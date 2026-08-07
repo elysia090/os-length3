@@ -1,0 +1,33 @@
+"""Version identifiers for the Quotient Minimizer prototype.
+
+The corpus key in SPEC §19 is
+
+    semantic identity
+    x observer
+    x target ISA
+    x grammar version
+    x objective version
+    -> canonical result
+
+so grammar and objective versions are first-class data, not comments.
+"""
+
+QM_VERSION = '2.0.0-prototype'
+
+# Bumped when the abstract operation grammar searched by Stage 2 changes.
+GRAMMAR_VERSION = 'g2'
+
+# Bumped when the lexicographic objective (span, work, L(z), rank) changes.
+OBJECTIVE_VERSION = 'o1'
+
+# Bumped when solver behaviour changes in a way that can move residual freedom.
+SOLVER_VERSION = 's2'
+
+
+def version_block():
+    return {
+        'qm': QM_VERSION,
+        'grammar': GRAMMAR_VERSION,
+        'objective': OBJECTIVE_VERSION,
+        'solver': SOLVER_VERSION,
+    }
