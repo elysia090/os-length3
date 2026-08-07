@@ -147,5 +147,80 @@ class TestManifest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(ROOT, rel)), rel)
 
 
+
+class TestAssemblyListings(unittest.TestCase):
+    """The listing's ISA is detected, never assumed.
+
+    Which one a Clang bundle can emit depends on the targets it was built with:
+    the bundled browser toolchain is WebAssembly-only, the native one here is
+    x86-64. A count must never be labelled with the wrong architecture.
+    """
+
+    WASM_LISTING = '''\t.file\t"in.c"
+\t.functype\tranks8 (i32) -> (i64)
+\t.section\t.text.ranks8,"",@
+\t.globl\tranks8
+ranks8:
+\t.functype\tranks8 (i32) -> (i64)
+\tlocal.get\t0
+\ti32.const\t127
+\ti32.and
+\ti32.popcnt
+\ti64.extend_i32_u
+\ti64.const\t56
+\ti64.shl
+\tend_function
+'''
+
+    X86_LISTING = '''\t.text
+\t.globl\tranks8
+ranks8:
+\tmovl\t%edi, %ecx
+\tandl\t$1, %ecx
+\tshll\t$8, %ecx
+\timulq\t%rax, %rdx
+\tretq
+'''
+
+    def test_wasm_listing_is_named_wasm(self):
+        from qm.asmstats import analyze
+        stats = analyze(self.WASM_LISTING, 'ranks8')
+        self.assertTrue(stats['available'])
+        self.assertEqual(stats['isa'], 'wasm32')
+        self.assertEqual(stats['instructions'], 8)
+        self.assertIn('wasm32', stats['note'])
+
+    def test_x86_listing_is_named_x86(self):
+        from qm.asmstats import analyze
+        stats = analyze(self.X86_LISTING, 'ranks8')
+        self.assertEqual(stats['isa'], 'x86-64')
+        self.assertEqual(stats['instructions'], 5)
+
+    def test_declared_isa_wins_over_detection(self):
+        from qm.asmstats import analyze
+        stats = analyze(self.WASM_LISTING, 'ranks8', isa='wasm32-declared')
+        self.assertEqual(stats['isa'], 'wasm32-declared')
+
+    def test_finish_labels_the_baseline_with_the_listing_isa(self):
+        planned = json.loads(plan(SOURCE, '{}'))
+
+        def ref(m):
+            return sum(bin(m & ((1 << k) - 1)).count('1') << (8 * k)
+                       for k in range(8))
+
+        options = json.dumps({
+            'function': 'ranks8', 'input_bits': 8, 'output_bits': 64,
+            'compile': {'opt': '-O2', 'listing_isa': 'wasm32'},
+        })
+        result = json.loads(finish(
+            SOURCE, options,
+            [str(ref(v)) for v in planned['values']], self.WASM_LISTING))
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['frontend']['assembly_stats']['isa'], 'wasm32')
+        self.assertIn('wasm32', result['frontend']['reference_ops']['metric'])
+        # QM still lowers to x86-64: the compiler's target is not QM's target.
+        self.assertIn('x86-64-bmi2-pclmul',
+                      [t['name'] for t in result['targets']])
+
 if __name__ == '__main__':
     unittest.main()
