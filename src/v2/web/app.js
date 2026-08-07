@@ -1,8 +1,8 @@
-// Two panes: write C on the left, take the assembly from the right.
+// Three cards: write C, read what the compiler made, copy what QM made of it.
 //
-// Everything the pipeline reports is still available, but nothing explains
-// itself at you. The status bar carries the few numbers worth a glance, and
-// clicking it opens the full derivation for anyone who wants it.
+// Nothing explains itself at you. Each card carries one line of numbers under
+// its title, and the Derivation link in the footer opens everything else for
+// anyone who wants it.
 
 import { readConfig } from './clang.js';
 
@@ -163,44 +163,76 @@ function highlightC(code) {
   return out.replace(/g(\d+)z/g, (_, i) => guarded[Number(i)]);
 }
 
-function highlightAsm(text) {
-  return escapeHtml(text)
-    .split('\n')
-    .map((line) => {
-      const comment = line.match(/([#;].*)$/);
-      let body = comment ? line.slice(0, line.length - comment[1].length) : line;
-      const tail = comment ? `<span class="tok-com">${comment[1]}</span>` : '';
+// ---------------------------------------------------------------------------
+// Listings
+// ---------------------------------------------------------------------------
 
-      if (/^\s*\./.test(body)) {
-        body = body.replace(/^(\s*)(\.[\w.]+)/, '$1<span class="tok-dir">$2</span>');
-      } else if (/^[\w.$]+:/.test(body)) {
-        body = body.replace(/^([\w.$]+)(:)/, '<span class="tok-label">$1</span>$2');
-      } else {
-        body = body
-          .replace(/^(\s+)([a-z][\w.]*)/, '$1<span class="tok-kw">$2</span>')
-          .replace(/(%[a-z0-9]+)/g, '<span class="tok-reg">$1</span>')
-          .replace(/(\$?0[xX][0-9a-fA-F]+|\$\d+)/g, '<span class="tok-num">$1</span>');
-      }
-      return body + tail;
-    })
-    .join('\n');
+// A listing is rendered as index / mnemonic / operands, the way a disassembler
+// shows it.  The left column counts instructions rather than bytes: nothing
+// here has been assembled, and a column of byte offsets would be invented.
+function renderListing(text, functionName) {
+  if (!text) return '<span class="hint">nothing here yet</span>';
+
+  const rows = [];
+  let index = 0;
+  for (const raw of sliceFunction(text, functionName).split('\n')) {
+    const line = raw.replace(/\t/g, '    ');
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('#') || trimmed.startsWith('//')) {
+      rows.push(`<span class="row"><span class="addr"></span>`
+        + `<span class="tok-com">${escapeHtml(trimmed)}</span></span>`);
+      continue;
+    }
+    if (/^[\w.$]+:/.test(trimmed)) {
+      rows.push(`<span class="row"><span class="addr"></span>`
+        + `<span class="lbl">${escapeHtml(trimmed)}</span></span>`);
+      continue;
+    }
+    if (trimmed.startsWith('.')) {
+      rows.push(`<span class="row"><span class="addr"></span>`
+        + `<span class="tok-dir">${escapeHtml(trimmed)}</span></span>`);
+      continue;
+    }
+    const match = trimmed.match(/^([A-Za-z_][\w.]*)\s*(.*)$/);
+    if (!match) continue;
+    index += 1;
+    rows.push(`<span class="row">`
+      + `<span class="addr">${String(index).padStart(3, ' ')}</span>`
+      + `<span class="mn">${escapeHtml(match[1])}</span>`
+      + `<span class="ops">${escapeHtml(match[2])}</span></span>`);
+  }
+  return rows.join('') || '<span class="hint">nothing to show</span>';
+}
+
+// Show the function, not the constant pool and section directives around it.
+function sliceFunction(text, functionName) {
+  if (!functionName) return text;
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => l.trim().startsWith(`${functionName}:`));
+  if (start < 0) return text;
+  const body = [lines[start]];
+  for (const line of lines.slice(start + 1)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('.size') || /^[\w$]+:/.test(trimmed)) break;
+    body.push(line);
+  }
+  return body.join('\n');
 }
 
 // ---------------------------------------------------------------------------
-// Editors
+// Editor
 // ---------------------------------------------------------------------------
-
-function gutterFor(text, minimum) {
-  const n = Math.max(text.split('\n').length, minimum || 1);
-  return Array.from({ length: n }, (_, i) => i + 1).join('\n');
-}
 
 function syncSource() {
   const code = $('source').value;
+  const lines = code.split('\n');
+  const shown = Math.max(lines.length, 14);
   $('highlight').innerHTML = highlightC(code) + '\n';
-  $('gutter').textContent = gutterFor(code, 20);
+  $('gutter').textContent =
+    Array.from({ length: shown }, (_, i) => i + 1).join('\n');
+  $('line-count').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'}`;
   localStorage.setItem('qm.source', code);
-  $('dirty-dot').classList.add('is-dirty');
 }
 
 function setSource(code) {
@@ -208,19 +240,8 @@ function setSource(code) {
   syncSource();
 }
 
-function showOutput(text, kind) {
-  const box = $('out-code');
-  if (!text) {
-    box.innerHTML = '<span class="hint-line">nothing here yet</span>';
-    $('out-gutter').textContent = '';
-    return;
-  }
-  box.innerHTML = (kind === 'c' ? highlightC(text) : highlightAsm(text)) + '\n';
-  $('out-gutter').textContent = gutterFor(text, 1);
-}
-
 // ---------------------------------------------------------------------------
-// Views
+// Cards
 // ---------------------------------------------------------------------------
 
 function currentTarget() {
@@ -232,96 +253,77 @@ function currentTarget() {
     || null;
 }
 
-function viewText() {
+function takeawayText() {
   const target = currentTarget();
-  if (state.view === 'clang') {
-    return { text: state.clangAssembly, kind: 'asm', name: 'clang.s' };
-  }
   if (!target) return { text: '', kind: 'asm', name: 'kernel_qm.s' };
-  if (state.view === 'c') {
+  if (state.view === 'c' || !target.asm) {
     return { text: target.c || '', kind: 'c', name: 'kernel_qm.c' };
-  }
-  if (!target.asm) {
-    // Some lowerings (a lookup table, a software gather loop) have no short
-    // assembly form in the emitter.  Hand over the C rather than nothing.
-    return {
-      text: `/* no assembly form for ${(target.instructions || []).join(' ')} */\n\n`
-            + (target.c || ''),
-      kind: 'c',
-      name: 'kernel_qm.c',
-    };
   }
   return { text: target.asm, kind: 'asm', name: 'kernel_qm.s' };
 }
 
-function renderView() {
-  const { text, kind } = viewText();
-  showOutput(text, kind);
-  document.querySelectorAll('#pane-output .tab').forEach((tab) => {
-    tab.classList.toggle('is-active', tab.dataset.view === state.view);
-  });
-  const clangTab = document.querySelector('#pane-output .tab[data-view="clang"]');
-  if (clangTab) clangTab.disabled = !state.clangAssembly;
+function renderCompiled(result) {
+  const front = result.frontend;
+  const stats = front.assembly_stats || {};
+  const compile = front.compile || {};
+  const isa = stats.isa || compile.listing_isa;
+
+  $('compiled-opt').textContent = `(${compile.opt || '-O2'})`;
+  $('brand-sub').textContent =
+    `C \u2192 Assembly (${front.frontend.kind === 'compiler' ? 'Clang ' : ''}`
+    + `${compile.opt || '-O2'}${isa ? `, ${isa}` : ''})`;
+
+  const count = stats.available ? stats.instructions
+                                : (front.reference_ops || {}).mean;
+  $('compiled-sub').textContent = count == null ? '— instructions'
+    : `${count} instructions`;
+  $('compiled-isa').textContent = isa || front.frontend.kind;
+  $('compiled-engine').textContent = front.frontend.title || '';
+  $('clang-listing').innerHTML = state.clangAssembly
+    ? renderListing(state.clangAssembly, front.function.name)
+    : '<span class="hint">this frontend produced no listing</span>';
+}
+
+function renderTakeaway() {
+  const result = state.result;
+  const target = currentTarget();
+  const { text, kind } = takeawayText();
+
+  // The listing shows the function body, the way the compiled card does.
+  // Copy still hands over the whole file, directives included, so that what
+  // leaves the page actually assembles.
+  const emitted = result && result.ok
+    ? `${result.frontend.function.name}_qm` : null;
+  $('qm-listing').innerHTML = !text
+    ? '<span class="hint">no program in the declared grammar</span>'
+    : (kind === 'c' ? highlightC(text) : renderListing(text, emitted));
+
+  if (!result || !result.ok || !target) {
+    $('qm-sub').textContent = '— instructions';
+    return;
+  }
+
+  const v = target.verification;
+  const verdict = v
+    ? `${v.pass ? '\u2713' : '\u2717'} ${v.matched.toLocaleString()}/${v.total.toLocaleString()}`
+      + (v.exhaustive ? ' exact' : ' sampled')
+    : '';
+  $('qm-sub').textContent =
+    `${target.work} instruction${target.work === 1 ? '' : 's'}`
+    + `  |  ${result.residual_freedom} solution${result.residual_freedom === 1 ? '' : 's'}`
+    + (verdict ? `  |  ${verdict}` : '');
 }
 
 function fillTargets(result) {
   const select = $('sel-isa-view');
   select.innerHTML = (result.targets || []).map((t) => {
-    const label = t.ok ? `${t.name} · ${t.work} op${t.work === 1 ? '' : 's'}`
-                       : `${t.name} · —`;
-    return `<option value="${t.name}"${t.ok ? '' : ' disabled'}>${escapeHtml(label)}</option>`;
+    const label = t.ok ? `${t.name} \u00b7 ${t.work} op${t.work === 1 ? '' : 's'}`
+                       : `${t.name} \u00b7 —`;
+    return `<option value="${t.name}"${t.ok ? '' : ' disabled'}>`
+      + `${escapeHtml(label)}</option>`;
   }).join('');
   state.isa = result.primary_target;
   select.value = state.isa;
-}
-
-// ---------------------------------------------------------------------------
-// Status bar
-// ---------------------------------------------------------------------------
-
-function seg(id, text, cls) {
-  const el = $(id);
-  if (!text) { el.hidden = true; return; }
-  el.hidden = false;
-  el.textContent = text;
-  el.className = `seg click${cls ? ` ${cls}` : ''}`;
-}
-
-function status(text) { $('st-state').textContent = text; }
-
-function renderStatus(result) {
-  if (!result || !result.ok) {
-    status('error');
-    ['st-verify', 'st-before', 'st-freedom'].forEach((id) => seg(id, '', null));
-    return;
-  }
-
-  const target = currentTarget();
-  const v = target && target.verification;
-  const before = (result.frontend.reference_ops || {}).mean;
-
-  status(result.frontend.function.name || 'done');
-
-  if (v) {
-    seg('st-verify',
-        `${v.pass ? '✓' : '✗'} ${v.matched.toLocaleString()}/${v.total.toLocaleString()}`
-          + (v.exhaustive ? '' : ' sampled'),
-        v.pass ? (v.exhaustive ? 'pass' : 'warn') : 'fail');
-  } else {
-    seg('st-verify', '', null);
-  }
-
-  if (target && before != null) {
-    seg('st-before', `${before} → ${target.work}`, null);
-  } else if (target) {
-    seg('st-before', `${target.work} ops`, null);
-  } else {
-    seg('st-before', '', null);
-  }
-
-  seg('st-freedom',
-      `${result.residual_freedom} solution${result.residual_freedom === 1 ? '' : 's'}`,
-      result.residual_freedom === 0 ? 'warn' : null);
 }
 
 // ---------------------------------------------------------------------------
@@ -347,8 +349,15 @@ function optimize() {
 
   state.busy = true;
   $('btn-optimize').disabled = true;
-  status('compiling…');
+  $('foot-note').textContent = 'compiling…';
   state.worker.postMessage({ type: 'solve', source, options: currentOptions() });
+}
+
+const FOOT_DEFAULT =
+  'All compilation happens in your browser. No code is sent to any server.';
+
+function status(text) {
+  $('foot-note').textContent = text || FOOT_DEFAULT;
 }
 
 let toastTimer = null;
@@ -362,7 +371,7 @@ function toast(message, isError) {
 }
 
 async function copyOutput() {
-  const { text } = viewText();
+  const { text } = takeawayText();
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
@@ -373,7 +382,7 @@ async function copyOutput() {
 }
 
 function downloadOutput() {
-  const { text, name } = viewText();
+  const { text, name } = takeawayText();
   if (!text) return;
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
   const link = document.createElement('a');
@@ -447,7 +456,7 @@ function fillSettings(capabilities) {
     .join('') + '<option value="mask:custom">Custom bit mask…</option>';
 
   const v = capabilities.versions;
-  $('st-engine').textContent = `qm ${v.qm} · ${v.grammar}/${v.objective}`;
+  $('lang-note').textContent = `C (${v.qm})`;
 }
 
 function onMessage(event) {
@@ -462,15 +471,16 @@ function onMessage(event) {
     fillSettings(msg.capabilities);
     $('settings-note').textContent = msg.clang.configured === false
       ? 'No Clang bundle configured; the built-in C subset frontend is used.'
-      : `Clang/WASM loads on the first Optimize. Listing: ${msg.clang.listing}.`;
-    status('ready');
+      : `Clang/WASM loads on the first Compile. Listing: ${msg.clang.listing}.`;
+    status();
     $('btn-optimize').disabled = false;
     return;
   }
 
   if (msg.type === 'compile-error') {
     state.clangAssembly = '';
-    showOutput(msg.stderr, 'asm');
+    $('clang-listing').innerHTML =
+      `<span class="tok-com">${escapeHtml(msg.stderr)}</span>`;
     return;
   }
 
@@ -478,22 +488,23 @@ function onMessage(event) {
     state.busy = false;
     $('btn-optimize').disabled = false;
     state.result = msg.result;
-    $('dirty-dot').classList.remove('is-dirty');
 
     if (!msg.result.ok) {
       state.clangAssembly = '';
-      renderStatus(msg.result);
-      showOutput(msg.result.error.text || msg.result.error.message, 'asm');
+      $('qm-listing').innerHTML =
+        `<span class="tok-com">${escapeHtml(
+          msg.result.error.text || msg.result.error.message)}</span>`;
+      $('qm-sub').textContent = 'no result';
+      status('error');
       toast(msg.result.error.message, true);
       return;
     }
 
     state.clangAssembly = (msg.result.compiled && msg.result.compiled.assembly) || '';
-    $('chip-signature').textContent = msg.result.frontend.function.signature || '';
     fillTargets(msg.result);
-    if (state.view === 'clang' && !state.clangAssembly) state.view = 'asm';
-    renderView();
-    renderStatus(msg.result);
+    renderCompiled(msg.result);
+    renderTakeaway();
+    status();
     return;
   }
 
@@ -503,43 +514,6 @@ function onMessage(event) {
     status('failed');
     toast(msg.message, true);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Split drag
-// ---------------------------------------------------------------------------
-
-function wireDrag() {
-  const bar = $('dragbar');
-  const split = $('split');
-  let dragging = false;
-
-  bar.addEventListener('pointerdown', (event) => {
-    dragging = true;
-    bar.setPointerCapture(event.pointerId);
-    document.body.style.userSelect = 'none';
-  });
-
-  bar.addEventListener('pointermove', (event) => {
-    if (!dragging) return;
-    const rect = split.getBoundingClientRect();
-    if (window.matchMedia('(max-width: 900px)').matches) {
-      const ratio = (event.clientY - rect.top) / rect.height;
-      const clamped = Math.min(0.85, Math.max(0.15, ratio));
-      split.style.gridTemplateRows = `${clamped}fr 6px ${1 - clamped}fr`;
-    } else {
-      const ratio = (event.clientX - rect.left) / rect.width;
-      const clamped = Math.min(0.85, Math.max(0.15, ratio));
-      split.style.gridTemplateColumns = `${clamped}fr 6px ${1 - clamped}fr`;
-    }
-  });
-
-  const stop = () => {
-    dragging = false;
-    document.body.style.userSelect = '';
-  };
-  bar.addEventListener('pointerup', stop);
-  bar.addEventListener('pointercancel', stop);
 }
 
 // ---------------------------------------------------------------------------
@@ -555,7 +529,6 @@ function init() {
     }
   }
   setSource(initial);
-  $('dirty-dot').classList.remove('is-dirty');
 
   const editor = $('source');
   editor.addEventListener('input', syncSource);
@@ -575,10 +548,6 @@ function init() {
     }
   });
 
-  $('out-code').addEventListener('scroll', () => {
-    $('out-gutter').scrollTop = $('out-code').scrollTop;
-  });
-
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
@@ -594,28 +563,21 @@ function init() {
   $('btn-optimize').addEventListener('click', optimize);
   $('btn-examples').addEventListener('click', showExamples);
   $('btn-copy').addEventListener('click', copyOutput);
-  $('btn-download').addEventListener('click', downloadOutput);
+  $('btn-details').addEventListener('click', showDetails);
   $('btn-settings').addEventListener('click', () => $('settings').showModal());
   $('settings-close').addEventListener('click', () => $('settings').close());
   $('dlg-close').addEventListener('click', () => $('dlg').close());
-  $('statusbar').addEventListener('click', showDetails);
   $('sel-observer').addEventListener('change', (event) => {
     $('inp-mask').disabled = event.target.value !== 'mask:custom';
   });
   $('sel-isa-view').addEventListener('change', (event) => {
     state.isa = event.target.value;
-    renderView();
-    renderStatus(state.result);
+    renderTakeaway();
   });
-  document.querySelectorAll('#pane-output .tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      if (tab.disabled) return;
-      state.view = tab.dataset.view;
-      renderView();
-    });
+  $('chk-intrinsics').addEventListener('change', (event) => {
+    state.view = event.target.checked ? 'c' : 'asm';
+    renderTakeaway();
   });
-
-  wireDrag();
 
   state.worker = new Worker(new URL('worker.js', import.meta.url),
                             { type: 'module' });
@@ -625,7 +587,7 @@ function init() {
     search: location.search,
     config: readConfig(location.search),
   });
-  status('booting…');
+  status('starting the engine…');
 }
 
 init();
