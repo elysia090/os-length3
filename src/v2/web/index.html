@@ -10,36 +10,56 @@
 </head>
 <body>
 
-<header class="titlebar">
+<header class="topbar">
   <div class="brand">
-    <span class="logo" aria-hidden="true">QM</span>
-    <span class="title">Quotient Minimizer</span>
+    <svg class="logo" viewBox="0 0 44 44" aria-hidden="true">
+      <circle cx="22" cy="22" r="15" fill="none" stroke="currentColor" stroke-width="4"/>
+      <path d="M27 27l6 7" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+      <path d="M15 27V17l7 6 7-6v10" stroke="currentColor" stroke-width="3"
+            stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>
+    <div class="brand-text">
+      <h1>Quotient Minimizer</h1>
+      <p id="brand-sub">C &rarr; Assembly (Clang -O2)</p>
+    </div>
   </div>
 
-  <div class="titlebar-actions">
-    <button class="btn primary" id="btn-optimize" type="button" disabled>
-      <svg viewBox="0 0 24 24" class="bolt" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
-      Optimize
-      <kbd>⌘⏎</kbd>
-    </button>
-    <button class="btn ghost" id="btn-examples" type="button">Examples</button>
-    <button class="icon-btn" id="btn-settings" type="button" title="Settings" aria-label="Settings">
+  <div class="controls">
+    <label class="control">
+      <span>Target</span>
+      <select id="sel-target">
+        <option value="x86-64">x86-64 (baseline)</option>
+        <option value="x86-64-v2">x86-64-v2</option>
+        <option value="x86-64-v3">x86-64-v3</option>
+        <option value="x86-64-v4">x86-64-v4</option>
+      </select>
+    </label>
+    <label class="control">
+      <span>Compiler</span>
+      <select id="sel-compiler"></select>
+    </label>
+    <label class="control">
+      <span>Optimization</span>
+      <select id="sel-opt">
+        <option>-O1</option><option selected>-O2</option><option>-O3</option>
+      </select>
+    </label>
+    <button class="icon-btn" id="btn-settings" type="button" title="Observer" aria-label="Observer">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
     </button>
   </div>
 </header>
 
-<main class="split" id="split">
+<main class="board">
 
-  <!-- ============ left: the paste ============ -->
-  <section class="pane" id="pane-source">
-    <div class="tabrow">
-      <div class="tab is-active"><span class="dot" id="dirty-dot"></span>kernel.c</div>
-      <div class="tabrow-right">
-        <span class="chip" id="chip-signature">—</span>
-      </div>
+  <!-- ================= 1. Write C ================= -->
+  <section class="card" id="card-write">
+    <div class="card-head">
+      <h2><span class="step">1.</span> Write C</h2>
+      <button class="link" id="btn-examples" type="button">Examples</button>
     </div>
-    <div class="editor">
+
+    <div class="framed editor">
       <div class="gutter" id="gutter" aria-hidden="true"></div>
       <div class="code-area">
         <pre class="highlight" id="highlight" aria-hidden="true"></pre>
@@ -47,42 +67,62 @@
                   autocapitalize="off" wrap="off" aria-label="C source"></textarea>
       </div>
     </div>
+
+    <div class="card-foot">
+      <span id="line-count">0 lines</span>
+      <span class="right" id="lang-note">C (Clang)</span>
+    </div>
+
+    <button class="compile" id="btn-optimize" type="button" disabled>
+      <svg viewBox="0 0 24 24" class="play" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
+      Compile
+    </button>
   </section>
 
-  <div class="gutter-drag" id="dragbar" role="separator" aria-orientation="vertical"></div>
-
-  <!-- ============ right: the takeaway ============ -->
-  <section class="pane" id="pane-output">
-    <div class="tabrow">
-      <button class="tab is-active" data-view="asm" type="button">kernel.s</button>
-      <button class="tab" data-view="c" type="button">kernel.c</button>
-      <button class="tab" data-view="clang" type="button">clang.s</button>
-      <div class="tabrow-right">
-        <select id="sel-isa-view" aria-label="Target ISA" title="Target ISA"></select>
-        <button class="icon-btn" id="btn-copy" title="Copy (⌘⇧C)" aria-label="Copy">
-          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-        </button>
-        <button class="icon-btn" id="btn-download" title="Download" aria-label="Download">
-          <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/></svg>
-        </button>
-      </div>
+  <!-- ================= 2. Compiled ================= -->
+  <section class="card" id="card-compiled">
+    <div class="card-head">
+      <h2><span class="step">2.</span> Compiled Assembly <span class="dim" id="compiled-opt">(-O2)</span></h2>
     </div>
-    <div class="editor readonly">
-      <div class="gutter" id="out-gutter" aria-hidden="true"></div>
-      <div class="code-area">
-        <pre class="highlight" id="out-code"><span class="hint-line">Press <b>Optimize</b> to compile and minimize.</span></pre>
-      </div>
+    <div class="card-sub" id="compiled-sub">— instructions</div>
+
+    <div class="framed listing">
+      <pre id="clang-listing"><span class="hint">Press <b>Compile</b>.</span></pre>
+    </div>
+
+    <div class="card-foot">
+      <span id="compiled-isa">—</span>
+      <span class="right" id="compiled-engine">—</span>
+    </div>
+  </section>
+
+  <!-- ================= 3. Copy Assembly ================= -->
+  <section class="card" id="card-copy">
+    <div class="card-head">
+      <h2><span class="step">3.</span> Copy Assembly</h2>
+      <button class="link copy" id="btn-copy" type="button">
+        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        Copy
+      </button>
+    </div>
+    <div class="card-sub" id="qm-sub">— instructions</div>
+
+    <div class="framed listing">
+      <pre id="qm-listing"><span class="hint">The minimized program appears here.</span></pre>
+    </div>
+
+    <div class="card-foot">
+      <select id="sel-isa-view" aria-label="Lowering target"></select>
+      <label class="check right">
+        <input type="checkbox" id="chk-intrinsics"> C intrinsics
+      </label>
     </div>
   </section>
 </main>
 
-<footer class="statusbar" id="statusbar">
-  <span class="seg state" id="st-state">booting…</span>
-  <span class="seg" id="st-verify" hidden></span>
-  <span class="seg" id="st-before" hidden></span>
-  <span class="seg" id="st-freedom" hidden></span>
-  <span class="grow"></span>
-  <span class="seg muted" id="st-engine">—</span>
+<footer class="pagefoot">
+  <span id="foot-note">All compilation happens in your browser. No code is sent to any server.</span>
+  <span class="right"><button class="link" id="btn-details" type="button">Derivation</button></span>
 </footer>
 
 <div class="toast" id="toast" hidden></div>
@@ -99,33 +139,14 @@
 
 <dialog id="settings" class="dlg">
   <div class="dlg-head">
-    <h3>Settings</h3>
+    <h3>Observer</h3>
     <button class="icon-btn" id="settings-close" aria-label="Close">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
   </div>
   <div class="dlg-body">
     <div class="field">
-      <label for="sel-compiler">Frontend</label>
-      <select id="sel-compiler"></select>
-    </div>
-    <div class="field">
-      <label for="sel-opt">Optimization</label>
-      <select id="sel-opt">
-        <option>-O1</option><option selected>-O2</option><option>-O3</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="sel-target">Source target</label>
-      <select id="sel-target">
-        <option value="x86-64">x86-64 baseline</option>
-        <option value="x86-64-v2">x86-64-v2</option>
-        <option value="x86-64-v3">x86-64-v3</option>
-        <option value="x86-64-v4">x86-64-v4</option>
-      </select>
-    </div>
-    <div class="field">
-      <label for="sel-observer">Observer</label>
+      <label for="sel-observer">Observed output</label>
       <select id="sel-observer"></select>
     </div>
     <div class="field">
