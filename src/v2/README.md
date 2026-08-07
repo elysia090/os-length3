@@ -170,7 +170,7 @@ qm/
   cli.py          §21  the local interactive product on a terminal
 
 web/              the page: index.html · app.js · worker.js · clang.js
-tools/            serve.py · gen_manifest.py
+tools/            serve.py · gen_manifest.py · build_site.py
 tests/            run.py and the suite
 examples/         the kernels the corpus is built from
 ```

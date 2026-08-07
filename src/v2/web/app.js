@@ -261,8 +261,11 @@ function renderCompiledInfo(result) {
   const front = result.frontend || {};
   const stats = front.assembly_stats || {};
   const sub = front.compile || {};
+  // Which ISA the listing is in depends on the Clang bundle, so it is read
+  // from the report rather than assumed.
+  const isa = stats.isa || sub.listing_isa || sub.target;
   $('compiled-sub').textContent = front.frontend && front.frontend.kind === 'compiler'
-    ? `(Clang ${sub.opt || '-O2'}, ${sub.target || 'x86-64'})`
+    ? `(Clang ${sub.opt || '-O2'}, ${isa || 'default target'})`
     : `(${(front.frontend && front.frontend.title) || 'built-in frontend'})`;
 
   const count = stats.available ? stats.instructions : (front.reference_ops || {}).mean;
@@ -275,7 +278,7 @@ function renderCompiledInfo(result) {
   const info = $('asm-info');
   const mnemonics = stats.available ? stats.distinct_mnemonics : '—';
   const rows = [
-    ['Functions', (front.functions_in_source || []).length || 1],
+    ['Listing', stats.isa || sub.listing_isa || '—'],
     ['Distinct mnemonics', mnemonics],
     ['Input domain', `2^${result.semantics.input_bits}`],
     ['Verification', result.semantics.domain.strength],
@@ -614,10 +617,13 @@ function onMessage(event) {
     state.capabilities = msg.capabilities;
     state.clang = msg.clang;
     fillSelects(msg.capabilities);
-    $('engine-note').textContent = msg.clang.available
-      ? `Engine ready · Clang/WASM configured`
-      : `Engine ready · Clang/WASM not configured (${msg.clang.reason || 'no bundle URL'}); ` +
-        `the built-in C subset frontend will be used`;
+    // The bundle is fetched on the first Optimize, so at boot the honest
+    // statement is which bundle is configured, not whether it loaded.
+    $('engine-note').textContent = msg.clang.configured === false
+      ? `Engine ready · no Clang bundle configured; the built-in C subset ` +
+        `frontend will be used`
+      : `Engine ready · Clang/WASM loads on the first Optimize ` +
+        `(listing: ${msg.clang.listing || 'toolchain default'})`;
     status('ready');
     $('btn-optimize').disabled = false;
     return;
