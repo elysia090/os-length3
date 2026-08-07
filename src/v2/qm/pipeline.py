@@ -272,6 +272,9 @@ def _target_record(name, lowered, sem, obs, program):
     fn_name = (sem.meta.get('function') or 'qm_kernel') + '_qm'
     record.update({
         'ok': True,
+        # Kept for in-process callers; `to_json_safe` strips it before the
+        # result crosses the worker boundary.
+        'seq': seq,
         'span': lowered['span'],
         'work': lowered['work'],
         'L_bits': lowered['L_bits'],

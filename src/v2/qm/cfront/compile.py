@@ -18,7 +18,7 @@ for the reference operation count.  `tests/test_cfront.py` checks the two agree
 over whole domains, so the fast path can never quietly drift from the slow one.
 """
 
-from ..bits import mask_of
+from ..bits import clmul as _clmul, mask_of, pdep as _pdep, pext as _pext
 from . import nodes as N
 from .ctypes_model import (
     BOOL, INT, U32, U64, VOID, CType, convert, promote, truncdiv,
@@ -160,10 +160,19 @@ class Compiler(object):
                               line=getattr(node, 'line', None))
         return method(self, node, scope)
 
+    def _stmt_decl_group(self, node, scope):
+        # Same scope, several declarators.
+        parts = [self._stmt(item, scope) for item in node.items]
+        return self._sequence(parts)
+
     def _stmt_block(self, node, scope):
         scope.push()
         parts = [self._stmt(item, scope) for item in node.items]
         scope.pop()
+        return self._sequence(parts)
+
+    @staticmethod
+    def _sequence(parts):
         if not parts:
             return lambda frame: None
         if len(parts) == 1:
@@ -791,6 +800,19 @@ def _bswap_for(bits):
     return bswap
 
 
+def _builtin_pair(bits, fn, ret_type=U64):
+    """Two 64-bit operands in, one out: PDEP, PEXT, carry-less multiply."""
+    def build(compiler, node, args, scope):
+        if len(args) != 2:
+            raise CFrontError('%s expects 2 arguments' % node.name,
+                              line=node.line)
+        left, _lt = args[0]
+        right, _rt = args[1]
+        mask = mask_of(bits)
+        return (lambda frame: fn(left(frame) & mask, right(frame) & mask)), ret_type
+    return build
+
+
 def _builtin_expect(compiler, node, args, scope):
     if len(args) != 2:
         raise CFrontError('__builtin_expect expects 2 arguments',
@@ -854,6 +876,10 @@ BUILTINS = {
     '__builtin_bswap32': _builtin_unary(32, _bswap_for(32), U32),
     '__builtin_bswap64': _builtin_unary(64, _bswap_for(64), U64),
     '__builtin_expect': _builtin_expect,
+    # QM emits these; modelling them means QM can read its own output.
+    '_pdep_u64': _builtin_pair(64, lambda v, m: _pdep(v, m)),
+    '_pext_u64': _builtin_pair(64, lambda v, m: _pext(v, m)),
+    'qm_clmul64': _builtin_pair(64, lambda a, b: _clmul(a, b, 64) & mask_of(64)),
     '__builtin_abs': _builtin_abs,
     'abs': _builtin_abs,
     'labs': _builtin_abs,
@@ -868,6 +894,7 @@ BUILTINS = {
 
 _STMT_DISPATCH = {
     N.Block: Compiler._stmt_block,
+    N.DeclGroup: Compiler._stmt_decl_group,
     N.Empty: Compiler._stmt_empty,
     N.ExprStmt: Compiler._stmt_expr,
     N.Decl: Compiler._stmt_decl,

@@ -8,113 +8,23 @@ import { readConfig } from './clang.js';
 
 const $ = (id) => document.getElementById(id);
 
-const EXAMPLES = [
-  {
-    name: 'ranks8',
-    note: '502 solutions tied',
-    code: `#include <stdint.h>
+// Examples are not written here. They live in examples/*.c, and
+// tools/gen_examples.py puts the same text into web/examples.json — one home
+// for the source, and no claim about any result: the numbers appear when you
+// press Compile, which is the only place they can be true.
+let EXAMPLES = [];
 
-uint64_t ranks8(uint8_t m)
-{
-    uint64_t r = 0;
-
-    for (unsigned i = 0; i < 8; ++i)
-        r |= (uint64_t)__builtin_popcount(
-            m & ((1u << i) - 1)) << (8 * i);
-
-    return r;
+async function loadExamples() {
+  try {
+    const response = await fetch(new URL('examples.json', import.meta.url),
+                                { cache: 'no-cache' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    EXAMPLES = (await response.json()).examples || [];
+  } catch {
+    EXAMPLES = [];
+  }
+  return EXAMPLES;
 }
-`,
-  },
-  {
-    name: 'inclusive_rank8',
-    note: 'uniquely forced',
-    code: `#include <stdint.h>
-
-uint64_t inclusive_rank8(uint8_t m)
-{
-    uint64_t r = 0;
-
-    for (unsigned i = 0; i < 8; ++i)
-        r |= (uint64_t)__builtin_popcount(
-            m & ((1u << (i + 1)) - 1)) << (8 * i);
-
-    return r;
-}
-`,
-  },
-  {
-    name: 'quote_state_before8',
-    note: 'carry-less convolution',
-    code: `#include <stdint.h>
-
-uint64_t quote_state_before8(uint8_t m)
-{
-    uint64_t r = 0;
-
-    for (unsigned i = 0; i < 8; ++i) {
-        unsigned p = __builtin_popcount(m & ((1u << i) - 1)) & 1;
-        r |= (uint64_t)(p * 0xFF) << (8 * i);
-    }
-
-    return r;
-}
-`,
-  },
-  {
-    name: 'select8',
-    note: 'dynamic permutation',
-    code: `#include <stdint.h>
-
-uint64_t select8(uint8_t m)
-{
-    uint64_t r = 0;
-    unsigned j = 0;
-
-    for (unsigned i = 0; i < 8; ++i)
-        if ((m >> i) & 1)
-            r |= (uint64_t)i << (8 * j++);
-
-    return r;
-}
-`,
-  },
-  {
-    name: 'run_ids8',
-    note: 'lane-local step first',
-    code: `#include <stdint.h>
-
-uint64_t run_ids8(uint8_t m)
-{
-    uint8_t starts = m & ~(uint8_t)(m << 1);
-    uint64_t r = 0;
-
-    for (unsigned i = 0; i < 8; ++i)
-        r |= (uint64_t)__builtin_popcount(
-            starts & ((1u << (i + 1)) - 1)) << (8 * i);
-
-    return r;
-}
-`,
-  },
-  {
-    name: 'morton_dilate16',
-    note: 'pure linear map',
-    code: `#include <stdint.h>
-
-uint32_t morton_dilate16(uint16_t x)
-{
-    uint32_t r = 0;
-
-    for (unsigned i = 0; i < 16; ++i)
-        if ((x >> i) & 1)
-            r |= 1u << (2 * i);
-
-    return r;
-}
-`,
-  },
-];
 
 const state = {
   worker: null,
@@ -398,13 +308,17 @@ function openDialog(title, html) {
   $('dlg').showModal();
 }
 
-function showExamples() {
-  openDialog('Examples', EXAMPLES.map((ex, i) =>
-    `<button class="btn ex" data-i="${i}">${escapeHtml(ex.name)}`
-    + ` <span>— ${escapeHtml(ex.note)}</span></button>`).join(''));
+async function showExamples() {
+  if (!EXAMPLES.length) await loadExamples();
+  openDialog('Examples', EXAMPLES.length
+    ? EXAMPLES.map((ex, i) =>
+        `<button class="btn ex" data-i="${i}">${escapeHtml(ex.name)}`
+        + (ex.summary ? ` <span>— ${escapeHtml(ex.summary)}</span>` : '')
+        + '</button>').join('')
+    : '<p class="note">examples.json could not be loaded</p>');
   $('dlg-body').querySelectorAll('.ex').forEach((el) => {
     el.addEventListener('click', () => {
-      setSource(EXAMPLES[Number(el.dataset.i)].code);
+      setSource(EXAMPLES[Number(el.dataset.i)].source);
       $('dlg').close();
       optimize();
     });
@@ -518,9 +432,24 @@ function onMessage(event) {
 
 // ---------------------------------------------------------------------------
 
+const FALLBACK_SOURCE = `#include <stdint.h>
+
+uint64_t ranks8(uint8_t m)
+{
+    uint64_t r = 0;
+
+    for (unsigned i = 0; i < 8; ++i)
+        r |= (uint64_t)__builtin_popcount(
+            m & ((1u << i) - 1)) << (8 * i);
+
+    return r;
+}
+`;
+
 function init() {
   const fragment = new URLSearchParams(location.hash.slice(1)).get('src');
-  let initial = localStorage.getItem('qm.source') || EXAMPLES[0].code;
+  const stored = localStorage.getItem('qm.source');
+  let initial = stored || FALLBACK_SOURCE;
   if (fragment) {
     try {
       initial = decodeURIComponent(escape(atob(fragment)));
@@ -529,6 +458,12 @@ function init() {
     }
   }
   setSource(initial);
+
+  // The first example replaces the placeholder only if nothing was typed or
+  // shared, so a returning visitor never loses what they had.
+  loadExamples().then((examples) => {
+    if (!stored && !fragment && examples.length) setSource(examples[0].source);
+  });
 
   const editor = $('source');
   editor.addEventListener('input', syncSource);

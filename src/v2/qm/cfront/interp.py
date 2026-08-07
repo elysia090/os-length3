@@ -132,6 +132,10 @@ class Interpreter(object):
 
         if isinstance(node, N.Empty):
             return
+        if isinstance(node, N.DeclGroup):
+            for item in node.items:
+                self.exec_stmt(item, scopes)
+            return
         if isinstance(node, N.Block):
             inner = scopes + [{}]
             for item in node.items:
@@ -508,6 +512,24 @@ def _bi_rotate(bits, left):
     return fn
 
 
+def _bi_pdep(interp, args, line):
+    from ..bits import pdep
+    (v, vt), (m, mt) = args[0], args[1]
+    return pdep(_u(convert(v, vt), 64), _u(convert(m, mt), 64)), U64
+
+
+def _bi_pext(interp, args, line):
+    from ..bits import pext
+    (v, vt), (m, mt) = args[0], args[1]
+    return pext(_u(convert(v, vt), 64), _u(convert(m, mt), 64)), U64
+
+
+def _bi_clmul(interp, args, line):
+    from ..bits import M64, clmul
+    (a, at), (b, bt) = args[0], args[1]
+    return clmul(_u(convert(a, at), 64), _u(convert(b, bt), 64), 64) & M64, U64
+
+
 def _bi_expect(interp, args, line):
     return args[0]
 
@@ -550,6 +572,10 @@ def _register():
         '__builtin_bswap32': (BUILTIN_COST['bswap'], _bi_bswap(32), 1),
         '__builtin_bswap64': (BUILTIN_COST['bswap'], _bi_bswap(64), 1),
         '__builtin_expect': (BUILTIN_COST['expect'], _bi_expect, 2),
+        # QM emits these; modelling them means QM can read its own output.
+        '_pdep_u64': (1, _bi_pdep, 2),
+        '_pext_u64': (1, _bi_pext, 2),
+        'qm_clmul64': (1, _bi_clmul, 2),
         '__builtin_abs': (BUILTIN_COST['abs'], _bi_abs, 1),
         'abs': (BUILTIN_COST['abs'], _bi_abs, 1),
         'labs': (BUILTIN_COST['abs'], _bi_abs, 1),

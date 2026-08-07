@@ -55,6 +55,31 @@ def solve_constant(sem, obs, options=None):
     return [prog] if verify(prog, sem, obs) else []
 
 
+def solve_conv_only(sem, obs, options=None):
+    """`CONV(family, M)` with no deposit in front of it.
+
+    A kernel whose lanes are already in place — a prefix sum over byte lanes,
+    say — is one multiply, and the deposit/convolution solver cannot express it
+    because that family always begins with a PDEP.  The constant is forced by
+    a single probe: if the program is x*M then M = f(1).
+    """
+    if obs(sem.value_at(0)) != obs(0):
+        return []
+    const = sem.value_at(1)
+    if const == 0:
+        return []
+
+    out = []
+    for family in (options or {}).get('families', ('IMUL', 'CLMUL')):
+        prog = Program([conv(family, const)], 1, 1, 'conv[%s]' % family,
+                       sem.input_bits, sem.output_bits,
+                       ['constant forced by f(1); the lanes need no deposit'])
+        if verify(prog, sem, obs):
+            out.append(prog)
+            break
+    return out
+
+
 # ---------------------------------------------------------------------------
 # LIN_CONST — constant GF(2)-linear maps
 # ---------------------------------------------------------------------------
@@ -401,6 +426,7 @@ def solve_table(sem, obs, options=None):
 COMPACT_SOLVERS = (
     solve_identity,
     solve_constant,
+    solve_conv_only,
     solve_deposit_conv_family,
     solve_linear,
     solve_point_gather,
