@@ -64,6 +64,9 @@ Return = _node('Return', ['expr'])
 Break = _node('Break', [])
 Continue = _node('Continue', [])
 Block = _node('Block', ['items'])
+# `int a = 1, b = 2;` is several declarations in one statement. It is not a
+# block: opening a scope for it would hide every declarator after the first.
+DeclGroup = _node('DeclGroup', ['items'])
 Switch = _node('Switch', ['expr', 'body'])
 Case = _node('Case', ['value'])
 Default = _node('Default', [])
@@ -106,11 +109,13 @@ class Function(object):
 
 
 class TranslationUnit(object):
-    __slots__ = ('functions', 'globals')
+    __slots__ = ('functions', 'globals', 'skipped')
 
-    def __init__(self, functions, globals_=None):
+    def __init__(self, functions, globals_=None, skipped=None):
         self.functions = functions            # ordered dict-like list
         self.globals = globals_ or []
+        # Definitions outside the subset, kept so the report can name them.
+        self.skipped = list(skipped or [])
 
     def by_name(self, name):
         for f in self.functions:

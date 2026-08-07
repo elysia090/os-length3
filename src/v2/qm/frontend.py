@@ -146,6 +146,13 @@ class CSubsetFrontend(object):
             'frontend': self.describe(),
             'function': fn.to_dict(),
             'functions_in_source': unit.names(),
+            # Definitions outside the subset are skipped, never silently: they
+            # are named here so a surprising result can be traced to one.
+            'skipped_definitions': [
+                {'name': item['name'], 'line': item['line'],
+                 'reason': item['reason']}
+                for item in unit.skipped
+            ],
             'input_bits': input_bits,
             'output_bits': output_bits,
             'reference_ops': self._reference_ops(unit, fn, domain, options),
