@@ -1,0 +1,60 @@
+# Publish the interactive product to GitHub Pages.
+#
+# The page needs the web/ shell and the qm/ package side by side, because the
+# worker installs the Python engine by fetching the files listed in
+# web/qm-manifest.json.  The site root is therefore src/v2 with web/index.html
+# copied up so that the deployment URL lands directly on the tool.
+
+name: Deploy Quotient Minimizer
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/v2/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check the browser manifest is current
+        run: python3 tools/gen_manifest.py --check
+        working-directory: src/v2
+      - name: Run the suite
+        run: python3 tests/run.py
+        working-directory: src/v2
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assemble the site
+        # Same builder wrangler uses, so the two deployments cannot drift.
+        run: python3 tools/build_site.py --out "$GITHUB_WORKSPACE/_site"
+        working-directory: src/v2
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
