@@ -4,10 +4,11 @@
   "private": true,
   "description": "Paste a small C function and see how little machine computation its observable meaning actually requires.",
   "scripts": {
-    "build": "python3 tools/gen_manifest.py --check && python3 tools/build_site.py",
-    "test": "python3 tests/run.py",
-    "serve": "python3 tools/serve.py",
-    "predeploy": "npm run test && npm run build",
+    "test": "python3 src/v2/tests/run.py",
+    "check-manifest": "python3 src/v2/tools/gen_manifest.py --check",
+    "build": "npm run check-manifest && python3 src/v2/tools/build_site.py --out dist",
+    "serve": "python3 src/v2/tools/serve.py",
+    "predeploy": "npm run test",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
