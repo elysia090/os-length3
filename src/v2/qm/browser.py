@@ -1,9 +1,10 @@
 """Entry points for the browser worker.
 
 The worker cannot call Python objects across the boundary cheaply, so this
-module exposes two JSON-in / JSON-out functions and keeps every decision on the
-Python side:
+module exposes a few JSON-in / JSON-out functions and keeps every decision on
+the Python side:
 
+    route(source)             is this C, or is it already a listing?
     plan(source, options)     what to compile, and which inputs to evaluate
     finish(source, options)   the full result, given the evaluated table
 
@@ -45,6 +46,18 @@ def capabilities():
         'opt_levels': ['-O1', '-O2', '-O3'],
         'source_targets': ['x86-64', 'x86-64-v2', 'x86-64-v3', 'x86-64-v4'],
     })
+
+
+def route(source):
+    """Is this paste C, or is it already a listing?
+
+    The worker asks before it starts a compiler.  Handing assembly to Clang
+    produces a page of parse errors about a file that was never C, so the
+    decision belongs here, next to the reader that will do the work.
+    """
+    from . import asmfront
+    dialect = asmfront.detect(source or '')
+    return _dumps({'kind': 'asm' if dialect else 'c', 'dialect': dialect})
 
 
 def plan(source, options_json='{}'):
@@ -119,10 +132,11 @@ def finish(source, options_json='{}', table=None, assembly=''):
 
 
 def fallback(source, options_json='{}'):
-    """Run the whole pipeline in Python, with no compiler available.
+    """Run the whole pipeline in Python, with no compiler involved.
 
-    Slower and limited to the C subset, but it means the page still answers
-    when the Clang bundle cannot be fetched.
+    Two things land here: C, when the Clang bundle cannot be fetched — slower
+    and limited to the subset, but the page still answers — and any paste
+    `route` identified as a listing, which never needed a compiler at all.
     """
     options = json.loads(options_json or '{}')
     result = solve(source, function=options.get('function'),

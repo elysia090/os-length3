@@ -114,6 +114,17 @@ async function solve(request) {
   const { source, options } = request;
   const optionsJson = JSON.stringify(options || {});
 
+  // SPEC §2 has two arrows into QM: C through Clang, and optimized assembly
+  // straight in.  Ask which one this paste is before starting a compiler.
+  const route = JSON.parse(callPython('route', [source]));
+  if (route.kind === 'asm') {
+    progress(`reading the ${route.dialect} listing…`);
+    post('done', {
+      result: JSON.parse(callPython('fallback', [source, optionsJson])),
+    });
+    return;
+  }
+
   // --- SPEC §2: compile with Clang -------------------------------------
   let compiled = null;
   if (options.frontend !== 'cfront') {

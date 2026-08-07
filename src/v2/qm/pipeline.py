@@ -72,7 +72,7 @@ def solve(source, function=None, observer='exact', targets=None,
 def _solve(source, function, observer_spec, targets, frontend_name, options,
            started):
     # -- §2 frontend -------------------------------------------------------
-    front = frontend_mod.get(frontend_name)
+    front = frontend_mod.choose(frontend_name, source)
     analysis = front.analyze(source, dict(options, function=function))
     sem = analysis.semantics
 
@@ -288,8 +288,16 @@ def _target_record(name, lowered, sem, obs, program):
         'c': isa_mod.emit_c(seq, fn_name,
                             input_ctype=_ctype_for(sem.input_bits),
                             output_ctype=_ctype_for(sem.output_bits)),
-        'asm': isa_mod.emit_asm(seq, fn_name),
     })
+    # Each target gets the listing its own machine reads.  The width is written
+    # into both, because a listing does not otherwise say how wide its input
+    # was meant to be, and a round trip has to land on the same domain.
+    if name == 'wasm32':
+        record['asm'] = isa_mod.emit_wasm(seq, fn_name, sem.input_bits)
+        record['asm_dialect'] = 'wasm32'
+    else:
+        record['asm'] = isa_mod.emit_asm(seq, fn_name, sem.input_bits)
+        record['asm_dialect'] = 'x86-64'
     return record
 
 
