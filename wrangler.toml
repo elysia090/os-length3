@@ -1,0 +1,29 @@
+# Cloudflare Workers static-assets deployment.
+#
+#   npx wrangler deploy
+#
+# This lives at the repository root because that is where Workers Builds looks
+# when the git integration runs, and because `name` has to match the connected
+# Worker script.  The product itself is in src/v2; the build step below
+# assembles it into ./dist.
+#
+# There is no Worker script: `assets` alone serves the site, so every request is
+# a static file and the whole product still runs on the visitor's machine.
+
+name = "libqm-prototype"
+compatibility_date = "2026-08-01"
+
+[build]
+# Runs before deploy, locally and in Workers Builds alike, so neither path
+# depends on a build command configured outside the repository.
+command = "python3 src/v2/tools/build_site.py --out dist"
+
+[assets]
+directory = "./dist"
+# Unknown paths return the shell rather than a 404, so a shared link with a
+# fragment (Share Source) resolves to the tool.
+not_found_handling = "single-page-application"
+
+[[routes]]
+pattern = "qm.length3.com"
+custom_domain = true

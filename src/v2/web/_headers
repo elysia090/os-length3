@@ -1,0 +1,23 @@
+# Cloudflare / Pages header rules.
+
+/*
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+
+# The worker fetches the engine as text; serve it as text so a stricter
+# content-type policy does not have to be special-cased in the fetch.
+/qm/*
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300, must-revalidate
+
+/examples/*
+  Content-Type: text/plain; charset=utf-8
+
+# The manifest decides which engine modules exist. A stale one silently ships a
+# missing module, so it is never cached.
+/web/qm-manifest.json
+  Content-Type: application/json
+  Cache-Control: no-cache
+
+/web/*.js
+  Content-Type: text/javascript; charset=utf-8
