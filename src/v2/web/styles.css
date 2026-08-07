@@ -44,6 +44,11 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
+/* Scrollbars are chrome, not content. Everything still scrolls — by wheel, by
+   touch, by keyboard — it just does not draw a bar over the code. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; }
+
 html, body { height: 100%; }
 
 body {
@@ -126,11 +131,58 @@ input:disabled { opacity: .45; }
   min-height: 0;
 }
 
+/* Below the three-column width the page scrolls instead of being squeezed.
+   As a flex child with min-height 0, the board was shrinking under its own
+   content, which left every grid row shorter than the card inside it — that is
+   what made the cards overlap on a phone. */
 @media (max-width: 1180px) {
-  .board { grid-template-columns: 1fr 1fr; align-items: start; }
-  .framed { height: 420px; }
+  html, body { height: auto; min-height: 100%; }
+  body { overflow: auto; }
+  .board {
+    flex: 0 0 auto;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  .framed { flex: 0 0 auto; height: 400px; }
 }
-@media (max-width: 800px) { .board { grid-template-columns: 1fr; } }
+
+@media (max-width: 820px) {
+  .topbar { padding: 12px 14px; gap: 10px; }
+  .brand { gap: 11px; }
+  .logo { width: 32px; height: 32px; }
+  .brand-text h1 { font-size: 16px; }
+  .brand-text p { font-size: 12px; }
+
+  .controls { width: 100%; gap: 10px 12px; }
+  .control { flex: 1 1 160px; min-width: 0; }
+  .control > span { font-size: 12px; }
+  .control select { flex: 1 1 auto; min-width: 0; width: 100%; }
+
+  .board { grid-template-columns: 1fr; gap: 12px; padding: 12px 14px 16px; }
+  .card { padding: 14px; border-radius: 10px; }
+  .card-head { margin-bottom: 2px; }
+  .card-head h2 { font-size: 15px; }
+  .card-sub { margin: 6px 0 10px; font-size: 12px; }
+  #card-write .card-head { margin-bottom: 10px; }
+  .framed { height: 264px; }
+  .gutter { flex-basis: 34px; padding-top: 11px; }
+  .highlight, #source, .listing pre { padding-top: 11px; }
+  .card-foot { margin-top: 10px; padding-top: 9px; min-height: 32px; }
+  .compile { margin-top: 10px; padding: 11px 16px; font-size: 14px; }
+  .pagefoot { padding: 12px 14px 18px; font-size: 12px; }
+}
+
+/* On a phone the control labels cost a whole row and say nothing the value
+   does not: "x86-64 (baseline)", "Clang (WASM)", "-O2" name themselves. */
+@media (max-width: 560px) {
+  .control > span { position: absolute; width: 1px; height: 1px;
+                    overflow: hidden; clip-path: inset(50%); }
+  .controls { gap: 8px; }
+  .control { flex: 1 1 44%; }
+  .control select { width: 100%; font-size: 12.5px; padding: 7px 26px 7px 10px; }
+  .brand-text h1 { font-size: 15.5px; }
+  .brand-text p { font-size: 11.5px; }
+}
 
 .card {
   display: flex; flex-direction: column;
@@ -139,6 +191,8 @@ input:disabled { opacity: .45; }
   border-radius: 12px;
   padding: 22px;
   min-width: 0; min-height: 0;
+  /* A card must never paint outside itself, whatever the row height. */
+  overflow: hidden;
 }
 
 .card-head {
