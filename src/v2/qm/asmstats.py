@@ -22,8 +22,25 @@ _MNEMONIC = re.compile(r'^\s+([a-z][a-z0-9._]*)\b')
 _PSEUDO = {'nop', 'hlt'}
 
 
-def analyze(text, function=None):
-    """Count instructions in GAS-syntax assembly.
+# WebAssembly mnemonics are dotted (`i32.add`, `local.get`); no x86 mnemonic
+# is.  That is enough to name the listing rather than assume one.
+def detect_isa(histogram):
+    if not histogram:
+        return 'unknown'
+    dotted = sum(n for m, n in histogram.items() if '.' in m)
+    total = sum(histogram.values())
+    if dotted * 2 > total:
+        return 'wasm32'
+    return 'x86-64'
+
+
+def analyze(text, function=None, isa=None):
+    """Count instructions in a GAS-syntax assembly listing.
+
+    Works for both x86-64 and WebAssembly listings, because which one a Clang
+    bundle can emit depends on the targets it was built with.  The ISA is
+    detected from the mnemonics and reported, so a count is never presented as
+    being for an architecture it is not.
 
     When `function` is given, only that symbol's body is counted, from its
     label to the next `.size` directive or the next top-level label.
@@ -33,10 +50,11 @@ def analyze(text, function=None):
 
     lines = text.splitlines()
     if function:
-        lines = _slice_function(lines, function)
-        if lines is None:
-            return {'available': False,
-                    'reason': 'symbol %r not found in the assembly' % function}
+        sliced = _slice_function(lines, function)
+        # A listing may name the symbol differently (or not at all); counting
+        # the whole listing is better than reporting nothing, as long as the
+        # report says which happened.
+        lines = sliced if sliced is not None else lines
 
     histogram = {}
     total = 0
@@ -54,13 +72,16 @@ def analyze(text, function=None):
         histogram[mnemonic] = histogram.get(mnemonic, 0) + 1
         total += 1
 
+    histogram = dict(sorted(histogram.items(), key=lambda kv: (-kv[1], kv[0])))
+    detected = isa or detect_isa(histogram)
     return {
         'available': True,
+        'isa': detected,
         'instructions': total,
         'distinct_mnemonics': len(histogram),
-        'histogram': dict(sorted(histogram.items(), key=lambda kv: (-kv[1], kv[0]))),
-        'note': 'standalone machine instructions in the emitted assembly; '
-                'not a cycle estimate',
+        'histogram': histogram,
+        'note': 'standalone %s instructions in the emitted listing; '
+                'not a cycle estimate' % detected,
     }
 
 

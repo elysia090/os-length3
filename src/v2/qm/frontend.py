@@ -261,8 +261,8 @@ class ClangFrontend(object):
             'assembly_stats': stats,
             'reference_ops': {
                 'mean': stats.get('instructions'),
-                'metric': 'x86-64 instructions emitted by Clang %s for %s'
-                          % (opt, target),
+                'metric': '%s instructions emitted by Clang %s for %s'
+                          % (stats.get('isa', 'machine'), opt, target),
             },
         }
         return FrontendResult(sem, report, None, None)
@@ -315,11 +315,17 @@ class PrecompiledFrontend(object):
         sem = table_semantics(outputs, input_bits, output_bits, domain,
                               meta={'function': name, 'source': 'clang-wasm'})
 
+        compile_info = options.get('compile') or {}
         asm = options.get('assembly') or ''
-        stats = analyze_asm(asm, name) if asm else {'available': False,
-                                                    'reason': 'not requested'}
+        stats = (analyze_asm(asm, name, compile_info.get('listing_isa'))
+                 if asm else {'available': False,
+                              'reason': 'the toolchain produced no listing'})
         describe = self.describe()
-        describe.update(options.get('toolchain') or {})
+        toolchain = options.get('toolchain') or {}
+        if toolchain.get('title'):
+            describe['title'] = toolchain['title']
+        describe['bundle'] = toolchain.get('bundle')
+        describe['listing'] = stats.get('isa') or compile_info.get('listing_isa')
 
         report = {
             'frontend': describe,
@@ -328,12 +334,14 @@ class PrecompiledFrontend(object):
             'functions_in_source': [name],
             'input_bits': input_bits,
             'output_bits': output_bits,
-            'compile': options.get('compile') or {},
+            'compile': compile_info,
             'assembly': asm,
             'assembly_stats': stats,
             'reference_ops': {
                 'mean': stats.get('instructions'),
-                'metric': 'x86-64 instructions emitted by Clang',
+                'metric': '%s instructions emitted by Clang %s'
+                          % (stats.get('isa', 'machine'),
+                             compile_info.get('opt', '-O2')),
             },
         }
         return FrontendResult(sem, report, None, None)
