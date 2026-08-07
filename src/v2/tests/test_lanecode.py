@@ -21,6 +21,8 @@ EXAMPLES = os.path.join(ROOT, 'examples')
 ONES = '0101010101010101'
 IOTA = '0706050403020100'
 ALL_ONES = 'FFFFFFFFFFFFFFFF'
+HIGH = '8080808080808080'
+BYTE = '00000000000000FF'
 
 
 def example(name):
@@ -48,7 +50,18 @@ class TestMatchesHandWritten(unittest.TestCase):
         # example                 lanecode              instructions        constants
         ('ranks8', 'lc_ranks8', ['PDEP', 'IMUL'], [ONES, '0101010101010100']),
         ('inclusive_rank8', 'lc_inclusive_ranks8', ['PDEP', 'IMUL'], [ONES, ONES]),
-        ('byte_mask8', 'lc_byte_mask8', ['PDEP', 'IMUL'], [ONES, '00000000000000FF']),
+        ('byte_mask8', 'lc_byte_mask8', ['PDEP', 'IMUL'], [ONES, BYTE]),
+        ('starts8', 'lc_starts', ['SHL', 'ANDNR', 'PDEP'], [BYTE]),
+        ('ends8', 'lc_ends', ['SHR', 'ANDNR', 'PDEP'], [BYTE]),
+        # MOVEMASK's integer half: gathering one flag per lane is a linear map,
+        # and on BMI2 a linear map that gathers is one PEXT.
+        ('mask_from_spread', 'lc_mask_from_spread', ['PEXT'], [HIGH]),
+        # lanecode writes this `(s >> 7) * 0xFF`, which is exact only because
+        # its caller guarantees the low seven bits of each lane are clear. QM
+        # is given no such guarantee, so it keeps the mask and is exact on
+        # every input — one instruction more, and a different claim.
+        ('byte_mask_from_spread', 'lc_byte_mask_from_spread',
+         ['AND', 'SHR', 'IMUL'], [HIGH, BYTE]),
         ('ranks16_nibble', 'lc_ranks16_nibble', ['PDEP', 'IMUL'],
          ['1111111111111111', '1111111111111110']),
         ('morton_dilate16', 'lc_morton_dilate32', ['PDEP'], ['0000000055555555']),
@@ -78,13 +91,17 @@ class TestMatchesHandWritten(unittest.TestCase):
                 self.assertEqual(constants(target), wanted)
                 self.assertTrue(target['verification']['pass'])
 
+    # A 64-bit input cannot be enumerated.  These are the cases where the
+    # verification is a differential rather than a proof, and the report has to
+    # say so in those words rather than quietly reporting a pass.
+    SAMPLED = {'prefix_xor64', 'mask_from_spread', 'byte_mask_from_spread'}
+
     def test_every_case_verifies_exhaustively(self):
         for name, _reference, _instructions, _wanted in self.CASES:
             with self.subTest(example=name):
                 _result, target = minimized(name)
                 v = target['verification']
-                if name == 'prefix_xor64':
-                    # A 64-bit input cannot be exhausted; the report says so.
+                if name in self.SAMPLED:
                     self.assertFalse(v['exhaustive'])
                     self.assertIn('not a proof', v['claim'])
                 else:

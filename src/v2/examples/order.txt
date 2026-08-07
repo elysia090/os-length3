@@ -6,9 +6,15 @@
 ranks8.c
 inclusive_rank8.c
 byte_mask8.c
+expand_nibbles8.c
 select8.c
 shuffle_control8.c
+starts8.c
+ends8.c
 run_ids8.c
+spread_high8.c
+mask_from_spread.c
+byte_mask_from_spread.c
 quote_state_before8.c
 prefix_parity_mask8.c
 prefix_xor64.c
@@ -17,3 +23,7 @@ morton_dilate16.c
 morton_compact_even16.c
 ranks16_nibble.c
 block_offsets8.c
+
+# The other arrow in SPEC §2: a listing going back in.
+ranks8.s
+prefix_xor64.wat

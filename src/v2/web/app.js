@@ -14,6 +14,10 @@ const $ = (id) => document.getElementById(id);
 // press Compile, which is the only place they can be true.
 let EXAMPLES = [];
 
+// Filled in once the worker reports what this build is; the editor footer
+// names the engine version next to whatever language the active tab holds.
+let QM_VERSION = '';
+
 async function loadExamples() {
   try {
     const response = await fetch(new URL('examples.json', import.meta.url),
@@ -70,8 +74,9 @@ function escapeHtml(text) {
 
 function highlightC(code) {
   // Comments, strings and preprocessor lines are lifted out first; the token
-  // passes below rewrite digits and would otherwise corrupt them. The index is
-  // wrapped in letters so the digit pass sees no word boundary.
+  // passes below rewrite digits and would otherwise corrupt them. The
+  // placeholder is fenced with U+0001, which cannot occur in a paste, so no
+  // source text can be mistaken for one.
   const guarded = [];
   const hold = (html) => `g${guarded.push(html) - 1}z`;
 
@@ -93,6 +98,25 @@ function highlightC(code) {
   return out.replace(/g(\d+)z/g, (_, i) => guarded[Number(i)]);
 }
 
+function highlightAsm(code) {
+  // The overlay sits behind the textarea character for character, so this
+  // colours in place rather than reflowing the way the listing panes do.
+  // Same U+0001 fencing as above, for the same reason.
+  const guarded = [];
+  const hold = (html) => `\u0001g${guarded.push(html) - 1}z\u0001`;
+
+  const out = escapeHtml(code)
+    .replace(/^[ \t]*(?:[#;]+|\/\/)[^\n]*/gm,
+             (m) => hold(`<span class="tok-com">${m}</span>`))
+    .replace(/^[ \t]*\.[\w.]+/gm,
+             (m) => hold(`<span class="tok-dir">${m}</span>`))
+    .replace(/\$?\b0[xX][0-9a-fA-F]+\b|\$-?\d+\b/g,
+             (m) => hold(`<span class="tok-num">${m}</span>`))
+    .replace(/%\w+/g, (m) => hold(`<span class="tok-type">${m}</span>`));
+
+  return out.replace(/\u0001g(\d+)z\u0001/g, (_, i) => guarded[Number(i)]);
+}
+
 // ---------------------------------------------------------------------------
 // Listings
 // ---------------------------------------------------------------------------
@@ -109,7 +133,8 @@ function renderListing(text, functionName) {
     const line = raw.replace(/\t/g, '    ');
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (trimmed.startsWith('#') || trimmed.startsWith('//')) {
+    if (trimmed.startsWith('#') || trimmed.startsWith('//')
+        || trimmed.startsWith(';')) {
       rows.push(`<span class="row"><span class="addr"></span>`
         + `<span class="tok-com">${escapeHtml(trimmed)}</span></span>`);
       continue;
@@ -117,6 +142,13 @@ function renderListing(text, functionName) {
     if (/^[\w.$]+:/.test(trimmed)) {
       rows.push(`<span class="row"><span class="addr"></span>`
         + `<span class="lbl">${escapeHtml(trimmed)}</span></span>`);
+      continue;
+    }
+    // wasm text wraps the body in `(module` / `(func ...)`; those are the
+    // shape of the file, not instructions, so they read like directives.
+    if (trimmed.startsWith('(') || trimmed.startsWith(')')) {
+      rows.push(`<span class="row"><span class="addr"></span>`
+        + `<span class="tok-dir">${escapeHtml(trimmed)}</span></span>`);
       continue;
     }
     if (trimmed.startsWith('.')) {
@@ -302,14 +334,24 @@ function restoreCards() {
 // Editor
 // ---------------------------------------------------------------------------
 
+function editorLanguage() {
+  const tab = activeTab();
+  const name = (tab && tab.name) || '';
+  if (name.endsWith('.wat')) return 'wasm32';
+  if (name.endsWith('.s') || name.endsWith('.S')) return 'x86-64';
+  return 'C';
+}
+
 function syncSource(options) {
   const code = $('source').value;
   const lines = code.split('\n');
   const shown = Math.max(lines.length, 14);
-  $('highlight').innerHTML = highlightC(code) + '\n';
+  $('highlight').innerHTML =
+    (editorLanguage() === 'C' ? highlightC(code) : highlightAsm(code)) + '\n';
   $('gutter').textContent =
     Array.from({ length: shown }, (_, i) => i + 1).join('\n');
   $('line-count').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'}`;
+  if (QM_VERSION) $('lang-note').textContent = `${editorLanguage()} (${QM_VERSION})`;
 
   const tab = activeTab();
   if (tab) {
@@ -351,19 +393,28 @@ function takeawayText() {
   if (state.view === 'c' || !target.asm) {
     return { text: target.c || '', kind: 'c', name: 'kernel_qm.c' };
   }
-  return { text: target.asm, kind: 'asm', name: 'kernel_qm.s' };
+  // A wasm target hands back wasm text, so the file it downloads as has to be
+  // a .wat — an assembler would reject it under any other name.
+  const wat = target.asm_dialect === 'wasm32';
+  return { text: target.asm, kind: 'asm',
+           name: wat ? 'kernel_qm.wat' : 'kernel_qm.s' };
 }
 
 function renderCompiled(result) {
   const front = result.frontend;
   const stats = front.assembly_stats || {};
   const compile = front.compile || {};
-  const isa = stats.isa || compile.listing_isa;
+  const isa = stats.isa || compile.listing_isa || compile.dialect;
+  // Nothing was compiled when the paste was already a listing; stamping "-O2"
+  // on somebody else's assembly would be inventing a provenance for it.
+  const pasted = front.frontend.kind === 'assembly';
 
-  $('compiled-opt').textContent = `(${compile.opt || '-O2'})`;
-  $('brand-sub').textContent =
-    `C \u2192 Assembly (${front.frontend.kind === 'compiler' ? 'Clang ' : ''}`
-    + `${compile.opt || '-O2'}${isa ? `, ${isa}` : ''})`;
+  $('compiled-opt').textContent = pasted ? '(as pasted)'
+                                        : `(${compile.opt || '-O2'})`;
+  $('brand-sub').textContent = pasted
+    ? `${isa || 'Assembly'} \u2192 Quotient Minimizer`
+    : `C \u2192 Assembly (${front.frontend.kind === 'compiler' ? 'Clang ' : ''}`
+      + `${compile.opt || '-O2'}${isa ? `, ${isa}` : ''})`;
 
   const count = stats.available ? stats.instructions
                                 : (front.reference_ops || {}).mean;
@@ -371,8 +422,9 @@ function renderCompiled(result) {
     : `${count} instructions`;
   $('compiled-isa').textContent = isa || front.frontend.kind;
   $('compiled-engine').textContent = front.frontend.title || '';
-  $('clang-listing').innerHTML = state.clangAssembly
-    ? renderListing(state.clangAssembly, front.function.name)
+  const listing = pasted ? (front.assembly || '') : state.clangAssembly;
+  $('clang-listing').innerHTML = listing
+    ? renderListing(listing, pasted ? null : front.function.name)
     : '<span class="hint">this frontend produced no listing</span>';
 }
 
@@ -494,7 +546,7 @@ async function showExamples() {
   if (!EXAMPLES.length) await loadExamples();
   openDialog('Examples', EXAMPLES.length
     ? EXAMPLES.map((ex, i) =>
-        `<button class="btn ex" data-i="${i}">${escapeHtml(ex.name)}`
+        `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}`
         + (ex.summary ? ` <span>— ${escapeHtml(ex.summary)}</span>` : '')
         + '</button>').join('')
     : '<p class="note">examples.json could not be loaded</p>');
@@ -561,8 +613,8 @@ function fillSettings(capabilities) {
     .map((o) => `<option value="${o.spec}">${escapeHtml(o.label)}</option>`)
     .join('') + '<option value="mask:custom">Custom bit mask…</option>';
 
-  const v = capabilities.versions;
-  $('lang-note').textContent = `C (${v.qm})`;
+  QM_VERSION = capabilities.versions.qm;
+  $('lang-note').textContent = `${editorLanguage()} (${QM_VERSION})`;
 }
 
 function onMessage(event) {

@@ -220,10 +220,16 @@ PROFILES = [
         'BMI2 + PCLMUL + AVX2 feature level'),
     ISA('portable', 'portable scalar', BASE,
         'C without intrinsics: no PDEP/PEXT/CLMUL'),
+    # wasm32 has i64 arithmetic, shifts, rotates and popcount, and nothing
+    # else on this list: no deposit/extract, no carry-less multiply, and no
+    # byte swap instruction.
+    ISA('wasm32', 'wasm32', {'alu', 'imul', 'shift', 'lut', 'popcnt', 'rotate'},
+        'WebAssembly: i64 arithmetic and shifts only'),
 ]
 
 PROFILE_BY_NAME = dict((p.name, p) for p in PROFILES)
-DEFAULT_PROFILES = ['x86-64-bmi2-pclmul', 'x86-64-bmi2', 'x86-64', 'portable']
+DEFAULT_PROFILES = ['x86-64-bmi2-pclmul', 'x86-64-bmi2', 'x86-64', 'wasm32',
+                    'portable']
 
 
 def get_isa(name):
@@ -281,6 +287,41 @@ def _lin_toeplitz_const(basis):
         if image != ((m << i) & M64):
             return None
     return m
+
+
+def _lin_select_shift_conv(basis, input_bits):
+    """Is this map "keep some bits, slide them down, convolve"?
+
+    Every spread consumer in a bit-lane library is written that way: `(s >> 7)
+    * K` reads one flag out of each byte lane and fans it back out.  As a
+    linear map that is not a convolution — the six dead bits between the flags
+    break the Toeplitz condition — so without this it decomposes into a
+    twenty-instruction XOR network, which describes the lowering table rather
+    than the map.
+
+    Returns (mask, shift, const), where `mask` is None when no bits need
+    clearing.  Masking first is what makes the multiply exact rather than
+    merely exact on the inputs that happen to be probed: the positions the
+    convolution would fill wrongly are the positions the mask has zeroed.
+    """
+    width = min(input_bits, len(basis))
+    support = [i for i in range(width) if basis[i]]
+    if len(support) < 2:
+        return None                 # a single bit is a shift, already covered
+    lead = support[0]
+    const = basis[lead]
+    for i in support:
+        if basis[i] != ((const << (i - lead)) & M64):
+            return None
+    contiguous = support == list(range(lead, lead + len(support)))
+    if lead == 0 and contiguous and len(support) == width:
+        return None                 # a plain convolution; already offered above
+    # The mask is unnecessary only when every input bit above the shift is one
+    # the convolution fills correctly; the shift discards the ones below it.
+    mask = None if (contiguous and width == input_bits
+                    and support[-1] == width - 1) \
+        else sum(1 << i for i in support)
+    return mask, lead, const
 
 
 def _lin_shift_terms(basis, input_bits):
@@ -363,9 +404,26 @@ def lower_lin_const(op, isa):
         s.emit('IMUL', [0], const=const)
         out.append(('IMUL', s))
 
-    spread = _seq_byte_spread(basis, input_bits)
-    if spread is not None:
-        out.append(('multiply/mask/bswap spread', spread))
+    selected = _lin_select_shift_conv(basis, input_bits)
+    if selected is not None:
+        mask, lead, const = selected
+        for family, label in (('CLMUL', 'mask + shift + CLMUL'),
+                              ('IMUL', 'mask + shift + IMUL')):
+            if family == 'CLMUL' and not isa.has('clmul'):
+                continue
+            s = Seq()
+            v = 0
+            if mask is not None:
+                v = s.emit('AND', [v], const=mask)
+            if lead:
+                v = s.emit('SHR', [v], shift=lead)
+            s.emit(family, [v], const=const)
+            out.append((label, s))
+
+    if isa.has('bswap'):
+        spread = _seq_byte_spread(basis, input_bits)
+        if spread is not None:
+            out.append(('multiply/mask/bswap spread', spread))
 
     terms = _lin_shift_terms(basis, input_bits)
     if terms and len(terms) <= 24:
@@ -646,7 +704,7 @@ _ASM_RI = {'AND': 'andq', 'OR': 'orq', 'XOR': 'xorq', 'ADD': 'addq',
            'SUB': 'subq'}
 
 
-def emit_asm(seq, name):
+def emit_asm(seq, name, input_bits=None):
     """Emit AT&T x86-64 assembly (SysV: argument in %rdi, result in %rax).
 
     Returns None when the sequence contains something this small emitter does
@@ -713,6 +771,13 @@ def emit_asm(seq, name):
         elif ins.op == 'NOT':
             body.append('    movq %s, %s' % (src[0], dst))
             body.append('    notq %s' % dst)
+        elif ins.op == 'ANDNR':
+            # BMI1 has ANDN, but its operand order is the easiest thing in this
+            # emitter to get silently backwards; NOT+AND is one instruction
+            # longer and assembles the same everywhere.
+            body.append('    movq %s, %s' % (src[0], dst))
+            body.append('    notq %s' % dst)
+            body.append('    andq %s, %s' % (src[1], dst))
         elif ins.op in ('SHL', 'SHR'):
             body.append('    movq %s, %s' % (src[0], dst))
             body.append('    %s $%d, %s'
@@ -727,7 +792,13 @@ def emit_asm(seq, name):
             return None
 
     header = ['    .text', '    .globl %s' % name,
-              '    .type %s, @function' % name, '%s:' % name]
+              '    .type %s, @function' % name]
+    if input_bits:
+        # A listing does not say how wide its input is; %rdi is 64 bits whatever
+        # the kernel meant. Recording it keeps a round trip through assembly on
+        # the same domain it started from.
+        header.insert(0, '    # qm-input-bits: %d' % input_bits)
+    header.append('%s:' % name)
     if uses_xmm:
         header.insert(0, '    # requires PCLMUL')
     tail = []
@@ -736,7 +807,84 @@ def emit_asm(seq, name):
     tail += ['    ret',
              '    .size %s, .-%s' % (name, name),
              '    .section .note.GNU-stack,"",@progbits']
-    return '\n'.join(header + body + tail)
+    return '\n'.join(header + body + tail) + '\n'
+
+
+# ---------------------------------------------------------------------------
+# WebAssembly emission
+# ---------------------------------------------------------------------------
+
+# Every value becomes a local, and every instruction is on its own line.  A
+# folded s-expression would be shorter to read and harder to read *back*, and
+# reading its own output is what lets QM be idempotent on wasm.
+_WASM_BINOP = {
+    'IMUL': 'i64.mul', 'AND': 'i64.and', 'OR': 'i64.or', 'XOR': 'i64.xor',
+    'ADD': 'i64.add', 'SUB': 'i64.sub', 'SHL': 'i64.shl', 'SHR': 'i64.shr_u',
+}
+_WASM_RR = {'XORR': 'i64.xor', 'ANDR': 'i64.and', 'ORR': 'i64.or',
+            'ADDR': 'i64.add'}
+
+
+def emit_wasm(seq, name, input_bits=None):
+    """Emit a wasm32 function in the text format.
+
+    Returns None when the sequence uses something wasm has no instruction for
+    — a deposit, a carry-less multiply, a lookup table — rather than inventing
+    an encoding for it.
+    """
+    unsupported = {'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'CLMUL', 'LUT',
+                   'LOOP8', 'BSWAP'}
+    if any(ins.op in unsupported for ins in seq.ins):
+        return None
+
+    body = []
+    for index, ins in enumerate(seq.ins, start=1):
+        op = ins.op
+        if op in _WASM_BINOP:
+            body.append('    local.get %d' % ins.args[0])
+            value = ins.shift if ins.shift is not None else ins.const
+            body.append('    i64.const 0x%X' % (value & M64))
+            body.append('    ' + _WASM_BINOP[op])
+        elif op in _WASM_RR:
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    local.get %d' % ins.args[1])
+            body.append('    ' + _WASM_RR[op])
+        elif op == 'NOT':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.const -1')
+            body.append('    i64.xor')
+        elif op == 'ANDNR':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.const -1')
+            body.append('    i64.xor')
+            body.append('    local.get %d' % ins.args[1])
+            body.append('    i64.and')
+        elif op == 'POPCNT':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.popcnt')
+        elif op == 'SCANXOR':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.const 0x%X' % ins.shift)
+            body.append('    i64.shl')
+            body.append('    i64.xor')
+        else:
+            return None
+        body.append('    local.set %d' % index)
+
+    locals_count = len(seq.ins)
+    lines = []
+    if input_bits:
+        lines.append(';; qm-input-bits: %d' % input_bits)
+    lines += ['(module',
+             '  (func $%s (export "%s") (param i64) (result i64)' % (name, name)]
+    if locals_count:
+        lines.append('    (local%s)' % (' i64' * locals_count))
+    lines.extend(body)
+    lines.append('    local.get %d' % seq.result)
+    lines.append('  )')
+    lines.append(')')
+    return '\n'.join(lines) + '\n'
 
 
 def instruction_names(seq):

@@ -19,10 +19,17 @@ it — all evaluate, so a kernel already written the fast way analyses as readil
 as the obvious one. `qm/cfront/intrinsics.py` holds the table, shared by the
 reference interpreter and the compiler so the two cannot disagree.
 
+Assembly goes in as well as out. Paste an x86-64 listing or a wasm32 function
+and QM evaluates it, minimizes it, and lowers again — so x86 → wasm and
+wasm → x86 are the ordinary pipeline with a different target selected at the
+end, and running a listing through it a second time gives the same listing
+back. `examples/ranks8.s` and `examples/prefix_xor64.wat` are there to press
+Optimize on.
+
 ```
-C / C++
-  ↓  Clang/WASM  -O2
-optimized code
+C / C++                     x86-64 · wasm32
+  ↓  Clang/WASM  -O2          ↓  evaluate the listing
+optimized code  ────────────────┘
   ↓  execute over the declared input domain
 semantics
   ↓  observation quotient · future quotient
@@ -176,15 +183,16 @@ qm/
   corpus.py       §19  semantic keys, §20 opt-in contribution blobs
   clang.py        §2   the Clang entry point (native driver)
   cfront/         the offline fallback frontend
-  frontend.py     frontend registry: clang · precompiled · cfront
+  asmfront/       §2   x86-64 and wasm32 read back in
+  frontend.py     frontend registry: clang · precompiled · cfront · asm
   pipeline.py     the whole product in one call
-  browser.py      plan / finish, the two calls the worker makes
+  browser.py      route / plan / finish, the calls the worker makes
   cli.py          §21  the local interactive product on a terminal
 
 web/              the page: index.html · app.js · worker.js · clang.js
 tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
 tests/            run.py and the suite
-examples/         the kernels the corpus is built from
+examples/         the kernels the corpus is built from, plus two listings
 ```
 
 Each module states which SPEC section it implements and imports only from lower
@@ -197,9 +205,11 @@ layers. `web/qm-manifest.json` lists the files the worker installs into Pyodide;
 
 **LIN_CONST is not another name for PDEP.** A `LIN_CONST` node carries the
 linear map itself — the images of the input basis — and `isa.py` searches PDEP,
-PEXT, constant CLMUL, constant IMUL, a multiply/mask/BSWAP spread and a
-shift/XOR network, keeping whichever survives verification most cheaply. That is
-why the portable target gets a 5-op answer instead of "cannot lower".
+PEXT, constant CLMUL, constant IMUL, a masked shift into either multiply, a
+multiply/mask/BSWAP spread and a shift/XOR network, keeping whichever survives
+verification most cheaply. That is why the portable target gets a 5-op answer
+instead of "cannot lower", and why `(s >> 7) * 0xFF` comes out in three
+instructions rather than as a twenty-instruction XOR network.
 
 **Span and work are different numbers.** A lowered program is an SSA DAG, so
 span is the critical path and work is the instruction count. A balanced XOR tree
@@ -215,10 +225,11 @@ a table, and under a plain (span, work) comparison a 2 KB table would "win"
 every 8-bit kernel with one instruction. It is reported, and ranked last, so
 that "no solution" means "no compact solution" rather than "QM gave up".
 
-**Minimizing a minimal program returns it unchanged.** QM reads its own output —
-the emitted C uses `_pdep_u64`, `_pext_u64` and `qm_clmul64`, and the frontend
-models all three — so idempotence is a property the suite can check, and does,
-for every example.
+**Minimizing a minimal program returns it unchanged.** QM reads its own output
+in all three languages — the emitted C uses `_pdep_u64`, `_pext_u64` and
+`qm_clmul64`, and `asmfront` evaluates the emitted x86-64 and wasm32 — so
+idempotence is a property the suite can check, and does, for every example and
+in both directions between the two machines.
 
 **The examples are measured against hand-written optima.**
 `examples/lanecode.h` is a header of kernels written by hand in their best known

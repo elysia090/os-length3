@@ -147,6 +147,33 @@ class TestManifest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(ROOT, rel)), rel)
 
 
+class TestExamplesJson(unittest.TestCase):
+    """The page's copy of the examples is generated, so it can go stale.
+
+    An example that differs between `examples/` and the page would mean the
+    tests measure one text and the user runs another.
+    """
+
+    PATH = os.path.join(ROOT, 'web', 'examples.json')
+
+    def test_examples_json_matches_the_directory(self):
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, 'tools'))
+        import gen_examples
+
+        with open(self.PATH) as handle:
+            stored = json.load(handle)
+        self.assertEqual(stored, gen_examples.build(),
+                         'web/examples.json is stale; run '
+                         'python3 tools/gen_examples.py')
+
+    def test_the_listing_examples_are_present(self):
+        with open(self.PATH) as handle:
+            stored = json.load(handle)
+        languages = set(e['language'] for e in stored['examples'])
+        self.assertEqual(languages, {'c', 'asm'})
+
+
 
 class TestAssemblyListings(unittest.TestCase):
     """The listing's ISA is detected, never assumed.

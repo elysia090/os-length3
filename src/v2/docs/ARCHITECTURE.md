@@ -11,7 +11,8 @@ any layer can be read on its own.
    guards    version
 2  quotient  program          the two quotients; the abstract op grammar
 3  cfront/   clang  asmstats  frontends: source -> semantics
-   frontend                   registry: clang · precompiled · cfront
+   asmfront/                  x86-64 and wasm32 readers
+   frontend                   registry: clang · precompiled · cfront · asm
 4  solvers   isa              Stage-2 search; ISA profiles and lowering
    recognize corpus
 5  pipeline                   the whole product in one call
@@ -31,6 +32,20 @@ That is what lets the browser put the expensive part where it belongs. The
 worker compiles with clang.wasm, executes the wasm32 module over the domain, and
 hands Python a table; `frontend.PrecompiledFrontend` wraps it and the pipeline
 proceeds identically to the native path.
+
+It is also what makes x86 → wasm and wasm → x86 ordinary uses of the pipeline
+rather than separate features. `asmfront` evaluates a pasted listing the same
+way the Clang path evaluates a compiled module, `frontend.AssemblyFrontend`
+wraps it, and the target selector on the far end decides which machine comes
+out. A listing does not record how wide its input was meant to be — `%rdi` is
+64 bits whether the kernel took a byte or a word — so the emitters write a
+`qm-input-bits:` line and the readers read it back; without it the width is
+assumed and the report says so.
+
+Both readers are deliberately partial: each covers the integer subset a small
+kernel compiles to, and names anything else instead of guessing. A wrong
+evaluation there would be a wrong semantics, and every claim downstream rests
+on it.
 
 ## Why the lowering is an SSA DAG
 

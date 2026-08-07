@@ -3,6 +3,9 @@
   "entry": "qm.browser",
   "files": [
     "qm/__init__.py",
+    "qm/asmfront/__init__.py",
+    "qm/asmfront/wasm.py",
+    "qm/asmfront/x86.py",
     "qm/asmstats.py",
     "qm/bits.py",
     "qm/browser.py",

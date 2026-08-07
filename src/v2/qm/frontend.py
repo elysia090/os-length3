@@ -360,6 +360,109 @@ class PrecompiledFrontend(object):
         return FrontendResult(sem, report, None, None)
 
 
+class AssemblyFrontend(object):
+    """SPEC §2's other arrow: optimized assembly straight into QM.
+
+    x86-64 in AT&T syntax or wasm32 in the text format.  Semantics come from
+    evaluating the listing, exactly as the Clang path evaluates the compiled
+    module, so the pipeline downstream cannot tell the two apart — which is what
+    makes x86 -> wasm and wasm -> x86 ordinary uses of it rather than features.
+
+    The one thing a listing cannot tell you is how wide its input was meant to
+    be: `%rdi` is 64 bits whether the kernel took a byte or a word.  QM writes
+    the width into what it emits and reads it back here; without it the width
+    has to be assumed, and the report says which happened.
+    """
+
+    name = 'asm'
+    title = 'x86-64 / wasm32 assembly'
+    kind = 'assembly'
+
+    def available(self):
+        return True
+
+    def describe(self):
+        return {
+            'name': self.name,
+            'title': self.title,
+            'kind': self.kind,
+            'available': True,
+            'baseline_metric': 'instructions in the pasted listing',
+            'note': 'semantics are extracted by evaluating the listing over the '
+                    'domain; the reader covers the integer subset a small '
+                    'kernel compiles to and refuses anything else by name',
+        }
+
+    def analyze(self, source, options=None):
+        from . import asmfront
+        options = options or {}
+
+        function, dialect = asmfront.parse(source, options.get('function'),
+                                           options.get('dialect'))
+        reader = asmfront.wasm if dialect == 'wasm32' else asmfront.x86
+
+        declared = reader.declared_input_bits(source)
+        natural = getattr(function, 'input_bits', 64)
+        if options.get('input_bits'):
+            input_bits, width_via = int(options['input_bits']), 'caller'
+        elif declared:
+            input_bits, width_via = declared, 'qm-input-bits annotation'
+        else:
+            input_bits, width_via = natural, 'operand width (%s)' % dialect
+        input_bits = min(input_bits, int(options.get('max_input_bits', 64)))
+        output_bits = getattr(function, 'output_bits', 64)
+
+        domain = choose_domain(
+            input_bits,
+            exhaustive_limit=int(options.get('exhaustive_limit', 16)),
+            probes=int(options.get('probes', 4096)),
+        )
+        outputs = [function(x) for x in domain.values()]
+        sem = table_semantics(outputs, input_bits, output_bits, domain,
+                              meta={'function': _base_name(function.name),
+                                    'source': 'asm:%s' % dialect})
+
+        count = len(function.instructions)
+        report = {
+            'frontend': dict(self.describe(),
+                             listing=dialect, title='%s (%s)'
+                             % (self.title, dialect)),
+            'function': {
+                'name': function.name,
+                'signature': '%s %s(%s)' % (_ctype(output_bits), function.name,
+                                            _ctype(input_bits)),
+            },
+            'functions_in_source': [function.name],
+            'skipped_definitions': [],
+            'input_bits': input_bits,
+            'output_bits': output_bits,
+            'compile': {'dialect': dialect, 'input_width_via': width_via,
+                        'declared_input_bits': declared},
+            'assembly': source,
+            'assembly_stats': {'available': True, 'isa': dialect,
+                               'instructions': count},
+            'reference_ops': {
+                'mean': count,
+                'metric': '%d instruction(s) in the pasted %s listing'
+                          % (count, dialect),
+            },
+        }
+        return FrontendResult(sem, report, None, None)
+
+
+def _ctype(bits):
+    for width in (8, 16, 32, 64):
+        if bits <= width:
+            return 'uint%d_t' % width
+    return 'uint64_t'
+
+
+def _base_name(name):
+    """`ranks8_qm` came from `ranks8`; do not stack the suffix every pass."""
+    trimmed = name.lstrip('$')
+    return trimmed[:-3] if trimmed.endswith('_qm') else trimmed
+
+
 def _require_unary(signature):
     if len(signature['params']) != 1:
         raise CFrontError('%s takes %d arguments; exactly one is required'
@@ -427,6 +530,7 @@ def register(frontend):
 register(CSubsetFrontend())
 register(ClangFrontend())
 register(PrecompiledFrontend())
+register(AssemblyFrontend())
 
 
 def get(name=None):
@@ -439,6 +543,23 @@ def get(name=None):
         raise CFrontError('unknown frontend %r' % name,
                           hint='available: %s' % ', '.join(sorted(REGISTRY)))
     return REGISTRY[name]
+
+
+def choose(name, source):
+    """Pick a frontend for this particular paste.
+
+    A C frontend handed an assembly listing fails with a lexer error several
+    lines in, which tells the user nothing useful.  Assembly is recognisable on
+    sight, so recognise it — including when a C frontend was named, since a
+    listing is never valid C and the alternative is a worse message.
+    """
+    from . import asmfront
+    dialect = asmfront.detect(source)
+    if dialect is None:
+        return get(name)
+    if not name or name in ('auto', 'asm', 'cfront', 'clang', 'precompiled'):
+        return REGISTRY['asm']
+    return get(name)
 
 
 def list_frontends():
