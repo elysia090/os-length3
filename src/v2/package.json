@@ -1,0 +1,16 @@
+{
+  "name": "quotient-minimizer",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Paste a small C function and see how little machine computation its observable meaning actually requires.",
+  "scripts": {
+    "build": "python3 tools/gen_manifest.py --check && python3 tools/build_site.py",
+    "test": "python3 tests/run.py",
+    "serve": "python3 tools/serve.py",
+    "predeploy": "npm run test && npm run build",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}
