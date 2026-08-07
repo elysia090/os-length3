@@ -1,4 +1,8 @@
-// UI shell.  All computation happens in the worker; this file only renders.
+// Two panes: write C on the left, take the assembly from the right.
+//
+// Everything the pipeline reports is still available, but nothing explains
+// itself at you. The status bar carries the few numbers worth a glance, and
+// clicking it opens the full derivation for anyone who wants it.
 
 import { readConfig } from './clang.js';
 
@@ -6,8 +10,8 @@ const $ = (id) => document.getElementById(id);
 
 const EXAMPLES = [
   {
-    name: 'ranks8 — exclusive prefix counts',
-    note: 'SPEC §1. 502 solutions remain tied.',
+    name: 'ranks8',
+    note: '502 solutions tied',
     code: `#include <stdint.h>
 
 uint64_t ranks8(uint8_t m)
@@ -23,8 +27,8 @@ uint64_t ranks8(uint8_t m)
 `,
   },
   {
-    name: 'inclusive_rank8 — uniquely forced',
-    note: 'The boundary condition removes all freedom: 1 solution.',
+    name: 'inclusive_rank8',
+    note: 'uniquely forced',
     code: `#include <stdint.h>
 
 uint64_t inclusive_rank8(uint8_t m)
@@ -40,8 +44,8 @@ uint64_t inclusive_rank8(uint8_t m)
 `,
   },
   {
-    name: 'quote_state_before8 — running parity',
-    note: 'Normalizes to CONV(CLMUL): a carry-less convolution.',
+    name: 'quote_state_before8',
+    note: 'carry-less convolution',
     code: `#include <stdint.h>
 
 uint64_t quote_state_before8(uint8_t m)
@@ -58,8 +62,8 @@ uint64_t quote_state_before8(uint8_t m)
 `,
   },
   {
-    name: 'select8 — compaction indices',
-    note: 'Needs a data-dependent permutation: PERM_DYN.',
+    name: 'select8',
+    note: 'dynamic permutation',
     code: `#include <stdint.h>
 
 uint64_t select8(uint8_t m)
@@ -76,8 +80,8 @@ uint64_t select8(uint8_t m)
 `,
   },
   {
-    name: 'run_ids8 — POINT then convolution',
-    note: 'A lane-local step before the linear map: 4 core ops.',
+    name: 'run_ids8',
+    note: 'lane-local step first',
     code: `#include <stdint.h>
 
 uint64_t run_ids8(uint8_t m)
@@ -94,8 +98,8 @@ uint64_t run_ids8(uint8_t m)
 `,
   },
   {
-    name: 'morton_dilate16 — pure LIN_CONST',
-    note: 'A constant GF(2)-linear map; the representative is what varies.',
+    name: 'morton_dilate16',
+    note: 'pure linear map',
     code: `#include <stdint.h>
 
 uint32_t morton_dilate16(uint16_t x)
@@ -112,39 +116,34 @@ uint32_t morton_dilate16(uint16_t x)
   },
 ];
 
-const STEPS = ['paste', 'compile', 'observe', 'quotients', 'normalize',
-               'synthesize', 'verify', 'results'];
-
 const state = {
   worker: null,
   ready: false,
   busy: false,
   capabilities: null,
-  clang: null,
   result: null,
-  assembly: '',
+  clangAssembly: '',
+  view: 'asm',
+  isa: null,
 };
 
 // ---------------------------------------------------------------------------
-// Editor
+// Highlighting
 // ---------------------------------------------------------------------------
 
-const C_TYPES = /\b(uint(8|16|32|64)_t|int(8|16|32|64)_t|unsigned|signed|void|char|short|int|long|float|double|bool|_Bool|size_t)\b/g;
+const C_TYPES = /\b(uint(8|16|32|64)_t|int(8|16|32|64)_t|unsigned|signed|void|char|short|int|long|bool|_Bool|size_t)\b/g;
 const C_KEYWORDS = /\b(for|while|do|if|else|return|break|continue|switch|case|default|static|inline|const|sizeof|struct|typedef|goto|extern|volatile|register)\b/g;
 
 function escapeHtml(text) {
   return text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
-function highlight(code) {
-  // Comments, strings and preprocessor lines are lifted out first, because the
-  // token passes below rewrite digits and would otherwise corrupt them.  The
-  // placeholder uses a control character precisely so that no later pass can
-  // match it.
+function highlightC(code) {
+  // Comments, strings and preprocessor lines are lifted out first; the token
+  // passes below rewrite digits and would otherwise corrupt them. The index is
+  // wrapped in letters so the digit pass sees no word boundary.
   const guarded = [];
-  // The index is wrapped in letters so the digit pass below sees no word
-  // boundary and leaves the placeholder alone.
-  const hold = (html) => `\u0001g${guarded.push(html) - 1}z\u0001`;
+  const hold = (html) => `g${guarded.push(html) - 1}z`;
 
   let out = escapeHtml(code)
     .replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
@@ -161,36 +160,195 @@ function highlight(code) {
     .replace(C_KEYWORDS, '<span class="tok-kw">$&</span>')
     .replace(/\b(__builtin_[a-z0-9_]+)\b/g, '<span class="tok-fn">$1</span>');
 
-  return out.replace(/\u0001g(\d+)z\u0001/g, (_, i) => guarded[Number(i)]);
+  return out.replace(/g(\d+)z/g, (_, i) => guarded[Number(i)]);
 }
 
+function highlightAsm(text) {
+  return escapeHtml(text)
+    .split('\n')
+    .map((line) => {
+      const comment = line.match(/([#;].*)$/);
+      let body = comment ? line.slice(0, line.length - comment[1].length) : line;
+      const tail = comment ? `<span class="tok-com">${comment[1]}</span>` : '';
 
-function syncEditor() {
+      if (/^\s*\./.test(body)) {
+        body = body.replace(/^(\s*)(\.[\w.]+)/, '$1<span class="tok-dir">$2</span>');
+      } else if (/^[\w.$]+:/.test(body)) {
+        body = body.replace(/^([\w.$]+)(:)/, '<span class="tok-label">$1</span>$2');
+      } else {
+        body = body
+          .replace(/^(\s+)([a-z][\w.]*)/, '$1<span class="tok-kw">$2</span>')
+          .replace(/(%[a-z0-9]+)/g, '<span class="tok-reg">$1</span>')
+          .replace(/(\$?0[xX][0-9a-fA-F]+|\$\d+)/g, '<span class="tok-num">$1</span>');
+      }
+      return body + tail;
+    })
+    .join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Editors
+// ---------------------------------------------------------------------------
+
+function gutterFor(text, minimum) {
+  const n = Math.max(text.split('\n').length, minimum || 1);
+  return Array.from({ length: n }, (_, i) => i + 1).join('\n');
+}
+
+function syncSource() {
   const code = $('source').value;
-  const lines = code.split('\n');
-  const shown = Math.max(lines.length, 14);
-  $('highlight').innerHTML = highlight(code) + '\n';
-  $('gutter').textContent = Array.from({ length: shown }, (_, i) => i + 1).join('\n');
-  $('line-count').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'}`;
+  $('highlight').innerHTML = highlightC(code) + '\n';
+  $('gutter').textContent = gutterFor(code, 20);
   localStorage.setItem('qm.source', code);
+  $('dirty-dot').classList.add('is-dirty');
 }
 
 function setSource(code) {
   $('source').value = code;
-  syncEditor();
-  setStep('paste');
+  syncSource();
+}
+
+function showOutput(text, kind) {
+  const box = $('out-code');
+  if (!text) {
+    box.innerHTML = '<span class="hint-line">nothing here yet</span>';
+    $('out-gutter').textContent = '';
+    return;
+  }
+  box.innerHTML = (kind === 'c' ? highlightC(text) : highlightAsm(text)) + '\n';
+  $('out-gutter').textContent = gutterFor(text, 1);
 }
 
 // ---------------------------------------------------------------------------
-// Chrome
+// Views
 // ---------------------------------------------------------------------------
 
-function setStep(name) {
-  const index = STEPS.indexOf(name);
-  document.querySelectorAll('.step').forEach((el, i) => {
-    el.classList.toggle('is-active', i === index);
-    el.classList.toggle('is-done', i < index);
+function currentTarget() {
+  if (!state.result || !state.result.ok) return null;
+  const targets = state.result.targets || [];
+  return targets.find((t) => t.name === state.isa && t.ok)
+    || targets.find((t) => t.name === state.result.primary_target)
+    || targets.find((t) => t.ok)
+    || null;
+}
+
+function viewText() {
+  const target = currentTarget();
+  if (state.view === 'clang') {
+    return { text: state.clangAssembly, kind: 'asm', name: 'clang.s' };
+  }
+  if (!target) return { text: '', kind: 'asm', name: 'kernel_qm.s' };
+  if (state.view === 'c') {
+    return { text: target.c || '', kind: 'c', name: 'kernel_qm.c' };
+  }
+  if (!target.asm) {
+    // Some lowerings (a lookup table, a software gather loop) have no short
+    // assembly form in the emitter.  Hand over the C rather than nothing.
+    return {
+      text: `/* no assembly form for ${(target.instructions || []).join(' ')} */\n\n`
+            + (target.c || ''),
+      kind: 'c',
+      name: 'kernel_qm.c',
+    };
+  }
+  return { text: target.asm, kind: 'asm', name: 'kernel_qm.s' };
+}
+
+function renderView() {
+  const { text, kind } = viewText();
+  showOutput(text, kind);
+  document.querySelectorAll('#pane-output .tab').forEach((tab) => {
+    tab.classList.toggle('is-active', tab.dataset.view === state.view);
   });
+  const clangTab = document.querySelector('#pane-output .tab[data-view="clang"]');
+  if (clangTab) clangTab.disabled = !state.clangAssembly;
+}
+
+function fillTargets(result) {
+  const select = $('sel-isa-view');
+  select.innerHTML = (result.targets || []).map((t) => {
+    const label = t.ok ? `${t.name} · ${t.work} op${t.work === 1 ? '' : 's'}`
+                       : `${t.name} · —`;
+    return `<option value="${t.name}"${t.ok ? '' : ' disabled'}>${escapeHtml(label)}</option>`;
+  }).join('');
+  state.isa = result.primary_target;
+  select.value = state.isa;
+}
+
+// ---------------------------------------------------------------------------
+// Status bar
+// ---------------------------------------------------------------------------
+
+function seg(id, text, cls) {
+  const el = $(id);
+  if (!text) { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = text;
+  el.className = `seg click${cls ? ` ${cls}` : ''}`;
+}
+
+function status(text) { $('st-state').textContent = text; }
+
+function renderStatus(result) {
+  if (!result || !result.ok) {
+    status('error');
+    ['st-verify', 'st-before', 'st-freedom'].forEach((id) => seg(id, '', null));
+    return;
+  }
+
+  const target = currentTarget();
+  const v = target && target.verification;
+  const before = (result.frontend.reference_ops || {}).mean;
+
+  status(result.frontend.function.name || 'done');
+
+  if (v) {
+    seg('st-verify',
+        `${v.pass ? '✓' : '✗'} ${v.matched.toLocaleString()}/${v.total.toLocaleString()}`
+          + (v.exhaustive ? '' : ' sampled'),
+        v.pass ? (v.exhaustive ? 'pass' : 'warn') : 'fail');
+  } else {
+    seg('st-verify', '', null);
+  }
+
+  if (target && before != null) {
+    seg('st-before', `${before} → ${target.work}`, null);
+  } else if (target) {
+    seg('st-before', `${target.work} ops`, null);
+  } else {
+    seg('st-before', '', null);
+  }
+
+  seg('st-freedom',
+      `${result.residual_freedom} solution${result.residual_freedom === 1 ? '' : 's'}`,
+      result.residual_freedom === 0 ? 'warn' : null);
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+function currentOptions() {
+  const observer = $('sel-observer').value === 'mask:custom'
+    ? `mask:${$('inp-mask').value || '0xFFFFFFFFFFFFFFFF'}`
+    : $('sel-observer').value;
+  return {
+    frontend: $('sel-compiler').value,
+    opt: $('sel-opt').value,
+    source_target: $('sel-target').value,
+    observer,
+  };
+}
+
+function optimize() {
+  if (!state.ready || state.busy) return;
+  const source = $('source').value.trim();
+  if (!source) return;
+
+  state.busy = true;
+  $('btn-optimize').disabled = true;
+  status('compiling…');
+  state.worker.postMessage({ type: 'solve', source, options: currentOptions() });
 }
 
 let toastTimer = null;
@@ -200,10 +358,30 @@ function toast(message, isError) {
   el.classList.toggle('err', Boolean(isError));
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, isError ? 6000 : 2600);
+  toastTimer = setTimeout(() => { el.hidden = true; }, isError ? 7000 : 1600);
 }
 
-function status(text) { $('foot-status').textContent = text; }
+async function copyOutput() {
+  const { text } = viewText();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('copied');
+  } catch {
+    toast('clipboard unavailable', true);
+  }
+}
+
+function downloadOutput() {
+  const { text, name } = viewText();
+  if (!text) return;
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function openDialog(title, html) {
   $('dlg-title').textContent = title;
@@ -211,383 +389,54 @@ function openDialog(title, html) {
   $('dlg').showModal();
 }
 
-async function copy(text, label) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast(`${label} copied`);
-  } catch {
-    toast('clipboard unavailable', true);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
-
-function renderAssembly(text) {
-  state.assembly = text || '';
-  const box = $('asm-listing');
-  if (!text) {
-    box.innerHTML = '<p class="placeholder">The compiler produced no assembly listing.</p>';
-    return;
-  }
-
-  const rows = [];
-  let offset = 0;
-  for (const raw of text.split('\n')) {
-    const line = raw.replace(/\t/g, '    ');
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('.file') || trimmed.startsWith('.ident')) continue;
-    if (/^[.\w$]+:$/.test(trimmed)) {
-      rows.push(`<div class="row"><span class="addr"></span><span class="label">${escapeHtml(trimmed)}</span></div>`);
-      continue;
-    }
-    if (trimmed.startsWith('.')) continue;
-    const m = trimmed.match(/^([a-z][a-z0-9._]*)\s*(.*)$/);
-    if (!m) continue;
-    const addr = offset.toString(16).toUpperCase().padStart(4, '0');
-    offset += 4;
-    rows.push(
-      `<div class="row"><span class="addr">${addr}</span>` +
-      `<span class="mn">${escapeHtml(m[1])}</span>` +
-      `<span class="ops">${escapeHtml(m[2])}</span></div>`,
-    );
-    if (rows.length > 400) { rows.push('<div class="row more">…</div>'); break; }
-  }
-  box.innerHTML = rows.join('') || '<p class="placeholder">Nothing to disassemble.</p>';
-}
-
-function renderCompiledInfo(result) {
-  const front = result.frontend || {};
-  const stats = front.assembly_stats || {};
-  const sub = front.compile || {};
-  // Which ISA the listing is in depends on the Clang bundle, so it is read
-  // from the report rather than assumed.
-  const isa = stats.isa || sub.listing_isa || sub.target;
-  $('compiled-sub').textContent = front.frontend && front.frontend.kind === 'compiler'
-    ? `(Clang ${sub.opt || '-O2'}, ${isa || 'default target'})`
-    : `(${(front.frontend && front.frontend.title) || 'built-in frontend'})`;
-
-  const count = stats.available ? stats.instructions : (front.reference_ops || {}).mean;
-  $('asm-instructions').textContent =
-    count === undefined || count === null ? '— instructions' : `${count} instructions`;
-  $('asm-bytes').textContent = state.assembly
-    ? `${new Blob([state.assembly]).size} bytes of asm`
-    : '— bytes';
-
-  const info = $('asm-info');
-  const mnemonics = stats.available ? stats.distinct_mnemonics : '—';
-  const rows = [
-    ['Listing', stats.isa || sub.listing_isa || '—'],
-    ['Distinct mnemonics', mnemonics],
-    ['Input domain', `2^${result.semantics.input_bits}`],
-    ['Verification', result.semantics.domain.strength],
-  ];
-  info.innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(String(v))}</dd>`).join('');
-}
-
-function renderMetrics(result, primary) {
-  const program = result.program || {};
-  const pass = primary && primary.verification && primary.verification.pass;
-  $('m-core').textContent = program.core_ops ?? '—';
-  $('m-span').textContent = primary ? primary.span : '—';
-  $('m-work').textContent = primary ? primary.work : '—';
-  $('m-freedom').textContent = result.residual_freedom ?? '—';
-  $('m-status').textContent = pass ? 'PASS' : (result.program ? 'CHECK' : 'NONE');
-  $('m-status-sub').textContent = primary && primary.verification
-    ? (primary.verification.exhaustive ? 'exact' : 'sampled') : ' ';
-
-  const card = $('m-status').closest('.metric');
-  card.classList.toggle('pass', Boolean(pass));
-  card.classList.toggle('fail', Boolean(result.program) && !pass);
-
-  const badge = $('verified-badge');
-  badge.hidden = !result.program;
-  badge.classList.toggle('fail', Boolean(result.program) && !pass);
-  badge.lastChild.textContent = pass ? ' Verified' : ' Unverified';
-}
-
-function renderVerification(result, primary) {
-  const pane = $('pane-verify');
-  const v = primary && primary.verification;
-  if (!v) {
-    pane.classList.add('fail');
-    $('v-mode').textContent = 'No program to verify';
-    $('v-count').textContent = '—';
-    $('v-pct').textContent = ' ';
-    $('v-pill').hidden = true;
-    return;
-  }
-  const pct = v.total ? (100 * v.matched / v.total) : 0;
-  pane.classList.toggle('fail', !v.pass);
-  $('v-mode').textContent = v.mode.charAt(0).toUpperCase() + v.mode.slice(1);
-  $('v-count').textContent = `${v.matched.toLocaleString()} / ${v.total.toLocaleString()} inputs`;
-  $('v-pct').textContent = `(${pct.toFixed(2)}%)`;
-  const pill = $('v-pill');
-  pill.hidden = false;
-  pill.textContent = v.pass ? 'PASS' : 'FAIL';
-  pill.classList.toggle('fail', !v.pass);
-  pane.title = v.claim;
-}
-
-function renderObserver(result) {
-  const obs = result.observer || {};
-  const report = (result.quotients || {}).observation || {};
-  $('obs-kind').textContent = obs.kind === 'exact' ? '(default)' : `(${obs.spec})`;
-  $('obs-formula').textContent = obs.kind === 'exact'
-    ? `obs(y) = y (${result.semantics.output_bits}-bit)`
-    : `obs(y) = y & ${obs.mask || obs.spec}`;
-  $('obs-note').textContent = report.is_identity_on_domain
-    ? 'All output bits are significant.'
-    : `${report.distinct_outputs} distinct outputs collapse to ${report.distinct_observables}.`;
-}
-
-function renderProgram(result, primary) {
-  const list = $('program');
-  $('canon-isa').textContent = primary ? `(${primary.isa.title})` : '';
-  if (!primary || !primary.ok) {
-    list.innerHTML = `<li class="placeholder-row">${
-      result.note || 'No program in the declared grammar for this observer.'}</li>`;
-    return;
-  }
-
-  const reps = primary.representatives || [];
-  const rows = primary.instructions.map((mnemonic, i) => {
-    const detail = (result.program.ops[Math.min(i, result.program.ops.length - 1)] || {});
-    const rep = reps[Math.min(i, reps.length - 1)];
-    const why = rep ? `${rep[0]} → ${rep[1]}` : (detail.label || '');
-    const constants = Object.entries(detail.detail || {})
-      .filter(([k, v]) => typeof v === 'string' && v.startsWith('0x'))
-      .map(([, v]) => v);
-    const side = i === 0
-      ? `<b>${primary.span}</b>span`
-      : (i === 1 ? `<b>${primary.work}</b>work` : '');
-    return `<li>
-      <span class="idx">${i + 1}</span>
-      <span class="op">${escapeHtml(mnemonic)}</span>
-      <span class="args">${escapeHtml(constants.join(', ') || '—')}
-        <span class="why">${escapeHtml(why)}</span></span>
-      <span class="side">${side}</span>
-    </li>`;
-  });
-  list.innerHTML = rows.join('');
-}
-
-function renderAlternatives(result) {
-  const box = $('alts');
-  const targets = result.targets || [];
-  $('alt-title').textContent = `Alternative Lowerings (${targets.length} targets)`;
-  if (!targets.length) { box.innerHTML = ''; return; }
-
-  const best = Math.min(...targets.filter((t) => t.ok).map((t) => t.work), Infinity);
-  box.innerHTML = targets.map((t) => {
-    if (!t.ok) {
-      return `<button class="alt is-dead" data-isa="${t.name}">
-        <span class="name">${escapeHtml(t.isa.title)}</span>
-        <span class="sub">cannot lower</span>
-        <span class="bars">${'<span style="height:3px"></span>'.repeat(8)}</span>
-      </button>`;
-    }
-    const max = Math.max(...targets.filter((x) => x.ok).map((x) => x.work), 1);
-    const bars = Array.from({ length: 8 }, (_, i) => {
-      const h = i < t.work ? Math.max(6, 42 - i * (30 / Math.max(max, 4))) : 3;
-      return `<span style="height:${h.toFixed(0)}px"></span>`;
-    }).join('');
-    return `<button class="alt${t.work === best ? ' is-best' : ''}" data-isa="${t.name}">
-      <span class="name">${escapeHtml(t.isa.title)}</span>
-      <span class="sub">${t.work} core op${t.work === 1 ? '' : 's'}</span>
-      <span class="bars">${bars}</span>
-    </button>`;
-  }).join('');
-
-  box.querySelectorAll('.alt').forEach((el) => {
-    el.addEventListener('click', () => showTarget(el.dataset.isa));
+function showExamples() {
+  openDialog('Examples', EXAMPLES.map((ex, i) =>
+    `<button class="btn ex" data-i="${i}">${escapeHtml(ex.name)}`
+    + ` <span>— ${escapeHtml(ex.note)}</span></button>`).join(''));
+  $('dlg-body').querySelectorAll('.ex').forEach((el) => {
+    el.addEventListener('click', () => {
+      setSource(EXAMPLES[Number(el.dataset.i)].code);
+      $('dlg').close();
+      optimize();
+    });
   });
 }
 
-function showTarget(name) {
-  const t = (state.result.targets || []).find((x) => x.name === name);
-  if (!t) return;
-  if (!t.ok) {
-    openDialog(t.isa.title, `<p>${escapeHtml(t.reason || 'cannot lower')}</p>`);
-    return;
-  }
-  openDialog(t.isa.title, `
-    <table>
-      <tr><th>Instructions</th><td>${escapeHtml(t.instructions.join(' '))}</td></tr>
-      <tr><th>Span / Work</th><td>${t.span} / ${t.work}</td></tr>
-      <tr><th>Description length</th><td>${t.L_bits} bits (${t.L_bytes} bytes)</td></tr>
-      <tr><th>Representatives</th><td>${t.representatives.map((r) => escapeHtml(`${r[0]} → ${r[1]}`)).join('<br>')}</td></tr>
-      <tr><th>Verification</th><td>${escapeHtml(t.verification.claim)}</td></tr>
-    </table>
-    <h4>C</h4><pre>${escapeHtml(t.c)}</pre>
-    ${t.asm ? `<h4>Assembly</h4><pre>${escapeHtml(t.asm)}</pre>` : ''}
-  `);
-}
-
-function renderResult(result) {
-  state.result = result;
-
+function showDetails() {
+  const result = state.result;
+  if (!result) return;
   if (!result.ok) {
-    setStep('paste');
-    const box = document.createElement('div');
-    box.className = 'error-box';
-    box.innerHTML = `<strong>${escapeHtml(result.stage || 'error')}:</strong> ` +
-      escapeHtml(result.error.message || 'failed') +
-      (result.error.hint ? `<br><code>${escapeHtml(result.error.hint)}</code>` : '');
-    const card = $('card-result');
-    card.querySelectorAll('.error-box').forEach((n) => n.remove());
-    card.querySelector('.metrics').before(box);
-    renderMetrics(result, null);
-    renderVerification(result, null);
+    openDialog('Error',
+               `<pre>${escapeHtml(result.error.text || result.error.message)}</pre>`);
     return;
   }
 
-  $('card-result').querySelectorAll('.error-box').forEach((n) => n.remove());
-
-  const primary = (result.targets || []).find((t) => t.name === result.primary_target)
-    || (result.targets || []).find((t) => t.ok) || null;
-
-  renderCompiledInfo(result);
-  renderMetrics(result, primary);
-  renderVerification(result, primary);
-  renderObserver(result);
-  renderProgram(result, primary);
-  renderAlternatives(result);
-  setStep('results');
-
-  const v = result.versions || {};
-  $('foot-version').textContent = `QM ${v.qm || '—'}`;
-  $('foot-grammar').textContent = `Grammar: ${v.grammar || '—'}`;
-  $('foot-solver').textContent = `Solver: ${v.solver || '—'}`;
-  $('foot-corpus').textContent = result.corpus && result.corpus.canonical
-    ? `Corpus key: ${result.corpus.semantic_key.slice(0, 10)}…`
-    : 'Corpus: not canonical';
-  status(`done in ${result.elapsed_s ?? '?'}s`);
-}
-
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
-
-function currentOptions() {
-  const isaSelect = $('sel-isa');
-  const targets = Array.from(isaSelect.selectedOptions).map((o) => o.value);
-  const observer = $('sel-observer').value === 'mask:custom'
-    ? `mask:${$('inp-mask').value || '0xFFFFFFFFFFFFFFFF'}`
-    : $('sel-observer').value;
-  return {
-    frontend: $('sel-compiler').value,
-    opt: $('sel-opt').value,
-    source_target: $('sel-target').value,
-    observer,
-    targets: targets.length ? targets : undefined,
-  };
-}
-
-function optimize() {
-  if (!state.ready || state.busy) return;
-  const source = $('source').value.trim();
-  if (!source) { toast('paste a C function first', true); return; }
-
-  state.busy = true;
-  $('btn-optimize').disabled = true;
-  setStep('compile');
-  status('working…');
-  state.worker.postMessage({ type: 'solve', source, options: currentOptions() });
-}
-
-function shareSource() {
-  // SPEC §1: Share Source is explicit and opt-in.  The link carries the source
-  // in the fragment, which browsers do not send to any server.
-  const encoded = btoa(unescape(encodeURIComponent($('source').value)));
-  const url = `${location.origin}${location.pathname}#src=${encoded}`;
-  copy(url, 'Share link');
-  openDialog('Share Source', `
-    <p>This link carries your source in the URL fragment. Fragments are not sent
-    to the server, but anyone you send the link to can read the code.</p>
-    <pre>${escapeHtml(url)}</pre>`);
-}
-
-function exportResult() {
-  if (!state.result || !state.result.ok) { toast('nothing to export', true); return; }
-  const primary = (state.result.targets || []).find((t) => t.ok);
-  const files = {
-    'qm-result.json': JSON.stringify(state.result, null, 2),
-    'qm-kernel.c': primary ? primary.c : '',
-    'qm-kernel.s': primary && primary.asm ? primary.asm : '',
-    'qm-verification.txt': verificationReport(state.result, primary),
-  };
-  const links = Object.entries(files)
-    .filter(([, body]) => body)
-    .map(([name, body]) => {
-      const url = URL.createObjectURL(new Blob([body], { type: 'text/plain' }));
-      return `<a class="btn ex" download="${name}" href="${url}">${name}</a>`;
-    })
-    .join('');
-  openDialog('Export', `<p>Everything is produced in your browser.</p>${links}`);
-}
-
-function verificationReport(result, primary) {
-  const lines = [
-    'Quotient Minimizer verification report',
-    `qm ${result.versions.qm} / grammar ${result.versions.grammar} / objective ${result.versions.objective}`,
-    '',
-    `function          ${result.frontend.function.signature}`,
-    `frontend          ${result.frontend.frontend.title}`,
-    `observer          ${result.observer.description}`,
-    `domain            2^${result.semantics.input_bits} (${result.semantics.domain.kind})`,
-    `residual freedom  ${result.residual_freedom}`,
-    '',
-  ];
-  for (const t of result.targets || []) {
-    if (!t.ok) { lines.push(`${t.name.padEnd(20)} cannot lower: ${t.reason}`); continue; }
-    lines.push(`${t.name.padEnd(20)} ${t.instructions.join(' ')}`);
-    lines.push(`${''.padEnd(20)} ${t.verification.mode} ${t.verification.matched}/${t.verification.total} ${t.verification.pass ? 'PASS' : 'FAIL'}`);
-  }
-  lines.push('', result.targets.length && primary ? primary.verification.claim : '');
-  return lines.join('\n');
-}
-
-function showDerivation() {
-  if (!state.result || !state.result.ok) { toast('run Optimize first', true); return; }
-  const rows = (state.result.derivation || [])
+  const rows = (result.derivation || [])
     .map((d) => `<tr><th>${escapeHtml(d.step)}</th><td>${escapeHtml(d.value)}</td></tr>`)
     .join('');
-  const guards = (state.result.normalization || {}).guard_evidence || [];
-  const evidence = guards.map((g) =>
-    `<tr><th>${escapeHtml(g.claim)}</th><td>${g.measured ? 'holds' : 'fails'} — ${escapeHtml(g.implication)}</td></tr>`).join('');
-  const quotient = (state.result.quotients || {}).future || {};
-  openDialog('Derivation', `
+  const targets = (result.targets || []).map((t) => (t.ok
+    ? `<tr><th>${escapeHtml(t.name)}</th><td>span ${t.span} · work ${t.work}`
+      + ` · ${escapeHtml(t.instructions.join(' '))}</td></tr>`
+    : `<tr><th>${escapeHtml(t.name)}</th><td>${escapeHtml(t.reason || 'cannot lower')}</td></tr>`))
+    .join('');
+  const recognized = (result.recognition || []).join(', ');
+
+  openDialog(result.frontend.function.signature || 'Details', `
     <table>${rows}</table>
-    <h4>Future quotient</h4>
-    <p>${escapeHtml(quotient.computed
-      ? `${quotient.peak_classes} classes at the peak (${quotient.state_bits} bits of streaming state against ${quotient.naive_state_bits} bits of raw history).`
-      : quotient.reason || 'not computed')}</p>
-    <h4>Guard evidence</h4><table>${evidence}</table>
-    ${state.result.recognition && state.result.recognition.length
-      ? `<h4>Recognized as</h4><p>${escapeHtml(state.result.recognition.join(', '))}</p>` : ''}
+    <h4>Targets</h4><table>${targets}</table>
+    ${recognized
+      ? `<h4>Recognized</h4><table><tr><th>primitive</th>`
+        + `<td>${escapeHtml(recognized)}</td></tr></table>`
+      : ''}
   `);
 }
 
-function showBenchmark() {
-  if (!state.result || !state.result.ok) { toast('run Optimize first', true); return; }
-  const cost = state.result.cost_model || {};
-  const rows = (cost.rows || []).map((r) =>
-    `<tr><th>${escapeHtml(r.target)}</th><td>span ${r.span} · work ${r.work} · ${r.instructions} instructions · ${r.code_bits} code bits</td></tr>`).join('');
-  openDialog('Benchmark', `
-    <p><strong>Compiler baseline:</strong> ${cost.frontend_reference_ops ?? '—'} instructions.</p>
-    <table>${rows}</table>
-    <p class="muted small">${escapeHtml(cost.note || '')}</p>`);
-}
-
 // ---------------------------------------------------------------------------
-// Boot
+// Worker plumbing
 // ---------------------------------------------------------------------------
 
-function fillSelects(capabilities) {
-  const compiler = $('sel-compiler');
-  compiler.innerHTML = capabilities.frontends
+function fillSettings(capabilities) {
+  $('sel-compiler').innerHTML = capabilities.frontends
     .filter((f) => f.name !== 'precompiled')
     .map((f) => `<option value="${f.name}"${f.name === 'clang' ? ' selected' : ''}>${
       f.name === 'clang' ? 'Clang (WASM)' : escapeHtml(f.title)}</option>`)
@@ -597,50 +446,54 @@ function fillSelects(capabilities) {
     .map((o) => `<option value="${o.spec}">${escapeHtml(o.label)}</option>`)
     .join('') + '<option value="mask:custom">Custom bit mask…</option>';
 
-  $('sel-isa').innerHTML = capabilities.targets
-    .map((t, i) => `<option value="${t.name}"${i < 4 ? ' selected' : ''}>${escapeHtml(t.title)}</option>`)
-    .join('');
-
   const v = capabilities.versions;
-  $('foot-version').textContent = `QM ${v.qm}`;
-  $('foot-grammar').textContent = `Grammar: ${v.grammar}`;
-  $('foot-solver').textContent = `Solver: ${v.solver}`;
+  $('st-engine').textContent = `qm ${v.qm} · ${v.grammar}/${v.objective}`;
 }
 
 function onMessage(event) {
   const msg = event.data;
+
   if (msg.type === 'progress') { status(msg.message); return; }
   if (msg.type === 'notice') { toast(msg.message, true); return; }
 
   if (msg.type === 'ready') {
     state.ready = true;
     state.capabilities = msg.capabilities;
-    state.clang = msg.clang;
-    fillSelects(msg.capabilities);
-    // The bundle is fetched on the first Optimize, so at boot the honest
-    // statement is which bundle is configured, not whether it loaded.
-    $('engine-note').textContent = msg.clang.configured === false
-      ? `Engine ready · no Clang bundle configured; the built-in C subset ` +
-        `frontend will be used`
-      : `Engine ready · Clang/WASM loads on the first Optimize ` +
-        `(listing: ${msg.clang.listing || 'toolchain default'})`;
+    fillSettings(msg.capabilities);
+    $('settings-note').textContent = msg.clang.configured === false
+      ? 'No Clang bundle configured; the built-in C subset frontend is used.'
+      : `Clang/WASM loads on the first Optimize. Listing: ${msg.clang.listing}.`;
     status('ready');
     $('btn-optimize').disabled = false;
+    return;
+  }
+
+  if (msg.type === 'compile-error') {
+    state.clangAssembly = '';
+    showOutput(msg.stderr, 'asm');
     return;
   }
 
   if (msg.type === 'done') {
     state.busy = false;
     $('btn-optimize').disabled = false;
-    if (msg.result.compiled) renderAssembly(msg.result.compiled.assembly);
-    else renderAssembly('');
-    renderResult(msg.result);
-    return;
-  }
+    state.result = msg.result;
+    $('dirty-dot').classList.remove('is-dirty');
 
-  if (msg.type === 'compile-error') {
-    renderAssembly('');
-    $('asm-listing').innerHTML = `<pre class="placeholder">${escapeHtml(msg.stderr)}</pre>`;
+    if (!msg.result.ok) {
+      state.clangAssembly = '';
+      renderStatus(msg.result);
+      showOutput(msg.result.error.text || msg.result.error.message, 'asm');
+      toast(msg.result.error.message, true);
+      return;
+    }
+
+    state.clangAssembly = (msg.result.compiled && msg.result.compiled.assembly) || '';
+    $('chip-signature').textContent = msg.result.frontend.function.signature || '';
+    fillTargets(msg.result);
+    if (state.view === 'clang' && !state.clangAssembly) state.view = 'asm';
+    renderView();
+    renderStatus(msg.result);
     return;
   }
 
@@ -652,64 +505,118 @@ function onMessage(event) {
   }
 }
 
-function init() {
-  const stored = localStorage.getItem('qm.source');
-  const fragment = new URLSearchParams(location.hash.slice(1)).get('src');
-  if (fragment) {
-    try { setSource(decodeURIComponent(escape(atob(fragment)))); }
-    catch { setSource(EXAMPLES[0].code); }
-  } else {
-    setSource(stored || EXAMPLES[0].code);
-  }
+// ---------------------------------------------------------------------------
+// Split drag
+// ---------------------------------------------------------------------------
 
-  $('source').addEventListener('input', syncEditor);
-  $('source').addEventListener('scroll', () => {
-    $('highlight').scrollTop = $('source').scrollTop;
-    $('highlight').scrollLeft = $('source').scrollLeft;
-    $('gutter').scrollTop = $('source').scrollTop;
+function wireDrag() {
+  const bar = $('dragbar');
+  const split = $('split');
+  let dragging = false;
+
+  bar.addEventListener('pointerdown', (event) => {
+    dragging = true;
+    bar.setPointerCapture(event.pointerId);
+    document.body.style.userSelect = 'none';
   });
-  $('source').addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const el = e.target;
-      const at = el.selectionStart;
-      el.value = `${el.value.slice(0, at)}    ${el.value.slice(el.selectionEnd)}`;
-      el.selectionStart = el.selectionEnd = at + 4;
-      syncEditor();
+
+  bar.addEventListener('pointermove', (event) => {
+    if (!dragging) return;
+    const rect = split.getBoundingClientRect();
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      const ratio = (event.clientY - rect.top) / rect.height;
+      const clamped = Math.min(0.85, Math.max(0.15, ratio));
+      split.style.gridTemplateRows = `${clamped}fr 6px ${1 - clamped}fr`;
+    } else {
+      const ratio = (event.clientX - rect.left) / rect.width;
+      const clamped = Math.min(0.85, Math.max(0.15, ratio));
+      split.style.gridTemplateColumns = `${clamped}fr 6px ${1 - clamped}fr`;
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); optimize(); }
+  });
+
+  const stop = () => {
+    dragging = false;
+    document.body.style.userSelect = '';
+  };
+  bar.addEventListener('pointerup', stop);
+  bar.addEventListener('pointercancel', stop);
+}
+
+// ---------------------------------------------------------------------------
+
+function init() {
+  const fragment = new URLSearchParams(location.hash.slice(1)).get('src');
+  let initial = localStorage.getItem('qm.source') || EXAMPLES[0].code;
+  if (fragment) {
+    try {
+      initial = decodeURIComponent(escape(atob(fragment)));
+    } catch {
+      /* a malformed link should not stop the editor coming up */
+    }
+  }
+  setSource(initial);
+  $('dirty-dot').classList.remove('is-dirty');
+
+  const editor = $('source');
+  editor.addEventListener('input', syncSource);
+  editor.addEventListener('scroll', () => {
+    $('highlight').scrollTop = editor.scrollTop;
+    $('highlight').scrollLeft = editor.scrollLeft;
+    $('gutter').scrollTop = editor.scrollTop;
+  });
+  editor.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      const at = editor.selectionStart;
+      editor.value = `${editor.value.slice(0, at)}    `
+        + editor.value.slice(editor.selectionEnd);
+      editor.selectionStart = editor.selectionEnd = at + 4;
+      syncSource();
+    }
+  });
+
+  $('out-code').addEventListener('scroll', () => {
+    $('out-gutter').scrollTop = $('out-code').scrollTop;
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      optimize();
+    }
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey
+        && event.key.toLowerCase() === 'c') {
+      event.preventDefault();
+      copyOutput();
+    }
   });
 
   $('btn-optimize').addEventListener('click', optimize);
-  $('btn-optimize').disabled = true;
-  $('btn-example').addEventListener('click', () => showExamples());
-  $('btn-examples').addEventListener('click', () => showExamples());
-  $('btn-docs').addEventListener('click', showDerivation);
-  $('btn-settings').addEventListener('click', () => {
-    document.querySelectorAll('.panel').forEach((p) => { p.open = true; });
-    $('sel-observer').focus();
-  });
-  $('btn-edit-observer').addEventListener('click', () => {
-    document.querySelectorAll('.panel')[1].open = true;
-    $('sel-observer').focus();
-  });
-  $('btn-copy-asm').addEventListener('click', () => copy(state.assembly, 'Assembly'));
-  $('btn-copy-result').addEventListener('click', () =>
-    copy(JSON.stringify(state.result, null, 2), 'Result JSON'));
-  $('btn-copy-program').addEventListener('click', () => {
-    const t = (state.result && state.result.targets || []).find((x) => x.ok);
-    copy(t ? t.c : '', 'Program');
-  });
-  $('btn-share').addEventListener('click', shareSource);
-  $('btn-export').addEventListener('click', exportResult);
-  $('btn-benchmark').addEventListener('click', showBenchmark);
+  $('btn-examples').addEventListener('click', showExamples);
+  $('btn-copy').addEventListener('click', copyOutput);
+  $('btn-download').addEventListener('click', downloadOutput);
+  $('btn-settings').addEventListener('click', () => $('settings').showModal());
+  $('settings-close').addEventListener('click', () => $('settings').close());
   $('dlg-close').addEventListener('click', () => $('dlg').close());
-  $('sel-observer').addEventListener('change', (e) => {
-    $('inp-mask').disabled = e.target.value !== 'mask:custom';
+  $('statusbar').addEventListener('click', showDetails);
+  $('sel-observer').addEventListener('change', (event) => {
+    $('inp-mask').disabled = event.target.value !== 'mask:custom';
+  });
+  $('sel-isa-view').addEventListener('change', (event) => {
+    state.isa = event.target.value;
+    renderView();
+    renderStatus(state.result);
+  });
+  document.querySelectorAll('#pane-output .tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      if (tab.disabled) return;
+      state.view = tab.dataset.view;
+      renderView();
+    });
   });
 
-  // Resolved against this module, not the document: index.html is also served
-  // from the site root, where a document-relative path would miss.
+  wireDrag();
+
   state.worker = new Worker(new URL('worker.js', import.meta.url),
                             { type: 'module' });
   state.worker.addEventListener('message', onMessage);
@@ -719,19 +626,6 @@ function init() {
     config: readConfig(location.search),
   });
   status('booting…');
-}
-
-function showExamples() {
-  const html = EXAMPLES.map((ex, i) =>
-    `<button class="btn ex" data-i="${i}"><strong>${escapeHtml(ex.name)}</strong><br>
-     <span class="muted small">${escapeHtml(ex.note)}</span></button>`).join('');
-  openDialog('Examples', html);
-  $('dlg-body').querySelectorAll('.ex').forEach((el) => {
-    el.addEventListener('click', () => {
-      setSource(EXAMPLES[Number(el.dataset.i)].code);
-      $('dlg').close();
-    });
-  });
 }
 
 init();
