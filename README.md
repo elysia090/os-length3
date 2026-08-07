@@ -31,6 +31,10 @@ python3 -m qm.cli examples/ranks8.c # the same pipeline on a terminal
 python3 tests/run.py                # the suite
 ```
 
+```sh
+npx wrangler deploy                 # deploy to qm.length3.com
+```
+
 `src/v2/README.md` covers the architecture, how the browser runs Clang and
 Python side by side, and what is deliberately not built yet.
 

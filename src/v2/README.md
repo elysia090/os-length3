@@ -125,15 +125,19 @@ and a ~300 MB one.
 
 The site is static: no server code, no build toolchain beyond Python.
 
-**Cloudflare Workers** — `qm.length3.com` is configured as a custom domain in
-`wrangler.toml`:
+**Cloudflare Workers** — run from the **repository root**, where
+`wrangler.toml` lives:
 
 ```sh
-npm run build          # gen_manifest --check, then tools/build_site.py -> dist/
-npx wrangler deploy
+npx wrangler deploy    # [build] assembles dist/ first
 ```
 
-`npm run deploy` runs the suite first, so a red test cannot ship.
+The config is at the root, not here, for two reasons: Workers Builds runs its
+git integration from the repository root, and the `name` has to match the
+connected Worker script. The `[build] command` assembles `dist/` as part of
+`wrangler deploy`, so no build command has to be configured in the Cloudflare
+dashboard for the git integration to work. `npm run deploy` runs the suite
+first, so a red test cannot ship.
 
 **GitHub Pages** — `.github/workflows/pages.yml` runs the same
 `tools/build_site.py`, so the two deployments cannot drift apart.
