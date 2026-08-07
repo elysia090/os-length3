@@ -221,6 +221,49 @@ input:disabled { opacity: .45; }
   min-height: 180px;
 }
 
+/* ------------------------------------------------------------------ tabs */
+
+.tabs {
+  display: flex; align-items: stretch; gap: 4px;
+  margin-bottom: 8px; min-width: 0;
+}
+
+.tablist {
+  display: flex; align-items: stretch; gap: 4px;
+  overflow-x: auto; min-width: 0; flex: 1 1 auto;
+}
+
+.tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 8px 6px 11px;
+  border: 1px solid transparent; border-radius: 7px;
+  background: var(--frame); color: var(--muted);
+  font: 12px var(--mono); cursor: pointer; white-space: nowrap;
+  max-width: 190px;
+}
+.tab:hover { color: var(--ink-2); }
+.tab.is-active {
+  background: var(--chrome); color: var(--ink); border-color: var(--edge);
+}
+.tab .name { overflow: hidden; text-overflow: ellipsis; }
+.tab .close {
+  display: inline-grid; place-items: center;
+  width: 16px; height: 16px; flex: 0 0 auto;
+  border: 0; border-radius: 4px; padding: 0;
+  background: none; color: inherit; font: 13px/1 var(--sans); cursor: pointer;
+  opacity: .55;
+}
+.tab .close:hover { background: var(--edge); opacity: 1; }
+.tab.is-dirty .name::after { content: " •"; color: var(--accent-hi); }
+
+.tab-add {
+  flex: 0 0 auto;
+  width: 30px; border: 1px dashed var(--edge); border-radius: 7px;
+  background: none; color: var(--muted);
+  font: 16px/1 var(--sans); cursor: pointer;
+}
+.tab-add:hover { color: var(--ink); border-color: var(--accent); background: var(--frame); }
+
 /* ---------------------------------------------------------------- editor */
 
 .editor { display: flex; }

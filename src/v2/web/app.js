@@ -31,11 +31,31 @@ const state = {
   ready: false,
   busy: false,
   capabilities: null,
-  result: null,
-  clangAssembly: '',
   view: 'asm',
   isa: null,
+  // One tab per kernel you are working on. Each keeps its own source and its
+  // own last result, so switching back shows what you left, not a blank card.
+  tabs: [],
+  activeId: null,
 };
+
+const TABS_KEY = 'qm.tabs';
+const ACTIVE_KEY = 'qm.activeTab';
+
+function activeTab() {
+  return state.tabs.find((t) => t.id === state.activeId) || state.tabs[0];
+}
+
+// `state.result` used to be a field; it is now whatever the active tab holds.
+Object.defineProperty(state, 'result', {
+  get() { const tab = activeTab(); return tab ? tab.result : null; },
+  set(value) { const tab = activeTab(); if (tab) tab.result = value; },
+});
+
+Object.defineProperty(state, 'clangAssembly', {
+  get() { const tab = activeTab(); return tab ? (tab.clangAssembly || '') : ''; },
+  set(value) { const tab = activeTab(); if (tab) tab.clangAssembly = value; },
+});
 
 // ---------------------------------------------------------------------------
 // Highlighting
@@ -131,10 +151,158 @@ function sliceFunction(text, functionName) {
 }
 
 // ---------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------
+
+let nextTabId = 1;
+
+function newTab(name, source) {
+  return {
+    id: `t${nextTabId++}`,
+    name: name || 'untitled.c',
+    source: source || '',
+    result: null,
+    clangAssembly: '',
+    dirty: false,
+  };
+}
+
+function persistTabs() {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify(
+      state.tabs.map((t) => ({ id: t.id, name: t.name, source: t.source }))));
+    localStorage.setItem(ACTIVE_KEY, state.activeId || '');
+  } catch {
+    /* a full or blocked store must not stop the editor working */
+  }
+}
+
+function restoreTabs() {
+  let stored = null;
+  try {
+    stored = JSON.parse(localStorage.getItem(TABS_KEY) || 'null');
+  } catch {
+    stored = null;
+  }
+
+  if (Array.isArray(stored) && stored.length) {
+    state.tabs = stored.map((t) => {
+      const tab = newTab(t.name, t.source);
+      if (t.id) tab.id = t.id;
+      return tab;
+    });
+    // Keep generated ids clear of restored ones.
+    const highest = Math.max(0, ...state.tabs
+      .map((t) => Number(String(t.id).replace(/\D/g, '')) || 0));
+    nextTabId = highest + 1;
+    state.activeId = localStorage.getItem(ACTIVE_KEY) || state.tabs[0].id;
+    if (!state.tabs.some((t) => t.id === state.activeId)) {
+      state.activeId = state.tabs[0].id;
+    }
+    return true;
+  }
+
+  // One-tab migration from the single-source layout this replaces.
+  const legacy = localStorage.getItem('qm.source');
+  if (legacy) {
+    const tab = newTab('kernel.c', legacy);
+    state.tabs = [tab];
+    state.activeId = tab.id;
+    return true;
+  }
+  return false;
+}
+
+function renderTabs() {
+  const list = $('tablist');
+  list.innerHTML = state.tabs.map((tab) => `
+    <div class="tab${tab.id === state.activeId ? ' is-active' : ''}${
+      tab.dirty ? ' is-dirty' : ''}" data-id="${tab.id}" role="tab">
+      <span class="name">${escapeHtml(tab.name)}</span>
+      ${state.tabs.length > 1
+        ? `<button class="close" data-close="${tab.id}" title="Close"
+                   aria-label="Close ${escapeHtml(tab.name)}">&times;</button>`
+        : ''}
+    </div>`).join('');
+
+  list.querySelectorAll('.tab').forEach((el) => {
+    el.addEventListener('click', (event) => {
+      if (event.target.dataset.close) return;
+      selectTab(el.dataset.id);
+    });
+  });
+  list.querySelectorAll('.close').forEach((el) => {
+    el.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeTab(el.dataset.close);
+    });
+  });
+}
+
+function selectTab(id) {
+  if (id === state.activeId) return;
+  const tab = state.tabs.find((t) => t.id === id);
+  if (!tab) return;
+  state.activeId = id;
+  $('source').value = tab.source;
+  syncSource({ keepDirty: true });
+  renderTabs();
+  restoreCards();
+  persistTabs();
+}
+
+function addTab(name, source) {
+  const tab = newTab(name, source || '');
+  state.tabs.push(tab);
+  state.activeId = tab.id;
+  $('source').value = tab.source;
+  syncSource({ keepDirty: true });
+  renderTabs();
+  restoreCards();
+  persistTabs();
+  $('source').focus();
+  return tab;
+}
+
+function closeTab(id) {
+  if (state.tabs.length <= 1) return;
+  const index = state.tabs.findIndex((t) => t.id === id);
+  if (index < 0) return;
+  state.tabs.splice(index, 1);
+  if (state.activeId === id) {
+    const next = state.tabs[Math.min(index, state.tabs.length - 1)];
+    state.activeId = next.id;
+    $('source').value = next.source;
+    syncSource({ keepDirty: true });
+    restoreCards();
+  }
+  renderTabs();
+  persistTabs();
+}
+
+/** Repaint cards 2 and 3 from whatever the active tab last produced. */
+function restoreCards() {
+  const result = state.result;
+  if (!result || !result.ok) {
+    $('clang-listing').innerHTML =
+      '<span class="hint">Press <b>Compile</b>.</span>';
+    $('qm-listing').innerHTML =
+      '<span class="hint">The minimized program appears here.</span>';
+    $('compiled-sub').textContent = '— instructions';
+    $('qm-sub').textContent = '— instructions';
+    $('sel-isa-view').innerHTML = '';
+    return;
+  }
+  fillTargets(result);
+  renderCompiled(result);
+  renderTakeaway();
+}
+
+// ---------------------------------------------------------------------------
 // Editor
 // ---------------------------------------------------------------------------
 
-function syncSource() {
+function syncSource(options) {
   const code = $('source').value;
   const lines = code.split('\n');
   const shown = Math.max(lines.length, 14);
@@ -142,12 +310,26 @@ function syncSource() {
   $('gutter').textContent =
     Array.from({ length: shown }, (_, i) => i + 1).join('\n');
   $('line-count').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'}`;
-  localStorage.setItem('qm.source', code);
+
+  const tab = activeTab();
+  if (tab) {
+    const changed = tab.source !== code;
+    tab.source = code;
+    if (changed && !(options && options.keepDirty)) {
+      tab.dirty = true;
+      renderTabs();
+    }
+    persistTabs();
+  }
 }
 
-function setSource(code) {
+function setSource(code, name) {
+  const tab = activeTab();
+  if (tab && name) tab.name = name;
   $('source').value = code;
-  syncSource();
+  syncSource({ keepDirty: true });
+  if (tab) tab.dirty = false;
+  renderTabs();
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +500,17 @@ async function showExamples() {
     : '<p class="note">examples.json could not be loaded</p>');
   $('dlg-body').querySelectorAll('.ex').forEach((el) => {
     el.addEventListener('click', () => {
-      setSource(EXAMPLES[Number(el.dataset.i)].source);
+      const example = EXAMPLES[Number(el.dataset.i)];
+      const existing = state.tabs.find((t) => t.name === example.file);
+      if (existing) {
+        selectTab(existing.id);
+        setSource(example.source, example.file);
+      } else if (activeTab() && !activeTab().source.trim()) {
+        setSource(example.source, example.file);
+      } else {
+        addTab(example.file, example.source);
+        renderTabs();
+      }
       $('dlg').close();
       optimize();
     });
@@ -415,6 +607,13 @@ function onMessage(event) {
     }
 
     state.clangAssembly = (msg.result.compiled && msg.result.compiled.assembly) || '';
+    const tab = activeTab();
+    if (tab) {
+      tab.dirty = false;
+      const name = msg.result.frontend.function.name;
+      if (name && /^untitled/.test(tab.name)) tab.name = `${name}.c`;
+    }
+    renderTabs();
     fillTargets(msg.result);
     renderCompiled(msg.result);
     renderTakeaway();
@@ -448,21 +647,35 @@ uint64_t ranks8(uint8_t m)
 
 function init() {
   const fragment = new URLSearchParams(location.hash.slice(1)).get('src');
-  const stored = localStorage.getItem('qm.source');
-  let initial = stored || FALLBACK_SOURCE;
+  const restored = restoreTabs();
+
+  if (!restored) {
+    const tab = newTab('kernel.c', FALLBACK_SOURCE);
+    state.tabs = [tab];
+    state.activeId = tab.id;
+  }
   if (fragment) {
     try {
-      initial = decodeURIComponent(escape(atob(fragment)));
+      const shared = decodeURIComponent(escape(atob(fragment)));
+      const tab = newTab('shared.c', shared);
+      state.tabs.push(tab);
+      state.activeId = tab.id;
     } catch {
       /* a malformed link should not stop the editor coming up */
     }
   }
-  setSource(initial);
 
-  // The first example replaces the placeholder only if nothing was typed or
+  $('source').value = activeTab().source;
+  syncSource({ keepDirty: true });
+  activeTab().dirty = false;
+  renderTabs();
+
+  // The first example replaces the placeholder only if nothing was restored or
   // shared, so a returning visitor never loses what they had.
   loadExamples().then((examples) => {
-    if (!stored && !fragment && examples.length) setSource(examples[0].source);
+    if (!restored && !fragment && examples.length) {
+      setSource(examples[0].source, examples[0].file);
+    }
   });
 
   const editor = $('source');
@@ -488,6 +701,14 @@ function init() {
       event.preventDefault();
       optimize();
     }
+    if ((event.metaKey || event.ctrlKey) && event.altKey
+        && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+      event.preventDefault();
+      const index = state.tabs.findIndex((t) => t.id === state.activeId);
+      const step = event.key === 'ArrowRight' ? 1 : -1;
+      const next = (index + step + state.tabs.length) % state.tabs.length;
+      selectTab(state.tabs[next].id);
+    }
     if ((event.metaKey || event.ctrlKey) && event.shiftKey
         && event.key.toLowerCase() === 'c') {
       event.preventDefault();
@@ -496,6 +717,7 @@ function init() {
   });
 
   $('btn-optimize').addEventListener('click', optimize);
+  $('btn-newtab').addEventListener('click', () => addTab());
   $('btn-examples').addEventListener('click', showExamples);
   $('btn-copy').addEventListener('click', copyOutput);
   $('btn-details').addEventListener('click', showDetails);

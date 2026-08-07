@@ -8,10 +8,16 @@ C, press **Optimize**, copy the assembly. Two panes, no prose. Compilation,
 solving and verification all happen on your machine — there is no account, no
 upload and no server component.
 
-Left pane is the C you write. Right pane is what you take away: the minimized
-assembly, the same thing as C intrinsics, and the compiler's own listing to
-compare against. A status bar carries the numbers worth a glance — verification,
-before → after, residual freedom — and clicking it opens the full derivation.
+Three cards: the C you write, what the compiler made of it, and what QM made of
+that — ready to copy. Tabs hold one kernel each, with their own source and their
+own last result.
+
+Intrinsics are read, not just emitted. `_pdep_u64`, `_pext_u64`, the BMI1 set,
+`_tzcnt`/`_lzcnt`/`_bzhi`, byte swaps and rotates, and the SSE carry-less
+multiply idiom — `__m128i`, `_mm_clmulepi64_si128` and the scalar moves around
+it — all evaluate, so a kernel already written the fast way analyses as readily
+as the obvious one. `qm/cfront/intrinsics.py` holds the table, shared by the
+reference interpreter and the compiler so the two cannot disagree.
 
 ```
 C / C++
@@ -176,7 +182,7 @@ qm/
   cli.py          §21  the local interactive product on a terminal
 
 web/              the page: index.html · app.js · worker.js · clang.js
-tools/            serve.py · gen_manifest.py · build_site.py
+tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
 tests/            run.py and the suite
 examples/         the kernels the corpus is built from
 ```
@@ -208,6 +214,17 @@ observer is the identity on the declared return width; `low:8`, `high:8`,
 a table, and under a plain (span, work) comparison a 2 KB table would "win"
 every 8-bit kernel with one instruction. It is reported, and ranked last, so
 that "no solution" means "no compact solution" rather than "QM gave up".
+
+**Minimizing a minimal program returns it unchanged.** QM reads its own output —
+the emitted C uses `_pdep_u64`, `_pext_u64` and `qm_clmul64`, and the frontend
+models all three — so idempotence is a property the suite can check, and does,
+for every example.
+
+**The examples are measured against hand-written optima.**
+`examples/lanecode.h` is a header of kernels written by hand in their best known
+form; `examples/*.c` states the same functions the obvious way; and
+`tests/test_lanecode.py` requires QM to get from one to the other, same
+representative and same constants, without being told either.
 
 **Verification strength is never overstated.** Domains up to 2^16 are exhaustive
 and reported as such. Wider domains get basis, boundary and deterministic
