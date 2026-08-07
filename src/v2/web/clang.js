@@ -6,29 +6,45 @@
 //   * wasm32 -O2, instantiated here and called over the input domain.  That is
 //     the execution oracle: 65,536 inputs cost milliseconds because the kernel
 //     runs as compiled code.
-//   * x86-64 -O2 assembly, shown in the UI and counted for "what did the
-//     compiler generate?".
+//   * an -O2 assembly listing, shown in the UI and counted for "what did the
+//     compiler generate?".  Which ISA that listing is in depends on the bundle;
+//     the default one is WebAssembly-only, so it is wasm32, and the report says
+//     which it was rather than assuming x86-64.
 //
 // The bundle is fetched lazily, on the first run that asks for it, so the page
 // is usable immediately and a user who never presses Optimize never pays for
 // it.  If the bundle cannot be fetched the caller falls back to the built-in
 // frontend; nothing here throws its way out to the UI.
 //
-// Configuring a bundle
-// --------------------
+// The default bundle
+// ------------------
+// `drivers/yowasp-clang.js` ships with the page and needs no configuration.
+// It is built with the WebAssembly target only, so the *listing* it produces
+// is wasm32; QM's own lowering targets are unaffected, because they are derived
+// from the extracted semantics rather than from the compiler's output.
+//
+// Configuring another bundle
+// --------------------------
 // A deployment points at its own build by setting, before this module loads:
 //
 //     window.QM_CLANG = {
 //       // module exporting { compile(args, files) -> { files, stderr, status } }
 //       driverUrl: 'https://example.com/clang-wasm/driver.mjs',
+//       // set when that build has an x86 backend, to get an x86-64 listing
+//       listingTriple: 'x86_64-unknown-linux-gnu',
 //     };
 //
 // or by passing ?clang=<url> in the query string.  The driver contract is
 // deliberately tiny — one `compile` call — so that any clang-in-wasm build can
 // be adapted with a short shim.
 
+const DEFAULT_DRIVER = new URL('./drivers/yowasp-clang.js', import.meta.url).href;
+
 const DEFAULT_CONFIG = {
-  driverUrl: null,
+  driverUrl: DEFAULT_DRIVER,
+  // Triple for the assembly listing.  `null` means the toolchain default,
+  // which for the bundled driver is wasm32.
+  listingTriple: null,
   // Flags shared by both compiles.  -ffreestanding + the prelude that qm/clang.py
   // injects is what removes the need for a sysroot, and with it tens of MB.
   common: ['-std=gnu11', '-ffreestanding', '-O2'],
@@ -40,6 +56,7 @@ export class ClangDriver {
   constructor(config) {
     this.config = Object.assign({}, DEFAULT_CONFIG, config || {});
     this.module = null;
+    this.info = null;
     this.state = 'idle'; // idle | loading | ready | unavailable
     this.reason = null;
   }
@@ -47,13 +64,21 @@ export class ClangDriver {
   describe() {
     return {
       name: 'clang-wasm',
-      title: 'Clang -O2 (WebAssembly)',
+      title: (this.info && this.info.title) || 'Clang -O2 (WebAssembly)',
       kind: 'compiler',
       available: this.state === 'ready',
       state: this.state,
       reason: this.reason,
       driverUrl: this.config.driverUrl,
+      configured: this.configured(),
+      listing: this.listingIsa(),
+      bundle: this.info || null,
     };
+  }
+
+  listingIsa() {
+    if (this.config.listingTriple) return this.config.listingTriple;
+    return (this.info && this.info.listingIsa) || 'the toolchain default';
   }
 
   configured() {
@@ -80,7 +105,10 @@ export class ClangDriver {
         if (typeof mod.compile !== 'function') {
           throw new Error('the driver module does not export compile()');
         }
-        if (typeof mod.init === 'function') await mod.init(onProgress);
+        if (typeof mod.init === 'function') {
+          this.info = await mod.init(onProgress);
+        }
+        this.info = this.info || mod.info || null;
         this.module = mod;
         this.state = 'ready';
         return mod;
@@ -96,9 +124,9 @@ export class ClangDriver {
     return this.loading;
   }
 
-  async run(args, files) {
-    const mod = await this.load();
-    const result = await mod.compile(args, files);
+  async run(args, files, onProgress) {
+    const mod = await this.load(onProgress);
+    const result = await mod.compile(args, files, onProgress);
     if (result.status !== 0) {
       const err = new Error('clang failed to compile the source');
       err.stderr = result.stderr || '';
@@ -109,47 +137,55 @@ export class ClangDriver {
 
   // --- the two artefacts ---------------------------------------------------
 
-  async assembly(source, { opt = '-O2', target = 'x86-64' } = {}) {
+  /**
+   * The listing shown in the UI: what the compiler generated, for real.
+   *
+   * `-march` is only meaningful when an x86 triple is configured; asking a
+   * WebAssembly-target build for `-march=x86-64-v3` is not a smaller listing,
+   * it is an error.
+   */
+  async assembly(source, { opt = '-O2', target = 'x86-64' } = {}, onProgress) {
     const flags = this.config.common.filter((f) => !f.startsWith('-O'));
-    const res = await this.run(
-      [
-        ...flags,
-        opt,
-        `-march=${target}`,
-        '--target=x86_64-unknown-linux-gnu',
-        '-S',
-        '-fno-asynchronous-unwind-tables',
-        '-fno-ident',
-        '-o',
-        '/out.s',
-        '/in.c',
-      ],
-      { '/in.c': source },
-    );
-    return res.files['/out.s'] || '';
+    const triple = this.config.listingTriple;
+    const args = [...flags, opt];
+    if (triple) args.push(`--target=${triple}`, `-march=${target}`);
+    args.push('-S', '-fno-ident', '-o', 'out.s', 'in.c');
+
+    const res = await this.run(args, { 'in.c': source }, onProgress);
+    return {
+      text: asText(res.files['out.s']),
+      isa: this.listingIsa(),
+      stderr: res.stderr || '',
+    };
   }
 
-  async wasm(source, { opt = '-O2' } = {}) {
+  async wasm(source, { opt = '-O2' } = {}, onProgress) {
     const flags = this.config.common.filter((f) => !f.startsWith('-O'));
     const res = await this.run(
       [
         ...flags,
         opt,
-        '--target=wasm32',
         '-nostdlib',
         '-Wl,--no-entry',
         '-Wl,--export-all',
         '-Wl,--allow-undefined',
         '-o',
-        '/out.wasm',
-        '/in.c',
+        'out.wasm',
+        'in.c',
       ],
-      { '/in.c': source },
+      { 'in.c': source },
+      onProgress,
     );
-    const bytes = res.files['/out.wasm'];
+    const bytes = res.files['out.wasm'];
     if (!bytes) throw new Error('clang produced no wasm module');
     return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   }
+}
+
+function asText(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return new TextDecoder().decode(value);
 }
 
 // ---------------------------------------------------------------------------

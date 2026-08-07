@@ -4,8 +4,14 @@
 > observable meaning actually requires.
 
 v2 is the interactive product from [`SPEC.md`](../v1/SPEC.md): open a URL, paste
-C, press **Optimize**. Compilation, solving and verification all happen on your
-machine — there is no account, no upload and no server component.
+C, press **Optimize**, copy the assembly. Two panes, no prose. Compilation,
+solving and verification all happen on your machine — there is no account, no
+upload and no server component.
+
+Left pane is the C you write. Right pane is what you take away: the minimized
+assembly, the same thing as C intrinsics, and the compiler's own listing to
+compare against. A status bar carries the numbers worth a glance — verification,
+before → after, residual freedom — and clicking it opens the full derivation.
 
 ```
 C / C++
@@ -170,7 +176,7 @@ qm/
   cli.py          §21  the local interactive product on a terminal
 
 web/              the page: index.html · app.js · worker.js · clang.js
-tools/            serve.py · gen_manifest.py
+tools/            serve.py · gen_manifest.py · build_site.py
 tests/            run.py and the suite
 examples/         the kernels the corpus is built from
 ```

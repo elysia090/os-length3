@@ -143,8 +143,20 @@ async function solve(request) {
 
   if (compiled) {
     progress('quotienting and synthesizing…');
+    const enriched = JSON.stringify(Object.assign({}, options || {}, {
+      function: compiled.plan.function,
+      input_bits: compiled.plan.input_bits,
+      output_bits: compiled.plan.output_bits,
+      signature: compiled.plan.signature,
+      compile: {
+        opt: options.opt || '-O2',
+        listing_isa: compiled.listing.isa,
+        toolchain: clang.describe().title,
+      },
+      toolchain: clang.describe(),
+    }));
     const json = callPython('finish', [
-      source, optionsJson, compiled.table, compiled.assembly,
+      source, enriched, compiled.table, compiled.assembly,
     ]);
     const result = JSON.parse(json);
     result.compiled = { assembly: compiled.assembly, plan: compiled.plan };
@@ -168,21 +180,21 @@ async function compileWithClang(source, options, optionsJson) {
 
   await clang.load(progress);
 
-  progress('clang -O2 → x86-64 assembly…');
-  const assembly = await clang.assembly(source, {
+  const listing = await clang.assembly(source, {
     opt: options.opt || '-O2',
     target: options.source_target || 'x86-64',
-  });
+  }, progress);
+  progress(`clang ${options.opt || '-O2'} → ${listing.isa} listing…`);
 
   progress('clang -O2 → wasm32…');
-  const wasm = await clang.wasm(source, { opt: options.opt || '-O2' });
+  const wasm = await clang.wasm(source, { opt: options.opt || '-O2' }, progress);
 
   progress(`executing ${plan.values.length.toLocaleString()} inputs…`);
   const table = await evaluateWasm(
     wasm, plan.function, plan.values, plan.output_bits,
   );
 
-  return { plan, assembly, table };
+  return { plan, assembly: listing.text, listing, table };
 }
 
 // ---------------------------------------------------------------------------
