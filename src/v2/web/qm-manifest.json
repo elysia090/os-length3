@@ -11,6 +11,7 @@
     "qm/cfront/ctypes_model.py",
     "qm/cfront/errors.py",
     "qm/cfront/interp.py",
+    "qm/cfront/intrinsics.py",
     "qm/cfront/lexer.py",
     "qm/cfront/nodes.py",
     "qm/cfront/parser.py",

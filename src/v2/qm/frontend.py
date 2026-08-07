@@ -113,6 +113,12 @@ class CSubsetFrontend(object):
         if param.ctype.kind not in ('int', 'bool'):
             raise CFrontError('parameter %r must be an integer type'
                               % param.name, line=fn.line)
+        if param.ctype.bits > 64:
+            raise CFrontError(
+                'parameter %r is %d bits; the solver family takes at most 64'
+                % (param.name, param.ctype.bits), line=fn.line,
+                hint='a 128-bit input would be silently truncated, so it is '
+                     'refused instead')
         if fn.ret.kind == 'void':
             raise CFrontError('%s returns void, so nothing is observable'
                               % fn.name, line=fn.line)

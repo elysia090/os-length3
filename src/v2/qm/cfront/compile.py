@@ -18,7 +18,8 @@ for the reference operation count.  `tests/test_cfront.py` checks the two agree
 over whole domains, so the fast path can never quietly drift from the slow one.
 """
 
-from ..bits import clmul as _clmul, mask_of, pdep as _pdep, pext as _pext
+from ..bits import mask_of
+from . import intrinsics
 from . import nodes as N
 from .ctypes_model import (
     BOOL, INT, U32, U64, VOID, CType, convert, promote, truncdiv,
@@ -752,71 +753,15 @@ def _is_constant(node):
 
 
 # ---------------------------------------------------------------------------
-# Builtins
+# Builtins and intrinsics
 # ---------------------------------------------------------------------------
-
-def _builtin_unary(bits, fn, ret_type=INT):
-    def build(compiler, node, args, scope):
-        if len(args) != 1:
-            raise CFrontError('%s expects 1 argument' % node.name,
-                              line=node.line)
-        emit, atype = args[0]
-        mask = mask_of(bits)
-        line = node.line
-        return (lambda frame: fn(emit(frame) & mask, line)), ret_type
-    return build
-
-
-def _popcount(value, line):
-    return bin(value).count('1')
-
-
-def _parity(value, line):
-    return bin(value).count('1') & 1
-
-
-def _ctz(value, line):
-    if value == 0:
-        raise CFrontError('__builtin_ctz(0) is undefined', line=line,
-                          hint='guard the zero case explicitly')
-    return (value & -value).bit_length() - 1
-
-
-def _clz_for(bits):
-    def clz(value, line):
-        if value == 0:
-            raise CFrontError('__builtin_clz(0) is undefined', line=line,
-                              hint='guard the zero case explicitly')
-        return bits - value.bit_length()
-    return clz
-
-
-def _bswap_for(bits):
-    width = bits // 8
-
-    def bswap(value, line):
-        return int.from_bytes(value.to_bytes(width, 'little'), 'big')
-
-    return bswap
-
-
-def _builtin_pair(bits, fn, ret_type=U64):
-    """Two 64-bit operands in, one out: PDEP, PEXT, carry-less multiply."""
-    def build(compiler, node, args, scope):
-        if len(args) != 2:
-            raise CFrontError('%s expects 2 arguments' % node.name,
-                              line=node.line)
-        left, _lt = args[0]
-        right, _rt = args[1]
-        mask = mask_of(bits)
-        return (lambda frame: fn(left(frame) & mask, right(frame) & mask)), ret_type
-    return build
-
+#
+# The pure ones come from `intrinsics.py`, the same table the interpreter reads.
+# Only the few that depend on their operand's type are written out here.
 
 def _builtin_expect(compiler, node, args, scope):
     if len(args) != 2:
-        raise CFrontError('__builtin_expect expects 2 arguments',
-                          line=node.line)
+        raise CFrontError('__builtin_expect expects 2 arguments', line=node.line)
     return args[0]
 
 
@@ -825,27 +770,6 @@ def _builtin_abs(compiler, node, args, scope):
     rtype = promote(atype)
     conv = _converter(rtype)
     return (lambda frame: conv(abs(emit(frame)))), rtype
-
-
-def _builtin_rotate(bits, left):
-    def build(compiler, node, args, scope):
-        if len(args) != 2:
-            raise CFrontError('%s expects 2 arguments' % node.name,
-                              line=node.line)
-        value, _ = args[0]
-        count, _ = args[1]
-        mask = mask_of(bits)
-        rtype = U32 if bits <= 32 else U64
-
-        def emit(frame):
-            x = value(frame) & mask
-            k = count(frame) % bits
-            if not left:
-                k = (bits - k) % bits
-            return ((x << k) | (x >> (bits - k))) & mask if k else x
-
-        return emit, rtype
-    return build
 
 
 def _builtin_minmax(is_min):
@@ -859,37 +783,54 @@ def _builtin_minmax(is_min):
     return build
 
 
+def _from_registry(intrinsic):
+    """Compile a fixed-arity intrinsic to a closure over its operands."""
+    masks = [mask_of(width) for width in intrinsic.widths]
+    fn = intrinsic.fn
+    name = intrinsic.name
+
+    def build(compiler, node, args, scope):
+        if len(args) != intrinsic.arity:
+            raise CFrontError('%s expects %d argument(s), got %d'
+                              % (name, intrinsic.arity, len(args)),
+                              line=node.line)
+        emits = [emit for emit, _ctype in args]
+        line = node.line
+
+        if intrinsic.arity == 1:
+            single, mask = emits[0], masks[0]
+
+            def emit_one(frame):
+                try:
+                    return fn(single(frame) & mask)
+                except CFrontError as exc:
+                    raise CFrontError(exc.message, line=line, hint=exc.hint)
+
+            return emit_one, intrinsic.result
+
+        def emit_many(frame):
+            values = [e(frame) & m for e, m in zip(emits, masks)]
+            try:
+                return fn(*values)
+            except CFrontError as exc:
+                raise CFrontError(exc.message, line=line, hint=exc.hint)
+
+        return emit_many, intrinsic.result
+
+    return build
+
+
 BUILTINS = {
-    '__builtin_popcount': _builtin_unary(32, _popcount),
-    '__builtin_popcountl': _builtin_unary(64, _popcount),
-    '__builtin_popcountll': _builtin_unary(64, _popcount),
-    '__builtin_parity': _builtin_unary(32, _parity),
-    '__builtin_parityl': _builtin_unary(64, _parity),
-    '__builtin_parityll': _builtin_unary(64, _parity),
-    '__builtin_ctz': _builtin_unary(32, _ctz),
-    '__builtin_ctzl': _builtin_unary(64, _ctz),
-    '__builtin_ctzll': _builtin_unary(64, _ctz),
-    '__builtin_clz': _builtin_unary(32, _clz_for(32)),
-    '__builtin_clzl': _builtin_unary(64, _clz_for(64)),
-    '__builtin_clzll': _builtin_unary(64, _clz_for(64)),
-    '__builtin_bswap16': _builtin_unary(16, _bswap_for(16), U32),
-    '__builtin_bswap32': _builtin_unary(32, _bswap_for(32), U32),
-    '__builtin_bswap64': _builtin_unary(64, _bswap_for(64), U64),
     '__builtin_expect': _builtin_expect,
-    # QM emits these; modelling them means QM can read its own output.
-    '_pdep_u64': _builtin_pair(64, lambda v, m: _pdep(v, m)),
-    '_pext_u64': _builtin_pair(64, lambda v, m: _pext(v, m)),
-    'qm_clmul64': _builtin_pair(64, lambda a, b: _clmul(a, b, 64) & mask_of(64)),
     '__builtin_abs': _builtin_abs,
     'abs': _builtin_abs,
     'labs': _builtin_abs,
-    '__builtin_rotateleft32': _builtin_rotate(32, True),
-    '__builtin_rotateleft64': _builtin_rotate(64, True),
-    '__builtin_rotateright32': _builtin_rotate(32, False),
-    '__builtin_rotateright64': _builtin_rotate(64, False),
     '__builtin_min': _builtin_minmax(True),
     '__builtin_max': _builtin_minmax(False),
 }
+
+for _name, _intrinsic in intrinsics.REGISTRY.items():
+    BUILTINS[_name] = _from_registry(_intrinsic)
 
 
 _STMT_DISPATCH = {

@@ -1,0 +1,19 @@
+# Presentation order for the Examples menu. The first entry is what a first
+# visit opens with. Anything not listed follows, alphabetically.
+#
+# Order is a presentation choice and belongs next to the examples; it is not a
+# claim about any result.
+ranks8.c
+inclusive_rank8.c
+byte_mask8.c
+select8.c
+shuffle_control8.c
+run_ids8.c
+quote_state_before8.c
+prefix_parity_mask8.c
+prefix_xor64.c
+changes64.c
+morton_dilate16.c
+morton_compact_even16.c
+ranks16_nibble.c
+block_offsets8.c

@@ -59,7 +59,13 @@
       <button class="link" id="btn-examples" type="button">Examples</button>
     </div>
 
-    <div class="framed editor">
+    <div class="tabs">
+      <div class="tablist" id="tablist" role="tablist"></div>
+      <button class="tab-add" id="btn-newtab" type="button"
+              title="New tab" aria-label="New tab">+</button>
+    </div>
+
+    <div class="framed editor with-tabs">
       <div class="gutter" id="gutter" aria-hidden="true"></div>
       <div class="code-area">
         <pre class="highlight" id="highlight" aria-hidden="true"></pre>

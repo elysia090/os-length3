@@ -37,9 +37,29 @@ def summarize(source):
     return ''
 
 
+def presentation_order():
+    """Filenames in the order examples/order.txt lists them.
+
+    Order is a presentation choice, so it lives beside the examples rather than
+    in the page. Anything unlisted follows alphabetically, which means a new
+    example shows up without anyone having to remember this file.
+    """
+    path = os.path.join(EXAMPLES, 'order.txt')
+    if not os.path.exists(path):
+        return []
+    with open(path) as handle:
+        return [line.strip() for line in handle
+                if line.strip() and not line.startswith('#')]
+
+
 def collect():
+    listed = presentation_order()
+    on_disk = sorted(n for n in os.listdir(EXAMPLES) if n.endswith('.c'))
+    names = [n for n in listed if n in on_disk]
+    names += [n for n in on_disk if n not in names]
+
     out = []
-    for name in sorted(os.listdir(EXAMPLES)):
+    for name in names:
         if not name.endswith('.c'):
             continue
         path = os.path.join(EXAMPLES, name)

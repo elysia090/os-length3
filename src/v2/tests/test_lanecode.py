@@ -140,38 +140,135 @@ class TestIdempotence(unittest.TestCase):
                                  self.signature(second, again))
 
 
-class TestUnparseableHelpersAreSkipped(unittest.TestCase):
+class TestIntrinsics(unittest.TestCase):
+    """Bit kernels are written with intrinsics, so the frontend reads them.
+
+    These are lanecode.h's own definitions, pasted as they are written there.
+    Getting the same answer from the intrinsic form and from the portable form
+    is the whole claim: QM works on what the function means, not on how it is
+    spelled.
+    """
+
+    PRELUDE = '''#include <stdint.h>
+#include <immintrin.h>
+#define LC_ONES 0x0101010101010101ull
+#define LC_LOW7 0x7f7f7f7f7f7f7f7full
+#define LC_HIGH 0x8080808080808080ull
+#define LC_IOTA 0x0706050403020100ull
+'''
+
+    BYTE_MASK = 'static inline uint64_t lc_byte_mask8(uint8_t m)\n' \
+                '{ return _pdep_u64((uint64_t)m, LC_ONES) * 0xFFull; }\n'
+
+    CASES = [
+        ('lc_ranks8',
+         'uint64_t lc_ranks8(uint8_t m)\n'
+         '{ return _pdep_u64((uint64_t)m, LC_ONES) * 0x0101010101010100ull; }',
+         ['PDEP', 'IMUL'], [ONES, '0101010101010100']),
+
+        ('lc_select8',
+         BYTE_MASK
+         + 'uint64_t lc_select8(uint8_t m)\n'
+           '{ return _pext_u64(LC_IOTA, lc_byte_mask8(m)); }',
+         ['PDEP', 'IMUL', 'PEXT_DYN'], [ONES, '00000000000000FF', IOTA]),
+
+        ('lc_shuffle_control8',
+         BYTE_MASK
+         + 'uint64_t lc_shuffle_control8(uint8_t m)\n'
+           '{ return ~_pext_u64(~LC_IOTA, lc_byte_mask8(m)); }',
+         ['PDEP', 'IMUL', 'PEXT_DYN', 'NOT'],
+         [ONES, '00000000000000FF', 'F8F9FAFBFCFDFEFF']),
+
+        # The SSE carry-less multiply idiom, __m128i and all.
+        ('lc_prefix_parity_mask8',
+         'uint64_t lc_prefix_parity_mask8(uint8_t m)\n'
+         '{\n'
+         '    const uint64_t a = _pdep_u64((uint64_t)m, LC_ONES);\n'
+         '    return (uint64_t)_mm_cvtsi128_si64(\n'
+         '        _mm_clmulepi64_si128(_mm_cvtsi64_si128((long long)a),\n'
+         '                             _mm_set1_epi64x(-1), 0));\n'
+         '}',
+         ['PDEP', 'CLMUL'], [ONES, ALL_ONES]),
+
+        ('lc_quote_state_before8',
+         'uint64_t lc_quote_state_before8(uint8_t q)\n'
+         '{\n'
+         '    const uint64_t a = _pdep_u64((uint64_t)q, LC_ONES);\n'
+         '    return (uint64_t)_mm_cvtsi128_si64(\n'
+         '        _mm_clmulepi64_si128(_mm_cvtsi64_si128((long long)a),\n'
+         '            _mm_set_epi64x(0, (long long)0xFFFFFFFFFFFFFF00ull), 0));\n'
+         '}',
+         ['PDEP', 'CLMUL'], [ONES, 'FFFFFFFFFFFFFF00']),
+
+        ('lc_ranks16_nibble',
+         'uint64_t lc_ranks16_nibble(uint16_t m)\n'
+         '{ return _pdep_u64((uint64_t)m, 0x1111111111111111ull)\n'
+         '       * 0x1111111111111110ull; }',
+         ['PDEP', 'IMUL'], ['1111111111111111', '1111111111111110']),
+    ]
+
+    def test_intrinsic_kernels_reach_the_same_form(self):
+        for name, body, instructions, wanted in self.CASES:
+            with self.subTest(kernel=name):
+                result = solve(self.PRELUDE + body, frontend='cfront')
+                self.assertTrue(result['ok'], result.get('error'))
+                target = next(t for t in result['targets']
+                              if t['name'] == result['primary_target'])
+                self.assertEqual(target['instructions'], instructions)
+                self.assertEqual(constants(target), wanted)
+                self.assertTrue(target['verification']['pass'])
+
+    def test_bmi1_andn(self):
+        source = self.PRELUDE + (
+            'uint64_t f(uint8_t x)\n'
+            '{\n'
+            '    uint64_t v = (uint64_t)x * LC_ONES;\n'
+            '    return _andn_u64(((v & LC_LOW7) + LC_LOW7) | v, LC_HIGH);\n'
+            '}')
+        result = solve(source, frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        # Every byte lane of a repeated byte is non-zero unless the byte is,
+        # so this is the zero predicate and the answer is a constant-ish map.
+        self.assertEqual(result['semantics']['input_bits'], 8)
+
+    def test_a_128_bit_parameter_is_refused_rather_than_truncated(self):
+        source = ('#include <immintrin.h>\n'
+                  'unsigned long long f(__m128i x) { return 0; }')
+        result = solve(source, frontend='cfront')
+        self.assertFalse(result['ok'])
+        self.assertIn('128', result['error']['message'])
+
+
+class TestUnsupportedHelpersAreSkipped(unittest.TestCase):
     """A helper outside the subset must not sink the whole paste."""
 
     SOURCE = '''#include <stdint.h>
-#include <immintrin.h>
 
-static inline uint64_t qm_clmul64(uint64_t a, uint64_t b)
+struct pair { uint32_t lo, hi; };
+
+static inline struct pair split(uint64_t v)
 {
-    __m128i r = _mm_clmulepi64_si128(_mm_cvtsi64_si128((long long)a),
-                                     _mm_cvtsi64_si128((long long)b), 0x00);
-    return (uint64_t)_mm_cvtsi128_si64(r);
+    struct pair p = { (uint32_t)v, (uint32_t)(v >> 32) };
+    return p;
 }
 
-uint64_t parity_mask(uint8_t m)
+uint64_t kernel(uint8_t m)
 {
-    uint64_t t = _pdep_u64((uint64_t)m, 0x0101010101010101ull);
-    return qm_clmul64(t, 0xFFFFFFFFFFFFFFFFull);
+    return (uint64_t)__builtin_popcount(m);
 }
 '''
 
     def test_the_kernel_still_analyses(self):
         result = solve(self.SOURCE, frontend='cfront')
         self.assertTrue(result['ok'], result.get('error'))
-        self.assertEqual(result['frontend']['function']['name'], 'parity_mask')
+        self.assertEqual(result['frontend']['function']['name'], 'kernel')
 
     def test_the_skip_is_reported_not_silent(self):
         result = solve(self.SOURCE, frontend='cfront')
         skipped = result['frontend']['skipped_definitions']
-        self.assertTrue(skipped, 'the unparseable helper was not reported')
-        self.assertTrue(any('m128i' in (s['reason'] or '').lower()
-                            or s['name'] == 'qm_clmul64' for s in skipped),
-                        skipped)
+        self.assertTrue(skipped, 'the unsupported helper was not reported')
+        self.assertTrue(any(s['name'] == 'split' or 'struct' in (s['reason'] or '')
+                            for s in skipped), skipped)
 
 
 if __name__ == '__main__':
