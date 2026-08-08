@@ -9,7 +9,6 @@
 // The UI thread stays responsive because all of this happens here.
 
 import { ClangDriver, ClangUnavailable, evaluateWasm, readConfig } from './clang.js';
-import { decodeArtifact, evaluate as runArtifact } from './vm.js';
 
 const PYODIDE_VERSIONS = [
   'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
@@ -112,8 +111,16 @@ function callPython(fn, args) {
 }
 
 async function solve(request) {
-  const { source, options } = request;
+  const options = request.options;
   const optionsJson = JSON.stringify(options || {});
+
+  // A paste may carry a `main` that drives the kernel. The minimizer must not
+  // see it — `main` reads a stream rather than a domain, so minimizing it
+  // would report the driver's function — and Run needs exactly the whole file.
+  // Python splits it, once, so the two halves cannot disagree.
+  const split = JSON.parse(callPython('split', [request.source]));
+  const source = split.kernel;
+  const hasMain = Boolean(split.has_main);
 
   // SPEC §2 has two arrows into QM: C through Clang, and optimized assembly
   // straight in.  Ask which one this paste is before starting a compiler.
@@ -121,6 +128,7 @@ async function solve(request) {
   if (route.kind === 'asm') {
     progress(`reading the ${route.dialect} listing…`);
     post('done', {
+      has_main: hasMain,
       result: JSON.parse(callPython('fallback', [source, optionsJson])),
     });
     return;
@@ -142,6 +150,7 @@ async function solve(request) {
         post('notice', { message: `Clang: ${err.message}` });
         if (err.stderr) post('compile-error', { stderr: err.stderr });
         post('done', {
+          has_main: hasMain,
           result: {
             ok: false,
             stage: 'frontend',
@@ -165,6 +174,7 @@ async function solve(request) {
       toolchain: clang.describe(),
     }));
     post('done', {
+      has_main: hasMain,
       result: JSON.parse(callPython('finish', [source, enriched,
                                                compiled.table, ''])),
     });
@@ -173,7 +183,7 @@ async function solve(request) {
 
   progress('extracting semantics with the built-in frontend…');
   const json = callPython('fallback', [source, optionsJson]);
-  post('done', { result: JSON.parse(json) });
+  post('done', { has_main: hasMain, result: JSON.parse(json) });
 }
 
 // Clang compiles once, to wasm32, and only so the kernel can be *evaluated*
@@ -213,37 +223,54 @@ async function compileWithClang(source, options, optionsJson) {
 }
 
 // ---------------------------------------------------------------------------
-// Run
+// Running the paste's own `main`
 //
-// Python normalizes the minimized program into one rSUBLEQ artifact and this
-// runs it on the compiled machine.  The lowered sequence never crosses the
-// boundary and does not need to: whichever of C, x86-64 or wasm32 came in, the
-// thing that runs is `pack(code(z))`.
+// `-nostdlib`, so the module imports exactly two things: one byte in, one byte
+// out. `qm.browser.prepare_run` supplies the C side of that, so a driver needs
+// no headers and this needs no WASI.
 // ---------------------------------------------------------------------------
 
-async function runMinimized(msg) {
-  const parsed = JSON.parse(callPython('parse_input',
-                                       [String(msg.value || '0')]));
-  if (!parsed.ok) return parsed;
+const EXEC_LIMIT = 1 << 20;     // bytes of stdout before the program is cut off
 
-  const built = JSON.parse(callPython('artifact', [msg.target || '']));
-  if (!built.ok) return built;
-
+async function execMain(msg) {
+  const prepared = callPython('prepare_run', [msg.source || '']);
+  let wasm;
   try {
-    const out = await runArtifact(decodeArtifact(built.artifact),
-                                  parsed.feed, built.out_bytes);
-    return {
-      ok: true,
-      input: parsed.value,
-      input_bits: built.input_bits,
-      output: out.toString(),
-      target: built.target,
-      artifact_bytes: built.bytes,
-    };
+    await clang.load(progress);
+    progress('clang -O2 -> wasm32...');
+    wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
+  } catch (err) {
+    return { ok: false,
+             error: (err && err.stderr) ? err.stderr.split('\n')[0]
+                                        : String((err && err.message) || err) };
+  }
+
+  const stdin = new TextEncoder().encode(msg.stdin == null ? '' : msg.stdin);
+  const out = [];
+  let at = 0;
+  let overflowed = false;
+  try {
+    const { instance } = await WebAssembly.instantiate(wasm, {
+      env: {
+        qm_getchar: () => (at < stdin.length ? stdin[at++] : -1),
+        qm_putchar: (c) => {
+          if (out.length >= EXEC_LIMIT) { overflowed = true; return; }
+          out.push(c & 255);
+        },
+      },
+    });
+    if (typeof instance.exports.main !== 'function') {
+      return { ok: false, error: 'the paste defines no main to run' };
+    }
+    const code = instance.exports.main();
+    const text = new TextDecoder().decode(new Uint8Array(out))
+      + (overflowed ? '\n[output truncated]\n' : '');
+    return { ok: true, stdout: text, code: Number(code) || 0 };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }
 }
+
 
 // ---------------------------------------------------------------------------
 
@@ -254,8 +281,8 @@ self.onmessage = async (event) => {
       await boot(msg.config || readConfig(msg.search));
     } else if (msg.type === 'solve') {
       await solve(msg);
-    } else if (msg.type === 'evaluate') {
-      post('evaluated', { result: await runMinimized(msg) });
+    } else if (msg.type === 'exec') {
+      post('ran', { result: await execMain(msg) });
     } else if (msg.type === 'load-clang') {
       await clang.load(progress);
       post('clang-state', { clang: clang.describe() });

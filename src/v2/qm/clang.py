@@ -57,6 +57,57 @@ MARCH = {
 OPT_LEVELS = ('-O1', '-O2', '-O3')
 
 
+# What a `main` gets instead of a C library. The module is compiled
+# `-nostdlib`, so these are the only two things that cross out of it, and the
+# page supplies them as imports. Everything else a driver usually reaches for
+# is written here in terms of them, so the paste needs no headers and the
+# browser needs no WASI.
+STDIO = r'''
+extern int qm_getchar(void);
+extern void qm_putchar(int c);
+
+static int getchar(void) { return qm_getchar(); }
+static int putchar(int c) { qm_putchar(c); return c; }
+
+static int puts(const char *s)
+{
+    while (*s) qm_putchar(*s++);
+    qm_putchar('\n');
+    return 0;
+}
+
+static void print_u64(uint64_t v)
+{
+    char buf[20];
+    int n = 0;
+    if (!v) { qm_putchar('0'); return; }
+    while (v) { buf[n++] = (char)('0' + (int)(v % 10u)); v /= 10u; }
+    while (n) qm_putchar(buf[--n]);
+}
+
+static void print_hex64(uint64_t v)
+{
+    qm_putchar('0'); qm_putchar('x');
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        int d = (int)((v >> shift) & 15u);
+        qm_putchar(d < 10 ? '0' + d : 'a' + d - 10);
+    }
+}
+'''
+
+
+def prepare_driver(source):
+    """The whole paste as Clang should see it when the point is to *run* it.
+
+    `prepare_source` is for the oracle, which calls one exported function over
+    a domain and never needs stdio. This is for a paste with a `main` in it,
+    which does — and gets two imports and a few helpers written on top of
+    them, rather than a C library that would not fit in the page.
+    """
+    body = _INCLUDE.sub('', source or '')
+    return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+
+
 def prepare_source(source):
     """Strip standard includes and prepend the freestanding prelude.
 
@@ -72,6 +123,130 @@ def prepare_source(source):
     """
     body = _INCLUDE.sub('', source)
     return PRELUDE + '\n' + c_shims_for(body) + body
+
+
+# ---------------------------------------------------------------------------
+# The driver, and the kernel underneath it
+# ---------------------------------------------------------------------------
+
+_MAIN_CALL = re.compile(r'\bmain\s*\(')
+
+
+def _code_mask(source):
+    """A byte per character: 1 where it is code, 0 in a comment or a literal.
+
+    Brace matching that counts a `}` inside a string is a brace matcher that
+    silently takes the wrong half of the file, so the scan happens once here
+    and everything below reads the mask.
+    """
+    mask = bytearray(len(source))
+    i, n = 0, len(source)
+    while i < n:
+        c = source[i]
+        if c == '/' and i + 1 < n and source[i + 1] == '/':
+            while i < n and source[i] != '\n':
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and source[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (source[i] == '*' and source[i + 1] == '/'):
+                i += 1
+            i = min(i + 2, n)
+            continue
+        if c in '"\'':
+            quote = c
+            i += 1
+            while i < n:
+                if source[i] == '\\':
+                    i += 2
+                    continue
+                if source[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        mask[i] = 1
+        i += 1
+    return mask
+
+
+def _match(source, mask, start, opener, closer):
+    """Index just past the `closer` that matches the `opener` at `start`."""
+    depth = 0
+    for i in range(start, len(source)):
+        if not mask[i]:
+            continue
+        if source[i] == opener:
+            depth += 1
+        elif source[i] == closer:
+            depth -= 1
+            if not depth:
+                return i + 1
+    return -1
+
+
+def split_main(source):
+    """`(kernel, main_span)` — the paste without its driver, and where it was.
+
+    A paste may carry a `main` that exercises the kernel. The minimizer must
+    not see it: `main` is a driver, its input is a stream rather than a domain,
+    and analysing it would report the driver's function instead of the
+    kernel's. Running the paste, on the other hand, needs exactly the whole
+    thing. So the split happens once, here, where the browser and the native
+    path share it.
+
+    `main_span` is None when there is no file-scope `main`, and the caller can
+    then say that pressing Run changes nothing.
+    """
+    source = source or ''
+    mask = _code_mask(source)
+    for hit in _MAIN_CALL.finditer(source):
+        at = hit.start()
+        if not mask[at]:
+            continue
+        if _depth_at(source, mask, at):
+            continue                        # a call inside a function body
+        close = _match(source, mask, hit.end() - 1, '(', ')')
+        if close < 0:
+            continue
+        rest = close
+        while rest < len(source) and (not mask[rest] or source[rest].isspace()):
+            rest += 1
+        if rest >= len(source) or source[rest] != '{':
+            continue                        # a declaration, not a definition
+        end = _match(source, mask, rest, '{', '}')
+        if end < 0:
+            continue
+        start = _definition_start(source, mask, at)
+        return source[:start] + source[end:], (start, end)
+    return source, None
+
+
+def _depth_at(source, mask, index):
+    depth = 0
+    for i in range(index):
+        if not mask[i]:
+            continue
+        if source[i] == '{':
+            depth += 1
+        elif source[i] == '}':
+            depth = max(0, depth - 1)
+    return depth
+
+
+def _definition_start(source, mask, at):
+    """Back up over the return type and any storage class before `main`."""
+    i = at
+    while i > 0:
+        c = source[i - 1]
+        if mask[i - 1] and c in ';}':
+            break
+        if c == '\n' and i >= 2 and source[i - 2] == '\n':
+            break
+        i -= 1
+    while i < at and source[i].isspace():
+        i += 1
+    return i
 
 
 # ---------------------------------------------------------------------------

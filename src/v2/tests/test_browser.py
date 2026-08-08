@@ -197,25 +197,45 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.solved('ranks8.c')
         self.assertFalse(json.loads(evaluate('', 'nope'))['ok'])
 
-    def test_the_worker_runs_the_artifact_and_not_the_sequence(self):
+    def test_run_executes_the_pastes_own_main(self):
         """Same lesson as `prepare`: the fix only counts if it is called.
 
-        And the point of the normalization is that the thing which runs is the
-        artifact. A worker that reached back for the lowered sequence would be
-        running a target-specific structure again, which is what this replaced.
+        Run used to evaluate the artifact on one typed-in value. It now runs
+        the paste's `main`, with the terminal beside the source as its stdin
+        and stdout — so the wiring to check is the split, the driver compile
+        and the two imports the module is allowed to have.
         """
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
             worker = handle.read()
-        self.assertIn("msg.type === 'evaluate'", worker)
-        self.assertIn("callPython('artifact'", worker)
-        self.assertIn("callPython('parse_input'", worker)
-        self.assertIn('runArtifact(decodeArtifact(', worker)
-        self.assertIn("from './vm.js'", worker)
+        self.assertIn("msg.type === 'exec'", worker)
+        self.assertIn("callPython('split'", worker)
+        self.assertIn("callPython('prepare_run'", worker)
+        self.assertIn('qm_getchar', worker)
+        self.assertIn('qm_putchar', worker)
+        # Every reply from a solve carries whether there was a `main`; the page
+        # has no second opinion about what the source contains.
+        self.assertEqual(worker.count("has_main: hasMain"),
+                         worker.count("post('done'"))
 
         with open(os.path.join(ROOT, 'web', 'app.js')) as handle:
             app = handle.read()
-        self.assertIn("type: 'evaluate'", app)
-        self.assertIn("msg.type === 'evaluated'", app)
+        self.assertIn("type: 'exec'", app)
+        self.assertIn("msg.type === 'ran'", app)
+        # There is no Compile button and no value box left to reference.
+        self.assertNotIn("btn-optimize", app)
+        self.assertNotIn("run-input", app)
+
+    def test_the_page_compiles_without_being_asked(self):
+        with open(os.path.join(ROOT, 'web', 'app.js')) as handle:
+            app = handle.read()
+        self.assertIn('scheduleCompile', app)
+        self.assertIn("editor.addEventListener('input'", app)
+        with open(os.path.join(ROOT, 'web', 'index.html')) as handle:
+            html = handle.read()
+        self.assertNotIn('id="btn-optimize"', html)
+        self.assertNotIn('id="run-input"', html)
+        self.assertIn('id="term-in"', html)
+        self.assertIn('id="btn-run"', html)
 
 
 class TestCapabilities(unittest.TestCase):

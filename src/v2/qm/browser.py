@@ -59,6 +59,21 @@ def route(source):
     return _dumps({'kind': 'asm' if dialect else 'c', 'dialect': dialect})
 
 
+def split(source):
+    """The paste without its driver, and whether it had one.
+
+    A paste may carry a `main` that exercises the kernel. Two different things
+    want two different halves of it: the minimizer must see the kernel alone —
+    `main` reads a stream, not a domain, and minimizing it would report the
+    driver's function — while running the paste needs the whole file. The page
+    asks once, here, so both halves come from one decision.
+    """
+    from .clang import split_main
+    kernel, span = split_main(source or '')
+    return _dumps({'ok': True, 'has_main': span is not None,
+                   'kernel': kernel})
+
+
 def prepare(source):
     """The paste as Clang should see it — the one place that decides.
 
@@ -70,6 +85,12 @@ def prepare(source):
     """
     from .clang import prepare_source
     return prepare_source(source or '')
+
+
+def prepare_run(source):
+    """The whole paste, stdio included, for the compile that runs `main`."""
+    from .clang import prepare_driver
+    return prepare_driver(source or '')
 
 
 def plan(source, options_json='{}'):
