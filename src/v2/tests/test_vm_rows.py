@@ -145,14 +145,20 @@ class TestHowFarTheLoweringIsFromTheMachine(unittest.TestCase):
     move without the README moving with it is which form beats which.
     """
 
-    def setUp(self):
+    table = None
+
+    @classmethod
+    def setUpClass(cls):
         import os
         import sys
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if here not in sys.path:
             sys.path.insert(0, here)
         from tools import measure_multiply
-        self.table = measure_multiply.measure()
+        # One measurement for the three claims about it: it builds three
+        # programs and runs each on 256 inputs, and doing that per test was
+        # three quarters of this file's time.
+        cls.table = measure_multiply.measure()
 
     def test_the_looped_word_level_form_wins_on_every_coordinate(self):
         """This is the whole claim: the gap is the lowering's, not the machine's.
@@ -299,8 +305,14 @@ class TestTheFalsificationList(unittest.TestCase):
         self.want = [machine.future(self.residual, [b]) for b in self.INPUTS]
         # Three rounds of `acc += t; t += t`, so the answer is 7x.
         self.assertEqual(self.want, [7 * b for b in self.INPUTS])
-        self.assertEqual([physical_future(self.residual, [b])
+        self.assertEqual([physical_future(self.residual, [b], self.BUDGET)
                           for b in self.INPUTS], self.want)
+
+    # The whole answer takes 44 transitions, so anything past a few hundred is
+    # a loop that is not going to end. Waiting out the default million-step
+    # budget four times over cost 11 seconds -- more than every other vm test
+    # put together -- to learn what 300 says.
+    BUDGET = 300
 
     def broken(self, patch, residual=None, inputs=None):
         """Answers with 3.2 partly disabled.
@@ -316,7 +328,7 @@ class TestTheFalsificationList(unittest.TestCase):
             out = []
             for byte in inputs:
                 try:
-                    out.append(physical_future(residual, [byte]))
+                    out.append(physical_future(residual, [byte], self.BUDGET))
                 except machine.Unfinished:
                     out.append(DIVERGED)
             return out
