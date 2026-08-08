@@ -9,6 +9,7 @@
 // The UI thread stays responsive because all of this happens here.
 
 import { ClangDriver, ClangUnavailable, evaluateWasm, readConfig } from './clang.js';
+import { decodeArtifact, evaluateLoaded, load as loadVm } from './vm.js';
 
 const PYODIDE_VERSIONS = [
   'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
@@ -225,9 +226,15 @@ async function compileWithClang(source, options, optionsJson) {
 // ---------------------------------------------------------------------------
 // Running the paste's own `main`
 //
-// `-nostdlib`, so the module imports exactly two things: one byte in, one byte
-// out. `qm.browser.prepare_run` supplies the C side of that, so a driver needs
-// no headers and this needs no WASI.
+//     paste -> QM -> codec -> run
+//
+// The driver is compiled alone: `prepare_run` keeps `main` and drops the
+// kernel's definition, leaving a declaration. So the kernel is an *import*,
+// and what answers it is the artifact — running `main` runs the minimized
+// program rather than Clang's compilation of the paste, which would be
+// testing the compiler.
+//
+// `-nostdlib`, so the other two imports are one byte in and one byte out.
 // ---------------------------------------------------------------------------
 
 const EXEC_LIMIT = 1 << 20;     // bytes of stdout before the program is cut off
@@ -245,27 +252,56 @@ async function execMain(msg) {
                                         : String((err && err.message) || err) };
   }
 
+  // The kernel the driver calls, implemented by the artifact.
+  const plan = JSON.parse(callPython('run_plan', []));
+  const built = plan.ok ? JSON.parse(callPython('artifact', [''])) : null;
+  let artifact = null;
+  if (built && built.ok) {
+    artifact = decodeArtifact(built.artifact);
+    try {
+      await loadVm();
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  }
+
   const stdin = new TextEncoder().encode(msg.stdin == null ? '' : msg.stdin);
   const out = [];
   let at = 0;
   let overflowed = false;
+  let ran = 0;
+  const env = {
+    qm_getchar: () => (at < stdin.length ? stdin[at++] : -1),
+    qm_putchar: (c) => {
+      if (out.length >= EXEC_LIMIT) { overflowed = true; return; }
+      out.push(c & 255);
+    },
+  };
+  if (artifact) {
+    // A wasm import is synchronous, which is why `vm.js` is loaded above and
+    // the call itself does no waiting.
+    const wide = plan.input_bits > 32;
+    env[plan.function] = (x) => {
+      const value = BigInt.asUintN(64, BigInt(x));
+      const feed = [];
+      for (let i = 0; i < plan.in_bytes; i += 1) {
+        feed.push(Number((value >> BigInt(8 * i)) & 255n));
+      }
+      ran += 1;
+      const y = evaluateLoaded(artifact, feed, plan.out_bytes);
+      return plan.output_bits > 32 ? y : Number(BigInt.asUintN(32, y));
+    };
+    void wide;
+  }
   try {
-    const { instance } = await WebAssembly.instantiate(wasm, {
-      env: {
-        qm_getchar: () => (at < stdin.length ? stdin[at++] : -1),
-        qm_putchar: (c) => {
-          if (out.length >= EXEC_LIMIT) { overflowed = true; return; }
-          out.push(c & 255);
-        },
-      },
-    });
+    const { instance } = await WebAssembly.instantiate(wasm, { env });
     if (typeof instance.exports.main !== 'function') {
       return { ok: false, error: 'the paste defines no main to run' };
     }
     const code = instance.exports.main();
     const text = new TextDecoder().decode(new Uint8Array(out))
       + (overflowed ? '\n[output truncated]\n' : '');
-    return { ok: true, stdout: text, code: Number(code) || 0 };
+    return { ok: true, stdout: text, code: Number(code) || 0, ran };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }

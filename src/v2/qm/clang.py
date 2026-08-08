@@ -96,16 +96,40 @@ static void print_hex64(uint64_t v)
 '''
 
 
-def prepare_driver(source):
-    """The whole paste as Clang should see it when the point is to *run* it.
+def prepare_driver(source, signature=None):
+    """Just the driver, with the kernel left as an import.
 
-    `prepare_source` is for the oracle, which calls one exported function over
-    a domain and never needs stdio. This is for a paste with a `main` in it,
-    which does — and gets two imports and a few helpers written on top of
-    them, rather than a C library that would not fit in the page.
+    This is the half that makes Run mean something. Compiling the whole paste
+    would run Clang's compilation of the kernel — the page would be testing the
+    compiler, not the minimizer. So the kernel's *definition* is dropped and
+    only its declaration is kept: `main` calls an undefined symbol, and the
+    page supplies it by running the artifact. What executes is then
+
+        paste -> QM -> codec -> run
+
+    with the driver as the thing that drives it.
+
+    `signature` is the kernel QM took, as `read_signature` returns it. Without
+    one there is nothing to declare and the whole paste is compiled, which is
+    the honest fallback when the minimizer found no kernel to begin with.
     """
-    body = _INCLUDE.sub('', source or '')
-    return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+    source = source or ''
+    _kernel, span = split_main(source)
+    if span is None:
+        body = _INCLUDE.sub('', source)
+        return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+
+    driver = _INCLUDE.sub('', source[span[0]:span[1]])
+    declaration = ''
+    if signature:
+        param = signature['params'][0][1].name
+        declaration = 'extern %s %s(%s);\n' % (
+            signature['ret'].name, signature['name'], param)
+    else:
+        body = _INCLUDE.sub('', source)
+        return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+    return (PRELUDE + '\n' + STDIO + '\n' + declaration + '\n'
+            + c_shims_for(driver) + driver)
 
 
 def prepare_source(source):

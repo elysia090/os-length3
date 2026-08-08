@@ -642,7 +642,13 @@ function showRunResult(result) {
     return;
   }
   if (result.stdout) termWrite(result.stdout);
-  termWrite(`[exit ${result.code}]\n`, 'term-echo');
+  // Say how many of those calls went through the artifact, because that is
+  // the whole claim: what ran was the minimized program, not the paste.
+  const via = result.ran
+    ? ` — ${result.ran.toLocaleString()} call${result.ran === 1 ? '' : 's'}`
+      + ' through the codec'
+    : '';
+  termWrite(`[exit ${result.code}${via}]\n`, 'term-echo');
   status();
 }
 

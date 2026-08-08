@@ -46,7 +46,25 @@ export async function load() {
  * @returns {bigint} the output word
  */
 export async function evaluate(artifact, feedBytes, outBytes) {
-  const E = (await load()).exports;
+  await load();
+  return evaluateLoaded(artifact, feedBytes, outBytes);
+}
+
+/**
+ * The same call, synchronously, once `load()` has been awaited.
+ *
+ * A wasm import cannot be async, and the driver's kernel *is* a wasm import:
+ * `main` calls the kernel, and what answers is this machine running the
+ * artifact. So the module is loaded first and the call itself does no waiting.
+ *
+ * @param {Uint8Array} artifact
+ * @param {number[]} feedBytes  the input, already little-endian
+ * @param {number} outBytes
+ * @returns {bigint} the output word
+ */
+export function evaluateLoaded(artifact, feedBytes, outBytes) {
+  if (!instance) throw new Error('vm.wasm is not loaded yet');
+  const E = instance.exports;
   const memory = new Uint8Array(E.memory.buffer);
   memory.set(artifact, E.vm_buffer());
   if (!E.vm_load(artifact.length)) {
