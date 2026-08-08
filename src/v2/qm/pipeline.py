@@ -95,7 +95,7 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
         'observer': obs.to_dict(),
         'quotients': {'observation': observation, 'future': future},
         'search': {
-            'solvers': [s.__name__ for s in solvers_mod.COMPACT_SOLVERS],
+            'solvers': [s.__name__ for s in solvers_mod.SEARCH_ORDER],
             'programs_found': len(programs),
             'families': sorted(set(p.solver for p in programs)),
         },
