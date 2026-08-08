@@ -54,6 +54,58 @@ the count is exactly 256 rather than 257.
 saying so is what stops `vm` and `qm` from each having a future quotient that
 nothing checks against the other.
 
+## Is the physical normal form actually faster
+
+§3.2 exists to make a transition cheap: §3.1 reads `M[pc]`, `M[pc+1]`,
+`M[pc+2]` and then, *depending on those*, `M[b]` and `M[a]` — two levels of
+pointer chase, serial, every step. §3.3 keeps `old` and `change` already
+dereferenced, so §3.4 is `result = old + change` and, in its own words, "the
+source address has disappeared". The price is the wave, which §3.7 prices at
+`work = Theta(k+1)` but `row_dependency_span = Theta(1)` and
+`fixed_width_time = Theta(ceil(k/W))`.
+
+`wasm/bench.c` runs three engines over the same artifact on the same inputs:
+§3.1 over the shipped hash table, §3.1 over a flat array, and §3.2 over
+resident rows. Measured with host clang -O2:
+
+| artifact | reuse | 3.1 hash | 3.1 dense | 3.2 rows |
+| --- | ---: | ---: | ---: | ---: |
+| `starts8` | 1.00x | 57.8 ns/step | 1.6 | 29.7 |
+| `ranks8` | 1.00x | 79.7 | 2.6 | 35.8 |
+| `ranks16_nibble` | 1.00x | 110.8 | 2.7 | 54.1 |
+| `prefix_xor64` | 1.00x | 117.2 | 3.3 | 80.1 |
+| a loop, rolled | 801x | 6.9 | 1.3 | **4.4** |
+| the same loop, unrolled | 1.00x | 88.6 | 4.0 | **3335.4** |
+
+**Reuse is the whole story, and this lowering has none.** Every row in every
+artifact above is entered exactly once — 1,624 transitions over 1,624 distinct
+coordinates for `ranks8`. A first arrival pays the full dereference inside
+`materialize`, which *is* §3.1's pointer chase, so at reuse 1.00x the resident
+row is §3.1 with an index to maintain on top. There is nothing to amortize,
+and the measurement says so.
+
+Give it a loop and it turns over: at 801x reuse §3.2 beats the shipped
+hash-table engine 1.6x, because the cache is finally being read more than it
+is being built.
+
+The last row is the one worth stopping at. The same 3,000 subtractions,
+unrolled, cost §3.2 **750 times more per step** than rolled — 71 incidences
+per transition against 0.07. Unrolling does not merely fail to help here, it is
+actively adversarial to §3.2: `k` is the number of resident rows reading the
+written cell, and every unrolled copy that mentions a hot cell is one more row
+the next write has to repair. `acc` written 3,000 times with 3,000 rows reading
+it is 4.5 million units of work for 3,000 transitions.
+
+So unrolling now loses on all four coordinates *and* on the wall clock, which
+is the same conclusion `tools/measure_multiply.py` reached from the size side.
+
+Two things the benchmark cannot settle, and neither is a fault in the design.
+It runs the wave serially, so it charges `Theta(k)` time for what §3.7 says
+costs `Theta(k/W)` — the claim is about span, and one thread turns span into
+nothing. And it rebuilds residency per call instead of rolling the wave back,
+where §3.2 says a read keeps rows speculative and a feed commits them; with
+rollback, residency would persist across calls and reuse would rise.
+
 ## Two paths through the residual ABI
 
 §4 releases four operations and nothing else — `open`, `feed`, `feed*`, `read`
