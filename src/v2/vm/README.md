@@ -61,6 +61,43 @@ A wasm module has neither, so:
 The Python reference has none of these limits, which is what makes the
 differential test meaningful rather than circular.
 
+## The artifact is not yet minimal, and by how much
+
+QM's objective is lexicographic `(span, work, L(z), rank)`. The codec target is
+measured on the same scale, and it currently loses on every coordinate — not
+narrowly:
+
+| `ranks8` | span | work | L(z) bits |
+| --- | ---: | ---: | ---: |
+| x86-64 + BMI2 | 2 | 2 | 156 |
+| codec | 2,242 | 2,242 | 108,685 |
+
+Some of that gap is real and permanent: a one-instruction machine cannot do a
+64-bit deposit in two steps, and it never will. But most of it is this
+lowering's fault, in two specific ways, both measured rather than guessed.
+
+**It bit-slices an arithmetic machine.** SUBLEQ's one instruction *is* a 64-bit
+subtract, and this builds 64-bit adders out of single-bit gates on top of it —
+each gate eight to twelve instructions. The `CONV(IMUL)` stage of `ranks8` is
+5,208 of its 6,728 cells for that reason. Written word-level, as the
+shift-and-add the machine can do natively, the same multiply is 623 cells and
+7,345 bits — **twelve times smaller**, and exact on every input tested.
+
+**It is fully unrolled.** In SUBLEQ every instruction depends on the one before
+it through `pc`, so a loop costs nothing in span or work — the chain is the same
+length either way — and it collapses L(z) and rank. The same multiply as a loop
+over its seven rounds is 232 cells and 2,546 bits: **thirty-five times smaller
+than the bit-sliced form**, executing 253 transitions.
+
+The fixed framing shows the same thing from the other end. Byte decode, byte
+encode and the stream dispatch are 1,520 cells whatever the kernel is — for
+`byte_mask8`, whose program is pure rewiring, that framing *is* the entire
+image. Both loops are eight iterations of the same few instructions.
+
+So the order to fix it in is: word-level values with bit-slicing kept only for
+the permutation-shaped operations that actually want it, then loops for the
+framing and for the repeated-stride stages. Neither is done.
+
 ## Building
 
 ```sh

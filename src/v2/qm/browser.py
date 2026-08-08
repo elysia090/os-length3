@@ -181,8 +181,8 @@ def _keep(result):
 
     result.setdefault('targets', []).append({
         'name': CODEC_TARGET,
-        'isa': {'name': CODEC_TARGET, 'title': 'rSUBLEQ codec',
-                'note': 'one instruction; the artifact itself'},
+        'isa': {'name': CODEC_TARGET, 'title': 'codec',
+                'note': 'the artifact itself'},
         'ok': True,
         # An rSUBLEQ program is a chain: every instruction depends on the one
         # before it, so span and work are the same number and saying otherwise
