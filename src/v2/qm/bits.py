@@ -117,6 +117,47 @@ def bswap64(x):
     return int.from_bytes((x & M64).to_bytes(8, 'little'), 'big')
 
 
+def clz(x, bits=64):
+    """Leading zeros of `x` read as a `bits`-wide word; `bits` when it is zero."""
+    return bits - (x & mask_of(bits)).bit_length()
+
+
+def ctz(x, bits=64):
+    """Trailing zeros of `x` read as a `bits`-wide word; `bits` when it is zero."""
+    x &= mask_of(bits)
+    return bits if x == 0 else (x & -x).bit_length() - 1
+
+
+def sar(x, s, bits=64):
+    """Arithmetic shift right: the sign bit is copied down, not zeroed.
+
+    This is the one shift the rest of the package did without, and every
+    comparison rests on it: `sar(a - b, 63)` is the whole of "is a below b"
+    once the difference is known not to have wrapped.
+    """
+    return to_signed(x, bits) >> s & mask_of(bits)
+
+
+def smear(x, bits=64):
+    """Fill every bit below the highest set one — `x | x>>1 | x>>2 | ...`.
+
+    A doubling cascade, so it is six steps and not sixty-three, and it is one
+    step of the grammar rather than six because the cascade is what a reader
+    recognizes: the whole of "round up to a power of two" is `smear(x-1) + 1`.
+    """
+    x &= mask_of(bits)
+    shift = 1
+    while shift < bits:
+        x |= x >> shift
+        shift <<= 1
+    return x
+
+
+def lane_values(x, lane_bits, bits=64):
+    return [(x >> (lane_bits * i)) & mask_of(lane_bits)
+            for i in range(bits // lane_bits)]
+
+
 def shift_signed(x, s, bits=64):
     """Signed shift amount: positive is left, negative is right."""
     if s >= 0:

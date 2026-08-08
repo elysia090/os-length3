@@ -11,8 +11,8 @@ searches them with the same lexicographic objective used everywhere else:
 """
 
 from . import straightline
-from .bits import (M64, bswap64, clmul, lane_masks, mask_of, pdep, pext,
-                    popcnt)
+from .bits import (M64, bswap64, clmul, clz, ctz, lane_masks, mask_of, pdep,
+                    pext, popcnt, sar)
 
 # Description-code widths for the L(z) model.  Toy but consistent, and the same
 # model ranks every candidate, which is what the objective needs.
@@ -27,6 +27,10 @@ _OPCODE = dict((name, index + 1) for index, name in enumerate([
     'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'IMUL', 'CLMUL', 'AND', 'OR',
     'XOR', 'ADD', 'SUB', 'NOT', 'SHL', 'SHR', 'BSWAP', 'POPCNT', 'XORR',
     'ANDR', 'ORR', 'ADDR', 'ANDNR', 'LUT', 'LOOP8', 'SCANXOR',
+    # Appended, never inserted: an existing opcode's number is part of the
+    # canonical rank, so moving one would silently rewrite which of two tied
+    # programs is the answer.
+    'SAR', 'NEG', 'SUBR', 'CLZ', 'CTZ',
 ]))
 
 
@@ -131,10 +135,16 @@ _EXPR = {
     'ANDNR': '~v{a} & v{b}',
     'LOOP8': 'pext({k}, v{a})',
     'SCANXOR': 'v{a} ^ (v{a} << {n})',
+    'SAR': 'sar(v{a}, {n})',
+    'NEG': '-v{a}',
+    'SUBR': 'v{a} - v{b}',
+    'CLZ': 'clz(v{a})',
+    'CTZ': 'ctz(v{a})',
 }
 
 _ENV = {'M': M64, 'pdep': pdep, 'pext': pext, 'clmul': clmul,
-        'popcnt': popcnt, 'bswap64': bswap64}
+        'popcnt': popcnt, 'bswap64': bswap64, 'sar': sar, 'clz': clz,
+        'ctz': ctz}
 
 
 def _expression(ins, tables):
@@ -635,12 +645,112 @@ def _lane_interval_seq(seq, v, bounds, lane_bits):
     return seq.emit('AND', [a], const=high)
 
 
+def _lane_less_seq(seq, x, y, lane_bits):
+    """Per-lane unsigned `x < y`, as that lane's top bit.
+
+    The same arithmetic as the one-sided `_lane_interval_seq` form, with the
+    bound in a register instead of in a constant.  Setting every top bit of `x`
+    before subtracting the low part of `y` is what stops a borrow leaving its
+    lane; what is left is a Boolean function of the three top bits.
+    """
+    _ones, low, high = lane_masks(lane_bits)
+    h = seq.emit('OR', [x], const=high)
+    yl = seq.emit('AND', [y], const=low)
+    z = seq.emit('SUBR', [h, yl])
+    u = seq.emit('XORR', [x, z])
+    e = seq.emit('XORR', [x, y])
+    a = seq.emit('ANDNR', [e, u])
+    a = seq.emit('XORR', [x, a])
+    a = seq.emit('NOT', [a])
+    return seq.emit('AND', [a], const=high), e
+
+
+def _lane_reduce_seq(seq, v, lane_bits, want_max):
+    """Maximum or minimum over the lanes of one word, in the low lane.
+
+    A halving tournament: compare the word against itself shifted down by half
+    the remaining width, keep the winner per lane, repeat.  Nothing here is a
+    branch and nothing is a new primitive — the comparison is the lane
+    arithmetic above, and the winner is chosen by XOR-blending under the mask
+    that comparison produced.
+    """
+    ones, _low, _high = lane_masks(lane_bits)
+    shift = 32
+    while shift >= lane_bits:
+        y = seq.emit('SHR', [v], shift=shift)
+        if want_max:
+            flag, diff = _lane_less_seq(seq, v, y, lane_bits)
+        else:
+            flag, diff = _lane_less_seq(seq, y, v, lane_bits)
+        bit = seq.emit('SHR', [flag], shift=lane_bits - 1)
+        mask = seq.emit('IMUL', [bit], const=mask_of(lane_bits))
+        take = seq.emit('ANDR', [diff, mask])
+        v = seq.emit('XORR', [v, take])
+        shift >>= 1
+    return seq.emit('AND', [v], const=ones & mask_of(lane_bits))
+
+
+def _smear_seq(seq, v, width):
+    """`x | x>>1 | x>>2 | ...`, as the doubling cascade it is."""
+    shift = 1
+    while shift < width:
+        s = seq.emit('SHR', [v], shift=shift)
+        v = seq.emit('ORR', [v, s])
+        shift <<= 1
+    return v
+
+
 def lower_point(op, isa):
     seq = Seq()
     v = 0
     for mnemonic, const, shift in op.detail['steps']:
         if mnemonic == 'LANE_INTERVAL':
             v = _lane_interval_seq(seq, v, const, shift)
+        elif mnemonic == 'NEG':
+            v = seq.emit('NEG', [v])
+        elif mnemonic == 'AND_NEG':
+            n = seq.emit('NEG', [v])
+            v = seq.emit('ANDR', [v, n])
+        elif mnemonic == 'AND_DEC':
+            d = seq.emit('SUB', [v], const=1)
+            v = seq.emit('ANDR', [v, d])
+        elif mnemonic == 'OR_SHR':
+            s = seq.emit('SHR', [v], shift=shift)
+            v = seq.emit('ORR', [v, s])
+        elif mnemonic == 'SAR':
+            v = seq.emit('SAR', [v], shift=shift)
+        elif mnemonic == 'XOR_SAR':
+            width = const or 64
+            if width < 64:
+                # The sign bit of a narrow word is not the register's, so it
+                # is slid up to bit 63 before the arithmetic shift reads it.
+                top = seq.emit('SHL', [v], shift=64 - width)
+                s = seq.emit('SAR', [top], shift=64 - width + shift)
+                v = seq.emit('XORR', [v, s])
+                v = seq.emit('AND', [v], const=mask_of(width))
+            else:
+                s = seq.emit('SAR', [v], shift=shift)
+                v = seq.emit('XORR', [v, s])
+        elif mnemonic == 'KEY':
+            v = _key_seq(seq, v, const)
+        elif mnemonic == 'SMEAR':
+            v = _smear_seq(seq, v, const or 64)
+        elif mnemonic == 'CLZ':
+            width = const or 64
+            if width < 64:
+                v = seq.emit('AND', [v], const=mask_of(width))
+            v = seq.emit('CLZ', [v])
+            if width < 64:
+                v = seq.emit('SUB', [v], const=64 - width)
+        elif mnemonic == 'CTZ':
+            width = const or 64
+            if width < 64:
+                # The count of a zero word is the width, and `x | 2^width` is
+                # how a 64-bit instruction is told what the width was.
+                v = seq.emit('OR', [v], const=1 << width)
+            v = seq.emit('CTZ', [v])
+        elif mnemonic in ('LANE_MAX', 'LANE_MIN'):
+            v = _lane_reduce_seq(seq, v, shift, mnemonic == 'LANE_MAX')
         elif mnemonic == 'ANDN_PREV_SHL':
             shifted = seq.emit('SHL', [v], shift=shift)
             v = seq.emit('ANDNR', [shifted, v])
@@ -664,6 +774,102 @@ def lower_point(op, isa):
     return [('POINT', seq)]
 
 
+def _key_seq(seq, x, key):
+    """The SSA value holding `key(x)`, as a signed 64-bit number."""
+    parts = []
+    for shift, width, signed, coeff in key.terms:
+        v = x
+        if signed:
+            # Slide the field's top bit to bit 63 and come back down
+            # arithmetically: that is sign extension, spelled in two shifts.
+            high = 64 - shift - width
+            if high:
+                v = seq.emit('SHL', [v], shift=high)
+            if 64 - width:
+                v = seq.emit('SAR', [v], shift=64 - width)
+        else:
+            if shift:
+                v = seq.emit('SHR', [v], shift=shift)
+            if width < 64:
+                v = seq.emit('AND', [v], const=mask_of(width))
+        parts.append((coeff, v))
+
+    coeff, total = parts[0]
+    if coeff < 0:
+        total = seq.emit('NEG', [total])
+    for coeff, v in parts[1:]:
+        total = seq.emit('SUBR' if coeff < 0 else 'ADDR', [total, v])
+    return total
+
+
+def lower_split(op, isa):
+    """Every branch, computed, and then blended under the key's comparisons.
+
+    There is no branch instruction here and there is no lookup: each threshold
+    becomes one subtraction whose sign bit *is* the comparison, spread to a
+    mask by an arithmetic shift.  Applying the thresholds in ascending order is
+    what makes the last one that fires the right one, so a k-way split costs
+    k-1 blends rather than k-1 nested selects.
+
+    A branch is an abstract program in its own right, so it is lowered by the
+    same search — and checked against its own meaning, not against the split's,
+    because a branch is only ever asked about the piece it owns.
+    """
+    key = op.detail['key']
+    breaks = op.detail['breaks']
+    branches = op.detail['branches']
+
+    subs = [lower_program(branch, isa, accept=_branch_check(branch))[0]
+            for branch in branches]
+
+    seq = Seq()
+    k = _key_seq(seq, 0, key)
+    result = seq.extend(subs[0], 0)
+    for threshold, sub in zip(breaks, subs[1:]):
+        alternative = seq.extend(sub, 0)
+        d = seq.emit('SUB', [k], const=threshold & M64)
+        below = seq.emit('SAR', [d], shift=63)
+        diff = seq.emit('XORR', [result, alternative])
+        take = seq.emit('ANDNR', [below, diff])
+        result = seq.emit('XORR', [result, take])
+    seq.result = result
+    return [('SPLIT', seq)]
+
+
+# How many inputs a lowered branch is checked on against the branch it lowers.
+# The composed program is verified over the whole declared domain afterwards;
+# this only decides which representative of each branch is tried first.
+BRANCH_PROBES = 192
+
+
+def _branch_check(branch):
+    """`seq -> bool`: does `seq` compute the same function as `branch`?
+
+    A branch is lowered against its own meaning rather than against the split's
+    semantics, because the split never asks a branch about a point outside its
+    piece — and a representative rejected for disagreeing off-piece would be
+    rejected for the wrong reason.
+    """
+    from .bits import xorshift_stream
+    from .program import compile_program
+
+    width = branch.input_bits
+    m = mask_of(width)
+    values = [0, m]
+    values += [1 << i for i in range(width)]
+    values += [(1 << i) - 1 for i in range(1, width)]
+    values += xorshift_stream(0x243F6A8885A308D3, BRANCH_PROBES, width)
+    values = list(dict.fromkeys(values))
+    reference = compile_program(branch)
+    expected = [reference(v) for v in values]
+
+    def check(seq):
+        evaluate = compile_seq(seq)
+        out = mask_of(branch.output_bits)
+        return all(evaluate(v) & out == y for v, y in zip(values, expected))
+    return check
+
+
 def lower_table(op, isa):
     s = Seq()
     s.emit('LUT', [0], const=tuple(op.detail['table']))
@@ -679,6 +885,7 @@ LOWERERS = {
     'CONV': lower_conv,
     'PERM_DYN': lower_perm_dyn,
     'POINT': lower_point,
+    'SPLIT': lower_split,
     'TABLE': lower_table,
     'IDENTITY': lower_identity,
 }
@@ -692,12 +899,16 @@ class LoweringFailure(Exception):
         self.isa = isa
 
 
-def lower_program(program, isa, verify_against=None):
+def lower_program(program, isa, verify_against=None, accept=None):
     """Lower every abstract op, choosing the best representative per op.
 
     `verify_against` is an optional (semantics, observer) pair.  When given, a
     candidate whose composition fails on the domain is discarded instead of
     ranked, which is what keeps IMUL from being offered where carry escapes.
+
+    `accept` is the same gate stated as a predicate on the sequence, for a
+    caller that has no semantics to offer — a SPLIT lowering its own branches
+    holds each one to the branch program it came from.
     """
     chosen = []
     seq = Seq()
@@ -723,11 +934,15 @@ def lower_program(program, isa, verify_against=None):
             used.append((op, name))
         seq.result = current
 
-        if verify_against is None:
+        if verify_against is None and accept is None:
             return seq, used
-        sem, obs = verify_against
-        if agrees(seq, sem, obs):
-            return seq, used
+        if accept is not None:
+            if accept(seq):
+                return seq, used
+        else:
+            sem, obs = verify_against
+            if agrees(seq, sem, obs):
+                return seq, used
 
         # Advance the first op that still has an untried representative.
         for k in range(len(picks)):
@@ -768,6 +983,15 @@ C_FORMS = {
     'ADDR': lambda a, ins: '%s + %s' % (a[0], a[1]),
     'ANDNR': lambda a, ins: '~%s & %s' % (a[0], a[1]),
     'SCANXOR': lambda a, ins: '%s ^ (%s << %d)' % (a[0], a[0], ins.shift),
+    'SAR': lambda a, ins: '(uint64_t)((int64_t)%s >> %d)' % (a[0], ins.shift),
+    'NEG': lambda a, ins: '-%s' % a[0],
+    'SUBR': lambda a, ins: '%s - %s' % (a[0], a[1]),
+    # `clz`/`ctz` of zero is undefined in C and defined here, so the guard is
+    # part of the program rather than a note about it.
+    'CLZ': lambda a, ins: ('%s ? (uint64_t)__builtin_clzll(%s) : 64'
+                           % (a[0], a[0])),
+    'CTZ': lambda a, ins: ('%s ? (uint64_t)__builtin_ctzll(%s) : 64'
+                           % (a[0], a[0])),
     'LOOP8': lambda a, ins: 'qm_gather_loop(0x%016Xull, %s)' % (ins.const, a[0]),
     'LUT': lambda a, ins: 'qm_lut[%s]' % a[0],
 }
@@ -830,7 +1054,8 @@ def emit_c(seq, name, input_ctype='uint8_t', output_ctype='uint64_t'):
 _ASM_POOL = ['%rax', '%rcx', '%rdx', '%rsi', '%r8', '%r9', '%r10']
 _ASM_SCRATCH = '%r11'
 
-_ASM_RR = {'XORR': 'xorq', 'ANDR': 'andq', 'ORR': 'orq', 'ADDR': 'addq'}
+_ASM_RR = {'XORR': 'xorq', 'ANDR': 'andq', 'ORR': 'orq', 'ADDR': 'addq',
+           'SUBR': 'subq'}
 _ASM_RI = {'AND': 'andq', 'OR': 'orq', 'XOR': 'xorq', 'ADD': 'addq',
            'SUB': 'subq'}
 
@@ -856,6 +1081,7 @@ def emit_asm(seq, name, input_bits=None):
     reg = {0: '%rdi'}
     body = []
     uses_xmm = False
+    uses_countbits = False
 
     def load_const(value, target):
         body.append('    movabsq $0x%X, %s' % (value, target))
@@ -909,10 +1135,19 @@ def emit_asm(seq, name, input_bits=None):
             body.append('    movq %s, %s' % (src[0], dst))
             body.append('    notq %s' % dst)
             body.append('    andq %s, %s' % (src[1], dst))
-        elif ins.op in ('SHL', 'SHR'):
+        elif ins.op in ('SHL', 'SHR', 'SAR'):
             body.append('    movq %s, %s' % (src[0], dst))
             body.append('    %s $%d, %s'
-                        % ('shlq' if ins.op == 'SHL' else 'shrq', ins.shift, dst))
+                        % ({'SHL': 'shlq', 'SHR': 'shrq', 'SAR': 'sarq'}[ins.op],
+                           ins.shift, dst))
+        elif ins.op == 'NEG':
+            body.append('    movq %s, %s' % (src[0], dst))
+            body.append('    negq %s' % dst)
+        elif ins.op in ('CLZ', 'CTZ'):
+            uses_countbits = True
+            body.append('    %s %s, %s'
+                        % ('lzcntq' if ins.op == 'CLZ' else 'tzcntq',
+                           src[0], dst))
         elif ins.op == 'BSWAP':
             body.append('    movq %s, %s' % (src[0], dst))
             body.append('    bswapq %s' % dst)
@@ -932,6 +1167,8 @@ def emit_asm(seq, name, input_bits=None):
     header.append('%s:' % name)
     if uses_xmm:
         header.insert(0, '    # requires PCLMUL')
+    if uses_countbits:
+        header.insert(0, '    # requires LZCNT/TZCNT')
     tail = []
     if reg[seq.result] != '%rax':
         tail.append('    movq %s, %%rax' % reg[seq.result])
@@ -951,9 +1188,13 @@ def emit_asm(seq, name, input_bits=None):
 _WASM_BINOP = {
     'IMUL': 'i64.mul', 'AND': 'i64.and', 'OR': 'i64.or', 'XOR': 'i64.xor',
     'ADD': 'i64.add', 'SUB': 'i64.sub', 'SHL': 'i64.shl', 'SHR': 'i64.shr_u',
+    'SAR': 'i64.shr_s',
 }
 _WASM_RR = {'XORR': 'i64.xor', 'ANDR': 'i64.and', 'ORR': 'i64.or',
-            'ADDR': 'i64.add'}
+            'ADDR': 'i64.add', 'SUBR': 'i64.sub'}
+# wasm counts leading and trailing zeros of a zero word as 64, which is the
+# definition this grammar uses, so no guard has to be emitted around them.
+_WASM_UNARY = {'POPCNT': 'i64.popcnt', 'CLZ': 'i64.clz', 'CTZ': 'i64.ctz'}
 
 
 def emit_wasm(seq, name, input_bits=None):
@@ -990,9 +1231,13 @@ def emit_wasm(seq, name, input_bits=None):
             body.append('    i64.xor')
             body.append('    local.get %d' % ins.args[1])
             body.append('    i64.and')
-        elif op == 'POPCNT':
+        elif op in _WASM_UNARY:
             body.append('    local.get %d' % ins.args[0])
-            body.append('    i64.popcnt')
+            body.append('    ' + _WASM_UNARY[op])
+        elif op == 'NEG':
+            body.append('    i64.const 0')
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.sub')
         elif op == 'SCANXOR':
             body.append('    local.get %d' % ins.args[0])
             body.append('    local.get %d' % ins.args[0])

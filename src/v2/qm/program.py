@@ -8,12 +8,99 @@ Layer 2: depends on `bits` only.
 """
 
 from . import straightline
-from .bits import (M64, bswap64, clmul, lane_masks, mask_of, pdep, pext,
-                    popcnt)
+from .bits import (M64, bswap64, clmul, clz, ctz, lane_masks, lane_values,
+                    mask_of, pdep, pext, popcnt, sar, smear, to_signed)
 
 # Semantic classes from SPEC §6, plus TABLE for the always-available
-# finite-domain representative.
-CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'TABLE', 'IDENTITY')
+# finite-domain representative and SPLIT for the piecewise one.
+CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'SPLIT', 'TABLE',
+           'IDENTITY')
+
+
+class Key(object):
+    """An ordered number read off the input, for a SPLIT to compare.
+
+    A key is a signed integer combination of bit-fields:
+
+        key(x) = SUM_i coeff_i * read(x, shift_i, width_i, signed_i)
+
+    That is deliberately narrow.  One term is "the exponent field", "the top
+    byte", "the word itself"; two terms with opposite signs is "a minus b",
+    which is the only thing `isLessOrEqual`, `min` and a conditional subtract
+    ever want.  Anything a key cannot say is something a SPLIT cannot split
+    on, which is what keeps this from becoming a search over all of C.
+
+    The magnitude is bounded so that `key - threshold` cannot wrap a signed
+    64-bit register: that subtraction *is* the comparison in the lowered code,
+    and a key that could wrap would make the sign bit answer a different
+    question.
+    """
+
+    __slots__ = ('terms',)
+
+    LIMIT = 1 << 62
+
+    def __init__(self, terms):
+        self.terms = tuple((int(s), int(w), bool(g), int(c))
+                           for s, w, g, c in terms)
+        if not self.terms:
+            raise ValueError('a key needs at least one term')
+        if self.bound >= self.LIMIT:
+            raise ValueError('key range does not fit a signed comparison')
+
+    @property
+    def bound(self):
+        """An upper bound on |key(x)|."""
+        return sum(1 << width for _shift, width, _signed, _coeff in self.terms)
+
+    def value(self, x):
+        total = 0
+        for shift, width, signed, coeff in self.terms:
+            v = (x >> shift) & mask_of(width)
+            if signed and (v >> (width - 1)) & 1:
+                v -= 1 << width
+            total += coeff * v
+        return total
+
+    def _term_label(self, term):
+        shift, width, signed, coeff = term
+        span = 'x' if shift == 0 and width >= 64 else (
+            'x[%d]' % shift if width == 1 else 'x[%d:%d]' % (shift + width - 1,
+                                                             shift))
+        if signed:
+            span = 's%s' % span
+        return ('-' if coeff < 0 else '+'), span
+
+    @property
+    def label(self):
+        out = ''
+        for index, term in enumerate(self.terms):
+            sign, span = self._term_label(term)
+            if index == 0:
+                out = span if sign == '+' else '-' + span
+            else:
+                out += ' %s %s' % (sign, span)
+        return out
+
+    def to_dict(self):
+        return {
+            'label': self.label,
+            'terms': [{'shift': s, 'width': w, 'signed': g, 'coeff': c}
+                      for s, w, g, c in self.terms],
+        }
+
+    def __eq__(self, other):
+        return isinstance(other, Key) and self.terms == other.terms
+
+    def __hash__(self):
+        return hash(self.terms)
+
+    def __repr__(self):
+        return 'Key(%s)' % self.label
+
+
+def field_key(shift, width, signed=False):
+    return Key([(shift, width, signed, 1)])
 
 
 class Op(object):
@@ -39,7 +126,11 @@ class Op(object):
         d = {'class': self.kind, 'label': self.label}
         detail = {}
         for key, value in self.detail.items():
-            if key in ('basis', 'table'):
+            if key == 'key':
+                detail[key] = value.to_dict()
+            elif key == 'branches':
+                detail[key] = [branch.to_dict() for branch in value]
+            elif key in ('basis', 'table'):
                 detail[key] = ['0x%X' % v for v in value[:8]]
                 if len(value) > 8:
                     detail[key].append('... %d entries' % len(value))
@@ -80,13 +171,40 @@ def perm_dyn_scatter(source):
 
 
 def point(steps, note=''):
-    """Lane-local / locally nonlinear step.
+    """Locally nonlinear step: lane-local, or a reduction of the whole word.
 
     `steps` is a list of concrete primitive tuples (mnemonic, const, shift)
-    because POINT is exactly where carry and comparison are created, and those
-    have no shorter semantic description than the operations themselves.
+    because POINT is exactly where carry, comparison and counting are created,
+    and those have no shorter semantic description than the operations
+    themselves.
+
+    Most steps are lane-local.  The reductions — POPCNT, CLZ, CTZ, LANE_MAX,
+    LANE_MIN — are not: they read the whole word and answer with a number.
+    They live here for the same reason the lane predicates do, which is that
+    they are where the grammar stops being linear.
     """
     return Op('POINT', {'steps': list(steps), 'note': note}, label='POINT')
+
+
+def split(key, breaks, branches, note=''):
+    """Piecewise program: a whole-word key decides which branch computes `y`.
+
+    `key` is a `Key` — a named, bounded way of reading an ordered number off
+    the input — and `breaks` is an ascending list of thresholds on it, so
+    branch `i` computes the answer for `breaks[i-1] <= key < breaks[i]`.
+
+    This is where comparison *between* parts of a word enters the grammar.  A
+    lane predicate answers "is this byte in range" for eight bytes at once; a
+    SPLIT answers "which of these programs is this word's" once, and that is
+    the difference between `lt_spread8` and `isLessOrEqual`.
+
+    Nothing here is a branch in the emitted code.  `isa.lower_split` computes
+    every branch and blends them under a mask derived from the key, which is
+    why a SPLIT still has a span and a work count rather than a mispredict.
+    """
+    label = 'SPLIT(%s, %d ways)' % (key.label, len(branches))
+    return Op('SPLIT', {'key': key, 'breaks': list(breaks),
+                        'branches': list(branches), 'note': note}, label=label)
 
 
 def table(values, input_bits, output_bits):
@@ -238,6 +356,36 @@ def _eval_point(steps, value):
             v = (v ^ (v << shift)) & M64
         elif mnemonic == 'POPCNT':
             v = popcnt(v)
+        elif mnemonic == 'NEG':
+            v = (-v) & M64
+        elif mnemonic == 'AND_NEG':
+            v = v & ((-v) & M64)
+        elif mnemonic == 'AND_DEC':
+            v = v & ((v - 1) & M64)
+        elif mnemonic == 'OR_SHR':
+            v |= v >> shift
+        elif mnemonic == 'SAR':
+            v = sar(v, shift)
+        elif mnemonic == 'XOR_SAR':
+            # `x ^ (x >> w-1)` arithmetic: the two's-complement fold that makes
+            # a negative number's magnitude readable by the same code as a
+            # positive one's.  One step, because the two halves are useless
+            # apart, and `const` carries the width because a word narrower than
+            # the register has its sign bit somewhere else.
+            width = const or 64
+            v = (v ^ (to_signed(v & mask_of(width), width) >> shift)) \
+                & mask_of(width)
+        elif mnemonic == 'KEY':
+            v = const.value(v) & M64
+        elif mnemonic == 'SMEAR':
+            v = smear(v, const or 64)
+        elif mnemonic == 'CLZ':
+            v = clz(v, const or 64)
+        elif mnemonic == 'CTZ':
+            v = ctz(v, const or 64)
+        elif mnemonic in ('LANE_MAX', 'LANE_MIN'):
+            values = lane_values(v, shift)
+            v = max(values) if mnemonic == 'LANE_MAX' else min(values)
         elif mnemonic == 'LANE_INTERVAL':
             v = _lane_interval(v, const, shift)
         else:
@@ -289,11 +437,39 @@ def _op_expression(op, index, data):
         name = 'steps%d' % index
         data[name] = op.detail['steps']
         return 'point(%s, %s)' % (name, source)
+    if kind == 'SPLIT':
+        name = 'split%d' % index
+        data[name] = _split_evaluator(op)
+        return '%s(%s)' % (name, source)
     if kind == 'TABLE':
         name = 'table%d' % index
         data[name] = op.detail['table']
         return '%s[%s & %d]' % (name, source, mask_of(op.detail['input_bits']))
     raise ValueError('cannot evaluate %r' % kind)
+
+
+def _split_evaluator(op):
+    """`x -> branch_i(x)` for the piece `x`'s key falls in.
+
+    The branches are compiled once each, and the piece is found by walking the
+    thresholds, because there are at most a handful of them.  This is the
+    reference: `isa.lower_split` computes every branch and blends, and the two
+    are held to each other by verification rather than assumed equal.
+    """
+    key = op.detail['key']
+    breaks = op.detail['breaks']
+    branches = [compile_program(branch) for branch in op.detail['branches']]
+    key_value = key.value
+
+    def evaluate(x):
+        k = key_value(x)
+        index = 0
+        for threshold in breaks:
+            if k < threshold:
+                break
+            index += 1
+        return branches[index](x)
+    return evaluate
 
 
 def _build(program):
