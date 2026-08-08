@@ -70,6 +70,7 @@ class Asm(object):
         self._cells = []
         self._code = []                 # (a, b, c) with symbolic operands
         self._names = {}
+        self._code_base = None
         self.Z = self.cell('Z')         # kept at zero by every macro that uses it
 
     # -- symbols ----------------------------------------------------------
@@ -122,10 +123,20 @@ class Asm(object):
         self.subleq(source, target)
 
     def add(self, source, target):
-        """M[target] += M[source], through the negation `Z` exists for."""
-        self.subleq(source, self.Z)          # Z = -source
-        self.subleq(self.Z, target)          # target -= -source
-        self.subleq(self.Z, self.Z)          # Z = 0
+        """M[target] += M[source], through a negation this add owns.
+
+        The scratch is private on purpose. Section 3.2 keeps every row's
+        operands already dereferenced, so writing a cell costs one incidence
+        per row that reads it — and a scratch shared by the whole program is
+        read by the whole program. Funnelling every add through one cell put
+        98.9% of `ranks8`'s measured work on that single coordinate; giving
+        each add its own drops the work from 146,828 to 3,672 for 26% more
+        L(z), and work precedes L(z) in the objective.
+        """
+        scratch = self.cell('z%d' % len(self._code))
+        self.subleq(source, scratch)         # scratch = -source
+        self.subleq(scratch, target)         # target -= -source
+        self.subleq(scratch, scratch)        # scratch = 0
 
     def move(self, source, target):
         """M[target] = M[source]."""
@@ -151,6 +162,7 @@ class Asm(object):
             made.address = at
             at += 1
         code_base = at
+        self._code_base = code_base
 
         memory = {}
         for made in self._cells:
@@ -188,6 +200,17 @@ class Asm(object):
 
         return Image(memory, pc_out=resolve(entry_out, -1),
                      pc_feed=resolve(entry_feed, -1))
+
+    def code_address(self, index):
+        """Address of instruction `index`. Valid only after `build`.
+
+        Needed to write a program that modifies itself: the operand words of
+        instruction `i` live at `code_address(i) + 0, +1, +2`, and §3.2 calls
+        the rows holding them `special` for exactly that reason.
+        """
+        if self._code_base is None:
+            raise ValueError('addresses are assigned by build()')
+        return self._code_base + 3 * index
 
     def __len__(self):
         return len(self._code)

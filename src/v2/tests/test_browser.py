@@ -163,11 +163,16 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
                      None)
         self.assertIsNotNone(codec, 'the codec is not in the target list')
         self.assertTrue(codec['ok'])
-        self.assertEqual(codec['instructions'], ['SUBLEQ'])
-        # It is a chain, so span and work are the same number; claiming
-        # otherwise would invent parallelism the machine does not have.
-        self.assertEqual(codec['span'], codec['work'])
-        self.assertIn('subleq', codec['asm'])
+        self.assertEqual(codec['instructions'], ['ROW'])
+        # §3.7's quantities, not the instruction count: span is one per
+        # transition and work is that plus the incidences each write repairs,
+        # so work exceeds span exactly when some write had rows reading it.
+        self.assertGreater(codec['work'], codec['span'])
+        self.assertGreater(codec['quiet'], 0)
+        # The view is the codeword first and the decode after it.
+        self.assertIn('pack(code(z))', codec['asm'])
+        self.assertLess(codec['asm'].index('00000000  '),
+                        codec['asm'].index('subleq'))
         self.assertIn('qm-input-bits: 8', codec['asm'])
         self.assertEqual(codec['L_bytes'],
                          json.loads(artifact())['bytes'])

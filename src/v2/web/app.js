@@ -171,6 +171,16 @@ function renderListing(text, functionName) {
         + `<span class="tok-dir">${escapeHtml(trimmed)}</span></span>`);
       continue;
     }
+    // The codec view is a hex dump of the artifact: an offset and its bytes.
+    // The offset belongs in the address column, because unlike a listing's
+    // index it is a real one — these are the bytes of the file.
+    const dump = trimmed.match(/^([0-9a-f]{8})\s\s((?:[0-9a-f]{2} ?)+)$/);
+    if (dump) {
+      rows.push(`<span class="row">`
+        + `<span class="addr wide">${dump[1]}</span>`
+        + `<span class="ops">${dump[2]}</span></span>`);
+      continue;
+    }
     const match = trimmed.match(/^([A-Za-z_][\w.]*)\s*(.*)$/);
     if (!match) continue;
     index += 1;
@@ -438,7 +448,12 @@ function takeawayText() {
     return { text: target.c || '', kind: 'c', name: 'kernel_qm.c' };
   }
   // A wasm target hands back wasm text, so the file it downloads as has to be
-  // a .wat — an assembler would reject it under any other name.
+  // a .wat — an assembler would reject it under any other name.  The codec
+  // view is not a language at all: it is the artifact's bytes, written out,
+  // and calling it a .s would be claiming an assembler could read it.
+  if (target.name === 'codec') {
+    return { text: target.asm, kind: 'asm', name: 'kernel_qm.codec.txt' };
+  }
   const wat = target.asm_dialect === 'wasm32';
   return { text: target.asm, kind: 'asm',
            name: wat ? 'kernel_qm.wat' : 'kernel_qm.s' };
