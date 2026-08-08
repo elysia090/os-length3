@@ -9,4 +9,4 @@ search; keeping it that way is what stops a proof object from becoming an
 implicit runtime primitive.
 """
 
-from . import codec, image, vm            # noqa: F401
+from . import codec, image, machine            # noqa: F401

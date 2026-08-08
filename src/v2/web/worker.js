@@ -9,6 +9,7 @@
 // The UI thread stays responsive because all of this happens here.
 
 import { ClangDriver, ClangUnavailable, evaluateWasm, readConfig } from './clang.js';
+import { decodeArtifact, evaluate as runArtifact } from './vm.js';
 
 const PYODIDE_VERSIONS = [
   'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
@@ -217,6 +218,39 @@ async function compileWithClang(source, options, optionsJson) {
 }
 
 // ---------------------------------------------------------------------------
+// Run
+//
+// Python normalizes the minimized program into one rSUBLEQ artifact and this
+// runs it on the compiled machine.  The lowered sequence never crosses the
+// boundary and does not need to: whichever of C, x86-64 or wasm32 came in, the
+// thing that runs is `pack(code(z))`.
+// ---------------------------------------------------------------------------
+
+async function runMinimized(msg) {
+  const parsed = JSON.parse(callPython('parse_input',
+                                       [String(msg.value || '0')]));
+  if (!parsed.ok) return parsed;
+
+  const built = JSON.parse(callPython('artifact', [msg.target || '']));
+  if (!built.ok) return built;
+
+  try {
+    const out = await runArtifact(decodeArtifact(built.artifact),
+                                  parsed.feed, built.out_bytes);
+    return {
+      ok: true,
+      input: parsed.value,
+      input_bits: built.input_bits,
+      output: out.toString(),
+      target: built.target,
+      artifact_bytes: built.bytes,
+    };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 
 self.onmessage = async (event) => {
   const msg = event.data || {};
@@ -226,12 +260,7 @@ self.onmessage = async (event) => {
     } else if (msg.type === 'solve') {
       await solve(msg);
     } else if (msg.type === 'evaluate') {
-      // The lowered sequence never crosses this boundary, so running the
-      // minimized program has to happen on the side that still holds it.
-      post('evaluated', {
-        result: JSON.parse(callPython('evaluate', [msg.target || '',
-                                                   String(msg.value || '0')])),
-      });
+      post('evaluated', { result: await runMinimized(msg) });
     } else if (msg.type === 'load-clang') {
       await clang.load(progress);
       post('clang-state', { clang: clang.describe() });

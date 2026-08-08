@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Compile `pinf.c` to a freestanding wasm32 module.
+"""Compile `vm.c` to a freestanding wasm32 module.
 
-    python3 pinf/wasm/build.py [--out path] [--check]
+    python3 vm/wasm/build.py [--out path] [--check]
 
 The module is built, not committed: a checked-in binary is a claim nobody can
 read, and the C is 300 lines that any clang can turn into the same thing. The
@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SOURCE = os.path.join(HERE, 'pinf.c')
+SOURCE = os.path.join(HERE, 'vm.c')
 
 # -O2 for the same reason the browser compiles the paste at -O2: this is the
 # execution substrate a search runs on, and its constant factor is the search's
@@ -40,7 +40,7 @@ def build(out_path, binary='clang'):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--out', default=os.path.join(HERE, 'pinf.wasm'))
+    parser.add_argument('--out', default=os.path.join(HERE, 'vm.wasm'))
     parser.add_argument('--check', action='store_true',
                         help='compile to a scratch file and discard it')
     args = parser.parse_args()
@@ -66,7 +66,7 @@ def main():
     size = os.path.getsize(out)
     if args.check:
         os.unlink(out)
-        print('pinf.c compiles clean (%d bytes)' % size)
+        print('vm.c compiles clean (%d bytes)' % size)
     else:
         print('wrote %s (%d bytes)' % (out, size))
     return 0

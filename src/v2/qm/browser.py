@@ -145,30 +145,68 @@ def _keep(result):
         _LAST.update((t['name'], t) for t in result.get('targets') or []
                      if t.get('ok') and t.get('seq') is not None)
         _LAST['*input_bits'] = result['frontend']['input_bits']
+        _LAST['*output_bits'] = result['frontend']['output_bits']
         _LAST['*primary'] = result.get('primary_target')
     return result
 
 
-def evaluate(target_name='', value='0'):
-    """Run the minimized program on one input, in the worker that built it.
-
-    The page shows a program and until now could not try it: `seq` is stripped
-    at the boundary and the wasm listing is text, not a module. Answering here
-    costs one lowered-sequence call and needs no compiler.
-
-    In and out are decimal strings for the reason the domain is: a 64-bit value
-    does not survive a JSON number.
-    """
-    from .bits import mask_of
+def _selected(target_name):
+    """The lowered target to normalize, or an error payload."""
     target = _LAST.get(target_name or _LAST.get('*primary'))
-    if target is None:
-        if '*primary' not in _LAST:
-            return _dumps({'ok': False,
-                           'error': 'no minimized program has been built yet'})
-        return _dumps({'ok': False,
-                       'error': '%s has no lowered program to run'
-                                % (target_name or 'this target')})
+    if target is not None:
+        return target, None
+    if '*primary' not in _LAST:
+        return None, {'ok': False,
+                      'error': 'no minimized program has been built yet'}
+    return None, {'ok': False,
+                  'error': '%s has no lowered program to run'
+                           % (target_name or 'this target')}
 
+
+def artifact(target_name=''):
+    """The minimized program as one rSUBLEQ artifact.
+
+    This is the normalization the whole thing turns on. C, an x86-64 listing
+    and a wasm32 listing all arrive at the same lowered sequence, and this
+    turns that into `pack(code(z))` over a canonical signed image — one program
+    in the sense the codec means, whichever of the three came in.
+
+    Running is then running *that*: `open`, `feed`, `read`, and no interpreter
+    for a target-specific structure. Base64 because the artifact is bytes and
+    JSON has no way to say so.
+    """
+    import base64
+    from vm.run import artifact_for
+
+    target, problem = _selected(target_name)
+    if problem:
+        return _dumps(problem)
+
+    input_bits, output_bits = _LAST['*input_bits'], _LAST['*output_bits']
+    key = (target['name'], input_bits, output_bits)
+    if _LAST.get('*artifact_key') != key:
+        _LAST['*artifact'] = artifact_for(target['seq'], input_bits, output_bits)
+        _LAST['*artifact_key'] = key
+    blob = _LAST['*artifact']
+
+    return _dumps({
+        'ok': True,
+        'target': target['name'],
+        'artifact': base64.b64encode(blob).decode('ascii'),
+        'bytes': len(blob),
+        'input_bits': input_bits,
+        'output_bits': output_bits,
+        'in_bytes': -(-input_bits // 8),
+        'out_bytes': -(-output_bits // 8),
+    })
+
+
+def parse_input(value='0'):
+    """One input value, or why it is not one. Decimal or 0x, and it must fit."""
+    from .bits import mask_of
+    if '*input_bits' not in _LAST:
+        return _dumps({'ok': False,
+                       'error': 'no minimized program has been built yet'})
     input_bits = _LAST['*input_bits']
     try:
         x = int(str(value).strip() or '0', 0)
@@ -177,11 +215,39 @@ def evaluate(target_name='', value='0'):
     if not 0 <= x <= mask_of(input_bits):
         return _dumps({'ok': False,
                        'error': 'input does not fit %d bits' % input_bits})
+    # Little-endian, which is the order `lower_seq` frames the stream in.
+    return _dumps({'ok': True, 'value': str(x), 'input_bits': input_bits,
+                   'feed': [(x >> (8 * k)) & 0xFF
+                            for k in range(-(-input_bits // 8))]})
 
-    from . import isa as isa_mod
-    return _dumps({'ok': True, 'input': str(x), 'input_bits': input_bits,
-                   'output': str(isa_mod.run(target['seq'], x)),
-                   'target': target['name']})
+
+def evaluate(target_name='', value='0'):
+    """Run the minimized program on one input, through the artifact.
+
+    The reference path: normalize, then `open`/`feed`/`read` on the Python
+    machine. `web/vm.js` does the same thing on the compiled one, and
+    `tests/test_vm_qm.py` requires the two to agree.
+    """
+    import base64
+    from vm.run import evaluate as run_artifact
+
+    parsed = json.loads(parse_input(value))
+    if not parsed['ok']:
+        return _dumps(parsed)
+    built = json.loads(artifact(target_name))
+    if not built['ok']:
+        return _dumps(built)
+
+    blob = base64.b64decode(built['artifact'])
+    out = run_artifact(blob, int(parsed['value']),
+                       built['input_bits'], built['output_bits'])
+    if out is None:
+        return _dumps({'ok': False,
+                       'error': 'the artifact gave no byte for this input'})
+    return _dumps({'ok': True, 'input': parsed['value'],
+                   'input_bits': built['input_bits'],
+                   'output': str(out), 'target': built['target'],
+                   'artifact_bytes': built['bytes']})
 
 
 def finish(source, options_json='{}', table=None, assembly=''):

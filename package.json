@@ -12,6 +12,7 @@
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
+    "wabt": "^1.0.39",
     "wrangler": "^4"
   }
 }
