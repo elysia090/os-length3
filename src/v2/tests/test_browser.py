@@ -235,7 +235,12 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertNotIn('id="btn-optimize"', html)
         self.assertNotIn('id="run-input"', html)
         self.assertIn('id="term-in"', html)
+        # Run sits in the source card's heading, where Examples used to be,
+        # and Examples folds into the control that makes a tab.
         self.assertIn('id="btn-run"', html)
+        self.assertNotIn('id="btn-examples"', html)
+        head = html.split('id="card-write"')[1].split('</div>')[0]
+        self.assertIn('id="btn-run"', head)
 
 
 class TestCapabilities(unittest.TestCase):

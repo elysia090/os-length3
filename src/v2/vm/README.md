@@ -7,9 +7,10 @@ memory image, one transactional rSUBLEQ instruction *and its direct physical
 form*. Nothing here is a search, a proof, or a learner.
 
 ```text
-codec -> image -> machine -> rows     the specification's dependency order
-                     |
-                    seed              the subset's initial object
+codec -> image -> machine -> rows -> residual   the dependency order
+                     |                           3.1 what a transition means
+                    seed                         3.2 what it is, 3.7 its cost
+                                                 4   the released ABI
                      |         |      3.1 what a transition means
                      |         |      3.2 what it is, 3.7 what it costs
                      v
@@ -52,6 +53,45 @@ the count is exactly 256 rather than 257.
 `read` directly. The subset's two operations are a `delta` and an `out`, and
 saying so is what stops `vm` and `qm` from each having a future quotient that
 nothing checks against the other.
+
+## Two paths through the residual ABI
+
+§4 releases four operations and nothing else — `open`, `feed`, `feed*`, `read`
+— and there are two ways to implement them.
+
+`machine.py` is the **open-state** path: open once, then feed and read a
+residual that is never serialized again. It is the fast one and the one a
+caller uses.
+
+`residual.py` is the **code-level** path. A residual has a code, and that code
+is a program in exactly the sense §1 measures:
+
+```
+emit(code(z))    = read(open(pack(code(z))))
+next(code(z), a) = code(res(z, a))                     (4.7)
+[[res(z, a)]](h) = [[z]]([a] || h)                     (4.6)
+```
+
+Both are required, and §4's falsification list names "make code-level
+residualization disagree with the open-state path" as a failure — which no
+suite with only one path can check. The port had one path.
+`tests/test_vm_residual.py` now runs both and requires them to agree, byte by
+byte, on the echo machine and on a compiled kernel.
+
+Two things it settled. The dead residual's code-level name is the **empty**
+payload, not `serialize(DEAD)`: the empty image parses fine and is a *live*
+residual that diverges — a machine entered at zero over empty memory subtracts
+zero from zero and branches to zero forever — and divergence is not the dead
+residual. And residualizing a multi-byte history from the wrong end still
+answers correctly on the echo machine for one byte, which is why §4 calls it a
+conformance failure rather than trusting it to show up.
+
+It also makes one thing measurable that was not: `res` is a *residualizer*, and
+§1 ranks residuals by `L` and `rank`. Feeding a byte to this lowering makes the
+program **longer** — 31,573 to 31,677 bits for `starts8` — because `feed` only
+stores the byte and folds nothing through the computation. There is a test
+saying so, to be inverted rather than deleted when the lowering learns to
+specialize.
 
 ## Why it exists here
 
