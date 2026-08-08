@@ -373,7 +373,11 @@ input:disabled { opacity: .45; }
 .compile {
   margin-top: 16px;
   display: flex; align-items: center; justify-content: center; gap: 9px;
-  width: 100%; padding: 13px 16px;
+  width: 100%;
+  /* The extra 12px on the right sits the label a hair left of the geometric
+     centre.  With the triangle beside it that is where it reads as centred;
+     dead centre reads right-of-centre on a phone. */
+  padding: 13px 28px 13px 16px;
   border: 0; border-radius: var(--radius);
   background: var(--accent); color: #fff;
   font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer;
