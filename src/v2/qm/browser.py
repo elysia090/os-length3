@@ -5,6 +5,7 @@ module exposes a few JSON-in / JSON-out functions and keeps every decision on
 the Python side:
 
     route(source)             is this C, or is it already a listing?
+    prepare(source)           the source as Clang should see it
     plan(source, options)     what to compile, and which inputs to evaluate
     finish(source, options)   the full result, given the evaluated table
 
@@ -58,6 +59,19 @@ def route(source):
     from . import asmfront
     dialect = asmfront.detect(source or '')
     return _dumps({'kind': 'asm' if dialect else 'c', 'dialect': dialect})
+
+
+def prepare(source):
+    """The paste as Clang should see it — the one place that decides.
+
+    The browser used to hand its raw text straight to clang.wasm, which meant
+    the freestanding prelude and the intrinsic definitions in `clang.py` were
+    applied on the native path and nowhere else.  `#include <immintrin.h>`
+    then reached a wasm32 compile, where it declares nothing, and QM's own
+    emitted `_pdep_u64` came back as an undeclared function.
+    """
+    from .clang import prepare_source
+    return prepare_source(source or '')
 
 
 def plan(source, options_json='{}'):

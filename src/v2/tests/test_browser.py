@@ -8,9 +8,12 @@ does not, so a break here is a break in the browser.
 
 import json
 import os
+import re
+import subprocess
+import tempfile
 import unittest
 
-from qm.browser import capabilities, fallback, finish, plan
+from qm.browser import capabilities, fallback, finish, plan, prepare
 from qm.clang import NATIVE, read_signature
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -25,6 +28,69 @@ uint64_t ranks8(uint8_t m)
     return r;
 }
 '''
+
+
+class TestPreparedSource(unittest.TestCase):
+    """What Clang is handed, and who decides it.
+
+    The worker used to pass its raw text straight to clang.wasm, so the
+    freestanding prelude and the intrinsic definitions in `clang.py` applied on
+    the native path and nowhere else. `#include <immintrin.h>` reached a wasm32
+    compile — where it declares nothing — and QM's own emitted `_pdep_u64` came
+    back as an undeclared function. The Python was right the whole time; the
+    wiring was not, which is why this checks both.
+    """
+
+    EMITTED = '''#include <stdint.h>
+#include <immintrin.h>
+
+uint64_t ranks8_qm(uint8_t x)
+{
+    uint64_t t1 = _pdep_u64((uint64_t)x, 0x0101010101010101ull);
+    uint64_t t2 = t1 * 0x0101010101010100ull;
+    return (uint64_t)t2;
+}
+'''
+
+    def test_includes_go_and_the_intrinsic_arrives(self):
+        prepared = prepare(self.EMITTED)
+        self.assertNotIn('#include', prepared)
+        self.assertIn('uint64_t;', prepared)          # the freestanding prelude
+        self.assertIn('_pdep_u64(unsigned long long', prepared)
+        self.assertNotIn('_pext_u64(unsigned', prepared)   # only what is used
+
+    def test_a_paste_that_brings_its_own_keeps_it(self):
+        own = ('unsigned long long _pdep_u64(unsigned long long v,'
+               ' unsigned long long m) { return v & m; }\n'
+               'unsigned long long f(unsigned char x)'
+               ' { return _pdep_u64(x, 3ull); }\n')
+        self.assertEqual(prepare(own).count('_pdep_u64(unsigned long long v'), 1)
+
+    @unittest.skipUnless(NATIVE.available(), 'no native Clang')
+    def test_it_compiles_where_the_browser_compiles(self):
+        prepared = prepare(self.EMITTED)
+        for machine in ('wasm32', 'x86_64-unknown-linux-gnu'):
+            with self.subTest(target=machine):
+                with tempfile.TemporaryDirectory() as tmp:
+                    src = os.path.join(tmp, 'in.c')
+                    with open(src, 'w') as handle:
+                        handle.write(prepared)
+                    built = subprocess.run(
+                        [NATIVE.binary, '--target=%s' % machine, '-std=gnu11',
+                         '-ffreestanding', '-O2', '-nostdlib', '-c', src,
+                         '-o', os.path.join(tmp, 'out.o')],
+                        capture_output=True, text=True)
+                    self.assertEqual(built.returncode, 0, built.stderr)
+
+    def test_the_worker_compiles_the_prepared_text(self):
+        """The bug was here, not in Python: the worker never called it."""
+        with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
+            worker = handle.read()
+        self.assertIn("callPython('prepare'", worker)
+        for call in re.findall(r'clang\.(?:assembly|wasm)\(\s*(\w+)', worker):
+            self.assertEqual(call, 'prepared',
+                             'clang is being handed %r rather than the '
+                             'prepared source' % call)
 
 
 class TestCapabilities(unittest.TestCase):

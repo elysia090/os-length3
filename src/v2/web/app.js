@@ -253,11 +253,17 @@ function renderTabs() {
     <div class="tab${tab.id === state.activeId ? ' is-active' : ''}${
       tab.dirty ? ' is-dirty' : ''}" data-id="${tab.id}" role="tab">
       <span class="name">${escapeHtml(tab.name)}</span>
+      <span class="dot" aria-hidden="true"></span>
       ${state.tabs.length > 1
         ? `<button class="close" data-close="${tab.id}" title="Close"
                    aria-label="Close ${escapeHtml(tab.name)}">&times;</button>`
         : ''}
     </div>`).join('');
+
+  // The strip scrolls, so a tab selected from the far end would otherwise sit
+  // half outside it.
+  const active = list.querySelector('.tab.is-active');
+  if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
   list.querySelectorAll('.tab').forEach((el) => {
     el.addEventListener('click', (event) => {
