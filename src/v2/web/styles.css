@@ -262,7 +262,14 @@ input:disabled { opacity: .45; }
 .tab.is-active {
   background: var(--chrome); color: var(--ink); border-color: var(--edge);
 }
-.tab .name { overflow: hidden; text-overflow: ellipsis; }
+.tab .name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* Unsaved marker, outside `.name`: inside it the ellipsis ate the dot on
+   exactly the tabs whose names are long enough to need one. */
+.tab .dot {
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent-hi); visibility: hidden;
+}
+.tab.is-dirty .dot { visibility: visible; }
 .tab .close {
   display: inline-grid; place-items: center;
   width: 16px; height: 16px; flex: 0 0 auto;
@@ -271,15 +278,14 @@ input:disabled { opacity: .45; }
   opacity: .55;
 }
 .tab .close:hover { background: var(--edge); opacity: 1; }
-.tab.is-dirty .name::after { content: " •"; color: var(--accent-hi); }
 
 .tab-add {
   flex: 0 0 auto;
-  width: 30px; border: 1px dashed var(--edge); border-radius: 7px;
+  width: 30px; border: 0; border-radius: 7px;
   background: none; color: var(--muted);
   font: 16px/1 var(--sans); cursor: pointer;
 }
-.tab-add:hover { color: var(--ink); border-color: var(--accent); background: var(--frame); }
+.tab-add:hover { color: var(--ink); background: var(--frame); }
 
 /* ---------------------------------------------------------------- editor */
 

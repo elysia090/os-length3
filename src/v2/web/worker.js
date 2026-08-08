@@ -189,16 +189,23 @@ async function compileWithClang(source, options, optionsJson) {
     throw err;
   }
 
+  // What Clang actually compiles: includes stripped, the freestanding prelude
+  // and the intrinsics the paste uses put in.  Python decides this so the
+  // browser and the native path cannot disagree about it — handing the raw
+  // text over is what made QM's own `_pdep_u64` output fail to compile.
+  const prepared = callPython('prepare', [source]);
+
   await clang.load(progress);
 
-  const listing = await clang.assembly(source, {
+  const listing = await clang.assembly(prepared, {
     opt: options.opt || '-O2',
     target: options.source_target || 'x86-64',
   }, progress);
   progress(`clang ${options.opt || '-O2'} → ${listing.isa} listing…`);
 
   progress('clang -O2 → wasm32…');
-  const wasm = await clang.wasm(source, { opt: options.opt || '-O2' }, progress);
+  const wasm = await clang.wasm(prepared, { opt: options.opt || '-O2' },
+                                progress);
 
   progress(`executing ${plan.values.length.toLocaleString()} inputs…`);
   const table = await evaluateWasm(
