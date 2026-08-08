@@ -13,8 +13,8 @@ import subprocess
 import tempfile
 import unittest
 
-from qm.browser import (capabilities, evaluate, fallback, finish, plan,
-                        prepare)
+from qm.browser import (artifact, capabilities, evaluate, fallback, finish,
+                        plan, prepare)
 from qm.clang import NATIVE, read_signature
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -136,26 +136,57 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertFalse(out['ok'])
         self.assertIn('8 bits', out['error'])
 
-    def test_a_named_target_runs_that_target(self):
-        self.solved('ranks8.c')
-        for name in ('x86-64-bmi2-pclmul', 'x86-64'):
-            with self.subTest(target=name):
-                out = json.loads(evaluate(name, '5'))
-                # Different machines, same function: that is the whole claim
-                # the target list makes.
-                self.assertTrue(out['ok'], out.get('error'))
-                self.assertEqual(out['target'], name)
-                self.assertEqual(int(out['output']),
-                                 int(json.loads(evaluate('', '5'))['output']))
+    def test_the_target_being_viewed_does_not_change_the_answer(self):
+        """One artifact per solve, not one per target.
 
-    def test_a_target_that_did_not_lower_says_so(self):
-        # Distinct from "nothing built yet": the UI disables Run for such a
-        # target, and if it ever stops doing that the message should still be
-        # about the target rather than about the session.
+        The artifact comes from the abstract program, so which machine you
+        happen to be looking at cannot change what Run executes. When it was
+        built from a target's lowered sequence, "the program" depended on a
+        view of it — which is the thing a single source of truth rules out.
+        """
         self.solved('ranks8.c')
-        out = json.loads(evaluate('no-such-target', '5'))
-        self.assertFalse(out['ok'])
-        self.assertIn('no lowered program', out['error'])
+        answers = [json.loads(evaluate(name, '5'))
+                   for name in ('', 'codec', 'x86-64-bmi2-pclmul', 'x86-64',
+                                'wasm32', 'no-such-target')]
+        for out in answers:
+            self.assertTrue(out['ok'], out.get('error'))
+            self.assertEqual(out['target'], 'codec')
+        self.assertEqual({out['output'] for out in answers},
+                         {answers[0]['output']})
+        self.assertEqual({out['artifact_bytes'] for out in answers},
+                         {answers[0]['artifact_bytes']})
+
+    def test_the_codec_is_one_of_the_targets_you_can_look_at(self):
+        from tests.support import read_example
+        result = json.loads(fallback(read_example('ranks8.c'), '{}'))
+        codec = next((t for t in result['targets'] if t['name'] == 'codec'),
+                     None)
+        self.assertIsNotNone(codec, 'the codec is not in the target list')
+        self.assertTrue(codec['ok'])
+        self.assertEqual(codec['instructions'], ['SUBLEQ'])
+        # It is a chain, so span and work are the same number; claiming
+        # otherwise would invent parallelism the machine does not have.
+        self.assertEqual(codec['span'], codec['work'])
+        self.assertIn('subleq', codec['asm'])
+        self.assertIn('qm-input-bits: 8', codec['asm'])
+        self.assertEqual(codec['L_bytes'],
+                         json.loads(artifact())['bytes'])
+
+    def test_a_program_with_no_artifact_says_so(self):
+        # A TABLE program has no bit-sliced form yet, and the honest answer is
+        # which instruction stopped it rather than a blank Run.
+        self.solved('ranks8.c')
+        from qm import browser
+        saved = dict(browser._LAST)
+        try:
+            browser._LAST.pop('*artifact')
+            browser._LAST['*artifact_error'] = 'no bit-sliced form for TABLE'
+            out = json.loads(evaluate('', '5'))
+            self.assertFalse(out['ok'])
+            self.assertIn('TABLE', out['error'])
+        finally:
+            browser._LAST.clear()
+            browser._LAST.update(saved)
 
     def test_nonsense_is_an_error_not_an_exception(self):
         self.solved('ranks8.c')

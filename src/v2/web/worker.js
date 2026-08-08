@@ -161,19 +161,13 @@ async function solve(request) {
       output_bits: compiled.plan.output_bits,
       signature: compiled.plan.signature,
       other_functions: compiled.plan.other_functions,
-      compile: {
-        opt: options.opt || '-O2',
-        listing_isa: compiled.listing.isa,
-        toolchain: clang.describe().title,
-      },
+      compile: { opt: ORACLE_OPT, toolchain: clang.describe().title },
       toolchain: clang.describe(),
     }));
-    const json = callPython('finish', [
-      source, enriched, compiled.table, compiled.assembly,
-    ]);
-    const result = JSON.parse(json);
-    result.compiled = { assembly: compiled.assembly, plan: compiled.plan };
-    post('done', { result });
+    post('done', {
+      result: JSON.parse(callPython('finish', [source, enriched,
+                                               compiled.table, ''])),
+    });
     return;
   }
 
@@ -181,6 +175,14 @@ async function solve(request) {
   const json = callPython('fallback', [source, optionsJson]);
   post('done', { result: JSON.parse(json) });
 }
+
+// Clang compiles once, to wasm32, and only so the kernel can be *evaluated*
+// over its domain.  There was a second compile producing an x86 listing for a
+// pane to show, with a target and an optimization level to choose; the pane is
+// gone and so is the choice.  The oracle's level is fixed because nothing
+// downstream depends on it: what QM analyses is the table, and -O3 and -O1
+// compute the same function.
+const ORACLE_OPT = '-O2';
 
 async function compileWithClang(source, options, optionsJson) {
   progress('reading the function signature…');
@@ -199,22 +201,15 @@ async function compileWithClang(source, options, optionsJson) {
 
   await clang.load(progress);
 
-  const listing = await clang.assembly(prepared, {
-    opt: options.opt || '-O2',
-    target: options.source_target || 'x86-64',
-  }, progress);
-  progress(`clang ${options.opt || '-O2'} → ${listing.isa} listing…`);
-
-  progress('clang -O2 → wasm32…');
-  const wasm = await clang.wasm(prepared, { opt: options.opt || '-O2' },
-                                progress);
+  progress(`clang ${ORACLE_OPT} → wasm32…`);
+  const wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
 
   progress(`executing ${plan.values.length.toLocaleString()} inputs…`);
   const table = await evaluateWasm(
     wasm, plan.function, plan.values, plan.output_bits, plan.input_bits,
   );
 
-  return { plan, assembly: listing.text, listing, table };
+  return { plan, table };
 }
 
 // ---------------------------------------------------------------------------
