@@ -44,8 +44,6 @@ def capabilities():
             {'spec': 'nonzero', 'label': 'Observe zero/nonzero'},
             {'spec': 'mask:0xFF00FF00FF00FF00', 'label': 'Custom bit mask'},
         ],
-        'opt_levels': ['-O1', '-O2', '-O3'],
-        'source_targets': ['x86-64', 'x86-64-v2', 'x86-64-v3', 'x86-64-v4'],
     })
 
 
@@ -139,59 +137,104 @@ def plan(source, options_json='{}'):
 _LAST = {}
 
 
+CODEC_TARGET = 'codec'
+
+# Above this the C view is replaced by a note; see where it is used.
+C_RENDER_LIMIT = 20000
+
+
 def _keep(result):
+    """Remember the solve, and add the codec to the targets it can be seen as.
+
+    The artifact comes from the *abstract* program, not from any target's
+    lowered sequence. That is what makes it a single source of truth rather
+    than a fourth listing: it is a property of the solve, and the same one
+    whichever machine you are looking at.
+    """
     _LAST.clear()
-    if result.get('ok'):
-        _LAST.update((t['name'], t) for t in result.get('targets') or []
-                     if t.get('ok') and t.get('seq') is not None)
-        _LAST['*input_bits'] = result['frontend']['input_bits']
-        _LAST['*output_bits'] = result['frontend']['output_bits']
-        _LAST['*primary'] = result.get('primary_target')
+    if not result.get('ok') or not result.get('program_object'):
+        return result
+
+    _LAST['*input_bits'] = result['frontend']['input_bits']
+    _LAST['*output_bits'] = result['frontend']['output_bits']
+    _LAST['*primary'] = result.get('primary_target')
+
+    from vm import codec as vm_codec, emit, image as vm_image, lower
+
+    input_bits, output_bits = _LAST['*input_bits'], _LAST['*output_bits']
+    try:
+        picture = lower.lower_program(result['program_object'],
+                                      input_bits, output_bits)
+    except lower.Unsupported as exc:
+        _LAST['*artifact_error'] = str(exc)
+        return result
+
+    payload = vm_image.serialize(picture)
+    blob = vm_codec.pack(vm_codec.code(payload))
+    _LAST['*artifact'] = blob
+    _LAST['*image'] = picture
+
+    name = (result['frontend'].get('function') or {}).get('name') or 'kernel'
+    primary = next((t for t in result.get('targets') or []
+                    if t['name'] == result.get('primary_target')), None)
+    steps = sum(1 for at in picture.memory if at >= 0) // 3
+
+    result.setdefault('targets', []).append({
+        'name': CODEC_TARGET,
+        'isa': {'name': CODEC_TARGET, 'title': 'rSUBLEQ codec',
+                'note': 'one instruction; the artifact itself'},
+        'ok': True,
+        # An rSUBLEQ program is a chain: every instruction depends on the one
+        # before it, so span and work are the same number and saying otherwise
+        # would invent parallelism the machine does not have.
+        'span': steps,
+        'work': steps,
+        'core_ops': (result.get('program') or {}).get('core_ops'),
+        'instructions': ['SUBLEQ'],
+        'L_bits': vm_codec.length(payload),
+        'L_bytes': len(blob),
+        'cells': len(picture.memory),
+        'asm': emit.emit_listing(picture, name, input_bits, output_bits),
+        # The C rendering of a big image is a file of the same order as the
+        # image, and it crosses the worker boundary as one string.  Past this
+        # it is offered rather than sent; the listing above is the artifact
+        # either way.
+        'c': (emit.emit_c(picture, '%s_qm' % name, input_bits, output_bits)
+              if len(picture.memory) <= C_RENDER_LIMIT else
+              '/* %d cells: too large to render as C here.\n'
+              '   The listing beside it is the same program. */\n'
+              % len(picture.memory)),
+        'verification': primary.get('verification') if primary else None,
+        'observer': primary.get('observer') if primary else None,
+        'representatives': [('artifact', 'pack(code(z))')],
+    })
     return result
 
 
-def _selected(target_name):
-    """The lowered target to normalize, or an error payload."""
-    target = _LAST.get(target_name or _LAST.get('*primary'))
-    if target is not None:
-        return target, None
-    if '*primary' not in _LAST:
-        return None, {'ok': False,
-                      'error': 'no minimized program has been built yet'}
-    return None, {'ok': False,
-                  'error': '%s has no lowered program to run'
-                           % (target_name or 'this target')}
-
-
-def artifact(target_name=''):
+def artifact(_target_name=''):
     """The minimized program as one rSUBLEQ artifact.
 
-    This is the normalization the whole thing turns on. C, an x86-64 listing
-    and a wasm32 listing all arrive at the same lowered sequence, and this
-    turns that into `pack(code(z))` over a canonical signed image — one program
-    in the sense the codec means, whichever of the three came in.
+    There is one, not one per target: `_keep` builds it from the abstract
+    program the solve produced. The argument is accepted and ignored so a
+    caller that names the target it is looking at still gets the program.
 
-    Running is then running *that*: `open`, `feed`, `read`, and no interpreter
-    for a target-specific structure. Base64 because the artifact is bytes and
-    JSON has no way to say so.
+    Base64 because the artifact is bytes and JSON has no way to say so.
     """
     import base64
-    from vm.run import artifact_for
 
-    target, problem = _selected(target_name)
-    if problem:
-        return _dumps(problem)
+    if '*artifact' not in _LAST:
+        if '*artifact_error' in _LAST:
+            return _dumps({'ok': False,
+                           'error': 'this program has no artifact: %s'
+                                    % _LAST['*artifact_error']})
+        return _dumps({'ok': False,
+                       'error': 'no minimized program has been built yet'})
 
-    input_bits, output_bits = _LAST['*input_bits'], _LAST['*output_bits']
-    key = (target['name'], input_bits, output_bits)
-    if _LAST.get('*artifact_key') != key:
-        _LAST['*artifact'] = artifact_for(target['seq'], input_bits, output_bits)
-        _LAST['*artifact_key'] = key
     blob = _LAST['*artifact']
-
+    input_bits, output_bits = _LAST['*input_bits'], _LAST['*output_bits']
     return _dumps({
         'ok': True,
-        'target': target['name'],
+        'target': CODEC_TARGET,
         'artifact': base64.b64encode(blob).decode('ascii'),
         'bytes': len(blob),
         'input_bits': input_bits,

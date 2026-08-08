@@ -4,15 +4,17 @@
 > observable meaning actually requires.
 
 v2 is the interactive product from [`SPEC.md`](../v1/SPEC.md): open a URL, paste
-C, press **Optimize**, copy the assembly. Two panes, no prose. Compilation,
-solving and verification all happen on your machine — there is no account, no
-upload and no server component.
+C, press **Compile**, copy the program. Compilation, solving and verification
+all happen on your machine — there is no account, no upload and no server
+component.
 
-Three cards: what you paste, what the compiler made of it, and what QM made of
-that — ready to copy. Tabs hold one kernel each, with their own source and their
-own last result. The language is read off the paste rather than picked from a
-menu, and the controls that only apply to compiling C step back when it is a
-listing.
+Two cards: what you paste, and what QM made of it — ready to copy, ready to run.
+Tabs hold one kernel each, with their own source and their own last result. The
+language is read off the paste rather than picked from a menu.
+
+The minimized program is viewable as any of the machines it lowers to, or as the
+codec: one canonical rSUBLEQ artifact, which is what **Run** executes and what
+`vm/` can render back out as C, x86-64 or wasm32.
 
 Intrinsics are read, not just emitted. `_pdep_u64`, `_pext_u64`, the BMI1 set,
 `_tzcnt`/`_lzcnt`/`_bzhi`, byte swaps and rotates, and the SSE carry-less
@@ -81,10 +83,10 @@ uint64_t ranks8(uint8_t m)
 ```
 
 ```
-Clang -O2                 77 x86-64 instructions
 Quotient Minimizer        2 core operations       PDEP ; IMUL
 Residual freedom          502 solutions
 Verification              exact exhaustive, 256 / 256
+Artifact                  13,586 bytes            pack(code(z))
 ```
 
 The same semantic program lowers differently per target, which is the point of
@@ -95,6 +97,12 @@ keeping semantic classes separate from mnemonics:
 | x86-64 + BMI2 | 2 | `PDEP IMUL` |
 | x86-64 baseline | 5 | `IMUL AND BSWAP SHR IMUL` |
 | portable scalar | 5 | `IMUL AND BSWAP SHR IMUL` |
+| rSUBLEQ codec | 2,242 | `SUBLEQ` |
+
+The last row is the artifact: one instruction, and the thing Run executes. It
+comes from the *abstract* program, so it does not depend on which of the rows
+above you are looking at — they are views of one solve, and `vm/emit.py` renders
+the artifact itself back out as C, x86-64 or wasm32. See `vm/README.md`.
 
 ---
 
@@ -102,11 +110,15 @@ keeping semantic classes separate from mnemonics:
 
 Two things run in the page, and the split is deliberate.
 
-**Clang/WASM compiles and executes.** The paste is compiled twice with the same
-`-O2`: once to `wasm32`, which is instantiated and called over the whole input
-domain, and once to x86-64 assembly, which is what the UI shows and counts.
-Executing compiled code is why a 16-bit kernel (65,536 inputs) is extracted in
-milliseconds rather than in a minute.
+**Clang/WASM compiles and executes.** The paste is compiled once, to `wasm32`,
+which is instantiated and called over the whole input domain. That is the only
+thing the compiler is for. Executing compiled code is why a 16-bit kernel
+(65,536 inputs) is extracted in milliseconds rather than in a minute.
+
+There used to be a second compile producing an x86-64 listing for a pane to
+show, with a target and an optimization level to choose. The pane is gone and so
+are both controls: they changed what was displayed, never what the kernel
+computes, and the minimized program is what this page is about.
 
 **Python decides everything else.** Quotients, synthesis, lowering, ranking and
 verification run under Pyodide, because that is where the engine lives and where
@@ -173,6 +185,14 @@ the engine modules the worker fetches at runtime, so `qm/`, `web/` and
 ## Layout
 
 ```
+vm/               the rSUBLEQ machine the minimized program normalizes onto
+  codec.py        one complete self-delimiting code, one rank
+  image.py        one canonical finite-support signed memory
+  machine.py      one transactional instruction
+  lower.py        abstract program -> canonical image (bit-sliced)
+  emit.py         canonical image -> C, x86-64, wasm32
+  wasm/vm.c       the same machine, freestanding, ~6 KB of wasm32
+
 qm/
   bits.py         PDEP/PEXT/CLMUL and the byte-lane constants
   observer.py     §3   obs : Output -> Observable

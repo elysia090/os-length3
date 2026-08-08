@@ -156,6 +156,18 @@ class Program(object):
     def classes(self):
         return [op.kind for op in self.ops]
 
+    # A program is data; the compiled function hanging off it is a cache, and
+    # a cache does not travel.  Saying so is what lets a result be handed
+    # between processes — the same reason `isa.Seq` says it.
+    def __getstate__(self):
+        return (self.ops, self.residual_freedom, self.candidates, self.solver,
+                self.notes, self.input_bits, self.output_bits)
+
+    def __setstate__(self, state):
+        (self.ops, self.residual_freedom, self.candidates, self.solver,
+         self.notes, self.input_bits, self.output_bits) = state
+        self._steps = None
+
     @property
     def core_ops(self):
         return len(self.ops)

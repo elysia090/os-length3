@@ -17,7 +17,7 @@ from .image import Image
 
 # The three targets share one interpreter shape, so a change to the machine is
 # a change in one place per language and nowhere else.
-LANGUAGES = ('c', 'wat', 'x86')
+LANGUAGES = ('listing', 'c', 'wat', 'x86')
 
 
 def _extent(picture):
@@ -31,6 +31,58 @@ def _pairs(picture):
 
 def _framing(input_bits, output_bits):
     return -(-input_bits // 8), -(-output_bits // 8)
+
+
+# ---------------------------------------------------------------------------
+# The image itself
+# ---------------------------------------------------------------------------
+
+def emit_listing(picture, name='kernel', input_bits=8, output_bits=64):
+    """The image as an rSUBLEQ listing: one line per instruction.
+
+    This is not a rendering *of* the program, it is the program. Every cell the
+    image holds appears once — the instruction stream in place, and the data
+    cells that are not on it named as data — so the listing and the artifact
+    are the same object written two ways.
+    """
+    memory = picture.memory
+    entries = {picture.pc_out: 'read', picture.pc_feed: 'feed'}
+
+    # Walk the instruction stream from the two entry points; anything not
+    # reached that way is data, and is listed as such rather than guessed at.
+    code = set()
+    top = max(memory) if memory else 0
+    for start in (picture.pc_out, picture.pc_feed):
+        at = start
+        while at <= top:
+            code.update((at, at + 1, at + 2))
+            at += 3
+
+    lines = [
+        ';; %s — %d live cells, read at %d, feed at %d.' % (
+            name, len(memory), picture.pc_out, picture.pc_feed),
+        ';; M[b] -= M[a]; branch to c when M[b] <= 0.'
+        '  c = -1 EMIT, -2 COMMIT.',
+        ';; qm-input-bits: %d' % input_bits,
+        ';; qm-output-bits: %d' % output_bits,
+        '',
+    ]
+
+    at = 0
+    while at <= top:
+        if at in code and at % 3 == picture.pc_out % 3:
+            a, b, c = (memory.get(at, 0), memory.get(at + 1, 0),
+                       memory.get(at + 2, 0))
+            label = ('  ; %s' % entries[at]) if at in entries else ''
+            target = {-1: 'EMIT', -2: 'COMMIT'}.get(c, str(c))
+            lines.append('%6d:  subleq %d, %d, %s%s' % (at, a, b, target, label))
+            at += 3
+            continue
+        if at in memory:
+            lines.append('%6d:  .quad %d' % (at, memory[at]))
+        at += 1
+
+    return '\n'.join(lines) + '\n'
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +599,8 @@ def emit_x86(picture, name='kernel', input_bits=8, output_bits=64):
     }
 
 
-EMITTERS = {'c': emit_c, 'wat': emit_wat, 'x86': emit_x86}
+EMITTERS = {'listing': emit_listing, 'c': emit_c,
+            'wat': emit_wat, 'x86': emit_x86}
 
 
 def emit(picture, language, name='kernel', input_bits=8, output_bits=64):

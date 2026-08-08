@@ -1,4 +1,10 @@
-// Three cards: write C, read what the compiler made, copy what QM made of it.
+// Two cards: paste a kernel, take the minimized program.
+//
+// There used to be a middle one showing what Clang made of the paste, with its
+// own target and optimization controls. It was a second compile whose only job
+// was display, and the minimized program is now the single thing this page is
+// about — the artifact, viewable as any of the machines it lowers to, or as
+// the codec itself.
 //
 // Nothing explains itself at you. Each card carries one line of numbers under
 // its title, and the Derivation link in the footer opens everything else for
@@ -56,10 +62,6 @@ Object.defineProperty(state, 'result', {
   set(value) { const tab = activeTab(); if (tab) tab.result = value; },
 });
 
-Object.defineProperty(state, 'clangAssembly', {
-  get() { const tab = activeTab(); return tab ? (tab.clangAssembly || '') : ''; },
-  set(value) { const tab = activeTab(); if (tab) tab.clangAssembly = value; },
-});
 
 // ---------------------------------------------------------------------------
 // Highlighting
@@ -124,12 +126,25 @@ function highlightAsm(code) {
 // A listing is rendered as index / mnemonic / operands, the way a disassembler
 // shows it.  The left column counts instructions rather than bytes: nothing
 // here has been assembled, and a column of byte offsets would be invented.
+// A program can be long — the codec view of a dynamic gather is tens of
+// thousands of instructions — and one DOM row each would hang the page. Past
+// this many rows the rest is elided *on screen only*: Copy still hands over
+// every line, because the whole thing is the program.
+const MAX_ROWS = 3000;
+
 function renderListing(text, functionName) {
   if (!text) return '<span class="hint">nothing here yet</span>';
 
   const rows = [];
   let index = 0;
-  for (const raw of sliceFunction(text, functionName).split('\n')) {
+  const lines = sliceFunction(text, functionName).split('\n');
+  for (const raw of lines) {
+    if (rows.length >= MAX_ROWS) {
+      rows.push(`<span class="row"><span class="addr"></span>`
+        + `<span class="hint">… ${(lines.length - rows.length).toLocaleString()}`
+        + ` more lines. Copy takes all of them.</span></span>`);
+      break;
+    }
     const line = raw.replace(/\t/g, '    ');
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -197,7 +212,6 @@ function newTab(name, source) {
     source: source || '',
     result: null,
     ranWith: null,
-    clangAssembly: '',
     dirty: false,
   };
 }
@@ -325,19 +339,14 @@ function closeTab(id) {
 function restoreCards() {
   const result = state.result;
   if (!result || !result.ok) {
-    $('clang-listing').innerHTML =
-      '<span class="hint">Press <b>Compile</b>.</span>';
     $('qm-listing').innerHTML =
       '<span class="hint">The minimized program appears here.</span>';
-    $('compiled-sub').textContent = '— instructions';
     $('qm-sub').textContent = '— instructions';
     $('sel-isa-view').innerHTML = '';
-    renderCompiledHeading();
     renderRunControls();
     return;
   }
   fillTargets(result);
-  renderCompiled(result);
   renderTakeaway();
   renderRunControls();
 }
@@ -387,15 +396,6 @@ function syncSource(options) {
   $('gutter').textContent =
     Array.from({ length: shown }, (_, i) => i + 1).join('\n');
   $('line-count').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'}`;
-
-  // A pasted listing is not compiled, so the two controls that say how to
-  // compile it have nothing to act on.  Leaving them live invites the reading
-  // that they changed something.
-  const compiles = language !== 'x86-64' && language !== 'wasm32';
-  for (const id of ['ctl-target', 'ctl-opt']) {
-    $(id).classList.toggle('off', !compiles);
-    $(id).querySelector('select').disabled = !compiles;
-  }
 
   const tab = activeTab();
   if (tab) {
@@ -448,54 +448,8 @@ function takeawayText() {
 // made of is how the page knows the listing on screen is no longer the one the
 // controls describe.
 function optionsSignature() {
-  return [$('sel-opt').value, $('sel-target').value, $('sel-compiler').value,
-          $('sel-observer').value, $('inp-mask').value].join('|');
-}
-
-function renderCompiledHeading() {
-  // The heading follows the selector rather than the last run, so choosing -O3
-  // is visible immediately; when that no longer matches what is on screen the
-  // sub-line below says so, rather than the heading quietly lying.  Nothing
-  // was compiled for a pasted listing, and the built-in frontend has no
-  // optimization level at all — neither gets an -O it did not use.
-  const result = state.result;
-  const kind = result && result.ok ? result.frontend.frontend.kind : 'compiler';
-  $('compiled-opt').textContent =
-    kind === 'assembly' ? '(as pasted)'
-      : kind === 'interpreter' ? ''
-        : `(${$('sel-opt').value})`;
-}
-
-function renderCompiled(result) {
-  const front = result.frontend;
-  const stats = front.assembly_stats || {};
-  const compile = front.compile || {};
-  const isa = stats.isa || compile.listing_isa || compile.dialect;
-  // Nothing was compiled when the paste was already a listing; stamping "-O2"
-  // on somebody else's assembly would be inventing a provenance for it.
-  const pasted = front.frontend.kind === 'assembly';
-
-  renderCompiledHeading();
-
-  const count = stats.available ? stats.instructions
-                                : (front.reference_ops || {}).mean;
-  const facts = [count == null ? '— instructions' : `${count} instructions`];
-  const tab = activeTab();
-  // Naming the knob that moved would be guesswork — several of them change
-  // what a run produces — so this says only that the two no longer agree.
-  if (!pasted && tab && tab.ranWith && tab.ranWith !== optionsSignature()) {
-    facts.push('press Compile to update');
-  }
-  $('compiled-sub').innerHTML = facts
-    .map((fact) => `<span>${escapeHtml(fact)}</span>`).join(' ');
-  $('compiled-isa').textContent = isa || front.frontend.kind;
-  const engine = front.frontend.title || '';
-  $('compiled-engine').textContent = engine;
-  $('compiled-engine').title = engine;
-  const listing = pasted ? (front.assembly || '') : state.clangAssembly;
-  $('clang-listing').innerHTML = listing
-    ? renderListing(listing, pasted ? null : front.function.name)
-    : '<span class="hint">this frontend produced no listing</span>';
+  return [$('sel-compiler').value, $('sel-observer').value,
+          $('inp-mask').value].join('|');
 }
 
 function renderTakeaway() {
@@ -556,17 +510,13 @@ function currentOptions() {
   const observer = $('sel-observer').value === 'mask:custom'
     ? `mask:${$('inp-mask').value || '0xFFFFFFFFFFFFFFFF'}`
     : $('sel-observer').value;
-  return {
-    frontend: $('sel-compiler').value,
-    opt: $('sel-opt').value,
-    source_target: $('sel-target').value,
-    observer,
-  };
+  return { frontend: $('sel-compiler').value, observer };
 }
 
 function onOptionChanged() {
-  renderCompiledHeading();
-  if (state.result && state.result.ok) renderCompiled(state.result);
+  // The sub-line under the minimized program says when the shown answer was
+  // made with different settings; nothing else needs repainting.
+  if (state.result && state.result.ok) renderTakeaway();
 }
 
 function optimize() {
@@ -776,9 +726,7 @@ function onMessage(event) {
   }
 
   if (msg.type === 'compile-error') {
-    state.clangAssembly = '';
-    $('clang-listing').innerHTML =
-      `<span class="tok-com">${escapeHtml(msg.stderr)}</span>`;
+    toast(msg.stderr.split('\n')[0] || 'compile error', true);
     return;
   }
 
@@ -788,7 +736,6 @@ function onMessage(event) {
     state.result = msg.result;
 
     if (!msg.result.ok) {
-      state.clangAssembly = '';
       $('qm-listing').innerHTML =
         `<span class="tok-com">${escapeHtml(
           msg.result.error.text || msg.result.error.message)}</span>`;
@@ -801,7 +748,6 @@ function onMessage(event) {
       return;
     }
 
-    state.clangAssembly = (msg.result.compiled && msg.result.compiled.assembly) || '';
     const tab = activeTab();
     if (tab) {
       tab.ranWith = optionsSignature();
@@ -815,7 +761,6 @@ function onMessage(event) {
     }
     renderTabs();
     fillTargets(msg.result);
-    renderCompiled(msg.result);
     renderTakeaway();
     renderRunControls();
     status();
@@ -877,7 +822,6 @@ function init() {
   syncSource({ keepDirty: true });
   activeTab().dirty = false;
   renderTabs();
-  renderCompiledHeading();
 
   // The first example replaces the placeholder only if nothing was restored or
   // shared, so a returning visitor never loses what they had.
@@ -941,9 +885,7 @@ function init() {
     $('inp-mask').disabled = event.target.value !== 'mask:custom';
     onOptionChanged();
   });
-  for (const id of ['sel-opt', 'sel-target', 'sel-compiler']) {
-    $(id).addEventListener('change', onOptionChanged);
-  }
+  $('sel-compiler').addEventListener('change', onOptionChanged);
   $('inp-mask').addEventListener('input', onOptionChanged);
   $('sel-isa-view').addEventListener('change', (event) => {
     state.isa = event.target.value;

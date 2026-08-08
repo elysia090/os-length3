@@ -142,6 +142,10 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
                                            verified)
 
     result['program'] = program.to_dict()
+    # The abstract program itself, for in-process callers that normalize it
+    # into an artifact.  `to_json_safe` strips it the way it strips `seq`: it
+    # is a live object, and the browser gets the artifact instead.
+    result['program_object'] = program
     result['residual_freedom'] = program.residual_freedom
     result['normalization'] = {
         'classes': program.classes,
@@ -454,11 +458,20 @@ def _derivation(result, program, ranked):
 # JSON-safe view for the browser and the CLI
 # ---------------------------------------------------------------------------
 
+LIVE_FIELDS = ('seq', 'program_object')
+
+
 def to_json_safe(result):
-    """Strip live objects (Seq) so the result can cross a worker boundary."""
+    """Strip live objects so the result can cross a worker boundary.
+
+    A lowered `Seq` and the abstract `Program` are Python objects, not data.
+    In-process callers use them — that is how the artifact gets built — and the
+    browser receives the artifact instead.
+    """
     def clean(value):
         if isinstance(value, dict):
-            return dict((k, clean(v)) for k, v in value.items() if k != 'seq')
+            return dict((k, clean(v)) for k, v in value.items()
+                        if k not in LIVE_FIELDS)
         if isinstance(value, (list, tuple)):
             return [clean(v) for v in value]
         if isinstance(value, int) and abs(value) >= (1 << 53):

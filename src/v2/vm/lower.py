@@ -355,6 +355,107 @@ class Lowering(object):
         raise Unsupported('no bit-sliced form for %s' % op)
 
 
+    # -- one abstract operation -------------------------------------------
+    #
+    # The semantic classes, not an ISA's mnemonics. This is what makes the
+    # artifact a property of the solve rather than of the target you happen to
+    # be looking at: LIN_CONST is a linear map here, not a PDEP.
+
+    def linear(self, x, basis, input_bits):
+        """`y = XOR_i basis[i] * bit_i(x)` — an XOR tree, position by position."""
+        out = [ZERO] * WORD
+        for source in range(min(input_bits, len(basis))):
+            image = basis[source]
+            if not image:
+                continue
+            for position in range(WORD):
+                if (image >> position) & 1:
+                    out[position] = self.gate_xor(out[position], x[source])
+        return out
+
+    def lane_less(self, lane, bound, lane_bits):
+        """Unsigned `lane < bound` for one lane, as a borrow chain."""
+        borrow = ZERO
+        for i in range(lane_bits):
+            a = lane[i]
+            b = ONE_BIT if (bound >> i) & 1 else ZERO
+            # borrow' = (~a & b) | (~(a ^ b) & borrow)
+            borrow = self.gate_or(
+                self.gate_and(invert(a), b),
+                self.gate_and(invert(self.gate_xor(a, b)), borrow))
+        return borrow
+
+    def lane_interval(self, x, bounds, lane_bits):
+        """`lo <= lane <= hi` on every lane, as that lane's top bit."""
+        lo, hi = bounds
+        out = [ZERO] * WORD
+        top = lane_bits - 1
+        for index in range(WORD // lane_bits):
+            base = index * lane_bits
+            lane = x[base:base + lane_bits]
+            below = self.lane_less(lane, lo, lane_bits) if lo else ZERO
+            above = (self.lane_less(lane, hi + 1, lane_bits)
+                     if hi + 1 < (1 << lane_bits) else ONE_BIT)
+            out[base + top] = self.gate_and(invert(below), above)
+        return out
+
+    def apply_point(self, x, steps):
+        for mnemonic, const, shift in steps:
+            if mnemonic == 'AND':
+                x = self.word_and(x, word_of_const(const))
+            elif mnemonic == 'OR':
+                x = self.word_or(x, word_of_const(const))
+            elif mnemonic == 'XOR':
+                x = self.word_xor(x, word_of_const(const))
+            elif mnemonic == 'ADD':
+                x = self.add_words(x, word_of_const(const))
+            elif mnemonic == 'SUB':
+                x = self.add_words(x, self.negate(word_of_const(const)))
+            elif mnemonic == 'NOT':
+                x = self.word_not(x)
+            elif mnemonic == 'SHL':
+                x = self.shift_left(x, shift)
+            elif mnemonic == 'SHR':
+                x = self.shift_right(x, shift)
+            elif mnemonic == 'BSWAP':
+                x = self.byteswap(x)
+            elif mnemonic == 'POPCNT':
+                x = self.popcount(x)
+            elif mnemonic == 'ANDN_PREV_SHL':
+                x = self.word_and(x, self.word_not(self.shift_left(x, shift)))
+            elif mnemonic == 'ANDN_PREV_SHR':
+                x = self.word_and(x, self.word_not(self.shift_right(x, shift)))
+            elif mnemonic == 'XOR_SHL':
+                x = self.word_xor(x, self.shift_left(x, shift))
+            elif mnemonic == 'LANE_INTERVAL':
+                x = self.lane_interval(x, const, shift)
+            else:
+                raise Unsupported('no bit-sliced form for POINT step %s'
+                                  % mnemonic)
+        return x
+
+    def apply_op(self, x, op):
+        kind, detail = op.kind, op.detail
+        if kind == 'IDENTITY':
+            return x
+        if kind == 'LIN_CONST':
+            return self.linear(x, detail['basis'], detail['input_bits'])
+        if kind == 'CONV':
+            if detail['family'] == 'IMUL':
+                return self.multiply(x, detail['const'])
+            if detail['family'] == 'CLMUL':
+                return self.clmul(x, detail['const'])
+            raise Unsupported('no bit-sliced form for CONV(%s)'
+                              % detail['family'])
+        if kind == 'POINT':
+            return self.apply_point(x, detail['steps'])
+        if kind == 'PERM_DYN':
+            if detail['direction'] == 'gather':
+                return self.extract_dynamic(detail['source'], x)
+            return self.deposit_dynamic(detail['source'], x)
+        raise Unsupported('no bit-sliced form for %s' % kind)
+
+
 def _decode_byte(low, source, bits, one, pow2):
     """Split a byte in `source` into eight one-bit cells, high bit first."""
     scratch = low.temp('d')
@@ -384,8 +485,8 @@ def _encode_byte(low, bits, target, pow2):
         low.a.place(after)
 
 
-def lower_seq(seq, input_bits, output_bits):
-    """`qm.isa.Seq` -> a canonical image with the byte ABI.
+def _frame(low, compute, input_bits, output_bits):
+    """The byte ABI around whatever `compute` makes of the input word.
 
     The framing is the one a function has under a byte stream: feed the input
     little-endian, then read the output a byte at a time, one feed apart.
@@ -397,7 +498,6 @@ def lower_seq(seq, input_bits, output_bits):
     `read` never commits, so reading the same byte twice gives the same byte
     twice; only a feed moves the stream on.
     """
-    low = Lowering(input_bits, output_bits)
     a = low.a
 
     in_bits = [a.cell('in%d' % i) for i in range(low.in_bytes * 8)]
@@ -459,19 +559,60 @@ def lower_seq(seq, input_bits, output_bits):
     a.place(run_kernel)
     word = [(in_bits[i], False) if i < input_bits else ZERO
             for i in range(WORD)]
-    values = {0: word}
-    for position, instruction in enumerate(seq.ins, start=1):
-        args = [values[k] for k in instruction.args]
-        values[position] = low.apply(instruction.op, args,
-                                     instruction.const, instruction.shift)
-    result = values[seq.result]
+    result = compute(word)
     result = [b if i < output_bits else ZERO for i, b in enumerate(result)]
 
     for which in range(low.out_bytes):
-        cells = []
-        for bit in range(8):
-            cells.append(low.materialize(result[which * 8 + bit]))
+        cells = [low.materialize(result[which * 8 + bit]) for bit in range(8)]
         _encode_byte(low, cells, out_bytes[which], low.pow2)
     a.halt(COMMIT)
 
     return low.a.build(entry_out, entry_feed)
+
+
+def lower_program(program, input_bits, output_bits):
+    """`qm.program.Program` -> a canonical image with the byte ABI.
+
+    This is the one that makes the artifact a single source of truth: the
+    abstract program is what the solve produced, and it is the same whichever
+    target you happen to be looking at. Lowering from a target's `Seq` would
+    make "the program" depend on a view of it.
+    """
+    low = Lowering(input_bits, output_bits)
+
+    def compute(word):
+        value = word
+        for op in program.ops:
+            value = low.apply_op(value, op)
+        return value
+
+    return _frame(low, compute, input_bits, output_bits)
+
+
+def lower_seq(seq, input_bits, output_bits):
+    """`qm.isa.Seq` -> a canonical image with the byte ABI.
+
+    The framing is the one a function has under a byte stream: feed the input
+    little-endian, then read the output a byte at a time, one feed apart.
+
+        feed(x0) .. feed(x_{n-1})   the input word
+        read()                      output byte 0
+        feed(anything); read()      output byte 1, and so on
+
+    `read` never commits, so reading the same byte twice gives the same byte
+    twice; only a feed moves the stream on.
+
+    Kept for the machine-level round trip; `lower_program` is what the artifact
+    is built from.
+    """
+    low = Lowering(input_bits, output_bits)
+
+    def compute(word):
+        values = {0: word}
+        for position, instruction in enumerate(seq.ins, start=1):
+            args = [values[k] for k in instruction.args]
+            values[position] = low.apply(instruction.op, args,
+                                         instruction.const, instruction.shift)
+        return values[seq.result]
+
+    return _frame(low, compute, input_bits, output_bits)
