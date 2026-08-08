@@ -36,6 +36,7 @@ LONGEST_FIRST = [
     'tests.test_lanecode.TestMatchesHandWritten',
     'tests.test_lanecode.TestIntrinsics',
     'tests.test_lanecode.TestEmittedCodeCompilesAsPasted',
+    'tests.test_lanecode.TestIdleStagesAreDropped',
     'tests.test_pipeline.TestDeterminism',
     'tests.test_pipeline.TestSpecNumbers',
     'tests.test_browser.TestWorkerProtocolWithRealClang',

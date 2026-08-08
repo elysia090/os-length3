@@ -312,10 +312,11 @@ double_it:
         self.assertEqual(result['frontend']['frontend']['listing'], 'x86-64')
         best = target(result)
         self.assertTrue(best['verification']['pass'])
-        # x + x on 8 bits of input is a linear map, so QM says LIN_CONST and
-        # lowers it to one instruction rather than carrying the two the
-        # listing spelled.  Which one is the emitter's choice, not the point.
-        self.assertEqual(result['program']['classes'], ['LIN_CONST'])
+        # x + x on 8 bits is a doubling, and QM lowers it to one instruction
+        # rather than carrying the two the listing spelled.  Which family
+        # expresses it — a linear map, or a multiply by two — is a tie between
+        # two one-instruction answers, and not what this test is about.
+        self.assertEqual(result['program']['core_ops'], 1)
         self.assertEqual(len(best['instructions']), 1)
 
 
