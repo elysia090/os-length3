@@ -44,8 +44,10 @@ class TestMatchesHandWritten(unittest.TestCase):
         ('ranks8', 'lc_ranks8', ['PDEP', 'IMUL'], [ONES, '0101010101010100']),
         ('inclusive_rank8', 'lc_inclusive_ranks8', ['PDEP', 'IMUL'], [ONES, ONES]),
         ('byte_mask8', 'lc_byte_mask8', ['PDEP', 'IMUL'], [ONES, BYTE]),
-        ('starts8', 'lc_starts', ['SHL', 'ANDNR', 'PDEP'], [BYTE]),
-        ('ends8', 'lc_ends', ['SHR', 'ANDNR', 'PDEP'], [BYTE]),
+        # No deposit: the run-start mask is already in the bits the output
+        # wants, so the family's LIN_CONST stage is the identity and goes.
+        ('starts8', 'lc_starts', ['SHL', 'ANDNR'], []),
+        ('ends8', 'lc_ends', ['SHR', 'ANDNR'], []),
         # MOVEMASK's integer half: gathering one flag per lane is a linear map,
         # and on BMI2 a linear map that gathers is one PEXT.
         ('mask_from_spread', 'lc_mask_from_spread', ['PEXT'], [HIGH]),
@@ -148,6 +150,37 @@ class TestIdempotence(unittest.TestCase):
                              if t['name'] == second['primary_target'])
                 self.assertEqual(self.signature(first, target),
                                  self.signature(second, again))
+
+
+class TestIdleStagesAreDropped(unittest.TestCase):
+    """A stage that computes the identity is not part of the meaning.
+
+    A solver searching `LIN_CONST[PDEP] ; CONV` has to fill in both stages, so
+    on a kernel that needs neither it comes back with a deposit into the
+    input's own bits and a convolution by 1. Both are real answers inside that
+    family and both do nothing — leaving them in put a PDEP in the output to
+    move eight bits to where they already were.
+    """
+
+    def test_starts8_needs_no_deposit(self):
+        result, lowered = minimized('starts8')
+        self.assertEqual(result['program']['classes'], ['POINT'])
+        self.assertEqual(result['program']['core_ops'], 1)
+        self.assertEqual(lowered['instructions'], ['SHL', 'ANDNR'])
+
+    def test_the_drop_is_reported_not_silent(self):
+        result, _lowered = minimized('starts8')
+        notes = ' '.join(result['program']['notes'])
+        self.assertIn('computing the identity', notes)
+        self.assertIn('LIN_CONST', notes)
+        self.assertIn('CONV', notes)
+
+    def test_the_answer_is_the_kernel_itself(self):
+        """Two ops in, two ops out: this one was already minimal."""
+        _result, lowered = minimized('starts8')
+        self.assertEqual((lowered['span'], lowered['work']), (2, 2))
+        self.assertTrue(lowered['verification']['pass'])
+        self.assertEqual(lowered['verification']['matched'], 256)
 
 
 class TestEmittedCodeCompilesAsPasted(unittest.TestCase):

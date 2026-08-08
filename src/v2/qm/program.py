@@ -99,6 +99,26 @@ def identity():
     return Op('IDENTITY', {}, label='IDENTITY')
 
 
+def computes_the_identity(op):
+    """Does this op leave its input alone?
+
+    A solver searching a family has to name every stage of it, so it can come
+    back with a stage that happens to do nothing: a deposit into a mask that is
+    just the input's own bits, or a convolution by 1.  Those are real answers
+    within the family and useless as operations — counting them would put a
+    PDEP in the emitted code to move eight bits to where they already are.
+    """
+    if op.kind == 'IDENTITY':
+        return True
+    if op.kind == 'LIN_CONST':
+        basis = op.detail['basis']
+        width = min(op.detail['input_bits'], len(basis))
+        return all(basis[i] == (1 << i) for i in range(width))
+    if op.kind == 'CONV':
+        return op.detail['const'] == 1
+    return False
+
+
 class Program(object):
     """An abstract program plus how strongly it was forced.
 
@@ -106,6 +126,10 @@ class Program(object):
         0    not representable in the declared grammar
         1    the physical parameters are uniquely forced
         n>1  n solutions remain tied before canonical rank selection
+
+    Stages that compute the identity are dropped on the way in, and said so in
+    the notes.  `core_ops` is meant to be how much of the meaning is left after
+    normalization, and a step that does nothing is not part of the meaning.
     """
 
     __slots__ = ('ops', 'residual_freedom', 'candidates', 'solver', 'notes',
@@ -113,14 +137,20 @@ class Program(object):
 
     def __init__(self, ops, residual_freedom, candidates, solver,
                  input_bits, output_bits, notes=None):
-        self.ops = list(ops)
+        ops = list(ops)
+        idle = [op for op in ops if computes_the_identity(op)]
+        self.ops = [op for op in ops if op not in idle]
+        notes = list(notes or [])
+        if idle:
+            notes.append('dropped, each computing the identity: %s'
+                         % ' ; '.join(op.label for op in idle))
         self._steps = None
         self.residual_freedom = residual_freedom
         self.candidates = candidates
         self.solver = solver
         self.input_bits = input_bits
         self.output_bits = output_bits
-        self.notes = list(notes or [])
+        self.notes = notes
 
     @property
     def classes(self):
