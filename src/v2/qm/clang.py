@@ -95,7 +95,7 @@ def read_signature(source, requested=None):
     """
     try:
         from .cfront import parse
-        from .frontend import pick_function
+        from .frontend import pick_function, rejections
         unit = parse(source)
         fn = pick_function(unit, requested)
         return {
@@ -103,6 +103,7 @@ def read_signature(source, requested=None):
             'ret': fn.ret,
             'params': [(p.name, p.ctype) for p in fn.params],
             'via': 'parser',
+            'others': rejections(unit, fn),
         }
     except CFrontError:
         pass
@@ -139,13 +140,25 @@ def read_signature(source, requested=None):
         raise CFrontError('no function definition found',
                           hint='paste a complete C function, e.g. '
                                'uint64_t f(uint8_t m) { ... }')
+    from .frontend import analysable
+
+    def with_others(chosen):
+        return dict(chosen, others=[
+            {'name': e['name'],
+             'reason': analysable(e['ret'], e['params']) or 'not the root'}
+            for e in found if e is not chosen])
+
     if requested:
         for entry in found:
             if entry['name'] == requested:
-                return entry
+                return with_others(entry)
         raise CFrontError('function %r is not defined in this source' % requested,
                           hint='found: %s' % ', '.join(e['name'] for e in found))
-    return found[-1]
+
+    # Same preference as the parser path: a paste of several functions should
+    # not be refused because the last one happens to take two arguments.
+    usable = [e for e in found if analysable(e['ret'], e['params']) is None]
+    return with_others((usable or found)[-1])
 
 
 # ---------------------------------------------------------------------------

@@ -92,19 +92,32 @@ def looks_like_wasm(text):
 
 
 def parse(text, requested=None):
-    """Parse the first (or requested) function out of a wasm text listing."""
+    """Parse the requested — or the usable — function out of a wasm listing.
+
+    A listing with several functions in it is ordinary: `clang -S` for a file
+    of kernels emits all of them, and QM's own output round-trips through here.
+    So every function is read, and the choice is made afterwards, preferring
+    one this prototype's unary solvers can actually take. Stopping at the first
+    header meant a two-parameter helper at the top of a module hid every kernel
+    below it.
+    """
     if '(i64.' in text.replace(' ', '') or re.search(r'\(\s*i64\.\w+\s+\(', text):
         raise UnsupportedC(
             'folded s-expressions are not read',
             hint='paste the flat instruction form, which is what clang -S and '
                  'the wasm text format both produce for a function body')
 
-    name = None
-    params = []
-    result = 'i64'
-    local_count = 0
-    instructions = []
-    seen_signature = False
+    found = []
+
+    def begin(name, params, result):
+        # `clang -S` declares each `.functype` twice — once in the preamble and
+        # once under the label — so a repeat of the name we are already on is
+        # the same function, not a new one.
+        if found and found[-1].name == name and not found[-1].instructions:
+            found[-1].param_types = params
+            found[-1].result_type = result
+            return
+        found.append(WasmFunction(name, params, result, [], 0))
 
     for raw in text.splitlines():
         line = raw.split(';;')[0].strip()
@@ -113,54 +126,68 @@ def parse(text, requested=None):
 
         match = _SIGNATURE.search(line)
         if match:
-            if seen_signature and name is not None:
-                break          # a second function; one is enough
-            candidate = match.group('name')
-            if requested and candidate != requested:
-                continue
-            name = candidate
-            params = [p.strip() for p in match.group('params').split(',')
-                      if p.strip()]
             results = [r.strip() for r in match.group('results').split(',')
                        if r.strip()]
-            result = results[0] if results else 'i64'
-            seen_signature = True
+            begin(match.group('name'),
+                  [p.strip() for p in match.group('params').split(',')
+                   if p.strip()],
+                  results[0] if results else 'i64')
             continue
 
         match = _WAT_FUNC.search(line)
         if match:
-            if seen_signature and name is not None:
-                break
             export = _EXPORT.search(line)
-            candidate = (export.group('name') if export else match.group('name'))
-            if requested and candidate != requested:
-                continue
-            name = candidate
             params = re.findall(r'\(\s*param\s+([^)]*)\)', line)
-            params = [t for group in params for t in group.split()]
-            found = re.findall(r'\(\s*result\s+([^)]*)\)', line)
-            result = found[0].split()[0] if found and found[0].split() else 'i64'
-            seen_signature = True
+            results = re.findall(r'\(\s*result\s+([^)]*)\)', line)
+            begin(export.group('name') if export else match.group('name'),
+                  [t for group in params for t in group.split()],
+                  results[0].split()[0]
+                  if results and results[0].split() else 'i64')
             continue
+
+        if not found:
+            continue           # preamble: nothing to attribute it to yet
+        current = found[-1]
 
         declared = re.match(r'\(\s*local\s+([^)]*)\)', line)
         if declared:
-            local_count += len(declared.group(1).split())
+            current.local_count += len(declared.group(1).split())
             continue
         if line.startswith('.') or line.endswith(':'):
             continue
 
         for token in _instructions_in(line):
-            instructions.append(token)
+            current.instructions.append(token)
 
-    if name is None:
+    if not found:
         raise CFrontError('no wasm function found',
                           hint='the listing needs a .functype line or a '
                                '(func ...) header')
-    if len(params) != 1:
-        raise CFrontError('%s takes %d parameter(s); exactly one is required'
-                          % (name, len(params)))
-    return WasmFunction(name, params, result, instructions, local_count)
+
+    def prefer(candidates):
+        """A body beats a bare declaration: an import declares a `.functype`
+        with nothing under it, and that is not the function anyone meant."""
+        return ([fn for fn in candidates if fn.instructions] or candidates)
+
+    if requested:
+        named = prefer([fn for fn in found if fn.name == requested])
+        if not named:
+            raise CFrontError('function %r is not in this listing' % requested,
+                              hint='found: %s'
+                                   % ', '.join(f.name for f in found))
+        if len(named[0].param_types) != 1:
+            raise CFrontError('%s takes %d parameters; this prototype\'s '
+                              'solver family takes one'
+                              % (named[0].name, len(named[0].param_types)))
+        return named[0]
+
+    unary = [fn for fn in found if len(fn.param_types) == 1]
+    if not unary:
+        first = prefer(found)[0]
+        raise CFrontError('%s takes %d parameters; this prototype\'s solver '
+                          'family takes one'
+                          % (first.name, len(first.param_types)))
+    return prefer(unary)[0]
 
 
 def _instructions_in(line):

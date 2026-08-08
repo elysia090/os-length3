@@ -320,6 +320,63 @@ double_it:
         self.assertEqual(len(best['instructions']), 1)
 
 
+class TestSeveralFunctionsInOneListing(unittest.TestCase):
+    """A module of several functions is what `clang -S` actually emits.
+
+    The reader used to stop at the first header, so a two-parameter helper at
+    the top of a file hid every kernel below it — the same defect the C path
+    had, in the other reader.
+    """
+
+    MODULE = '''(module
+  (func $combine (param i64 i64) (result i64)
+    local.get 0
+    local.get 1
+    i64.or
+  )
+  (func $double_it (export "double_it") (param i64) (result i64)
+    local.get 0
+    i64.const 2
+    i64.mul
+  )
+)
+'''
+
+    def test_the_unary_function_is_read_past_a_binary_one(self):
+        fn, dialect = parse(self.MODULE)
+        self.assertEqual((dialect, fn.name), ('wasm32', 'double_it'))
+        self.assertEqual([fn(x) for x in range(4)], [0, 2, 4, 6])
+
+    def test_a_named_request_still_names_its_own_problem(self):
+        with self.assertRaises(CFrontError) as caught:
+            wasm.parse(self.MODULE, requested='combine')
+        self.assertIn('combine takes 2 parameters', str(caught.exception))
+
+    def test_a_request_for_something_absent_says_what_is_there(self):
+        with self.assertRaises(CFrontError) as caught:
+            wasm.parse(self.MODULE, requested='nope')
+        self.assertIn('double_it', caught.exception.hint)
+
+    def test_the_repeated_functype_clang_emits_is_one_function(self):
+        # `clang -S` writes `.functype` twice, once in the preamble and once
+        # under the label.  Read as two functions, the first is empty and the
+        # reader would answer about a body that was never there.
+        listing = ('\t.functype\tdouble_it (i64) -> (i64)\n'
+                   'double_it:\n'
+                   '\t.functype\tdouble_it (i64) -> (i64)\n'
+                   '\tlocal.get\t0\n\ti64.const\t2\n\ti64.mul\n'
+                   '\tend_function\n')
+        fn, _ = parse(listing)
+        self.assertEqual(fn.name, 'double_it')
+        self.assertEqual([fn(x) for x in range(4)], [0, 2, 4, 6])
+
+    def test_instructions_are_not_pooled_across_functions(self):
+        fn, _ = parse(self.MODULE)
+        # Reading the module used to concatenate every body it walked past.
+        self.assertEqual([op for op, _ in fn.instructions],
+                         ['local.get', 'i64.const', 'i64.mul'])
+
+
 class TestListingExamples(unittest.TestCase):
     """The two pasteable listings in `examples/`, held to what they claim.
 
