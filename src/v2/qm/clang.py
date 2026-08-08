@@ -31,6 +31,7 @@ import tempfile
 
 from .cfront import CFrontError
 from .cfront.ctypes_model import CType, type_from_keywords
+from .cfront.intrinsics import c_shims_for
 
 # Freestanding prelude: clang predefines these, so no sysroot header is needed.
 # This is what lets the browser bundle run with -nostdlib and no include tree.
@@ -62,8 +63,15 @@ def prepare_source(source):
     The includes are removed rather than resolved because a bit-vector kernel
     needs exactly the fixed-width typedefs, and requiring a sysroot is the
     difference between a 50 MB browser bundle and a 300 MB one.
+
+    Stripping `<immintrin.h>` takes the intrinsics with it, and the browser
+    compiles for wasm32 where that header does not exist at all — so whichever
+    of them the paste uses are supplied here as portable C.  Without that, QM
+    emits code it cannot read: paste back its own `_pdep_u64` output and Clang
+    says the function is undeclared.
     """
-    return PRELUDE + '\n' + _INCLUDE.sub('', source)
+    body = _INCLUDE.sub('', source)
+    return PRELUDE + '\n' + c_shims_for(body) + body
 
 
 # ---------------------------------------------------------------------------

@@ -180,3 +180,159 @@ NAMES = sorted(REGISTRY)
 
 def get(name):
     return REGISTRY.get(name)
+
+
+# ---------------------------------------------------------------------------
+# The same intrinsics, in C, for the Clang path
+#
+# `clang.py` strips `#include <immintrin.h>` — a bit-vector kernel needs the
+# fixed-width typedefs and nothing else, and requiring a sysroot is the
+# difference between a 50 MB browser bundle and a 300 MB one — and the browser
+# compiles for wasm32, where that header does not exist at all.  Without these
+# QM emitted C it could not read back: paste its own `_pdep_u64` output and
+# Clang says the function is undeclared.
+#
+# These are portable definitions, not the instructions.  That is the point: the
+# Clang path needs source that computes the same function on whatever target it
+# is aimed at, and it is the same function the table above describes.  Keeping
+# the two here means they cannot drift into disagreeing about what `_pdep_u64`
+# means.
+# ---------------------------------------------------------------------------
+
+_M128I = '''typedef struct { unsigned long long qm_lo, qm_hi; } __m128i;'''
+
+C_SHIMS = [
+    ('_pdep_u64', '''static inline unsigned long long
+_pdep_u64(unsigned long long v, unsigned long long m) {
+  unsigned long long r = 0, b = 1;
+  while (m) { unsigned long long low = m & (0ULL - m);
+              if (v & b) r |= low; b <<= 1; m ^= low; }
+  return r;
+}'''),
+    ('_pext_u64', '''static inline unsigned long long
+_pext_u64(unsigned long long v, unsigned long long m) {
+  unsigned long long r = 0, b = 1;
+  while (m) { unsigned long long low = m & (0ULL - m);
+              if (v & low) r |= b; b <<= 1; m ^= low; }
+  return r;
+}'''),
+    ('_pdep_u32', '''static inline unsigned int
+_pdep_u32(unsigned int v, unsigned int m) {
+  unsigned int r = 0, b = 1;
+  while (m) { unsigned int low = m & (0u - m);
+              if (v & b) r |= low; b <<= 1; m ^= low; }
+  return r;
+}'''),
+    ('_pext_u32', '''static inline unsigned int
+_pext_u32(unsigned int v, unsigned int m) {
+  unsigned int r = 0, b = 1;
+  while (m) { unsigned int low = m & (0u - m);
+              if (v & low) r |= b; b <<= 1; m ^= low; }
+  return r;
+}'''),
+    ('_andn_u64', '''static inline unsigned long long
+_andn_u64(unsigned long long a, unsigned long long b) { return (~a) & b; }'''),
+    ('_andn_u32', '''static inline unsigned int
+_andn_u32(unsigned int a, unsigned int b) { return (~a) & b; }'''),
+    ('_blsi_u64', '''static inline unsigned long long
+_blsi_u64(unsigned long long a) { return a & (0ULL - a); }'''),
+    ('_blsr_u64', '''static inline unsigned long long
+_blsr_u64(unsigned long long a) { return a & (a - 1ULL); }'''),
+    ('_blsmsk_u64', '''static inline unsigned long long
+_blsmsk_u64(unsigned long long a) { return a ^ (a - 1ULL); }'''),
+    ('_bzhi_u64', '''static inline unsigned long long
+_bzhi_u64(unsigned long long a, unsigned int i) {
+  return i >= 64u ? a : (a & ((1ULL << i) - 1ULL));
+}'''),
+    ('_bzhi_u32', '''static inline unsigned int
+_bzhi_u32(unsigned int a, unsigned int i) {
+  return i >= 32u ? a : (a & ((1u << i) - 1u));
+}'''),
+    ('_tzcnt_u64', '''static inline unsigned long long
+_tzcnt_u64(unsigned long long a) { return a ? __builtin_ctzll(a) : 64ULL; }'''),
+    ('_tzcnt_u32', '''static inline unsigned int
+_tzcnt_u32(unsigned int a) { return a ? __builtin_ctz(a) : 32u; }'''),
+    ('_lzcnt_u64', '''static inline unsigned long long
+_lzcnt_u64(unsigned long long a) { return a ? __builtin_clzll(a) : 64ULL; }'''),
+    ('_lzcnt_u32', '''static inline unsigned int
+_lzcnt_u32(unsigned int a) { return a ? __builtin_clz(a) : 32u; }'''),
+    ('_mm_popcnt_u64', '''static inline unsigned long long
+_mm_popcnt_u64(unsigned long long a) { return __builtin_popcountll(a); }'''),
+    ('_mm_popcnt_u32', '''static inline unsigned int
+_mm_popcnt_u32(unsigned int a) { return __builtin_popcount(a); }'''),
+
+    ('_mm_cvtsi64_si128', '''static inline __m128i
+_mm_cvtsi64_si128(long long a) {
+  __m128i r; r.qm_lo = (unsigned long long)a; r.qm_hi = 0; return r;
+}'''),
+    ('_mm_cvtsi128_si64', '''static inline long long
+_mm_cvtsi128_si64(__m128i a) { return (long long)a.qm_lo; }'''),
+    ('_mm_set1_epi64x', '''static inline __m128i
+_mm_set1_epi64x(long long a) {
+  __m128i r; r.qm_lo = r.qm_hi = (unsigned long long)a; return r;
+}'''),
+    ('_mm_set_epi64x', '''static inline __m128i
+_mm_set_epi64x(long long hi, long long lo) {
+  __m128i r; r.qm_lo = (unsigned long long)lo;
+  r.qm_hi = (unsigned long long)hi; return r;
+}'''),
+    ('_mm_setzero_si128', '''static inline __m128i
+_mm_setzero_si128(void) { __m128i r; r.qm_lo = r.qm_hi = 0; return r; }'''),
+    ('_mm_xor_si128', '''static inline __m128i
+_mm_xor_si128(__m128i a, __m128i b) {
+  __m128i r; r.qm_lo = a.qm_lo ^ b.qm_lo; r.qm_hi = a.qm_hi ^ b.qm_hi;
+  return r;
+}'''),
+    ('_mm_and_si128', '''static inline __m128i
+_mm_and_si128(__m128i a, __m128i b) {
+  __m128i r; r.qm_lo = a.qm_lo & b.qm_lo; r.qm_hi = a.qm_hi & b.qm_hi;
+  return r;
+}'''),
+    ('_mm_or_si128', '''static inline __m128i
+_mm_or_si128(__m128i a, __m128i b) {
+  __m128i r; r.qm_lo = a.qm_lo | b.qm_lo; r.qm_hi = a.qm_hi | b.qm_hi;
+  return r;
+}'''),
+    ('_mm_andnot_si128', '''static inline __m128i
+_mm_andnot_si128(__m128i a, __m128i b) {
+  __m128i r; r.qm_lo = (~a.qm_lo) & b.qm_lo; r.qm_hi = (~a.qm_hi) & b.qm_hi;
+  return r;
+}'''),
+    # Bit 0 of `imm` selects a's half, bit 4 selects b's — the same convention
+    # as `_clmulepi64` above.
+    ('_mm_clmulepi64_si128', '''static inline __m128i
+_mm_clmulepi64_si128(__m128i a, __m128i b, int imm) {
+  unsigned long long x = (imm & 0x01) ? a.qm_hi : a.qm_lo;
+  unsigned long long y = (imm & 0x10) ? b.qm_hi : b.qm_lo;
+  __m128i r; r.qm_lo = 0; r.qm_hi = 0;
+  for (int i = 0; i < 64; ++i)
+    if ((y >> i) & 1ULL) {
+      r.qm_lo ^= x << i;
+      if (i) r.qm_hi ^= x >> (64 - i);
+    }
+  return r;
+}'''),
+]
+
+_C_SHIM_NAMES = [name for name, _ in C_SHIMS]
+
+
+def c_shims_for(source):
+    """C definitions for the intrinsics `source` uses and does not define.
+
+    A paste that brings its own `_pdep_u64` keeps it: defining it twice would
+    be an error, and the point is to fill in what is missing, not to overrule
+    what is there.
+    """
+    import re
+
+    wanted = [(name, body) for name, body in C_SHIMS
+              if re.search(r'\b%s\s*\(' % name, source)
+              and not re.search(r'\b%s\s*\([^)]*\)\s*\{' % name, source)]
+    if not wanted:
+        return ''
+    parts = []
+    if any(name.startswith('_mm_') for name, _ in wanted) or '__m128i' in source:
+        parts.append(_M128I)
+    parts += [body for _, body in wanted]
+    return '\n'.join(parts) + '\n'
