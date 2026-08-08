@@ -680,20 +680,34 @@ function openDialog(title, html) {
   $('dlg').showModal();
 }
 
-async function showExamples() {
-  if (!EXAMPLES.length) await loadExamples();
-  // The `+` opens this, so an empty tab has to be one of the choices — it is
-  // what the button used to do on its own.
-  const blank = '<div class="examples">'
+// The `+` opens this, so an empty tab is one of the choices — it is what the
+// button used to do on its own, and it is the one that must never depend on a
+// fetch. The dialog is painted first and the examples are filled in when they
+// arrive: awaiting before showing anything is a `+` that does nothing for as
+// long as the network takes, which reads as a broken button.
+function examplesMarkup() {
+  return '<div class="examples">'
     + '<button class="btn ex" data-blank="1">Empty tab</button>'
-    + (EXAMPLES.length
-       ? EXAMPLES.map((ex, i) =>
-           `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
-           .join('')
-       : '') + '</div>';
-  openDialog('New tab', EXAMPLES.length
-    ? blank
-    : blank + '<p class="note">examples.json could not be loaded</p>');
+    + EXAMPLES.map((ex, i) =>
+        `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
+        .join('')
+    + '</div>';
+}
+
+async function showExamples() {
+  openDialog('New tab', examplesMarkup());
+  wireExamples();
+  if (!EXAMPLES.length) {
+    await loadExamples();
+    if (!$('dlg').open) return;             // closed while it was loading
+    $('dlg-body').innerHTML = examplesMarkup()
+      + (EXAMPLES.length ? ''
+         : '<p class="note">examples.json could not be loaded</p>');
+    wireExamples();
+  }
+}
+
+function wireExamples() {
   $('dlg-body').querySelectorAll('.ex').forEach((el) => {
     el.addEventListener('click', () => {
       if (el.dataset.blank) {
