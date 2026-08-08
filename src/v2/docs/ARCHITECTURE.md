@@ -6,7 +6,8 @@ Each module imports only from lower layers, so the dependency graph is a DAG and
 any layer can be read on its own.
 
 ```
-0  bits                       PDEP/PEXT/CLMUL, GF(2^128), masks, probe streams
+0  bits  straightline        PDEP/PEXT/CLMUL, GF(2^128), masks, probe streams;
+                              compiling a straight-line program to a function
 1  observer  semantics        obs : Output -> Observable; finite domains
    guards    version
 2  quotient  program          the two quotients; the abstract op grammar
@@ -50,18 +51,37 @@ on it.
 ## Decide once, not once per input
 
 Everything QM claims rests on evaluating something over a declared domain, and
-a 16-bit kernel has 65,536 points in it. Three places used to walk their own
-program per input and re-decide what each instruction was: the C subset, the
-lowered sequence, and the two assembly readers. The opcode does not depend on
-the input, so the decision is taken once and the sweep runs a list of closures
-with the constants already bound.
+a 16-bit kernel has 65,536 points in it. Four things used to walk their own
+program per input and re-decide what each instruction was: the lowered
+sequence, the normalized abstract program, and the two assembly readers. None
+of those decisions depends on the input, so each is now written out once as a
+Python function — `straightline.build` assembles the source and compiles it —
+and the sweep calls that function.
+
+The generated source is closed: every name in it is a temporary this package
+named or a helper it passed in, and every constant is formatted from an `int`.
+Nothing from a paste reaches it. `fn.qm_source` keeps the text on the function,
+because a tool whose claim is that you can check what it computed should not
+have a step you cannot read.
 
 In each case there is one implementation and not a fast path beside a reference
-one — `isa.run` and `isa.compile_seq` share their steps, as do
-`asmfront.wasm.evaluate` and its compiled form — and the suite checks the two
-entry points agree. A fast path that could drift from the reference would mean
-the verification counts in the report describe a different program from the one
-that gets emitted.
+one — `isa.run` calls `isa.compile_seq`, `asmfront.wasm.evaluate` calls its
+compiled form — and the suite checks the two entry points agree. A fast path
+that could drift from the reference would mean the verification counts in the
+report describe a different program from the one that gets emitted.
+
+The same rule shapes the primitives. `pdep`, `pext` and `clmul` walk the set
+bits of a mask rather than all 64 positions, and `clmul` walks whichever
+operand has fewer — the product is symmetric, and the constants these kernels
+multiply by are often dense while the values are not.
+
+## Running the suite
+
+`tests/run.py` hands test *classes* to a pool of worker processes. `solve` is a
+pure function of its arguments, so `tests/support` memoizes it; the shared
+inputs are solved in parallel up front and the workers are forked afterwards,
+which is what stops each of them from recomputing the twenty examples it
+happens to need. `-j 1` runs the plain serial unittest runner.
 
 ## Why the lowering is an SSA DAG
 

@@ -53,3 +53,60 @@ def target(result, name=None):
     name = name or result.get('primary_target')
     return next((t for t in result.get('targets') or [] if t['name'] == name),
                 None)
+
+
+# ---------------------------------------------------------------------------
+# Warming
+# ---------------------------------------------------------------------------
+
+def _solve_one(item):
+    key, source, kwargs = item
+    return key, solve(source, **kwargs)
+
+
+def _absorb(pool, work):
+    """Solve `work` across the pool and keep the answers in this process."""
+    pending = [item for item in work if item[0] not in _CACHE]
+    for key, result in pool.imap_unordered(_solve_one, pending, chunksize=1):
+        _CACHE[key] = result
+
+
+def _pair(source, **kwargs):
+    return (_key(source, kwargs), source, kwargs)
+
+
+def warm(pool):
+    """Precompute the solves the suite shares, across `pool`.
+
+    `solve` is a pure function, and the suite calls it about a hundred times on
+    a couple of dozen distinct inputs that do not depend on each other. They
+    are evaluated in parallel here so the answers are already in the cache when
+    the first assertion runs, and — since the test workers are forked
+    afterwards — every one of them inherits the same answers instead of
+    recomputing the ones it happens to need.
+
+    Nothing has to be warmed. A source that is not listed here is solved on
+    demand, exactly as before; this only decides when the work happens.
+    """
+    sources = [name for name in sorted(os.listdir(EXAMPLES))
+               if name.endswith(('.c', '.s', '.wat'))]
+    first = [_pair(read_example(name),
+                   **({'frontend': 'cfront'} if name.endswith('.c') else {}))
+             for name in sources]
+    _absorb(pool, first)
+
+    # What the round trips and the idempotence check ask next: QM's own output,
+    # in all three languages, fed back in.
+    second = []
+    for key, source, kwargs in first:
+        result = _CACHE.get(key)
+        if not result or not result.get('ok') or not result.get('program'):
+            continue
+        primary = target(result)
+        if primary and primary.get('c'):
+            second.append(_pair(primary['c'], frontend='cfront'))
+        for name in (result.get('primary_target'), 'wasm32'):
+            listing = target(result, name)
+            if listing and listing.get('asm'):
+                second.append(_pair(listing['asm']))
+    _absorb(pool, second)

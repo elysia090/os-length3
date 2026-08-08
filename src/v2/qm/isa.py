@@ -10,7 +10,9 @@ searches them with the same lexicographic objective used everywhere else:
     span, work, L(z), rank
 """
 
-from .bits import M64, bswap64, clmul, mask_of, pdep, pext, popcnt
+from . import straightline
+from .bits import (M64, bswap64, clmul, mask_of, pdep, pext,
+                    popcnt)
 
 # Description-code widths for the L(z) model.  Toy but consistent, and the same
 # model ranks every candidate, which is what the objective needs.
@@ -78,6 +80,16 @@ class Seq(object):
     def __len__(self):
         return len(self.ins)
 
+    # A sequence is data; the compiled function hanging off it is a cache, and
+    # a cache does not travel.  Saying so is what lets a result be handed
+    # between processes.
+    def __getstate__(self):
+        return self.ins, self.result, self.notes
+
+    def __setstate__(self, state):
+        self.ins, self.result, self.notes = state
+        self._steps = None
+
 
 # ---------------------------------------------------------------------------
 # Interpretation of a lowered sequence
@@ -85,109 +97,84 @@ class Seq(object):
 # Verifying one target over a 2^16 domain is 65,536 evaluations of the same
 # five instructions, and every candidate on every target pays it again.  Doing
 # that by walking `ins` and testing the opcode makes the opcode test the
-# dominant cost of the whole pipeline: the decision is identical on every
-# input, so it is taken once, here, and what the sweep runs is a list of
-# closures with the constants already bound.
+# dominant cost of the whole pipeline.  The decision is identical on every
+# input, so the sequence is written out as one Python function instead, once,
+# and the sweep calls that.
 #
 # There is one implementation, not a fast path beside a reference one — `run`
-# goes through the same closures — so the two cannot disagree.
+# calls the same compiled function — so the two cannot disagree.
 # ---------------------------------------------------------------------------
 
-def _step(ins):
-    """Compile one instruction into `values -> value`."""
-    op = ins.op
-    args = ins.args
-    a = args[0] if args else 0
-    b = args[1] if len(args) > 1 else 0
-    k = ins.const
-    n = ins.shift
+# `v0` is the input; `v1..` are the SSA values, in order.  Every line is masked
+# to 64 bits, so no expression has to remember to do it and none can forget.
+_EXPR = {
+    'PDEP': 'pdep(v{a}, {k})',
+    'PEXT': 'pext(v{a}, {k})',
+    'PEXT_DYN': 'pext({k}, v{a})',
+    'PDEP_DYN': 'pdep({k}, v{a})',
+    'IMUL': 'v{a} * {k}',
+    'CLMUL': 'clmul(v{a}, {k}, 64)',
+    'AND': 'v{a} & {k}',
+    'OR': 'v{a} | {k}',
+    'XOR': 'v{a} ^ {k}',
+    'ADD': 'v{a} + {k}',
+    'SUB': 'v{a} - {k}',
+    'NOT': '~v{a}',
+    'SHL': 'v{a} << {n}',
+    'SHR': 'v{a} >> {n}',
+    'BSWAP': 'bswap64(v{a})',
+    'POPCNT': 'popcnt(v{a})',
+    'XORR': 'v{a} ^ v{b}',
+    'ANDR': 'v{a} & v{b}',
+    'ORR': 'v{a} | v{b}',
+    'ADDR': 'v{a} + v{b}',
+    'ANDNR': '~v{a} & v{b}',
+    'LOOP8': 'pext({k}, v{a})',
+    'SCANXOR': 'v{a} ^ (v{a} << {n})',
+}
 
-    if op == 'PDEP':
-        return lambda v: pdep(v[a], k)
-    if op == 'PEXT':
-        return lambda v: pext(v[a], k)
-    if op == 'PEXT_DYN':
-        return lambda v: pext(k, v[a])
-    if op == 'PDEP_DYN':
-        return lambda v: pdep(k, v[a])
-    if op == 'IMUL':
-        return lambda v: v[a] * k
-    if op == 'CLMUL':
-        return lambda v: clmul(v[a], k, 64)
-    if op == 'AND':
-        return lambda v: v[a] & k
-    if op == 'OR':
-        return lambda v: v[a] | k
-    if op == 'XOR':
-        return lambda v: v[a] ^ k
-    if op == 'ADD':
-        return lambda v: v[a] + k
-    if op == 'SUB':
-        return lambda v: v[a] - k
-    if op == 'NOT':
-        return lambda v: ~v[a]
-    if op == 'SHL':
-        return lambda v: v[a] << n
-    if op == 'SHR':
-        return lambda v: v[a] >> n
-    if op == 'BSWAP':
-        return lambda v: bswap64(v[a])
-    if op == 'POPCNT':
-        return lambda v: popcnt(v[a])
-    if op == 'XORR':
-        return lambda v: v[a] ^ v[b]
-    if op == 'ANDR':
-        return lambda v: v[a] & v[b]
-    if op == 'ORR':
-        return lambda v: v[a] | v[b]
-    if op == 'ADDR':
-        return lambda v: v[a] + v[b]
-    if op == 'ANDNR':
-        return lambda v: ~v[a] & v[b]
-    if op == 'LUT':
-        wrap = len(k) - 1
-        return lambda v: k[v[a] & wrap]
-    if op == 'LOOP8':
-        return lambda v: pext(k, v[a])
-    if op == 'SCANXOR':
-        return lambda v: v[a] ^ (v[a] << n)
-    raise ValueError('unknown instruction %r' % op)
+_ENV = {'M': M64, 'pdep': pdep, 'pext': pext, 'clmul': clmul,
+        'popcnt': popcnt, 'bswap64': bswap64}
 
 
-def steps_of(seq):
-    """The compiled steps of `seq`, built once and cached on it."""
-    steps = seq._steps
-    if steps is None or len(steps) != len(seq.ins):
-        steps = seq._steps = [_step(ins) for ins in seq.ins]
-    return steps
+def _expression(ins, tables):
+    """The right-hand side for one instruction, as source text."""
+    a = ins.args[0] if ins.args else 0
+    b = ins.args[1] if len(ins.args) > 1 else 0
+    if ins.op == 'LUT':
+        # A lookup table is data, not text: it goes into the environment under
+        # a generated name and the source refers to it.
+        key = 'lut%d' % len(tables)
+        tables[key] = ins.const
+        return '%s[v%d & %d]' % (key, a, len(ins.const) - 1)
+    form = _EXPR.get(ins.op)
+    if form is None:
+        raise ValueError('unknown instruction %r' % ins.op)
+    return form.format(a=a, b=b, k=ins.const, n=ins.shift)
+
+
+def _build(seq):
+    tables = {}
+    body = [('v%d' % k, '(%s) & M' % _expression(ins, tables))
+            for k, ins in enumerate(seq.ins, start=1)]
+    env = dict(_ENV, **tables)
+    return straightline.build('qm_seq', ['x'], [('v0', 'x & M')] + body,
+                              'v%d' % seq.result, env)
 
 
 def compile_seq(seq):
-    """A callable `x -> y` for `seq`.
+    """A callable `x -> y` for `seq`, compiled once and cached on it.
 
-    Use this for a domain sweep; `run` is the same thing for a single input.
-    Every step is masked to 64 bits on the way into the value list, so no step
-    has to remember to do it and none of them can forget.
+    Use this for a domain sweep; `run` is the same function for a single input.
     """
-    steps = steps_of(seq)
-    result = seq.result
-
-    def evaluate(x):
-        values = [x & M64]
-        append = values.append
-        for step in steps:
-            append(step(values) & M64)
-        return values[result]
-
-    return evaluate
+    compiled = seq._steps
+    if compiled is None or compiled[0] != (len(seq.ins), seq.result):
+        compiled = seq._steps = ((len(seq.ins), seq.result), _build(seq))
+    return compiled[1]
 
 
 def run(seq, x):
-    values = [x & M64]
-    append = values.append
-    for step in steps_of(seq):
-        append(step(values) & M64)
-    return values[seq.result]
+    return compile_seq(seq)(x)
 
 
 def matches(seq, sem, obs):

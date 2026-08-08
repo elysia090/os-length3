@@ -43,6 +43,20 @@ class _Return(object):
 BUDGET_SLOT = 0
 
 
+def _fused(emit, ctype):
+    """`emit`, then the conversion to `ctype`, without a second call.
+
+    Unsigned conversion *is* a mask, so it goes inline.  A domain sweep runs
+    the closure tree 65,536 times, and a conversion hop that survives on every
+    node costs a Python call each time.
+    """
+    if ctype.kind != 'bool' and not ctype.signed:
+        mask = mask_of(ctype.bits)
+        return lambda frame: emit(frame) & mask
+    conv = _converter(ctype)
+    return lambda frame: conv(emit(frame))
+
+
 def _converter(ctype):
     """Fast value normalizer for a fixed C type."""
     if ctype.kind == 'bool':
@@ -428,8 +442,7 @@ class Compiler(object):
 
     def _expr_cast(self, node, scope):
         inner, _ = self._expr(node.operand, scope)
-        conv = _converter(node.ctype)
-        return (lambda frame: conv(inner(frame))), node.ctype
+        return _fused(inner, node.ctype), node.ctype
 
     def _expr_sizeof(self, node, scope):
         size = max(1, node.ctype.bits // 8)
@@ -443,7 +456,7 @@ class Compiler(object):
         rtype = promote(itype)
         conv = _converter(rtype)
         if op == '+':
-            return (lambda frame: conv(inner(frame))), rtype
+            return _fused(inner, rtype), rtype
         if op == '-':
             return (lambda frame: conv(-inner(frame))), rtype
         if op == '~':
@@ -575,10 +588,12 @@ class Compiler(object):
         else:
             combine = _compound(node.op[:-1], ctype, vtype, node.line)
 
+        converted = _fused(value, ctype)
+
         if store is None:
             if combine is None:
                 def emit(frame):
-                    result = conv(value(frame))
+                    result = converted(frame)
                     frame[slot] = result
                     return result
             else:
@@ -591,7 +606,7 @@ class Compiler(object):
         index_of, slot_of = store
         if combine is None:
             def emit(frame):
-                result = conv(value(frame))
+                result = converted(frame)
                 frame[slot_of][index_of(frame)] = result
                 return result
         else:
@@ -696,11 +711,7 @@ def _rewrap(emit, from_type, to_type):
     """Insert a conversion only when the static types actually differ."""
     if from_type == to_type:
         return emit
-    if to_type.kind == 'int' and not to_type.signed:
-        mask = mask_of(to_type.bits)
-        return lambda frame: emit(frame) & mask
-    conv = _converter(to_type)
-    return lambda frame: conv(emit(frame))
+    return _fused(emit, to_type)
 
 
 def _compound(op, target_type, value_type, line):
@@ -711,6 +722,22 @@ def _compound(op, target_type, value_type, line):
     bits = promote(target_type).bits
     signed = promote(target_type).signed
     target_conv = _converter(promote(target_type))
+
+    # Unsigned: converting the operands and then the result is the same as
+    # masking once at the end, for every one of these operators.
+    if not common.signed and common.kind != 'bool':
+        if op == '+':
+            return lambda a, b: (a + b) & mask
+        if op == '-':
+            return lambda a, b: (a - b) & mask
+        if op == '*':
+            return lambda a, b: (a * b) & mask
+        if op == '&':
+            return lambda a, b: a & b & mask
+        if op == '|':
+            return lambda a, b: (a | b) & mask
+        if op == '^':
+            return lambda a, b: (a ^ b) & mask
 
     if op == '+':
         return lambda a, b: conv(conv(a) + conv(b))
