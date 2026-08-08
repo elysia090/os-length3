@@ -28,12 +28,17 @@ from tests.support import EXAMPLES, example, read_example, solved as solve, targ
 CASES = ['ranks8', 'inclusive_rank8', 'byte_mask8', 'ranks16_nibble',
          'morton_dilate16', 'morton_compact_even16', 'prefix_parity_mask8',
          'quote_state_before8', 'select8', 'shuffle_control8', 'run_ids8',
-         'starts8', 'ends8', 'spread_high8', 'expand_nibbles8']
+         'starts8', 'ends8', 'spread_high8', 'expand_nibbles8',
+         'middle_bits_u16']
 
 # 64-bit inputs: the round trip still has to be a fixed point, but the reader
 # cannot be checked by enumeration.
 SAMPLED_CASES = ['prefix_xor64', 'changes64', 'mask_from_spread',
-                 'byte_mask_from_spread']
+                 'byte_mask_from_spread',
+                 # The lane comparisons: eight AND/ADD/SUB/OR/XOR/NOT steps
+                 # with no PDEP or CLMUL in them, which is a different path
+                 # through both readers than anything above.
+                 'zero_spread8', 'eq_spread8', 'lt_spread8', 'range_spread8']
 
 
 def listings(name):

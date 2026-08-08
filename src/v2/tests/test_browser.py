@@ -343,7 +343,9 @@ class TestValueTransport(unittest.TestCase):
         # right, not that one mistake was made twice.
         from tests.support import read_example
         examples = ['block_offsets8.c', 'byte_mask_from_spread.c',
-                    'changes64.c', 'mask_from_spread.c', 'prefix_xor64.c']
+                    'changes64.c', 'mask_from_spread.c', 'prefix_xor64.c',
+                    'zero_spread8.c', 'eq_spread8.c', 'lt_spread8.c',
+                    'range_spread8.c']
         for name in examples:
             with self.subTest(example=name):
                 source = read_example(name)

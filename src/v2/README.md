@@ -254,6 +254,15 @@ and reported as such. Wider domains get basis, boundary and deterministic
 differential probes, and every report of one says in as many words that it is
 not a proof of global equivalence.
 
+**Comparison is a semantic class, not three of them.** A per-lane `==`, `<` or
+pair of bounds arrives as one abstract step carrying the interval; the equality,
+one-sided and two-sided forms in `lanecode.h` are three physical
+representatives, chosen during lowering the way LIN_CONST chooses between PDEP
+and a shift-XOR chain. The interval and the lane width are both read off the
+observed data — every input carries eight independent observations of the same
+byte-local predicate, so a domain far too sparse to characterise a 64-bit
+function still sees all 256 lane values a few hundred times each.
+
 ---
 
 ## Deliberately not done yet
@@ -270,5 +279,15 @@ not a proof of global equivalence.
   it are implemented and tested against a native Clang; no wasm build of Clang is
   vendored, and I could not reach a CDN from the environment this was written in
   to verify a specific one.
+* **Whole-word comparison, reduction and modular arithmetic.** The declared
+  grammar is GF(2)-linear maps, convolutions, lane-local steps and gathers. A
+  predicate *within* a lane is in it; a comparison *between* lanes is not. So
+  the classic teaching kernels — `is_less_or_equal`, `min`, `max` of packed
+  bytes, `round_up_pow2`, `how_many_bits`, `popcount` as a number, `(a + b) % m`,
+  a rolling hash, or float sign/exponent/mantissa surgery — come back as "no
+  program in the declared grammar" rather than as a wrong answer. `middle_bits`
+  is the one of that family that does land, because selecting bits is linear.
+  Extending the grammar to reach the rest is a different change from extending
+  the search, and neither is done.
 * **The paid surface** (SPEC §22-§32): API, CLI-over-API, CI, batch, private
   cache, native oracle, team workspaces. v2 is the free interactive product only.

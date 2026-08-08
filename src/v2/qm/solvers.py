@@ -16,7 +16,7 @@ implying quotient-aware generation.
 Layer 4: depends on `bits`, `program`, `semantics`, `observer`.
 """
 
-from .bits import M64, clmul, mask_of, pdep, pext
+from .bits import M64, clmul, lane_masks, mask_of, pdep, pext
 from .program import (
     Program, compile_program, conv, identity, lin_const, perm_dyn_gather,
     point, table,
@@ -335,6 +335,130 @@ def _lane_width(deposit_mask, input_bits):
 
 
 # ---------------------------------------------------------------------------
+# POINT — per-lane comparison against a constant
+# ---------------------------------------------------------------------------
+
+# Lane widths worth testing: a divisor of 64 wide enough to hold a comparison,
+# and narrow enough that the domain can show every value a lane can take.
+LANE_WIDTHS = (2, 4, 8, 16)
+
+
+def _lane_bits_of(outputs, input_bits):
+    """The lane width implied by where the output bits are, or None.
+
+    A per-lane predicate writes one bit per lane and nothing else, so the union
+    of every output is a subset of "the top bit of each lane". That pins the
+    width without having to be told it.
+    """
+    union = 0
+    for y in outputs:
+        union |= y
+    if not union:
+        return None                     # a constant, and not this family's job
+    for lane_bits in LANE_WIDTHS:
+        if lane_bits > input_bits or input_bits % lane_bits:
+            continue
+        _, _, high = lane_masks(lane_bits)
+        high &= mask_of(input_bits)
+        if union & ~high:
+            continue
+        # The lowest bit that ever fires has to be a lane's top bit; otherwise
+        # a wider lane would explain the same outputs and be wrong about which.
+        if (union & -union) == (1 << (lane_bits - 1)):
+            return lane_bits
+    return None
+
+
+def _lane_truth_table(sem, lane_bits):
+    """Which lane values set their lane's bit, read off the observed data.
+
+    Every input carries `64 / lane_bits` independent observations of the same
+    lane-local predicate, so a domain far too sparse to characterise a 64-bit
+    function still sees each of the 256 byte values a few hundred times. The
+    answer is only accepted when *every* value has been seen and every sighting
+    agreed: a predicate guessed at the values that happened to show up is not
+    forced by anything.
+    """
+    lanes = sem.input_bits // lane_bits
+    lane_mask = mask_of(lane_bits)
+    top = 1 << (lane_bits - 1)
+    truth = {}
+    for x, y in sem.pairs():
+        for i in range(lanes):
+            value = (x >> (lane_bits * i)) & lane_mask
+            fired = bool((y >> (lane_bits * i)) & top)
+            seen = truth.get(value)
+            if seen is None:
+                truth[value] = fired
+            elif seen != fired:
+                return None             # not lane-local, or not uniform
+    if len(truth) != (1 << lane_bits):
+        return None
+    return truth
+
+
+def _lane_interval(truth, lane_bits):
+    """The accepted set as (lo, hi), or None when it is not an interval."""
+    accepted = sorted(value for value, fired in truth.items() if fired)
+    if not accepted or len(accepted) == len(truth):
+        return None                     # constant; `solve_constant` owns those
+    if accepted != list(range(accepted[0], accepted[-1] + 1)):
+        return None                     # not an interval, so not this family
+    lo, hi = accepted[0], accepted[-1]
+    # Only the two-sided form has the second subtraction, and only it needs the
+    # upper bound to stay below the lane's top bit.  Equality does not subtract
+    # at all and the one-sided form subtracts once, so neither is restricted —
+    # `lane == 0xC0` is as answerable as `lane == 0x2C`.
+    two_sided = lo != 0 and lo != hi
+    if two_sided and hi >= (1 << (lane_bits - 1)):
+        return None
+    return lo, hi
+
+
+def _describe_interval(lo, hi, lane_bits):
+    if lo == hi:
+        return 'lane == %d' % lo
+    if lo == 0:
+        return 'lane < %d' % (hi + 1)
+    return '%d <= lane <= %d' % (lo, hi)
+
+
+def solve_lane_predicate(sem, obs, options=None):
+    """`POINT` — one interval test applied to every lane, as in lanecode.h.
+
+    Comparison is where this grammar stops being linear: there is no GF(2)
+    description of `lane < c`, and a deposit/convolution cannot produce one, so
+    without this a per-lane predicate falls all the way through to a 2^16-entry
+    lookup table. What is searched here is the interval, read off the data; the
+    equality, one-sided and two-sided forms that compute it are three physical
+    representatives of the same abstract step, chosen in `isa.lower_point`.
+    """
+    if sem.input_bits < 4 or sem.output_bits < sem.input_bits:
+        return []
+
+    lane_bits = _lane_bits_of(sem.table(), sem.input_bits)
+    if lane_bits is None:
+        return []
+    truth = _lane_truth_table(sem, lane_bits)
+    if truth is None:
+        return []
+    bounds = _lane_interval(truth, lane_bits)
+    if bounds is None:
+        return []
+
+    lo, hi = bounds
+    op = point([('LANE_INTERVAL', (lo, hi), lane_bits)],
+               note='%d-bit lanes, %s'
+                    % (lane_bits, _describe_interval(lo, hi, lane_bits)))
+    prog = Program([op], 1, 1, 'lane-interval', sem.input_bits, sem.output_bits,
+                   ['the accepted set is forced by the observed lanes: every '
+                    'one of the %d values a %d-bit lane can take was seen, and '
+                    'they form the interval [%d, %d]'
+                    % (1 << lane_bits, lane_bits, lo, hi)])
+    return [prog] if verify(prog, sem, obs) else []
+
+
+# ---------------------------------------------------------------------------
 # POINT ; PERM_DYN — dynamic gather with a constant source
 # ---------------------------------------------------------------------------
 
@@ -502,6 +626,7 @@ COMPACT_SOLVERS = (
     solve_conv_only,
     solve_deposit_conv_family,
     solve_linear,
+    solve_lane_predicate,
     solve_point_gather,
 )
 
