@@ -43,8 +43,8 @@ Python side by side, and what is deliberately not built yet.
 For the 14-line `ranks8` from the spec:
 
 ```
-Clang -O2             77 x86-64 instructions
 Quotient Minimizer    2 core operations      PDEP ; IMUL
 Residual freedom      502 solutions
 Verification          exact exhaustive, 256 / 256
+Artifact              13,586 bytes           pack(code(z))
 ```

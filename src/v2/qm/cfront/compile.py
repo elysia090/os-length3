@@ -19,6 +19,7 @@ over whole domains, so the fast path can never quietly drift from the slow one.
 """
 
 from ..bits import mask_of
+from . import intrinsics
 from . import nodes as N
 from .ctypes_model import (
     BOOL, INT, U32, U64, VOID, CType, convert, promote, truncdiv,
@@ -40,6 +41,20 @@ class _Return(object):
 
 # Frame layout: slot 0 holds a one-element list with the remaining loop budget.
 BUDGET_SLOT = 0
+
+
+def _fused(emit, ctype):
+    """`emit`, then the conversion to `ctype`, without a second call.
+
+    Unsigned conversion *is* a mask, so it goes inline.  A domain sweep runs
+    the closure tree 65,536 times, and a conversion hop that survives on every
+    node costs a Python call each time.
+    """
+    if ctype.kind != 'bool' and not ctype.signed:
+        mask = mask_of(ctype.bits)
+        return lambda frame: emit(frame) & mask
+    conv = _converter(ctype)
+    return lambda frame: conv(emit(frame))
 
 
 def _converter(ctype):
@@ -160,10 +175,19 @@ class Compiler(object):
                               line=getattr(node, 'line', None))
         return method(self, node, scope)
 
+    def _stmt_decl_group(self, node, scope):
+        # Same scope, several declarators.
+        parts = [self._stmt(item, scope) for item in node.items]
+        return self._sequence(parts)
+
     def _stmt_block(self, node, scope):
         scope.push()
         parts = [self._stmt(item, scope) for item in node.items]
         scope.pop()
+        return self._sequence(parts)
+
+    @staticmethod
+    def _sequence(parts):
         if not parts:
             return lambda frame: None
         if len(parts) == 1:
@@ -418,8 +442,7 @@ class Compiler(object):
 
     def _expr_cast(self, node, scope):
         inner, _ = self._expr(node.operand, scope)
-        conv = _converter(node.ctype)
-        return (lambda frame: conv(inner(frame))), node.ctype
+        return _fused(inner, node.ctype), node.ctype
 
     def _expr_sizeof(self, node, scope):
         size = max(1, node.ctype.bits // 8)
@@ -433,7 +456,7 @@ class Compiler(object):
         rtype = promote(itype)
         conv = _converter(rtype)
         if op == '+':
-            return (lambda frame: conv(inner(frame))), rtype
+            return _fused(inner, rtype), rtype
         if op == '-':
             return (lambda frame: conv(-inner(frame))), rtype
         if op == '~':
@@ -479,6 +502,13 @@ class Compiler(object):
         lc = _rewrap(left, ltype, common)
         rc = _rewrap(right, rtype, common)
         mask = mask_of(common.bits)
+
+        # Unsigned arithmetic *is* "compute, then mask", so the mask goes
+        # inline.  Routing it through the conversion function instead costs one
+        # Python call per operator per evaluation, and the domain of a 16-bit
+        # kernel is 65,536 evaluations.
+        if not common.signed and op in _UNSIGNED_BINARY:
+            return _UNSIGNED_BINARY[op](lc, rc, mask), common
 
         if op == '+':
             return (lambda frame: conv(lc(frame) + rc(frame))), common
@@ -558,10 +588,12 @@ class Compiler(object):
         else:
             combine = _compound(node.op[:-1], ctype, vtype, node.line)
 
+        converted = _fused(value, ctype)
+
         if store is None:
             if combine is None:
                 def emit(frame):
-                    result = conv(value(frame))
+                    result = converted(frame)
                     frame[slot] = result
                     return result
             else:
@@ -574,7 +606,7 @@ class Compiler(object):
         index_of, slot_of = store
         if combine is None:
             def emit(frame):
-                result = conv(value(frame))
+                result = converted(frame)
                 frame[slot_of][index_of(frame)] = result
                 return result
         else:
@@ -662,12 +694,24 @@ def _budget_error():
                             'interactive budget')
 
 
+# Masking both operands of a bitwise operator and masking the result are the
+# same thing, so these are the existing forms with one call taken out, not new
+# arithmetic.
+_UNSIGNED_BINARY = {
+    '+': lambda lc, rc, m: lambda frame: (lc(frame) + rc(frame)) & m,
+    '-': lambda lc, rc, m: lambda frame: (lc(frame) - rc(frame)) & m,
+    '*': lambda lc, rc, m: lambda frame: (lc(frame) * rc(frame)) & m,
+    '&': lambda lc, rc, m: lambda frame: lc(frame) & rc(frame) & m,
+    '|': lambda lc, rc, m: lambda frame: (lc(frame) | rc(frame)) & m,
+    '^': lambda lc, rc, m: lambda frame: (lc(frame) ^ rc(frame)) & m,
+}
+
+
 def _rewrap(emit, from_type, to_type):
     """Insert a conversion only when the static types actually differ."""
     if from_type == to_type:
         return emit
-    conv = _converter(to_type)
-    return lambda frame: conv(emit(frame))
+    return _fused(emit, to_type)
 
 
 def _compound(op, target_type, value_type, line):
@@ -678,6 +722,22 @@ def _compound(op, target_type, value_type, line):
     bits = promote(target_type).bits
     signed = promote(target_type).signed
     target_conv = _converter(promote(target_type))
+
+    # Unsigned: converting the operands and then the result is the same as
+    # masking once at the end, for every one of these operators.
+    if not common.signed and common.kind != 'bool':
+        if op == '+':
+            return lambda a, b: (a + b) & mask
+        if op == '-':
+            return lambda a, b: (a - b) & mask
+        if op == '*':
+            return lambda a, b: (a * b) & mask
+        if op == '&':
+            return lambda a, b: a & b & mask
+        if op == '|':
+            return lambda a, b: (a | b) & mask
+        if op == '^':
+            return lambda a, b: (a ^ b) & mask
 
     if op == '+':
         return lambda a, b: conv(conv(a) + conv(b))
@@ -743,58 +803,15 @@ def _is_constant(node):
 
 
 # ---------------------------------------------------------------------------
-# Builtins
+# Builtins and intrinsics
 # ---------------------------------------------------------------------------
-
-def _builtin_unary(bits, fn, ret_type=INT):
-    def build(compiler, node, args, scope):
-        if len(args) != 1:
-            raise CFrontError('%s expects 1 argument' % node.name,
-                              line=node.line)
-        emit, atype = args[0]
-        mask = mask_of(bits)
-        line = node.line
-        return (lambda frame: fn(emit(frame) & mask, line)), ret_type
-    return build
-
-
-def _popcount(value, line):
-    return bin(value).count('1')
-
-
-def _parity(value, line):
-    return bin(value).count('1') & 1
-
-
-def _ctz(value, line):
-    if value == 0:
-        raise CFrontError('__builtin_ctz(0) is undefined', line=line,
-                          hint='guard the zero case explicitly')
-    return (value & -value).bit_length() - 1
-
-
-def _clz_for(bits):
-    def clz(value, line):
-        if value == 0:
-            raise CFrontError('__builtin_clz(0) is undefined', line=line,
-                              hint='guard the zero case explicitly')
-        return bits - value.bit_length()
-    return clz
-
-
-def _bswap_for(bits):
-    width = bits // 8
-
-    def bswap(value, line):
-        return int.from_bytes(value.to_bytes(width, 'little'), 'big')
-
-    return bswap
-
+#
+# The pure ones come from `intrinsics.py`, the same table the interpreter reads.
+# Only the few that depend on their operand's type are written out here.
 
 def _builtin_expect(compiler, node, args, scope):
     if len(args) != 2:
-        raise CFrontError('__builtin_expect expects 2 arguments',
-                          line=node.line)
+        raise CFrontError('__builtin_expect expects 2 arguments', line=node.line)
     return args[0]
 
 
@@ -803,27 +820,6 @@ def _builtin_abs(compiler, node, args, scope):
     rtype = promote(atype)
     conv = _converter(rtype)
     return (lambda frame: conv(abs(emit(frame)))), rtype
-
-
-def _builtin_rotate(bits, left):
-    def build(compiler, node, args, scope):
-        if len(args) != 2:
-            raise CFrontError('%s expects 2 arguments' % node.name,
-                              line=node.line)
-        value, _ = args[0]
-        count, _ = args[1]
-        mask = mask_of(bits)
-        rtype = U32 if bits <= 32 else U64
-
-        def emit(frame):
-            x = value(frame) & mask
-            k = count(frame) % bits
-            if not left:
-                k = (bits - k) % bits
-            return ((x << k) | (x >> (bits - k))) & mask if k else x
-
-        return emit, rtype
-    return build
 
 
 def _builtin_minmax(is_min):
@@ -837,37 +833,59 @@ def _builtin_minmax(is_min):
     return build
 
 
+def _from_registry(intrinsic):
+    """Compile a fixed-arity intrinsic to a closure over its operands."""
+    masks = [mask_of(width) for width in intrinsic.widths]
+    fn = intrinsic.fn
+    name = intrinsic.name
+
+    def build(compiler, node, args, scope):
+        if len(args) != intrinsic.arity:
+            raise CFrontError('%s expects %d argument(s), got %d'
+                              % (name, intrinsic.arity, len(args)),
+                              line=node.line)
+        emits = [emit for emit, _ctype in args]
+        line = node.line
+
+        if intrinsic.arity == 1:
+            single, mask = emits[0], masks[0]
+
+            def emit_one(frame):
+                try:
+                    return fn(single(frame) & mask)
+                except CFrontError as exc:
+                    raise CFrontError(exc.message, line=line, hint=exc.hint)
+
+            return emit_one, intrinsic.result
+
+        def emit_many(frame):
+            values = [e(frame) & m for e, m in zip(emits, masks)]
+            try:
+                return fn(*values)
+            except CFrontError as exc:
+                raise CFrontError(exc.message, line=line, hint=exc.hint)
+
+        return emit_many, intrinsic.result
+
+    return build
+
+
 BUILTINS = {
-    '__builtin_popcount': _builtin_unary(32, _popcount),
-    '__builtin_popcountl': _builtin_unary(64, _popcount),
-    '__builtin_popcountll': _builtin_unary(64, _popcount),
-    '__builtin_parity': _builtin_unary(32, _parity),
-    '__builtin_parityl': _builtin_unary(64, _parity),
-    '__builtin_parityll': _builtin_unary(64, _parity),
-    '__builtin_ctz': _builtin_unary(32, _ctz),
-    '__builtin_ctzl': _builtin_unary(64, _ctz),
-    '__builtin_ctzll': _builtin_unary(64, _ctz),
-    '__builtin_clz': _builtin_unary(32, _clz_for(32)),
-    '__builtin_clzl': _builtin_unary(64, _clz_for(64)),
-    '__builtin_clzll': _builtin_unary(64, _clz_for(64)),
-    '__builtin_bswap16': _builtin_unary(16, _bswap_for(16), U32),
-    '__builtin_bswap32': _builtin_unary(32, _bswap_for(32), U32),
-    '__builtin_bswap64': _builtin_unary(64, _bswap_for(64), U64),
     '__builtin_expect': _builtin_expect,
     '__builtin_abs': _builtin_abs,
     'abs': _builtin_abs,
     'labs': _builtin_abs,
-    '__builtin_rotateleft32': _builtin_rotate(32, True),
-    '__builtin_rotateleft64': _builtin_rotate(64, True),
-    '__builtin_rotateright32': _builtin_rotate(32, False),
-    '__builtin_rotateright64': _builtin_rotate(64, False),
     '__builtin_min': _builtin_minmax(True),
     '__builtin_max': _builtin_minmax(False),
 }
 
+for _name, _intrinsic in intrinsics.REGISTRY.items():
+    BUILTINS[_name] = _from_registry(_intrinsic)
+
 
 _STMT_DISPATCH = {
     N.Block: Compiler._stmt_block,
+    N.DeclGroup: Compiler._stmt_decl_group,
     N.Empty: Compiler._stmt_empty,
     N.ExprStmt: Compiler._stmt_expr,
     N.Decl: Compiler._stmt_decl,

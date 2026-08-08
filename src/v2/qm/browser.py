@@ -1,9 +1,11 @@
 """Entry points for the browser worker.
 
 The worker cannot call Python objects across the boundary cheaply, so this
-module exposes two JSON-in / JSON-out functions and keeps every decision on the
-Python side:
+module exposes a few JSON-in / JSON-out functions and keeps every decision on
+the Python side:
 
+    route(source)             is this C, or is it already a listing?
+    prepare(source)           the source as Clang should see it
     plan(source, options)     what to compile, and which inputs to evaluate
     finish(source, options)   the full result, given the evaluated table
 
@@ -42,9 +44,83 @@ def capabilities():
             {'spec': 'nonzero', 'label': 'Observe zero/nonzero'},
             {'spec': 'mask:0xFF00FF00FF00FF00', 'label': 'Custom bit mask'},
         ],
-        'opt_levels': ['-O1', '-O2', '-O3'],
-        'source_targets': ['x86-64', 'x86-64-v2', 'x86-64-v3', 'x86-64-v4'],
     })
+
+
+def route(source):
+    """Is this paste C, or is it already a listing?
+
+    The worker asks before it starts a compiler.  Handing assembly to Clang
+    produces a page of parse errors about a file that was never C, so the
+    decision belongs here, next to the reader that will do the work.
+    """
+    from . import asmfront
+    dialect = asmfront.detect(source or '')
+    return _dumps({'kind': 'asm' if dialect else 'c', 'dialect': dialect})
+
+
+def split(source):
+    """The paste without its driver, and whether it had one.
+
+    A paste may carry a `main` that exercises the kernel. Two different things
+    want two different halves of it: the minimizer must see the kernel alone —
+    `main` reads a stream, not a domain, and minimizing it would report the
+    driver's function — while running the paste needs the whole file. The page
+    asks once, here, so both halves come from one decision.
+    """
+    from .clang import split_main
+    kernel, span = split_main(source or '')
+    return _dumps({'ok': True, 'has_main': span is not None,
+                   'kernel': kernel})
+
+
+def prepare(source):
+    """The paste as Clang should see it — the one place that decides.
+
+    The browser used to hand its raw text straight to clang.wasm, which meant
+    the freestanding prelude and the intrinsic definitions in `clang.py` were
+    applied on the native path and nowhere else.  `#include <immintrin.h>`
+    then reached a wasm32 compile, where it declares nothing, and QM's own
+    emitted `_pdep_u64` came back as an undeclared function.
+    """
+    from .clang import prepare_source
+    return prepare_source(source or '')
+
+
+def prepare_run(source):
+    """The driver alone, with the kernel left undefined for the artifact.
+
+    Compiling the whole paste would run Clang's kernel and call that the
+    answer. What Run has to execute is the minimized program, so the kernel
+    arrives as an import and `web/worker.js` implements it by feeding the
+    artifact.
+    """
+    from .clang import prepare_driver, split_main
+    source = source or ''
+    kernel, _span = split_main(source)
+    try:
+        signature = read_signature(kernel)
+    except CFrontError:
+        signature = None
+    return prepare_driver(source, signature)
+
+
+def run_plan():
+    """What the driver's kernel import has to be wired to.
+
+    From the last solve, so it names the function QM actually took rather than
+    whatever the paste happens to define first.
+    """
+    if '*artifact' not in _LAST:
+        return _dumps({'ok': False,
+                       'error': _LAST.get('*artifact_error')
+                       or 'no minimized program has been built yet'})
+    return _dumps({'ok': True,
+                   'function': _LAST.get('*function') or 'kernel',
+                   'input_bits': _LAST['*input_bits'],
+                   'output_bits': _LAST['*output_bits'],
+                   'in_bytes': -(-_LAST['*input_bits'] // 8),
+                   'out_bytes': -(-_LAST['*output_bits'] // 8)})
 
 
 def plan(source, options_json='{}'):
@@ -59,22 +135,14 @@ def plan(source, options_json='{}'):
     except CFrontError as exc:
         return _dumps({'ok': False, 'error': exc.to_dict()})
 
-    if len(signature['params']) != 1:
-        return _dumps({'ok': False, 'error': {
-            'message': '%s takes %d arguments; exactly one is required'
-                       % (signature['name'], len(signature['params'])),
-            'text': '%s takes %d arguments; exactly one is required'
-                    % (signature['name'], len(signature['params'])),
-            'hint': 'combine the arguments into a single word'}})
+    from .frontend import require_analysable
+    try:
+        require_analysable(signature)
+    except CFrontError as exc:
+        return _dumps({'ok': False, 'error': exc.to_dict()})
 
     param_name, param_ctype = signature['params'][0]
     ret = signature['ret']
-    if ret.kind == 'void':
-        return _dumps({'ok': False, 'error': {
-            'message': '%s returns void, so nothing is observable'
-                       % signature['name'],
-            'text': '%s returns void, so nothing is observable'
-                    % signature['name']}})
 
     input_bits = min(param_ctype.bits, int(options.get('max_input_bits', 64)))
     if options.get('input_bits'):
@@ -94,7 +162,16 @@ def plan(source, options_json='{}'):
         'input_bits': input_bits,
         'output_bits': ret.bits,
         'domain': domain.to_dict(),
-        'values': domain.values(),
+        # Which other functions the paste defined, and why each was not taken.
+        # Only this side ever parses the source, so if it does not travel the
+        # browser cannot say which of twenty kernels it answered about.
+        'other_functions': signature.get('others') or [],
+        # Decimal strings, for the same reason the outputs come back as
+        # strings: a JSON number is a double, and 4,177 of the 4,287 points in
+        # a 64-bit domain are above 2^53.  Sent as numbers they arrive rounded,
+        # and the worker would evaluate the kernel at inputs neither side
+        # asked for.
+        'values': [str(v) for v in domain.values()],
         'signature': {
             'name': signature['name'],
             'signature': '%s %s(%s %s)' % (ret.name, signature['name'],
@@ -105,28 +182,252 @@ def plan(source, options_json='{}'):
     })
 
 
+# The last solve, before `to_json_safe` strips it.  A lowered `Seq` is a live
+# object and cannot cross to JS, so the one place that can still run the
+# minimized program is here, in the worker that produced it.
+_LAST = {}
+
+
+CODEC_TARGET = 'codec'
+
+# Above this the C view is replaced by a note; see where it is used.
+C_RENDER_LIMIT = 20000
+
+
+def _codec_cost(picture, input_bits):
+    """What §3.7 charges for running this image, worst of a fixed sample.
+
+    Span and work are properties of the *run*, not of the listing: §3.2 makes a
+    transition a capture plus a broadcast over the rows that read the written
+    coordinate, and §3.7 charges `Theta(k+1)` work and `Theta(1)` span for it.
+    Counting instructions instead — which is what this used to do — reports the
+    same number for span and for work and is neither of them.
+
+    A run is input-dependent, so this takes the worst of a small fixed sample
+    rather than claiming a single number covers every input. Three values are
+    enough to be worth reporting and cheap enough to always do: across the
+    examples here, all-zeros, alternating and all-ones bracket a five-value
+    sample to within one percent, and the largest image costs about a second.
+    """
+    from vm import machine, rows
+
+    limit = (1 << input_bits) - 1
+    values = sorted({0, 0xAAAAAAAAAAAAAAAA & limit, limit})
+    width = -(-input_bits // 8)
+    # This lowering is straight-line, so a terminating run enters each
+    # instruction about once; eight times the cell count is generous headroom
+    # and still bounds a runaway at a few seconds rather than a hang.
+    budget = max(1 << 16, 8 * len(picture.memory))
+
+    residual = machine.Residual(picture)
+    worst = None
+    for value in values:
+        history = [(value >> (8 * i)) & 255 for i in range(width)]
+        try:
+            cost = rows.measure(residual, history, budget)
+        except machine.Unfinished:
+            return None
+        if cost is None:
+            return None
+        if worst is None or cost.work > worst.work:
+            worst = cost
+    return worst
+
+
+def _keep(result):
+    """Remember the solve, and add the codec to the targets it can be seen as.
+
+    The artifact comes from the *abstract* program, not from any target's
+    lowered sequence. That is what makes it a single source of truth rather
+    than a fourth listing: it is a property of the solve, and the same one
+    whichever machine you are looking at.
+    """
+    _LAST.clear()
+    if not result.get('ok') or not result.get('program_object'):
+        return result
+
+    _LAST['*input_bits'] = result['frontend']['input_bits']
+    _LAST['*output_bits'] = result['frontend']['output_bits']
+    _LAST['*primary'] = result.get('primary_target')
+    _LAST['*function'] = (result['frontend'].get('function') or {}).get('name')
+
+    from vm import codec as vm_codec, emit, image as vm_image, lower
+
+    input_bits, output_bits = _LAST['*input_bits'], _LAST['*output_bits']
+    try:
+        picture = lower.lower_program(result['program_object'],
+                                      input_bits, output_bits)
+    except lower.Unsupported as exc:
+        _LAST['*artifact_error'] = str(exc)
+        return result
+
+    payload = vm_image.serialize(picture)
+    blob = vm_codec.pack(vm_codec.code(payload))
+    _LAST['*artifact'] = blob
+    _LAST['*image'] = picture
+
+    name = (result['frontend'].get('function') or {}).get('name') or 'kernel'
+    primary = next((t for t in result.get('targets') or []
+                    if t['name'] == result.get('primary_target')), None)
+    cost = _codec_cost(picture, input_bits)
+    if cost is None:
+        # No run finished inside the budget, so there is no §3.7 quantity to
+        # report. Say the size of the image and say that is what it is.
+        steps = sum(1 for at in picture.memory if at >= 0) // 3
+        span, work = steps, steps
+        note = 'the artifact itself; %d instructions, not run' % steps
+    else:
+        span, work = cost.span, cost.work
+        note = ('the artifact itself; %s transitions, %s of them quiet'
+                % ('{:,}'.format(cost.transitions), '{:,}'.format(cost.quiet)))
+
+    result.setdefault('targets', []).append({
+        'name': CODEC_TARGET,
+        'isa': {'name': CODEC_TARGET, 'title': 'codec', 'note': note},
+        'ok': True,
+        # §3.2, not the listing: one transition is a capture whose row
+        # dependency is Theta(1), and a wave over the rows that read the cell
+        # it wrote, which is Theta(k+1) work. Span and work therefore differ,
+        # and neither is the instruction count.
+        'span': span,
+        'work': work,
+        # Span is one per transition, so it already says how many there were.
+        'quiet': cost.quiet if cost else None,
+        'barriers': cost.barriers if cost else None,
+        'core_ops': (result.get('program') or {}).get('core_ops'),
+        # One row, entered and repaired. §3.1 gives the transition its meaning;
+        # §3.2 gives it its shape, and the shape is what these numbers count.
+        'instructions': ['ROW'],
+        'L_bits': vm_codec.length(payload),
+        'L_bytes': len(blob),
+        'cells': len(picture.memory),
+        # The codec view is the codeword — `pack(code(z))` as bytes, with its
+        # fields named — and then the listing those bits decode to. A view
+        # called codec that showed only a disassembly would be showing the
+        # decode and calling it the code.
+        'asm': emit.emit_code(picture, name, input_bits, output_bits,
+                              listing=len(picture.memory) <= C_RENDER_LIMIT),
+        # The C rendering of a big image is a file of the same order as the
+        # image, and it crosses the worker boundary as one string.  Past this
+        # it is offered rather than sent; the listing above is the artifact
+        # either way.
+        'c': (emit.emit_c(picture, '%s_qm' % name, input_bits, output_bits)
+              if len(picture.memory) <= C_RENDER_LIMIT else
+              '/* %d cells: too large to render as C here.\n'
+              '   The listing beside it is the same program. */\n'
+              % len(picture.memory)),
+        'verification': primary.get('verification') if primary else None,
+        'observer': primary.get('observer') if primary else None,
+        'representatives': [('artifact', 'pack(code(z))')],
+    })
+    return result
+
+
+def artifact(_target_name=''):
+    """The minimized program as one rSUBLEQ artifact.
+
+    There is one, not one per target: `_keep` builds it from the abstract
+    program the solve produced. The argument is accepted and ignored so a
+    caller that names the target it is looking at still gets the program.
+
+    Base64 because the artifact is bytes and JSON has no way to say so.
+    """
+    import base64
+
+    if '*artifact' not in _LAST:
+        if '*artifact_error' in _LAST:
+            return _dumps({'ok': False,
+                           'error': 'this program has no artifact: %s'
+                                    % _LAST['*artifact_error']})
+        return _dumps({'ok': False,
+                       'error': 'no minimized program has been built yet'})
+
+    blob = _LAST['*artifact']
+    input_bits, output_bits = _LAST['*input_bits'], _LAST['*output_bits']
+    return _dumps({
+        'ok': True,
+        'target': CODEC_TARGET,
+        'artifact': base64.b64encode(blob).decode('ascii'),
+        'bytes': len(blob),
+        'input_bits': input_bits,
+        'output_bits': output_bits,
+        'in_bytes': -(-input_bits // 8),
+        'out_bytes': -(-output_bits // 8),
+    })
+
+
+def parse_input(value='0'):
+    """One input value, or why it is not one. Decimal or 0x, and it must fit."""
+    from .bits import mask_of
+    if '*input_bits' not in _LAST:
+        return _dumps({'ok': False,
+                       'error': 'no minimized program has been built yet'})
+    input_bits = _LAST['*input_bits']
+    try:
+        x = int(str(value).strip() or '0', 0)
+    except ValueError:
+        return _dumps({'ok': False, 'error': 'not an integer: %r' % value})
+    if not 0 <= x <= mask_of(input_bits):
+        return _dumps({'ok': False,
+                       'error': 'input does not fit %d bits' % input_bits})
+    # Little-endian, which is the order `lower_seq` frames the stream in.
+    return _dumps({'ok': True, 'value': str(x), 'input_bits': input_bits,
+                   'feed': [(x >> (8 * k)) & 0xFF
+                            for k in range(-(-input_bits // 8))]})
+
+
+def evaluate(target_name='', value='0'):
+    """Run the minimized program on one input, through the artifact.
+
+    The reference path: normalize, then `open`/`feed`/`read` on the Python
+    machine. `web/vm.js` does the same thing on the compiled one, and
+    `tests/test_vm_qm.py` requires the two to agree.
+    """
+    import base64
+    from vm.run import evaluate as run_artifact
+
+    parsed = json.loads(parse_input(value))
+    if not parsed['ok']:
+        return _dumps(parsed)
+    built = json.loads(artifact(target_name))
+    if not built['ok']:
+        return _dumps(built)
+
+    blob = base64.b64decode(built['artifact'])
+    out = run_artifact(blob, int(parsed['value']),
+                       built['input_bits'], built['output_bits'])
+    if out is None:
+        return _dumps({'ok': False,
+                       'error': 'the artifact gave no byte for this input'})
+    return _dumps({'ok': True, 'input': parsed['value'],
+                   'input_bits': built['input_bits'],
+                   'output': str(out), 'target': built['target'],
+                   'artifact_bytes': built['bytes']})
+
+
 def finish(source, options_json='{}', table=None, assembly=''):
     """Run the pipeline on a table the worker has already evaluated."""
     options = json.loads(options_json or '{}')
     options = dict(options)
     options['table'] = list(table or [])
     options['assembly'] = assembly or ''
-    result = solve(source, function=options.get('function'),
-                   observer=options.get('observer', 'exact'),
-                   targets=options.get('targets'),
-                   frontend='precompiled', options=options)
+    result = _keep(solve(source, function=options.get('function'),
+                         observer=options.get('observer', 'exact'),
+                         targets=options.get('targets'),
+                         frontend='precompiled', options=options))
     return _dumps(to_json_safe(result))
 
 
 def fallback(source, options_json='{}'):
-    """Run the whole pipeline in Python, with no compiler available.
+    """Run the whole pipeline in Python, with no compiler involved.
 
-    Slower and limited to the C subset, but it means the page still answers
-    when the Clang bundle cannot be fetched.
+    Two things land here: C, when the Clang bundle cannot be fetched — slower
+    and limited to the subset, but the page still answers — and any paste
+    `route` identified as a listing, which never needed a compiler at all.
     """
     options = json.loads(options_json or '{}')
-    result = solve(source, function=options.get('function'),
-                   observer=options.get('observer', 'exact'),
-                   targets=options.get('targets'),
-                   frontend='cfront', options=options)
+    result = _keep(solve(source, function=options.get('function'),
+                         observer=options.get('observer', 'exact'),
+                         targets=options.get('targets'),
+                         frontend='cfront', options=options))
     return _dumps(to_json_safe(result))

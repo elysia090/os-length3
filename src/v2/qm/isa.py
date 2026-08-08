@@ -10,7 +10,9 @@ searches them with the same lexicographic objective used everywhere else:
     span, work, L(z), rank
 """
 
-from .bits import M64, bswap64, clmul, mask_of, pdep, pext, popcnt
+from . import straightline
+from .bits import (M64, bswap64, clmul, lane_masks, mask_of, pdep, pext,
+                    popcnt)
 
 # Description-code widths for the L(z) model.  Toy but consistent, and the same
 # model ranks every candidate, which is what the objective needs.
@@ -47,15 +49,17 @@ class Ins(object):
 class Seq(object):
     """A lowered instruction sequence in SSA form."""
 
-    __slots__ = ('ins', 'result', 'notes')
+    __slots__ = ('ins', 'result', 'notes', '_steps')
 
     def __init__(self, ins=None, result=0, notes=None):
         self.ins = list(ins or [])
         self.result = result
         self.notes = list(notes or [])
+        self._steps = None
 
     def emit(self, op, args, const=None, shift=None):
         self.ins.append(Ins(op, args, const, shift))
+        self._steps = None
         self.result = len(self.ins)          # values are 1-based after input 0
         return self.result
 
@@ -68,6 +72,7 @@ class Seq(object):
         for ins in other.ins:
             self.ins.append(Ins(ins.op, [remap[a] for a in ins.args],
                                 ins.const, ins.shift))
+        self._steps = None
         self.result = remap[other.result]
         self.notes.extend(other.notes)
         return self.result
@@ -75,69 +80,133 @@ class Seq(object):
     def __len__(self):
         return len(self.ins)
 
+    # A sequence is data; the compiled function hanging off it is a cache, and
+    # a cache does not travel.  Saying so is what lets a result be handed
+    # between processes.
+    def __getstate__(self):
+        return self.ins, self.result, self.notes
+
+    def __setstate__(self, state):
+        self.ins, self.result, self.notes = state
+        self._steps = None
+
 
 # ---------------------------------------------------------------------------
-# Reference interpretation of a lowered sequence
+# Interpretation of a lowered sequence
+#
+# Verifying one target over a 2^16 domain is 65,536 evaluations of the same
+# five instructions, and every candidate on every target pays it again.  Doing
+# that by walking `ins` and testing the opcode makes the opcode test the
+# dominant cost of the whole pipeline.  The decision is identical on every
+# input, so the sequence is written out as one Python function instead, once,
+# and the sweep calls that.
+#
+# There is one implementation, not a fast path beside a reference one — `run`
+# calls the same compiled function — so the two cannot disagree.
 # ---------------------------------------------------------------------------
+
+# `v0` is the input; `v1..` are the SSA values, in order.  Every line is masked
+# to 64 bits, so no expression has to remember to do it and none can forget.
+_EXPR = {
+    'PDEP': 'pdep(v{a}, {k})',
+    'PEXT': 'pext(v{a}, {k})',
+    'PEXT_DYN': 'pext({k}, v{a})',
+    'PDEP_DYN': 'pdep({k}, v{a})',
+    'IMUL': 'v{a} * {k}',
+    'CLMUL': 'clmul(v{a}, {k}, 64)',
+    'AND': 'v{a} & {k}',
+    'OR': 'v{a} | {k}',
+    'XOR': 'v{a} ^ {k}',
+    'ADD': 'v{a} + {k}',
+    'SUB': 'v{a} - {k}',
+    'NOT': '~v{a}',
+    'SHL': 'v{a} << {n}',
+    'SHR': 'v{a} >> {n}',
+    'BSWAP': 'bswap64(v{a})',
+    'POPCNT': 'popcnt(v{a})',
+    'XORR': 'v{a} ^ v{b}',
+    'ANDR': 'v{a} & v{b}',
+    'ORR': 'v{a} | v{b}',
+    'ADDR': 'v{a} + v{b}',
+    'ANDNR': '~v{a} & v{b}',
+    'LOOP8': 'pext({k}, v{a})',
+    'SCANXOR': 'v{a} ^ (v{a} << {n})',
+}
+
+_ENV = {'M': M64, 'pdep': pdep, 'pext': pext, 'clmul': clmul,
+        'popcnt': popcnt, 'bswap64': bswap64}
+
+
+def _expression(ins, tables):
+    """The right-hand side for one instruction, as source text."""
+    a = ins.args[0] if ins.args else 0
+    b = ins.args[1] if len(ins.args) > 1 else 0
+    if ins.op == 'LUT':
+        # A lookup table is data, not text: it goes into the environment under
+        # a generated name and the source refers to it.
+        key = 'lut%d' % len(tables)
+        tables[key] = ins.const
+        return '%s[v%d & %d]' % (key, a, len(ins.const) - 1)
+    form = _EXPR.get(ins.op)
+    if form is None:
+        raise ValueError('unknown instruction %r' % ins.op)
+    return form.format(a=a, b=b, k=ins.const, n=ins.shift)
+
+
+def _build(seq):
+    tables = {}
+    body = [('v%d' % k, '(%s) & M' % _expression(ins, tables))
+            for k, ins in enumerate(seq.ins, start=1)]
+    env = dict(_ENV, **tables)
+    return straightline.build('qm_seq', ['x'], [('v0', 'x & M')] + body,
+                              'v%d' % seq.result, env)
+
+
+def compile_seq(seq):
+    """A callable `x -> y` for `seq`, compiled once and cached on it.
+
+    Use this for a domain sweep; `run` is the same function for a single input.
+    """
+    compiled = seq._steps
+    if compiled is None or compiled[0] != (len(seq.ins), seq.result):
+        compiled = seq._steps = ((len(seq.ins), seq.result), _build(seq))
+    return compiled[1]
+
 
 def run(seq, x):
-    values = [x & M64]
-    for ins in seq.ins:
-        a = values[ins.args[0]] if ins.args else 0
-        b = values[ins.args[1]] if len(ins.args) > 1 else None
-        op = ins.op
-        if op == 'PDEP':
-            v = pdep(a, ins.const)
-        elif op == 'PEXT':
-            v = pext(a, ins.const)
-        elif op == 'PEXT_DYN':
-            v = pext(ins.const, a)
-        elif op == 'PDEP_DYN':
-            v = pdep(ins.const, a)
-        elif op == 'IMUL':
-            v = (a * ins.const) & M64
-        elif op == 'CLMUL':
-            v = clmul(a, ins.const, 64) & M64
-        elif op == 'AND':
-            v = a & ins.const
-        elif op == 'OR':
-            v = a | ins.const
-        elif op == 'XOR':
-            v = a ^ ins.const
-        elif op == 'ADD':
-            v = (a + ins.const) & M64
-        elif op == 'SUB':
-            v = (a - ins.const) & M64
-        elif op == 'NOT':
-            v = (~a) & M64
-        elif op == 'SHL':
-            v = (a << ins.shift) & M64
-        elif op == 'SHR':
-            v = a >> ins.shift
-        elif op == 'BSWAP':
-            v = bswap64(a)
-        elif op == 'POPCNT':
-            v = popcnt(a)
-        elif op == 'XORR':
-            v = a ^ b
-        elif op == 'ANDR':
-            v = a & b
-        elif op == 'ORR':
-            v = a | b
-        elif op == 'ADDR':
-            v = (a + b) & M64
-        elif op == 'ANDNR':
-            v = (~a) & b & M64
-        elif op == 'LUT':
-            v = ins.const[a & (len(ins.const) - 1)]
-        elif op == 'LOOP8':
-            v = pext(ins.const, a)
-        elif op == 'SCANXOR':
-            v = (a ^ (a << ins.shift)) & M64
-        else:
-            raise ValueError('unknown instruction %r' % op)
-        values.append(v & M64)
-    return values[seq.result]
+    return compile_seq(seq)(x)
+
+
+def matches(seq, sem, obs):
+    """(agreeing points, domain size) for `seq` against `sem` under `obs`.
+
+    Every observer that declares a `mask` is `y & mask` and nothing else, so
+    the comparison becomes two integer ands instead of two calls — worth
+    saying out loud because it is 2 * 65,536 calls per target otherwise.
+    """
+    evaluate = compile_seq(seq)
+    values = sem.domain.values()
+    expected = sem.table()
+    m = obs.mask
+    if m is None:
+        matched = sum(1 for x, y in zip(values, expected)
+                      if obs(evaluate(x)) == obs(y))
+    else:
+        matched = sum(1 for x, y in zip(values, expected)
+                      if evaluate(x) & m == y & m)
+    return matched, len(values)
+
+
+def agrees(seq, sem, obs):
+    """True when `seq` reproduces `sem` on every point of its domain."""
+    evaluate = compile_seq(seq)
+    expected = sem.table()
+    m = obs.mask
+    if m is None:
+        return all(obs(evaluate(x)) == obs(y)
+                   for x, y in zip(sem.domain.values(), expected))
+    return all(evaluate(x) & m == y & m
+               for x, y in zip(sem.domain.values(), expected))
 
 
 # ---------------------------------------------------------------------------
@@ -215,15 +284,21 @@ PROFILES = [
     ISA('x86-64-bmi2-pclmul', 'x86-64 + BMI2 + PCLMUL',
         BASE | {'pdep', 'pext', 'popcnt', 'clmul'},
         'adds carry-less multiply'),
-    ISA('x86-64-v3', 'x86-64-v3',
+    ISA('x86-64-v3', 'x86-64-v3 (AVX2)',
         BASE | {'pdep', 'pext', 'popcnt', 'clmul', 'avx2'},
         'BMI2 + PCLMUL + AVX2 feature level'),
     ISA('portable', 'portable scalar', BASE,
         'C without intrinsics: no PDEP/PEXT/CLMUL'),
+    # wasm32 has i64 arithmetic, shifts, rotates and popcount, and nothing
+    # else on this list: no deposit/extract, no carry-less multiply, and no
+    # byte swap instruction.
+    ISA('wasm32', 'wasm32 (i64 only)', {'alu', 'imul', 'shift', 'lut', 'popcnt', 'rotate'},
+        'WebAssembly: i64 arithmetic and shifts only'),
 ]
 
 PROFILE_BY_NAME = dict((p.name, p) for p in PROFILES)
-DEFAULT_PROFILES = ['x86-64-bmi2-pclmul', 'x86-64-bmi2', 'x86-64', 'portable']
+DEFAULT_PROFILES = ['x86-64-bmi2-pclmul', 'x86-64-bmi2', 'x86-64', 'wasm32',
+                    'portable']
 
 
 def get_isa(name):
@@ -281,6 +356,41 @@ def _lin_toeplitz_const(basis):
         if image != ((m << i) & M64):
             return None
     return m
+
+
+def _lin_select_shift_conv(basis, input_bits):
+    """Is this map "keep some bits, slide them down, convolve"?
+
+    Every spread consumer in a bit-lane library is written that way: `(s >> 7)
+    * K` reads one flag out of each byte lane and fans it back out.  As a
+    linear map that is not a convolution — the six dead bits between the flags
+    break the Toeplitz condition — so without this it decomposes into a
+    twenty-instruction XOR network, which describes the lowering table rather
+    than the map.
+
+    Returns (mask, shift, const), where `mask` is None when no bits need
+    clearing.  Masking first is what makes the multiply exact rather than
+    merely exact on the inputs that happen to be probed: the positions the
+    convolution would fill wrongly are the positions the mask has zeroed.
+    """
+    width = min(input_bits, len(basis))
+    support = [i for i in range(width) if basis[i]]
+    if len(support) < 2:
+        return None                 # a single bit is a shift, already covered
+    lead = support[0]
+    const = basis[lead]
+    for i in support:
+        if basis[i] != ((const << (i - lead)) & M64):
+            return None
+    contiguous = support == list(range(lead, lead + len(support)))
+    if lead == 0 and contiguous and len(support) == width:
+        return None                 # a plain convolution; already offered above
+    # The mask is unnecessary only when every input bit above the shift is one
+    # the convolution fills correctly; the shift discards the ones below it.
+    mask = None if (contiguous and width == input_bits
+                    and support[-1] == width - 1) \
+        else sum(1 << i for i in support)
+    return mask, lead, const
 
 
 def _lin_shift_terms(basis, input_bits):
@@ -363,9 +473,26 @@ def lower_lin_const(op, isa):
         s.emit('IMUL', [0], const=const)
         out.append(('IMUL', s))
 
-    spread = _seq_byte_spread(basis, input_bits)
-    if spread is not None:
-        out.append(('multiply/mask/bswap spread', spread))
+    selected = _lin_select_shift_conv(basis, input_bits)
+    if selected is not None:
+        mask, lead, const = selected
+        for family, label in (('CLMUL', 'mask + shift + CLMUL'),
+                              ('IMUL', 'mask + shift + IMUL')):
+            if family == 'CLMUL' and not isa.has('clmul'):
+                continue
+            s = Seq()
+            v = 0
+            if mask is not None:
+                v = s.emit('AND', [v], const=mask)
+            if lead:
+                v = s.emit('SHR', [v], shift=lead)
+            s.emit(family, [v], const=const)
+            out.append((label, s))
+
+    if isa.has('bswap'):
+        spread = _seq_byte_spread(basis, input_bits)
+        if spread is not None:
+            out.append(('multiply/mask/bswap spread', spread))
 
     terms = _lin_shift_terms(basis, input_bits)
     if terms and len(terms) <= 24:
@@ -448,11 +575,73 @@ def lower_perm_dyn(op, isa):
     return out
 
 
+def _lane_interval_seq(seq, v, bounds, lane_bits):
+    """`lo <= lane <= hi` on every lane, branch-free, as `examples/lanecode.h`.
+
+    Three physical forms for one semantic step, picked by the shape of the
+    interval: a point is an equality test, an interval starting at zero is a
+    one-sided compare, and anything else needs both bounds. The abstract
+    program says only which interval; which of these computes it is a lowering
+    decision, the same way LIN_CONST does not mean PDEP.
+
+    Nothing here is a new primitive. Each form expands to AND/ADD/SUB/OR/XOR/
+    NOT over whole registers, which every target in this file already has — the
+    lane structure lives in the constants, not in the instruction set.
+
+    These are fused rather than a chain of POINT steps because each of them
+    uses its input twice, and a step list has no way to say "and also the value
+    before this one".
+    """
+    lo, hi = bounds
+    ones, low, high = lane_masks(lane_bits)
+
+    if lo == hi:
+        # lane == c.  `(t & low) + low` carries into a lane's top bit exactly
+        # when the rest of that lane is nonzero, so OR-ing the value back in
+        # and complementing leaves the top bit set only for an all-zero lane —
+        # and the lane is zero exactly where the input equalled c.
+        t = seq.emit('XOR', [v], const=(lo * ones) & M64) if lo else v
+        a = seq.emit('AND', [t], const=low)
+        a = seq.emit('ADD', [a], const=low)
+        a = seq.emit('ORR', [a, t])
+        a = seq.emit('NOT', [a])
+        return seq.emit('AND', [a], const=high)
+
+    if lo == 0:
+        # lane < hi+1, unsigned.  Setting every top bit before subtracting the
+        # low part of the bound stops a borrow from leaving its lane; what is
+        # left is a small Boolean function of the three top bits.
+        c = ((hi + 1) * ones) & M64
+        h = seq.emit('OR', [v], const=high)
+        z = seq.emit('SUB', [h], const=c & low)
+        u = seq.emit('XORR', [v, z])
+        e = seq.emit('XOR', [v], const=c)
+        a = seq.emit('ANDNR', [e, u])
+        a = seq.emit('XORR', [v, a])
+        a = seq.emit('NOT', [a])
+        return seq.emit('AND', [a], const=high)
+
+    # Both bounds at once.  `hi` below the lane's top bit is what keeps the
+    # second subtraction inside its lane; the solver does not offer an interval
+    # that reaches past it, and `verify` would reject one anyway.
+    h = seq.emit('OR', [v], const=high)
+    z1 = seq.emit('SUB', [h], const=(lo * ones) & M64)
+    xl = seq.emit('AND', [v], const=low)
+    # `K - xl` with no reverse-subtract in the grammar: ~xl + (K + 1).
+    n = seq.emit('NOT', [xl])
+    z2 = seq.emit('ADD', [n], const=(((hi * ones) | high) + 1) & M64)
+    g = seq.emit('ANDR', [z1, z2])
+    a = seq.emit('ANDNR', [v, g])
+    return seq.emit('AND', [a], const=high)
+
+
 def lower_point(op, isa):
     seq = Seq()
     v = 0
     for mnemonic, const, shift in op.detail['steps']:
-        if mnemonic == 'ANDN_PREV_SHL':
+        if mnemonic == 'LANE_INTERVAL':
+            v = _lane_interval_seq(seq, v, const, shift)
+        elif mnemonic == 'ANDN_PREV_SHL':
             shifted = seq.emit('SHL', [v], shift=shift)
             v = seq.emit('ANDNR', [shifted, v])
         elif mnemonic == 'ANDN_PREV_SHR':
@@ -537,7 +726,7 @@ def lower_program(program, isa, verify_against=None):
         if verify_against is None:
             return seq, used
         sem, obs = verify_against
-        if all(obs(run(seq, x)) == obs(y) for x, y in sem.pairs()):
+        if agrees(seq, sem, obs):
             return seq, used
 
         # Advance the first op that still has an untried representative.
@@ -646,7 +835,7 @@ _ASM_RI = {'AND': 'andq', 'OR': 'orq', 'XOR': 'xorq', 'ADD': 'addq',
            'SUB': 'subq'}
 
 
-def emit_asm(seq, name):
+def emit_asm(seq, name, input_bits=None):
     """Emit AT&T x86-64 assembly (SysV: argument in %rdi, result in %rax).
 
     Returns None when the sequence contains something this small emitter does
@@ -713,6 +902,13 @@ def emit_asm(seq, name):
         elif ins.op == 'NOT':
             body.append('    movq %s, %s' % (src[0], dst))
             body.append('    notq %s' % dst)
+        elif ins.op == 'ANDNR':
+            # BMI1 has ANDN, but its operand order is the easiest thing in this
+            # emitter to get silently backwards; NOT+AND is one instruction
+            # longer and assembles the same everywhere.
+            body.append('    movq %s, %s' % (src[0], dst))
+            body.append('    notq %s' % dst)
+            body.append('    andq %s, %s' % (src[1], dst))
         elif ins.op in ('SHL', 'SHR'):
             body.append('    movq %s, %s' % (src[0], dst))
             body.append('    %s $%d, %s'
@@ -727,7 +923,13 @@ def emit_asm(seq, name):
             return None
 
     header = ['    .text', '    .globl %s' % name,
-              '    .type %s, @function' % name, '%s:' % name]
+              '    .type %s, @function' % name]
+    if input_bits:
+        # A listing does not say how wide its input is; %rdi is 64 bits whatever
+        # the kernel meant. Recording it keeps a round trip through assembly on
+        # the same domain it started from.
+        header.insert(0, '    # qm-input-bits: %d' % input_bits)
+    header.append('%s:' % name)
     if uses_xmm:
         header.insert(0, '    # requires PCLMUL')
     tail = []
@@ -736,7 +938,84 @@ def emit_asm(seq, name):
     tail += ['    ret',
              '    .size %s, .-%s' % (name, name),
              '    .section .note.GNU-stack,"",@progbits']
-    return '\n'.join(header + body + tail)
+    return '\n'.join(header + body + tail) + '\n'
+
+
+# ---------------------------------------------------------------------------
+# WebAssembly emission
+# ---------------------------------------------------------------------------
+
+# Every value becomes a local, and every instruction is on its own line.  A
+# folded s-expression would be shorter to read and harder to read *back*, and
+# reading its own output is what lets QM be idempotent on wasm.
+_WASM_BINOP = {
+    'IMUL': 'i64.mul', 'AND': 'i64.and', 'OR': 'i64.or', 'XOR': 'i64.xor',
+    'ADD': 'i64.add', 'SUB': 'i64.sub', 'SHL': 'i64.shl', 'SHR': 'i64.shr_u',
+}
+_WASM_RR = {'XORR': 'i64.xor', 'ANDR': 'i64.and', 'ORR': 'i64.or',
+            'ADDR': 'i64.add'}
+
+
+def emit_wasm(seq, name, input_bits=None):
+    """Emit a wasm32 function in the text format.
+
+    Returns None when the sequence uses something wasm has no instruction for
+    — a deposit, a carry-less multiply, a lookup table — rather than inventing
+    an encoding for it.
+    """
+    unsupported = {'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'CLMUL', 'LUT',
+                   'LOOP8', 'BSWAP'}
+    if any(ins.op in unsupported for ins in seq.ins):
+        return None
+
+    body = []
+    for index, ins in enumerate(seq.ins, start=1):
+        op = ins.op
+        if op in _WASM_BINOP:
+            body.append('    local.get %d' % ins.args[0])
+            value = ins.shift if ins.shift is not None else ins.const
+            body.append('    i64.const 0x%X' % (value & M64))
+            body.append('    ' + _WASM_BINOP[op])
+        elif op in _WASM_RR:
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    local.get %d' % ins.args[1])
+            body.append('    ' + _WASM_RR[op])
+        elif op == 'NOT':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.const -1')
+            body.append('    i64.xor')
+        elif op == 'ANDNR':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.const -1')
+            body.append('    i64.xor')
+            body.append('    local.get %d' % ins.args[1])
+            body.append('    i64.and')
+        elif op == 'POPCNT':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.popcnt')
+        elif op == 'SCANXOR':
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i64.const 0x%X' % ins.shift)
+            body.append('    i64.shl')
+            body.append('    i64.xor')
+        else:
+            return None
+        body.append('    local.set %d' % index)
+
+    locals_count = len(seq.ins)
+    lines = []
+    if input_bits:
+        lines.append(';; qm-input-bits: %d' % input_bits)
+    lines += ['(module',
+             '  (func $%s (export "%s") (param i64) (result i64)' % (name, name)]
+    if locals_count:
+        lines.append('    (local%s)' % (' i64' * locals_count))
+    lines.extend(body)
+    lines.append('    local.get %d' % seq.result)
+    lines.append('  )')
+    lines.append(')')
+    return '\n'.join(lines) + '\n'
 
 
 def instruction_names(seq):

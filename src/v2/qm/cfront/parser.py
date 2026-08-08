@@ -120,21 +120,71 @@ class Parser(object):
     # -- top level ----------------------------------------------------------
 
     def parse_unit(self):
+        """Parse every definition, skipping the ones outside the subset.
+
+        A paste often carries helpers this frontend does not model — a wrapper
+        around an SSE intrinsic, say.  Refusing the whole file over a helper the
+        kernel never needs is the wrong trade, so an unparseable definition is
+        skipped and recorded.  Nothing is silent: the skips travel with the
+        translation unit, and if the kernel actually calls one, the call fails
+        with "call to unknown function".
+        """
         functions = []
+        skipped = []
         while self.tok.kind != 'eof':
             if self.accept(';'):
                 continue
             if self.at('_Static_assert') or self.at('typedef'):
-                raise UnsupportedC('%r is not supported' % self.tok.value,
-                                   line=self.tok.line)
-            fn = self.parse_external()
+                skipped.append(self._skip_definition(
+                    UnsupportedC('%r is not supported' % self.tok.value,
+                                 line=self.tok.line)))
+                continue
+            mark = self.i
+            try:
+                fn = self.parse_external()
+            except CFrontError as exc:
+                self.i = mark
+                skipped.append(self._skip_definition(exc))
+                continue
             if fn is not None:
                 functions.append(fn)
+
         if not functions:
+            if skipped:
+                raise skipped[0]['error']
             raise CFrontError('no function definition found',
                               hint='paste a complete C function, '
                                    'e.g. uint64_t f(uint8_t m) { ... }')
-        return N.TranslationUnit(functions)
+        return N.TranslationUnit(functions, skipped=skipped)
+
+    def _skip_definition(self, error):
+        """Consume one top-level definition, and say what was dropped.
+
+        The name is the identifier immediately before the parameter list — the
+        declarator, not the return type, which is what a reader needs to see.
+        """
+        name = None
+        previous = None
+        line = self.tok.line
+        depth = 0
+        started = False
+        while self.tok.kind != 'eof':
+            token = self.advance()
+            if token.value == '(' and name is None and previous is not None:
+                name = previous
+            if token.kind in ('id', 'kw'):
+                previous = token.value
+            if token.value == '{':
+                depth += 1
+                started = True
+            elif token.value == '}':
+                depth -= 1
+                if started and depth <= 0:
+                    break
+            elif token.value == ';' and not started:
+                break
+        return {'name': name, 'line': line, 'error': error,
+                'reason': error.message}
 
     def parse_external(self):
         line = self.tok.line
@@ -272,7 +322,7 @@ class Parser(object):
             break
         if len(decls) == 1:
             return decls[0]
-        return N.Block(decls, line=line)
+        return N.DeclGroup(decls, line=line)
 
     def parse_initializer(self):
         if self.accept('{'):

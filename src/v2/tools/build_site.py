@@ -7,8 +7,9 @@ The page needs three things next to each other, because the worker installs the
 Python engine by fetching the files named in `web/qm-manifest.json`:
 
     dist/index.html      the shell, so the bare domain lands on the tool
-    dist/web/            app.js, worker.js, clang.js, styles.css, manifest
-    dist/qm/             the engine, fetched at runtime by the worker
+    dist/web/            app.js, worker.js, clang.js, vm.js, vm.wasm, styles
+    dist/qm/             the minimizer, fetched at runtime by the worker
+    dist/vm/             the machine it normalizes onto, fetched the same way
     dist/examples/       the kernels the Examples dialog offers
 
 `index.html` is copied to the root with its two asset paths rewritten, so the
@@ -26,12 +27,20 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, 'dist')
-TREES = ('qm', 'web', 'examples')
+# Every package the manifest can name has to be here, or the worker
+# installs an engine with a hole in it.  The check at the end of `build`
+# is what makes that a build failure rather than a runtime one.
+TREES = ('qm', 'vm', 'web', 'examples')
 
 
-def _ignore(_dir, names):
+def _ignore(directory, names):
+    # `vm/wasm` is the C and its build script.  The compiled module ships as
+    # `web/vm.wasm`; the source it came from is not something the page fetches.
+    skip = {'__pycache__'}
+    if os.path.basename(directory) == 'vm':
+        skip.add('wasm')
     return [n for n in names
-            if n == '__pycache__' or n.endswith(('.pyc', '.pyo'))]
+            if n in skip or n.endswith(('.pyc', '.pyo'))]
 
 
 def build(dist=DIST):

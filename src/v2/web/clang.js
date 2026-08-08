@@ -6,10 +6,10 @@
 //   * wasm32 -O2, instantiated here and called over the input domain.  That is
 //     the execution oracle: 65,536 inputs cost milliseconds because the kernel
 //     runs as compiled code.
-//   * an -O2 assembly listing, shown in the UI and counted for "what did the
-//     compiler generate?".  Which ISA that listing is in depends on the bundle;
-//     the default one is WebAssembly-only, so it is wasm32, and the report says
-//     which it was rather than assuming x86-64.
+// That is the only thing it is for.  There was a second compile producing an
+// assembly listing for a pane to show; the pane is gone, and with it the
+// listing target and the optimization level, neither of which changed what the
+// kernel computes.
 //
 // The bundle is fetched lazily, on the first run that asks for it, so the page
 // is usable immediately and a user who never presses Optimize never pays for
@@ -19,9 +19,9 @@
 // The default bundle
 // ------------------
 // `drivers/yowasp-clang.js` ships with the page and needs no configuration.
-// It is built with the WebAssembly target only, so the *listing* it produces
-// is wasm32; QM's own lowering targets are unaffected, because they are derived
-// from the extracted semantics rather than from the compiler's output.
+// It is built with the WebAssembly target only, which is all this needs: the
+// compiler is the oracle, and QM's lowering targets are derived from the
+// extracted semantics rather than from anything the compiler emitted.
 //
 // Configuring another bundle
 // --------------------------
@@ -30,8 +30,6 @@
 //     window.QM_CLANG = {
 //       // module exporting { compile(args, files) -> { files, stderr, status } }
 //       driverUrl: 'https://example.com/clang-wasm/driver.mjs',
-//       // set when that build has an x86 backend, to get an x86-64 listing
-//       listingTriple: 'x86_64-unknown-linux-gnu',
 //     };
 //
 // or by passing ?clang=<url> in the query string.  The driver contract is
@@ -42,9 +40,6 @@ const DEFAULT_DRIVER = new URL('./drivers/yowasp-clang.js', import.meta.url).hre
 
 const DEFAULT_CONFIG = {
   driverUrl: DEFAULT_DRIVER,
-  // Triple for the assembly listing.  `null` means the toolchain default,
-  // which for the bundled driver is wasm32.
-  listingTriple: null,
   // Flags shared by both compiles.  -ffreestanding + the prelude that qm/clang.py
   // injects is what removes the need for a sysroot, and with it tens of MB.
   common: ['-std=gnu11', '-ffreestanding', '-O2'],
@@ -71,15 +66,10 @@ export class ClangDriver {
       reason: this.reason,
       driverUrl: this.config.driverUrl,
       configured: this.configured(),
-      listing: this.listingIsa(),
       bundle: this.info || null,
     };
   }
 
-  listingIsa() {
-    if (this.config.listingTriple) return this.config.listingTriple;
-    return (this.info && this.info.listingIsa) || 'the toolchain default';
-  }
 
   configured() {
     return Boolean(this.config.driverUrl);
@@ -135,30 +125,12 @@ export class ClangDriver {
     return result;
   }
 
-  // --- the two artefacts ---------------------------------------------------
+  // --- the one artefact ----------------------------------------------------
 
   /**
-   * The listing shown in the UI: what the compiler generated, for real.
-   *
-   * `-march` is only meaningful when an x86 triple is configured; asking a
-   * WebAssembly-target build for `-march=x86-64-v3` is not a smaller listing,
-   * it is an error.
+   * The oracle: a wasm32 module, instantiated and called over the domain.
+   * This is the only thing the compiler is asked for.
    */
-  async assembly(source, { opt = '-O2', target = 'x86-64' } = {}, onProgress) {
-    const flags = this.config.common.filter((f) => !f.startsWith('-O'));
-    const triple = this.config.listingTriple;
-    const args = [...flags, opt];
-    if (triple) args.push(`--target=${triple}`, `-march=${target}`);
-    args.push('-S', '-fno-ident', '-o', 'out.s', 'in.c');
-
-    const res = await this.run(args, { 'in.c': source }, onProgress);
-    return {
-      text: asText(res.files['out.s']),
-      isa: this.listingIsa(),
-      stderr: res.stderr || '',
-    };
-  }
-
   async wasm(source, { opt = '-O2' } = {}, onProgress) {
     const flags = this.config.common.filter((f) => !f.startsWith('-O'));
     const res = await this.run(
@@ -200,7 +172,8 @@ function asText(value) {
  * output width are masked on the Python side, not here — masking twice is how
  * a frontend quietly changes the semantics it is supposed to report.
  */
-export async function evaluateWasm(bytes, functionName, values, outputBits) {
+export async function evaluateWasm(bytes, functionName, values, outputBits,
+                                   inputBits) {
   const { instance } = await WebAssembly.instantiate(bytes, {});
   const fn = instance.exports[functionName];
   if (typeof fn !== 'function') {
@@ -213,10 +186,15 @@ export async function evaluateWasm(bytes, functionName, values, outputBits) {
     );
   }
 
+  // A wasm parameter wider than 32 bits is an i64, and the JS API takes a
+  // BigInt for one — handing it a Number throws, which is why every 64-bit
+  // kernel used to fail here. `values` arrive as decimal strings, so nothing
+  // has passed through a double on the way.
   const wide = outputBits > 32;
+  const asArgument = inputBits > 32 ? (v) => BigInt(v) : (v) => Number(BigInt(v));
   const out = new Array(values.length);
   for (let i = 0; i < values.length; i += 1) {
-    const y = fn(values[i]);
+    const y = fn(asArgument(values[i]));
     out[i] = typeof y === 'bigint' ? y : BigInt.asUintN(64, BigInt(y));
   }
   // Python receives decimal strings: a JSON number cannot carry 64 bits.
