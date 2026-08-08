@@ -452,7 +452,9 @@ function renderCompiled(result) {
   $('compiled-sub').textContent = count == null ? '— instructions'
     : `${count} instructions`;
   $('compiled-isa').textContent = isa || front.frontend.kind;
-  $('compiled-engine').textContent = front.frontend.title || '';
+  const engine = front.frontend.title || '';
+  $('compiled-engine').textContent = engine;
+  $('compiled-engine').title = engine;
   const listing = pasted ? (front.assembly || '') : state.clangAssembly;
   $('clang-listing').innerHTML = listing
     ? renderListing(listing, pasted ? null : front.function.name)
@@ -483,10 +485,17 @@ function renderTakeaway() {
     ? `${v.pass ? '\u2713' : '\u2717'} ${v.matched.toLocaleString()}/${v.total.toLocaleString()}`
       + (v.exhaustive ? ' exact' : ' sampled')
     : '';
-  $('qm-sub').textContent =
-    `${target.work} instruction${target.work === 1 ? '' : 's'}`
-    + `  |  ${result.residual_freedom} solution${result.residual_freedom === 1 ? '' : 's'}`
-    + (verdict ? `  |  ${verdict}` : '');
+  // Each fact is its own span so a narrow screen breaks between them rather
+  // than inside one — "256/256 exact" on its own line said nothing.
+  const facts = [
+    `${target.work} instruction${target.work === 1 ? '' : 's'}`,
+    `${result.residual_freedom} solution${result.residual_freedom === 1 ? '' : 's'}`,
+  ];
+  if (verdict) facts.push(verdict);
+  // Spacing separates them, not punctuation: a middot left at the end of a
+  // wrapped line — or at the start of the next one — is the untidy bit.
+  $('qm-sub').innerHTML = facts
+    .map((fact) => `<span>${escapeHtml(fact)}</span>`).join(' ');
 }
 
 function fillTargets(result) {
@@ -533,9 +542,7 @@ const FOOT_DEFAULT =
   'All compilation happens in your browser. No code is sent to any server.';
 
 function status(text) {
-  $('foot-note').textContent =
-    text || (QM_VERSION ? `${FOOT_DEFAULT}  \u00b7  QM ${QM_VERSION}`
-                        : FOOT_DEFAULT);
+  $('foot-note').textContent = text || FOOT_DEFAULT;
 }
 
 let toastTimer = null;
@@ -621,6 +628,10 @@ function showDetails() {
     : `<tr><th>${escapeHtml(t.name)}</th><td>${escapeHtml(t.reason || 'cannot lower')}</td></tr>`))
     .join('');
   const recognized = (result.recognition || []).join(', ');
+  const versions = Object.entries(result.versions || {})
+    .map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`)
+    .join('');
+  const engine = result.frontend.frontend.title || '';
 
   openDialog(result.frontend.function.signature || 'Details', `
     <table>${rows}</table>
@@ -629,6 +640,10 @@ function showDetails() {
       ? `<h4>Recognized</h4><table><tr><th>primitive</th>`
         + `<td>${escapeHtml(recognized)}</td></tr></table>`
       : ''}
+    <h4>Build</h4><table>
+      ${engine ? `<tr><th>frontend</th><td>${escapeHtml(engine)}</td></tr>` : ''}
+      ${versions}
+    </table>
   `);
 }
 

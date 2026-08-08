@@ -216,6 +216,8 @@ input:disabled { opacity: .45; }
   margin: 8px 0 16px;
   font-size: 12.5px; color: var(--muted); font-family: var(--mono);
 }
+/* Facts wrap between themselves, never inside one. */
+.card-sub span { white-space: nowrap; margin-right: 1.8ch; }
 #card-write .card-head { margin-bottom: 18px; }
 
 .framed {
@@ -315,7 +317,8 @@ input:disabled { opacity: .45; }
 
 .row { display: block; }
 .addr { color: var(--addr); display: inline-block; width: 6ch; }
-.mn { color: var(--ink); display: inline-block; min-width: 9ch; }
+.mn { color: var(--ink); display: inline-block; min-width: 9ch;
+      padding-right: 1ch; }   /* a long mnemonic must not touch its operands */
 .ops { color: var(--operand); }
 .lbl { color: var(--label); }
 
@@ -343,9 +346,19 @@ input:disabled { opacity: .45; }
   min-height: 42px;
 }
 .card-foot .right { margin-left: auto; }
-.card-foot select { padding: 5px 26px 5px 9px; font-size: 12px; }
+.card-foot select {
+  padding: 5px 26px 5px 9px; font-size: 12px;
+  min-width: 0; flex: 0 1 auto;      /* give way to the checkbox beside it */
+}
+/* The toolchain's full name is in the derivation; the foot shows what fits. */
+#compiled-engine {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
-.check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.check {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  white-space: nowrap; flex: 0 0 auto;
+}
 .check input {
   appearance: none; -webkit-appearance: none;
   width: 15px; height: 15px; margin: 0;
