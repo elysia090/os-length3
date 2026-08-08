@@ -11,8 +11,11 @@ anything: minimizing an already-minimal program returns it unchanged.
 
 import os
 import re
+import subprocess
+import tempfile
 import unittest
 
+from qm.clang import NATIVE, prepare_source
 from tests.support import EXAMPLES, example, solved as solve, target
 
 ONES = '0101010101010101'
@@ -145,6 +148,60 @@ class TestIdempotence(unittest.TestCase):
                              if t['name'] == second['primary_target'])
                 self.assertEqual(self.signature(first, target),
                                  self.signature(second, again))
+
+
+class TestEmittedCodeCompilesAsPasted(unittest.TestCase):
+    """The C the page offers you must go back in through the Clang path.
+
+    `clang.prepare_source` strips `#include <immintrin.h>` — a bit-vector
+    kernel needs the fixed-width typedefs and nothing else — and the browser
+    compiles for wasm32, where that header does not exist. So the emitted
+    `_pdep_u64` was an undeclared function: QM was handing out code it could
+    not read back, and the "C intrinsics" view was the one place you saw it.
+    """
+
+    CASES = ['ranks8', 'byte_mask8', 'select8', 'shuffle_control8', 'run_ids8',
+             'quote_state_before8', 'prefix_parity_mask8', 'prefix_xor64']
+
+    @staticmethod
+    def emitted(name):
+        result = solve(example(name), frontend='cfront')
+        return result, target(result)['c']
+
+    @unittest.skipUnless(NATIVE.available(), 'no native Clang')
+    def test_it_compiles_for_both_targets(self):
+        for name in self.CASES:
+            _result, source = self.emitted(name)
+            prepared = prepare_source(source)
+            for machine in ('wasm32', 'x86_64-unknown-linux-gnu'):
+                with self.subTest(example=name, target=machine):
+                    with tempfile.TemporaryDirectory() as tmp:
+                        src = os.path.join(tmp, 'in.c')
+                        with open(src, 'w') as handle:
+                            handle.write(prepared)
+                        built = subprocess.run(
+                            [NATIVE.binary, '--target=%s' % machine, '-O2',
+                             '-ffreestanding', '-nostdlib', '-c', src,
+                             '-o', os.path.join(tmp, 'out.o')],
+                            capture_output=True, text=True)
+                        self.assertEqual(built.returncode, 0, built.stderr)
+
+    @unittest.skipUnless(NATIVE.available(), 'no native Clang')
+    def test_clang_reads_it_back_to_the_same_answer(self):
+        """Compiling is not enough — the shims have to mean the same thing."""
+        for name in self.CASES:
+            first, source = self.emitted(name)
+            with self.subTest(example=name):
+                again = solve(source, frontend='clang')
+                self.assertTrue(again['ok'],
+                                (again.get('error') or {}).get('text'))
+                self.assertEqual(
+                    (tuple(first['program']['classes']),
+                     tuple(target(first)['instructions']),
+                     tuple(constants(target(first)))),
+                    (tuple(again['program']['classes']),
+                     tuple(target(again)['instructions']),
+                     tuple(constants(target(again)))))
 
 
 class TestIntrinsics(unittest.TestCase):
