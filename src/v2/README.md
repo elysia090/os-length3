@@ -97,7 +97,7 @@ keeping semantic classes separate from mnemonics:
 | x86-64 + BMI2 | 2 | `PDEP IMUL` |
 | x86-64 baseline | 5 | `IMUL AND BSWAP SHR IMUL` |
 | portable scalar | 5 | `IMUL AND BSWAP SHR IMUL` |
-| rSUBLEQ codec | 2,242 | `SUBLEQ` |
+| codec | 2,242 | `SUBLEQ` |
 
 The last row is the artifact: one instruction, and the thing Run executes. It
 comes from the *abstract* program, so it does not depend on which of the rows
