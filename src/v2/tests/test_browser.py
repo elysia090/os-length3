@@ -161,12 +161,21 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.solved('ranks8.c')
         self.assertFalse(json.loads(evaluate('', 'nope'))['ok'])
 
-    def test_the_worker_forwards_run_requests(self):
-        """Same lesson as `prepare`: the fix only counts if it is called."""
+    def test_the_worker_runs_the_artifact_and_not_the_sequence(self):
+        """Same lesson as `prepare`: the fix only counts if it is called.
+
+        And the point of the normalization is that the thing which runs is the
+        artifact. A worker that reached back for the lowered sequence would be
+        running a target-specific structure again, which is what this replaced.
+        """
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
             worker = handle.read()
         self.assertIn("msg.type === 'evaluate'", worker)
-        self.assertIn("callPython('evaluate'", worker)
+        self.assertIn("callPython('artifact'", worker)
+        self.assertIn("callPython('parse_input'", worker)
+        self.assertIn('runArtifact(decodeArtifact(', worker)
+        self.assertIn("from './vm.js'", worker)
+
         with open(os.path.join(ROOT, 'web', 'app.js')) as handle:
             app = handle.read()
         self.assertIn("type: 'evaluate'", app)

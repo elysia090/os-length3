@@ -1,8 +1,8 @@
 /* Pinf-R codec -> image -> vm, as one freestanding wasm32 module.
  *
- * This is the fast half.  `pinf/codec.py`, `pinf/image.py` and `pinf/vm.py`
+ * This is the fast half.  `vm/codec.py`, `vm/image.py` and `vm/machine.py`
  * are the definition; this file has to agree with them on every byte, and
- * `tests/test_pinf.py` is what holds it to that rather than assuming it.
+ * `tests/test_vm.py` is what holds it to that rather than assuming it.
  *
  * Three deliberate departures from the specification, all of them reported
  * rather than hidden:
@@ -193,12 +193,12 @@ static i64 unzigzag(u64 point)
     return (point & 1u) ? -(i64)((point + 1u) >> 1) : (i64)(point >> 1);
 }
 
-EXPORT u8 *pinf_buffer(void);
+EXPORT u8 *vm_buffer(void);
 static u8 artifact[1u << 20];
 
-EXPORT u8 *pinf_buffer(void) { return artifact; }
+EXPORT u8 *vm_buffer(void) { return artifact; }
 
-EXPORT int pinf_load(u32 byte_len)
+EXPORT int vm_load(u32 byte_len)
 {
     mem_clear();
     dead = 1;
@@ -283,7 +283,7 @@ static int run(i64 pc, i64 *event)
     }
 }
 
-EXPORT int pinf_read(void)
+EXPORT int vm_read(void)
 {
     if (dead) return R_BOTTOM;
     exhausted = 0;
@@ -299,7 +299,7 @@ EXPORT int pinf_read(void)
     return (out >= 0 && out < 256) ? (int)out : R_BOTTOM;
 }
 
-EXPORT int pinf_feed(int byte)
+EXPORT int vm_feed(int byte)
 {
     if (dead) return R_DEAD;
     if (byte < 0 || byte > 255) return R_DEAD;
@@ -320,13 +320,13 @@ EXPORT int pinf_feed(int byte)
     return R_COMMITTED;
 }
 
-EXPORT void pinf_set_budget(u32 high, u32 low)
+EXPORT void vm_set_budget(u32 high, u32 low)
 {
     budget = ((u64)high << 32) | (u64)low;
 }
 
-EXPORT u32 pinf_steps_low(void)  { return (u32)(last_steps & 0xFFFFFFFFull); }
-EXPORT u32 pinf_steps_high(void) { return (u32)(last_steps >> 32); }
-EXPORT int pinf_overflowed(void) { return overflowed; }
-EXPORT int pinf_exhausted(void)  { return exhausted; }
-EXPORT int pinf_dead(void)       { return dead; }
+EXPORT u32 vm_steps_low(void)  { return (u32)(last_steps & 0xFFFFFFFFull); }
+EXPORT u32 vm_steps_high(void) { return (u32)(last_steps >> 32); }
+EXPORT int vm_overflowed(void) { return overflowed; }
+EXPORT int vm_exhausted(void)  { return exhausted; }
+EXPORT int vm_dead(void)       { return dead; }

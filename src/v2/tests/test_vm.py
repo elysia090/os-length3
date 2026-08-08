@@ -4,7 +4,7 @@ The specification names, for each layer, exactly what must be made false. This
 module does that: every test here breaks one invariant on purpose and requires
 the implementation to reject rather than to guess.
 
-`pinf/*.py` is the definition and `pinf/wasm/pinf.c` is the fast path. They are
+`vm/*.py` is the definition and `vm/wasm/vm.c` is the fast path. They are
 two independent statements of the same machine, so the last class runs the
 compiled module against the reference rather than assuming they agree.
 """
@@ -16,10 +16,10 @@ import subprocess
 import tempfile
 import unittest
 
-from pinf import codec, image, vm
+from vm import codec, image, machine
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WASM_SOURCE = os.path.join(ROOT, 'pinf', 'wasm', 'pinf.c')
+WASM_SOURCE = os.path.join(ROOT, 'vm', 'wasm', 'vm.c')
 
 # An echo machine, written by hand.  Cells 0 and 1 are the input and output
 # cells and cell 2 is scratch; cell 9 is absent, which reads as the zero the
@@ -46,7 +46,7 @@ def artifact(picture):
 
 
 def opened(picture=ECHO):
-    return vm.open_payload(codec.unpack(artifact(picture)))
+    return machine.open_payload(codec.unpack(artifact(picture)))
 
 
 class TestScalarCode(unittest.TestCase):
@@ -172,8 +172,8 @@ class TestCanonicalImage(unittest.TestCase):
     def test_a_dead_payload_still_denotes_something(self):
         # Not an error to report: one fixed residual, which is what keeps the
         # meaning of a payload total.
-        self.assertIs(vm.open_payload('1').image, image.DEAD)
-        self.assertIsNone(vm.read(vm.open_payload('1')))
+        self.assertIs(machine.open_payload('1').image, image.DEAD)
+        self.assertIsNone(machine.read(machine.open_payload('1')))
 
 
 class TestTransactionalMachine(unittest.TestCase):
@@ -181,17 +181,17 @@ class TestTransactionalMachine(unittest.TestCase):
 
     def test_the_echo_machine_echoes(self):
         residual = opened()
-        self.assertEqual(vm.read(residual), 0)
+        self.assertEqual(machine.read(residual), 0)
         for byte in (0, 1, 65, 128, 255):
             with self.subTest(byte=byte):
-                self.assertEqual(vm.future(residual, [byte]), byte)
+                self.assertEqual(machine.future(residual, [byte]), byte)
 
     def test_a_history_is_folded_left_to_right(self):
         # Residualizing the final byte first reverses the history, and this is
         # the machine where that is visible: the last byte is the answer.
         residual = opened()
-        self.assertEqual(vm.future(residual, [1, 2, 3]), 3)
-        self.assertEqual(vm.future(residual, [3, 2, 1]), 1)
+        self.assertEqual(machine.future(residual, [1, 2, 3]), 3)
+        self.assertEqual(machine.future(residual, [3, 2, 1]), 1)
 
     def test_the_residual_law_holds(self):
         # future(feed*(r,p)) = after(future(r),p), which is the whole reason a
@@ -200,16 +200,16 @@ class TestTransactionalMachine(unittest.TestCase):
         prefix = [65, 66]
         for suffix in ([], [0], [9], [255]):
             with self.subTest(suffix=suffix):
-                self.assertEqual(vm.future(vm.feed_all(residual, prefix), suffix),
-                                 vm.future(residual, prefix + suffix))
+                self.assertEqual(machine.future(machine.feed_all(residual, prefix), suffix),
+                                 machine.future(residual, prefix + suffix))
 
     def test_a_read_commits_nothing(self):
         # The read path writes to cells 1 and 2 every time it runs.  If any of
         # it survived, reading would train the machine.
-        residual = vm.feed(opened(), 77)
+        residual = machine.feed(opened(), 77)
         before = dict(residual.image.memory)
         for _ in range(5):
-            self.assertEqual(vm.read(residual), 77)
+            self.assertEqual(machine.read(residual), 77)
         self.assertEqual(residual.image.memory, before)
 
     def test_operands_are_read_before_the_write(self):
@@ -219,39 +219,39 @@ class TestTransactionalMachine(unittest.TestCase):
         picture = image.Image({0: 4, 1: 4, 2: 6,
                                6: 9, 7: 9, 8: -2}, pc_out=0, pc_feed=0)
         memory = dict(picture.memory)
-        event, _steps = vm._run(memory, 0, 1000)
-        self.assertEqual(event, vm.COMMIT)
+        event, _steps = machine._run(memory, 0, 1000)
+        self.assertEqual(event, machine.COMMIT)
 
     def test_a_negative_operand_fails_finitely(self):
         picture = image.Image({0: -1, 1: 5, 2: 9}, pc_out=0, pc_feed=0)
         memory = dict(picture.memory)
-        self.assertEqual(vm._run(memory, 0, 100), (None, 1))
+        self.assertEqual(machine._run(memory, 0, 100), (None, 1))
 
     def test_a_feed_that_does_not_commit_is_dead(self):
         # EMIT on the feed entry: a real event, and the wrong one.
         picture = image.Image(dict(ECHO.memory), pc_out=3, pc_feed=15)
-        residual = vm.feed(opened(picture), 5)
+        residual = machine.feed(opened(picture), 5)
         self.assertTrue(residual.dead)
-        self.assertIsNone(vm.read(residual))
+        self.assertIsNone(machine.read(residual))
 
     def test_a_dead_residual_stays_dead(self):
-        residual = vm.feed_all(vm.DEAD_RESIDUAL, [1, 2, 3])
+        residual = machine.feed_all(machine.DEAD_RESIDUAL, [1, 2, 3])
         self.assertTrue(residual.dead)
-        self.assertIsNone(vm.read(residual))
+        self.assertIsNone(machine.read(residual))
 
     def test_a_read_that_never_emits_is_bottom(self):
         picture = image.Image(dict(ECHO.memory), pc_out=18, pc_feed=18)
-        self.assertIsNone(vm.read(opened(picture)))
+        self.assertIsNone(machine.read(opened(picture)))
 
     def test_divergence_is_not_an_outcome(self):
         # A budget exists so a test can finish.  Exhausting it is verifier
         # state: not a byte, not a failure, and never quietly either.
         picture = image.Image({0: 5, 1: 5, 5: -1}, pc_out=0, pc_feed=0)
-        with self.assertRaises(vm.Unfinished):
-            vm.read(vm.Residual(picture), budget=500)
+        with self.assertRaises(machine.Unfinished):
+            machine.read(machine.Residual(picture), budget=500)
 
     def test_work_is_counted_exactly(self):
-        _residual, steps = vm.feed_with_budget(opened(), 42)
+        _residual, steps = machine.feed_with_budget(opened(), 42)
         self.assertEqual(steps, 1)          # the feed program is one COMMIT
 
 
@@ -269,7 +269,7 @@ class TestWasmAgreesWithTheReference(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.mkdtemp()
-        cls.module = os.path.join(cls._tmp, 'pinf.wasm')
+        cls.module = os.path.join(cls._tmp, 'vm.wasm')
         build = subprocess.run(
             ['clang', '--target=wasm32', '-O2', '-ffreestanding', '-nostdlib',
              '-Wl,--no-entry', '-Wl,--export-dynamic',
@@ -300,15 +300,15 @@ class TestWasmAgreesWithTheReference(unittest.TestCase):
             ops += [{'op': 'feed', 'byte': byte}, {'op': 'read'}]
 
         try:
-            residual = vm.open_payload(codec.unpack(blob))
+            residual = machine.open_payload(codec.unpack(blob))
         except codec.Malformed:
-            residual = vm.DEAD_RESIDUAL
+            residual = machine.DEAD_RESIDUAL
         want = [{'load': 0 if residual.dead else 1},
-                {'read': _as_wasm(vm.read(residual))}]
+                {'read': _as_wasm(machine.read(residual))}]
         for byte in history:
-            residual = vm.feed(residual, byte)
+            residual = machine.feed(residual, byte)
             want += [{'feed': 0 if residual.dead else 1},
-                     {'read': _as_wasm(vm.read(residual))}]
+                     {'read': _as_wasm(machine.read(residual))}]
         return self.drive(ops), want
 
     def test_the_echo_machine_agrees_over_every_byte(self):
@@ -395,17 +395,17 @@ const mem = new Uint8Array(E.memory.buffer);
 const out = [];
 for (const step of job.ops) {
   if (step.op === 'load') {
-    mem.set(step.bytes, E.pinf_buffer());
-    out.push({ load: E.pinf_load(step.bytes.length) });
+    mem.set(step.bytes, E.vm_buffer());
+    out.push({ load: E.vm_load(step.bytes.length) });
   } else if (step.op === 'read') {
-    out.push({ read: E.pinf_read() });
+    out.push({ read: E.vm_read() });
   } else if (step.op === 'feed') {
-    out.push({ feed: E.pinf_feed(step.byte) });
+    out.push({ feed: E.vm_feed(step.byte) });
   } else if (step.op === 'budget') {
-    E.pinf_set_budget(0, step.value);
+    E.vm_set_budget(0, step.value);
   } else if (step.op === 'flags') {
-    out.push({ dead: E.pinf_dead(), overflowed: E.pinf_overflowed(),
-               exhausted: E.pinf_exhausted() });
+    out.push({ dead: E.vm_dead(), overflowed: E.vm_overflowed(),
+               exhausted: E.vm_exhausted() });
   }
 }
 process.stdout.write(JSON.stringify(out));
