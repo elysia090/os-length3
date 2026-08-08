@@ -475,6 +475,34 @@ class TestManifest(unittest.TestCase):
         for rel in stored['files']:
             self.assertTrue(os.path.exists(os.path.join(ROOT, rel)), rel)
 
+    def test_the_deployed_site_contains_what_the_manifest_names(self):
+        """Being on disk is not the same as being deployed.
+
+        `qm-manifest.json` is checked against the source tree, and the source
+        tree was right — but `build_site.py` copied a fixed list of directories,
+        so adding a second package left the manifest naming files the deploy did
+        not contain. The suite stayed green and the build broke, which is the
+        one shape of failure this repo keeps having to close.
+        """
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, 'tools'))
+        import build_site
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'dist')
+            build_site.build(out)
+            with open(MANIFEST) as handle:
+                stored = json.load(handle)
+            for rel in stored['files']:
+                self.assertTrue(os.path.exists(os.path.join(out, rel)),
+                                '%s is in the manifest and not in the build'
+                                % rel)
+            # And the files the page fetches directly rather than through the
+            # manifest.
+            for rel in ('web/vm.wasm', 'web/vm.js', 'web/qm-manifest.json',
+                        'web/examples.json', 'index.html'):
+                self.assertTrue(os.path.exists(os.path.join(out, rel)), rel)
+
 
 class TestExamplesJson(unittest.TestCase):
     """The page's copy of the examples is generated, so it can go stale.
