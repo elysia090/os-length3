@@ -200,7 +200,8 @@ function asText(value) {
  * output width are masked on the Python side, not here — masking twice is how
  * a frontend quietly changes the semantics it is supposed to report.
  */
-export async function evaluateWasm(bytes, functionName, values, outputBits) {
+export async function evaluateWasm(bytes, functionName, values, outputBits,
+                                   inputBits) {
   const { instance } = await WebAssembly.instantiate(bytes, {});
   const fn = instance.exports[functionName];
   if (typeof fn !== 'function') {
@@ -213,10 +214,15 @@ export async function evaluateWasm(bytes, functionName, values, outputBits) {
     );
   }
 
+  // A wasm parameter wider than 32 bits is an i64, and the JS API takes a
+  // BigInt for one — handing it a Number throws, which is why every 64-bit
+  // kernel used to fail here. `values` arrive as decimal strings, so nothing
+  // has passed through a double on the way.
   const wide = outputBits > 32;
+  const asArgument = inputBits > 32 ? (v) => BigInt(v) : (v) => Number(BigInt(v));
   const out = new Array(values.length);
   for (let i = 0; i < values.length; i += 1) {
-    const y = fn(values[i]);
+    const y = fn(asArgument(values[i]));
     out[i] = typeof y === 'bigint' ? y : BigInt.asUintN(64, BigInt(y));
   }
   // Python receives decimal strings: a JSON number cannot carry 64 bits.

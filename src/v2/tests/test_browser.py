@@ -112,6 +112,38 @@ class TestPlan(unittest.TestCase):
         self.assertEqual(result['input_bits'], 8)
         self.assertEqual(result['output_bits'], 64)
         self.assertEqual(len(result['values']), 256)
+        # Decimal strings, not JSON numbers: a double cannot carry a 64-bit
+        # input, and most of a 64-bit domain is above 2^53.
+        self.assertTrue(all(isinstance(v, str) for v in result['values']))
+        self.assertEqual([int(v) for v in result['values']], list(range(256)))
+
+    def test_a_64_bit_domain_survives_the_json_round_trip(self):
+        source = 'unsigned long long f(unsigned long long x) { return x; }'
+        values = [int(v) for v in json.loads(plan(source, '{}'))['values']]
+        # The point of the strings: as numbers these arrive rounded, and the
+        # worker would evaluate the kernel at inputs neither side asked for.
+        self.assertIn((1 << 64) - 1, values)
+        self.assertTrue(any(v > (1 << 53) for v in values))
+
+    def test_a_paste_of_several_functions_plans_the_one_it_can_take(self):
+        source = ('#include <stdint.h>\n'
+                  'uint64_t starts8(uint8_t m) { uint64_t x = m;'
+                  ' return x & ~(x << 1); }\n'
+                  'uint64_t combine(uint8_t a, uint8_t b)'
+                  ' { return starts8(a) | starts8(b); }\n')
+        result = json.loads(plan(source, '{}'))
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['function'], 'starts8')
+        # And the reason the other one was passed over travels with it: only
+        # this side parses the source, so the page cannot work it out again.
+        self.assertEqual([f['name'] for f in result['other_functions']],
+                         ['combine'])
+        self.assertIn('takes 2 arguments', result['other_functions'][0]['reason'])
+
+    def test_the_worker_carries_the_other_functions_to_finish(self):
+        with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
+            self.assertIn('other_functions: compiled.plan.other_functions',
+                          handle.read())
 
     def test_plan_reports_errors_as_data_not_exceptions(self):
         result = json.loads(plan('not C at all', '{}'))
@@ -125,7 +157,7 @@ class TestFinish(unittest.TestCase):
         def ref(m):
             return sum(bin(m & ((1 << k) - 1)).count('1') << (8 * k)
                        for k in range(8))
-        return [str(ref(v)) for v in values]
+        return [str(ref(int(v))) for v in values]
 
     def test_finish_accepts_decimal_strings(self):
         # A JSON number cannot carry 64 bits, so the worker sends strings.
@@ -143,6 +175,20 @@ class TestFinish(unittest.TestCase):
         result = json.loads(finish(SOURCE, options, ['0', '1'], ''))
         self.assertFalse(result['ok'])
 
+    def test_finish_reports_the_functions_it_did_not_analyse(self):
+        options = json.dumps({
+            'function': 'ranks8', 'input_bits': 8, 'output_bits': 64,
+            'other_functions': [{'name': 'combine',
+                                 'reason': 'takes 2 arguments'}],
+        })
+        planned = json.loads(plan(SOURCE, '{}'))
+        result = json.loads(finish(SOURCE, options,
+                                   self._table(planned['values']), ''))
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['frontend']['other_functions'][0]['name'],
+                         'combine')
+        self.assertIn('combine', result['frontend']['functions_in_source'])
+
     def test_fallback_runs_without_a_compiler(self):
         result = json.loads(fallback(SOURCE, '{}'))
         self.assertTrue(result['ok'], result.get('error'))
@@ -154,7 +200,8 @@ class TestWorkerProtocolWithRealClang(unittest.TestCase):
     def test_plan_then_compile_then_finish(self):
         planned = json.loads(plan(SOURCE, '{}'))
         signature = read_signature(SOURCE)
-        table = NATIVE.evaluate(SOURCE, signature, planned['values'])
+        table = NATIVE.evaluate(SOURCE, signature,
+                                [int(v) for v in planned['values']])
         assembly = NATIVE.assembly(SOURCE)
 
         options = json.dumps({
@@ -192,6 +239,131 @@ class TestWorkerProtocolWithRealClang(unittest.TestCase):
                 blob = handle.read()
         self.assertEqual(blob[:4], b'\x00asm')
         self.assertIn(b'ranks8', blob)
+
+
+def _have(binary):
+    from shutil import which
+    return which(binary) is not None
+
+
+@unittest.skipUnless(NATIVE.available() and _have('node'),
+                     'needs native Clang and node')
+class TestValueTransport(unittest.TestCase):
+    """Getting the domain into the wasm and the results back out.
+
+    Two separate things used to go wrong on the way, and neither shows up in a
+    Python test, because neither is in Python:
+
+      * an i64 parameter takes a BigInt across the JS boundary — a Number
+        throws `Cannot convert 255 to a BigInt`, so every 64-bit kernel died
+        the moment the oracle was called;
+      * a JSON number is a double, and 4,177 of the 4,287 points in a 64-bit
+        domain are above 2^53, so the inputs QM verified against were not the
+        inputs the kernel was evaluated at.
+
+    So this runs the shipped `web/clang.js` — the file itself, copied, not a
+    restatement of it — against a module the real compiler produced.
+    """
+
+    def _evaluate(self, source, function, values, output_bits, input_bits):
+        """`evaluateWasm` from web/clang.js, on a real WebAssembly engine."""
+        with tempfile.TemporaryDirectory() as tmp:
+            from qm.clang import prepare_source
+            csrc = os.path.join(tmp, 'k.c')
+            wasm = os.path.join(tmp, 'k.wasm')
+            with open(csrc, 'w') as handle:
+                handle.write(prepare_source(source))
+            build = subprocess.run(
+                [NATIVE.binary, '--target=wasm32', '-O2', '-ffreestanding',
+                 '-nostdlib', '-Wl,--no-entry', '-Wl,--export-all',
+                 csrc, '-o', wasm],
+                capture_output=True, text=True)
+            self.assertEqual(build.returncode, 0, build.stderr)
+
+            # .mjs because the repo has no "type": "module"; the bytes are the
+            # shipped file's, so a break in it is a break here.
+            with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
+                shipped = handle.read()
+            with open(os.path.join(tmp, 'clang.mjs'), 'w') as handle:
+                handle.write(shipped)
+            with open(os.path.join(tmp, 'run.mjs'), 'w') as handle:
+                handle.write(
+                    "import { readFileSync } from 'node:fs';\n"
+                    "import { evaluateWasm } from './clang.mjs';\n"
+                    "const [wasm, fn, bits, inBits] = process.argv.slice(2);\n"
+                    "const values = JSON.parse(readFileSync(0, 'utf8'));\n"
+                    "const out = await evaluateWasm(readFileSync(wasm), fn,"
+                    " values, Number(bits), Number(inBits));\n"
+                    "process.stdout.write(JSON.stringify(out));\n")
+            run = subprocess.run(
+                ['node', os.path.join(tmp, 'run.mjs'), wasm, function,
+                 str(output_bits), str(input_bits)],
+                input=json.dumps(values), capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            return json.loads(run.stdout)
+
+    def test_a_64_bit_kernel_is_evaluated_at_the_inputs_qm_planned(self):
+        source = ('#include <stdint.h>\n'
+                  'uint64_t mix64(uint64_t x) { return x ^ (x >> 32); }\n')
+        planned = json.loads(plan(source, '{}'))
+        self.assertEqual(planned['input_bits'], 64)
+
+        table = self._evaluate(source, 'mix64', planned['values'],
+                               planned['output_bits'], planned['input_bits'])
+        expected = [str(int(v) ^ (int(v) >> 32)) for v in planned['values']]
+        self.assertEqual(table, expected)
+
+    def test_the_widest_input_is_not_rounded_on_the_way_in(self):
+        # The one point that proves the strings are doing something: as a JSON
+        # number 0xFFFFFFFFFFFFFFFF arrives as 2^64, and the kernel would be
+        # evaluated at zero.
+        source = ('#include <stdint.h>\n'
+                  'uint64_t low8(uint64_t x) { return x & 0xFFull; }\n')
+        widest = str((1 << 64) - 1)
+        self.assertEqual(
+            self._evaluate(source, 'low8', [widest], 64, 64), ['255'])
+
+    def test_a_narrow_kernel_still_takes_a_plain_number(self):
+        # The other side of the branch: an i32 parameter rejects a BigInt just
+        # as firmly as an i64 rejects a Number.
+        planned = json.loads(plan(SOURCE, '{}'))
+        table = self._evaluate(SOURCE, 'ranks8', planned['values'],
+                               planned['output_bits'], planned['input_bits'])
+
+        def ref(m):
+            return sum(bin(m & ((1 << k) - 1)).count('1') << (8 * k)
+                       for k in range(8))
+        self.assertEqual(table, [str(ref(int(v))) for v in planned['values']])
+
+    def test_every_64_bit_example_now_reaches_the_oracle(self):
+        # These five are what the bug cost: a `uint64_t` parameter is an i64,
+        # so each of them threw before the first input was evaluated.  The
+        # native harness is an independent oracle — a different compiler and a
+        # different calling convention — so agreeing means the transport is
+        # right, not that one mistake was made twice.
+        from tests.support import read_example
+        examples = ['block_offsets8.c', 'byte_mask_from_spread.c',
+                    'changes64.c', 'mask_from_spread.c', 'prefix_xor64.c']
+        for name in examples:
+            with self.subTest(example=name):
+                source = read_example(name)
+                planned = json.loads(plan(source, '{}'))
+                self.assertEqual(planned['input_bits'], 64)
+                native = NATIVE.evaluate(source, read_signature(source),
+                                         [int(v) for v in planned['values']])
+                self.assertEqual(
+                    self._evaluate(source, planned['function'],
+                                   planned['values'], planned['output_bits'],
+                                   planned['input_bits']),
+                    [str(v) for v in native])
+
+    def test_the_worker_tells_the_oracle_how_wide_the_input_is(self):
+        """Same lesson as `prepare`: the fix only counts if it is called."""
+        with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
+            worker = handle.read()
+        call = re.search(r'evaluateWasm\(([^;]*?)\)\s*;', worker, re.S)
+        self.assertIsNotNone(call, 'the worker no longer calls evaluateWasm')
+        self.assertIn('plan.input_bits', call.group(1))
 
 
 class TestManifest(unittest.TestCase):
@@ -307,7 +479,7 @@ ranks8:
         })
         result = json.loads(finish(
             SOURCE, options,
-            [str(ref(v)) for v in planned['values']], self.WASM_LISTING))
+            [str(ref(int(v))) for v in planned['values']], self.WASM_LISTING))
         self.assertTrue(result['ok'], result.get('error'))
         self.assertEqual(result['frontend']['assembly_stats']['isa'], 'wasm32')
         self.assertIn('wasm32', result['frontend']['reference_ops']['metric'])

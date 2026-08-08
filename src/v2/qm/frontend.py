@@ -35,12 +35,43 @@ class FrontendResult(object):
         self.unit = unit
 
 
+def analysable(ret, params, max_input_bits=64):
+    """Why this signature cannot be the kernel, or None if it can.
+
+    One integer in, one integer out, both inside the 64-bit lowering grammar.
+    Everything here is a property of *this prototype's solver family*, not of
+    the function — hence the reasons, which the report passes on.
+    """
+    if len(params) != 1:
+        return ('takes %d arguments; this prototype\'s solver family takes one'
+                % len(params))
+    ctype = params[0][1] if isinstance(params[0], tuple) else params[0].ctype
+    if ctype.kind not in ('int', 'bool'):
+        return 'the argument is not an integer type'
+    if ctype.bits > max_input_bits:
+        return ('the argument is %d bits; at most %d are supported'
+                % (ctype.bits, max_input_bits))
+    if ret.kind == 'void':
+        return 'returns void, so nothing is observable'
+    if ret.bits > 64:
+        return 'returns %d bits; the lowering grammar is 64' % ret.bits
+    return None
+
+
+def _signature_of(fn):
+    return fn.ret, [(p.name, p.ctype) for p in fn.params]
+
+
 def pick_function(unit, requested=None):
     """Choose the kernel to analyse.
 
-    Explicit request wins.  Otherwise pick a function that nothing else in the
-    paste calls — the root of the little call graph — falling back to the last
-    definition.
+    Explicit request wins, whatever it is — an explicit choice that cannot be
+    analysed should say so about *that* function, not quietly analyse another.
+
+    Otherwise: a function nothing else in the paste calls, the root of the
+    little call graph, preferring one this prototype can actually take. A
+    header of twenty kernels has one root, and if that root happens to be
+    binary there is no reason to refuse the nineteen that are not.
     """
     if requested:
         fn = unit.by_name(requested)
@@ -54,7 +85,33 @@ def pick_function(unit, requested=None):
     for fn in unit.functions:
         _collect_calls(fn.body, called)
     roots = [fn for fn in unit.functions if fn.name not in called]
+
+    for order in (roots, unit.functions):
+        usable = [fn for fn in order if analysable(*_signature_of(fn)) is None]
+        if usable:
+            return usable[-1]
     return roots[-1] if roots else unit.functions[-1]
+
+
+def rejections(unit, chosen):
+    """[{name, reason}] for every function in the paste that was not taken."""
+    out = []
+    for fn in unit.functions:
+        if fn is chosen:
+            continue
+        out.append({'name': fn.name,
+                    'reason': analysable(*_signature_of(fn)) or 'not the root'})
+    return out
+
+
+def _other_candidates_hint(unit, chosen):
+    """Name any function in the paste that *could* have been analysed."""
+    usable = [fn.name for fn in unit.functions
+              if fn is not chosen and analysable(*_signature_of(fn)) is None]
+    if usable:
+        return ('this paste also defines %s, which the solver family can take'
+                % ', '.join(usable))
+    return UNARY_ONLY_HINT
 
 
 def _collect_calls(node, out):
@@ -104,27 +161,11 @@ class CSubsetFrontend(object):
         unit = parse(source)
         fn = pick_function(unit, options.get('function'))
 
-        if len(fn.params) != 1:
-            raise CFrontError(
-                '%s takes %d arguments; exactly one is required'
-                % (fn.name, len(fn.params)), line=fn.line, hint=UNARY_ONLY_HINT)
-
+        why = analysable(*_signature_of(fn))
+        if why:
+            raise CFrontError('%s %s' % (fn.name, why), line=fn.line,
+                              hint=_other_candidates_hint(unit, fn))
         param = fn.params[0]
-        if param.ctype.kind not in ('int', 'bool'):
-            raise CFrontError('parameter %r must be an integer type'
-                              % param.name, line=fn.line)
-        if param.ctype.bits > 64:
-            raise CFrontError(
-                'parameter %r is %d bits; the solver family takes at most 64'
-                % (param.name, param.ctype.bits), line=fn.line,
-                hint='a 128-bit input would be silently truncated, so it is '
-                     'refused instead')
-        if fn.ret.kind == 'void':
-            raise CFrontError('%s returns void, so nothing is observable'
-                              % fn.name, line=fn.line)
-        if fn.ret.bits > 64:
-            raise CFrontError('return width %d exceeds the 64-bit lowering '
-                              'grammar' % fn.ret.bits, line=fn.line)
 
         input_bits = min(param.ctype.bits, int(options.get('max_input_bits', 64)))
         if options.get('input_bits'):
@@ -152,6 +193,10 @@ class CSubsetFrontend(object):
             'frontend': self.describe(),
             'function': fn.to_dict(),
             'functions_in_source': unit.names(),
+            # Which of them could not be the kernel, and why.  A paste of
+            # twenty is normal; saying which one was taken, and what was wrong
+            # with the rest, is the difference between a choice and a guess.
+            'other_functions': rejections(unit, fn),
             # Definitions outside the subset are skipped, never silently: they
             # are named here so a surprising result can be traced to one.
             'skipped_definitions': [
@@ -239,7 +284,7 @@ class ClangFrontend(object):
         target = options.get('source_target', 'x86-64')
 
         signature = self._mod.read_signature(source, options.get('function'))
-        _require_unary(signature)
+        require_analysable(signature)
 
         param_name, param_ctype = signature['params'][0]
         input_bits = min(param_ctype.bits,
@@ -265,7 +310,9 @@ class ClangFrontend(object):
         report = {
             'frontend': self.describe(),
             'function': _signature_dict(signature),
-            'functions_in_source': [signature['name']],
+            'functions_in_source': [signature['name']]
+                                   + [f['name'] for f in signature.get('others') or []],
+            'other_functions': signature.get('others') or [],
             'input_bits': input_bits,
             'output_bits': output_bits,
             'compile': {'opt': opt, 'target': target,
@@ -344,7 +391,12 @@ class PrecompiledFrontend(object):
             'frontend': describe,
             'function': options.get('signature') or {'name': name,
                                                      'signature': name},
-            'functions_in_source': [name],
+            # The paste was parsed on the way in, by `plan`; the worker carries
+            # what it learned across so this path can say which of several
+            # functions it answered about, exactly as the others do.
+            'functions_in_source': [name] + [f['name'] for f in
+                                             options.get('other_functions') or []],
+            'other_functions': options.get('other_functions') or [],
             'input_bits': input_bits,
             'output_bits': output_bits,
             'compile': compile_info,
@@ -464,17 +516,23 @@ def _base_name(name):
     return trimmed[:-3] if trimmed.endswith('_qm') else trimmed
 
 
-def _require_unary(signature):
-    if len(signature['params']) != 1:
-        raise CFrontError('%s takes %d arguments; exactly one is required'
-                          % (signature['name'], len(signature['params'])),
-                          hint=UNARY_ONLY_HINT)
-    if signature['ret'].kind == 'void':
-        raise CFrontError('%s returns void, so nothing is observable'
-                          % signature['name'])
-    if signature['ret'].bits > 64:
-        raise CFrontError('return width %d exceeds the 64-bit lowering grammar'
-                          % signature['ret'].bits)
+def require_analysable(signature):
+    """Raise unless `read_signature`'s choice is one the solvers can take.
+
+    The same `analysable` the parser path uses, so the two frontends cannot
+    disagree about what this prototype accepts — and the hint names a sibling
+    in the paste when there is one, because "takes two arguments" is not much
+    use to someone who pasted a header of twenty kernels.
+    """
+    why = analysable(signature['ret'], signature['params'])
+    if not why:
+        return
+    usable = [item['name'] for item in signature.get('others') or []
+              if item.get('reason') == 'not the root']
+    raise CFrontError(
+        '%s %s' % (signature['name'], why),
+        hint=('this paste also defines %s, which the solver family can take'
+              % ', '.join(usable)) if usable else UNARY_ONLY_HINT)
 
 
 def _signature_dict(signature):

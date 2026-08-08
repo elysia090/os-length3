@@ -86,22 +86,14 @@ def plan(source, options_json='{}'):
     except CFrontError as exc:
         return _dumps({'ok': False, 'error': exc.to_dict()})
 
-    if len(signature['params']) != 1:
-        return _dumps({'ok': False, 'error': {
-            'message': '%s takes %d arguments; exactly one is required'
-                       % (signature['name'], len(signature['params'])),
-            'text': '%s takes %d arguments; exactly one is required'
-                    % (signature['name'], len(signature['params'])),
-            'hint': 'combine the arguments into a single word'}})
+    from .frontend import require_analysable
+    try:
+        require_analysable(signature)
+    except CFrontError as exc:
+        return _dumps({'ok': False, 'error': exc.to_dict()})
 
     param_name, param_ctype = signature['params'][0]
     ret = signature['ret']
-    if ret.kind == 'void':
-        return _dumps({'ok': False, 'error': {
-            'message': '%s returns void, so nothing is observable'
-                       % signature['name'],
-            'text': '%s returns void, so nothing is observable'
-                    % signature['name']}})
 
     input_bits = min(param_ctype.bits, int(options.get('max_input_bits', 64)))
     if options.get('input_bits'):
@@ -121,7 +113,16 @@ def plan(source, options_json='{}'):
         'input_bits': input_bits,
         'output_bits': ret.bits,
         'domain': domain.to_dict(),
-        'values': domain.values(),
+        # Which other functions the paste defined, and why each was not taken.
+        # Only this side ever parses the source, so if it does not travel the
+        # browser cannot say which of twenty kernels it answered about.
+        'other_functions': signature.get('others') or [],
+        # Decimal strings, for the same reason the outputs come back as
+        # strings: a JSON number is a double, and 4,177 of the 4,287 points in
+        # a 64-bit domain are above 2^53.  Sent as numbers they arrive rounded,
+        # and the worker would evaluate the kernel at inputs neither side
+        # asked for.
+        'values': [str(v) for v in domain.values()],
         'signature': {
             'name': signature['name'],
             'signature': '%s %s(%s %s)' % (ret.name, signature['name'],

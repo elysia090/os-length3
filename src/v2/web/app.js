@@ -671,10 +671,18 @@ function showDetails() {
     .map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`)
     .join('');
   const engine = result.frontend.frontend.title || '';
+  // A paste of several functions analyses one of them.  Saying which, and
+  // what was wrong with the rest, is the difference between a choice and a
+  // guess — and the header above already names the one that was taken.
+  const others = (result.frontend.other_functions || [])
+    .map((f) => `<tr><th>${escapeHtml(f.name)}</th>`
+      + `<td>${escapeHtml(f.reason)}</td></tr>`)
+    .join('');
 
   openDialog(result.frontend.function.signature || 'Details', `
     <table>${rows}</table>
     <h4>Targets</h4><table>${targets}</table>
+    ${others ? `<h4>Not analysed</h4><table>${others}</table>` : ''}
     ${recognized
       ? `<h4>Recognized</h4><table><tr><th>primitive</th>`
         + `<td>${escapeHtml(recognized)}</td></tr></table>`
@@ -763,6 +771,13 @@ function onMessage(event) {
     renderCompiled(msg.result);
     renderTakeaway();
     status();
+    // A paste of several functions answers about one of them.  Say so, once,
+    // rather than letting the reader assume the whole file was minimized.
+    const skipped = (msg.result.frontend.other_functions || []).length;
+    if (skipped) {
+      toast(`analysed ${msg.result.frontend.function.name} — `
+            + `${skipped} other function${skipped === 1 ? '' : 's'} skipped`);
+    }
     return;
   }
 
