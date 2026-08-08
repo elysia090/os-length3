@@ -366,6 +366,8 @@ input:disabled { opacity: .45; }
 
 .row { display: block; }
 .addr { color: var(--addr); display: inline-block; width: 6ch; }
+/* The codec view's addresses are eight hex digits and need the room. */
+.addr.wide { width: 10ch; }
 .mn { color: var(--ink); display: inline-block; min-width: 9ch;
       padding-right: 1ch; }   /* a long mnemonic must not touch its operands */
 .ops { color: var(--operand); }

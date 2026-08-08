@@ -143,6 +143,46 @@ CODEC_TARGET = 'codec'
 C_RENDER_LIMIT = 20000
 
 
+def _codec_cost(picture, input_bits):
+    """What §3.7 charges for running this image, worst of a fixed sample.
+
+    Span and work are properties of the *run*, not of the listing: §3.2 makes a
+    transition a capture plus a broadcast over the rows that read the written
+    coordinate, and §3.7 charges `Theta(k+1)` work and `Theta(1)` span for it.
+    Counting instructions instead — which is what this used to do — reports the
+    same number for span and for work and is neither of them.
+
+    A run is input-dependent, so this takes the worst of a small fixed sample
+    rather than claiming a single number covers every input. Three values are
+    enough to be worth reporting and cheap enough to always do: across the
+    examples here, all-zeros, alternating and all-ones bracket a five-value
+    sample to within one percent, and the largest image costs about a second.
+    """
+    from vm import machine, rows
+
+    limit = (1 << input_bits) - 1
+    values = sorted({0, 0xAAAAAAAAAAAAAAAA & limit, limit})
+    width = -(-input_bits // 8)
+    # This lowering is straight-line, so a terminating run enters each
+    # instruction about once; eight times the cell count is generous headroom
+    # and still bounds a runaway at a few seconds rather than a hang.
+    budget = max(1 << 16, 8 * len(picture.memory))
+
+    residual = machine.Residual(picture)
+    worst = None
+    for value in values:
+        history = [(value >> (8 * i)) & 255 for i in range(width)]
+        try:
+            cost = rows.measure(residual, history, budget)
+        except machine.Unfinished:
+            return None
+        if cost is None:
+            return None
+        if worst is None or cost.work > worst.work:
+            worst = cost
+    return worst
+
+
 def _keep(result):
     """Remember the solve, and add the codec to the targets it can be seen as.
 
@@ -177,24 +217,44 @@ def _keep(result):
     name = (result['frontend'].get('function') or {}).get('name') or 'kernel'
     primary = next((t for t in result.get('targets') or []
                     if t['name'] == result.get('primary_target')), None)
-    steps = sum(1 for at in picture.memory if at >= 0) // 3
+    cost = _codec_cost(picture, input_bits)
+    if cost is None:
+        # No run finished inside the budget, so there is no §3.7 quantity to
+        # report. Say the size of the image and say that is what it is.
+        steps = sum(1 for at in picture.memory if at >= 0) // 3
+        span, work = steps, steps
+        note = 'the artifact itself; %d instructions, not run' % steps
+    else:
+        span, work = cost.span, cost.work
+        note = ('the artifact itself; %s transitions, %s of them quiet'
+                % ('{:,}'.format(cost.transitions), '{:,}'.format(cost.quiet)))
 
     result.setdefault('targets', []).append({
         'name': CODEC_TARGET,
-        'isa': {'name': CODEC_TARGET, 'title': 'codec',
-                'note': 'the artifact itself'},
+        'isa': {'name': CODEC_TARGET, 'title': 'codec', 'note': note},
         'ok': True,
-        # An rSUBLEQ program is a chain: every instruction depends on the one
-        # before it, so span and work are the same number and saying otherwise
-        # would invent parallelism the machine does not have.
-        'span': steps,
-        'work': steps,
+        # §3.2, not the listing: one transition is a capture whose row
+        # dependency is Theta(1), and a wave over the rows that read the cell
+        # it wrote, which is Theta(k+1) work. Span and work therefore differ,
+        # and neither is the instruction count.
+        'span': span,
+        'work': work,
+        # Span is one per transition, so it already says how many there were.
+        'quiet': cost.quiet if cost else None,
+        'barriers': cost.barriers if cost else None,
         'core_ops': (result.get('program') or {}).get('core_ops'),
-        'instructions': ['SUBLEQ'],
+        # One row, entered and repaired. §3.1 gives the transition its meaning;
+        # §3.2 gives it its shape, and the shape is what these numbers count.
+        'instructions': ['ROW'],
         'L_bits': vm_codec.length(payload),
         'L_bytes': len(blob),
         'cells': len(picture.memory),
-        'asm': emit.emit_listing(picture, name, input_bits, output_bits),
+        # The codec view is the codeword — `pack(code(z))` as bytes, with its
+        # fields named — and then the listing those bits decode to. A view
+        # called codec that showed only a disassembly would be showing the
+        # decode and calling it the code.
+        'asm': emit.emit_code(picture, name, input_bits, output_bits,
+                              listing=len(picture.memory) <= C_RENDER_LIMIT),
         # The C rendering of a big image is a file of the same order as the
         # image, and it crosses the worker boundary as one string.  Past this
         # it is offered rather than sent; the listing above is the artifact

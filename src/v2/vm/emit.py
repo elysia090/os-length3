@@ -1,23 +1,29 @@
-"""The other direction: a canonical image back out as C, wasm32 or x86-64.
+"""The other direction: a canonical image back out as bytes, C, wasm32 or x86.
 
-`lower.lower_seq` turns a minimized program into one artifact. This turns that
-artifact back into the three languages it can be read in — so there is one
-program and three views of it, rather than one program per language kept in
-step by hand.
+`lower.lower_program` turns a minimized program into one artifact. This turns
+that artifact back into the forms it can be read in — so there is one program
+and several views of it, rather than one program per language kept in step by
+hand.
+
+`emit_code` is not one of the views: it is the artifact, `pack(code(z))`, with
+the fields §1 and §2 define named. Everything else here is what those bits
+decode to.
 
 What comes out is the machine and the image, not a decompilation. That is the
-honest rendering: an rSUBLEQ program *is* a memory and one instruction, and any
-of these three can say so exactly. Each emitted form exposes the same kernel
+honest rendering: an rSUBLEQ program *is* a memory and one instruction, and
+each of these can say so exactly. Each emitted language exposes the same kernel
 signature, so it can be compiled and put straight against the artifact.
 
 Depends on `codec` and `image`.
 """
 
-from .image import Image
+from .codec import encode_scalar, pack
+from .image import Image, serialize
 
 # The three targets share one interpreter shape, so a change to the machine is
-# a change in one place per language and nowhere else.
-LANGUAGES = ('listing', 'c', 'wat', 'x86')
+# a change in one place per language and nowhere else.  `codec` is not one of
+# them: it is the artifact, and the other four are what it decodes to.
+LANGUAGES = ('codec', 'listing', 'c', 'wat', 'x86')
 
 
 def _extent(picture):
@@ -82,6 +88,84 @@ def emit_listing(picture, name='kernel', input_bits=8, output_bits=64):
             lines.append('%6d:  .quad %d' % (at, memory[at]))
         at += 1
 
+    return '\n'.join(lines) + '\n'
+
+
+# ---------------------------------------------------------------------------
+# The codeword
+# ---------------------------------------------------------------------------
+
+def emit_code(picture, name='kernel', input_bits=8, output_bits=64,
+              listing=True):
+    """`pack(code(z))` as bytes, with the fields §1 and §2 define named.
+
+    This is the artifact. The listing above is a rendering of what these bits
+    decode to; these bits are the thing itself — the one word whose length is
+    `L(z)` and whose rank is the final tie-break of the objective — so a view
+    called *codec* shows this and nothing else.
+
+    The field table is the codeword parsed by its own grammar. Reading it is
+    how you check that the prefix is self-delimiting without trusting the
+    decoder: each length below is `2k+2` for the value beside it, and they sum
+    to the payload the header announces.
+    """
+    payload = serialize(picture)
+    header = encode_scalar(len(payload))
+    blob = pack(header + payload)
+
+    entries = sorted(picture.memory.items())
+    at = len(encode_scalar(len(entries)))
+    at += len(encode_scalar(picture.pc_out))
+    at += len(encode_scalar(picture.pc_feed))
+
+    fields = [
+        ('E(|z|)', len(payload), 0, len(header)),
+        ('E(k)', len(entries), len(header),
+         len(encode_scalar(len(entries)))),
+        ('E(pc_o)', picture.pc_out,
+         len(header) + len(encode_scalar(len(entries))),
+         len(encode_scalar(picture.pc_out))),
+        ('E(pc_a)', picture.pc_feed,
+         len(header) + at - len(encode_scalar(picture.pc_feed)),
+         len(encode_scalar(picture.pc_feed))),
+        ('(gap, zigzag) pairs', len(entries), len(header) + at,
+         len(payload) - at),
+    ]
+
+    total = len(header) + len(payload)
+    lines = [
+        ';; %s — the artifact: pack(code(z)), %d bytes.' % (name, len(blob)),
+        ';;',
+        ';; 1  code(z) = E(|z|) || z                        L(z) = %d bits'
+        % total,
+        ';; 2  z = E(k) || E(pc_o) || E(pc_a) '
+        '|| (E(gap) || E(zigzag(v)))^k',
+        ';;',
+        ';;      bit  field                     value      bits',
+    ]
+    for label, value, start, width in fields:
+        lines.append(';;  %7d  %-20s %10d  %8d'
+                     % (start, label, value, width))
+    pad = (-total) % 8
+    lines.append(';;  %7d  %-20s %10d  %8d' % (total, 'pad (all zero)', 0, pad))
+    lines += [
+        ';;',
+        ';; qm-input-bits: %d' % input_bits,
+        ';; qm-output-bits: %d' % output_bits,
+        '',
+    ]
+
+    for start in range(0, len(blob), 16):
+        chunk = blob[start:start + 16]
+        lines.append('%08x  %s' % (start, ' '.join('%02x' % b for b in chunk)))
+
+    if listing:
+        lines += [
+            '',
+            ';; ---- what those bits decode to -------------------------',
+            '',
+            emit_listing(picture, name, input_bits, output_bits).rstrip('\n'),
+        ]
     return '\n'.join(lines) + '\n'
 
 
@@ -599,12 +683,12 @@ def emit_x86(picture, name='kernel', input_bits=8, output_bits=64):
     }
 
 
-EMITTERS = {'listing': emit_listing, 'c': emit_c,
+EMITTERS = {'codec': emit_code, 'listing': emit_listing, 'c': emit_c,
             'wat': emit_wat, 'x86': emit_x86}
 
 
 def emit(picture, language, name='kernel', input_bits=8, output_bits=64):
-    """One image, one of the three languages it can be read in."""
+    """One image, as the artifact or as one of the languages it decodes to."""
     if language not in EMITTERS:
         raise ValueError('no emitter for %r; have %s'
                          % (language, ', '.join(sorted(EMITTERS))))

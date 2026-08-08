@@ -3,13 +3,15 @@
 The runtime half of the Pinf-R specification, plus the two directions that make it the canonical form.
 
 The runtime half of Pinf-R: one self-delimiting code, one canonical signed
-memory image, one transactional rSUBLEQ instruction. Nothing here is a search,
-a proof, or a learner.
+memory image, one transactional rSUBLEQ instruction *and its direct physical
+form*. Nothing here is a search, a proof, or a learner.
 
 ```text
-codec  ->  image  ->  machine          the specification's dependency order
-                        ^
-    qm.isa.Seq  --lower-->  image      C, x86-64 or wasm32 in
+codec -> image -> machine -> rows     the specification's dependency order
+                     |         |      3.1 what a transition means
+                     |         |      3.2 what it is, 3.7 what it costs
+                     v
+    qm.isa.Seq  --lower-->  image     C, x86-64 or wasm32 in
                             image  --emit-->  C, x86-64, wasm32 out
 ```
 
@@ -34,8 +36,9 @@ somewhere to run candidate programs, exactly and quickly.
 
 ## Two implementations, held to each other
 
-`codec.py`, `image.py` and `vm.py` are the definition. They are written for
-clarity: bits are strings, memory is a dict, and nothing is optimized.
+`codec.py`, `image.py`, `machine.py` and `rows.py` are the definition. They are
+written for clarity: bits are strings, memory is a dict, and nothing is
+optimized.
 
 `wasm/vm.c` is the fast path — 300 lines of freestanding C with no allocator,
 no libc and no imports, compiled to a ~6 KB wasm32 module.
@@ -61,33 +64,70 @@ A wasm module has neither, so:
 The Python reference has none of these limits, which is what makes the
 differential test meaningful rather than circular.
 
+## What span and work actually count here
+
+Not instructions. §3.1 says what a transition *means*; §3.2 says what it *is*,
+and they are different objects. A transition in the physical form is a capture
+whose row dependency is `Theta(1)`, a store, and then a wave over every row
+that had the written coordinate cached — `Theta(k+1)` work for `k` incidences,
+one barrier when `k > 0`, and nothing at all when `change == 0` (3.7). So:
+
+* **span** is one per transition, and therefore counts transitions;
+* **work** is transitions plus incidences, and is the number that notices when
+  many rows read one cell.
+
+`rows.py` is that form written out, and `tests/test_vm_rows.py` runs it beside
+`machine.py` on the same artifacts and requires identical outcomes — plus the
+falsification list §3 names: drop the stale `old`, drop the stale `change`,
+drop the wave, or skip the special-row repair, and the answers must change.
+
+The distinction is not bookkeeping. Every `add` used to go through one shared
+scratch cell, which put **98.9%** of `ranks8`'s measured work on that single
+coordinate; `asm.add` now gives each add a private one, which costs 26% more
+`L(z)` and **40 times less work** — and work precedes `L(z)` in the objective.
+Counting instructions would have shown that change as a pure regression.
+
 ## The artifact is not yet minimal, and by how much
 
 QM's objective is lexicographic `(span, work, L(z), rank)`. The codec target is
-measured on the same scale, and it currently loses on every coordinate — not
-narrowly:
+measured on the same scale — the worst of a fixed input sample, since a run is
+input-dependent — and it currently loses on every coordinate, not narrowly:
 
 | `ranks8` | span | work | L(z) bits |
 | --- | ---: | ---: | ---: |
 | x86-64 + BMI2 | 2 | 2 | 156 |
-| codec | 2,242 | 2,242 | 108,685 |
+| codec | 1,624 | 4,123 | 136,849 |
 
 Some of that gap is real and permanent: a one-instruction machine cannot do a
 64-bit deposit in two steps, and it never will. But most of it is this
-lowering's fault, in two specific ways, both measured rather than guessed.
+lowering's fault, in two specific ways. `tools/measure_multiply.py` writes one
+function three ways — the `CONV(IMUL)` stage of `ranks8`, `y = x · 0x0101…01
+mod 2^64` — and runs all three on the same 256 inputs with no framing around
+them:
+
+| form | cells | L(z) bits | span | work |
+| --- | ---: | ---: | ---: | ---: |
+| bit-sliced, unrolled (today) | 7,827 | 164,767 | 2,100 | 4,844 |
+| word-level, unrolled | 1,945 | 34,017 | 589 | 7,477 |
+| word-level, looped | 127 | 1,859 | 923 | 3,523 |
 
 **It bit-slices an arithmetic machine.** SUBLEQ's one instruction *is* a 64-bit
 subtract, and this builds 64-bit adders out of single-bit gates on top of it —
-each gate eight to twelve instructions. The `CONV(IMUL)` stage of `ranks8` is
-5,208 of its 6,728 cells for that reason. Written word-level, as the
-shift-and-add the machine can do natively, the same multiply is 623 cells and
-7,345 bits — **twelve times smaller**, and exact on every input tested.
+each gate eight to twelve instructions. Written word-level, as the shift-and-add
+the machine does natively, the same multiply is four times shorter and takes a
+quarter of the transitions.
 
-**It is fully unrolled.** In SUBLEQ every instruction depends on the one before
-it through `pc`, so a loop costs nothing in span or work — the chain is the same
-length either way — and it collapses L(z) and rank. The same multiply as a loop
-over its seven rounds is 232 cells and 2,546 bits: **thirty-five times smaller
-than the bit-sliced form**, executing 253 transitions.
+**It is fully unrolled.** Unrolling has no loop counter to maintain, so it wins
+on span — and that is the coordinate that comes first, which is why "add loops"
+is not by itself the answer. What it loses is work, and §3.2 says why: every
+unrolled copy that reads a hot cell is one more row the next write has to
+repair. Unrolled pays 7,477 work against the loop's 3,523 for the same
+arithmetic.
+
+The last row is the one that matters, because it loses on nothing. Word-level
+*and* looped beats what is built today on span, on work, on `L(z)` and on cell
+count at once — 2.3× the span, 1.4× the work, 89× the length. There is no
+trade to argue about; it is simply better, and it is not implemented.
 
 The fixed framing shows the same thing from the other end. Byte decode, byte
 encode and the stream dispatch are 1,520 cells whatever the kernel is — for
@@ -97,6 +137,10 @@ image. Both loops are eight iterations of the same few instructions.
 So the order to fix it in is: word-level values with bit-slicing kept only for
 the permutation-shaped operations that actually want it, then loops for the
 framing and for the repeated-stride stages. Neither is done.
+
+```sh
+python3 tools/measure_multiply.py    # re-derives the table above
+```
 
 ## Building
 
@@ -144,16 +188,18 @@ free for the same reason. The gates and the adders are what is left.
 ## Using it
 
 ```python
-from vm import codec, image, vm
+from vm import codec, image, machine, rows
 
 picture  = image.Image({...}, pc_out=3, pc_feed=18)
 artifact = codec.pack(codec.code(image.serialize(picture)))
 
-r = vm.open_payload(codec.unpack(artifact))
-r = vm.feed(r, 65)
-vm.read(r)          # a byte, or None for bottom
+r = machine.open_payload(codec.unpack(artifact))
+r = machine.feed(r, 65)
+machine.read(r)               # a byte, or None for bottom
+
+rows.measure(r, [65])         # the same run, in section 3.7's terms
 ```
 
-`vm.read` discards every write, including self-modification, so reading is
-observation and nothing else. `vm.feed` keeps its writes only on COMMIT: any
+`machine.read` discards every write, including self-modification, so reading is
+observation and nothing else. `machine.feed` keeps its writes only on COMMIT: any
 other event yields the one fixed dead residual.

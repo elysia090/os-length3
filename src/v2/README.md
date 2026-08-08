@@ -12,9 +12,11 @@ Two cards: what you paste, and what QM made of it — ready to copy, ready to ru
 Tabs hold one kernel each, with their own source and their own last result. The
 language is read off the paste rather than picked from a menu.
 
-The minimized program is viewable as any of the machines it lowers to, or as the
-codec: one canonical rSUBLEQ artifact, which is what **Run** executes and what
-`vm/` can render back out as C, x86-64 or wasm32.
+The minimized program is viewable as any of the machines it lowers to, or as
+the codec: one canonical artifact, `pack(code(z))`, shown as the bytes it is —
+with the fields of the code named — and then the listing those bytes decode to.
+That artifact is what **Run** executes, and what `vm/` renders back out as C,
+x86-64 or wasm32.
 
 Intrinsics are read, not just emitted. `_pdep_u64`, `_pext_u64`, the BMI1 set,
 `_tzcnt`/`_lzcnt`/`_bzhi`, byte swaps and rotates, and the SSE carry-less
@@ -86,7 +88,7 @@ uint64_t ranks8(uint8_t m)
 Quotient Minimizer        2 core operations       PDEP ; IMUL
 Residual freedom          502 solutions
 Verification              exact exhaustive, 256 / 256
-Artifact                  13,586 bytes            pack(code(z))
+Artifact                  17,107 bytes            pack(code(z))
 ```
 
 The same semantic program lowers differently per target, which is the point of
@@ -97,12 +99,21 @@ keeping semantic classes separate from mnemonics:
 | x86-64 + BMI2 | 2 | `PDEP IMUL` |
 | x86-64 baseline | 5 | `IMUL AND BSWAP SHR IMUL` |
 | portable scalar | 5 | `IMUL AND BSWAP SHR IMUL` |
-| codec | 2,242 | `SUBLEQ` |
+| codec | 4,123 | `ROW` |
 
 The last row is the artifact: one instruction, and the thing Run executes. It
-comes from the *abstract* program, so it does not depend on which of the rows
-above you are looking at — they are views of one solve, and `vm/emit.py` renders
-the artifact itself back out as C, x86-64 or wasm32. See `vm/README.md`.
+comes from the *abstract* program the minimizer produced, not from the paste
+and not from any of the rows above — three spellings of one function give the
+same bytes, which `tests/test_vm_codec_view.py` checks, and which is the only
+thing that makes "canonical form" mean anything. `vm/emit.py` renders it back
+out as C, x86-64 or wasm32.
+
+Its number is not a count of listing lines. The specification defines the cost
+of a transition on the physical form of the machine — a capture plus a wave
+over the rows that had the written cell cached — so `work` is transitions plus
+incidences and `span` is transitions, and a run of `ranks8` is 1,624
+transitions against 6,728 cells of image. See `vm/README.md`, which also says
+how far that is from what the same function costs written properly.
 
 ---
 
@@ -188,7 +199,8 @@ the engine modules the worker fetches at runtime, so `qm/`, `web/` and
 vm/               the rSUBLEQ machine the minimized program normalizes onto
   codec.py        one complete self-delimiting code, one rank
   image.py        one canonical finite-support signed memory
-  machine.py      one transactional instruction
+  machine.py      one transactional instruction  (3.1, what it means)
+  rows.py         the direct physical form        (3.2, what it is; 3.7 cost)
   lower.py        abstract program -> canonical image (bit-sliced)
   emit.py         canonical image -> C, x86-64, wasm32
   wasm/vm.c       the same machine, freestanding, ~6 KB of wasm32
