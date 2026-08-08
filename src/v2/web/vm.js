@@ -50,6 +50,12 @@ export async function evaluate(artifact, feedBytes, outBytes) {
   const memory = new Uint8Array(E.memory.buffer);
   memory.set(artifact, E.vm_buffer());
   if (!E.vm_load(artifact.length)) {
+    // Running out of table is this module's limit, not a statement about the
+    // artifact. Reporting the two the same way blamed a perfectly canonical
+    // image for a size the machine happened not to have room for.
+    if (E.vm_table_full && E.vm_table_full()) {
+      throw new Error('the image is larger than this machine has room for');
+    }
     throw new Error('the artifact did not open as a canonical image');
   }
 

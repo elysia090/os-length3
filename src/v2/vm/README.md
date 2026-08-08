@@ -40,8 +40,28 @@ somewhere to run candidate programs, exactly and quickly.
 written for clarity: bits are strings, memory is a dict, and nothing is
 optimized.
 
-`wasm/vm.c` is the fast path — 300 lines of freestanding C with no allocator,
+`wasm/vm.c` is the fast path — 400 lines of freestanding C with no allocator,
 no libc and no imports, compiled to a ~6 KB wasm32 module.
+
+Its cost is almost entirely in *opening* an artifact rather than running one,
+which is worth knowing before optimizing the wrong half: `ranks8` is 2,016
+transitions and 17 KB of codeword, and decoding the codeword took four times
+as long as executing it. Three things were doing that, all of them the
+runtime's fault and none of them the machine's:
+
+* every load walked all 131,072 slots to empty the table, which cost more than
+  decoding a small artifact did — a generation counter makes it an increment;
+* the scalar decoder read one bit at a time, and `E(n)` announces its own
+  width with a zero run, so `clz` over a 64-bit window reads a whole word at
+  once;
+* every cell the load stored was written to the undo log, though a load is
+  committed and nothing rolls back past it — that log entry per cell was also
+  what capped image size at a quarter of what the table holds.
+
+Together: 156 -> 43 us to open `middle_bits_u16`, 21 -> 12 ns per artifact
+byte, and the two largest examples — `prefix_xor64` at 125,035 cells and
+`select8` at 241,841 — open at all now, where before they were refused as
+though they were malformed.
 
 Neither is checked against a description of the other. `tests/test_vm.py`
 runs both on the same artifacts and requires identical answers, which is how
@@ -58,7 +78,7 @@ A wasm module has neither, so:
 | Specification | `wasm/vm.c` | How it is reported |
 | --- | --- | --- |
 | unbounded integers | i64 | a subtraction that would overflow ends the call and raises `vm_overflowed`; it never wraps |
-| unbounded memory | fixed open-addressing table | exhausting it is a finite failure, never a silent eviction |
+| unbounded memory | fixed open-addressing table, 2^20 slots | exhausting it is a finite failure, never a silent eviction, and `vm_table_full` says it was the table rather than the image — the two used to be reported alike, which blamed a canonical artifact for the machine's size |
 | divergence is divergence | step budget | exhausting it returns `UNFINISHED` (-2), which is **not** an outcome: not a byte, not a failure |
 
 The Python reference has none of these limits, which is what makes the

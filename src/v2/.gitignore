@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .wrangler/
 
-# Built, not committed: pinf/wasm/build.py makes it from pinf.c.
-pinf/wasm/*.wasm
-!web/pinf.wasm
+# Built, not committed: vm/wasm/build.py makes it from vm.c.  The copy under
+# web/ is the one the page loads and is committed on purpose.
+vm/wasm/*.wasm
+!web/vm.wasm
