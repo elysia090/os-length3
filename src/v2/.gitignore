@@ -3,3 +3,6 @@ node_modules/
 __pycache__/
 *.pyc
 .wrangler/
+
+# Built, not committed: pinf/wasm/build.py makes it from pinf.c.
+pinf/wasm/*.wasm

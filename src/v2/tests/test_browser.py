@@ -13,7 +13,8 @@ import subprocess
 import tempfile
 import unittest
 
-from qm.browser import capabilities, fallback, finish, plan, prepare
+from qm.browser import (capabilities, evaluate, fallback, finish, plan,
+                        prepare)
 from qm.clang import NATIVE, read_signature
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -91,6 +92,85 @@ uint64_t ranks8_qm(uint8_t x)
             self.assertEqual(call, 'prepared',
                              'clang is being handed %r rather than the '
                              'prepared source' % call)
+
+
+class TestRunTheMinimizedProgram(unittest.TestCase):
+    """The page could show a program and not try it.
+
+    The lowered sequence is a live object that `to_json_safe` strips at the
+    worker boundary, and the wasm listing is text rather than a module, so the
+    only side that can still run the answer is the one that built it.
+    """
+
+    def solved(self, name):
+        from tests.support import read_example
+        result = json.loads(fallback(read_example(name), '{}'))
+        self.assertTrue(result['ok'], result.get('error'))
+
+    def test_it_runs_the_program_it_just_built(self):
+        self.solved('ranks8.c')
+        out = json.loads(evaluate('', '5'))
+        self.assertTrue(out['ok'], out.get('error'))
+        # ranks8(0b101): exclusive prefix popcounts, one per byte lane.
+        expected = sum(bin(5 & ((1 << k) - 1)).count('1') << (8 * k)
+                       for k in range(8))
+        self.assertEqual(int(out['output']), expected)
+
+    def test_a_64_bit_answer_survives_as_a_string(self):
+        self.solved('range_spread8.c')
+        out = json.loads(evaluate('', '0x3030303030303030'))
+        self.assertTrue(out['ok'], out.get('error'))
+        # Every lane is an ASCII zero, so every lane flag is set.  As a JSON
+        # number this value would come back rounded.
+        self.assertEqual(out['output'], str(0x8080808080808080))
+        self.assertTrue(isinstance(out['output'], str))
+
+    def test_hex_and_decimal_are_both_accepted(self):
+        self.solved('ranks8.c')
+        self.assertEqual(json.loads(evaluate('', '0x0A'))['output'],
+                         json.loads(evaluate('', '10'))['output'])
+
+    def test_an_input_too_wide_for_the_kernel_is_refused(self):
+        self.solved('ranks8.c')
+        out = json.loads(evaluate('', '256'))
+        self.assertFalse(out['ok'])
+        self.assertIn('8 bits', out['error'])
+
+    def test_a_named_target_runs_that_target(self):
+        self.solved('ranks8.c')
+        for name in ('x86-64-bmi2-pclmul', 'x86-64'):
+            with self.subTest(target=name):
+                out = json.loads(evaluate(name, '5'))
+                # Different machines, same function: that is the whole claim
+                # the target list makes.
+                self.assertTrue(out['ok'], out.get('error'))
+                self.assertEqual(out['target'], name)
+                self.assertEqual(int(out['output']),
+                                 int(json.loads(evaluate('', '5'))['output']))
+
+    def test_a_target_that_did_not_lower_says_so(self):
+        # Distinct from "nothing built yet": the UI disables Run for such a
+        # target, and if it ever stops doing that the message should still be
+        # about the target rather than about the session.
+        self.solved('ranks8.c')
+        out = json.loads(evaluate('no-such-target', '5'))
+        self.assertFalse(out['ok'])
+        self.assertIn('no lowered program', out['error'])
+
+    def test_nonsense_is_an_error_not_an_exception(self):
+        self.solved('ranks8.c')
+        self.assertFalse(json.loads(evaluate('', 'nope'))['ok'])
+
+    def test_the_worker_forwards_run_requests(self):
+        """Same lesson as `prepare`: the fix only counts if it is called."""
+        with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
+            worker = handle.read()
+        self.assertIn("msg.type === 'evaluate'", worker)
+        self.assertIn("callPython('evaluate'", worker)
+        with open(os.path.join(ROOT, 'web', 'app.js')) as handle:
+            app = handle.read()
+        self.assertIn("type: 'evaluate'", app)
+        self.assertIn("msg.type === 'evaluated'", app)
 
 
 class TestCapabilities(unittest.TestCase):

@@ -119,9 +119,42 @@ input:disabled { opacity: .45; }
   font: inherit; font-size: 13.5px; cursor: pointer;
 }
 .link:hover { background: var(--chrome); color: var(--ink); }
-.link.copy { border-color: var(--edge); background: var(--chrome); }
-.link.copy:hover { border-color: var(--accent); }
+.link.run { border-color: var(--edge); background: var(--chrome); }
+.link.run:hover:not(:disabled) { border-color: var(--accent); }
+.link:disabled { opacity: .45; cursor: default; }
+.link:disabled:hover { background: none; color: var(--ink-2); }
 .link svg { width: 14px; height: 14px; }
+
+/* Run sits where the heading has room; the input is beside it so one glance
+   shows both what will be run and what it will be run on. */
+.runbar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.runbar input {
+  width: 15ch; min-width: 8ch; padding: 5px 9px;
+  border: 1px solid var(--edge); border-radius: 7px;
+  background: var(--frame); color: var(--ink);
+  font-family: var(--mono); font-size: 13px;
+}
+.runbar input:disabled { opacity: .45; }
+.runbar input:focus { outline: none; border-color: var(--accent); }
+
+/* Copy belongs to the block it copies, so it rides on it rather than sitting
+   in the heading where it read as a heading action. */
+.overlay-copy {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 30px; height: 30px; display: inline-flex;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--edge); border-radius: 8px;
+  background: var(--frame); color: var(--muted);
+  cursor: pointer; opacity: 0; transition: opacity .12s ease;
+}
+.overlay-copy svg { width: 14px; height: 14px; }
+.overlay-copy:hover { color: var(--ink); border-color: var(--accent); }
+/* Keyboard users never hover, so focus reveals it too. */
+.framed:hover .overlay-copy,
+.overlay-copy:focus-visible { opacity: 1; }
+/* Neither does a touch screen, where hover-to-reveal hides it for good.
+   This must stay after the rules above: equally specific, later wins. */
+@media (hover: none) { .overlay-copy { opacity: 1; } }
 
 /* ----------------------------------------------------------------- board */
 
@@ -230,6 +263,7 @@ input:disabled { opacity: .45; }
 #card-write .card-head { margin-bottom: 18px; }
 
 .framed {
+  position: relative;
   border: 1px solid var(--edge-soft);
   border-radius: var(--radius);
   background: var(--frame);

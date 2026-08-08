@@ -133,16 +133,67 @@ def plan(source, options_json='{}'):
     })
 
 
+# The last solve, before `to_json_safe` strips it.  A lowered `Seq` is a live
+# object and cannot cross to JS, so the one place that can still run the
+# minimized program is here, in the worker that produced it.
+_LAST = {}
+
+
+def _keep(result):
+    _LAST.clear()
+    if result.get('ok'):
+        _LAST.update((t['name'], t) for t in result.get('targets') or []
+                     if t.get('ok') and t.get('seq') is not None)
+        _LAST['*input_bits'] = result['frontend']['input_bits']
+        _LAST['*primary'] = result.get('primary_target')
+    return result
+
+
+def evaluate(target_name='', value='0'):
+    """Run the minimized program on one input, in the worker that built it.
+
+    The page shows a program and until now could not try it: `seq` is stripped
+    at the boundary and the wasm listing is text, not a module. Answering here
+    costs one lowered-sequence call and needs no compiler.
+
+    In and out are decimal strings for the reason the domain is: a 64-bit value
+    does not survive a JSON number.
+    """
+    from .bits import mask_of
+    target = _LAST.get(target_name or _LAST.get('*primary'))
+    if target is None:
+        if '*primary' not in _LAST:
+            return _dumps({'ok': False,
+                           'error': 'no minimized program has been built yet'})
+        return _dumps({'ok': False,
+                       'error': '%s has no lowered program to run'
+                                % (target_name or 'this target')})
+
+    input_bits = _LAST['*input_bits']
+    try:
+        x = int(str(value).strip() or '0', 0)
+    except ValueError:
+        return _dumps({'ok': False, 'error': 'not an integer: %r' % value})
+    if not 0 <= x <= mask_of(input_bits):
+        return _dumps({'ok': False,
+                       'error': 'input does not fit %d bits' % input_bits})
+
+    from . import isa as isa_mod
+    return _dumps({'ok': True, 'input': str(x), 'input_bits': input_bits,
+                   'output': str(isa_mod.run(target['seq'], x)),
+                   'target': target['name']})
+
+
 def finish(source, options_json='{}', table=None, assembly=''):
     """Run the pipeline on a table the worker has already evaluated."""
     options = json.loads(options_json or '{}')
     options = dict(options)
     options['table'] = list(table or [])
     options['assembly'] = assembly or ''
-    result = solve(source, function=options.get('function'),
-                   observer=options.get('observer', 'exact'),
-                   targets=options.get('targets'),
-                   frontend='precompiled', options=options)
+    result = _keep(solve(source, function=options.get('function'),
+                         observer=options.get('observer', 'exact'),
+                         targets=options.get('targets'),
+                         frontend='precompiled', options=options))
     return _dumps(to_json_safe(result))
 
 
@@ -154,8 +205,8 @@ def fallback(source, options_json='{}'):
     `route` identified as a listing, which never needed a compiler at all.
     """
     options = json.loads(options_json or '{}')
-    result = solve(source, function=options.get('function'),
-                   observer=options.get('observer', 'exact'),
-                   targets=options.get('targets'),
-                   frontend='cfront', options=options)
+    result = _keep(solve(source, function=options.get('function'),
+                         observer=options.get('observer', 'exact'),
+                         targets=options.get('targets'),
+                         frontend='cfront', options=options))
     return _dumps(to_json_safe(result))
