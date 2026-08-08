@@ -613,7 +613,11 @@ function runProgram() {
   // Run belongs to the source, not to the minimized program: what it executes
   // is the paste's own `main`. Without one there is nothing to run and nothing
   // changes — the two panes already show what QM made of the kernel.
-  if (!state.hasMain || state.busy) return;
+  if (!state.hasMain) {
+    toast('this paste has no main to run');
+    return;
+  }
+  if (state.busy) return;
   const stdin = $('term-in').value;
   termWrite(`> ${stdin}\n`, 'term-echo');
   $('term-in').value = '';
@@ -624,9 +628,11 @@ function runProgram() {
 }
 
 function renderRunControls() {
-  // The terminal is only there when there is a `main` to drive it.
+  // The terminal is only there when there is a `main` to drive it. Run is
+  // always live, though: a control that greys itself out for reasons you have
+  // to reconstruct is worse than one that presses and tells you why.
   $('term').hidden = !state.hasMain;
-  $('btn-run').disabled = !state.hasMain || state.busy;
+  $('btn-run').disabled = !state.ready;
 }
 
 function showRunResult(result) {
@@ -670,13 +676,26 @@ function openDialog(title, html) {
 
 async function showExamples() {
   if (!EXAMPLES.length) await loadExamples();
-  openDialog('Examples', EXAMPLES.length
-    ? '<div class="examples">' + EXAMPLES.map((ex, i) =>
-        `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
-        .join('') + '</div>'
-    : '<p class="note">examples.json could not be loaded</p>');
+  // The `+` opens this, so an empty tab has to be one of the choices — it is
+  // what the button used to do on its own.
+  const blank = '<div class="examples">'
+    + '<button class="btn ex" data-blank="1">Empty tab</button>'
+    + (EXAMPLES.length
+       ? EXAMPLES.map((ex, i) =>
+           `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
+           .join('')
+       : '') + '</div>';
+  openDialog('New tab', EXAMPLES.length
+    ? blank
+    : blank + '<p class="note">examples.json could not be loaded</p>');
   $('dlg-body').querySelectorAll('.ex').forEach((el) => {
     el.addEventListener('click', () => {
+      if (el.dataset.blank) {
+        addTab();
+        renderTabs();
+        $('dlg').close();
+        return;
+      }
       const example = EXAMPLES[Number(el.dataset.i)];
       const existing = state.tabs.find((t) => t.name === example.file);
       if (existing) {
@@ -924,8 +943,7 @@ function init() {
   });
 
   $('btn-run').addEventListener('click', runProgram);
-  $('btn-newtab').addEventListener('click', () => addTab());
-  $('btn-examples').addEventListener('click', showExamples);
+  $('btn-newtab').addEventListener('click', showExamples);
   $('btn-copy').addEventListener('click', copyOutput);
   $('term-in').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') { event.preventDefault(); runProgram(); }

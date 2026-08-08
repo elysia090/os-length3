@@ -40,6 +40,7 @@
     "vm/image.py",
     "vm/lower.py",
     "vm/machine.py",
+    "vm/residual.py",
     "vm/rows.py",
     "vm/run.py",
     "vm/seed.py"

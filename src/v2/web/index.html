@@ -37,13 +37,16 @@
   <section class="card" id="card-write">
     <div class="card-head">
       <h2><span class="step">1.</span> Source</h2>
-      <button class="link" id="btn-examples" type="button">Examples</button>
+      <button class="link run" id="btn-run" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
+        Run
+      </button>
     </div>
 
     <div class="tabs">
       <div class="tablist" id="tablist" role="tablist"></div>
       <button class="tab-add" id="btn-newtab" type="button"
-              title="New tab" aria-label="New tab">+</button>
+              title="New tab or example" aria-label="New tab or example">+</button>
     </div>
 
     <div class="framed editor with-tabs">
@@ -71,10 +74,6 @@
       </div>
     </div>
 
-    <button class="compile" id="btn-run" type="button" disabled>
-      <svg viewBox="0 0 24 24" class="play" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
-      Run
-    </button>
   </section>
 
   <!-- ================= 2. Minimized Program ================= -->
