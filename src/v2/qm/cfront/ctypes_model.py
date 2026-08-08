@@ -98,6 +98,9 @@ _TYPEDEFS = {
     'intptr_t': S64, 'uintptr_t': U64,
     'size_t': U64, 'ssize_t': S64, 'ptrdiff_t': S64,
     '__uint128_t': U128, '__int128_t': S128,
+    # An __m128i is a 128-bit value here.  That is exactly what it is for the
+    # carry-less multiply idiom, which is the part of SSE this subset models.
+    '__m128i': U128,
     'u8': U8, 'u16': U16, 'u32': U32, 'u64': U64,
     'i8': S8, 'i16': S16, 'i32': S32, 'i64': S64,
 }

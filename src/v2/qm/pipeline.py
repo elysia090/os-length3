@@ -72,7 +72,7 @@ def solve(source, function=None, observer='exact', targets=None,
 def _solve(source, function, observer_spec, targets, frontend_name, options,
            started):
     # -- §2 frontend -------------------------------------------------------
-    front = frontend_mod.get(frontend_name)
+    front = frontend_mod.choose(frontend_name, source)
     analysis = front.analyze(source, dict(options, function=function))
     sem = analysis.semantics
 
@@ -131,10 +131,21 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
     ranked = sorted(per_program, key=lambda e: _rank_key(e, targets))
     best = ranked[0]
     program = best['program']
+    # Several profiles usually lower to the same instructions — x86-64 and
+    # portable differ in what they *offer*, not in what wins — and verifying
+    # the same sequence against the same semantics twice is the same
+    # computation, on a domain where that costs 65,536 evaluations.  `rank` is
+    # the encoded program, so equal ranks are the same program.
+    verified = {}
     for name in targets:
-        best['targets'][name] = _lower_one(program, name, sem, obs, sample)
+        best['targets'][name] = _lower_one(program, name, sem, obs, sample,
+                                           verified)
 
     result['program'] = program.to_dict()
+    # The abstract program itself, for in-process callers that normalize it
+    # into an artifact.  `to_json_safe` strips it the way it strips `seq`: it
+    # is a live object, and the browser gets the artifact instead.
+    result['program_object'] = program
     result['residual_freedom'] = program.residual_freedom
     result['normalization'] = {
         'classes': program.classes,
@@ -197,20 +208,20 @@ def _selection_sample(sem):
     return sem.restricted([v for v in picked if v < (1 << sem.input_bits)])
 
 
-def _lower_one(program, isa_name, sem, obs, sample):
+def _lower_one(program, isa_name, sem, obs, sample, verified=None):
     isa = isa_mod.get_isa(isa_name)
     try:
         seq, used = isa_mod.lower_program(program, isa, verify_against=(sample, obs))
     except isa_mod.LoweringFailure as exc:
         return {'ok': False, 'reason': str(exc)}
 
-    matched = 0
-    total = 0
-    for x, y in sem.pairs():
-        total += 1
-        if obs(isa_mod.run(seq, x)) == obs(y):
-            matched += 1
     span, work, l_bits, rank = isa_mod.measure(seq)
+    if verified is None:
+        matched, total = isa_mod.matches(seq, sem, obs)
+    elif rank in verified:
+        matched, total = verified[rank]
+    else:
+        matched, total = verified[rank] = isa_mod.matches(seq, sem, obs)
 
     return {
         'ok': matched == total,
@@ -272,6 +283,9 @@ def _target_record(name, lowered, sem, obs, program):
     fn_name = (sem.meta.get('function') or 'qm_kernel') + '_qm'
     record.update({
         'ok': True,
+        # Kept for in-process callers; `to_json_safe` strips it before the
+        # result crosses the worker boundary.
+        'seq': seq,
         'span': lowered['span'],
         'work': lowered['work'],
         'L_bits': lowered['L_bits'],
@@ -285,8 +299,16 @@ def _target_record(name, lowered, sem, obs, program):
         'c': isa_mod.emit_c(seq, fn_name,
                             input_ctype=_ctype_for(sem.input_bits),
                             output_ctype=_ctype_for(sem.output_bits)),
-        'asm': isa_mod.emit_asm(seq, fn_name),
     })
+    # Each target gets the listing its own machine reads.  The width is written
+    # into both, because a listing does not otherwise say how wide its input
+    # was meant to be, and a round trip has to land on the same domain.
+    if name == 'wasm32':
+        record['asm'] = isa_mod.emit_wasm(seq, fn_name, sem.input_bits)
+        record['asm_dialect'] = 'wasm32'
+    else:
+        record['asm'] = isa_mod.emit_asm(seq, fn_name, sem.input_bits)
+        record['asm_dialect'] = 'x86-64'
     return record
 
 
@@ -436,11 +458,20 @@ def _derivation(result, program, ranked):
 # JSON-safe view for the browser and the CLI
 # ---------------------------------------------------------------------------
 
+LIVE_FIELDS = ('seq', 'program_object')
+
+
 def to_json_safe(result):
-    """Strip live objects (Seq) so the result can cross a worker boundary."""
+    """Strip live objects so the result can cross a worker boundary.
+
+    A lowered `Seq` and the abstract `Program` are Python objects, not data.
+    In-process callers use them — that is how the artifact gets built — and the
+    browser receives the artifact instead.
+    """
     def clean(value):
         if isinstance(value, dict):
-            return dict((k, clean(v)) for k, v in value.items() if k != 'seq')
+            return dict((k, clean(v)) for k, v in value.items()
+                        if k not in LIVE_FIELDS)
         if isinstance(value, (list, tuple)):
             return [clean(v) for v in value]
         if isinstance(value, int) and abs(value) >= (1 << 53):

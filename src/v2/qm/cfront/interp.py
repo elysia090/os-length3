@@ -11,6 +11,7 @@ not a claim about what any particular compiler emits.
 """
 
 from ..bits import mask_of, popcnt
+from . import intrinsics
 from . import nodes as N
 from .ctypes_model import (
     BOOL, INT, U32, U64, VOID, binary_op, convert, promote, unary_op,
@@ -131,6 +132,10 @@ class Interpreter(object):
         self._tick()
 
         if isinstance(node, N.Empty):
+            return
+        if isinstance(node, N.DeclGroup):
+            for item in node.items:
+                self.exec_stmt(item, scopes)
             return
         if isinstance(node, N.Block):
             inner = scopes + [{}]
@@ -443,126 +448,53 @@ class Interpreter(object):
 
 
 # ---------------------------------------------------------------------------
-# Builtins
+# Builtins and intrinsics
 # ---------------------------------------------------------------------------
-
-def _u(value, bits):
-    return value & mask_of(bits)
-
-
-def _bi_popcount(bits):
-    def fn(interp, args, line):
-        v, t = args[0]
-        return popcnt(_u(convert(v, t), bits)), INT
-    return fn
-
-
-def _bi_parity(bits):
-    def fn(interp, args, line):
-        v, t = args[0]
-        return popcnt(_u(convert(v, t), bits)) & 1, INT
-    return fn
-
-
-def _bi_ctz(bits):
-    def fn(interp, args, line):
-        v, t = args[0]
-        x = _u(convert(v, t), bits)
-        if x == 0:
-            raise CFrontError('__builtin_ctz(0) is undefined', line=line,
-                              hint='guard the zero case explicitly')
-        return (x & -x).bit_length() - 1, INT
-    return fn
-
-
-def _bi_clz(bits):
-    def fn(interp, args, line):
-        v, t = args[0]
-        x = _u(convert(v, t), bits)
-        if x == 0:
-            raise CFrontError('__builtin_clz(0) is undefined', line=line,
-                              hint='guard the zero case explicitly')
-        return bits - x.bit_length(), INT
-    return fn
-
-
-def _bi_bswap(bits):
-    def fn(interp, args, line):
-        v, t = args[0]
-        x = _u(convert(v, t), bits)
-        n = bits // 8
-        out = int.from_bytes(x.to_bytes(n, 'little'), 'big')
-        return out, (U32 if bits <= 32 else U64)
-    return fn
-
-
-def _bi_rotate(bits, left):
-    def fn(interp, args, line):
-        (v, t), (n, nt) = args[0], args[1]
-        x = _u(convert(v, t), bits)
-        k = convert(n, nt) % bits
-        if not left:
-            k = (bits - k) % bits
-        out = ((x << k) | (x >> (bits - k))) & mask_of(bits) if k else x
-        return out, (U32 if bits <= 32 else U64)
-    return fn
-
+#
+# The pure ones live in `intrinsics.py`, shared with the compiler so the two
+# paths cannot disagree about what `_pdep_u64` means.  Only the handful that
+# need the type of their operand are written out here.
 
 def _bi_expect(interp, args, line):
     return args[0]
 
 
 def _bi_abs(interp, args, line):
-    v, t = args[0]
-    t = promote(t)
-    value = convert(v, t)
-    return convert(-value if value < 0 else value, t), t
+    value, atype = args[0]
+    rtype = promote(atype)
+    converted = convert(value, rtype)
+    return convert(-converted if converted < 0 else converted, rtype), rtype
 
 
 def _bi_minmax(is_min):
     def fn(interp, args, line):
         (a, at), (b, bt) = args[0], args[1]
         from .ctypes_model import usual_arithmetic
-        ct = usual_arithmetic(at, bt)
-        x, y = convert(a, ct), convert(b, ct)
-        return (min(x, y) if is_min else max(x, y)), ct
+        ctype = usual_arithmetic(at, bt)
+        left, right = convert(a, ctype), convert(b, ctype)
+        return (min(left, right) if is_min else max(left, right)), ctype
     return fn
 
 
-_BUILTINS = {}
+def _from_registry(intrinsic):
+    def fn(interp, args, line):
+        values = [convert(value, ctype) for value, ctype in args]
+        return intrinsic.apply(values, line), intrinsic.result
+    return fn
 
 
-def _register():
-    table = {
-        '__builtin_popcount': (BUILTIN_COST['popcount'], _bi_popcount(32), 1),
-        '__builtin_popcountl': (BUILTIN_COST['popcount'], _bi_popcount(64), 1),
-        '__builtin_popcountll': (BUILTIN_COST['popcount'], _bi_popcount(64), 1),
-        '__builtin_parity': (BUILTIN_COST['parity'], _bi_parity(32), 1),
-        '__builtin_parityl': (BUILTIN_COST['parity'], _bi_parity(64), 1),
-        '__builtin_parityll': (BUILTIN_COST['parity'], _bi_parity(64), 1),
-        '__builtin_ctz': (BUILTIN_COST['ctz'], _bi_ctz(32), 1),
-        '__builtin_ctzl': (BUILTIN_COST['ctz'], _bi_ctz(64), 1),
-        '__builtin_ctzll': (BUILTIN_COST['ctz'], _bi_ctz(64), 1),
-        '__builtin_clz': (BUILTIN_COST['clz'], _bi_clz(32), 1),
-        '__builtin_clzl': (BUILTIN_COST['clz'], _bi_clz(64), 1),
-        '__builtin_clzll': (BUILTIN_COST['clz'], _bi_clz(64), 1),
-        '__builtin_bswap16': (BUILTIN_COST['bswap'], _bi_bswap(16), 1),
-        '__builtin_bswap32': (BUILTIN_COST['bswap'], _bi_bswap(32), 1),
-        '__builtin_bswap64': (BUILTIN_COST['bswap'], _bi_bswap(64), 1),
-        '__builtin_expect': (BUILTIN_COST['expect'], _bi_expect, 2),
-        '__builtin_abs': (BUILTIN_COST['abs'], _bi_abs, 1),
-        'abs': (BUILTIN_COST['abs'], _bi_abs, 1),
-        'labs': (BUILTIN_COST['abs'], _bi_abs, 1),
-        '__builtin_rotateleft32': (BUILTIN_COST['rotate'], _bi_rotate(32, True), 2),
-        '__builtin_rotateleft64': (BUILTIN_COST['rotate'], _bi_rotate(64, True), 2),
-        '__builtin_rotateright32': (BUILTIN_COST['rotate'], _bi_rotate(32, False), 2),
-        '__builtin_rotateright64': (BUILTIN_COST['rotate'], _bi_rotate(64, False), 2),
-        '__builtin_min': (BUILTIN_COST['min'], _bi_minmax(True), 2),
-        '__builtin_max': (BUILTIN_COST['max'], _bi_minmax(False), 2),
-    }
-    _BUILTINS.update(table)
+_BUILTINS = {
+    '__builtin_expect': (0, _bi_expect, 2),
+    '__builtin_abs': (BUILTIN_COST['abs'], _bi_abs, 1),
+    'abs': (BUILTIN_COST['abs'], _bi_abs, 1),
+    'labs': (BUILTIN_COST['abs'], _bi_abs, 1),
+    '__builtin_min': (BUILTIN_COST['min'], _bi_minmax(True), 2),
+    '__builtin_max': (BUILTIN_COST['max'], _bi_minmax(False), 2),
+}
 
+for _name, _intrinsic in intrinsics.REGISTRY.items():
+    _BUILTINS[_name] = (_intrinsic.cost, _from_registry(_intrinsic),
+                        _intrinsic.arity)
 
-_register()
 
 BUILTIN_NAMES = sorted(_BUILTINS)

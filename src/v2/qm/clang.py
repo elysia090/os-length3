@@ -31,6 +31,7 @@ import tempfile
 
 from .cfront import CFrontError
 from .cfront.ctypes_model import CType, type_from_keywords
+from .cfront.intrinsics import c_shims_for
 
 # Freestanding prelude: clang predefines these, so no sysroot header is needed.
 # This is what lets the browser bundle run with -nostdlib and no include tree.
@@ -56,14 +57,220 @@ MARCH = {
 OPT_LEVELS = ('-O1', '-O2', '-O3')
 
 
+# What a `main` gets instead of a C library. The module is compiled
+# `-nostdlib`, so these are the only two things that cross out of it, and the
+# page supplies them as imports. Everything else a driver usually reaches for
+# is written here in terms of them, so the paste needs no headers and the
+# browser needs no WASI.
+STDIO = r'''
+extern int qm_getchar(void);
+extern void qm_putchar(int c);
+
+static int getchar(void) { return qm_getchar(); }
+static int putchar(int c) { qm_putchar(c); return c; }
+
+static int puts(const char *s)
+{
+    while (*s) qm_putchar(*s++);
+    qm_putchar('\n');
+    return 0;
+}
+
+static void print_u64(uint64_t v)
+{
+    char buf[20];
+    int n = 0;
+    if (!v) { qm_putchar('0'); return; }
+    while (v) { buf[n++] = (char)('0' + (int)(v % 10u)); v /= 10u; }
+    while (n) qm_putchar(buf[--n]);
+}
+
+static void print_hex64(uint64_t v)
+{
+    qm_putchar('0'); qm_putchar('x');
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        int d = (int)((v >> shift) & 15u);
+        qm_putchar(d < 10 ? '0' + d : 'a' + d - 10);
+    }
+}
+'''
+
+
+def prepare_driver(source, signature=None):
+    """Just the driver, with the kernel left as an import.
+
+    This is the half that makes Run mean something. Compiling the whole paste
+    would run Clang's compilation of the kernel — the page would be testing the
+    compiler, not the minimizer. So the kernel's *definition* is dropped and
+    only its declaration is kept: `main` calls an undefined symbol, and the
+    page supplies it by running the artifact. What executes is then
+
+        paste -> QM -> codec -> run
+
+    with the driver as the thing that drives it.
+
+    `signature` is the kernel QM took, as `read_signature` returns it. Without
+    one there is nothing to declare and the whole paste is compiled, which is
+    the honest fallback when the minimizer found no kernel to begin with.
+    """
+    source = source or ''
+    _kernel, span = split_main(source)
+    if span is None:
+        body = _INCLUDE.sub('', source)
+        return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+
+    driver = _INCLUDE.sub('', source[span[0]:span[1]])
+    declaration = ''
+    if signature:
+        param = signature['params'][0][1].name
+        declaration = 'extern %s %s(%s);\n' % (
+            signature['ret'].name, signature['name'], param)
+    else:
+        body = _INCLUDE.sub('', source)
+        return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+    return (PRELUDE + '\n' + STDIO + '\n' + declaration + '\n'
+            + c_shims_for(driver) + driver)
+
+
 def prepare_source(source):
     """Strip standard includes and prepend the freestanding prelude.
 
     The includes are removed rather than resolved because a bit-vector kernel
     needs exactly the fixed-width typedefs, and requiring a sysroot is the
     difference between a 50 MB browser bundle and a 300 MB one.
+
+    Stripping `<immintrin.h>` takes the intrinsics with it, and the browser
+    compiles for wasm32 where that header does not exist at all — so whichever
+    of them the paste uses are supplied here as portable C.  Without that, QM
+    emits code it cannot read: paste back its own `_pdep_u64` output and Clang
+    says the function is undeclared.
     """
-    return PRELUDE + '\n' + _INCLUDE.sub('', source)
+    body = _INCLUDE.sub('', source)
+    return PRELUDE + '\n' + c_shims_for(body) + body
+
+
+# ---------------------------------------------------------------------------
+# The driver, and the kernel underneath it
+# ---------------------------------------------------------------------------
+
+_MAIN_CALL = re.compile(r'\bmain\s*\(')
+
+
+def _code_mask(source):
+    """A byte per character: 1 where it is code, 0 in a comment or a literal.
+
+    Brace matching that counts a `}` inside a string is a brace matcher that
+    silently takes the wrong half of the file, so the scan happens once here
+    and everything below reads the mask.
+    """
+    mask = bytearray(len(source))
+    i, n = 0, len(source)
+    while i < n:
+        c = source[i]
+        if c == '/' and i + 1 < n and source[i + 1] == '/':
+            while i < n and source[i] != '\n':
+                i += 1
+            continue
+        if c == '/' and i + 1 < n and source[i + 1] == '*':
+            i += 2
+            while i + 1 < n and not (source[i] == '*' and source[i + 1] == '/'):
+                i += 1
+            i = min(i + 2, n)
+            continue
+        if c in '"\'':
+            quote = c
+            i += 1
+            while i < n:
+                if source[i] == '\\':
+                    i += 2
+                    continue
+                if source[i] == quote:
+                    i += 1
+                    break
+                i += 1
+            continue
+        mask[i] = 1
+        i += 1
+    return mask
+
+
+def _match(source, mask, start, opener, closer):
+    """Index just past the `closer` that matches the `opener` at `start`."""
+    depth = 0
+    for i in range(start, len(source)):
+        if not mask[i]:
+            continue
+        if source[i] == opener:
+            depth += 1
+        elif source[i] == closer:
+            depth -= 1
+            if not depth:
+                return i + 1
+    return -1
+
+
+def split_main(source):
+    """`(kernel, main_span)` — the paste without its driver, and where it was.
+
+    A paste may carry a `main` that exercises the kernel. The minimizer must
+    not see it: `main` is a driver, its input is a stream rather than a domain,
+    and analysing it would report the driver's function instead of the
+    kernel's. Running the paste, on the other hand, needs exactly the whole
+    thing. So the split happens once, here, where the browser and the native
+    path share it.
+
+    `main_span` is None when there is no file-scope `main`, and the caller can
+    then say that pressing Run changes nothing.
+    """
+    source = source or ''
+    mask = _code_mask(source)
+    for hit in _MAIN_CALL.finditer(source):
+        at = hit.start()
+        if not mask[at]:
+            continue
+        if _depth_at(source, mask, at):
+            continue                        # a call inside a function body
+        close = _match(source, mask, hit.end() - 1, '(', ')')
+        if close < 0:
+            continue
+        rest = close
+        while rest < len(source) and (not mask[rest] or source[rest].isspace()):
+            rest += 1
+        if rest >= len(source) or source[rest] != '{':
+            continue                        # a declaration, not a definition
+        end = _match(source, mask, rest, '{', '}')
+        if end < 0:
+            continue
+        start = _definition_start(source, mask, at)
+        return source[:start] + source[end:], (start, end)
+    return source, None
+
+
+def _depth_at(source, mask, index):
+    depth = 0
+    for i in range(index):
+        if not mask[i]:
+            continue
+        if source[i] == '{':
+            depth += 1
+        elif source[i] == '}':
+            depth = max(0, depth - 1)
+    return depth
+
+
+def _definition_start(source, mask, at):
+    """Back up over the return type and any storage class before `main`."""
+    i = at
+    while i > 0:
+        c = source[i - 1]
+        if mask[i - 1] and c in ';}':
+            break
+        if c == '\n' and i >= 2 and source[i - 2] == '\n':
+            break
+        i -= 1
+    while i < at and source[i].isspace():
+        i += 1
+    return i
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +294,7 @@ def read_signature(source, requested=None):
     """
     try:
         from .cfront import parse
-        from .frontend import pick_function
+        from .frontend import pick_function, rejections
         unit = parse(source)
         fn = pick_function(unit, requested)
         return {
@@ -95,6 +302,7 @@ def read_signature(source, requested=None):
             'ret': fn.ret,
             'params': [(p.name, p.ctype) for p in fn.params],
             'via': 'parser',
+            'others': rejections(unit, fn),
         }
     except CFrontError:
         pass
@@ -131,13 +339,25 @@ def read_signature(source, requested=None):
         raise CFrontError('no function definition found',
                           hint='paste a complete C function, e.g. '
                                'uint64_t f(uint8_t m) { ... }')
+    from .frontend import analysable
+
+    def with_others(chosen):
+        return dict(chosen, others=[
+            {'name': e['name'],
+             'reason': analysable(e['ret'], e['params']) or 'not the root'}
+            for e in found if e is not chosen])
+
     if requested:
         for entry in found:
             if entry['name'] == requested:
-                return entry
+                return with_others(entry)
         raise CFrontError('function %r is not defined in this source' % requested,
                           hint='found: %s' % ', '.join(e['name'] for e in found))
-    return found[-1]
+
+    # Same preference as the parser path: a paste of several functions should
+    # not be refused because the last one happens to take two arguments.
+    usable = [e for e in found if analysable(e['ret'], e['params']) is None]
+    return with_others((usable or found)[-1])
 
 
 # ---------------------------------------------------------------------------

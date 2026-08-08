@@ -4,19 +4,38 @@
 > observable meaning actually requires.
 
 v2 is the interactive product from [`SPEC.md`](../v1/SPEC.md): open a URL, paste
-C, press **Optimize**, copy the assembly. Two panes, no prose. Compilation,
-solving and verification all happen on your machine — there is no account, no
-upload and no server component.
+C, press **Compile**, copy the program. Compilation, solving and verification
+all happen on your machine — there is no account, no upload and no server
+component.
 
-Left pane is the C you write. Right pane is what you take away: the minimized
-assembly, the same thing as C intrinsics, and the compiler's own listing to
-compare against. A status bar carries the numbers worth a glance — verification,
-before → after, residual freedom — and clicking it opens the full derivation.
+Two cards: what you paste, and what QM made of it — ready to copy, ready to run.
+Tabs hold one kernel each, with their own source and their own last result. The
+language is read off the paste rather than picked from a menu.
+
+The minimized program is viewable as any of the machines it lowers to, or as
+the codec: one canonical artifact, `pack(code(z))`, shown as the bytes it is —
+with the fields of the code named — and then the listing those bytes decode to.
+That artifact is what **Run** executes, and what `vm/` renders back out as C,
+x86-64 or wasm32.
+
+Intrinsics are read, not just emitted. `_pdep_u64`, `_pext_u64`, the BMI1 set,
+`_tzcnt`/`_lzcnt`/`_bzhi`, byte swaps and rotates, and the SSE carry-less
+multiply idiom — `__m128i`, `_mm_clmulepi64_si128` and the scalar moves around
+it — all evaluate, so a kernel already written the fast way analyses as readily
+as the obvious one. `qm/cfront/intrinsics.py` holds the table, shared by the
+reference interpreter and the compiler so the two cannot disagree.
+
+Assembly goes in as well as out. Paste an x86-64 listing or a wasm32 function
+and QM evaluates it, minimizes it, and lowers again — so x86 → wasm and
+wasm → x86 are the ordinary pipeline with a different target selected at the
+end, and running a listing through it a second time gives the same listing
+back. `examples/ranks8.s` and `examples/prefix_xor64.wat` are there to press
+Optimize on.
 
 ```
-C / C++
-  ↓  Clang/WASM  -O2
-optimized code
+C / C++                     x86-64 · wasm32
+  ↓  Clang/WASM  -O2          ↓  evaluate the listing
+optimized code  ────────────────┘
   ↓  execute over the declared input domain
 semantics
   ↓  observation quotient · future quotient
@@ -47,7 +66,8 @@ python3 -m qm.cli examples/select8.c --observer low:8 --json
 **Tests** (standard library only, no dependencies):
 
 ```sh
-python3 tests/run.py
+python3 tests/run.py          # every core
+python3 tests/run.py -j 1     # one process, plain unittest output
 ```
 
 ---
@@ -65,10 +85,10 @@ uint64_t ranks8(uint8_t m)
 ```
 
 ```
-Clang -O2                 77 x86-64 instructions
 Quotient Minimizer        2 core operations       PDEP ; IMUL
 Residual freedom          502 solutions
 Verification              exact exhaustive, 256 / 256
+Artifact                  17,107 bytes            pack(code(z))
 ```
 
 The same semantic program lowers differently per target, which is the point of
@@ -79,6 +99,21 @@ keeping semantic classes separate from mnemonics:
 | x86-64 + BMI2 | 2 | `PDEP IMUL` |
 | x86-64 baseline | 5 | `IMUL AND BSWAP SHR IMUL` |
 | portable scalar | 5 | `IMUL AND BSWAP SHR IMUL` |
+| codec | 4,123 | `ROW` |
+
+The last row is the artifact: one instruction, and the thing Run executes. It
+comes from the *abstract* program the minimizer produced, not from the paste
+and not from any of the rows above — three spellings of one function give the
+same bytes, which `tests/test_vm_codec_view.py` checks, and which is the only
+thing that makes "canonical form" mean anything. `vm/emit.py` renders it back
+out as C, x86-64 or wasm32.
+
+Its number is not a count of listing lines. The specification defines the cost
+of a transition on the physical form of the machine — a capture plus a wave
+over the rows that had the written cell cached — so `work` is transitions plus
+incidences and `span` is transitions, and a run of `ranks8` is 1,624
+transitions against 6,728 cells of image. See `vm/README.md`, which also says
+how far that is from what the same function costs written properly.
 
 ---
 
@@ -86,11 +121,15 @@ keeping semantic classes separate from mnemonics:
 
 Two things run in the page, and the split is deliberate.
 
-**Clang/WASM compiles and executes.** The paste is compiled twice with the same
-`-O2`: once to `wasm32`, which is instantiated and called over the whole input
-domain, and once to x86-64 assembly, which is what the UI shows and counts.
-Executing compiled code is why a 16-bit kernel (65,536 inputs) is extracted in
-milliseconds rather than in a minute.
+**Clang/WASM compiles and executes.** The paste is compiled once, to `wasm32`,
+which is instantiated and called over the whole input domain. That is the only
+thing the compiler is for. Executing compiled code is why a 16-bit kernel
+(65,536 inputs) is extracted in milliseconds rather than in a minute.
+
+There used to be a second compile producing an x86-64 listing for a pane to
+show, with a target and an optimization level to choose. The pane is gone and so
+are both controls: they changed what was displayed, never what the kernel
+computes, and the minimized program is what this page is about.
 
 **Python decides everything else.** Quotients, synthesis, lowering, ranking and
 verification run under Pyodide, because that is where the engine lives and where
@@ -157,6 +196,15 @@ the engine modules the worker fetches at runtime, so `qm/`, `web/` and
 ## Layout
 
 ```
+vm/               the rSUBLEQ machine the minimized program normalizes onto
+  codec.py        one complete self-delimiting code, one rank
+  image.py        one canonical finite-support signed memory
+  machine.py      one transactional instruction  (3.1, what it means)
+  rows.py         the direct physical form        (3.2, what it is; 3.7 cost)
+  lower.py        abstract program -> canonical image (bit-sliced)
+  emit.py         canonical image -> C, x86-64, wasm32
+  wasm/vm.c       the same machine, freestanding, ~6 KB of wasm32
+
 qm/
   bits.py         PDEP/PEXT/CLMUL and the byte-lane constants
   observer.py     §3   obs : Output -> Observable
@@ -170,15 +218,17 @@ qm/
   corpus.py       §19  semantic keys, §20 opt-in contribution blobs
   clang.py        §2   the Clang entry point (native driver)
   cfront/         the offline fallback frontend
-  frontend.py     frontend registry: clang · precompiled · cfront
+  asmfront/       §2   x86-64 and wasm32 read back in
+  frontend.py     frontend registry: clang · precompiled · cfront · asm
   pipeline.py     the whole product in one call
-  browser.py      plan / finish, the two calls the worker makes
+  browser.py      route / plan / finish, the calls the worker makes
   cli.py          §21  the local interactive product on a terminal
+  straightline.py compiles a straight-line integer program to a function
 
 web/              the page: index.html · app.js · worker.js · clang.js
-tools/            serve.py · gen_manifest.py · build_site.py
+tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
 tests/            run.py and the suite
-examples/         the kernels the corpus is built from
+examples/         the kernels the corpus is built from, plus two listings
 ```
 
 Each module states which SPEC section it implements and imports only from lower
@@ -191,9 +241,11 @@ layers. `web/qm-manifest.json` lists the files the worker installs into Pyodide;
 
 **LIN_CONST is not another name for PDEP.** A `LIN_CONST` node carries the
 linear map itself — the images of the input basis — and `isa.py` searches PDEP,
-PEXT, constant CLMUL, constant IMUL, a multiply/mask/BSWAP spread and a
-shift/XOR network, keeping whichever survives verification most cheaply. That is
-why the portable target gets a 5-op answer instead of "cannot lower".
+PEXT, constant CLMUL, constant IMUL, a masked shift into either multiply, a
+multiply/mask/BSWAP spread and a shift/XOR network, keeping whichever survives
+verification most cheaply. That is why the portable target gets a 5-op answer
+instead of "cannot lower", and why `(s >> 7) * 0xFF` comes out in three
+instructions rather than as a twenty-instruction XOR network.
 
 **Span and work are different numbers.** A lowered program is an SSA DAG, so
 span is the critical path and work is the instruction count. A balanced XOR tree
@@ -209,10 +261,39 @@ a table, and under a plain (span, work) comparison a 2 KB table would "win"
 every 8-bit kernel with one instruction. It is reported, and ranked last, so
 that "no solution" means "no compact solution" rather than "QM gave up".
 
+**Nothing decides per input what it can decide once.** Verifying a lowering
+sweeps the declared domain — 65,536 points for a 16-bit kernel, and a hundred
+solves do it — so the lowered sequence, the normalized program and both
+assembly readers are each written out as one Python function and the sweep
+calls that, rather than walking an instruction list and testing opcodes. Each
+has one implementation, not a fast path beside a reference one, and the suite
+checks that the single-input and swept forms agree.
+
+**Minimizing a minimal program returns it unchanged.** QM reads its own output
+in all three languages — the emitted C uses `_pdep_u64`, `_pext_u64` and
+`qm_clmul64`, and `asmfront` evaluates the emitted x86-64 and wasm32 — so
+idempotence is a property the suite can check, and does, for every example and
+in both directions between the two machines.
+
+**The examples are measured against hand-written optima.**
+`examples/lanecode.h` is a header of kernels written by hand in their best known
+form; `examples/*.c` states the same functions the obvious way; and
+`tests/test_lanecode.py` requires QM to get from one to the other, same
+representative and same constants, without being told either.
+
 **Verification strength is never overstated.** Domains up to 2^16 are exhaustive
 and reported as such. Wider domains get basis, boundary and deterministic
 differential probes, and every report of one says in as many words that it is
 not a proof of global equivalence.
+
+**Comparison is a semantic class, not three of them.** A per-lane `==`, `<` or
+pair of bounds arrives as one abstract step carrying the interval; the equality,
+one-sided and two-sided forms in `lanecode.h` are three physical
+representatives, chosen during lowering the way LIN_CONST chooses between PDEP
+and a shift-XOR chain. The interval and the lane width are both read off the
+observed data — every input carries eight independent observations of the same
+byte-local predicate, so a domain far too sparse to characterise a 64-bit
+function still sees all 256 lane values a few hundred times each.
 
 ---
 
@@ -230,5 +311,15 @@ not a proof of global equivalence.
   it are implemented and tested against a native Clang; no wasm build of Clang is
   vendored, and I could not reach a CDN from the environment this was written in
   to verify a specific one.
+* **Whole-word comparison, reduction and modular arithmetic.** The declared
+  grammar is GF(2)-linear maps, convolutions, lane-local steps and gathers. A
+  predicate *within* a lane is in it; a comparison *between* lanes is not. So
+  the classic teaching kernels — `is_less_or_equal`, `min`, `max` of packed
+  bytes, `round_up_pow2`, `how_many_bits`, `popcount` as a number, `(a + b) % m`,
+  a rolling hash, or float sign/exponent/mantissa surgery — come back as "no
+  program in the declared grammar" rather than as a wrong answer. `middle_bits`
+  is the one of that family that does land, because selecting bits is linear.
+  Extending the grammar to reach the rest is a different change from extending
+  the search, and neither is done.
 * **The paid surface** (SPEC §22-§32): API, CLI-over-API, CI, batch, private
   cache, native oracle, team workspaces. v2 is the free interactive product only.

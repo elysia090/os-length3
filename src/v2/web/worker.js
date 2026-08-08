@@ -9,6 +9,7 @@
 // The UI thread stays responsive because all of this happens here.
 
 import { ClangDriver, ClangUnavailable, evaluateWasm, readConfig } from './clang.js';
+import { decodeArtifact, evaluateLoaded, load as loadVm } from './vm.js';
 
 const PYODIDE_VERSIONS = [
   'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
@@ -111,8 +112,28 @@ function callPython(fn, args) {
 }
 
 async function solve(request) {
-  const { source, options } = request;
+  const options = request.options;
   const optionsJson = JSON.stringify(options || {});
+
+  // A paste may carry a `main` that drives the kernel. The minimizer must not
+  // see it — `main` reads a stream rather than a domain, so minimizing it
+  // would report the driver's function — and Run needs exactly the whole file.
+  // Python splits it, once, so the two halves cannot disagree.
+  const split = JSON.parse(callPython('split', [request.source]));
+  const source = split.kernel;
+  const hasMain = Boolean(split.has_main);
+
+  // SPEC §2 has two arrows into QM: C through Clang, and optimized assembly
+  // straight in.  Ask which one this paste is before starting a compiler.
+  const route = JSON.parse(callPython('route', [source]));
+  if (route.kind === 'asm') {
+    progress(`reading the ${route.dialect} listing…`);
+    post('done', {
+      has_main: hasMain,
+      result: JSON.parse(callPython('fallback', [source, optionsJson])),
+    });
+    return;
+  }
 
   // --- SPEC §2: compile with Clang -------------------------------------
   let compiled = null;
@@ -130,6 +151,7 @@ async function solve(request) {
         post('notice', { message: `Clang: ${err.message}` });
         if (err.stderr) post('compile-error', { stderr: err.stderr });
         post('done', {
+          has_main: hasMain,
           result: {
             ok: false,
             stage: 'frontend',
@@ -148,26 +170,30 @@ async function solve(request) {
       input_bits: compiled.plan.input_bits,
       output_bits: compiled.plan.output_bits,
       signature: compiled.plan.signature,
-      compile: {
-        opt: options.opt || '-O2',
-        listing_isa: compiled.listing.isa,
-        toolchain: clang.describe().title,
-      },
+      other_functions: compiled.plan.other_functions,
+      compile: { opt: ORACLE_OPT, toolchain: clang.describe().title },
       toolchain: clang.describe(),
     }));
-    const json = callPython('finish', [
-      source, enriched, compiled.table, compiled.assembly,
-    ]);
-    const result = JSON.parse(json);
-    result.compiled = { assembly: compiled.assembly, plan: compiled.plan };
-    post('done', { result });
+    post('done', {
+      has_main: hasMain,
+      result: JSON.parse(callPython('finish', [source, enriched,
+                                               compiled.table, ''])),
+    });
     return;
   }
 
   progress('extracting semantics with the built-in frontend…');
   const json = callPython('fallback', [source, optionsJson]);
-  post('done', { result: JSON.parse(json) });
+  post('done', { has_main: hasMain, result: JSON.parse(json) });
 }
+
+// Clang compiles once, to wasm32, and only so the kernel can be *evaluated*
+// over its domain.  There was a second compile producing an x86 listing for a
+// pane to show, with a target and an optimization level to choose; the pane is
+// gone and so is the choice.  The oracle's level is fixed because nothing
+// downstream depends on it: what QM analyses is the table, and -O3 and -O1
+// compute the same function.
+const ORACLE_OPT = '-O2';
 
 async function compileWithClang(source, options, optionsJson) {
   progress('reading the function signature…');
@@ -178,24 +204,109 @@ async function compileWithClang(source, options, optionsJson) {
     throw err;
   }
 
+  // What Clang actually compiles: includes stripped, the freestanding prelude
+  // and the intrinsics the paste uses put in.  Python decides this so the
+  // browser and the native path cannot disagree about it — handing the raw
+  // text over is what made QM's own `_pdep_u64` output fail to compile.
+  const prepared = callPython('prepare', [source]);
+
   await clang.load(progress);
 
-  const listing = await clang.assembly(source, {
-    opt: options.opt || '-O2',
-    target: options.source_target || 'x86-64',
-  }, progress);
-  progress(`clang ${options.opt || '-O2'} → ${listing.isa} listing…`);
-
-  progress('clang -O2 → wasm32…');
-  const wasm = await clang.wasm(source, { opt: options.opt || '-O2' }, progress);
+  progress(`clang ${ORACLE_OPT} → wasm32…`);
+  const wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
 
   progress(`executing ${plan.values.length.toLocaleString()} inputs…`);
   const table = await evaluateWasm(
-    wasm, plan.function, plan.values, plan.output_bits,
+    wasm, plan.function, plan.values, plan.output_bits, plan.input_bits,
   );
 
-  return { plan, assembly: listing.text, listing, table };
+  return { plan, table };
 }
+
+// ---------------------------------------------------------------------------
+// Running the paste's own `main`
+//
+//     paste -> QM -> codec -> run
+//
+// The driver is compiled alone: `prepare_run` keeps `main` and drops the
+// kernel's definition, leaving a declaration. So the kernel is an *import*,
+// and what answers it is the artifact — running `main` runs the minimized
+// program rather than Clang's compilation of the paste, which would be
+// testing the compiler.
+//
+// `-nostdlib`, so the other two imports are one byte in and one byte out.
+// ---------------------------------------------------------------------------
+
+const EXEC_LIMIT = 1 << 20;     // bytes of stdout before the program is cut off
+
+async function execMain(msg) {
+  const prepared = callPython('prepare_run', [msg.source || '']);
+  let wasm;
+  try {
+    await clang.load(progress);
+    progress('clang -O2 -> wasm32...');
+    wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
+  } catch (err) {
+    return { ok: false,
+             error: (err && err.stderr) ? err.stderr.split('\n')[0]
+                                        : String((err && err.message) || err) };
+  }
+
+  // The kernel the driver calls, implemented by the artifact.
+  const plan = JSON.parse(callPython('run_plan', []));
+  const built = plan.ok ? JSON.parse(callPython('artifact', [''])) : null;
+  let artifact = null;
+  if (built && built.ok) {
+    artifact = decodeArtifact(built.artifact);
+    try {
+      await loadVm();
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  }
+
+  const stdin = new TextEncoder().encode(msg.stdin == null ? '' : msg.stdin);
+  const out = [];
+  let at = 0;
+  let overflowed = false;
+  let ran = 0;
+  const env = {
+    qm_getchar: () => (at < stdin.length ? stdin[at++] : -1),
+    qm_putchar: (c) => {
+      if (out.length >= EXEC_LIMIT) { overflowed = true; return; }
+      out.push(c & 255);
+    },
+  };
+  if (artifact) {
+    // A wasm import is synchronous, which is why `vm.js` is loaded above and
+    // the call itself does no waiting.
+    const wide = plan.input_bits > 32;
+    env[plan.function] = (x) => {
+      const value = BigInt.asUintN(64, BigInt(x));
+      const feed = [];
+      for (let i = 0; i < plan.in_bytes; i += 1) {
+        feed.push(Number((value >> BigInt(8 * i)) & 255n));
+      }
+      ran += 1;
+      const y = evaluateLoaded(artifact, feed, plan.out_bytes);
+      return plan.output_bits > 32 ? y : Number(BigInt.asUintN(32, y));
+    };
+    void wide;
+  }
+  try {
+    const { instance } = await WebAssembly.instantiate(wasm, { env });
+    if (typeof instance.exports.main !== 'function') {
+      return { ok: false, error: 'the paste defines no main to run' };
+    }
+    const code = instance.exports.main();
+    const text = new TextDecoder().decode(new Uint8Array(out))
+      + (overflowed ? '\n[output truncated]\n' : '');
+    return { ok: true, stdout: text, code: Number(code) || 0, ran };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 
@@ -206,6 +317,8 @@ self.onmessage = async (event) => {
       await boot(msg.config || readConfig(msg.search));
     } else if (msg.type === 'solve') {
       await solve(msg);
+    } else if (msg.type === 'exec') {
+      post('ran', { result: await execMain(msg) });
     } else if (msg.type === 'load-clang') {
       await clang.load(progress);
       post('clang-state', { clang: clang.describe() });

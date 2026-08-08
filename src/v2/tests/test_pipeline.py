@@ -9,15 +9,8 @@ import subprocess
 import unittest
 
 from qm.clang import NATIVE
-from qm.pipeline import solve
-
-EXAMPLES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        'examples')
-
-
-def example(name):
-    with open(os.path.join(EXAMPLES, name)) as handle:
-        return handle.read()
+from qm import pipeline
+from tests.support import read_example as example, solved as solve
 
 
 class TestSpecNumbers(unittest.TestCase):
@@ -51,6 +44,29 @@ class TestSpecNumbers(unittest.TestCase):
         self.assertEqual(result['program']['classes'],
                          ['POINT', 'LIN_CONST', 'CONV'])
         self.assertIn('run IDs', result['recognition'])
+
+
+class TestDeterminism(unittest.TestCase):
+    """Solving the same source twice gives the same answer.
+
+    The suite leans on this everywhere — a fixed-point test compares one solve
+    against another, and `tests/support.solved` memoizes on that basis — so it
+    is pinned here once, against the uncached entry point, instead of being
+    assumed a hundred times.
+    """
+
+    SOURCES = ['ranks8.c', 'select8.c', 'run_ids8.c', 'prefix_xor64.c']
+
+    def test_two_runs_agree(self):
+        for name in self.SOURCES:
+            with self.subTest(example=name):
+                first = pipeline.to_json_safe(
+                    pipeline.solve(example(name), frontend='cfront'))
+                second = pipeline.to_json_safe(
+                    pipeline.solve(example(name), frontend='cfront'))
+                # Wall-clock is the one field allowed to differ.
+                first.pop('elapsed_s'), second.pop('elapsed_s')
+                self.assertEqual(first, second)
 
 
 class TestVerification(unittest.TestCase):
@@ -105,7 +121,47 @@ class TestErrors(unittest.TestCase):
         result = solve('#include <stdint.h>\nuint64_t f(uint8_t a, uint8_t b)'
                        '{ return a + b; }', frontend='cfront')
         self.assertFalse(result['ok'])
-        self.assertIn('one is required', result['error']['message'])
+        self.assertIn('takes 2 arguments', result['error']['message'])
+        self.assertIn('takes one', result['error']['message'])
+
+
+class TestSeveralFunctions(unittest.TestCase):
+    """A paste of several functions is normal; one binary one is not a wall."""
+
+    # `combine` is the call-graph root and takes two arguments.  Refusing the
+    # paste over it would throw away the unary kernel sitting right beside it.
+    SOURCE = ('#include <stdint.h>\n'
+              'uint64_t starts8(uint8_t m) { uint64_t x = m;'
+              ' return x & ~(x << 1); }\n'
+              'uint64_t combine(uint8_t a, uint8_t b)'
+              ' { return starts8(a) | starts8(b); }\n')
+
+    def test_the_analysable_function_is_taken_not_the_binary_root(self):
+        result = solve(self.SOURCE, frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['frontend']['function']['name'], 'starts8')
+
+    def test_the_report_says_why_the_others_were_not_taken(self):
+        result = solve(self.SOURCE, frontend='cfront')
+        others = dict((item['name'], item['reason'])
+                      for item in result['frontend']['other_functions'])
+        self.assertIn('takes 2 arguments', others['combine'])
+
+    def test_an_explicit_request_still_answers_about_that_function(self):
+        # Choosing `combine` by name and being told about `starts8` instead
+        # would be answering a question nobody asked.
+        result = solve(self.SOURCE, function='combine', frontend='cfront')
+        self.assertFalse(result['ok'])
+        self.assertIn('combine takes 2 arguments', result['error']['message'])
+        self.assertIn('starts8', result['error']['hint'])
+
+    def test_a_paste_with_no_analysable_function_is_still_an_error(self):
+        result = solve('#include <stdint.h>\n'
+                       'uint64_t f(uint8_t a, uint8_t b) { return a + b; }\n'
+                       'uint64_t g(uint8_t a, uint8_t b) { return f(a, b); }\n',
+                       frontend='cfront')
+        self.assertFalse(result['ok'])
+        self.assertIn('takes 2 arguments', result['error']['message'])
 
 
 @unittest.skipUnless(NATIVE.available(), 'clang is not installed')

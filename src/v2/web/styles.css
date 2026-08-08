@@ -44,13 +44,18 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
+/* Scrollbars are chrome, not content. Everything still scrolls — by wheel, by
+   touch, by keyboard — it just does not draw a bar over the code. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; }
+
 html, body { height: 100%; }
 
 body {
   margin: 0;
   display: flex; flex-direction: column;
   background: var(--bg); color: var(--ink);
-  font: 14px/1.5 var(--sans);
+  font: 15px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -73,13 +78,17 @@ svg {
 
 .brand { display: flex; align-items: center; gap: 14px; }
 .logo { width: 40px; height: 40px; color: var(--accent); stroke-width: 3; }
-.brand-text h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
-.brand-text p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.brand-text h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+.brand-text p { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); }
 
 .controls { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 
 .control { display: inline-flex; align-items: center; gap: 9px; }
-.control > span { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.control > span { font-size: 13.5px; color: var(--muted); white-space: nowrap; }
+/* A control that cannot act on the current input steps back rather than
+   disappearing: the layout stays put, and it is clear what is unavailable. */
+.control.off { opacity: 0.42; }
+.control.off select { cursor: not-allowed; }
 
 select, input[type="text"] {
   appearance: none; -webkit-appearance: none;
@@ -89,10 +98,10 @@ select, input[type="text"] {
     url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 5l3 3 3-3' fill='none' stroke='%238b8b9c' stroke-width='1.4'/></svg>")
     no-repeat right 10px center;
   background-size: 11px 11px;
-  color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+  color: var(--ink); font: inherit; font-size: 14px; cursor: pointer;
 }
 input[type="text"] { background-image: none; padding-right: 11px; cursor: text;
-                     font-family: var(--mono); font-size: 12.5px; }
+                     font-family: var(--mono); font-size: 13.5px; }
 select:focus, input:focus { outline: 2px solid rgba(37, 99, 255, .45); }
 input:disabled { opacity: .45; }
 
@@ -107,12 +116,45 @@ input:disabled { opacity: .45; }
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 10px; border: 1px solid transparent; border-radius: 7px;
   background: none; color: var(--ink-2);
-  font: inherit; font-size: 12.5px; cursor: pointer;
+  font: inherit; font-size: 13.5px; cursor: pointer;
 }
 .link:hover { background: var(--chrome); color: var(--ink); }
-.link.copy { border-color: var(--edge); background: var(--chrome); }
-.link.copy:hover { border-color: var(--accent); }
+.link.run { border-color: var(--edge); background: var(--chrome); }
+.link.run:hover:not(:disabled) { border-color: var(--accent); }
+.link:disabled { opacity: .45; cursor: default; }
+.link:disabled:hover { background: none; color: var(--ink-2); }
 .link svg { width: 14px; height: 14px; }
+
+/* Run sits where the heading has room; the input is beside it so one glance
+   shows both what will be run and what it will be run on. */
+.runbar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.runbar input {
+  width: 15ch; min-width: 8ch; padding: 5px 9px;
+  border: 1px solid var(--edge); border-radius: 7px;
+  background: var(--frame); color: var(--ink);
+  font-family: var(--mono); font-size: 13px;
+}
+.runbar input:disabled { opacity: .45; }
+.runbar input:focus { outline: none; border-color: var(--accent); }
+
+/* Copy belongs to the block it copies, so it rides on it rather than sitting
+   in the heading where it read as a heading action. */
+.overlay-copy {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 30px; height: 30px; display: inline-flex;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--edge); border-radius: 8px;
+  background: var(--frame); color: var(--muted);
+  cursor: pointer; opacity: 0; transition: opacity .12s ease;
+}
+.overlay-copy svg { width: 14px; height: 14px; }
+.overlay-copy:hover { color: var(--ink); border-color: var(--accent); }
+/* Keyboard users never hover, so focus reveals it too. */
+.framed:hover .overlay-copy,
+.overlay-copy:focus-visible { opacity: 1; }
+/* Neither does a touch screen, where hover-to-reveal hides it for good.
+   This must stay after the rules above: equally specific, later wins. */
+@media (hover: none) { .overlay-copy { opacity: 1; } }
 
 /* ----------------------------------------------------------------- board */
 
@@ -126,11 +168,69 @@ input:disabled { opacity: .45; }
   min-height: 0;
 }
 
+/* These breakpoints sit *above* the component rules, so a declaration here
+   only wins where nothing of equal specificity repeats it further down —
+   overriding `.card-foot select { … }` from up here does nothing at all.
+   Change the component rule, or add a class, rather than trusting the cascade.
+
+   Below the three-column width the page scrolls instead of being squeezed.
+   As a flex child with min-height 0, the board was shrinking under its own
+   content, which left every grid row shorter than the card inside it — that is
+   what made the cards overlap on a phone. */
 @media (max-width: 1180px) {
-  .board { grid-template-columns: 1fr 1fr; align-items: start; }
-  .framed { height: 420px; }
+  html, body { height: auto; min-height: 100%; }
+  body { overflow: auto; }
+  .board {
+    flex: 0 0 auto;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  .framed { flex: 0 0 auto; height: 400px; }
 }
-@media (max-width: 800px) { .board { grid-template-columns: 1fr; } }
+
+@media (max-width: 820px) {
+  .topbar { padding: 12px 14px; gap: 10px; }
+  .brand { gap: 11px; }
+  .logo { width: 32px; height: 32px; }
+  .brand-text h1 { font-size: 17px; }
+  .brand-text p { font-size: 13px; }
+
+  .controls { width: 100%; gap: 10px 12px; }
+  .control { flex: 1 1 160px; min-width: 0; }
+  .control > span { font-size: 13px; }
+  .control select { flex: 1 1 auto; min-width: 0; width: 100%; }
+
+  .board { grid-template-columns: 1fr; gap: 12px; padding: 12px 14px 16px; }
+  .card { padding: 14px; border-radius: 10px; }
+  .card-head { margin-bottom: 2px; }
+  .card-head h2 { font-size: 16px; }
+  .card-sub { margin: 6px 0 10px; font-size: 13px; }
+  #card-write .card-head { margin-bottom: 10px; }
+  /* 2px border + 14px above + 14px below + 11 lines of 22px: a fixed-height
+     pane should end on a line rather than halfway through one. */
+  .framed { height: 272px; }
+  .gutter { flex-basis: 37px; }
+  .card-foot { margin-top: 10px; padding-top: 9px; min-height: 32px; }
+  .compile { margin-top: 10px; padding: 11px 28px 11px 16px; font-size: 15px; }
+  .pagefoot { padding: 12px 14px 18px; font-size: 13px; }
+}
+
+/* On a phone the control labels cost a whole row and say nothing the value
+   does not: "x86-64 — baseline" and "-O2" name themselves.  The two selects
+   share what is left after the settings button, so the whole row fits on one
+   line instead of pushing the button onto its own. */
+@media (max-width: 560px) {
+  .control > span { position: absolute; width: 1px; height: 1px;
+                    overflow: hidden; clip-path: inset(50%); }
+  .controls { gap: 8px; flex-wrap: nowrap; }
+  .control { flex: 1 1 0; min-width: 0; }
+  .control select { width: 100%; font-size: 13.5px; padding: 7px 26px 7px 10px; }
+  /* "x86-64 + BMI2 + PCLMUL · 2 ops" and a checkbox do not share a phone-width
+     row without one of them being cut; give the target its own. */
+  .card-foot { flex-wrap: wrap; }
+  .brand-text h1 { font-size: 16.5px; }
+  .brand-text p { font-size: 12.5px; }
+}
 
 .card {
   display: flex; flex-direction: column;
@@ -139,6 +239,8 @@ input:disabled { opacity: .45; }
   border-radius: 12px;
   padding: 22px;
   min-width: 0; min-height: 0;
+  /* A card must never paint outside itself, whatever the row height. */
+  overflow: hidden;
 }
 
 .card-head {
@@ -146,7 +248,7 @@ input:disabled { opacity: .45; }
   gap: 12px; margin-bottom: 4px;
 }
 .card-head h2 {
-  margin: 0; font-size: 17px; font-weight: 600;
+  margin: 0; font-size: 18px; font-weight: 600;
   display: inline-flex; align-items: baseline; gap: 8px;
 }
 .step { color: var(--muted); font-weight: 500; }
@@ -154,11 +256,14 @@ input:disabled { opacity: .45; }
 
 .card-sub {
   margin: 8px 0 16px;
-  font-size: 12.5px; color: var(--muted); font-family: var(--mono);
+  font-size: 13.5px; color: var(--muted); font-family: var(--mono);
 }
+/* Facts wrap between themselves, never inside one. */
+.card-sub span { white-space: nowrap; margin-right: 1.8ch; }
 #card-write .card-head { margin-bottom: 18px; }
 
 .framed {
+  position: relative;
   border: 1px solid var(--edge-soft);
   border-radius: var(--radius);
   background: var(--frame);
@@ -167,16 +272,65 @@ input:disabled { opacity: .45; }
   min-height: 180px;
 }
 
+/* ------------------------------------------------------------------ tabs */
+
+.tabs {
+  display: flex; align-items: stretch; gap: 4px;
+  margin-bottom: 8px; min-width: 0;
+}
+
+.tablist {
+  display: flex; align-items: stretch; gap: 4px;
+  overflow-x: auto; min-width: 0; flex: 1 1 auto;
+}
+
+.tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 8px 6px 11px;
+  border: 1px solid transparent; border-radius: 7px;
+  background: var(--frame); color: var(--muted);
+  font: 13px var(--mono); cursor: pointer; white-space: nowrap;
+  max-width: 190px;
+}
+.tab:hover { color: var(--ink-2); }
+.tab.is-active {
+  background: var(--chrome); color: var(--ink); border-color: var(--edge);
+}
+.tab .name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* Unsaved marker, outside `.name`: inside it the ellipsis ate the dot on
+   exactly the tabs whose names are long enough to need one. */
+.tab .dot {
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent-hi); visibility: hidden;
+}
+.tab.is-dirty .dot { visibility: visible; }
+.tab .close {
+  display: inline-grid; place-items: center;
+  width: 16px; height: 16px; flex: 0 0 auto;
+  border: 0; border-radius: 4px; padding: 0;
+  background: none; color: inherit; font: 14px/1 var(--sans); cursor: pointer;
+  opacity: .55;
+}
+.tab .close:hover { background: var(--edge); opacity: 1; }
+
+.tab-add {
+  flex: 0 0 auto;
+  width: 30px; border: 0; border-radius: 7px;
+  background: none; color: var(--muted);
+  font: 16px/1 var(--sans); cursor: pointer;
+}
+.tab-add:hover { color: var(--ink); background: var(--frame); }
+
 /* ---------------------------------------------------------------- editor */
 
 .editor { display: flex; }
 
 .gutter {
-  flex: 0 0 42px;
+  flex: 0 0 45px;
   padding: 14px 10px 14px 0;
   text-align: right; white-space: pre;
   color: var(--line-no);
-  font: 12.5px/21px var(--mono);
+  font: 13.5px/22px var(--mono);
   user-select: none; overflow: hidden;
 }
 
@@ -184,7 +338,7 @@ input:disabled { opacity: .45; }
 
 .highlight, #source {
   margin: 0; padding: 14px 14px 14px 0;
-  font: 12.5px/21px var(--mono);
+  font: 13.5px/22px var(--mono);
   white-space: pre; border: 0; tab-size: 4;
   width: 100%; height: 100%; overflow: auto;
 }
@@ -194,6 +348,10 @@ input:disabled { opacity: .45; }
   color: transparent; caret-color: var(--ink); resize: none; outline: none;
 }
 #source::selection { background: #2d4f86; }
+/* The text is transparent because the highlight layer draws it; the
+   placeholder is the one thing here with nothing behind it, and it is where a
+   first visit learns that C is not the only thing you can paste. */
+#source::placeholder { color: var(--muted); opacity: 1; }
 
 /* --------------------------------------------------------------- listing */
 
@@ -201,16 +359,39 @@ input:disabled { opacity: .45; }
 .listing pre {
   margin: 0; padding: 14px;
   height: 100%; overflow: auto;
-  font: 12.5px/21px var(--mono);
+  font: 13.5px/22px var(--mono);
   white-space: pre; color: var(--ink);
 }
 .listing .row + .row { margin-top: 0; }
 
 .row { display: block; }
 .addr { color: var(--addr); display: inline-block; width: 6ch; }
-.mn { color: var(--ink); display: inline-block; min-width: 9ch; }
+/* The codec view's addresses are eight hex digits and need the room. */
+.addr.wide { width: 10ch; }
+.mn { color: var(--ink); display: inline-block; min-width: 9ch;
+      padding-right: 1ch; }   /* a long mnemonic must not touch its operands */
 .ops { color: var(--operand); }
 .lbl { color: var(--label); }
+
+/* The terminal: a transcript and one line you type into. It only appears
+   when the paste has a `main`, because without one there is nothing to run. */
+.terminal { display: flex; flex-direction: column; min-height: 96px;
+            max-height: 220px; }
+.terminal #term-out {
+  margin: 0; padding: 10px 12px 0; overflow: auto; flex: 1;
+  font: 13px/20px var(--mono); white-space: pre-wrap; word-break: break-word;
+  color: var(--ink);
+}
+.term-line { display: flex; align-items: center; gap: 6px;
+             padding: 4px 12px 8px; }
+.term-prompt { color: var(--muted); font: 13px/20px var(--mono); }
+#term-in {
+  flex: 1; border: 0; background: none; outline: none; padding: 2px 0;
+  font: 13px/20px var(--mono); color: var(--ink);
+}
+#term-in::placeholder { color: var(--muted); }
+.term-echo { color: var(--muted); }
+.term-err { color: var(--bad, #d33); }
 
 .hint { color: var(--muted); font-family: var(--sans); }
 .hint b { color: var(--ink-2); }
@@ -232,13 +413,24 @@ input:disabled { opacity: .45; }
   display: flex; align-items: center; gap: 10px;
   margin-top: 14px; padding-top: 12px;
   border-top: 1px solid var(--edge-soft);
-  font-size: 12.5px; color: var(--muted);
+  font-size: 13.5px; color: var(--muted);
   min-height: 42px;
 }
 .card-foot .right { margin-left: auto; }
-.card-foot select { padding: 5px 26px 5px 9px; font-size: 12px; }
+.card-foot select {
+  padding: 5px 26px 5px 9px; font-size: 13px;
+  min-width: 0; flex: 0 1 auto;      /* give way to the checkbox beside it */
+}
+.card-foot select:empty { display: none; }
+/* The toolchain's full name is in the derivation; the foot shows what fits. */
+#compiled-engine {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
-.check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.check {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  white-space: nowrap; flex: 0 0 auto;
+}
 .check input {
   appearance: none; -webkit-appearance: none;
   width: 15px; height: 15px; margin: 0;
@@ -253,14 +445,25 @@ input:disabled { opacity: .45; }
 .compile {
   margin-top: 16px;
   display: flex; align-items: center; justify-content: center; gap: 9px;
-  width: 100%; padding: 13px 16px;
+  width: 100%;
+  /* The extra 12px on the right sits the label a hair left of the geometric
+     centre.  With the triangle beside it that is where it reads as centred;
+     dead centre reads right-of-centre on a phone. */
+  padding: 13px 28px 13px 16px;
   border: 0; border-radius: var(--radius);
   background: var(--accent); color: #fff;
-  font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer;
+  font: inherit; font-size: 15.5px; font-weight: 600; cursor: pointer;
 }
 .compile:hover { background: var(--accent-hi); }
 .compile:disabled { opacity: .5; cursor: progress; }
-.compile .play { fill: currentColor; stroke: none; width: 15px; height: 15px; }
+.compile .play {
+  fill: currentColor; stroke: none; width: 15px; height: 15px;
+  /* Centring [icon + gap + word] as a block puts the *word* half the icon's
+     width right of centre, and the word is what the eye reads as the label —
+     the button looks shifted right. Cancelling the icon's contribution to the
+     flex line centres the word and lets the icon hang to its left. */
+  margin-left: -24px;
+}
 
 /* -------------------------------------------------------------- pagefoot */
 
@@ -269,7 +472,7 @@ input:disabled { opacity: .45; }
   display: flex; align-items: center; gap: 12px;
   padding: 26px 24px 32px;
   border-top: 1px solid var(--edge-soft);
-  font-size: 12.5px; color: var(--muted);
+  font-size: 13.5px; color: var(--muted);
 }
 .pagefoot .right { margin-left: auto; }
 
@@ -279,7 +482,7 @@ input:disabled { opacity: .45; }
   position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
   background: var(--chrome); color: var(--ink);
   border: 1px solid var(--edge);
-  padding: 10px 16px; border-radius: 999px; font-size: 13px; z-index: 40;
+  padding: 10px 16px; border-radius: 999px; font-size: 14px; z-index: 40;
   box-shadow: 0 12px 34px rgba(0, 0, 0, .5);
   max-width: min(760px, 88vw);
 }
@@ -296,37 +499,38 @@ input:disabled { opacity: .45; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px; border-bottom: 1px solid var(--edge);
 }
-.dlg-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; }
+.dlg-head h3 { margin: 0; font-size: 15.5px; font-weight: 600; }
 .dlg-body { padding: 16px; overflow: auto; max-height: 70vh; }
 .dlg-body pre {
   margin: 0 0 12px; padding: 11px;
-  font: 12px/1.65 var(--mono); white-space: pre-wrap; word-break: break-word;
+  font: 13px/1.65 var(--mono); white-space: pre-wrap; word-break: break-word;
   background: var(--frame); border: 1px solid var(--edge-soft); border-radius: 8px;
 }
-.dlg-body h4 { margin: 18px 0 8px; font-size: 12.5px; color: var(--ink-2); }
-.dlg-body table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dlg-body h4 { margin: 18px 0 8px; font-size: 13.5px; color: var(--ink-2); }
+.dlg-body table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .dlg-body th, .dlg-body td {
   text-align: left; padding: 7px 8px; vertical-align: top;
   border-bottom: 1px solid var(--edge-soft);
 }
 .dlg-body th { color: var(--muted); font-weight: 500; width: 34%; }
 .dlg-body td { font-family: var(--mono); }
+/* Names only, laid out as chips: this list is somewhere to grab something to
+   paste, and a paragraph about each one is in the file you are about to open. */
+.dlg-body .examples { display: flex; flex-wrap: wrap; gap: 7px; }
 .dlg-body .ex {
-  display: block; width: 100%; text-align: left; margin-bottom: 7px;
-  padding: 9px 11px; border: 1px solid var(--edge); border-radius: 8px;
+  padding: 8px 11px; border: 1px solid var(--edge); border-radius: 8px;
   background: var(--chrome); color: var(--ink);
-  font: inherit; font-size: 13px; cursor: pointer;
+  font: 13.5px var(--mono); cursor: pointer;
 }
 .dlg-body .ex:hover { border-color: var(--accent); }
-.dlg-body .ex span { color: var(--muted); font-size: 12px; }
 
 .field {
   display: grid; grid-template-columns: 140px 1fr;
   gap: 12px; align-items: center; margin-bottom: 12px;
 }
-.field label { font-size: 12.5px; color: var(--ink-2); }
+.field label { font-size: 13.5px; color: var(--ink-2); }
 .field select, .field input { width: 100%; }
-.note { margin: 14px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.note { margin: 14px 0 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
 
 @media (prefers-reduced-motion: no-preference) {
   .compile, .link, .icon-btn, select { transition: background .12s ease, border-color .12s ease, color .12s ease; }
