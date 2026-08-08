@@ -225,6 +225,13 @@ self.onmessage = async (event) => {
       await boot(msg.config || readConfig(msg.search));
     } else if (msg.type === 'solve') {
       await solve(msg);
+    } else if (msg.type === 'evaluate') {
+      // The lowered sequence never crosses this boundary, so running the
+      // minimized program has to happen on the side that still holds it.
+      post('evaluated', {
+        result: JSON.parse(callPython('evaluate', [msg.target || '',
+                                                   String(msg.value || '0')])),
+      });
     } else if (msg.type === 'load-clang') {
       await clang.load(progress);
       post('clang-state', { clang: clang.describe() });

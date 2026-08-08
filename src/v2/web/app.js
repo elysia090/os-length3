@@ -333,11 +333,13 @@ function restoreCards() {
     $('qm-sub').textContent = '— instructions';
     $('sel-isa-view').innerHTML = '';
     renderCompiledHeading();
+    renderRunControls();
     return;
   }
   fillTargets(result);
   renderCompiled(result);
   renderTakeaway();
+  renderRunControls();
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +597,47 @@ function toast(message, isError) {
   toastTimer = setTimeout(() => { el.hidden = true; }, isError ? 7000 : 1600);
 }
 
+// --------------------------------------------------------------------------
+// Running the minimized program
+//
+// The lowered sequence is a live Python object and never crosses to this side,
+// so the answer comes from the worker that built it.  The page had been able
+// to show a program and not to try it.
+// --------------------------------------------------------------------------
+
+function runMinimized() {
+  if (!state.result || !state.result.ok || state.busy) return;
+  state.worker.postMessage({
+    type: 'evaluate',
+    target: state.isa || '',
+    value: $('run-input').value || '0',
+  });
+}
+
+function renderRunControls() {
+  const ready = Boolean(state.result && state.result.ok
+                        && currentTarget() && currentTarget().ok);
+  $('btn-run').disabled = !ready;
+  $('run-input').disabled = !ready;
+  if (!ready) {
+    $('run-input').value = '';
+    $('run-input').placeholder = 'input';
+    return;
+  }
+  const bits = state.result.frontend.input_bits;
+  $('run-input').placeholder = `${bits}-bit input`;
+}
+
+function showRunResult(result) {
+  if (!result.ok) { toast(result.error, true); return; }
+  // Hex alongside decimal: these are bit patterns, and a lane structure is
+  // unreadable in base ten.
+  const out = BigInt(result.output);
+  const digits = Math.ceil(state.result.frontend.output_bits / 4);
+  status(`${result.input} \u2192 ${result.output}`
+         + `  (0x${out.toString(16).toUpperCase().padStart(digits, '0')})`);
+}
+
 async function copyOutput() {
   const { text } = takeawayText();
   if (!text) return;
@@ -718,6 +761,7 @@ function onMessage(event) {
 
   if (msg.type === 'progress') { status(msg.message); return; }
   if (msg.type === 'notice') { toast(msg.message, true); return; }
+  if (msg.type === 'evaluated') { showRunResult(msg.result); return; }
 
   if (msg.type === 'ready') {
     state.ready = true;
@@ -749,6 +793,9 @@ function onMessage(event) {
         `<span class="tok-com">${escapeHtml(
           msg.result.error.text || msg.result.error.message)}</span>`;
       $('qm-sub').textContent = 'no result';
+      // There is no program to run any more, and leaving Run live would offer
+      // to evaluate the previous paste's answer under this one's heading.
+      renderRunControls();
       status('error');
       toast(msg.result.error.message, true);
       return;
@@ -770,6 +817,7 @@ function onMessage(event) {
     fillTargets(msg.result);
     renderCompiled(msg.result);
     renderTakeaway();
+    renderRunControls();
     status();
     // A paste of several functions answers about one of them.  Say so, once,
     // rather than letting the reader assume the whole file was minimized.
@@ -881,6 +929,10 @@ function init() {
   $('btn-newtab').addEventListener('click', () => addTab());
   $('btn-examples').addEventListener('click', showExamples);
   $('btn-copy').addEventListener('click', copyOutput);
+  $('btn-run').addEventListener('click', runMinimized);
+  $('run-input').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); runMinimized(); }
+  });
   $('btn-details').addEventListener('click', showDetails);
   $('btn-settings').addEventListener('click', () => $('settings').showModal());
   $('settings-close').addEventListener('click', () => $('settings').close());
@@ -896,6 +948,7 @@ function init() {
   $('sel-isa-view').addEventListener('change', (event) => {
     state.isa = event.target.value;
     renderTakeaway();
+    renderRunControls();
   });
   $('chk-intrinsics').addEventListener('change', (event) => {
     state.view = event.target.checked ? 'c' : 'asm';

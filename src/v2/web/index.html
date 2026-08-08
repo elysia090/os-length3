@@ -103,14 +103,23 @@
   <section class="card" id="card-copy">
     <div class="card-head">
       <h2><span class="step">3.</span> Minimized Program</h2>
-      <button class="link copy" id="btn-copy" type="button">
-        <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-        Copy
-      </button>
+      <div class="runbar">
+        <input id="run-input" type="text" spellcheck="false" autocomplete="off"
+               placeholder="input" aria-label="Input value, decimal or 0x hex"
+               disabled>
+        <button class="link run" id="btn-run" type="button" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
+          Run
+        </button>
+      </div>
     </div>
     <div class="card-sub" id="qm-sub">— instructions</div>
 
     <div class="framed listing">
+      <button class="overlay-copy" id="btn-copy" type="button"
+              title="Copy" aria-label="Copy the minimized program">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
       <pre id="qm-listing"><span class="hint">The minimized program appears here.</span></pre>
     </div>
 
