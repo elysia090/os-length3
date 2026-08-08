@@ -8,6 +8,8 @@ form*. Nothing here is a search, a proof, or a learner.
 
 ```text
 codec -> image -> machine -> rows     the specification's dependency order
+                     |
+                    seed              the subset's initial object
                      |         |      3.1 what a transition means
                      |         |      3.2 what it is, 3.7 what it costs
                      v
@@ -18,6 +20,38 @@ codec -> image -> machine -> rows     the specification's dependency order
 That order is normative and is also the import order. Nothing in this package
 reaches forward to residual algebra, exact numerics, a frontier, a foundation
 contract, or a product learner — and nothing here imports `qm`.
+
+## The physical minimal subset
+
+A machine in the subset is three things and nothing else — a state, a `feed`
+that commits one byte, and a `read` that commits nothing:
+
+```c
+typedef uint8_t state_t;
+state_t feed(state_t state, uint8_t byte) { return byte; }
+uint8_t read_state(state_t state)         { return state; }
+```
+
+`machine.py` gives that interface over an artifact. `seed.py` gives the one
+machine in it that needs no artifact, and it is there because the future
+quotient needs somewhere to stand: a residual is a function of a *history*,
+histories are `Byte*`, and nothing about that is finite until histories
+collapse. The echo machine is where the collapse is immediate — after one byte
+every history ending in `b` is the same state, so `Byte*` falls to 256 classes
+on the first move and no deeper probe refines it again.
+
+Two details are the point rather than trivia. The image is **built**, not typed
+out, because a table of numbers asserted to be the echo machine is a claim
+about what those numbers do; `tests/test_vm_seed.py` requires it to compute
+what the hand-written one in the codec tests computes. And the empty history is
+*not* a class of its own: the saved cell starts empty and an empty cell reads
+as zero, so the state before anything is fed is the state after feeding 0, and
+the count is exactly 256 rather than 257.
+
+`tests/test_vm_seed.py` also points `qm.quotient.future_quotient` at `feed` and
+`read` directly. The subset's two operations are a `delta` and an `out`, and
+saying so is what stops `vm` and `qm` from each having a future quotient that
+nothing checks against the other.
 
 ## Why it exists here
 
