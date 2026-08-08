@@ -199,12 +199,19 @@ static u64 decode_scalar(void)
     u64 width = 1ull + (u64)k + 1ull + (u64)k;
     if (bits_at + width > bits_len) { bits_bad = 1; return 0; }
 
-    /* A second window, at the bit that ended the run.  The payload is k+1
-     * bits and the run is k, so for a wide word the two do not fit in one
-     * window together -- which is exactly the 2^62 case the overflow test
-     * builds, and reading them from one word silently returned 1 there. */
-    u64 tail = bits_window(bits_at + 1ull + (u64)k);
-    u64 value = (k == 63u) ? tail : (tail >> (63u - k));
+    /* The word is 1 || 0^k || 1 || (k more bits), so it is 2k+2 wide and fits
+     * the window already loaded whenever k <= 31 — which is every address and
+     * every value this lowering emits. Taking a second window unconditionally
+     * doubled the loads for the common case; it is needed only when the run
+     * and the payload cannot sit in 64 bits together, which is the 2^62 case
+     * the overflow test builds. */
+    u64 value;
+    if (k <= 31u) {
+        value = (rest << k) >> (63u - k);
+    } else {
+        u64 tail = bits_window(bits_at + 1ull + (u64)k);
+        value = (k == 63u) ? tail : (tail >> (63u - k));
+    }
     bits_at += width;
     return value;
 }
