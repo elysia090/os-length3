@@ -377,7 +377,6 @@ function syncSource(options) {
   $('gutter').textContent =
     Array.from({ length: shown }, (_, i) => i + 1).join('\n');
   $('line-count').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'}`;
-  $('lang-note').textContent = language || '\u2014';
 
   // A pasted listing is not compiled, so the two controls that say how to
   // compile it have nothing to act on.  Leaving them live invites the reading
@@ -586,10 +585,9 @@ function openDialog(title, html) {
 async function showExamples() {
   if (!EXAMPLES.length) await loadExamples();
   openDialog('Examples', EXAMPLES.length
-    ? EXAMPLES.map((ex, i) =>
-        `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}`
-        + (ex.summary ? ` <span>— ${escapeHtml(ex.summary)}</span>` : '')
-        + '</button>').join('')
+    ? '<div class="examples">' + EXAMPLES.map((ex, i) =>
+        `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
+        .join('') + '</div>'
     : '<p class="note">examples.json could not be loaded</p>');
   $('dlg-body').querySelectorAll('.ex').forEach((el) => {
     el.addEventListener('click', () => {
@@ -663,7 +661,6 @@ function fillSettings(capabilities) {
     .join('') + '<option value="mask:custom">Custom bit mask…</option>';
 
   QM_VERSION = capabilities.versions.qm;
-  $('lang-note').textContent = editorLanguage() || '\u2014';
   status();
 }
 

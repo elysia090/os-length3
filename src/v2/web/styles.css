@@ -431,14 +431,15 @@ input:disabled { opacity: .45; }
 }
 .dlg-body th { color: var(--muted); font-weight: 500; width: 34%; }
 .dlg-body td { font-family: var(--mono); }
+/* Names only, laid out as chips: this list is somewhere to grab something to
+   paste, and a paragraph about each one is in the file you are about to open. */
+.dlg-body .examples { display: flex; flex-wrap: wrap; gap: 7px; }
 .dlg-body .ex {
-  display: block; width: 100%; text-align: left; margin-bottom: 7px;
-  padding: 9px 11px; border: 1px solid var(--edge); border-radius: 8px;
+  padding: 8px 11px; border: 1px solid var(--edge); border-radius: 8px;
   background: var(--chrome); color: var(--ink);
-  font: inherit; font-size: 13px; cursor: pointer;
+  font: 12.5px var(--mono); cursor: pointer;
 }
 .dlg-body .ex:hover { border-color: var(--accent); }
-.dlg-body .ex span { color: var(--muted); font-size: 12px; }
 
 .field {
   display: grid; grid-template-columns: 140px 1fr;

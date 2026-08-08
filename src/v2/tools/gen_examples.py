@@ -13,47 +13,16 @@ because that is the only place they can be true.
 import argparse
 import json
 import os
-import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.join(ROOT, 'examples')
 OUTPUT = os.path.join(ROOT, 'web', 'examples.json')
 
-# The first prose line of the leading block comment describes the kernel.
-# Lines naming a physical form are documentation for a reader of the file, not
-# something the page should assert before the solver has run.
-_COMMENT = re.compile(r'/\*(.*?)\*/', re.S)
-
-# Assembly examples carry their description in leading `#` / `;;` comments,
-# which is the only comment syntax those files have.
-_ASM_COMMENT = re.compile(r'^\s*(?:#+|;+)\s?(.*)$')
-
-# What a paste can be: C, or a listing on the way back in (SPEC §2).
+# What a paste can be: C, or a listing on the way back in (SPEC §2).  Only the
+# text travels — an example is something to open and press Compile on, and what
+# each one does is in the comment at the top of the file itself.
 SUFFIXES = ('.c', '.s', '.wat')
-
-
-def summarize(source, name):
-    if name.endswith('.c'):
-        match = _COMMENT.search(source)
-        if not match:
-            return ''
-        for raw in match.group(1).splitlines():
-            line = raw.strip().lstrip('*').strip()
-            if line:
-                return line
-        return ''
-
-    for raw in source.splitlines():
-        if not raw.strip():
-            continue
-        match = _ASM_COMMENT.match(raw)
-        if not match:
-            break               # the comment block is over; nothing described
-        text = match.group(1).strip()
-        if text and not text.startswith('qm-'):
-            return text
-    return ''
 
 
 def presentation_order():
@@ -87,7 +56,6 @@ def collect():
             'name': stem,
             'file': name,
             'language': 'c' if suffix == 'c' else 'asm',
-            'summary': summarize(source, name),
             'source': source,
         })
     return out
