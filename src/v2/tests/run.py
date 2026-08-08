@@ -40,6 +40,7 @@ LONGEST_FIRST = [
     'tests.test_pipeline.TestDeterminism',
     'tests.test_pipeline.TestSpecNumbers',
     'tests.test_browser.TestWorkerProtocolWithRealClang',
+    'tests.test_vm_closure.TestTheRoundTripCloses',
 ]
 
 

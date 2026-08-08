@@ -84,6 +84,14 @@ memory and one instruction, and each of the three can say so exactly. Every
 emitted form is compiled or assembled with a real toolchain, run, and required
 to compute what the artifact computes.
 
+The round trip closes. `tests/test_vm_closure.py` takes a kernel through QM,
+lowers the abstract program to an artifact, emits that artifact as C — a
+400-line SUBLEQ interpreter over a 6,000-cell memory, which resembles the
+kernel in no syntactic way at all — and puts *that* back through QM. What comes
+out is the same minimized program, `SHL ANDNR` and one core operation, because
+what QM reads is the function rather than the text. If the lowering dropped or
+added meaning anywhere, the second pass would land somewhere else.
+
 So the artifact is what is kept and the listings are derived from it. Note what
 this is *not*: QM's own `qm.isa.emit_c` / `emit_asm` / `emit_wasm` still emit
 the minimized program in each ISA — two instructions of x86 for `ranks8`, not a
