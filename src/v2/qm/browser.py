@@ -88,9 +88,39 @@ def prepare(source):
 
 
 def prepare_run(source):
-    """The whole paste, stdio included, for the compile that runs `main`."""
-    from .clang import prepare_driver
-    return prepare_driver(source or '')
+    """The driver alone, with the kernel left undefined for the artifact.
+
+    Compiling the whole paste would run Clang's kernel and call that the
+    answer. What Run has to execute is the minimized program, so the kernel
+    arrives as an import and `web/worker.js` implements it by feeding the
+    artifact.
+    """
+    from .clang import prepare_driver, split_main
+    source = source or ''
+    kernel, _span = split_main(source)
+    try:
+        signature = read_signature(kernel)
+    except CFrontError:
+        signature = None
+    return prepare_driver(source, signature)
+
+
+def run_plan():
+    """What the driver's kernel import has to be wired to.
+
+    From the last solve, so it names the function QM actually took rather than
+    whatever the paste happens to define first.
+    """
+    if '*artifact' not in _LAST:
+        return _dumps({'ok': False,
+                       'error': _LAST.get('*artifact_error')
+                       or 'no minimized program has been built yet'})
+    return _dumps({'ok': True,
+                   'function': _LAST.get('*function') or 'kernel',
+                   'input_bits': _LAST['*input_bits'],
+                   'output_bits': _LAST['*output_bits'],
+                   'in_bytes': -(-_LAST['*input_bits'] // 8),
+                   'out_bytes': -(-_LAST['*output_bits'] // 8)})
 
 
 def plan(source, options_json='{}'):
@@ -219,6 +249,7 @@ def _keep(result):
     _LAST['*input_bits'] = result['frontend']['input_bits']
     _LAST['*output_bits'] = result['frontend']['output_bits']
     _LAST['*primary'] = result.get('primary_target')
+    _LAST['*function'] = (result['frontend'].get('function') or {}).get('name')
 
     from vm import codec as vm_codec, emit, image as vm_image, lower
 

@@ -212,6 +212,12 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn("callPython('prepare_run'", worker)
         self.assertIn('qm_getchar', worker)
         self.assertIn('qm_putchar', worker)
+        # paste -> QM -> codec -> run: the kernel the driver calls is an
+        # import, answered by the artifact rather than by Clang's own build of
+        # it. `tests/test_browser_run.py` drives the whole chain.
+        self.assertIn("callPython('run_plan'", worker)
+        self.assertIn('evaluateLoaded', worker)
+        self.assertIn("env[plan.function]", worker)
         # Every reply from a solve carries whether there was a `main`; the page
         # has no second opinion about what the source contains.
         self.assertEqual(worker.count("has_main: hasMain"),
