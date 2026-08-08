@@ -196,6 +196,7 @@ function newTab(name, source) {
     name: name || 'untitled',
     source: source || '',
     result: null,
+    ranWith: null,
     clangAssembly: '',
     dirty: false,
   };
@@ -331,6 +332,7 @@ function restoreCards() {
     $('compiled-sub').textContent = '— instructions';
     $('qm-sub').textContent = '— instructions';
     $('sel-isa-view').innerHTML = '';
+    renderCompiledHeading();
     return;
   }
   fillTargets(result);
@@ -440,6 +442,28 @@ function takeawayText() {
            name: wat ? 'kernel_qm.wat' : 'kernel_qm.s' };
 }
 
+// What a run would be made of.  Comparing it against what the shown result was
+// made of is how the page knows the listing on screen is no longer the one the
+// controls describe.
+function optionsSignature() {
+  return [$('sel-opt').value, $('sel-target').value, $('sel-compiler').value,
+          $('sel-observer').value, $('inp-mask').value].join('|');
+}
+
+function renderCompiledHeading() {
+  // The heading follows the selector rather than the last run, so choosing -O3
+  // is visible immediately; when that no longer matches what is on screen the
+  // sub-line below says so, rather than the heading quietly lying.  Nothing
+  // was compiled for a pasted listing, and the built-in frontend has no
+  // optimization level at all — neither gets an -O it did not use.
+  const result = state.result;
+  const kind = result && result.ok ? result.frontend.frontend.kind : 'compiler';
+  $('compiled-opt').textContent =
+    kind === 'assembly' ? '(as pasted)'
+      : kind === 'interpreter' ? ''
+        : `(${$('sel-opt').value})`;
+}
+
 function renderCompiled(result) {
   const front = result.frontend;
   const stats = front.assembly_stats || {};
@@ -449,13 +473,19 @@ function renderCompiled(result) {
   // on somebody else's assembly would be inventing a provenance for it.
   const pasted = front.frontend.kind === 'assembly';
 
-  $('compiled-opt').textContent = pasted ? '(as pasted)'
-                                        : `(${compile.opt || '-O2'})`;
+  renderCompiledHeading();
 
   const count = stats.available ? stats.instructions
                                 : (front.reference_ops || {}).mean;
-  $('compiled-sub').textContent = count == null ? '— instructions'
-    : `${count} instructions`;
+  const facts = [count == null ? '— instructions' : `${count} instructions`];
+  const tab = activeTab();
+  // Naming the knob that moved would be guesswork — several of them change
+  // what a run produces — so this says only that the two no longer agree.
+  if (!pasted && tab && tab.ranWith && tab.ranWith !== optionsSignature()) {
+    facts.push('press Compile to update');
+  }
+  $('compiled-sub').innerHTML = facts
+    .map((fact) => `<span>${escapeHtml(fact)}</span>`).join(' ');
   $('compiled-isa').textContent = isa || front.frontend.kind;
   const engine = front.frontend.title || '';
   $('compiled-engine').textContent = engine;
@@ -530,6 +560,11 @@ function currentOptions() {
     source_target: $('sel-target').value,
     observer,
   };
+}
+
+function onOptionChanged() {
+  renderCompiledHeading();
+  if (state.result && state.result.ok) renderCompiled(state.result);
 }
 
 function optimize() {
@@ -714,6 +749,7 @@ function onMessage(event) {
     state.clangAssembly = (msg.result.compiled && msg.result.compiled.assembly) || '';
     const tab = activeTab();
     if (tab) {
+      tab.ranWith = optionsSignature();
       tab.dirty = false;
       // Name the tab after the kernel, in the language it turned out to be.
       const name = msg.result.frontend.function.name;
@@ -778,6 +814,7 @@ function init() {
   syncSource({ keepDirty: true });
   activeTab().dirty = false;
   renderTabs();
+  renderCompiledHeading();
 
   // The first example replaces the placeholder only if nothing was restored or
   // shared, so a returning visitor never loses what they had.
@@ -835,7 +872,12 @@ function init() {
   $('dlg-close').addEventListener('click', () => $('dlg').close());
   $('sel-observer').addEventListener('change', (event) => {
     $('inp-mask').disabled = event.target.value !== 'mask:custom';
+    onOptionChanged();
   });
+  for (const id of ['sel-opt', 'sel-target', 'sel-compiler']) {
+    $(id).addEventListener('change', onOptionChanged);
+  }
+  $('inp-mask').addEventListener('input', onOptionChanged);
   $('sel-isa-view').addEventListener('change', (event) => {
     state.isa = event.target.value;
     renderTakeaway();
