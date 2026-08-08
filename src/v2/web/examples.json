@@ -122,6 +122,36 @@
       "source": "#include <stdint.h>\n\n/* Exclusive prefix sums of eight byte-lane counts, in place.\n * lanecode.h: lc_block_offsets8 \u2014 counts * ONES\n * Requires every prefix to fit in one byte. */\nuint64_t block_offsets8(uint64_t counts)\n{\n    uint64_t r = 0;\n    uint64_t acc = 0;\n\n    for (unsigned i = 0; i < 8; ++i) {\n        r |= (acc & 0xFF) << (8 * i);\n        acc += (counts >> (8 * i)) & 0xFF;\n    }\n\n    return r;\n}\n"
     },
     {
+      "name": "zero_spread8",
+      "file": "zero_spread8.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Which byte lanes are zero \u2014 the end-of-string test, exactly rather than\n * approximately.  The well-known (v - ONES) & ~v & HIGH is not this function:\n * a borrow reaches into an adjacent 0x01 lane and reports it as zero.\n * lanecode.h: lc_zero_spread */\nuint64_t zero_spread8(uint64_t x)\n{\n    uint64_t s = 0;\n\n    for (unsigned i = 0; i < 8; ++i)\n        if (((x >> (8 * i)) & 0xFF) == 0)\n            s |= 0x80ull << (8 * i);\n\n    return s;\n}\n"
+    },
+    {
+      "name": "eq_spread8",
+      "file": "eq_spread8.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Which of the eight byte lanes equals a fixed byte, as a 0x80 flag per lane.\n * The comma is the separator a CSV scanner looks for.\n * lanecode.h: LC_EQ_SPREAD \u2014 lc_zero_spread(x ^ c * ONES) */\nuint64_t eq_spread8(uint64_t x)\n{\n    uint64_t s = 0;\n\n    for (unsigned i = 0; i < 8; ++i)\n        if (((x >> (8 * i)) & 0xFF) == ',')\n            s |= 0x80ull << (8 * i);\n\n    return s;\n}\n"
+    },
+    {
+      "name": "lt_spread8",
+      "file": "lt_spread8.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Which byte lanes hold a control character, unsigned.  One-sided compare:\n * the interval starts at zero, so only the upper bound is left to test.\n * lanecode.h: LC_LT_SPREAD */\nuint64_t lt_spread8(uint64_t x)\n{\n    uint64_t s = 0;\n\n    for (unsigned i = 0; i < 8; ++i)\n        if (((x >> (8 * i)) & 0xFF) < 0x20)\n            s |= 0x80ull << (8 * i);\n\n    return s;\n}\n"
+    },
+    {
+      "name": "range_spread8",
+      "file": "range_spread8.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Which byte lanes hold an ASCII digit.  Both bounds at once: one subtraction\n * per side, and neither borrow leaves the lane it started in.\n * lanecode.h: LC_RANGE_SPREAD */\nuint64_t range_spread8(uint64_t x)\n{\n    uint64_t s = 0;\n\n    for (unsigned i = 0; i < 8; ++i) {\n        unsigned b = (unsigned)((x >> (8 * i)) & 0xFF);\n\n        if (b >= '0' && b <= '9')\n            s |= 0x80ull << (8 * i);\n    }\n\n    return s;\n}\n"
+    },
+    {
+      "name": "middle_bits_u16",
+      "file": "middle_bits_u16.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Stanford CS107 bit-manipulation exercise: pull a field out of the middle of\n * a word.  Selecting bits is a GF(2)-linear map, so this is one instruction on\n * any target that can extract \u2014 and the shift-and-mask pair is not it. */\nuint16_t middle_bits_u16(uint16_t x)\n{\n    return (x >> 4) & 0xFF;\n}\n"
+    },
+    {
       "name": "ranks8",
       "file": "ranks8.s",
       "language": "asm",

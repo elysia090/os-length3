@@ -192,3 +192,124 @@ class TestSequenceEvaluation(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestLaneIntervalSolver(unittest.TestCase):
+    """Comparison, which is where this grammar stops being linear.
+
+    There is no GF(2) description of `lane < c` and no deposit/convolution that
+    produces one, so before this solver existed a per-lane predicate fell all
+    the way through to a 2^16-entry lookup table. What it searches is the
+    interval, read off the observed lanes; the three branch-free forms that
+    compute it are lowering decisions, not separate abstract operations.
+    """
+
+    @staticmethod
+    def spread(predicate, lane_bits=8, input_bits=64):
+        top = 1 << (lane_bits - 1)
+        lane_mask = mask_of(lane_bits)
+
+        def kernel(x):
+            out = 0
+            for i in range(input_bits // lane_bits):
+                if predicate((x >> (lane_bits * i)) & lane_mask):
+                    out |= top << (lane_bits * i)
+            return out
+        return kernel
+
+    def solved(self, predicate, **kw):
+        from qm.solvers import solve_lane_predicate
+        bits = kw.pop('input_bits', 64)
+        sem = from_callable(self.spread(predicate, input_bits=bits, **kw),
+                            bits, bits)
+        return solve_lane_predicate(sem, parse_observer('exact'))
+
+    def instructions(self, programs, isa_name='x86-64-bmi2-pclmul'):
+        from qm import isa as isa_mod
+        seq, _used = isa_mod.lower_program(programs[0],
+                                           isa_mod.get_isa(isa_name))
+        return [ins.op for ins in seq.ins]
+
+    def test_equality_lowers_to_the_zero_test_over_a_xor(self):
+        found = self.solved(lambda b: b == 0x2C)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(self.instructions(found),
+                         ['XOR', 'AND', 'ADD', 'ORR', 'NOT', 'AND'])
+
+    def test_equality_with_zero_needs_no_xor(self):
+        # The XOR would be by zero.  A stage that does nothing is not part of
+        # the meaning, and it is not emitted either.
+        self.assertEqual(self.instructions(self.solved(lambda b: b == 0)),
+                         ['AND', 'ADD', 'ORR', 'NOT', 'AND'])
+
+    def test_an_interval_from_zero_uses_the_one_sided_form(self):
+        self.assertEqual(
+            self.instructions(self.solved(lambda b: b < 0x20)),
+            ['OR', 'SUB', 'XORR', 'XOR', 'ANDNR', 'XORR', 'NOT', 'AND'])
+
+    def test_a_two_sided_interval_subtracts_from_both_ends(self):
+        self.assertEqual(
+            self.instructions(self.solved(lambda b: 0x30 <= b <= 0x39)),
+            ['OR', 'SUB', 'AND', 'NOT', 'ADD', 'ANDR', 'ANDNR', 'AND'])
+
+    def test_nibble_lanes_are_found_without_being_told(self):
+        # The lane width comes from where the output bits are, so the same
+        # solver answers for sixteen 4-bit lanes with no parameter changed.
+        found = self.solved(lambda b: b == 0xA, lane_bits=4)
+        self.assertEqual(len(found), 1)
+        self.assertIn('4-bit lanes', found[0].ops[0].detail['note'])
+
+    def test_a_set_that_is_not_an_interval_is_refused(self):
+        # Even lanes only: a real per-lane predicate, and not one this family
+        # can state.  Answering it with the nearest interval would be wrong.
+        self.assertEqual(self.solved(lambda b: b % 2 == 0), [])
+
+    def test_an_upper_bound_past_the_lane_top_bit_is_refused(self):
+        # The two-sided form's second subtraction stays inside its lane only
+        # below the top bit.  This is the case that used to be emitted and
+        # silently disagree on inputs the sample happened to miss.
+        self.assertEqual(self.solved(lambda b: 0x70 <= b <= 0x90), [])
+
+    def test_an_always_true_predicate_is_left_to_the_constant_solver(self):
+        self.assertEqual(self.solved(lambda b: True), [])
+
+    def test_the_lowered_form_is_checked_against_the_comparison_itself(self):
+        """The two statements of the meaning have to agree, not be assumed to.
+
+        `program._eval_point` says `lo <= lane <= hi` in Python and decides
+        whether a candidate is accepted; `isa.lower_point` says it in AND/ADD/
+        SUB/OR/XOR/NOT and is what gets emitted. This walks the second against
+        the first over every lane value, which is the check that would have
+        caught the borrow bug in the two-sided form.
+        """
+        from qm import isa as isa_mod
+        from qm.program import compile_program
+        for predicate in (lambda b: b == 0x2C, lambda b: b < 0x20,
+                          lambda b: 0x30 <= b <= 0x39):
+            found = self.solved(predicate)
+            self.assertEqual(len(found), 1)
+            abstract = compile_program(found[0])
+            seq, _ = isa_mod.lower_program(
+                found[0], isa_mod.get_isa('x86-64-bmi2-pclmul'))
+            lowered = isa_mod.compile_seq(seq)
+            reference = self.spread(predicate)
+            for b in range(256):
+                x = b * 0x0101010101010101
+                self.assertEqual(abstract(x), reference(x), 'lane 0x%02X' % b)
+                self.assertEqual(lowered(x), reference(x), 'lane 0x%02X' % b)
+
+    def test_equality_against_a_high_constant_is_not_refused(self):
+        # Equality never subtracts, so the two-sided form's bound on `hi` does
+        # not apply to it.  Reading that guard as "any interval" refused every
+        # `lane == c` with c at or above half the lane range, which is half of
+        # them — and nibble lanes, where 0xA is already past the middle.
+        for constant in (0x80, 0xC0, 0xFF):
+            with self.subTest(constant=constant):
+                found = self.solved((lambda c: (lambda b: b == c))(constant))
+                self.assertEqual(len(found), 1)
+                self.assertEqual(self.instructions(found),
+                                 ['XOR', 'AND', 'ADD', 'ORR', 'NOT', 'AND'])
+
+    def test_a_one_sided_bound_past_the_lane_top_bit_is_kept(self):
+        found = self.solved(lambda b: b < 0xF0)
+        self.assertEqual(len(found), 1)

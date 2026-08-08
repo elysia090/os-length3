@@ -147,3 +147,17 @@ def xorshift_stream(seed, count, bits=64):
         x = (x * 0x2545F4914F6CDD1D) & M64
         out.append(x & m)
     return out
+
+
+def lane_masks(lane_bits):
+    """(ones, low, high) for lanes of `lane_bits`, replicated across 64 bits.
+
+    `low` is every bit of a lane but its top one and `high` is that top bit, so
+    the two partition the word and `~low == high`. That is the property the
+    lane-comparison forms rest on: a borrow started in a lane cannot leave it
+    once every top bit is accounted for.
+    """
+    lanes = 64 // lane_bits
+    ones = sum(1 << (lane_bits * i) for i in range(lanes))
+    high = (ones << (lane_bits - 1)) & M64
+    return ones, (~high) & M64, high

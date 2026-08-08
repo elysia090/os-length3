@@ -22,6 +22,7 @@ ONES = '0101010101010101'
 IOTA = '0706050403020100'
 ALL_ONES = 'FFFFFFFFFFFFFFFF'
 HIGH = '8080808080808080'
+LOW7 = '7F7F7F7F7F7F7F7F'
 BYTE = '00000000000000FF'
 
 
@@ -75,6 +76,24 @@ class TestMatchesHandWritten(unittest.TestCase):
          [ONES, '00000000000000FF', 'F8F9FAFBFCFDFEFF']),
         ('run_ids8', 'lc_run_ids8', ['SHL', 'ANDNR', 'PDEP', 'IMUL'],
          [ONES, ONES]),
+        # Comparison.  lanecode.h has carried these three forms since before
+        # anything could derive them; what QM is given is a loop with a `==`,
+        # a `<` or a pair of bounds in it, and what it has to arrive at is the
+        # branch-free lane arithmetic — including which of the three.
+        ('zero_spread8', 'lc_zero_spread', ['AND', 'ADD', 'ORR', 'NOT', 'AND'],
+         [LOW7, LOW7, HIGH]),
+        ('eq_spread8', 'LC_EQ_SPREAD',
+         ['XOR', 'AND', 'ADD', 'ORR', 'NOT', 'AND'],
+         ['2C2C2C2C2C2C2C2C', LOW7, LOW7, HIGH]),
+        ('lt_spread8', 'LC_LT_SPREAD',
+         ['OR', 'SUB', 'XORR', 'XOR', 'ANDNR', 'XORR', 'NOT', 'AND'],
+         [HIGH, '2020202020202020', '2020202020202020', HIGH]),
+        # The two-sided form needs `K - (x & LOW7)`, and the grammar has no
+        # reverse subtract, so QM reaches it as `~(x & LOW7) + (K + 1)` —
+        # 0xB9..BA being 0x39-per-lane with the top bits set, plus one.
+        ('range_spread8', 'LC_RANGE_SPREAD',
+         ['OR', 'SUB', 'AND', 'NOT', 'ADD', 'ANDR', 'ANDNR', 'AND'],
+         [HIGH, '3030303030303030', LOW7, 'B9B9B9B9B9B9B9BA', HIGH]),
     ]
 
     def test_reaches_the_hand_written_form(self):
@@ -89,7 +108,8 @@ class TestMatchesHandWritten(unittest.TestCase):
     # A 64-bit input cannot be enumerated.  These are the cases where the
     # verification is a differential rather than a proof, and the report has to
     # say so in those words rather than quietly reporting a pass.
-    SAMPLED = {'prefix_xor64', 'mask_from_spread', 'byte_mask_from_spread'}
+    SAMPLED = {'prefix_xor64', 'mask_from_spread', 'byte_mask_from_spread',
+               'zero_spread8', 'eq_spread8', 'lt_spread8', 'range_spread8'}
 
     def test_every_case_verifies_exhaustively(self):
         for name, _reference, _instructions, _wanted in self.CASES:
@@ -194,7 +214,11 @@ class TestEmittedCodeCompilesAsPasted(unittest.TestCase):
     """
 
     CASES = ['ranks8', 'byte_mask8', 'select8', 'shuffle_control8', 'run_ids8',
-             'quote_state_before8', 'prefix_parity_mask8', 'prefix_xor64']
+             'quote_state_before8', 'prefix_parity_mask8', 'prefix_xor64',
+             # The lane comparisons emit no intrinsic at all — plain operators
+             # and five constants — so they are the case where a wrong
+             # constant would compile perfectly and mean something else.
+             'zero_spread8', 'eq_spread8', 'lt_spread8', 'range_spread8']
 
     @staticmethod
     def emitted(name):

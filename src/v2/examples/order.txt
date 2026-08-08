@@ -24,6 +24,14 @@ morton_compact_even16.c
 ranks16_nibble.c
 block_offsets8.c
 
+# Comparison: the interval is read off the data, and the branch-free form that
+# computes it is chosen from the shape of that interval.
+zero_spread8.c
+eq_spread8.c
+lt_spread8.c
+range_spread8.c
+middle_bits_u16.c
+
 # The other arrow in SPEC §2: a listing going back in.
 ranks8.s
 prefix_xor64.wat

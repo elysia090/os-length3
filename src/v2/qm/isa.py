@@ -11,7 +11,7 @@ searches them with the same lexicographic objective used everywhere else:
 """
 
 from . import straightline
-from .bits import (M64, bswap64, clmul, mask_of, pdep, pext,
+from .bits import (M64, bswap64, clmul, lane_masks, mask_of, pdep, pext,
                     popcnt)
 
 # Description-code widths for the L(z) model.  Toy but consistent, and the same
@@ -575,11 +575,73 @@ def lower_perm_dyn(op, isa):
     return out
 
 
+def _lane_interval_seq(seq, v, bounds, lane_bits):
+    """`lo <= lane <= hi` on every lane, branch-free, as `examples/lanecode.h`.
+
+    Three physical forms for one semantic step, picked by the shape of the
+    interval: a point is an equality test, an interval starting at zero is a
+    one-sided compare, and anything else needs both bounds. The abstract
+    program says only which interval; which of these computes it is a lowering
+    decision, the same way LIN_CONST does not mean PDEP.
+
+    Nothing here is a new primitive. Each form expands to AND/ADD/SUB/OR/XOR/
+    NOT over whole registers, which every target in this file already has — the
+    lane structure lives in the constants, not in the instruction set.
+
+    These are fused rather than a chain of POINT steps because each of them
+    uses its input twice, and a step list has no way to say "and also the value
+    before this one".
+    """
+    lo, hi = bounds
+    ones, low, high = lane_masks(lane_bits)
+
+    if lo == hi:
+        # lane == c.  `(t & low) + low` carries into a lane's top bit exactly
+        # when the rest of that lane is nonzero, so OR-ing the value back in
+        # and complementing leaves the top bit set only for an all-zero lane —
+        # and the lane is zero exactly where the input equalled c.
+        t = seq.emit('XOR', [v], const=(lo * ones) & M64) if lo else v
+        a = seq.emit('AND', [t], const=low)
+        a = seq.emit('ADD', [a], const=low)
+        a = seq.emit('ORR', [a, t])
+        a = seq.emit('NOT', [a])
+        return seq.emit('AND', [a], const=high)
+
+    if lo == 0:
+        # lane < hi+1, unsigned.  Setting every top bit before subtracting the
+        # low part of the bound stops a borrow from leaving its lane; what is
+        # left is a small Boolean function of the three top bits.
+        c = ((hi + 1) * ones) & M64
+        h = seq.emit('OR', [v], const=high)
+        z = seq.emit('SUB', [h], const=c & low)
+        u = seq.emit('XORR', [v, z])
+        e = seq.emit('XOR', [v], const=c)
+        a = seq.emit('ANDNR', [e, u])
+        a = seq.emit('XORR', [v, a])
+        a = seq.emit('NOT', [a])
+        return seq.emit('AND', [a], const=high)
+
+    # Both bounds at once.  `hi` below the lane's top bit is what keeps the
+    # second subtraction inside its lane; the solver does not offer an interval
+    # that reaches past it, and `verify` would reject one anyway.
+    h = seq.emit('OR', [v], const=high)
+    z1 = seq.emit('SUB', [h], const=(lo * ones) & M64)
+    xl = seq.emit('AND', [v], const=low)
+    # `K - xl` with no reverse-subtract in the grammar: ~xl + (K + 1).
+    n = seq.emit('NOT', [xl])
+    z2 = seq.emit('ADD', [n], const=(((hi * ones) | high) + 1) & M64)
+    g = seq.emit('ANDR', [z1, z2])
+    a = seq.emit('ANDNR', [v, g])
+    return seq.emit('AND', [a], const=high)
+
+
 def lower_point(op, isa):
     seq = Seq()
     v = 0
     for mnemonic, const, shift in op.detail['steps']:
-        if mnemonic == 'ANDN_PREV_SHL':
+        if mnemonic == 'LANE_INTERVAL':
+            v = _lane_interval_seq(seq, v, const, shift)
+        elif mnemonic == 'ANDN_PREV_SHL':
             shifted = seq.emit('SHL', [v], shift=shift)
             v = seq.emit('ANDNR', [shifted, v])
         elif mnemonic == 'ANDN_PREV_SHR':

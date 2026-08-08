@@ -8,7 +8,7 @@ Layer 2: depends on `bits` only.
 """
 
 from . import straightline
-from .bits import (M64, bswap64, clmul, mask_of, pdep, pext,
+from .bits import (M64, bswap64, clmul, lane_masks, mask_of, pdep, pext,
                     popcnt)
 
 # Semantic classes from SPEC §6, plus TABLE for the always-available
@@ -176,6 +176,26 @@ class Program(object):
         }
 
 
+def _lane_interval(value, bounds, lane_bits):
+    """`lo <= lane <= hi` on every lane, as the top bit of that lane.
+
+    This is the *meaning* — a comparison, written as a comparison. The
+    branch-free forms that compute it live in `isa.lower_point`, and the two
+    are held to each other rather than assumed equal: this decides whether a
+    candidate is accepted at all, and `isa.matches` then puts the lowered
+    sequence against the same semantics over the same domain.
+    """
+    lo, hi = bounds
+    _, _, high = lane_masks(lane_bits)
+    lane_mask = mask_of(lane_bits)
+    top = 1 << (lane_bits - 1)
+    out = 0
+    for i in range(64 // lane_bits):
+        if lo <= ((value >> (lane_bits * i)) & lane_mask) <= hi:
+            out |= top << (lane_bits * i)
+    return out & high
+
+
 def _eval_point(steps, value):
     v = value & M64
     for mnemonic, const, shift in steps:
@@ -206,6 +226,8 @@ def _eval_point(steps, value):
             v = (v ^ (v << shift)) & M64
         elif mnemonic == 'POPCNT':
             v = popcnt(v)
+        elif mnemonic == 'LANE_INTERVAL':
+            v = _lane_interval(v, const, shift)
         else:
             raise ValueError('unknown POINT step: %r' % mnemonic)
     return v
