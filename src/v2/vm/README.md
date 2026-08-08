@@ -206,6 +206,23 @@ byte, and the two largest examples — `prefix_xor64` at 125,035 cells and
 `select8` at 241,841 — open at all now, where before they were refused as
 though they were malformed.
 
+Then the memory itself. It was an open-addressing table, so all five reads and
+the write of every transition paid a multiply-hash and a probe. That is the
+wrong shape for what this runs: an image encodes addresses as gaps (§2.2) and
+the lowering emits them consecutively — one bit of gap per cell across every
+example here — so the memory is dense and paying for sparsity buys nothing.
+`bench.c` had already put the two side by side at 92.6 against 2.6 ns per
+transition; replacing it moved the compiled machine the same way.
+
+| | open before | open now | run before | run now |
+| --- | ---: | ---: | ---: | ---: |
+| `ranks8` | 222 us | 150 | 195 us | **20** |
+| `ranks16_nibble` | 1,639 | 935 | 756 | **67** |
+| `prefix_xor64` | 5,173 | 2,830 | 2,445 | **214** |
+| `select8` | 10,694 | 5,526 | 5,085 | **266** |
+
+The module is smaller for it too — 6,159 bytes of wasm to 4,988.
+
 Neither is checked against a description of the other. `tests/test_vm.py`
 runs both on the same artifacts and requires identical answers, which is how
 the one real divergence so far was found: the C counted a scalar word's zero
@@ -221,7 +238,7 @@ A wasm module has neither, so:
 | Specification | `wasm/vm.c` | How it is reported |
 | --- | --- | --- |
 | unbounded integers | i64 | a subtraction that would overflow ends the call and raises `vm_overflowed`; it never wraps |
-| unbounded memory | fixed open-addressing table, 2^20 slots | exhausting it is a finite failure, never a silent eviction, and `vm_table_full` says it was the table rather than the image — the two used to be reported alike, which blamed a canonical artifact for the machine's size |
+| unbounded memory | flat array of 2^20 cells | an address past the end is a finite failure, never a wrap, and `vm_table_full` says it was the machine rather than the image — the two used to be reported alike, which blamed a canonical artifact for the machine's size |
 | divergence is divergence | step budget | exhausting it returns `UNFINISHED` (-2), which is **not** an outcome: not a byte, not a failure |
 
 The Python reference has none of these limits, which is what makes the

@@ -38,39 +38,37 @@ typedef long long          i64;
 #define EV_COMMIT -2
 
 /* -------------------------------------------------------------- memory ---
- * Open addressing over i64 addresses.  A slot may be occupied and hold zero:
- * deleting on a zero write would cost a tombstone pass and buys nothing, since
- * a read of an absent cell and a read of a zero cell are the same value.  Only
- * serialization cares about the difference, and this module never serializes.
+ * A flat array over i64 addresses, sized at load from the image's own extent.
+ *
+ * It used to be an open-addressing table, which cost a multiply-hash and a
+ * probe on all five reads and the write of every transition. That is the wrong
+ * shape for what this actually runs: an image encodes its addresses as gaps
+ * (SPEC 2.2), and the lowering emits them consecutively — one bit of gap per
+ * cell across every example here — so the memory is dense and paying for
+ * sparsity buys nothing. `vm/wasm/bench.c` puts the two side by side: 92.6
+ * against 2.6 ns per transition on `ranks8`.
+ *
+ * An address past the arena is a finite failure rather than a wrap. The
+ * specification's memory is unbounded and this one is not, which is the
+ * departure already reported through `vm_table_full`.
  */
 
 /* Big enough for every artifact `vm/lower.py` produces today: the dynamic
- * gather is 241,841 cells, and open addressing needs headroom above that or it
- * probes forever.  Sizing this from the image is what an allocator would do,
- * and there is not one here on purpose. */
+ * gather is 241,841 cells and its top address is a little above that.  Sizing
+ * this from the image is what an allocator would do, and there is not one here
+ * on purpose. */
 #define CAP_BITS 20
 #define CAP      (1u << CAP_BITS)
-#define CAP_MASK (CAP - 1u)
 
-/* A slot is occupied when its generation matches the current one, so emptying
- * the table is an increment rather than a walk.  `vm_load` used to clear every
- * slot whatever the image held, which cost more than decoding a small
- * artifact did. */
-static i64 slot_key[CAP];
-static i64 slot_val[CAP];
-static u32 slot_gen[CAP];
-static u32 generation = 1;
-static u32 live;
-
-#define SLOT_USED(i) (slot_gen[i] == generation)
+static i64 cells[CAP];
+static u32 extent;                 /* how much of it this image uses */
+static int table_full;
 
 /* Undo log, so a discarded read costs the writes it made and not a copy of
  * the whole table. */
 #define JCAP (1u << 18)
 static u32 j_slot[JCAP];
-static i64 j_key[JCAP];
 static i64 j_val[JCAP];
-static u8  j_used[JCAP];
 static u32 j_n;
 /* Off while `vm_load` fills the table: those writes are the image itself, and
  * nothing rolls back past them.  Journalling them cost one log entry per cell
@@ -79,61 +77,26 @@ static int journaling = 1;
 
 static int overflowed;
 static int exhausted;
-static int table_full;
 static u64 budget = 1ull << 22;
 static u64 last_steps;
 
-static u32 hash_slot(i64 address)
-{
-    u64 x = (u64)address * 0x9E3779B97F4A7C15ull;
-    x ^= x >> 29;
-    x *= 0xBF58476D1CE4E5B9ull;
-    x ^= x >> 32;
-    return (u32)x & CAP_MASK;
-}
-
-/* Slot for `address`: the one holding it, or the first free slot on its probe
- * path.  Returns CAP when the table is full. */
-static u32 find(i64 address)
-{
-    u32 i = hash_slot(address);
-    for (u32 probe = 0; probe < CAP; ++probe) {
-        if (!SLOT_USED(i) || slot_key[i] == address) return i;
-        i = (i + 1u) & CAP_MASK;
-    }
-    return CAP;
-}
-
 static i64 mem_get(i64 address)
 {
-    u32 i = find(address);
-    if (i == CAP || !SLOT_USED(i)) return 0;
-    return slot_val[i];
+    if (address < 0 || (u64)address >= CAP) return 0;
+    return cells[address];
 }
 
 static int mem_set(i64 address, i64 value)
 {
-    u32 i = find(address);
-    if (i == CAP) return 0;
-    if (!journaling) {
-        /* nothing to undo */
-    } else if (j_n < JCAP) {
-        j_slot[j_n] = i;
-        j_key[j_n]  = slot_key[i];
-        j_val[j_n]  = slot_val[i];
-        j_used[j_n] = SLOT_USED(i);
+    if (address < 0 || (u64)address >= CAP) { table_full = 1; return 0; }
+    if (journaling) {
+        if (j_n >= JCAP) return 0;     /* cannot promise a rollback */
+        j_slot[j_n] = (u32)address;
+        j_val[j_n]  = cells[address];
         j_n += 1;
-    } else {
-        return 0;                      /* cannot promise a rollback */
     }
-    if (!SLOT_USED(i)) {
-        /* Keep a headroom margin: a full table probes forever. */
-        if (live + 1u >= (CAP - (CAP >> 2))) { table_full = 1; return 0; }
-        slot_gen[i] = generation;
-        slot_key[i] = address;
-        live += 1u;
-    }
-    slot_val[i] = value;
+    cells[address] = value;
+    if ((u64)address >= extent) extent = (u32)address + 1u;
     return 1;
 }
 
@@ -143,24 +106,15 @@ static void journal_rollback(void)
 {
     while (j_n) {
         j_n -= 1;
-        u32 i = j_slot[j_n];
-        if (SLOT_USED(i) && !j_used[j_n]) live -= 1u;
-        slot_key[i] = j_key[j_n];
-        slot_val[i] = j_val[j_n];
-        slot_gen[i] = j_used[j_n] ? generation : (generation - 1u);
+        cells[j_slot[j_n]] = j_val[j_n];
     }
 }
 
 static void mem_clear(void)
 {
-    /* One increment empties the table.  The wrap is the only case that has to
-     * touch memory, and it happens once every four billion loads. */
-    generation += 1u;
-    if (generation == 0u) {
-        for (u32 i = 0; i < CAP; ++i) slot_gen[i] = 0;
-        generation = 1u;
-    }
-    live = 0;
+    /* Only what the last image used, not the whole arena. */
+    for (u32 i = 0; i < extent; ++i) cells[i] = 0;
+    extent = 0;
     j_n = 0;
 }
 
