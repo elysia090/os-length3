@@ -37,3 +37,6 @@ middle_bits_u16.c
 # The other arrow in SPEC §2: a listing going back in.
 ranks8.s
 prefix_xor64.wat
+counting_sort8_u2.c
+kmp_scan8_fixed.c
+float_power2_bits.c
