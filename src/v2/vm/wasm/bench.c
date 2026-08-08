@@ -182,45 +182,114 @@ static u64 run_dense(i64 pc, i64 *event)
     }
 }
 
-/* ------------------------------------------------ 3.2 rows over an array */
-static i64 *r_src, *r_dst, *r_br, *r_old, *r_chg;
-static unsigned char *r_live;
-static int32_t *dst_head, *dst_next, *src_head, *src_next;
+/* ------------------------------------------------ 3.2 rows over an array
+ *
+ * (3.5) says entries are "grouped by written coordinate" and that "the sign
+ * may be represented by two contiguous spans". That is the design, and it is
+ * what makes `fixed_width_time = Theta(ceil(k/W))` mean anything: the wave
+ * becomes two straight loops over contiguous i64, with no row id, no hit bit,
+ * no tag and no order among lanes. Chasing a linked list per incidence — which
+ * is what this file did first — is the one shape that cannot vectorize, and it
+ * turned a span claim into a work claim.
+ *
+ * So the components live in the wave's order rather than beside their rows:
+ *
+ *     old_store   grouped by destination, row i's slot at old_at[i]
+ *     chg_store   grouped by source,      row i's slot at chg_at[i]
+ *
+ * Special rows d, d-1, d-2 are not skipped inside the loop; a branch there
+ * would undo the point. They sit in their spans, get updated with everything
+ * else, and the coordinator rebuilds them from memory straight after, which
+ * overwrites whatever the wave did. (3.6) puts the rebuild after the wave for
+ * exactly this reason.
+ */
+static i64 *r_src, *r_dst, *r_br;
+static i64 *old_store, *chg_store;
+static int32_t *old_off, *chg_off, *old_at, *chg_at;
+static unsigned char *r_row;
 static u64 incidences;
 
 static void rows_alloc(void)
 {
     r_src = malloc(extent * sizeof(i64)); r_dst = malloc(extent * sizeof(i64));
-    r_br = malloc(extent * sizeof(i64));  r_old = malloc(extent * sizeof(i64));
-    r_chg = malloc(extent * sizeof(i64)); r_live = malloc(extent);
-    dst_head = malloc(extent * sizeof(int32_t));
-    src_head = malloc(extent * sizeof(int32_t));
-    dst_next = malloc(extent * sizeof(int32_t));
-    src_next = malloc(extent * sizeof(int32_t));
+    r_br  = malloc(extent * sizeof(i64)); r_row = malloc(extent);
+    old_off = malloc((extent + 2) * sizeof(int32_t));
+    chg_off = malloc((extent + 2) * sizeof(int32_t));
+    old_at = malloc(extent * sizeof(int32_t));
+    chg_at = malloc(extent * sizeof(int32_t));
+    old_store = malloc((extent + 1) * sizeof(i64));
+    chg_store = malloc((extent + 1) * sizeof(i64));
 }
 
-static void rows_reset(void)
+/* Which row sits in which span is a function of the image, and the image does
+ * not move unless the program modifies itself. So this runs once per call
+ * rather than being rebuilt per transition, and the wave keeps the values in
+ * step from there. */
+static void rows_build(void)
 {
-    memset(r_live, 0, extent);
-    for (u64 i = 0; i < extent; ++i) { dst_head[i] = -1; src_head[i] = -1; }
+    memset(r_row, 0, extent);
     incidences = 0;
+    for (u64 i = 0; i <= extent + 1; ++i) { old_off[i] = 0; chg_off[i] = 0; }
+
+    for (u64 i = 0; i + 2 < extent; ++i) {
+        i64 s = mem[i], d = mem[i + 1];
+        if (s < 0 || d < 0 || (u64)s >= extent || (u64)d >= extent) continue;
+        r_row[i] = 1;
+        old_off[d + 1] += 1;
+        chg_off[s + 1] += 1;
+    }
+    for (u64 i = 0; i < extent; ++i) {
+        old_off[i + 1] += old_off[i];
+        chg_off[i + 1] += chg_off[i];
+    }
+    static int32_t *ocur, *ccur;
+    if (!ocur) { ocur = malloc((extent + 2) * sizeof(int32_t));
+                 ccur = malloc((extent + 2) * sizeof(int32_t)); }
+    memcpy(ocur, old_off, (extent + 1) * sizeof(int32_t));
+    memcpy(ccur, chg_off, (extent + 1) * sizeof(int32_t));
+    for (u64 i = 0; i + 2 < extent; ++i) {
+        if (!r_row[i]) continue;
+        i64 s = mem[i], d = mem[i + 1];
+        r_src[i] = s; r_dst[i] = d; r_br[i] = mem[i + 2];
+        old_at[i] = ocur[d]++;
+        chg_at[i] = ccur[s]++;
+        old_store[old_at[i]] = mem[d];
+        chg_store[chg_at[i]] = -mem[s];
+    }
 }
 
-static void materialize(i64 i)
+static void rebuild(i64 i)
 {
-    i64 s = mem[i], d = mem[i + 1];
-    r_src[i] = s; r_dst[i] = d; r_br[i] = mem[i + 2];
-    if (s >= 0 && d >= 0) {
-        r_old[i] = mem[d];
-        r_chg[i] = -mem[s];
-        if (!r_live[i]) {                  /* index once; rebuilds keep it */
-            dst_next[i] = dst_head[d]; dst_head[d] = (int32_t)i;
-            src_next[i] = src_head[s]; src_head[s] = (int32_t)i;
-        }
-        r_live[i] = 1;
-    } else {
-        r_live[i] = 2;                     /* resident but invalid */
-    }
+    if (i < 0 || (u64)i + 2 >= extent || !r_row[i]) return;
+    r_br[i] = mem[i + 2];
+    old_store[old_at[i]] = mem[r_dst[i]];
+    chg_store[chg_at[i]] = -mem[r_src[i]];
+}
+
+/* The wave for one write, which is the body of (3.6) with the successor left
+ * to the caller. */
+static void wave(i64 d, i64 result, i64 chg)
+{
+    if (!chg) return;
+    mem[d] = result;
+    int32_t lo = old_off[d], hi = old_off[d + 1];
+    for (int32_t p = lo; p < hi; ++p) old_store[p] += chg;
+    int32_t clo = chg_off[d], chi = chg_off[d + 1];
+    for (int32_t p = clo; p < chi; ++p) chg_store[p] -= chg;
+    incidences += (u64)(hi - lo) + (u64)(chi - clo);
+    for (i64 off = 0; off < 3; ++off) rebuild(d - off);
+}
+
+/* 3.2, last paragraph: "The initial feed write uses the same wave with
+ * (destination, old, result, change) = (0, M[0], input, input - M[0])."
+ *
+ * Storing the byte straight into `mem[0]` instead skips the wave for
+ * coordinate zero, so every row reading the input cell keeps a stale
+ * component — and the machine then takes a different number of transitions
+ * from the one 3.1 takes. That is what the step-count check caught. */
+static void feed_write(i64 input)
+{
+    wave(0, input, input - mem[0]);
 }
 
 static u64 run_rows(i64 pc, i64 *event)
@@ -228,31 +297,14 @@ static u64 run_rows(i64 pc, i64 *event)
     u64 steps = 0;
     for (;;) {
         steps += 1;
-        if (!r_live[pc]) materialize(pc);
-        if (r_live[pc] == 2) { *event = 0; return steps; }
+        if (!r_row[pc]) { *event = 0; return steps; }
 
-        i64 old = r_old[pc];
-        i64 chg = (r_src[pc] == r_dst[pc]) ? -old : r_chg[pc];
+        i64 old = old_store[old_at[pc]];
+        i64 chg = (r_src[pc] == r_dst[pc]) ? -old : chg_store[chg_at[pc]];
         i64 d = r_dst[pc], br = r_br[pc];
         i64 v = old + chg;                 /* the whole transition */
 
-        if (chg) {
-            mem[d] = v;
-            /* (3.5): one independent single-slot add per incidence. */
-            for (int32_t j = dst_head[d]; j >= 0; j = dst_next[j]) {
-                if (j == d || j == d - 1 || j == d - 2) continue;
-                r_old[j] += chg; incidences += 1;
-            }
-            for (int32_t j = src_head[d]; j >= 0; j = src_next[j]) {
-                if (j == d || j == d - 1 || j == d - 2) continue;
-                if (r_dst[j] == d) continue;
-                r_chg[j] -= chg; incidences += 1;
-            }
-            for (i64 off = 0; off < 3; ++off) {
-                i64 at = d - off;
-                if (at >= 0 && (u64)at < extent && r_live[at]) materialize(at);
-            }
-        }
+        wave(d, v, chg);
         if (v > 0) { pc += 3; continue; }
         if (br >= 0) { pc = br; continue; }
         *event = br; return steps;
@@ -268,27 +320,26 @@ static double now(void)
 
 typedef u64 (*runner)(i64, i64 *);
 
-static u64 whole(runner go, void (*prep)(void), int in_bytes, int out_bytes,
-                 u64 value)
+/* Feed the input, then read once.
+ *
+ * A read commits nothing, so it goes last and there is nothing to roll back.
+ * Reading eight times with feeds between them would need the speculative-row
+ * machinery §3.2 describes, and getting that half-right is how this file
+ * previously came to disagree with itself about the step count. Same call the
+ * Python `rows.measure` counts, so the two sides are comparable. */
+static u64 whole(runner go, void (*prep)(void), int in_bytes, u64 value)
 {
     u64 steps = 0; i64 ev;
     prep();
-    if (go == run_rows) rows_reset();
+    if (go == run_rows) rows_build();
     for (int i = 0; i < in_bytes; ++i) {
         i64 byte = (i64)((value >> (8 * i)) & 255u);
-        if (go == run_hash) hset(0, byte); else mem[0] = byte;
-        if (go == run_rows) { rows_reset(); materialize(0); }
+        if (go == run_hash) hset(0, byte);
+        else if (go == run_rows) feed_write(byte);
+        else mem[0] = byte;
         steps += go(pc_feed, &ev);
     }
-    for (int k = 0; k < out_bytes; ++k) {
-        if (go == run_rows) rows_reset();
-        steps += go(pc_out, &ev);
-        if (k + 1 < out_bytes) {
-            if (go == run_hash) hset(0, 0); else mem[0] = 0;
-            if (go == run_rows) rows_reset();
-            steps += go(pc_feed, &ev);
-        }
-    }
+    steps += go(pc_out, &ev);
     return steps;
 }
 
@@ -303,7 +354,7 @@ int main(int argc, char **argv)
     fclose(f);
     if (!load(blob, (u64)n)) { fprintf(stderr, "did not open\n"); return 2; }
 
-    int in_bytes = atoi(argv[2]), out_bytes = atoi(argv[3]);
+    int in_bytes = atoi(argv[2]); (void)atoi(argv[3]);
     u64 value = (in_bytes >= 8) ? ~0ull : ((1ull << (8 * in_bytes)) - 1);
 
     h_key = malloc(CAP * sizeof(i64)); h_val = malloc(CAP * sizeof(i64));
@@ -319,13 +370,13 @@ int main(int argc, char **argv)
     printf("%-18s", argv[4]);
     u64 first_steps = 0;
     for (int c = 0; c < 3; ++c) {
-        u64 steps = whole(cases[c].go, cases[c].prep, in_bytes, out_bytes, value);
+        u64 steps = whole(cases[c].go, cases[c].prep, in_bytes, value);
         if (!c) first_steps = steps;
         else if (steps != first_steps) printf("  STEPS DIFFER(%llu)", (unsigned long long)steps);
         int reps = 20;
         double t0 = now();
         for (int i = 0; i < reps; ++i)
-            whole(cases[c].go, cases[c].prep, in_bytes, out_bytes, value);
+            whole(cases[c].go, cases[c].prep, in_bytes, value);
         double us = (now() - t0) * 1e6 / reps;
         printf("  %s %8.1f us  %6.1f ns/step", cases[c].name, us,
                us * 1000.0 / (double)steps);

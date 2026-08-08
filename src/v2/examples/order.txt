@@ -4,6 +4,7 @@
 # Order is a presentation choice and belongs next to the examples; it is not a
 # claim about any result.
 ranks8.c
+ranks8_run.c
 inclusive_rank8.c
 byte_mask8.c
 expand_nibbles8.c

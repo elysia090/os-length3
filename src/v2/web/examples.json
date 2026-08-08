@@ -8,6 +8,12 @@
       "source": "#include <stdint.h>\n\n/* Exclusive prefix popcount of an 8-bit mask, one count per byte lane.\n * SPEC \u00a71 / \u00a79: 502 solutions remain tied before canonical selection. */\nuint64_t ranks8(uint8_t m)\n{\n    uint64_t r = 0;\n\n    for (unsigned i = 0; i < 8; ++i)\n        r |= (uint64_t)__builtin_popcount(\n            m & ((1u << i) - 1)) << (8 * i);\n\n    return r;\n}\n"
     },
     {
+      "name": "ranks8_run",
+      "file": "ranks8_run.c",
+      "language": "c",
+      "source": "/* The same kernel as ranks8.c, with a driver \u2014 what Run executes.\n *\n * A paste may carry a `main`. The minimizer never sees it: `main` reads a\n * stream rather than a domain, so minimizing it would report the driver's\n * function instead of the kernel's. The two panes show what QM made of\n * `ranks8` alone.\n *\n * Run compiles this `main` on its own, with `ranks8` left undefined, and\n * answers the call by feeding the artifact. So every line the terminal prints\n * came out of the minimized program:\n *\n *     paste -> QM -> codec -> run\n *\n * Type bytes into the terminal and press Run. `getchar`, `putchar`, `puts`,\n * `print_u64` and `print_hex64` are all there is \u2014 the module is freestanding\n * and those two of them are its only imports.\n */\n#include <stdint.h>\n\n/* Exclusive prefix popcount, one lane per bit: lane i holds how many of the\n * bits below i are set. */\nuint64_t ranks8(uint8_t m)\n{\n    uint64_t r = 0;\n\n    for (unsigned i = 0; i < 8; ++i)\n        r |= (uint64_t)__builtin_popcount(m & ((1u << i) - 1)) << (8 * i);\n\n    return r;\n}\n\nint main(void)\n{\n    int c;\n\n    while ((c = getchar()) >= 0) {\n        print_hex64(ranks8((uint8_t)c));\n        putchar('\\n');\n    }\n    puts(\"done\");\n    return 0;\n}\n"
+    },
+    {
       "name": "inclusive_rank8",
       "file": "inclusive_rank8.c",
       "language": "c",

@@ -88,7 +88,10 @@ class TestRunGoesThroughTheCodec(unittest.TestCase):
 
     def drive(self, example, stdin, name=None):
         name = name or example
-        source = read_example(example + '.c') + (DRIVER % name)
+        return self.drive_source(read_example(example + '.c') + (DRIVER % name),
+                                 stdin)
+
+    def drive_source(self, source, stdin):
         kernel, span = split_main(source)
         self.assertIsNotNone(span, 'the driver was not found')
 
@@ -151,6 +154,32 @@ class TestRunGoesThroughTheCodec(unittest.TestCase):
             want.append('0x%016x' % sum(
                 bin(v & ((1 << k) - 1)).count('1') << (8 * k) for k in range(8)))
         self.assertEqual(rows, want)
+        self.assertEqual(out['ran'], 3)
+
+    def test_the_shipped_example_runs(self):
+        """`examples/ranks8_run.c` is the one a visitor presses Run on.
+
+        It is in the Examples menu, so it has to work as written — including
+        that the minimizer sees `ranks8` and not `main`.
+        """
+        source = read_example('ranks8_run.c')
+        kernel, span = split_main(source)
+        self.assertIsNotNone(span, 'the shipped example lost its main')
+        # The comment at the top names `getchar`, so the check is that the
+        # driver's *body* is gone rather than every mention of it.
+        self.assertNotIn('int main(void)', kernel)
+        self.assertIn('uint64_t ranks8(uint8_t m)', kernel)
+
+        result = json.loads(fallback(kernel, '{}'))
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['frontend']['function']['name'], 'ranks8')
+
+        out = self.drive_source(source, [0, 5, 0xFF])
+        want = ['0x%016x' % sum(bin(v & ((1 << k) - 1)).count('1') << (8 * k)
+                                for k in range(8))
+                for v in (0, 5, 0xFF)]
+        self.assertEqual(out['stdout'].split('\n')[:3], want)
+        self.assertEqual(out['stdout'].split('\n')[3], 'done')
         self.assertEqual(out['ran'], 3)
 
     def test_stdin_ends_the_loop_rather_than_hanging(self):
