@@ -9,15 +9,8 @@ import subprocess
 import unittest
 
 from qm.clang import NATIVE
-from qm.pipeline import solve
-
-EXAMPLES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        'examples')
-
-
-def example(name):
-    with open(os.path.join(EXAMPLES, name)) as handle:
-        return handle.read()
+from qm import pipeline
+from tests.support import read_example as example, solved as solve
 
 
 class TestSpecNumbers(unittest.TestCase):
@@ -51,6 +44,29 @@ class TestSpecNumbers(unittest.TestCase):
         self.assertEqual(result['program']['classes'],
                          ['POINT', 'LIN_CONST', 'CONV'])
         self.assertIn('run IDs', result['recognition'])
+
+
+class TestDeterminism(unittest.TestCase):
+    """Solving the same source twice gives the same answer.
+
+    The suite leans on this everywhere — a fixed-point test compares one solve
+    against another, and `tests/support.solved` memoizes on that basis — so it
+    is pinned here once, against the uncached entry point, instead of being
+    assumed a hundred times.
+    """
+
+    SOURCES = ['ranks8.c', 'select8.c', 'run_ids8.c', 'prefix_xor64.c']
+
+    def test_two_runs_agree(self):
+        for name in self.SOURCES:
+            with self.subTest(example=name):
+                first = pipeline.to_json_safe(
+                    pipeline.solve(example(name), frontend='cfront'))
+                second = pipeline.to_json_safe(
+                    pipeline.solve(example(name), frontend='cfront'))
+                # Wall-clock is the one field allowed to differ.
+                first.pop('elapsed_s'), second.pop('elapsed_s')
+                self.assertEqual(first, second)
 
 
 class TestVerification(unittest.TestCase):

@@ -47,15 +47,17 @@ class Ins(object):
 class Seq(object):
     """A lowered instruction sequence in SSA form."""
 
-    __slots__ = ('ins', 'result', 'notes')
+    __slots__ = ('ins', 'result', 'notes', '_steps')
 
     def __init__(self, ins=None, result=0, notes=None):
         self.ins = list(ins or [])
         self.result = result
         self.notes = list(notes or [])
+        self._steps = None
 
     def emit(self, op, args, const=None, shift=None):
         self.ins.append(Ins(op, args, const, shift))
+        self._steps = None
         self.result = len(self.ins)          # values are 1-based after input 0
         return self.result
 
@@ -68,6 +70,7 @@ class Seq(object):
         for ins in other.ins:
             self.ins.append(Ins(ins.op, [remap[a] for a in ins.args],
                                 ins.const, ins.shift))
+        self._steps = None
         self.result = remap[other.result]
         self.notes.extend(other.notes)
         return self.result
@@ -77,67 +80,146 @@ class Seq(object):
 
 
 # ---------------------------------------------------------------------------
-# Reference interpretation of a lowered sequence
+# Interpretation of a lowered sequence
+#
+# Verifying one target over a 2^16 domain is 65,536 evaluations of the same
+# five instructions, and every candidate on every target pays it again.  Doing
+# that by walking `ins` and testing the opcode makes the opcode test the
+# dominant cost of the whole pipeline: the decision is identical on every
+# input, so it is taken once, here, and what the sweep runs is a list of
+# closures with the constants already bound.
+#
+# There is one implementation, not a fast path beside a reference one — `run`
+# goes through the same closures — so the two cannot disagree.
 # ---------------------------------------------------------------------------
+
+def _step(ins):
+    """Compile one instruction into `values -> value`."""
+    op = ins.op
+    args = ins.args
+    a = args[0] if args else 0
+    b = args[1] if len(args) > 1 else 0
+    k = ins.const
+    n = ins.shift
+
+    if op == 'PDEP':
+        return lambda v: pdep(v[a], k)
+    if op == 'PEXT':
+        return lambda v: pext(v[a], k)
+    if op == 'PEXT_DYN':
+        return lambda v: pext(k, v[a])
+    if op == 'PDEP_DYN':
+        return lambda v: pdep(k, v[a])
+    if op == 'IMUL':
+        return lambda v: v[a] * k
+    if op == 'CLMUL':
+        return lambda v: clmul(v[a], k, 64)
+    if op == 'AND':
+        return lambda v: v[a] & k
+    if op == 'OR':
+        return lambda v: v[a] | k
+    if op == 'XOR':
+        return lambda v: v[a] ^ k
+    if op == 'ADD':
+        return lambda v: v[a] + k
+    if op == 'SUB':
+        return lambda v: v[a] - k
+    if op == 'NOT':
+        return lambda v: ~v[a]
+    if op == 'SHL':
+        return lambda v: v[a] << n
+    if op == 'SHR':
+        return lambda v: v[a] >> n
+    if op == 'BSWAP':
+        return lambda v: bswap64(v[a])
+    if op == 'POPCNT':
+        return lambda v: popcnt(v[a])
+    if op == 'XORR':
+        return lambda v: v[a] ^ v[b]
+    if op == 'ANDR':
+        return lambda v: v[a] & v[b]
+    if op == 'ORR':
+        return lambda v: v[a] | v[b]
+    if op == 'ADDR':
+        return lambda v: v[a] + v[b]
+    if op == 'ANDNR':
+        return lambda v: ~v[a] & v[b]
+    if op == 'LUT':
+        wrap = len(k) - 1
+        return lambda v: k[v[a] & wrap]
+    if op == 'LOOP8':
+        return lambda v: pext(k, v[a])
+    if op == 'SCANXOR':
+        return lambda v: v[a] ^ (v[a] << n)
+    raise ValueError('unknown instruction %r' % op)
+
+
+def steps_of(seq):
+    """The compiled steps of `seq`, built once and cached on it."""
+    steps = seq._steps
+    if steps is None or len(steps) != len(seq.ins):
+        steps = seq._steps = [_step(ins) for ins in seq.ins]
+    return steps
+
+
+def compile_seq(seq):
+    """A callable `x -> y` for `seq`.
+
+    Use this for a domain sweep; `run` is the same thing for a single input.
+    Every step is masked to 64 bits on the way into the value list, so no step
+    has to remember to do it and none of them can forget.
+    """
+    steps = steps_of(seq)
+    result = seq.result
+
+    def evaluate(x):
+        values = [x & M64]
+        append = values.append
+        for step in steps:
+            append(step(values) & M64)
+        return values[result]
+
+    return evaluate
+
 
 def run(seq, x):
     values = [x & M64]
-    for ins in seq.ins:
-        a = values[ins.args[0]] if ins.args else 0
-        b = values[ins.args[1]] if len(ins.args) > 1 else None
-        op = ins.op
-        if op == 'PDEP':
-            v = pdep(a, ins.const)
-        elif op == 'PEXT':
-            v = pext(a, ins.const)
-        elif op == 'PEXT_DYN':
-            v = pext(ins.const, a)
-        elif op == 'PDEP_DYN':
-            v = pdep(ins.const, a)
-        elif op == 'IMUL':
-            v = (a * ins.const) & M64
-        elif op == 'CLMUL':
-            v = clmul(a, ins.const, 64) & M64
-        elif op == 'AND':
-            v = a & ins.const
-        elif op == 'OR':
-            v = a | ins.const
-        elif op == 'XOR':
-            v = a ^ ins.const
-        elif op == 'ADD':
-            v = (a + ins.const) & M64
-        elif op == 'SUB':
-            v = (a - ins.const) & M64
-        elif op == 'NOT':
-            v = (~a) & M64
-        elif op == 'SHL':
-            v = (a << ins.shift) & M64
-        elif op == 'SHR':
-            v = a >> ins.shift
-        elif op == 'BSWAP':
-            v = bswap64(a)
-        elif op == 'POPCNT':
-            v = popcnt(a)
-        elif op == 'XORR':
-            v = a ^ b
-        elif op == 'ANDR':
-            v = a & b
-        elif op == 'ORR':
-            v = a | b
-        elif op == 'ADDR':
-            v = (a + b) & M64
-        elif op == 'ANDNR':
-            v = (~a) & b & M64
-        elif op == 'LUT':
-            v = ins.const[a & (len(ins.const) - 1)]
-        elif op == 'LOOP8':
-            v = pext(ins.const, a)
-        elif op == 'SCANXOR':
-            v = (a ^ (a << ins.shift)) & M64
-        else:
-            raise ValueError('unknown instruction %r' % op)
-        values.append(v & M64)
+    append = values.append
+    for step in steps_of(seq):
+        append(step(values) & M64)
     return values[seq.result]
+
+
+def matches(seq, sem, obs):
+    """(agreeing points, domain size) for `seq` against `sem` under `obs`.
+
+    Every observer that declares a `mask` is `y & mask` and nothing else, so
+    the comparison becomes two integer ands instead of two calls — worth
+    saying out loud because it is 2 * 65,536 calls per target otherwise.
+    """
+    evaluate = compile_seq(seq)
+    values = sem.domain.values()
+    expected = sem.table()
+    m = obs.mask
+    if m is None:
+        matched = sum(1 for x, y in zip(values, expected)
+                      if obs(evaluate(x)) == obs(y))
+    else:
+        matched = sum(1 for x, y in zip(values, expected)
+                      if evaluate(x) & m == y & m)
+    return matched, len(values)
+
+
+def agrees(seq, sem, obs):
+    """True when `seq` reproduces `sem` on every point of its domain."""
+    evaluate = compile_seq(seq)
+    expected = sem.table()
+    m = obs.mask
+    if m is None:
+        return all(obs(evaluate(x)) == obs(y)
+                   for x, y in zip(sem.domain.values(), expected))
+    return all(evaluate(x) & m == y & m
+               for x, y in zip(sem.domain.values(), expected))
 
 
 # ---------------------------------------------------------------------------
@@ -595,7 +677,7 @@ def lower_program(program, isa, verify_against=None):
         if verify_against is None:
             return seq, used
         sem, obs = verify_against
-        if all(obs(run(seq, x)) == obs(y) for x, y in sem.pairs()):
+        if agrees(seq, sem, obs):
             return seq, used
 
         # Advance the first op that still has an untried representative.

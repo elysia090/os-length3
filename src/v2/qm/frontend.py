@@ -417,7 +417,8 @@ class AssemblyFrontend(object):
             exhaustive_limit=int(options.get('exhaustive_limit', 16)),
             probes=int(options.get('probes', 4096)),
         )
-        outputs = [function(x) for x in domain.values()]
+        evaluate = asmfront.compile_function(function)
+        outputs = [evaluate(x) for x in domain.values()]
         sem = table_semantics(outputs, input_bits, output_bits, domain,
                               meta={'function': _base_name(function.name),
                                     'source': 'asm:%s' % dialect})

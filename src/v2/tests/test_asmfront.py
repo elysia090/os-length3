@@ -15,12 +15,11 @@ import os
 import unittest
 
 from qm import isa as isa_mod
-from qm.asmfront import CFrontError, detect, parse, wasm, x86
+from qm.asmfront import (CFrontError, compile_function, detect, parse, wasm,
+                         x86)
 from qm.cfront.errors import UnsupportedC
-from qm.pipeline import solve
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLES = os.path.join(ROOT, 'examples')
+from tests.support import EXAMPLES, example, read_example, solved as solve, target
 
 # Examples with a small enough input to enumerate, which is what lets the
 # reader be checked against the sequence rather than against a sample.  The
@@ -35,16 +34,6 @@ CASES = ['ranks8', 'inclusive_rank8', 'byte_mask8', 'ranks16_nibble',
 # cannot be checked by enumeration.
 SAMPLED_CASES = ['prefix_xor64', 'changes64', 'mask_from_spread',
                  'byte_mask_from_spread']
-
-
-def example(name):
-    with open(os.path.join(EXAMPLES, name + '.c')) as handle:
-        return handle.read()
-
-
-def target(result, name=None):
-    name = name or result['primary_target']
-    return next((t for t in result['targets'] if t['name'] == name), None)
 
 
 def listings(name):
@@ -74,9 +63,8 @@ class TestReadsItsOwnOutput(unittest.TestCase):
                 bits = x86.declared_input_bits(text)
                 self.assertIsNotNone(bits, 'the width annotation was not written')
                 reference = solve(example(name), frontend='cfront')
-                seq = target(reference)['seq']
-                self.assertEqual(table(fn, bits),
-                                 [isa_mod.run(seq, x) for x in range(1 << bits)])
+                lowered = isa_mod.compile_seq(target(reference)['seq'])
+                self.assertEqual(table(fn, bits), table(lowered, bits))
 
     def test_wasm_evaluates_to_the_same_function(self):
         checked = 0
@@ -91,10 +79,32 @@ class TestReadsItsOwnOutput(unittest.TestCase):
                 bits = wasm.declared_input_bits(text)
                 self.assertIsNotNone(bits)
                 reference = solve(example(name), frontend='cfront')
-                seq = target(reference, 'wasm32')['seq']
-                self.assertEqual(table(fn, bits),
-                                 [isa_mod.run(seq, x) for x in range(1 << bits)])
+                lowered = isa_mod.compile_seq(target(reference, 'wasm32')['seq'])
+                self.assertEqual(table(fn, bits), table(lowered, bits))
         self.assertTrue(checked, 'no example lowered to wasm at all')
+
+
+class TestTheTwoEvaluationForms(unittest.TestCase):
+    """Reading one input and sweeping a domain go through the same closures.
+
+    Extracting semantics evaluates a listing on every point of the domain, so
+    each instruction is resolved once and the sweep runs the resolved form. A
+    reader whose two forms disagreed would mean the semantics QM analysed were
+    not the semantics anyone could reproduce by hand.
+    """
+
+    def test_both_readers_agree_with_themselves(self):
+        for name in ('ranks8', 'run_ids8', 'byte_mask8'):
+            x86_text, wasm_text = listings(name)
+            for text in (x86_text, wasm_text):
+                if text is None:
+                    continue
+                function, dialect = parse(text)
+                swept = compile_function(function)
+                with self.subTest(example=name, dialect=dialect):
+                    for x in range(256):
+                        self.assertEqual(function(x), swept(x),
+                                         'input 0x%X' % x)
 
 
 class TestRoundTrip(unittest.TestCase):
@@ -317,10 +327,7 @@ class TestListingExamples(unittest.TestCase):
     checked here rather than trusted.
     """
 
-    @staticmethod
-    def read(name):
-        with open(os.path.join(EXAMPLES, name)) as handle:
-            return handle.read()
+    read = staticmethod(read_example)
 
     def test_the_x86_example_is_already_its_own_minimum(self):
         source = self.read('ranks8.s')

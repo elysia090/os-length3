@@ -45,11 +45,12 @@ _SUB_REGISTERS = {
 
 
 class X86Function(object):
-    __slots__ = ('name', 'instructions')
+    __slots__ = ('name', 'instructions', '_steps')
 
     def __init__(self, name, instructions):
         self.name = name
         self.instructions = instructions
+        self._steps = None
 
     def __call__(self, value):
         return evaluate(self, value)
@@ -139,135 +140,226 @@ def _split_operands(text):
     return out
 
 
+# Operand text and mnemonic spelling do not change between inputs, but a
+# domain sweep re-reads them once per input.  Both are pure functions of a
+# string, so the answers are kept.
+_IMMEDIATES = {}
+_SUFFIXES = {}
+
+
 def _immediate(token):
-    body = token[1:].strip()
-    negative = body.startswith('-')
-    if negative:
-        body = body[1:]
-    value = int(body, 16) if body[:2].lower() == '0x' else int(body, 10)
-    return (-value if negative else value) & M64
+    value = _IMMEDIATES.get(token)
+    if value is None:
+        body = token[1:].strip()
+        negative = body.startswith('-')
+        if negative:
+            body = body[1:]
+        value = int(body, 16) if body[:2].lower() == '0x' else int(body, 10)
+        value = _IMMEDIATES[token] = (-value if negative else value) & M64
+    return value
 
 
 def _canonical(register):
     return _SUB_REGISTERS.get(register, register)
 
 
+# A listing is straight-line, so which registers an instruction touches and
+# what its immediates are do not depend on the input — but a domain sweep asks
+# 65,536 times.  Each instruction is resolved once, here, into a closure over
+# the machine state, and the sweep runs the closures.  `evaluate` runs the same
+# list, so there is one implementation and not a fast path beside a reference
+# one.
+
+XMM = mask_of(128)
+
+
+def steps_of(function):
+    """The compiled steps of `function`, built once and cached on it."""
+    steps = function._steps
+    if steps is None or len(steps) != len(function.instructions):
+        steps = function._steps = [_compile_step(mnemonic, operands)
+                                   for mnemonic, operands
+                                   in function.instructions]
+    return steps
+
+
+def compile_function(function):
+    """A callable `x -> y` for one parsed listing."""
+    steps = steps_of(function)
+
+    def evaluate_one(argument):
+        registers = {ARG_REGISTER: argument & M64}
+        xmm = {}
+        for step in steps:
+            step(registers, xmm)
+        return registers.get(RESULT_REGISTER, 0) & M64
+
+    return evaluate_one
+
+
 def evaluate(function, argument):
     """Run the body with `argument` in %rdi, returning %rax."""
     registers = {ARG_REGISTER: argument & M64}
     xmm = {}
-
-    def read(token):
-        if token.startswith('$'):
-            return _immediate(token)
-        if token.startswith('%xmm'):
-            return xmm.get(token, 0)
-        if token.startswith('%'):
-            return registers.get(_canonical(token), 0)
-        raise UnsupportedC('memory operand %r is not modelled' % token,
-                           hint='this reader evaluates register-only code')
-
-    def write(token, value):
-        if token.startswith('%xmm'):
-            xmm[token] = value & mask_of(128)
-            return
-        if not token.startswith('%'):
-            raise UnsupportedC('memory operand %r is not modelled' % token)
-        full = _canonical(token)
-        # A 32-bit destination zero-extends, which is how these listings keep
-        # the upper half clean; anything narrower merges.
-        if token in _SUB_REGISTERS and token.endswith(('d', 'x', 'i', 'p')) \
-                and token != full:
-            width = 32 if (token.startswith('%e') or token.endswith('d')) else 16
-            if width == 32:
-                registers[full] = value & mask_of(32)
-                return
-            registers[full] = (registers.get(full, 0) & ~mask_of(width)) \
-                | (value & mask_of(width))
-            return
-        registers[full] = value & M64
-
-    for mnemonic, operands in function.instructions:
-        _execute(mnemonic, operands, read, write)
-
+    for step in steps_of(function):
+        step(registers, xmm)
     return registers.get(RESULT_REGISTER, 0) & M64
 
 
-def _execute(mnemonic, operands, read, write):
+def _reader(token):
+    """Resolve a source operand to `(registers, xmm) -> value`."""
+    if token.startswith('$'):
+        value = _immediate(token)
+        return lambda registers, xmm: value
+    if token.startswith('%xmm'):
+        return lambda registers, xmm: xmm.get(token, 0)
+    if token.startswith('%'):
+        full = _canonical(token)
+        return lambda registers, xmm: registers.get(full, 0)
+    raise UnsupportedC('memory operand %r is not modelled' % token,
+                       hint='this reader evaluates register-only code')
+
+
+def _writer(token):
+    """Resolve a destination operand to `(registers, xmm, value) -> None`."""
+    if token.startswith('%xmm'):
+        def to_xmm(registers, xmm, value):
+            xmm[token] = value & XMM
+        return to_xmm
+    if not token.startswith('%'):
+        raise UnsupportedC('memory operand %r is not modelled' % token)
+    full = _canonical(token)
+    # A 32-bit destination zero-extends, which is how these listings keep the
+    # upper half clean; anything narrower merges.
+    if token in _SUB_REGISTERS and token.endswith(('d', 'x', 'i', 'p')) \
+            and token != full:
+        width = 32 if (token.startswith('%e') or token.endswith('d')) else 16
+        if width == 32:
+            low = mask_of(32)
+
+            def zero_extend(registers, xmm, value):
+                registers[full] = value & low
+            return zero_extend
+        low = mask_of(width)
+        keep = ~low
+
+        def merge(registers, xmm, value):
+            registers[full] = (registers.get(full, 0) & keep) | (value & low)
+        return merge
+
+    def to_register(registers, xmm, value):
+        registers[full] = value & M64
+    return to_register
+
+
+_ALU = {'and': lambda a, b: a & b, 'or': lambda a, b: a | b,
+        'xor': lambda a, b: a ^ b, 'add': lambda a, b: a + b,
+        'sub': lambda a, b: a - b}
+
+
+def _compile_step(mnemonic, operands):
+    """Resolve one instruction to a `(registers, xmm) -> None` step."""
     base, width = _strip_suffix(mnemonic)
     mask = mask_of(width)
 
-    if base in ('mov', 'movabs'):
-        write(operands[1], read(operands[0]) & mask)
-        return
-    if base == 'movzx' or base == 'movz':
-        write(operands[1], read(operands[0]) & mask)
-        return
-    if base in ('and', 'or', 'xor', 'add', 'sub'):
-        left = read(operands[1]) & mask
-        right = read(operands[0]) & mask
-        value = {'and': left & right, 'or': left | right, 'xor': left ^ right,
-                 'add': left + right, 'sub': left - right}[base]
-        write(operands[1], value & mask)
-        return
+    if base in ('mov', 'movabs', 'movzx', 'movz'):
+        src, dst = _reader(operands[0]), _writer(operands[1])
+        return lambda r, x: dst(r, x, src(r, x) & mask)
+
+    if base in _ALU:
+        fn = _ALU[base]
+        right, left = _reader(operands[0]), _reader(operands[1])
+        dst = _writer(operands[1])
+        return lambda r, x: dst(r, x, fn(left(r, x) & mask,
+                                         right(r, x) & mask) & mask)
+
     if base == 'imul':
         if len(operands) == 3:
-            write(operands[2], (read(operands[0]) * read(operands[1])) & mask)
+            a, b = _reader(operands[0]), _reader(operands[1])
+            dst = _writer(operands[2])
         else:
-            write(operands[1], (read(operands[1]) * read(operands[0])) & mask)
-        return
+            a, b = _reader(operands[1]), _reader(operands[0])
+            dst = _writer(operands[1])
+        return lambda r, x: dst(r, x, (a(r, x) * b(r, x)) & mask)
+
     if base == 'not':
-        write(operands[0], (~read(operands[0])) & mask)
-        return
+        src, dst = _reader(operands[0]), _writer(operands[0])
+        return lambda r, x: dst(r, x, (~src(r, x)) & mask)
+
     if base == 'neg':
-        write(operands[0], (-read(operands[0])) & mask)
-        return
+        src, dst = _reader(operands[0]), _writer(operands[0])
+        return lambda r, x: dst(r, x, (-src(r, x)) & mask)
+
     if base in ('shl', 'sal', 'shr', 'sar'):
-        amount = read(operands[0]) % width if len(operands) == 2 else 1
+        count = _reader(operands[0]) if len(operands) == 2 else None
         target = operands[-1]
-        value = read(target) & mask
+        src, dst = _reader(target), _writer(target)
         if base in ('shl', 'sal'):
-            value <<= amount
+            def shift(r, x):
+                n = count(r, x) % width if count else 1
+                dst(r, x, ((src(r, x) & mask) << n) & mask)
         elif base == 'shr':
-            value >>= amount
+            def shift(r, x):
+                n = count(r, x) % width if count else 1
+                dst(r, x, ((src(r, x) & mask) >> n) & mask)
         else:
             top = 1 << (width - 1)
-            signed = value - (1 << width) if value & top else value
-            value = signed >> amount
-        write(target, value & mask)
-        return
+            modulus = 1 << width
+
+            def shift(r, x):
+                n = count(r, x) % width if count else 1
+                value = src(r, x) & mask
+                if value & top:
+                    value -= modulus
+                dst(r, x, (value >> n) & mask)
+        return shift
+
     if base == 'bswap':
-        write(operands[0], bswap64(read(operands[0])) if width == 64
-              else int.from_bytes((read(operands[0]) & mask).to_bytes(
-                  width // 8, 'little'), 'big'))
-        return
+        src, dst = _reader(operands[0]), _writer(operands[0])
+        if width == 64:
+            return lambda r, x: dst(r, x, bswap64(src(r, x)))
+        size = width // 8
+        return lambda r, x: dst(r, x, int.from_bytes(
+            (src(r, x) & mask).to_bytes(size, 'little'), 'big'))
+
     if base in ('popcnt', 'lzcnt', 'tzcnt'):
-        value = read(operands[0]) & mask
+        src, dst = _reader(operands[0]), _writer(operands[1])
         if base == 'popcnt':
-            out = popcnt(value)
-        elif base == 'lzcnt':
-            out = width - value.bit_length()
-        else:
-            out = width if value == 0 else (value & -value).bit_length() - 1
-        write(operands[1], out)
-        return
+            return lambda r, x: dst(r, x, popcnt(src(r, x) & mask))
+        if base == 'lzcnt':
+            return lambda r, x: dst(r, x, width - (src(r, x) & mask).bit_length())
+
+        def trailing(r, x):
+            value = src(r, x) & mask
+            dst(r, x, width if value == 0 else (value & -value).bit_length() - 1)
+        return trailing
+
     if base in ('pdep', 'pext'):
         # AT&T reverses Intel: pdep mask, src, dst.
-        maskv = read(operands[0]) & M64
-        source = read(operands[1]) & M64
-        out = pdep(source, maskv) if base == 'pdep' else pext(source, maskv)
-        write(operands[2], out)
-        return
+        select = _reader(operands[0])
+        source = _reader(operands[1])
+        dst = _writer(operands[2])
+        fn = pdep if base == 'pdep' else pext
+        return lambda r, x: dst(r, x, fn(source(r, x) & M64,
+                                         select(r, x) & M64))
+
     if base == 'pclmulqdq':
-        selector = _immediate(operands[0]) if operands[0].startswith('$') else 0
-        left = read(operands[1])
-        right = read(operands[2])
-        a = (right >> 64) if (selector & 1) else (right & M64)
-        b = (left >> 64) if (selector & 0x10) else (left & M64)
-        write(operands[2], clmul(a, b, 64) & mask_of(128))
-        return
+        selector = (_immediate(operands[0])
+                    if operands[0].startswith('$') else 0)
+        left, right = _reader(operands[1]), _reader(operands[2])
+        dst = _writer(operands[2])
+        high_a = bool(selector & 1)
+        high_b = bool(selector & 0x10)
+
+        def carryless(r, x):
+            lv, rv = left(r, x), right(r, x)
+            a = (rv >> 64) if high_a else (rv & M64)
+            b = (lv >> 64) if high_b else (lv & M64)
+            dst(r, x, clmul(a, b, 64) & XMM)
+        return carryless
+
     if base in ('nop', 'endbr64', 'hlt'):
-        return
+        return lambda r, x: None
 
     raise UnsupportedC('x86 instruction %r is not modelled' % mnemonic,
                        hint='this reader covers the 64-bit integer subset a '
@@ -276,6 +368,13 @@ def _execute(mnemonic, operands, read, write):
 
 def _strip_suffix(mnemonic):
     """Split `andq` into ('and', 64); default to 64 bits."""
+    split = _SUFFIXES.get(mnemonic)
+    if split is None:
+        split = _SUFFIXES[mnemonic] = _split_suffix(mnemonic)
+    return split
+
+
+def _split_suffix(mnemonic):
     if mnemonic in ('pdep', 'pext', 'pclmulqdq', 'nop', 'endbr64', 'hlt'):
         return mnemonic, 64
     if len(mnemonic) > 2 and mnemonic[-1] in _SIZES:

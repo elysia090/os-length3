@@ -4,7 +4,7 @@ import unittest
 
 from qm.bits import M64, clmul, mask_of, parity, pdep, pext, popcnt
 from qm.guards import derive_guard, guard_evidence, lane_rule_Z
-from qm.isa import Seq, measure
+from qm.isa import Seq, compile_seq, measure, run
 from qm.observer import parse as parse_observer
 from qm.quotient import future_quotient, streaming_future_quotient
 from qm.semantics import choose_domain, from_callable
@@ -133,6 +133,61 @@ class TestObjective(unittest.TestCase):
         self.assertEqual((span, work), (1, 1))
         self.assertIsInstance(rank, bytes)
         self.assertGreater(bits, 1 << 20)
+
+
+class TestSequenceEvaluation(unittest.TestCase):
+    """`run` and `compile_seq` are one interpreter used two ways.
+
+    Verifying a target sweeps the whole domain, so the opcode decision is taken
+    once and the sweep runs closures. That is only safe while the single-input
+    form goes through the same closures — if these two ever disagreed, every
+    verification count in the report would be measuring a different program
+    from the one that gets emitted.
+    """
+
+    @staticmethod
+    def mixed():
+        """One sequence touching every shape of instruction."""
+        seq = Seq()
+        a = seq.emit('PDEP', [0], const=0x0101010101010101)
+        b = seq.emit('IMUL', [a], const=0x0101010101010100)
+        c = seq.emit('SHL', [b], shift=3)
+        d = seq.emit('SHR', [c], shift=1)
+        e = seq.emit('NOT', [d])
+        f = seq.emit('AND', [e], const=0xF0F0F0F0F0F0F0F0)
+        g = seq.emit('XORR', [f, b])
+        h = seq.emit('ANDNR', [g, c])
+        i = seq.emit('ADDR', [h, a])
+        j = seq.emit('CLMUL', [i], const=0xFFFFFFFFFFFFFFFF)
+        k = seq.emit('BSWAP', [j])
+        m = seq.emit('POPCNT', [k])
+        n = seq.emit('SCANXOR', [m], shift=2)
+        o = seq.emit('PEXT', [n], const=0x8080808080808080)
+        seq.emit('SUB', [o], const=1)
+        return seq
+
+    def test_the_two_forms_agree(self):
+        seq = self.mixed()
+        evaluate = compile_seq(seq)
+        for x in range(256):
+            self.assertEqual(run(seq, x), evaluate(x), 'input 0x%X' % x)
+
+    def test_appending_to_a_sequence_invalidates_the_compiled_form(self):
+        seq = Seq()
+        seq.emit('AND', [0], const=0xFF)
+        self.assertEqual(run(seq, 0x1234), 0x34)
+        seq.emit('SHL', [1], shift=8)
+        self.assertEqual(run(seq, 0x1234), 0x3400)
+
+    def test_extend_invalidates_it_too(self):
+        seq = Seq()
+        seq.emit('AND', [0], const=0xFF)
+        self.assertEqual(run(seq, 0x1234), 0x34)
+
+        tail = Seq()
+        tail.emit('IMUL', [0], const=3)
+        seq.extend(tail, seq.result)
+        self.assertEqual(run(seq, 0x1234), 0x34 * 3)
 
 
 if __name__ == '__main__':
