@@ -182,6 +182,19 @@ class TestRunGoesThroughTheCodec(unittest.TestCase):
         self.assertEqual(out['stdout'].split('\n')[3], 'done')
         self.assertEqual(out['ran'], 3)
 
+    def test_hello_world_is_a_greeting_and_a_kernel(self):
+        """The first thing the Examples menu offers, so it has to work.
+
+        Both halves at once: the greeting is ordinary C, and everything after
+        it came back through the artifact.
+        """
+        out = self.drive_source(read_example('HelloWorld.c'), b'Hi')
+        lines = out['stdout'].split('\n')
+        self.assertEqual(lines[0], 'Hello, world!')
+        self.assertEqual(lines[1], 'H' * 8)
+        self.assertEqual(lines[2], 'i' * 8)
+        self.assertEqual(out['ran'], 2)
+
     def test_stdin_ends_the_loop_rather_than_hanging(self):
         out = self.drive('starts8', [])
         self.assertEqual(out['stdout'], 'done\n')
