@@ -55,7 +55,7 @@ body {
   margin: 0;
   display: flex; flex-direction: column;
   background: var(--bg); color: var(--ink);
-  font: 14px/1.5 var(--sans);
+  font: 15px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -78,13 +78,13 @@ svg {
 
 .brand { display: flex; align-items: center; gap: 14px; }
 .logo { width: 40px; height: 40px; color: var(--accent); stroke-width: 3; }
-.brand-text h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
-.brand-text p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.brand-text h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+.brand-text p { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); }
 
 .controls { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 
 .control { display: inline-flex; align-items: center; gap: 9px; }
-.control > span { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.control > span { font-size: 13.5px; color: var(--muted); white-space: nowrap; }
 /* A control that cannot act on the current input steps back rather than
    disappearing: the layout stays put, and it is clear what is unavailable. */
 .control.off { opacity: 0.42; }
@@ -98,10 +98,10 @@ select, input[type="text"] {
     url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path d='M3 5l3 3 3-3' fill='none' stroke='%238b8b9c' stroke-width='1.4'/></svg>")
     no-repeat right 10px center;
   background-size: 11px 11px;
-  color: var(--ink); font: inherit; font-size: 13px; cursor: pointer;
+  color: var(--ink); font: inherit; font-size: 14px; cursor: pointer;
 }
 input[type="text"] { background-image: none; padding-right: 11px; cursor: text;
-                     font-family: var(--mono); font-size: 12.5px; }
+                     font-family: var(--mono); font-size: 13.5px; }
 select:focus, input:focus { outline: 2px solid rgba(37, 99, 255, .45); }
 input:disabled { opacity: .45; }
 
@@ -116,7 +116,7 @@ input:disabled { opacity: .45; }
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 10px; border: 1px solid transparent; border-radius: 7px;
   background: none; color: var(--ink-2);
-  font: inherit; font-size: 12.5px; cursor: pointer;
+  font: inherit; font-size: 13.5px; cursor: pointer;
 }
 .link:hover { background: var(--chrome); color: var(--ink); }
 .link.copy { border-color: var(--edge); background: var(--chrome); }
@@ -135,7 +135,12 @@ input:disabled { opacity: .45; }
   min-height: 0;
 }
 
-/* Below the three-column width the page scrolls instead of being squeezed.
+/* These breakpoints sit *above* the component rules, so a declaration here
+   only wins where nothing of equal specificity repeats it further down —
+   overriding `.card-foot select { … }` from up here does nothing at all.
+   Change the component rule, or add a class, rather than trusting the cascade.
+
+   Below the three-column width the page scrolls instead of being squeezed.
    As a flex child with min-height 0, the board was shrinking under its own
    content, which left every grid row shorter than the card inside it — that is
    what made the cards overlap on a phone. */
@@ -154,26 +159,27 @@ input:disabled { opacity: .45; }
   .topbar { padding: 12px 14px; gap: 10px; }
   .brand { gap: 11px; }
   .logo { width: 32px; height: 32px; }
-  .brand-text h1 { font-size: 16px; }
-  .brand-text p { font-size: 12px; }
+  .brand-text h1 { font-size: 17px; }
+  .brand-text p { font-size: 13px; }
 
   .controls { width: 100%; gap: 10px 12px; }
   .control { flex: 1 1 160px; min-width: 0; }
-  .control > span { font-size: 12px; }
+  .control > span { font-size: 13px; }
   .control select { flex: 1 1 auto; min-width: 0; width: 100%; }
 
   .board { grid-template-columns: 1fr; gap: 12px; padding: 12px 14px 16px; }
   .card { padding: 14px; border-radius: 10px; }
   .card-head { margin-bottom: 2px; }
-  .card-head h2 { font-size: 15px; }
-  .card-sub { margin: 6px 0 10px; font-size: 12px; }
+  .card-head h2 { font-size: 16px; }
+  .card-sub { margin: 6px 0 10px; font-size: 13px; }
   #card-write .card-head { margin-bottom: 10px; }
-  .framed { height: 264px; }
-  .gutter { flex-basis: 34px; padding-top: 11px; }
-  .highlight, #source, .listing pre { padding-top: 11px; }
+  /* 2px border + 14px above + 14px below + 11 lines of 22px: a fixed-height
+     pane should end on a line rather than halfway through one. */
+  .framed { height: 272px; }
+  .gutter { flex-basis: 37px; }
   .card-foot { margin-top: 10px; padding-top: 9px; min-height: 32px; }
-  .compile { margin-top: 10px; padding: 11px 16px; font-size: 14px; }
-  .pagefoot { padding: 12px 14px 18px; font-size: 12px; }
+  .compile { margin-top: 10px; padding: 11px 28px 11px 16px; font-size: 15px; }
+  .pagefoot { padding: 12px 14px 18px; font-size: 13px; }
 }
 
 /* On a phone the control labels cost a whole row and say nothing the value
@@ -185,9 +191,12 @@ input:disabled { opacity: .45; }
                     overflow: hidden; clip-path: inset(50%); }
   .controls { gap: 8px; flex-wrap: nowrap; }
   .control { flex: 1 1 0; min-width: 0; }
-  .control select { width: 100%; font-size: 12.5px; padding: 7px 26px 7px 10px; }
-  .brand-text h1 { font-size: 15.5px; }
-  .brand-text p { font-size: 11.5px; }
+  .control select { width: 100%; font-size: 13.5px; padding: 7px 26px 7px 10px; }
+  /* "x86-64 + BMI2 + PCLMUL · 2 ops" and a checkbox do not share a phone-width
+     row without one of them being cut; give the target its own. */
+  .card-foot { flex-wrap: wrap; }
+  .brand-text h1 { font-size: 16.5px; }
+  .brand-text p { font-size: 12.5px; }
 }
 
 .card {
@@ -206,7 +215,7 @@ input:disabled { opacity: .45; }
   gap: 12px; margin-bottom: 4px;
 }
 .card-head h2 {
-  margin: 0; font-size: 17px; font-weight: 600;
+  margin: 0; font-size: 18px; font-weight: 600;
   display: inline-flex; align-items: baseline; gap: 8px;
 }
 .step { color: var(--muted); font-weight: 500; }
@@ -214,7 +223,7 @@ input:disabled { opacity: .45; }
 
 .card-sub {
   margin: 8px 0 16px;
-  font-size: 12.5px; color: var(--muted); font-family: var(--mono);
+  font-size: 13.5px; color: var(--muted); font-family: var(--mono);
 }
 /* Facts wrap between themselves, never inside one. */
 .card-sub span { white-space: nowrap; margin-right: 1.8ch; }
@@ -246,7 +255,7 @@ input:disabled { opacity: .45; }
   padding: 6px 8px 6px 11px;
   border: 1px solid transparent; border-radius: 7px;
   background: var(--frame); color: var(--muted);
-  font: 12px var(--mono); cursor: pointer; white-space: nowrap;
+  font: 13px var(--mono); cursor: pointer; white-space: nowrap;
   max-width: 190px;
 }
 .tab:hover { color: var(--ink-2); }
@@ -258,7 +267,7 @@ input:disabled { opacity: .45; }
   display: inline-grid; place-items: center;
   width: 16px; height: 16px; flex: 0 0 auto;
   border: 0; border-radius: 4px; padding: 0;
-  background: none; color: inherit; font: 13px/1 var(--sans); cursor: pointer;
+  background: none; color: inherit; font: 14px/1 var(--sans); cursor: pointer;
   opacity: .55;
 }
 .tab .close:hover { background: var(--edge); opacity: 1; }
@@ -277,11 +286,11 @@ input:disabled { opacity: .45; }
 .editor { display: flex; }
 
 .gutter {
-  flex: 0 0 42px;
+  flex: 0 0 45px;
   padding: 14px 10px 14px 0;
   text-align: right; white-space: pre;
   color: var(--line-no);
-  font: 12.5px/21px var(--mono);
+  font: 13.5px/22px var(--mono);
   user-select: none; overflow: hidden;
 }
 
@@ -289,7 +298,7 @@ input:disabled { opacity: .45; }
 
 .highlight, #source {
   margin: 0; padding: 14px 14px 14px 0;
-  font: 12.5px/21px var(--mono);
+  font: 13.5px/22px var(--mono);
   white-space: pre; border: 0; tab-size: 4;
   width: 100%; height: 100%; overflow: auto;
 }
@@ -310,7 +319,7 @@ input:disabled { opacity: .45; }
 .listing pre {
   margin: 0; padding: 14px;
   height: 100%; overflow: auto;
-  font: 12.5px/21px var(--mono);
+  font: 13.5px/22px var(--mono);
   white-space: pre; color: var(--ink);
 }
 .listing .row + .row { margin-top: 0; }
@@ -342,14 +351,15 @@ input:disabled { opacity: .45; }
   display: flex; align-items: center; gap: 10px;
   margin-top: 14px; padding-top: 12px;
   border-top: 1px solid var(--edge-soft);
-  font-size: 12.5px; color: var(--muted);
+  font-size: 13.5px; color: var(--muted);
   min-height: 42px;
 }
 .card-foot .right { margin-left: auto; }
 .card-foot select {
-  padding: 5px 26px 5px 9px; font-size: 12px;
+  padding: 5px 26px 5px 9px; font-size: 13px;
   min-width: 0; flex: 0 1 auto;      /* give way to the checkbox beside it */
 }
+.card-foot select:empty { display: none; }
 /* The toolchain's full name is in the derivation; the foot shows what fits. */
 #compiled-engine {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -380,7 +390,7 @@ input:disabled { opacity: .45; }
   padding: 13px 28px 13px 16px;
   border: 0; border-radius: var(--radius);
   background: var(--accent); color: #fff;
-  font: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer;
+  font: inherit; font-size: 15.5px; font-weight: 600; cursor: pointer;
 }
 .compile:hover { background: var(--accent-hi); }
 .compile:disabled { opacity: .5; cursor: progress; }
@@ -400,7 +410,7 @@ input:disabled { opacity: .45; }
   display: flex; align-items: center; gap: 12px;
   padding: 26px 24px 32px;
   border-top: 1px solid var(--edge-soft);
-  font-size: 12.5px; color: var(--muted);
+  font-size: 13.5px; color: var(--muted);
 }
 .pagefoot .right { margin-left: auto; }
 
@@ -410,7 +420,7 @@ input:disabled { opacity: .45; }
   position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
   background: var(--chrome); color: var(--ink);
   border: 1px solid var(--edge);
-  padding: 10px 16px; border-radius: 999px; font-size: 13px; z-index: 40;
+  padding: 10px 16px; border-radius: 999px; font-size: 14px; z-index: 40;
   box-shadow: 0 12px 34px rgba(0, 0, 0, .5);
   max-width: min(760px, 88vw);
 }
@@ -427,15 +437,15 @@ input:disabled { opacity: .45; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px; border-bottom: 1px solid var(--edge);
 }
-.dlg-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; }
+.dlg-head h3 { margin: 0; font-size: 15.5px; font-weight: 600; }
 .dlg-body { padding: 16px; overflow: auto; max-height: 70vh; }
 .dlg-body pre {
   margin: 0 0 12px; padding: 11px;
-  font: 12px/1.65 var(--mono); white-space: pre-wrap; word-break: break-word;
+  font: 13px/1.65 var(--mono); white-space: pre-wrap; word-break: break-word;
   background: var(--frame); border: 1px solid var(--edge-soft); border-radius: 8px;
 }
-.dlg-body h4 { margin: 18px 0 8px; font-size: 12.5px; color: var(--ink-2); }
-.dlg-body table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dlg-body h4 { margin: 18px 0 8px; font-size: 13.5px; color: var(--ink-2); }
+.dlg-body table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .dlg-body th, .dlg-body td {
   text-align: left; padding: 7px 8px; vertical-align: top;
   border-bottom: 1px solid var(--edge-soft);
@@ -448,7 +458,7 @@ input:disabled { opacity: .45; }
 .dlg-body .ex {
   padding: 8px 11px; border: 1px solid var(--edge); border-radius: 8px;
   background: var(--chrome); color: var(--ink);
-  font: 12.5px var(--mono); cursor: pointer;
+  font: 13.5px var(--mono); cursor: pointer;
 }
 .dlg-body .ex:hover { border-color: var(--accent); }
 
@@ -456,9 +466,9 @@ input:disabled { opacity: .45; }
   display: grid; grid-template-columns: 140px 1fr;
   gap: 12px; align-items: center; margin-bottom: 12px;
 }
-.field label { font-size: 12.5px; color: var(--ink-2); }
+.field label { font-size: 13.5px; color: var(--ink-2); }
 .field select, .field input { width: 100%; }
-.note { margin: 14px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.note { margin: 14px 0 0; font-size: 13px; color: var(--muted); line-height: 1.6; }
 
 @media (prefers-reduced-motion: no-preference) {
   .compile, .link, .icon-btn, select { transition: background .12s ease, border-color .12s ease, color .12s ease; }
