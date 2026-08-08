@@ -47,6 +47,22 @@ kernel compiles to, and names anything else instead of guessing. A wrong
 evaluation there would be a wrong semantics, and every claim downstream rests
 on it.
 
+## Decide once, not once per input
+
+Everything QM claims rests on evaluating something over a declared domain, and
+a 16-bit kernel has 65,536 points in it. Three places used to walk their own
+program per input and re-decide what each instruction was: the C subset, the
+lowered sequence, and the two assembly readers. The opcode does not depend on
+the input, so the decision is taken once and the sweep runs a list of closures
+with the constants already bound.
+
+In each case there is one implementation and not a fast path beside a reference
+one — `isa.run` and `isa.compile_seq` share their steps, as do
+`asmfront.wasm.evaluate` and its compiled form — and the suite checks the two
+entry points agree. A fast path that could drift from the reference would mean
+the verification counts in the report describe a different program from the one
+that gets emitted.
+
 ## Why the lowering is an SSA DAG
 
 SPEC §8 ranks candidates by `(span, work, L(z), rank)` and SPEC §11 insists that

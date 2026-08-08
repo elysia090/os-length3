@@ -131,8 +131,15 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
     ranked = sorted(per_program, key=lambda e: _rank_key(e, targets))
     best = ranked[0]
     program = best['program']
+    # Several profiles usually lower to the same instructions — x86-64 and
+    # portable differ in what they *offer*, not in what wins — and verifying
+    # the same sequence against the same semantics twice is the same
+    # computation, on a domain where that costs 65,536 evaluations.  `rank` is
+    # the encoded program, so equal ranks are the same program.
+    verified = {}
     for name in targets:
-        best['targets'][name] = _lower_one(program, name, sem, obs, sample)
+        best['targets'][name] = _lower_one(program, name, sem, obs, sample,
+                                           verified)
 
     result['program'] = program.to_dict()
     result['residual_freedom'] = program.residual_freedom
@@ -197,20 +204,20 @@ def _selection_sample(sem):
     return sem.restricted([v for v in picked if v < (1 << sem.input_bits)])
 
 
-def _lower_one(program, isa_name, sem, obs, sample):
+def _lower_one(program, isa_name, sem, obs, sample, verified=None):
     isa = isa_mod.get_isa(isa_name)
     try:
         seq, used = isa_mod.lower_program(program, isa, verify_against=(sample, obs))
     except isa_mod.LoweringFailure as exc:
         return {'ok': False, 'reason': str(exc)}
 
-    matched = 0
-    total = 0
-    for x, y in sem.pairs():
-        total += 1
-        if obs(isa_mod.run(seq, x)) == obs(y):
-            matched += 1
     span, work, l_bits, rank = isa_mod.measure(seq)
+    if verified is None:
+        matched, total = isa_mod.matches(seq, sem, obs)
+    elif rank in verified:
+        matched, total = verified[rank]
+    else:
+        matched, total = verified[rank] = isa_mod.matches(seq, sem, obs)
 
     return {
         'ok': matched == total,

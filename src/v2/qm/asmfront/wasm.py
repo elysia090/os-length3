@@ -56,7 +56,7 @@ class WasmFunction(object):
     """One parsed function: a flat instruction list over locals and a stack."""
 
     __slots__ = ('name', 'param_types', 'result_type', 'instructions',
-                 'local_count')
+                 'local_count', '_steps')
 
     def __init__(self, name, param_types, result_type, instructions,
                  local_count):
@@ -65,6 +65,7 @@ class WasmFunction(object):
         self.result_type = result_type
         self.instructions = instructions
         self.local_count = local_count
+        self._steps = None
 
     @property
     def input_bits(self):
@@ -196,20 +197,56 @@ def _is_number(token):
 # Evaluation
 # ---------------------------------------------------------------------------
 
-def evaluate(function, args, max_steps=200000):
+# A listing is straight-line, so which opcode an instruction is does not depend
+# on the input — but the domain sweep behind an idempotence check asks 65,536
+# times.  The decision is taken once, here, and what the sweep runs is a list of
+# closures.  `evaluate` goes through the same list, so there is one
+# implementation and not a fast path beside a reference one.
+
+MAX_INSTRUCTIONS = 200000
+
+
+def steps_of(function):
+    """The compiled steps of `function`, built once and cached on it."""
+    steps = function._steps
+    if steps is None or len(steps) != len(function.instructions):
+        if len(function.instructions) > MAX_INSTRUCTIONS:
+            raise CFrontError('wasm listing exceeded the step budget')
+        steps = function._steps = [_compile_step(op, immediate)
+                                   for op, immediate in function.instructions]
+    return steps
+
+
+def compile_function(function):
+    """A callable `x -> y` for one parsed function."""
+    steps = steps_of(function)
+    name = function.name
+    in_mask = I32 if function.param_types[0] == 'i32' else M64
+    out_mask = I32 if function.result_type == 'i32' else M64
+    slots = len(function.param_types) + function.local_count + 1
+
+    def evaluate_one(x):
+        locals_ = [0] * slots
+        locals_[0] = x & in_mask
+        stack = []
+        for step in steps:
+            step(stack, locals_)
+        if not stack:
+            raise CFrontError('%s left no value on the stack' % name)
+        return stack[-1] & out_mask
+
+    return evaluate_one
+
+
+def evaluate(function, args):
     """Run the function as a stack machine over 32/64-bit integers."""
     locals_ = [0] * (len(function.param_types) + function.local_count + 1)
     for index, value in enumerate(args):
         locals_[index] = value & (I32 if function.param_types[index] == 'i32'
                                   else M64)
     stack = []
-    steps = 0
-
-    for opcode, immediate in function.instructions:
-        steps += 1
-        if steps > max_steps:
-            raise CFrontError('wasm listing exceeded the step budget')
-        _step(opcode, immediate, stack, locals_)
+    for step in steps_of(function):
+        step(stack, locals_)
 
     if not stack:
         raise CFrontError('%s left no value on the stack' % function.name)
@@ -217,43 +254,41 @@ def evaluate(function, args, max_steps=200000):
     return out & (I32 if function.result_type == 'i32' else M64)
 
 
-def _step(opcode, immediate, stack, locals_):
+def _compile_step(opcode, immediate):
+    """Resolve one instruction to a `(stack, locals) -> None` step."""
     if opcode == 'local.get':
-        stack.append(locals_[immediate])
-        return
-    if opcode == 'local.set':
-        _grow(locals_, immediate)
-        locals_[immediate] = stack.pop()
-        return
-    if opcode == 'local.tee':
-        _grow(locals_, immediate)
-        locals_[immediate] = stack[-1]
-        return
+        index = immediate
+        return lambda stack, locals_: stack.append(locals_[index])
+    if opcode in ('local.set', 'local.tee'):
+        index = immediate
+        keep = opcode == 'local.tee'
+
+        def store(stack, locals_):
+            # A `.local` directive the parser did not count would leave the
+            # frame short; growing here keeps that a missing slot rather than
+            # an IndexError halfway through a listing.
+            while len(locals_) <= index:
+                locals_.append(0)
+            locals_[index] = stack[-1] if keep else stack.pop()
+        return store
     if opcode in ('i32.const', 'i64.const'):
-        bits = 32 if opcode.startswith('i32') else 64
-        stack.append(immediate & mask_of(bits))
-        return
+        value = immediate & (I32 if opcode[1] == '3' else M64)
+        return lambda stack, locals_: stack.append(value)
     if opcode == 'drop':
-        stack.pop()
-        return
+        return lambda stack, locals_: stack.pop()
 
     handler = _OPS.get(opcode)
     if handler is None:
         raise UnsupportedC('wasm instruction %r is not modelled' % opcode,
                            hint='this reader covers the integer subset a small '
                                 'kernel compiles to')
-    handler(stack)
-
-
-def _grow(locals_, index):
-    while len(locals_) <= index:
-        locals_.append(0)
+    return handler
 
 
 def _binary(bits, fn):
     mask = mask_of(bits)
 
-    def op(stack):
+    def op(stack, locals_):
         right = stack.pop() & mask
         left = stack.pop() & mask
         stack.append(fn(left, right) & mask)
@@ -263,7 +298,7 @@ def _binary(bits, fn):
 def _unary(bits, fn):
     mask = mask_of(bits)
 
-    def op(stack):
+    def op(stack, locals_):
         stack.append(fn(stack.pop() & mask) & mask)
     return op
 
@@ -271,7 +306,7 @@ def _unary(bits, fn):
 def _shift(bits, fn):
     mask = mask_of(bits)
 
-    def op(stack):
+    def op(stack, locals_):
         amount = stack.pop() % bits
         value = stack.pop() & mask
         stack.append(fn(value, amount) & mask)
@@ -281,7 +316,7 @@ def _shift(bits, fn):
 def _rotate(bits, left):
     mask = mask_of(bits)
 
-    def op(stack):
+    def op(stack, locals_):
         amount = stack.pop() % bits
         value = stack.pop() & mask
         if amount:
@@ -324,10 +359,12 @@ def _build_ops():
         table[prefix + 'rem_u'] = _binary(bits, lambda a, b: a % b if b else 0)
         _ = mask
 
-    table['i64.extend_i32_u'] = lambda stack: stack.append(stack.pop() & I32)
-    table['i64.extend_i32_s'] = lambda stack: stack.append(
+    table['i64.extend_i32_u'] = lambda stack, locals_: stack.append(
+        stack.pop() & I32)
+    table['i64.extend_i32_s'] = lambda stack, locals_: stack.append(
         _to_signed(stack.pop(), 32) & M64)
-    table['i32.wrap_i64'] = lambda stack: stack.append(stack.pop() & I32)
+    table['i32.wrap_i64'] = lambda stack, locals_: stack.append(
+        stack.pop() & I32)
     return table
 
 

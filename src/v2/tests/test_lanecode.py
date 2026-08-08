@@ -13,10 +13,7 @@ import os
 import re
 import unittest
 
-from qm.pipeline import solve
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLES = os.path.join(ROOT, 'examples')
+from tests.support import EXAMPLES, example, solved as solve, target
 
 ONES = '0101010101010101'
 IOTA = '0706050403020100'
@@ -25,17 +22,10 @@ HIGH = '8080808080808080'
 BYTE = '00000000000000FF'
 
 
-def example(name):
-    with open(os.path.join(EXAMPLES, name + '.c')) as handle:
-        return handle.read()
-
-
 def minimized(name, **kwargs):
     result = solve(example(name), frontend='cfront', **kwargs)
     assert result['ok'], result.get('error')
-    target = next((t for t in result['targets']
-                   if t['name'] == result['primary_target']), None)
-    return result, target
+    return result, target(result)
 
 
 def constants(target):

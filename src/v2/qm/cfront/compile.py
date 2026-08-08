@@ -490,6 +490,13 @@ class Compiler(object):
         rc = _rewrap(right, rtype, common)
         mask = mask_of(common.bits)
 
+        # Unsigned arithmetic *is* "compute, then mask", so the mask goes
+        # inline.  Routing it through the conversion function instead costs one
+        # Python call per operator per evaluation, and the domain of a 16-bit
+        # kernel is 65,536 evaluations.
+        if not common.signed and op in _UNSIGNED_BINARY:
+            return _UNSIGNED_BINARY[op](lc, rc, mask), common
+
         if op == '+':
             return (lambda frame: conv(lc(frame) + rc(frame))), common
         if op == '-':
@@ -672,10 +679,26 @@ def _budget_error():
                             'interactive budget')
 
 
+# Masking both operands of a bitwise operator and masking the result are the
+# same thing, so these are the existing forms with one call taken out, not new
+# arithmetic.
+_UNSIGNED_BINARY = {
+    '+': lambda lc, rc, m: lambda frame: (lc(frame) + rc(frame)) & m,
+    '-': lambda lc, rc, m: lambda frame: (lc(frame) - rc(frame)) & m,
+    '*': lambda lc, rc, m: lambda frame: (lc(frame) * rc(frame)) & m,
+    '&': lambda lc, rc, m: lambda frame: lc(frame) & rc(frame) & m,
+    '|': lambda lc, rc, m: lambda frame: (lc(frame) | rc(frame)) & m,
+    '^': lambda lc, rc, m: lambda frame: (lc(frame) ^ rc(frame)) & m,
+}
+
+
 def _rewrap(emit, from_type, to_type):
     """Insert a conversion only when the static types actually differ."""
     if from_type == to_type:
         return emit
+    if to_type.kind == 'int' and not to_type.signed:
+        mask = mask_of(to_type.bits)
+        return lambda frame: emit(frame) & mask
     conv = _converter(to_type)
     return lambda frame: conv(emit(frame))
 

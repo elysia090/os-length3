@@ -18,7 +18,8 @@ import re
 from ..cfront.errors import CFrontError
 from . import wasm, x86
 
-__all__ = ['detect', 'parse', 'wasm', 'x86', 'CFrontError']
+__all__ = ['detect', 'parse', 'compile_function', 'wasm', 'x86',
+           'CFrontError']
 
 # C first: a paste that declares a function body is C even if a line of it
 # happens to start with `or`.  Guessing wrong here would send C to a reader
@@ -51,3 +52,15 @@ def parse(text, requested=None, dialect=None):
     raise CFrontError('this does not look like x86-64 or wasm32 assembly',
                       hint='paste a listing with a `name:` label and AT&T '
                            'instructions, or a wasm text function')
+
+
+def compile_function(function):
+    """A callable `x -> y` for a parsed listing, whichever dialect it came from.
+
+    Extracting semantics means evaluating the listing on every point of the
+    domain, so the per-instruction decisions are taken once rather than 65,536
+    times.
+    """
+    if isinstance(function, wasm.WasmFunction):
+        return wasm.compile_function(function)
+    return x86.compile_function(function)
