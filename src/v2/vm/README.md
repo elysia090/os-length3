@@ -70,12 +70,22 @@ resident rows. Measured with host clang -O2:
 
 | artifact | reuse | 3.1 hash | 3.1 dense | 3.2 rows |
 | --- | ---: | ---: | ---: | ---: |
-| `starts8` | 1.00x | 57.8 ns/step | 1.6 | 29.7 |
-| `ranks8` | 1.00x | 79.7 | 2.6 | 35.8 |
-| `ranks16_nibble` | 1.00x | 110.8 | 2.7 | 54.1 |
-| `prefix_xor64` | 1.00x | 117.2 | 3.3 | 80.1 |
-| a loop, rolled | 801x | 6.9 | 1.3 | **4.4** |
-| the same loop, unrolled | 1.00x | 88.6 | 4.0 | **3335.4** |
+| `starts8` | 1.00x | 98.4 ns/step | 1.9 | 57.3 |
+| `byte_mask8` | 1.00x | 78.2 | 2.7 | 39.3 |
+| `ranks8` | 1.00x | 92.6 | 2.6 | 42.4 |
+| `ranks16_nibble` | 1.00x | 109.4 | 2.6 | 45.5 |
+| `prefix_xor64` | 1.00x | 123.6 | 3.2 | 52.4 |
+| a loop, rolled | 801x | 6.9 | 1.2 | 7.4 |
+| the same loop, unrolled | 1.00x | 80.8 | 2.5 | **743.4** |
+
+The wave is two contiguous spans, which is what (3.5) asks for — "grouped by
+written coordinate", "the sign may be represented by two contiguous spans" —
+and it is what makes `fixed_width_time = Theta(ceil(k/W))` mean anything. A
+linked list per incidence, which is what this was first written as, is the one
+shape that cannot vectorize, and it turned a span claim into a work claim.
+Fixing it is worth 4.5x exactly where `k` is large: the unrolled loop went from
+3,335 to 743 ns/step. Where `k` is one or two it changes nothing, because
+there is no width to use.
 
 **Reuse is the whole story, and this lowering has none.** Every row in every
 artifact above is entered exactly once — 1,624 transitions over 1,624 distinct
@@ -99,12 +109,19 @@ it is 4.5 million units of work for 3,000 transitions.
 So unrolling now loses on all four coordinates *and* on the wall clock, which
 is the same conclusion `tools/measure_multiply.py` reached from the size side.
 
-Two things the benchmark cannot settle, and neither is a fault in the design.
-It runs the wave serially, so it charges `Theta(k)` time for what §3.7 says
-costs `Theta(k/W)` — the claim is about span, and one thread turns span into
-nothing. And it rebuilds residency per call instead of rolling the wave back,
-where §3.2 says a read keeps rows speculative and a feed commits them; with
-rollback, residency would persist across calls and reuse would rise.
+One thing the benchmark still cannot settle: it runs the wave on one thread,
+so `Theta(ceil(k/W))` is only ever `W = 4` lanes of an auto-vectorized loop
+rather than the workers §3.6 describes. The span claim needs a machine with
+them.
+
+Two mistakes it caught on the way, both by its own step-count check rather
+than by inspection. Storing the input byte straight into `mem[0]` skips the
+wave for coordinate zero, so every row reading the input cell keeps a stale
+component — §3.2's last paragraph says the initial feed write "uses the same
+wave", and it means it. And restoring components to their initial values
+between calls desynchronizes them from a memory that committed feeds have
+moved on; the fix is to feed and then read once, since a read commits nothing
+and there is then nothing to roll back.
 
 ## Two paths through the residual ABI
 

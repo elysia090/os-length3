@@ -31,8 +31,17 @@ def read_example(name):
 
 
 def example(name):
-    """The C source of `examples/<name>.c`."""
-    return read_example(name + '.c')
+    """The kernel in `examples/<name>.c` — what QM is given.
+
+    An example may carry a `main` that drives it, and the product splits that
+    off before minimizing: `main` reads a stream rather than a domain, so
+    minimizing it would report the driver's function. The sweeps here apply the
+    same split, for the same reason. `read_example` still returns the whole
+    file, which is what running it needs.
+    """
+    from qm.clang import split_main
+    kernel, _span = split_main(read_example(name + '.c'))
+    return kernel
 
 
 def _key(source, kwargs):
