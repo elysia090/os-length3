@@ -284,7 +284,7 @@ PROFILES = [
     ISA('x86-64-bmi2-pclmul', 'x86-64 + BMI2 + PCLMUL',
         BASE | {'pdep', 'pext', 'popcnt', 'clmul'},
         'adds carry-less multiply'),
-    ISA('x86-64-v3', 'x86-64-v3',
+    ISA('x86-64-v3', 'x86-64-v3 (AVX2)',
         BASE | {'pdep', 'pext', 'popcnt', 'clmul', 'avx2'},
         'BMI2 + PCLMUL + AVX2 feature level'),
     ISA('portable', 'portable scalar', BASE,
@@ -292,7 +292,7 @@ PROFILES = [
     # wasm32 has i64 arithmetic, shifts, rotates and popcount, and nothing
     # else on this list: no deposit/extract, no carry-less multiply, and no
     # byte swap instruction.
-    ISA('wasm32', 'wasm32', {'alu', 'imul', 'shift', 'lut', 'popcnt', 'rotate'},
+    ISA('wasm32', 'wasm32 (i64 only)', {'alu', 'imul', 'shift', 'lut', 'popcnt', 'rotate'},
         'WebAssembly: i64 arithmetic and shifts only'),
 ]
 

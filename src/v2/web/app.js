@@ -191,7 +191,9 @@ let nextTabId = 1;
 function newTab(name, source) {
   return {
     id: `t${nextTabId++}`,
-    name: name || 'untitled.c',
+    // No extension by default: the language comes from what you paste, and a
+    // tab labelled `.c` while it holds wasm is the confusing part.
+    name: name || 'untitled',
     source: source || '',
     result: null,
     clangAssembly: '',
@@ -334,24 +336,57 @@ function restoreCards() {
 // Editor
 // ---------------------------------------------------------------------------
 
+// What the paste looks like, so the page can say so while you type.  The
+// worker's `route` is what actually decides — this is a hint, and the result
+// corrects it — but a page that calls a wasm listing "C" while the engine reads
+// it as wasm is the confusing part, not the highlighting.
+const LOOKS_LIKE_C =
+  /^\s*#\s*(include|define)\b|\b(?:uint(?:8|16|32|64)_t|unsigned\s+long|int\b)[\s*]+\w+\s*\(|\breturn\b[^;\n]*;/m;
+
+function detectLanguage(text) {
+  if (!text.trim()) return null;
+  if (LOOKS_LIKE_C.test(text)) return 'C';
+  if (/local\.get|\.functype|\bi(32|64)\.(const|add|mul|and|or|xor|shl)\b/.test(text)) {
+    return 'wasm32';
+  }
+  if (/%rdi|%rax|%eax/.test(text)
+      || /^\s*(mov|imul|and|or|xor|shl|shr|pdep|pext)[qlwb]?\s/m.test(text)) {
+    return 'x86-64';
+  }
+  return null;
+}
+
 function editorLanguage() {
+  const detected = detectLanguage($('source').value);
+  if (detected) return detected;
   const tab = activeTab();
   const name = (tab && tab.name) || '';
   if (name.endsWith('.wat')) return 'wasm32';
   if (name.endsWith('.s') || name.endsWith('.S')) return 'x86-64';
-  return 'C';
+  return $('source').value.trim() ? 'C' : null;
 }
 
 function syncSource(options) {
   const code = $('source').value;
+  const language = editorLanguage();
   const lines = code.split('\n');
   const shown = Math.max(lines.length, 14);
   $('highlight').innerHTML =
-    (editorLanguage() === 'C' ? highlightC(code) : highlightAsm(code)) + '\n';
+    (language === 'C' || !language ? highlightC(code) : highlightAsm(code))
+    + '\n';
   $('gutter').textContent =
     Array.from({ length: shown }, (_, i) => i + 1).join('\n');
   $('line-count').textContent = `${lines.length} line${lines.length === 1 ? '' : 's'}`;
-  if (QM_VERSION) $('lang-note').textContent = `${editorLanguage()} (${QM_VERSION})`;
+  $('lang-note').textContent = language || '\u2014';
+
+  // A pasted listing is not compiled, so the two controls that say how to
+  // compile it have nothing to act on.  Leaving them live invites the reading
+  // that they changed something.
+  const compiles = language !== 'x86-64' && language !== 'wasm32';
+  for (const id of ['ctl-target', 'ctl-opt']) {
+    $(id).classList.toggle('off', !compiles);
+    $(id).querySelector('select').disabled = !compiles;
+  }
 
   const tab = activeTab();
   if (tab) {
@@ -411,10 +446,6 @@ function renderCompiled(result) {
 
   $('compiled-opt').textContent = pasted ? '(as pasted)'
                                         : `(${compile.opt || '-O2'})`;
-  $('brand-sub').textContent = pasted
-    ? `${isa || 'Assembly'} \u2192 Quotient Minimizer`
-    : `C \u2192 Assembly (${front.frontend.kind === 'compiler' ? 'Clang ' : ''}`
-      + `${compile.opt || '-O2'}${isa ? `, ${isa}` : ''})`;
 
   const count = stats.available ? stats.instructions
                                 : (front.reference_ops || {}).mean;
@@ -461,8 +492,9 @@ function renderTakeaway() {
 function fillTargets(result) {
   const select = $('sel-isa-view');
   select.innerHTML = (result.targets || []).map((t) => {
-    const label = t.ok ? `${t.name} \u00b7 ${t.work} op${t.work === 1 ? '' : 's'}`
-                       : `${t.name} \u00b7 —`;
+    const title = (t.isa && t.isa.title) || t.name;
+    const label = t.ok ? `${title} \u00b7 ${t.work} op${t.work === 1 ? '' : 's'}`
+                       : `${title} \u00b7 —`;
     return `<option value="${t.name}"${t.ok ? '' : ' disabled'}>`
       + `${escapeHtml(label)}</option>`;
   }).join('');
@@ -501,7 +533,9 @@ const FOOT_DEFAULT =
   'All compilation happens in your browser. No code is sent to any server.';
 
 function status(text) {
-  $('foot-note').textContent = text || FOOT_DEFAULT;
+  $('foot-note').textContent =
+    text || (QM_VERSION ? `${FOOT_DEFAULT}  \u00b7  QM ${QM_VERSION}`
+                        : FOOT_DEFAULT);
 }
 
 let toastTimer = null;
@@ -614,7 +648,8 @@ function fillSettings(capabilities) {
     .join('') + '<option value="mask:custom">Custom bit mask…</option>';
 
   QM_VERSION = capabilities.versions.qm;
-  $('lang-note').textContent = `${editorLanguage()} (${QM_VERSION})`;
+  $('lang-note').textContent = editorLanguage() || '\u2014';
+  status();
 }
 
 function onMessage(event) {
@@ -662,8 +697,12 @@ function onMessage(event) {
     const tab = activeTab();
     if (tab) {
       tab.dirty = false;
+      // Name the tab after the kernel, in the language it turned out to be.
       const name = msg.result.frontend.function.name;
-      if (name && /^untitled/.test(tab.name)) tab.name = `${name}.c`;
+      const listing = msg.result.frontend.frontend.listing;
+      const suffix = listing === 'wasm32' ? '.wat'
+        : listing === 'x86-64' ? '.s' : '.c';
+      if (name && /^untitled/.test(tab.name)) tab.name = `${name}${suffix}`;
     }
     renderTabs();
     fillTargets(msg.result);

@@ -20,31 +20,27 @@
     </svg>
     <div class="brand-text">
       <h1>Quotient Minimizer</h1>
-      <p id="brand-sub">C &rarr; Assembly (Clang -O2)</p>
+      <p id="brand-sub">C &middot; x86-64 &middot; wasm32 &rarr; minimal program</p>
     </div>
   </div>
 
   <div class="controls">
-    <label class="control">
-      <span>Target</span>
+    <label class="control" id="ctl-target">
+      <span>Compile for</span>
       <select id="sel-target">
-        <option value="x86-64">x86-64 (baseline)</option>
-        <option value="x86-64-v2">x86-64-v2</option>
-        <option value="x86-64-v3">x86-64-v3</option>
-        <option value="x86-64-v4">x86-64-v4</option>
+        <option value="x86-64">x86-64 &mdash; baseline</option>
+        <option value="x86-64-v2">x86-64-v2 &mdash; SSE4.2</option>
+        <option value="x86-64-v3">x86-64-v3 &mdash; AVX2, BMI2</option>
+        <option value="x86-64-v4">x86-64-v4 &mdash; AVX-512</option>
       </select>
     </label>
-    <label class="control">
-      <span>Compiler</span>
-      <select id="sel-compiler"><option>starting…</option></select>
-    </label>
-    <label class="control">
+    <label class="control" id="ctl-opt">
       <span>Optimization</span>
       <select id="sel-opt">
         <option>-O1</option><option selected>-O2</option><option>-O3</option>
       </select>
     </label>
-    <button class="icon-btn" id="btn-settings" type="button" title="Observer" aria-label="Observer">
+    <button class="icon-btn" id="btn-settings" type="button" title="Settings" aria-label="Settings">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
     </button>
   </div>
@@ -55,7 +51,7 @@
   <!-- ================= 1. Write C ================= -->
   <section class="card" id="card-write">
     <div class="card-head">
-      <h2><span class="step">1.</span> Write C</h2>
+      <h2><span class="step">1.</span> Source</h2>
       <button class="link" id="btn-examples" type="button">Examples</button>
     </div>
 
@@ -70,13 +66,15 @@
       <div class="code-area">
         <pre class="highlight" id="highlight" aria-hidden="true"></pre>
         <textarea id="source" spellcheck="false" autocomplete="off"
-                  autocapitalize="off" wrap="off" aria-label="C source"></textarea>
+                  autocapitalize="off" wrap="off"
+                  aria-label="C, x86-64 or wasm32 source"
+                  placeholder="Paste C, x86-64 or wasm32."></textarea>
       </div>
     </div>
 
     <div class="card-foot">
       <span id="line-count">0 lines</span>
-      <span class="right" id="lang-note">C (Clang)</span>
+      <span class="right" id="lang-note">C</span>
     </div>
 
     <button class="compile" id="btn-optimize" type="button" disabled>
@@ -145,7 +143,7 @@
 
 <dialog id="settings" class="dlg">
   <div class="dlg-head">
-    <h3>Observer</h3>
+    <h3>Settings</h3>
     <button class="icon-btn" id="settings-close" aria-label="Close">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
@@ -154,6 +152,10 @@
     <div class="field">
       <label for="sel-observer">Observed output</label>
       <select id="sel-observer"></select>
+    </div>
+    <div class="field">
+      <label for="sel-compiler">Frontend for C</label>
+      <select id="sel-compiler"><option>starting…</option></select>
     </div>
     <div class="field">
       <label for="inp-mask">Custom mask</label>

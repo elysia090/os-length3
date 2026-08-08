@@ -8,9 +8,11 @@ C, press **Optimize**, copy the assembly. Two panes, no prose. Compilation,
 solving and verification all happen on your machine — there is no account, no
 upload and no server component.
 
-Three cards: the C you write, what the compiler made of it, and what QM made of
+Three cards: what you paste, what the compiler made of it, and what QM made of
 that — ready to copy. Tabs hold one kernel each, with their own source and their
-own last result.
+own last result. The language is read off the paste rather than picked from a
+menu, and the controls that only apply to compiling C step back when it is a
+listing.
 
 Intrinsics are read, not just emitted. `_pdep_u64`, `_pext_u64`, the BMI1 set,
 `_tzcnt`/`_lzcnt`/`_bzhi`, byte swaps and rotates, and the SSE carry-less
