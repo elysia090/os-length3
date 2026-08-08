@@ -223,6 +223,17 @@ transition; replacing it moved the compiled machine the same way.
 
 The module is smaller for it too — 6,159 bytes of wasm to 4,988.
 
+That left the decode as the whole of what remains, and it was taking two
+64-bit windows per scalar: one to count the zero run, another to read the
+payload. `E(n)` is `2k+2` bits wide, so it fits the window already loaded
+whenever `k <= 31` — which is every address and every value this lowering
+emits. The second window is needed only when the run and the payload cannot
+sit in 64 bits together, which is the `2^62` case the overflow test builds.
+Opening `select8` goes 5,526 -> 4,160 us, `prefix_xor64` 2,830 -> 2,337.
+
+Against where this started: `select8` would not open at all, and now it opens
+in 4.2 ms and runs in 0.28.
+
 Neither is checked against a description of the other. `tests/test_vm.py`
 runs both on the same artifacts and requires identical answers, which is how
 the one real divergence so far was found: the C counted a scalar word's zero
