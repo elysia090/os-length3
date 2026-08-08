@@ -38,7 +38,7 @@ const BUNDLE_URLS = [
 
 export const info = {
   name: 'yowasp-clang',
-  title: 'Clang/LLD (YoWASP, WebAssembly target)',
+  title: 'Clang/LLD (YoWASP)',
   package: '@yowasp/clang',
   version: DEFAULT_VERSION,
   approximateBytes: 105 * 1024 * 1024,
