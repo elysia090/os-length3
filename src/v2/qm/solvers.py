@@ -22,6 +22,12 @@ from .program import (
     point, table,
 )
 
+# The deposit/convolution search enumerates the constant's free high bits, and
+# there are 2^p0 of them at shift p0. Bounded, because the alternative is a
+# solve that does not return: a kernel whose first lane lands in a float's
+# exponent field has thirty trailing zeros and therefore a billion candidates.
+MAX_CONSTANT_CANDIDATES = 1 << 14
+
 MAX_CLOSED_FORM_BITS = 16
 
 
@@ -232,9 +238,23 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
 
     candidates = 0
     solutions = []
+    exhausted = False
 
     for p0 in range(trailing + 1):
         base = t0 >> p0
+        if candidates + (1 << p0) > MAX_CONSTANT_CANDIDATES:
+            # The high bits of the constant are shifted out and are therefore
+            # free, so there are 2^p0 of them to enumerate — and `p0` runs to
+            # the trailing zeros of `target(1)`, which is 30 for a kernel whose
+            # first lane lands in a float's exponent field. That is a billion
+            # candidates, and the search simply never came back.
+            #
+            # Enumerating fewer would silently undercount residual freedom, and
+            # that number is reported. So the search stops instead and says it
+            # did: no program from this family, rather than a program with a
+            # freedom nobody counted.
+            exhausted = True
+            break
         for high in range(1 << p0):
             const = ((base | (high << (64 - p0))) if p0 else base) & M64
             candidates += 1
@@ -272,6 +292,11 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
                     solutions.append((deposit, const))
 
     solutions.sort()
+    if exhausted:
+        return [], candidates, (
+            'deposit/convolution search stopped after %d constants: the first '
+            'lane has %d trailing zeros, so the free high bits do not fit a '
+            'bounded search' % (candidates, trailing))
     return solutions, candidates, None
 
 

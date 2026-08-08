@@ -174,6 +174,24 @@
       "file": "prefix_xor64.wat",
       "language": "asm",
       "source": ";; Inclusive prefix XOR of 64 bits, as wasm32.\n;;\n;; wasm has no carry-less multiply, so the scan is six shift/XOR doublings.\n;; QM reads the listing, recognises the convolution behind it, and on a\n;; target that has PCLMUL emits one instruction for the same function.\n;; qm-input-bits: 64\n(module\n  (func $prefix_xor64_qm (export \"prefix_xor64_qm\") (param i64) (result i64)\n    (local i64 i64 i64 i64 i64 i64)\n    local.get 0\n    local.get 0\n    i64.const 0x1\n    i64.shl\n    i64.xor\n    local.set 1\n    local.get 1\n    local.get 1\n    i64.const 0x2\n    i64.shl\n    i64.xor\n    local.set 2\n    local.get 2\n    local.get 2\n    i64.const 0x4\n    i64.shl\n    i64.xor\n    local.set 3\n    local.get 3\n    local.get 3\n    i64.const 0x8\n    i64.shl\n    i64.xor\n    local.set 4\n    local.get 4\n    local.get 4\n    i64.const 0x10\n    i64.shl\n    i64.xor\n    local.set 5\n    local.get 5\n    local.get 5\n    i64.const 0x20\n    i64.shl\n    i64.xor\n    local.set 6\n    local.get 6\n  )\n)\n"
+    },
+    {
+      "name": "counting_sort8_u2",
+      "file": "counting_sort8_u2.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n/* Princeton 4/e, key-indexed counting \u2014 eight 2-bit keys, sorted in place. */\nuint16_t counting_sort8_u2(uint16_t v)\n{\n    int count[4] = {0, 0, 0, 0};\n    uint16_t out = 0;\n    int at = 0;\n\n    for (int i = 0; i < 8; ++i) count[(v >> (2 * i)) & 3u] += 1;\n    for (int key = 0; key < 4; ++key)\n        for (int n = 0; n < count[key]; ++n)\n            out |= (uint16_t)((uint16_t)key << (2 * at++));\n    return out;\n}\n"
+    },
+    {
+      "name": "kmp_scan8_fixed",
+      "file": "kmp_scan8_fixed.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n/* Princeton 4/e, KMP \u2014 the automaton state after eight bits of text, for the\n * fixed pattern 1011. State is how much of the pattern currently matches. */\nuint8_t kmp_scan8_fixed(uint8_t text)\n{\n    uint8_t state = 0;\n    for (int i = 7; i >= 0; --i) {\n        uint8_t bit = (uint8_t)((text >> i) & 1u);\n        if (state == 0) state = bit ? 1u : 0u;\n        else if (state == 1) state = bit ? 1u : 2u;\n        else if (state == 2) state = bit ? 3u : 0u;\n        else if (state == 3) state = bit ? 4u : 2u;\n        else state = bit ? 1u : 2u;\n    }\n    return state;\n}\n"
+    },
+    {
+      "name": "float_power2_bits",
+      "file": "float_power2_bits.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n/* CS:APP Data Lab \u2014 the bits of 2.0^x, for x read as a signed byte. */\nuint32_t float_power2_bits(uint8_t x)\n{\n    int32_t e = (int32_t)(int8_t)x + 127;\n    if (e <= 0) return 0u;\n    if (e >= 255) return 0x7F800000u;\n    return (uint32_t)e << 23;\n}\n"
     }
   ]
 }
