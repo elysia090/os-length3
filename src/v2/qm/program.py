@@ -7,7 +7,9 @@ search its own physical representatives in `isa.py`.
 Layer 2: depends on `bits` only.
 """
 
-from .bits import mask_of
+from . import straightline
+from .bits import (M64, bswap64, clmul, mask_of, pdep, pext,
+                    popcnt)
 
 # Semantic classes from SPEC §6, plus TABLE for the always-available
 # finite-domain representative.
@@ -107,11 +109,12 @@ class Program(object):
     """
 
     __slots__ = ('ops', 'residual_freedom', 'candidates', 'solver', 'notes',
-                 'input_bits', 'output_bits')
+                 'input_bits', 'output_bits', '_steps')
 
     def __init__(self, ops, residual_freedom, candidates, solver,
                  input_bits, output_bits, notes=None):
         self.ops = list(ops)
+        self._steps = None
         self.residual_freedom = residual_freedom
         self.candidates = candidates
         self.solver = solver
@@ -129,35 +132,7 @@ class Program(object):
 
     def evaluate(self, x):
         """Reference evaluation of the abstract program (ISA-independent)."""
-        from .bits import clmul, pdep, pext
-        value = x & mask_of(self.input_bits)
-        for op in self.ops:
-            if op.kind == 'IDENTITY':
-                continue
-            if op.kind == 'LIN_CONST':
-                basis = op.detail['basis']
-                acc = 0
-                for i, image in enumerate(basis):
-                    if (value >> i) & 1:
-                        acc ^= image
-                value = acc
-            elif op.kind == 'CONV':
-                const = op.detail['const']
-                if op.detail['family'] == 'IMUL':
-                    value = (value * const) & mask_of(64)
-                else:
-                    value = clmul(value, const, 64) & mask_of(64)
-            elif op.kind == 'PERM_DYN':
-                src = op.detail['source']
-                value = (pext(src, value) if op.detail['direction'] == 'gather'
-                         else pdep(src, value))
-            elif op.kind == 'POINT':
-                value = _eval_point(op.detail['steps'], value)
-            elif op.kind == 'TABLE':
-                value = op.detail['table'][value & mask_of(op.detail['input_bits'])]
-            else:
-                raise ValueError('cannot evaluate %r' % op.kind)
-        return value & mask_of(self.output_bits)
+        return compile_program(self)(x)
 
     def to_dict(self):
         return {
@@ -172,7 +147,6 @@ class Program(object):
 
 
 def _eval_point(steps, value):
-    from .bits import M64, bswap64, popcnt
     v = value & M64
     for mnemonic, const, shift in steps:
         if mnemonic == 'AND':
@@ -205,3 +179,74 @@ def _eval_point(steps, value):
         else:
             raise ValueError('unknown POINT step: %r' % mnemonic)
     return v
+
+
+# ---------------------------------------------------------------------------
+# Evaluation
+#
+# Accepting a candidate walks the whole declared domain, and residual freedom
+# is the count of candidates that survive, so a 2^16 kernel is a few million
+# evaluations of the same handful of ops.  Which class an op is does not depend
+# on the input, so the program is written out as one Python function, once, and
+# the walk calls that.  `Program.evaluate` calls the same function.
+# ---------------------------------------------------------------------------
+
+_ENV = {'M': M64, 'pdep': pdep, 'pext': pext, 'clmul': clmul,
+        'bswap64': bswap64, 'popcnt': popcnt, 'point': _eval_point}
+
+
+def _op_expression(op, index, data):
+    """The right-hand side for one abstract op, over the previous value."""
+    kind = op.kind
+    source = 'v%d' % index
+    if kind == 'IDENTITY':
+        return source
+    if kind == 'LIN_CONST':
+        # Only basis vectors with a non-zero image contribute, and the map is
+        # an XOR of them: writing it out beats looping over the basis.
+        terms = [(1 << i, image)
+                 for i, image in enumerate(op.detail['basis']) if image]
+        if not terms:
+            return '0'
+        return ' ^ '.join('(%d if %s & %d else 0)' % (image, source, bit)
+                          for bit, image in terms)
+    if kind == 'CONV':
+        const = op.detail['const']
+        if op.detail['family'] == 'IMUL':
+            return '(%s * %d) & M' % (source, const)
+        return 'clmul(%s, %d, 64) & M' % (source, const)
+    if kind == 'PERM_DYN':
+        name = 'src%d' % index
+        data[name] = op.detail['source']
+        if op.detail['direction'] == 'gather':
+            return 'pext(%s, %s)' % (name, source)
+        return 'pdep(%s, %s)' % (name, source)
+    if kind == 'POINT':
+        name = 'steps%d' % index
+        data[name] = op.detail['steps']
+        return 'point(%s, %s)' % (name, source)
+    if kind == 'TABLE':
+        name = 'table%d' % index
+        data[name] = op.detail['table']
+        return '%s[%s & %d]' % (name, source, mask_of(op.detail['input_bits']))
+    raise ValueError('cannot evaluate %r' % kind)
+
+
+def _build(program):
+    data = {}
+    body = [('v0', 'x & %d' % mask_of(program.input_bits))]
+    for index, op in enumerate(program.ops):
+        body.append(('v%d' % (index + 1), _op_expression(op, index, data)))
+    return straightline.build(
+        'qm_program', ['x'], body,
+        'v%d & %d' % (len(program.ops), mask_of(program.output_bits)),
+        dict(_ENV, **data))
+
+
+def compile_program(program):
+    """A callable `x -> y` for one abstract program, compiled once."""
+    compiled = program._steps
+    if compiled is None or compiled[0] != len(program.ops):
+        compiled = program._steps = (len(program.ops), _build(program))
+    return compiled[1]
+

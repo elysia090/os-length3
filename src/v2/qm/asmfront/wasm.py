@@ -15,6 +15,7 @@ as `(i64.mul (local.get 0) (i64.const 5))` — is reported rather than guessed a
 
 import re
 
+from .. import straightline
 from ..bits import M64, mask_of, popcnt
 from ..cfront.errors import CFrontError, UnsupportedC
 
@@ -195,177 +196,156 @@ def _is_number(token):
 
 # ---------------------------------------------------------------------------
 # Evaluation
+#
+# A listing is straight-line, so which opcode an instruction is — and where the
+# stack stands when it runs — do not depend on the input.  The domain sweep
+# behind an idempotence check asks 65,536 times, so the stack is walked once at
+# compile time and the listing is written out as one Python function with a
+# variable per local and per intermediate.  `evaluate` calls the same function,
+# so there is one implementation and not a fast path beside a reference one.
 # ---------------------------------------------------------------------------
 
-# A listing is straight-line, so which opcode an instruction is does not depend
-# on the input — but the domain sweep behind an idempotence check asks 65,536
-# times.  The decision is taken once, here, and what the sweep runs is a list of
-# closures.  `evaluate` goes through the same list, so there is one
-# implementation and not a fast path beside a reference one.
-
-MAX_INSTRUCTIONS = 200000
+MAX_INSTRUCTIONS = straightline.MAX_LINES
 
 
-def steps_of(function):
-    """The compiled steps of `function`, built once and cached on it."""
-    steps = function._steps
-    if steps is None or len(steps) != len(function.instructions):
-        if len(function.instructions) > MAX_INSTRUCTIONS:
-            raise CFrontError('wasm listing exceeded the step budget')
-        steps = function._steps = [_compile_step(op, immediate)
-                                   for op, immediate in function.instructions]
-    return steps
+def _rotate(value, amount, bits, left):
+    if not amount:
+        return value
+    return ((value << amount) | (value >> (bits - amount))) if left \
+        else ((value >> amount) | (value << (bits - amount)))
+
+
+def _clz(value, bits):
+    return bits - value.bit_length()
+
+
+def _ctz(value, bits):
+    return bits if value == 0 else (value & -value).bit_length() - 1
+
+
+_ENV = {'popcnt': popcnt, 'signed': _to_signed, 'rot': _rotate, 'clz': _clz,
+        'ctz': _ctz}
+
+
+def _forms():
+    """opcode -> (arity, expression template) over already-named operands."""
+    table = {}
+    for bits in (32, 64):
+        p = 'i%d.' % bits
+        m = '0x%X' % mask_of(bits)
+        binary = {'add': '+', 'sub': '-', 'mul': '*', 'and': '&', 'or': '|',
+                  'xor': '^'}
+        for name, symbol in binary.items():
+            table[p + name] = (2, '(({a} & %s) %s ({b} & %s)) & %s'
+                               % (m, symbol, m, m))
+        compare = {'eq': '==', 'ne': '!=', 'lt_u': '<', 'gt_u': '>',
+                   'le_u': '<=', 'ge_u': '>='}
+        for name, symbol in compare.items():
+            table[p + name] = (2, '(1 if ({a} & %s) %s ({b} & %s) else 0)'
+                               % (m, symbol, m))
+        table[p + 'shl'] = (2, '(({a} & %s) << (({b}) %% %d)) & %s'
+                            % (m, bits, m))
+        table[p + 'shr_u'] = (2, '(({a} & %s) >> (({b}) %% %d)) & %s'
+                              % (m, bits, m))
+        table[p + 'shr_s'] = (2, '(signed({a} & %s, %d) >> (({b}) %% %d)) & %s'
+                              % (m, bits, bits, m))
+        table[p + 'rotl'] = (2, 'rot({a} & %s, ({b}) %% %d, %d, True) & %s'
+                             % (m, bits, bits, m))
+        table[p + 'rotr'] = (2, 'rot({a} & %s, ({b}) %% %d, %d, False) & %s'
+                             % (m, bits, bits, m))
+        table[p + 'div_u'] = (2, '((({a} & %s) // ({b} & %s)) & %s '
+                                 'if ({b} & %s) else 0)' % (m, m, m, m))
+        table[p + 'rem_u'] = (2, '((({a} & %s) %% ({b} & %s)) & %s '
+                                 'if ({b} & %s) else 0)' % (m, m, m, m))
+        table[p + 'popcnt'] = (1, 'popcnt({a} & %s)' % m)
+        table[p + 'clz'] = (1, 'clz({a} & %s, %d)' % (m, bits))
+        table[p + 'ctz'] = (1, 'ctz({a} & %s, %d)' % (m, bits))
+        table[p + 'eqz'] = (1, '(1 if ({a} & %s) == 0 else 0)' % m)
+
+    table['i64.extend_i32_u'] = (1, '{a} & 0x%X' % I32)
+    table['i64.extend_i32_s'] = (1, 'signed({a}, 32) & 0x%X' % M64)
+    table['i32.wrap_i64'] = (1, '{a} & 0x%X' % I32)
+    return table
+
+
+_FORMS = _forms()
+
+
+def _build(function):
+    """Walk the stack at compile time and emit one Python function."""
+    if len(function.instructions) > MAX_INSTRUCTIONS:
+        raise CFrontError('wasm listing exceeded the step budget')
+
+    in_mask = I32 if function.param_types[0] == 'i32' else M64
+    out_mask = I32 if function.result_type == 'i32' else M64
+    slots = max([len(function.param_types) + function.local_count] +
+                [immediate + 1
+                 for opcode, immediate in function.instructions
+                 if opcode.startswith('local.') and immediate is not None])
+
+    body = [('l0', 'x & 0x%X' % in_mask)]
+    body += [('l%d' % i, '0') for i in range(1, slots)]
+    stack = []
+    temp = 0
+
+    def pop():
+        if not stack:
+            raise CFrontError('%s pops from an empty stack' % function.name,
+                              hint='the listing is unbalanced, or it uses '
+                                   'control flow this reader does not model')
+        return stack.pop()
+
+    for opcode, immediate in function.instructions:
+        if opcode == 'local.get':
+            stack.append('l%d' % immediate)
+            continue
+        if opcode == 'local.set':
+            body.append(('l%d' % immediate, pop()))
+            continue
+        if opcode == 'local.tee':
+            body.append(('l%d' % immediate, stack[-1] if stack else pop()))
+            stack[-1] = 'l%d' % immediate
+            continue
+        if opcode in ('i32.const', 'i64.const'):
+            stack.append('0x%X' % (immediate & (I32 if opcode[1] == '3'
+                                                else M64)))
+            continue
+        if opcode == 'drop':
+            pop()
+            continue
+
+        form = _FORMS.get(opcode)
+        if form is None:
+            raise UnsupportedC('wasm instruction %r is not modelled' % opcode,
+                               hint='this reader covers the integer subset a '
+                                    'small kernel compiles to')
+        arity, template = form
+        if arity == 2:
+            b = pop()
+            a = pop()
+            expression = template.format(a=a, b=b)
+        else:
+            expression = template.format(a=pop())
+        temp += 1
+        name = 't%d' % temp
+        body.append((name, expression))
+        stack.append(name)
+
+    if not stack:
+        raise CFrontError('%s left no value on the stack' % function.name)
+    return straightline.build('qm_wasm', ['x'], body,
+                              '%s & 0x%X' % (stack[-1], out_mask), _ENV)
 
 
 def compile_function(function):
-    """A callable `x -> y` for one parsed function."""
-    steps = steps_of(function)
-    name = function.name
-    in_mask = I32 if function.param_types[0] == 'i32' else M64
-    out_mask = I32 if function.result_type == 'i32' else M64
-    slots = len(function.param_types) + function.local_count + 1
-
-    def evaluate_one(x):
-        locals_ = [0] * slots
-        locals_[0] = x & in_mask
-        stack = []
-        for step in steps:
-            step(stack, locals_)
-        if not stack:
-            raise CFrontError('%s left no value on the stack' % name)
-        return stack[-1] & out_mask
-
-    return evaluate_one
+    """A callable `x -> y` for one parsed function, compiled once."""
+    compiled = function._steps
+    if compiled is None or compiled[0] != len(function.instructions):
+        compiled = function._steps = (len(function.instructions),
+                                      _build(function))
+    return compiled[1]
 
 
 def evaluate(function, args):
     """Run the function as a stack machine over 32/64-bit integers."""
-    locals_ = [0] * (len(function.param_types) + function.local_count + 1)
-    for index, value in enumerate(args):
-        locals_[index] = value & (I32 if function.param_types[index] == 'i32'
-                                  else M64)
-    stack = []
-    for step in steps_of(function):
-        step(stack, locals_)
-
-    if not stack:
-        raise CFrontError('%s left no value on the stack' % function.name)
-    out = stack[-1]
-    return out & (I32 if function.result_type == 'i32' else M64)
-
-
-def _compile_step(opcode, immediate):
-    """Resolve one instruction to a `(stack, locals) -> None` step."""
-    if opcode == 'local.get':
-        index = immediate
-        return lambda stack, locals_: stack.append(locals_[index])
-    if opcode in ('local.set', 'local.tee'):
-        index = immediate
-        keep = opcode == 'local.tee'
-
-        def store(stack, locals_):
-            # A `.local` directive the parser did not count would leave the
-            # frame short; growing here keeps that a missing slot rather than
-            # an IndexError halfway through a listing.
-            while len(locals_) <= index:
-                locals_.append(0)
-            locals_[index] = stack[-1] if keep else stack.pop()
-        return store
-    if opcode in ('i32.const', 'i64.const'):
-        value = immediate & (I32 if opcode[1] == '3' else M64)
-        return lambda stack, locals_: stack.append(value)
-    if opcode == 'drop':
-        return lambda stack, locals_: stack.pop()
-
-    handler = _OPS.get(opcode)
-    if handler is None:
-        raise UnsupportedC('wasm instruction %r is not modelled' % opcode,
-                           hint='this reader covers the integer subset a small '
-                                'kernel compiles to')
-    return handler
-
-
-def _binary(bits, fn):
-    mask = mask_of(bits)
-
-    def op(stack, locals_):
-        right = stack.pop() & mask
-        left = stack.pop() & mask
-        stack.append(fn(left, right) & mask)
-    return op
-
-
-def _unary(bits, fn):
-    mask = mask_of(bits)
-
-    def op(stack, locals_):
-        stack.append(fn(stack.pop() & mask) & mask)
-    return op
-
-
-def _shift(bits, fn):
-    mask = mask_of(bits)
-
-    def op(stack, locals_):
-        amount = stack.pop() % bits
-        value = stack.pop() & mask
-        stack.append(fn(value, amount) & mask)
-    return op
-
-
-def _rotate(bits, left):
-    mask = mask_of(bits)
-
-    def op(stack, locals_):
-        amount = stack.pop() % bits
-        value = stack.pop() & mask
-        if amount:
-            value = ((value << amount) | (value >> (bits - amount))) if left \
-                else ((value >> amount) | (value << (bits - amount)))
-        stack.append(value & mask)
-    return op
-
-
-def _build_ops():
-    table = {}
-    for bits in (32, 64):
-        prefix = 'i%d.' % bits
-        mask = mask_of(bits)
-        table[prefix + 'add'] = _binary(bits, lambda a, b: a + b)
-        table[prefix + 'sub'] = _binary(bits, lambda a, b: a - b)
-        table[prefix + 'mul'] = _binary(bits, lambda a, b: a * b)
-        table[prefix + 'and'] = _binary(bits, lambda a, b: a & b)
-        table[prefix + 'or'] = _binary(bits, lambda a, b: a | b)
-        table[prefix + 'xor'] = _binary(bits, lambda a, b: a ^ b)
-        table[prefix + 'shl'] = _shift(bits, lambda v, n: v << n)
-        table[prefix + 'shr_u'] = _shift(bits, lambda v, n: v >> n)
-        table[prefix + 'shr_s'] = _shift(
-            bits, lambda v, n, _b=bits: _to_signed(v, _b) >> n)
-        table[prefix + 'rotl'] = _rotate(bits, True)
-        table[prefix + 'rotr'] = _rotate(bits, False)
-        table[prefix + 'popcnt'] = _unary(bits, popcnt)
-        table[prefix + 'clz'] = _unary(
-            bits, lambda v, _b=bits: _b - v.bit_length())
-        table[prefix + 'ctz'] = _unary(
-            bits, lambda v, _b=bits: _b if v == 0 else (v & -v).bit_length() - 1)
-        table[prefix + 'eqz'] = _unary(bits, lambda v: 1 if v == 0 else 0)
-        table[prefix + 'eq'] = _binary(bits, lambda a, b: 1 if a == b else 0)
-        table[prefix + 'ne'] = _binary(bits, lambda a, b: 1 if a != b else 0)
-        table[prefix + 'lt_u'] = _binary(bits, lambda a, b: 1 if a < b else 0)
-        table[prefix + 'gt_u'] = _binary(bits, lambda a, b: 1 if a > b else 0)
-        table[prefix + 'le_u'] = _binary(bits, lambda a, b: 1 if a <= b else 0)
-        table[prefix + 'ge_u'] = _binary(bits, lambda a, b: 1 if a >= b else 0)
-        table[prefix + 'div_u'] = _binary(bits, lambda a, b: a // b if b else 0)
-        table[prefix + 'rem_u'] = _binary(bits, lambda a, b: a % b if b else 0)
-        _ = mask
-
-    table['i64.extend_i32_u'] = lambda stack, locals_: stack.append(
-        stack.pop() & I32)
-    table['i64.extend_i32_s'] = lambda stack, locals_: stack.append(
-        _to_signed(stack.pop(), 32) & M64)
-    table['i32.wrap_i64'] = lambda stack, locals_: stack.append(
-        stack.pop() & I32)
-    return table
-
-
-_OPS = _build_ops()
+    return compile_function(function)(args[0])

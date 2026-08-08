@@ -60,7 +60,8 @@ python3 -m qm.cli examples/select8.c --observer low:8 --json
 **Tests** (standard library only, no dependencies):
 
 ```sh
-python3 tests/run.py
+python3 tests/run.py          # every core
+python3 tests/run.py -j 1     # one process, plain unittest output
 ```
 
 ---
@@ -188,6 +189,7 @@ qm/
   pipeline.py     the whole product in one call
   browser.py      route / plan / finish, the calls the worker makes
   cli.py          §21  the local interactive product on a terminal
+  straightline.py compiles a straight-line integer program to a function
 
 web/              the page: index.html · app.js · worker.js · clang.js
 tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
@@ -224,6 +226,14 @@ observer is the identity on the declared return width; `low:8`, `high:8`,
 a table, and under a plain (span, work) comparison a 2 KB table would "win"
 every 8-bit kernel with one instruction. It is reported, and ranked last, so
 that "no solution" means "no compact solution" rather than "QM gave up".
+
+**Nothing decides per input what it can decide once.** Verifying a lowering
+sweeps the declared domain — 65,536 points for a 16-bit kernel, and a hundred
+solves do it — so the lowered sequence, the normalized program and both
+assembly readers are each written out as one Python function and the sweep
+calls that, rather than walking an instruction list and testing opcodes. Each
+has one implementation, not a fast path beside a reference one, and the suite
+checks that the single-input and swept forms agree.
 
 **Minimizing a minimal program returns it unchanged.** QM reads its own output
 in all three languages — the emitted C uses `_pdep_u64`, `_pext_u64` and

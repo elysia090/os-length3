@@ -16,18 +16,47 @@ implying quotient-aware generation.
 Layer 4: depends on `bits`, `program`, `semantics`, `observer`.
 """
 
-from .bits import M64, mask_of, pdep, pext
+from .bits import M64, clmul, mask_of, pdep, pext
 from .program import (
-    Program, conv, identity, lin_const, perm_dyn_gather, point, table,
+    Program, compile_program, conv, identity, lin_const, perm_dyn_gather,
+    point, table,
 )
 
 MAX_CLOSED_FORM_BITS = 16
 
 
+# How many points a candidate has to survive before the whole domain is asked.
+PREFILTER = 256
+
+
+def _agrees(evaluate, values, expected, obs, mask):
+    if mask is None:
+        return all(obs(evaluate(x)) == obs(y) for x, y in zip(values, expected))
+    return all(evaluate(x) & mask == y & mask
+               for x, y in zip(values, expected))
+
+
 def verify(program, sem, obs):
-    """Exhaustive-on-the-domain check of an abstract program."""
+    """Exhaustive-on-the-domain check of an abstract program.
+
+    Most candidates offered here are wrong, and a wrong candidate is almost
+    never wrong only in some far corner of the domain — so a spread-out sample
+    is asked first, and a rejection costs 256 evaluations instead of 65,536.
+    Anything that survives is still checked on every point, so what `verify`
+    means is unchanged: it accepts a program only after seeing the whole
+    declared domain.
+    """
+    evaluate = compile_program(program)
+    values = sem.domain.values()
+    expected = sem.table()
+    mask = obs.mask
     try:
-        return all(obs(program.evaluate(x)) == obs(y) for x, y in sem.pairs())
+        if len(values) > PREFILTER:
+            step = len(values) // PREFILTER
+            if not _agrees(evaluate, values[::step], expected[::step],
+                           obs, mask):
+                return False
+        return _agrees(evaluate, values, expected, obs, mask)
     except (ValueError, IndexError, KeyError):
         return False
 
@@ -144,13 +173,12 @@ def _apply_conv(value, const, family):
     if family == 'IMUL':
         return (value * const) & M64
     if family == 'CLMUL':
-        from .bits import clmul
         return clmul(value, const, 64) & M64
     raise ValueError('unknown convolution family: %r' % (family,))
 
 
 def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
-                       accept=None, expected=None):
+                       accept=None, expected=None, mask=None, tables=None):
     """Closed-form solver for `LIN_CONST[PDEP(D)] ; CONV(family, M)`.
 
     On a singleton source bit both IMUL and CLMUL act as a shift of M, so
@@ -162,6 +190,12 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
     why the same trailing-zero freedom shows up under both IMUL and CLMUL: it
     comes from the boundary condition, not from one ISA instruction.
 
+    `mask` is the observer's mask when it has one — every observer that
+    declares one is `y & mask` and nothing else, and saying so lets the
+    full-domain check below run without a call per point.  `tables` is a shared
+    deposit-table cache: the two families propose the same deposits, and
+    building a 2^16-entry table twice for one of them is the same work twice.
+
     Returns (solutions, candidates, error).
     """
     if not 1 <= input_bits <= MAX_CLOSED_FORM_BITS:
@@ -170,6 +204,8 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
 
     values = list(range(1 << input_bits)) if domain is None else list(domain)
     accept = accept or (lambda a, b: a == b)
+    if tables is None:
+        tables = {}
 
     t0 = target(1) & M64
     if t0 == 0:
@@ -183,6 +219,17 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
     if expected is None:
         expected = dict((m, target(m) & M64) for m in values)
 
+    # Confirming one candidate walks the whole domain, and there are as many
+    # walks as there are solutions to count — residual freedom is a reported
+    # number, so none of them can be skipped.  What can go is the work inside
+    # the walk: the family branch, the observer call and the dictionary lookup
+    # are all the same on every point, so they are lifted out of it.
+    if mask is not None:
+        wanted = [expected[m] & mask for m in values]
+    else:
+        wanted = [expected[m] for m in values]
+    contiguous = values == list(range(len(values)))
+
     candidates = 0
     solutions = []
 
@@ -192,11 +239,16 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
             const = ((base | (high << (64 - p0))) if p0 else base) & M64
             candidates += 1
 
-            allowed = [
-                [p for p in range(64) if ((const << p) & M64) == lane_targets[lane]]
-                for lane in range(input_bits)
-            ]
-            if any(not slots for slots in allowed) or p0 not in allowed[0]:
+            # Which shifts of this constant hit each lane's target.  Asking
+            # that lane by lane rescans all 64 shifts once per lane; the shifts
+            # do not depend on the lane, so they are indexed once and each lane
+            # is a lookup.  Ascending `p` order is preserved, which `walk`
+            # below relies on.
+            shifts = {}
+            for p in range(64):
+                shifts.setdefault((const << p) & M64, []).append(p)
+            allowed = [shifts.get(image) for image in lane_targets]
+            if None in allowed or p0 not in allowed[0]:
                 continue
 
             deposits = []
@@ -212,13 +264,33 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
             walk(1, p0, [p0])
 
             for deposit in deposits:
-                dep = _deposit_table(deposit, input_bits)
-                if all(accept(_apply_conv(dep[m], const, family), expected[m])
-                       for m in values):
+                dep = tables.get(deposit)
+                if dep is None:
+                    dep = tables[deposit] = _deposit_table(deposit, input_bits)
+                if _confirms(dep, const, family, values, wanted, mask,
+                             contiguous, accept, expected):
                     solutions.append((deposit, const))
 
     solutions.sort()
     return solutions, candidates, None
+
+
+def _confirms(dep, const, family, values, wanted, mask, contiguous, accept,
+              expected):
+    """Does `dep` composed with `const` reproduce the target on every point?"""
+    if mask is None:
+        return all(accept(_apply_conv(dep[m], const, family), expected[m])
+                   for m in values)
+    if family == 'IMUL':
+        if contiguous:
+            return all((d * const) & mask == y for d, y in zip(dep, wanted))
+        return all((dep[m] * const) & mask == y
+                   for m, y in zip(values, wanted))
+    if contiguous:
+        return all(clmul(d, const, 64) & mask == y
+                   for d, y in zip(dep, wanted))
+    return all(clmul(dep[m], const, 64) & mask == y
+               for m, y in zip(values, wanted))
 
 
 def solve_deposit_conv_family(sem, obs, options=None):
@@ -230,12 +302,13 @@ def solve_deposit_conv_family(sem, obs, options=None):
 
     out = []
     expected = dict(zip(sem.domain.values(), sem.table()))
+    tables = {}
     for family in families:
         sols, candidates, err = solve_deposit_conv(
             sem.target, sem.input_bits, family,
             domain=sem.domain.values(),
             accept=lambda a, b: obs(a) == obs(b),
-            expected=expected,
+            expected=expected, mask=obs.mask, tables=tables,
         )
         if not sols:
             continue

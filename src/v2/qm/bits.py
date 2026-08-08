@@ -28,20 +28,37 @@ def mask_of(bits):
     return (1 << bits) - 1 if bits > 0 else 0
 
 
-def popcnt(x):
-    return bin(x).count('1')
+if hasattr(0, 'bit_count'):          # Python 3.10 and later
+    def popcnt(x):
+        return x.bit_count()
+else:                                # pragma: no cover - older interpreters
+    def popcnt(x):
+        return bin(x).count('1')
 
 
 def parity(x):
-    return bin(x).count('1') & 1
+    return popcnt(x) & 1
 
 
 def clmul(a, b, bits):
-    """Carry-less multiplication over GF(2)[x], keeping the full product."""
+    """Carry-less multiplication over GF(2)[x], keeping the full product.
+
+    Only set bits contribute a shift, so only those are visited, and the
+    sparser operand is the one walked — the product is symmetric, and the
+    constants these kernels multiply by are often dense (all-ones is a prefix
+    XOR) while the values going through them are not.  This is the most-called
+    primitive in the package; scanning all 64 positions to find the eight that
+    matter was most of the cost of a CLMUL family search.
+    """
+    limit = 1 << bits
+    b &= limit - 1
+    if a < limit and popcnt(a) < popcnt(b):
+        a, b = b, a
     r = 0
-    for i in range(bits):
-        if (b >> i) & 1:
-            r ^= a << i
+    while b:
+        low = b & -b
+        r ^= a << (low.bit_length() - 1)
+        b ^= low
     return r
 
 
@@ -63,26 +80,36 @@ def gf128_mul(a, b):
 
 
 def pdep(v, m, bits=64):
-    """Reference PDEP: scatter the low bits of `v` into the set bits of `m`."""
+    """Reference PDEP: scatter the low bits of `v` into the set bits of `m`.
+
+    Only the set bits of the mask do anything, so only those are visited.  The
+    masks these kernels use are sparse — one bit per byte lane, one per nibble
+    — and walking all 64 positions to find eight of them is most of the cost of
+    a domain sweep.
+    """
+    m &= mask_of(bits)
     r = 0
     j = 0
-    for i in range(bits):
-        if (m >> i) & 1:
-            if (v >> j) & 1:
-                r |= 1 << i
-            j += 1
+    while m:
+        low = m & -m
+        if (v >> j) & 1:
+            r |= low
+        j += 1
+        m ^= low
     return r
 
 
 def pext(v, m, bits=64):
     """Reference PEXT: gather the bits of `v` selected by `m` into low bits."""
+    m &= mask_of(bits)
     r = 0
     j = 0
-    for i in range(bits):
-        if (m >> i) & 1:
-            if (v >> i) & 1:
-                r |= 1 << j
-            j += 1
+    while m:
+        low = m & -m
+        if v & low:
+            r |= 1 << j
+        j += 1
+        m ^= low
     return r
 
 
