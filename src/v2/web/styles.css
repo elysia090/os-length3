@@ -380,7 +380,14 @@ input:disabled { opacity: .45; }
 }
 .compile:hover { background: var(--accent-hi); }
 .compile:disabled { opacity: .5; cursor: progress; }
-.compile .play { fill: currentColor; stroke: none; width: 15px; height: 15px; }
+.compile .play {
+  fill: currentColor; stroke: none; width: 15px; height: 15px;
+  /* Centring [icon + gap + word] as a block puts the *word* half the icon's
+     width right of centre, and the word is what the eye reads as the label —
+     the button looks shifted right. Cancelling the icon's contribution to the
+     flex line centres the word and lets the icon hang to its left. */
+  margin-left: -24px;
+}
 
 /* -------------------------------------------------------------- pagefoot */
 
