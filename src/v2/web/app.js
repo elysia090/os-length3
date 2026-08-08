@@ -43,6 +43,11 @@ const state = {
   capabilities: null,
   view: 'asm',
   isa: null,
+  // Whether the paste defines a `main`. Python decides it, on every solve, so
+  // the page never has a second opinion about what the source contains.
+  hasMain: false,
+  // An edit that landed while a solve was running.
+  pending: false,
   // One tab per kernel you are working on. Each keeps its own source and its
   // own last result, so switching back shows what you left, not a blank card.
   tabs: [],
@@ -540,9 +545,34 @@ function optimize() {
   if (!source) return;
 
   state.busy = true;
-  $('btn-optimize').disabled = true;
+  state.pending = false;
   $('foot-note').textContent = 'compiling…';
   state.worker.postMessage({ type: 'solve', source, options: currentOptions() });
+}
+
+// Typing is the only thing that starts a compile now; there is no button. The
+// delay is long enough that a burst of keystrokes is one solve rather than
+// twenty, and `state.pending` remembers an edit that arrived while the last
+// one was still running so nothing typed is ever left unanswered.
+const AUTO_DELAY = 700;
+let autoTimer = null;
+
+// One place for "the worker stopped": it clears the flag, repaints Run, and
+// picks up an edit that arrived while it was busy. Three call sites used to
+// re-enable a Compile button each and none of them knew about the queue.
+function finishBusy() {
+  state.busy = false;
+  renderRunControls();
+  if (state.pending) { state.pending = false; scheduleCompile(); }
+}
+
+function scheduleCompile() {
+  clearTimeout(autoTimer);
+  if (!$('source').value.trim()) return;
+  autoTimer = setTimeout(() => {
+    if (state.busy) { state.pending = true; return; }
+    optimize();
+  }, AUTO_DELAY);
 }
 
 const FOOT_DEFAULT =
@@ -570,37 +600,44 @@ function toast(message, isError) {
 // to show a program and not to try it.
 // --------------------------------------------------------------------------
 
-function runMinimized() {
-  if (!state.result || !state.result.ok || state.busy) return;
-  state.worker.postMessage({
-    type: 'evaluate',
-    target: state.isa || '',
-    value: $('run-input').value || '0',
-  });
+function termWrite(text, className) {
+  const out = $('term-out');
+  const line = document.createElement('span');
+  if (className) line.className = className;
+  line.textContent = text;
+  out.appendChild(line);
+  out.scrollTop = out.scrollHeight;
+}
+
+function runProgram() {
+  // Run belongs to the source, not to the minimized program: what it executes
+  // is the paste's own `main`. Without one there is nothing to run and nothing
+  // changes — the two panes already show what QM made of the kernel.
+  if (!state.hasMain || state.busy) return;
+  const stdin = $('term-in').value;
+  termWrite(`> ${stdin}\n`, 'term-echo');
+  $('term-in').value = '';
+  state.busy = true;
+  $('btn-run').disabled = true;
+  status('running main…');
+  state.worker.postMessage({ type: 'exec', source: $('source').value, stdin });
 }
 
 function renderRunControls() {
-  const ready = Boolean(state.result && state.result.ok
-                        && currentTarget() && currentTarget().ok);
-  $('btn-run').disabled = !ready;
-  $('run-input').disabled = !ready;
-  if (!ready) {
-    $('run-input').value = '';
-    $('run-input').placeholder = 'input';
-    return;
-  }
-  const bits = state.result.frontend.input_bits;
-  $('run-input').placeholder = `${bits}-bit input`;
+  // The terminal is only there when there is a `main` to drive it.
+  $('term').hidden = !state.hasMain;
+  $('btn-run').disabled = !state.hasMain || state.busy;
 }
 
 function showRunResult(result) {
-  if (!result.ok) { toast(result.error, true); return; }
-  // Hex alongside decimal: these are bit patterns, and a lane structure is
-  // unreadable in base ten.
-  const out = BigInt(result.output);
-  const digits = Math.ceil(state.result.frontend.output_bits / 4);
-  status(`${result.input} \u2192 ${result.output}`
-         + `  (0x${out.toString(16).toUpperCase().padStart(digits, '0')})`);
+  if (!result.ok) {
+    termWrite(`${result.error}\n`, 'term-err');
+    status();
+    return;
+  }
+  if (result.stdout) termWrite(result.stdout);
+  termWrite(`[exit ${result.code}]\n`, 'term-echo');
+  status();
 }
 
 async function copyOutput() {
@@ -726,7 +763,7 @@ function onMessage(event) {
 
   if (msg.type === 'progress') { status(msg.message); return; }
   if (msg.type === 'notice') { toast(msg.message, true); return; }
-  if (msg.type === 'evaluated') { showRunResult(msg.result); return; }
+  if (msg.type === 'ran') { finishBusy(); showRunResult(msg.result); return; }
 
   if (msg.type === 'ready') {
     state.ready = true;
@@ -734,9 +771,12 @@ function onMessage(event) {
     fillSettings(msg.capabilities);
     $('settings-note').textContent = msg.clang.configured === false
       ? 'No Clang bundle configured; the built-in C subset frontend is used.'
-      : `Clang/WASM loads on the first Compile. Listing: ${msg.clang.listing}.`;
+      : `Clang/WASM loads on the first solve. Listing: ${msg.clang.listing}.`;
     status();
-    $('btn-optimize').disabled = false;
+    finishBusy();
+    // The paste that was restored from the last session has never been through
+    // the engine, so the first solve starts as soon as the engine is up.
+    scheduleCompile();
     return;
   }
 
@@ -746,8 +786,8 @@ function onMessage(event) {
   }
 
   if (msg.type === 'done') {
-    state.busy = false;
-    $('btn-optimize').disabled = false;
+    state.hasMain = Boolean(msg.has_main);
+    finishBusy();
     state.result = msg.result;
 
     if (!msg.result.ok) {
@@ -790,8 +830,7 @@ function onMessage(event) {
   }
 
   if (msg.type === 'fatal') {
-    state.busy = false;
-    $('btn-optimize').disabled = false;
+    finishBusy();
     status('failed');
     toast(msg.message, true);
   }
@@ -847,7 +886,7 @@ function init() {
   });
 
   const editor = $('source');
-  editor.addEventListener('input', syncSource);
+  editor.addEventListener('input', () => { syncSource(); scheduleCompile(); });
   editor.addEventListener('scroll', () => {
     $('highlight').scrollTop = editor.scrollTop;
     $('highlight').scrollLeft = editor.scrollLeft;
@@ -884,13 +923,12 @@ function init() {
     }
   });
 
-  $('btn-optimize').addEventListener('click', optimize);
+  $('btn-run').addEventListener('click', runProgram);
   $('btn-newtab').addEventListener('click', () => addTab());
   $('btn-examples').addEventListener('click', showExamples);
   $('btn-copy').addEventListener('click', copyOutput);
-  $('btn-run').addEventListener('click', runMinimized);
-  $('run-input').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') { event.preventDefault(); runMinimized(); }
+  $('term-in').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); runProgram(); }
   });
   $('btn-details').addEventListener('click', showDetails);
   $('btn-settings').addEventListener('click', () => $('settings').showModal());

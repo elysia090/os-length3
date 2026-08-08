@@ -373,6 +373,26 @@ input:disabled { opacity: .45; }
 .ops { color: var(--operand); }
 .lbl { color: var(--label); }
 
+/* The terminal: a transcript and one line you type into. It only appears
+   when the paste has a `main`, because without one there is nothing to run. */
+.terminal { display: flex; flex-direction: column; min-height: 96px;
+            max-height: 220px; }
+.terminal #term-out {
+  margin: 0; padding: 10px 12px 0; overflow: auto; flex: 1;
+  font: 13px/20px var(--mono); white-space: pre-wrap; word-break: break-word;
+  color: var(--ink);
+}
+.term-line { display: flex; align-items: center; gap: 6px;
+             padding: 4px 12px 8px; }
+.term-prompt { color: var(--muted); font: 13px/20px var(--mono); }
+#term-in {
+  flex: 1; border: 0; background: none; outline: none; padding: 2px 0;
+  font: 13px/20px var(--mono); color: var(--ink);
+}
+#term-in::placeholder { color: var(--muted); }
+.term-echo { color: var(--muted); }
+.term-err { color: var(--bad, #d33); }
+
 .hint { color: var(--muted); font-family: var(--sans); }
 .hint b { color: var(--ink-2); }
 

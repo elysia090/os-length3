@@ -61,9 +61,19 @@
       <span id="line-count">0 lines</span>
     </div>
 
-    <button class="compile" id="btn-optimize" type="button" disabled>
+    <div class="framed terminal" id="term" hidden>
+      <pre id="term-out"></pre>
+      <div class="term-line">
+        <span class="term-prompt" aria-hidden="true">&gt;</span>
+        <input id="term-in" type="text" spellcheck="false" autocomplete="off"
+               autocapitalize="off" placeholder="stdin"
+               aria-label="Standard input for main">
+      </div>
+    </div>
+
+    <button class="compile" id="btn-run" type="button" disabled>
       <svg viewBox="0 0 24 24" class="play" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
-      Compile
+      Run
     </button>
   </section>
 
@@ -71,15 +81,6 @@
   <section class="card" id="card-copy">
     <div class="card-head">
       <h2><span class="step">2.</span> Minimized Program</h2>
-      <div class="runbar">
-        <input id="run-input" type="text" spellcheck="false" autocomplete="off"
-               placeholder="input" aria-label="Input value, decimal or 0x hex"
-               disabled>
-        <button class="link run" id="btn-run" type="button" disabled>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
-          Run
-        </button>
-      </div>
     </div>
     <div class="card-sub" id="qm-sub">— instructions</div>
 
