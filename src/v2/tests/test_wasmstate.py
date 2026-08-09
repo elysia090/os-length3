@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from qm.transducer import StateLimit
+from qm.cfront.errors import UnsupportedC
 from qm.wasmstate import (EOF, WasmStateError, compile_stream, decode_module,
                           invoke, observe, PagedMemory, run_until_boundary,
                           start_state, stream_initial, stream_step)
@@ -69,6 +70,26 @@ def indirect_driver():
             + _section(9, elements) + _section(10, code))
 
 
+def c_abi_indirect_driver():
+    """A six-argument dispatch slot targeting a three-argument C handler."""
+    types = (b'\x02'
+             b'\x60\x03\x7f\x7f\x7f\x01\x7f'
+             b'\x60\x06\x7f\x7f\x7f\x7f\x7f\x7f\x01\x7f')
+    functions = b'\x02\x00\x01'
+    table = b'\x01\x70\x00\x01'
+    exports = b'\x01' + _name('main') + b'\x00\x01'
+    elements = b'\x01\x00\x41\x00\x0b\x01\x00'
+    target = b'\x00\x20\x00\x20\x01\x6a\x20\x02\x6a\x0b'
+    caller = (b'\x00' + b''.join(b'\x20' + bytes([index])
+                                  for index in range(6))
+              + b'\x41\x00\x11\x01\x00\x0b')
+    code = b'\x02' + _u(len(target)) + target + _u(len(caller)) + caller
+    return (b'\x00asm\x01\x00\x00\x00'
+            + _section(1, types) + _section(3, functions)
+            + _section(4, table) + _section(7, exports)
+            + _section(9, elements) + _section(10, code))
+
+
 def atomic_add_driver():
     """An i32 atomic read-modify-write over internal linear memory."""
     types = b'\x01\x60\x02\x7f\x7f\x01\x7f'
@@ -81,6 +102,30 @@ def atomic_add_driver():
             + _section(1, types) + _section(3, functions)
             + _section(5, memory) + _section(7, exports)
             + _section(10, code))
+
+
+def imported_resources_driver():
+    """A module initialized into explicit host memory and a host table."""
+    types = b'\x01\x60\x00\x01\x7f'
+    imports = (
+        b'\x03'
+        + _name('env') + _name('memory') + b'\x02\x00\x02'
+        + _name('env') + _name('table') + b'\x01\x70\x00\x01'
+        + _name('env') + _name('base') + b'\x03\x7f\x00'
+    )
+    functions = b'\x01\x00'
+    exports = b'\x01' + _name('main') + b'\x00\x00'
+    # Return memory[base]. The active data and element segments both target
+    # imported resources, so decoding without bindings must remain a refusal.
+    body = b'\x00\x23\x00\x28\x02\x00\x0b'
+    code = b'\x01' + _u(len(body)) + body
+    elements = b'\x01\x00\x41\x00\x0b\x01\x00'
+    data = b'\x01\x00\x23\x00\x0b\x04\x2a\x00\x00\x00'
+    return (b'\x00asm\x01\x00\x00\x00'
+            + _section(1, types) + _section(2, imports)
+            + _section(3, functions) + _section(7, exports)
+            + _section(9, elements) + _section(10, code)
+            + _section(11, data))
 
 
 class TestCompiledMainIsAStateStep(unittest.TestCase):
@@ -169,6 +214,39 @@ class TestPersistentLinearMemory(unittest.TestCase):
                          [65535, 65536])
         self.assertEqual(original.pages, ())
 
+    def test_a_page_aligned_disposable_range_returns_to_its_backing(self):
+        original = PagedMemory(b'base' + bytes(1020), 2048)
+        changed = original.write(256, b'x' * 512).write(900, b'kept')
+
+        discarded = changed.discard(256, 512)
+
+        self.assertEqual(discarded.read(256, 512), bytes(512))
+        self.assertEqual(discarded.read(900, 4), b'kept')
+        self.assertEqual(original.read(256, 4), bytes(4))
+        with self.assertRaisesRegex(ValueError, 'page aligned'):
+            changed.discard(1, 256)
+
+
+class TestExplicitImportedResources(unittest.TestCase):
+    def test_imported_memory_table_and_global_are_bound_as_snapshots(self):
+        memory = PagedMemory(b'', 2 * 65536)
+        module = decode_module(imported_resources_driver(), {
+            ('env', 'memory'): memory,
+            ('env', 'table'): (None,),
+            ('env', 'base'): 4096,
+        })
+
+        self.assertEqual(module.memory.read(4096, 4), b'\x2a\x00\x00\x00')
+        self.assertEqual(module.tables, ((0,),))
+        final = run_until_boundary(module, start_state(module))
+        self.assertEqual(final.result, (42,))
+        self.assertEqual(memory.read(4096, 4), bytes(4))
+
+    def test_imported_resources_are_not_ambient(self):
+        with self.assertRaisesRegex(UnsupportedC,
+                                    'memory env.memory.*explicit'):
+            decode_module(imported_resources_driver())
+
 
 class TestKernelWasmInstructions(unittest.TestCase):
     def test_active_function_table_drives_call_indirect(self):
@@ -176,6 +254,19 @@ class TestKernelWasmInstructions(unittest.TestCase):
         self.assertEqual(module.tables, ((0,),))
         final = run_until_boundary(module, start_state(module, args=(41,)))
         self.assertEqual(final.result, (42,))
+
+    def test_c_function_pointer_abi_is_explicit_and_kernel_scoped(self):
+        raw = c_abi_indirect_driver()
+        strict = decode_module(raw)
+        with self.assertRaisesRegex(WasmStateError, 'type mismatch'):
+            run_until_boundary(
+                strict, start_state(strict, args=(1, 2, 3, 4, 5, 6)))
+
+        compatible = decode_module(raw, indirect_abi='c-extra-args')
+        final = run_until_boundary(
+            compatible,
+            start_state(compatible, args=(1, 2, 3, 4, 5, 6)))
+        self.assertEqual(final.result, (6,))
 
     def test_sign_extension_remains_inside_a_pure_wave_slice(self):
         from tests.test_wasmbinary import module as scalar_module

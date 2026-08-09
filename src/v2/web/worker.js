@@ -273,6 +273,7 @@ async function solve(request) {
       input_bits: compiled.plan.input_bits,
       output_bits: compiled.plan.output_bits,
       signature: compiled.plan.signature,
+      parameter_layout: compiled.plan.parameters,
       other_functions: compiled.plan.other_functions,
       compile: { opt: ORACLE_OPT, toolchain: describeClang().title },
       toolchain: describeClang(),
@@ -380,6 +381,7 @@ async function compileWithClang(source, options, optionsJson) {
   progress(`executing ${plan.values.length.toLocaleString()} inputs…`);
   const table = await evaluateWasm(
     wasm, plan.function, plan.values, plan.output_bits, plan.input_bits,
+    plan.parameters,
   );
 
   return { plan, table };

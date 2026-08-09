@@ -17,10 +17,8 @@ from .bits import mask_of
 from .cfront import CFrontError, Interpreter, compile_unit, parse
 from .semantics import Semantics, choose_domain
 
-# The solvers in this prototype are unary; keep the reason explicit.
-UNARY_ONLY_HINT = ('the Stage-2 solver family in this prototype takes one '
-                   'integer input; combine arguments into a single word to '
-                   'analyse a multi-argument kernel')
+SCALAR_INPUT_HINT = ('integer parameters are packed low-to-high in declaration '
+                     'order into one at-most-64-bit solver coordinate')
 
 
 class FrontendResult(object):
@@ -38,24 +36,47 @@ class FrontendResult(object):
 def analysable(ret, params, max_input_bits=64):
     """Why this signature cannot be the kernel, or None if it can.
 
-    One integer in, one integer out, both inside the 64-bit lowering grammar.
+    Integer inputs totaling at most 64 bits and one scalar output.
     Everything here is a property of *this prototype's solver family*, not of
     the function — hence the reasons, which the report passes on.
     """
-    if len(params) != 1:
-        return ('takes %d arguments; this prototype\'s solver family takes one'
-                % len(params))
-    ctype = params[0][1] if isinstance(params[0], tuple) else params[0].ctype
-    if ctype.kind not in ('int', 'bool'):
-        return 'the argument is not an integer type'
-    if ctype.bits > max_input_bits:
-        return ('the argument is %d bits; at most %d are supported'
-                % (ctype.bits, max_input_bits))
+    if not params:
+        return 'takes no arguments, so there is no input coordinate'
+    total = 0
+    for param in params:
+        ctype = param[1] if isinstance(param, tuple) else param.ctype
+        if ctype.kind not in ('int', 'bool'):
+            return 'an argument is not an integer type'
+        total += ctype.bits
+    if total > max_input_bits:
+        return ('the arguments total %d bits; at most %d are supported'
+                % (total, max_input_bits))
     if ret.kind == 'void':
         return 'returns void, so nothing is observable'
     if ret.bits > 64:
         return 'returns %d bits; the lowering grammar is 64' % ret.bits
     return None
+
+
+def parameter_layout(params):
+    """Stable low-to-high coordinates for a sequence of integer parameters."""
+    layout = []
+    offset = 0
+    for param in params:
+        if isinstance(param, tuple):
+            name, ctype = param
+        else:
+            name, ctype = param.name, param.ctype
+        layout.append({'name': name, 'type': ctype.name,
+                       'bits': ctype.bits, 'offset': offset})
+        offset += ctype.bits
+    return layout
+
+
+def unpack_parameters(value, layout):
+    value = int(value)
+    return tuple((value >> item['offset']) & mask_of(item['bits'])
+                 for item in layout)
 
 
 def _signature_of(fn):
@@ -70,8 +91,7 @@ def pick_function(unit, requested=None):
 
     Otherwise: a function nothing else in the paste calls, the root of the
     little call graph, preferring one this prototype can actually take. A
-    header of twenty kernels has one root, and if that root happens to be
-    binary there is no reason to refuse the nineteen that are not.
+    multi-parameter root remains one reversible scalar coordinate downstream.
     """
     if requested:
         fn = unit.by_name(requested)
@@ -111,7 +131,7 @@ def _other_candidates_hint(unit, chosen):
     if usable:
         return ('this paste also defines %s, which the solver family can take'
                 % ', '.join(usable))
-    return UNARY_ONLY_HINT
+    return SCALAR_INPUT_HINT
 
 
 def _collect_calls(node, out):
@@ -165,9 +185,9 @@ class CSubsetFrontend(object):
         if why:
             raise CFrontError('%s %s' % (fn.name, why), line=fn.line,
                               hint=_other_candidates_hint(unit, fn))
-        param = fn.params[0]
-
-        input_bits = min(param.ctype.bits, int(options.get('max_input_bits', 64)))
+        layout = parameter_layout(fn.params)
+        input_bits = min(sum(item['bits'] for item in layout),
+                         int(options.get('max_input_bits', 64)))
         if options.get('input_bits'):
             input_bits = int(options['input_bits'])
         output_bits = fn.ret.bits
@@ -179,7 +199,7 @@ class CSubsetFrontend(object):
         out_mask = mask_of(output_bits)
 
         def target(x):
-            return compiled(x) & out_mask
+            return compiled(*unpack_parameters(x, layout)) & out_mask
 
         domain = choose_domain(
             input_bits,
@@ -206,12 +226,14 @@ class CSubsetFrontend(object):
             ],
             'input_bits': input_bits,
             'output_bits': output_bits,
-            'reference_ops': self._reference_ops(unit, fn, domain, options),
+            'parameter_layout': layout,
+            'reference_ops': self._reference_ops(unit, fn, domain, options,
+                                                  layout),
         }
         return FrontendResult(sem, report, fn, unit)
 
     @staticmethod
-    def _reference_ops(unit, fn, domain, options):
+    def _reference_ops(unit, fn, domain, options, layout):
         """Reference operation count, measured on a sample of the domain."""
         sample_size = int(options.get('cost_sample', 128))
         values = domain.values()
@@ -224,7 +246,7 @@ class CSubsetFrontend(object):
         for x in values:
             interp.reset_counters()
             try:
-                interp.call(fn.name, [x])
+                interp.call(fn.name, unpack_parameters(x, layout))
             except CFrontError:
                 continue
             counts.append(interp.ops)
@@ -286,8 +308,8 @@ class ClangFrontend(object):
         signature = self._mod.read_signature(source, options.get('function'))
         require_analysable(signature)
 
-        param_name, param_ctype = signature['params'][0]
-        input_bits = min(param_ctype.bits,
+        layout = parameter_layout(signature['params'])
+        input_bits = min(sum(item['bits'] for item in layout),
                          int(options.get('max_input_bits', 64)))
         if options.get('input_bits'):
             input_bits = int(options['input_bits'])
@@ -315,6 +337,7 @@ class ClangFrontend(object):
             'other_functions': signature.get('others') or [],
             'input_bits': input_bits,
             'output_bits': output_bits,
+            'parameter_layout': layout,
             'compile': {'opt': opt, 'target': target,
                         'signature_via': signature.get('via')},
             'assembly': asm,
@@ -399,6 +422,8 @@ class PrecompiledFrontend(object):
             'other_functions': options.get('other_functions') or [],
             'input_bits': input_bits,
             'output_bits': output_bits,
+            'parameter_layout': (options.get('parameter_layout')
+                                 or options.get('parameters')),
             'compile': compile_info,
             'assembly': asm,
             'assembly_stats': stats,
@@ -563,7 +588,7 @@ def require_analysable(signature):
     raise CFrontError(
         '%s %s' % (signature['name'], why),
         hint=('this paste also defines %s, which the solver family can take'
-              % ', '.join(usable)) if usable else UNARY_ONLY_HINT)
+              % ', '.join(usable)) if usable else SCALAR_INPUT_HINT)
 
 
 def _signature_dict(signature):

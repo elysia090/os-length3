@@ -25,6 +25,8 @@ _BINARY = {
     'shl', 'shr_s', 'shr_u', 'rotl', 'rotr',
     'div_s', 'div_u', 'rem_s', 'rem_u',
 }
+_COMMUTATIVE = {'eq', 'ne', 'add', 'mul', 'and', 'or', 'xor'}
+_TRAPPING = {'div_s', 'div_u', 'rem_s', 'rem_u'}
 
 
 @dataclass(frozen=True)
@@ -126,6 +128,62 @@ def _evaluate(op, arguments):
     return stack[0]
 
 
+def _operand_key(operand):
+    # Constants last makes identities such as ``x + 0`` canonical without
+    # changing the source operation's integer type.
+    return operand.kind == 'const', operand.kind, operand.value
+
+
+def _live_graph(nodes, stack, locals_):
+    """Remove dead non-trapping nodes and rebuild dense dependency waves."""
+    live = set(node.value for node in nodes
+               if node.op.split('.', 1)[-1] in _TRAPPING)
+    live.update(operand.value for operand in stack + locals_
+                if operand.kind == 'node')
+    pending = list(live)
+    while pending:
+        value = pending.pop()
+        for operand in nodes[value - 1].arguments:
+            if operand.kind == 'node' and operand.value not in live:
+                live.add(operand.value)
+                pending.append(operand.value)
+
+    remap = {}
+    kept = []
+    for node in nodes:
+        if node.value not in live:
+            continue
+        value = len(kept) + 1
+        remap[node.value] = value
+        arguments = tuple(
+            Operand('node', remap[operand.value])
+            if operand.kind == 'node' else operand
+            for operand in node.arguments)
+        kept.append(WaveNode(value, node.op, arguments))
+
+    def output(operand):
+        if operand.kind == 'node':
+            return Operand('node', remap[operand.value])
+        return operand
+
+    depths = [0]
+    by_depth = {}
+    for node in kept:
+        depth = 1 + max((depths[argument.value]
+                         for argument in node.arguments
+                         if argument.kind == 'node'), default=0)
+        depths.append(depth)
+        by_depth.setdefault(depth, []).append(node.value)
+    offsets = [0]
+    values = []
+    for depth in range(1, max(by_depth, default=0) + 1):
+        values.extend(by_depth.get(depth, ()))
+        offsets.append(len(values))
+    waves = DependencyWaves(tuple(offsets), tuple(values), tuple(depths))
+    return tuple(kept), waves, tuple(map(output, stack)), \
+        tuple(map(output, locals_))
+
+
 def compile_slice(module, frame):
     """Rename the maximal pure region at ``frame.pc`` into an SSA wave plan."""
     function = module.functions[frame.function]
@@ -136,8 +194,7 @@ def compile_slice(module, frame):
     stack = [Operand('stack', index) for index in range(len(frame.stack))]
     locals_ = [Operand('local', index) for index in range(len(frame.locals))]
     nodes = []
-    depths = [0]
-    by_depth = {}
+    common = {}
 
     def pop(op):
         if not stack:
@@ -148,14 +205,56 @@ def compile_slice(module, frame):
         if all(argument.kind == 'const' for argument in arguments):
             return Operand('const', _evaluate(
                 op, tuple(argument.value for argument in arguments)))
+        name = op.split('.', 1)[-1]
+        arguments = tuple(arguments)
+        if name in _COMMUTATIVE:
+            arguments = tuple(sorted(arguments, key=_operand_key))
+
+        if op == 'select':
+            left, right, condition = arguments
+            if condition.kind == 'const':
+                return left if condition.value else right
+            if left == right:
+                return left
+        elif len(arguments) == 2:
+            left, right = arguments
+            bits = 32 if op.startswith('i32.') else 64
+            if left == right:
+                if name in ('sub', 'xor', 'ne', 'lt_s', 'lt_u',
+                            'gt_s', 'gt_u'):
+                    return Operand('const', 0)
+                if name in ('and', 'or'):
+                    return left
+                if name in ('eq', 'le_s', 'le_u', 'ge_s', 'ge_u'):
+                    return Operand('const', 1)
+            if right.kind == 'const':
+                constant = right.value & ((1 << bits) - 1)
+                if name in ('add', 'sub', 'or', 'xor') and constant == 0:
+                    return left
+                if name == 'mul' and constant == 1:
+                    return left
+                if name == 'mul' and constant == 0:
+                    return Operand('const', 0)
+                if name == 'and' and constant == (1 << bits) - 1:
+                    return left
+                if name == 'and' and constant == 0:
+                    return Operand('const', 0)
+                if name in ('shl', 'shr_s', 'shr_u', 'rotl', 'rotr') \
+                        and constant % bits == 0:
+                    return left
+                if name in ('div_s', 'div_u') and constant == 1:
+                    return left
+                if name in ('rem_s', 'rem_u') and constant == 1:
+                    return Operand('const', 0)
+
+        key = (op, arguments)
+        if key in common:
+            return common[key]
         value = len(nodes) + 1
-        depth = 1 + max((depths[argument.value]
-                         for argument in arguments
-                         if argument.kind == 'node'), default=0)
-        nodes.append(WaveNode(value, op, tuple(arguments)))
-        depths.append(depth)
-        by_depth.setdefault(depth, []).append(value)
-        return Operand('node', value)
+        nodes.append(WaveNode(value, op, arguments))
+        result = Operand('node', value)
+        common[key] = result
+        return result
 
     while pc < len(function.code):
         instruction = function.code[pc]
@@ -190,15 +289,11 @@ def compile_slice(module, frame):
             stack.append(emit(op, arguments))
         pc += 1
 
-    offsets = [0]
-    values = []
-    for depth in range(1, max(by_depth, default=0) + 1):
-        values.extend(by_depth.get(depth, ()))
-        offsets.append(len(values))
-    waves = DependencyWaves(tuple(offsets), tuple(values), tuple(depths))
+    nodes, waves, stack, locals_ = _live_graph(
+        tuple(nodes), tuple(stack), tuple(locals_))
     return PureSlice(frame.function, frame.pc, pc, pc - frame.pc,
                      len(frame.stack),
-                     tuple(nodes), waves, tuple(stack), tuple(locals_))
+                     nodes, waves, stack, locals_)
 
 
 def execute_slice(plan, state):
@@ -239,21 +334,89 @@ def execute_slice(plan, state):
     return replace(state, frames=state.frames[:-1] + (next_frame,))
 
 
+def compile_slice_executor(plan):
+    """Compile one validated codec plan into a direct frame transition."""
+    lines = ['def execute(frame, evaluate=evaluate):',
+             '    stack = frame.stack',
+             '    locals_ = frame.locals']
+
+    def expression(operand):
+        if operand.kind == 'const':
+            return repr(operand.value)
+        if operand.kind == 'stack':
+            return 'stack[%d]' % operand.value
+        if operand.kind == 'local':
+            return 'locals_[%d]' % operand.value
+        return 'value_%d' % operand.value
+
+    for node in plan.nodes:
+        arguments = ', '.join(expression(argument)
+                              for argument in node.arguments)
+        if len(node.arguments) == 1:
+            arguments += ','
+        lines.append("    value_%d = evaluate(%r, (%s))" %
+                     (node.value, node.op, arguments))
+    local_values = ', '.join(expression(value) for value in plan.locals)
+    stack_values = ', '.join(expression(value) for value in plan.stack)
+    if len(plan.locals) == 1:
+        local_values += ','
+    if len(plan.stack) == 1:
+        stack_values += ','
+    lines.append('    return (%s), (%s)' % (local_values, stack_values))
+    namespace = {'evaluate': _evaluate}
+    exec(compile('\n'.join(lines), '<qm-wasm-slice>', 'exec'),
+         namespace, namespace)
+    return namespace['execute']
+
+
+def execute_compiled(plan, executor, state):
+    """Commit the outputs of a hot compiled slice as one state update."""
+    frame = state.frames[-1]
+    locals_, stack = executor(frame)
+    next_frame = Frame(frame.function, plan.end, tuple(locals_), tuple(stack),
+                       frame.controls)
+    return replace(state, frames=state.frames[:-1] + (next_frame,))
+
+
 class WaveExecutor:
     """Cached barrier/slice executor for one decoded module."""
 
     def __init__(self, module):
         self.module = module
         self.cache = {}
+        self.source_work = {}
         self.physical = {}
         self.executable = {}
+        self.hits = {}
+        self.compiled = {}
         self.total_cost = WaveCost()
+        self.total_source_work = 0
 
     def plan(self, frame):
         key = (frame.function, frame.pc, len(frame.stack))
         if key not in self.cache:
-            self.cache[key] = compile_slice(self.module, frame)
+            plan = compile_slice(self.module, frame)
+            self.cache[key] = plan
+            if plan is not None:
+                function = self.module.functions[frame.function]
+                self.source_work[key] = sum(
+                    1 for instruction in function.code[plan.start:plan.end]
+                    if instruction.op == 'select'
+                    or numeric_arity(instruction.op) is not None)
         return self.cache[key]
+
+    def normalization_layout(self):
+        """Dynamic work removed before slices entered the codec cache."""
+        source = self.total_source_work
+        normalized = self.total_cost.work
+        return {
+            'source_work': source,
+            'normalized_work': normalized,
+            'removed_work': source - normalized,
+            'cached_slices': sum(plan is not None
+                                 for plan in self.cache.values()),
+            'compiled_hot_slices': len(self.compiled),
+        }
 
     def mapped(self, frame):
         """The disposable codec page for the current pure slice."""
@@ -286,7 +449,18 @@ class WaveExecutor:
                 instructions=1, barriers=1)
         widths = [len(plan.waves.wave(depth))
                   for depth in range(1, plan.waves.span + 1)]
-        return execute_slice(self.decoded(frame), state), WaveCost(
+        key = (frame.function, frame.pc, len(frame.stack))
+        hits = self.hits.get(key, 0) + 1
+        self.hits[key] = hits
+        decoded = self.decoded(frame)
+        if hits >= 2:
+            if key not in self.compiled:
+                self.compiled[key] = compile_slice_executor(decoded)
+            next_state = execute_compiled(
+                decoded, self.compiled[key], state)
+        else:
+            next_state = execute_slice(decoded, state)
+        return next_state, WaveCost(
             instructions=plan.instructions,
             work=plan.waves.work,
             span=plan.waves.span,
@@ -298,11 +472,17 @@ class WaveExecutor:
         """Run one bounded quantum and retain its continuation on exhaustion."""
         cost = WaveCost()
         while state.waiting is None and not state.halted:
+            source_key = None
+            if state.frames:
+                frame = state.frames[-1]
+                source_key = (frame.function, frame.pc, len(frame.stack))
             next_state, step_cost = self.step(state)
             if cost.instructions + step_cost.instructions > budget:
                 break
             state = next_state
             cost += step_cost
+            if step_cost.slices:
+                self.total_source_work += self.source_work[source_key]
         reached_boundary = state.waiting is not None or state.halted
         self.total_cost += cost
         return state, cost, reached_boundary

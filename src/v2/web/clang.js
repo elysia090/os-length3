@@ -175,7 +175,7 @@ function asText(value) {
  * a frontend quietly changes the semantics it is supposed to report.
  */
 export async function evaluateWasm(bytes, functionName, values, outputBits,
-                                   inputBits) {
+                                   inputBits, parameters = null) {
   const { instance } = await WebAssembly.instantiate(bytes, {});
   const fn = instance.exports[functionName];
   if (typeof fn !== 'function') {
@@ -193,10 +193,21 @@ export async function evaluateWasm(bytes, functionName, values, outputBits,
   // kernel used to fail here. `values` arrive as decimal strings, so nothing
   // has passed through a double on the way.
   const wide = outputBits > 32;
-  const asArgument = inputBits > 32 ? (v) => BigInt(v) : (v) => Number(BigInt(v));
+  const layout = parameters || [
+    { bits: inputBits, offset: 0 },
+  ];
+  const argumentsFor = (value) => {
+    const coordinate = BigInt(value);
+    return layout.map((parameter) => {
+      const bits = BigInt(parameter.bits);
+      const raw = (coordinate >> BigInt(parameter.offset))
+        & ((1n << bits) - 1n);
+      return parameter.bits > 32 ? raw : Number(raw);
+    });
+  };
   const out = new Array(values.length);
   for (let i = 0; i < values.length; i += 1) {
-    const y = fn(asArgument(values[i]));
+    const y = fn(...argumentsFor(values[i]));
     out[i] = typeof y === 'bigint' ? y : BigInt.asUintN(64, BigInt(y));
   }
   // Python receives decimal strings: a JSON number cannot carry 64 bits.

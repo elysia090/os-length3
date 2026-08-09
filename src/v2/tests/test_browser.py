@@ -187,10 +187,14 @@ uint64_t helper(uint8_t a, uint8_t b) { return kernel(a) + b + bias; }
 int main(void) { return (int)helper(1, 2); }
 '''
         prepared = prepare_run(source)
-        self.assertIn('extern uint64_t kernel(uint8_t);', prepared)
-        self.assertNotIn('return (uint64_t)x + 1', prepared)
-        self.assertIn('static uint64_t bias = 4', prepared)
+        self.assertIn('extern uint64_t qm_artifact_helper(uint32_t);', prepared)
         self.assertIn('uint64_t helper(uint8_t a, uint8_t b)', prepared)
+        self.assertIn('qm_artifact_helper', prepared)
+        self.assertIn('((uint64_t)(a) & 0xFFull)', prepared)
+        self.assertIn('(((uint64_t)(b) & 0xFFull) << 8)', prepared)
+        self.assertNotIn('return kernel(a) + b + bias', prepared)
+        self.assertIn('return (uint64_t)x + 1', prepared)
+        self.assertIn('static uint64_t bias = 4', prepared)
         self.assertIn('int main(void)', prepared)
 
     def test_state_analysis_compiles_the_complete_unit(self):
@@ -368,7 +372,7 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         # it. `tests/test_browser_run.py` drives the whole chain.
         self.assertIn("callPython('run_plan'", worker)
         self.assertIn('prepareEvaluator', runner)
-        self.assertIn('env[message.plan.function] = evaluator.fn', runner)
+        self.assertIn('env[message.plan.import_function', runner)
         self.assertIn('const runCache = new Map()', worker)
         self.assertIn('executionWorker.terminate()', worker)
         self.assertIn('RUNNER_IDLE_MS', worker)
@@ -509,7 +513,7 @@ class TestPlan(unittest.TestCase):
         self.assertIn((1 << 64) - 1, values)
         self.assertTrue(any(v > (1 << 53) for v in values))
 
-    def test_a_paste_of_several_functions_plans_the_one_it_can_take(self):
+    def test_a_paste_of_several_functions_plans_the_root(self):
         source = ('#include <stdint.h>\n'
                   'uint64_t starts8(uint8_t m) { uint64_t x = m;'
                   ' return x & ~(x << 1); }\n'
@@ -517,12 +521,29 @@ class TestPlan(unittest.TestCase):
                   ' { return starts8(a) | starts8(b); }\n')
         result = json.loads(plan(source, '{}'))
         self.assertTrue(result['ok'], result.get('error'))
-        self.assertEqual(result['function'], 'starts8')
+        self.assertEqual(result['function'], 'combine')
+        self.assertEqual(result['input_bits'], 16)
+        self.assertEqual(result['parameters'], [
+            {'name': 'a', 'type': 'uint8_t', 'bits': 8, 'offset': 0},
+            {'name': 'b', 'type': 'uint8_t', 'bits': 8, 'offset': 8},
+        ])
         # And the reason the other one was passed over travels with it: only
         # this side parses the source, so the page cannot work it out again.
         self.assertEqual([f['name'] for f in result['other_functions']],
-                         ['combine'])
-        self.assertIn('takes 2 arguments', result['other_functions'][0]['reason'])
+                         ['starts8'])
+        self.assertEqual(result['other_functions'][0]['reason'], 'not the root')
+
+    def test_morton32_has_a_64_bit_two_parameter_plan(self):
+        from tests.support import read_example
+        result = json.loads(plan(read_example('morton32.c'),
+                                 json.dumps({'probes': 8})))
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['function'], 'morton32')
+        self.assertEqual(result['input_bits'], 64)
+        self.assertEqual(result['parameters'], [
+            {'name': 'x', 'type': 'uint32_t', 'bits': 32, 'offset': 0},
+            {'name': 'y', 'type': 'uint32_t', 'bits': 32, 'offset': 32},
+        ])
 
     def test_the_worker_carries_the_other_functions_to_finish(self):
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
@@ -630,6 +651,59 @@ def _have(binary):
     return which(binary) is not None
 
 
+@unittest.skipUnless(_have('node'), 'needs node')
+class TestPackedValueTransportWithoutToolchain(unittest.TestCase):
+    """Exercise the shipped JS argument split without requiring wasm-ld."""
+
+    def test_two_i32_parameters_reconstruct_the_64_bit_coordinate(self):
+        from qm.wasmbinary import encode_uleb
+
+        def section(kind, payload):
+            return bytes([kind]) + encode_uleb(len(payload)) + payload
+
+        # (i32 x, i32 y) -> i64: x | (y << 32)
+        types = b'\x01\x60\x02\x7f\x7f\x01\x7e'
+        functions = b'\x01\x00'
+        exports = b'\x01\x01f\x00\x00'
+        body = b'\x00\x20\x00\xad\x20\x01\xad\x42\x20\x86\x84\x0b'
+        code = b'\x01' + encode_uleb(len(body)) + body
+        wasm = (b'\x00asm\x01\x00\x00\x00' + section(1, types)
+                + section(3, functions) + section(7, exports)
+                + section(10, code))
+
+        values = [0, 1, 1 << 32, 0x9ABCDEF012345678,
+                  0xFFFFFFFFFFFFFFFF]
+        layout = [
+            {'name': 'x', 'bits': 32, 'offset': 0},
+            {'name': 'y', 'bits': 32, 'offset': 32},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            wasm_path = os.path.join(tmp, 'packed.wasm')
+            with open(wasm_path, 'wb') as handle:
+                handle.write(wasm)
+            with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
+                shipped = handle.read()
+            with open(os.path.join(tmp, 'clang.mjs'), 'w') as handle:
+                handle.write(shipped)
+            runner = os.path.join(tmp, 'run.mjs')
+            with open(runner, 'w') as handle:
+                handle.write(
+                    "import { readFileSync } from 'node:fs';\n"
+                    "import { evaluateWasm } from './clang.mjs';\n"
+                    "const values = JSON.parse(process.argv[3]);\n"
+                    "const layout = JSON.parse(process.argv[4]);\n"
+                    "const out = await evaluateWasm(readFileSync(process.argv[2]),"
+                    " 'f', values, 64, 64, layout);\n"
+                    "process.stdout.write(JSON.stringify(out));\n")
+            run = subprocess.run(
+                ['node', runner, wasm_path,
+                 json.dumps([str(value) for value in values]),
+                 json.dumps(layout)], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout),
+                         [str(value) for value in values])
+
+
 @unittest.skipUnless(NATIVE.available() and _have('node'),
                      'needs native Clang and node')
 class TestValueTransport(unittest.TestCase):
@@ -649,7 +723,8 @@ class TestValueTransport(unittest.TestCase):
     restatement of it — against a module the real compiler produced.
     """
 
-    def _evaluate(self, source, function, values, output_bits, input_bits):
+    def _evaluate(self, source, function, values, output_bits, input_bits,
+                  parameters=None):
         """`evaluateWasm` from web/clang.js, on a real WebAssembly engine."""
         with tempfile.TemporaryDirectory() as tmp:
             from qm.clang import prepare_source
@@ -674,14 +749,14 @@ class TestValueTransport(unittest.TestCase):
                 handle.write(
                     "import { readFileSync } from 'node:fs';\n"
                     "import { evaluateWasm } from './clang.mjs';\n"
-                    "const [wasm, fn, bits, inBits] = process.argv.slice(2);\n"
+                    "const [wasm, fn, bits, inBits, layout] = process.argv.slice(2);\n"
                     "const values = JSON.parse(readFileSync(0, 'utf8'));\n"
                     "const out = await evaluateWasm(readFileSync(wasm), fn,"
-                    " values, Number(bits), Number(inBits));\n"
+                    " values, Number(bits), Number(inBits), JSON.parse(layout));\n"
                     "process.stdout.write(JSON.stringify(out));\n")
             run = subprocess.run(
                 ['node', os.path.join(tmp, 'run.mjs'), wasm, function,
-                 str(output_bits), str(input_bits)],
+                 str(output_bits), str(input_bits), json.dumps(parameters)],
                 input=json.dumps(values), capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             return json.loads(run.stdout)
@@ -719,6 +794,24 @@ class TestValueTransport(unittest.TestCase):
                        for k in range(8))
         self.assertEqual(table, [str(ref(int(v))) for v in planned['values']])
 
+    def test_morton32_reaches_wasm_as_two_independent_arguments(self):
+        from tests.support import read_example
+        source = read_example('morton32.c')
+        planned = json.loads(plan(source, json.dumps({'probes': 8})))
+        points = [(0, 0), (1, 0), (0, 1),
+                  (0x12345678, 0x9ABCDEF0),
+                  (0xFFFFFFFF, 0xFFFFFFFF)]
+        values = [str(x | (y << 32)) for x, y in points]
+        table = self._evaluate(
+            source, 'morton32', values, 64, 64, planned['parameters'])
+
+        def morton(x, y):
+            return sum((((x >> i) & 1) << (2 * i))
+                       | (((y >> i) & 1) << (2 * i + 1))
+                       for i in range(32))
+
+        self.assertEqual(table, [str(morton(x, y)) for x, y in points])
+
     def test_every_64_bit_example_now_reaches_the_oracle(self):
         # These five are what the bug cost: a `uint64_t` parameter is an i64,
         # so each of them threw before the first input was evaluated.  The
@@ -750,6 +843,7 @@ class TestValueTransport(unittest.TestCase):
         call = re.search(r'evaluateWasm\(([^;]*?)\)\s*;', worker, re.S)
         self.assertIsNotNone(call, 'the worker no longer calls evaluateWasm')
         self.assertIn('plan.input_bits', call.group(1))
+        self.assertIn('plan.parameters', call.group(1))
 
 
 class TestManifest(unittest.TestCase):

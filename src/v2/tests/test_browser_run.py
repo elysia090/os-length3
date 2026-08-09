@@ -56,7 +56,7 @@ const env = {
   qm_getchar: () => (at < stdin.length ? stdin[at++] : -1),
   qm_putchar: (c) => out.push(c & 255),
 };
-env[plan.function] = (x) => {
+env[plan.import_function || plan.function] = (x) => {
   const v = BigInt.asUintN(64, BigInt(x));
   const feed = [];
   for (let i = 0; i < plan.in_bytes; i += 1) {

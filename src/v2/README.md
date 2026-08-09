@@ -346,7 +346,10 @@ qm/
 
 kernel/           Linux-in-Wasm execution, deterministic host state and pages
   host.py         nccc_call64 barriers and lazy direct block-page storage
-  run.py          native LKL wasm entry point; stops at scheduler boundaries
+  scheduler.py    resumable kernel threads and setjmp/longjmp continuations
+  process.py      user/kernel syscall, TLS, and user continuation boundaries
+  run.py          native LKL wasm entry point and barrier/page trace
+  guest/          reproducible read-only virtio root-device wrapper
 
 web/              the page: index.html · app.js · worker.js · clang.js
 tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
@@ -368,6 +371,26 @@ python -m kernel.run lin.wasm --budget 131072 --max-events 64
 
 The report separates logical linear-memory size from resident page bytes and
 names every host boundary, thread and timeslice.
+
+The guest wrapper attaches an ext image without copying it into Wasm memory,
+mounts it read-only, and reads `/init` through LKL's VFS. `--start-init`
+instantiates that dynamic Wasm module over the shared sparse memory, gives it
+private globals, table and stack, and connects its syscall imports to the
+retained kernel continuation:
+
+```sh
+python -m kernel.run kernel-rootfs.wasm \
+    --rootfs busybox-rootfs.ext2 --start-init \
+    --max-events 3000 --budget 1048576
+```
+
+Only block pages read by Linux become resident. The temporary contiguous
+`/init` extraction buffer is discarded after decoding; clean root-image pages
+and physical codec slices remain independently disposable. Timers advance the
+deterministic virtual clock to the next deadline and enqueue their callbacks as
+ordinary cooperative continuations. Pure slices between load/store/call/control
+barriers are substituted, normalized, encoded once, and compiled only after a
+second touch.
 
 ---
 

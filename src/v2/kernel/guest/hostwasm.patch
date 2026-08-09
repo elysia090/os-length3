@@ -1,0 +1,112 @@
+--- a/hostwasm_lklops.c
++++ b/hostwasm_lklops.c
+@@ -1,6 +1,10 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <uapi/asm/host_ops.h> // Under arch/lkl/include
++extern char lkl_virtio_devs[4096];
++void *lkl_ioremap(long address, int size);
++int lkl_iomem_access(const volatile void *address, void *value, int size,
++                     int write);
+ 
+ __attribute__((import_module("env"), import_name("nccc_call64"))) void nccc_call64(uint64_t* in, uint64_t* out);
+ 
+@@ -394,7 +398,7 @@
+ /* pci_ops */
+ 
+-const struct lkl_host_operations host_lkl_ops = (struct lkl_host_operations){
++struct lkl_host_operations lkl_host_ops = (struct lkl_host_operations){
+-    .virtio_devices = 0,
++    .virtio_devices = lkl_virtio_devs,
+         .print = host_print,
+         .panic = host_panic,
+         .sem_alloc = host_sem_alloc,
+@@ -423,8 +427,8 @@
+         .timer_alloc = host_timer_alloc,
+         .timer_set_oneshot = host_timer_set_oneshot,
+         .timer_free = host_timer_free,
+-        .ioremap = 0,
+-        .iomem_access = 0,
++        .ioremap = lkl_ioremap,
++        .iomem_access = lkl_iomem_access,
+         .gettid = host_gettid,
+         .jmp_buf_set = host_jmp_buf_set,
+         .jmp_buf_longjmp = host_jmp_buf_longjmp,
+@@ -441,5 +445,5 @@
+ 
+ void*
+ lklhost_getops(void){
+-    return &host_lkl_ops;
++    return &lkl_host_ops;
+ }
+--- a/hostwasm_main.c
++++ b/hostwasm_main.c
+@@ -67,23 +67,14 @@
+ void *memcpy(void *dest, const void *src, size_t n);
+ 
+ void*
+ memset(void* s, int c, size_t n){
+-    char* p = (char*)s;
+-    size_t i;
+-    for(i=0;i!=n;i++){
+-        p[i] = c;
+-    }
++    __builtin_memset(s, c, n);
+     return s;
+ }
+ 
+ void*
+ memcpy(void* dest, const void* src, size_t n){
+-    char* p = (char*)dest;
+-    const char* q = (const char*)src;
+-    size_t i;
+-    for(i=0;i!=n;i++){
+-        p[i] = q[i];
+-    }
++    __builtin_memcpy(dest, src, n);
+     return dest;
+ }
+ 
+@@ -100,6 +100,11 @@
+ }
+ 
+ void* lklhost_getops(void);
++int qm_block_prepare(void);
++int qm_rootfs_mount(void);
++int qm_init_probe(void);
++long qm_init_size(void);
++int qm_init_read(void *destination, unsigned long size);
+ 
+ void host_lkl_inittbl(void); // generated
+ void host_lkl_initschedclasses(void);
+@@ -144,9 +140,30 @@
+ void __attribute__((export_name ("init")))
+ init(void){
+     copy_init_thread_info();
+     host_lkl_initschedclasses();
+     host_lkl_inittbl();
+     lkl_init(lklhost_getops());
+     lkl_start_kernel("mem=64M"); // FIXME
++    qm_block_prepare();
+     //__initcall__kmod_vhci_hcd__237_1574_vhci_hcd_init6();
+ }
++
++int __attribute__((export_name ("rootfs_mount")))
++rootfs_mount(void){
++    return qm_rootfs_mount();
++}
++
++int __attribute__((export_name ("init_probe")))
++init_probe(void){
++    return qm_init_probe();
++}
++
++long __attribute__((export_name ("init_size")))
++init_size(void){
++    return qm_init_size();
++}
++
++int __attribute__((export_name ("init_read")))
++init_read(void *destination, unsigned long size){
++    return qm_init_read(destination, size);
++}

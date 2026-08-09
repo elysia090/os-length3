@@ -10,6 +10,7 @@ import unittest
 
 from qm.clang import NATIVE
 from qm import pipeline
+from qm.frontend import CSubsetFrontend
 from tests.support import read_example as example, solved as solve
 
 
@@ -117,51 +118,91 @@ class TestErrors(unittest.TestCase):
         self.assertEqual(result['stage'], 'frontend')
         self.assertIn('line', result['error'])
 
-    def test_multi_argument_kernel_is_explained(self):
+    def test_multi_argument_kernel_uses_a_reversible_scalar_coordinate(self):
         result = solve('#include <stdint.h>\nuint64_t f(uint8_t a, uint8_t b)'
                        '{ return a + b; }', frontend='cfront')
-        self.assertFalse(result['ok'])
-        self.assertIn('takes 2 arguments', result['error']['message'])
-        self.assertIn('takes one', result['error']['message'])
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['frontend']['input_bits'], 16)
+        self.assertEqual(result['frontend']['parameter_layout'], [
+            {'name': 'a', 'type': 'uint8_t', 'bits': 8, 'offset': 0},
+            {'name': 'b', 'type': 'uint8_t', 'bits': 8, 'offset': 8},
+        ])
+
+    def test_morton32_keeps_both_coordinates(self):
+        source = example('morton32.c')
+        analysed = CSubsetFrontend().analyze(source, {'probes': 8})
+        self.assertEqual(analysed.semantics.input_bits, 64)
+        self.assertEqual(analysed.report['parameter_layout'], [
+            {'name': 'x', 'type': 'uint32_t', 'bits': 32, 'offset': 0},
+            {'name': 'y', 'type': 'uint32_t', 'bits': 32, 'offset': 32},
+        ])
+
+        def morton(x, y):
+            out = 0
+            for i in range(32):
+                out |= ((x >> i) & 1) << (2 * i)
+                out |= ((y >> i) & 1) << (2 * i + 1)
+            return out
+
+        for x, y in ((0, 0), (1, 0), (0, 1),
+                     (0x12345678, 0x9ABCDEF0),
+                     (0xFFFFFFFF, 0xFFFFFFFF)):
+            coordinate = x | (y << 32)
+            self.assertEqual(analysed.semantics.value_at(coordinate),
+                             morton(x, y))
+
+    def test_new_bit_linear_corpus_entries_reach_synthesis(self):
+        for name in ('prefix_parity64.c', 'morton32.c'):
+            with self.subTest(corpus=name):
+                result = solve(example(name), frontend='cfront',
+                               options={'probes': 64})
+                self.assertTrue(result['ok'], result.get('error'))
+                self.assertIsNotNone(result.get('program'))
+
+    def test_morton32_lowers_the_two_packed_runs_independently(self):
+        result = solve(example('morton32.c'), frontend='cfront',
+                       options={'probes': 64})
+        targets = dict((target['name'], target)
+                       for target in result['targets'])
+
+        self.assertEqual(
+            targets['x86-64-bmi2']['instructions'],
+            ['PDEP', 'SHR', 'PDEP', 'XORR'])
+        self.assertTrue(targets['wasm32']['ok'],
+                        targets['wasm32'].get('reason'))
 
 
 class TestSeveralFunctions(unittest.TestCase):
-    """A paste of several functions is normal; one binary one is not a wall."""
+    """The call-graph root remains the default with packed parameters."""
 
-    # `combine` is the call-graph root and takes two arguments.  Refusing the
-    # paste over it would throw away the unary kernel sitting right beside it.
     SOURCE = ('#include <stdint.h>\n'
               'uint64_t starts8(uint8_t m) { uint64_t x = m;'
               ' return x & ~(x << 1); }\n'
               'uint64_t combine(uint8_t a, uint8_t b)'
               ' { return starts8(a) | starts8(b); }\n')
 
-    def test_the_analysable_function_is_taken_not_the_binary_root(self):
+    def test_the_binary_root_is_analysed(self):
         result = solve(self.SOURCE, frontend='cfront')
         self.assertTrue(result['ok'], result.get('error'))
-        self.assertEqual(result['frontend']['function']['name'], 'starts8')
+        self.assertEqual(result['frontend']['function']['name'], 'combine')
 
     def test_the_report_says_why_the_others_were_not_taken(self):
         result = solve(self.SOURCE, frontend='cfront')
         others = dict((item['name'], item['reason'])
                       for item in result['frontend']['other_functions'])
-        self.assertIn('takes 2 arguments', others['combine'])
+        self.assertEqual(others['starts8'], 'not the root')
 
     def test_an_explicit_request_still_answers_about_that_function(self):
-        # Choosing `combine` by name and being told about `starts8` instead
-        # would be answering a question nobody asked.
         result = solve(self.SOURCE, function='combine', frontend='cfront')
-        self.assertFalse(result['ok'])
-        self.assertIn('combine takes 2 arguments', result['error']['message'])
-        self.assertIn('starts8', result['error']['hint'])
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['frontend']['function']['name'], 'combine')
 
-    def test_a_paste_with_no_analysable_function_is_still_an_error(self):
+    def test_more_than_64_input_bits_is_still_an_error(self):
         result = solve('#include <stdint.h>\n'
-                       'uint64_t f(uint8_t a, uint8_t b) { return a + b; }\n'
-                       'uint64_t g(uint8_t a, uint8_t b) { return f(a, b); }\n',
+                       'uint64_t f(uint64_t a, uint8_t b) { return a + b; }\n',
                        frontend='cfront')
         self.assertFalse(result['ok'])
-        self.assertIn('takes 2 arguments', result['error']['message'])
+        self.assertIn('total 72 bits', result['error']['message'])
 
 
 @unittest.skipUnless(NATIVE.available(), 'clang is not installed')

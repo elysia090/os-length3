@@ -23,6 +23,9 @@ SPAN_PAGES = 256
 KERNEL_POOL_PAGES = 2048
 KERNEL_STACK_PAGES = 2048
 THREAD_STACK_PAGES = 10
+BLOCK_OK = 0
+BLOCK_IOERR = 1
+BLOCK_UNSUPPORTED = 2
 _U64 = struct.Struct('<Q')
 
 
@@ -78,6 +81,11 @@ _OPERATIONS = (
 
     _operation(5, 1, 'jmp_buf_set', 5),
     _operation(5, 2, 'jmp_buf_longjmp', 4),
+
+    _operation(6, 1, 'block_capacity', 3, 1),
+    _operation(6, 2, 'block_read', 6, 1),
+    _operation(6, 3, 'block_write', 6, 1),
+    _operation(6, 4, 'block_flush', 3, 1),
 )
 
 OPERATIONS = dict((operation.coordinate, operation)
@@ -146,6 +154,12 @@ class HostObject:
 
 
 @dataclass(frozen=True)
+class HostBlock:
+    store: object
+    read_only: bool = True
+
+
+@dataclass(frozen=True)
 class LinuxHostState:
     """Explicit state for immediate LKL host operations.
 
@@ -161,6 +175,7 @@ class LinuxHostState:
     heap_limit: int = 0
     stack_pointer: int = 0
     stack_limit: int = 0
+    blocks: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -169,6 +184,15 @@ class HostTransition:
     host: LinuxHostState
     blocked: bool = False
     event: object = None
+
+
+def attach_block(host, store, read_only=True):
+    """Attach a directly addressed block image and return its device number."""
+    if not hasattr(store, 'read') or not hasattr(store, 'length'):
+        raise TypeError('block store must provide length and read(offset, length)')
+    device = len(host.blocks)
+    block = HostBlock(store, bool(read_only))
+    return replace(host, blocks=host.blocks + (block,)), device
 
 
 def prepare_linux_memory(machine, host=None, pool_pages=KERNEL_POOL_PAGES,
@@ -201,6 +225,20 @@ def allocate_thread_stack(host, pages=THREAD_STACK_PAGES):
     return replace(host, stack_pointer=end), end - 256
 
 
+def allocate_host_memory(host, size, alignment=16):
+    """Reserve an aligned range from the prepared shared-memory pool."""
+    size, alignment = int(size), int(alignment)
+    if size < 0 or alignment <= 0 or alignment & (alignment - 1):
+        raise ValueError('size must be nonnegative and alignment a power of two')
+    if not host.heap_pointer or not host.heap_limit:
+        raise WasmStateError('LKL host memory is not prepared')
+    pointer = (host.heap_pointer + alignment - 1) & -alignment
+    end = pointer + size
+    if end > host.heap_limit:
+        raise WasmStateError('LKL host allocation region is exhausted')
+    return replace(host, heap_pointer=(end + 15) & -16), pointer
+
+
 def _object(host, handle, kind=None):
     handle = int(handle)
     if handle <= 0 or handle >= len(host.objects):
@@ -229,8 +267,16 @@ def _free_object(host, handle, kind):
     return _replace_object(host, handle, None)
 
 
-def _finish(machine, host, outputs=(), event=None):
-    return HostTransition(resume_nccc(machine, outputs), host, event=event)
+def _finish(machine, host, outputs=(), event=None, memory_writes=()):
+    return HostTransition(resume_nccc(machine, outputs, memory_writes), host,
+                          event=event)
+
+
+def _block(host, device):
+    device = int(device)
+    if device < 0 or device >= len(host.blocks):
+        raise WasmStateError('LKL block device %d is not attached' % device)
+    return host.blocks[device]
 
 
 def step_nccc(machine, host=None):
@@ -333,15 +379,18 @@ def step_nccc(machine, host=None):
     if group == 3:
         if code == 1:
             size = int(args[0])
-            pointer = host.heap_pointer or ((len(machine.memory) + 15) & -16)
-            end = pointer + size
             memory = machine.memory
-            if host.heap_limit and end > host.heap_limit:
-                raise WasmStateError('LKL host allocation region is exhausted')
+            if host.heap_limit:
+                host, pointer = allocate_host_memory(host, size)
+                end = host.heap_pointer
+            else:
+                pointer = host.heap_pointer or ((len(memory) + 15) & -16)
+                end = pointer + size
             if not host.heap_limit and end > len(memory):
                 memory = memory.grow((end - len(memory) + PAGE - 1) // PAGE)
                 machine = replace(machine, memory=memory)
-            host = replace(host, heap_pointer=(end + 15) & -16)
+            if not host.heap_limit:
+                host = replace(host, heap_pointer=(end + 15) & -16)
             return _finish(machine, host, (pointer,))
         if code == 2:
             return _finish(machine, host)
@@ -368,6 +417,55 @@ def step_nccc(machine, host=None):
     if group == 5:
         return HostTransition(machine, host, blocked=True,
                               event=('context', barrier.operation.name, args))
+
+    if group == 6:
+        device = int(args[0])
+        block = _block(host, device)
+        store = block.store
+        if code == 1:
+            return _finish(machine, host, (store.length,),
+                           event=('block', 'capacity', device, store.length))
+        if code in (2, 3):
+            offset, pointer, length = map(int, args[1:])
+            try:
+                pages = store.pages_for_range(offset, length)
+            except ValueError:
+                return _finish(
+                    machine, host, (BLOCK_IOERR,),
+                    event=('block', barrier.operation.name, device, offset,
+                           length, (), 0))
+            before = store.resident_pages
+            if code == 2:
+                try:
+                    payload = store.read(offset, length)
+                except ValueError:
+                    return _finish(
+                        machine, host, (BLOCK_IOERR,),
+                        event=('block', 'read', device, offset, length,
+                               pages, 0))
+                event = ('block', 'read', device, offset, length, pages,
+                         store.resident_pages - before)
+                return _finish(machine, host, (BLOCK_OK,), event=event,
+                               memory_writes=((pointer & I32, payload),))
+            if block.read_only:
+                return _finish(
+                    machine, host, (BLOCK_UNSUPPORTED,),
+                    event=('block', 'write-rejected', device, offset, length,
+                           pages, 0))
+            try:
+                store.write(offset, machine.memory.read(pointer & I32, length))
+            except ValueError:
+                status = BLOCK_IOERR
+            else:
+                status = BLOCK_OK
+            return _finish(
+                machine, host, (status,),
+                event=('block', 'write', device, offset, length, pages,
+                       store.resident_pages - before))
+        if code == 4:
+            written = 0 if block.read_only else store.flush()
+            return _finish(machine, host, (BLOCK_OK,),
+                           event=('block', 'flush', device, written))
     raise WasmStateError('no LKL host transition for %d:%d' % (group, code))
 
 
@@ -460,6 +558,17 @@ class DirectPageStore(object):
             length -= count
         return bytes(out)
 
+    def pages_for_range(self, offset, length):
+        """Return the page coordinates touched by a byte range."""
+        offset, length = int(offset), int(length)
+        if offset < 0 or length < 0 or offset + length > self.length:
+            raise ValueError('block range is outside the image')
+        if not length:
+            return ()
+        first = offset // self.page_size
+        last = (offset + length - 1) // self.page_size
+        return tuple(range(first, last + 1))
+
     def write(self, offset, payload):
         offset, payload = int(offset), bytes(payload)
         if offset < 0 or offset + len(payload) > self.length:
@@ -505,6 +614,11 @@ class DirectPageStore(object):
         if drop:
             self.directory[span_index] = None
         return written
+
+    def flush(self, drop=False):
+        """Flush all resident spans and optionally discard clean pages."""
+        return sum(self.flush_span(index, drop=drop)
+                   for index in range(len(self.directory)))
 
     def evict_span(self, span_index):
         span_index = int(span_index)

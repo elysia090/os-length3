@@ -39,6 +39,61 @@ class TestWaveExecutor(unittest.TestCase):
             'max_parallel_width': 2,
         })
 
+    def test_slice_normalization_substitutes_locals_and_folds_identities(self):
+        # local1 = x + 0; return local1 ^ local1.
+        body = (b'\x01\x01\x7f\x20\x00\x41\x00\x6a\x21\x01'
+                b'\x20\x01\x20\x01\x73\x0b')
+        decoded = decode_module(module(body, kind=0x7f))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (0x1234,))
+
+        plan = executor.plan(initial.frames[-1])
+        self.assertEqual(plan.waves.work, 0)
+        self.assertEqual(plan.stack[0].kind, 'const')
+        self.assertEqual(plan.stack[0].value, 0)
+        final, _report = executor.run_with_report(initial)
+        self.assertEqual(final.result, (0,))
+
+    def test_slice_normalization_shares_common_subexpressions(self):
+        # (x & 255) + (x & 255) has two physical operations, not three.
+        body = (b'\x00\x20\x00\x41\xff\x01\x71'
+                b'\x20\x00\x41\xff\x01\x71\x6a\x0b')
+        decoded = decode_module(module(body, kind=0x7f))
+        plan = WaveExecutor(decoded).plan(
+            start_state(decoded, 'f', (7,)).frames[-1])
+
+        self.assertEqual(plan.waves.work, 2)
+        self.assertEqual(plan.waves.span, 2)
+
+    def test_only_reused_codec_slices_get_a_compiled_transition(self):
+        body = (b'\x00\x20\x00\x41\xff\x01\x71'
+                b'\x20\x00\x41\xd5\x00\x73\x6a\x0b')
+        decoded = decode_module(module(body, kind=0x7f))
+        executor = WaveExecutor(decoded)
+
+        first, _cost = executor.run_with_report(
+            start_state(decoded, 'f', (9,)))
+        self.assertEqual(len(executor.compiled), 0)
+        second, _cost = executor.run_with_report(
+            start_state(decoded, 'f', (9,)))
+
+        self.assertEqual(first.result, second.result)
+        self.assertEqual(len(executor.compiled), 1)
+        self.assertEqual(
+            executor.normalization_layout()['compiled_hot_slices'], 1)
+
+    def test_dead_slice_nodes_keep_trap_sensitive_operations(self):
+        # The quotient is dropped, but x / x still traps for x == 0.
+        body = b'\x00\x20\x00\x20\x00\x6e\x1a\x41\x07\x0b'
+        decoded = decode_module(module(body, kind=0x7f))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (0,))
+        plan = executor.plan(initial.frames[-1])
+
+        self.assertEqual(plan.waves.work, 1)
+        with self.assertRaisesRegex(Exception, 'zero'):
+            executor.step(initial)
+
     def test_slice_codec_is_segmented_mmap_data(self):
         body = (b'\x00\x20\x00\x41\xff\x01\x71'
                 b'\x20\x00\x41\xd5\x00\x73\x6a\x0b')

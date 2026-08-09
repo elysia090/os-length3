@@ -103,8 +103,9 @@ def prepare_driver(source, signature=None):
     would run Clang's compilation of the kernel — the page would be testing the
     compiler, not the minimizer. Only the selected kernel definition is
     dropped. `main`, globals and every other helper stay in the translation
-    unit, while an external declaration makes calls to the kernel resolve to
-    the artifact. What executes is then
+    unit. A unary function is the VM import directly; a multi-parameter
+    function gets a C-ABI bridge to the packed scalar import. What executes is
+    then
 
         paste -> QM -> codec -> run
 
@@ -121,9 +122,7 @@ def prepare_driver(source, signature=None):
         return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
 
     if signature:
-        param = signature['params'][0][1].name
-        declaration = 'extern %s %s(%s);\n' % (
-            signature['ret'].name, signature['name'], param)
+        declaration = _driver_bridge(signature)
     else:
         body = _INCLUDE.sub('', source)
         return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
@@ -135,6 +134,50 @@ def prepare_driver(source, signature=None):
     driver = _INCLUDE.sub('', source[:kernel_span[0]] + source[kernel_span[1]:])
     return (PRELUDE + '\n' + STDIO + '\n' + declaration + '\n'
             + c_shims_for(driver) + driver)
+
+
+def driver_import_name(name, parameter_count):
+    """Name of the scalar VM import used by a prepared Run driver."""
+    return name if parameter_count == 1 else 'qm_artifact_%s' % name
+
+
+def _driver_bridge(signature):
+    """Declare the VM import and preserve the source function's C ABI.
+
+    A minimized artifact always consumes one scalar coordinate. For a unary
+    function that is already the source ABI. Multiple C parameters need a
+    tiny wasm-side adapter: it packs them low-to-high and calls the same unary
+    VM export, without putting JavaScript on the per-call path.
+    """
+    params = signature['params']
+    ret = signature['ret'].name
+    name = signature['name']
+    if len(params) == 1:
+        return 'extern %s %s(%s);\n' % (ret, name, params[0][1].name)
+
+    total_bits = sum(ctype.bits for _param_name, ctype in params)
+    coordinate_type = 'uint64_t' if total_bits > 32 else 'uint32_t'
+    imported = driver_import_name(name, len(params))
+    declaration = 'extern %s %s(%s);\n' % (
+        ret, imported, coordinate_type)
+
+    offset = 0
+    terms = []
+    for param_name, ctype in params:
+        mask = (1 << ctype.bits) - 1
+        term = '((uint64_t)(%s) & 0x%Xull)' % (param_name, mask)
+        if offset:
+            term = '(%s << %d)' % (term, offset)
+        terms.append(term)
+        offset += ctype.bits
+    typed_params = ', '.join('%s %s' % (ctype.name, param_name)
+                             for param_name, ctype in params)
+    coordinate = ' | '.join(terms)
+    bridge = ('%s %s(%s)\n{\n'
+              '    return %s((%s)(%s));\n'
+              '}\n') % (ret, name, typed_params, imported,
+                         coordinate_type, coordinate)
+    return declaration + bridge
 
 
 def prepare_source(source):
@@ -379,12 +422,23 @@ int main(void)
 {
     unsigned long long in, out;
     while (fread(&in, sizeof in, 1, stdin) == 1) {
-        out = (unsigned long long)(QM_CAST)%(NAME)s((QM_ARG)in);
+        out = (unsigned long long)(QM_CAST)(QM_CALL);
         if (fwrite(&out, sizeof out, 1, stdout) != 1) return 2;
     }
     return 0;
 }
 '''
+
+
+def _packed_call(signature):
+    offset = 0
+    arguments = []
+    for _name, ctype in signature['params']:
+        mask = (1 << ctype.bits) - 1
+        raw = '((in >> %d) & 0x%XULL)' % (offset, mask)
+        arguments.append('(%s)%s' % (ctype.name, raw))
+        offset += ctype.bits
+    return '%s(%s)' % (signature['name'], ', '.join(arguments))
 
 
 class ClangError(CFrontError):
@@ -445,10 +499,8 @@ class NativeClang(object):
         """
         if not self.available():
             raise ClangError('clang was not found on PATH')
-        arg_ctype = signature['params'][0][1]
-        harness = (_HARNESS % {'NAME': signature['name']}) \
-            .replace('QM_CAST', signature['ret'].name) \
-            .replace('QM_ARG', arg_ctype.name)
+        harness = (_HARNESS.replace('QM_CAST', signature['ret'].name)
+                    .replace('QM_CALL', _packed_call(signature)))
 
         with tempfile.TemporaryDirectory(prefix='qm-clang-') as tmp:
             csrc = os.path.join(tmp, 'kernel.c')

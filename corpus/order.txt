@@ -17,9 +17,11 @@ lanes/byte_mask_from_spread.c
 lanes/quote_state_before8.c
 lanes/prefix_parity_mask8.c
 bit-linear/prefix_xor64.c
+bit-linear/prefix_parity64.c
 bit-linear/changes64.c
 bit-linear/morton_dilate16.c
 bit-linear/morton_compact_even16.c
+bit-linear/morton32.c
 lanes/ranks16_nibble.c
 lanes/block_offsets8.c
 

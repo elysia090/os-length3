@@ -182,8 +182,14 @@ def run_plan():
         return _dumps({'ok': False,
                        'error': _LAST.get('*artifact_error')
                        or 'no minimized program has been built yet'})
+    function = _LAST.get('*function') or 'kernel'
+    parameters = _LAST.get('*parameter_layout') or []
+    from .clang import driver_import_name
     return _dumps({'ok': True,
-                   'function': _LAST.get('*function') or 'kernel',
+                   'function': function,
+                   'import_function': driver_import_name(
+                       function, len(parameters) or 1),
+                   'parameters': parameters,
                    'input_bits': _LAST['*input_bits'],
                    'output_bits': _LAST['*output_bits'],
                    'in_bytes': -(-_LAST['*input_bits'] // 8),
@@ -205,16 +211,16 @@ def plan(source, options_json='{}'):
     except CFrontError as exc:
         return _dumps({'ok': False, 'error': exc.to_dict()})
 
-    from .frontend import require_analysable
+    from .frontend import parameter_layout, require_analysable
     try:
         require_analysable(signature)
     except CFrontError as exc:
         return _dumps({'ok': False, 'error': exc.to_dict()})
 
-    param_name, param_ctype = signature['params'][0]
     ret = signature['ret']
-
-    input_bits = min(param_ctype.bits, int(options.get('max_input_bits', 64)))
+    parameters = parameter_layout(signature['params'])
+    input_bits = min(sum(item['bits'] for item in parameters),
+                     int(options.get('max_input_bits', 64)))
     if options.get('input_bits'):
         input_bits = int(options['input_bits'])
     domain = choose_domain(
@@ -227,7 +233,9 @@ def plan(source, options_json='{}'):
         'ok': True,
         'function': signature['name'],
         'signature_via': signature.get('via'),
-        'param_type': param_ctype.name,
+        'param_type': (parameters[0]['type'] if len(parameters) == 1
+                       else None),
+        'parameters': parameters,
         'return_type': ret.name,
         'input_bits': input_bits,
         'output_bits': ret.bits,
@@ -244,10 +252,15 @@ def plan(source, options_json='{}'):
         'values': [str(v) for v in domain.values()],
         'signature': {
             'name': signature['name'],
-            'signature': '%s %s(%s %s)' % (ret.name, signature['name'],
-                                           param_ctype.name, param_name),
+            'signature': '%s %s(%s)' % (
+                ret.name, signature['name'],
+                ', '.join('%s %s' % (item['type'], item['name'])
+                          for item in parameters)),
             'return': ret.to_dict(),
-            'params': [{'name': param_name, 'type': param_ctype.to_dict()}],
+            'params': [
+                {'name': name, 'type': ctype.to_dict()}
+                for name, ctype in signature['params']
+            ],
         },
     })
 
@@ -319,6 +332,8 @@ def _keep(result):
     _LAST['*output_bits'] = result['frontend']['output_bits']
     _LAST['*primary'] = result.get('primary_target')
     _LAST['*function'] = (result['frontend'].get('function') or {}).get('name')
+    _LAST['*parameter_layout'] = (
+        result['frontend'].get('parameter_layout') or [])
 
     from vm import codec as vm_codec, emit, image as vm_image, lower
 
