@@ -17,7 +17,7 @@ C / C++  →  Clang -O2  →  semantics  →  quotient  →  normalized action
 The grammar it normalizes into is GF(2)-linear maps, convolutions, lane-local
 steps, gathers, whole-word reductions and a bounded case analysis — so the
 bit-manipulation exercises from CS:APP, MIT 6.172 and Princeton's *Algorithms*
-are in `src/v2/examples/` alongside the lane kernels, and what QM makes of each
+are in the categorized top-level `corpus/` alongside the lane kernels, and what QM makes of each
 of them is in [`src/v2/README.md`](src/v2/README.md).
 
 ## Contents
@@ -27,13 +27,14 @@ of them is in [`src/v2/README.md`](src/v2/README.md).
 | [`src/v1/SPEC.md`](src/v1/SPEC.md) | the product specification |
 | [`src/v2/`](src/v2/) | **the interactive product**: open a URL, paste C |
 | [`src/v1/`](src/v1/) | the original research prototype and its x86 execution oracle |
+| [`corpus/`](corpus/) | categorized C, assembly, physical-array, and VM kernels |
 
 ## Quick start
 
 ```sh
 cd src/v2
 python3 tools/serve.py              # the browser product
-python3 -m qm.cli examples/ranks8.c # the same pipeline on a terminal
+python3 -m qm.cli ../../corpus/lanes/ranks8.c # the same pipeline on a terminal
 python3 tests/run.py                # the suite
 ```
 
@@ -52,5 +53,5 @@ For the 14-line `ranks8` from the spec:
 Quotient Minimizer    2 core operations      PDEP ; IMUL
 Residual freedom      502 solutions
 Verification          exact exhaustive, 256 / 256
-Artifact              13,586 bytes           pack(code(z))
+Artifact               2,148 bytes           pack(code(z))
 ```

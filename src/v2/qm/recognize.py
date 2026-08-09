@@ -1,4 +1,4 @@
-"""SPEC §16 — known primitive recognition.
+"""Known primitive recognition.
 
 Recognition is informational.  Correctness comes from semantics and
 verification, never from a matched name, so nothing downstream branches on the

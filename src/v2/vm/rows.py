@@ -1,8 +1,8 @@
-"""Section 3.2 — the direct physical normal form.
+"""The direct physical row form of the transactional rSUBLEQ machine.
 
-Section 3.1 says what a transition *means*. This says what it *is*, and the two
-are different things: §3.1 reads five cells per step, and §3.2 keeps those reads
-already resolved and repairs them by broadcast when memory changes.
+The scalar machine reads five cells per transition. This representation keeps
+those reads resolved in resident rows and repairs them by broadcast when
+memory changes.
 
 A resident coordinate keeps a row:
 
@@ -10,34 +10,34 @@ A resident coordinate keeps a row:
                 destination = M[i+1],
                 branch      = M[i+2],
                 old         = M[M[i+1]],
-                change      = -M[M[i]])                              (3.3)
+                change      = -M[M[i]])
 
 so a transition is `result = old + change` with no indirect read left to do:
 
     successor = pc+3           when result > 0
                 branch         when result <= 0 and branch >= 0
-                event(branch)  when result <= 0 and branch < 0       (3.4)
+                event(branch)  when result <= 0 and branch < 0
 
 Writing coordinate `d` invalidates exactly the cached components that read it,
-and (3.5) names them: a row whose destination is `d` has a stale `old`, a row
+as follows: a row whose destination is `d` has a stale `old`, a row
 whose source is `d` has a stale `change`, and rows `d`, `d-1`, `d-2` have stale
 *descriptors* and are rebuilt whole. Every other entry is an independent
-single-slot add of the same `change`, which is why (3.6) is one wave with no
+single-slot add of the same `change`, so the repair is one wave with no
 reduction, no atomic and no order among lanes.
 
 That is the cost model, and it is not the instruction count:
 
     work                 = Theta(k + 1)     per transition, k incidences
     row_dependency_span  = Theta(1)         per transition
-    barriers             = 1 when change != 0 and k > 0              (3.7)
+    barriers             = 1 when change != 0 and k > 0
 
 and when `change == 0` the undo, the store, the propagation, the repair and
 the synchronization all disappear — such a transition costs its capture and
 nothing else.
 
 This module is a reference: it computes the same outcomes as `machine.py` and
-counts what §3.7 defines. Nothing here is a second semantics — the tests run
-both on the same artifacts and require identical outcomes.
+counts the wave costs above. Nothing here is a second semantics — the tests
+run both on the same artifacts and require identical outcomes.
 
 Depends on `image` and `machine`.
 """
@@ -47,7 +47,7 @@ from .image import DEAD
 
 
 class Cost(object):
-    """What §3.7 counts, accumulated over a call."""
+    """Logical transitions and physical wave costs accumulated over a call."""
 
     __slots__ = ('transitions', 'work', 'span', 'barriers', 'incidences',
                  'quiet')
@@ -72,7 +72,7 @@ class Cost(object):
 
 
 class Rows(object):
-    """Resident rows over one memory, with the incidence index (3.5) needs.
+    """Resident rows over one memory, with reverse incidence indexes.
 
     Rows are created on first arrival and never have to be created any other
     way: the row is a function of memory, so a coordinate that is never entered
@@ -89,8 +89,8 @@ class Rows(object):
         self.branch = {}
         self.old = {}
         self.change = {}
-        # Rows with source == destination.  The specification says one value
-        # suffices for these — `result = 0` and `change = -old` — so `change`
+        # Rows with source == destination need only one stored value:
+        # `result = 0` and `change = -old`. Therefore `change`
         # is derived at use rather than cached. Caching it and updating only
         # `old` in the wave is exactly how it goes stale.
         self.paired = set()
@@ -114,7 +114,7 @@ class Rows(object):
         self.source[at] = source = get(at, 0)
         self.destination[at] = destination = get(at + 1, 0)
         self.branch[at] = get(at + 2, 0)
-        # An invalid row has no value; §3.1 fails finitely on it.
+        # An invalid row has no value and therefore fails finitely.
         self.paired.discard(at)
         if source >= 0 and destination >= 0:
             self.old[at] = get(destination, 0)
@@ -143,10 +143,11 @@ class Rows(object):
     # -- the wave ---------------------------------------------------------
 
     def propagate(self, written, change, cost):
-        """(3.5) and (3.6): one write, one wave, then the special-row repair.
+        """Perform one write, one incidence wave, then repair code rows.
 
         Every entry below writes a distinct component, so the loop has no
-        reduction and no order. `k` is what §3.7 charges.
+        reduction and no ordering dependency. `k` is the number of touched
+        source/destination incidences.
         """
         special = set()
         for offset in (0, 1, 2):
@@ -224,7 +225,7 @@ def run(memory, pc, budget, cost=None):
 
 
 def measure(residual, history=(), budget=1 << 24):
-    """Cost of feeding `history` and then reading, in §3.7's terms."""
+    """Cost of feeding `history` and then reading in the row-wave model."""
     if residual.dead:
         return None
     total = Cost()

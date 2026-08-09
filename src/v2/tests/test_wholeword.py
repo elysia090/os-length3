@@ -18,9 +18,9 @@ from qm.bits import lane_values, mask_of
 from qm.isa import reciprocal
 from qm.program import compile_program
 from qm.solvers import _modulus_of
-from vm import codec, image, lower, run
+from vm import codec, image, run
 
-from tests.support import example, solved as solve, target
+from tests.support import example, solved as solve, target, vm_picture
 
 
 def minimized(name):
@@ -50,24 +50,22 @@ class TestWholeWordKernelsLand(unittest.TestCase):
         # The threshold is zero, so the subtraction that would have made the
         # comparison is not there: the difference's own sign bit is it.
         ('is_less_or_equal_i32', 'split',
-         ['SEXT', 'SAR', 'SUBR', 'AND', 'XOR',
+         ['SHL', 'SAR', 'SAR', 'SUBR', 'AND', 'XOR',
           'SAR', 'XORR', 'ANDNR', 'XORR']),
         # Both halves are read with a mask and a shift: a deposit into the low
         # thirty-two bits is a mask, and normalization says so.
         ('min_i32', 'split',
-         ['SEXT', 'SAR', 'SUBR', 'AND', 'SHR',
+         ['SHL', 'SAR', 'SAR', 'SUBR', 'AND', 'SHR',
           'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
         # `x >> 32` has nothing above bit 31, so the mask after it is dropped.
         ('mod_add_u32', 'split',
          ['AND', 'SHR', 'ADDR', 'ADD',
           'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
-        # Two pieces on the byte read as signed: the two exponents that give a
-        # denormal, and everything above them.  A multiply by 2^23 is a shift,
-        # and a subtraction of -125 is an addition of 125.
+        # A multiply by 2^23 is a shift, and a subtraction of -125 is an
+        # addition of 125.
         ('float_power2_bits', 'split',
-         ['SEXT', 'AND', 'SHL', 'AND', 'SHL', 'AND', 'SHL', 'XORR',
-          'XORR', 'XOR', 'SHL', 'ADD', 'ADD', 'SAR', 'XORR', 'ANDNR',
-          'XORR']),
+         ['SHL', 'SAR', 'AND', 'SHL', 'SHL', 'ADD',
+          'ADD', 'SAR', 'XORR', 'ANDNR', 'XORR']),
     ]
 
     def test_reaches_the_named_sequence(self):
@@ -175,8 +173,7 @@ class TestCommonSubexpressions(unittest.TestCase):
 
 
 class TestTheArtifactAgrees(unittest.TestCase):
-    """The canonical artifact is built from the abstract program, so every new
-    class needs a bit-sliced form and the two have to compute the same thing."""
+    """The minimized wasm32 program and the VM image compute the same thing."""
 
     CASES = ['logical_neg_i32', 'least_bit_mask_u64', 'float_power2_bits',
              'rabin_karp_roll']
@@ -187,7 +184,7 @@ class TestTheArtifactAgrees(unittest.TestCase):
             program = result['program_object']
             input_bits = result['frontend']['input_bits']
             output_bits = result['frontend']['output_bits']
-            picture = lower.lower_program(program, input_bits, output_bits)
+            picture = vm_picture(result)
             blob = codec.pack(codec.code(image.serialize(picture)))
             reference = compile_program(program)
             values = [v & mask_of(input_bits)

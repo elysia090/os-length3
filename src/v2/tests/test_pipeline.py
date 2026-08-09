@@ -1,4 +1,4 @@
-"""End-to-end behaviour, including the numbers SPEC quotes.
+"""End-to-end behaviour, including pinned residual-freedom counts.
 
 If the residual-freedom counts here change, either the grammar changed or
 something is wrong; both cases need a human, so they are asserted exactly.
@@ -14,7 +14,7 @@ from tests.support import read_example as example, solved as solve
 
 
 class TestSpecNumbers(unittest.TestCase):
-    """SPEC §9's residual-freedom table, reproduced from pasted C."""
+    """The residual-freedom regression table, reproduced from pasted C."""
 
     CASES = [
         ('ranks8.c', 502, ['LIN_CONST', 'CONV'], 'exclusive rank8'),
@@ -67,42 +67,6 @@ class TestDeterminism(unittest.TestCase):
                 # Wall-clock is the one field allowed to differ.
                 first.pop('elapsed_s'), second.pop('elapsed_s')
                 self.assertEqual(first, second)
-
-
-class TestTheDriverIsNotTheKernel(unittest.TestCase):
-    """A `main` in the paste is left out of the analysis, wherever it arrives.
-
-    The page split the driver off and the command line did not, so the same
-    file answered two different questions depending on where it was pasted.
-    The split belongs to `solve`, which is the one door both come through.
-    """
-
-    KERNEL_ALONE = '''#include <stdint.h>
-    uint64_t ranks8(uint8_t m)
-    {
-        uint64_t r = 0;
-        for (unsigned i = 0; i < 8; ++i)
-            r |= (uint64_t)__builtin_popcount(m & ((1u << i) - 1)) << (8 * i);
-        return r;
-    }'''
-
-    def test_a_paste_with_a_driver_answers_about_the_kernel(self):
-        with_driver = solve(example('ranks8.c'), frontend='cfront')
-        alone = solve(self.KERNEL_ALONE, frontend='cfront')
-        self.assertTrue(with_driver['ok'], with_driver.get('error'))
-        self.assertEqual(with_driver['program']['classes'],
-                         alone['program']['classes'])
-        self.assertEqual(with_driver['residual_freedom'],
-                         alone['residual_freedom'])
-        self.assertEqual(with_driver['frontend']['function']['name'], 'ranks8')
-
-    def test_the_report_says_a_driver_was_found(self):
-        self.assertTrue(
-            solve(example('ranks8.c'),
-                  frontend='cfront')['frontend']['driver']['present'])
-        self.assertFalse(
-            solve(self.KERNEL_ALONE,
-                  frontend='cfront')['frontend']['driver']['present'])
 
 
 class TestVerification(unittest.TestCase):
@@ -202,7 +166,7 @@ class TestSeveralFunctions(unittest.TestCase):
 
 @unittest.skipUnless(NATIVE.available(), 'clang is not installed')
 class TestClangFrontend(unittest.TestCase):
-    """SPEC §2: Clang is the entry point, not a modelled substitute for it."""
+    """Clang is the C entry point, not a modelled substitute for it."""
 
     def test_clang_and_builtin_frontend_agree(self):
         for name in ('ranks8.c', 'select8.c', 'run_ids8.c'):

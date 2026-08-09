@@ -1,4 +1,4 @@
-"""SPEC §7 — representation guards are derived, not declared.
+"""Representation guards are derived from the algebra, not declared.
 
     quotient/truncation is trivial   -> guard cost 0
     escape correction is linear      -> guard may be deferred and amortized

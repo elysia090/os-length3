@@ -1,7 +1,7 @@
 """Recursive-descent parser for the C subset.
 
-Grammar coverage is chosen to match SPEC §33: small functions, fixed-width
-integers, bounded control flow.  Anything outside that is rejected with a
+Grammar coverage is limited to small functions, fixed-width integers, and
+bounded control flow. Anything outside that is rejected with a
 located diagnostic rather than mis-parsed.
 """
 
@@ -291,8 +291,9 @@ class Parser(object):
             self.expect(';')
             return N.Continue(line=line)
         if self.at('goto'):
-            raise UnsupportedC('goto is not supported', line=line,
-                               hint='SPEC §33 targets bounded control flow')
+            raise UnsupportedC(
+                'goto is not supported', line=line,
+                hint='use structured, statically bounded control flow')
         if self.looks_like_declaration():
             return self.parse_declaration()
 

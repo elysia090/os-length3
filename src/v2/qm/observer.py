@@ -1,4 +1,4 @@
-"""SPEC §3 / §5.1 — the observation quotient comes from an explicit observer.
+"""The observation quotient comes from an explicit observer.
 
     obs : Output -> Observable
     y ~ y'   iff   obs(y) == obs(y')

@@ -1,4 +1,4 @@
-"""SPEC §2 — Clang is the entry point.
+"""Clang is the C entry point.
 
 The compiler is not the minimizer.  It is the frontend normalizer that removes
 ordinary source-level noise before QM extracts semantics, and it is what makes
@@ -8,10 +8,10 @@ Two artefacts come out of one compile:
 
     --target=x86_64 -O2 -S     the assembly the UI shows, and the instruction
                                count that answers "what did the compiler
-                               generate?"  (SPEC §2, §13)
+                               generate?"
 
     execution of the same -O2 code   the concrete input/output semantics QM
-                                     quotients and verifies against (SPEC §4)
+                                     quotients and verifies against
 
 In the browser the second artefact comes from compiling to wasm32 and calling
 the exported function; `web/worker.js` does that and hands the table to
@@ -47,7 +47,7 @@ typedef __UINT64_TYPE__ uint_fast64_t; typedef __UINT32_TYPE__ uint_fast32_t;
 
 _INCLUDE = re.compile(r'^\s*#\s*include\s*[<"][^>"]*[>"]\s*$', re.M)
 
-# SPEC §2: source-compilation presets.
+# Source-compilation presets.
 MARCH = {
     'x86-64': ['-march=x86-64'],
     'x86-64-v2': ['-march=x86-64-v2'],
@@ -97,20 +97,21 @@ static void print_hex64(uint64_t v)
 
 
 def prepare_driver(source, signature=None):
-    """Just the driver, with the kernel left as an import.
+    """The driver translation unit, with the selected kernel as an import.
 
     This is the half that makes Run mean something. Compiling the whole paste
     would run Clang's compilation of the kernel — the page would be testing the
-    compiler, not the minimizer. So the kernel's *definition* is dropped and
-    only its declaration is kept: `main` calls an undefined symbol, and the
-    page supplies it by running the artifact. What executes is then
+    compiler, not the minimizer. Only the selected kernel definition is
+    dropped. `main`, globals and every other helper stay in the translation
+    unit, while an external declaration makes calls to the kernel resolve to
+    the artifact. What executes is then
 
         paste -> QM -> codec -> run
 
     with the driver as the thing that drives it.
 
     `signature` is the kernel QM took, as `read_signature` returns it. Without
-    one there is nothing to declare and the whole paste is compiled, which is
+    one there is nothing to replace and the whole paste is compiled, which is
     the honest fallback when the minimizer found no kernel to begin with.
     """
     source = source or ''
@@ -119,8 +120,6 @@ def prepare_driver(source, signature=None):
         body = _INCLUDE.sub('', source)
         return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
 
-    driver = _INCLUDE.sub('', source[span[0]:span[1]])
-    declaration = ''
     if signature:
         param = signature['params'][0][1].name
         declaration = 'extern %s %s(%s);\n' % (
@@ -128,6 +127,12 @@ def prepare_driver(source, signature=None):
     else:
         body = _INCLUDE.sub('', source)
         return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+
+    kernel_span = _definition_span(source, signature['name'])
+    if kernel_span is None:
+        body = _INCLUDE.sub('', source)
+        return PRELUDE + '\n' + STDIO + '\n' + c_shims_for(body) + body
+    driver = _INCLUDE.sub('', source[:kernel_span[0]] + source[kernel_span[1]:])
     return (PRELUDE + '\n' + STDIO + '\n' + declaration + '\n'
             + c_shims_for(driver) + driver)
 
@@ -144,23 +149,14 @@ def prepare_source(source):
     of them the paste uses are supplied here as portable C.  Without that, QM
     emits code it cannot read: paste back its own `_pdep_u64` output and Clang
     says the function is undeclared.
-
-    A driver goes too.  This is the half that gets *evaluated* over a domain,
-    and the harness that does the evaluating brings its own `main`; leaving the
-    paste's in would be two of them and a link error.  `prepare_driver` is the
-    other half and keeps exactly what this drops.
     """
-    kernel, _driver = split_main(source)
-    body = _INCLUDE.sub('', kernel)
+    body = _INCLUDE.sub('', source)
     return PRELUDE + '\n' + c_shims_for(body) + body
 
 
 # ---------------------------------------------------------------------------
 # The driver, and the kernel underneath it
 # ---------------------------------------------------------------------------
-
-_MAIN_CALL = re.compile(r'\bmain\s*\(')
-
 
 def _code_mask(source):
     """A byte per character: 1 where it is code, 0 in a comment or a literal.
@@ -229,8 +225,17 @@ def split_main(source):
     then say that pressing Run changes nothing.
     """
     source = source or ''
+    span = _definition_span(source, 'main')
+    if span is None:
+        return source, None
+    return source[:span[0]] + source[span[1]:], span
+
+
+def _definition_span(source, name):
+    """The source span of one file-scope function definition, if present."""
     mask = _code_mask(source)
-    for hit in _MAIN_CALL.finditer(source):
+    call = re.compile(r'\b%s\s*\(' % re.escape(name))
+    for hit in call.finditer(source):
         at = hit.start()
         if not mask[at]:
             continue
@@ -248,8 +253,8 @@ def split_main(source):
         if end < 0:
             continue
         start = _definition_start(source, mask, at)
-        return source[:start] + source[end:], (start, end)
-    return source, None
+        return start, end
+    return None
 
 
 def _depth_at(source, mask, index):
@@ -265,7 +270,7 @@ def _depth_at(source, mask, index):
 
 
 def _definition_start(source, mask, at):
-    """Back up over the return type and any storage class before `main`."""
+    """Back up over a return type and storage classes at file scope."""
     i = at
     while i > 0:
         c = source[i - 1]

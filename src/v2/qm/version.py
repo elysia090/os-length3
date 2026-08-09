@@ -1,6 +1,6 @@
 """Version identifiers for the Quotient Minimizer prototype.
 
-The corpus key in SPEC §19 is
+A corpus key has the form
 
     semantic identity
     x observer
@@ -9,7 +9,9 @@ The corpus key in SPEC §19 is
     x objective version
     -> canonical result
 
-so grammar and objective versions are first-class data, not comments.
+so grammar and objective versions are first-class data, not comments. Solver
+versions describe changes in candidate discovery without invalidating an
+already verified minimum under the same grammar and objective.
 """
 
 QM_VERSION = '2.0.0-prototype'
@@ -21,7 +23,7 @@ GRAMMAR_VERSION = 'g3'
 OBJECTIVE_VERSION = 'o1'
 
 # Bumped when solver behaviour changes in a way that can move residual freedom.
-SOLVER_VERSION = 's3'
+SOLVER_VERSION = 's4'
 
 
 def version_block():

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Regenerate web/examples.json from the examples directory.
+"""Regenerate web/examples.json from the categorized top-level corpus.
 
-The example kernels have exactly one home: `examples/`. The CLI reads them from
-there, the tests run them from there, and this puts the same text in front of
-the page. Nothing about an example is written twice, and nothing about its
+The example kernels have exactly one home under `corpus/<category>/`. The CLI
+and tests read them there, and this puts the same text in front of the page.
+Nothing about an example is written twice, and nothing about its
 *result* is written down at all — the numbers appear when you press Compile,
 because that is the only place they can be true.
 
@@ -16,23 +16,25 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLES = os.path.join(ROOT, 'examples')
+CORPUS = os.path.abspath(os.path.join(ROOT, '..', '..', 'corpus'))
 OUTPUT = os.path.join(ROOT, 'web', 'examples.json')
+PRESENTED_CATEGORIES = (
+    'bit-linear', 'whole-word', 'lanes', 'text', 'floating', 'demos',
+)
 
-# What a paste can be: C, or a listing on the way back in (SPEC §2).  Only the
-# text travels — an example is something to open and press Compile on, and what
-# each one does is in the comment at the top of the file itself.
+# What a paste can be: C, or an x86-64 or wasm32 listing. Only the text travels;
+# each example explains its function in the comment at the top of the file.
 SUFFIXES = ('.c', '.s', '.wat')
 
 
 def presentation_order():
-    """Filenames in the order examples/order.txt lists them.
+    """Relative paths in the order corpus/order.txt lists them.
 
     Order is a presentation choice, so it lives beside the examples rather than
     in the page. Anything unlisted follows alphabetically, which means a new
     example shows up without anyone having to remember this file.
     """
-    path = os.path.join(EXAMPLES, 'order.txt')
+    path = os.path.join(CORPUS, 'order.txt')
     if not os.path.exists(path):
         return []
     with open(path) as handle:
@@ -42,19 +44,28 @@ def presentation_order():
 
 def collect():
     listed = presentation_order()
-    on_disk = sorted(n for n in os.listdir(EXAMPLES) if n.endswith(SUFFIXES))
+    on_disk = []
+    for category in PRESENTED_CATEGORIES:
+        directory = os.path.join(CORPUS, category)
+        on_disk.extend(
+            '%s/%s' % (category, name)
+            for name in sorted(os.listdir(directory))
+            if name.endswith(SUFFIXES)
+        )
+    on_disk.sort()
     names = [n for n in listed if n in on_disk]
     names += [n for n in on_disk if n not in names]
 
     out = []
     for name in names:
-        path = os.path.join(EXAMPLES, name)
+        path = os.path.join(CORPUS, *name.split('/'))
         with open(path) as handle:
             source = handle.read()
-        stem, _, suffix = name.rpartition('.')
+        filename = os.path.basename(name)
+        stem, _, suffix = filename.rpartition('.')
         out.append({
             'name': stem,
-            'file': name,
+            'file': filename,
             'language': 'c' if suffix == 'c' else 'asm',
             'source': source,
         })
@@ -90,7 +101,7 @@ def main():
               file=sys.stderr)
         return 1
 
-    with open(OUTPUT, 'w') as handle:
+    with open(OUTPUT, 'w', newline='\n') as handle:
         json.dump(wanted, handle, indent=2)
         handle.write('\n')
     print('wrote %s (%d examples)' % (OUTPUT, len(wanted['examples'])))
