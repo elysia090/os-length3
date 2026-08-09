@@ -23,10 +23,18 @@ from tests.support import read_example
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-
-def hex_words(values):
-    """What the shipped drivers read: whitespace-separated hex words."""
-    return (' '.join('%x' % v for v in values) + '\n').encode()
+DRIVER = '''
+int main(void)
+{
+    int c;
+    while ((c = getchar()) >= 0) {
+        print_hex64(%s((uint8_t)c));
+        putchar('\\n');
+    }
+    puts("done");
+    return 0;
+}
+'''
 
 # What the page does, with node for the browser: load the machine, then hand
 # `main` the kernel as an import that runs the artifact.
@@ -78,10 +86,10 @@ def has_node():
 @unittest.skipUnless(NATIVE.available() and has_node(), 'needs clang and node')
 class TestRunGoesThroughTheCodec(unittest.TestCase):
 
-    def drive(self, example, values):
-        """Run the example exactly as it ships, over `values`."""
-        return self.drive_source(read_example(example + '.c'),
-                                 hex_words(values))
+    def drive(self, example, stdin, name=None):
+        name = name or example
+        return self.drive_source(read_example(example + '.c') + (DRIVER % name),
+                                 stdin)
 
     def drive_source(self, source, stdin):
         kernel, span = split_main(source)
@@ -132,7 +140,8 @@ class TestRunGoesThroughTheCodec(unittest.TestCase):
 
     def test_the_kernel_is_not_in_the_compiled_driver(self):
         """If Clang still had the body, the import would never be called."""
-        prepared = prepare_run(read_example('starts8.c'))
+        source = read_example('starts8.c') + (DRIVER % 'starts8')
+        prepared = prepare_run(source)
         self.assertIn('extern uint64_t starts8(uint8_t);', prepared)
         self.assertNotIn('x & ~(x << 1)', prepared)
         self.assertIn('getchar()', prepared)
@@ -148,13 +157,12 @@ class TestRunGoesThroughTheCodec(unittest.TestCase):
         self.assertEqual(out['ran'], 3)
 
     def test_the_shipped_example_runs(self):
-        """Every example ships with a driver, so every one can be pressed Run on.
+        """`examples/ranks8_run.c` is the one a visitor presses Run on.
 
-        `ranks8` stands for all of them here: the check is that the shipped
-        text works as written, and that what gets minimized is the kernel and
-        not `main`.
+        It is in the Examples menu, so it has to work as written — including
+        that the minimizer sees `ranks8` and not `main`.
         """
-        source = read_example('ranks8.c')
+        source = read_example('ranks8_run.c')
         kernel, span = split_main(source)
         self.assertIsNotNone(span, 'the shipped example lost its main')
         # The comment at the top names `getchar`, so the check is that the
@@ -166,11 +174,12 @@ class TestRunGoesThroughTheCodec(unittest.TestCase):
         self.assertTrue(result['ok'], result.get('error'))
         self.assertEqual(result['frontend']['function']['name'], 'ranks8')
 
-        out = self.drive_source(source, hex_words([0, 5, 0xFF]))
+        out = self.drive_source(source, [0, 5, 0xFF])
         want = ['0x%016x' % sum(bin(v & ((1 << k) - 1)).count('1') << (8 * k)
                                 for k in range(8))
                 for v in (0, 5, 0xFF)]
         self.assertEqual(out['stdout'].split('\n')[:3], want)
+        self.assertEqual(out['stdout'].split('\n')[3], 'done')
         self.assertEqual(out['ran'], 3)
 
     def test_hello_world_is_a_greeting_and_a_kernel(self):
@@ -188,5 +197,5 @@ class TestRunGoesThroughTheCodec(unittest.TestCase):
 
     def test_stdin_ends_the_loop_rather_than_hanging(self):
         out = self.drive('starts8', [])
-        self.assertEqual(out['stdout'], '')
+        self.assertEqual(out['stdout'], 'done\n')
         self.assertEqual(out['ran'], 0)

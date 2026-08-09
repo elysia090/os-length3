@@ -1,9 +1,8 @@
 ;; Inclusive prefix XOR of 64 bits, as wasm32.
 ;;
 ;; wasm has no carry-less multiply, so the scan is six shift/XOR doublings.
-;; Pasted here, the listing is evaluated rather than pattern-matched, so the
-;; same function comes back as a single instruction on a target that does have
-;; one.
+;; QM reads the listing, recognises the convolution behind it, and on a
+;; target that has PCLMUL emits one instruction for the same function.
 ;; qm-input-bits: 64
 (module
   (func $prefix_xor64_qm (export "prefix_xor64_qm") (param i64) (result i64)

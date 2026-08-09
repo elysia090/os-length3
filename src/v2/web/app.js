@@ -610,19 +610,14 @@ function termWrite(text, className) {
 }
 
 function runProgram() {
-  // Two things one control can mean, and which one it means is a property of
-  // the paste. With a `main`, the paste drives itself and Run executes it —
-  // through the artifact, so what runs is the minimized program. Without one
-  // there is nothing to drive, and the useful thing to ask for is the compile
-  // that typing would otherwise schedule: press it and the answer is now
-  // rather than after the delay.
-  if (!state.ready || state.busy) return;
+  // Run belongs to the source, not to the minimized program: what it executes
+  // is the paste's own `main`. Without one there is nothing to run and nothing
+  // changes — the two panes already show what QM made of the kernel.
   if (!state.hasMain) {
-    clearTimeout(autoTimer);
-    state.pending = false;
-    optimize();
+    toast('this paste has no main to run');
     return;
   }
+  if (state.busy) return;
   const stdin = $('term-in').value;
   termWrite(`> ${stdin}\n`, 'term-echo');
   $('term-in').value = '';
@@ -633,16 +628,11 @@ function runProgram() {
 }
 
 function renderRunControls() {
-  // The terminal is only there when there is a `main` to drive it, and the
-  // control says which of its two jobs it is about to do rather than leaving
-  // that to be discovered by pressing it.
+  // The terminal is only there when there is a `main` to drive it. Run is
+  // always live, though: a control that greys itself out for reasons you have
+  // to reconstruct is worse than one that presses and tells you why.
   $('term').hidden = !state.hasMain;
   $('btn-run').disabled = !state.ready;
-  const label = $('run-label');
-  if (label) label.textContent = state.hasMain ? 'Run' : 'Compile';
-  $('btn-run').title = state.hasMain
-    ? "run this paste's main, with the minimized program behind it"
-    : 'compile and minimize now, without waiting for the pause after typing';
 }
 
 function showRunResult(result) {

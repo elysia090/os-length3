@@ -31,13 +31,17 @@ def read_example(name):
 
 
 def example(name):
-    """The text of `examples/<name>.c` — what a user would paste.
+    """The kernel in `examples/<name>.c` — what QM is given.
 
-    Not the kernel: the whole file, `main` and all. `pipeline.solve` splits the
-    driver off itself, so handing it anything less here would be testing a path
-    nobody uses.
+    An example may carry a `main` that drives it, and the product splits that
+    off before minimizing: `main` reads a stream rather than a domain, so
+    minimizing it would report the driver's function. The sweeps here apply the
+    same split, for the same reason. `read_example` still returns the whole
+    file, which is what running it needs.
     """
-    return read_example(name + '.c')
+    from qm.clang import split_main
+    kernel, _span = split_main(read_example(name + '.c'))
+    return kernel
 
 
 def _key(source, kwargs):

@@ -50,24 +50,22 @@ class TestWholeWordKernelsLand(unittest.TestCase):
         # The threshold is zero, so the subtraction that would have made the
         # comparison is not there: the difference's own sign bit is it.
         ('is_less_or_equal_i32', 'split',
-         ['SEXT', 'SAR', 'SUBR', 'AND', 'XOR',
+         ['SHL', 'SAR', 'SAR', 'SUBR', 'AND', 'XOR',
           'SAR', 'XORR', 'ANDNR', 'XORR']),
         # Both halves are read with a mask and a shift: a deposit into the low
         # thirty-two bits is a mask, and normalization says so.
         ('min_i32', 'split',
-         ['SEXT', 'SAR', 'SUBR', 'AND', 'SHR',
+         ['SHL', 'SAR', 'SAR', 'SUBR', 'AND', 'SHR',
           'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
         # `x >> 32` has nothing above bit 31, so the mask after it is dropped.
         ('mod_add_u32', 'split',
          ['AND', 'SHR', 'ADDR', 'ADD',
           'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
-        # Two pieces on the byte read as signed: the two exponents that give a
-        # denormal, and everything above them.  A multiply by 2^23 is a shift,
-        # and a subtraction of -125 is an addition of 125.
+        # A multiply by 2^23 is a shift, and a subtraction of -125 is an
+        # addition of 125.
         ('float_power2_bits', 'split',
-         ['SEXT', 'AND', 'SHL', 'AND', 'SHL', 'AND', 'SHL', 'XORR',
-          'XORR', 'XOR', 'SHL', 'ADD', 'ADD', 'SAR', 'XORR', 'ANDNR',
-          'XORR']),
+         ['SHL', 'SAR', 'AND', 'SHL', 'SHL', 'ADD',
+          'ADD', 'SAR', 'XORR', 'ANDNR', 'XORR']),
     ]
 
     def test_reaches_the_named_sequence(self):

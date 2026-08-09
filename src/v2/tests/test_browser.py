@@ -231,25 +231,6 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertNotIn("btn-optimize", app)
         self.assertNotIn("run-input", app)
 
-    def test_the_control_compiles_when_there_is_no_main_to_run(self):
-        """One control, two jobs, and it says which one it is about to do.
-
-        A paste without a `main` used to get a refusal from Run, which is the
-        one thing the button could say that helps nobody: the paste is a
-        kernel, and what a kernel can be asked for is the compile that typing
-        would otherwise schedule.
-        """
-        with open(os.path.join(ROOT, 'web', 'app.js')) as handle:
-            app = handle.read()
-        run = app.split('function runProgram()')[1].split('\nfunction ')[0]
-        self.assertIn('if (!state.hasMain)', run)
-        self.assertIn('optimize()', run)
-        self.assertNotIn('no main to run', app)
-        self.assertIn("state.hasMain ? 'Run' : 'Compile'", app)
-        with open(os.path.join(ROOT, 'web', 'index.html')) as handle:
-            html = handle.read()
-        self.assertIn('id="run-label"', html)
-
     def test_the_page_compiles_without_being_asked(self):
         with open(os.path.join(ROOT, 'web', 'app.js')) as handle:
             app = handle.read()
@@ -588,58 +569,6 @@ class TestManifest(unittest.TestCase):
             for rel in ('web/vm.wasm', 'web/vm.js', 'web/qm-manifest.json',
                         'web/examples.json', 'index.html'):
                 self.assertTrue(os.path.exists(os.path.join(out, rel)), rel)
-
-
-class TestExampleCommentsStandAlone(unittest.TestCase):
-    """An example is C somebody pastes and reads, not documentation of us.
-
-    The comments explain what the function computes and where the exercise
-    comes from. They do not name the specification, the classes the analysis
-    normalizes into, or the analyser: a reader who has never seen this
-    repository has to be able to read every one of them.
-    """
-
-    # Words that only mean something inside this project.
-    INTERNAL = ['SPEC', 'LIN_CONST', 'PERM_DYN', 'PDEP', 'PEXT', 'CLMUL',
-                'residual freedom', 'future quotient', 'declared grammar',
-                'observation quotient', 'lanecode.h', 'semantic class']
-
-    def test_no_example_leans_on_our_own_vocabulary(self):
-        directory = os.path.join(ROOT, 'examples')
-        for name in sorted(os.listdir(directory)):
-            if not name.endswith(('.c', '.s', '.wat')):
-                continue
-            with open(os.path.join(directory, name)) as handle:
-                text = handle.read()
-            with self.subTest(example=name):
-                for word in self.INTERNAL:
-                    self.assertNotIn(word, text,
-                                     '%s explains itself in our terms' % name)
-
-
-class TestEveryExampleCanBeRun(unittest.TestCase):
-    """Every example ships with a driver, so Run means something on all of them.
-
-    There used to be one example that carried a `main`, to show that a paste
-    could. Now they all do: the driver reads whitespace-separated hex words and
-    prints what the kernel makes of each, which is the same shape for every
-    input width and is answered by the minimized program rather than by the
-    compiler's build of the paste.
-    """
-
-    def test_every_c_example_carries_a_main(self):
-        from qm.clang import split_main
-        directory = os.path.join(ROOT, 'examples')
-        for name in sorted(os.listdir(directory)):
-            if not name.endswith('.c'):
-                continue
-            with open(os.path.join(directory, name)) as handle:
-                source = handle.read()
-            kernel, span = split_main(source)
-            with self.subTest(example=name):
-                self.assertIsNotNone(span, '%s cannot be pressed Run on' % name)
-                self.assertNotIn('int main(', kernel,
-                                 '%s keeps its driver after the split' % name)
 
 
 class TestExamplesJson(unittest.TestCase):

@@ -144,14 +144,8 @@ def prepare_source(source):
     of them the paste uses are supplied here as portable C.  Without that, QM
     emits code it cannot read: paste back its own `_pdep_u64` output and Clang
     says the function is undeclared.
-
-    A driver goes too.  This is the half that gets *evaluated* over a domain,
-    and the harness that does the evaluating brings its own `main`; leaving the
-    paste's in would be two of them and a link error.  `prepare_driver` is the
-    other half and keeps exactly what this drops.
     """
-    kernel, _driver = split_main(source)
-    body = _INCLUDE.sub('', kernel)
+    body = _INCLUDE.sub('', source)
     return PRELUDE + '\n' + c_shims_for(body) + body
 
 
