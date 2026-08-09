@@ -117,6 +117,43 @@ how far that is from what the same function costs written properly.
 
 ---
 
+## The curriculum kernels
+
+`examples/` carries the bit-manipulation exercises from CMU's CS:APP Data Lab,
+MIT 6.172 and Princeton's *Algorithms* 4/e, each stated the obvious way. They
+are there because they are the ones that used to fall through the grammar: a
+comparison between two words, a count, a case analysis on a float's exponent.
+
+| kernel | QM | |
+| --- | --- | --- |
+| `logical_neg_i32` | 5 | `1 - popcount(x & -x)` |
+| `least_bit_mask_u64` | 2 | `x & -x` |
+| `popcount_u64` | 1 | `POPCNT` |
+| `rabin_karp_roll` | 4 | one reduction of the concatenated word |
+| `how_many_bits_i32` | 9 | sign fold, then leading zeros |
+| `is_less_or_equal_i32` | 11 | `SPLIT` on `b - a`, two constant pieces |
+| `min_i32` | 11 | `SPLIT` on `a - b`, a piece per half |
+| `mod_add_u32` | 10 | `SPLIT` on `a + b`: the conditional subtract |
+| `float_power2_bits` | 11 | `SPLIT` on the word read signed |
+| `float_scale2_bits` | 24 | `SPLIT` on the magnitude, four pieces |
+| `round_up_pow2_u64` | 14 | `smear(x - 1) + 1` |
+| `max_u8x8` | 43 | the halving tournament, branch-free |
+| `middle_bits_u16` | 1 | `PEXT` |
+
+Five more are in `examples/` because they do **not** land, which is a result
+and not an omission. `counting_sort8_u2` and `kmp_scan8_fixed` come back as
+tables — the interesting number for the second one is its future quotient,
+three bits of state against eight bits of history. `float_to_int_bits` and
+`strict_sum4_f64` want a shift by a value, and `histogram4_u2x16` wants four
+answers in four fields of one output. Each says which of the two it is; none
+of them answers with something that merely fits the probes.
+
+The counts above are `work` on the primary target and are checked by
+`tests/test_wholeword.py`, so a change that quietly makes one of them longer
+fails the suite.
+
+---
+
 ## How the browser runs it
 
 Two things run in the page, and the split is deliberate.
@@ -210,7 +247,7 @@ qm/
   observer.py     §3   obs : Output -> Observable
   semantics.py    §4   the finite domain, and its verification strength
   quotient.py     §5   observation quotient, future quotient
-  program.py      §6   POINT / LIN_CONST / CONV / PERM_DYN / TABLE
+  program.py      §6   POINT / LIN_CONST / CONV / PERM_DYN / SPLIT / TABLE
   guards.py       §7   guards derived from the multiply family
   solvers.py      §8   specialized Stage-2 solvers
   isa.py          §10  target profiles, §11 physical representatives, SSA DAG
@@ -286,6 +323,42 @@ and reported as such. Wider domains get basis, boundary and deterministic
 differential probes, and every report of one says in as many words that it is
 not a proof of global equivalence.
 
+**A comparison between words is a different class from one within a lane.**
+`lt_spread8` asks the same question about eight bytes at once and answers in
+eight bits; `isLessOrEqual` asks one question about two halves of a word and
+answers in one. The first is a `POINT` predicate and the second is a `SPLIT`:
+a whole-word key, thresholds on it read off the data, and one program per
+piece. Nothing branches — every piece is computed and blended under a mask
+that is one subtraction's sign bit — so a four-way case analysis still has a
+span and a work count rather than a mispredict. `float_scale2_bits` is four
+pieces and twenty-four instructions where it used to be a 64 KB table.
+
+**A split's pieces are fitted, not searched.** A piece runs as far as one
+affine map still explains it — over GF(2), over the integers in the word, or
+over the integers in the key the split already compared — and it is closed at
+the first key value none of the three can. That is what stops the class from
+becoming a lookup table written sideways: there are at most eight pieces, and
+each one is a map that two points determine and the rest of the piece checks.
+
+**A reduction is where the output stops having the input's shape.** Population
+count, leading and trailing zeros, the maximum over the lanes, a reduction
+modulo a constant: each answers with a number, and no deposit, convolution or
+lane predicate produces one. They are `POINT` steps because they are where the
+grammar stops being linear, which is what `POINT` has always meant. The
+modulus is read off the observed outputs the way a lane interval is read off
+the observed lanes — `Q` when the values are exactly `0 .. Q-1` — and it lowers
+to a reciprocal multiply, which is why `rabin_karp_roll` comes back as four
+instructions rather than as a 64 KB table.
+
+**The chain search counts instructions, not moves.** `smear`, the sign fold and
+the reductions are one move each and up to twelve instructions each, so a
+breadth-first search that returned its first hit would answer a logical
+negation with a cascade. Every chain that reaches the target at a given depth
+is collected and the cheapest is offered first: `!x` comes out as
+`1 - popcount(x & -x)`, five instructions, and `round_up_pow2` as
+`smear(x - 1) + 1`, which is fourteen because in this grammar there is nothing
+shorter.
+
 **Comparison is a semantic class, not three of them.** A per-lane `==`, `<` or
 pair of bounds arrives as one abstract step carrying the interval; the equality,
 one-sided and two-sided forms in `lanecode.h` are three physical
@@ -311,15 +384,24 @@ function still sees all 256 lane values a few hundred times each.
   it are implemented and tested against a native Clang; no wasm build of Clang is
   vendored, and I could not reach a CDN from the environment this was written in
   to verify a specific one.
-* **Whole-word comparison, reduction and modular arithmetic.** The declared
-  grammar is GF(2)-linear maps, convolutions, lane-local steps and gathers. A
-  predicate *within* a lane is in it; a comparison *between* lanes is not. So
-  the classic teaching kernels — `is_less_or_equal`, `min`, `max` of packed
-  bytes, `round_up_pow2`, `how_many_bits`, `popcount` as a number, `(a + b) % m`,
-  a rolling hash, or float sign/exponent/mantissa surgery — come back as "no
-  program in the declared grammar" rather than as a wrong answer. `middle_bits`
-  is the one of that family that does land, because selecting bits is linear.
-  Extending the grammar to reach the rest is a different change from extending
-  the search, and neither is done.
+* **A shift by a value.** The grammar has shifts by constants, and a dynamic
+  gather, and nothing between them. `float_to_int_bits` needs one — the shift
+  is by the exponent — so its exponent field is thirty-three cases rather than
+  four and it comes back as the table. `strict_sum4_f64` needs one for the same
+  reason, in the normalizing step of every partial sum, and comes back as no
+  program at all. A dynamic shift is a data-dependent permutation and belongs
+  in `PERM_DYN`; it is not there yet.
+* **Several answers in one output.** An abstract program is a chain, so there
+  is no way to say "these four counts go in these four bytes".
+  `histogram4_u2x16` is four lane predicates and four population counts, each
+  of which the grammar has, and it still has no program because they have to
+  be combined. Solving an output field at a time — and joining the results —
+  is the next class, and it is the one that would also make
+  `counting_sort8_u2` something other than a table.
+* **Quotient-aware branch fitting inside a split.** A piece is fitted with an
+  affine map, and only an affine map; a piece whose answer is a deposit and a
+  convolution is not recognized as one, because the fit that finds the pieces
+  is the same fit that names them. Running the full solver set per piece would
+  reach further and cost a solve per piece.
 * **The paid surface** (SPEC §22-§32): API, CLI-over-API, CI, batch, private
   cache, native oracle, team workspaces. v2 is the free interactive product only.
