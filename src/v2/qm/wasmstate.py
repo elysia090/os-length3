@@ -24,6 +24,8 @@ from .cfront.errors import CFrontError, UnsupportedC
 
 PAGE = 65536
 MEMORY_PAGE = 256
+MEMORY_SPAN_PAGES = 256
+MEMORY_REGION_SPANS = 256
 EOF = 256
 I32 = mask_of(32)
 I64 = mask_of(64)
@@ -42,21 +44,75 @@ class PagedMemory(object):
     writes only a handful of words.  Copying that reservation after every
     store changes the cost of the interpreter without changing its semantics.
     This value keeps the decoded module bytes as one shared base and records
-    only complete 256-byte pages that differ from it.  The base may be shorter
-    than the logical memory: its absent tail is the implicit WebAssembly zero
-    fill.  A module reserving 32 MiB with one data page therefore retains one
-    page, not a 32 MiB Python bytes object.
+    only complete 256-byte pages that differ from it. Changed pages live in a
+    three-level direct array: eight page bits select a slot, eight more select
+    a span, and the remaining bits select a region. A hot load therefore uses
+    three indexes without hashing. Updating one page copies at most one fixed
+    region and span rather than a directory proportional to logical memory.
+    The base may be shorter than the logical memory; its absent tail is the
+    implicit WebAssembly zero fill.
     """
 
-    __slots__ = ('base', 'length', 'pages', '_hash')
+    __slots__ = ('base', 'length', '_regions', '_hash')
 
-    def __init__(self, base, length=None, pages=()):
+    def __init__(self, base, length=None, pages=(), _regions=None):
         self.base = bytes(base)
         self.length = len(self.base) if length is None else int(length)
         if self.length < len(self.base):
             raise ValueError('linear memory cannot be shorter than its base')
-        self.pages = tuple(pages)
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        span_count = ((page_count + MEMORY_SPAN_PAGES - 1)
+                      // MEMORY_SPAN_PAGES)
+        region_count = ((span_count + MEMORY_REGION_SPANS - 1)
+                        // MEMORY_REGION_SPANS)
+        if _regions is None:
+            regions = [None] * region_count
+            mutable_regions = {}
+            mutable_spans = {}
+            for index, page in pages:
+                index, page = int(index), bytes(page)
+                if index < 0 or index >= page_count:
+                    raise ValueError('changed memory page is outside memory')
+                if len(page) != MEMORY_PAGE:
+                    raise ValueError('changed memory page has the wrong size')
+                span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+                region_index, span_slot = divmod(
+                    span_index, MEMORY_REGION_SPANS)
+                region = mutable_regions.get(region_index)
+                if region is None:
+                    region = [None] * MEMORY_REGION_SPANS
+                    mutable_regions[region_index] = region
+                key = (region_index, span_slot)
+                span = mutable_spans.get(key)
+                if span is None:
+                    span = [None] * MEMORY_SPAN_PAGES
+                    mutable_spans[key] = span
+                span[slot] = page
+            for (region_index, span_slot), span in mutable_spans.items():
+                mutable_regions[region_index][span_slot] = tuple(span)
+            for region_index, region in mutable_regions.items():
+                regions[region_index] = tuple(region)
+            self._regions = tuple(regions)
+        else:
+            regions = tuple(_regions)
+            if len(regions) != region_count:
+                raise ValueError('memory region directory has the wrong size')
+            self._regions = regions
         self._hash = None
+
+    @property
+    def pages(self):
+        """Changed pages as stable ``(index, bytes)`` pairs."""
+        return tuple(
+            (((region_index * MEMORY_REGION_SPANS + span_slot)
+              * MEMORY_SPAN_PAGES + slot), page)
+            for region_index, region in enumerate(self._regions)
+            if region is not None
+            for span_slot, span in enumerate(region)
+            if span is not None
+            for slot, page in enumerate(span)
+            if page is not None
+        )
 
     def __len__(self):
         return self.length
@@ -64,13 +120,13 @@ class PagedMemory(object):
     def __eq__(self, other):
         return (isinstance(other, PagedMemory)
                 and self.length == other.length
-                and self.pages == other.pages
+                and self._regions == other._regions
                 and (self.base is other.base or self.base == other.base))
 
     def __hash__(self):
         value = self._hash
         if value is None:
-            value = hash((self.base, self.length, self.pages))
+            value = hash((self.base, self.length, self._regions))
             self._hash = value
         return value
 
@@ -86,13 +142,17 @@ class PagedMemory(object):
             raise WasmStateError('wasm memory access is out of bounds')
         if not size:
             return b''
-        changed = dict(self.pages)
         out = bytearray()
         end = address + size
         while address < end:
             index, offset = divmod(address, MEMORY_PAGE)
             count = min(end - address, MEMORY_PAGE - offset)
-            page = changed.get(index)
+            span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+            region_index, span_slot = divmod(span_index,
+                                             MEMORY_REGION_SPANS)
+            region = self._regions[region_index]
+            span = None if region is None else region[span_slot]
+            page = None if span is None else span[slot]
             if page is None:
                 page = self._base_page(index)
             out.extend(page[offset:offset + count])
@@ -105,28 +165,62 @@ class PagedMemory(object):
             raise WasmStateError('wasm memory access is out of bounds')
         if not payload:
             return self
-        changed = dict(self.pages)
+        regions = list(self._regions)
+        changed_regions = {}
+        changed_spans = {}
         at = 0
         while at < len(payload):
             absolute = address + at
             index, offset = divmod(absolute, MEMORY_PAGE)
             count = min(len(payload) - at, MEMORY_PAGE - offset)
-            page = bytearray(changed.get(index, self._base_page(index)))
+            span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+            region_index, span_slot = divmod(span_index,
+                                             MEMORY_REGION_SPANS)
+            region = changed_regions.get(region_index)
+            if region is None:
+                old_region = regions[region_index]
+                region = ([None] * MEMORY_REGION_SPANS
+                          if old_region is None else list(old_region))
+                changed_regions[region_index] = region
+            key = (region_index, span_slot)
+            span = changed_spans.get(key)
+            if span is None:
+                old_span = region[span_slot]
+                span = ([None] * MEMORY_SPAN_PAGES if old_span is None
+                        else list(old_span))
+                changed_spans[key] = span
+            current = span[slot]
+            page = bytearray(self._base_page(index)
+                             if current is None else current)
             page[offset:offset + count] = payload[at:at + count]
             page = bytes(page)
             if page == self._base_page(index):
-                changed.pop(index, None)
+                span[slot] = None
             else:
-                changed[index] = page
+                span[slot] = page
             at += count
-        return PagedMemory(self.base, self.length, sorted(changed.items()))
+        for (region_index, span_slot), span in changed_spans.items():
+            changed_regions[region_index][span_slot] = tuple(span) if any(
+                page is not None for page in span) else None
+        for region_index, region in changed_regions.items():
+            regions[region_index] = tuple(region) if any(
+                span is not None for span in region) else None
+        return PagedMemory(self.base, self.length, _regions=tuple(regions))
 
     def grow(self, pages):
         if pages < 0:
             raise ValueError('page count must be nonnegative')
         if not pages:
             return self
-        return PagedMemory(self.base, self.length + pages * PAGE, self.pages)
+        length = self.length + pages * PAGE
+        page_count = ((length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        span_count = ((page_count + MEMORY_SPAN_PAGES - 1)
+                      // MEMORY_SPAN_PAGES)
+        region_count = ((span_count + MEMORY_REGION_SPANS - 1)
+                        // MEMORY_REGION_SPANS)
+        regions = self._regions + (None,) * (
+            region_count - len(self._regions))
+        return PagedMemory(self.base, length, _regions=regions)
 
 
 class _Reader(object):
@@ -227,6 +321,7 @@ class Module:
     memory_max: object
     exports: tuple
     start: object = None
+    tables: tuple = ()
 
     def export(self, name):
         for exported, kind, index in self.exports:
@@ -251,6 +346,8 @@ def decode_module(data):
     globals_ = []
     exports = []
     memories = []
+    table_limits = []
+    element_segments = []
     data_segments = []
     start = None
 
@@ -289,7 +386,7 @@ def decode_module(data):
             defined_types.extend(section.vector(lambda: section.uleb()))
         elif section_id == 4:
             for _ in range(section.uleb()):
-                _table_type(section)
+                table_limits.append(_table_type(section))
         elif section_id == 5:
             memories.extend(section.vector(lambda: _limits(section)))
         elif section_id == 6:
@@ -304,7 +401,7 @@ def decode_module(data):
         elif section_id == 8:
             start = section.uleb()
         elif section_id == 9:
-            _skip_elements(section)
+            element_segments.extend(_read_elements(section, globals_))
         elif section_id == 10:
             for _ in range(section.uleb()):
                 body_size = section.uleb()
@@ -363,10 +460,19 @@ def decode_module(data):
         if offset < 0 or end > len(memory):
             raise WasmStateError('active data segment is outside memory')
         memory = memory.write(offset, payload)
+    tables = [[None] * minimum for minimum, _maximum in table_limits]
+    for table_index, offset, elements in element_segments:
+        if table_index < 0 or table_index >= len(tables):
+            raise WasmStateError('active element segment names an unknown table')
+        end = offset + len(elements)
+        if offset < 0 or end > len(tables[table_index]):
+            raise WasmStateError('active element segment is outside its table')
+        tables[table_index][offset:end] = elements
     return Module(tuple(types), tuple(functions),
                   tuple(value for _kind, _mut, value, _imp in globals_),
                   tuple(mutable for _kind, mutable, _value, _imp in globals_),
-                  memory, maximum, tuple(exports), start)
+                  memory, maximum, tuple(exports), start,
+                  tuple(tuple(table) for table in tables))
 
 
 def _valtype(reader):
@@ -388,8 +494,10 @@ def _limits(reader):
 
 
 def _table_type(reader):
-    _valtype(reader)
-    _limits(reader)
+    kind = _valtype(reader)
+    if kind != 'funcref':
+        raise UnsupportedC('wasm table type %s is not callable' % kind)
+    return _limits(reader)
 
 
 def _const_expr(reader, globals_):
@@ -409,26 +517,70 @@ def _const_expr(reader, globals_):
     return value
 
 
-def _skip_elements(reader):
+def _element_expr(reader):
+    opcode = reader.byte()
+    if opcode == 0xD2:
+        value = reader.uleb()
+    elif opcode == 0xD0:
+        _valtype(reader)
+        value = None
+    else:
+        raise UnsupportedC('wasm element expression opcode 0x%02X is not '
+                           'modelled' % opcode)
+    if reader.byte() != 0x0B:
+        raise WasmStateError('wasm element expression has no end')
+    return value
+
+
+def _read_elements(reader, globals_):
+    """Decode active table initializers and consume passive segments."""
+    active = []
     for _ in range(reader.uleb()):
         flags = reader.uleb()
         if flags == 0:
-            _const_expr(reader, ())
-            reader.vector(lambda: reader.uleb())
+            offset = _const_expr(reader, globals_)
+            active.append((0, offset,
+                           reader.vector(lambda: reader.uleb())))
         elif flags == 1:
-            reader.byte()
+            if reader.byte() != 0:
+                raise UnsupportedC('non-function wasm element kind is not '
+                                   'modelled')
             reader.vector(lambda: reader.uleb())
         elif flags == 2:
-            reader.uleb()
-            _const_expr(reader, ())
-            reader.byte()
-            reader.vector(lambda: reader.uleb())
+            table_index = reader.uleb()
+            offset = _const_expr(reader, globals_)
+            if reader.byte() != 0:
+                raise UnsupportedC('non-function wasm element kind is not '
+                                   'modelled')
+            active.append((table_index, offset,
+                           reader.vector(lambda: reader.uleb())))
         elif flags == 3:
-            reader.byte()
+            if reader.byte() != 0:
+                raise UnsupportedC('non-function wasm element kind is not '
+                                   'modelled')
             reader.vector(lambda: reader.uleb())
+        elif flags in (4, 5, 6, 7):
+            table_index = 0
+            offset = None
+            if flags == 4:
+                offset = _const_expr(reader, globals_)
+            elif flags == 6:
+                table_index = reader.uleb()
+                offset = _const_expr(reader, globals_)
+                if _valtype(reader) != 'funcref':
+                    raise UnsupportedC('non-function wasm element type is '
+                                       'not modelled')
+            else:
+                if _valtype(reader) != 'funcref':
+                    raise UnsupportedC('non-function wasm element type is '
+                                       'not modelled')
+            values = reader.vector(lambda: _element_expr(reader))
+            if offset is not None:
+                active.append((table_index, offset, values))
         else:
-            raise UnsupportedC('reference-expression element segments are '
-                               'not modelled')
+            raise UnsupportedC('wasm element segment form %d is not modelled'
+                               % flags)
+    return active
 
 
 _PLAIN = {
@@ -456,6 +608,9 @@ _PLAIN = {
     0x88: 'i64.shr_u', 0x89: 'i64.rotl', 0x8A: 'i64.rotr',
     0xA7: 'i32.wrap_i64', 0xAC: 'i64.extend_i32_s',
     0xAD: 'i64.extend_i32_u',
+    0xC0: 'i32.extend8_s', 0xC1: 'i32.extend16_s',
+    0xC2: 'i64.extend8_s', 0xC3: 'i64.extend16_s',
+    0xC4: 'i64.extend32_s',
 }
 
 _INDEXED = {0x0C: 'br', 0x0D: 'br_if', 0x10: 'call', 0x20: 'local.get',
@@ -474,6 +629,49 @@ _MEMORY = {
     0x3C: ('i64.store8', 1, False), 0x3D: ('i64.store16', 2, False),
     0x3E: ('i64.store32', 4, False),
 }
+
+
+_ATOMIC_MEMORY = {
+    0: ('memory.atomic.notify', 4, 32),
+    1: ('memory.atomic.wait32', 4, 32),
+    2: ('memory.atomic.wait64', 8, 64),
+    16: ('i32.atomic.load', 4, 32),
+    17: ('i64.atomic.load', 8, 64),
+    18: ('i32.atomic.load8_u', 1, 32),
+    19: ('i32.atomic.load16_u', 2, 32),
+    20: ('i64.atomic.load8_u', 1, 64),
+    21: ('i64.atomic.load16_u', 2, 64),
+    22: ('i64.atomic.load32_u', 4, 64),
+    23: ('i32.atomic.store', 4, 32),
+    24: ('i64.atomic.store', 8, 64),
+    25: ('i32.atomic.store8', 1, 32),
+    26: ('i32.atomic.store16', 2, 32),
+    27: ('i64.atomic.store8', 1, 64),
+    28: ('i64.atomic.store16', 2, 64),
+    29: ('i64.atomic.store32', 4, 64),
+}
+
+_ATOMIC_WIDTHS = (
+    ('i32', 4, 32), ('i64', 8, 64),
+    ('i32', 1, 32), ('i32', 2, 32),
+    ('i64', 1, 64), ('i64', 2, 64), ('i64', 4, 64),
+)
+for _base, _action in zip(range(30, 72, 7),
+                          ('add', 'sub', 'and', 'or', 'xor', 'xchg')):
+    for _slot, (_kind, _width, _bits) in enumerate(_ATOMIC_WIDTHS):
+        _narrow = '' if _width == _bits // 8 else str(_width * 8)
+        _suffix = '' if not _narrow else '_u'
+        _ATOMIC_MEMORY[_base + _slot] = (
+            '%s.atomic.rmw%s.%s%s' % (_kind, _narrow, _action, _suffix),
+            _width, _bits,
+        )
+for _slot, (_kind, _width, _bits) in enumerate(_ATOMIC_WIDTHS):
+    _narrow = '' if _width == _bits // 8 else str(_width * 8)
+    _suffix = '' if not _narrow else '_u'
+    _ATOMIC_MEMORY[72 + _slot] = (
+        '%s.atomic.rmw%s.cmpxchg%s' % (_kind, _narrow, _suffix),
+        _width, _bits,
+    )
 
 
 def _decode_code(reader):
@@ -531,6 +729,19 @@ def _decode_code(reader):
             else:
                 raise UnsupportedC('wasm 0xFC instruction %d is not modelled'
                                    % sub)
+        elif opcode == 0xFE:
+            sub = reader.uleb()
+            if sub == 3:
+                if reader.uleb() != 0:
+                    raise WasmStateError('wasm atomic fence flag is not zero')
+                code.append(Instruction('atomic.fence'))
+            elif sub in _ATOMIC_MEMORY:
+                name, width, bits = _ATOMIC_MEMORY[sub]
+                code.append(Instruction(name, (reader.uleb(), reader.uleb(),
+                                                width, bits)))
+            else:
+                raise UnsupportedC('wasm atomic instruction %d is not '
+                                   'modelled' % sub)
         elif opcode in _PLAIN:
             code.append(Instruction(_PLAIN[opcode]))
         else:
@@ -578,6 +789,7 @@ class HostRequest:
     module: str
     name: str
     result_count: int
+    args: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -589,11 +801,15 @@ class MachineState:
     halted: bool = False
     result: tuple = ()
     output: bytes = b''
+    host_imports: tuple = ()
 
 
-def start_state(module, function='main', args=(), run_start=True):
+def start_state(module, function='main', args=(), run_start=True,
+                host_imports=()):
     """Instantiate the module and create one exported invocation."""
-    base = MachineState((), module.globals, module.memory, halted=True)
+    allowed = tuple(sorted(set(tuple(entry) for entry in host_imports)))
+    base = MachineState((), module.globals, module.memory, halted=True,
+                        host_imports=allowed)
     if run_start and module.start is not None:
         started = _invoke(module, base, module.start, ())
         started = run_until_boundary(module, started)
@@ -635,7 +851,8 @@ def _invoke(module, base, index, args):
                     for value, kind in zip(args, ftype.params))
     locals_ += tuple(0 for _ in fn.locals)
     frame = Frame(index, 0, locals_, ())
-    return MachineState((frame,), base.globals, base.memory)
+    return MachineState((frame,), base.globals, base.memory,
+                        host_imports=base.host_imports)
 
 
 def instruction_step(module, state):
@@ -724,8 +941,24 @@ def instruction_step(module, state):
         return _return_from_frame(module, replace(state, frames=tuple(frames),
                                                   globals=tuple(globals_),
                                                   memory=memory))
-    elif op == 'call':
-        callee_index = inst.args[0]
+    elif op in ('call', 'call_indirect'):
+        if op == 'call':
+            callee_index = inst.args[0]
+        else:
+            type_index, table_index = inst.args
+            selector = pop() & I32
+            if table_index >= len(module.tables):
+                raise WasmStateError('call_indirect table is outside the module')
+            table = module.tables[table_index]
+            if selector >= len(table) or table[selector] is None:
+                raise WasmStateError('call_indirect selected an empty table slot')
+            callee_index = table[selector]
+            if callee_index >= len(module.functions):
+                raise WasmStateError('call_indirect function is outside the module')
+            if (type_index >= len(module.types)
+                    or module.types[module.functions[callee_index].type_index]
+                    != module.types[type_index]):
+                raise WasmStateError('call_indirect function type mismatch')
         callee = module.functions[callee_index]
         callee_type = module.types[callee.type_index]
         args = [pop() for _ in callee_type.params][::-1]
@@ -741,10 +974,6 @@ def instruction_step(module, state):
         frames.append(Frame(callee_index, 0, child_locals, ()))
         return replace(state, frames=tuple(frames), globals=tuple(globals_),
                        memory=memory)
-    elif op == 'call_indirect':
-        raise UnsupportedC('wasm call_indirect is not modelled',
-                           hint='direct calls and the complete C call stack '
-                                'are supported')
     elif op == 'drop':
         pop()
     elif op == 'select':
@@ -772,6 +1001,10 @@ def instruction_step(module, state):
             globals_[index] = pop()
     elif op.endswith('.const'):
         stack.append(inst.args[0])
+    elif op == 'atomic.fence':
+        pass
+    elif '.atomic.' in op or op.startswith('memory.atomic.'):
+        memory = _atomic_step(op, inst.args, stack, memory)
     elif '.load' in op:
         _align, offset, width, signed = inst.args
         address = (pop() & I32) + offset
@@ -857,7 +1090,8 @@ def _host_call(module, state, function, ftype, args):
         if args:
             raise WasmStateError('%s import unexpectedly takes arguments' % name)
         return replace(state, waiting=HostRequest(function.module, name,
-                                                  len(ftype.results)))
+                                                  len(ftype.results),
+                                                  tuple(args)))
     if name in _OUTPUT_NAMES:
         if len(args) != 1:
             raise WasmStateError('%s import expects one byte' % name)
@@ -869,10 +1103,44 @@ def _host_call(module, state, function, ftype, args):
                                                    + (args[0] & I32,)),)
             return replace(state, frames=frames, output=output)
         return replace(state, output=output)
+    identity = (function.module, name)
+    if identity in state.host_imports:
+        return replace(state, waiting=HostRequest(function.module, name,
+                                                  len(ftype.results),
+                                                  tuple(args)))
     raise UnsupportedC('wasm host import %s.%s is not modelled'
-                       % (function.module, name),
+                       % identity,
                        hint='make environment state an explicit input, or '
                             'provide a deterministic host adapter')
+
+
+def resume_host(state, results=(), memory_writes=()):
+    """Apply one deterministic host response to a suspended machine.
+
+    Host adapters state their import names up front through ``start_state``.
+    At the import boundary they may update explicit guest-memory ranges and
+    return the declared Wasm results.  No ambient host operation is performed
+    by the interpreter itself.
+    """
+    request = state.waiting
+    if request is None:
+        raise WasmStateError('machine is not waiting for a host response')
+    results = tuple(results)
+    if len(results) != request.result_count:
+        raise WasmStateError('host import %s.%s expects %d result(s), got %d'
+                             % (request.module, request.name,
+                                request.result_count, len(results)))
+    memory = state.memory
+    for address, payload in memory_writes:
+        memory = memory.write(int(address), bytes(payload))
+    frames = state.frames
+    if results:
+        if not frames:
+            raise WasmStateError('host response has no caller frame')
+        parent = frames[-1]
+        frames = frames[:-1] + (replace(parent,
+                                        stack=parent.stack + results),)
+    return replace(state, frames=frames, memory=memory, waiting=None)
 
 
 def resume_input(module, state, byte):
@@ -882,12 +1150,8 @@ def resume_input(module, state, byte):
     if byte != EOF and not 0 <= byte <= 255:
         raise ValueError('input letter must be a byte or EOF')
     value = I32 if byte == EOF else byte
-    frames = state.frames
-    if state.waiting.result_count:
-        parent = frames[-1]
-        frames = frames[:-1] + (replace(parent,
-                                        stack=parent.stack + (value,)),)
-    return replace(state, frames=frames, waiting=None, output=b'')
+    results = (value,) if state.waiting.result_count else ()
+    return replace(resume_host(state, results), output=b'')
 
 
 def run_until_boundary(module, state, budget=1 << 20, executor=None):
@@ -992,6 +1256,10 @@ def _numeric(op, stack):
         value = stack.pop() & I32
         stack.append((_signed(value, 32) if name.endswith('_s') else value) & I64)
         return
+    if name in ('extend8_s', 'extend16_s', 'extend32_s'):
+        width = int(name[len('extend'):-len('_s')])
+        stack.append(_signed(pop(), width) & mask)
+        return
     if name == 'eqz':
         stack.append(1 if pop() == 0 else 0)
         return
@@ -1043,3 +1311,70 @@ def _numeric(op, stack):
     else:
         raise UnsupportedC('wasm integer instruction %r is not modelled' % op)
     stack.append(result & mask)
+
+
+def _atomic_step(op, args, stack, memory):
+    """Execute one atomic barrier in the single-machine reference state."""
+    _align, offset, width, bits = args
+    result_mask = mask_of(bits)
+    storage_mask = mask_of(width * 8)
+
+    def pop():
+        if not stack:
+            raise WasmStateError('%s pops an empty value stack' % op)
+        return stack.pop()
+
+    if op == 'memory.atomic.notify':
+        _count = pop() & I32
+        address = (pop() & I32) + offset
+        if address % width:
+            raise WasmStateError('unaligned atomic memory access')
+        _memory_read(memory, address, width)
+        stack.append(0)
+        return memory
+    if op in ('memory.atomic.wait32', 'memory.atomic.wait64'):
+        raise UnsupportedC('%s requires an explicit scheduler barrier' % op)
+
+    if '.load' in op:
+        address = (pop() & I32) + offset
+        if address % width:
+            raise WasmStateError('unaligned atomic memory access')
+        stack.append(int.from_bytes(_memory_read(memory, address, width),
+                                    'little') & result_mask)
+        return memory
+    if '.store' in op:
+        value = pop() & storage_mask
+        address = (pop() & I32) + offset
+        if address % width:
+            raise WasmStateError('unaligned atomic memory access')
+        return _memory_write(memory, address,
+                             value.to_bytes(width, 'little'))
+
+    replacement = pop() & storage_mask
+    expected = None
+    if '.cmpxchg' in op:
+        expected = pop() & storage_mask
+    address = (pop() & I32) + offset
+    if address % width:
+        raise WasmStateError('unaligned atomic memory access')
+    old = int.from_bytes(_memory_read(memory, address, width), 'little')
+    if expected is not None:
+        changed = replacement if old == expected else old
+    elif '.add' in op:
+        changed = old + replacement
+    elif '.sub' in op:
+        changed = old - replacement
+    elif '.and' in op:
+        changed = old & replacement
+    elif '.or' in op:
+        changed = old | replacement
+    elif '.xor' in op:
+        changed = old ^ replacement
+    elif '.xchg' in op:
+        changed = replacement
+    else:
+        raise UnsupportedC('wasm atomic instruction %r is not modelled' % op)
+    memory = _memory_write(memory, address,
+                           int(changed & storage_mask).to_bytes(width, 'little'))
+    stack.append(old & result_mask)
+    return memory

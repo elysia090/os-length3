@@ -10,8 +10,8 @@ import unittest
 
 from qm.transducer import StateLimit
 from qm.wasmstate import (EOF, WasmStateError, compile_stream, decode_module,
-                          observe, PagedMemory, run_until_boundary, start_state,
-                          stream_initial, stream_step)
+                          invoke, observe, PagedMemory, run_until_boundary,
+                          start_state, stream_initial, stream_step)
 
 
 def _u(value):
@@ -50,6 +50,36 @@ def echo_driver():
     return (b'\x00asm\x01\x00\x00\x00'
             + _section(1, types) + _section(2, imports)
             + _section(3, functions) + _section(7, exports)
+            + _section(10, code))
+
+
+def indirect_driver():
+    """Two functions connected through one active funcref table slot."""
+    types = b'\x01\x60\x01\x7f\x01\x7f'
+    functions = b'\x02\x00\x00'
+    table = b'\x01\x70\x00\x01'
+    exports = b'\x01' + _name('main') + b'\x00\x01'
+    elements = b'\x01\x00\x41\x00\x0b\x01\x00'
+    target = b'\x00\x20\x00\x41\x01\x6a\x0b'
+    caller = b'\x00\x20\x00\x41\x00\x11\x00\x00\x0b'
+    code = b'\x02' + _u(len(target)) + target + _u(len(caller)) + caller
+    return (b'\x00asm\x01\x00\x00\x00'
+            + _section(1, types) + _section(3, functions)
+            + _section(4, table) + _section(7, exports)
+            + _section(9, elements) + _section(10, code))
+
+
+def atomic_add_driver():
+    """An i32 atomic read-modify-write over internal linear memory."""
+    types = b'\x01\x60\x02\x7f\x7f\x01\x7f'
+    functions = b'\x01\x00'
+    memory = b'\x01\x00\x01'
+    exports = b'\x01' + _name('main') + b'\x00\x00'
+    expression = b'\x00\x20\x00\x20\x01\xfe\x1e\x02\x00\x0b'
+    code = b'\x01' + _u(len(expression)) + expression
+    return (b'\x00asm\x01\x00\x00\x00'
+            + _section(1, types) + _section(3, functions)
+            + _section(5, memory) + _section(7, exports)
             + _section(10, code))
 
 
@@ -128,6 +158,41 @@ class TestPersistentLinearMemory(unittest.TestCase):
         self.assertEqual(len(grown), 3 * 65536)
         self.assertEqual(grown.read(7, 1), b'x')
         self.assertEqual(grown.read(2 * 65536, 4), bytes(4))
+
+    def test_a_write_crosses_a_region_without_committing_its_zero_tail(self):
+        region_bytes = 256 * 256 * 256
+        original = PagedMemory(b'', 2 * region_bytes)
+        changed = original.write(region_bytes - 1, b'abc')
+
+        self.assertEqual(changed.read(region_bytes - 2, 5), b'\0abc\0')
+        self.assertEqual([index for index, _page in changed.pages],
+                         [65535, 65536])
+        self.assertEqual(original.pages, ())
+
+
+class TestKernelWasmInstructions(unittest.TestCase):
+    def test_active_function_table_drives_call_indirect(self):
+        module = decode_module(indirect_driver())
+        self.assertEqual(module.tables, ((0,),))
+        final = run_until_boundary(module, start_state(module, args=(41,)))
+        self.assertEqual(final.result, (42,))
+
+    def test_sign_extension_remains_inside_a_pure_wave_slice(self):
+        from tests.test_wasmbinary import module as scalar_module
+        raw = scalar_module(b'\x00\x20\x00\xc0\x0b', kind=0x7f)
+        module = decode_module(raw)
+        final = run_until_boundary(module, start_state(module, 'f', (0xff,)))
+        self.assertEqual(final.result, (0xffffffff,))
+
+    def test_atomic_rmw_is_an_ordered_memory_barrier(self):
+        module = decode_module(atomic_add_driver())
+        first = run_until_boundary(module, start_state(module, args=(0, 5)))
+        self.assertEqual(first.result, (0,))
+        self.assertEqual(first.memory.read(0, 4), b'\x05\x00\x00\x00')
+
+        second = invoke(module, first, 'main', (0, 7))
+        self.assertEqual(second.result, (5,))
+        self.assertEqual(second.memory.read(0, 4), b'\x0c\x00\x00\x00')
 
 
 class TestProductionVmBinary(unittest.TestCase):

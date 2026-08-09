@@ -42,6 +42,8 @@ OPS = (
     'i64.extend_i32_s',
     'i64.extend_i32_u',
 ) + tuple('i64.%s' % name for name in _COMMON_UNARY + _BINARY)
+OPS += ('i32.extend8_s', 'i32.extend16_s',
+        'i64.extend8_s', 'i64.extend16_s', 'i64.extend32_s')
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 
 OPERAND_KINDS = ('const', 'stack', 'local', 'node')

@@ -344,15 +344,30 @@ qm/
   cli.py          §21  the local interactive product on a terminal
   straightline.py compiles a straight-line integer program to a function
 
+kernel/           Linux-in-Wasm execution, deterministic host state and pages
+  host.py         nccc_call64 barriers and lazy direct block-page storage
+  run.py          native LKL wasm entry point; stops at scheduler boundaries
+
 web/              the page: index.html · app.js · worker.js · clang.js
 tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
 tests/            run.py and the suite
 ../../corpus/     categorized kernels, physical-array forms, and VM experiments
 ```
 
-Each module states which SPEC section it implements and imports only from lower
-layers. `web/qm-manifest.json` lists the files the worker installs into Pyodide;
+The QM and VM modules import only from lower layers. `kernel/` consumes the
+generic Wasm machine but keeps Linux-specific host and scheduler policy outside
+QM. `web/qm-manifest.json` lists the files the worker installs into Pyodide;
 `tests/test_browser.py` fails if it drifts from what is on disk.
+
+The Linux-in-Wasm machine is a package entry point, not a tool script. From
+`src/v2`, run a native LKL module with bounded, resumable execution quanta:
+
+```sh
+python -m kernel.run lin.wasm --budget 131072 --max-events 64
+```
+
+The report separates logical linear-memory size from resident page bytes and
+names every host boundary, thread and timeslice.
 
 ---
 

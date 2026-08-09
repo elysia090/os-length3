@@ -15,6 +15,7 @@ from .wasmstate import (Frame, WasmStateError, _numeric, instruction_step)
 
 _UNARY = {
     'wrap_i64', 'extend_i32_s', 'extend_i32_u',
+    'extend8_s', 'extend16_s', 'extend32_s',
     'eqz', 'clz', 'ctz', 'popcnt',
 }
 _BINARY = {
@@ -245,6 +246,7 @@ class WaveExecutor:
         self.module = module
         self.cache = {}
         self.physical = {}
+        self.executable = {}
         self.total_cost = WaveCost()
 
     def plan(self, frame):
@@ -262,6 +264,16 @@ class WaveExecutor:
             self.physical[key] = None if plan is None else unpack(pack(plan))
         return self.physical[key]
 
+    def decoded(self, frame):
+        """Validated execution plan decoded once from its physical page."""
+        from .wasmcodec import decode_plan
+        key = (frame.function, frame.pc, len(frame.stack))
+        if key not in self.executable:
+            mapped = self.mapped(frame)
+            self.executable[key] = (None if mapped is None
+                                    else decode_plan(mapped))
+        return self.executable[key]
+
     def step(self, state):
         if state.waiting is not None or state.halted:
             return state, WaveCost()
@@ -274,8 +286,7 @@ class WaveExecutor:
                 instructions=1, barriers=1)
         widths = [len(plan.waves.wave(depth))
                   for depth in range(1, plan.waves.span + 1)]
-        from .wasmcodec import execute_mapped
-        return execute_mapped(self.mapped(frame), state), WaveCost(
+        return execute_slice(self.decoded(frame), state), WaveCost(
             instructions=plan.instructions,
             work=plan.waves.work,
             span=plan.waves.span,
@@ -283,7 +294,8 @@ class WaveExecutor:
             max_parallel_width=max(widths, default=0),
         )
 
-    def run_with_report(self, state, budget=1 << 20):
+    def run_quantum_with_report(self, state, budget=1 << 20):
+        """Run one bounded quantum and retain its continuation on exhaustion."""
         cost = WaveCost()
         while state.waiting is None and not state.halted:
             next_state, step_cost = self.step(state)
@@ -291,8 +303,14 @@ class WaveExecutor:
                 break
             state = next_state
             cost += step_cost
-        else:
-            self.total_cost += cost
+        reached_boundary = state.waiting is not None or state.halted
+        self.total_cost += cost
+        return state, cost, reached_boundary
+
+    def run_with_report(self, state, budget=1 << 20):
+        state, cost, reached_boundary = self.run_quantum_with_report(
+            state, budget)
+        if reached_boundary:
             return state, cost
         raise WasmStateError(
             'wasm state step budget of %d was exhausted' % budget,
