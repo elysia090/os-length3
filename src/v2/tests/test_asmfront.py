@@ -29,12 +29,23 @@ CASES = ['ranks8', 'inclusive_rank8', 'byte_mask8', 'ranks16_nibble',
          'morton_dilate16', 'morton_compact_even16', 'prefix_parity_mask8',
          'quote_state_before8', 'select8', 'shuffle_control8', 'run_ids8',
          'starts8', 'ends8', 'spread_high8', 'expand_nibbles8',
-         'middle_bits_u16']
+         'middle_bits_u16',
+         # The whole-word half: a case analysis blended under a mask, and a
+         # reduction lowered to a reciprocal multiply.  Both go through the
+         # normalizer on the way out, so a fixed point here is also the
+         # statement that normalizing twice changes nothing.
+         'float_power2_bits', 'float_scale2_bits', 'rabin_karp_roll']
 
 # 64-bit inputs: the round trip still has to be a fixed point, but the reader
 # cannot be checked by enumeration.
 SAMPLED_CASES = ['prefix_xor64', 'changes64', 'mask_from_spread',
                  'byte_mask_from_spread',
+                 # Whole-word comparison, the idiom chains, and the halving
+                 # tournament: the longest listing QM emits, and the one most
+                 # sensitive to the register allocator repeating itself.
+                 'is_less_or_equal_i32', 'min_i32', 'mod_add_u32',
+                 'least_bit_mask_u64', 'round_up_pow2_u64',
+                 'how_many_bits_i32', 'max_u8x8',
                  # The lane comparisons: eight AND/ADD/SUB/OR/XOR/NOT steps
                  # with no PDEP or CLMUL in them, which is a different path
                  # through both readers than anything above.

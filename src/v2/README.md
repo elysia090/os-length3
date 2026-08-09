@@ -130,10 +130,10 @@ comparison between two words, a count, a case analysis on a float's exponent.
 | `least_bit_mask_u64` | 2 | `x & -x` |
 | `popcount_u64` | 1 | `POPCNT` |
 | `rabin_karp_roll` | 4 | one reduction of the concatenated word |
-| `how_many_bits_i32` | 9 | sign fold, then leading zeros |
-| `is_less_or_equal_i32` | 11 | `SPLIT` on `b - a`, two constant pieces |
+| `how_many_bits_i32` | 8 | sign fold, then leading zeros |
+| `is_less_or_equal_i32` | 10 | `SPLIT` on `b - a`, two constant pieces |
 | `min_i32` | 11 | `SPLIT` on `a - b`, a piece per half |
-| `mod_add_u32` | 10 | `SPLIT` on `a + b`: the conditional subtract |
+| `mod_add_u32` | 9 | `SPLIT` on `a + b`: the conditional subtract |
 | `float_power2_bits` | 11 | `SPLIT` on the word read signed |
 | `float_scale2_bits` | 24 | `SPLIT` on the magnitude, four pieces |
 | `round_up_pow2_u64` | 14 | `smear(x - 1) + 1` |
@@ -251,6 +251,7 @@ qm/
   guards.py       §7   guards derived from the multiply family
   solvers.py      §8   specialized Stage-2 solvers
   isa.py          §10  target profiles, §11 physical representatives, SSA DAG
+                       normalization, known bits, and the three emitters
   recognize.py    §16  known primitives
   corpus.py       §19  semantic keys, §20 opt-in contribution blobs
   clang.py        §2   the Clang entry point (native driver)
@@ -322,6 +323,39 @@ representative and same constants, without being told either.
 and reported as such. Wider domains get basis, boundary and deterministic
 differential probes, and every report of one says in as many words that it is
 not a proof of global equivalence.
+
+**A lowering is assembled, so it has to be normalized.** Each abstract op is
+lowered on its own, and each branch of a split is lowered on its own, so what
+comes out is correct and says several things twice: the same field extracted
+once per branch, a mask that cannot clear anything, a multiply by `0x800000`
+where a shift was meant. None of that is a fact about the kernel and all of it
+is counted by `work`, `span` and `L(z)` — so `isa.normalize` rewrites, folds,
+shares and prunes to a fixed point before anything is measured or verified. A
+multiply by a power of two becomes a shift, `x - (-125)` becomes `x + 125`, a
+deposit into the low bits becomes a mask, adjacent masks and shifts merge, and
+a value nothing reads is not computed. Every rewrite is an identity over 64-bit
+words, and the composed sequence is still verified over the declared domain
+afterwards, so a wrong one would be caught rather than shipped.
+
+**Which masks are redundant is a question about known bits.** `isa.known_bits`
+propagates, forwards and conservatively, which bits of each value can be set. A
+shift down by 32 leaves nothing above bit 31, so the mask after it is not
+clearing anything and goes. The same analysis decides where the listing may use
+the 32-bit forms: a 32-bit destination zero-extends, so `xorl` computes `xorq`
+exactly when neither operand nor result has an upper half. The input is assumed
+unknown even though the domain declares a width — a listing takes its argument
+in a 64-bit register, and a caller with something else in the top of it should
+still get the answer the C would.
+
+**The listing is written the way the instruction set allows.** A constant that
+fits a sign-extended 32-bit immediate is one, rather than a `movabsq` into a
+scratch register and a second instruction to use it; a value whose last reader
+is the current instruction is overwritten in place, which removes the `movq` in
+front of nearly every operation. `float_power2_bits` was twenty-nine lines of
+assembly and is now seventeen for the same eleven instructions. None of that
+changes the program, so the check is that the reader still evaluates it to the
+same function — and that a real assembler accepts it, which
+`tests/test_normalize.py` asks it to.
 
 **A comparison between words is a different class from one within a lane.**
 `lt_spread8` asks the same question about eight bytes at once and answers in
