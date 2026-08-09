@@ -313,7 +313,7 @@ lc_ranks16_nibble(uint16_t m)
 }
 
 /* ------------------------------------------------------------------
- * Morton: two ways to compute one fixed rearrangement of bits
+ * Morton: two physical representatives of one LIN_CONST class
  * ------------------------------------------------------------------ */
 
 static inline uint64_t

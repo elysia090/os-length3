@@ -1,18 +1,23 @@
 #include <stdint.h>
 
-/* IEEE-754 addition is not associative: rounding after each partial sum makes
- * the order of a summation observable, which is why a compiler may not
- * reassociate one unless it is told the result need not match.
+/* MIT 6.172 — floating-point addition is not associative, so a sum has an
+ * order and a compiler may not pick another one.
  *
  * The four addends are the four 16-bit lanes of the input, each read as a
  * bfloat16 and widened exactly into binary64; they are summed strictly left to
- * right in binary64 and the result comes back as its bit pattern.  Bfloat16
- * exponents span the whole binary32 range, so four addends routinely need more
- * than fifty-three significant bits and every partial sum rounds.
+ * right in binary64 and the result comes back as its bit pattern.  The
+ * exponents range over the whole bfloat16 range, so four addends routinely
+ * need more than fifty-three significant bits and every partial sum rounds —
+ * which is the whole point, and what makes the order observable.
  *
- * Denormals flush to zero.  The arithmetic is spelled out on the fields of a
- * binary64, because that is what floating-point addition is once the hardware
- * is taken away. */
+ * Denormals flush to zero.  Everything here is integer bit surgery on the
+ * fields of a binary64, because that is what floating-point addition is once
+ * the hardware is taken away.
+ *
+ * QM has no compact program for this, and says so.  A normalizing shift is a
+ * shift by a value the data decides, and the declared grammar has shifts by
+ * constants only; SPEC §9's zero refers to the search family, not to the
+ * function. */
 
 static uint64_t widen_bf16(uint16_t h)
 {
@@ -76,29 +81,4 @@ uint64_t strict_sum4_f64(uint64_t v)
     for (i = 1; i < 4; ++i)
         acc = f64_add(acc, widen_bf16((uint16_t)(v >> (16 * i))));
     return acc;
-}
-
-/* Reads whitespace-separated hex words from the terminal and prints what the
- * kernel makes of each one. */
-int main(void)
-{
-    uint64_t x = 0;
-    int c, seen = 0;
-
-    while (1) {
-        c = getchar();
-        if (c >= '0' && c <= '9')      { x = x * 16u + (uint64_t)(c - '0');      seen = 1; }
-        else if (c >= 'a' && c <= 'f') { x = x * 16u + (uint64_t)(c - 'a' + 10); seen = 1; }
-        else if (c >= 'A' && c <= 'F') { x = x * 16u + (uint64_t)(c - 'A' + 10); seen = 1; }
-        else {
-            if (seen) {
-                print_hex64((uint64_t)strict_sum4_f64((uint64_t)x));
-                putchar('\n');
-            }
-            x = 0;
-            seen = 0;
-            if (c < 0) break;
-        }
-    }
-    return 0;
 }

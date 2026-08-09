@@ -1,17 +1,17 @@
-/* Hello, world -- and the whole of what this page does, in one file.
+/* Hello, world — and the whole of what this page does, in one file.
  *
- * Two halves, and they are read differently.
+ * Two halves, and they go to two different places.
  *
- * `repeat8` is the kernel. It is the half that gets minimized, and the pane on
- * the right shows what came of it -- in whichever machine you pick, or as the
- * one canonical artifact both of them come from. One multiply, on every target
- * that has one.
+ * `repeat8` is the kernel. QM minimizes it, and the pane on the right shows
+ * what it made of it — in whichever machine you pick, or as the codec, which
+ * is the artifact itself. One multiply, on every target that has one.
  *
- * `main` is a driver. It is not analysed: it reads a stream rather than a
- * range of inputs, so analysing it would describe the driver instead of the
- * function under it. Press Run and `main` is compiled on its own with
- * `repeat8` left undefined, and every call it makes is answered by running the
- * minimized program instead.
+ * `main` is a driver. The minimizer never sees it: it reads a stream rather
+ * than a domain, so minimizing it would report the driver's function instead
+ * of the kernel's. Press Run and `main` is compiled on its own with `repeat8`
+ * left undefined, and every call it makes is answered by running the artifact:
+ *
+ *     this file -> QM -> codec -> run
  *
  * So the greeting is ordinary C, and every line after it came out of the
  * minimized program. Type a few characters into the terminal and press Run.
