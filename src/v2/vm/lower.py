@@ -489,6 +489,8 @@ class Lowering(object):
                 x = self.negate(x)
             elif mnemonic == 'AND_NEG':
                 x = self.word_and(x, self.negate(x))
+            elif mnemonic == 'OR_NEG':
+                x = self.word_or(x, self.negate(x))
             elif mnemonic == 'AND_DEC':
                 x = self.word_and(x, self.add_words(x, word_of_const(M64_ALL)))
             elif mnemonic == 'OR_SHR':
@@ -504,6 +506,16 @@ class Lowering(object):
                 x = [b if i < width else ZERO for i, b in enumerate(x)]
             elif mnemonic == 'KEY':
                 x = self.key_word(x, const)
+            elif mnemonic == 'MOD':
+                # The same closed form as `qm.isa.reciprocal`, written out
+                # again because this package does not import that one: a
+                # reduction is two multiplies, a shift and a subtract, and
+                # both lowerings are checked against the same semantics.
+                value_bits = shift or WORD
+                s = value_bits + const.bit_length()
+                multiplier = -((-1 << s) // const)
+                q = self.shift_right(self.multiply(x, multiplier), s)
+                x = self.add_words(x, self.negate(self.multiply(q, const)))
             elif mnemonic == 'SMEAR':
                 x = self.smear(x)
             elif mnemonic == 'CLZ':

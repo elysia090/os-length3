@@ -176,6 +176,78 @@
       "source": ";; Inclusive prefix XOR of 64 bits, as wasm32.\n;;\n;; wasm has no carry-less multiply, so the scan is six shift/XOR doublings.\n;; QM reads the listing, recognises the convolution behind it, and on a\n;; target that has PCLMUL emits one instruction for the same function.\n;; qm-input-bits: 64\n(module\n  (func $prefix_xor64_qm (export \"prefix_xor64_qm\") (param i64) (result i64)\n    (local i64 i64 i64 i64 i64 i64)\n    local.get 0\n    local.get 0\n    i64.const 0x1\n    i64.shl\n    i64.xor\n    local.set 1\n    local.get 1\n    local.get 1\n    i64.const 0x2\n    i64.shl\n    i64.xor\n    local.set 2\n    local.get 2\n    local.get 2\n    i64.const 0x4\n    i64.shl\n    i64.xor\n    local.set 3\n    local.get 3\n    local.get 3\n    i64.const 0x8\n    i64.shl\n    i64.xor\n    local.set 4\n    local.get 4\n    local.get 4\n    i64.const 0x10\n    i64.shl\n    i64.xor\n    local.set 5\n    local.get 5\n    local.get 5\n    i64.const 0x20\n    i64.shl\n    i64.xor\n    local.set 6\n    local.get 6\n  )\n)\n"
     },
     {
+      "name": "logical_neg_i32",
+      "file": "logical_neg_i32.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* CS:APP Data Lab, bang \u2014 `!x` without using `!`.  One bit of output, and the\n * whole 32-bit word decides it. */\nuint32_t logical_neg_i32(uint32_t x)\n{\n    return x == 0u ? 1u : 0u;\n}\n"
+    },
+    {
+      "name": "is_less_or_equal_i32",
+      "file": "is_less_or_equal_i32.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* CS:APP Data Lab, isLessOrEqual \u2014 `a <= b` for two signed 32-bit values, the\n * high half against the low half of one word.\n *\n * A comparison between two parts of a word, not within a lane: the lane\n * predicates in lanecode.h answer eight of these at once and none of them\n * answers this one. */\nuint32_t is_less_or_equal_i32(uint64_t ab)\n{\n    int32_t a = (int32_t)(uint32_t)(ab >> 32);\n    int32_t b = (int32_t)(uint32_t)ab;\n\n    return a <= b ? 1u : 0u;\n}\n"
+    },
+    {
+      "name": "min_i32",
+      "file": "min_i32.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* MIT 6.172 \u2014 the branchless minimum of two signed 32-bit values, packed as\n * the high and low halves of one word.  What the lecture is about is that the\n * branch is avoidable; what QM has to find is which of the two words the\n * comparison selects. */\nuint32_t min_i32(uint64_t ab)\n{\n    int32_t a = (int32_t)(uint32_t)(ab >> 32);\n    int32_t b = (int32_t)(uint32_t)ab;\n\n    return (uint32_t)(a < b ? a : b);\n}\n"
+    },
+    {
+      "name": "mod_add_u32",
+      "file": "mod_add_u32.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* MIT 6.172 \u2014 modular addition as the conditional subtract it is.  The\n * operands are assumed already reduced; what the function computes is `a + b`,\n * minus the modulus when the sum reached it, and nothing else. */\nuint32_t mod_add_u32(uint64_t ab)\n{\n    uint32_t a = (uint32_t)(ab >> 32);\n    uint32_t b = (uint32_t)ab;\n    uint64_t s = (uint64_t)a + (uint64_t)b;\n\n    if (s >= 0xFFFFFFFBu) s -= 0xFFFFFFFBu;   /* 2^32 - 5, the largest u32 prime */\n    return (uint32_t)s;\n}\n"
+    },
+    {
+      "name": "float_power2_bits",
+      "file": "float_power2_bits.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n/* CS:APP Data Lab \u2014 the bits of 2.0^x, for x read as a signed byte. */\nuint32_t float_power2_bits(uint8_t x)\n{\n    int32_t e = (int32_t)(int8_t)x + 127;\n    if (e <= 0) return 0u;\n    if (e >= 255) return 0x7F800000u;\n    return (uint32_t)e << 23;\n}\n"
+    },
+    {
+      "name": "float_scale2_bits",
+      "file": "float_scale2_bits.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* CS:APP Data Lab, floatScale2 \u2014 the bits of 2*f, for f a bfloat16: the top\n * sixteen bits of a binary32, sign, eight exponent bits and seven of mantissa.\n *\n * The case analysis is the exercise.  A denormal doubles by shifting its\n * mantissa, a normal one by incrementing its exponent, the last finite\n * exponent overflows to infinity, and a NaN comes back untouched \u2014 four\n * different programs chosen by one comparison on a field. */\nuint16_t float_scale2_bits(uint16_t x)\n{\n    uint16_t sign = x & 0x8000u;\n    unsigned exp = (x >> 7) & 0xFFu;\n    unsigned man = x & 0x7Fu;\n\n    if (exp == 0xFFu) return x;                              /* inf or NaN  */\n    if (exp == 0u)    return (uint16_t)(sign | (man << 1));  /* denormal    */\n    if (exp == 0xFEu) return (uint16_t)(sign | 0x7F80u);     /* overflows   */\n    return (uint16_t)(x + 0x80u);                            /* exp + 1     */\n}\n"
+    },
+    {
+      "name": "popcount_u64",
+      "file": "popcount_u64.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* MIT 6.172 \u2014 the population count, written as the loop nobody ships. */\nuint32_t popcount_u64(uint64_t x)\n{\n    uint32_t n = 0;\n\n    for (unsigned i = 0; i < 64; ++i)\n        n += (uint32_t)((x >> i) & 1u);\n    return n;\n}\n"
+    },
+    {
+      "name": "least_bit_mask_u64",
+      "file": "least_bit_mask_u64.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* MIT 6.172 \u2014 a mask with only the lowest set bit of x in it. */\nuint64_t least_bit_mask_u64(uint64_t x)\n{\n    for (unsigned i = 0; i < 64; ++i)\n        if ((x >> i) & 1u)\n            return (uint64_t)1 << i;\n    return 0;\n}\n"
+    },
+    {
+      "name": "round_up_pow2_u64",
+      "file": "round_up_pow2_u64.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* MIT 6.172 \u2014 the smallest power of two that is not below x.  Zero is not\n * rounded up to anything, and a value above 2^63 has nothing to round up to,\n * so both answer zero. */\nuint64_t round_up_pow2_u64(uint64_t x)\n{\n    uint64_t n = 0;\n\n    if (x != 0) {\n        n = 1;\n        for (unsigned i = 0; i < 64; ++i)\n            if (n < x) n <<= 1;\n    }\n    return n;\n}\n"
+    },
+    {
+      "name": "how_many_bits_i32",
+      "file": "how_many_bits_i32.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* CS:APP Data Lab, howManyBits \u2014 the fewest bits that can hold x in two's\n * complement.  Zero and minus one both need one; every other value needs its\n * magnitude's width plus a sign bit. */\nuint32_t how_many_bits_i32(uint32_t x)\n{\n    int32_t v = (int32_t)x;\n    uint32_t n = 1;\n\n    if (v < 0) v = ~v;\n    while (v) { v >>= 1; n += 1; }\n    return n;\n}\n"
+    },
+    {
+      "name": "max_u8x8",
+      "file": "max_u8x8.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* MIT 6.172 \u2014 the largest of eight bytes packed in a word.  A reduction: the\n * output is one lane wide however wide the input is, which no deposit, no\n * convolution and no lane predicate can produce. */\nuint8_t max_u8x8(uint64_t v)\n{\n    uint8_t best = 0;\n\n    for (unsigned i = 0; i < 8; ++i) {\n        uint8_t lane = (uint8_t)(v >> (8 * i));\n        if (lane > best) best = lane;\n    }\n    return best;\n}\n"
+    },
+    {
+      "name": "rabin_karp_roll",
+      "file": "rabin_karp_roll.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Princeton 4/e, Rabin-Karp \u2014 one step of the rolling hash: the running hash\n * moves up by the radix, the character coming in is added, and the whole thing\n * is reduced modulo the prime.  The running hash is the high byte of the\n * input and the character is the low byte. */\nuint16_t rabin_karp_roll(uint16_t hc)\n{\n    uint32_t h = (uint32_t)(hc >> 8);\n    uint32_t c = (uint32_t)(hc & 0xFFu);\n\n    return (uint16_t)((h * 256u + c) % 251u);\n}\n"
+    },
+    {
       "name": "counting_sort8_u2",
       "file": "counting_sort8_u2.c",
       "language": "c",
@@ -188,10 +260,22 @@
       "source": "#include <stdint.h>\n/* Princeton 4/e, KMP \u2014 the automaton state after eight bits of text, for the\n * fixed pattern 1011. State is how much of the pattern currently matches. */\nuint8_t kmp_scan8_fixed(uint8_t text)\n{\n    uint8_t state = 0;\n    for (int i = 7; i >= 0; --i) {\n        uint8_t bit = (uint8_t)((text >> i) & 1u);\n        if (state == 0) state = bit ? 1u : 0u;\n        else if (state == 1) state = bit ? 1u : 2u;\n        else if (state == 2) state = bit ? 3u : 0u;\n        else if (state == 3) state = bit ? 4u : 2u;\n        else state = bit ? 1u : 2u;\n    }\n    return state;\n}\n"
     },
     {
-      "name": "float_power2_bits",
-      "file": "float_power2_bits.c",
+      "name": "float_to_int_bits",
+      "file": "float_to_int_bits.c",
       "language": "c",
-      "source": "#include <stdint.h>\n/* CS:APP Data Lab \u2014 the bits of 2.0^x, for x read as a signed byte. */\nuint32_t float_power2_bits(uint8_t x)\n{\n    int32_t e = (int32_t)(int8_t)x + 127;\n    if (e <= 0) return 0u;\n    if (e >= 255) return 0x7F800000u;\n    return (uint32_t)e << 23;\n}\n"
+      "source": "#include <stdint.h>\n\n/* CS:APP Data Lab, floatFloat2Int \u2014 (int)f for f a bfloat16, truncating\n * toward zero, with 0x80000000 for anything out of range.\n *\n * The shift is by the exponent, and a shift by a value is not a shift by a\n * constant: this is the kernel that says where the declared grammar stops. */\nuint32_t float_to_int_bits(uint16_t x)\n{\n    unsigned sign = (x >> 15) & 1u;\n    int exp = (int)((x >> 7) & 0xFFu) - 127;\n    uint32_t frac = (uint32_t)(x & 0x7Fu) | 0x80u;\n    uint32_t v;\n\n    if (exp < 0) return 0u;\n    if (exp > 30) return 0x80000000u;\n\n    if (exp >= 7) v = frac << (exp - 7);\n    else          v = frac >> (7 - exp);\n\n    return sign ? (uint32_t)(-(int32_t)v) : v;\n}\n"
+    },
+    {
+      "name": "histogram4_u2x16",
+      "file": "histogram4_u2x16.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Princeton 4/e, key-indexed counting \u2014 the counting pass on its own: sixteen\n * two-bit keys, and the four counts that come out of them, one per byte.\n *\n * Four independent counts of one word.  Each is a lane predicate and a\n * population count, which the grammar has; what it does not have is a way to\n * say \"and these four answers go in these four fields\", so an abstract program\n * is still a chain and this is still out of reach. */\nuint32_t histogram4_u2x16(uint32_t v)\n{\n    uint32_t out = 0;\n\n    for (unsigned i = 0; i < 16; ++i)\n        out += (uint32_t)1 << (8 * ((v >> (2 * i)) & 3u));\n    return out;\n}\n"
+    },
+    {
+      "name": "strict_sum4_f64",
+      "file": "strict_sum4_f64.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* MIT 6.172 \u2014 floating-point addition is not associative, so a sum has an\n * order and a compiler may not pick another one.\n *\n * The four addends are the four 16-bit lanes of the input, each read as a\n * bfloat16 and widened exactly into binary64; they are summed strictly left to\n * right in binary64 and the result comes back as its bit pattern.  The\n * exponents range over the whole bfloat16 range, so four addends routinely\n * need more than fifty-three significant bits and every partial sum rounds \u2014\n * which is the whole point, and what makes the order observable.\n *\n * Denormals flush to zero.  Everything here is integer bit surgery on the\n * fields of a binary64, because that is what floating-point addition is once\n * the hardware is taken away.\n *\n * QM has no compact program for this, and says so.  A normalizing shift is a\n * shift by a value the data decides, and the declared grammar has shifts by\n * constants only; SPEC \u00a79's zero refers to the search family, not to the\n * function. */\n\nstatic uint64_t widen_bf16(uint16_t h)\n{\n    uint64_t sign = (uint64_t)(h >> 15) << 63;\n    unsigned exp = (h >> 7) & 0xFFu;\n    uint64_t man = (uint64_t)(h & 0x7Fu) << 45;\n\n    if (exp == 0u) return sign;                       /* zero, or flushed */\n    if (exp == 0xFFu) return sign | 0x7FF0000000000000ull | man;\n    return sign | ((uint64_t)(exp + 896u) << 52) | man;\n}\n\nstatic uint64_t f64_add(uint64_t a, uint64_t b)\n{\n    uint64_t swap, ma, mb, sum, sticky;\n    unsigned sa, sb, ea, eb, shift;\n    int32_t e;\n\n    if ((a & 0x7FFFFFFFFFFFFFFFull) < (b & 0x7FFFFFFFFFFFFFFFull)) {\n        swap = a; a = b; b = swap;\n    }\n\n    sa = (unsigned)(a >> 63); ea = (unsigned)((a >> 52) & 0x7FFu);\n    sb = (unsigned)(b >> 63); eb = (unsigned)((b >> 52) & 0x7FFu);\n\n    if (ea == 0x7FFu) return a;              /* infinity or NaN wins      */\n    if (ea == 0u) return 0;                  /* |a| >= |b|, so both zero  */\n    if (eb == 0u) return a;                  /* b is zero or flushed      */\n\n    shift = ea - eb;\n    if (shift > 56u) return a;               /* b is below the sticky bit */\n\n    ma = (((a & 0x000FFFFFFFFFFFFFull) | 0x0010000000000000ull) << 3);\n    mb = (((b & 0x000FFFFFFFFFFFFFull) | 0x0010000000000000ull) << 3);\n    sticky = (shift != 0u && (mb & (((uint64_t)1 << shift) - 1u)) != 0u) ? 1u : 0u;\n    mb = (mb >> shift) | sticky;\n\n    if (sa == sb) sum = ma + mb;\n    else          sum = ma - mb;\n    if (sum == 0u) return 0;\n\n    e = (int32_t)ea;\n    while (sum >= 0x0100000000000000ull) { sum = (sum >> 1) | (sum & 1u); e += 1; }\n    while (sum < 0x0080000000000000ull) { sum <<= 1; e -= 1; }\n\n    if ((sum & 7u) > 4u || ((sum & 7u) == 4u && (sum & 8u) != 0u)) sum += 8u;\n    if (sum >= 0x0100000000000000ull) { sum >>= 1; e += 1; }\n    sum >>= 3;\n\n    if (e >= 0x7FF) return ((uint64_t)sa << 63) | 0x7FF0000000000000ull;\n    if (e <= 0) return (uint64_t)sa << 63;\n    return ((uint64_t)sa << 63) | ((uint64_t)e << 52)\n         | (sum & 0x000FFFFFFFFFFFFFull);\n}\n\nuint64_t strict_sum4_f64(uint64_t v)\n{\n    uint64_t acc = widen_bf16((uint16_t)v);\n    unsigned i;\n\n    for (i = 1; i < 4; ++i)\n        acc = f64_add(acc, widen_bf16((uint16_t)(v >> (16 * i))));\n    return acc;\n}\n"
     }
   ]
 }

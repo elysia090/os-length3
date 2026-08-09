@@ -508,6 +508,15 @@ def lower_lin_const(op, isa):
     if terms and len(terms) <= 24:
         out.append(('shift/XOR network', _seq_shift_network(terms)))
 
+    if not out:
+        # The zero map is a linear map, and every target can compute it.  A
+        # SPLIT whose branch is a constant arrives here with an empty basis and
+        # a constant beside it, and "no representative of LIN_CONST" would be a
+        # statement about this table rather than about the map.
+        s = Seq()
+        s.emit('AND', [0], const=0)
+        out.append(('zero', s))
+
     return out
 
 
@@ -674,7 +683,6 @@ def _lane_reduce_seq(seq, v, lane_bits, want_max):
     arithmetic above, and the winner is chosen by XOR-blending under the mask
     that comparison produced.
     """
-    ones, _low, _high = lane_masks(lane_bits)
     shift = 32
     while shift >= lane_bits:
         y = seq.emit('SHR', [v], shift=shift)
@@ -687,7 +695,28 @@ def _lane_reduce_seq(seq, v, lane_bits, want_max):
         take = seq.emit('ANDR', [diff, mask])
         v = seq.emit('XORR', [v, take])
         shift >>= 1
-    return seq.emit('AND', [v], const=ones & mask_of(lane_bits))
+    return seq.emit('AND', [v], const=mask_of(lane_bits))
+
+
+def reciprocal(modulus, value_bits):
+    """(M, s) with `(v * M) >> s == v // modulus` for every `v < 2^value_bits`.
+
+    The remainder is then `v - modulus * (v // modulus)`, so a division nobody
+    wants to issue becomes two multiplies, a shift and a subtract.  `s` is the
+    value's width plus the modulus's, which is what makes the rounding error of
+    `ceil(2^s / modulus)` too small to reach the next integer over the whole
+    range — and the lowered sequence is verified over the domain regardless.
+    """
+    s = value_bits + modulus.bit_length()
+    return -((-1 << s) // modulus), s
+
+
+def _mod_seq(seq, v, modulus, value_bits):
+    multiplier, s = reciprocal(modulus, value_bits or 64)
+    q = seq.emit('IMUL', [v], const=multiplier)
+    q = seq.emit('SHR', [q], shift=s)
+    q = seq.emit('IMUL', [q], const=modulus)
+    return seq.emit('SUBR', [v, q])
 
 
 def _smear_seq(seq, v, width):
@@ -711,6 +740,9 @@ def lower_point(op, isa):
         elif mnemonic == 'AND_NEG':
             n = seq.emit('NEG', [v])
             v = seq.emit('ANDR', [v, n])
+        elif mnemonic == 'OR_NEG':
+            n = seq.emit('NEG', [v])
+            v = seq.emit('ORR', [v, n])
         elif mnemonic == 'AND_DEC':
             d = seq.emit('SUB', [v], const=1)
             v = seq.emit('ANDR', [v, d])
@@ -733,6 +765,8 @@ def lower_point(op, isa):
                 v = seq.emit('XORR', [v, s])
         elif mnemonic == 'KEY':
             v = _key_seq(seq, v, const)
+        elif mnemonic == 'MOD':
+            v = _mod_seq(seq, v, const, shift)
         elif mnemonic == 'SMEAR':
             v = _smear_seq(seq, v, const or 64)
         elif mnemonic == 'CLZ':
@@ -772,6 +806,34 @@ def lower_point(op, isa):
             v = seq.emit(mnemonic, [v], const=const)
     seq.result = v
     return [('POINT', seq)]
+
+
+def common_subexpressions(seq):
+    """`seq` with every repeated instruction computed once.
+
+    A split computes its key for the comparison and again inside any branch
+    that reads it, and two branches of a case analysis usually agree about
+    most of what they read off the word.  None of that is a fact about the
+    grammar — it is what happens when independent sub-programs are pasted into
+    one straight line — so it is removed here rather than worked around in
+    three solvers.
+    """
+    remap = {0: 0}
+    seen = {}
+    out = Seq()
+    for index, ins in enumerate(seq.ins, start=1):
+        args = tuple(remap[a] for a in ins.args)
+        const = (tuple(ins.const) if isinstance(ins.const, (list, tuple))
+                 else ins.const)
+        signature = (ins.op, args, const, ins.shift)
+        if signature in seen:
+            remap[index] = seen[signature]
+            continue
+        seen[signature] = remap[index] = out.emit(ins.op, args, ins.const,
+                                                  ins.shift)
+    out.result = remap[seq.result]
+    out.notes = list(seq.notes)
+    return out
 
 
 def _key_seq(seq, x, key):
@@ -833,7 +895,7 @@ def lower_split(op, isa):
         take = seq.emit('ANDNR', [below, diff])
         result = seq.emit('XORR', [result, take])
     seq.result = result
-    return [('SPLIT', seq)]
+    return [('SPLIT', common_subexpressions(seq))]
 
 
 # How many inputs a lowered branch is checked on against the branch it lowers.
