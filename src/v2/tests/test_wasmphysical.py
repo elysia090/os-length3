@@ -6,8 +6,10 @@ from qm import isa
 from qm.wasmphysical import (frame_coordinate, lower_module,
                              memory_coordinate, schedule_sequence,
                              summarize_binary)
-from qm.wasmstate import decode_module
-from tests.test_wasmbinary import module
+from qm.wasmbinary import encode_uleb
+from qm.wasmstate import decode_module, start_state
+from qm.wasmwave import WaveExecutor
+from tests.test_wasmbinary import module, section
 
 
 class TestPhysicalWasmLayout(unittest.TestCase):
@@ -63,6 +65,32 @@ class TestPhysicalWasmLayout(unittest.TestCase):
             'wave_widths': [2, 1],
             'max_parallel_width': 2,
         })
+
+    def test_function_bodies_and_coordinate_rows_are_demand_materialized(self):
+        function_type = b'\x01\x60\x00\x01\x7f'
+        functions = b'\x02\x00\x00'
+        exports = b'\x01\x01f\x00\x00'
+        first = b'\x00\x41\x01\x0b'
+        second = b'\x00\x41\x02\x0b'
+        code = (b'\x02' + encode_uleb(len(first)) + first
+                + encode_uleb(len(second)) + second)
+        raw = (b'\x00asm\x01\x00\x00\x00'
+               + section(1, function_type) + section(3, functions)
+               + section(7, exports) + section(10, code))
+
+        decoded = decode_module(raw)
+        executor = WaveExecutor(decoded)
+
+        self.assertEqual(decoded.code_layout()['decoded_functions'], 0)
+        self.assertEqual(executor.steps.resident_rows, 0)
+
+        state = start_state(decoded, 'f')
+        self.assertEqual(decoded.code_layout()['decoded_functions'], 1)
+        self.assertFalse(decoded.functions[1].decoded)
+
+        executor.mapped(state.frames[-1])
+        self.assertEqual(executor.steps.resident_rows, 1)
+        self.assertFalse(decoded.functions[1].decoded)
 
 
 if __name__ == '__main__':

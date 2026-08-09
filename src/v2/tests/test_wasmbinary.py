@@ -2,7 +2,8 @@
 
 import unittest
 
-from qm.wasmbinary import encode_uleb, optimize_module
+from qm.wasmbinary import (encode_uleb, optimize_module, section_layout,
+                           strip_custom_sections)
 from qm.wasmstate import decode_module, run_until_boundary, start_state
 
 
@@ -73,6 +74,54 @@ class TestLargeWasmFunctionOptimizer(unittest.TestCase):
         self.assertEqual(report['replaced'], 1)
         for values in ((0, 0), (1, 1), (0xffffffff, 15), (17, 99)):
             self.assertEqual(call(raw, values), call(optimized, values))
+
+    def test_custom_debug_sections_drop_without_changing_execution(self):
+        raw = module(b'\x00\x20\x00\x42\x03\x7c\x0b')
+        custom = (b'\x00' + encode_uleb(11)
+                  + encode_uleb(5) + b'name!' + b'debug')
+        decorated = raw + custom
+
+        compact, removed = strip_custom_sections(decorated)
+
+        self.assertEqual([item.name for item in removed], ['name!'])
+        self.assertEqual(section_layout(decorated)['custom_section_bytes'], 13)
+        self.assertEqual(section_layout(compact)['custom_section_bytes'], 0)
+        for value in (0, 1, (1 << 64) - 1):
+            self.assertEqual(call(decorated, value), call(compact, value))
+
+    def test_selected_custom_metadata_can_be_retained(self):
+        raw = module(b'\x00\x20\x00\x0b')
+        name = b'target_features'
+        payload = encode_uleb(len(name)) + name + b'features'
+        decorated = raw + section(0, payload)
+
+        compact, removed = strip_custom_sections(
+            decorated, keep=('target_features',))
+
+        self.assertEqual(compact, decorated)
+        self.assertEqual(removed, ())
+
+    def test_custom_ranges_are_skipped_from_a_view_without_source_copy(self):
+        raw = module(b'\x00\x20\x00\x0b')
+        custom = section(0, encode_uleb(5) + b'debug' + bytes(4096))
+        source = memoryview(raw + custom)
+
+        compact, removed = strip_custom_sections(source)
+
+        self.assertIsInstance(compact, bytearray)
+        self.assertEqual(compact, raw)
+        self.assertEqual(sum(item.size for item in removed), len(custom))
+
+    def test_no_replacement_reuses_the_single_semantic_buffer(self):
+        # Memory is an observation boundary, so QM must keep this body and can
+        # return the caller's already compact buffer without another copy.
+        raw = bytearray(module(b'\x00\x20\x00\x28\x02\x00\x0b',
+                               kind=0x7F, memory=True))
+
+        optimized, report = optimize_module(raw)
+
+        self.assertEqual(report['replaced'], 0)
+        self.assertIs(optimized, raw)
 
 
 if __name__ == '__main__':

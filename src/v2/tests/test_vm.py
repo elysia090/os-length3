@@ -17,9 +17,9 @@ import tempfile
 import unittest
 
 from vm import codec, image, machine
+from vm.wasm.build import build as build_wasm
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WASM_SOURCE = os.path.join(ROOT, 'vm', 'wasm', 'vm.c')
 
 # An echo machine, written by hand.  Cells 0 and 1 are the input and output
 # cells and cell 2 is scratch; cell 9 is absent, which reads as the zero the
@@ -270,12 +270,7 @@ class TestWasmAgreesWithTheReference(unittest.TestCase):
     def setUpClass(cls):
         cls._tmp = tempfile.mkdtemp()
         cls.module = os.path.join(cls._tmp, 'vm.wasm')
-        build = subprocess.run(
-            ['clang', '--target=wasm32', '-O2', '-ffreestanding', '-nostdlib',
-             '-Wl,--no-entry', '-Wl,--export-dynamic',
-             '-Wl,--initial-memory=33554432', '-Wall', '-Wextra',
-             WASM_SOURCE, '-o', cls.module],
-            capture_output=True, text=True)
+        build = build_wasm(cls.module, shutil.which('clang'))
         assert build.returncode == 0, build.stderr
         assert not build.stderr.strip(), build.stderr
         cls.driver = os.path.join(cls._tmp, 'drive.mjs')

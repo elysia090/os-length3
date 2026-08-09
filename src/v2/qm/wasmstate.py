@@ -358,6 +358,73 @@ class Function:
     elses: tuple = ()
 
 
+class LazyFunction(object):
+    """One defined body kept as byte coordinates until first execution.
+
+    The module owns the shared input buffer.  A function carries only its
+    ``(start, end)`` span and decodes its locals/control tables atomically on
+    first observation.  Untouched functions therefore never become Python
+    instruction objects.
+    """
+
+    __slots__ = ('type_index', 'imported', 'module', 'name', '_data',
+                 '_start', '_end', '_decoded')
+
+    def __init__(self, type_index, data, start, end):
+        self.type_index = int(type_index)
+        self.imported = False
+        self.module = ''
+        self.name = ''
+        self._data = data
+        self._start = int(start)
+        self._end = int(end)
+        self._decoded = None
+
+    def _open(self):
+        decoded = self._decoded
+        if decoded is None:
+            body = _Reader(self._data, self._start, self._end)
+            locals_ = []
+            for _ in range(body.uleb()):
+                count, kind = body.uleb(), _valtype(body)
+                if count > 1 << 20:
+                    raise WasmStateError(
+                        'wasm function declares too many locals')
+                locals_.extend([kind] * count)
+            code, ends, elses = _decode_code(body)
+            decoded = (tuple(locals_), code, ends, elses)
+            self._decoded = decoded
+        return decoded
+
+    @property
+    def locals(self):
+        return self._open()[0]
+
+    @property
+    def code(self):
+        return self._open()[1]
+
+    @property
+    def ends(self):
+        return self._open()[2]
+
+    @property
+    def elses(self):
+        return self._open()[3]
+
+    @property
+    def decoded(self):
+        return self._decoded is not None
+
+    @property
+    def encoded_size(self):
+        return self._end - self._start
+
+    @property
+    def decoded_instructions(self):
+        return 0 if self._decoded is None else len(self._decoded[1])
+
+
 @dataclass(frozen=True)
 class Module:
     types: tuple
@@ -380,6 +447,22 @@ class Module:
                              hint='function exports: %s' %
                                   (', '.join(available) or 'none'))
 
+    def code_layout(self):
+        """Report byte spans versus bodies actually materialized so far."""
+        defined = [function for function in self.functions
+                   if isinstance(function, LazyFunction)]
+        decoded = [function for function in defined if function.decoded]
+        return {
+            'defined_functions': len(defined),
+            'encoded_body_bytes': sum(function.encoded_size
+                                      for function in defined),
+            'decoded_functions': len(decoded),
+            'decoded_body_bytes': sum(function.encoded_size
+                                      for function in decoded),
+            'decoded_instructions': sum(function.decoded_instructions
+                                        for function in decoded),
+        }
+
 
 def decode_module(data, imports=None, indirect_abi='strict'):
     """Decode and instantiate the integer/control/memory core of a module.
@@ -401,7 +484,7 @@ def decode_module(data, imports=None, indirect_abi='strict'):
                 'imported wasm %s %s.%s needs an explicit deterministic '
                 'host snapshot' % (kind, module, name))
 
-    reader = _Reader(bytes(data))
+    reader = _Reader(data)
     if reader.take(4) != b'\x00asm' or reader.take(4) != b'\x01\x00\x00\x00':
         raise WasmStateError('input is not a WebAssembly 1.0 binary')
 
@@ -504,16 +587,13 @@ def decode_module(data, imports=None, indirect_abi='strict'):
         elif section_id == 10:
             for _ in range(section.uleb()):
                 body_size = section.uleb()
-                body = _Reader(section.data, section.at, section.at + body_size)
+                body_start = section.at
+                body_end = body_start + body_size
+                if body_end > section.end:
+                    raise WasmStateError(
+                        'wasm function body exceeds the code section')
                 section.at += body_size
-                locals_ = []
-                for _ in range(body.uleb()):
-                    count, kind = body.uleb(), _valtype(body)
-                    if count > 1 << 20:
-                        raise WasmStateError('wasm function declares too many locals')
-                    locals_.extend([kind] * count)
-                code, ends, elses = _decode_code(body)
-                bodies.append((tuple(locals_), code, ends, elses))
+                bodies.append((section.data, body_start, body_end))
         elif section_id == 11:
             for _ in range(section.uleb()):
                 flags = section.uleb()
@@ -540,8 +620,7 @@ def decode_module(data, imports=None, indirect_abi='strict'):
         raise WasmStateError('wasm function and code section lengths disagree')
     functions = list(imported)
     for type_index, body in zip(defined_types, bodies):
-        functions.append(Function(type_index, body[0], body[1], False,
-                                  ends=body[2], elses=body[3]))
+        functions.append(LazyFunction(type_index, body[0], body[1], body[2]))
 
     minimum, maximum, imported_memory = (memories[0] if memories
                                          else (0, None, None))
@@ -956,7 +1035,7 @@ def start_state(module, function='main', args=(), run_start=True,
     return _invoke(module, base, index, args)
 
 
-def invoke(module, base, function, args=(), budget=1 << 20):
+def invoke(module, base, function, args=(), budget=1 << 20, executor=None):
     """Run one exported call against an existing module snapshot.
 
     The returned value retains all global and memory changes.  Calling this
@@ -966,7 +1045,7 @@ def invoke(module, base, function, args=(), budget=1 << 20):
     """
     index = module.export(function) if isinstance(function, str) else int(function)
     return run_until_boundary(module, _invoke(module, base, index, args),
-                              budget=budget)
+                              budget=budget, executor=executor)
 
 
 def write_memory(state, address, payload):

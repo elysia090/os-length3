@@ -33,6 +33,19 @@ GENERIC_ARITY = {
     'DIV_U': 2,
     'REM_S': 2,
     'REM_U': 2,
+    # Terminal physical forms selected while recomposing a residual SSA cut.
+    # BIT/BITZ are the value and zero-observer of one dynamic bit coordinate;
+    # ADD3 is the three-input form normally implemented by an address lane.
+    'BIT': 2,
+    'BITZ': 2,
+    'BIT_MSB8': 2,
+    'BIT_MSB8Z': 2,
+    'ADD3': 3,
+    'BEXTR': 3,
+    'UMIN': 2,
+    'UMAX': 2,
+    'SMIN': 2,
+    'SMAX': 2,
 }
 
 ISA_BINARY = {'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR'}
@@ -128,7 +141,11 @@ def evaluate(operation, arguments):
     bits, name = split(operation)
     if name in isa.OPCODES:
         arity = 2 if name in ISA_BINARY else 1
-        values = arguments[:arity]
+        # A lane boundary is also its publication-width projection.  This is
+        # important when QM removes an otherwise redundant i64->i32 materialize
+        # node before a 32-bit consumer.
+        values = tuple(value & mask_of(bits)
+                       for value in arguments[:arity])
         tail = arguments[arity:]
         shift = tail[0] if name in ISA_SHIFT else 255
         constants = () if name in ISA_SHIFT else tail
@@ -138,6 +155,32 @@ def evaluate(operation, arguments):
     if name == 'SELECT':
         left, right, condition = arguments
         return left if condition else right
+    if name in ('BIT', 'BITZ'):
+        value, coordinate = arguments
+        bit = ((value & mask_of(bits)) >> (coordinate % bits)) & 1
+        return bit if name == 'BIT' else bit ^ 1
+    if name in ('BIT_MSB8', 'BIT_MSB8Z'):
+        value, coordinate = arguments
+        bit = ((value & mask_of(bits)) >> ((~coordinate) & 7)) & 1
+        return bit if name == 'BIT_MSB8' else bit ^ 1
+    if name == 'ADD3':
+        return sum(value & mask_of(bits) for value in arguments) & mask_of(bits)
+    if name == 'BEXTR':
+        value, offset, width = arguments
+        count = width % bits
+        return ((value & mask_of(bits)) >> (offset % bits)) & mask_of(count)
+    if name in ('UMIN', 'UMAX', 'SMIN', 'SMAX'):
+        mask = mask_of(bits)
+        left, right = (value & mask for value in arguments)
+        if name.startswith('S'):
+            sign = 1 << (bits - 1)
+            left_key = left - (1 << bits) if left & sign else left
+            right_key = right - (1 << bits) if right & sign else right
+        else:
+            left_key, right_key = left, right
+        choose_left = (left_key < right_key if name.endswith('MIN')
+                       else left_key > right_key)
+        return left if choose_left else right
 
     wasm_name = {
         'WRAP_I64': 'wrap_i64',

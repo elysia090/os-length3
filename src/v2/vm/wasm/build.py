@@ -12,7 +12,9 @@ wants.
 """
 
 import argparse
+import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -36,7 +38,29 @@ FLAGS = [
 
 
 def build(out_path, binary='clang'):
-    result = subprocess.run([binary] + FLAGS + [SOURCE, '-o', out_path],
+    compiler = binary
+    probe = subprocess.run([binary, '-print-prog-name=clang'],
+                           capture_output=True, text=True)
+    resolved = probe.stdout.strip() if probe.returncode == 0 else ''
+    if os.path.isabs(resolved) and os.path.isfile(resolved):
+        # Nix's native cc-wrapper injects host linker flags even when clang is
+        # explicitly targeting wasm32.  Clang names its unwrapped executable
+        # through this standard query, so use that compiler for cross-targets.
+        compiler = resolved
+    flags = list(FLAGS)
+    linker = shutil.which('wasm-ld')
+    if compiler != binary and linker is None:
+        candidates = glob.glob('/nix/store/*-lld-*/bin/wasm-ld')
+        version = re.search(r'clang-(\d+)', compiler)
+        if version is not None:
+            same = [path for path in candidates
+                    if '-lld-%s.' % version.group(1) in path
+                    or '-lld-%s-' % version.group(1) in path]
+            candidates = same or candidates
+        linker = sorted(candidates)[-1] if candidates else None
+    if compiler != binary and linker:
+        flags.append('-fuse-ld=' + linker)
+    result = subprocess.run([compiler] + flags + [SOURCE, '-o', out_path],
                             capture_output=True, text=True)
     return result
 

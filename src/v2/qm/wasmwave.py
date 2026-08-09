@@ -28,9 +28,6 @@ _BINARY = {
     'div_s', 'div_u', 'rem_s', 'rem_u',
 }
 _COMMUTATIVE = {'eq', 'ne', 'add', 'mul', 'and', 'or', 'xor'}
-_TRAPPING = {'div_s', 'div_u', 'rem_s', 'rem_u'}
-
-
 @dataclass(frozen=True)
 class Operand:
     kind: str
@@ -135,56 +132,6 @@ def _operand_key(operand):
     # Constants last makes identities such as ``x + 0`` canonical without
     # changing the source operation's integer type.
     return operand.kind == 'const', operand.kind, operand.value
-
-
-def _live_graph(nodes, stack, locals_):
-    """Remove dead non-trapping nodes and rebuild dense dependency waves."""
-    live = set(node.value for node in nodes
-               if node.op.split('.', 1)[-1] in _TRAPPING)
-    live.update(operand.value for operand in stack + locals_
-                if operand.kind == 'node')
-    pending = list(live)
-    while pending:
-        value = pending.pop()
-        for operand in nodes[value - 1].arguments:
-            if operand.kind == 'node' and operand.value not in live:
-                live.add(operand.value)
-                pending.append(operand.value)
-
-    remap = {}
-    kept = []
-    for node in nodes:
-        if node.value not in live:
-            continue
-        value = len(kept) + 1
-        remap[node.value] = value
-        arguments = tuple(
-            Operand('node', remap[operand.value])
-            if operand.kind == 'node' else operand
-            for operand in node.arguments)
-        kept.append(WaveNode(value, node.op, arguments))
-
-    def output(operand):
-        if operand.kind == 'node':
-            return Operand('node', remap[operand.value])
-        return operand
-
-    depths = [0]
-    by_depth = {}
-    for node in kept:
-        depth = 1 + max((depths[argument.value]
-                         for argument in node.arguments
-                         if argument.kind == 'node'), default=0)
-        depths.append(depth)
-        by_depth.setdefault(depth, []).append(node.value)
-    offsets = [0]
-    values = []
-    for depth in range(1, max(by_depth, default=0) + 1):
-        values.extend(by_depth.get(depth, ()))
-        offsets.append(len(values))
-    waves = DependencyWaves(tuple(offsets), tuple(values), tuple(depths))
-    return tuple(kept), waves, tuple(map(output, stack)), \
-        tuple(map(output, locals_))
 
 
 def compile_slice(module, frame):
@@ -292,11 +239,12 @@ def compile_slice(module, frame):
             stack.append(emit(op, arguments))
         pc += 1
 
-    nodes, waves, stack, locals_ = _live_graph(
-        tuple(nodes), tuple(stack), tuple(locals_))
+    # Renaming does not assign a second, provisional dependency layout.  The
+    # persistent cut builder owns liveness, CSE and waves exactly once before
+    # any backward work minimization can observe this graph.
     return normalize_plan(PureSlice(
         frame.function, frame.pc, pc, pc - frame.pc, len(frame.stack),
-        nodes, waves, stack, locals_))
+        tuple(nodes), None, tuple(stack), tuple(locals_)))
 
 
 def execute_slice(plan, state):
@@ -337,50 +285,6 @@ def execute_slice(plan, state):
     return replace(state, frames=state.frames[:-1] + (next_frame,))
 
 
-def compile_slice_executor(plan):
-    """Compile one validated codec plan into a direct frame transition."""
-    lines = ['def execute(frame, evaluate=evaluate):',
-             '    stack = frame.stack',
-             '    locals_ = frame.locals']
-
-    def expression(operand):
-        if operand.kind == 'const':
-            return repr(operand.value)
-        if operand.kind == 'stack':
-            return 'stack[%d]' % operand.value
-        if operand.kind == 'local':
-            return 'locals_[%d]' % operand.value
-        return 'value_%d' % operand.value
-
-    for node in plan.nodes:
-        arguments = ', '.join(expression(argument)
-                              for argument in node.arguments)
-        if len(node.arguments) == 1:
-            arguments += ','
-        lines.append("    value_%d = evaluate(%r, (%s))" %
-                     (node.value, node.op, arguments))
-    local_values = ', '.join(expression(value) for value in plan.locals)
-    stack_values = ', '.join(expression(value) for value in plan.stack)
-    if len(plan.locals) == 1:
-        local_values += ','
-    if len(plan.stack) == 1:
-        stack_values += ','
-    lines.append('    return (%s), (%s)' % (local_values, stack_values))
-    namespace = {'evaluate': evaluate_physical}
-    exec(compile('\n'.join(lines), '<qm-wasm-slice>', 'exec'),
-         namespace, namespace)
-    return namespace['execute']
-
-
-def execute_compiled(plan, executor, state):
-    """Commit the outputs of a hot compiled slice as one state update."""
-    frame = state.frames[-1]
-    locals_, stack = executor(frame)
-    next_frame = Frame(frame.function, plan.end, tuple(locals_), tuple(stack),
-                       frame.controls)
-    return replace(state, frames=state.frames[:-1] + (next_frame,))
-
-
 _EMPTY = object()
 
 
@@ -388,15 +292,24 @@ class _CoordinateArray(object):
     """Direct ``(function, pc)`` storage with stack extent as a guard."""
 
     def __init__(self, module):
-        self.rows = [[_EMPTY] * len(function.code)
-                     for function in module.functions]
+        self.module = module
+        # The first level is the exact function coordinate.  The pc row is
+        # allocated only after that function body is touched and decoded.
+        self.rows = [None] * len(module.functions)
         self.count = 0
+
+    def _row(self, function):
+        row = self.rows[function]
+        if row is None:
+            row = [_EMPTY] * len(self.module.functions[function].code)
+            self.rows[function] = row
+        return row
 
     def _at(self, key):
         function, pc, extent = map(int, key)
         if function < 0 or function >= len(self.rows):
             raise KeyError(key)
-        row = self.rows[function]
+        row = self._row(function)
         if pc < 0 or pc >= len(row):
             raise KeyError(key)
         return row, pc, extent
@@ -427,11 +340,31 @@ class _CoordinateArray(object):
         row[pc] = (extent, value)
 
     def values(self):
-        return tuple(entry[1] for row in self.rows for entry in row
-                     if entry is not _EMPTY)
+        return (entry[1] for row in self.rows if row is not None
+                for entry in row if entry is not _EMPTY)
+
+    def items(self):
+        return (((function, pc, entry[0]), entry[1])
+                for function, row in enumerate(self.rows) if row is not None
+                for pc, entry in enumerate(row) if entry is not _EMPTY)
+
+    @property
+    def resident_rows(self):
+        return sum(row is not None for row in self.rows)
 
     def __len__(self):
         return self.count
+
+
+@dataclass
+class _PhysicalStep:
+    """One resident physical page and its terminal executable projection."""
+
+    mapped: object
+    execute: object
+    cost: WaveCost
+    source_work: int
+    executions: int = 0
 
 
 class WaveExecutor:
@@ -439,66 +372,99 @@ class WaveExecutor:
 
     def __init__(self, module):
         self.module = module
-        # Function and source-pc are already dense physical coordinates. Keep
-        # every derived form in that array instead of building parallel hash
-        # indexes with another identity for the same state step.
-        self.cache = _CoordinateArray(module)
-        self.source_work = _CoordinateArray(module)
-        self.physical = _CoordinateArray(module)
-        self.executable = _CoordinateArray(module)
-        self.compiled = _CoordinateArray(module)
+        # Function and source-pc are already dense physical coordinates.  One
+        # entry owns the mapped page and its terminal executable projection;
+        # the construction SSA is released before the entry becomes resident.
+        self.steps = _CoordinateArray(module)
         self.total_cost = WaveCost()
         self.total_source_work = 0
 
-    def plan(self, frame):
+    def _entry(self, frame):
         key = (frame.function, frame.pc, len(frame.stack))
-        if key not in self.cache:
+        if key not in self.steps:
             plan = compile_slice(self.module, frame)
-            self.cache[key] = plan
-            if plan is not None:
-                function = self.module.functions[frame.function]
-                self.source_work[key] = sum(
-                    1 for instruction in function.code[plan.start:plan.end]
-                    if instruction.op == 'select'
-                    or numeric_arity(instruction.op) is not None)
-        return self.cache[key]
+            if plan is None:
+                raise WasmStateError(
+                    'a barrier has no physical residual state-step')
+            from .steppage import compile_mapped_executor, pack, unpack
+
+            function = self.module.functions[frame.function]
+            source_work = sum(
+                1 for instruction in function.code[plan.start:plan.end]
+                if instruction.op == 'select'
+                or numeric_arity(instruction.op) is not None)
+            mapped = unpack(pack(plan))
+            widths = [
+                mapped.value('wave_offsets', depth + 1)
+                - mapped.value('wave_offsets', depth)
+                for depth in range(mapped.span)
+            ]
+            cost = WaveCost(
+                instructions=mapped.instructions,
+                work=mapped.work,
+                span=mapped.span,
+                slices=1,
+                max_parallel_width=max(widths, default=0),
+            )
+            self.steps[key] = _PhysicalStep(
+                mapped, compile_mapped_executor(mapped), cost, source_work)
+        return self.steps[key]
+
+    def plan(self, frame):
+        """Reconstruct scalar SSA only when a diagnostic explicitly asks."""
+        from .steppage import decode_plan
+        function = self.module.functions[frame.function]
+        if (frame.pc >= len(function.code)
+                or is_barrier(function.code[frame.pc].op)):
+            return None
+        entry = self._entry(frame)
+        return decode_plan(entry.mapped)
 
     def normalization_layout(self):
         """Dynamic work removed before slices entered the codec cache."""
         source = self.total_source_work
         normalized = self.total_cost.work
+        dominant = sorted(
+            ((entry.executions * entry.mapped.work, entry.executions,
+              key, entry.mapped.work, entry.mapped.span)
+             for key, entry in self.steps.items()),
+            reverse=True,
+        )[:8]
         return {
             'source_work': source,
             'normalized_work': normalized,
             'removed_work': source - normalized,
-            'cached_slices': sum(plan is not None
-                                 for plan in self.cache.values()),
-            'compiled_state_steps': len(self.compiled),
+            'cached_slices': len(self.steps),
+            'compiled_state_steps': len(self.steps),
             'normalized_state_steps': sum(
-                bool(plan.nodes)
-                and all(node.op.startswith(('lane32.', 'lane64.'))
-                        for node in plan.nodes)
-                for plan in self.cache.values() if plan is not None),
+                entry.mapped.work > 0
+                for entry in self.steps.values()),
+            'projection_state_steps': sum(
+                entry.mapped.work == 0 for entry in self.steps.values()),
+            'changed_local_coordinates': sum(
+                entry.mapped.local_updates for entry in self.steps.values()),
+            'resident_scalar_plans': 0,
+            'dominant_residuals': [
+                {
+                    'dynamic_work': work,
+                    'executions': executions,
+                    'coordinate': list(key),
+                    'work': static_work,
+                    'span': span,
+                }
+                for work, executions, key, static_work, span in dominant
+                if work
+            ],
         }
 
     def mapped(self, frame):
         """The sole disposable codec page for the current pure slice."""
-        from .steppage import pack, unpack
-        key = (frame.function, frame.pc, len(frame.stack))
-        if key not in self.physical:
-            plan = self.plan(frame)
-            self.physical[key] = None if plan is None else unpack(pack(plan))
-        return self.physical[key]
-
-    def decoded(self, frame):
-        """Validated execution plan decoded once from its physical page."""
-        from .steppage import decode_plan
-        key = (frame.function, frame.pc, len(frame.stack))
-        if key not in self.executable:
-            mapped = self.mapped(frame)
-            self.executable[key] = (None if mapped is None
-                                    else decode_plan(mapped))
-        return self.executable[key]
+        function = self.module.functions[frame.function]
+        if (frame.pc >= len(function.code)
+                or is_barrier(function.code[frame.pc].op)):
+            return None
+        entry = self._entry(frame)
+        return entry.mapped
 
     def step(self, state):
         if state.waiting is not None or state.halted:
@@ -506,24 +472,23 @@ class WaveExecutor:
         if not state.frames:
             return instruction_step(self.module, state), WaveCost()
         frame = state.frames[-1]
-        plan = self.plan(frame)
-        if plan is None:
+        function = self.module.functions[frame.function]
+        if (frame.pc >= len(function.code)
+                or is_barrier(function.code[frame.pc].op)):
             return instruction_step(self.module, state), WaveCost(
                 instructions=1, barriers=1)
-        widths = [len(plan.waves.wave(depth))
-                  for depth in range(1, plan.waves.span + 1)]
-        key = (frame.function, frame.pc, len(frame.stack))
-        decoded = self.decoded(frame)
-        if key not in self.compiled:
-            self.compiled[key] = compile_slice_executor(decoded)
-        next_state = execute_compiled(decoded, self.compiled[key], state)
-        return next_state, WaveCost(
-            instructions=plan.instructions,
-            work=plan.waves.work,
-            span=plan.waves.span,
-            slices=1,
-            max_parallel_width=max(widths, default=0),
-        )
+        entry = self._entry(frame)
+        mapped = entry.mapped
+        if len(frame.locals) != mapped.local_extent:
+            raise WasmStateError(
+                'state-step local extent changed at a physical coordinate')
+        entry.executions += 1
+        locals_, stack = entry.execute(frame)
+        next_frame = Frame(frame.function, mapped.end, locals_, stack,
+                           frame.controls)
+        next_state = replace(
+            state, frames=state.frames[:-1] + (next_frame,))
+        return next_state, entry.cost
 
     def run_quantum_with_report(self, state, budget=1 << 20):
         """Run one bounded quantum and retain its continuation on exhaustion."""
@@ -539,7 +504,7 @@ class WaveExecutor:
             state = next_state
             cost += step_cost
             if step_cost.slices:
-                self.total_source_work += self.source_work[source_key]
+                self.total_source_work += self.steps[source_key].source_work
         reached_boundary = state.waiting is not None or state.halted
         self.total_cost += cost
         return state, cost, reached_boundary

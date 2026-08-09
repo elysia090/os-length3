@@ -187,11 +187,13 @@ of live nodes and span is the number of waves. Memory effects, calls, and
 control transfers end a slice and form explicit barriers between waves.
 
 The execution cache uses those dense `(function, pc)` coordinates directly.
-Source SSA, selected page, decoded lane plan and compiled transition occupy
-parallel coordinate arrays with stack extent as a validation guard; none has a
-second hash identity. The first execution already goes through the encoded and
-decoded physical page. Raw Wasm arithmetic is available only while building
-the source SSA and cannot be called by the state-step executor.
+One coordinate entry owns one mapped page and its terminal executable
+projection, with stack extent as a validation guard. Source SSA exists only
+while that page is built and is then released. The executable is generated
+directly from mapped columns; reconstructing `PureSlice`, `WaveNode`, or
+`Operand` objects is a diagnostic operation and is not reachable from runtime
+execution. Raw Wasm arithmetic is available only while building the source SSA
+and cannot be called by the state-step executor.
 
 `qm.scalarpage` and `qm.steppage` materialize those schedules
 as fixed-vocabulary, structure-of-arrays pages. Columns and payloads are
@@ -205,9 +207,152 @@ no duplicate hash index—and only the selected inner codec is validated and
 opened. This packed form is also a range-readable model for storing its pages
 as separate OPFS objects.
 
-`qm.stepnormalize` closes the remaining scalar gap before page encoding. A step
-whose complete live arithmetic has one observed result, one external
-stack/local coordinate, one integer width, and no trap is translated to
+This physical form does not imply eager materialization. Large linked Wasm is
+opened read-only with `mmap`; section headers are scanned as byte ranges and
+non-semantic custom ranges are skipped without copying them. Only the semantic
+core is presented to function-local QM. The core is copied once only because a
+new contiguous Wasm artifact was explicitly requested; a no-replacement QM pass
+returns that same buffer. Runtime function bodies stay as `(start,end)` ranges
+into the mapped code section. Locals, instructions and control tables are
+decoded on the first call to that function, and the direct `(function,pc)`
+coordinate row is allocated at the same boundary. State-step and scalar pages
+remain `memoryview` slices, and block backing is loaded only for the exact
+direct page coordinate that faulted.
+
+This follows the physical-array construction rather than ordinary lazy object
+loading. A logical domain is carried by a descriptor, axes and endpoint ranks;
+an ordinary value appears only at `select`. Closed operations stay as one of:
+
+1. coordinate substitution,
+2. region cut/composition, or
+3. endpoint-potential evaluation.
+
+An operation that cannot prove one of those forms must stop or cross an
+explicit bounded materialization boundary. It must not silently enumerate the
+logical domain. The analogous VM object is a coordinate rule plus resident
+spans, not an allocation proportional to the logical address universe.
+
+The implementation audit is deliberately more precise than saying "lazy":
+
+| object | carried before observation | materialized boundary |
+|---|---|---|
+| linked Wasm source | read-only mapping and section ranges | one retained semantic output buffer |
+| Wasm code | function body byte spans | instruction/control objects for called functions only |
+| linear memory zero tail | logical length | changed or active-data 256-byte pages |
+| root block image | `(device,page)` coordinate and a small direct span directory | exact 4 KiB backing page on fault |
+| execution codec | coordinate-ordered resident directory | selected state-step payload as a `memoryview` |
+| hot transition | `(function,pc,stack_extent)` | one normalized page and terminal transition on first execution; construction SSA is released |
+
+The small direct directories are resident metadata, not a claim of zero
+metadata. The payloads and instruction graphs are the expensive objects and
+remain demand-derived. The directories can be rebuilt, and clean backing,
+decoded pages and the Worker-owned Wasm memory can be discarded independently.
+
+The compact linked-Wasm form and the released VM codec have different reasons
+for being small. Linked Wasm shrinks when debug/name/producers custom sections
+are omitted; its code and data sections remain ordinary Wasm. The codec in the
+Pinf-R specification instead stores exactly one self-delimiting global word
+`E(|z|)||z`, so its byte size is `ceil(L(z)/8)`. The payload is one canonical
+sparse default-zero image: only increasing gaps and nonzero support values are
+stored. Dense slots, dependency waves, decoded rows, page directories and hot
+transitions are derived disposable layouts and never become a second codebook
+inside that artifact. Kraft Cell regions follow the same rule: a descriptor
+and endpoint ranks name the region; selected ordinary values are observations,
+not carried storage.
+
+There are four separate size arguments here:
+
+1. For a payload of `n>0` bits, the global framing costs exactly
+   `2*floor(log2(n))+2` bits. Thus `L(z)=n+O(log n)`, with no container,
+   alignment or per-section tax beyond the final zero-to-seven padding bits.
+2. The image is finite support over default zero. It encodes `k`, two entry
+   coordinates, then only increasing gaps and nonzero zigzag values. Its size
+   depends on the support and logarithms of its coordinates/values, not on the
+   largest logical address or a dense memory length.
+3. No local codebook, decoder, physical row, proof checkpoint, training corpus
+   or scheduler state may be omitted from the length calculation and then
+   supplied for free at runtime. Physical layouts are reconstructed after
+   `open` and are disposable.
+4. When the all-program selector is actually certified, the specification gives
+   the comparison bound
+   `L(selected) <= L(e) + ceil(log2 T(e)) + ceil(log2(1/P_e(x)))`
+   for every admitted capable comparator `e`. For a proved fixed evaluator
+   family of `N` futures, the constructive form is `C_e + O(log N)`.
+
+The fourth point is conditional. A product obtained only by materializing a
+feed result has no storage theorem, and Kraft equality alone does not promise
+that an arbitrary payload is short. Smallness comes from canonical global
+framing, sparse support, proof-erased runtime boundaries, and—when claimed—a
+certified selector that charges complete artifact length after span and work.
+
+On the measured LKL input, these distinctions are visible. The original
+88,629,674-byte linked module contained 79,188,258 bytes of custom/debug
+sections and a 9,441,416-byte semantic core. Removing those ranges saved
+89.35%; function-local QM replaced zero bodies. This is a packaging result,
+not evidence that the Pinf codec compressed Linux instructions. After the code
+path became range-backed, initial module indexing fell from about 6.4 seconds
+to 0.059 seconds on the same compact module; only called bodies subsequently
+became instruction objects.
+
+The same audit applies inside each state-step page. Packing allocates the final
+column buffer once and writes fixed-width values into their final offsets; it
+does not first build a second bytes object for every column. Locals use a
+sparse patch: the header carries the logical local extent, while
+`local_indices`, `local_tags`, and `local_values` contain only coordinates whose
+output differs from the identity projection. A diagnostic decoder can rebuild
+the dense local tuple, but the runtime reads the sparse patch directly. On the
+18-event LKL boot sample this changed 1,703 pages from 5,360,464 mapped bytes to
+361,176 bytes. There were 1,607 changed local coordinates across those pages,
+1,256 zero-work projection pages, and no resident scalar plans. Only 82 of
+20,092 function bodies (34,260 of 7,411,642 encoded body bytes) were decoded.
+
+### Persistent cuts and residual state
+
+For a two-phase operation `F(x,y)`, the state that must survive after `x` and
+before a future query `y` is not necessarily `x`. It is the equivalence class
+of pasts that every allowed future query observes identically. If `Res(F)` is
+that set of future behaviours, the minimum persistent description has
+`ceil(log2 |Res(F)|)` bits. This is the standard deterministic one-way
+communication/residual-counting identity, used here as a layout rule.
+
+That rule distinguishes three objects that a conventional cache often mixes:
+
+1. construction evidence, which may be discarded after the quotient is proved;
+2. a sealed residual that crosses a real temporal cut; and
+3. a decoder chosen so future observations are local machine operations.
+
+The state-step route now follows this separation. Wasm instructions and scalar
+SSA are construction evidence. The mapped wave columns plus sparse output patch
+are the sealed residual. The terminal executor is derived directly from those
+columns. Function and pc select the page but do not justify retaining a second
+decoded expression graph. A barrier coordinate is not stored as a negative
+physical page because it has no pure residual payload.
+
+This also identifies the next runtime boundary precisely. Load, store, call and
+branch remain ordering barriers, but only a host event, timeslice, fault or
+interrupt is a persistent cut. Materializing a complete immutable
+`MachineState` after every internal barrier preserves more distinctions than
+the future host ABI can observe. The next state-step executor should therefore
+carry an internal residual through ordered barriers and seal the full machine
+state only at those external cuts. This is not ordinary input memoization and
+does not require recompiling a hot block for each value: it changes which state
+is allowed to persist between phases.
+
+Residual construction is itself SSA. Renaming produces no provisional wave
+layout. One canonical cut pass first owns backward liveness, physical CSE and
+dependency-wave construction. Each future-visible stack/local output in that
+cut is then a root; its backward slice is the past-side encoder and its root
+expression is the future decoder. `qm.stepnormalize` ranks those roots by cut
+work and normalizes the dominant root first. It never reopens the pre-cut Wasm
+SSA. After each candidate it CSEs and schedules the result back into the same
+cut. Because two residuals may share a cheaper prefix, a candidate is retained
+only when neither work nor span regresses against the previously selected
+physical DAG. On the same LKL sample this moved normalized work from 41,587 to
+41,457 and span from 40,926 to 40,848 while retaining one execution route.
+
+`qm.stepnormalize` closes the remaining scalar gap after the persistent cut is
+canonical and before its one page is encoded. A future-visible backward slice
+with one external stack/local coordinate, one integer width, and no trap is translated to
 `isa.Seq` and passed through the same whole-expression `isa.normalize` used by
 the scalar frontend. `isa.normalize` includes the source form in its candidate
 set, so the canonical winner is always installed even when its `(span, work,
@@ -225,12 +370,43 @@ rather than introducing an x86-only runtime artifact.
 object: only data and changed 256-byte pages are retained. In the browser the
 native linear memory belongs to the disposable execution Worker, so terminating
 that Worker releases the reservation. At load time, `vm.wasm` also checks
-whether feed can change only the input cell and exhaustively runs the ordinary
-transactional reader over all 256 byte values. When that complete check proves
-a byte register, its state step is substituted as
+whether feed can change only the input cell and proves the observer over the
+complete byte domain. When that check proves a byte register, its state step is
+substituted as
 `next(state, byte) = byte`; the future quotient stores five affine/constant
 coefficients rather than a 256-by-256 table. Other artifacts keep the generic
 transactional engine.
+
+The complete byte check is also physical SSA rather than a scalar 256-call
+loop. After the feed row proves the right-zero transition, the ordinary
+rSUBLEQ observer is interpreted once with every live cell represented as
+`base + step*byte`. Coefficients use the same direct cell coordinates with
+epoch tags, so the proof clears no million-cell arena, hashes no state, and
+materializes no 256-value table. An observer branch advances only when its
+affine interval chooses one edge for all bytes or both edges have the same
+target. The direct form is selected only when the emitted affine value is
+exactly `(base,step)=(0,1)`; any unproved observer continues to use the one
+transactional VM semantics.
+
+On the 21-byte ECHO artifact, one `vm_load` fell from 2.10 seconds to about
+0.22 seconds for the first cold page construction and 0.13 seconds after Python
+imports were warm while still using a fresh decoded module and executor. Source
+dynamic work fell from 60,153 to 2,400 and normalized work from 52,450 to
+1,671. The codec reader now scans a zero prefix and value tail by touched byte
+chunks rather than reloading the same byte for every bit; this reduced the load
+sample from 10,638 to 8,372 Wasm instructions and from 1,893 to 1,673 internal
+barriers. The compiled module is 8,839 bytes. The affine coefficient arrays are
+zero-initialized logical memory inside the existing 32 MiB reservation and only
+reached coordinates are touched. Under the physical objective, persistent-cut
+count, work and span are measured before accepting an artifact-size tradeoff.
+
+The physical executor is also a residual of the module, not part of the VM's
+semantic state. `load`, `feed`, `read`, and finite-closure construction retain
+one executor, so public byte calls do not rebuild the same function SSA, page,
+validation, and terminal transition. All derived pages remain excluded from
+`state_key`; two snapshots are compared only by the globals and cell coordinates
+that later `feed/read` calls can observe. Thus retaining the executor removes
+reconstruction work without inventing an additional VM state distinction.
 
 Large tool modules use a narrower boundary. `qm.wasmbinary` indexes the code
 section without expanding a complete module into Python objects, then admits

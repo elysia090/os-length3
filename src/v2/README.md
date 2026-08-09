@@ -363,6 +363,18 @@ generic Wasm machine but keeps Linux-specific host and scheduler policy outside
 QM. `web/qm-manifest.json` lists the files the worker installs into Pyodide;
 `tests/test_browser.py` fails if it drifts from what is on disk.
 
+`tools/compact_wasm.py` maps a linked module read-only, skips custom/debug
+ranges without copying them, then runs function-local QM over only the retained
+semantic core. This is packaging, not a replacement codec: the released codec
+is smaller for the stronger reason that it carries one self-delimiting sparse
+image and derives every physical array and hot page after opening.
+
+The runtime applies the same boundary to code. It indexes function body byte
+ranges without decoding them, then materializes a body's instructions and its
+direct `(function, pc)` cache row only when that function is called. Reports
+separate total encoded body bytes from decoded body bytes, so a regression back
+to whole-module object expansion is visible.
+
 The Linux-in-Wasm machine is a package entry point, not a tool script. From
 `src/v2`, run a native LKL module with bounded, resumable execution quanta:
 
@@ -391,8 +403,22 @@ and physical codec slices remain independently disposable. Timers advance the
 deterministic virtual clock to the next deadline and enqueue their callbacks as
 ordinary cooperative continuations. Pure slices between load/store/call/control
 barriers are substituted into physical-array SSA, normalized by QM, encoded,
-decoded and compiled through one state-step route on their first execution.
-Raw Wasm arithmetic cannot be encoded or executed as a state-step page.
+and compiled directly from one mapped state-step page on their first execution.
+The construction SSA is then released; scalar node reconstruction is available
+only to diagnostics. Page locals are sparse changed-coordinate patches rather
+than dense identity projections. Raw Wasm arithmetic cannot be encoded or
+executed as a state-step page.
+
+Multiple values live at a barrier are treated as the outputs of one persistent
+SSA cut. Renamed Wasm carries no provisional wave graph: one canonical cut pass
+owns liveness, CSE and dependency waves. Only then are closed backward slices
+visited in descending work order. Each accepted result is recomposed into that
+same cut, and a candidate is installed only when both work and span are
+non-increasing. The minimizer cannot return to the pre-cut Wasm SSA. This lets
+partial QM improve a VM continuation without requiring the entire future state
+to collapse to one scalar result. The stateful VM also retains that derived physical
+executor across `load`, `feed`, and `read`; the executor is excluded from the
+semantic state key and may be discarded and rebuilt.
 
 ---
 

@@ -24,7 +24,7 @@ from .laneops import OPS
 
 
 MAGIC = b'STEP'
-VERSION = 1
+VERSION = 2
 I64 = (1 << 64) - 1
 
 # This is a global physical vocabulary, not a per-file dictionary. Giving the
@@ -38,8 +38,8 @@ OPERAND_TO_TAG = dict((name, tag)
 
 # magic, version, header bytes, then:
 # function, start, end, source instructions, span, work, operand values,
-# input stack extent, stack outputs, local outputs.
-_HEADER = struct.Struct('<4sHH10I')
+# input stack extent, stack outputs, local extent, changed local outputs.
+_HEADER = struct.Struct('<4sHH11I')
 _DIRECTORY_ENTRY = struct.Struct('<II')       # byte offset, element count
 
 _COLUMNS = (
@@ -51,6 +51,7 @@ _COLUMNS = (
     ('operand_values', 8),
     ('stack_tags', 1),
     ('stack_values', 8),
+    ('local_indices', 4),
     ('local_tags', 1),
     ('local_values', 8),
 )
@@ -82,11 +83,14 @@ def _operand_columns(operands):
     return tags, values
 
 
-def _column_bytes(width, values):
+def _write_column(blob, offset, width, values):
+    """Write a column into its final allocation without an intermediate blob."""
     if width == 1:
-        return bytes(values)
+        blob[offset:offset + len(values)] = bytes(values)
+        return
     code = '<I' if width == 4 else '<Q'
-    return b''.join(struct.pack(code, int(value)) for value in values)
+    for index, value in enumerate(values):
+        struct.pack_into(code, blob, offset + index * width, int(value))
 
 
 def pack(plan):
@@ -112,7 +116,14 @@ def pack(plan):
 
     operand_tags, operand_values = _operand_columns(operands)
     stack_tags, stack_values = _operand_columns(plan.stack)
-    local_tags, local_values = _operand_columns(plan.locals)
+    local_updates = tuple(
+        (index, operand)
+        for index, operand in enumerate(plan.locals)
+        if operand.kind != 'local' or operand.value != index
+    )
+    local_indices = tuple(index for index, _operand in local_updates)
+    local_tags, local_values = _operand_columns(
+        tuple(operand for _index, operand in local_updates))
     stack_inputs = int(plan.stack_inputs)
     if stack_inputs < 0:
         raise ValueError('input stack extent must be nonnegative')
@@ -125,34 +136,32 @@ def pack(plan):
         'operand_values': operand_values,
         'stack_tags': stack_tags,
         'stack_values': stack_values,
+        'local_indices': local_indices,
         'local_tags': local_tags,
         'local_values': local_values,
     }
 
-    encoded = {}
     directory = []
     cursor = HEADER_BYTES
     for name, width in _COLUMNS:
         cursor = _align(cursor)
-        raw = _column_bytes(width, values[name])
-        encoded[name] = raw
         directory.append((cursor, len(values[name])))
-        cursor += len(raw)
+        cursor += len(values[name]) * width
 
     blob = bytearray(cursor)
     _HEADER.pack_into(
         blob, 0, MAGIC, VERSION, HEADER_BYTES,
         int(plan.function), int(plan.start), int(plan.end),
         int(plan.instructions), int(plan.waves.span), work, len(operands),
-        stack_inputs, len(plan.stack), len(plan.locals),
+        stack_inputs, len(plan.stack), len(plan.locals), len(local_updates),
     )
     at = _HEADER.size
     for entry in directory:
         _DIRECTORY_ENTRY.pack_into(blob, at, *entry)
         at += _DIRECTORY_ENTRY.size
-    for (name, _width), (offset, _count) in zip(_COLUMNS, directory):
-        blob[offset:offset + len(encoded[name])] = encoded[name]
-    return bytes(blob)
+    for (name, width), (offset, _count) in zip(_COLUMNS, directory):
+        _write_column(blob, offset, width, values[name])
+    return blob
 
 
 @dataclass(frozen=True)
@@ -167,14 +176,15 @@ class MappedStatePage(object):
 
     __slots__ = ('data', 'function', 'start', 'end', 'instructions',
                  'span', 'work', 'operands', 'stack_inputs',
-                 'stack_count', 'local_count',
+                 'stack_count', 'local_extent', 'local_updates',
                  '_columns')
 
     def __init__(self, data, header, columns):
         self.data = data
         (self.function, self.start, self.end, self.instructions,
          self.span, self.work, self.operands,
-         self.stack_inputs, self.stack_count, self.local_count) = header
+         self.stack_inputs, self.stack_count, self.local_extent,
+         self.local_updates) = header
         self._columns = columns
 
     def column(self, name):
@@ -225,7 +235,8 @@ class MappedStatePage(object):
             'max_parallel_width': max(widths, default=0),
             'input_stack_slots': self.stack_inputs,
             'output_stack_slots': self.stack_count,
-            'local_slots': self.local_count,
+            'local_slots': self.local_extent,
+            'local_updates': self.local_updates,
             'mapped_bytes': len(self.data),
             'columns': {
                 name: {
@@ -238,7 +249,7 @@ class MappedStatePage(object):
         }
 
 
-def _expected_counts(span, work, operands, stack_count, local_count):
+def _expected_counts(span, work, operands, stack_count, local_updates):
     return {
         'wave_offsets': span + 1,
         'lane_values': work,
@@ -248,8 +259,9 @@ def _expected_counts(span, work, operands, stack_count, local_count):
         'operand_values': operands,
         'stack_tags': stack_count,
         'stack_values': stack_count,
-        'local_tags': local_count,
-        'local_values': local_count,
+        'local_indices': local_updates,
+        'local_tags': local_updates,
+        'local_values': local_updates,
     }
 
 
@@ -262,12 +274,12 @@ def unpack(blob):
     if magic != MAGIC or version != VERSION or header_bytes != HEADER_BYTES:
         raise StatePageError('state-step page has an unknown format')
     (function, start, end, instructions, span, work, operands,
-     stack_inputs, stack_count, local_count) = header
+     stack_inputs, stack_count, local_extent, local_updates) = header
     if end < start or instructions != end - start:
         raise StatePageError('state-step instruction region is inconsistent')
 
     expected_counts = _expected_counts(
-        span, work, operands, stack_count, local_count)
+        span, work, operands, stack_count, local_updates)
     columns = {}
     cursor = HEADER_BYTES
     directory_at = _HEADER.size
@@ -297,43 +309,57 @@ def unpack(blob):
 
 
 def _validate(mapped):
-    wave_offsets = mapped.values('wave_offsets')
-    lanes = mapped.values('lane_values')
-    argument_offsets = mapped.values('argument_offsets')
-    tags = mapped.values('operand_tags')
-    values = mapped.values('operand_values')
-    opcodes = mapped.values('opcodes')
-    if (not wave_offsets or wave_offsets[0] != 0
-            or wave_offsets[-1] != mapped.work
-            or any(a > b for a, b in zip(wave_offsets, wave_offsets[1:]))):
+    if (mapped.value('wave_offsets', 0) != 0
+            or mapped.value('wave_offsets', mapped.span) != mapped.work):
         raise StatePageError('wave boundaries are not a segmented region')
-    if sorted(lanes) != list(range(1, mapped.work + 1)):
-        raise StatePageError('wave lanes do not form the node domain')
-    if (not argument_offsets or argument_offsets[0] != 0
-            or argument_offsets[-1] != mapped.operands
-            or any(a > b for a, b in zip(argument_offsets,
-                                         argument_offsets[1:]))):
+    for index in range(mapped.span):
+        if (mapped.value('wave_offsets', index)
+                > mapped.value('wave_offsets', index + 1)):
+            raise StatePageError('wave boundaries are not a segmented region')
+    if (mapped.value('argument_offsets', 0) != 0
+            or mapped.value('argument_offsets', mapped.work)
+            != mapped.operands):
         raise StatePageError('argument boundaries are not a segmented region')
-    if any(code >= len(OPS) for code in opcodes):
-        raise StatePageError('state-step page contains an unknown operation')
-    if any(tag >= len(OPERAND_KINDS) for tag in tags):
-        raise StatePageError('state-step page has an unknown operand kind')
+    for index in range(mapped.work):
+        if (mapped.value('argument_offsets', index)
+                > mapped.value('argument_offsets', index + 1)):
+            raise StatePageError(
+                'argument boundaries are not a segmented region')
 
+    # Validation uses one compact coordinate array, then releases it.  No
+    # decoded node/operand graph survives beside the mapped physical page.
     depth = [0] * (mapped.work + 1)
     for wave in range(1, mapped.span + 1):
-        for value in mapped.wave(wave):
+        begin = mapped.value('wave_offsets', wave - 1)
+        end = mapped.value('wave_offsets', wave)
+        for lane in range(begin, end):
+            value = mapped.value('lane_values', lane)
+            if value < 1 or value > mapped.work or depth[value]:
+                raise StatePageError('wave lanes do not form the node domain')
             depth[value] = wave
+    if any(value == 0 for value in depth[1:]):
+        raise StatePageError('wave lanes do not form the node domain')
     for node in range(1, mapped.work + 1):
-        begin, end = argument_offsets[node - 1:node + 1]
-        operation = OPS[opcodes[node - 1]]
-        for tag, value in zip(tags[begin:end], values[begin:end]):
+        begin = mapped.value('argument_offsets', node - 1)
+        end = mapped.value('argument_offsets', node)
+        opcode = mapped.value('opcodes', node - 1)
+        if opcode >= len(OPS):
+            raise StatePageError(
+                'state-step page contains an unknown operation')
+        operation = OPS[opcode]
+        for at in range(begin, end):
+            tag = mapped.value('operand_tags', at)
+            value = mapped.value('operand_values', at)
+            if tag >= len(OPERAND_KINDS):
+                raise StatePageError(
+                    'state-step page has an unknown operand kind')
             kind = OPERAND_KINDS[tag]
             if kind == 'node' and (value < 1 or value > mapped.work
                                    or depth[value] >= depth[node]):
                 raise StatePageError('a wave lane depends on its own/later wave')
             if kind == 'stack' and value >= mapped.stack_inputs:
                 raise StatePageError('stack operand is outside the frame region')
-            if kind == 'local' and value >= mapped.local_count:
+            if kind == 'local' and value >= mapped.local_extent:
                 raise StatePageError('local operand is outside the frame region')
         if operation.startswith(('lane32.', 'lane64.')):
             from .laneops import GENERIC_ARITY, shape, split
@@ -341,19 +367,19 @@ def _validate(mapped):
                 arity, constant_count, is_shift = shape(operation)
             except ValueError as error:
                 raise StatePageError(str(error))
-            node_tags = tags[begin:end]
             _bits, name = split(operation)
             if name in GENERIC_ARITY:
-                if len(node_tags) != arity:
+                if end - begin != arity:
                     raise StatePageError(
                         '%s has the wrong operand count' % operation)
                 continue
-            if (len(node_tags) < arity
-                    or any(OPERAND_KINDS[tag] != 'const'
-                           for tag in node_tags[arity:])):
+            if (end - begin < arity
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'const'
+                           for at in range(begin + arity, end))):
                 raise StatePageError('%s mixes inputs and constants'
                                      % operation)
-            carried = len(node_tags) - arity
+            carried = end - begin - arity
             if constant_count < 0:
                 if not carried or carried & (carried - 1):
                     raise StatePageError(
@@ -361,14 +387,26 @@ def _validate(mapped):
             elif carried != constant_count + int(is_shift):
                 raise StatePageError(
                     '%s has the wrong physical constant count' % operation)
-            if is_shift and values[begin + arity] >= int(
+            if is_shift and mapped.value(
+                    'operand_values', begin + arity) >= int(
                     operation[4:].split('.', 1)[0]):
                 raise StatePageError('%s has an invalid physical shift'
                                      % operation)
+
+    previous = -1
+    for index in range(mapped.local_updates):
+        coordinate = mapped.value('local_indices', index)
+        if coordinate <= previous or coordinate >= mapped.local_extent:
+            raise StatePageError(
+                'changed local coordinates are not strictly increasing')
+        previous = coordinate
+
     for tag_name, value_name, count in (
             ('stack_tags', 'stack_values', mapped.stack_count),
-            ('local_tags', 'local_values', mapped.local_count)):
-        for tag, value in zip(mapped.values(tag_name), mapped.values(value_name)):
+            ('local_tags', 'local_values', mapped.local_updates)):
+        for index in range(count):
+            tag = mapped.value(tag_name, index)
+            value = mapped.value(value_name, index)
             if tag >= len(OPERAND_KINDS):
                 raise StatePageError('state output has an unknown operand kind')
             kind = OPERAND_KINDS[tag]
@@ -377,7 +415,7 @@ def _validate(mapped):
             if kind == 'stack' and value >= mapped.stack_inputs:
                 raise StatePageError(
                     'state output stack slot is outside the frame')
-            if kind == 'local' and value >= mapped.local_count:
+            if kind == 'local' and value >= mapped.local_extent:
                 raise StatePageError(
                     'state output local slot is outside the frame')
 
@@ -409,12 +447,18 @@ def decode_plan(mapped):
             depth[value] = wave
     waves = DependencyWaves(mapped.values('wave_offsets'),
                             mapped.values('lane_values'), tuple(depth))
+    locals_ = [Operand('local', index)
+               for index in range(mapped.local_extent)]
+    local_indices = mapped.values('local_indices')
+    local_outputs = operands('local_tags', 'local_values')
+    for index, operand in zip(local_indices, local_outputs):
+        locals_[index] = operand
     return PureSlice(
         mapped.function, mapped.start, mapped.end, mapped.instructions,
         mapped.stack_inputs,
         tuple(nodes), waves,
         operands('stack_tags', 'stack_values'),
-        operands('local_tags', 'local_values'),
+        tuple(locals_),
     )
 
 
@@ -429,7 +473,7 @@ def execute_mapped(mapped, state):
         raise StatePageError('state-step page does not name the current frame')
     if len(frame.stack) != mapped.stack_inputs:
         raise StatePageError('state-step input stack extent does not match')
-    if len(frame.locals) != mapped.local_count:
+    if len(frame.locals) != mapped.local_extent:
         raise StatePageError('state-step local extent does not match')
 
     values = [0] * (mapped.work + 1)
@@ -465,13 +509,107 @@ def execute_mapped(mapped, state):
     def output(tags, raw, index):
         return resolve(mapped.value(tags, index), mapped.value(raw, index))
 
+    locals_ = list(frame.locals)
+    for index in range(mapped.local_updates):
+        coordinate = mapped.value('local_indices', index)
+        locals_[coordinate] = output(
+            'local_tags', 'local_values', index)
     next_frame = Frame(
         frame.function,
         mapped.end,
-        tuple(output('local_tags', 'local_values', index)
-              for index in range(mapped.local_count)),
+        tuple(locals_),
         tuple(output('stack_tags', 'stack_values', index)
               for index in range(mapped.stack_count)),
         frame.controls,
     )
     return replace(state, frames=state.frames[:-1] + (next_frame,))
+
+
+def compile_mapped_executor(mapped):
+    """Specialize one physical page without reconstructing scalar SSA nodes."""
+    from .laneops import evaluate
+
+    if not mapped.work:
+        # A projection page has no SSA to compile.  Its terminal cut is just a
+        # few physical coordinates, so generating and compiling Python source
+        # would cost more than every future execution of the page.
+        def coordinates(tag_name, value_name, count):
+            return tuple((mapped.value(tag_name, index),
+                          mapped.value(value_name, index))
+                         for index in range(count))
+
+        local_indices = mapped.values('local_indices')
+        local_values = coordinates(
+            'local_tags', 'local_values', mapped.local_updates)
+        stack_values = coordinates(
+            'stack_tags', 'stack_values', mapped.stack_count)
+
+        def execute_projection(frame):
+            sources = (None, frame.stack, frame.locals)
+
+            def resolve(spec):
+                tag, value = spec
+                return value if tag == 0 else sources[tag][value]
+
+            if local_indices:
+                next_locals = list(frame.locals)
+                for coordinate, spec in zip(local_indices, local_values):
+                    next_locals[coordinate] = resolve(spec)
+                next_locals = tuple(next_locals)
+            else:
+                next_locals = frame.locals
+            return next_locals, tuple(map(resolve, stack_values))
+
+        return execute_projection
+
+    lines = ['def execute(frame, evaluate=evaluate):',
+             '    stack = frame.stack',
+             '    locals_ = frame.locals']
+
+    def expression(tag_name, value_name, index):
+        tag = mapped.value(tag_name, index)
+        value = mapped.value(value_name, index)
+        kind = OPERAND_KINDS[tag]
+        if kind == 'const':
+            return repr(value)
+        if kind == 'stack':
+            return 'stack[%d]' % value
+        if kind == 'local':
+            return 'locals_[%d]' % value
+        return 'value_%d' % value
+
+    for depth in range(mapped.span):
+        begin = mapped.value('wave_offsets', depth)
+        end = mapped.value('wave_offsets', depth + 1)
+        for lane in range(begin, end):
+            node = mapped.value('lane_values', lane)
+            first = mapped.value('argument_offsets', node - 1)
+            last = mapped.value('argument_offsets', node)
+            arguments = ', '.join(
+                expression('operand_tags', 'operand_values', index)
+                for index in range(first, last))
+            if last - first == 1:
+                arguments += ','
+            operation = OPS[mapped.value('opcodes', node - 1)]
+            lines.append("    value_%d = evaluate(%r, (%s))" %
+                         (node, operation, arguments))
+
+    if mapped.local_updates:
+        lines.append('    next_locals = list(locals_)')
+        for index in range(mapped.local_updates):
+            coordinate = mapped.value('local_indices', index)
+            value = expression('local_tags', 'local_values', index)
+            lines.append('    next_locals[%d] = %s' % (coordinate, value))
+        lines.append('    next_locals = tuple(next_locals)')
+    else:
+        lines.append('    next_locals = locals_')
+    stack_values = ', '.join(
+        expression('stack_tags', 'stack_values', index)
+        for index in range(mapped.stack_count))
+    if mapped.stack_count == 1:
+        stack_values += ','
+    lines.append('    return next_locals, (%s)' % stack_values)
+    namespace = {'evaluate': evaluate}
+    exec(compile('\n'.join(lines), '<qm-state-page>', 'exec'),
+         namespace, namespace)
+    return namespace['execute']

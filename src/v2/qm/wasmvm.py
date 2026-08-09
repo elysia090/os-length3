@@ -28,6 +28,7 @@ class VmState:
     snapshot: object
     cells_address: int
     dead: bool = False
+    executor: object = None
 
 
 def _result_i32(state, name):
@@ -39,20 +40,24 @@ def _result_i32(state, name):
 
 def load(module, artifact, budget=1 << 24):
     """Instantiate ``module`` and return its state after opening ``artifact``."""
+    from .wasmwave import WaveExecutor
+    executor = WaveExecutor(module)
     pointer_call = run_until_boundary(module, start_state(module, 'vm_buffer'),
-                                      budget=budget)
+                                      budget=budget, executor=executor)
     pointer = _result_i32(pointer_call, 'vm_buffer')
     if pointer < 0:
         raise WasmStateError('vm_buffer returned a negative address')
     copied = write_memory(pointer_call, pointer, artifact)
-    cells_call = invoke(module, copied, 'vm_cells', (), budget=budget)
+    cells_call = invoke(module, copied, 'vm_cells', (), budget=budget,
+                        executor=executor)
     cells_address = _result_i32(cells_call, 'vm_cells')
     if cells_address < 0 or cells_address + CELL_BYTES > len(cells_call.memory):
         raise WasmStateError('vm_cells returned an invalid arena address')
-    opened = invoke(module, cells_call, 'vm_load', (len(artifact),), budget=budget)
+    opened = invoke(module, cells_call, 'vm_load', (len(artifact),),
+                    budget=budget, executor=executor)
     if _result_i32(opened, 'vm_load') != COMMITTED:
         raise WasmStateError('vm_load rejected the artifact')
-    return VmState(opened, cells_address)
+    return VmState(opened, cells_address, executor=executor)
 
 
 def load_file(path, artifact, budget=1 << 24):
@@ -66,19 +71,22 @@ def feed(module, state, byte, budget=1 << 24):
     """Pure wasm VM transition over one byte."""
     if not 0 <= byte <= 255:
         raise ValueError('vm_feed takes one byte: %r' % (byte,))
-    after = invoke(module, state.snapshot, 'vm_feed', (byte,), budget=budget)
+    after = invoke(module, state.snapshot, 'vm_feed', (byte,), budget=budget,
+                   executor=state.executor)
     status = _result_i32(after, 'vm_feed')
     if status == UNFINISHED:
         raise WasmStateError('vm_feed(%d) exhausted its transition budget'
                              % byte)
     if status not in (COMMITTED, DEAD):
         raise WasmStateError('vm_feed(%d) returned %d' % (byte, status))
-    return VmState(after, state.cells_address, dead=(status == DEAD))
+    return VmState(after, state.cells_address, dead=(status == DEAD),
+                   executor=state.executor)
 
 
 def read(module, state, budget=1 << 24):
     """Observe one byte through a non-committing wasm ``vm_read`` call."""
-    observed = invoke(module, state.snapshot, 'vm_read', (), budget=budget)
+    observed = invoke(module, state.snapshot, 'vm_read', (), budget=budget,
+                      executor=state.executor)
     value = _result_i32(observed, 'vm_read')
     return value if 0 <= value <= 255 else None
 
@@ -116,7 +124,7 @@ def state_key(state):
 def compile_vm(module, initial, max_states=4096, budget=1 << 24):
     """Close and minimize the loaded ``vm.wasm`` byte future exactly."""
     mode = invoke(module, initial.snapshot, 'vm_direct_byte_state', (),
-                  budget=budget)
+                  budget=budget, executor=initial.executor)
     if _result_i32(mode, 'vm_direct_byte_state') == 1:
         states = [feed(module, initial, byte, budget=budget)
                   for byte in range(256)]
@@ -126,11 +134,11 @@ def compile_vm(module, initial, max_states=4096, budget=1 << 24):
         initial_byte = identities.get(state_key(initial))
         if (len(identities) == 256 and initial_byte is not None
                 and outputs == tuple(range(256))):
-            # vm_load selected this mode only after executing the ordinary
-            # transactional reader over all 256 byte states and proving that
-            # feed changes no other persistent cell.  Substitute that proved
-            # state step before graph closure; its transition rows normalize
-            # to one affine map rather than 65,536 interpreted calls.
+            # vm_load selected this mode only after its affine SSA observer
+            # proved the complete byte domain and the feed row proved that no
+            # other persistent cell changes. Substitute that proved state step
+            # before graph closure; its transition rows normalize to one
+            # affine map rather than 65,536 interpreted calls.
             return compile_transducer(
                 initial_byte,
                 lambda _state, byte: byte,
