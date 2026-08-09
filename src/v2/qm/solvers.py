@@ -642,9 +642,15 @@ def solve_lane_reduction(sem, obs, options=None):
     """
     if sem.input_bits < 16:
         return []
+    # How wide the answer is, read off the answers.  The declared output width
+    # is not it: a listing does not declare one, and a kernel whose C says
+    # `uint64_t` can still be answering with a byte.
+    reach = 0
+    for y in sem.table():
+        reach |= y
     out = []
     for lane_bits in REDUCE_LANE_WIDTHS:
-        if lane_bits >= sem.input_bits or sem.output_bits > lane_bits:
+        if lane_bits >= sem.input_bits or reach > mask_of(lane_bits):
             continue
         for mnemonic in ('LANE_MAX', 'LANE_MIN'):
             op = point([(mnemonic, None, lane_bits)],

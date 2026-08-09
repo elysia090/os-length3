@@ -264,6 +264,249 @@ def objective_key(seq):
 
 
 # ---------------------------------------------------------------------------
+# Normalization of a lowered sequence
+#
+# A lowering is assembled from independent pieces — one sub-sequence per
+# abstract op, and one per branch of a split — so what comes out of it is
+# correct and says the same thing several times: a multiply by a power of two,
+# a mask that cannot clear anything, the same field extracted once per branch.
+# None of that is a fact about the kernel, and all of it is counted by `work`,
+# `span` and `L(z)`.  It is removed here, once, rather than in every lowerer.
+#
+# Everything below is an identity over 64-bit words.  The composed sequence is
+# still verified over the declared domain afterwards, so a rewrite that was
+# wrong would be caught rather than shipped.
+# ---------------------------------------------------------------------------
+
+def _sum_bits(a, b):
+    return mask_of(min(64, (a + b).bit_length()))
+
+
+def _product_bits(a, b):
+    if not a or not b:
+        return 0
+    return mask_of(min(64, (a * b).bit_length()))
+
+
+def _clmul_bits(a, const):
+    out = 0
+    for position in range(64):
+        if (const >> position) & 1:
+            out |= a << position
+    return out & M64
+
+
+def known_bits(seq, input_bits=None):
+    """Which bits of each value can be set, over-approximated.
+
+    Forward only, and deliberately conservative: an operation whose result this
+    cannot bound gets all 64 bits.  What it is for is the masks — a shift down
+    by 32 leaves nothing above bit 31, so an `AND` with the low half after one
+    is not clearing anything — and the 32-bit forms in the listing, which are
+    sound exactly when the value provably has no upper half.
+
+    The input is unknown by default, even though the domain declares a width:
+    a listing takes its argument in a 64-bit register, and a caller with
+    something else in the top of it should still get the answer the C would.
+    """
+    known = [mask_of(input_bits) if input_bits else M64]
+    for ins in seq.ins:
+        a = known[ins.args[0]] if ins.args else 0
+        b = known[ins.args[1]] if len(ins.args) > 1 else 0
+        op, const, shift = ins.op, ins.const, ins.shift
+        if op == 'AND':
+            value = a & const
+        elif op in ('OR', 'XOR'):
+            value = a | const
+        elif op == 'ANDR':
+            value = a & b
+        elif op in ('ORR', 'XORR'):
+            value = a | b
+        elif op == 'ANDNR':
+            value = b
+        elif op == 'SHL':
+            value = (a << shift) & M64
+        elif op == 'SHR':
+            value = a >> shift
+        elif op == 'SAR':
+            value = M64 if a >> 63 else a >> shift
+        elif op == 'ADD':
+            value = _sum_bits(a, const)
+        elif op == 'ADDR':
+            value = _sum_bits(a, b)
+        elif op == 'IMUL':
+            value = _product_bits(a, const)
+        elif op == 'CLMUL':
+            value = _clmul_bits(a, const)
+        elif op == 'SCANXOR':
+            value = a | ((a << shift) & M64)
+        elif op == 'BSWAP':
+            value = bswap64(a)
+        elif op == 'PDEP':
+            value = const
+        elif op == 'PEXT':
+            value = mask_of(popcnt(const))
+        elif op in ('POPCNT', 'CLZ', 'CTZ'):
+            value = 0x7F               # never more than 64
+        elif op == 'LUT':
+            value = 0
+            for entry in const:
+                value |= entry
+        else:
+            value = M64                # SUB, SUBR, NEG, NOT, the dynamic pair
+        known.append(value & M64)
+    return known
+
+
+def _rewrite_one(op, const, shift, incoming):
+    """One instruction's canonical form, or None when it is a copy.
+
+    `incoming` is what the first argument's bits can be.  Returning None means
+    the instruction computes its own argument and the uses of it are remapped.
+    """
+    if op == 'IMUL':
+        if const == 0:
+            return 'AND', 0, None
+        if const == 1:
+            return None
+        if const & (const - 1) == 0:
+            # A multiply by a power of two is a shift, and the difference is
+            # not cosmetic: `L(z)` charges sixty-four bits for the constant and
+            # six for the shift amount, so the two are not the same program.
+            return 'SHL', None, const.bit_length() - 1
+    if op == 'CLMUL' and const == 1:
+        return None
+    if op in ('PDEP', 'PEXT') and const == mask_of(popcnt(const)):
+        # Depositing into the low `n` bits, or gathering them, moves nothing:
+        # it is a mask, and saying so keeps the answer the same on a target
+        # without BMI2 as on one with it.  A mask anywhere else is a real
+        # deposit and stays one — `middle_bits_u16` is a PEXT and not a shift
+        # and an AND.
+        return 'AND', const, None
+    if op == 'SUB' and const is not None and const >> 63:
+        # Subtracting a negative constant is adding its magnitude, and the
+        # magnitude is the shorter of the two to write.  The mirror rewrite is
+        # deliberately not made: an addition whose constant is large is usually
+        # one a lane form put there, and `0xB9B9B9B9B9B9B9BA` says what it is.
+        return 'ADD', (-const) & M64, None
+    if op in ('SHL', 'SHR', 'SAR') and shift == 0:
+        return None
+    if op == 'AND' and const is not None and incoming & ~const & M64 == 0:
+        return None
+    if op in ('OR', 'XOR', 'ADD', 'SUB') and const == 0:
+        return None
+    return op, const, shift
+
+
+def _merge(producer, op, const, shift):
+    """One instruction folded into the single-use one that produced its input."""
+    previous = producer.op
+    if previous == op and op in ('AND', 'OR', 'XOR'):
+        combined = {'AND': producer.const & const,
+                    'OR': producer.const | const,
+                    'XOR': producer.const ^ const}[op]
+        return op, combined, None
+    if previous == 'ADD' and op == 'ADD':
+        return 'ADD', (producer.const + const) & M64, None
+    if previous == op and op in ('SHL', 'SHR'):
+        total = producer.shift + shift
+        if total >= 64:
+            return 'AND', 0, None
+        return op, None, total
+    if previous == 'NOT' and op == 'NOT':
+        return 'AND', M64, None        # dropped on the next rewrite pass
+    return None
+
+
+def _rewrite(seq):
+    known = known_bits(seq)
+    out = Seq()
+    remap = {0: 0}
+    for index, ins in enumerate(seq.ins, start=1):
+        args = [remap[a] for a in ins.args]
+        form = _rewrite_one(ins.op, ins.const, ins.shift,
+                            known[ins.args[0]] if ins.args else M64)
+        if form is None:
+            remap[index] = args[0]
+            continue
+        op, const, shift = form
+        remap[index] = out.emit(op, args, const, shift)
+    out.result = remap[seq.result]
+    out.notes = list(seq.notes)
+    return out
+
+
+def _fold(seq):
+    uses = [0] * (len(seq.ins) + 1)
+    for ins in seq.ins:
+        for a in ins.args:
+            uses[a] += 1
+    uses[seq.result] += 1
+
+    out = Seq()
+    remap = {0: 0}
+    defined = {}
+    for index, ins in enumerate(seq.ins, start=1):
+        args = [remap[a] for a in ins.args]
+        op, const, shift = ins.op, ins.const, ins.shift
+        if len(ins.args) == 1 and uses[ins.args[0]] == 1:
+            producer = defined.get(args[0])
+            if producer is not None and len(producer.args) == 1:
+                merged = _merge(producer, op, const, shift)
+                if merged is not None:
+                    op, const, shift = merged
+                    args = list(producer.args)
+        value = out.emit(op, args, const, shift)
+        defined[value] = out.ins[-1]
+        remap[index] = value
+    out.result = remap[seq.result]
+    out.notes = list(seq.notes)
+    return out
+
+
+def dead_code(seq):
+    """`seq` with every value no other value and no result reads removed."""
+    live = set([seq.result])
+    for index in range(len(seq.ins), 0, -1):
+        if index in live:
+            live.update(seq.ins[index - 1].args)
+
+    out = Seq()
+    remap = {0: 0}
+    for index, ins in enumerate(seq.ins, start=1):
+        if index not in live:
+            continue
+        remap[index] = out.emit(ins.op, [remap[a] for a in ins.args],
+                                ins.const, ins.shift)
+    out.result = remap[seq.result]
+    out.notes = list(seq.notes)
+    return out
+
+
+def _shape(seq):
+    return (seq.result, [(ins.op, ins.args, ins.const, ins.shift)
+                         for ins in seq.ins])
+
+
+# Each round can expose the next one's work — folding two masks into one can
+# make the result a mask that clears nothing, which removes it, which makes
+# another pair adjacent — and each round strictly removes or shortens, so the
+# fixed point arrives quickly and the bound is a guard rather than a policy.
+NORMALIZE_ROUNDS = 8
+
+
+def normalize(seq):
+    """Rewrite, fold, share and prune to a fixed point."""
+    current = seq
+    for _round in range(NORMALIZE_ROUNDS):
+        stepped = dead_code(common_subexpressions(_fold(_rewrite(current))))
+        if _shape(stepped) == _shape(current):
+            return current
+        current = stepped
+    return current
+
+
+# ---------------------------------------------------------------------------
 # ISA profiles
 # ---------------------------------------------------------------------------
 
@@ -895,7 +1138,7 @@ def lower_split(op, isa):
         take = seq.emit('ANDNR', [below, diff])
         result = seq.emit('XORR', [result, take])
     seq.result = result
-    return [('SPLIT', common_subexpressions(seq))]
+    return [('SPLIT', seq)]
 
 
 # How many inputs a lowered branch is checked on against the branch it lowers.
@@ -980,7 +1223,11 @@ def lower_program(program, isa, verify_against=None, accept=None):
         options = LOWERERS[op.kind](op, isa)
         if not options:
             raise LoweringFailure(op, isa)
-        options = sorted(options, key=lambda pair: objective_key(pair[1]))
+        # Rank the representatives by what they cost after normalization, not
+        # by what the lowerer happened to write: a multiply by a power of two
+        # and the shift it becomes are not two candidates.
+        options = sorted(((name, normalize(sub)) for name, sub in options),
+                         key=lambda pair: objective_key(pair[1]))
         chosen.append((op, options))
 
     # Independent per-op choices: try the cheapest combination first, then fall
@@ -995,6 +1242,10 @@ def lower_program(program, isa, verify_against=None, accept=None):
             current = seq.extend(sub, current)
             used.append((op, name))
         seq.result = current
+        # Pieces that were lowered independently say the same thing several
+        # times over; what is asked of them is the whole sequence, so that is
+        # what is normalized and what is then verified and measured.
+        seq = normalize(seq)
 
         if verify_against is None and accept is None:
             return seq, used
@@ -1122,8 +1373,52 @@ _ASM_RI = {'AND': 'andq', 'OR': 'orq', 'XOR': 'xorq', 'ADD': 'addq',
            'SUB': 'subq'}
 
 
+def _fits_imm32(value):
+    """Does this 64-bit constant survive as a sign-extended 32-bit immediate?
+
+    Every operand form below writes `q`, so an immediate is sign-extended from
+    32 bits to 64. A constant inside that range is one instruction; anything
+    else needs `movabsq` into a scratch register and a second instruction to
+    use it, which is where the listings were spending most of their length.
+    """
+    return value < (1 << 31) or value >= (M64 + 1) - (1 << 31)
+
+
+def _imm(value):
+    """A constant as AT&T immediate text, in the shorter of the two spellings."""
+    if value >= (M64 + 1) - (1 << 31):
+        return '$-%d' % ((M64 + 1) - value)
+    return '$0x%X' % value
+
+
+# Instructions whose 32-bit form computes the 64-bit one, given that every
+# value involved provably has no upper half. A 32-bit destination zero-extends,
+# so nothing above bit 31 survives to be wrong; `NOT`, `NEG` and `SAR` are not
+# on the list because each of them reads or writes the upper half by
+# definition.
+_NARROWABLE = {'AND', 'OR', 'XOR', 'ADD', 'SUB', 'IMUL', 'SHL', 'SHR',
+               'ANDR', 'ORR', 'XORR', 'ADDR', 'SUBR', 'ANDNR'}
+
+_ASM_32 = {
+    '%rax': '%eax', '%rcx': '%ecx', '%rdx': '%edx', '%rsi': '%esi',
+    '%rdi': '%edi', '%r8': '%r8d', '%r9': '%r9d', '%r10': '%r10d',
+    '%r11': '%r11d',
+}
+
+
 def emit_asm(seq, name, input_bits=None):
     """Emit AT&T x86-64 assembly (SysV: argument in %rdi, result in %rax).
+
+    Three things keep the listing close to what an assembly programmer would
+    have written for the same sequence, none of which changes the program:
+
+    * a constant that fits a sign-extended 32-bit immediate is written as one,
+      so most instructions stop being a `movabsq` and a use;
+    * a value whose last reader is this instruction is overwritten in place,
+      which is what removes the `movq` in front of nearly every operation;
+    * an instruction all of whose values provably fit in 32 bits is written in
+      the 32-bit form, because a 32-bit destination zero-extends and the two
+      compute the same thing.
 
     Returns None when the sequence contains something this small emitter does
     not encode, or needs more live values than the register pool holds — a
@@ -1133,6 +1428,7 @@ def emit_asm(seq, name, input_bits=None):
     if any(ins.op in unsupported for ins in seq.ins):
         return None
 
+    known = known_bits(seq)
     last_use = {0: 0}
     for k, ins in enumerate(seq.ins, start=1):
         for a in ins.args:
@@ -1150,20 +1446,49 @@ def emit_asm(seq, name, input_bits=None):
 
     for k, ins in enumerate(seq.ins, start=1):
         src = [reg[a] for a in ins.args]
+        narrow = (ins.op in _NARROWABLE
+                  and known[k] <= mask_of(32)
+                  and all(known[a] <= mask_of(32) for a in ins.args))
+        suffix = 'l' if narrow else 'q'
 
-        # Free registers whose last use is this instruction, before allocating.
-        for a in ins.args:
+        def name_of(register):
+            return _ASM_32[register] if narrow else register
+
+        # A value nothing reads after this instruction is a register this
+        # instruction may have: writing into it is what makes the `movq` in
+        # front of a two-address operation unnecessary.
+        recycled = [a for a in dict.fromkeys(ins.args) if last_use.get(a, 0) <= k]
+        dst = reg[ins.args[0]] if (ins.args and last_use.get(ins.args[0], 0) <= k) \
+            else None
+        for a in recycled:
             r = reg.get(a)
-            if r and r != '%rdi' and last_use.get(a, 0) <= k and r not in free:
+            if r and r != dst and r != '%rdi' and r not in free:
                 free.append(r)
-        if not free:
-            return None
-        dst = free.pop(0)
+        if dst is None:
+            if not free:
+                return None
+            dst = free.pop(0)
         reg[k] = dst
 
+        in_place = bool(ins.args) and dst == src[0]
+
+        def carry_in():
+            """Put the first argument in `dst`, unless it is already there."""
+            if not in_place:
+                body.append('    mov%s %s, %s'
+                            % (suffix, name_of(src[0]), name_of(dst)))
+
         if ins.op == 'IMUL':
-            load_const(ins.const, dst)
-            body.append('    imulq %s, %s' % (src[0], dst))
+            if _fits_imm32(ins.const):
+                body.append('    imul%s %s, %s, %s'
+                            % (suffix, _imm(ins.const), name_of(src[0]),
+                               name_of(dst)))
+            else:
+                # The constant cannot land in `dst` first: `dst` may be the
+                # register the multiplicand is already in.
+                load_const(ins.const, _ASM_SCRATCH)
+                carry_in()
+                body.append('    imulq %s, %s' % (_ASM_SCRATCH, dst))
         elif ins.op in ('PDEP', 'PEXT'):
             load_const(ins.const, _ASM_SCRATCH)
             # AT&T reverses Intel's operand order:
@@ -1184,26 +1509,37 @@ def emit_asm(seq, name, input_bits=None):
             body.append('    pclmulqdq $0x00, %xmm1, %xmm0')
             body.append('    movq %%xmm0, %s' % dst)
         elif ins.op in _ASM_RI:
-            load_const(ins.const, _ASM_SCRATCH)
-            body.append('    movq %s, %s' % (src[0], dst))
-            body.append('    %s %s, %s' % (_ASM_RI[ins.op], _ASM_SCRATCH, dst))
+            mnemonic = _ASM_RI[ins.op][:-1] + suffix
+            if _fits_imm32(ins.const):
+                carry_in()
+                body.append('    %s %s, %s'
+                            % (mnemonic, _imm(ins.const), name_of(dst)))
+            else:
+                load_const(ins.const, _ASM_SCRATCH)
+                carry_in()
+                body.append('    %s %s, %s' % (_ASM_RI[ins.op], _ASM_SCRATCH,
+                                               dst))
         elif ins.op == 'NOT':
-            body.append('    movq %s, %s' % (src[0], dst))
+            carry_in()
             body.append('    notq %s' % dst)
         elif ins.op == 'ANDNR':
             # BMI1 has ANDN, but its operand order is the easiest thing in this
             # emitter to get silently backwards; NOT+AND is one instruction
             # longer and assembles the same everywhere.
-            body.append('    movq %s, %s' % (src[0], dst))
-            body.append('    notq %s' % dst)
-            body.append('    andq %s, %s' % (src[1], dst))
+            if in_place:
+                body.append('    notq %s' % dst)
+            else:
+                body.append('    movq %s, %s' % (src[0], dst))
+                body.append('    notq %s' % dst)
+            body.append('    and%s %s, %s' % (suffix, name_of(src[1]),
+                                              name_of(dst)))
         elif ins.op in ('SHL', 'SHR', 'SAR'):
-            body.append('    movq %s, %s' % (src[0], dst))
+            carry_in()
             body.append('    %s $%d, %s'
-                        % ({'SHL': 'shlq', 'SHR': 'shrq', 'SAR': 'sarq'}[ins.op],
-                           ins.shift, dst))
+                        % ({'SHL': 'shl', 'SHR': 'shr', 'SAR': 'sar'}[ins.op]
+                           + suffix, ins.shift, name_of(dst)))
         elif ins.op == 'NEG':
-            body.append('    movq %s, %s' % (src[0], dst))
+            carry_in()
             body.append('    negq %s' % dst)
         elif ins.op in ('CLZ', 'CTZ'):
             uses_countbits = True
@@ -1211,11 +1547,13 @@ def emit_asm(seq, name, input_bits=None):
                         % ('lzcntq' if ins.op == 'CLZ' else 'tzcntq',
                            src[0], dst))
         elif ins.op == 'BSWAP':
-            body.append('    movq %s, %s' % (src[0], dst))
+            carry_in()
             body.append('    bswapq %s' % dst)
         elif ins.op in _ASM_RR:
-            body.append('    movq %s, %s' % (src[0], dst))
-            body.append('    %s %s, %s' % (_ASM_RR[ins.op], src[1], dst))
+            carry_in()
+            body.append('    %s %s, %s'
+                        % (_ASM_RR[ins.op][:-1] + suffix, name_of(src[1]),
+                           name_of(dst)))
         else:
             return None
 

@@ -39,7 +39,7 @@ class TestWholeWordKernelsLand(unittest.TestCase):
         ('least_bit_mask_u64', 'point-chain', ['NEG', 'ANDR']),
         ('popcount_u64', 'point-chain', ['POPCNT']),
         ('how_many_bits_i32', 'point-chain',
-         ['SHL', 'SAR', 'XORR', 'AND', 'AND', 'CLZ', 'SUB', 'NEG', 'ADD']),
+         ['SHL', 'SAR', 'XORR', 'AND', 'CLZ', 'SUB', 'NEG', 'ADD']),
         # `smear(x - 1) + 1`.  The cascade is six shifts and six ORs, and that
         # is the shortest this grammar has: there is no rounding instruction.
         ('round_up_pow2_u64', 'point-chain',
@@ -47,18 +47,25 @@ class TestWholeWordKernelsLand(unittest.TestCase):
         # One reduction of the concatenated word — which is what a Rabin-Karp
         # step *is*, once the radix and the modulus are looked at together.
         ('rabin_karp_roll', 'point-chain', ['IMUL', 'SHR', 'IMUL', 'SUBR']),
+        # The threshold is zero, so the subtraction that would have made the
+        # comparison is not there: the difference's own sign bit is it.
         ('is_less_or_equal_i32', 'split',
          ['SHL', 'SAR', 'SAR', 'SUBR', 'AND', 'XOR',
-          'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
+          'SAR', 'XORR', 'ANDNR', 'XORR']),
+        # Both halves are read with a mask and a shift: a deposit into the low
+        # thirty-two bits is a mask, and normalization says so.
         ('min_i32', 'split',
-         ['SHL', 'SAR', 'SAR', 'SUBR', 'PDEP', 'PEXT',
+         ['SHL', 'SAR', 'SAR', 'SUBR', 'AND', 'SHR',
           'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
+        # `x >> 32` has nothing above bit 31, so the mask after it is dropped.
         ('mod_add_u32', 'split',
-         ['AND', 'SHR', 'AND', 'ADDR', 'ADD',
+         ['AND', 'SHR', 'ADDR', 'ADD',
           'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
+        # A multiply by 2^23 is a shift, and a subtraction of -125 is an
+        # addition of 125.
         ('float_power2_bits', 'split',
-         ['SHL', 'SAR', 'AND', 'SHL', 'IMUL', 'ADD',
-          'SUB', 'SAR', 'XORR', 'ANDNR', 'XORR']),
+         ['SHL', 'SAR', 'AND', 'SHL', 'SHL', 'ADD',
+          'ADD', 'SAR', 'XORR', 'ANDNR', 'XORR']),
     ]
 
     def test_reaches_the_named_sequence(self):

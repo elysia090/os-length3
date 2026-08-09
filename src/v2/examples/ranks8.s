@@ -12,10 +12,10 @@
     .type ranks8_qm, @function
 ranks8_qm:
     movabsq $0x101010101010101, %r11
-    pdep %r11, %rdi, %rax
-    movabsq $0x101010101010100, %rcx
-    imulq %rax, %rcx
-    movq %rcx, %rax
+    pdep %r11, %rdi, %rdi
+    movabsq $0x101010101010100, %r11
+    imulq %r11, %rdi
+    movq %rdi, %rax
     ret
     .size ranks8_qm, .-ranks8_qm
     .section .note.GNU-stack,"",@progbits

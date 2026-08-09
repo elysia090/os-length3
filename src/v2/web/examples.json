@@ -167,7 +167,7 @@
       "name": "ranks8",
       "file": "ranks8.s",
       "language": "asm",
-      "source": "# Exclusive prefix popcount of an 8-bit mask, as x86-64.\n#\n# Pasting a listing is the other arrow in SPEC 2: QM evaluates it, extracts\n# the semantics, and lowers again -- so this is also how you get the wasm32\n# form, by choosing that target once the result is in.\n#\n# Minimizing it returns the same listing: it is already the canonical\n# representative, and the search says so rather than moving.\n    # qm-input-bits: 8\n    .text\n    .globl ranks8_qm\n    .type ranks8_qm, @function\nranks8_qm:\n    movabsq $0x101010101010101, %r11\n    pdep %r11, %rdi, %rax\n    movabsq $0x101010101010100, %rcx\n    imulq %rax, %rcx\n    movq %rcx, %rax\n    ret\n    .size ranks8_qm, .-ranks8_qm\n    .section .note.GNU-stack,\"\",@progbits\n"
+      "source": "# Exclusive prefix popcount of an 8-bit mask, as x86-64.\n#\n# Pasting a listing is the other arrow in SPEC 2: QM evaluates it, extracts\n# the semantics, and lowers again -- so this is also how you get the wasm32\n# form, by choosing that target once the result is in.\n#\n# Minimizing it returns the same listing: it is already the canonical\n# representative, and the search says so rather than moving.\n    # qm-input-bits: 8\n    .text\n    .globl ranks8_qm\n    .type ranks8_qm, @function\nranks8_qm:\n    movabsq $0x101010101010101, %r11\n    pdep %r11, %rdi, %rdi\n    movabsq $0x101010101010100, %r11\n    imulq %r11, %rdi\n    movq %rdi, %rax\n    ret\n    .size ranks8_qm, .-ranks8_qm\n    .section .note.GNU-stack,\"\",@progbits\n"
     },
     {
       "name": "prefix_xor64",
