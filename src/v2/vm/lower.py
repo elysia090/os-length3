@@ -21,6 +21,7 @@ from . import asm as _asm
 from .asm import Asm, COMMIT, EMIT
 
 WORD = 64
+M64_ALL = (1 << WORD) - 1
 
 
 class Unsupported(Exception):
@@ -191,6 +192,51 @@ class Lowering(object):
     def shift_right(self, x, n):
         return x[n:] + [ZERO] * n if n < WORD else [ZERO] * WORD
 
+    def shift_right_signed(self, x, n):
+        """Arithmetic shift: the top bit is copied down, not zeroed.
+
+        Rewiring, like every other shift here, so a comparison costs one
+        subtraction and nothing at all for the mask it turns into.
+        """
+        if n >= WORD:
+            return [x[WORD - 1]] * WORD
+        return x[n:] + [x[WORD - 1]] * n
+
+    def smear(self, x):
+        """Fill every bit below the highest set one, by doubling."""
+        shift = 1
+        while shift < WORD:
+            x = self.word_or(x, self.shift_right(x, shift))
+            shift <<= 1
+        return x
+
+    def count_leading_zeros(self, x):
+        """`clz(x) == popcount(~smear(x))` — the leading zeros are what is left
+        once every bit below the top one has been filled in."""
+        return self.popcount(self.word_not(self.smear(x)))
+
+    def count_trailing_zeros(self, x):
+        """`ctz(x) == popcount((x & -x) - 1)`, which answers 64 for zero
+        because the borrow runs the whole width."""
+        low = self.word_and(x, self.negate(x))
+        return self.popcount(self.add_words(low, word_of_const(M64_ALL)))
+
+    def less_unsigned(self, x, y, width=WORD):
+        """One bit: is `x` below `y`, both read as unsigned `width`-bit words."""
+        borrow = ZERO
+        for i in range(width):
+            a, b = x[i], y[i]
+            borrow = self.gate_or(
+                self.gate_and(invert(a), b),
+                self.gate_and(invert(self.gate_xor(a, b)), borrow))
+        return borrow
+
+    def select_word(self, condition, when_true, when_false):
+        """Blend two words under one bit, position by position."""
+        return [self.gate_or(self.gate_and(condition, t),
+                             self.gate_and(invert(condition), f))
+                for t, f in zip(when_true, when_false)]
+
     def deposit(self, x, mask):
         """PDEP: the j-th set bit of the mask takes the j-th bit of x."""
         out = [ZERO] * WORD
@@ -352,6 +398,19 @@ class Lowering(object):
             return self.deposit_dynamic(const, one)
         if op == 'POPCNT':
             return self.popcount(one)
+        if op == 'SAR':
+            return self.shift_right_signed(one, shift)
+        if op == 'NEG':
+            return self.negate(one)
+        if op == 'SUBR':
+            return self.add_words(one, self.negate(two))
+        if op == 'SEXT':
+            return [(one[i] if i < shift else one[shift - 1])
+                    for i in range(WORD)]
+        if op == 'CLZ':
+            return self.count_leading_zeros(one)
+        if op == 'CTZ':
+            return self.count_trailing_zeros(one)
         raise Unsupported('no bit-sliced form for %s' % op)
 
 
@@ -429,9 +488,105 @@ class Lowering(object):
                 x = self.word_xor(x, self.shift_left(x, shift))
             elif mnemonic == 'LANE_INTERVAL':
                 x = self.lane_interval(x, const, shift)
+            elif mnemonic == 'NEG':
+                x = self.negate(x)
+            elif mnemonic == 'AND_NEG':
+                x = self.word_and(x, self.negate(x))
+            elif mnemonic == 'OR_NEG':
+                x = self.word_or(x, self.negate(x))
+            elif mnemonic == 'AND_DEC':
+                x = self.word_and(x, self.add_words(x, word_of_const(M64_ALL)))
+            elif mnemonic == 'OR_SHR':
+                x = self.word_or(x, self.shift_right(x, shift))
+            elif mnemonic == 'SAR':
+                x = self.shift_right_signed(x, shift)
+            elif mnemonic == 'XOR_SAR':
+                width = const or WORD
+                sign = x[width - 1]
+                folded = [(x[i + shift] if i + shift < width else sign)
+                          for i in range(WORD)]
+                x = self.word_xor(x, folded)
+                x = [b if i < width else ZERO for i, b in enumerate(x)]
+            elif mnemonic == 'KEY':
+                x = self.key_word(x, const)
+            elif mnemonic == 'MOD':
+                # The same closed form as `qm.isa.reciprocal`, written out
+                # again because this package does not import that one: a
+                # reduction is two multiplies, a shift and a subtract, and
+                # both lowerings are checked against the same semantics.
+                value_bits = shift or WORD
+                s = value_bits + const.bit_length()
+                multiplier = -((-1 << s) // const)
+                q = self.shift_right(self.multiply(x, multiplier), s)
+                x = self.add_words(x, self.negate(self.multiply(q, const)))
+            elif mnemonic == 'SMEAR':
+                x = self.smear(x)
+            elif mnemonic == 'CLZ':
+                width = const or WORD
+                masked = [b if i < width else ZERO for i, b in enumerate(x)]
+                x = self.add_words(self.count_leading_zeros(masked),
+                                   word_of_const((width - WORD) & M64_ALL))
+            elif mnemonic == 'CTZ':
+                width = const or WORD
+                masked = [b if i < width else ZERO for i, b in enumerate(x)]
+                if width < WORD:
+                    masked[width] = ONE_BIT
+                x = self.count_trailing_zeros(masked)
+            elif mnemonic in ('LANE_MAX', 'LANE_MIN'):
+                x = self.lane_reduce(x, shift, mnemonic == 'LANE_MAX')
             else:
                 raise Unsupported('no bit-sliced form for POINT step %s'
                                   % mnemonic)
+        return x
+
+    def lane_reduce(self, x, lane_bits, want_max):
+        """Maximum or minimum over the lanes, in the low lane.
+
+        The same halving tournament the ISA lowering runs, except that here a
+        comparison is a borrow chain and choosing a winner is a multiplexer, so
+        neither one needs the lane masks to keep it inside its lane.
+        """
+        lanes = WORD // lane_bits
+        values = [x[i * lane_bits:(i + 1) * lane_bits] for i in range(lanes)]
+        while len(values) > 1:
+            nxt = []
+            for k in range(0, len(values), 2):
+                if k + 1 == len(values):
+                    nxt.append(values[k])
+                    continue
+                a, b = values[k], values[k + 1]
+                below = self.less_unsigned(a + [ZERO] * (WORD - lane_bits),
+                                           b + [ZERO] * (WORD - lane_bits),
+                                           lane_bits)
+                pick_b = below if want_max else invert(below)
+                nxt.append(self.select_word(pick_b, b, a))
+            values = nxt
+        return values[0] + [ZERO] * (WORD - lane_bits)
+
+    def key_word(self, x, key):
+        """The SPLIT key as one two's-complement word."""
+        total = None
+        for shift, width, signed, coeff in key.terms:
+            fill = x[shift + width - 1] if signed else ZERO
+            term = [(x[shift + i] if i < width else fill) for i in range(WORD)]
+            if coeff < 0:
+                term = self.negate(term)
+            total = term if total is None else self.add_words(total, term)
+        return total
+
+    def apply_split(self, x, detail):
+        key = self.key_word(x, detail['key'])
+        result = self.apply_program(x, detail['branches'][0])
+        for threshold, branch in zip(detail['breaks'], detail['branches'][1:]):
+            alternative = self.apply_program(x, branch)
+            below = self.add_words(
+                key, self.negate(word_of_const(threshold & M64_ALL)))[WORD - 1]
+            result = self.select_word(below, result, alternative)
+        return result
+
+    def apply_program(self, x, program):
+        for op in program.ops:
+            x = self.apply_op(x, op)
         return x
 
     def apply_op(self, x, op):
@@ -453,6 +608,8 @@ class Lowering(object):
             if detail['direction'] == 'gather':
                 return self.extract_dynamic(detail['source'], x)
             return self.deposit_dynamic(detail['source'], x)
+        if kind == 'SPLIT':
+            return self.apply_split(x, detail)
         raise Unsupported('no bit-sliced form for %s' % kind)
 
 

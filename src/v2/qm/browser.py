@@ -129,7 +129,12 @@ def plan(source, options_json='{}'):
     Returning the domain explicitly is what lets the worker evaluate exactly the
     inputs QM will verify against — no more, and never fewer.
     """
+    from .clang import split_main
     options = json.loads(options_json or '{}')
+    # The driver is not the kernel, and the domain being planned is the
+    # kernel's. The worker splits before it calls this; a caller that does not
+    # should still get the same answer.
+    source, _driver = split_main(source or '')
     try:
         signature = read_signature(source, options.get('function'))
     except CFrontError as exc:

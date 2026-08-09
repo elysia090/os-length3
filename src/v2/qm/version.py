@@ -15,13 +15,13 @@ so grammar and objective versions are first-class data, not comments.
 QM_VERSION = '2.0.0-prototype'
 
 # Bumped when the abstract operation grammar searched by Stage 2 changes.
-GRAMMAR_VERSION = 'g2'
+GRAMMAR_VERSION = 'g3'
 
 # Bumped when the lexicographic objective (span, work, L(z), rank) changes.
 OBJECTIVE_VERSION = 'o1'
 
 # Bumped when solver behaviour changes in a way that can move residual freedom.
-SOLVER_VERSION = 's2'
+SOLVER_VERSION = 's3'
 
 
 def version_block():
