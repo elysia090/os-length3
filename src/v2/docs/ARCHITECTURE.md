@@ -23,10 +23,35 @@ any layer can be read on its own.
    recognize corpus
 5  pipeline                   the whole product in one call
 6  cli  browser               the two front doors
+7  kernel                     Linux-in-Wasm machine, host barriers, scheduler
 ```
 
 `pipeline.solve()` is the only thing either front door calls, so the CLI and the
 browser cannot diverge in behaviour.
+
+`kernel` is an execution consumer, not a QM frontend or a diagnostic tool. It
+imports the generic Wasm state machine from `qm`, owns Linux-specific host and
+scheduling state, and is not part of the browser's eager Pyodide manifest.
+
+## Linux-in-Wasm execution
+
+`kernel.host` decodes the single `env.nccc_call64` import used by the LKL Wasm
+port. Linux syscalls and VFS code stay inside the guest. Clocks, synchronization
+objects, memory regions and block pages are explicit host state; no operation
+implicitly reads the filesystem, wall clock or random source.
+
+`kernel.scheduler` owns cooperative threads. Frames and mutable globals are
+private to a thread, while linear memory and host objects share one current
+snapshot. A `thread_create` table coordinate becomes a new Wasm continuation
+with its own downward-growing stack. Semaphore, mutex and join boundaries park
+that continuation instead of blocking the Python or browser worker. Long pure
+runs return a resumable timeslice at a cached wave boundary.
+
+The 128 MiB allocator pool and 128 MiB stack area used by the reference runner
+are logical address ranges. `PagedMemory.grow()` extends only its direct span
+directory; a 256-byte page becomes resident after it is written. Block images
+use the same principle at a 4 KiB page size, with clean spans individually
+evictable and dirty spans explicitly flushable.
 
 ## Browser execution path
 
