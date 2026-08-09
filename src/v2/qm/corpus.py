@@ -1,4 +1,4 @@
-"""SPEC §19 / §20 — semantic keys, local corpus lookup, opt-in contribution.
+"""Semantic keys, local corpus lookup, and opt-in contribution records.
 
 The key is built from the *observed* semantics, not from the source, so two
 different C spellings of the same kernel land on the same entry and no source
@@ -64,7 +64,7 @@ class Corpus(object):
 
 
 def contribution_record(key, isa_name, result_for_isa, program, recognition):
-    """The opt-in contribution blob from SPEC §20.
+    """Build an opt-in contribution record without raw source material.
 
     Raw C and raw assembly are excluded by construction: they are not
     parameters of this function.

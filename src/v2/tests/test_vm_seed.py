@@ -52,6 +52,9 @@ class TestItIsTheEchoMachine(unittest.TestCase):
                 self.assertEqual(machine.future(built, [byte]),
                                  machine.future(typed, [byte]))
 
+    def test_the_selected_seed_is_the_compact_assembled_image(self):
+        self.assertEqual(seed.ECHO, HAND_WRITTEN)
+
     def test_a_read_commits_nothing(self):
         after = machine.feed(seed.residual(), 42)
         before = dict(after.image.memory)

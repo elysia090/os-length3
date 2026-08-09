@@ -1,4 +1,4 @@
-"""SPEC §6 — the normalized abstract program.
+"""The normalized abstract program.
 
 Abstract operations are *semantic classes*, never instruction names.  A
 `LIN_CONST` node carries the linear map, not a PDEP mask, so that every ISA can
@@ -11,8 +11,8 @@ from . import straightline
 from .bits import (M64, bswap64, clmul, clz, ctz, lane_masks, lane_values,
                     mask_of, pdep, pext, popcnt, sar, smear, to_signed)
 
-# Semantic classes from SPEC §6, plus TABLE for the always-available
-# finite-domain representative and SPLIT for the piecewise one.
+# Semantic classes, plus TABLE for the always-available finite-domain
+# representative and SPLIT for the piecewise one.
 CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'SPLIT', 'TABLE',
            'IDENTITY')
 
@@ -240,7 +240,7 @@ def computes_the_identity(op):
 class Program(object):
     """An abstract program plus how strongly it was forced.
 
-    residual_freedom follows SPEC §9:
+    residual_freedom reports how many candidates remain before canonical rank:
         0    not representable in the declared grammar
         1    the physical parameters are uniquely forced
         n>1  n solutions remain tied before canonical rank selection
@@ -493,4 +493,3 @@ def compile_program(program):
     if compiled is None or compiled[0] != len(program.ops):
         compiled = program._steps = (len(program.ops), _build(program))
     return compiled[1]
-

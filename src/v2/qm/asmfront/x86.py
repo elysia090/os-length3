@@ -51,9 +51,6 @@ _SUB_REGISTERS = {
     '%r12d': '%r12', '%r13d': '%r13', '%r14d': '%r14', '%r15d': '%r15',
     '%ax': '%rax', '%cx': '%rcx', '%dx': '%rdx', '%si': '%rsi', '%di': '%rdi',
     '%al': '%rax', '%cl': '%rcx', '%dl': '%rdx',
-    '%sil': '%rsi', '%dil': '%rdi', '%bpl': '%rbp', '%spl': '%rsp',
-    '%r8b': '%r8', '%r9b': '%r9', '%r10b': '%r10', '%r11b': '%r11',
-    '%r8w': '%r8', '%r9w': '%r9', '%r10w': '%r10', '%r11w': '%r11',
 }
 
 
@@ -258,11 +255,6 @@ def _emit_instruction(state, mnemonic, operands):
     mask = '0x%X' % mask_of(width)
     read = state.read
 
-    if mnemonic in ('movsbq', 'movswq', 'movslq', 'movsbl', 'movswl'):
-        source = {'b': 8, 'w': 16, 'l': 32}[mnemonic[4]]
-        state.write(operands[1], 'signed((%s) & 0x%X, %d) & %s'
-                    % (read(operands[0]), mask_of(source), source, mask))
-        return
     if base in ('mov', 'movabs', 'movzx', 'movz'):
         state.write(operands[1], '(%s) & %s' % (read(operands[0]), mask))
         return

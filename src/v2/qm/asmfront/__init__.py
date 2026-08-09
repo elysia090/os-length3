@@ -1,16 +1,15 @@
 """Assembly as an input, not only as an output.
 
-SPEC §2 draws the arrow `optimized assembly -> Quotient Minimizer`. This is that
-arrow: paste x86-64 or wasm32 and QM extracts the semantics by evaluating the
+Paste x86-64 or wasm32 and QM extracts the semantics by evaluating the
 listing, then minimizes and lowers to whichever targets you asked for. Going in
 one side and out the other is what makes x86 → wasm and wasm → x86 ordinary
 uses of the same pipeline rather than separate features.
 
-Neither reader is a full machine. Each covers the integer subset a small kernel
-compiles to — which includes everything QM emits, so a round trip is a fixed
-point and the suite checks that it is. Anything outside the subset is named and
-refused; a wrong evaluation here would be a wrong semantics, and every claim
-downstream rests on it.
+The text readers cover the integer subset a small kernel compiles to — including
+everything QM emits, so a round trip is a fixed point. They are fast paths, not
+the semantic coverage boundary: linked wasm is handled by the clonable binary
+machine, and a sandbox-capable Linux x86-64 host can use the native execution
+oracle. Anything that reaches neither path is named and refused.
 """
 
 import re

@@ -1,18 +1,17 @@
-"""Section 4 — the two paths through the residual ABI, held to each other.
+"""The two paths through the residual ABI, held to each other.
 
 `machine.py` is the open-state path: open once, then feed and read a residual
 that is never serialized again. `residual.py` is the code-level one: a byte
 takes a payload to another payload, and the interface is over global codewords.
 
-Section 4 requires both, and its falsification list names "make code-level
-residualization disagree with the open-state path" as a failure — which is a
-thing no suite with one path can check. The port had one path.
+The interface requires both paths to agree, which no suite with only one path
+can check. The port originally had one path.
 
 The obligations, written out rather than paraphrased:
 
-    future(feed*(R, p)) = after(future(R), p)                    (4.5)
-    [[res(z, a)]](h)    = [[z]]([a] || h)                        (4.6)
-    emit(code(z))       = read(open(pack(code(z))))              (4.7)
+    future(feed*(R, p)) = after(future(R), p)
+    [[res(z, a)]](h)    = [[z]]([a] || h)
+    emit(code(z))       = read(open(pack(code(z))))
     next(code(z), a)    = code(res(z, a))
 """
 
@@ -30,7 +29,7 @@ def payload_of(picture):
 
 
 class TestTheSoleSemanticObligation(unittest.TestCase):
-    """(4.5). Everything else in §4 follows from it by substitution."""
+    """Moving a prefix into the state must preserve every suffix result."""
 
     def check(self, start):
         observe = residual.future_of(start)
@@ -47,16 +46,15 @@ class TestTheSoleSemanticObligation(unittest.TestCase):
 
     def test_on_a_compiled_kernel(self):
         from qm.pipeline import solve
-        from vm import lower
-        from tests.support import read_example
+        from tests.support import read_example, vm_picture
 
         result = solve(read_example('starts8.c'), frontend='cfront')
-        picture = lower.lower_program(result['program_object'], 8, 64)
+        picture = vm_picture(result)
         self.check(machine.Residual(picture))
 
 
 class TestResidualizationIsSubstitution(unittest.TestCase):
-    """(4.6): running the residual is running the whole history."""
+    """Running the residual is running the whole history."""
 
     def check(self, payload, alphabet=(0, 1, 5, 128, 255)):
         for byte in alphabet:
@@ -74,7 +72,7 @@ class TestResidualizationIsSubstitution(unittest.TestCase):
         self.check(payload_of(ECHO))
 
     def test_a_multi_byte_history_is_never_reversed(self):
-        """§4 calls residualizing the final byte first a conformance failure.
+        """Residualizing the final byte first changes the history order.
 
         It is also the mistake that looks right: for the echo machine only the
         last byte survives, so folding from the wrong end still answers
@@ -92,7 +90,7 @@ class TestResidualizationIsSubstitution(unittest.TestCase):
 
 
 class TestTheTwoPathsAgree(unittest.TestCase):
-    """The falsification §4 names, and the reason this module exists."""
+    """The open-state and code-level paths must remain observationally equal."""
 
     def setUp(self):
         self.payload = payload_of(seed.ECHO)
@@ -107,7 +105,7 @@ class TestTheTwoPathsAgree(unittest.TestCase):
                 self.assertEqual(code_side, open_side)
 
     def test_next_over_codewords_is_code_of_res(self):
-        """(4.7), which is the definition rather than a coincidence."""
+        """The codeword successor is the code of the residualized payload."""
         word = codec.code(self.payload)
         for byte in (0, 1, 42, 255):
             with self.subTest(byte=byte):
@@ -127,11 +125,10 @@ class TestTheTwoPathsAgree(unittest.TestCase):
 
     def test_it_agrees_on_a_compiled_kernel(self):
         from qm.pipeline import solve
-        from vm import lower
-        from tests.support import read_example
+        from tests.support import read_example, vm_picture
 
         result = solve(read_example('starts8.c'), frontend='cfront')
-        picture = lower.lower_program(result['program_object'], 8, 64)
+        picture = vm_picture(result)
         payload = payload_of(picture)
         start = machine.Residual(picture)
         for byte in (0, 1, 5, 170, 255):
@@ -142,7 +139,7 @@ class TestTheTwoPathsAgree(unittest.TestCase):
 
 
 class TestNothingEscapesTheCode(unittest.TestCase):
-    """Total, and dead where §2 says dead."""
+    """The code path is total and maps every malformed input to one dead state."""
 
     def test_a_malformed_codeword_is_the_dead_residual(self):
         for word in ('', '0', '1', '10', codec.code('0101') + '1'):
@@ -166,7 +163,7 @@ class TestNothingEscapesTheCode(unittest.TestCase):
 
 
 class TestWhatTheCodeCosts(unittest.TestCase):
-    """§1 measures the residual, so the residual has to be measurable."""
+    """Residuals expose the same length and rank as their global codewords."""
 
     def test_length_and_rank_are_the_codec_s(self):
         payload = payload_of(seed.ECHO)
@@ -176,18 +173,16 @@ class TestWhatTheCodeCosts(unittest.TestCase):
     def test_feeding_a_byte_does_not_shrink_this_lowering(self):
         """The finding, stated as a test so it cannot quietly stop being true.
 
-        `res` is a residualizer, and §1 ranks residuals by `L` and `rank`. This
+        `res` is a residualizer, and residuals rank by `L` and `rank`. This
         lowering's `feed` only stores the byte — it folds nothing through the
         computation — so the residual comes out *longer* than what it came
         from. When the lowering learns to specialize, this test is what says
         so, and it should then be inverted rather than deleted.
         """
         from qm.pipeline import solve
-        from vm import lower
-        from tests.support import read_example
+        from tests.support import read_example, vm_picture
 
         result = solve(read_example('starts8.c'), frontend='cfront')
-        payload = payload_of(lower.lower_program(result['program_object'],
-                                                 8, 64))
+        payload = payload_of(vm_picture(result))
         shorter = residual.res(payload, 5)
         self.assertGreater(residual.length(shorter), residual.length(payload))

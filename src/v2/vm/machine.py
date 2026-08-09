@@ -1,4 +1,4 @@
-"""Pinf-R Section 3 — one transactional rSUBLEQ instruction.
+"""One transactional rSUBLEQ instruction and its residual call boundary.
 
 At `pc`, read all three operands from the pre-step state:
 
@@ -105,14 +105,19 @@ def read(residual, budget=1 << 22):
     Every write is discarded, including self-modification, so reading is
     observation and nothing else.
     """
+    return read_with_budget(residual, budget=budget)[0]
+
+
+def read_with_budget(residual, budget=1 << 22):
+    """``(output, transitions)`` for one non-committing read call."""
     if residual.dead:
-        return BOTTOM
+        return BOTTOM, 0
     scratch = dict(residual.image.memory)          # the private transaction
-    event, _steps = _run(scratch, residual.image.pc_out, budget)
+    event, steps = _run(scratch, residual.image.pc_out, budget)
     if event != EMIT:
-        return BOTTOM
+        return BOTTOM, steps
     out = scratch.get(1, 0)
-    return out if 0 <= out < 256 else BOTTOM
+    return (out if 0 <= out < 256 else BOTTOM), steps
 
 
 def feed(residual, byte):

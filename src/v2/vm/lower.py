@@ -5,20 +5,20 @@ the one place any of the three becomes a program in the sense the codec means:
 `pack(code(z))` over a canonical signed image. Run then means running *that*,
 not interpreting a target-specific structure in whatever language built it.
 
-Values are bit-sliced: a 64-bit word is 64 one-bit cells. That is what makes
-the normalization cheap where it can be, because a shift, a deposit, an
-extract, a byte swap and a carry-less multiply by a constant are all
-*rewiring* — they move bits to other positions and cost no instruction at all.
-A bit also carries a complement flag, so NOT is free for the same reason. What
-is left costing real code is the gates and the adders, which is exactly the
-part that is genuinely computation.
+Bit-structural sequences use one cell per bit. A shift, deposit, extract, byte
+swap, and carry-less multiply by a constant can then be rewiring rather than
+runtime work. Closed integer-affine islands instead use the machine's native
+whole-word subtraction. Both are exact candidates; the complete framed
+artifacts compete under measured row-wave span, work, and code length.
 
 Depends on `asm` and `image`, and on `qm.isa` only for the shape of the
 sequence it is handed.
 """
 
-from . import asm as _asm
-from .asm import Asm, COMMIT, EMIT
+from . import planner
+from .asm import Asm
+from .framing import frame_function, frame_word_function
+from .word import WordAffineLowering, extract_affine, is_candidate
 
 WORD = 64
 M64_ALL = (1 << WORD) - 1
@@ -56,12 +56,18 @@ def word_of_const(value):
     return [(None, bool((value >> i) & 1)) for i in range(WORD)]
 
 
-class Lowering(object):
-    """Builds one artifact for one `qm.isa.Seq`."""
+class BitVectorLowering(object):
+    """Compile fixed-width values as vectors of one-bit cells.
+
+    Structural bit operations only rearrange cell references. Gates and carry
+    chains emit instructions. Other value representations can be added beside
+    this class without changing the byte-stream machine.
+    """
 
     def __init__(self, input_bits, output_bits):
         self.input_bits = input_bits
         self.output_bits = output_bits
+        self.word_bits = WORD
         self.in_bytes = -(-input_bits // 8)
         self.out_bytes = -(-output_bits // 8)
 
@@ -349,6 +355,125 @@ class Lowering(object):
             total = self.add_words(total, [bit] + [ZERO] * (WORD - 1))
         return total
 
+    def lookup(self, x, values):
+        """Select a constant word with a balanced tree of bit multiplexers."""
+        index_bits = (len(values) - 1).bit_length() if values else 0
+        if not values or len(values) != 1 << index_bits:
+            raise Unsupported('LUT size must be a nonzero power of two')
+
+        choices = [word_of_const(value) for value in values]
+        for bit in range(index_bits):
+            choices = [self.select_word(x[bit], choices[i + 1], choices[i])
+                       for i in range(0, len(choices), 2)]
+        return choices[0]
+
+    def _lane_cell(self, bits):
+        """Materialize one byte coordinate and return `(cell, upper_bound)`."""
+        terms = []
+        constant = 0
+        for position, bit in enumerate(bits):
+            weight = 1 << position
+            if is_const(bit):
+                if const_value(bit):
+                    constant += weight
+                continue
+            source = self.materialize(bit)
+            if weight != 1:
+                scaled = self.temp('lane_bit')
+                after = self.a.label('lane_bit_done')
+                self.a.if_le_zero(source, after)
+                self.a.move(self.pow2[position], scaled)
+                self.a.place(after)
+                source = scaled
+            terms.append((source, weight))
+
+        if not terms:
+            self._temp += 1
+            return self.a.cell('lane_const%d' % self._temp, constant), constant
+        if len(terms) == 1 and constant == 0:
+            return terms[0][0], terms[0][1]
+
+        out = self.temp('lane')
+        if constant:
+            self._temp += 1
+            base = self.a.cell('lane_base%d' % self._temp, constant)
+            self.a.add(base, out)
+        for source, _bound in terms:
+            self.a.add(source, out)
+        return out, constant + sum(bound for _source, bound in terms)
+
+    def _small_scale(self, source, factor):
+        """Multiply one byte-sized cell by a small constant without carries."""
+        if factor == 1:
+            return source
+        shifted = self.temp('lane_shift')
+        self.a.move(source, shifted)
+        out = self.temp('lane_product')
+        initialized = False
+        for position in range(factor.bit_length()):
+            if (factor >> position) & 1:
+                if not initialized:
+                    self.a.move(shifted, out)
+                    initialized = True
+                else:
+                    self.a.add(shifted, out)
+            if position + 1 < factor.bit_length():
+                self.a.add(shifted, shifted)
+        return out
+
+    def multiply_to_bytes(self, x, const, output_bits):
+        """Direct base-256 convolution when every lane is carry-free.
+
+        This is coordinate substitution, not a second multiply algorithm. The
+        source bit vector is first viewed as eight byte coordinates. Constant
+        multiplication becomes a triangular convolution of those coordinates.
+        If any output coordinate can exceed 255, the form is rejected before
+        code is emitted and the ordinary bit-vector multiply remains in use.
+        """
+        if output_bits != WORD:
+            return None
+        lane_bits = [x[start:start + 8] for start in range(0, WORD, 8)]
+        bounds = []
+        # Bounds are structural and can be checked before materialization.
+        for bits in lane_bits:
+            bound = 0
+            for position, bit in enumerate(bits):
+                if not is_const(bit) or const_value(bit):
+                    bound += 1 << position
+            bounds.append(bound)
+
+        coefficients = [(const >> (8 * lane)) & 0xFF for lane in range(8)]
+        for output in range(8):
+            bound = sum(bounds[source] * coefficients[output - source]
+                        for source in range(output + 1))
+            if bound > 0xFF:
+                return None
+
+        lanes = [self._lane_cell(bits) for bits in lane_bits]
+        scaled = {}
+        outputs = []
+        for output in range(8):
+            terms = []
+            for source in range(output + 1):
+                coefficient = coefficients[output - source]
+                if coefficient == 0 or lanes[source][1] == 0:
+                    continue
+                key = source, coefficient
+                if key not in scaled:
+                    scaled[key] = self._small_scale(lanes[source][0],
+                                                    coefficient)
+                terms.append(scaled[key])
+            if not terms:
+                outputs.append(self.materialize(ZERO))
+            elif len(terms) == 1:
+                outputs.append(terms[0])
+            else:
+                value = self.temp('lane_sum')
+                for term in terms:
+                    self.a.add(term, value)
+                outputs.append(value)
+        return outputs
+
     # -- one instruction --------------------------------------------------
 
     def apply(self, op, args, const, shift):
@@ -404,372 +529,95 @@ class Lowering(object):
             return self.negate(one)
         if op == 'SUBR':
             return self.add_words(one, self.negate(two))
-        if op == 'SEXT':
-            return [(one[i] if i < shift else one[shift - 1])
-                    for i in range(WORD)]
         if op == 'CLZ':
             return self.count_leading_zeros(one)
         if op == 'CTZ':
             return self.count_trailing_zeros(one)
+        if op == 'LUT':
+            return self.lookup(one, const)
         raise Unsupported('no bit-sliced form for %s' % op)
 
 
-    # -- one abstract operation -------------------------------------------
-    #
-    # The semantic classes, not an ISA's mnemonics. This is what makes the
-    # artifact a property of the solve rather than of the target you happen to
-    # be looking at: LIN_CONST is a linear map here, not a PDEP.
-
-    def linear(self, x, basis, input_bits):
-        """`y = XOR_i basis[i] * bit_i(x)` — an XOR tree, position by position."""
-        out = [ZERO] * WORD
-        for source in range(min(input_bits, len(basis))):
-            image = basis[source]
-            if not image:
-                continue
-            for position in range(WORD):
-                if (image >> position) & 1:
-                    out[position] = self.gate_xor(out[position], x[source])
-        return out
-
-    def lane_less(self, lane, bound, lane_bits):
-        """Unsigned `lane < bound` for one lane, as a borrow chain."""
-        borrow = ZERO
-        for i in range(lane_bits):
-            a = lane[i]
-            b = ONE_BIT if (bound >> i) & 1 else ZERO
-            # borrow' = (~a & b) | (~(a ^ b) & borrow)
-            borrow = self.gate_or(
-                self.gate_and(invert(a), b),
-                self.gate_and(invert(self.gate_xor(a, b)), borrow))
-        return borrow
-
-    def lane_interval(self, x, bounds, lane_bits):
-        """`lo <= lane <= hi` on every lane, as that lane's top bit."""
-        lo, hi = bounds
-        out = [ZERO] * WORD
-        top = lane_bits - 1
-        for index in range(WORD // lane_bits):
-            base = index * lane_bits
-            lane = x[base:base + lane_bits]
-            below = self.lane_less(lane, lo, lane_bits) if lo else ZERO
-            above = (self.lane_less(lane, hi + 1, lane_bits)
-                     if hi + 1 < (1 << lane_bits) else ONE_BIT)
-            out[base + top] = self.gate_and(invert(below), above)
-        return out
-
-    def apply_point(self, x, steps):
-        for mnemonic, const, shift in steps:
-            if mnemonic == 'AND':
-                x = self.word_and(x, word_of_const(const))
-            elif mnemonic == 'OR':
-                x = self.word_or(x, word_of_const(const))
-            elif mnemonic == 'XOR':
-                x = self.word_xor(x, word_of_const(const))
-            elif mnemonic == 'ADD':
-                x = self.add_words(x, word_of_const(const))
-            elif mnemonic == 'SUB':
-                x = self.add_words(x, self.negate(word_of_const(const)))
-            elif mnemonic == 'NOT':
-                x = self.word_not(x)
-            elif mnemonic == 'SHL':
-                x = self.shift_left(x, shift)
-            elif mnemonic == 'SHR':
-                x = self.shift_right(x, shift)
-            elif mnemonic == 'BSWAP':
-                x = self.byteswap(x)
-            elif mnemonic == 'POPCNT':
-                x = self.popcount(x)
-            elif mnemonic == 'ANDN_PREV_SHL':
-                x = self.word_and(x, self.word_not(self.shift_left(x, shift)))
-            elif mnemonic == 'ANDN_PREV_SHR':
-                x = self.word_and(x, self.word_not(self.shift_right(x, shift)))
-            elif mnemonic == 'XOR_SHL':
-                x = self.word_xor(x, self.shift_left(x, shift))
-            elif mnemonic == 'LANE_INTERVAL':
-                x = self.lane_interval(x, const, shift)
-            elif mnemonic == 'NEG':
-                x = self.negate(x)
-            elif mnemonic == 'AND_NEG':
-                x = self.word_and(x, self.negate(x))
-            elif mnemonic == 'OR_NEG':
-                x = self.word_or(x, self.negate(x))
-            elif mnemonic == 'AND_DEC':
-                x = self.word_and(x, self.add_words(x, word_of_const(M64_ALL)))
-            elif mnemonic == 'OR_SHR':
-                x = self.word_or(x, self.shift_right(x, shift))
-            elif mnemonic == 'SAR':
-                x = self.shift_right_signed(x, shift)
-            elif mnemonic == 'XOR_SAR':
-                width = const or WORD
-                sign = x[width - 1]
-                folded = [(x[i + shift] if i + shift < width else sign)
-                          for i in range(WORD)]
-                x = self.word_xor(x, folded)
-                x = [b if i < width else ZERO for i, b in enumerate(x)]
-            elif mnemonic == 'KEY':
-                x = self.key_word(x, const)
-            elif mnemonic == 'MOD':
-                # The same closed form as `qm.isa.reciprocal`, written out
-                # again because this package does not import that one: a
-                # reduction is two multiplies, a shift and a subtract, and
-                # both lowerings are checked against the same semantics.
-                value_bits = shift or WORD
-                s = value_bits + const.bit_length()
-                multiplier = -((-1 << s) // const)
-                q = self.shift_right(self.multiply(x, multiplier), s)
-                x = self.add_words(x, self.negate(self.multiply(q, const)))
-            elif mnemonic == 'SMEAR':
-                x = self.smear(x)
-            elif mnemonic == 'CLZ':
-                width = const or WORD
-                masked = [b if i < width else ZERO for i, b in enumerate(x)]
-                x = self.add_words(self.count_leading_zeros(masked),
-                                   word_of_const((width - WORD) & M64_ALL))
-            elif mnemonic == 'CTZ':
-                width = const or WORD
-                masked = [b if i < width else ZERO for i, b in enumerate(x)]
-                if width < WORD:
-                    masked[width] = ONE_BIT
-                x = self.count_trailing_zeros(masked)
-            elif mnemonic in ('LANE_MAX', 'LANE_MIN'):
-                x = self.lane_reduce(x, shift, mnemonic == 'LANE_MAX')
-            else:
-                raise Unsupported('no bit-sliced form for POINT step %s'
-                                  % mnemonic)
-        return x
-
-    def lane_reduce(self, x, lane_bits, want_max):
-        """Maximum or minimum over the lanes, in the low lane.
-
-        The same halving tournament the ISA lowering runs, except that here a
-        comparison is a borrow chain and choosing a winner is a multiplexer, so
-        neither one needs the lane masks to keep it inside its lane.
-        """
-        lanes = WORD // lane_bits
-        values = [x[i * lane_bits:(i + 1) * lane_bits] for i in range(lanes)]
-        while len(values) > 1:
-            nxt = []
-            for k in range(0, len(values), 2):
-                if k + 1 == len(values):
-                    nxt.append(values[k])
-                    continue
-                a, b = values[k], values[k + 1]
-                below = self.less_unsigned(a + [ZERO] * (WORD - lane_bits),
-                                           b + [ZERO] * (WORD - lane_bits),
-                                           lane_bits)
-                pick_b = below if want_max else invert(below)
-                nxt.append(self.select_word(pick_b, b, a))
-            values = nxt
-        return values[0] + [ZERO] * (WORD - lane_bits)
-
-    def key_word(self, x, key):
-        """The SPLIT key as one two's-complement word."""
-        total = None
-        for shift, width, signed, coeff in key.terms:
-            fill = x[shift + width - 1] if signed else ZERO
-            term = [(x[shift + i] if i < width else fill) for i in range(WORD)]
-            if coeff < 0:
-                term = self.negate(term)
-            total = term if total is None else self.add_words(total, term)
-        return total
-
-    def apply_split(self, x, detail):
-        key = self.key_word(x, detail['key'])
-        result = self.apply_program(x, detail['branches'][0])
-        for threshold, branch in zip(detail['breaks'], detail['branches'][1:]):
-            alternative = self.apply_program(x, branch)
-            below = self.add_words(
-                key, self.negate(word_of_const(threshold & M64_ALL)))[WORD - 1]
-            result = self.select_word(below, result, alternative)
-        return result
-
-    def apply_program(self, x, program):
-        for op in program.ops:
-            x = self.apply_op(x, op)
-        return x
-
-    def apply_op(self, x, op):
-        kind, detail = op.kind, op.detail
-        if kind == 'IDENTITY':
-            return x
-        if kind == 'LIN_CONST':
-            return self.linear(x, detail['basis'], detail['input_bits'])
-        if kind == 'CONV':
-            if detail['family'] == 'IMUL':
-                return self.multiply(x, detail['const'])
-            if detail['family'] == 'CLMUL':
-                return self.clmul(x, detail['const'])
-            raise Unsupported('no bit-sliced form for CONV(%s)'
-                              % detail['family'])
-        if kind == 'POINT':
-            return self.apply_point(x, detail['steps'])
-        if kind == 'PERM_DYN':
-            if detail['direction'] == 'gather':
-                return self.extract_dynamic(detail['source'], x)
-            return self.deposit_dynamic(detail['source'], x)
-        if kind == 'SPLIT':
-            return self.apply_split(x, detail)
-        raise Unsupported('no bit-sliced form for %s' % kind)
-
-
-def _decode_byte(low, source, bits, one, pow2):
-    """Split a byte in `source` into eight one-bit cells, high bit first."""
-    scratch = low.temp('d')
-    probe = low.temp('q')
-    low.a.move(source, scratch)
-    for index in range(7, -1, -1):
-        set_here = low.a.label('set%d' % index)
-        after = low.a.label('after%d' % index)
-        low.a.move(pow2[index], probe)
-        low.a.sub(scratch, probe)              # 2^i - value <= 0 iff bit is set
-        low.a.if_le_zero(probe, set_here)
-        low.a.clear(bits[index])
-        low.a.goto(after)
-        low.a.place(set_here)
-        low.a.move(one, bits[index])
-        low.a.sub(pow2[index], scratch)
-        low.a.place(after)
-
-
-def _encode_byte(low, bits, target, pow2):
-    """Recombine eight one-bit cells into a byte."""
-    low.a.clear(target)
-    for index in range(8):
-        after = low.a.label('skip%d' % index)
-        low.a.if_le_zero(bits[index], after)
-        low.a.add(pow2[index], target)
-        low.a.place(after)
-
-
-def _frame(low, compute, input_bits, output_bits):
-    """The byte ABI around whatever `compute` makes of the input word.
-
-    The framing is the one a function has under a byte stream: feed the input
-    little-endian, then read the output a byte at a time, one feed apart.
-
-        feed(x0) .. feed(x_{n-1})   the input word
-        read()                      output byte 0
-        feed(anything); read()      output byte 1, and so on
-
-    `read` never commits, so reading the same byte twice gives the same byte
-    twice; only a feed moves the stream on.
-    """
-    a = low.a
-
-    in_bits = [a.cell('in%d' % i) for i in range(low.in_bytes * 8)]
-    out_bytes = [a.cell('ob%d' % i) for i in range(low.out_bytes)]
-    counter = a.cell('counter')
-    index = a.cell('index')
-
-    entry_out = a.label('read')
-    entry_feed = a.label('feed')
-    run_kernel = a.label('kernel')
-
-    # -- read: emit the byte the stream is on ------------------------------
-    #
-    # `index - which <= 0` fires for the first `which` the index has reached,
-    # and every smaller one has already branched away, so a chain of these is
-    # an exact dispatch without any indirection.
-    a.place(entry_out)
-    probe = low.temp('r')
-    emit_at = [a.label('emit%d' % i) for i in range(low.out_bytes)]
-    skip_emit = [a.label('no_emit%d' % i) for i in range(low.out_bytes)]
-    for which in range(low.out_bytes):
-        a.move(index, probe)
-        for _ in range(which):
-            a.sub(low.one, probe)
-        a.if_le_zero(probe, emit_at[which])
-        a.goto(skip_emit[which])
-        a.place(emit_at[which])
-        a.move(out_bytes[which], Asm.OUTPUT)
-        a.halt(EMIT)
-        a.place(skip_emit[which])
-    # Past the last output byte there is nothing left to emit.
-    a.halt(_asm.FAIL)
-
-    # -- feed --------------------------------------------------------------
-    a.place(entry_feed)
-    probe2 = low.temp('f')
-    take_at = [a.label('take%d' % i) for i in range(low.in_bytes)]
-    skip_take = [a.label('skip_take%d' % i) for i in range(low.in_bytes)]
-    for which in range(low.in_bytes):
-        a.move(counter, probe2)
-        for _ in range(which):
-            a.sub(low.one, probe2)
-        a.if_le_zero(probe2, take_at[which])
-        a.goto(skip_take[which])
-        a.place(take_at[which])
-        _decode_byte(low, Asm.INPUT, in_bits[which * 8:which * 8 + 8],
-                     low.one, low.pow2)
-        a.add(low.one, counter)
-        if which == low.in_bytes - 1:
-            a.goto(run_kernel)
-        else:
-            a.halt(COMMIT)
-        a.place(skip_take[which])
-    # Past the input, a feed advances the output stream by one byte.
-    a.add(low.one, index)
-    a.halt(COMMIT)
-
-    # -- the kernel --------------------------------------------------------
-    a.place(run_kernel)
-    word = [(in_bits[i], False) if i < input_bits else ZERO
-            for i in range(WORD)]
-    result = compute(word)
-    result = [b if i < output_bits else ZERO for i, b in enumerate(result)]
-
-    for which in range(low.out_bytes):
-        cells = [low.materialize(result[which * 8 + bit]) for bit in range(8)]
-        _encode_byte(low, cells, out_bytes[which], low.pow2)
-    a.halt(COMMIT)
-
-    return low.a.build(entry_out, entry_feed)
-
-
-def lower_program(program, input_bits, output_bits):
-    """`qm.program.Program` -> a canonical image with the byte ABI.
-
-    This is the one that makes the artifact a single source of truth: the
-    abstract program is what the solve produced, and it is the same whichever
-    target you happen to be looking at. Lowering from a target's `Seq` would
-    make "the program" depend on a view of it.
-    """
-    low = Lowering(input_bits, output_bits)
-
-    def compute(word):
-        value = word
-        for op in program.ops:
-            value = low.apply_op(value, op)
-        return value
-
-    return _frame(low, compute, input_bits, output_bits)
-
-
-def lower_seq(seq, input_bits, output_bits):
-    """`qm.isa.Seq` -> a canonical image with the byte ABI.
-
-    The framing is the one a function has under a byte stream: feed the input
-    little-endian, then read the output a byte at a time, one feed apart.
-
-        feed(x0) .. feed(x_{n-1})   the input word
-        read()                      output byte 0
-        feed(anything); read()      output byte 1, and so on
-
-    `read` never commits, so reading the same byte twice gives the same byte
-    twice; only a feed moves the stream on.
-
-    Kept for the machine-level round trip; `lower_program` is what the artifact
-    is built from.
-    """
-    low = Lowering(input_bits, output_bits)
+def _lower_bit_seq(seq, input_bits, output_bits):
+    """The exact bit-vector representative for one minimized sequence."""
+    low = BitVectorLowering(input_bits, output_bits)
 
     def compute(word):
         values = {0: word}
         for position, instruction in enumerate(seq.ins, start=1):
             args = [values[k] for k in instruction.args]
+            if position == seq.result and instruction.op == 'IMUL':
+                byte_cells = low.multiply_to_bytes(
+                    args[0], instruction.const, output_bits)
+                if byte_cells is not None:
+                    return 'bytes', byte_cells
             values[position] = low.apply(instruction.op, args,
                                          instruction.const, instruction.shift)
         return values[seq.result]
 
-    return _frame(low, compute, input_bits, output_bits)
+    return frame_function(low, compute, input_bits, output_bits, ZERO)
+
+
+def _lower_word_seq(seq, input_bits, output_bits):
+    """The exact whole-word representative for an integer-affine island."""
+    form = extract_affine(seq)
+    if form is None:
+        raise Unsupported('sequence is not integer-affine')
+    low = WordAffineLowering(input_bits, output_bits)
+
+    def compute(word):
+        byte_cells = low.emit_affine_bytes(word, *form)
+        if byte_cells is not None:
+            return 'bytes', byte_cells
+        return 'word', low.emit_affine(word, *form)
+
+    return frame_word_function(
+        low, compute, input_bits, output_bits)
+
+
+_SELECTION = {}
+
+
+def _sequence_key(seq, input_bits, output_bits):
+    return (input_bits, output_bits, seq.result,
+            tuple((instruction.op, instruction.args, instruction.const,
+                   instruction.shift) for instruction in seq.ins))
+
+
+def lower_seq(seq, input_bits, output_bits):
+    """Compile a minimized wasm32 instruction sequence for the byte interface.
+
+    The framing is the one a function has under a byte stream: feed the input
+    little-endian, then read the output a byte at a time, one feed apart.
+
+        feed(x0) .. feed(x_{n-1})   the input word
+        read()                      output byte 0
+        feed(anything); read()      output byte 1, and so on
+
+    `read` never commits, so reading the same byte twice gives the same byte
+    twice; only a feed moves the stream on.
+
+    The browser always supplies the wasm32 target selected by QM. This compiler
+    does not accept the abstract solver program or choose an instruction set.
+    """
+    if not is_candidate(seq, output_bits):
+        return _lower_bit_seq(seq, input_bits, output_bits)
+
+    key = _sequence_key(seq, input_bits, output_bits)
+    selected = _SELECTION.get(key)
+    if selected == 'word':
+        return _lower_word_seq(seq, input_bits, output_bits)
+    if selected == 'bits':
+        return _lower_bit_seq(seq, input_bits, output_bits)
+
+    candidates = [
+        ('bits', _lower_bit_seq(seq, input_bits, output_bits)),
+        ('word', _lower_word_seq(seq, input_bits, output_bits)),
+    ]
+    selected, picture = planner.choose(candidates, input_bits, output_bits)
+    _SELECTION[key] = selected
+    return picture
+
+
+# Compatibility for the existing measurement tool.
+Lowering = BitVectorLowering

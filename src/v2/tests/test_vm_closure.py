@@ -1,11 +1,11 @@
 """The round trip closes: minimizing the artifact's own C gives the same answer.
 
-    source  --QM-->  abstract program  --lower-->  artifact
-                                                      |
-                                                    emit C
-                                                      |
-                                                      v
-                                                     QM  ==  the same program
+    source  --QM-->  minimized wasm32  --codec-->  artifact
+                                                       |
+                                                     emit C
+                                                       |
+                                                       v
+                                                      QM
 
 This is the property that makes the artifact a single source of truth rather
 than a lossy export. The emitted C is a 400-line SUBLEQ interpreter over a
@@ -25,9 +25,9 @@ import unittest
 
 from qm.clang import NATIVE
 from qm.pipeline import solve
-from vm import emit, lower
+from vm import emit
 
-from tests.support import read_example
+from tests.support import read_example, vm_picture
 
 # 8- and 16-bit kernels, whose domains are walked exhaustively on both passes,
 # plus one 64-bit case so a sampled domain is covered too. The dynamic gather
@@ -58,8 +58,7 @@ class TestTheRoundTripCloses(unittest.TestCase):
 
         input_bits = first['frontend']['input_bits']
         output_bits = first['frontend']['output_bits']
-        picture = lower.lower_program(first['program_object'],
-                                      input_bits, output_bits)
+        picture = vm_picture(first)
         emitted = emit.emit_c(picture, '%s_vm' % name, input_bits, output_bits)
 
         second = solve(emitted, frontend='clang', function='%s_vm' % name)

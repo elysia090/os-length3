@@ -1,8 +1,8 @@
-"""SPEC §2 — the frontend stage.
+"""The frontend stage.
 
 A frontend turns pasted source into `Semantics` plus a "what did the input cost
 before QM" number.  Frontends are registered here so that the Clang/WASM
-frontend described in SPEC §2 can be added without touching the pipeline:
+frontend can be added without touching the pipeline:
 
     Frontend protocol
         name        str, stable id used by the UI and the result record
@@ -243,7 +243,7 @@ class CSubsetFrontend(object):
 
 
 class ClangFrontend(object):
-    """SPEC §2 — real Clang -O2 as the entry point.
+    """Use real Clang -O2 as a source-normalizing entry point.
 
     Semantics come from executing the optimized code, not from re-modelling it,
     so anything Clang accepts is analysable and the extracted function is by
@@ -413,7 +413,7 @@ class PrecompiledFrontend(object):
 
 
 class AssemblyFrontend(object):
-    """SPEC §2's other arrow: optimized assembly straight into QM.
+    """Accept optimized assembly directly as a QM input.
 
     x86-64 in AT&T syntax or wasm32 in the text format.  Semantics come from
     evaluating the listing, exactly as the Clang path evaluates the compiled
@@ -440,17 +440,33 @@ class AssemblyFrontend(object):
             'kind': self.kind,
             'available': True,
             'baseline_metric': 'instructions in the pasted listing',
-            'note': 'semantics are extracted by evaluating the listing over the '
-                    'domain; the reader covers the integer subset a small '
-                    'kernel compiles to and refuses anything else by name',
+            'note': 'the lightweight integer reader is the fast path; on a '
+                    'sandbox-capable Linux x86-64 host, other deterministic '
+                    'instructions fall back to the native execution oracle',
         }
 
     def analyze(self, source, options=None):
         from . import asmfront
         options = options or {}
-
-        function, dialect = asmfront.parse(source, options.get('function'),
-                                           options.get('dialect'))
+        dialect = options.get('dialect') or asmfront.detect(source)
+        fast_error = None
+        try:
+            function, dialect = asmfront.parse(source,
+                                               options.get('function'), dialect)
+            evaluate = asmfront.compile_function(function)
+        except CFrontError as exc:
+            fast_error = exc
+            if dialect != 'x86-64':
+                raise
+            from .x86oracle import NativeX86Oracle, available, function_name
+            if not available():
+                raise
+            name = function_name(source, options.get('function'))
+            function = type('OracleFunction', (), {
+                'name': name, 'input_bits': 64, 'output_bits': 64,
+                'instructions': (),
+            })()
+            evaluate = None
         reader = asmfront.wasm if dialect == 'wasm32' else asmfront.x86
 
         declared = reader.declared_input_bits(source)
@@ -469,13 +485,26 @@ class AssemblyFrontend(object):
             exhaustive_limit=int(options.get('exhaustive_limit', 16)),
             probes=int(options.get('probes', 4096)),
         )
-        evaluate = asmfront.compile_function(function)
-        outputs = [evaluate(x) for x in domain.values()]
+        if evaluate is None:
+            from .x86oracle import NativeX86Oracle
+            outputs = NativeX86Oracle(
+                source, function.name,
+                timeout=float(options.get('oracle_timeout', 30.0)),
+            ).evaluate(domain.values())
+            backend = 'sandboxed-native-oracle'
+        else:
+            outputs = [evaluate(x) for x in domain.values()]
+            backend = 'lightweight-reader'
         sem = table_semantics(outputs, input_bits, output_bits, domain,
                               meta={'function': _base_name(function.name),
                                     'source': 'asm:%s' % dialect})
 
-        count = len(function.instructions)
+        if function.instructions:
+            count = len(function.instructions)
+        else:
+            from .asmstats import analyze as analyze_asm
+            count = analyze_asm(source, function.name,
+                                isa=dialect).get('instructions', 0)
         report = {
             'frontend': dict(self.describe(),
                              listing=dialect, title='%s (%s)'
@@ -490,7 +519,9 @@ class AssemblyFrontend(object):
             'input_bits': input_bits,
             'output_bits': output_bits,
             'compile': {'dialect': dialect, 'input_width_via': width_via,
-                        'declared_input_bits': declared},
+                        'declared_input_bits': declared, 'backend': backend,
+                        'fast_path_error': (str(fast_error)
+                                            if fast_error else None)},
             'assembly': source,
             'assembly_stats': {'available': True, 'isa': dialect,
                                'instructions': count},
@@ -594,8 +625,8 @@ register(AssemblyFrontend())
 
 def get(name=None):
     if not name or name == 'auto':
-        # SPEC §2 wants Clang at the entry; the built-in subset is the
-        # fallback for when no toolchain is reachable, not the default.
+        # Prefer the production compiler when reachable. The built-in C
+        # subset is an offline fallback, not an independent semantics path.
         clang = REGISTRY['clang']
         return clang if clang.available() else REGISTRY['cfront']
     if name not in REGISTRY:

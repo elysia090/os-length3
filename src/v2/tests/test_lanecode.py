@@ -16,7 +16,8 @@ import tempfile
 import unittest
 
 from qm.clang import NATIVE, prepare_source
-from tests.support import EXAMPLES, example, solved as solve, target
+from tests.support import (example, example_names, example_path,
+                           solved as solve, target)
 
 ONES = '0101010101010101'
 IOTA = '0706050403020100'
@@ -124,7 +125,7 @@ class TestMatchesHandWritten(unittest.TestCase):
                     self.assertEqual(v['matched'], v['total'])
 
     def test_lanecode_header_is_present_as_the_reference(self):
-        path = os.path.join(EXAMPLES, 'lanecode.h')
+        path = example_path('lanecode.h')
         self.assertTrue(os.path.exists(path))
         with open(path) as handle:
             text = handle.read()
@@ -149,7 +150,7 @@ class TestIdempotence(unittest.TestCase):
                 result['residual_freedom'])
 
     def test_every_example_is_a_fixed_point(self):
-        for name in sorted(os.listdir(EXAMPLES)):
+        for name in example_names(('.c',)):
             if not name.endswith('.c'):
                 continue
             stem = name[:-2]

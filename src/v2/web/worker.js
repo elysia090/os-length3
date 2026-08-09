@@ -123,8 +123,8 @@ async function solve(request) {
   const source = split.kernel;
   const hasMain = Boolean(split.has_main);
 
-  // SPEC §2 has two arrows into QM: C through Clang, and optimized assembly
-  // straight in.  Ask which one this paste is before starting a compiler.
+  // C enters through Clang; optimized assembly enters directly. Determine
+  // which input this is before starting a compiler.
   const route = JSON.parse(callPython('route', [source]));
   if (route.kind === 'asm') {
     progress(`reading the ${route.dialect} listing…`);
@@ -135,7 +135,7 @@ async function solve(request) {
     return;
   }
 
-  // --- SPEC §2: compile with Clang -------------------------------------
+  // --- Compile C with Clang --------------------------------------------
   let compiled = null;
   if (options.frontend !== 'cfront') {
     try {
@@ -174,17 +174,58 @@ async function solve(request) {
       compile: { opt: ORACLE_OPT, toolchain: clang.describe().title },
       toolchain: clang.describe(),
     }));
+    const result = JSON.parse(callPython('finish', [source, enriched,
+                                                    compiled.table, '']));
+    if (request.analyze_main && hasMain) {
+      result.state_machine = await analyzeCompiledMain(request.source, optionsJson);
+    }
     post('done', {
       has_main: hasMain,
-      result: JSON.parse(callPython('finish', [source, enriched,
-                                               compiled.table, ''])),
+      result,
     });
     return;
   }
 
   progress('extracting semantics with the built-in frontend…');
   const json = callPython('fallback', [source, optionsJson]);
-  post('done', { has_main: hasMain, result: JSON.parse(json) });
+  const result = JSON.parse(json);
+  if (request.analyze_main && hasMain && result.ok) {
+    result.state_machine = await analyzeCompiledMain(request.source, optionsJson);
+  }
+  post('done', { has_main: hasMain, result });
+}
+
+function base64Bytes(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let at = 0; at < bytes.length; at += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + chunk));
+  }
+  return btoa(binary);
+}
+
+async function analyzeCompiledMain(source, optionsJson) {
+  try {
+    progress('compiling main to an explicit wasm state machine…');
+    const prepared = callPython('prepare_state', [source || '']);
+    const wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
+    progress('closing the reachable main/VM states…');
+    const report = JSON.parse(callPython(
+      'stateful_wasm', [base64Bytes(wasm), 'main', optionsJson],
+    ));
+    if (!report.ok) {
+      post('notice', {
+        message: `state-machine frontend: ${report.error.message}`,
+      });
+    }
+    return report;
+  } catch (err) {
+    const message = (err && err.stderr)
+      ? err.stderr.split('\n')[0] : String((err && err.message) || err);
+    post('notice', { message: `state-machine frontend: ${message}` });
+    return { ok: false, exact: false, stage: 'state-compile',
+             error: { message } };
+  }
 }
 
 // Clang compiles once, to wasm32, and only so the kernel can be *evaluated*
@@ -228,11 +269,11 @@ async function compileWithClang(source, options, optionsJson) {
 //
 //     paste -> QM -> codec -> run
 //
-// The driver is compiled alone: `prepare_run` keeps `main` and drops the
-// kernel's definition, leaving a declaration. So the kernel is an *import*,
-// and what answers it is the artifact — running `main` runs the minimized
-// program rather than Clang's compilation of the paste, which would be
-// testing the compiler.
+// `prepare_run` keeps `main`, globals and unrelated helpers, but replaces the
+// selected kernel definition with a declaration. The kernel is therefore an
+// *import*, and what answers it is the artifact — running `main` runs the
+// minimized function rather than Clang's compilation of that function, which
+// would be testing the compiler.
 //
 // `-nostdlib`, so the other two imports are one byte in and one byte out.
 // ---------------------------------------------------------------------------
@@ -318,7 +359,10 @@ self.onmessage = async (event) => {
     } else if (msg.type === 'solve') {
       await solve(msg);
     } else if (msg.type === 'exec') {
-      post('ran', { result: await execMain(msg) });
+      const started = performance.now();
+      const result = await execMain(msg);
+      result.elapsed_ms = performance.now() - started;
+      post('ran', { result });
     } else if (msg.type === 'load-clang') {
       await clang.load(progress);
       post('clang-state', { clang: clang.describe() });
