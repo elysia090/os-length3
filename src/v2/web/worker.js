@@ -9,7 +9,7 @@
 // The UI thread stays responsive because all of this happens here.
 
 import { ClangDriver, ClangUnavailable, evaluateWasm, readConfig } from './clang.js';
-import { decodeArtifact, load as loadVm, prepareEvaluator } from './vm.js';
+import { compile as compileVm, decodeArtifact } from './vm.js';
 
 const PYODIDE_VERSIONS = [
   'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
@@ -19,10 +19,11 @@ const PYODIDE_VERSIONS = [
 
 let pyodide = null;
 let clang = null;
+let clangConfig = null;
+let clangDescription = null;
 let manifest = null;
 const runCache = new Map();
 const RUN_CACHE_LIMIT = 8;
-let activeVmSource = null;
 
 function post(type, payload) {
   self.postMessage(Object.assign({ type }, payload || {}));
@@ -30,6 +31,87 @@ function post(type, payload) {
 
 function progress(message) {
   post('progress', { message });
+}
+
+// The compiler core and its resource filesystem dominate residency. Keep
+// them in a child worker so the browser and Python/QM can remain alive while
+// those WebAssembly memories are physically released after compilation.
+const COMPILER_IDLE_MS = 15_000;
+let compilerWorker = null;
+let compilerIdleTimer = null;
+let compilerRequest = 0;
+const compilerPending = new Map();
+
+function describeClang() {
+  return clangDescription || clang.describe();
+}
+
+function disposeCompilerWorker() {
+  if (compilerIdleTimer) clearTimeout(compilerIdleTimer);
+  compilerIdleTimer = null;
+  if (compilerWorker) compilerWorker.terminate();
+  compilerWorker = null;
+  for (const pending of compilerPending.values()) {
+    pending.reject(new ClangUnavailable('compiler worker was released'));
+  }
+  compilerPending.clear();
+}
+
+function compilerError(raw) {
+  const error = raw && raw.unavailable
+    ? new ClangUnavailable(raw.message)
+    : new Error((raw && raw.message) || 'compiler worker failed');
+  if (raw && raw.stderr) error.stderr = raw.stderr;
+  return error;
+}
+
+function ensureCompilerWorker() {
+  if (compilerWorker) return compilerWorker;
+  const worker = new Worker(new URL('./compile-worker.js', import.meta.url), {
+    type: 'module',
+  });
+  worker.onmessage = (event) => {
+    const message = event.data || {};
+    const pending = compilerPending.get(message.id);
+    if (!pending) return;
+    if (message.type === 'progress') {
+      progress(message.message);
+      return;
+    }
+    if (message.type !== 'result') return;
+    compilerPending.delete(message.id);
+    if (message.ok) {
+      if (message.result && message.result.clang) {
+        clangDescription = message.result.clang;
+      }
+      pending.resolve(message.result);
+    } else {
+      pending.reject(compilerError(message.error));
+    }
+  };
+  worker.onerror = (event) => {
+    const error = new Error(event.message || 'compiler worker failed');
+    for (const pending of compilerPending.values()) pending.reject(error);
+    compilerPending.clear();
+    if (compilerWorker === worker) compilerWorker = null;
+  };
+  compilerWorker = worker;
+  return worker;
+}
+
+async function callCompiler(action, payload = {}) {
+  if (compilerIdleTimer) clearTimeout(compilerIdleTimer);
+  compilerIdleTimer = null;
+  const worker = ensureCompilerWorker();
+  const id = ++compilerRequest;
+  const result = await new Promise((resolve, reject) => {
+    compilerPending.set(id, { resolve, reject });
+    worker.postMessage(Object.assign({
+      id, action, config: clangConfig,
+    }, payload));
+  });
+  compilerIdleTimer = setTimeout(disposeCompilerWorker, COMPILER_IDLE_MS);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,25 +173,16 @@ import qm.browser as qmb
 }
 
 async function boot(config) {
-  // These three runtimes are independent. Starting the compiler and the
-  // minimized VM only after Python was ready made cold start their sum; Run
-  // cannot be enabled before all of them are useful anyway.
+  // Boot only the engine needed to classify and minimize a paste.  The
+  // compiler reserves the dominant working set and vm.wasm reserves 32 MiB of
+  // linear memory; neither belongs in the initial resident set.  C compilation
+  // starts clang on demand, and an executable artifact starts the VM on demand.
+  clangConfig = config;
   clang = new ClangDriver(config);
-  const compilerWarm = clang.load(progress).catch((err) => {
-    post('notice', { message: `Clang: ${err.message}` });
-    return null;
-  });
-  const vmWarm = loadVm().catch((err) => {
-    post('notice', { message: `VM: ${err.message}` });
-    return null;
-  });
-  const pythonWarm = loadPyodide_();
-
-  pyodide = await pythonWarm;
+  pyodide = await loadPyodide_();
   await installPackage();
-  await Promise.all([compilerWarm, vmWarm]);
   const capabilities = JSON.parse(pyodide.runPython('qmb.capabilities()'));
-  post('ready', { capabilities, clang: clang.describe() });
+  post('ready', { capabilities, clang: describeClang() });
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +201,7 @@ function callPython(fn, args) {
 }
 
 async function solve(request) {
+  disposeExecutionWorker();
   const options = request.options;
   const optionsJson = JSON.stringify(options || {});
 
@@ -200,8 +274,8 @@ async function solve(request) {
       output_bits: compiled.plan.output_bits,
       signature: compiled.plan.signature,
       other_functions: compiled.plan.other_functions,
-      compile: { opt: ORACLE_OPT, toolchain: clang.describe().title },
-      toolchain: clang.describe(),
+      compile: { opt: ORACLE_OPT, toolchain: describeClang().title },
+      toolchain: describeClang(),
     }));
     const result = JSON.parse(callPython('finish', [source, enriched,
                                                     compiled.table, '']));
@@ -237,11 +311,26 @@ function base64Bytes(bytes) {
   return btoa(binary);
 }
 
+function normalizeCompiledWasm(wasm, label) {
+  const normalized = JSON.parse(callPython('normalize_wasm', [base64Bytes(wasm)]));
+  if (!normalized.ok) throw new Error(`${label}: ${normalized.error}`);
+  if (normalized.replaced) {
+    progress(
+      `QM ${label}: ${normalized.replaced} wasm bodies, `
+      + `${normalized.saved_body_bytes} bytes removed…`,
+    );
+  }
+  return decodeArtifact(normalized.wasm);
+}
+
 async function analyzeCompiledMain(source, optionsJson) {
   try {
     progress('compiling main to an explicit wasm state machine…');
     const prepared = callPython('prepare_state', [source || '']);
-    const wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
+    const compiled = await callCompiler('wasm', {
+      source: prepared, opt: ORACLE_OPT,
+    });
+    const wasm = normalizeCompiledWasm(compiled.wasm, 'main state machine');
     progress('closing the reachable main/VM states…');
     const report = JSON.parse(callPython(
       'stateful_wasm', [base64Bytes(wasm), 'main', optionsJson],
@@ -282,10 +371,11 @@ async function compileWithClang(source, options, optionsJson) {
   // text over is what made QM's own `_pdep_u64` output fail to compile.
   const prepared = callPython('prepare', [source]);
 
-  await clang.load(progress);
-
   progress(`clang ${ORACLE_OPT} → wasm32…`);
-  const wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
+  const compiled = await callCompiler('wasm', {
+    source: prepared, opt: ORACLE_OPT,
+  });
+  const wasm = normalizeCompiledWasm(compiled.wasm, 'kernel oracle');
 
   progress(`executing ${plan.values.length.toLocaleString()} inputs…`);
   const table = await evaluateWasm(
@@ -309,7 +399,108 @@ async function compileWithClang(source, options, optionsJson) {
 // `-nostdlib`, so the other two imports are one byte in and one byte out.
 // ---------------------------------------------------------------------------
 
-const EXEC_LIMIT = 1 << 20;     // bytes of stdout before the program is cut off
+const RUNNER_IDLE_MS = 15_000;
+let executionWorker = null;
+let executionIdleTimer = null;
+let executionRequest = 0;
+let executionReady = null;
+let executionReadyResolve = null;
+const executionPending = new Map();
+
+function disposeExecutionWorker() {
+  if (executionIdleTimer) clearTimeout(executionIdleTimer);
+  executionIdleTimer = null;
+  if (executionWorker) executionWorker.terminate();
+  executionWorker = null;
+  if (executionReadyResolve) executionReadyResolve();
+  executionReady = null;
+  executionReadyResolve = null;
+  for (const pending of executionPending.values()) {
+    pending.resolve({ ok: false, error: 'execution worker was released' });
+  }
+  executionPending.clear();
+}
+
+function ensureExecutionWorker() {
+  if (executionWorker) return executionWorker;
+  const worker = new Worker(new URL('./run-worker.js', import.meta.url), {
+    type: 'module',
+  });
+  executionReady = new Promise((resolve) => {
+    executionReadyResolve = resolve;
+  });
+  worker.onmessage = (event) => {
+    const message = event.data || {};
+    if (message.type === 'ready') {
+      if (executionWorker === worker && executionReadyResolve) {
+        executionReadyResolve();
+        executionReadyResolve = null;
+      }
+      return;
+    }
+    const pending = executionPending.get(message.id);
+    if (!pending) return;
+    executionPending.delete(message.id);
+    pending.resolve(message.result);
+  };
+  worker.onerror = (event) => {
+    const error = event.message || 'execution worker failed';
+    for (const pending of executionPending.values()) {
+      pending.resolve({ ok: false, error });
+    }
+    executionPending.clear();
+    if (executionWorker === worker) {
+      executionWorker = null;
+      if (executionReadyResolve) executionReadyResolve();
+      executionReady = null;
+      executionReadyResolve = null;
+    }
+  };
+  executionWorker = worker;
+  return worker;
+}
+
+async function primeExecutionWorker() {
+  const worker = ensureExecutionWorker();
+  const ready = executionReady;
+  await ready;
+  if (executionWorker !== worker) {
+    throw new Error('execution standby failed to start');
+  }
+}
+
+function releaseExecutionMemory() {
+  // Termination is the deterministic way to release WebAssembly.Memory. Keep
+  // only an empty module Worker warm afterwards; it has imported the tiny JS
+  // wrappers but has not instantiated vm.wasm.
+  disposeExecutionWorker();
+  ensureExecutionWorker();
+}
+
+async function runInExecutionWorker(payload) {
+  const started = performance.now();
+  if (executionIdleTimer) clearTimeout(executionIdleTimer);
+  const worker = ensureExecutionWorker();
+  const ready = executionReady;
+  await ready;
+  if (executionWorker !== worker) {
+    return {
+      ok: false,
+      error: 'execution worker failed to start',
+      total_ms: performance.now() - started,
+    };
+  }
+  const id = ++executionRequest;
+  const result = await new Promise((resolve) => {
+    executionPending.set(id, { resolve });
+    worker.postMessage(Object.assign({ id, type: 'exec' }, payload));
+  });
+  executionIdleTimer = setTimeout(releaseExecutionMemory, RUNNER_IDLE_MS);
+  if (result && typeof result === 'object') {
+    result.total_ms = performance.now() - started;
+  }
+  return result;
+}
 
 function rememberRun(source, prepared) {
   runCache.delete(source);
@@ -325,7 +516,7 @@ function standaloneMainResult(scalarError) {
     standalone_main: true,
     scalar_error: scalarError || null,
     frontend: {
-      frontend: { title: clang.describe().title },
+      frontend: { title: describeClang().title },
       function: { name: 'main', signature: 'main' },
       other_functions: [],
     },
@@ -342,9 +533,12 @@ async function prepareStandaloneMain(source) {
   try {
     progress('compiling main to wasm…');
     const prepared = callPython('prepare_state', [source || '']);
-    await clang.load(progress);
-    const wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
+    const compiled = await callCompiler('wasm', {
+      source: prepared, opt: ORACLE_OPT,
+    });
+    const wasm = normalizeCompiledWasm(compiled.wasm, 'standalone main');
     rememberRun(source, { wasm, plan: null, artifact: null });
+    await primeExecutionWorker();
     return true;
   } catch (err) {
     if (err && err.stderr) post('compile-error', { stderr: err.stderr });
@@ -359,8 +553,10 @@ async function prepareRunSnapshot(source) {
   try {
     progress('preparing Run from the minimized artifact…');
     const driver = callPython('prepare_run', [source || '']);
-    await clang.load(progress);
-    const wasm = await clang.wasm(driver, { opt: ORACLE_OPT }, progress);
+    const compiled = await callCompiler('wasm', {
+      source: driver, opt: ORACLE_OPT,
+    });
+    const wasm = normalizeCompiledWasm(compiled.wasm, 'Run driver');
 
     // Read these while this solve still owns qmb's exact minimized result.
     // A later solve in another tab must not replace this Run snapshot.
@@ -371,8 +567,12 @@ async function prepareRunSnapshot(source) {
       throw new Error(typeof error === 'string' ? error : error.message);
     }
     const artifact = decodeArtifact(built.artifact);
-    await loadVm();
-    rememberRun(source, { wasm, plan, artifact });
+    // Keep only compiled VM code in the analysis worker. A WebAssembly.Module
+    // is cheaply cloned into each runner; its 32 MiB linear memory still
+    // belongs exclusively to that disposable child Worker.
+    const vmModule = await compileVm();
+    rememberRun(source, { wasm, plan, artifact, vmModule });
+    await primeExecutionWorker();
     return true;
   } catch (err) {
     const message = (err && err.stderr)
@@ -383,7 +583,6 @@ async function prepareRunSnapshot(source) {
 }
 
 async function execMain(msg) {
-  const prepareStarted = performance.now();
   const prepared = runCache.get(msg.source || '');
   if (!prepared) {
     return {
@@ -393,57 +592,15 @@ async function execMain(msg) {
     };
   }
   rememberRun(msg.source || '', prepared);
-  const { wasm, plan, artifact } = prepared;
-
-  const stdin = new TextEncoder().encode(msg.stdin == null ? '' : msg.stdin);
-  const out = [];
-  let at = 0;
-  let overflowed = false;
-  const env = {
-    qm_getchar: () => (at < stdin.length ? stdin[at++] : -1),
-    qm_putchar: (c) => {
-      if (out.length >= EXEC_LIMIT) { overflowed = true; return; }
-      out.push(c & 255);
-    },
-  };
-  let evaluator;
-  try {
-    if (plan && artifact) {
-      if (activeVmSource === (msg.source || '') && prepared.evaluator) {
-        evaluator = prepared.evaluator;
-      } else {
-        evaluator = await prepareEvaluator(artifact, plan);
-        prepared.evaluator = evaluator;
-        activeVmSource = msg.source || '';
-      }
-      // A WebAssembly export is itself a valid import. The driver has no
-      // kernel body, so every call now stays wasm-to-wasm inside the prepared
-      // VM.
-      env[plan.function] = evaluator.fn;
-    }
-    const callsBefore = evaluator ? evaluator.calls() : 0;
-    const runStarted = performance.now();
-    const { instance } = await WebAssembly.instantiate(wasm, { env });
-    if (typeof instance.exports.main !== 'function') {
-      return { ok: false, error: 'the paste defines no main to run' };
-    }
-    const code = instance.exports.main();
-    if (evaluator && !evaluator.ok()) {
-      prepared.evaluator = null;
-      activeVmSource = null;
-      return { ok: false, error: 'the minimized artifact refused an input' };
-    }
-    const text = new TextDecoder().decode(new Uint8Array(out))
-      + (overflowed ? '\n[output truncated]\n' : '');
-    return {
-      ok: true, stdout: text, code: Number(code) || 0,
-      ran: evaluator ? evaluator.calls() - callsBefore : 0,
-      elapsed_ms: performance.now() - runStarted,
-      prepare_ms: runStarted - prepareStarted,
-    };
-  } catch (err) {
-    return { ok: false, error: String((err && err.message) || err) };
-  }
+  const { wasm, plan, artifact, vmModule } = prepared;
+  return runInExecutionWorker({
+    source: msg.source || '',
+    stdin: msg.stdin == null ? '' : msg.stdin,
+    wasm,
+    plan,
+    artifact,
+    vmModule,
+  });
 }
 
 
@@ -465,8 +622,8 @@ self.onmessage = async (event) => {
       );
       post('state-machine', { result });
     } else if (msg.type === 'load-clang') {
-      await clang.load(progress);
-      post('clang-state', { clang: clang.describe() });
+      const result = await callCompiler('load');
+      post('clang-state', { clang: result.clang || describeClang() });
     }
   } catch (err) {
     post('fatal', {

@@ -133,6 +133,38 @@ class TestTheVmCanBeQuotientCompiled(unittest.TestCase):
         self.assertEqual(report['outputs']['kind'], 'affine')
         self.assertEqual(report['storage_cells'], 5)
 
+    def test_the_complete_byte_future_is_a_direct_cache_coordinate(self):
+        projection = self.compiled.direct_byte_projection()
+        self.assertIsNotNone(projection)
+        self.assertEqual(projection.initial, 0)
+        for history in ((), (7,), (1, 2, 3), (255, 0, 19)):
+            state = projection.state(history)
+            expected, _output = self.compiled.run(history)
+            self.assertEqual(state, expected)
+
+        # Any value proved invariant on the quotient can use the final byte as
+        # its direct slot. There is no history hash and no transition table.
+        cache = projection.cache(
+            self.compiled.out(state) ** 2
+            for state in range(self.compiled.classes)
+        )
+        self.assertEqual(cache.run((4, 9)), (9, 81))
+        self.assertEqual(cache.step(9, 255), 255)
+        layout = cache.to_dict()
+        self.assertEqual(layout['resume_bytes'], 1)
+        self.assertEqual(layout['transition_storage_cells'], 0)
+        self.assertEqual(layout['value_slots'], 256)
+
+    def test_a_general_finite_machine_is_not_called_a_byte_cache(self):
+        compiled = compile_transducer(
+            0,
+            lambda state, byte: (state + byte) & 255,
+            lambda state: state,
+            alphabet=range(256),
+            max_states=256,
+        )
+        self.assertIsNone(compiled.direct_byte_projection())
+
     def test_independently_opened_echoes_have_the_same_complete_future(self):
         from tests.test_vm import ECHO
         self.assertTrue(same_future(self.start, machine.Residual(ECHO),

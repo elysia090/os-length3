@@ -15,6 +15,8 @@ any layer can be read on its own.
    asmfront/  x86oracle       x86-64/wasm32 fast readers; native x86 fallback
    wasmstate  wasmvm          linked wasm -> clonable whole-program/VM state
    wasmphysical              wasm code/state coordinates -> physical arrays
+   wasmcodec  seqcodec        mapped span/work pages for wasm slices / QM SSA
+   wavearchive                coordinate directory over disposable pages
    wasmbinary                 large wasm -> closed function-local QM
    frontend                   registry: clang · precompiled · cfront · asm
 4  solvers   isa              Stage-2 search; ISA profiles and lowering
@@ -39,16 +41,17 @@ x86-64 / wasm32 listing-+
 C is a browser frontend, not another execution backend. A pasted `main` is
 removed before the selected scalar kernel enters this path. Once the kernel's
 codec artifact exists, the browser compiles the same source snapshot's `main`
-to an import-only wasm32 driver and preloads the VM. Run remains disabled until
-that exact tuple `(source, artifact, driver, VM)` is ready, then only
-instantiates it. An edit invalidates the tuple; another tab's later solve
-cannot replace it because the worker cache is keyed by the complete source.
+to an import-only wasm32 driver. Run remains disabled until that exact tuple
+`(source, artifact, driver)` is ready. The VM itself is loaded only inside a
+disposable execution Worker when Run is pressed. An edit invalidates the
+tuple; another tab's later solve cannot replace it because the worker cache is
+keyed by the complete source.
 
 Automatic compilation is therefore the executable function-level analysis,
 not a preview that Run repeats. The driver contains no selected kernel body:
-its import is answered by a wasm export of the already loaded codec VM, so
-kernel calls do not cross JavaScript. Codec compilation never consumes C
-directly.
+its import is answered by a wasm export of the codec VM in the same execution
+Worker, so kernel calls do not cross JavaScript. Codec compilation never
+consumes C directly.
 
 A translation unit may contain `main` without a separate scalar kernel. That
 is still a runnable program: the browser compiles the complete unit to wasm and
@@ -56,10 +59,13 @@ prepares Run without inventing a scalar quotient or demanding a particular C
 function signature. Input that has no scalar entry and no `main` is an idle
 editor state, not a C-specific diagnostic.
 
-Cold startup begins the compiler core, codec VM and Python/QM runtime together.
-They have no data dependency before source analysis, so making their downloads
-and wasm compilation a serial chain only delays the first valid Run tuple.
-Readiness still waits for all three and the button remains inert until then.
+Cold startup loads only Python/QM. C source creates a compiler Worker on demand;
+Run uses a separate execution Worker. After 15 seconds idle the compiler Worker
+is terminated. The execution Worker is also terminated, releasing its VM linear
+memory, then replaced by an empty standby that has not instantiated `vm.wasm`.
+This keeps Worker startup off the next Run without retaining the 32 MiB VM
+memory. The parent retains only rebuildable inputs: source, the small compiled
+driver, the canonical artifact, its precompiled 8 KiB VM module, and its plan.
 
 The VM export keeps an exact result cache for scalar domains through 16 bits.
 For the stronger byte-register form it first checks all 256 byte observations;
@@ -100,6 +106,15 @@ states close to 256 future classes, while its build representation reduces the
 square transition relation to five stored coefficients: affine output,
 constant row selection and affine byte projection.
 
+The completed quotient is also checked for the stronger direct-cache shape:
+the alphabet is all 256 bytes, one byte reaches each of the 256 classes, and
+every class has the same successor row. Only after all three hold can the last
+byte replace a general state identity. The resume token is then one byte,
+`next(_state, byte) = byte` has no stored transition table, and any value proved
+invariant on that quotient can occupy a direct 256-slot cache. A general finite
+machine does not inherit this representation merely because its state count is
+small.
+
 `qm.vmquotient` applies that construction to an opened VM residual and gives a
 canonical complete-future key for comparing candidate artifacts. The quotient,
 class table, coordinate maps and closure states are proof data. They are not
@@ -137,16 +152,31 @@ slot, so it has no lane order, atomic update, or reduction. Work is the number
 of live nodes and span is the number of waves. Memory effects, calls, and
 control transfers end a slice and form explicit barriers between waves.
 
+`qm.seqcodec` (`QMS1`) and `qm.wasmcodec` (`QMW1`) materialize those schedules
+as fixed-vocabulary, structure-of-arrays pages. Columns and payloads are
+8-byte aligned and mapped through `memoryview`; executing a page reads the
+selected columns without rebuilding the SSA object graph. The target grammar
+is part of a QMS1 page, so `ranks8` has span 2 for BMI2 (`PDEP`, `IMUL`) and
+span 6 for the portable wasm32 representation rather than one unnamed cost.
+`qm.wavearchive` (`QMA1`) keeps a canonical coordinate-ordered directory over
+independent pages. Lookup searches that resident directory directly—there is
+no duplicate hash index—and only the selected inner codec is validated and
+opened. This packed form is also a range-readable model for storing its pages
+as separate OPFS objects.
+
 `qm.wasmvm` opens a canonical artifact through the real `vm_buffer` and
 `vm_load` exports, then uses that retained wasm memory as the state of
-`vm_feed(byte)` and the source of `vm_read()`. The 32 MiB reservation is an
-immutable shared base with 256-byte copy-on-write pages, so a store no longer
-copies the reservation. At load time, `vm.wasm` also checks whether feed can
-change only the input cell and exhaustively runs the ordinary transactional
-reader over all 256 byte values. When that complete check proves a byte
-register, its state step is substituted as `next(state, byte) = byte`; the
-future quotient stores five affine/constant coefficients rather than a
-256-by-256 table. Other artifacts keep the generic transactional engine.
+`vm_feed(byte)` and the source of `vm_read()`. In the Python state frontend the
+32 MiB minimum is a logical zero-filled address range, not a resident bytes
+object: only data and changed 256-byte pages are retained. In the browser the
+native linear memory belongs to the disposable execution Worker, so terminating
+that Worker releases the reservation. At load time, `vm.wasm` also checks
+whether feed can change only the input cell and exhaustively runs the ordinary
+transactional reader over all 256 byte values. When that complete check proves
+a byte register, its state step is substituted as
+`next(state, byte) = byte`; the future quotient stores five affine/constant
+coefficients rather than a 256-by-256 table. Other artifacts keep the generic
+transactional engine.
 
 Large tool modules use a narrower boundary. `qm.wasmbinary` indexes the code
 section without expanding a complete module into Python objects, then admits
@@ -157,15 +187,17 @@ body bytes decrease. This is the path used for YoWASP's `llvm.core.wasm`;
 WASI arguments, clocks, random input and virtual files remain explicit host
 state and are never treated as constants.
 
-The browser enters that core directly. `web/drivers/compiler-core.js` lazily
-fetches the version-pinned compiler module and resource tar in parallel and
-checks their digests. `web/wasi-preview1.js` supplies exactly the 29 imported
-Preview 1 operations over an in-memory filesystem. Clang first prints its cc1
-and linker plan with `-###`; fresh instances of the same multi-call core execute
-those steps. The generated package wrapper and the three component adapters do
-not participate. The compiler artifact URL is configurable, so a normalized
-and QM-processed `compiler.wasm` can replace the raw upstream core without
-changing the frontend contract.
+The browser enters that core directly, but only inside `compile-worker.js`.
+`web/drivers/compiler-core.js` lazily fetches the version-pinned compiler module
+and resource tar in parallel and checks their digests. `web/wasi-preview1.js`
+supplies exactly the 29 imported Preview 1 operations over an in-memory
+filesystem. Clang first prints its cc1 and linker plan with `-###`; fresh
+instances of the same multi-call core execute those steps. The generated
+package wrapper and the three component adapters do not participate. The
+Worker returns an exact-sized compiled wasm buffer and can then be terminated
+with the LLVM memories and resource filesystem still inside it. The compiler
+artifact URL is configurable, so a normalized and QM-processed `compiler.wasm`
+can replace the raw upstream core without changing the frontend contract.
 
 ## The frontend boundary
 

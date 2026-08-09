@@ -23,7 +23,7 @@ CONST_BITS = 64
 # Stable opcode numbering for the description code.  Order is arbitrary but
 # must not change without bumping OBJECTIVE_VERSION, since it decides which of
 # two otherwise-tied programs is canonical.
-_OPCODE = dict((name, index + 1) for index, name in enumerate([
+OPCODES = (
     'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'IMUL', 'CLMUL', 'AND', 'OR',
     'XOR', 'ADD', 'SUB', 'NOT', 'SHL', 'SHR', 'BSWAP', 'POPCNT', 'XORR',
     'ANDR', 'ORR', 'ADDR', 'ANDNR', 'LUT', 'LOOP8', 'SCANXOR',
@@ -31,7 +31,8 @@ _OPCODE = dict((name, index + 1) for index, name in enumerate([
     # canonical rank, so moving one would silently rewrite which of two tied
     # programs is the answer.
     'SAR', 'NEG', 'SUBR', 'CLZ', 'CTZ',
-]))
+)
+_OPCODE = dict((name, index + 1) for index, name in enumerate(OPCODES))
 
 
 class Ins(object):

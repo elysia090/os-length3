@@ -210,6 +210,92 @@ class PhysicalTransitions(object):
         }
 
 
+class DirectByteCache(object):
+    """A value cache over the complete right-zero ``Byte*`` quotient.
+
+    The retained state is the final byte itself. A transition therefore needs
+    neither a hash nor a 256-by-256 table: ``step(_state, byte) == byte``. The
+    value attached to each state is one direct 256-slot coordinate map, which
+    :class:`PhysicalMap` may reduce further when it is constant or affine.
+    """
+
+    __slots__ = ('initial', 'values')
+
+    def __init__(self, initial, values):
+        values = tuple(values)
+        if len(values) != 256:
+            raise ValueError('a direct Byte* cache has exactly 256 slots')
+        if not 0 <= initial < 256:
+            raise ValueError('the initial Byte* token must be one byte')
+        self.initial = int(initial)
+        self.values = PhysicalMap(values)
+
+    @staticmethod
+    def step(_state, byte):
+        if not 0 <= byte < 256:
+            raise ValueError('Byte* transition takes one byte: %r' % byte)
+        return byte
+
+    def lookup(self, state):
+        if not 0 <= state < 256:
+            raise ValueError('Byte* cache token is not one byte: %r' % state)
+        return self.values.at(state)
+
+    def run(self, history, state=None):
+        at = self.initial if state is None else state
+        if not 0 <= at < 256:
+            raise ValueError('Byte* cache token is not one byte: %r' % at)
+        for byte in history:
+            at = self.step(at, byte)
+        return at, self.lookup(at)
+
+    def to_dict(self):
+        return {
+            'domain': 'Byte*',
+            'classes': 256,
+            'resume_bytes': 1,
+            'transition': 'next = byte',
+            'transition_storage_cells': 0,
+            'value_slots': 256,
+            'values': self.values.to_dict(),
+        }
+
+
+class DirectByteProjection(object):
+    """Build-side proof that quotient classes are named by their last byte."""
+
+    __slots__ = ('initial', 'state_by_byte')
+
+    def __init__(self, initial, state_by_byte):
+        state_by_byte = tuple(state_by_byte)
+        if len(state_by_byte) != 256 or len(set(state_by_byte)) != 256:
+            raise ValueError('direct byte projection must biject 256 classes')
+        try:
+            initial_byte = state_by_byte.index(initial)
+        except ValueError:
+            raise ValueError('the initial class has no direct byte token')
+        self.initial = initial_byte
+        self.state_by_byte = state_by_byte
+
+    def state(self, history):
+        at = self.state_by_byte[self.initial]
+        for byte in history:
+            if not 0 <= byte < 256:
+                raise ValueError('Byte* transition takes one byte: %r' % byte)
+            at = self.state_by_byte[byte]
+        return at
+
+    def cache(self, values_by_state):
+        """Materialize one quotient-invariant value per direct byte token."""
+        values_by_state = tuple(values_by_state)
+        if max(self.state_by_byte) >= len(values_by_state):
+            raise ValueError('value map does not cover every quotient class')
+        return DirectByteCache(
+            self.initial,
+            (values_by_state[state] for state in self.state_by_byte),
+        )
+
+
 class QuotientMachine(object):
     """A minimal reachable Moore-machine closure witness.
 
@@ -259,8 +345,28 @@ class QuotientMachine(object):
             at = self.step(at, letter)
         return at, self.out(at)
 
+    def direct_byte_projection(self):
+        """Return the exact last-byte projection, or ``None`` if not proved.
+
+        This checks the completed quotient, not samples: the alphabet must be
+        all bytes, all 256 classes must be reached by one byte, and every class
+        must have that same successor row. Only then may a byte replace a
+        general state identity or a hash key.
+        """
+        if self.alphabet != tuple(range(256)) or self.classes != 256:
+            return None
+        state_by_byte = tuple(
+            self.transitions.at(self.initial, byte) for byte in range(256))
+        if len(set(state_by_byte)) != 256:
+            return None
+        for state in range(self.classes):
+            if any(self.transitions.at(state, byte) != state_by_byte[byte]
+                   for byte in range(256)):
+                return None
+        return DirectByteProjection(self.initial, state_by_byte)
+
     def to_dict(self):
-        return {
+        result = {
             'reachable_states': self.reachable_states,
             'classes': self.classes,
             'alphabet_size': len(self.alphabet),
@@ -272,6 +378,12 @@ class QuotientMachine(object):
                                   + self.transitions.storage_cells),
             },
         }
+        projection = self.direct_byte_projection()
+        if projection is not None:
+            result['direct_byte_cache'] = projection.cache(
+                self.outputs.at(state) for state in range(self.classes)
+            ).to_dict()
+        return result
 
     def semantic_key(self):
         """Canonical complete-future key rooted at the initial class.

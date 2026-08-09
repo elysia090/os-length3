@@ -19,6 +19,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.join(HERE, 'vm.c')
+ROOT = os.path.dirname(os.path.dirname(HERE))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 # -O2 for the same reason the browser compiles the paste at -O2: this is the
 # execution substrate a search runs on, and its constant factor is the search's
@@ -36,6 +39,19 @@ def build(out_path, binary='clang'):
     result = subprocess.run([binary] + FLAGS + [SOURCE, '-o', out_path],
                             capture_output=True, text=True)
     return result
+
+
+def normalize(out_path):
+    """Put the compiled VM through the same safe wasm-body QM as drivers."""
+    from qm.wasmbinary import optimize_module
+
+    with open(out_path, 'rb') as handle:
+        raw = handle.read()
+    optimized, report = optimize_module(raw)
+    if optimized != raw:
+        with open(out_path, 'wb') as handle:
+            handle.write(optimized)
+    return report
 
 
 def main():
@@ -63,12 +79,16 @@ def main():
         sys.stderr.write(result.stderr)
         return 1
 
+    report = normalize(out)
+
     size = os.path.getsize(out)
     if args.check:
         os.unlink(out)
         print('vm.c compiles clean (%d bytes)' % size)
     else:
         print('wrote %s (%d bytes)' % (out, size))
+    print('QM checked %d pure wasm bodies; %d replaced'
+          % (report['decoded_pure_integer_expressions'], report['replaced']))
     return 0
 
 

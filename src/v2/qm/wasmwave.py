@@ -45,6 +45,7 @@ class PureSlice:
     start: int
     end: int
     instructions: int
+    stack_inputs: int
     nodes: tuple
     waves: DependencyWaves
     stack: tuple
@@ -57,6 +58,7 @@ class PureSlice:
             'start_pc': self.start,
             'end_pc': self.end,
             'wasm_instructions': self.instructions,
+            'input_stack_slots': self.stack_inputs,
         })
         return layout
 
@@ -194,6 +196,7 @@ def compile_slice(module, frame):
         offsets.append(len(values))
     waves = DependencyWaves(tuple(offsets), tuple(values), tuple(depths))
     return PureSlice(frame.function, frame.pc, pc, pc - frame.pc,
+                     len(frame.stack),
                      tuple(nodes), waves, tuple(stack), tuple(locals_))
 
 
@@ -241,6 +244,7 @@ class WaveExecutor:
     def __init__(self, module):
         self.module = module
         self.cache = {}
+        self.physical = {}
         self.total_cost = WaveCost()
 
     def plan(self, frame):
@@ -249,18 +253,29 @@ class WaveExecutor:
             self.cache[key] = compile_slice(self.module, frame)
         return self.cache[key]
 
+    def mapped(self, frame):
+        """The disposable codec page for the current pure slice."""
+        from .wasmcodec import pack, unpack
+        key = (frame.function, frame.pc, len(frame.stack))
+        if key not in self.physical:
+            plan = self.plan(frame)
+            self.physical[key] = None if plan is None else unpack(pack(plan))
+        return self.physical[key]
+
     def step(self, state):
         if state.waiting is not None or state.halted:
             return state, WaveCost()
         if not state.frames:
             return instruction_step(self.module, state), WaveCost()
-        plan = self.plan(state.frames[-1])
+        frame = state.frames[-1]
+        plan = self.plan(frame)
         if plan is None:
             return instruction_step(self.module, state), WaveCost(
                 instructions=1, barriers=1)
         widths = [len(plan.waves.wave(depth))
                   for depth in range(1, plan.waves.span + 1)]
-        return execute_slice(plan, state), WaveCost(
+        from .wasmcodec import execute_mapped
+        return execute_mapped(self.mapped(frame), state), WaveCost(
             instructions=plan.instructions,
             work=plan.waves.work,
             span=plan.waves.span,

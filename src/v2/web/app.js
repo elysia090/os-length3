@@ -653,7 +653,8 @@ function termWrite(text, className) {
 
 function runProgram() {
   // Automatic analysis prewarms an exact source snapshot: minimized artifact,
-  // import-only main driver and VM. Run only instantiates that snapshot.
+  // import-only main driver and compiled VM code. The VM's large linear memory
+  // is still created only in the disposable execution Worker.
   const tab = activeTab();
   if (state.busy || state.pending || !state.ready || !tab
       || tab.dirty || !tab.hasMain || !tab.runReady) return;
@@ -689,7 +690,7 @@ function showRunResult(result) {
     return;
   }
   if (result.stdout) termWrite(result.stdout);
-  const elapsed = formatElapsed(result.elapsed_ms);
+  const elapsed = formatElapsed(result.total_ms ?? result.elapsed_ms);
   // Keep the artifact fact, but make completion and elapsed wall time the
   // stable line instead of exposing a process-like exit record for success.
   const via = result.ran

@@ -1,11 +1,14 @@
 """Dependency-wave execution between exact WebAssembly barriers."""
 
 import base64
+from dataclasses import replace
 import json
 import unittest
 
 from qm.wasmstate import decode_module, run_until_boundary, start_state
-from qm.wasmwave import WaveExecutor, is_barrier
+from qm.wasmcodec import (decode_plan, execute_mapped, pack, unpack,
+                          WaveCodecError)
+from qm.wasmwave import WaveExecutor, execute_slice, is_barrier
 from tests.test_wasmbinary import module
 
 
@@ -35,6 +38,51 @@ class TestWaveExecutor(unittest.TestCase):
             'barriers': 0,
             'max_parallel_width': 2,
         })
+
+    def test_slice_codec_is_segmented_mmap_data(self):
+        body = (b'\x00\x20\x00\x41\xff\x01\x71'
+                b'\x20\x00\x41\xd5\x00\x73\x6a\x0b')
+        decoded = decode_module(module(body, kind=0x7f))
+        initial = start_state(decoded, 'f', (0x1234,))
+        plan = WaveExecutor(decoded).plan(initial.frames[-1])
+
+        blob = pack(plan)
+        mapped = unpack(memoryview(blob))
+        self.assertIs(mapped.data.obj, blob)
+        self.assertEqual(mapped.wave(1), (1, 2))
+        self.assertEqual(mapped.wave(2), (3,))
+        self.assertEqual(mapped.layout()['slice_region'], [0, 7])
+        self.assertEqual(mapped.layout()['wave_widths'], [2, 1])
+        self.assertTrue(all(column['offset'] % 8 == 0
+                            for column in mapped.layout()['columns'].values()))
+
+        restored = decode_plan(mapped)
+        self.assertEqual(restored.layout(), plan.layout())
+        self.assertEqual(execute_slice(restored, initial),
+                         execute_slice(plan, initial))
+        self.assertEqual(execute_mapped(mapped, initial),
+                         execute_slice(plan, initial))
+
+    def test_slice_codec_rejects_a_second_encoding(self):
+        body = b'\x00\x20\x00\x41\x01\x6a\x0b'
+        decoded = decode_module(module(body, kind=0x7f))
+        initial = start_state(decoded, 'f', (2,))
+        blob = bytearray(pack(WaveExecutor(decoded).plan(initial.frames[-1])))
+        blob.extend(b'\0')
+        with self.assertRaises(WaveCodecError):
+            unpack(blob)
+
+    def test_slice_codec_preserves_dropped_input_stack_extent(self):
+        body = b'\x00\x1a\x1a\x41\x01\x0b'
+        decoded = decode_module(module(body, kind=0x7f))
+        initial = start_state(decoded, 'f', (0,))
+        frame = replace(initial.frames[-1], stack=(23, 41))
+        plan = WaveExecutor(decoded).plan(frame)
+
+        self.assertEqual(plan.stack_inputs, 2)
+        self.assertEqual([(value.kind, value.value) for value in plan.stack],
+                         [('const', 1)])
+        self.assertEqual(unpack(pack(plan)).stack_inputs, 2)
 
     def test_local_writes_are_renamed_and_committed_at_slice_end(self):
         # local 1 = x + 1; return x * 2 + local 1.
