@@ -34,6 +34,40 @@ export async function load() {
 }
 
 /**
+ * Bind one minimized artifact to the VM's scalar-kernel ABI.
+ *
+ * The returned function is a WebAssembly export. Passing it as the driver's
+ * kernel import keeps calls inside wasm; JavaScript is not on the per-byte or
+ * per-kernel path. `vm_prepare_eval` also enables the VM's exact finite-domain
+ * cache (and its stronger right-zero Byte* form when proved at load time).
+ */
+export async function prepareEvaluator(artifact, plan) {
+  const loaded = await load();
+  const E = loaded.exports;
+  const memory = new Uint8Array(E.memory.buffer);
+  memory.set(artifact, E.vm_buffer());
+  if (!E.vm_prepare_eval(
+    artifact.length, plan.input_bits, plan.in_bytes, plan.out_bytes,
+  )) {
+    if (E.vm_table_full && E.vm_table_full()) {
+      throw new Error('the image is larger than this machine has room for');
+    }
+    throw new Error('the artifact did not open as a canonical image');
+  }
+
+  const input = plan.input_bits > 32 ? 'i64' : 'i32';
+  const output = plan.output_bits > 32 ? 'i64' : 'i32';
+  const fn = E[`vm_eval_${input}_${output}`];
+  if (typeof fn !== 'function') throw new Error('the VM has no matching kernel ABI');
+  return {
+    fn,
+    calls: () => Number(E.vm_eval_calls()),
+    misses: () => Number(E.vm_eval_misses()),
+    ok: () => Boolean(E.vm_eval_ok()),
+  };
+}
+
+/**
  * Evaluate a kernel-shaped artifact on one input.
  *
  * The framing is the one `vm/lower.py` writes: the input little-endian, then

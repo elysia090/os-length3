@@ -575,6 +575,13 @@ def _lower_word_seq(seq, input_bits, output_bits):
         low, compute, input_bits, output_bits)
 
 
+def _fits_runtime_i64(picture):
+    """Whether the production wasm VM can represent every physical cell."""
+    low = -(1 << 63)
+    high = 1 << 63
+    return all(low <= value < high for value in picture.memory.values())
+
+
 _SELECTION = {}
 
 
@@ -610,10 +617,10 @@ def lower_seq(seq, input_bits, output_bits):
     if selected == 'bits':
         return _lower_bit_seq(seq, input_bits, output_bits)
 
-    candidates = [
-        ('bits', _lower_bit_seq(seq, input_bits, output_bits)),
-        ('word', _lower_word_seq(seq, input_bits, output_bits)),
-    ]
+    candidates = [('bits', _lower_bit_seq(seq, input_bits, output_bits))]
+    word = _lower_word_seq(seq, input_bits, output_bits)
+    if _fits_runtime_i64(word):
+        candidates.append(('word', word))
     selected, picture = planner.choose(candidates, input_bits, output_bits)
     _SELECTION[key] = selected
     return picture

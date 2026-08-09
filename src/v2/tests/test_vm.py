@@ -356,6 +356,21 @@ class TestWasmAgreesWithTheReference(unittest.TestCase):
         self.assertEqual(self.drive(ops)[2:],
                          [{'read': 200}] * 20)
 
+    def test_kernel_abi_stays_in_wasm_and_caches_the_complete_byte_domain(self):
+        blob = artifact(ECHO)
+        out = self.drive([
+            {'op': 'prepare', 'bytes': list(blob),
+             'input_bits': 8, 'input_bytes': 1, 'output_bytes': 1},
+            {'op': 'eval32', 'value': 42},
+            {'op': 'eval32', 'value': 255},
+            {'op': 'eval32', 'value': 42},
+            {'op': 'eval_stats'},
+        ])
+        self.assertEqual(out[:4], [
+            {'prepare': 1}, {'eval': 42}, {'eval': 255}, {'eval': 42},
+        ])
+        self.assertEqual(out[4], {'calls': 3, 'misses': 2, 'ok': 1})
+
     def test_the_wasm_reports_a_budget_it_could_not_finish(self):
         # Not a byte and not a failure: the caller is told the run is
         # unfinished, which is the only honest thing to say about it.
@@ -401,6 +416,15 @@ for (const step of job.ops) {
     out.push({ read: E.vm_read() });
   } else if (step.op === 'feed') {
     out.push({ feed: E.vm_feed(step.byte) });
+  } else if (step.op === 'prepare') {
+    mem.set(step.bytes, E.vm_buffer());
+    out.push({ prepare: E.vm_prepare_eval(
+      step.bytes.length, step.input_bits, step.input_bytes, step.output_bytes) });
+  } else if (step.op === 'eval32') {
+    out.push({ eval: E.vm_eval_i32_i32(step.value) >>> 0 });
+  } else if (step.op === 'eval_stats') {
+    out.push({ calls: E.vm_eval_calls(), misses: E.vm_eval_misses(),
+               ok: E.vm_eval_ok() });
   } else if (step.op === 'budget') {
     E.vm_set_budget(0, step.value);
   } else if (step.op === 'flags') {

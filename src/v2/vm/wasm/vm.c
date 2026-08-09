@@ -139,84 +139,26 @@ static u32 bit_next(void)
     return (bits_base[i >> 3] >> (7u - (u32)(i & 7u))) & 1u;
 }
 
-/* The next 64 bits from `at`, most significant first, zero-filled past the
- * end.  Reading a word and counting its leading zeros is the whole reason
- * `decode_scalar` below is not a loop over bits: `E(n)` announces its own
- * width with a zero run, and a zero run is what `clz` measures. */
-static u64 bits_window(u64 at)
-{
-    u64 bytes = (bits_len + 7u) >> 3;
-    u64 base = at >> 3;
-    u32 skew = (u32)(at & 7u);
-
-    u64 word;
-    if (base + 9u <= bytes) {
-        /* The common case by far: nine bytes are in reach, so this is one
-         * unaligned load rather than nine bounds-checked ones. */
-        __builtin_memcpy(&word, bits_base + base, 8);
-        word = __builtin_bswap64(word);
-        if (!skew) return word;
-        return (word << skew) | ((u64)bits_base[base + 8u] >> (8u - skew));
-    }
-    word = 0;
-    for (u32 i = 0; i < 8u; ++i) {
-        u64 j = base + i;
-        word = (word << 8) | (u64)(j < bytes ? bits_base[j] : 0u);
-    }
-    if (!skew) return word;
-    /* Nine bytes do not fit in one, so the ninth is folded in separately
-     * rather than shifted through the accumulator and off the top. */
-    u64 j = base + 8u;
-    u64 extra = (u64)(j < bytes ? bits_base[j] : 0u);
-    return (word << skew) | (extra >> (8u - skew));
-}
-
 static u64 decode_scalar(void)
 {
-    if (bits_bad) return 0;
-    if (bits_at >= bits_len) { bits_bad = 1; return 0; }
+    if (bits_bad || bits_at >= bits_len) { bits_bad = 1; return 0; }
+    if (!bit_next()) return 0;                         /* E(0) */
 
-    u64 window = bits_window(bits_at);
-    if (!(window >> 63)) { bits_at += 1; return 0; }   /* E(0) */
-
-    /* `window` is 1 || 0^k || 1 || (k-1 more bits).  The zero run is what
-     * announces the width, so counting it is one `clz` on the word with the
-     * leading 1 removed, and the payload is the next k+1 bits.  Running out
-     * here is malformed, not a short word: `1` alone is not E(1), and
-     * accepting it would make this disagree with the reference about which
-     * artifacts are dead. */
-    /* `rest` holds the 63 bits after the lead, so its leading zeros are the
-     * run.  All 63 being zero does not yet mean the word is malformed: the
-     * bit that ends the run may be the very next one, which is `k == 63` --
-     * the widest word an i64 value can have, and the one the overflow test
-     * builds.  Only a run that continues past it is too wide. */
-    u64 rest = window << 1;
-    u32 k;
-    if (rest == 0) {
-        if (bits_at + 64ull >= bits_len) { bits_bad = 1; return 0; }
-        if (!(bits_window(bits_at + 64ull) >> 63)) { bits_bad = 1; return 0; }
-        k = 63u;
-    } else {
-        k = (u32)__builtin_clzll(rest);
+    u32 zeros = 0;
+    for (;;) {
+        if (bits_at >= bits_len || zeros >= 64u) {
+            bits_bad = 1;
+            return 0;
+        }
+        if (bit_next()) break;
+        zeros += 1u;
     }
-    /* 1 for the lead, k for the run, 1 for the bit that ends it, k payload. */
-    u64 width = 1ull + (u64)k + 1ull + (u64)k;
-    if (bits_at + width > bits_len) { bits_bad = 1; return 0; }
 
-    /* The word is 1 || 0^k || 1 || (k more bits), so it is 2k+2 wide and fits
-     * the window already loaded whenever k <= 31 — which is every address and
-     * every value this lowering emits. Taking a second window unconditionally
-     * doubled the loads for the common case; it is needed only when the run
-     * and the payload cannot sit in 64 bits together, which is the 2^62 case
-     * the overflow test builds. */
-    u64 value;
-    if (k <= 31u) {
-        value = (rest << k) >> (63u - k);
-    } else {
-        u64 tail = bits_window(bits_at + 1ull + (u64)k);
-        value = (k == 63u) ? tail : (tail >> (63u - k));
+    u64 value = 1;
+    for (u32 i = 0; i < zeros; ++i) {
+        if (bits_at >= bits_len) { bits_bad = 1; return 0; }
+        value = (value << 1) | (u64)bit_next();
     }
-    bits_at += width;
     return value;
 }
 
@@ -227,6 +169,7 @@ static u64 decode_scalar(void)
 
 static i64 pc_out, pc_feed;
 static int dead = 1;
+static int load_error;
 
 static i64 unzigzag(u64 point)
 {
@@ -255,6 +198,7 @@ EXPORT int vm_load(u32 byte_len)
     overflowed = 0;
     exhausted = 0;
     table_full = 0;
+    load_error = 0;
     direct_byte_state = 0;
     direct_read_steps = 0;
 
@@ -265,14 +209,14 @@ EXPORT int vm_load(u32 byte_len)
 
     /* code(z) = E(|z|) || z, then a shorter-than-byte all-zero pad. */
     u64 payload_bits = decode_scalar();
-    if (bits_bad) return 0;
+    if (bits_bad) { load_error = 1; return 0; }
     u64 payload_start = bits_at;
-    if (payload_start + payload_bits > bits_len) return 0;
+    if (payload_start + payload_bits > bits_len) { load_error = 2; return 0; }
     u64 payload_end = payload_start + payload_bits;
-    if (bits_len - payload_end >= 8) return 0;
+    if (bits_len - payload_end >= 8) { load_error = 3; return 0; }
     for (u64 i = payload_end; i < bits_len; ++i) {
         bits_at = i;
-        if (bit_next()) return 0;                  /* pad is not all zero */
+        if (bit_next()) { load_error = 3; return 0; } /* nonzero pad */
     }
 
     bits_len = payload_end;                        /* the image ends here */
@@ -281,22 +225,28 @@ EXPORT int vm_load(u32 byte_len)
     u64 count = decode_scalar();
     u64 out   = decode_scalar();
     u64 feed  = decode_scalar();
-    if (bits_bad) return 0;
+    if (bits_bad) { load_error = 4; return 0; }
 
     i64 address = -1;
     journaling = 0;
     for (u64 i = 0; i < count; ++i) {
         u64 gap   = decode_scalar();
         u64 point = decode_scalar();
-        if (bits_bad) { journaling = 1; mem_clear(); return 0; }
+        if (bits_bad) {
+            load_error = 5; journaling = 1; mem_clear(); return 0;
+        }
         address += 1 + (i64)gap;
         i64 value = unzigzag(point);
         /* no canonical image */
-        if (value == 0) { journaling = 1; mem_clear(); return 0; }
-        if (!mem_set(address, value)) { journaling = 1; mem_clear(); return 0; }
+        if (value == 0) {
+            load_error = 6; journaling = 1; mem_clear(); return 0;
+        }
+        if (!mem_set(address, value)) {
+            load_error = 7; journaling = 1; mem_clear(); return 0;
+        }
     }
     journaling = 1;
-    if (bits_at != bits_len) { mem_clear(); return 0; }
+    if (bits_at != bits_len) { load_error = 8; mem_clear(); return 0; }
 
     journal_begin();                               /* the load is committed */
     pc_out  = (i64)out;
@@ -452,6 +402,104 @@ EXPORT int vm_feed(int byte)
     return R_COMMITTED;
 }
 
+/* --------------------------------------------------------- kernel ABI ---
+ * A minimized scalar kernel is driven as one fixed-width byte history. Keep
+ * that loop in wasm: importing one of these exports into the driver gives the
+ * engine a direct wasm-to-wasm call instead of a JavaScript callback for every
+ * kernel invocation and every byte.
+ *
+ * Up to 16 input bits have a finite domain of at most 65,536 words. The cache
+ * below is exact over that whole domain; tags make changing artifacts O(1).
+ * `direct_byte_state` is stronger: its exhaustive 256-byte proof says every
+ * non-empty history denotes its final byte (one physical transition row), so
+ * Byte* needs no table lookup or replay at all.
+ */
+#define EVAL_CACHE_SIZE (1u << 16)
+static u32 eval_tag[EVAL_CACHE_SIZE];
+static u64 eval_value[EVAL_CACHE_SIZE];
+static u32 eval_epoch = 1;
+static u32 eval_artifact_len;
+static u32 eval_input_bits;
+static u32 eval_input_bytes;
+static u32 eval_output_bytes;
+static u32 eval_calls;
+static u32 eval_misses;
+static int eval_ok;
+static int eval_right_zero;
+
+EXPORT int vm_prepare_eval(u32 byte_len, u32 input_bits,
+                           u32 input_bytes, u32 output_bytes)
+{
+    eval_ok = 0;
+    eval_calls = 0;
+    eval_misses = 0;
+    if (!byte_len || input_bits > 64u || !input_bytes || input_bytes > 8u
+            || !output_bytes || output_bytes > 8u) return 0;
+    eval_artifact_len = byte_len;
+    eval_input_bits = input_bits;
+    eval_input_bytes = input_bytes;
+    eval_output_bytes = output_bytes;
+    eval_epoch += 1u;
+    if (!eval_epoch) {
+        for (u32 i = 0; i < EVAL_CACHE_SIZE; ++i) eval_tag[i] = 0;
+        eval_epoch = 1;
+    }
+    if (!vm_load(byte_len)) return 0;
+    eval_right_zero = direct_byte_state;
+    eval_ok = 1;
+    return 1;
+}
+
+static u64 eval_word(u64 input)
+{
+    eval_calls += 1u;
+    if (!eval_ok) return 0;
+    if (eval_input_bits < 64u) input &= (1ull << eval_input_bits) - 1ull;
+
+    u32 key = (u32)input;
+    int cacheable = eval_input_bits <= 16u;
+    if (cacheable && eval_tag[key] == eval_epoch) return eval_value[key];
+    eval_misses += 1u;
+
+    u64 out = 0;
+    if (eval_right_zero) {
+        /* Every feed is the constant map for its byte. A read gives that byte;
+         * the ABI's zero feeds between later reads select zero. */
+        out = (input >> (8u * (eval_input_bytes - 1u))) & 255u;
+    } else {
+        if (!vm_load(eval_artifact_len)) { eval_ok = 0; return 0; }
+        for (u32 i = 0; i < eval_input_bytes; ++i) {
+            if (vm_feed((int)((input >> (8u * i)) & 255u)) != R_COMMITTED) {
+                eval_ok = 0;
+                return 0;
+            }
+        }
+        for (u32 i = 0; i < eval_output_bytes; ++i) {
+            int byte = vm_read();
+            if (byte < 0) { eval_ok = 0; return 0; }
+            out |= (u64)(u32)byte << (8u * i);
+            if (i + 1u < eval_output_bytes && vm_feed(0) != R_COMMITTED) {
+                eval_ok = 0;
+                return 0;
+            }
+        }
+    }
+
+    if (cacheable) {
+        eval_value[key] = out;
+        eval_tag[key] = eval_epoch;
+    }
+    return out;
+}
+
+EXPORT u32 vm_eval_i32_i32(u32 input) { return (u32)eval_word(input); }
+EXPORT u64 vm_eval_i32_i64(u32 input) { return eval_word((u64)input); }
+EXPORT u32 vm_eval_i64_i32(u64 input) { return (u32)eval_word(input); }
+EXPORT u64 vm_eval_i64_i64(u64 input) { return eval_word(input); }
+EXPORT u32 vm_eval_calls(void) { return eval_calls; }
+EXPORT u32 vm_eval_misses(void) { return eval_misses; }
+EXPORT int vm_eval_ok(void) { return eval_ok; }
+
 EXPORT void vm_set_budget(u32 high, u32 low)
 {
     budget = ((u64)high << 32) | (u64)low;
@@ -463,5 +511,6 @@ EXPORT int vm_overflowed(void) { return overflowed; }
 /* Set when a write had nowhere to go.  That is this module's limit, not a
  * statement about the artifact, and the two must not be reported alike. */
 EXPORT int vm_table_full(void) { return table_full; }
+EXPORT int vm_load_error(void) { return load_error; }
 EXPORT int vm_exhausted(void)  { return exhausted; }
 EXPORT int vm_dead(void)       { return dead; }

@@ -37,20 +37,34 @@ x86-64 / wasm32 listing-+
 ```
 
 C is a browser frontend, not another execution backend. A pasted `main` is
-removed before the selected scalar kernel enters this path. With `main`, Run
-also compiles the complete translation unit to linked wasm32. The lightweight
-binary compiler then makes its program counter, call frames, locals, globals
-and linear memory explicit; imported `qm_getchar` is a state transition and
-`qm_putchar` is an observation. Codec compilation never consumes C directly.
+removed before the selected scalar kernel enters this path. Once the kernel's
+codec artifact exists, the browser compiles the same source snapshot's `main`
+to an import-only wasm32 driver and preloads the VM. Run remains disabled until
+that exact tuple `(source, artifact, driver, VM)` is ready, then only
+instantiates it. An edit invalidates the tuple; another tab's later solve
+cannot replace it because the worker cache is keyed by the complete source.
 
-Run treats automatic compilation as a preview, not as executable state. It
-takes one source snapshot, removes `main` and rebuilds the selected function
-through QM and codec. Only after that succeeds does it compile the same
-snapshot's `main` as a wasm32 driver and bind the function import to the fresh
-artifact. A stale result from an older edit is neither displayed nor run.
+Automatic compilation is therefore the executable function-level analysis,
+not a preview that Run repeats. The driver contains no selected kernel body:
+its import is answered by a wasm export of the already loaded codec VM, so
+kernel calls do not cross JavaScript. Codec compilation never consumes C
+directly.
+
+Cold startup begins the compiler core, codec VM and Python/QM runtime together.
+They have no data dependency before source analysis, so making their downloads
+and wasm compilation a serial chain only delays the first valid Run tuple.
+Readiness still waits for all three and the button remains inert until then.
+
+The VM export keeps an exact result cache for scalar domains through 16 bits.
+For the stronger byte-register form it first checks all 256 byte observations;
+only when they prove the one-row right-zero transition law does every non-empty
+history in `Byte*` reduce to its final byte. That path is a direct state write
+and read in wasm. Other artifacts stay on the transactional VM and are cached
+only by values actually proved by execution.
 
 `main` is not sent through the scalar-function minimizer. It is an environment
-adapter whose loop carries state. Run instead derives the pure interface
+adapter whose loop carries state. Explicit state-machine analysis derives the
+pure interface
 
 ```text
 step(state, input-byte) -> (next-state, output-action)
@@ -61,10 +75,12 @@ If the graph does not close below the declared state limit, the frontend
 refuses; it never treats a bounded prefix as proof. Treating the driver as an
 ordinary scalar function would discard the state and I/O that define it.
 
-Analysis is function-scoped. At present one analysable non-`main` function is
-selected and every other definition is reported as not analysed. A whole-file
-Run therefore means one fresh function artifact plus its driver, not an
-implicit claim that every helper in the translation unit was minimized.
+That potentially large closure is not on the interactive Run path: it is an
+analysis product, not a prerequisite for executing an artifact already proved
+at the scalar boundary. Analysis is function-scoped. At present one analysable
+non-`main` function is selected and every other definition is reported as not
+analysed. A whole-file Run therefore means one prepared function artifact plus
+its driver, not an implicit claim that every helper was minimized.
 
 ## Stateful quotient boundary
 

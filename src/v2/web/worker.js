@@ -9,7 +9,7 @@
 // The UI thread stays responsive because all of this happens here.
 
 import { ClangDriver, ClangUnavailable, evaluateWasm, readConfig } from './clang.js';
-import { decodeArtifact, evaluateLoaded, load as loadVm } from './vm.js';
+import { decodeArtifact, load as loadVm, prepareEvaluator } from './vm.js';
 
 const PYODIDE_VERSIONS = [
   'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
@@ -20,6 +20,9 @@ const PYODIDE_VERSIONS = [
 let pyodide = null;
 let clang = null;
 let manifest = null;
+const runCache = new Map();
+const RUN_CACHE_LIMIT = 8;
+let activeVmSource = null;
 
 function post(type, payload) {
   self.postMessage(Object.assign({ type }, payload || {}));
@@ -88,10 +91,23 @@ import qm.browser as qmb
 }
 
 async function boot(config) {
-  pyodide = await loadPyodide_();
-  await installPackage();
-
+  // These three runtimes are independent. Starting the compiler and the
+  // minimized VM only after Python was ready made cold start their sum; Run
+  // cannot be enabled before all of them are useful anyway.
   clang = new ClangDriver(config);
+  const compilerWarm = clang.load(progress).catch((err) => {
+    post('notice', { message: `Clang: ${err.message}` });
+    return null;
+  });
+  const vmWarm = loadVm().catch((err) => {
+    post('notice', { message: `VM: ${err.message}` });
+    return null;
+  });
+  const pythonWarm = loadPyodide_();
+
+  pyodide = await pythonWarm;
+  await installPackage();
+  await Promise.all([compilerWarm, vmWarm]);
   const capabilities = JSON.parse(pyodide.runPython('qmb.capabilities()'));
   post('ready', { capabilities, clang: clang.describe() });
 }
@@ -130,6 +146,7 @@ async function solve(request) {
     progress(`reading the ${route.dialect} listing…`);
     post('done', {
       has_main: hasMain,
+      run_ready: false,
       result: JSON.parse(callPython('fallback', [source, optionsJson])),
     });
     return;
@@ -176,11 +193,11 @@ async function solve(request) {
     }));
     const result = JSON.parse(callPython('finish', [source, enriched,
                                                     compiled.table, '']));
-    if (request.analyze_main && hasMain) {
-      result.state_machine = await analyzeCompiledMain(request.source, optionsJson);
-    }
+    const runReady = hasMain && result.ok
+      ? await prepareRunSnapshot(request.source) : false;
     post('done', {
       has_main: hasMain,
+      run_ready: runReady,
       result,
     });
     return;
@@ -189,10 +206,9 @@ async function solve(request) {
   progress('extracting semantics with the built-in frontend…');
   const json = callPython('fallback', [source, optionsJson]);
   const result = JSON.parse(json);
-  if (request.analyze_main && hasMain && result.ok) {
-    result.state_machine = await analyzeCompiledMain(request.source, optionsJson);
-  }
-  post('done', { has_main: hasMain, result });
+  const runReady = hasMain && result.ok
+    ? await prepareRunSnapshot(request.source) : false;
+  post('done', { has_main: hasMain, run_ready: runReady, result });
 }
 
 function base64Bytes(bytes) {
@@ -280,37 +296,58 @@ async function compileWithClang(source, options, optionsJson) {
 
 const EXEC_LIMIT = 1 << 20;     // bytes of stdout before the program is cut off
 
-async function execMain(msg) {
-  const prepared = callPython('prepare_run', [msg.source || '']);
-  let wasm;
-  try {
-    await clang.load(progress);
-    progress('clang -O2 -> wasm32...');
-    wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
-  } catch (err) {
-    return { ok: false,
-             error: (err && err.stderr) ? err.stderr.split('\n')[0]
-                                        : String((err && err.message) || err) };
+function rememberRun(source, prepared) {
+  runCache.delete(source);
+  runCache.set(source, prepared);
+  while (runCache.size > RUN_CACHE_LIMIT) {
+    runCache.delete(runCache.keys().next().value);
   }
+}
 
-  // The kernel the driver calls, implemented by the artifact.
-  const plan = JSON.parse(callPython('run_plan', []));
-  const built = plan.ok ? JSON.parse(callPython('artifact', [''])) : null;
-  let artifact = null;
-  if (built && built.ok) {
-    artifact = decodeArtifact(built.artifact);
-    try {
-      await loadVm();
-    } catch (err) {
-      return { ok: false, error: String((err && err.message) || err) };
+async function prepareRunSnapshot(source) {
+  try {
+    progress('preparing Run from the minimized artifact…');
+    const driver = callPython('prepare_run', [source || '']);
+    await clang.load(progress);
+    const wasm = await clang.wasm(driver, { opt: ORACLE_OPT }, progress);
+
+    // Read these while this solve still owns qmb's exact minimized result.
+    // A later solve in another tab must not replace this Run snapshot.
+    const plan = JSON.parse(callPython('run_plan', []));
+    const built = plan.ok ? JSON.parse(callPython('artifact', [''])) : null;
+    if (!plan.ok || !built || !built.ok) {
+      const error = (built && built.error) || plan.error || 'no artifact';
+      throw new Error(typeof error === 'string' ? error : error.message);
     }
+    const artifact = decodeArtifact(built.artifact);
+    await loadVm();
+    rememberRun(source, { wasm, plan, artifact });
+    return true;
+  } catch (err) {
+    const message = (err && err.stderr)
+      ? err.stderr.split('\n')[0] : String((err && err.message) || err);
+    post('notice', { message: `Run preparation: ${message}` });
+    return false;
   }
+}
+
+async function execMain(msg) {
+  const prepareStarted = performance.now();
+  const prepared = runCache.get(msg.source || '');
+  if (!prepared) {
+    return {
+      ok: false,
+      stale: true,
+      error: 'Run snapshot expired; analysing this source again',
+    };
+  }
+  rememberRun(msg.source || '', prepared);
+  const { wasm, plan, artifact } = prepared;
 
   const stdin = new TextEncoder().encode(msg.stdin == null ? '' : msg.stdin);
   const out = [];
   let at = 0;
   let overflowed = false;
-  let ran = 0;
   const env = {
     qm_getchar: () => (at < stdin.length ? stdin[at++] : -1),
     qm_putchar: (c) => {
@@ -318,31 +355,38 @@ async function execMain(msg) {
       out.push(c & 255);
     },
   };
-  if (artifact) {
-    // A wasm import is synchronous, which is why `vm.js` is loaded above and
-    // the call itself does no waiting.
-    const wide = plan.input_bits > 32;
-    env[plan.function] = (x) => {
-      const value = BigInt.asUintN(64, BigInt(x));
-      const feed = [];
-      for (let i = 0; i < plan.in_bytes; i += 1) {
-        feed.push(Number((value >> BigInt(8 * i)) & 255n));
-      }
-      ran += 1;
-      const y = evaluateLoaded(artifact, feed, plan.out_bytes);
-      return plan.output_bits > 32 ? y : Number(BigInt.asUintN(32, y));
-    };
-    void wide;
-  }
+  let evaluator;
   try {
+    if (activeVmSource === (msg.source || '') && prepared.evaluator) {
+      evaluator = prepared.evaluator;
+    } else {
+      evaluator = await prepareEvaluator(artifact, plan);
+      prepared.evaluator = evaluator;
+      activeVmSource = msg.source || '';
+    }
+    const callsBefore = evaluator.calls();
+    // A WebAssembly export is itself a valid import. The driver has no kernel
+    // body, so every call now stays wasm-to-wasm inside the prepared VM.
+    env[plan.function] = evaluator.fn;
+    const runStarted = performance.now();
     const { instance } = await WebAssembly.instantiate(wasm, { env });
     if (typeof instance.exports.main !== 'function') {
       return { ok: false, error: 'the paste defines no main to run' };
     }
     const code = instance.exports.main();
+    if (!evaluator.ok()) {
+      prepared.evaluator = null;
+      activeVmSource = null;
+      return { ok: false, error: 'the minimized artifact refused an input' };
+    }
     const text = new TextDecoder().decode(new Uint8Array(out))
       + (overflowed ? '\n[output truncated]\n' : '');
-    return { ok: true, stdout: text, code: Number(code) || 0, ran };
+    return {
+      ok: true, stdout: text, code: Number(code) || 0,
+      ran: evaluator.calls() - callsBefore,
+      elapsed_ms: performance.now() - runStarted,
+      prepare_ms: runStarted - prepareStarted,
+    };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }
@@ -359,10 +403,13 @@ self.onmessage = async (event) => {
     } else if (msg.type === 'solve') {
       await solve(msg);
     } else if (msg.type === 'exec') {
-      const started = performance.now();
       const result = await execMain(msg);
-      result.elapsed_ms = performance.now() - started;
       post('ran', { result });
+    } else if (msg.type === 'analyze-main') {
+      const result = await analyzeCompiledMain(
+        msg.source || '', JSON.stringify(msg.options || {}),
+      );
+      post('state-machine', { result });
     } else if (msg.type === 'load-clang') {
       await clang.load(progress);
       post('clang-state', { clang: clang.describe() });
