@@ -35,21 +35,28 @@ from . import machine
 def echo_image():
     """The echo machine as a canonical image.
 
-    Two straight-line entries: `feed` saves the input byte and commits, `read`
-    copies it out and emits. Nothing else is in it, which is what makes it the
-    smallest thing the subset can be shown on.
+    Feed commits the ABI input cell directly; copying it to a second saved cell
+    would preserve the same future but add four transitions to every feed.
+    Read copies that committed cell to output in one speculative transaction.
+
+    This read uses the assembler's zero cell as its scratch. The general `add`
+    macro deliberately owns a private scratch to avoid high-incidence shared
+    coordinates, but this machine has one addition in a read whose writes are
+    discarded. Restoring zero and emitting are therefore the same final
+    instruction, and no later row can observe an alias.
     """
     a = _asm.Asm()
-    saved = a.cell('saved')
     out_entry = a.label('read')
     feed_entry = a.label('feed')
 
     a.place(out_entry)
-    a.move(saved, _asm.Asm.OUTPUT)
+    a.clear(_asm.Asm.OUTPUT)
+    a.clear(a.Z)
+    a.sub(_asm.Asm.INPUT, a.Z)
+    a.sub(a.Z, _asm.Asm.OUTPUT)
     a.halt(_asm.EMIT)
 
     a.place(feed_entry)
-    a.move(_asm.Asm.INPUT, saved)
     a.halt(_asm.COMMIT)
 
     return a.build(out_entry, feed_entry)
@@ -59,7 +66,7 @@ ECHO = echo_image()
 
 
 def residual():
-    """A fresh echo residual. The empty history's state."""
+    """A fresh echo residual at the empty history."""
     return machine.Residual(echo_image())
 
 

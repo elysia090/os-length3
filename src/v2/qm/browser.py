@@ -16,6 +16,7 @@ Everything else — quotients, synthesis, lowering, verification — runs here.
 """
 
 import json
+import base64
 
 from .cfront import CFrontError
 from .clang import read_signature
@@ -88,12 +89,12 @@ def prepare(source):
 
 
 def prepare_run(source):
-    """The driver alone, with the kernel left undefined for the artifact.
+    """The driver unit, with the selected kernel undefined for the artifact.
 
     Compiling the whole paste would run Clang's kernel and call that the
-    answer. What Run has to execute is the minimized program, so the kernel
-    arrives as an import and `web/worker.js` implements it by feeding the
-    artifact.
+    answer. What Run has to execute is the minimized program, so only that
+    function arrives as an import and `web/worker.js` implements it by feeding
+    the artifact. `main`, globals, and unrelated helper definitions remain.
     """
     from .clang import prepare_driver, split_main
     source = source or ''
@@ -103,6 +104,72 @@ def prepare_run(source):
     except CFrontError:
         signature = None
     return prepare_driver(source, signature)
+
+
+def prepare_state(source):
+    """Compile the complete C unit for whole-program wasm state extraction.
+
+    Unlike ``prepare_run``, no function is replaced by an import.  The scalar
+    kernel artifact is already verified separately; this compile supplies the
+    control stack, globals and memory that make ``main`` a state machine.
+    """
+    from .clang import prepare_driver
+    return prepare_driver(source or '', None)
+
+
+def stateful_wasm(encoded, function='main', options_json='{}'):
+    """Decode linked wasm and close its imported-byte state machine exactly."""
+    from .transducer import StateLimit
+    from .wasmstate import compile_stream, decode_module
+    from .wasmwave import WaveExecutor
+
+    options = json.loads(options_json or '{}')
+    max_states = int(options.get('state_max_states', 4096))
+    budget = int(options.get('state_step_budget', 1 << 20))
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+        module = decode_module(raw)
+        index = module.export(function)
+        entry_type = module.types[module.functions[index].type_index]
+        # Clang gives C `main` its conventional argc/argv wasm ABI even when
+        # the source spells `main(void)`. JavaScript invocation supplies zero
+        # for omitted integer parameters; the state frontend must start from
+        # the same concrete machine state rather than reject that ABI wrapper.
+        args = tuple(0 for _ in entry_type.params)
+        executor = WaveExecutor(module)
+        compiled = compile_stream(module, function,
+                                  max_states=max_states, budget=budget,
+                                  args=args, executor=executor)
+        report = compiled.to_dict()
+        report.update({
+            'ok': True,
+            'exact': True,
+            'function': function,
+            'input_alphabet': 'byte + EOF',
+            'state_bits': max(0, (compiled.classes - 1).bit_length()),
+            'initial_observation': compiled.out(compiled.initial),
+            'execution_layout': executor.total_cost.layout(),
+            'ordered_barriers': [
+                'load', 'store', 'call', 'branch', 'control',
+                'global', 'memory',
+            ],
+            'runtime': ('quotient data is a build witness; execution retains '
+                        'the selected wasm/codec machine'),
+        })
+        return _dumps(report)
+    except StateLimit as exc:
+        return _dumps({
+            'ok': False,
+            'exact': False,
+            'stage': 'state-closure',
+            'error': {'message': str(exc),
+                      'hint': 'raise state_max_states or reduce explicit state'},
+        })
+    except (CFrontError, ValueError) as exc:
+        detail = exc.to_dict() if isinstance(exc, CFrontError) else {
+            'message': str(exc)}
+        return _dumps({'ok': False, 'exact': False,
+                       'stage': 'state-frontend', 'error': detail})
 
 
 def run_plan():
@@ -195,11 +262,11 @@ C_RENDER_LIMIT = 20000
 
 
 def _codec_cost(picture, input_bits):
-    """What §3.7 charges for running this image, worst of a fixed sample.
+    """Physical row-wave cost of this image, worst of a fixed sample.
 
-    Span and work are properties of the *run*, not of the listing: §3.2 makes a
-    transition a capture plus a broadcast over the rows that read the written
-    coordinate, and §3.7 charges `Theta(k+1)` work and `Theta(1)` span for it.
+    Span and work are properties of the *run*, not of the listing. A transition
+    is one capture plus a broadcast over the rows that read the written
+    coordinate, costing `Theta(k+1)` work and `Theta(1)` dependency span.
     Counting instructions instead — which is what this used to do — reports the
     same number for span and for work and is neither of them.
 
@@ -237,13 +304,12 @@ def _codec_cost(picture, input_bits):
 def _keep(result):
     """Remember the solve, and add the codec to the targets it can be seen as.
 
-    The artifact comes from the *abstract* program, not from any target's
-    lowered sequence. That is what makes it a single source of truth rather
-    than a fourth listing: it is a property of the solve, and the same one
-    whichever machine you are looking at.
+    The codec compiler consumes the minimized wasm32 sequence. This keeps the
+    browser path linear: C is compiled to wasm32 for evaluation, QM produces a
+    smaller wasm32 program, and that program is encoded for the VM.
     """
     _LAST.clear()
-    if not result.get('ok') or not result.get('program_object'):
+    if not result.get('ok') or not result.get('program'):
         return result
 
     _LAST['*input_bits'] = result['frontend']['input_bits']
@@ -254,9 +320,14 @@ def _keep(result):
     from vm import codec as vm_codec, emit, image as vm_image, lower
 
     input_bits, output_bits = _LAST['*input_bits'], _LAST['*output_bits']
+    wasm = next((target for target in result.get('targets') or []
+                 if target.get('name') == 'wasm32' and target.get('ok')
+                 and target.get('seq') is not None), None)
+    if wasm is None:
+        _LAST['*artifact_error'] = 'no minimized wasm32 program was produced'
+        return result
     try:
-        picture = lower.lower_program(result['program_object'],
-                                      input_bits, output_bits)
+        picture = lower.lower_seq(wasm['seq'], input_bits, output_bits)
     except lower.Unsupported as exc:
         _LAST['*artifact_error'] = str(exc)
         return result
@@ -271,7 +342,7 @@ def _keep(result):
                     if t['name'] == result.get('primary_target')), None)
     cost = _codec_cost(picture, input_bits)
     if cost is None:
-        # No run finished inside the budget, so there is no §3.7 quantity to
+        # No run finished inside the budget, so there is no physical run cost to
         # report. Say the size of the image and say that is what it is.
         steps = sum(1 for at in picture.memory if at >= 0) // 3
         span, work = steps, steps
@@ -285,7 +356,7 @@ def _keep(result):
         'name': CODEC_TARGET,
         'isa': {'name': CODEC_TARGET, 'title': 'codec', 'note': note},
         'ok': True,
-        # §3.2, not the listing: one transition is a capture whose row
+        # This describes the row wave, not the listing: one transition is a
         # dependency is Theta(1), and a wave over the rows that read the cell
         # it wrote, which is Theta(k+1) work. Span and work therefore differ,
         # and neither is the instruction count.
@@ -295,8 +366,8 @@ def _keep(result):
         'quiet': cost.quiet if cost else None,
         'barriers': cost.barriers if cost else None,
         'core_ops': (result.get('program') or {}).get('core_ops'),
-        # One row, entered and repaired. §3.1 gives the transition its meaning;
-        # §3.2 gives it its shape, and the shape is what these numbers count.
+        # One row is entered and repaired; these numbers count that physical
+        # shape while `machine.py` remains the transition semantics.
         'instructions': ['ROW'],
         'L_bits': vm_codec.length(payload),
         'L_bytes': len(blob),
@@ -326,8 +397,8 @@ def _keep(result):
 def artifact(_target_name=''):
     """The minimized program as one rSUBLEQ artifact.
 
-    There is one, not one per target: `_keep` builds it from the abstract
-    program the solve produced. The argument is accepted and ignored so a
+    There is one, not one per target: `_keep` builds it from the minimized
+    wasm32 sequence. The argument is accepted and ignored so a
     caller that names the target it is looking at still gets the program.
 
     Base64 because the artifact is bytes and JSON has no way to say so.

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quotient Minimizer</title>
 <meta name="description" content="Paste a small C function and see how little machine computation its observable meaning actually requires.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230a84ff'/><text x='16' y='22' font-size='15' font-family='system-ui' font-weight='700' fill='white' text-anchor='middle'>QM</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23ed6332'/><text x='16' y='22' font-size='15' font-family='system-ui' font-weight='700' fill='%23211f1d' text-anchor='middle'>QM</text></svg>">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -24,11 +24,6 @@
     </div>
   </div>
 
-  <div class="controls">
-    <button class="icon-btn" id="btn-settings" type="button" title="Settings" aria-label="Settings">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>
-    </button>
-  </div>
 </header>
 
 <main class="board">
@@ -39,7 +34,7 @@
       <h2><span class="step">1.</span> Source</h2>
       <button class="link run" id="btn-run" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
-        Run
+        <span id="run-label">Run</span>
       </button>
     </div>
 
@@ -88,7 +83,7 @@
               title="Copy" aria-label="Copy the minimized program">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
       </button>
-      <pre id="qm-listing"><span class="hint">The minimized program appears here.</span></pre>
+      <pre id="qm-listing" tabindex="0"><span class="hint">The minimized program appears here.</span></pre>
     </div>
 
     <div class="card-foot">
@@ -110,35 +105,12 @@
 <dialog id="dlg" class="dlg">
   <div class="dlg-head">
     <h3 id="dlg-title">Details</h3>
+    <button class="dlg-title-action" id="dlg-title-action" type="button" hidden>New tab</button>
     <button class="icon-btn" id="dlg-close" aria-label="Close">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
   </div>
   <div class="dlg-body" id="dlg-body"></div>
-</dialog>
-
-<dialog id="settings" class="dlg">
-  <div class="dlg-head">
-    <h3>Settings</h3>
-    <button class="icon-btn" id="settings-close" aria-label="Close">
-      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-    </button>
-  </div>
-  <div class="dlg-body">
-    <div class="field">
-      <label for="sel-observer">Observed output</label>
-      <select id="sel-observer"></select>
-    </div>
-    <div class="field">
-      <label for="sel-compiler">Frontend for C</label>
-      <select id="sel-compiler"><option>starting…</option></select>
-    </div>
-    <div class="field">
-      <label for="inp-mask">Custom mask</label>
-      <input id="inp-mask" type="text" placeholder="0xFFFFFFFFFFFFFFFF" spellcheck="false" disabled>
-    </div>
-    <p class="note" id="settings-note"></p>
-  </div>
 </dialog>
 
 <script type="module" src="app.js"></script>

@@ -1,15 +1,15 @@
 """The whole product in one call.
 
     source text
-      -> frontend            (SPEC §2)
-      -> semantics           (SPEC §4)
-      -> quotients           (SPEC §5)
-      -> normalization       (SPEC §6)
-      -> guards              (SPEC §7)
-      -> synthesis           (SPEC §8, §9)
-      -> lowering            (SPEC §10, §11)
-      -> verification        (SPEC §12)
-      -> report              (SPEC §13..§16, §18..§20)
+      -> frontend
+      -> finite-domain semantics
+      -> observation and future quotients
+      -> normalized abstract program
+      -> derived guards
+      -> candidate synthesis
+      -> target lowering
+      -> full-domain verification
+      -> result and contribution records
 
 The web worker and the CLI are both thin wrappers around `solve`.
 
@@ -71,20 +71,20 @@ def solve(source, function=None, observer='exact', targets=None,
 
 def _solve(source, function, observer_spec, targets, frontend_name, options,
            started):
-    # -- §2 frontend -------------------------------------------------------
+    # -- frontend ----------------------------------------------------------
     front = frontend_mod.choose(frontend_name, source)
     analysis = front.analyze(source, dict(options, function=function))
     sem = analysis.semantics
 
-    # -- §3 observer -------------------------------------------------------
+    # -- observer ----------------------------------------------------------
     obs = observer_mod.parse(observer_spec, sem.output_bits)
 
-    # -- §5 quotients ------------------------------------------------------
+    # -- quotients ---------------------------------------------------------
     observation = quotient_mod.observation_report(sem, obs)
     future = quotient_mod.streaming_future_quotient(
         sem, obs, max_input_bits=int(options.get('future_quotient_limit', 13)))
 
-    # -- §8 synthesis ------------------------------------------------------
+    # -- synthesis ---------------------------------------------------------
     programs = solvers_mod.solve_all(sem, obs, options)
 
     result = {
@@ -108,13 +108,13 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
         result['targets'] = []
         result['note'] = (
             'no program exists in the declared grammar for this observer; '
-            'SPEC §9: a zero result refers to the current search family, not '
-            'to the target function in general')
+            'a zero result describes the current search family, not the '
+            'target function in general')
         result['derivation'] = _derivation(result, None, [])
         result['elapsed_s'] = round(time.time() - started, 3)
         return result
 
-    # -- §10/§11 lowering, §12 verification --------------------------------
+    # -- lowering and verification ----------------------------------------
     # Rank candidates on a sample, then verify only the winner over the whole
     # domain on every target.  Full-domain verification of every rejected
     # candidate on every ISA is work whose result is thrown away.
@@ -168,7 +168,7 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
         for entry in ranked[1:]
     ]
 
-    # -- §19/§20 corpus ----------------------------------------------------
+    # -- corpus ------------------------------------------------------------
     key = corpus_mod.semantic_key(sem, obs)
     primary_record = _record_by_name(result['targets'], result['primary_target'])
     result['corpus'] = {
@@ -185,10 +185,10 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
                                        result['recognition'])
         if key else None)
 
-    # -- §17 cost model ----------------------------------------------------
+    # -- cost model --------------------------------------------------------
     result['cost_model'] = _cost_model(analysis.report, result['targets'])
 
-    # -- §14 derivation ----------------------------------------------------
+    # -- derivation --------------------------------------------------------
     result['derivation'] = _derivation(result, program, ranked)
     result['elapsed_s'] = round(time.time() - started, 3)
     return result
@@ -245,8 +245,8 @@ def _rank_key(entry, targets):
     The finite-domain lookup table is ranked as a fallback rather than as a
     minimum.  Under a plain (span, work) comparison a 2 KB table would "win"
     every 8-bit kernel with one instruction, which would make the product
-    answer a different question than the one SPEC §35 asks: how little machine
-    *computation* the observable meaning requires.  The table is still
+    answer a different question: how little machine *computation* the
+    observable meaning requires. The table is still
     reported, and it is still what makes "no solution" mean "no compact
     solution".
     """
@@ -364,10 +364,10 @@ def _guards_for(program):
 
 
 def _cost_model(front_report, targets):
-    """SPEC §17, honestly scoped.
+    """Report only costs supported by the available measurement method.
 
-    Cycle-level numbers need native execution (SPEC §27); in the browser QM
-    compares the static model only, and says so.
+    Cycle-level numbers need native execution. In the browser QM compares the
+    static model only, and says so.
     """
     reference = front_report.get('reference_ops', {})
     rows = []
@@ -391,7 +391,7 @@ def _cost_model(front_report, targets):
 
 
 # ---------------------------------------------------------------------------
-# SPEC §14 derivation
+# Human-readable derivation
 # ---------------------------------------------------------------------------
 
 def _derivation(result, program, ranked):

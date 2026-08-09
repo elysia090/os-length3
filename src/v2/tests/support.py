@@ -19,19 +19,46 @@ import os
 from qm.pipeline import solve
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXAMPLES = os.path.join(ROOT, 'examples')
+EXAMPLES = os.path.abspath(os.path.join(ROOT, '..', '..', 'corpus'))
+EXAMPLE_CATEGORIES = (
+    'bit-linear', 'whole-word', 'lanes', 'text', 'floating', 'demos',
+)
 
 _CACHE = {}
 
 
+def example_paths():
+    """`{basename: absolute path}` for the categorized executable corpus."""
+    paths = {}
+    for category in EXAMPLE_CATEGORIES:
+        directory = os.path.join(EXAMPLES, category)
+        for name in os.listdir(directory):
+            if name.endswith(('.c', '.s', '.wat', '.h')):
+                if name in paths:
+                    raise AssertionError('duplicate corpus basename %r' % name)
+                paths[name] = os.path.join(directory, name)
+    return paths
+
+
+def example_names(suffixes=('.c', '.s', '.wat')):
+    return sorted(name for name in example_paths() if name.endswith(suffixes))
+
+
+def example_path(name):
+    try:
+        return example_paths()[name]
+    except KeyError:
+        raise FileNotFoundError('no corpus entry named %r' % name)
+
+
 def read_example(name):
-    """The text of `examples/<name>`, with the suffix included."""
-    with open(os.path.join(EXAMPLES, name)) as handle:
+    """The text of a categorized corpus entry, suffix included."""
+    with open(example_path(name)) as handle:
         return handle.read()
 
 
 def example(name):
-    """The kernel in `examples/<name>.c` — what QM is given.
+    """The kernel in the categorized corpus — what QM is given.
 
     An example may carry a `main` that drives it, and the product splits that
     off before minimizing: `main` reads a stream rather than a domain, so
@@ -62,6 +89,16 @@ def target(result, name=None):
     name = name or result.get('primary_target')
     return next((t for t in result.get('targets') or [] if t['name'] == name),
                 None)
+
+
+def vm_picture(result):
+    """Compile the minimized wasm32 sequence into the VM image."""
+    from vm import lower
+    wasm = target(result, 'wasm32')
+    if not wasm or not wasm.get('ok') or wasm.get('seq') is None:
+        raise AssertionError('solve did not produce a wasm32 sequence')
+    return lower.lower_seq(wasm['seq'], result['frontend']['input_bits'],
+                           result['frontend']['output_bits'])
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +134,7 @@ def warm(pool):
     Nothing has to be warmed. A source that is not listed here is solved on
     demand, exactly as before; this only decides when the work happens.
     """
-    sources = [name for name in sorted(os.listdir(EXAMPLES))
-               if name.endswith(('.c', '.s', '.wat'))]
+    sources = example_names()
     first = [_pair(read_example(name),
                    **({'frontend': 'cfront'} if name.endswith('.c') else {}))
              for name in sources]

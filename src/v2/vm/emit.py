@@ -1,12 +1,11 @@
 """The other direction: a canonical image back out as bytes, C, wasm32 or x86.
 
-`lower.lower_program` turns a minimized program into one artifact. This turns
-that artifact back into the forms it can be read in — so there is one program
-and several views of it, rather than one program per language kept in step by
-hand.
+`lower.lower_seq` compiles QM's minimized wasm32 sequence into one artifact.
+This turns that artifact back into the forms it can be read in, so there is one
+program and several derived views rather than separately maintained versions.
 
 `emit_code` is not one of the views: it is the artifact, `pack(code(z))`, with
-the fields §1 and §2 define named. Everything else here is what those bits
+its self-delimiting fields named. Everything else here is what those bits
 decode to.
 
 What comes out is the machine and the image, not a decompilation. That is the
@@ -97,7 +96,7 @@ def emit_listing(picture, name='kernel', input_bits=8, output_bits=64):
 
 def emit_code(picture, name='kernel', input_bits=8, output_bits=64,
               listing=True):
-    """`pack(code(z))` as bytes, with the fields §1 and §2 define named.
+    """`pack(code(z))` as bytes, with its self-delimiting fields named.
 
     This is the artifact. The listing above is a rendering of what these bits
     decode to; these bits are the thing itself — the one word whose length is

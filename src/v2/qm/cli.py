@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """Command-line front door for the same pipeline the browser runs.
 
-    python3 -m qm.cli examples/ranks8.c
-    python3 -m qm.cli examples/ranks8.c --observer low:8 --json
+    python3 -m qm.cli corpus/lanes/ranks8.c
+    python3 -m qm.cli corpus/lanes/ranks8.c --observer low:8 --json
     python3 -m qm.cli --frontend cfront kernel.c
+    python3 -m qm.cli web/vm.wasm --vm-artifact echo.qm --json
 
-This is the local, interactive product from SPEC §21, not the paid automation
-API of SPEC §22-§23: it runs entirely on this machine, and it has no account,
-no network and no quota.
+This is a local interactive command. It runs entirely on this machine and has
+no account, network dependency, or quota.
 """
 
 import argparse
 import json
 import sys
 
+from .cfront.errors import CFrontError
 from .isa import DEFAULT_PROFILES, PROFILE_BY_NAME
 from .pipeline import solve, to_json_safe
 
@@ -41,11 +42,26 @@ def build_parser():
                         help='machine-readable output')
     parser.add_argument('--asm', action='store_true',
                         help='print the compiler assembly as well')
+    parser.add_argument('--state-main', action='store_true',
+                        help='treat a linked .wasm main as an imported-I/O '
+                             'state machine')
+    parser.add_argument('--vm-artifact',
+                        help='open this codec artifact in a vm.wasm input and '
+                             'minimize its exact feed/read state machine')
+    parser.add_argument('--state-max-states', type=int, default=4096,
+                        help='exact reachable-state limit (default: 4096)')
+    parser.add_argument('--state-step-budget', type=int, default=1 << 20,
+                        help='wasm instructions allowed between I/O boundaries')
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    if args.vm_artifact:
+        return state_vm(args)
+    if args.state_main:
+        return state_main(args)
 
     if args.source == '-':
         source = sys.stdin.read()
@@ -68,6 +84,90 @@ def main(argv=None):
         return 0 if result.get('ok') else 1
 
     return report(result, show_asm=args.asm)
+
+
+def state_main(args):
+    """Exact whole-program path for an already linked wasm module."""
+    if args.source == '-':
+        raw = sys.stdin.buffer.read()
+    else:
+        with open(args.source, 'rb') as handle:
+            raw = handle.read()
+    from .transducer import StateLimit
+    from .wasmstate import compile_stream, decode_module
+    try:
+        module = decode_module(raw)
+        compiled = compile_stream(
+            module,
+            function=args.function or 'main',
+            max_states=args.state_max_states,
+            budget=args.state_step_budget,
+        )
+    except (CFrontError, StateLimit, ValueError) as exc:
+        print('state-frontend: %s' % exc, file=sys.stderr)
+        return 1
+    result = compiled.to_dict()
+    result.update({'ok': True, 'exact': True,
+                   'state_bits': max(0, (compiled.classes - 1).bit_length())})
+    if args.json:
+        json.dump(result, sys.stdout, indent=2, default=str)
+        sys.stdout.write('\n')
+    else:
+        print('main state machine')
+        print('  reachable states %d' % compiled.reachable_states)
+        print('  future classes   %d' % compiled.classes)
+        print('  state bits       %d' % result['state_bits'])
+        print('  alphabet         byte + EOF')
+    return 0
+
+
+def state_vm(args):
+    """Put a compiled VM and one opened artifact through stateful QM."""
+    if args.source == '-':
+        raw = sys.stdin.buffer.read()
+    else:
+        with open(args.source, 'rb') as handle:
+            raw = handle.read()
+    with open(args.vm_artifact, 'rb') as handle:
+        artifact = handle.read()
+
+    from .transducer import StateLimit
+    from .wasmstate import decode_module, invoke
+    from .wasmvm import compile_vm, load
+    try:
+        module = decode_module(raw)
+        initial = load(module, artifact, budget=args.state_step_budget)
+        mode = invoke(module, initial.snapshot, 'vm_direct_byte_state', (),
+                      budget=args.state_step_budget).result[0]
+        compiled = compile_vm(
+            module, initial,
+            max_states=args.state_max_states,
+            budget=args.state_step_budget,
+        )
+    except (CFrontError, StateLimit, ValueError, OSError) as exc:
+        print('vm-state-frontend: %s' % exc, file=sys.stderr)
+        return 1
+
+    result = compiled.to_dict()
+    result.update({
+        'ok': True,
+        'exact': True,
+        'state_bits': max(0, (compiled.classes - 1).bit_length()),
+        'vm_bytes': len(raw),
+        'artifact_bytes': len(artifact),
+        'state_step': ('direct-byte-register' if mode == 1 else 'generic'),
+    })
+    if args.json:
+        json.dump(result, sys.stdout, indent=2, default=str)
+        sys.stdout.write('\n')
+    else:
+        print('wasm VM state machine')
+        print('  reachable states %d' % compiled.reachable_states)
+        print('  future classes   %d' % compiled.classes)
+        print('  state bits       %d' % result['state_bits'])
+        print('  state step       %s' % result['state_step'])
+        print('  build cells      %d' % result['build_form']['storage_cells'])
+    return 0
 
 
 def report(result, show_asm=False):

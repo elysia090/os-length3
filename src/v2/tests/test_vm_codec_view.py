@@ -2,34 +2,29 @@
 
 Two claims, and neither is obvious from the screen:
 
-**It is the codeword.** A view named after §1 has to be `pack(code(z))` — the
+**It is the codeword.** The codec view has to be `pack(code(z))` — the
 bytes whose length is `L(z)` and whose rank is the objective's last tie-break —
 not a disassembly of what those bytes decode to. So the hex in the view is
 compared against the artifact byte for byte, and the field table against a
 second decode of the same bits.
 
-**It is downstream of the minimizer.** The artifact is built from
-`result['program_object']`, which is the program the search ranked first, not
-the pasted function. Two sources that say the same thing in different words
-therefore have to produce the *same bytes* — that is what "the codec is the
-canonical form" means, and it is false the moment anything lowers the paste
-instead of the program.
+**It is downstream of the minimizer.** The artifact is built from the wasm32
+sequence produced by QM, not from the pasted function. Two sources that say the
+same thing in different words therefore have to produce the *same bytes*.
 """
 
 import unittest
 
 from qm.pipeline import solve
-from vm import codec, emit, image, lower
+from vm import codec, emit, image
 
-from tests.support import read_example
+from tests.support import read_example, vm_picture
 
 
 def artifact_of(source, **kw):
     result = solve(source, frontend='cfront', **kw)
     assert result['ok'], result.get('error')
-    picture = lower.lower_program(result['program_object'],
-                                  result['frontend']['input_bits'],
-                                  result['frontend']['output_bits'])
+    picture = vm_picture(result)
     payload = image.serialize(picture)
     return picture, payload, codec.pack(codec.code(payload))
 

@@ -1,8 +1,8 @@
 """Assembly as an input: x86 -> wasm, wasm -> x86, and back to itself.
 
-SPEC §2 draws the arrow `optimized assembly -> Quotient Minimizer`. Once that
-arrow exists, x86 -> wasm is not a translator: it is the ordinary pipeline with
-an assembly frontend on one end and a wasm target on the other. These tests
+Optimized assembly enters the same minimizer as C-derived semantics. Therefore
+x86 -> wasm is not a translator: it is the ordinary pipeline with an assembly
+frontend on one end and a wasm target on the other. These tests
 hold it to the property that makes it worth anything — the round trip is a
 fixed point, in both directions, on both machines.
 
@@ -19,7 +19,8 @@ from qm.asmfront import (CFrontError, compile_function, detect, parse, wasm,
                          x86)
 from qm.cfront.errors import UnsupportedC
 
-from tests.support import EXAMPLES, example, read_example, solved as solve, target
+from tests.support import (example, example_names, read_example,
+                           solved as solve, target)
 
 # Examples with a small enough input to enumerate, which is what lets the
 # reader be checked against the sequence rather than against a sample.  The
@@ -226,12 +227,11 @@ class TestDetection(unittest.TestCase):
     """Sending C to an assembly reader would produce a useless error."""
 
     def test_c_is_not_mistaken_for_assembly(self):
-        for name in sorted(os.listdir(EXAMPLES)):
+        for name in example_names(('.c', '.h')):
             if not name.endswith(('.c', '.h')):
                 continue
             with self.subTest(example=name):
-                with open(os.path.join(EXAMPLES, name)) as handle:
-                    self.assertIsNone(detect(handle.read()))
+                self.assertIsNone(detect(read_example(name)))
 
     def test_each_dialect_is_recognised(self):
         x86_text, wasm_text = listings('ranks8')

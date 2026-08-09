@@ -1,4 +1,4 @@
-"""SPEC §5 — the two quotients, kept deliberately separate.
+"""The observation and streaming-future quotients, kept separate.
 
 Observation quotient
     Can the caller distinguish these outputs?

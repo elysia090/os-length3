@@ -1,4 +1,4 @@
-"""End-to-end behaviour, including the numbers SPEC quotes.
+"""End-to-end behaviour, including pinned residual-freedom counts.
 
 If the residual-freedom counts here change, either the grammar changed or
 something is wrong; both cases need a human, so they are asserted exactly.
@@ -14,7 +14,7 @@ from tests.support import read_example as example, solved as solve
 
 
 class TestSpecNumbers(unittest.TestCase):
-    """SPEC §9's residual-freedom table, reproduced from pasted C."""
+    """The residual-freedom regression table, reproduced from pasted C."""
 
     CASES = [
         ('ranks8.c', 502, ['LIN_CONST', 'CONV'], 'exclusive rank8'),
@@ -166,7 +166,7 @@ class TestSeveralFunctions(unittest.TestCase):
 
 @unittest.skipUnless(NATIVE.available(), 'clang is not installed')
 class TestClangFrontend(unittest.TestCase):
-    """SPEC §2: Clang is the entry point, not a modelled substitute for it."""
+    """Clang is the C entry point, not a modelled substitute for it."""
 
     def test_clang_and_builtin_frontend_agree(self):
         for name in ('ranks8.c', 'select8.c', 'run_ids8.c'):

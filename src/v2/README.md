@@ -29,22 +29,31 @@ Assembly goes in as well as out. Paste an x86-64 listing or a wasm32 function
 and QM evaluates it, minimizes it, and lowers again — so x86 → wasm and
 wasm → x86 are the ordinary pipeline with a different target selected at the
 end, and running a listing through it a second time gives the same listing
-back. `examples/ranks8.s` and `examples/prefix_xor64.wat` are there to press
+back. `../../corpus/lanes/ranks8.s` and
+`../../corpus/bit-linear/prefix_xor64.wat` are there to press
 Optimize on.
 
 ```
-C / C++                     x86-64 · wasm32
-  ↓  Clang/WASM  -O2          ↓  evaluate the listing
-optimized code  ────────────────┘
-  ↓  execute over the declared input domain
-semantics
-  ↓  observation quotient · future quotient
-normalized operations
-  ↓  specialized solvers
-minimal physical representative
-  ↓
-verification
+C ──Clang/WASM──┐
+                ├──> wasm32 / x86 input ──> QM ──> minimized wasm32
+x86 / wasm32 ───┘                                  │
+                                                   v
+                                                codec
+                                                   │
+                                                   v
+                                  fast VM in x86-64 or wasm32
 ```
+
+The browser uses C only as a frontend: Clang produces wasm32, and QM analyses
+that result. Human-authored wasm32 and x86-64 enter at the same QM boundary.
+The minimized wasm32 sequence is the only input to codec compilation; the VM
+then runs the resulting image in its x86-64 or wasm32 implementation.
+
+On Run, the same linked wasm32 also goes through the whole-program state
+frontend. It makes the wasm PC, call stack, locals, globals and memory explicit,
+stops at imported input, and derives a pure `state, byte -> state` function.
+The scalar Minimized Program still excludes `main`; its state-machine proof is
+reported separately.
 
 ---
 
@@ -59,9 +68,55 @@ python3 tools/serve.py        # serves this directory, opens the page
 **On the command line** (the same pipeline):
 
 ```sh
-python3 -m qm.cli examples/ranks8.c
-python3 -m qm.cli examples/select8.c --observer low:8 --json
+python3 -m qm.cli ../../corpus/lanes/ranks8.c
+python3 -m qm.cli ../../corpus/lanes/select8.c --observer low:8 --json
+python3 -m qm.cli program.wasm --state-main --json
+python3 tools/qm_compiler_wasm.py llvm.core.wasm --out compiler.wasm
+python3 tools/physicalize_wasm.py compiler.wasm
+python3 tools/build_compiler_distribution.py llvm.core.wasm \
+  llvm-resources.tar --out compiler-dist --version 22.0.0-git20542-10
 ```
+
+The last command is the large-module path used for YoWASP itself. A compiler
+invocation is not treated as a scalar kernel: arguments, clocks, randomness and
+the virtual filesystem remain host state. The tool scans internal code bodies
+without materializing the 75 MB module as an instruction object graph and sends
+only closed straight-line integer functions through whole-expression
+substitution, normalization, and QM. Multiple parameters remain independent
+SSA inputs; they are not packed into a sampled domain. On
+`@yowasp/clang@22.0.0-git20542-10`, the 75,532,134-byte core contains 133,398
+defined functions; 5,124 functions fit that safe grammar, and all 5,124 are
+already fixed points. The output is therefore intentionally byte-identical.
+The component adapters likewise contain only host wrappers and indirect-call
+trampolines in this grammar. A zero replacement count is a result, not licence
+to rewrite host state or claim sampled compiler equivalence.
+
+Byte-identical does not mean physically serial. After dead-value removal those
+5,124 slices contain 4,179 computation nodes with an aggregate dependency span
+of 3,860. There are 157 slices with more than one independent lane; the widest
+wave has 7 lanes and the longest slice has span 10. `qm.wasmphysical` schedules
+each live SSA node by dependency depth, so one wave writes distinct slots in
+parallel. Calls, memory effects, and control transfers remain barriers.
+
+The complete core has 24,856,928 decoded instructions in 103 opcode groups.
+Its segmented `(function, pc)` view derives 24,724,978 ordinary `rank + 1`
+coordinates and stores none of them. This sequential view preserves code
+location; it does not impose execution order inside a dependency wave.
+
+The browser does not load the package's generated JavaScript wrapper. On the
+first Compile it fetches the pinned `llvm.core.wasm` and
+`llvm-resources.tar` in parallel, verifies their SHA-256 hashes, and connects
+the core's 29 WASI Preview 1 imports to an in-memory filesystem. The core asks
+Clang for its cc1/link plan and the same core executes each step. The three
+component adapter modules are outside this path. A deployment can point
+`QM_CLANG.compilerCoreUrl` at a normalized `compiler.wasm`; its expected digest
+is supplied as `QM_CLANG.compilerCoreSha256`.
+
+The distribution command makes that deployment input explicitly. It produces
+only `compiler.wasm`, `compiler-resources.tar`, and deterministic
+`compiler.json`; the installed package and generated adapters are build inputs,
+not runtime dependencies. The manifest records both binary digests and the
+normalization/QM report.
 
 **Tests** (standard library only, no dependencies):
 
@@ -102,27 +157,36 @@ keeping semantic classes separate from mnemonics:
 | codec | 4,123 | `ROW` |
 
 The last row is the artifact: one instruction, and the thing Run executes. It
-comes from the *abstract* program the minimizer produced, not from the paste
-and not from any of the rows above — three spellings of one function give the
-same bytes, which `tests/test_vm_codec_view.py` checks, and which is the only
-thing that makes "canonical form" mean anything. `vm/emit.py` renders it back
-out as C, x86-64 or wasm32.
+comes from the minimized wasm32 sequence, never directly from C, a pasted
+listing, or the solver's abstract program. `tests/test_vm_codec_view.py` checks
+that different spellings of one function produce the same bytes. `vm/emit.py`
+renders the VM image back out as C, x86-64 or wasm32.
 
 Its number is not a count of listing lines. The specification defines the cost
 of a transition on the physical form of the machine — a capture plus a wave
 over the rows that had the written cell cached — so `work` is transitions plus
-incidences and `span` is transitions, and a run of `ranks8` is 1,624
-transitions against 6,728 cells of image. See `vm/README.md`, which also says
-how far that is from what the same function costs written properly.
+incidences and `span` is transitions. Carry-free lane-coordinate lowering now
+puts one feed and one read of `ranks8` at 225 transitions and 1,067 image cells,
+down from 1,624 and 6,728. See `vm/README.md` for the physical comparison.
 
 ---
 
 ## The curriculum kernels
 
-`examples/` carries the bit-manipulation exercises from CMU's CS:APP Data Lab,
+The categorized top-level `corpus/` carries the bit-manipulation exercises from CMU's CS:APP Data Lab,
 MIT 6.172 and Princeton's *Algorithms* 4/e, each stated the obvious way. They
 are there because they are the ones that used to fall through the grammar: a
 comparison between two words, a count, a case analysis on a float's exponent.
+
+The names and topics follow the primary course materials: the
+[CS:APP Data Lab handout](https://csapp.cs.cmu.edu/3e/datalab.pdf),
+[MIT 6.172 Lecture 3: Bit Hacks](https://ocw.mit.edu/courses/6-172-performance-engineering-of-software-systems-fall-2018/resources/lecture-3-bit-hacks/),
+and the *Algorithms, 4th Edition* sections on
+[key-indexed counting](https://algs4.cs.princeton.edu/51radix/),
+[KMP](https://algs4.cs.princeton.edu/53substring/KMP.java.html), and
+[Rabin-Karp](https://algs4.cs.princeton.edu/53substring/RabinKarp.java.html).
+Examples that narrow or pack the original inputs say “adapted from” in their
+comments; `max_u8x8` and `strict_sum4_f64` carry no university attribution.
 
 | kernel | QM | |
 | --- | --- | --- |
@@ -140,7 +204,7 @@ comparison between two words, a count, a case analysis on a float's exponent.
 | `max_u8x8` | 43 | the halving tournament, branch-free |
 | `middle_bits_u16` | 1 | `PEXT` |
 
-Five more are in `examples/` because they do **not** land, which is a result
+Five more are in the corpus because they do **not** land, which is a result
 and not an omission. `counting_sort8_u2` and `kmp_scan8_fixed` come back as
 tables — the interesting number for the second one is its future quotient,
 three bits of state against eight bits of history. `float_to_int_bits` and
@@ -225,8 +289,9 @@ first, so a red test cannot ship.
 `tools/build_site.py`, so the two deployments cannot drift apart.
 
 Either way the layout is the same, and it matters: `web/qm-manifest.json` names
-the engine modules the worker fetches at runtime, so `qm/`, `web/` and
-`examples/` must sit next to each other under the site root.
+the engine modules the worker fetches at runtime, so `qm/`, `vm/` and `web/`
+must sit next to each other under the site root. The categorized source corpus
+is compiled into `web/examples.json`; it is not copied into the deployment.
 
 ---
 
@@ -238,7 +303,7 @@ vm/               the rSUBLEQ machine the minimized program normalizes onto
   image.py        one canonical finite-support signed memory
   machine.py      one transactional instruction  (3.1, what it means)
   rows.py         the direct physical form        (3.2, what it is; 3.7 cost)
-  lower.py        abstract program -> canonical image (bit-sliced)
+  lower.py        minimized wasm32 Seq -> canonical image (bit-sliced)
   emit.py         canonical image -> C, x86-64, wasm32
   wasm/vm.c       the same machine, freestanding, ~6 KB of wasm32
 
@@ -266,7 +331,7 @@ qm/
 web/              the page: index.html · app.js · worker.js · clang.js
 tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
 tests/            run.py and the suite
-examples/         the kernels the corpus is built from, plus two listings
+../../corpus/     categorized kernels, physical-array forms, and VM experiments
 ```
 
 Each module states which SPEC section it implements and imports only from lower
@@ -314,8 +379,8 @@ idempotence is a property the suite can check, and does, for every example and
 in both directions between the two machines.
 
 **The examples are measured against hand-written optima.**
-`examples/lanecode.h` is a header of kernels written by hand in their best known
-form; `examples/*.c` states the same functions the obvious way; and
+`../../corpus/lanes/lanecode.h` is a header of kernels written by hand in their best known
+form; categorized corpus `.c` files state the same functions the obvious way; and
 `tests/test_lanecode.py` requires QM to get from one to the other, same
 representative and same constants, without being told either.
 

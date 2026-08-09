@@ -1,9 +1,9 @@
 """The image back out as C, wasm32 and x86-64.
 
-`vm.lower` takes a minimized program to one artifact; `vm.emit` takes that
-artifact back to the three languages. Together they are why there is one
-program rather than one per language: the artifact is what is kept, and each
-listing is derived from it.
+`vm.lower` takes the minimized wasm32 sequence to one artifact; `vm.emit`
+takes that artifact back to the three languages. Together they are why there
+is one program rather than one per language: the artifact is what is kept,
+and each listing is derived from it.
 
 Emitting is easy to get subtly wrong and impossible to eyeball, so nothing here
 inspects the text. Each form is compiled or assembled with a real toolchain,
@@ -59,7 +59,7 @@ def minimized(name):
     result = solve(read_example(name + '.c'), frontend='cfront')
     assert result['ok'], result.get('error')
     target = next(t for t in result['targets']
-                  if t['name'] == result['primary_target'])
+                  if t['name'] == 'wasm32' and t.get('ok'))
     return (target['seq'], result['frontend']['input_bits'],
             result['frontend']['output_bits'])
 

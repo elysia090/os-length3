@@ -10,7 +10,7 @@ Python engine by fetching the files named in `web/qm-manifest.json`:
     dist/web/            app.js, worker.js, clang.js, vm.js, vm.wasm, styles
     dist/qm/             the minimizer, fetched at runtime by the worker
     dist/vm/             the machine it normalizes onto, fetched the same way
-    dist/examples/       the kernels the Examples dialog offers
+    dist/web/examples.json  the generated kernels the Examples dialog offers
 
 `index.html` is copied to the root with its two asset paths rewritten, so the
 same file serves correctly from `/` and from `/web/`.
@@ -30,7 +30,7 @@ DIST = os.path.join(ROOT, 'dist')
 # Every package the manifest can name has to be here, or the worker
 # installs an engine with a hole in it.  The check at the end of `build`
 # is what makes that a build failure rather than a runtime one.
-TREES = ('qm', 'vm', 'web', 'examples')
+TREES = ('qm', 'vm', 'web')
 
 
 def _ignore(directory, names):

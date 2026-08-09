@@ -1,10 +1,8 @@
-"""The normalization: any of C, x86-64 or wasm32 becomes one rSUBLEQ artifact.
+"""A minimized wasm32 sequence becomes one rSUBLEQ artifact.
 
-QM minimizes into a grammar of GF(2)-linear maps, convolutions, lane-local
-steps and gathers, and lowers that to whichever target was asked for. The three
-listings it can produce are three languages for one program, and none of them
-is *the* program. `vm.lower` makes one: `pack(code(z))` over a canonical
-signed image, running on the one instruction.
+QM accepts C through the browser's wasm32 compiler, or x86-64 and wasm32
+listings directly. It produces a minimized wasm32 instruction sequence, and
+`vm.lower` compiles that sequence to `pack(code(z))` over a canonical image.
 
 What makes it worth anything is that the artifact computes the same function,
 which is what these check — on the whole domain where the domain can be walked.
@@ -45,9 +43,18 @@ def minimized(name):
     result = solve(read_example(name + '.c'), frontend='cfront')
     assert result['ok'], result.get('error')
     target = next(t for t in result['targets']
-                  if t['name'] == result['primary_target'])
+                  if t['name'] == 'wasm32' and t.get('ok'))
     return (target['seq'], result['frontend']['input_bits'],
             result['frontend']['output_bits'])
+
+
+def artifact_result(result):
+    """Compile a solved result through the one wasm32-to-codec boundary."""
+    target = next(t for t in result['targets']
+                  if t['name'] == 'wasm32' and t.get('ok'))
+    bits = (result['frontend']['input_bits'],
+            result['frontend']['output_bits'])
+    return run.artifact_for(target['seq'], *bits)
 
 
 class TestTheArtifactComputesTheKernel(unittest.TestCase):
@@ -108,13 +115,15 @@ class TestTheArtifactComputesTheKernel(unittest.TestCase):
         # ranks8(0xFF) is the byte-lane iota, so the stream is 0..7.
         self.assertEqual(seen, list(range(8)))
 
-    def test_an_unsupported_instruction_says_which(self):
+    def test_a_lookup_table_has_a_vm_form(self):
         from qm.isa import Seq
         seq = Seq()
-        seq.emit('LUT', [0], const=(0, 1, 2, 3))
-        with self.assertRaises(lower.Unsupported) as caught:
-            lower.lower_seq(seq, 2, 8)
-        self.assertIn('LUT', str(caught.exception))
+        seq.emit('LUT', [0], const=(19, 3, 41, 7, 23, 11, 29, 5))
+        picture = lower.lower_seq(seq, 8, 32)
+        blob = codec.pack(codec.code(image.serialize(picture)))
+        values = [0, 1, 7, 8, 13, 255]
+        expected = [seq.ins[0].const[value & 7] for value in values]
+        self.assertEqual(run.evaluate_many(blob, values, 8, 32), expected)
 
 
 class TestTheThreeEntryArrowsAgree(unittest.TestCase):
@@ -133,23 +142,15 @@ class TestTheThreeEntryArrowsAgree(unittest.TestCase):
                             if t['name'] == 'wasm32' and t.get('ok')), None)
         self.assertIsNotNone(wasm_target, 'no wasm32 listing to feed back')
 
-        bits = (from_c['frontend']['input_bits'],
-                from_c['frontend']['output_bits'])
-        want = run.artifact_for(primary['seq'], *bits)
+        want = artifact_result(from_c)
 
         for label, listing in (('x86-64', primary['asm']),
                                ('wasm32', wasm_target['asm'])):
             with self.subTest(entry=label):
                 back = solve(listing)
                 self.assertTrue(back['ok'], back.get('error'))
-                again = next(t for t in back['targets']
-                             if t['name'] == back['primary_target'])
-                self.assertEqual(
-                    run.artifact_for(again['seq'],
-                                     back['frontend']['input_bits'],
-                                     back['frontend']['output_bits']),
-                    want,
-                    '%s came back as a different artifact' % label)
+                self.assertEqual(artifact_result(back), want,
+                                 '%s came back as a different artifact' % label)
 
 
 @unittest.skipUnless(shutil.which('node'), 'needs node')

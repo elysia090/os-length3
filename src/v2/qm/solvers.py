@@ -1,4 +1,4 @@
-"""SPEC §8 — Stage 2: synthesize candidate programs.
+"""Synthesize candidate programs after quotienting and normalization.
 
 Search happens only after quotienting and normalization, and specialized solvers
 are preferred over general search.  Every solver here is specialized; none of
@@ -450,7 +450,7 @@ def _describe_interval(lo, hi, lane_bits):
 
 
 def solve_lane_predicate(sem, obs, options=None):
-    """`POINT` — one interval test applied to every lane, as in lanecode.h.
+    """`POINT` — one interval test applied to every lane, as in the lane corpus.
 
     Comparison is where this grammar stops being linear: there is no GF(2)
     description of `lane < c`, and a deposit/convolution cannot produce one, so
@@ -1284,11 +1284,25 @@ def solve_table(sem, obs, options=None):
     """
     if not sem.domain.exhaustive or sem.input_bits > 16:
         return []
-    prog = Program([table(sem.table(), sem.input_bits, sem.output_bits)],
+    values = sem.table()
+    index_bits = sem.input_bits
+    while index_bits and values[:1 << (index_bits - 1)] == \
+            values[1 << (index_bits - 1):1 << index_bits]:
+        index_bits -= 1
+        values = values[:1 << index_bits]
+
+    if index_bits < sem.input_bits:
+        description = ('%d-entry lookup table selected by the low %d bits; '
+                       'the full input domain has %d entries'
+                       % (len(values), index_bits, 1 << sem.input_bits))
+    else:
+        description = ('%d-entry lookup table; correct by construction, and '
+                       'ranked last because L(z) counts the table'
+                       % len(values))
+
+    prog = Program([table(values, index_bits, sem.output_bits)],
                    1, 1, 'table', sem.input_bits, sem.output_bits,
-                   ['%d-entry lookup table; correct by construction, and '
-                    'ranked last because L(z) counts the table'
-                    % (1 << sem.input_bits)])
+                   [description])
     return [prog] if verify(prog, sem, obs) else []
 
 

@@ -1,4 +1,4 @@
-"""Pinf-R Section 1 — one complete scalar code, one program code, one rank.
+"""One complete scalar code, one program code, and one canonical rank.
 
 This is the dependency root. It knows nothing about images, machines, residuals
 or proofs, and nothing later may reach back into it for anything but bits.

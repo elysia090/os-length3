@@ -41,11 +41,12 @@ const state = {
   ready: false,
   busy: false,
   capabilities: null,
+  options: { frontend: 'clang', observer: 'exact' },
   view: 'asm',
   isa: null,
-  // Whether the paste defines a `main`. Python decides it, on every solve, so
-  // the page never has a second opinion about what the source contains.
-  hasMain: false,
+  // The one solve currently in flight. Its source and tab are captured so a
+  // late worker reply cannot overwrite a different tab or a newer edit.
+  solve: null,
   // An edit that landed while a solve was running.
   pending: false,
   // One tab per kernel you are working on. Each keeps its own source and its
@@ -65,6 +66,13 @@ function activeTab() {
 Object.defineProperty(state, 'result', {
   get() { const tab = activeTab(); return tab ? tab.result : null; },
   set(value) { const tab = activeTab(); if (tab) tab.result = value; },
+});
+
+// `main` belongs to a tab's last successful analysis, not to the editor as a
+// whole. Keeping it beside the result makes Run/Compile stable across tabs.
+Object.defineProperty(state, 'hasMain', {
+  get() { const tab = activeTab(); return tab ? Boolean(tab.hasMain) : false; },
+  set(value) { const tab = activeTab(); if (tab) tab.hasMain = Boolean(value); },
 });
 
 
@@ -226,6 +234,7 @@ function newTab(name, source) {
     name: name || 'untitled',
     source: source || '',
     result: null,
+    hasMain: false,
     ranWith: null,
     dirty: false,
   };
@@ -289,11 +298,6 @@ function renderTabs() {
                    aria-label="Close ${escapeHtml(tab.name)}">&times;</button>`
         : ''}
     </div>`).join('');
-
-  // The strip scrolls, so a tab selected from the far end would otherwise sit
-  // half outside it.
-  const active = list.querySelector('.tab.is-active');
-  if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 
   list.querySelectorAll('.tab').forEach((el) => {
     el.addEventListener('click', (event) => {
@@ -418,6 +422,7 @@ function syncSource(options) {
     tab.source = code;
     if (changed && !(options && options.keepDirty)) {
       tab.dirty = true;
+      tab.hasMain = false;
       renderTabs();
     }
     persistTabs();
@@ -468,8 +473,7 @@ function takeawayText() {
 // made of is how the page knows the listing on screen is no longer the one the
 // controls describe.
 function optionsSignature() {
-  return [$('sel-compiler').value, $('sel-observer').value,
-          $('inp-mask').value].join('|');
+  return `${state.options.frontend}|${state.options.observer}`;
 }
 
 function renderTakeaway() {
@@ -527,27 +531,33 @@ function fillTargets(result) {
 // ---------------------------------------------------------------------------
 
 function currentOptions() {
-  const observer = $('sel-observer').value === 'mask:custom'
-    ? `mask:${$('inp-mask').value || '0xFFFFFFFFFFFFFFFF'}`
-    : $('sel-observer').value;
-  return { frontend: $('sel-compiler').value, observer };
+  return { ...state.options };
 }
 
-function onOptionChanged() {
-  // The sub-line under the minimized program says when the shown answer was
-  // made with different settings; nothing else needs repainting.
-  if (state.result && state.result.ok) renderTakeaway();
-}
-
-function optimize() {
+function optimize(runRequest) {
   if (!state.ready || state.busy) return;
-  const source = $('source').value.trim();
-  if (!source) return;
+  const source = $('source').value;
+  if (!source.trim()) return;
 
   state.busy = true;
   state.pending = false;
-  $('foot-note').textContent = 'compiling…';
-  state.worker.postMessage({ type: 'solve', source, options: currentOptions() });
+  state.solve = {
+    tabId: state.activeId,
+    source,
+    options: optionsSignature(),
+    // Run is a transaction: the worker first rebuilds the minimized kernel
+    // from this exact source, then the driver consumes that fresh artifact.
+    run: runRequest || null,
+  };
+  $('foot-note').textContent = runRequest
+    ? 'recompiling the minimized program…' : 'compiling…';
+  state.worker.postMessage({
+    type: 'solve', source, options: currentOptions(),
+    // Automatic solves keep `main` out of the scalar Minimized Program. Run
+    // additionally asks the worker to compile the complete unit to wasm and
+    // close its explicit imported-I/O state machine.
+    analyze_main: Boolean(runRequest),
+  });
 }
 
 // Typing is the only thing that starts a compile now; there is no button. The
@@ -610,29 +620,31 @@ function termWrite(text, className) {
 }
 
 function runProgram() {
-  // Run belongs to the source, not to the minimized program: what it executes
-  // is the paste's own `main`. Without one there is nothing to run and nothing
-  // changes — the two panes already show what QM made of the kernel.
-  if (!state.hasMain) {
-    toast('this paste has no main to run');
+  // With a known driver, Run deliberately solves again before executing it.
+  // Automatic compilation is only a preview; execution must use an artifact
+  // rebuilt from the exact source visible when Run was pressed. Without a
+  // known driver, the same control remains an explicit compile request.
+  const tab = activeTab();
+  if (!state.hasMain || (tab && tab.dirty)) {
+    optimize();
     return;
   }
   if (state.busy) return;
   const stdin = $('term-in').value;
-  termWrite(`> ${stdin}\n`, 'term-echo');
+  // With no typed input, keep stdout on the prompt line: an empty echo used
+  // to leave a visually stray `>` above "Hello, world!".
+  termWrite(stdin ? `> ${stdin}\n` : '> ', 'term-echo');
   $('term-in').value = '';
-  state.busy = true;
-  $('btn-run').disabled = true;
-  status('running main…');
-  state.worker.postMessage({ type: 'exec', source: $('source').value, stdin });
+  optimize({ stdin });
 }
 
 function renderRunControls() {
-  // The terminal is only there when there is a `main` to drive it. Run is
-  // always live, though: a control that greys itself out for reasons you have
-  // to reconstruct is worse than one that presses and tells you why.
-  $('term').hidden = !state.hasMain;
-  $('btn-run').disabled = !state.ready;
+  const tab = activeTab();
+  const canRun = state.hasMain && tab && !tab.dirty;
+  $('term').hidden = !canRun;
+  $('run-label').textContent = canRun ? 'Run' : 'Compile';
+  const hasSource = Boolean($('source').value.trim());
+  $('btn-run').disabled = state.busy || !state.ready || !hasSource;
 }
 
 function showRunResult(result) {
@@ -642,13 +654,15 @@ function showRunResult(result) {
     return;
   }
   if (result.stdout) termWrite(result.stdout);
-  // Say how many of those calls went through the artifact, because that is
-  // the whole claim: what ran was the minimized program, not the paste.
+  const elapsed = Math.max(0, Math.round(Number(result.elapsed_ms) || 0));
+  // Keep the artifact fact, but make completion and elapsed wall time the
+  // stable line instead of exposing a process-like exit record for success.
   const via = result.ran
-    ? ` — ${result.ran.toLocaleString()} call${result.ran === 1 ? '' : 's'}`
+    ? ` · ${result.ran.toLocaleString()} call${result.ran === 1 ? '' : 's'}`
       + ' through the codec'
     : '';
-  termWrite(`[exit ${result.code}${via}]\n`, 'term-echo');
+  const exit = result.code ? ` · exit ${result.code}` : '';
+  termWrite(`Done. [${elapsed}ms]${exit}${via}\n`, 'term-echo');
   status();
 }
 
@@ -676,18 +690,16 @@ function downloadOutput() {
 
 function openDialog(title, html) {
   $('dlg-title').textContent = title;
+  $('dlg-title').hidden = false;
+  $('dlg-title-action').hidden = true;
   $('dlg-body').innerHTML = html;
   $('dlg').showModal();
 }
 
-// The `+` opens this, so an empty tab is one of the choices — it is what the
-// button used to do on its own, and it is the one that must never depend on a
-// fetch. The dialog is painted first and the examples are filled in when they
-// arrive: awaiting before showing anything is a `+` that does nothing for as
-// long as the network takes, which reads as a broken button.
 function examplesMarkup() {
   return '<div class="examples">'
-    + '<button class="btn ex" data-blank="1">Empty tab</button>'
+    + '<button class="btn ex new-tab" data-new-tab="1" '
+    + 'aria-label="New tab">+</button>'
     + EXAMPLES.map((ex, i) =>
         `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
         .join('')
@@ -696,6 +708,8 @@ function examplesMarkup() {
 
 async function showExamples() {
   openDialog('New tab', examplesMarkup());
+  $('dlg-title').hidden = true;
+  $('dlg-title-action').hidden = false;
   wireExamples();
   if (!EXAMPLES.length) {
     await loadExamples();
@@ -710,9 +724,8 @@ async function showExamples() {
 function wireExamples() {
   $('dlg-body').querySelectorAll('.ex').forEach((el) => {
     el.addEventListener('click', () => {
-      if (el.dataset.blank) {
+      if (el.dataset.newTab) {
         addTab();
-        renderTabs();
         $('dlg').close();
         return;
       }
@@ -782,17 +795,7 @@ function showDetails() {
 // Worker plumbing
 // ---------------------------------------------------------------------------
 
-function fillSettings(capabilities) {
-  $('sel-compiler').innerHTML = capabilities.frontends
-    .filter((f) => f.name !== 'precompiled')
-    .map((f) => `<option value="${f.name}"${f.name === 'clang' ? ' selected' : ''}>${
-      f.name === 'clang' ? 'Clang (WASM)' : escapeHtml(f.title)}</option>`)
-    .join('');
-
-  $('sel-observer').innerHTML = capabilities.observers
-    .map((o) => `<option value="${o.spec}">${escapeHtml(o.label)}</option>`)
-    .join('') + '<option value="mask:custom">Custom bit mask…</option>';
-
+function acceptCapabilities(capabilities) {
   QM_VERSION = capabilities.versions.qm;
   status();
 }
@@ -807,10 +810,7 @@ function onMessage(event) {
   if (msg.type === 'ready') {
     state.ready = true;
     state.capabilities = msg.capabilities;
-    fillSettings(msg.capabilities);
-    $('settings-note').textContent = msg.clang.configured === false
-      ? 'No Clang bundle configured; the built-in C subset frontend is used.'
-      : `Clang/WASM loads on the first solve. Listing: ${msg.clang.listing}.`;
+    acceptCapabilities(msg.capabilities);
     status();
     finishBusy();
     // The paste that was restored from the last session has never been through
@@ -825,11 +825,35 @@ function onMessage(event) {
   }
 
   if (msg.type === 'done') {
-    state.hasMain = Boolean(msg.has_main);
-    finishBusy();
-    state.result = msg.result;
+    const request = state.solve;
+    state.solve = null;
+    const tab = request
+      ? state.tabs.find((candidate) => candidate.id === request.tabId)
+      : activeTab();
+
+    // An edit made during this solve is already queued. Discard this stale
+    // answer instead of briefly presenting it as the answer to the new text.
+    if (!tab || (request && tab.source !== request.source)) {
+      finishBusy();
+      return;
+    }
+
+    tab.hasMain = Boolean(msg.has_main);
+    tab.result = msg.result;
+    tab.ranWith = request ? request.options : optionsSignature();
+    tab.dirty = false;
+
+    // A solve may finish after the user switches tabs. Store it on its own
+    // tab, but never paint it into the tab now visible.
+    if (tab.id !== state.activeId) {
+      finishBusy();
+      renderTabs();
+      persistTabs();
+      return;
+    }
 
     if (!msg.result.ok) {
+      finishBusy();
       $('qm-listing').innerHTML =
         `<span class="tok-com">${escapeHtml(
           msg.result.error.text || msg.result.error.message)}</span>`;
@@ -842,10 +866,7 @@ function onMessage(event) {
       return;
     }
 
-    const tab = activeTab();
     if (tab) {
-      tab.ranWith = optionsSignature();
-      tab.dirty = false;
       // Name the tab after the kernel, in the language it turned out to be.
       const name = msg.result.frontend.function.name;
       const listing = msg.result.frontend.frontend.listing;
@@ -857,6 +878,25 @@ function onMessage(event) {
     fillTargets(msg.result);
     renderTakeaway();
     renderRunControls();
+
+    // A Run request is continued only after a successful, non-stale solve.
+    // `solve` removed main before QM and replaced the worker's artifact, so
+    // `execMain` cannot accidentally execute an older minimized program.
+    if (request && request.run) {
+      if (!msg.has_main) {
+        finishBusy();
+        termWrite('the paste defines no main to run\n', 'term-err');
+        status();
+        return;
+      }
+      status('running main through the fresh artifact…');
+      state.worker.postMessage({
+        type: 'exec', source: request.source, stdin: request.run.stdin,
+      });
+      return;
+    }
+
+    finishBusy();
     status();
     // A paste of several functions answers about one of them.  Say so, once,
     // rather than letting the reader assume the whole file was minimized.
@@ -942,6 +982,42 @@ function init() {
     }
   });
 
+  // A desktop double-click on panel chrome turns the two working columns into
+  // one wide reading surface; a second double-click restores the pair. Code,
+  // tabs and controls keep their native double-click behaviour (word
+  // selection, tab actions, and so on).
+  const desktopPanels = matchMedia('(min-width: 1061px)');
+  const board = document.querySelector('.board');
+  const cards = Array.from(board.querySelectorAll('.card'));
+  const restorePanelPair = () => {
+    board.classList.remove('is-focused');
+    cards.forEach((card) => {
+      card.classList.remove('is-expanded');
+      card.setAttribute('aria-expanded', 'false');
+    });
+  };
+  const togglePanel = (card) => {
+    if (!desktopPanels.matches) return;
+    const restore = card.classList.contains('is-expanded');
+    restorePanelPair();
+    if (!restore) {
+      board.classList.add('is-focused');
+      card.classList.add('is-expanded');
+      card.setAttribute('aria-expanded', 'true');
+    }
+  };
+  cards.forEach((card) => {
+    card.setAttribute('aria-expanded', 'false');
+    card.addEventListener('dblclick', (event) => {
+      if (event.target.closest(
+        'textarea, pre, input, button, select, .tabs, .terminal')) return;
+      togglePanel(card);
+    });
+  });
+  desktopPanels.addEventListener('change', (event) => {
+    if (!event.matches) restorePanelPair();
+  });
+
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
@@ -969,15 +1045,11 @@ function init() {
     if (event.key === 'Enter') { event.preventDefault(); runProgram(); }
   });
   $('btn-details').addEventListener('click', showDetails);
-  $('btn-settings').addEventListener('click', () => $('settings').showModal());
-  $('settings-close').addEventListener('click', () => $('settings').close());
-  $('dlg-close').addEventListener('click', () => $('dlg').close());
-  $('sel-observer').addEventListener('change', (event) => {
-    $('inp-mask').disabled = event.target.value !== 'mask:custom';
-    onOptionChanged();
+  $('dlg-title-action').addEventListener('click', () => {
+    addTab();
+    $('dlg').close();
   });
-  $('sel-compiler').addEventListener('change', onOptionChanged);
-  $('inp-mask').addEventListener('input', onOptionChanged);
+  $('dlg-close').addEventListener('click', () => $('dlg').close());
   $('sel-isa-view').addEventListener('change', (event) => {
     state.isa = event.target.value;
     renderTakeaway();

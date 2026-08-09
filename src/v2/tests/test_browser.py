@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 from qm.browser import (artifact, capabilities, evaluate, fallback, finish,
-                        plan, prepare)
+                        plan, prepare, prepare_run, prepare_state)
 from qm.clang import NATIVE, read_signature
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +27,22 @@ uint64_t ranks8(uint8_t m)
     for (unsigned i = 0; i < 8; ++i)
         r |= (uint64_t)__builtin_popcount(m & ((1u << i) - 1)) << (8 * i);
     return r;
+}
+'''
+
+LOOKUP = '''#include <stdint.h>
+uint32_t lookup(uint8_t x)
+{
+    switch (x & 7) {
+    case 0: return 19;
+    case 1: return 3;
+    case 2: return 41;
+    case 3: return 7;
+    case 4: return 23;
+    case 5: return 11;
+    case 6: return 29;
+    default: return 5;
+    }
 }
 '''
 
@@ -93,6 +109,45 @@ uint64_t ranks8_qm(uint8_t x)
                              'clang is being handed %r rather than the '
                              'prepared source' % call)
 
+    def test_the_default_compiler_enters_the_core_directly(self):
+        with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
+            clang = handle.read()
+        self.assertIn("./drivers/compiler-core.js", clang)
+        self.assertNotIn(
+            "DEFAULT_DRIVER = new URL('./drivers/yowasp-clang.js'", clang)
+        with open(os.path.join(ROOT, 'web', 'drivers',
+                               'compiler-core.js')) as handle:
+            driver = handle.read()
+        self.assertIn("'llvm.core.wasm'", driver)
+        self.assertIn("'llvm-resources.tar'", driver)
+        self.assertIn('WebAssembly.compile(coreBytes)', driver)
+        self.assertNotIn("from '@yowasp/clang'", driver)
+        self.assertNotIn('bundle.js', driver)
+
+    def test_run_replaces_only_the_selected_function(self):
+        source = '''#include <stdint.h>
+uint64_t kernel(uint8_t x) { return (uint64_t)x + 1; }
+static uint64_t bias = 4;
+uint64_t helper(uint8_t a, uint8_t b) { return kernel(a) + b + bias; }
+int main(void) { return (int)helper(1, 2); }
+'''
+        prepared = prepare_run(source)
+        self.assertIn('extern uint64_t kernel(uint8_t);', prepared)
+        self.assertNotIn('return (uint64_t)x + 1', prepared)
+        self.assertIn('static uint64_t bias = 4', prepared)
+        self.assertIn('uint64_t helper(uint8_t a, uint8_t b)', prepared)
+        self.assertIn('int main(void)', prepared)
+
+    def test_state_analysis_compiles_the_complete_unit(self):
+        source = '''#include <stdint.h>
+uint64_t kernel(uint8_t x) { return (uint64_t)x + 1; }
+int main(void) { return (int)kernel((uint8_t)getchar()); }
+'''
+        prepared = prepare_state(source)
+        self.assertIn('uint64_t kernel(uint8_t x)', prepared)
+        self.assertIn('int main(void)', prepared)
+        self.assertIn('static int getchar(void)', prepared)
+
 
 class TestRunTheMinimizedProgram(unittest.TestCase):
     """The page could show a program and not try it.
@@ -139,10 +194,8 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
     def test_the_target_being_viewed_does_not_change_the_answer(self):
         """One artifact per solve, not one per target.
 
-        The artifact comes from the abstract program, so which machine you
-        happen to be looking at cannot change what Run executes. When it was
-        built from a target's lowered sequence, "the program" depended on a
-        view of it — which is the thing a single source of truth rules out.
+        The artifact always comes from the minimized wasm32 sequence, so the
+        target currently displayed cannot change what Run executes.
         """
         self.solved('ranks8.c')
         answers = [json.loads(evaluate(name, '5'))
@@ -164,7 +217,7 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIsNotNone(codec, 'the codec is not in the target list')
         self.assertTrue(codec['ok'])
         self.assertEqual(codec['instructions'], ['ROW'])
-        # §3.7's quantities, not the instruction count: span is one per
+        # Physical run quantities, not the instruction count: span is one per
         # transition and work is that plus the incidences each write repairs,
         # so work exceeds span exactly when some write had rows reading it.
         self.assertGreater(codec['work'], codec['span'])
@@ -178,8 +231,8 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
                          json.loads(artifact())['bytes'])
 
     def test_a_program_with_no_artifact_says_so(self):
-        # A TABLE program has no bit-sliced form yet, and the honest answer is
-        # which instruction stopped it rather than a blank Run.
+        # Preserve a compiler failure as a visible error rather than showing a
+        # blank Run result. The injected message checks that it is propagated.
         self.solved('ranks8.c')
         from qm import browser
         saved = dict(browser._LAST)
@@ -193,6 +246,20 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
             browser._LAST.clear()
             browser._LAST.update(saved)
 
+    def test_a_periodic_lookup_is_compact_and_runs_through_wasm(self):
+        result = json.loads(fallback(LOOKUP, '{}'))
+        self.assertTrue(result['ok'], result.get('error'))
+        op = result['program']['ops'][0]
+        self.assertEqual(op['class'], 'TABLE')
+        self.assertEqual(op['detail']['input_bits'], 3)
+        self.assertEqual(len(op['detail']['table']), 8)
+
+        wasm = next(t for t in result['targets'] if t['name'] == 'wasm32')
+        self.assertEqual(wasm['instructions'], ['LUT'])
+        self.assertLess(wasm['L_bits'], 1000)
+        self.assertTrue(json.loads(artifact())['ok'])
+        self.assertEqual(json.loads(evaluate('', '255'))['output'], '5')
+
     def test_nonsense_is_an_error_not_an_exception(self):
         self.solved('ranks8.c')
         self.assertFalse(json.loads(evaluate('', 'nope'))['ok'])
@@ -200,16 +267,19 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
     def test_run_executes_the_pastes_own_main(self):
         """Same lesson as `prepare`: the fix only counts if it is called.
 
-        Run used to evaluate the artifact on one typed-in value. It now runs
-        the paste's `main`, with the terminal beside the source as its stdin
-        and stdout — so the wiring to check is the split, the driver compile
-        and the two imports the module is allowed to have.
+        Run recompiles the kernel without `main`, then runs the paste's `main`
+        with the terminal beside the source as its stdin and stdout. The
+        explicit solve is required even when automatic compilation produced a
+        preview: execution must consume a fresh artifact for the source that
+        was visible when Run was pressed.
         """
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
             worker = handle.read()
         self.assertIn("msg.type === 'exec'", worker)
         self.assertIn("callPython('split'", worker)
         self.assertIn("callPython('prepare_run'", worker)
+        self.assertIn("callPython('prepare_state'", worker)
+        self.assertIn("'stateful_wasm'", worker)
         self.assertIn('qm_getchar', worker)
         self.assertIn('qm_putchar', worker)
         # paste -> QM -> codec -> run: the kernel the driver calls is an
@@ -227,8 +297,21 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
             app = handle.read()
         self.assertIn("type: 'exec'", app)
         self.assertIn("msg.type === 'ran'", app)
-        # There is no Compile button and no value box left to reference.
+        self.assertIn("Done. [${elapsed}ms]", app)
+        self.assertIn("stdin ? `> ${stdin}\\n` : '> '", app)
+        # There is one context-sensitive control, not separate Run and Compile
+        # buttons, and no value box left to reference.
         self.assertNotIn("btn-optimize", app)
+        self.assertIn("canRun ? 'Run' : 'Compile'", app)
+        self.assertIn("tab.hasMain = Boolean(msg.has_main)", app)
+        self.assertIn("tab.source !== request.source", app)
+        self.assertIn('if (!state.hasMain || (tab && tab.dirty))', app)
+        self.assertIn('optimize({ stdin });', app)
+        self.assertIn('run: runRequest || null', app)
+        self.assertIn('analyze_main: Boolean(runRequest)', app)
+        self.assertIn("source: request.source, stdin: request.run.stdin", app)
+        self.assertLess(app.index("type: 'solve', source"),
+                        app.index("type: 'exec', source: request.source"))
         self.assertNotIn("run-input", app)
 
     def test_the_page_compiles_without_being_asked(self):
@@ -241,10 +324,21 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertNotIn('id="btn-optimize"', html)
         self.assertNotIn('id="run-input"', html)
         self.assertIn('id="term-in"', html)
-        # Run sits in the source card's heading, where Examples used to be,
-        # and Examples folds into the control that makes a tab.
+        # Run stays in the source heading. The + opens one chooser where both
+        # the New tab heading and the + before the examples create a tab.
         self.assertIn('id="btn-run"', html)
+        self.assertIn('id="run-label"', html)
         self.assertNotIn('id="btn-examples"', html)
+        self.assertIn('aria-label="New tab or example"', html)
+        self.assertNotIn('Empty tab', html)
+        self.assertNotIn('id="btn-settings"', html)
+        self.assertNotIn('id="settings"', html)
+        self.assertIn('data-new-tab="1"', app)
+        self.assertIn("$('dlg-title-action').addEventListener('click'", app)
+        self.assertIn("card.addEventListener('dblclick'", app)
+        self.assertIn("board.classList.add('is-focused')", app)
+        self.assertIn('tabindex="0"', html)
+        self.assertIn("$('btn-newtab').addEventListener('click', showExamples)", app)
         head = html.split('id="card-write"')[1].split('</div>')[0]
         self.assertIn('id="btn-run"', head)
 
