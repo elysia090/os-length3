@@ -360,6 +360,8 @@ def _eval_point(steps, value):
             v = (-v) & M64
         elif mnemonic == 'AND_NEG':
             v = v & ((-v) & M64)
+        elif mnemonic == 'OR_NEG':
+            v = (v | (-v)) & M64
         elif mnemonic == 'AND_DEC':
             v = v & ((v - 1) & M64)
         elif mnemonic == 'OR_SHR':
@@ -377,6 +379,8 @@ def _eval_point(steps, value):
                 & mask_of(width)
         elif mnemonic == 'KEY':
             v = const.value(v) & M64
+        elif mnemonic == 'MOD':
+            v %= const
         elif mnemonic == 'SMEAR':
             v = smear(v, const or 64)
         elif mnemonic == 'CLZ':

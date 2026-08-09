@@ -675,8 +675,17 @@ CHAIN_DEPTH = 3
 CHAIN_PROBES = 40
 
 
-def chain_steps(width):
-    """The alphabet of whole-word steps, as (label, POINT steps, function).
+def _cascade_cost(width):
+    steps = 0
+    shift = 1
+    while shift < width:
+        steps += 2
+        shift <<= 1
+    return steps
+
+
+def chain_steps(width, modulus=None):
+    """The alphabet of whole-word steps, as (label, POINT steps, function, cost).
 
     Each entry is one recognizable move, not one instruction: `SMEAR` is the
     doubling cascade and `XOR_SAR` is the two's-complement fold, because those
@@ -689,26 +698,45 @@ def chain_steps(width):
     # is not emitted; a narrower word needs it after anything that can carry or
     # complement into the bits above it.
     trim = [('AND', m, None)] if width < 64 else []
+    narrow = 1 if width < 64 else 0
     steps = [
-        ('NOT', [('NOT', None, None)] + trim, lambda v: (~v) & m),
-        ('NEG', [('NEG', None, None)] + trim, lambda v: (-v) & m),
-        ('lowest set bit', [('AND_NEG', None, None)], lambda v: v & ((-v) & m)),
+        ('NOT', [('NOT', None, None)] + trim, lambda v: (~v) & m, 1 + narrow),
+        ('NEG', [('NEG', None, None)] + trim, lambda v: (-v) & m, 1 + narrow),
+        ('lowest set bit', [('AND_NEG', None, None)], lambda v: v & ((-v) & m),
+         2),
+        # `x | -x` puts "is anything set" in the top bit, which is the whole of
+        # a logical negation once the bit is shifted down and complemented.
+        ('any bit set', [('OR_NEG', None, None)], lambda v: (v | (-v)) & m, 2),
         ('clear lowest set bit', [('AND_DEC', None, None)],
-         lambda v: v & ((v - 1) & m)),
-        ('smear', [('SMEAR', width, None)], lambda v: smear(v, width)),
-        ('popcount', [('POPCNT', None, None)], popcnt),
-        ('leading zeros', [('CLZ', width, None)], lambda v: clz(v, width)),
-        ('trailing zeros', [('CTZ', width, None)], lambda v: ctz(v, width)),
+         lambda v: v & ((v - 1) & m), 2),
+        ('smear', [('SMEAR', width, None)], lambda v: smear(v, width),
+         _cascade_cost(width)),
+        ('popcount', [('POPCNT', None, None)], popcnt, 1),
+        ('leading zeros', [('CLZ', width, None)], lambda v: clz(v, width),
+         1 + 2 * narrow),
+        ('trailing zeros', [('CTZ', width, None)], lambda v: ctz(v, width),
+         1 + narrow),
         ('sign fold', [('XOR_SAR', width, width - 1)],
-         lambda v: (v ^ (to_signed(v, width) >> (width - 1))) & m),
+         lambda v: (v ^ (to_signed(v, width) >> (width - 1))) & m,
+         2 + 2 * narrow),
     ]
-    for shift in (1, 2, 4, 8, 16, 32):
+    # Doubling shifts, plus the one that reads a word's top bit: a sign or a
+    # "did anything survive" flag lives at `width - 1` and nowhere near a power
+    # of two.
+    if modulus is not None:
+        # The modulus is read off the observed outputs, the way a lane
+        # interval is read off the observed lanes: a function whose values
+        # stop at Q-1 and cover it has said what it is reduced by.
+        steps.append(('mod %d' % modulus, [('MOD', modulus, width)],
+                      lambda v, q=modulus: v % q, 4))
+    for shift in sorted(set([s for s in (1, 2, 4, 8, 16, 32) if s < width]
+                            + [width - 1])):
         if shift >= width:
             break
         steps.append(('>> %d' % shift, [('SHR', None, shift)],
-                      lambda v, s=shift: v >> s))
+                      lambda v, s=shift: v >> s, 1))
         steps.append(('<< %d' % shift, [('SHL', None, shift)] + trim,
-                      lambda v, s=shift: (v << s) & m))
+                      lambda v, s=shift: (v << s) & m, 1 + narrow))
     return steps
 
 
@@ -718,6 +746,11 @@ def chain_steps(width):
 CHAIN_ENTRIES = (
     ('x', 0), ('x - 1', -1), ('x + 1', 1),
 )
+
+
+# What leaving the chain costs in instructions: an add is one, and `c - v` is
+# a negate and an add.
+EXIT_COST = {'ADD': 1, 'SUB': 2}
 
 
 def _affine_exit(values, wanted, output_bits):
@@ -742,6 +775,32 @@ def _chain_probe_values(sem):
     return list(dict.fromkeys(v for v in picked if v <= mask_of(sem.input_bits)))
 
 
+# A reduction's reciprocal has to fit a 64-bit multiply, which bounds the
+# value's width plus the modulus's.  Wider than this and there is no lowering,
+# so there is no point offering the step.
+MAX_MOD_PRODUCT_BITS = 62
+
+
+def _modulus_of(outputs, width):
+    """The modulus the outputs imply, or None.
+
+    `Q` when the observed values are exactly `0 .. Q-1`: a function that never
+    reaches Q-1, or that skips a residue below it, is one whose range happens
+    to be small rather than one that was reduced.  A power of two is a mask,
+    and `AND` already has that.
+    """
+    modulus = max(outputs) + 1
+    if modulus < 3 or modulus >= (1 << width):
+        return None
+    if modulus & (modulus - 1) == 0:
+        return None
+    if width + modulus.bit_length() > MAX_MOD_PRODUCT_BITS:
+        return None
+    if len(set(outputs)) != modulus:
+        return None
+    return modulus
+
+
 def solve_point_chain(sem, obs, options=None):
     """`POINT` — a short chain of whole-word steps, entered and left affinely.
 
@@ -759,7 +818,7 @@ def solve_point_chain(sem, obs, options=None):
     width = sem.input_bits
     probes = _chain_probe_values(sem)
     wanted = [sem.value_at(x) for x in probes]
-    alphabet = chain_steps(width)
+    alphabet = chain_steps(width, _modulus_of(sem.table(), width))
 
     m = mask_of(width)
     # Depth is the outer loop and the entry is the inner one, so the shortest
@@ -769,31 +828,42 @@ def solve_point_chain(sem, obs, options=None):
     searches = []
     for entry_label, delta in CHAIN_ENTRIES:
         start = tuple((x + delta) & m for x in probes)
-        searches.append([entry_label, delta, {start: None}, [(start, [])]])
+        searches.append([entry_label, delta, {start: None},
+                         [(start, [], 1 if delta else 0)]])
 
     for depth in range(CHAIN_DEPTH + 1):
+        # Every chain that reaches the target at this depth, cheapest first.
+        # Depth counts moves and the objective counts instructions, and the two
+        # disagree: `smear` is one move and twelve instructions, so a search
+        # that returned the first match would answer a logical negation with a
+        # cascade where a shift would do.
+        matched = []
         for entry_label, delta, seen, frontier in searches:
-            for values, chain in frontier:
+            for values, chain, cost in frontier:
                 exit_form = _affine_exit(values, wanted, sem.output_bits)
                 if exit_form is None:
                     continue
                 if not chain and not delta and exit_form[1] == 0:
                     continue            # the identity; `solve_identity` owns it
-                prog = _chain_program(sem, entry_label, delta, chain, exit_form)
-                if verify(prog, sem, obs):
-                    return [prog]
+                matched.append((cost + EXIT_COST[exit_form[0]], entry_label,
+                                delta, chain, exit_form))
+        matched.sort(key=lambda item: (item[0], item[1]))
+        for _cost, entry_label, delta, chain, exit_form in matched:
+            prog = _chain_program(sem, entry_label, delta, chain, exit_form)
+            if verify(prog, sem, obs):
+                return [prog]
         if depth == CHAIN_DEPTH:
             break
         for search in searches:
             seen, frontier = search[2], search[3]
             nxt = []
-            for values, chain in frontier:
-                for label, steps, fn in alphabet:
+            for values, chain, cost in frontier:
+                for label, steps, fn, weight in alphabet:
                     moved = tuple(fn(v) for v in values)
                     if moved in seen:
                         continue
                     seen[moved] = None
-                    nxt.append((moved, chain + [(label, steps)]))
+                    nxt.append((moved, chain + [(label, steps)], cost + weight))
             search[3] = nxt
     return []
 
@@ -810,12 +880,20 @@ def _chain_program(sem, entry_label, delta, chain, exit_form):
         steps.extend(sub)
         labels.append(label)
     kind, const = exit_form
-    if const:
-        steps.append((kind, const, None))
+    if kind == 'SUB':
+        # `c - v`, and the grammar has no reverse subtract: negate, then add.
+        # The result is masked to the output width either way, so a narrower
+        # word needs no trim of its own.
+        steps.append(('NEG', None, None))
+        if const:
+            steps.append(('ADD', const, None))
+    elif const:
+        steps.append(('ADD', const, None))
     description = ' ; '.join([entry_label] + labels)
-    if const:
-        description += ' ; %s %d' % ('+' if kind == 'ADD' else 'reversed -',
-                                     const)
+    if kind == 'SUB':
+        description += ' ; %d - it' % const
+    elif const:
+        description += ' ; + %d' % const
     return Program(
         [point(steps, note=description)], 1, len(chain) + 1,
         'point-chain', sem.input_bits, sem.output_bits,
@@ -901,7 +979,13 @@ class _Gf2AffineFit(object):
         if vector == 0:
             self.alive = rhs == 0
             return self.alive
-        position = (vector & -vector).bit_length() - 1
+        # The highest column first, which puts the constant — its column is the
+        # top one — ahead of every input bit.  A piece where some bits never
+        # move leaves the system underdetermined, and pivoting low attributes
+        # the whole constant to whichever low bit happened to appear in the
+        # first row: a correct map, spelled as a fourteen-instruction XOR
+        # network instead of a mask and a constant.
+        position = vector.bit_length() - 1
         for other, (ov, orhs) in list(self.pivots.items()):
             if (ov >> position) & 1:
                 self.pivots[other] = (ov ^ vector, orhs ^ rhs)
@@ -1024,6 +1108,11 @@ def split_keys(input_bits):
     if input_bits <= 61:
         keys.append(field_key(0, input_bits, False))
         keys.append(field_key(0, input_bits, True))
+        # The word without its top bit.  A float's case analysis is the same on
+        # both halves of the sign, so reading the sign into the key would split
+        # every piece in two and answer with eight where there are four.  The
+        # branches still see the whole word; only the comparison does not.
+        keys.append(field_key(0, input_bits - 1, False))
     if input_bits >= 8 and input_bits % 2 == 0:
         half = input_bits // 2
         for signed in (True, False):
@@ -1137,6 +1226,11 @@ def _split_from_key(sem, obs, key):
                note='%d pieces on %s' % (len(branches), key.label))
     notes = ['key %s, thresholds %s'
              % (key.label, ', '.join(str(t) for t in breaks))]
+    if not sem.domain.exhaustive:
+        notes.append('the domain is probed, so each threshold is pinned only '
+                     'to within the gap between the keys either side of it: '
+                     'the smallest key that was seen to behave differently is '
+                     'the one reported')
     notes += ['piece %d: %s' % (index, label)
               for index, label in enumerate(labels)]
     prog = Program([op], 1, len(branches), 'split', sem.input_bits,
