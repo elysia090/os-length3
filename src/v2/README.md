@@ -99,9 +99,9 @@ wave has 7 lanes and the longest slice has span 10. `qm.wasmphysical` schedules
 each live SSA node by dependency depth, so one wave writes distinct slots in
 parallel. Calls, memory effects, and control transfers remain barriers.
 
-Those schedules have mapped physical forms. `QMS1` stores a target-shaped QM
-SSA sequence, `QMW1` stores one maximal pure wasm slice, and `QMA1` is the
-coordinate-ordered directory over independent pages. Each codec is columnar,
+Those schedules have mapped physical forms. `qm.scalarpage` stores a
+target-shaped scalar SSA sequence, `qm.steppage` stores one maximal pure state
+step, and `qm.pagearchive` is the coordinate-ordered directory over independent pages. Each codec is columnar,
 8-byte aligned, and validated only when its page is selected. The directory
 has no duplicate hash index. For an exactly proved right-zero `Byte*` future,
 the last byte is the direct 256-slot cache coordinate and the resume token;
@@ -346,6 +346,7 @@ qm/
 
 kernel/           Linux-in-Wasm execution, deterministic host state and pages
   host.py         nccc_call64 barriers and lazy direct block-page storage
+  machine.py      machine_step(state, event) and the external device ABI
   scheduler.py    resumable kernel threads and setjmp/longjmp continuations
   process.py      user/kernel syscall, TLS, and user continuation boundaries
   run.py          native LKL wasm entry point and barrier/page trace
@@ -389,8 +390,9 @@ Only block pages read by Linux become resident. The temporary contiguous
 and physical codec slices remain independently disposable. Timers advance the
 deterministic virtual clock to the next deadline and enqueue their callbacks as
 ordinary cooperative continuations. Pure slices between load/store/call/control
-barriers are substituted, normalized, encoded once, and compiled only after a
-second touch.
+barriers are substituted into physical-array SSA, normalized by QM, encoded,
+decoded and compiled through one state-step route on their first execution.
+Raw Wasm arithmetic cannot be encoded or executed as a state-step page.
 
 ---
 

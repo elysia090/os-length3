@@ -323,6 +323,9 @@ def run(path, entry='init', max_events=64, budget=1 << 17, rootfs=None,
             'bytes': root_store.length,
             'resident_pages': root_store.resident_pages,
             'resident_bytes': root_store.resident_bytes,
+            'backing_pages': root_store.backing_pages,
+            'cow_pages': root_store.cow_pages,
+            'dirty_pages': root_store.dirty_pages,
             'touched_pages': sorted(touched_pages),
         }
     if init_image is not None:
@@ -395,7 +398,7 @@ def main(argv=None):
               (normalization['source_work'],
                normalization['normalized_work'],
                normalization['removed_work'],
-               normalization['compiled_hot_slices']))
+               normalization['compiled_state_steps']))
         if 'rootfs' in report:
             root = report['rootfs']
             print('rootfs       %d/%d bytes resident, %d page(s) touched'

@@ -460,7 +460,7 @@ def physical_codec(_target_name=''):
     """
     import base64
 
-    from . import seqcodec
+    from . import scalarpage
 
     sources = _LAST.get('*physical_sources') or {}
     target_name = _target_name or 'wasm32'
@@ -471,12 +471,12 @@ def physical_codec(_target_name=''):
                                 % target_name})
     cache = _LAST['*physical_codecs']
     if target_name not in cache:
-        blob = seqcodec.pack(seq)
-        cache[target_name] = (blob, seqcodec.unpack(blob).layout())
+        blob = scalarpage.pack(seq)
+        cache[target_name] = (blob, scalarpage.unpack(blob).layout())
     blob, layout = cache[target_name]
     return _dumps({
         'ok': True,
-        'format': 'QMS1',
+        'format': 'scalar-page',
         'target': target_name,
         'codec': base64.b64encode(blob).decode('ascii'),
         'bytes': len(blob),

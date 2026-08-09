@@ -1,4 +1,4 @@
-"""Mapped dependency-wave codec for a minimized SSA program.
+"""Mapped physical page for one normalized scalar SSA program.
 
 The minimized program remains the source of truth.  This file derives a
 target-shaped execution cache which can be discarded and rebuilt.  Nodes are
@@ -21,7 +21,7 @@ from .cfront.errors import CFrontError
 from .wasmphysical import schedule_sequence
 
 
-MAGIC = b'QMS1'
+MAGIC = b'SCAL'
 VERSION = 1
 OPS = tuple(isa.OPCODES)
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
@@ -44,7 +44,7 @@ _COLUMNS = (
 )
 
 
-class SequenceCodecError(CFrontError):
+class ScalarPageError(CFrontError):
     """A minimized-program execution cache is malformed."""
 
 
@@ -63,7 +63,7 @@ def _column_bytes(width, values):
 
 
 def pack(seq, value_bits=64, inputs=1):
-    """Encode a normalized :class:`qm.isa.Seq` as one mapped wave page."""
+    """Encode a normalized :class:`qm.isa.Seq` as one mapped scalar page."""
     if value_bits not in (32, 64):
         raise ValueError('physical sequence values must be i32 or i64')
     if inputs != 1:
@@ -157,7 +157,7 @@ class _Column:
     width: int
 
 
-class MappedSequence(object):
+class MappedScalarPage(object):
     """Validated zero-copy columns for one minimized physical program."""
 
     __slots__ = ('data', 'value_bits', 'inputs', 'result', 'span', 'work',
@@ -201,7 +201,7 @@ class MappedSequence(object):
         widths = [offsets[index + 1] - offsets[index]
                   for index in range(self.span)]
         return {
-            'kind': 'qm-ssa-wave-program',
+            'kind': 'scalar-ssa-page',
             'value_bits': self.value_bits,
             'input_values': self.inputs,
             'result_value': self.result,
@@ -241,16 +241,16 @@ def unpack(blob):
     """Validate and map a physical sequence without rebuilding SSA objects."""
     data = blob if isinstance(blob, memoryview) else memoryview(blob)
     if len(data) < HEADER_BYTES:
-        raise SequenceCodecError('physical sequence header is truncated')
+        raise ScalarPageError('scalar page header is truncated')
     magic, version, header_bytes, *header = _HEADER.unpack_from(data, 0)
     if magic != MAGIC or version != VERSION or header_bytes != HEADER_BYTES:
-        raise SequenceCodecError('physical sequence has an unknown format')
+        raise ScalarPageError('scalar page has an unknown format')
     (value_bits, inputs, result, span, work, arguments, constants,
      required_features) = header
     if value_bits not in (32, 64) or inputs != 1 or result > work:
-        raise SequenceCodecError('physical sequence header is inconsistent')
+        raise ScalarPageError('scalar page header is inconsistent')
     if required_features & ~sum(FEATURE_TO_BIT.values()):
-        raise SequenceCodecError('physical sequence requires unknown features')
+        raise ScalarPageError('scalar page requires unknown features')
 
     expected = _expected_counts(span, work, arguments, constants)
     columns = {}
@@ -258,25 +258,25 @@ def unpack(blob):
     directory_at = _HEADER.size
     directory_end = _HEADER.size + len(_COLUMNS) * _DIRECTORY_ENTRY.size
     if any(data[directory_end:HEADER_BYTES]):
-        raise SequenceCodecError('physical sequence header padding is nonzero')
+        raise ScalarPageError('scalar page header padding is nonzero')
     for name, width in _COLUMNS:
         offset, count = _DIRECTORY_ENTRY.unpack_from(data, directory_at)
         directory_at += _DIRECTORY_ENTRY.size
         aligned = _align(cursor)
         if any(data[cursor:aligned]):
-            raise SequenceCodecError('physical sequence padding is nonzero')
+            raise ScalarPageError('scalar page padding is nonzero')
         cursor = aligned
         if offset != cursor or count != expected[name]:
-            raise SequenceCodecError('%s column is not canonical' % name)
+            raise ScalarPageError('%s column is not canonical' % name)
         end = offset + count * width
         if end > len(data):
-            raise SequenceCodecError('%s column is truncated' % name)
+            raise ScalarPageError('%s column is truncated' % name)
         columns[name] = _Column(offset, count, width)
         cursor = end
     if cursor != len(data):
-        raise SequenceCodecError('physical sequence has trailing bytes')
+        raise ScalarPageError('scalar page has trailing bytes')
 
-    mapped = MappedSequence(data, tuple(header), columns)
+    mapped = MappedScalarPage(data, tuple(header), columns)
     _validate(mapped)
     return mapped
 
@@ -299,18 +299,18 @@ def _validate(mapped):
     lanes = mapped.values('lane_values')
     if (not offsets or offsets[0] != 0 or offsets[-1] != mapped.work
             or any(a > b for a, b in zip(offsets, offsets[1:]))):
-        raise SequenceCodecError('waves are not a segmented region')
+        raise ScalarPageError('waves are not a segmented region')
     if sorted(lanes) != list(range(1, mapped.work + 1)):
-        raise SequenceCodecError('wave lanes do not cover the SSA domain')
+        raise ScalarPageError('wave lanes do not cover the SSA domain')
 
     arguments = mapped.values('argument_offsets')
     constants = mapped.values('constant_offsets')
     if (arguments[0] != 0 or arguments[-1] != mapped.arguments
             or any(a > b for a, b in zip(arguments, arguments[1:]))):
-        raise SequenceCodecError('arguments are not a segmented region')
+        raise ScalarPageError('arguments are not a segmented region')
     if (constants[0] != 0 or constants[-1] != mapped.constants
             or any(a > b for a, b in zip(constants, constants[1:]))):
-        raise SequenceCodecError('constants are not a segmented region')
+        raise ScalarPageError('constants are not a segmented region')
 
     depth = [0] * (mapped.work + 1)
     required_features = 0
@@ -320,7 +320,7 @@ def _validate(mapped):
     for value in range(1, mapped.work + 1):
         code = mapped.value('opcodes', value - 1)
         if code >= len(OPS):
-            raise SequenceCodecError('physical sequence has an unknown opcode')
+            raise ScalarPageError('scalar page has an unknown opcode')
         op = OPS[code]
         if op in ('PDEP', 'PDEP_DYN'):
             required_features |= FEATURE_TO_BIT['pdep']
@@ -334,32 +334,32 @@ def _validate(mapped):
         args = mapped.values('argument_values')[begin:end]
         if any(arg >= value or (arg and depth[arg] >= depth[value])
                for arg in args):
-            raise SequenceCodecError('a lane depends on its own/later wave')
+            raise ScalarPageError('a lane depends on its own/later wave')
         arity = end - begin
         if op in _ONE_ARGUMENT:
             expected_arity = 1
         elif op in _TWO_ARGUMENTS:
             expected_arity = 2
         else:  # guarded by the fixed OPS table, kept explicit for extensions
-            raise SequenceCodecError('%s has no declared argument shape' % op)
+            raise ScalarPageError('%s has no declared argument shape' % op)
         if arity != expected_arity:
-            raise SequenceCodecError('%s has the wrong argument count' % op)
+            raise ScalarPageError('%s has the wrong argument count' % op)
 
         cbegin, cend = constants[value - 1:value + 1]
         count = cend - cbegin
         if op == 'LUT':
             if not count or count & (count - 1):
-                raise SequenceCodecError('LUT size must be a power of two')
+                raise ScalarPageError('LUT size must be a power of two')
         elif count != (1 if op in _ONE_CONSTANT else 0):
-            raise SequenceCodecError('%s has the wrong constant count' % op)
+            raise ScalarPageError('%s has the wrong constant count' % op)
         shift = mapped.value('shifts', value - 1)
         if op in _ONE_SHIFT:
             if shift >= mapped.value_bits:
-                raise SequenceCodecError('%s has an invalid shift' % op)
+                raise ScalarPageError('%s has an invalid shift' % op)
         elif shift != NO_SHIFT:
-            raise SequenceCodecError('%s unexpectedly carries a shift' % op)
+            raise ScalarPageError('%s unexpectedly carries a shift' % op)
     if required_features != mapped.required_features:
-        raise SequenceCodecError('physical feature requirements are not exact')
+        raise ScalarPageError('physical feature requirements are not exact')
 
 
 def execute(mapped, input_value):
@@ -422,4 +422,4 @@ def _apply(op, args, constants, shift, mask):
     if op == 'CLZ': return clz(a, bits)
     if op == 'CTZ': return ctz(a, bits)
     if op == 'LUT': return constants[a & (len(constants) - 1)]
-    raise SequenceCodecError('no executor for %s' % op)
+    raise ScalarPageError('no executor for %s' % op)

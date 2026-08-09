@@ -1,4 +1,4 @@
-"""Mmap-shaped physical codec for one pure WebAssembly slice.
+"""Mmap-shaped physical page for one normalized machine-state step.
 
 The semantic input remains the decoded WebAssembly module.  This codec is a
 deterministic, disposable execution cache derived from it.  One blob is one
@@ -20,30 +20,16 @@ from dataclasses import dataclass
 import struct
 
 from .cfront.errors import CFrontError
+from .laneops import OPS
 
 
-MAGIC = b'QMW1'
+MAGIC = b'STEP'
 VERSION = 1
 I64 = (1 << 64) - 1
 
-# This is a global physical vocabulary, not a per-file dictionary.  Giving the
-# same short code a different operation in another slice would make a cached
-# page depend on an omitted decoder.
-_COMMON_UNARY = ('eqz', 'clz', 'ctz', 'popcnt')
-_BINARY = ('eq', 'ne', 'lt_s', 'lt_u', 'gt_s', 'gt_u',
-           'le_s', 'le_u', 'ge_s', 'ge_u',
-           'add', 'sub', 'mul', 'and', 'or', 'xor',
-           'shl', 'shr_s', 'shr_u', 'rotl', 'rotr',
-           'div_s', 'div_u', 'rem_s', 'rem_u')
-OPS = (
-    'select',
-    'i32.wrap_i64',
-) + tuple('i32.%s' % name for name in _COMMON_UNARY + _BINARY) + (
-    'i64.extend_i32_s',
-    'i64.extend_i32_u',
-) + tuple('i64.%s' % name for name in _COMMON_UNARY + _BINARY)
-OPS += ('i32.extend8_s', 'i32.extend16_s',
-        'i64.extend8_s', 'i64.extend16_s', 'i64.extend32_s')
+# This is a global physical vocabulary, not a per-file dictionary. Giving the
+# same short code a different operation in another page would make cached state
+# depend on an omitted decoder.
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 
 OPERAND_KINDS = ('const', 'stack', 'local', 'node')
@@ -70,7 +56,7 @@ _COLUMNS = (
 )
 
 
-class WaveCodecError(CFrontError):
+class StatePageError(CFrontError):
     """The physical slice is malformed or not canonical."""
 
 
@@ -176,7 +162,7 @@ class _Column:
     width: int
 
 
-class MappedWaveSlice(object):
+class MappedStatePage(object):
     """A validated zero-copy view of one physical slice blob."""
 
     __slots__ = ('data', 'function', 'start', 'end', 'instructions',
@@ -228,7 +214,7 @@ class MappedWaveSlice(object):
         widths = [offsets[index + 1] - offsets[index]
                   for index in range(self.span)]
         return {
-            'kind': 'wasm-wave-slice',
+            'kind': 'state-step-page',
             'function': self.function,
             'slice_region': [self.start, self.end],
             'wasm_instructions': self.instructions,
@@ -271,14 +257,14 @@ def unpack(blob):
     """Validate and map one slice without expanding its physical columns."""
     data = blob if isinstance(blob, memoryview) else memoryview(blob)
     if len(data) < HEADER_BYTES:
-        raise WaveCodecError('wave slice header is truncated')
+        raise StatePageError('state-step page header is truncated')
     magic, version, header_bytes, *header = _HEADER.unpack_from(data, 0)
     if magic != MAGIC or version != VERSION or header_bytes != HEADER_BYTES:
-        raise WaveCodecError('wave slice has an unknown physical format')
+        raise StatePageError('state-step page has an unknown format')
     (function, start, end, instructions, span, work, operands,
      stack_inputs, stack_count, local_count) = header
     if end < start or instructions != end - start:
-        raise WaveCodecError('wave slice instruction region is inconsistent')
+        raise StatePageError('state-step instruction region is inconsistent')
 
     expected_counts = _expected_counts(
         span, work, operands, stack_count, local_count)
@@ -287,25 +273,25 @@ def unpack(blob):
     directory_at = _HEADER.size
     directory_end = _HEADER.size + len(_COLUMNS) * _DIRECTORY_ENTRY.size
     if any(data[directory_end:HEADER_BYTES]):
-        raise WaveCodecError('wave slice header padding is not canonical')
+        raise StatePageError('state-step header padding is not canonical')
     for name, width in _COLUMNS:
         offset, count = _DIRECTORY_ENTRY.unpack_from(data, directory_at)
         directory_at += _DIRECTORY_ENTRY.size
         aligned = _align(cursor)
         if any(data[cursor:aligned]):
-            raise WaveCodecError('wave slice column padding is not canonical')
+            raise StatePageError('state-step column padding is not canonical')
         cursor = aligned
         if count != expected_counts[name] or offset != cursor:
-            raise WaveCodecError('wave slice %s column is not canonical' % name)
+            raise StatePageError('state-step %s column is not canonical' % name)
         end_offset = offset + count * width
         if end_offset > len(data):
-            raise WaveCodecError('wave slice %s column is truncated' % name)
+            raise StatePageError('state-step %s column is truncated' % name)
         columns[name] = _Column(offset, count, width)
         cursor = end_offset
     if cursor != len(data):
-        raise WaveCodecError('wave slice has trailing bytes')
+        raise StatePageError('state-step page has trailing bytes')
 
-    mapped = MappedWaveSlice(data, tuple(header), columns)
+    mapped = MappedStatePage(data, tuple(header), columns)
     _validate(mapped)
     return mapped
 
@@ -320,18 +306,18 @@ def _validate(mapped):
     if (not wave_offsets or wave_offsets[0] != 0
             or wave_offsets[-1] != mapped.work
             or any(a > b for a, b in zip(wave_offsets, wave_offsets[1:]))):
-        raise WaveCodecError('wave boundaries are not a segmented region')
+        raise StatePageError('wave boundaries are not a segmented region')
     if sorted(lanes) != list(range(1, mapped.work + 1)):
-        raise WaveCodecError('wave lanes do not form the node domain')
+        raise StatePageError('wave lanes do not form the node domain')
     if (not argument_offsets or argument_offsets[0] != 0
             or argument_offsets[-1] != mapped.operands
             or any(a > b for a, b in zip(argument_offsets,
                                          argument_offsets[1:]))):
-        raise WaveCodecError('argument boundaries are not a segmented region')
+        raise StatePageError('argument boundaries are not a segmented region')
     if any(code >= len(OPS) for code in opcodes):
-        raise WaveCodecError('wave slice contains an unknown operation')
+        raise StatePageError('state-step page contains an unknown operation')
     if any(tag >= len(OPERAND_KINDS) for tag in tags):
-        raise WaveCodecError('wave slice contains an unknown operand kind')
+        raise StatePageError('state-step page has an unknown operand kind')
 
     depth = [0] * (mapped.work + 1)
     for wave in range(1, mapped.span + 1):
@@ -339,28 +325,61 @@ def _validate(mapped):
             depth[value] = wave
     for node in range(1, mapped.work + 1):
         begin, end = argument_offsets[node - 1:node + 1]
+        operation = OPS[opcodes[node - 1]]
         for tag, value in zip(tags[begin:end], values[begin:end]):
             kind = OPERAND_KINDS[tag]
             if kind == 'node' and (value < 1 or value > mapped.work
                                    or depth[value] >= depth[node]):
-                raise WaveCodecError('a wave lane depends on its own/later wave')
+                raise StatePageError('a wave lane depends on its own/later wave')
             if kind == 'stack' and value >= mapped.stack_inputs:
-                raise WaveCodecError('stack operand is outside the frame region')
+                raise StatePageError('stack operand is outside the frame region')
             if kind == 'local' and value >= mapped.local_count:
-                raise WaveCodecError('local operand is outside the frame region')
+                raise StatePageError('local operand is outside the frame region')
+        if operation.startswith(('lane32.', 'lane64.')):
+            from .laneops import GENERIC_ARITY, shape, split
+            try:
+                arity, constant_count, is_shift = shape(operation)
+            except ValueError as error:
+                raise StatePageError(str(error))
+            node_tags = tags[begin:end]
+            _bits, name = split(operation)
+            if name in GENERIC_ARITY:
+                if len(node_tags) != arity:
+                    raise StatePageError(
+                        '%s has the wrong operand count' % operation)
+                continue
+            if (len(node_tags) < arity
+                    or any(OPERAND_KINDS[tag] != 'const'
+                           for tag in node_tags[arity:])):
+                raise StatePageError('%s mixes inputs and constants'
+                                     % operation)
+            carried = len(node_tags) - arity
+            if constant_count < 0:
+                if not carried or carried & (carried - 1):
+                    raise StatePageError(
+                        'physical LUT size is not a power of two')
+            elif carried != constant_count + int(is_shift):
+                raise StatePageError(
+                    '%s has the wrong physical constant count' % operation)
+            if is_shift and values[begin + arity] >= int(
+                    operation[4:].split('.', 1)[0]):
+                raise StatePageError('%s has an invalid physical shift'
+                                     % operation)
     for tag_name, value_name, count in (
             ('stack_tags', 'stack_values', mapped.stack_count),
             ('local_tags', 'local_values', mapped.local_count)):
         for tag, value in zip(mapped.values(tag_name), mapped.values(value_name)):
             if tag >= len(OPERAND_KINDS):
-                raise WaveCodecError('wave output has an unknown operand kind')
+                raise StatePageError('state output has an unknown operand kind')
             kind = OPERAND_KINDS[tag]
             if kind == 'node' and not 1 <= value <= mapped.work:
-                raise WaveCodecError('wave output node is outside the slice')
+                raise StatePageError('state output node is outside the step')
             if kind == 'stack' and value >= mapped.stack_inputs:
-                raise WaveCodecError('wave output stack slot is outside the frame')
+                raise StatePageError(
+                    'state output stack slot is outside the frame')
             if kind == 'local' and value >= mapped.local_count:
-                raise WaveCodecError('wave output local slot is outside the frame')
+                raise StatePageError(
+                    'state output local slot is outside the frame')
 
 
 def decode_plan(mapped):
@@ -403,15 +422,15 @@ def execute_mapped(mapped, state):
     """Execute mapped columns directly without rebuilding the SSA objects."""
     from dataclasses import replace
     from .wasmstate import Frame
-    from .wasmwave import _evaluate
+    from .laneops import evaluate
 
     frame = state.frames[-1]
     if frame.function != mapped.function or frame.pc != mapped.start:
-        raise WaveCodecError('wave slice does not name the current frame')
+        raise StatePageError('state-step page does not name the current frame')
     if len(frame.stack) != mapped.stack_inputs:
-        raise WaveCodecError('wave slice input stack extent does not match')
+        raise StatePageError('state-step input stack extent does not match')
     if len(frame.locals) != mapped.local_count:
-        raise WaveCodecError('wave slice local extent does not match')
+        raise StatePageError('state-step local extent does not match')
 
     values = [0] * (mapped.work + 1)
 
@@ -439,7 +458,7 @@ def execute_mapped(mapped, state):
                 for at in range(begin, end)
             )
             operation = OPS[mapped.value('opcodes', node - 1)]
-            produced.append((node, _evaluate(operation, arguments)))
+            produced.append((node, evaluate(operation, arguments)))
         for node, value in produced:
             values[node] = value
 
