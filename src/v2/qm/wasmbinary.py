@@ -68,6 +68,99 @@ def encode_sleb(value, bits=64):
     return bytes(out)
 
 
+SECTION_NAMES = {
+    0: 'custom', 1: 'type', 2: 'import', 3: 'function', 4: 'table',
+    5: 'memory', 6: 'global', 7: 'export', 8: 'start', 9: 'element',
+    10: 'code', 11: 'data', 12: 'data-count', 13: 'tag',
+}
+
+
+@dataclass(frozen=True)
+class Section:
+    kind: int
+    name: str
+    start: int
+    payload: int
+    end: int
+
+    @property
+    def size(self):
+        return self.end - self.start
+
+    @property
+    def payload_size(self):
+        return self.end - self.payload
+
+
+def module_sections(data):
+    """Return exact byte regions for a core WebAssembly module."""
+    if bytes(data[:8]) != b'\x00asm\x01\x00\x00\x00':
+        raise ValueError('input is not a WebAssembly 1.0 binary')
+    out = []
+    at = 8
+    while at < len(data):
+        start = at
+        kind = data[at]
+        size, payload = _uleb(data, at + 1)
+        end = payload + size
+        if end > len(data):
+            raise ValueError('wasm section exceeds the file')
+        name = SECTION_NAMES.get(kind, 'section-%d' % kind)
+        if kind == 0:
+            length, cursor = _uleb(data, payload)
+            name_end = cursor + length
+            if name_end > end:
+                raise ValueError('wasm custom section name is truncated')
+            name = bytes(data[cursor:name_end]).decode('utf-8', 'replace')
+        out.append(Section(kind, name, start, payload, end))
+        at = end
+    return tuple(out)
+
+
+def section_layout(data):
+    """Summarize semantic and removable custom section bytes."""
+    sections = module_sections(data)
+    return {
+        'module_bytes': len(data),
+        'semantic_section_bytes': 8 + sum(
+            section.size for section in sections if section.kind),
+        'custom_section_bytes': sum(
+            section.size for section in sections if not section.kind),
+        'sections': [
+            {'kind': section.kind, 'name': section.name,
+             'bytes': section.size, 'payload_bytes': section.payload_size}
+            for section in sections
+        ],
+    }
+
+
+def strip_custom_sections(data, keep=()):
+    """Copy only the retained ranges of a linked runtime module once.
+
+    ``data`` may be an mmap or memoryview.  Custom payloads are never copied
+    into a temporary list: the returned bytearray is the one dense semantic
+    artifact that a caller explicitly asked to produce.
+    """
+    keep = frozenset(keep)
+    sections = module_sections(data)
+    retained_size = 8 + sum(
+        section.size for section in sections
+        if section.kind or section.name in keep)
+    kept = bytearray(retained_size)
+    kept[:8] = data[:8]
+    cursor = 8
+    removed = []
+    for section in sections:
+        if section.kind or section.name in keep:
+            following = cursor + section.size
+            kept[cursor:following] = data[section.start:section.end]
+            cursor = following
+        else:
+            removed.append(section)
+    assert cursor == retained_size
+    return kept, tuple(removed)
+
+
 def _name(data, at):
     size, at = _uleb(data, at)
     return at + size
@@ -108,7 +201,7 @@ class ModuleIndex(object):
 
     def __init__(self, data, types, imported_functions, bodies,
                  code_start, code_end):
-        self.data = bytes(data)
+        self.data = data
         self.types = tuple(types)
         self.imported_functions = imported_functions
         self.bodies = tuple(bodies)
@@ -135,6 +228,8 @@ class ModuleIndex(object):
                 raise ValueError('cannot replace a body without a code section')
             return self.data
         replacements = dict(replacements)
+        if not replacements:
+            return self.data
         payload = bytearray(encode_uleb(len(self.bodies)))
         for body in self.bodies:
             raw = replacements.get(body.ordinal,
@@ -142,13 +237,19 @@ class ModuleIndex(object):
             payload += encode_uleb(len(raw))
             payload += raw
         section = b'\x0a' + encode_uleb(len(payload)) + bytes(payload)
-        return self.data[:self.code_start] + section + self.data[self.code_end:]
+        rewritten = bytearray(
+            len(self.data) - (self.code_end - self.code_start) + len(section))
+        first = self.code_start
+        second = first + len(section)
+        rewritten[:first] = self.data[:first]
+        rewritten[first:second] = section
+        rewritten[second:] = self.data[self.code_end:]
+        return rewritten
 
 
 def index_module(data):
     """Index a wasm binary without decoding every instruction in it."""
-    data = bytes(data)
-    if data[:8] != b'\x00asm\x01\x00\x00\x00':
+    if bytes(data[:8]) != b'\x00asm\x01\x00\x00\x00':
         raise ValueError('input is not a WebAssembly 1.0 binary')
     at = 8
     types = []

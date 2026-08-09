@@ -3,16 +3,10 @@
 from . import isa
 from .bits import mask_of
 from .laneops import select
-from .wasmphysical import schedule_sequence
 
 
-def _slice_sequence(plan):
-    """Return a canonical normalized one-coordinate island, if closed."""
-    roots = {operand.value for operand in plan.stack + plan.locals
-             if operand.kind == 'node'}
-    if len(roots) != 1 or not plan.nodes:
-        return None
-    root = next(iter(roots))
+def _backward_nodes(plan, root):
+    """Node coordinates that can affect one future-visible output."""
     live = set()
     pending = [root]
     while pending:
@@ -23,16 +17,23 @@ def _slice_sequence(plan):
         pending.extend(operand.value
                        for operand in plan.nodes[value - 1].arguments
                        if operand.kind == 'node')
-    if len(live) != len(plan.nodes):
-        return None
+    return live
 
-    external = {operand for node in plan.nodes for operand in node.arguments
+
+def _slice_sequence(plan, root):
+    """Normalize one future-visible SSA residual, if its slice is closed."""
+    if not plan.nodes or root < 1 or root > len(plan.nodes):
+        return None
+    live = _backward_nodes(plan, root)
+    external = {operand for node in plan.nodes if node.value in live
+                for operand in node.arguments
                 if operand.kind in ('stack', 'local')}
     if len(external) != 1:
         return None
     input_operand = next(iter(external))
 
     kinds = {node.op.split('.', 1)[0] for node in plan.nodes
+             if node.value in live
              if node.op.startswith(('i32.', 'i64.'))}
     if len(kinds) != 1:
         return None
@@ -40,7 +41,7 @@ def _slice_sequence(plan):
     if any(not node.op.startswith(kind + '.')
            or node.op.split('.', 1)[1]
            in ('div_s', 'div_u', 'rem_s', 'rem_u')
-           for node in plan.nodes):
+           for node in plan.nodes if node.value in live):
         return None
     bits = 32 if kind == 'i32' else 64
     mask = mask_of(bits)
@@ -72,6 +73,8 @@ def _slice_sequence(plan):
 
     try:
         for node in plan.nodes:
+            if node.value not in live:
+                continue
             name = node.op.split('.', 1)[1]
             arguments = tuple(item(operand) for operand in node.arguments)
             if name == 'extend_i32_u' and node.op.startswith('i64.'):
@@ -161,14 +164,40 @@ def _slice_sequence(plan):
     before = isa.dead_code(before)
     after = isa.normalize(before)
     if bits == 32:
-        # A state page's width-qualified lanes mask every publication. The explicit
-        # i32 masks above are proof markers needed while 64-bit isa.normalize
-        # reasons about the expression; they are not executable work in the
-        # selected 32-bit physical domain.
+        # Propagate the future observer backward through the selected SSA. A
+        # width-qualified lane masks every publication, so an earlier AND that
+        # preserves every bit a later shift can expose is an identity in the
+        # quotient even when 64-bit normalization needed it as a proof marker.
+        required = [0] * (len(after.ins) + 1)
+        required[after.result] = mask
+        for index in range(len(after.ins), 0, -1):
+            instruction = after.ins[index - 1]
+            observed = required[index]
+            if not observed:
+                continue
+            if instruction.op == 'SHL':
+                inputs = observed >> instruction.shift
+            elif instruction.op == 'SHR':
+                inputs = (observed << instruction.shift) & mask
+            elif instruction.op == 'SAR':
+                inputs = (observed << instruction.shift) & mask
+                filled = mask ^ mask_of(32 - instruction.shift)
+                if observed & filled:
+                    inputs |= 1 << 31
+            elif instruction.op == 'AND' and instruction.const is not None:
+                inputs = observed & int(instruction.const)
+            else:
+                inputs = mask
+            for argument in instruction.args:
+                required[argument] |= inputs
+
         compact = isa.Seq()
         remap = {0: 0}
         for index, instruction in enumerate(after.ins, start=1):
-            if instruction.op == 'AND' and instruction.const == mask:
+            if (instruction.op == 'AND'
+                    and instruction.const is not None
+                    and (int(instruction.const) & required[index])
+                    == required[index]):
                 remap[index] = remap[instruction.args[0]]
             else:
                 remap[index] = compact.emit(
@@ -192,36 +221,331 @@ def _physical_plan(plan):
         plan.stack_inputs, tuple(nodes), plan.waves, plan.stack, plan.locals)
 
 
-def normalize_plan(plan):
-    """Produce the sole canonical physical plan for one pure state step."""
-    normalized = _slice_sequence(plan)
-    if normalized is None:
-        return _physical_plan(plan)
-    after, bits, input_operand, old_root = normalized
-    from .wasmwave import Operand, PureSlice, WaveNode
+def _rewrite_physical(nodes, stack, locals_):
+    """Recompose local quotient identities across a multi-input SSA cut.
 
-    nodes = []
-    for instruction in after.ins:
-        arguments = [input_operand if value == 0
-                     else Operand('node', value)
-                     for value in instruction.args]
-        constants = instruction.const
-        if constants is not None:
-            if not isinstance(constants, (tuple, list)):
-                constants = (constants,)
-            arguments.extend(Operand('const', value) for value in constants)
-        if instruction.shift is not None:
-            arguments.append(Operand('const', instruction.shift))
-        value = len(nodes) + 1
-        nodes.append(WaveNode(value, 'lane%d.%s' % (bits, instruction.op),
-                              tuple(arguments)))
-    replacement = (input_operand if after.result == 0
-                   else Operand('node', after.result))
+    The single-input minimizer handles the expensive closed backward slices.
+    This pass handles identities whose inputs remain separate physical
+    coordinates, without packing them into a synthetic scalar or materializing
+    a second plan.  Every replacement is one exact lane primitive and the
+    following liveness pass proves the resulting work/span objective.
+    """
+    from .wasmwave import Operand, WaveNode
+
+    outputs = {operand.value for operand in stack + locals_
+               if operand.kind == 'node'}
+    consumers = {node.value: [] for node in nodes}
+    for node in nodes:
+        for operand in node.arguments:
+            if operand.kind == 'node':
+                consumers[operand.value].append(node.op)
+
+    remap = {}
+    rebuilt = []
+    forms = {}
+
+    def resolve(operand):
+        if operand.kind != 'node':
+            return operand
+        return remap[operand.value]
+
+    def form(operand):
+        return forms.get(operand.value) if operand.kind == 'node' else None
+
+    def constant(operand):
+        return operand.value if operand.kind == 'const' else None
+
+    def emit(operation, arguments):
+        value = len(rebuilt) + 1
+        operand = Operand('node', value)
+        rebuilt.append(WaveNode(value, operation, tuple(arguments)))
+        forms[value] = (operation, tuple(arguments))
+        return operand
+
+    for node in nodes:
+        operation = node.op
+        arguments = tuple(map(resolve, node.arguments))
+        width, name = operation.split('.', 1)
+        bits = 32 if width == 'lane32' else 64
+        full = mask_of(bits)
+        replacement = None
+
+        # Wasm values already use an unsigned host representation.  The
+        # unsigned extension therefore changes the type observer, not the
+        # stored coordinate.
+        if name == 'EXTEND_I32_U':
+            replacement = arguments[0]
+
+        # A wrap only publishes the low word.  When it is not itself visible
+        # and every consumer is already a 32-bit lane, those consumers perform
+        # the same projection at their input boundary.
+        elif (name == 'WRAP_I64' and node.value not in outputs
+              and consumers[node.value]
+              and all(op.startswith('lane32.')
+                      for op in consumers[node.value])):
+            replacement = arguments[0]
+
+        elif name == 'ADD' and len(arguments) == 2:
+            source = form(arguments[0])
+            if (source is not None and source[0] == width + '.ADDR'
+                    and constant(arguments[1]) is not None):
+                operation = width + '.ADD3'
+                arguments = source[1] + (arguments[1],)
+
+        elif name == 'AND' and len(arguments) == 2:
+            source = form(arguments[0])
+            mask = constant(arguments[1])
+            if source is not None and mask == 1 and source[0] in (
+                    width + '.SHRR', width + '.SHR'):
+                shift = form(source[1][1])
+                if (shift is not None and shift[0] == width + '.ANDNR'
+                        and constant(shift[1][1]) == 7):
+                    operation = width + '.BIT_MSB8'
+                    arguments = (source[1][0], shift[1][0])
+                else:
+                    operation = width + '.BIT'
+                    arguments = source[1]
+            elif source is not None and source[0] == width + '.XOR':
+                inverted = source[1]
+                if (len(inverted) == 2
+                        and constant(inverted[1]) == full
+                        and mask is not None):
+                    operation = width + '.ANDNR'
+                    arguments = (inverted[0], arguments[1])
+
+        elif name == 'ANDR' and len(arguments) == 2:
+            shifted = form(arguments[0])
+            bounded = form(arguments[1])
+            if shifted is None or shifted[0] != width + '.SHRR':
+                shifted, bounded = bounded, shifted
+            if (shifted is not None and shifted[0] == width + '.SHRR'
+                    and bounded is not None
+                    and bounded[0] == width + '.XOR'
+                    and constant(bounded[1][1]) == full):
+                raised = form(bounded[1][0])
+                if (raised is not None and raised[0] == width + '.SHLR'
+                        and constant(raised[1][0]) == full):
+                    operation = width + '.BEXTR'
+                    arguments = (shifted[1][0], shifted[1][1], raised[1][1])
+
+        elif name == 'EQZ' and len(arguments) == 1:
+            source = form(arguments[0])
+            if source is not None:
+                inverse = {
+                    'EQ': 'NE', 'NE': 'EQ',
+                    'LT_S': 'GE_S', 'LT_U': 'GE_U',
+                    'GT_S': 'LE_S', 'GT_U': 'LE_U',
+                    'LE_S': 'GT_S', 'LE_U': 'GT_U',
+                    'GE_S': 'LT_S', 'GE_U': 'LT_U',
+                }
+                source_width, source_name = source[0].split('.', 1)
+                if source_name in ('BIT', 'BIT_MSB8'):
+                    operation = (source_width + '.BITZ'
+                                 if source_name == 'BIT'
+                                 else source_width + '.BIT_MSB8Z')
+                    arguments = source[1]
+                elif source_name in inverse:
+                    operation = source_width + '.' + inverse[source_name]
+                    arguments = source[1]
+
+        elif name == 'SELECT' and len(arguments) == 3:
+            condition = form(arguments[2])
+            if condition is not None:
+                condition_width, relation = condition[0].split('.', 1)
+                extrema = {
+                    'LT_U': 'UMIN', 'LE_U': 'UMIN',
+                    'GT_U': 'UMAX', 'GE_U': 'UMAX',
+                    'LT_S': 'SMIN', 'LE_S': 'SMIN',
+                    'GT_S': 'SMAX', 'GE_S': 'SMAX',
+                }
+                if (relation in extrema
+                        and condition[1] == arguments[:2]):
+                    operation = condition_width + '.' + extrema[relation]
+                    arguments = arguments[:2]
+
+        if replacement is not None:
+            remap[node.value] = replacement
+            continue
+        operand = emit(operation, arguments)
+        remap[node.value] = operand
 
     def output(operand):
-        return replacement if operand == Operand('node', old_root) else operand
+        return resolve(operand) if operand.kind == 'node' else operand
 
+    return tuple(rebuilt), tuple(map(output, stack)), tuple(map(output, locals_))
+
+
+def _compact(nodes, stack, locals_):
+    """Remove superseded SSA and rebuild dense physical dependency waves."""
+    from .wasmphysical import DependencyWaves
+    from .wasmwave import Operand, WaveNode
+
+    nodes, stack, locals_ = _rewrite_physical(nodes, stack, locals_)
+
+    trapping = {'DIV_S', 'DIV_U', 'REM_S', 'REM_U'}
+    live = {node.value for node in nodes
+            if node.op.split('.', 1)[-1] in trapping}
+    live.update(operand.value for operand in stack + locals_
+                if operand.kind == 'node')
+    pending = list(live)
+    while pending:
+        value = pending.pop()
+        for operand in nodes[value - 1].arguments:
+            if operand.kind == 'node' and operand.value not in live:
+                live.add(operand.value)
+                pending.append(operand.value)
+
+    remap = {}
+    kept = []
+    common = {}
+    for node in nodes:
+        if node.value not in live:
+            continue
+        arguments = tuple(
+            Operand('node', remap[operand.value])
+            if operand.kind == 'node' else operand
+            for operand in node.arguments)
+        key = (node.op, arguments)
+        previous = common.get(key)
+        if previous is not None:
+            remap[node.value] = previous
+            continue
+        value = len(kept) + 1
+        remap[node.value] = value
+        kept.append(WaveNode(value, node.op, arguments))
+        common[key] = value
+
+    def output(operand):
+        return (Operand('node', remap[operand.value])
+                if operand.kind == 'node' else operand)
+
+    depths = [0]
+    by_depth = {}
+    for node in kept:
+        depth = 1 + max((depths[operand.value]
+                         for operand in node.arguments
+                         if operand.kind == 'node'), default=0)
+        depths.append(depth)
+        by_depth.setdefault(depth, []).append(node.value)
+    offsets = [0]
+    values = []
+    for depth in range(1, max(by_depth, default=0) + 1):
+        values.extend(by_depth.get(depth, ()))
+        offsets.append(len(values))
+    return (tuple(kept),
+            DependencyWaves(tuple(offsets), tuple(values), tuple(depths)),
+            tuple(map(output, stack)), tuple(map(output, locals_)))
+
+
+def _semantic_cut(plan):
+    """Expose only lane forms the scalar solver can prove, without escape.
+
+    Node coordinates, outputs and waves remain those of the canonical
+    persistent cut.  This view changes operation spelling only; unsupported
+    terminal primitives remain physical and make that backward island closed
+    to the scalar solver.
+    """
+    from .wasmwave import PureSlice, WaveNode
+
+    names = {
+        'ADD': 'add', 'ADDR': 'add',
+        'SUB': 'sub', 'SUBR': 'sub',
+        'IMUL': 'mul', 'MULR': 'mul',
+        'AND': 'and', 'ANDR': 'and',
+        'OR': 'or', 'ORR': 'or',
+        'XOR': 'xor', 'XORR': 'xor',
+        'SHL': 'shl', 'SHLR': 'shl',
+        'SHR': 'shr_u', 'SHRR': 'shr_u',
+        'SAR': 'shr_s', 'SARR': 'shr_s',
+        'CLZ': 'clz', 'CTZ': 'ctz', 'POPCNT': 'popcnt',
+        'WRAP_I64': 'wrap_i64',
+        'EXTEND_I32_S': 'extend_i32_s',
+        'EXTEND_I32_U': 'extend_i32_u',
+        'EXTEND8_S': 'extend8_s',
+        'EXTEND16_S': 'extend16_s',
+        'EXTEND32_S': 'extend32_s',
+    }
+    nodes = []
+    for node in plan.nodes:
+        prefix, name = node.op.split('.', 1)
+        semantic = names.get(name)
+        operation = node.op
+        if semantic is not None:
+            bits = prefix[len('lane'):]
+            operation = 'i%s.%s' % (bits, semantic)
+        nodes.append(WaveNode(node.value, operation, node.arguments))
     return PureSlice(
         plan.function, plan.start, plan.end, plan.instructions,
-        plan.stack_inputs, tuple(nodes), schedule_sequence(after),
-        tuple(map(output, plan.stack)), tuple(map(output, plan.locals)))
+        plan.stack_inputs, tuple(nodes), plan.waves, plan.stack, plan.locals)
+
+
+def normalize_plan(plan):
+    """Normalize dominant future-visible work backward into one wave."""
+    from .wasmwave import Operand, PureSlice, WaveNode
+
+    raw = _physical_plan(plan)
+    nodes, waves, stack, locals_ = _compact(
+        raw.nodes, raw.stack, raw.locals)
+    physical = PureSlice(
+        raw.function, raw.start, raw.end, raw.instructions,
+        raw.stack_inputs, nodes, waves, stack, locals_)
+    semantic = _semantic_cut(physical)
+    source_nodes = list(physical.nodes)
+    roots = {operand.value for operand in physical.stack + physical.locals
+             if operand.kind == 'node'}
+    roots = sorted(roots, key=lambda root: (-len(_backward_nodes(semantic, root)),
+                                            root))
+    replacements = {}
+    # Multi-coordinate cuts may have no closed single-input island at all.
+    # Recompose the physical graph once unconditionally so those residuals do
+    # not escape every QM pass merely because the scalar solver cannot pack
+    # their independent inputs.
+    best = (physical.nodes, physical.waves,
+            physical.stack, physical.locals)
+    for root in roots:
+        normalized = _slice_sequence(semantic, root)
+        if normalized is None:
+            continue
+        after, bits, input_operand, old_root = normalized
+        trial_nodes = list(source_nodes)
+        values = {0: input_operand}
+        for result, instruction in enumerate(after.ins, start=1):
+            arguments = [values[value] for value in instruction.args]
+            constants = instruction.const
+            if constants is not None:
+                if not isinstance(constants, (tuple, list)):
+                    constants = (constants,)
+                arguments.extend(Operand('const', value)
+                                 for value in constants)
+            if instruction.shift is not None:
+                arguments.append(Operand('const', instruction.shift))
+            value = len(trial_nodes) + 1
+            trial_nodes.append(WaveNode(
+                value, 'lane%d.%s' % (bits, instruction.op),
+                tuple(arguments)))
+            values[result] = Operand('node', value)
+        trial_replacements = dict(replacements)
+        trial_replacements[old_root] = values[after.result]
+
+        def output(operand):
+            if operand.kind == 'node':
+                return trial_replacements.get(operand.value, operand)
+            return operand
+
+        stack = tuple(map(output, physical.stack))
+        locals_ = tuple(map(output, physical.locals))
+        candidate = _compact(tuple(trial_nodes), stack, locals_)
+        nodes, waves, _stack, _locals = candidate
+        best_nodes, best_waves, _best_stack, _best_locals = best
+        # A smaller root may share the dominant root's source prefix. Admit it
+        # only after recomposition proves that neither physical dimension grew.
+        if (len(nodes) <= len(best_nodes)
+                and waves.span <= best_waves.span):
+            source_nodes = trial_nodes
+            replacements = trial_replacements
+            best = candidate
+
+    nodes, waves, stack, locals_ = best
+    return PureSlice(
+        plan.function, plan.start, plan.end, plan.instructions,
+        plan.stack_inputs, nodes, waves, stack, locals_)

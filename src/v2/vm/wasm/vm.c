@@ -39,6 +39,8 @@ typedef long long          i64;
 /* Branch targets below zero are invocation events. */
 #define EV_EMIT   -1
 #define EV_COMMIT -2
+#define I64_MAX_VALUE ((i64)(((u64)1 << 63) - 1))
+#define I64_MIN_VALUE (-I64_MAX_VALUE - 1)
 
 /* -------------------------------------------------------------- memory ---
  * A flat array over i64 addresses, sized at load from the image's own extent.
@@ -83,6 +85,13 @@ static u64 budget = 1ull << 22;
 static u64 last_steps;
 static int direct_byte_state;
 static u64 direct_read_steps;
+
+/* One coefficient per physical cell is the affine SSA residual over Byte.
+ * Epoch tags make each proof proportional to cells actually reached by the
+ * observer; the 2^20 coordinate space is never cleared or hashed. */
+static u32 affine_tag[CAP];
+static i64 affine_step[CAP];
+static u32 affine_epoch = 1;
 
 static i64 mem_get(i64 address)
 {
@@ -139,27 +148,61 @@ static u32 bit_next(void)
     return (bits_base[i >> 3] >> (7u - (u32)(i & 7u))) & 1u;
 }
 
+/* Consume the zero prefix a byte coordinate at a time.  Aligning the current
+ * byte under CLZ preserves the MSB-first bit order while avoiding a separate
+ * memory load and state materialization for every zero bit.  The terminating
+ * one is consumed as part of the result. */
+static u32 bit_zero_run(void)
+{
+    u32 zeros = 0;
+    while (bits_at < bits_len && zeros < 64u) {
+        u32 offset = (u32)(bits_at & 7u);
+        u32 take = 8u - offset;
+        u64 available = bits_len - bits_at;
+        if ((u64)take > available) take = (u32)available;
+        u32 chunk = ((u32)bits_base[bits_at >> 3] << offset) & 255u;
+        if (chunk) {
+            u32 in_byte = (u32)__builtin_clz(chunk) - 24u;
+            if (in_byte < take) {
+                bits_at += (u64)in_byte + 1u;
+                return zeros + in_byte;
+            }
+        }
+        bits_at += take;
+        zeros += take;
+    }
+    bits_bad = 1;
+    return 0;
+}
+
+static u64 bit_take(u32 count)
+{
+    if ((u64)count > bits_len - bits_at) {
+        bits_bad = 1;
+        return 0;
+    }
+    u64 value = 0;
+    while (count) {
+        u32 offset = (u32)(bits_at & 7u);
+        u32 take = 8u - offset;
+        if (take > count) take = count;
+        u32 shift = 8u - offset - take;
+        u32 part = ((u32)bits_base[bits_at >> 3] >> shift)
+                 & ((1u << take) - 1u);
+        value = (value << take) | part;
+        bits_at += take;
+        count -= take;
+    }
+    return value;
+}
+
 static u64 decode_scalar(void)
 {
     if (bits_bad || bits_at >= bits_len) { bits_bad = 1; return 0; }
     if (!bit_next()) return 0;                         /* E(0) */
-
-    u32 zeros = 0;
-    for (;;) {
-        if (bits_at >= bits_len || zeros >= 64u) {
-            bits_bad = 1;
-            return 0;
-        }
-        if (bit_next()) break;
-        zeros += 1u;
-    }
-
-    u64 value = 1;
-    for (u32 i = 0; i < zeros; ++i) {
-        if (bits_at >= bits_len) { bits_bad = 1; return 0; }
-        value = (value << 1) | (u64)bit_next();
-    }
-    return value;
+    u32 zeros = bit_zero_run();
+    if (bits_bad) return 0;
+    return (1ull << zeros) | bit_take(zeros);
 }
 
 /* ---------------------------------------------------------------- image ---
@@ -290,11 +333,36 @@ static int run(i64 pc, i64 *event)
     }
 }
 
+struct affine_value { i64 base, step; };
+
+static struct affine_value affine_get(i64 address)
+{
+    struct affine_value value;
+    value.base = mem_get(address);
+    value.step = (address >= 0 && (u64)address < CAP
+                  && affine_tag[address] == affine_epoch)
+        ? affine_step[address] : 0;
+    return value;
+}
+
+static int affine_range(struct affine_value value, i64 *low, i64 *high)
+{
+    i64 delta, end;
+    if (value.step > I64_MAX_VALUE / 255
+            || value.step < I64_MIN_VALUE / 255) return 0;
+    delta = value.step * 255;
+    if (__builtin_saddll_overflow(value.base, delta, &end)) return 0;
+    *low = value.base < end ? value.base : end;
+    *high = value.base > end ? value.base : end;
+    return 1;
+}
+
 /* Prove the byte-register state step over its complete finite input domain.
- * The feed row must commit after changing no persistent cell except input.
- * Each possible byte is then read through the ordinary transactional engine;
- * only a byte-for-byte identity result selects the direct implementation.
- * Nothing sampled or remembered at runtime participates in the decision. */
+ * The feed row first proves that the persistent state is the final byte. The
+ * observer is then interpreted once over affine SSA values `base + step*byte`.
+ * Uniform branches retain one path; a branch whose two targets coincide needs
+ * no predicate. An identity affine output proves all 256 bytes without
+ * materializing or hashing a 256-state table. */
 static int detect_direct_byte_state(void)
 {
     i64 a = mem_get(pc_feed);
@@ -308,41 +376,84 @@ static int detect_direct_byte_state(void)
     int saved_overflowed = overflowed;
     int saved_exhausted = exhausted;
     int saved_table_full = table_full;
-    u64 read_steps = 0;
+    u64 steps = 0;
+    i64 event = 0;
+    i64 pc = pc_out;
 
-    for (u32 byte = 0; byte < 256u; ++byte) {
-        journal_begin();
-        if (!mem_set(0, (i64)byte)) {
-            journal_rollback();
-            last_steps = saved_steps;
-            overflowed = saved_overflowed;
-            exhausted = saved_exhausted;
-            table_full = saved_table_full;
-            return 0;
+    affine_epoch += 1u;
+    if (!affine_epoch) {
+        for (u32 i = 0; i < CAP; ++i) affine_tag[i] = 0;
+        affine_epoch = 1;
+    }
+    journal_begin();
+    if (!mem_set(0, 0)) goto affine_fail;
+    affine_tag[0] = affine_epoch;
+    affine_step[0] = 1;
+
+    for (;;) {
+        if (steps >= budget) goto affine_fail;
+        steps += 1;
+
+        struct affine_value av = affine_get(pc);
+        struct affine_value bv = affine_get(pc + 1);
+        struct affine_value cv = affine_get(pc + 2);
+        if (av.step || bv.step || cv.step) goto affine_fail;
+        a = av.base;
+        i64 b = bv.base;
+        i64 c = cv.base;
+        if (a < 0 || b < 0) goto affine_fail;
+
+        struct affine_value left = affine_get(a);
+        struct affine_value right = affine_get(b);
+        struct affine_value result;
+        if (__builtin_ssubll_overflow(right.base, left.base, &result.base)
+                || __builtin_ssubll_overflow(right.step, left.step,
+                                              &result.step))
+            goto affine_fail;
+        i64 low, high;
+        if (!affine_range(result, &low, &high)) goto affine_fail;
+        if (!mem_set(b, result.base)) goto affine_fail;
+        affine_tag[b] = affine_epoch;
+        affine_step[b] = result.step;
+
+        if (low > 0 || (high > 0 && c == pc + 3)) {
+            pc += 3;
+            continue;
         }
-        i64 event = 0;
-        int finished = run(pc_out, &event);
-        i64 out = mem_get(1);
-        u64 steps = last_steps;
-        journal_rollback();
-        if (!finished || event != EV_EMIT || out != (i64)byte
-                || (byte && steps != read_steps)) {
-            last_steps = saved_steps;
-            overflowed = saved_overflowed;
-            exhausted = saved_exhausted;
-            table_full = saved_table_full;
-            return 0;
+        if (high <= 0 && c >= 0) {
+            pc = c;
+            continue;
         }
-        read_steps = steps;
+        if (high <= 0) {
+            event = c;
+            break;
+        }
+        goto affine_fail;
     }
 
+    {
+        struct affine_value out = affine_get(1);
+        if (event != EV_EMIT || out.base != 0 || out.step != 1)
+            goto affine_fail;
+    }
+
+    journal_rollback();
     last_steps = saved_steps;
     overflowed = saved_overflowed;
     exhausted = saved_exhausted;
     table_full = saved_table_full;
     journal_begin();
-    direct_read_steps = read_steps;
+    direct_read_steps = steps;
     return 1;
+
+affine_fail:
+    journal_rollback();
+    last_steps = saved_steps;
+    overflowed = saved_overflowed;
+    exhausted = saved_exhausted;
+    table_full = saved_table_full;
+    journal_begin();
+    return 0;
 }
 
 EXPORT int vm_read(void)

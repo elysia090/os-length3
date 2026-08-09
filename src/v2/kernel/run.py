@@ -9,6 +9,7 @@ operation that requires choosing or waking a continuation.
 import argparse
 from dataclasses import replace
 import json
+import mmap
 from pathlib import Path
 import sys
 import time
@@ -45,13 +46,13 @@ def _process_stopped(process, boundary):
 def run(path, entry='init', max_events=64, budget=1 << 17, rootfs=None,
         event_callback=None, start_init=False, init_module=None):
     with open(path, 'rb') as handle:
-        raw = handle.read()
+        source = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
     started = time.perf_counter()
     # LKL's C syscall table casts handlers of smaller arity to its uniform
     # six-i32 dispatch signature. Native C ABIs ignore the extra registers;
     # strict WebAssembly traps, so this compatibility is explicit and scoped
     # to the kernel module rather than weakening ordinary Wasm execution.
-    module = decode_module(raw, indirect_abi='c-extra-args')
+    module = decode_module(source, indirect_abi='c-extra-args')
     decoded_seconds = time.perf_counter() - started
     machine = start_state(module, entry, host_imports=(NCCC_IMPORT,))
     host = LinuxHostState()
@@ -280,16 +281,18 @@ def run(path, entry='init', max_events=64, budget=1 << 17, rootfs=None,
         detail = event.get('detail') or ()
         if len(detail) > 5 and detail[0:2] == ('block', 'read'):
             touched_pages.update(detail[5])
-    mapped_pages = tuple(page for page in executor.physical.values()
-                         if page is not None)
+    mapped_pages = tuple(entry.mapped for entry in executor.steps.values()
+                         if entry is not None)
     codec = {
         'mapped_pages': len(mapped_pages),
         'mapped_bytes': sum(len(page.data) for page in mapped_pages),
         'execution': executor.total_cost.layout(),
         'normalization': executor.normalization_layout(),
     }
+    code_layout = module.code_layout()
+    code_layout['coordinate_rows'] = executor.steps.resident_rows
     report = {
-        'module_bytes': len(raw),
+        'module_bytes': len(source),
         'decode_seconds': decoded_seconds,
         'functions': len(module.functions),
         'table_slots': [len(table) for table in module.tables],
@@ -314,7 +317,14 @@ def run(path, entry='init', max_events=64, budget=1 << 17, rootfs=None,
             for thread in state.threads[1:] if thread is not None
         ],
         'codec': codec,
-        'physical_pages': len(executor.physical),
+        'code': code_layout,
+        'materialization': {
+            'source': 'read-only mmap',
+            'source_heap_copy_bytes': 0,
+            'decoded_body_bytes': code_layout['decoded_body_bytes'],
+            'encoded_body_bytes': code_layout['encoded_body_bytes'],
+        },
+        'physical_pages': len(mapped_pages),
         'stopped_at_scheduler': bool(events and
                                      events[-1]['action'] == 'stalled'),
     }
@@ -374,6 +384,10 @@ def main(argv=None):
     else:
         print('module       %d bytes' % report['module_bytes'])
         print('decode       %.3f s' % report['decode_seconds'])
+        code = report['code']
+        print('code         %d/%d functions, %d/%d body bytes decoded'
+              % (code['decoded_functions'], code['defined_functions'],
+                 code['decoded_body_bytes'], code['encoded_body_bytes']))
         if args.events:
             for event in report['events']:
                 suffix = ' [%s]' % event['action']

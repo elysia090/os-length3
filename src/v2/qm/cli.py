@@ -138,7 +138,8 @@ def state_vm(args):
         module = decode_module(raw)
         initial = load(module, artifact, budget=args.state_step_budget)
         mode = invoke(module, initial.snapshot, 'vm_direct_byte_state', (),
-                      budget=args.state_step_budget).result[0]
+                      budget=args.state_step_budget,
+                      executor=initial.executor).result[0]
         compiled = compile_vm(
             module, initial,
             max_states=args.state_max_states,

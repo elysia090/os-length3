@@ -26,7 +26,7 @@ class TestWasmVmSelfQuotient(unittest.TestCase):
 
     def test_loaded_wasm_agrees_with_the_python_vm(self):
         mode = invoke(self.module, self.initial.snapshot,
-                      'vm_direct_byte_state')
+                      'vm_direct_byte_state', executor=self.initial.executor)
         self.assertEqual(mode.result, (1,))
         reference = machine.Residual(seed.ECHO)
         self.assertEqual(wasmvm.read(self.module, self.initial),
@@ -53,10 +53,22 @@ class TestWasmVmSelfQuotient(unittest.TestCase):
             _next, next_output = quotient.run([17], state=state)
             self.assertEqual(next_output, 17)
 
+    def test_public_vm_calls_retain_the_same_physical_residual_pages(self):
+        first = wasmvm.feed(self.module, self.initial, 7)
+        self.assertIs(first.executor, self.initial.executor)
+        self.assertEqual(wasmvm.read(self.module, first), 7)
+        resident = len(self.initial.executor.steps)
+
+        second = wasmvm.feed(self.module, self.initial, 41)
+        self.assertIs(second.executor, self.initial.executor)
+        self.assertEqual(wasmvm.read(self.module, second), 41)
+        self.assertEqual(len(self.initial.executor.steps), resident)
+
     def test_a_nonmatching_artifact_stays_on_the_generic_vm(self):
         picture = image.Image(dict(seed.ECHO.memory), pc_out=3, pc_feed=15)
         initial = wasmvm.load(self.module, artifact(picture))
-        mode = invoke(self.module, initial.snapshot, 'vm_direct_byte_state')
+        mode = invoke(self.module, initial.snapshot, 'vm_direct_byte_state',
+                      executor=initial.executor)
         self.assertEqual(mode.result, (0,))
         wasm_after = wasmvm.feed(self.module, initial, 7)
         python_after = machine.feed(machine.Residual(picture), 7)
@@ -67,11 +79,14 @@ class TestWasmVmSelfQuotient(unittest.TestCase):
 
     def test_the_direct_step_still_obeys_the_public_budget(self):
         limited = invoke(self.module, self.initial.snapshot,
-                         'vm_set_budget', (0, 0))
-        state = wasmvm.VmState(limited, self.initial.cells_address)
+                         'vm_set_budget', (0, 0),
+                         executor=self.initial.executor)
+        state = wasmvm.VmState(limited, self.initial.cells_address,
+                               executor=self.initial.executor)
         with self.assertRaisesRegex(WasmStateError, 'exhausted'):
             wasmvm.feed(self.module, state, 7)
-        exhausted = invoke(self.module, limited, 'vm_exhausted')
+        exhausted = invoke(self.module, limited, 'vm_exhausted',
+                           executor=self.initial.executor)
         # The getter above reads the pre-feed snapshot, so the original state
         # is unchanged; pure calls cannot leak the failed transition backward.
         self.assertEqual(exhausted.result, (0,))

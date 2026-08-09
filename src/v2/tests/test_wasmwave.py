@@ -4,13 +4,14 @@ import base64
 from dataclasses import replace
 import json
 import unittest
+from unittest.mock import patch
 
 from qm.wasmstate import (decode_module, instruction_step,
                           run_until_boundary, start_state)
 from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
                          StatePageError)
 from qm.wasmwave import WaveExecutor, execute_slice, is_barrier
-from tests.test_wasmbinary import module
+from tests.test_wasmbinary import encode_uleb, module
 
 
 class TestWaveExecutor(unittest.TestCase):
@@ -93,6 +94,137 @@ class TestWaveExecutor(unittest.TestCase):
             optimized = executor.run(start_state(decoded, 'f', (value,)))
             self.assertEqual(optimized.result, reference.result)
 
+    def test_each_future_visible_ssa_root_is_normalized_before_the_barrier(self):
+        # The value and the following if-condition are two residual outputs of
+        # one pure slice.  The affine value still reduces independently.
+        body = (b'\x00\x20\x00\x42\x01\x7c\x42\x03\x7e\x42\x03\x7d'
+                b'\x20\x00\x50\x04\x40\x0b\x0b')
+        decoded = decode_module(module(body, kind=0x7e))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (9,))
+
+        plan = executor.plan(initial.frames[-1])
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.EQZ', 'lane64.IMUL'])
+        self.assertEqual(plan.waves.wave(1), (1, 2))
+        self.assertEqual(plan.waves.work, 2)
+        final = executor.run(initial)
+        self.assertEqual(final.result, (27,))
+
+    def test_residual_roots_keep_a_cheaper_shared_prefix(self):
+        # Both products share x + 1.  Optimizing each output independently
+        # would duplicate that prefix, so the recomposed cut keeps the shared
+        # four-node DAG until a jointly cheaper form is found.
+        body = (b'\x01\x01\x7e\x20\x00\x42\x01\x7c\x22\x01'
+                b'\x42\x03\x7e\x20\x01\x42\x05\x7e\x20\x00\x50'
+                b'\x04\x40\x0b\x0b')
+        decoded = decode_module(module(body, kind=0x7e))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (9,))
+
+        plan = executor.plan(initial.frames[-1])
+        self.assertEqual(plan.waves.work, 4)
+        self.assertEqual(executor.run(initial).result, (50,))
+
+    def test_backward_observer_removes_a_mask_hidden_by_i32_shift(self):
+        body = (b'\x00\x20\x00\x41' + encode_uleb(0x1fffffff)
+                + b'\x71\x41\x03\x74\x0b')
+        decoded = decode_module(module(body, kind=0x7f))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (0xf1234567,))
+
+        plan = executor.plan(initial.frames[-1])
+        self.assertEqual([node.op for node in plan.nodes], ['lane32.SHL'])
+        self.assertEqual(executor.run(initial).result,
+                         ((0xf1234567 << 3) & 0xffffffff,))
+
+    def test_multi_coordinate_cut_recomposes_into_one_address_lane(self):
+        # Two independent parameters cannot enter the scalar single-input
+        # solver.  Their physical cut is still one a+b+immediate address lane.
+        body = b'\x00\x20\x00\x20\x01\x6a\x41\x07\x6a\x0b'
+        decoded = decode_module(module(
+            body, kind=0x7f, parameter_count=2))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (11, 23))
+
+        plan = executor.plan(initial.frames[-1])
+        self.assertEqual([node.op for node in plan.nodes], ['lane32.ADD3'])
+        self.assertEqual(plan.waves.work, 1)
+        self.assertEqual(executor.run(initial).result, (41,))
+
+    def test_dynamic_bit_observer_is_one_physical_lane(self):
+        # (((x >> coordinate) & 1) == 0) is an observer of one coordinate,
+        # not a materialized shift, mask, and comparison chain.
+        body = (b'\x00\x20\x00\x20\x01\x76\x41\x01\x71\x45\x0b')
+        decoded = decode_module(module(
+            body, kind=0x7f, parameter_count=2))
+        executor = WaveExecutor(decoded)
+
+        for value, coordinate in ((0, 0), (1, 0), (8, 3), (8, 2),
+                                  (0x80000000, 31)):
+            with self.subTest(value=value, coordinate=coordinate):
+                initial = start_state(decoded, 'f', (value, coordinate))
+                plan = executor.plan(initial.frames[-1])
+                self.assertEqual([node.op for node in plan.nodes],
+                                 ['lane32.BITZ'])
+                expected = 1 ^ ((value >> (coordinate & 31)) & 1)
+                self.assertEqual(executor.run(initial).result, (expected,))
+
+    def test_msb_first_byte_observer_does_not_materialize_bit_coordinate(self):
+        # (byte >> ((~coordinate) & 7)) & 1 is the codec's MSB-first byte
+        # coordinate.  The complement/mask belongs to the observer lane.
+        body = (b'\x00\x20\x00\x20\x01\x41\x7f\x73\x41\x07\x71'
+                b'\x76\x41\x01\x71\x45\x0b')
+        decoded = decode_module(module(
+            body, kind=0x7f, parameter_count=2))
+        executor = WaveExecutor(decoded)
+
+        for value, coordinate in ((0x80, 0), (0x40, 1), (1, 7),
+                                  (0xa5, 3), (0xa5, 11)):
+            with self.subTest(value=value, coordinate=coordinate):
+                initial = start_state(decoded, 'f', (value, coordinate))
+                plan = executor.plan(initial.frames[-1])
+                self.assertEqual([node.op for node in plan.nodes],
+                                 ['lane32.BIT_MSB8Z'])
+                expected = 1 ^ ((value >> ((~coordinate) & 7)) & 1)
+                self.assertEqual(executor.run(initial).result, (expected,))
+
+    def test_dynamic_bit_field_is_one_physical_extract_lane(self):
+        # (x >> offset) & ~(~0 << width) is the hardware bit-field observer.
+        body = (b'\x00\x20\x00\x20\x01\x76'
+                b'\x41\x7f\x20\x02\x74\x41\x7f\x73\x71\x0b')
+        decoded = decode_module(module(
+            body, kind=0x7f, parameter_count=3))
+        executor = WaveExecutor(decoded)
+
+        for value, offset, width in ((0x12345678, 4, 8), (0xffffffff, 7, 5),
+                                     (17, 0, 0), (0xabcdef01, 31, 32)):
+            with self.subTest(value=value, offset=offset, width=width):
+                initial = start_state(decoded, 'f', (value, offset, width))
+                plan = executor.plan(initial.frames[-1])
+                self.assertEqual([node.op for node in plan.nodes],
+                                 ['lane32.BEXTR'])
+                count = width & 31
+                expected = ((value & 0xffffffff) >> (offset & 31))
+                expected &= (1 << count) - 1 if count else 0
+                self.assertEqual(executor.run(initial).result, (expected,))
+
+    def test_select_comparison_recomposes_as_unsigned_minimum(self):
+        body = (b'\x00\x20\x00\x20\x01\x20\x00\x20\x01\x49\x1b\x0b')
+        decoded = decode_module(module(
+            body, kind=0x7f, parameter_count=2))
+        executor = WaveExecutor(decoded)
+
+        for left, right in ((0, 0), (1, 2), (7, 3),
+                            (0xffffffff, 17)):
+            with self.subTest(left=left, right=right):
+                initial = start_state(decoded, 'f', (left, right))
+                plan = executor.plan(initial.frames[-1])
+                self.assertEqual([node.op for node in plan.nodes],
+                                 ['lane32.UMIN'])
+                self.assertEqual(executor.run(initial).result,
+                                 (min(left, right),))
+
     def test_every_executed_page_uses_one_compiled_physical_transition(self):
         body = (b'\x00\x20\x00\x41\xff\x01\x71'
                 b'\x20\x00\x41\xd5\x00\x73\x6a\x0b')
@@ -101,12 +233,14 @@ class TestWaveExecutor(unittest.TestCase):
 
         first, _cost = executor.run_with_report(
             start_state(decoded, 'f', (9,)))
-        self.assertEqual(len(executor.compiled), 1)
+        self.assertEqual(sum(entry is not None
+                             for entry in executor.steps.values()), 1)
         second, _cost = executor.run_with_report(
             start_state(decoded, 'f', (9,)))
 
         self.assertEqual(first.result, second.result)
-        self.assertEqual(len(executor.compiled), 1)
+        self.assertEqual(sum(entry is not None
+                             for entry in executor.steps.values()), 1)
         self.assertEqual(
             executor.normalization_layout()['compiled_state_steps'], 1)
 
@@ -198,6 +332,32 @@ class TestWaveExecutor(unittest.TestCase):
                          [('const', 1)])
         self.assertEqual(unpack(pack(plan)).stack_inputs, 2)
 
+    def test_state_page_carries_only_changed_local_coordinates(self):
+        # One parameter plus 64 declared locals; only local 64 changes.
+        body = (b'\x01\x40\x7f\x20\x00\x41\x01\x6a\x21\x40'
+                b'\x20\x00\x0b')
+        decoded = decode_module(module(
+            body, kind=0x7f, parameter_count=1))
+        initial = start_state(decoded, 'f', (7,))
+        plan = WaveExecutor(decoded).plan(initial.frames[-1])
+        mapped = unpack(pack(plan))
+
+        self.assertEqual(mapped.local_extent, 65)
+        self.assertEqual(mapped.local_updates, 1)
+        self.assertEqual(mapped.values('local_indices'), (64,))
+        self.assertEqual(mapped.layout()['columns']['local_values']['count'], 1)
+        self.assertEqual(execute_mapped(mapped, initial),
+                         execute_slice(plan, initial))
+
+    def test_runtime_does_not_reconstruct_scalar_plan_from_physical_page(self):
+        body = b'\x00\x20\x00\x41\x01\x6a\x0b'
+        decoded = decode_module(module(body, kind=0x7f))
+        executor = WaveExecutor(decoded)
+        with patch('qm.steppage.decode_plan',
+                   side_effect=AssertionError('diagnostic route used')):
+            final = executor.run(start_state(decoded, 'f', (2,)))
+        self.assertEqual(final.result, (3,))
+
     def test_local_writes_are_renamed_and_committed_at_slice_end(self):
         # local 1 = x + 1; return x * 2 + local 1.
         body = (b'\x01\x01\x7f\x20\x00\x41\x01\x6a\x21\x01'
@@ -239,15 +399,15 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertGreater(report.work, 0)
         self.assertGreater(report.barriers, 0)
         self.assertEqual(executor.total_cost, report)
-        plans = [plan for plan in executor.cache.values()
-                 if plan is not None and plan.nodes]
+        plans = [decode_plan(entry.mapped) for entry in executor.steps.values()
+                 if entry is not None and entry.mapped.work]
         self.assertTrue(plans)
         self.assertTrue(all(
             node.op.startswith(('lane32.', 'lane64.'))
             for plan in plans for node in plan.nodes))
         self.assertGreaterEqual(
             executor.normalization_layout()['removed_work'], 1)
-        self.assertNotIsInstance(executor.physical, dict)
+        self.assertNotIsInstance(executor.steps, dict)
 
     def test_state_frontend_supplies_zeroes_for_clang_style_entry_params(self):
         from qm.browser import stateful_wasm
