@@ -1,4 +1,4 @@
-"""SPEC §4 — extract semantics.
+"""Extract finite-domain semantics behind a frontend-independent boundary.
 
 `Semantics` is the boundary between the frontend (which knows about C, assembly
 or a native oracle) and the solvers (which only ever see a function on a
@@ -60,9 +60,9 @@ class Domain(object):
 def choose_domain(input_bits, exhaustive_limit=16, probes=4096):
     """Exhaustive when tractable, structured probes otherwise.
 
-    SPEC §12: random testing alone must never be presented as a proof of global
-    equivalence, so the sampled case is labelled as such and carries basis and
-    boundary probes rather than random values only.
+    Random testing alone is not a proof of global equivalence, so a sampled
+    domain is labelled as such and carries basis and boundary probes rather
+    than random values only.
     """
     if input_bits <= exhaustive_limit:
         n = 1 << input_bits

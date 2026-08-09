@@ -1,12 +1,12 @@
 /* Three ways to execute the same artifact, on the same inputs.
  *
- *   3.1 hash  : memory in an open-addressing table   (what vm/wasm/vm.c ships)
- *   3.1 dense : memory in a flat array               (isolates the table)
- *   3.2 rows  : resident rows over a flat array      (the specification's)
+ *   hash      : historical open-addressing memory
+ *   dense     : the released flat-array memory
+ *   rows      : resident source/destination incidences over a flat array
  *
  * The third is the claim in 3.3/3.4: `old` and `change` are already
  * dereferenced, so a transition is `result = old + change` and the two
- * dependent loads disappear. What it pays is the wave (3.5).
+ * dependent loads disappear. What it pays is the incidence-update wave.
  *
  * Two things this cannot show, and neither is a fault in the design.
  *
@@ -33,6 +33,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#include "../../../../corpus/physical-array/pa_grouped_spans.h"
 
 typedef int64_t i64;
 typedef uint64_t u64;
@@ -182,10 +184,10 @@ static u64 run_dense(i64 pc, i64 *event)
     }
 }
 
-/* ------------------------------------------------ 3.2 rows over an array
+/* --------------------------------------- resident rows over an array
  *
- * (3.5) says entries are "grouped by written coordinate" and that "the sign
- * may be represented by two contiguous spans". That is the design, and it is
+ * Entries are grouped by written coordinate, with each sign in one contiguous
+ * span. That is the design, and it is
  * what makes `fixed_width_time = Theta(ceil(k/W))` mean anything: the wave
  * becomes two straight loops over contiguous i64, with no row id, no hit bit,
  * no tag and no order among lanes. Chasing a linked list per incidence — which
@@ -200,12 +202,13 @@ static u64 run_dense(i64 pc, i64 *event)
  * Special rows d, d-1, d-2 are not skipped inside the loop; a branch there
  * would undo the point. They sit in their spans, get updated with everything
  * else, and the coordinator rebuilds them from memory straight after, which
- * overwrites whatever the wave did. (3.6) puts the rebuild after the wave for
- * exactly this reason.
+ * overwrites whatever the wave did. The rebuild follows the wave for exactly
+ * this reason.
  */
 static i64 *r_src, *r_dst, *r_br;
 static i64 *old_store, *chg_store;
 static int32_t *old_off, *chg_off, *old_at, *chg_at;
+static int32_t *old_cursor, *chg_cursor;
 static unsigned char *r_row;
 static u64 incidences;
 
@@ -217,6 +220,8 @@ static void rows_alloc(void)
     chg_off = malloc((extent + 2) * sizeof(int32_t));
     old_at = malloc(extent * sizeof(int32_t));
     chg_at = malloc(extent * sizeof(int32_t));
+    old_cursor = malloc(extent * sizeof(int32_t));
+    chg_cursor = malloc(extent * sizeof(int32_t));
     old_store = malloc((extent + 1) * sizeof(i64));
     chg_store = malloc((extent + 1) * sizeof(i64));
 }
@@ -229,32 +234,26 @@ static void rows_build(void)
 {
     memset(r_row, 0, extent);
     incidences = 0;
-    for (u64 i = 0; i <= extent + 1; ++i) { old_off[i] = 0; chg_off[i] = 0; }
 
     for (u64 i = 0; i + 2 < extent; ++i) {
         i64 s = mem[i], d = mem[i + 1];
         if (s < 0 || d < 0 || (u64)s >= extent || (u64)d >= extent) continue;
         r_row[i] = 1;
-        old_off[d + 1] += 1;
-        chg_off[s + 1] += 1;
+        r_src[i] = s;
+        r_dst[i] = d;
+        r_br[i] = mem[i + 2];
     }
-    for (u64 i = 0; i < extent; ++i) {
-        old_off[i + 1] += old_off[i];
-        chg_off[i + 1] += chg_off[i];
+    if (!pa_grouped_spans_i64(extent, extent, r_dst, r_row,
+                              old_off, old_at, old_cursor) ||
+        !pa_grouped_spans_i64(extent, extent, r_src, r_row,
+                              chg_off, chg_at, chg_cursor)) {
+        fprintf(stderr, "row coordinate is outside the dense image\n");
+        abort();
     }
-    static int32_t *ocur, *ccur;
-    if (!ocur) { ocur = malloc((extent + 2) * sizeof(int32_t));
-                 ccur = malloc((extent + 2) * sizeof(int32_t)); }
-    memcpy(ocur, old_off, (extent + 1) * sizeof(int32_t));
-    memcpy(ccur, chg_off, (extent + 1) * sizeof(int32_t));
     for (u64 i = 0; i + 2 < extent; ++i) {
         if (!r_row[i]) continue;
-        i64 s = mem[i], d = mem[i + 1];
-        r_src[i] = s; r_dst[i] = d; r_br[i] = mem[i + 2];
-        old_at[i] = ocur[d]++;
-        chg_at[i] = ccur[s]++;
-        old_store[old_at[i]] = mem[d];
-        chg_store[chg_at[i]] = -mem[s];
+        old_store[old_at[i]] = mem[r_dst[i]];
+        chg_store[chg_at[i]] = -mem[r_src[i]];
     }
 }
 
@@ -266,8 +265,7 @@ static void rebuild(i64 i)
     chg_store[chg_at[i]] = -mem[r_src[i]];
 }
 
-/* The wave for one write, which is the body of (3.6) with the successor left
- * to the caller. */
+/* The wave for one write, with successor selection left to the caller. */
 static void wave(i64 d, i64 result, i64 chg)
 {
     if (!chg) return;
@@ -280,13 +278,12 @@ static void wave(i64 d, i64 result, i64 chg)
     for (i64 off = 0; off < 3; ++off) rebuild(d - off);
 }
 
-/* 3.2, last paragraph: "The initial feed write uses the same wave with
- * (destination, old, result, change) = (0, M[0], input, input - M[0])."
- *
- * Storing the byte straight into `mem[0]` instead skips the wave for
- * coordinate zero, so every row reading the input cell keeps a stale
- * component — and the machine then takes a different number of transitions
- * from the one 3.1 takes. That is what the step-count check caught. */
+/* The initial feed write uses the same wave as every other write, with
+ * destination zero and change equal to input minus the old input cell.
+ * Storing the byte straight into `mem[0]` instead skips that wave, so every
+ * row reading coordinate zero keeps a stale
+ * component and the two machine forms take different paths. The step-count
+ * check catches that divergence. */
 static void feed_write(i64 input)
 {
     wave(0, input, input - mem[0]);
@@ -323,8 +320,8 @@ typedef u64 (*runner)(i64, i64 *);
 /* Feed the input, then read once.
  *
  * A read commits nothing, so it goes last and there is nothing to roll back.
- * Reading eight times with feeds between them would need the speculative-row
- * machinery §3.2 describes, and getting that half-right is how this file
+ * Reading eight times with feeds between them would need speculative rows
+ * with transactional rollback, and getting that half-right is how this file
  * previously came to disagree with itself about the step count. Same call the
  * Python `rows.measure` counts, so the two sides are comparable. */
 static u64 whole(runner go, void (*prep)(void), int in_bytes, u64 value)

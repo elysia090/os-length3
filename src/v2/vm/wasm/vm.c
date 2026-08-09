@@ -4,14 +4,13 @@
  * are the definition; this file has to agree with them on every byte, and
  * `tests/test_vm.py` is what holds it to that rather than assuming it.
  *
- * Three deliberate departures from the specification, all of them reported
- * rather than hidden:
+ * Three deliberate finite-runtime limits, all reported rather than hidden:
  *
- *   * Values are i64, not unbounded.  The specification forbids an integer
- *     wrapping into a second image, so a subtraction that would overflow ends
- *     the call as a finite failure and raises a flag instead of wrapping.
- *   * Memory is a fixed open-addressing table.  Running out of it is a
- *     reported failure, never a silent eviction.
+ *   * Values are i64, not unbounded. A subtraction that would overflow ends
+ *     the call as a finite failure and raises a flag instead of wrapping into
+ *     a different encoded image.
+ *   * Memory is a fixed dense i64 arena. Running past it is a reported
+ *     failure, never an address wrap or silent eviction.
  *   * A step budget exists so a caller can stop.  Exhausting it returns
  *     UNFINISHED, which is not an outcome: it is neither a byte nor a failure,
  *     and a caller must not turn it into either.
@@ -26,6 +25,10 @@ typedef unsigned long long u64;
 typedef long long          i64;
 
 #define EXPORT __attribute__((visibility("default")))
+
+#ifndef VM_DIRECT_BYTE_STATE
+#define VM_DIRECT_BYTE_STATE 1
+#endif
 
 /* Outcomes shared with the JS and Python sides. */
 #define R_BOTTOM     -1
@@ -42,15 +45,14 @@ typedef long long          i64;
  *
  * It used to be an open-addressing table, which cost a multiply-hash and a
  * probe on all five reads and the write of every transition. That is the wrong
- * shape for what this actually runs: an image encodes its addresses as gaps
- * (SPEC 2.2), and the lowering emits them consecutively — one bit of gap per
+ * shape for what this actually runs: an image encodes its addresses as gaps,
+ * and the lowering emits them consecutively — one bit of gap per
  * cell across every example here — so the memory is dense and paying for
  * sparsity buys nothing. `vm/wasm/bench.c` puts the two side by side: 92.6
  * against 2.6 ns per transition on `ranks8`.
  *
- * An address past the arena is a finite failure rather than a wrap. The
- * specification's memory is unbounded and this one is not, which is the
- * departure already reported through `vm_table_full`.
+ * An address past the finite arena is a reported failure rather than a wrap,
+ * exposed through `vm_table_full`.
  */
 
 /* Big enough for every artifact `vm/lower.py` produces today: the dynamic
@@ -79,6 +81,8 @@ static int overflowed;
 static int exhausted;
 static u64 budget = 1ull << 22;
 static u64 last_steps;
+static int direct_byte_state;
+static u64 direct_read_steps;
 
 static i64 mem_get(i64 address)
 {
@@ -230,9 +234,19 @@ static i64 unzigzag(u64 point)
 }
 
 EXPORT u8 *vm_buffer(void);
+EXPORT u8 *vm_cells(void);
+EXPORT int vm_direct_byte_state(void);
 static u8 artifact[1u << 20];
 
 EXPORT u8 *vm_buffer(void) { return artifact; }
+
+/* Build tools use this address to project a suspended module onto the cells
+ * that can affect later feed/read calls. Codec buffers, undo-log contents and
+ * counters are deliberately outside that state boundary. */
+EXPORT u8 *vm_cells(void) { return (u8 *)cells; }
+EXPORT int vm_direct_byte_state(void) { return direct_byte_state; }
+
+static int detect_direct_byte_state(void);
 
 EXPORT int vm_load(u32 byte_len)
 {
@@ -241,6 +255,8 @@ EXPORT int vm_load(u32 byte_len)
     overflowed = 0;
     exhausted = 0;
     table_full = 0;
+    direct_byte_state = 0;
+    direct_read_steps = 0;
 
     bits_base = artifact;
     bits_len  = (u64)byte_len * 8ull;
@@ -286,6 +302,7 @@ EXPORT int vm_load(u32 byte_len)
     pc_out  = (i64)out;
     pc_feed = (i64)feed;
     dead = 0;
+    direct_byte_state = VM_DIRECT_BYTE_STATE && detect_direct_byte_state();
     return 1;
 }
 
@@ -323,10 +340,75 @@ static int run(i64 pc, i64 *event)
     }
 }
 
+/* Prove the byte-register state step over its complete finite input domain.
+ * The feed row must commit after changing no persistent cell except input.
+ * Each possible byte is then read through the ordinary transactional engine;
+ * only a byte-for-byte identity result selects the direct implementation.
+ * Nothing sampled or remembered at runtime participates in the decision. */
+static int detect_direct_byte_state(void)
+{
+    i64 a = mem_get(pc_feed);
+    i64 b = mem_get(pc_feed + 1);
+    i64 c = mem_get(pc_feed + 2);
+    i64 initial = mem_get(0);
+    if (a != b || a < 2 || c != EV_COMMIT || mem_get(a) != 0
+            || initial < 0 || initial >= 256) return 0;
+
+    u64 saved_steps = last_steps;
+    int saved_overflowed = overflowed;
+    int saved_exhausted = exhausted;
+    int saved_table_full = table_full;
+    u64 read_steps = 0;
+
+    for (u32 byte = 0; byte < 256u; ++byte) {
+        journal_begin();
+        if (!mem_set(0, (i64)byte)) {
+            journal_rollback();
+            last_steps = saved_steps;
+            overflowed = saved_overflowed;
+            exhausted = saved_exhausted;
+            table_full = saved_table_full;
+            return 0;
+        }
+        i64 event = 0;
+        int finished = run(pc_out, &event);
+        i64 out = mem_get(1);
+        u64 steps = last_steps;
+        journal_rollback();
+        if (!finished || event != EV_EMIT || out != (i64)byte
+                || (byte && steps != read_steps)) {
+            last_steps = saved_steps;
+            overflowed = saved_overflowed;
+            exhausted = saved_exhausted;
+            table_full = saved_table_full;
+            return 0;
+        }
+        read_steps = steps;
+    }
+
+    last_steps = saved_steps;
+    overflowed = saved_overflowed;
+    exhausted = saved_exhausted;
+    table_full = saved_table_full;
+    journal_begin();
+    direct_read_steps = read_steps;
+    return 1;
+}
+
 EXPORT int vm_read(void)
 {
     if (dead) return R_BOTTOM;
     exhausted = 0;
+    if (direct_byte_state) {
+        if (budget < direct_read_steps) {
+            last_steps = budget;
+            exhausted = 1;
+            return R_UNFINISHED;
+        }
+        last_steps = direct_read_steps;
+        i64 out = cells[0];
+        return (out >= 0 && out < 256) ? (int)out : R_BOTTOM;
+    }
     journal_begin();
 
     i64 event = 0;
@@ -344,6 +426,16 @@ EXPORT int vm_feed(int byte)
     if (dead) return R_DEAD;
     if (byte < 0 || byte > 255) return R_DEAD;
     exhausted = 0;
+    if (direct_byte_state) {
+        if (budget < 1) {
+            last_steps = 0;
+            exhausted = 1;
+            return R_UNFINISHED;
+        }
+        cells[0] = (i64)byte;
+        last_steps = 1;
+        return R_COMMITTED;
+    }
     journal_begin();
 
     if (!mem_set(0, (i64)byte)) { journal_rollback(); dead = 1; return R_DEAD; }

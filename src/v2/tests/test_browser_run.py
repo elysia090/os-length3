@@ -1,9 +1,9 @@
 """Run closes the loop: paste -> QM -> codec -> run.
 
-A driver that called Clang's compilation of the kernel would be testing the
-compiler. What Run has to execute is the *minimized program*, so the paste is
-split, only `main` is compiled, and the kernel is left undefined — an import,
-answered by feeding the artifact.
+A driver that called Clang's compilation of the selected kernel would be
+testing the compiler. What Run has to execute is the *minimized program*, so
+that one definition is removed and left as an import answered by the artifact.
+`main`, globals and unrelated helpers remain ordinary wasm32 driver code.
 
 These drive exactly what `web/worker.js` drives, with the native toolchain
 standing in for clang.wasm and node for the page.

@@ -1,4 +1,4 @@
-"""Pinf-R Section 2 — the payload is the machine image.
+"""A canonical payload for one finite-support signed machine image.
 
     E(k) || E(pc_o) || E(pc_a) || (E(gap_i) || E(zigzag(value_i)))^k
 

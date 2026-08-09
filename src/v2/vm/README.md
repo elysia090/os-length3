@@ -6,6 +6,11 @@ The runtime half of Pinf-R: one self-delimiting code, one canonical signed
 memory image, one transactional rSUBLEQ instruction *and its direct physical
 form*. Nothing here is a search, a proof, or a learner.
 
+The artifact compiler lives beside the runtime but is not part of the released
+machine. [`LOWERING.md`](LOWERING.md) fixes that boundary and the order for
+adding word-, region-, and product-level physical forms. In particular,
+`BitVectorLowering` is one strong compiler representation; it is not the VM.
+
 ```text
 codec -> image -> machine -> rows -> residual   the dependency order
                      |                           3.1 what a transition means
@@ -14,7 +19,7 @@ codec -> image -> machine -> rows -> residual   the dependency order
                      |         |      3.1 what a transition means
                      |         |      3.2 what it is, 3.7 what it costs
                      v
-    qm.isa.Seq  --lower-->  image     C, x86-64 or wasm32 in
+    minimized wasm32 Seq --> BitVectorLowering --> framing --> asm --> image
                             image  --emit-->  C, x86-64, wasm32 out
 ```
 
@@ -108,6 +113,51 @@ it is 4.5 million units of work for 3,000 transitions.
 
 So unrolling now loses on all four coordinates *and* on the wall clock, which
 is the same conclusion `tools/measure_multiply.py` reached from the size side.
+
+The carry-free lane-coordinate lowering changes the `ranks8` artifact itself:
+17,107 to 2,148 artifact bytes, 6,728 to 1,067 image cells, and 1,624 to 225
+transitions for one feed and read. Re-running the C benchmark on that compact
+artifact measured 61.0 ns/step for the historical hash layout, 2.0 for the
+released dense layout, and 54.0 for resident rows. The row form now narrowly
+beats the hash table, but the dense VM remains about 27 times faster. Therefore
+rows stay an optional backend for genuinely reused/parallel regions; they do
+not replace the released dense VM merely because the representation exists.
+
+### Stateful QM is a build proof, not a runtime table
+
+`qm.transducer` and `qm.vmquotient` can close a finite `feed/read` state graph,
+compute its exact future quotient and compare independently built VM residuals
+by a canonical complete-future key. Their transition relation is held as
+Kraft-style coordinate regions with constant/affine maps and shared rows while
+the proof is being built. The echo residual, for example, represents
+`delta(state, byte) = byte` as one affine byte projection rather than a
+256-by-256 table.
+
+Those classes and maps are erased after candidate comparison. Shipping or
+executing the closure table would introduce a second evaluator and change the
+artifact boundary. Speed must come from selecting a smaller/faster canonical
+artifact with the same proved future, then running that artifact through the
+ordinary transactional VM and runtime-derived rows.
+
+The wasm VM now has one table-free specialization at that same boundary. After
+loading an artifact, it first checks that feed commits while changing no state
+except the input cell, then executes the ordinary transactional reader for all
+256 possible byte states. If and only if every result is the same byte, later
+calls use the proved state step directly. The released state is one byte; no
+closure table or sampled predicate is retained. On the production echo seed,
+`vm/wasm/bench.mjs` measured a feed/read pair at 9.79 ns instead of 41.33 ns
+for the generic engine, a 4.22x reduction (5,000,000 pairs under Node on the
+development host).
+The generic path remains selected for every artifact that fails the complete
+finite check.
+
+The stateful regression has two independently assembled echo artifacts. One
+adds redundant transitions but has the same complete byte future. Exhausting
+all 256 states and all 256 next bytes proves equality, then the dense VM key
+selects `(span, work, L) = (5, 5, 165)` over `(7, 7, 437)`. Only the 165-bit
+canonical payload survives; the closure states and transition maps do not.
+The selected form is now the production echo seed: it uses 17 image cells
+instead of 29, and one byte feed executes one transition instead of five.
 
 One thing the benchmark still cannot settle: it runs the wave on one thread,
 so `Theta(ceil(k/W))` is only ever `W = 4` lanes of an auto-vectorized loop
@@ -345,10 +395,9 @@ temporary directory, so a stale binary cannot pass for a current one.
 
 ## Both directions
 
-`lower.lower_seq` takes a minimized QM sequence to a canonical image. Whichever
-of C, an x86-64 listing or a wasm32 listing was pasted, all three reach the same
-lowered sequence and therefore the same artifact — `tests/test_vm_qm.py` checks
-that byte for byte.
+`lower.lower_seq` takes QM's minimized wasm32 sequence to a canonical image.
+Whether the input was C, x86-64 or wasm32, QM selects this one target before
+codec compilation — `tests/test_vm_qm.py` checks that path byte for byte.
 
 `emit.emit` takes an image back out as C, x86-64 or wasm32. What comes out is
 the machine and the image, not a decompilation: an rSUBLEQ program *is* a
@@ -357,7 +406,7 @@ emitted form is compiled or assembled with a real toolchain, run, and required
 to compute what the artifact computes.
 
 The round trip closes. `tests/test_vm_closure.py` takes a kernel through QM,
-lowers the abstract program to an artifact, emits that artifact as C — a
+compiles the minimized wasm32 sequence to an artifact, emits it as C — a
 400-line SUBLEQ interpreter over a 6,000-cell memory, which resembles the
 kernel in no syntactic way at all — and puts *that* back through QM. What comes
 out is the same minimized program, `SHL ANDNR` and one core operation, because

@@ -1,7 +1,7 @@
 // Clang/WASM driver.
 //
-// SPEC §2 puts Clang at the entry: the browser compiles the paste locally and
-// QM works on the optimized output.  Two artefacts come from one paste:
+// The browser compiles C locally and QM works on the optimized output. Two
+// artifacts come from one paste:
 //
 //   * wasm32 -O2, instantiated here and called over the input domain.  That is
 //     the execution oracle: 65,536 inputs cost milliseconds because the kernel
@@ -18,10 +18,12 @@
 //
 // The default bundle
 // ------------------
-// `drivers/yowasp-clang.js` ships with the page and needs no configuration.
-// It is built with the WebAssembly target only, which is all this needs: the
-// compiler is the oracle, and QM's lowering targets are derived from the
-// extracted semantics rather than from anything the compiler emitted.
+// `drivers/compiler-core.js` ships with the page and needs no configuration.
+// On the first compile it fetches the pinned LLVM core and standard resources
+// directly, then connects the core's 29 standard WASI Preview 1 imports to a
+// small in-memory filesystem. No generated package wrapper or component-model
+// adapter is loaded. This build has only the WebAssembly target, which is all
+// the execution oracle needs.
 //
 // Configuring another bundle
 // --------------------------
@@ -36,7 +38,7 @@
 // deliberately tiny — one `compile` call — so that any clang-in-wasm build can
 // be adapted with a short shim.
 
-const DEFAULT_DRIVER = new URL('./drivers/yowasp-clang.js', import.meta.url).href;
+const DEFAULT_DRIVER = new URL('./drivers/compiler-core.js', import.meta.url).href;
 
 const DEFAULT_CONFIG = {
   driverUrl: DEFAULT_DRIVER,

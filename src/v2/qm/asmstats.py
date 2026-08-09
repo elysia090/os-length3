@@ -1,6 +1,6 @@
 """Statistics over emitted x86-64 assembly.
 
-SPEC §11 insists that three numbers stay distinct:
+The report keeps three numbers distinct:
 
     core operations
     standalone machine instructions

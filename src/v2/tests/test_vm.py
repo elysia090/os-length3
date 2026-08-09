@@ -50,7 +50,7 @@ def opened(picture=ECHO):
 
 
 class TestScalarCode(unittest.TestCase):
-    """Section 1. Completeness is the property, not a nicety."""
+    """Completeness is the property, not a nicety."""
 
     def test_the_code_is_complete(self):
         # sum 2^-|E(n)| = 1.  Out to 2^k the tail left over is exactly 2^-(k+1),
@@ -95,7 +95,7 @@ class TestScalarCode(unittest.TestCase):
 
 
 class TestArtifactPacking(unittest.TestCase):
-    """Section 1's byte boundary. One payload, one file, or the identity goes."""
+    """One payload has one byte artifact, or canonical identity is lost."""
 
     def test_round_trip(self):
         for payload in ('', '0', '1', '0110', '1' * 33, '01' * 100):
@@ -131,7 +131,7 @@ class TestArtifactPacking(unittest.TestCase):
 
 
 class TestCanonicalImage(unittest.TestCase):
-    """Section 2. Every finite payload has one meaning; the rest are dead."""
+    """Every finite payload has one meaning; every malformed one is dead."""
 
     def test_round_trip(self):
         self.assertEqual(image.parse(image.serialize(ECHO)), ECHO)
@@ -177,7 +177,7 @@ class TestCanonicalImage(unittest.TestCase):
 
 
 class TestTransactionalMachine(unittest.TestCase):
-    """Section 3. One instruction, three return targets, two call modes."""
+    """One instruction, three return targets, and two transactional call modes."""
 
     def test_the_echo_machine_echoes(self):
         residual = opened()

@@ -1,8 +1,7 @@
 // Default Clang/WASM driver: the YoWASP LLVM/Clang/LLD toolchain.
 //
-// This is the bundle the page uses out of the box, so SPEC §2's "the browser
-// compiles the input locally using Clang/WASM" is true without any deployment
-// configuration.
+// This bundle lets the page compile C locally with Clang/WASM without any
+// deployment-specific configuration.
 //
 // What it is
 // ----------

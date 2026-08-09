@@ -1,32 +1,29 @@
-"""Pinf-R Section 4 — the residual ABI, and the code-level path beside it.
+"""The residual ABI, and the code-level path beside it.
 
-Section 3 says how one call runs. This says what the released interface is, and
-there are two ways through it that must not disagree.
+The VM says how one call runs. This module defines the released interface, with
+two paths that must not disagree.
 
 The **open-state path** is `machine.py`: `open` once, then `feed` and `read` on
 a residual that is never serialized again. It is the fast one, and it is the
 one a caller uses.
 
-The **code-level path** is here. A residual has a code, and the code is a
-program in exactly the sense §1 measures:
+The **code-level path** is here. A residual has a globally ranked code:
 
     emit(code(z))    = read(open(pack(code(z))))
-    next(code(z), a) = code(res(z, a))                          (4.7)
+    next(code(z), a) = code(res(z, a))
 
 with `res` the s-m-n residualizer, fixed by
 
-    [[res(z, a)]](h) = [[z]]([a] || h).                         (4.6)
+    [[res(z, a)]](h) = [[z]]([a] || h).
 
 That identity is the whole content: residualizing a byte and then running the
-rest is running the whole history. It follows from (4.1) and transactional
-commit, so it is derived rather than implemented — but only if the two paths
-compute the same thing, and §4's falsification list names "make code-level
-residualization disagree with the open-state path" as a failure. Nothing can
-check that with one path, which is why this exists.
+rest is running the whole history. It follows from transactional commit, so it
+is derived rather than implemented — but only if the two paths compute the
+same thing. Nothing can check that with one path, which is why this exists.
 
 The sole semantic implementation obligation is
 
-    future(feed*(R, p)) = after(future(R), p)                    (4.5)
+    future(feed*(R, p)) = after(future(R), p)
 
 and `after` is here so a test can write it down rather than paraphrase it.
 
@@ -35,7 +32,7 @@ Depends on `codec`, `image` and `machine`.
 
 from . import codec, image, machine
 
-# Every parse failure denotes one fixed dead residual (§2), so the code-level
+# Every parse failure denotes one fixed dead residual, so the code-level
 # path needs a payload that denotes it — and the empty one does, because a
 # payload with no `E(k)` in it does not parse. It is also the least: rank 1, and
 # `L('')` is one bit, so the dead residual is the cheapest thing to name.
@@ -104,7 +101,7 @@ def emit(word):
     """`emit(code(z)) = read(open(pack(code(z))))`.
 
     Takes the global codeword, not the payload: `code(z) = E(|z|) || z` is the
-    thing §1 gives a length and a rank, and the one a search hands around.
+    globally ranked object that a search hands around.
     """
     return machine.read(machine.open_payload(_payload_of(word)))
 
@@ -153,10 +150,10 @@ def next_artifact(blob, byte):
 
 
 def length(payload):
-    """`L(z)` of a payload — what (1.3) measures and (1.6) ranks."""
+    """`L(z)` of a payload under the complete global code."""
     return codec.length(payload)
 
 
 def rank(payload):
-    """`rank(z)` — the final tie-break for every minimum (1.5)."""
+    """`rank(z)` — the final canonical tie-break for every minimum."""
     return codec.rank(payload)

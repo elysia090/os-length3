@@ -15,8 +15,8 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# Both packages run in the browser: `qm.browser` normalizes the minimized
-# program into a `vm` artifact, so the engine is incomplete without it.
+# Both packages run in the browser: QM produces the minimized wasm32 sequence,
+# and the VM package compiles it into the executable artifact.
 PACKAGES = ('qm', 'vm')
 # The C and its build script are not importable and are not shipped; the
 # compiled module travels as `web/vm.wasm` instead.
@@ -68,7 +68,7 @@ def main():
               file=sys.stderr)
         return 1
 
-    with open(MANIFEST, 'w') as handle:
+    with open(MANIFEST, 'w', newline='\n') as handle:
         json.dump(wanted, handle, indent=2)
         handle.write('\n')
     print('wrote %s (%d files)' % (MANIFEST, len(wanted['files'])))

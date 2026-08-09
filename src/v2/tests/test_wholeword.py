@@ -18,9 +18,9 @@ from qm.bits import lane_values, mask_of
 from qm.isa import reciprocal
 from qm.program import compile_program
 from qm.solvers import _modulus_of
-from vm import codec, image, lower, run
+from vm import codec, image, run
 
-from tests.support import example, solved as solve, target
+from tests.support import example, solved as solve, target, vm_picture
 
 
 def minimized(name):
@@ -173,8 +173,7 @@ class TestCommonSubexpressions(unittest.TestCase):
 
 
 class TestTheArtifactAgrees(unittest.TestCase):
-    """The canonical artifact is built from the abstract program, so every new
-    class needs a bit-sliced form and the two have to compute the same thing."""
+    """The minimized wasm32 program and the VM image compute the same thing."""
 
     CASES = ['logical_neg_i32', 'least_bit_mask_u64', 'float_power2_bits',
              'rabin_karp_roll']
@@ -185,7 +184,7 @@ class TestTheArtifactAgrees(unittest.TestCase):
             program = result['program_object']
             input_bits = result['frontend']['input_bits']
             output_bits = result['frontend']['output_bits']
-            picture = lower.lower_program(program, input_bits, output_bits)
+            picture = vm_picture(result)
             blob = codec.pack(codec.code(image.serialize(picture)))
             reference = compile_program(program)
             values = [v & mask_of(input_bits)

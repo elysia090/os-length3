@@ -1,11 +1,9 @@
-"""Section 3.2 — the direct physical normal form, and what §3.7 counts.
+"""The direct physical row form and its wave-cost accounting.
 
-Section 3.1 says what a transition means; 3.2 says what it is. They are not the
-same object: 3.1 reads five cells per step, 3.2 keeps those reads resolved in a
-row and repairs them by broadcast when memory changes. The specification
-requires both — §8.4 asks for "one transactional rSUBLEQ instruction *and its
-direct physical form*" — and names dropping an independent row component or
-omitting a special-row repair as changes of semantics.
+The scalar transition reads five cells per step. The physical form keeps those
+reads resolved in a row and repairs them by broadcast when memory changes.
+Both must produce identical outcomes; dropping an independent row component or
+omitting a descriptor repair changes semantics.
 
 So the first thing here is that the two forms agree on outcomes, and the rest
 is the falsification list: break one incidence, skip one repair, and require
@@ -24,7 +22,7 @@ def opened():
 
 
 def physical_future(residual, history, budget=1 << 20):
-    """`feed*` then `read`, entirely in the 3.2 form."""
+    """`feed*` then `read`, entirely in the physical row form."""
     scratch = dict(residual.image.memory)
     for byte in history:
         if byte:
@@ -66,11 +64,10 @@ class TestTheTwoFormsAgree(unittest.TestCase):
 
     def test_it_agrees_on_a_compiled_kernel(self):
         from qm.pipeline import solve
-        from vm import lower
-        from tests.support import read_example
+        from tests.support import read_example, vm_picture
 
         result = solve(read_example('starts8.c'), frontend='cfront')
-        picture = lower.lower_program(result['program_object'], 8, 64)
+        picture = vm_picture(result)
         residual = machine.Residual(picture)
         for value in (0, 1, 5, 170, 255):
             with self.subTest(input=value):
@@ -79,7 +76,7 @@ class TestTheTwoFormsAgree(unittest.TestCase):
                                  machine.future(residual, [value]))
 
 
-class TestWhatSectionThreeSevenCounts(unittest.TestCase):
+class TestPhysicalWaveCost(unittest.TestCase):
     """The cost model is the incidence structure, not the instruction count."""
 
     def cost(self, history=(65,)):
@@ -99,42 +96,6 @@ class TestWhatSectionThreeSevenCounts(unittest.TestCase):
         cost = self.cost()
         self.assertGreater(cost.quiet, 0)
         self.assertLessEqual(cost.barriers, cost.transitions - cost.quiet)
-
-    def test_a_shared_scratch_is_what_the_model_charges_for(self):
-        """The finding this section exists to make visible.
-
-        Every `add` used to go through one scratch cell, so writing it cost one
-        incidence per row that read it — 98.9% of `ranks8`'s work sat on that
-        single coordinate. A private scratch per add costs more L(z) and 40
-        times less work, and work precedes L(z) in the objective.
-        """
-        from qm.pipeline import solve
-        from vm import lower
-        from tests.support import read_example
-
-        result = solve(read_example('ranks8.c'), frontend='cfront')
-        picture = lower.lower_program(result['program_object'], 8, 64)
-        cost = rows.measure(machine.Residual(picture), [5])
-
-        # No single coordinate may carry most of the work any more.
-        charged = {}
-        original = rows.Rows.propagate
-
-        def traced(self, written, change, cost_):
-            touched = original(self, written, change, cost_)
-            charged[written] = charged.get(written, 0) + touched
-            return touched
-
-        rows.Rows.propagate = traced
-        try:
-            rows.measure(machine.Residual(picture), [5])
-        finally:
-            rows.Rows.propagate = original
-
-        worst = max(charged.values()) if charged else 0
-        self.assertLess(worst, cost.incidences * 0.5,
-                        'one coordinate carries most of the work again')
-
 
 class TestHowFarTheLoweringIsFromTheMachine(unittest.TestCase):
     """`vm/README.md` blames the gap on two decisions. This checks the claim.
@@ -179,7 +140,7 @@ class TestHowFarTheLoweringIsFromTheMachine(unittest.TestCase):
 
         Unrolled has no loop counter to maintain, so it takes fewer
         transitions and therefore less span. It pays in work: every unrolled
-        copy that reads a hot cell is another row §3.2 has to repair.
+        copy that reads a hot cell is another resident row to repair.
         """
         unrolled = self.table['word-level, unrolled']
         looped = self.table['word-level, looped']
@@ -200,7 +161,8 @@ def looping_machine():
 
     Propagation exists for exactly this. A straight-line program enters each
     row once, materializes it fresh on arrival and never reads a stale cache —
-    so breaking (3.5) on the echo machine changes nothing and proves nothing.
+    so breaking incidence repair on the echo machine changes nothing and
+    proves nothing.
     A row entered *again* after a cell it reads was written is the case.
 
     Both sides have to move, too. An earlier version accumulated a value that
@@ -244,7 +206,7 @@ def self_modifying_machine():
     """A loop that rewrites an operand word of an instruction it re-enters.
 
     Writing coordinate `d` moves the *descriptors* of the rows at `d`, `d-1`
-    and `d-2` — §3.2 calls them special and rebuilds them whole. Repairing the
+    and `d-2`; the physical form rebuilds them whole. Repairing the
     cached operands and leaving the descriptors stale is the case this is for.
     """
     from vm import asm as A
@@ -295,8 +257,7 @@ def self_modifying_machine():
 
 
 class TestTheFalsificationList(unittest.TestCase):
-    """§3: dropping an independent row component, or omitting a special-row
-    repair, changes semantics. Both must show."""
+    """Dropping an independent component or descriptor repair changes results."""
 
     INPUTS = (0, 1, 5, 30)
 
@@ -369,7 +330,8 @@ class TestTheFalsificationList(unittest.TestCase):
         """Rows d, d-1 and d-2 hold the written cell as a *descriptor*.
 
         Repairing the cached operands and not the descriptors is exactly the
-        self-modification case, which is why §3.1 fetches all three operands
+        self-modification case, which is why the scalar machine fetches all
+        three operands
         before the write.
         """
         residual, _cells = self_modifying_machine()

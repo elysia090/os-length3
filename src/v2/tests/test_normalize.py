@@ -20,7 +20,7 @@ import unittest
 
 from qm import isa as isa_mod
 from qm.asmfront import parse
-from qm.bits import M64, mask_of
+from qm.bits import M64, mask_of, pdep, xorshift_stream
 
 from tests.support import example, solved as solve, target
 
@@ -99,6 +99,30 @@ class TestEveryRewriteIsAnIdentity(unittest.TestCase):
         self.assertEqual([ins.op for ins in isa_mod.normalize(seq).ins],
                          ['PEXT'])
 
+    def test_a_long_integer_expression_is_substituted_then_reformed(self):
+        seq = build(('ADD', [0], 1, None),
+                    ('ADD', [0], 2, None),
+                    ('ADDR', [1, 2], None, None),
+                    ('IMUL', [3], 3, None),
+                    ('SUB', [4], 4, None),
+                    ('ADD', [5], 9, None))
+        normalized = isa_mod.normalize(seq)
+        self.assertTrue(agrees(seq, normalized))
+        self.assertEqual([ins.op for ins in normalized.ins], ['IMUL', 'ADD'])
+
+    def test_a_long_linear_expression_factors_after_substitution(self):
+        seq = build(('AND', [0], 0x0F, None),
+                    ('AND', [0], 0xF0, None),
+                    ('SHL', [1], None, 8),
+                    ('SHL', [2], None, 8),
+                    ('XORR', [3, 4], None, None),
+                    ('XOR', [5], 0x1234, None),
+                    ('NOT', [6], None, None))
+        normalized = isa_mod.normalize(seq)
+        self.assertTrue(agrees(seq, normalized))
+        self.assertEqual([ins.op for ins in normalized.ins],
+                         ['AND', 'SHL', 'XOR'])
+
 
 class TestKnownBits(unittest.TestCase):
     """The analysis the masks and the 32-bit forms both rest on."""
@@ -121,6 +145,33 @@ class TestKnownBits(unittest.TestCase):
                 for value in PROBES:
                     self.assertEqual(evaluate(value) & ~known[seq.result] & M64,
                                      0, 'input 0x%X' % value)
+
+
+class TestPortableConstantDeposit(unittest.TestCase):
+    """wasm32 has shifts and masks but no PDEP instruction."""
+
+    MASKS = [0x0101010101010101, 0x55555555, 0x1111111111111111,
+             0x1249249249249249, 0x0000FFFF0000FFFF]
+
+    def test_the_expansion_network_is_the_same_function(self):
+        values = PROBES + xorshift_stream(0x6A09E667F3BCC909, 512, 64)
+        for mask in self.MASKS:
+            seq = isa_mod._seq_pdep_expand(mask)
+            evaluate = isa_mod.compile_seq(seq)
+            with self.subTest(mask=hex(mask)):
+                for value in values:
+                    self.assertEqual(evaluate(value), pdep(value, mask))
+
+    def test_a_regular_deposit_beats_the_one_bit_per_term_form(self):
+        result = solve(example('morton_dilate16'), frontend='cfront')
+        op = result['program_object'].ops[0]
+        candidates = dict(isa_mod.lower_lin_const(
+            op, isa_mod.get_isa('wasm32')))
+        seq = isa_mod.normalize(candidates['shift/OR deposit network'])
+        self.assertLessEqual(len(seq), 13)
+        reference = isa_mod.compile_seq(seq)
+        for value in range(1 << 16):
+            self.assertEqual(reference(value), pdep(value, 0x55555555))
 
 
 class TestTheListingIsWrittenShort(unittest.TestCase):
@@ -182,6 +233,26 @@ class TestTheListingIsWrittenShort(unittest.TestCase):
                 # right if every value it names really does fit.
                 self.assertTrue(any(k <= mask_of(32) for k in known[1:]),
                                 'nothing in the sequence fits 32 bits')
+
+    def test_and_not_with_one_shared_operand_stays_zero(self):
+        seq = build(('XOR', [0], 7, None),
+                    ('ORR', [1, 0], None, None),
+                    ('ANDNR', [2, 2], None, None))
+        text = isa_mod.emit_asm(seq, 'shared_and_not', 8)
+        function, _dialect = parse(text)
+        for value in range(256):
+            self.assertEqual(function(value), 0)
+
+    def test_a_wide_shift_count_is_not_narrowed_modulo_32(self):
+        seq = build(('CLZ', [0], None, None),
+                    ('SHR', [1], None, 36),
+                    ('ADDR', [2, 1], None, None))
+        text = isa_mod.emit_asm(seq, 'wide_shift_count', 8)
+        self.assertIn('shrq $36', text)
+        function, _dialect = parse(text)
+        reference = isa_mod.compile_seq(seq)
+        for value in range(256):
+            self.assertEqual(function(value), reference(value))
 
 
 @unittest.skipUnless(shutil.which('cc') or shutil.which('gcc'),

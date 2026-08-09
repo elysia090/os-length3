@@ -62,7 +62,7 @@ _EVENTS = {EMIT: -1, COMMIT: -2, FAIL: -3}
 class Asm(object):
     """Emit SUBLEQ, resolve symbols, hand back a canonical image."""
 
-    # The ABI cells, fixed by the specification.
+    # Fixed ABI cells used by every encoded program.
     INPUT = 0
     OUTPUT = 1
 
@@ -125,8 +125,8 @@ class Asm(object):
     def add(self, source, target):
         """M[target] += M[source], through a negation this add owns.
 
-        The scratch is private on purpose. Section 3.2 keeps every row's
-        operands already dereferenced, so writing a cell costs one incidence
+        The scratch is private on purpose. The physical row form keeps every
+        row's operands already dereferenced, so writing a cell costs one incidence
         per row that reads it — and a scratch shared by the whole program is
         read by the whole program. Funnelling every add through one cell put
         98.9% of `ranks8`'s measured work on that single coordinate; giving
@@ -205,8 +205,8 @@ class Asm(object):
         """Address of instruction `index`. Valid only after `build`.
 
         Needed to write a program that modifies itself: the operand words of
-        instruction `i` live at `code_address(i) + 0, +1, +2`, and §3.2 calls
-        the rows holding them `special` for exactly that reason.
+        instruction `i` live at `code_address(i) + 0, +1, +2`; rows holding
+        those words need repair after a write changes an instruction.
         """
         if self._code_base is None:
             raise ValueError('addresses are assigned by build()')

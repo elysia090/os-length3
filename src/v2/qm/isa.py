@@ -1,4 +1,4 @@
-"""SPEC §10 / §11 — target ISAs and physical lowering.
+"""Target ISAs, exact normalization, and physical lowering.
 
 A lowered program is an SSA DAG, not a chain, so `span` (critical path) and
 `work` (instruction count) are genuinely different numbers instead of two names
@@ -220,7 +220,7 @@ def agrees(seq, sem, obs):
 
 
 # ---------------------------------------------------------------------------
-# Measurement: SPEC §8 objective (span, work, L(z), rank)
+# Measurement objective: (span, work, L(z), rank)
 # ---------------------------------------------------------------------------
 
 def _elias_len(n):
@@ -495,8 +495,8 @@ def _shape(seq):
 NORMALIZE_ROUNDS = 8
 
 
-def normalize(seq):
-    """Rewrite, fold, share and prune to a fixed point."""
+def _normalize_local(seq):
+    """Apply instruction-local identities to a fixed point."""
     current = seq
     for _round in range(NORMALIZE_ROUNDS):
         stepped = dead_code(common_subexpressions(_fold(_rewrite(current))))
@@ -504,6 +504,145 @@ def normalize(seq):
             return current
         current = stepped
     return current
+
+
+def _extract_integer_affine(seq):
+    """Extract the final `(scale, offset)` from an integer-affine SSA DAG.
+
+    The accepted operations are exactly affine over integers modulo 2^64.
+    No rewritten intermediate program is produced: each SSA value is mapped
+    to its exact coefficients and only the requested result is returned.
+    Rejecting any non-affine dependency keeps this independent of probes and
+    of the finite verification domain.
+    """
+    forms = [(1, 0)]
+    for ins in seq.ins:
+        args = [forms[arg] for arg in ins.args]
+        if any(value is None for value in args):
+            forms.append(None)
+            continue
+        op = ins.op
+        if op == 'IMUL':
+            scale, offset = args[0]
+            value = (scale * ins.const, offset * ins.const)
+        elif op == 'SHL':
+            scale, offset = args[0]
+            factor = 1 << ins.shift
+            value = (scale * factor, offset * factor)
+        elif op == 'ADD':
+            scale, offset = args[0]
+            value = (scale, offset + ins.const)
+        elif op == 'SUB':
+            scale, offset = args[0]
+            value = (scale, offset - ins.const)
+        elif op == 'NEG':
+            scale, offset = args[0]
+            value = (-scale, -offset)
+        elif op in ('ADDR', 'SUBR'):
+            left, right = args
+            sign = 1 if op == 'ADDR' else -1
+            value = (left[0] + sign * right[0],
+                     left[1] + sign * right[1])
+        else:
+            value = None
+        forms.append(None if value is None
+                     else (value[0] & M64, value[1] & M64))
+
+    return forms[seq.result]
+
+
+def _seq_integer_affine(form, notes=()):
+    """Emit the canonical program for one extracted affine form."""
+    scale, offset = form
+    out = Seq(notes=list(notes))
+    value = 0
+    if scale == 0:
+        value = out.emit('AND', [0], const=0)
+    elif scale != 1:
+        if scale & (scale - 1) == 0:
+            value = out.emit('SHL', [0], shift=scale.bit_length() - 1)
+        else:
+            value = out.emit('IMUL', [0], const=scale)
+    if offset:
+        value = out.emit('ADD', [value], const=offset)
+    out.result = value
+    return out
+
+
+def _extract_gf2_affine(seq):
+    """Extract the final GF(2) basis and constant from an SSA DAG."""
+    identity = tuple(1 << bit for bit in range(64))
+    forms = [(identity, 0)]
+
+    def map_bits(form, function):
+        basis, constant = form
+        return tuple(function(value) & M64 for value in basis), \
+            function(constant) & M64
+
+    for ins in seq.ins:
+        args = [forms[arg] for arg in ins.args]
+        if any(value is None for value in args):
+            forms.append(None)
+            continue
+        op = ins.op
+        if op == 'AND':
+            value = map_bits(args[0], lambda word: word & ins.const)
+        elif op == 'XOR':
+            basis, constant = args[0]
+            value = basis, constant ^ ins.const
+        elif op == 'NOT':
+            basis, constant = args[0]
+            value = basis, constant ^ M64
+        elif op == 'SHL':
+            value = map_bits(args[0], lambda word: word << ins.shift)
+        elif op == 'SHR':
+            value = map_bits(args[0], lambda word: word >> ins.shift)
+        elif op == 'BSWAP':
+            value = map_bits(args[0], bswap64)
+        elif op == 'SCANXOR':
+            value = map_bits(args[0],
+                             lambda word: word ^ (word << ins.shift))
+        elif op == 'XORR':
+            left, right = args
+            value = (tuple(a ^ b for a, b in zip(left[0], right[0])),
+                     left[1] ^ right[1])
+        else:
+            value = None
+        forms.append(value)
+
+    return forms[seq.result]
+
+
+def _seq_gf2_affine(form, notes=()):
+    """Emit a factored shift network from one extracted GF(2) map."""
+    identity = tuple(1 << bit for bit in range(64))
+    basis, constant = form
+    if basis == identity:
+        out = Seq(notes=list(notes))
+        if constant:
+            out.emit('XOR', [0], const=constant)
+        return out
+
+    out = _seq_shift_network(_lin_shift_terms(basis, 64))
+    if constant:
+        out.emit('XOR', [out.result], const=constant)
+    out.notes = list(notes)
+    return out
+
+
+def normalize(seq):
+    """Rewrite locally, then extract and directly emit exact whole forms."""
+    current = _normalize_local(seq)
+    candidates = [current]
+    forms = (
+        (_extract_integer_affine, _seq_integer_affine),
+        (_extract_gf2_affine, _seq_gf2_affine),
+    )
+    for extract, emit in forms:
+        form = extract(current)
+        if form is not None:
+            candidates.append(_normalize_local(emit(form, current.notes)))
+    return min(candidates, key=objective_key)
 
 
 # ---------------------------------------------------------------------------
@@ -694,6 +833,48 @@ def _seq_shift_network(terms):
     return seq
 
 
+def _pdep_expand_levels(mask):
+    """Masks for a constant deposit, from compact bits to `mask` positions.
+
+    Compressing the mask moves selected positions right by powers of two.
+    Replaying those levels backwards expands the low packed bits.  Each level
+    is therefore the exact identity
+
+        x = (x | (x << shift)) & expanded_mask
+
+    on the current selected positions.  The returned data is constant for one
+    deposit mask; none of the planning work is emitted into the program.
+    """
+    current = mask & M64
+    moving = ((~current) & M64) << 1 & M64
+    levels = []
+    for bit in range(6):
+        prefix = moving ^ ((moving << 1) & M64)
+        for shift in (2, 4, 8, 16, 32):
+            prefix ^= (prefix << shift) & M64
+        moved = prefix & current
+        before = current
+        current = ((current ^ moved) | (moved >> (1 << bit))) & M64
+        levels.append((1 << bit, before, moved))
+        moving &= ~prefix & M64
+    return levels
+
+
+def _seq_pdep_expand(mask):
+    """Portable constant deposit as a logarithmic shift/OR/mask network."""
+    seq = Seq()
+    packed = mask_of(popcnt(mask))
+    value = 0 if packed == M64 else seq.emit('AND', [0], const=packed)
+    for shift, expanded, moved in reversed(_pdep_expand_levels(mask)):
+        if not moved:
+            continue
+        shifted = seq.emit('SHL', [value], shift=shift)
+        value = seq.emit('ORR', [value, shifted])
+        value = seq.emit('AND', [value], const=expanded)
+    seq.result = value
+    return seq
+
+
 def lower_lin_const(op, isa):
     """All physical representatives of a constant GF(2)-linear map on `isa`."""
     basis = op.detail['basis']
@@ -746,6 +927,10 @@ def lower_lin_const(op, isa):
         spread = _seq_byte_spread(basis, input_bits)
         if spread is not None:
             out.append(('multiply/mask/bswap spread', spread))
+
+    pdep_mask = _lin_pdep_mask(basis)
+    if pdep_mask is not None and not isa.has('pdep'):
+        out.append(('shift/OR deposit network', _seq_pdep_expand(pdep_mask)))
 
     terms = _lin_shift_terms(basis, input_bits)
     if terms and len(terms) <= 24:
@@ -838,7 +1023,7 @@ def lower_perm_dyn(op, isa):
 
 
 def _lane_interval_seq(seq, v, bounds, lane_bits):
-    """`lo <= lane <= hi` on every lane, branch-free, as `examples/lanecode.h`.
+    """`lo <= lane <= hi` on every lane, as `corpus/lanes/lanecode.h`.
 
     Three physical forms for one semantic step, picked by the shape of the
     interval: a point is an equality test, an interval starting at zero is a
@@ -1306,7 +1491,8 @@ C_FORMS = {
     'CTZ': lambda a, ins: ('%s ? (uint64_t)__builtin_ctzll(%s) : 64'
                            % (a[0], a[0])),
     'LOOP8': lambda a, ins: 'qm_gather_loop(0x%016Xull, %s)' % (ins.const, a[0]),
-    'LUT': lambda a, ins: 'qm_lut[%s]' % a[0],
+    'LUT': lambda a, ins: 'qm_lut[%s & %d]'
+    % (a[0], len(ins.const) - 1),
 }
 
 NEEDS_BMI2 = {'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN'}
@@ -1448,7 +1634,11 @@ def emit_asm(seq, name, input_bits=None):
         src = [reg[a] for a in ins.args]
         narrow = (ins.op in _NARROWABLE
                   and known[k] <= mask_of(32)
-                  and all(known[a] <= mask_of(32) for a in ins.args))
+                  and all(known[a] <= mask_of(32) for a in ins.args)
+                  # x86 masks a 32-bit shift count modulo 32 and a 64-bit
+                  # count modulo 64. A count in 32..63 therefore cannot be
+                  # narrowed even when both the input and result fit in 32 bits.
+                  and not (ins.op in ('SHL', 'SHR') and ins.shift >= 32))
         suffix = 'l' if narrow else 'q'
 
         def name_of(register):
@@ -1526,13 +1716,21 @@ def emit_asm(seq, name, input_bits=None):
             # BMI1 has ANDN, but its operand order is the easiest thing in this
             # emitter to get silently backwards; NOT+AND is one instruction
             # longer and assembles the same everywhere.
-            if in_place:
+            if ins.args[0] == ins.args[1]:
+                # ~x & x is zero. Destructively complementing the shared
+                # register first would also overwrite the second operand and
+                # incorrectly turn this into ~x & ~x.
+                body.append('    xor%s %s, %s'
+                            % (suffix, name_of(dst), name_of(dst)))
+            elif in_place:
                 body.append('    notq %s' % dst)
+                body.append('    and%s %s, %s' % (suffix, name_of(src[1]),
+                                                  name_of(dst)))
             else:
                 body.append('    movq %s, %s' % (src[0], dst))
                 body.append('    notq %s' % dst)
-            body.append('    and%s %s, %s' % (suffix, name_of(src[1]),
-                                              name_of(dst)))
+                body.append('    and%s %s, %s' % (suffix, name_of(src[1]),
+                                                  name_of(dst)))
         elif ins.op in ('SHL', 'SHR', 'SAR'):
             carry_in()
             body.append('    %s $%d, %s'
