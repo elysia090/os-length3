@@ -222,6 +222,53 @@ class PagedMemory(object):
             region_count - len(self._regions))
         return PagedMemory(self.base, length, _regions=regions)
 
+    def discard(self, address, length):
+        """Drop complete changed pages and expose their backing bytes again.
+
+        This is the sparse-memory equivalent of discarding a clean mmap
+        range. Requiring physical-page alignment prevents a caller from
+        accidentally erasing unrelated bytes that share an edge page.
+        """
+        address, length = int(address), int(length)
+        if address < 0 or length < 0 or address + length > self.length:
+            raise WasmStateError('discarded wasm memory range is out of bounds')
+        if address % MEMORY_PAGE or length % MEMORY_PAGE:
+            raise ValueError('discarded wasm memory range must be page aligned')
+        if not length:
+            return self
+        regions = list(self._regions)
+        changed_regions = {}
+        changed_spans = {}
+        first = address // MEMORY_PAGE
+        last = (address + length) // MEMORY_PAGE
+        for index in range(first, last):
+            span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+            region_index, span_slot = divmod(span_index,
+                                             MEMORY_REGION_SPANS)
+            region = changed_regions.get(region_index)
+            if region is None:
+                old_region = regions[region_index]
+                if old_region is None:
+                    continue
+                region = list(old_region)
+                changed_regions[region_index] = region
+            key = (region_index, span_slot)
+            span = changed_spans.get(key)
+            if span is None:
+                old_span = region[span_slot]
+                if old_span is None:
+                    continue
+                span = list(old_span)
+                changed_spans[key] = span
+            span[slot] = None
+        for (region_index, span_slot), span in changed_spans.items():
+            changed_regions[region_index][span_slot] = tuple(span) if any(
+                page is not None for page in span) else None
+        for region_index, region in changed_regions.items():
+            regions[region_index] = tuple(region) if any(
+                span is not None for span in region) else None
+        return PagedMemory(self.base, self.length, _regions=tuple(regions))
+
 
 class _Reader(object):
     __slots__ = ('data', 'at', 'end')
@@ -322,6 +369,7 @@ class Module:
     exports: tuple
     start: object = None
     tables: tuple = ()
+    indirect_abi: str = 'strict'
 
     def export(self, name):
         for exported, kind, index in self.exports:
@@ -333,8 +381,26 @@ class Module:
                                   (', '.join(available) or 'none'))
 
 
-def decode_module(data):
-    """Decode the executable integer/control/memory core of a wasm module."""
+def decode_module(data, imports=None, indirect_abi='strict'):
+    """Decode and instantiate the integer/control/memory core of a module.
+
+    Function imports remain resumable host barriers. Imported memories,
+    tables, and globals are accepted only when ``imports`` supplies an
+    explicit deterministic snapshot keyed by ``(module, name)``.
+    """
+    imports = {} if imports is None else imports
+    if indirect_abi not in ('strict', 'c-extra-args'):
+        raise ValueError('unknown indirect call ABI %r' % indirect_abi)
+
+    def resource(module, name, kind):
+        identity = (module, name)
+        try:
+            return imports[identity]
+        except KeyError:
+            raise UnsupportedC(
+                'imported wasm %s %s.%s needs an explicit deterministic '
+                'host snapshot' % (kind, module, name))
+
     reader = _Reader(bytes(data))
     if reader.take(4) != b'\x00asm' or reader.take(4) != b'\x01\x00\x00\x00':
         raise WasmStateError('input is not a WebAssembly 1.0 binary')
@@ -372,13 +438,43 @@ def decode_module(data):
                     imported.append(Function(section.uleb(), imported=True,
                                              module=mod, name=name))
                 elif kind == 1:
-                    raise UnsupportedC('imported wasm tables are not modelled')
+                    minimum, maximum = _table_type(section)
+                    initial = tuple(resource(mod, name, 'table'))
+                    if len(initial) < minimum \
+                            or maximum is not None and len(initial) > maximum:
+                        raise WasmStateError(
+                            'imported wasm table %s.%s has %d slots, expected '
+                            '%d..%s' % (mod, name, len(initial), minimum,
+                                       maximum if maximum is not None else
+                                       'unbounded'))
+                    table_limits.append((minimum, maximum, initial))
                 elif kind == 2:
-                    raise UnsupportedC('imported wasm memories need an explicit '
-                                       'deterministic host snapshot')
+                    minimum, maximum = _limits(section)
+                    initial = resource(mod, name, 'memory')
+                    if not isinstance(initial, PagedMemory):
+                        raise TypeError('imported wasm memory %s.%s must be a '
+                                        'PagedMemory snapshot' % (mod, name))
+                    pages = len(initial) // PAGE
+                    if len(initial) % PAGE or pages < minimum \
+                            or maximum is not None and pages > maximum:
+                        raise WasmStateError(
+                            'imported wasm memory %s.%s has %d pages, expected '
+                            '%d..%s' % (mod, name, pages, minimum,
+                                       maximum if maximum is not None else
+                                       'unbounded'))
+                    memories.append((minimum, maximum, initial))
                 elif kind == 3:
-                    raise UnsupportedC('imported wasm globals need an explicit '
-                                       'deterministic host value')
+                    ctype = _valtype(section)
+                    mutable = bool(section.byte())
+                    value = int(resource(mod, name, 'global'))
+                    if ctype == 'i32':
+                        value &= I32
+                    elif ctype == 'i64':
+                        value &= I64
+                    else:
+                        raise UnsupportedC('imported wasm global type %s is '
+                                           'not modelled' % ctype)
+                    globals_.append((ctype, mutable, value, True))
                 else:
                     raise UnsupportedC('wasm import kind %d is not modelled'
                                        % kind)
@@ -386,9 +482,12 @@ def decode_module(data):
             defined_types.extend(section.vector(lambda: section.uleb()))
         elif section_id == 4:
             for _ in range(section.uleb()):
-                table_limits.append(_table_type(section))
+                minimum, maximum = _table_type(section)
+                table_limits.append((minimum, maximum, None))
         elif section_id == 5:
-            memories.extend(section.vector(lambda: _limits(section)))
+            memories.extend((minimum, maximum, None)
+                            for minimum, maximum
+                            in section.vector(lambda: _limits(section)))
         elif section_id == 6:
             for _ in range(section.uleb()):
                 ctype = _valtype(section)
@@ -444,7 +543,8 @@ def decode_module(data):
         functions.append(Function(type_index, body[0], body[1], False,
                                   ends=body[2], elses=body[3]))
 
-    minimum, maximum = memories[0] if memories else (0, None)
+    minimum, maximum, imported_memory = (memories[0] if memories
+                                         else (0, None, None))
     if len(memories) > 1:
         raise UnsupportedC('multiple wasm memories are not modelled')
     # The minimum is an address-space limit, not resident data.  WebAssembly
@@ -452,7 +552,8 @@ def decode_module(data):
     # only active data-segment pages.  This is the state-machine equivalent of
     # a demand-zero mmap and is especially important for compiler/VM modules
     # that reserve tens of MiB before touching most of it.
-    memory = PagedMemory(b'', minimum * PAGE)
+    memory = (PagedMemory(b'', minimum * PAGE) if imported_memory is None
+              else imported_memory)
     for memory_index, offset, payload in data_segments:
         if memory_index != 0:
             raise UnsupportedC('multiple wasm memories are not modelled')
@@ -460,7 +561,8 @@ def decode_module(data):
         if offset < 0 or end > len(memory):
             raise WasmStateError('active data segment is outside memory')
         memory = memory.write(offset, payload)
-    tables = [[None] * minimum for minimum, _maximum in table_limits]
+    tables = [(list(initial) if initial is not None else [None] * minimum)
+              for minimum, _maximum, initial in table_limits]
     for table_index, offset, elements in element_segments:
         if table_index < 0 or table_index >= len(tables):
             raise WasmStateError('active element segment names an unknown table')
@@ -472,7 +574,7 @@ def decode_module(data):
                   tuple(value for _kind, _mut, value, _imp in globals_),
                   tuple(mutable for _kind, mutable, _value, _imp in globals_),
                   memory, maximum, tuple(exports), start,
-                  tuple(tuple(table) for table in tables))
+                  tuple(tuple(table) for table in tables), indirect_abi)
 
 
 def _valtype(reader):
@@ -594,6 +696,10 @@ _PLAIN = {
     0x53: 'i64.lt_s', 0x54: 'i64.lt_u', 0x55: 'i64.gt_s',
     0x56: 'i64.gt_u', 0x57: 'i64.le_s', 0x58: 'i64.le_u',
     0x59: 'i64.ge_s', 0x5A: 'i64.ge_u',
+    0x5B: 'f32.eq', 0x5C: 'f32.ne', 0x5D: 'f32.lt',
+    0x5E: 'f32.gt', 0x5F: 'f32.le', 0x60: 'f32.ge',
+    0x61: 'f64.eq', 0x62: 'f64.ne', 0x63: 'f64.lt',
+    0x64: 'f64.gt', 0x65: 'f64.le', 0x66: 'f64.ge',
     0x67: 'i32.clz', 0x68: 'i32.ctz', 0x69: 'i32.popcnt',
     0x6A: 'i32.add', 0x6B: 'i32.sub', 0x6C: 'i32.mul',
     0x6D: 'i32.div_s', 0x6E: 'i32.div_u', 0x6F: 'i32.rem_s',
@@ -606,8 +712,30 @@ _PLAIN = {
     0x82: 'i64.rem_u', 0x83: 'i64.and', 0x84: 'i64.or',
     0x85: 'i64.xor', 0x86: 'i64.shl', 0x87: 'i64.shr_s',
     0x88: 'i64.shr_u', 0x89: 'i64.rotl', 0x8A: 'i64.rotr',
+    0x8B: 'f32.abs', 0x8C: 'f32.neg', 0x8D: 'f32.ceil',
+    0x8E: 'f32.floor', 0x8F: 'f32.trunc', 0x90: 'f32.nearest',
+    0x91: 'f32.sqrt', 0x92: 'f32.add', 0x93: 'f32.sub',
+    0x94: 'f32.mul', 0x95: 'f32.div', 0x96: 'f32.min',
+    0x97: 'f32.max', 0x98: 'f32.copysign',
+    0x99: 'f64.abs', 0x9A: 'f64.neg', 0x9B: 'f64.ceil',
+    0x9C: 'f64.floor', 0x9D: 'f64.trunc', 0x9E: 'f64.nearest',
+    0x9F: 'f64.sqrt', 0xA0: 'f64.add', 0xA1: 'f64.sub',
+    0xA2: 'f64.mul', 0xA3: 'f64.div', 0xA4: 'f64.min',
+    0xA5: 'f64.max', 0xA6: 'f64.copysign',
     0xA7: 'i32.wrap_i64', 0xAC: 'i64.extend_i32_s',
     0xAD: 'i64.extend_i32_u',
+    0xA8: 'i32.trunc_f32_s', 0xA9: 'i32.trunc_f32_u',
+    0xAA: 'i32.trunc_f64_s', 0xAB: 'i32.trunc_f64_u',
+    0xAE: 'i64.trunc_f32_s', 0xAF: 'i64.trunc_f32_u',
+    0xB0: 'i64.trunc_f64_s', 0xB1: 'i64.trunc_f64_u',
+    0xB2: 'f32.convert_i32_s', 0xB3: 'f32.convert_i32_u',
+    0xB4: 'f32.convert_i64_s', 0xB5: 'f32.convert_i64_u',
+    0xB6: 'f32.demote_f64',
+    0xB7: 'f64.convert_i32_s', 0xB8: 'f64.convert_i32_u',
+    0xB9: 'f64.convert_i64_s', 0xBA: 'f64.convert_i64_u',
+    0xBB: 'f64.promote_f32', 0xBC: 'i32.reinterpret_f32',
+    0xBD: 'i64.reinterpret_f64', 0xBE: 'f32.reinterpret_i32',
+    0xBF: 'f64.reinterpret_i64',
     0xC0: 'i32.extend8_s', 0xC1: 'i32.extend16_s',
     0xC2: 'i64.extend8_s', 0xC3: 'i64.extend16_s',
     0xC4: 'i64.extend32_s',
@@ -619,12 +747,14 @@ _INDEXED = {0x0C: 'br', 0x0D: 'br_if', 0x10: 'call', 0x20: 'local.get',
 
 _MEMORY = {
     0x28: ('i32.load', 4, False), 0x29: ('i64.load', 8, False),
+    0x2A: ('f32.load', 4, False), 0x2B: ('f64.load', 8, False),
     0x2C: ('i32.load8_s', 1, True), 0x2D: ('i32.load8_u', 1, False),
     0x2E: ('i32.load16_s', 2, True), 0x2F: ('i32.load16_u', 2, False),
     0x30: ('i64.load8_s', 1, True), 0x31: ('i64.load8_u', 1, False),
     0x32: ('i64.load16_s', 2, True), 0x33: ('i64.load16_u', 2, False),
     0x34: ('i64.load32_s', 4, True), 0x35: ('i64.load32_u', 4, False),
     0x36: ('i32.store', 4, False), 0x37: ('i64.store', 8, False),
+    0x38: ('f32.store', 4, False), 0x39: ('f64.store', 8, False),
     0x3A: ('i32.store8', 1, False), 0x3B: ('i32.store16', 2, False),
     0x3C: ('i64.store8', 1, False), 0x3D: ('i64.store16', 2, False),
     0x3E: ('i64.store32', 4, False),
@@ -719,6 +849,12 @@ def _decode_code(reader):
             code.append(Instruction('i32.const', (reader.sleb(32) & I32,)))
         elif opcode == 0x42:
             code.append(Instruction('i64.const', (reader.sleb(64) & I64,)))
+        elif opcode == 0x43:
+            code.append(Instruction(
+                'f32.const', (int.from_bytes(reader.take(4), 'little'),)))
+        elif opcode == 0x44:
+            code.append(Instruction(
+                'f64.const', (int.from_bytes(reader.take(8), 'little'),)))
         elif opcode == 0xFC:
             sub = reader.uleb()
             if sub == 10:
@@ -942,6 +1078,7 @@ def instruction_step(module, state):
                                                   globals=tuple(globals_),
                                                   memory=memory))
     elif op in ('call', 'call_indirect'):
+        call_type = None
         if op == 'call':
             callee_index = inst.args[0]
         else:
@@ -955,13 +1092,32 @@ def instruction_step(module, state):
             callee_index = table[selector]
             if callee_index >= len(module.functions):
                 raise WasmStateError('call_indirect function is outside the module')
-            if (type_index >= len(module.types)
-                    or module.types[module.functions[callee_index].type_index]
-                    != module.types[type_index]):
-                raise WasmStateError('call_indirect function type mismatch')
+            actual_index = module.functions[callee_index].type_index
+            expected = (module.types[type_index]
+                        if type_index < len(module.types) else None)
+            actual = (module.types[actual_index]
+                      if actual_index < len(module.types) else None)
+            compatible = expected == actual
+            if not compatible and module.indirect_abi == 'c-extra-args' \
+                    and expected is not None and actual is not None:
+                compatible = (
+                    expected.results == actual.results
+                    and len(expected.params) >= len(actual.params)
+                    and expected.params[:len(actual.params)] == actual.params)
+                if compatible:
+                    call_type = expected
+            if not compatible:
+                raise WasmStateError(
+                    'call_indirect function type mismatch at function %d pc %d: '
+                    'table %d slot %d selects function %d, expected type %d %r, '
+                    'got type %d %r'
+                    % (frame.function, frame.pc, table_index, selector,
+                       callee_index, type_index, expected, actual_index, actual))
         callee = module.functions[callee_index]
         callee_type = module.types[callee.type_index]
-        args = [pop() for _ in callee_type.params][::-1]
+        args = [pop() for _ in (call_type or callee_type).params][::-1]
+        if call_type is not None:
+            args = args[:len(callee_type.params)]
         put_frame()
         if callee.imported:
             return _host_call(module, replace(state, frames=tuple(frames),
@@ -1202,9 +1358,9 @@ def compile_stream(module, function='main', alphabet=None, max_states=4096,
 
 
 def _coerce(value, kind):
-    if kind == 'i32':
+    if kind in ('i32', 'f32'):
         return int(value) & I32
-    if kind == 'i64':
+    if kind in ('i64', 'f64'):
         return int(value) & I64
     raise UnsupportedC('runtime value type %s is not modelled' % kind)
 

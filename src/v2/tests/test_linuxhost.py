@@ -4,8 +4,9 @@ import struct
 import unittest
 
 from qm.cfront.errors import UnsupportedC
-from kernel.host import (DirectPageStore, LinuxHostState, NCCC_IMPORT,
-                         allocate_thread_stack, decode_nccc,
+from kernel.host import (BLOCK_OK, BLOCK_UNSUPPORTED, DirectPageStore,
+                         LinuxHostState, NCCC_IMPORT, allocate_thread_stack,
+                         allocate_host_memory, attach_block, decode_nccc,
                          prepare_linux_memory, resume_nccc, step_nccc)
 from qm.wasmstate import (WasmStateError, decode_module, run_until_boundary,
                           start_state)
@@ -153,6 +154,62 @@ class TestLinuxHostBarrier(unittest.TestCase):
         host, stack_pointer = allocate_thread_stack(host, pages=1)
         self.assertEqual(stack_pointer, host.heap_limit + 65536 - 256)
         self.assertEqual(prepared.memory.pages, pages_before)
+
+    def test_host_pool_reservations_are_aligned_and_bounded(self):
+        _module, machine = self.waiting(4, 1)
+        _prepared, host = prepare_linux_memory(
+            machine, LinuxHostState(), pool_pages=1, stack_pages=1)
+
+        host, first = allocate_host_memory(host, 7, alignment=256)
+        host, second = allocate_host_memory(host, 9, alignment=256)
+
+        self.assertEqual(first % 256, 0)
+        self.assertEqual(second - first, 256)
+        with self.assertRaisesRegex(WasmStateError, 'exhausted'):
+            allocate_host_memory(host, 65536)
+
+    def test_read_only_block_is_copied_into_guest_memory_and_traced(self):
+        image = bytes(range(256)) * 64
+        loaded = []
+
+        def load(offset, length):
+            loaded.append((offset, length))
+            return image[offset:offset + length]
+
+        store = DirectPageStore(len(image), load, page_size=4096,
+                                span_pages=4)
+        host, device = attach_block(LinuxHostState(), store)
+        module, waiting = self.waiting(6, 2, (device, 4090, 512, 24))
+        transition = step_nccc(waiting, host)
+        final = run_until_boundary(module, transition.machine)
+
+        self.assertEqual(final.result, (BLOCK_OK,))
+        self.assertEqual(final.memory.read(512, 24), image[4090:4114])
+        self.assertEqual(loaded, [(0, 4096), (4096, 4096)])
+        self.assertEqual(transition.event,
+                         ('block', 'read', 0, 4090, 24, (0, 1), 2))
+
+    def test_read_only_block_rejects_write_without_touching_backing(self):
+        loaded = []
+        store = DirectPageStore(8192, lambda offset, length:
+                                loaded.append((offset, length)) or bytes(length))
+        host, device = attach_block(LinuxHostState(), store)
+        module, waiting = self.waiting(6, 3, (device, 0, 512, 16))
+        transition = step_nccc(waiting, host)
+        final = run_until_boundary(module, transition.machine)
+
+        self.assertEqual(final.result, (BLOCK_UNSUPPORTED,))
+        self.assertEqual(store.resident_pages, 0)
+        self.assertEqual(loaded, [])
+        self.assertEqual(transition.event[1], 'write-rejected')
+
+    def test_block_capacity_is_explicit(self):
+        store = DirectPageStore(12345)
+        host, device = attach_block(LinuxHostState(), store)
+        module, waiting = self.waiting(6, 1, (device,))
+        transition = step_nccc(waiting, host)
+        final = run_until_boundary(module, transition.machine)
+        self.assertEqual(final.result, (12345,))
 
 
 class TestDirectPageStore(unittest.TestCase):

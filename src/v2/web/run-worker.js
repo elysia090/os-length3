@@ -38,7 +38,7 @@ async function execute(message) {
       );
       activeSource = message.source;
     }
-    env[message.plan.function] = evaluator.fn;
+    env[message.plan.import_function || message.plan.function] = evaluator.fn;
   } else {
     evaluator = null;
     activeSource = message.source;

@@ -104,6 +104,12 @@
       "source": "#include <stdint.h>\n\n/* Inclusive prefix XOR over 64 bits: multiplication by (1+x)^-1 in GF(2)[x].\n * lanecode.h: lc_prefix_xor64 \u2014 one CLMUL by all-ones */\nuint64_t prefix_xor64(uint64_t x)\n{\n    uint64_t r = 0;\n    uint64_t p = 0;\n\n    for (unsigned i = 0; i < 64; ++i) {\n        p ^= (x >> i) & 1;\n        r |= p << i;\n    }\n\n    return r;\n}\n"
     },
     {
+      "name": "prefix_parity64",
+      "file": "prefix_parity64.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Inclusive prefix parity over all 64 input coordinates. Each output bit is\n * the GF(2) sum of the input prefix ending at that coordinate. */\nuint64_t prefix_parity64(uint64_t x)\n{\n    uint64_t r = 0;\n    uint64_t mask = 0;\n\n    for (unsigned i = 0; i < 64; ++i) {\n        mask |= 1ull << i;\n        r |= (uint64_t)__builtin_parityll(x & mask) << i;\n    }\n\n    return r;\n}\n"
+    },
+    {
       "name": "changes64",
       "file": "changes64.c",
       "language": "c",
@@ -120,6 +126,12 @@
       "file": "morton_compact_even16.c",
       "language": "c",
       "source": "#include <stdint.h>\n\n/* Gather the even bit positions.\n * lanecode.h: lc_morton_compact_even \u2014 PEXT with a 0x5555... mask */\nuint8_t morton_compact_even16(uint16_t x)\n{\n    uint8_t r = 0;\n\n    for (unsigned i = 0; i < 8; ++i)\n        if ((x >> (2 * i)) & 1)\n            r |= (uint8_t)(1u << i);\n\n    return r;\n}\n"
+    },
+    {
+      "name": "morton32",
+      "file": "morton32.c",
+      "language": "c",
+      "source": "#include <stdint.h>\n\n/* Interleave the bits of two independent 32-bit coordinates. */\nuint64_t morton32(uint32_t x, uint32_t y)\n{\n    uint64_t r = 0;\n\n    for (unsigned i = 0; i < 32; ++i) {\n        r |= (uint64_t)((x >> i) & 1u) << (2 * i);\n        r |= (uint64_t)((y >> i) & 1u) << (2 * i + 1);\n    }\n\n    return r;\n}\n"
     },
     {
       "name": "ranks16_nibble",

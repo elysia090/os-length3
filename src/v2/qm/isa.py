@@ -724,6 +724,29 @@ def _lin_pdep_mask(basis):
     return sum(1 << p for p in positions)
 
 
+def _lin_pdep_groups(basis):
+    """Partition a one-hot map into monotone constant-deposit groups.
+
+    One PDEP can only preserve the order of its packed input bits. A map such
+    as Morton interleaving has two ordered runs in the packed coordinate: the
+    low input word maps to even output bits and the high word maps to odd bits.
+    Splitting at the order reversal gives two exact deposits whose outputs can
+    be XORed.
+    """
+    groups = []
+    for input_bit, image in enumerate(basis):
+        if not image:
+            continue
+        if image & (image - 1):
+            return None
+        output_bit = image.bit_length() - 1
+        if groups and groups[-1][-1][1] < output_bit:
+            groups[-1].append((input_bit, output_bit))
+        else:
+            groups.append([(input_bit, output_bit)])
+    return groups or None
+
+
 def _lin_pext_mask(basis):
     """PEXT mask when the images are one-hot at output bits 0,1,2,..."""
     selected = []
@@ -876,6 +899,42 @@ def _seq_pdep_expand(mask):
     return seq
 
 
+def _seq_partitioned_deposits(groups, isa):
+    """Lower ordered input/output groups to deposits over one packed word."""
+    seq = Seq()
+    partials = []
+    for group in groups:
+        inputs = [item[0] for item in group]
+        output_mask = sum(1 << item[1] for item in group)
+        contiguous = inputs == list(range(inputs[0], inputs[0] + len(inputs)))
+        value = 0
+        if contiguous:
+            if inputs[0]:
+                value = seq.emit('SHR', [value], shift=inputs[0])
+        elif isa.has('pext'):
+            input_mask = sum(1 << bit for bit in inputs)
+            value = seq.emit('PEXT', [value], const=input_mask)
+        else:
+            return None
+
+        if isa.has('pdep'):
+            value = seq.emit('PDEP', [value], const=output_mask)
+        else:
+            value = seq.extend(_seq_pdep_expand(output_mask), value)
+        partials.append(value)
+
+    while len(partials) > 1:
+        combined = []
+        for index in range(0, len(partials) - 1, 2):
+            combined.append(seq.emit(
+                'XORR', [partials[index], partials[index + 1]]))
+        if len(partials) % 2:
+            combined.append(partials[-1])
+        partials = combined
+    seq.result = partials[0]
+    return seq
+
+
 def lower_lin_const(op, isa):
     """All physical representatives of a constant GF(2)-linear map on `isa`."""
     basis = op.detail['basis']
@@ -932,6 +991,12 @@ def lower_lin_const(op, isa):
     pdep_mask = _lin_pdep_mask(basis)
     if pdep_mask is not None and not isa.has('pdep'):
         out.append(('shift/OR deposit network', _seq_pdep_expand(pdep_mask)))
+
+    groups = _lin_pdep_groups(basis)
+    if groups is not None and len(groups) > 1:
+        deposits = _seq_partitioned_deposits(groups, isa)
+        if deposits is not None:
+            out.append(('partitioned deposit network', deposits))
 
     terms = _lin_shift_terms(basis, input_bits)
     if terms and len(terms) <= 24:
