@@ -181,6 +181,18 @@ async function solve(request) {
   }
 
   if (compiled) {
+    if (compiled.planError) {
+      const runReady = hasMain
+        ? await prepareStandaloneMain(request.source) : false;
+      post('done', {
+        has_main: hasMain,
+        run_ready: runReady,
+        result: runReady
+          ? standaloneMainResult(compiled.planError)
+          : { ok: false, idle: compiled.idle, error: compiled.planError },
+      });
+      return;
+    }
     progress('quotienting and synthesizing…');
     const enriched = JSON.stringify(Object.assign({}, options || {}, {
       function: compiled.plan.function,
@@ -205,9 +217,14 @@ async function solve(request) {
 
   progress('extracting semantics with the built-in frontend…');
   const json = callPython('fallback', [source, optionsJson]);
-  const result = JSON.parse(json);
+  let result = JSON.parse(json);
+  if (!result.ok && hasMain) {
+    const directReady = await prepareStandaloneMain(request.source);
+    if (directReady) result = standaloneMainResult(result.error);
+  }
   const runReady = hasMain && result.ok
-    ? await prepareRunSnapshot(request.source) : false;
+    ? (result.standalone_main || await prepareRunSnapshot(request.source))
+    : false;
   post('done', { has_main: hasMain, run_ready: runReady, result });
 }
 
@@ -256,9 +273,7 @@ async function compileWithClang(source, options, optionsJson) {
   progress('reading the function signature…');
   const plan = JSON.parse(callPython('plan', [source, optionsJson]));
   if (!plan.ok) {
-    const err = new Error(plan.error.text || plan.error.message);
-    err.stderr = plan.error.hint || '';
-    throw err;
+    return { planError: plan.error, idle: Boolean(plan.idle) };
   }
 
   // What Clang actually compiles: includes stripped, the freestanding prelude
@@ -301,6 +316,42 @@ function rememberRun(source, prepared) {
   runCache.set(source, prepared);
   while (runCache.size > RUN_CACHE_LIMIT) {
     runCache.delete(runCache.keys().next().value);
+  }
+}
+
+function standaloneMainResult(scalarError) {
+  return {
+    ok: true,
+    standalone_main: true,
+    scalar_error: scalarError || null,
+    frontend: {
+      frontend: { title: clang.describe().title },
+      function: { name: 'main', signature: 'main' },
+      other_functions: [],
+    },
+    targets: [],
+    primary_target: null,
+    residual_freedom: 0,
+    derivation: [],
+    recognition: [],
+    note: 'main runs as compiled wasm without requiring a scalar kernel',
+  };
+}
+
+async function prepareStandaloneMain(source) {
+  try {
+    progress('compiling main to wasm…');
+    const prepared = callPython('prepare_state', [source || '']);
+    await clang.load(progress);
+    const wasm = await clang.wasm(prepared, { opt: ORACLE_OPT }, progress);
+    rememberRun(source, { wasm, plan: null, artifact: null });
+    return true;
+  } catch (err) {
+    if (err && err.stderr) post('compile-error', { stderr: err.stderr });
+    const message = (err && err.stderr)
+      ? err.stderr.split('\n')[0] : String((err && err.message) || err);
+    post('notice', { message: `main: ${message}` });
+    return false;
   }
 }
 
@@ -357,24 +408,27 @@ async function execMain(msg) {
   };
   let evaluator;
   try {
-    if (activeVmSource === (msg.source || '') && prepared.evaluator) {
-      evaluator = prepared.evaluator;
-    } else {
-      evaluator = await prepareEvaluator(artifact, plan);
-      prepared.evaluator = evaluator;
-      activeVmSource = msg.source || '';
+    if (plan && artifact) {
+      if (activeVmSource === (msg.source || '') && prepared.evaluator) {
+        evaluator = prepared.evaluator;
+      } else {
+        evaluator = await prepareEvaluator(artifact, plan);
+        prepared.evaluator = evaluator;
+        activeVmSource = msg.source || '';
+      }
+      // A WebAssembly export is itself a valid import. The driver has no
+      // kernel body, so every call now stays wasm-to-wasm inside the prepared
+      // VM.
+      env[plan.function] = evaluator.fn;
     }
-    const callsBefore = evaluator.calls();
-    // A WebAssembly export is itself a valid import. The driver has no kernel
-    // body, so every call now stays wasm-to-wasm inside the prepared VM.
-    env[plan.function] = evaluator.fn;
+    const callsBefore = evaluator ? evaluator.calls() : 0;
     const runStarted = performance.now();
     const { instance } = await WebAssembly.instantiate(wasm, { env });
     if (typeof instance.exports.main !== 'function') {
       return { ok: false, error: 'the paste defines no main to run' };
     }
     const code = instance.exports.main();
-    if (!evaluator.ok()) {
+    if (evaluator && !evaluator.ok()) {
       prepared.evaluator = null;
       activeVmSource = null;
       return { ok: false, error: 'the minimized artifact refused an input' };
@@ -383,7 +437,7 @@ async function execMain(msg) {
       + (overflowed ? '\n[output truncated]\n' : '');
     return {
       ok: true, stdout: text, code: Number(code) || 0,
-      ran: evaluator.calls() - callsBefore,
+      ran: evaluator ? evaluator.calls() - callsBefore : 0,
       elapsed_ms: performance.now() - runStarted,
       prepare_ms: runStarted - prepareStarted,
     };

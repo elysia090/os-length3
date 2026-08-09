@@ -25,7 +25,7 @@ from . import observer as observer_mod
 from . import quotient as quotient_mod
 from . import recognize as recognize_mod
 from . import solvers as solvers_mod
-from .cfront import CFrontError
+from .cfront import CFrontError, NoEntry
 from .guards import derive_guard, guard_evidence
 from .version import version_block
 
@@ -46,6 +46,14 @@ def solve(source, function=None, observer='exact', targets=None,
     try:
         return _solve(source, function, observer, targets, frontend, options,
                       started)
+    except NoEntry as exc:
+        return {
+            'ok': False,
+            'idle': True,
+            'stage': 'frontend',
+            'error': exc.to_dict(),
+            'versions': version_block(),
+        }
     except CFrontError as exc:
         return {
             'ok': False,

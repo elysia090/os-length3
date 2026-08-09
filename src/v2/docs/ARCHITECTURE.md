@@ -50,6 +50,12 @@ its import is answered by a wasm export of the already loaded codec VM, so
 kernel calls do not cross JavaScript. Codec compilation never consumes C
 directly.
 
+A translation unit may contain `main` without a separate scalar kernel. That
+is still a runnable program: the browser compiles the complete unit to wasm and
+prepares Run without inventing a scalar quotient or demanding a particular C
+function signature. Input that has no scalar entry and no `main` is an idle
+editor state, not a C-specific diagnostic.
+
 Cold startup begins the compiler core, codec VM and Python/QM runtime together.
 They have no data dependency before source analysis, so making their downloads
 and wasm compilation a serial chain only delays the first valid Run tuple.

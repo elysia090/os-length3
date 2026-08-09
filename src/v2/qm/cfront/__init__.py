@@ -10,11 +10,11 @@ The subset is documented in ``docs/C_SUBSET.md``.
 """
 
 from .compile import Compiler, compile_unit             # noqa: F401
-from .errors import CFrontError, UnsupportedC          # noqa: F401
+from .errors import CFrontError, NoEntry, UnsupportedC  # noqa: F401
 from .interp import BUILTIN_NAMES, Interpreter          # noqa: F401
 from .parser import parse                               # noqa: F401
 
 __all__ = [
-    'CFrontError', 'UnsupportedC', 'Interpreter', 'Compiler', 'compile_unit',
-    'parse', 'BUILTIN_NAMES',
+    'CFrontError', 'NoEntry', 'UnsupportedC', 'Interpreter', 'Compiler',
+    'compile_unit', 'parse', 'BUILTIN_NAMES',
 ]

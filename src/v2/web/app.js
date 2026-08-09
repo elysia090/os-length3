@@ -502,6 +502,13 @@ function renderTakeaway() {
   const target = currentTarget();
   const { text, kind } = takeawayText();
 
+  if (result && result.ok && result.standalone_main) {
+    $('qm-listing').innerHTML =
+      '<span class="hint">main is ready to Run</span>';
+    $('qm-sub').innerHTML = '<span>main</span> <span>wasm32</span>';
+    return;
+  }
+
   // The listing shows the function body, the way the compiled card does.
   // Copy still hands over the whole file, directives included, so that what
   // leaves the page actually assembles.
@@ -885,6 +892,16 @@ function onMessage(event) {
       finishBusy();
       renderTabs();
       persistTabs();
+      return;
+    }
+
+    if (!msg.result.ok && msg.result.idle) {
+      finishBusy();
+      $('qm-listing').innerHTML =
+        '<span class="hint">The minimized program appears here.</span>';
+      $('qm-sub').textContent = '— instructions';
+      renderRunControls();
+      status();
       return;
     }
 

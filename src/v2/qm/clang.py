@@ -29,7 +29,7 @@ import struct
 import subprocess
 import tempfile
 
-from .cfront import CFrontError
+from .cfront import CFrontError, NoEntry
 from .cfront.ctypes_model import CType, type_from_keywords
 from .cfront.intrinsics import c_shims_for
 
@@ -347,9 +347,7 @@ def read_signature(source, requested=None):
                       'params': params, 'via': 'scan'})
 
     if not found:
-        raise CFrontError('no function definition found',
-                          hint='paste a complete C function, e.g. '
-                               'uint64_t f(uint8_t m) { ... }')
+        raise NoEntry()
     from .frontend import analysable
 
     def with_others(chosen):
