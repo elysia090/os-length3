@@ -79,7 +79,8 @@ def start_scheduler(machine, host=None):
 class KernelScheduler(object):
     """Round-robin state machine over Wasm continuations."""
 
-    def __init__(self, module, executor=None, stack_global=None):
+    def __init__(self, module, executor=None, stack_global=None,
+                 defer_clock=False):
         self.module = module
         self.executor = WaveExecutor(module) if executor is None else executor
         if stack_global is None:
@@ -87,6 +88,7 @@ class KernelScheduler(object):
                             in enumerate(module.global_mutable) if enabled)
             stack_global = mutable[0] if len(mutable) == 1 else None
         self.stack_global = stack_global
+        self.defer_clock = bool(defer_clock)
 
     @staticmethod
     def _replace_thread(state, thread):
@@ -354,6 +356,12 @@ class KernelScheduler(object):
                                          result)
 
         barrier = decode_nccc(machine)
+        if self.defer_clock and barrier.operation.name == 'time':
+            thread = replace(thread, machine=machine, status='blocked',
+                             wait=('external', 'clock'))
+            state = replace(self._replace_thread(state, thread),
+                            memory=machine.memory)
+            return state, SchedulerEvent(handle, 'clock', 'blocked', cost)
         transition = step_nccc(machine, self._host_for(state, handle))
         if transition.blocked and transition.event \
                 and transition.event[0] == 'thread':

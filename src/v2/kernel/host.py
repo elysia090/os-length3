@@ -186,6 +186,14 @@ class HostTransition:
     event: object = None
 
 
+class BlockPageFault(Exception):
+    """A directly addressed backing page must be supplied by the host."""
+
+    def __init__(self, page):
+        self.page = int(page)
+        super().__init__('block backing page %d is not resident' % self.page)
+
+
 def attach_block(host, store, read_only=True):
     """Attach a directly addressed block image and return its device number."""
     if not hasattr(store, 'read') or not hasattr(store, 'length'):
@@ -438,6 +446,10 @@ def step_nccc(machine, host=None):
             if code == 2:
                 try:
                     payload = store.read(offset, length)
+                except BlockPageFault as fault:
+                    return HostTransition(
+                        machine, host, blocked=True,
+                        event=('block', 'page-read', device, fault.page))
                 except ValueError:
                     return _finish(
                         machine, host, (BLOCK_IOERR,),
@@ -454,6 +466,10 @@ def step_nccc(machine, host=None):
                            pages, 0))
             try:
                 store.write(offset, machine.memory.read(pointer & I32, length))
+            except BlockPageFault as fault:
+                return HostTransition(
+                    machine, host, blocked=True,
+                    event=('block', 'page-read', device, fault.page))
             except ValueError:
                 status = BLOCK_IOERR
             else:
@@ -470,10 +486,13 @@ def step_nccc(machine, host=None):
 
 
 class _PageSpan(object):
-    __slots__ = ('pages', 'dirty')
+    __slots__ = ('backing', 'cow', 'dirty')
 
     def __init__(self, span_pages):
-        self.pages = [None] * span_pages
+        # Clean image bytes and guest writes have different lifetimes. Backing
+        # pages are disposable; COW pages survive release of Wasm memory.
+        self.backing = [None] * span_pages
+        self.cow = [None] * span_pages
         self.dirty = 0
 
 
@@ -487,7 +506,8 @@ class DirectPageStore(object):
     """
 
     def __init__(self, length, loader=None, writer=None,
-                 page_size=BLOCK_PAGE_SIZE, span_pages=SPAN_PAGES):
+                 page_size=BLOCK_PAGE_SIZE, span_pages=SPAN_PAGES,
+                 event_backed=False):
         self.length = int(length)
         self.page_size = int(page_size)
         self.span_pages = int(span_pages)
@@ -502,6 +522,9 @@ class DirectPageStore(object):
         self.directory = [None] * spans
         self.loader = loader
         self.writer = writer
+        self.event_backed = bool(event_backed)
+        if self.event_backed and loader is not None:
+            raise ValueError('event-backed block storage cannot have a loader')
 
     def _check_page(self, page):
         page = int(page)
@@ -526,9 +549,14 @@ class DirectPageStore(object):
     def _load(self, page):
         span_index, slot = self._coordinates(page)
         span = self._span(span_index, True)
-        payload = span.pages[slot]
+        payload = span.cow[slot]
+        if payload is not None:
+            return span, slot, payload
+        payload = span.backing[slot]
         if payload is None:
             count = self._valid_bytes(page)
+            if self.event_backed:
+                raise BlockPageFault(page)
             if self.loader is None:
                 raw = bytes(count)
             else:
@@ -537,8 +565,23 @@ class DirectPageStore(object):
                     raise ValueError('block loader returned %d bytes, expected %d'
                                      % (len(raw), count))
             payload = raw + bytes(self.page_size - count)
-            span.pages[slot] = payload
+            span.backing[slot] = payload
         return span, slot, payload
+
+    def install_backing(self, page, payload):
+        """Satisfy one event-backed page fault without copying another page."""
+        if not self.event_backed:
+            raise ValueError('only event-backed storage accepts supplied pages')
+        page = self._check_page(page)
+        payload = bytes(payload)
+        count = self._valid_bytes(page)
+        if len(payload) != count:
+            raise ValueError('backing page %d has %d bytes, expected %d'
+                             % (page, len(payload), count))
+        span_index, slot = self._coordinates(page)
+        span = self._span(span_index, True)
+        if span.cow[slot] is None:
+            span.backing[slot] = payload + bytes(self.page_size - count)
 
     def page(self, page):
         """Return a zero-copy read-only view of one resident page."""
@@ -586,7 +629,7 @@ class DirectPageStore(object):
                 changed = bytearray(old)
                 changed[within:within + count] = payload[cursor:cursor + count]
                 changed = bytes(changed)
-            span.pages[slot] = changed
+            span.cow[slot] = changed
             span.dirty |= 1 << slot
             offset += count
             cursor += count
@@ -607,7 +650,7 @@ class DirectPageStore(object):
             slot = low.bit_length() - 1
             page = span_index * self.span_pages + slot
             count = self._valid_bytes(page)
-            self.writer(page * self.page_size, span.pages[slot][:count])
+            self.writer(page * self.page_size, span.cow[slot][:count])
             dirty ^= low
             written += 1
         span.dirty = 0
@@ -629,9 +672,60 @@ class DirectPageStore(object):
             raise ValueError('cannot evict a dirty block span')
         self.directory[span_index] = None
 
+    def release_backing(self):
+        """Drop clean image pages while retaining every COW coordinate."""
+        for index, span in enumerate(self.directory):
+            if span is None:
+                continue
+            span.backing = [None] * self.span_pages
+            if not any(page is not None for page in span.cow):
+                self.directory[index] = None
+
+    def dirty_snapshot(self):
+        """Return canonical ``(page, bytes)`` records for dirty COW pages."""
+        records = []
+        for span_index, span in enumerate(self.directory):
+            if span is None:
+                continue
+            dirty = span.dirty
+            while dirty:
+                low = dirty & -dirty
+                slot = low.bit_length() - 1
+                page = span_index * self.span_pages + slot
+                records.append((page, span.cow[slot]))
+                dirty ^= low
+        return tuple(records)
+
+    def restore_dirty(self, records):
+        """Install a canonical dirty-page snapshot without reading backing."""
+        previous = -1
+        for page, payload in records:
+            page = self._check_page(page)
+            if page <= previous:
+                raise ValueError('dirty page snapshot is not coordinate ordered')
+            previous = page
+            payload = bytes(payload)
+            if len(payload) != self.page_size:
+                raise ValueError('dirty COW page has the wrong size')
+            span_index, slot = self._coordinates(page)
+            span = self._span(span_index, True)
+            span.cow[slot] = payload
+            span.dirty |= 1 << slot
+
     @property
     def resident_pages(self):
-        return sum(sum(page is not None for page in span.pages)
+        return sum(sum(backing is not None or cow is not None
+                       for backing, cow in zip(span.backing, span.cow))
+                   for span in self.directory if span is not None)
+
+    @property
+    def backing_pages(self):
+        return sum(sum(page is not None for page in span.backing)
+                   for span in self.directory if span is not None)
+
+    @property
+    def cow_pages(self):
+        return sum(sum(page is not None for page in span.cow)
                    for span in self.directory if span is not None)
 
     @property

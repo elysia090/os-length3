@@ -1,4 +1,4 @@
-"""Range-readable index over independently mapped wave-codec pages.
+"""Range-readable index over independent physical execution pages.
 
 The directory is resident; page payloads are not decoded until selected by a
 machine coordinate.  A payload can live as an independent OPFS object, an HTTP
@@ -12,13 +12,13 @@ import struct
 from .cfront.errors import CFrontError
 
 
-MAGIC = b'QMA1'
+MAGIC = b'PAGE'
 VERSION = 1
 ALIGNMENT = 8
 
-SEQUENCE = 1
-WASM_SLICE = 2
-KINDS = {'sequence': SEQUENCE, 'wasm-slice': WASM_SLICE}
+SCALAR = 1
+STATE_STEP = 2
+KINDS = {'scalar': SCALAR, 'state-step': STATE_STEP}
 KIND_NAMES = dict((value, key) for key, value in KINDS.items())
 
 _HEADER = struct.Struct('<4sHHII')
@@ -27,8 +27,8 @@ _HEADER = struct.Struct('<4sHHII')
 _ENTRY = struct.Struct('<IIIIQIIII')
 
 
-class WaveArchiveError(CFrontError):
-    """A wave-page archive or selected page is malformed."""
+class PageArchiveError(CFrontError):
+    """A physical page archive or selected page is malformed."""
 
 
 def _align(value):
@@ -82,22 +82,22 @@ def _inspect(page):
     try:
         kind = KINDS[page.kind]
     except KeyError:
-        raise ValueError('unknown wave page kind %r' % page.kind)
+        raise ValueError('unknown physical page kind %r' % page.kind)
     if min(page.function, page.start, page.frame_extent) < 0:
-        raise ValueError('wave page coordinates must be nonnegative')
+        raise ValueError('physical page coordinates must be nonnegative')
     blob = bytes(page.blob)
-    if kind == SEQUENCE:
-        from . import seqcodec
-        mapped = seqcodec.unpack(blob)
+    if kind == SCALAR:
+        from . import scalarpage
+        mapped = scalarpage.unpack(blob)
         if page.frame_extent != mapped.inputs:
-            raise ValueError('sequence input extent does not match its key')
+            raise ValueError('scalar input extent does not match its key')
         features = mapped.required_features
     else:
-        from . import wasmcodec
-        mapped = wasmcodec.unpack(blob)
+        from . import steppage
+        mapped = steppage.unpack(blob)
         if (page.function != mapped.function or page.start != mapped.start
                 or page.frame_extent != mapped.stack_inputs):
-            raise ValueError('wasm slice coordinate does not match its key')
+            raise ValueError('state-step coordinate does not match its key')
         features = 0
     return kind, blob, mapped.span, mapped.work, features
 
@@ -112,7 +112,7 @@ def pack(pages):
     inspected.sort(key=lambda item: item[0])
     if any(left[0] == right[0]
            for left, right in zip(inspected, inspected[1:])):
-        raise ValueError('wave archive has a duplicate page coordinate')
+        raise ValueError('page archive has a duplicate coordinate')
 
     count = len(inspected)
     header_bytes = _align(_HEADER.size + count * _ENTRY.size)
@@ -141,7 +141,7 @@ def pack(pages):
     return bytes(out)
 
 
-class MappedWaveArchive(object):
+class MappedPageArchive(object):
     """Resident directory with demand decoding of selected page payloads."""
 
     __slots__ = ('data', 'entries')
@@ -154,7 +154,7 @@ class MappedWaveArchive(object):
         try:
             kind_code = KINDS[kind]
         except KeyError:
-            raise KeyError('unknown wave page kind %r' % kind)
+            raise KeyError('unknown physical page kind %r' % kind)
         key = (kind_code, function, start, frame_extent)
         # The canonical directory is already coordinate ordered. Search that
         # resident range directly instead of retaining a second hash index;
@@ -168,7 +168,7 @@ class MappedWaveArchive(object):
                 hi = middle
         if lo < len(self.entries) and self.entries[lo].key == key:
             return self.entries[lo]
-        raise KeyError('wave page coordinate is not in the archive')
+        raise KeyError('physical page coordinate is not in the archive')
 
     def page(self, kind, function, start=0, frame_extent=1):
         """Return one memoryview without copying or scanning its payload."""
@@ -177,15 +177,15 @@ class MappedWaveArchive(object):
 
     def open(self, kind, function, start=0, frame_extent=1):
         payload = self.page(kind, function, start, frame_extent)
-        if kind == 'sequence':
-            from . import seqcodec
-            return seqcodec.unpack(payload)
-        from . import wasmcodec
-        return wasmcodec.unpack(payload)
+        if kind == 'scalar':
+            from . import scalarpage
+            return scalarpage.unpack(payload)
+        from . import steppage
+        return steppage.unpack(payload)
 
     def layout(self):
         return {
-            'kind': 'wave-page-archive',
+            'kind': 'physical-page-archive',
             'pages': len(self.entries),
             'directory_bytes': (_HEADER.size + len(self.entries) * _ENTRY.size),
             'mapped_bytes': len(self.data),
@@ -197,15 +197,15 @@ def unpack(blob):
     """Map only the directory; selected payloads validate in :meth:`open`."""
     data = blob if isinstance(blob, memoryview) else memoryview(blob)
     if len(data) < _HEADER.size:
-        raise WaveArchiveError('wave archive header is truncated')
+        raise PageArchiveError('page archive header is truncated')
     magic, version, header_bytes, count, entry_bytes = _HEADER.unpack_from(data)
     expected_header = _align(_HEADER.size + count * _ENTRY.size)
     if (magic != MAGIC or version != VERSION or entry_bytes != _ENTRY.size
             or header_bytes != expected_header or header_bytes > len(data)):
-        raise WaveArchiveError('wave archive has an unknown format')
+        raise PageArchiveError('page archive has an unknown format')
     directory_end = _HEADER.size + count * _ENTRY.size
     if any(data[directory_end:header_bytes]):
-        raise WaveArchiveError('wave archive header padding is nonzero')
+        raise PageArchiveError('page archive header padding is nonzero')
 
     entries = []
     at = _HEADER.size
@@ -215,19 +215,19 @@ def unpack(blob):
         at += _ENTRY.size
         entry = ArchiveEntry(*raw)
         if entry.kind not in KIND_NAMES:
-            raise WaveArchiveError('wave archive contains an unknown page kind')
+            raise PageArchiveError('page archive has an unknown page kind')
         aligned = _align(cursor)
         if entry.offset != aligned or any(data[cursor:aligned]):
-            raise WaveArchiveError('wave archive page offset is not canonical')
+            raise PageArchiveError('page offset is not canonical')
         end = entry.offset + entry.length
         if end > len(data):
-            raise WaveArchiveError('wave archive page is truncated')
+            raise PageArchiveError('page archive payload is truncated')
         entries.append(entry)
         cursor = end
     if entries != sorted(entries, key=lambda entry: entry.key):
-        raise WaveArchiveError('wave archive directory is not coordinate ordered')
+        raise PageArchiveError('page directory is not coordinate ordered')
     if len({entry.key for entry in entries}) != len(entries):
-        raise WaveArchiveError('wave archive has a duplicate page coordinate')
+        raise PageArchiveError('page archive has a duplicate coordinate')
     if cursor != len(data):
-        raise WaveArchiveError('wave archive has trailing bytes')
-    return MappedWaveArchive(data, tuple(entries))
+        raise PageArchiveError('page archive has trailing bytes')
+    return MappedPageArchive(data, tuple(entries))

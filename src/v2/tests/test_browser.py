@@ -291,7 +291,7 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
 
     def test_the_span_codec_is_a_separate_disposable_cache(self):
         import base64
-        from qm.seqcodec import execute as execute_physical, unpack
+        from qm.scalarpage import execute as execute_physical, unpack
 
         self.solved('ranks8.c')
         canonical = json.loads(artifact())
@@ -299,7 +299,7 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         bmi2 = json.loads(physical_codec('x86-64-bmi2-pclmul'))
         self.assertTrue(physical['ok'])
         self.assertNotIn('codec', canonical)
-        self.assertEqual(physical['format'], 'QMS1')
+        self.assertEqual(physical['format'], 'scalar-page')
         self.assertEqual(physical['target'], 'wasm32')
         mapped = unpack(base64.b64decode(physical['codec']))
         self.assertEqual(mapped.layout(), physical['layout'])

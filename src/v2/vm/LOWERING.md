@@ -26,6 +26,12 @@ whole-expression extraction, and direct canonical emission, regardless of
 instruction count. The old and rewritten forms compete under `(span, work, L(z), rank)`;
 being algebraically available never makes a form win by declaration.
 
+The state-step path uses the same boundary. A closed one-coordinate Wasm slice
+is normalized before its frame coordinates and selected physical operations
+are stored together in one state-step page. There is no second executable scalar page.
+Effectful instructions stay outside it as ordered barriers, which is also where
+an x86 decoder must cut the basic blocks executed by `kernel.wasm`.
+
 ## Sources of the boundary
 
 Pinf-R fixes the runtime dependency order and the released ABI:

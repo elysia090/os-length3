@@ -4,7 +4,7 @@
 the LKL device model. Its backing bytes never enter the kernel module:
 capacity, read, write, and flush requests cross `env.nccc_call64` group 6. The
 host can therefore populate fixed-size pages on first access and discard clean
-spans independently of the browser or kernel lifetime.
+backing independently of dirty COW pages and the browser or kernel lifetime.
 
 Apply `hostwasm.patch` to copies of the WasmLinux host stubs, then link those
 copies with `block.c` and these LKL tool sources:

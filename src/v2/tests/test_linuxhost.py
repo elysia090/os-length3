@@ -4,7 +4,8 @@ import struct
 import unittest
 
 from qm.cfront.errors import UnsupportedC
-from kernel.host import (BLOCK_OK, BLOCK_UNSUPPORTED, DirectPageStore,
+from kernel.host import (BLOCK_OK, BLOCK_UNSUPPORTED, BlockPageFault,
+                         DirectPageStore,
                          LinuxHostState, NCCC_IMPORT, allocate_thread_stack,
                          allocate_host_memory, attach_block, decode_nccc,
                          prepare_linux_memory, resume_nccc, step_nccc)
@@ -255,6 +256,35 @@ class TestDirectPageStore(unittest.TestCase):
         self.store.flush_span(0)
         self.store.evict_span(0)
         self.assertEqual(self.store.resident_pages, 0)
+
+    def test_backing_release_keeps_only_dirty_cow_pages(self):
+        self.store.read(0, 1)
+        self.store.write(5 * 16, b'x' * 16)
+        self.assertEqual((self.store.backing_pages, self.store.cow_pages),
+                         (1, 1))
+
+        snapshot = self.store.dirty_snapshot()
+        self.store.release_backing()
+
+        self.assertEqual(self.store.backing_pages, 0)
+        self.assertEqual(self.store.cow_pages, 1)
+        self.assertEqual(snapshot, ((5, b'x' * 16),))
+        restored = DirectPageStore(
+            self.store.length, self.store.loader, self.store.writer,
+            page_size=16, span_pages=4)
+        restored.restore_dirty(snapshot)
+        self.assertEqual(restored.read(5 * 16, 16), b'x' * 16)
+        self.assertEqual(restored.dirty_pages, 1)
+
+    def test_event_backed_store_faults_and_installs_one_direct_page(self):
+        store = DirectPageStore(19, page_size=16, span_pages=4,
+                                event_backed=True)
+        with self.assertRaisesRegex(BlockPageFault, 'page 0'):
+            store.read(7, 2)
+        store.install_backing(0, bytes(range(16)))
+        self.assertEqual(store.read(7, 2), b'\x07\x08')
+        with self.assertRaisesRegex(ValueError, 'expected 3'):
+            store.install_backing(1, b'too long')
 
     def test_last_partial_page_is_range_checked(self):
         self.assertEqual(len(self.store.page(13)), 16)

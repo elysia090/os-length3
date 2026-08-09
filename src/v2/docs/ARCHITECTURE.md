@@ -15,8 +15,8 @@ any layer can be read on its own.
    asmfront/  x86oracle       x86-64/wasm32 fast readers; native x86 fallback
    wasmstate  wasmvm          linked wasm -> clonable whole-program/VM state
    wasmphysical              wasm code/state coordinates -> physical arrays
-   wasmcodec  seqcodec        mapped span/work pages for wasm slices / QM SSA
-   wavearchive                coordinate directory over disposable pages
+   steppage   scalarpage      mapped state-step / scalar-SSA physical pages
+   pagearchive                coordinate directory over disposable pages
    wasmbinary                 large wasm -> closed function-local QM
    frontend                   registry: clang · precompiled · cfront · asm
 4  solvers   isa              Stage-2 search; ISA profiles and lowering
@@ -47,11 +47,20 @@ with its own downward-growing stack. Semaphore, mutex and join boundaries park
 that continuation instead of blocking the Python or browser worker. Long pure
 runs return a resumable timeslice at a cached wave boundary.
 
+`kernel.machine` is the only outer execution boundary. Its operation is
+`machine_step(state, event)`: synchronization, allocation, VFS, dcache and
+page-cache work stays inside Linux, while only `block_read`, `block_write`,
+`console_read/write`, `clock`, `entropy`, and `network_poll` can cross to the
+host. Event-backed block reads stop on exactly one `(device, page)` coordinate
+and resume only after that page is supplied, so the host never needs a second
+pathname table or filename hash.
+
 The 128 MiB allocator pool and 128 MiB stack area used by the reference runner
 are logical address ranges. `PagedMemory.grow()` extends only its direct span
 directory; a 256-byte page becomes resident after it is written. Block images
-use the same principle at a 4 KiB page size, with clean spans individually
-evictable and dirty spans explicitly flushable.
+use the same principle at a 4 KiB page size. Immutable backing pages and dirty
+COW pages occupy separate direct arrays: backing can be released when a Worker
+is terminated, while canonical `(page, bytes)` dirty records remain restorable.
 
 ## Browser execution path
 
@@ -177,17 +186,37 @@ slot, so it has no lane order, atomic update, or reduction. Work is the number
 of live nodes and span is the number of waves. Memory effects, calls, and
 control transfers end a slice and form explicit barriers between waves.
 
-`qm.seqcodec` (`QMS1`) and `qm.wasmcodec` (`QMW1`) materialize those schedules
+The execution cache uses those dense `(function, pc)` coordinates directly.
+Source SSA, selected page, decoded lane plan and compiled transition occupy
+parallel coordinate arrays with stack extent as a validation guard; none has a
+second hash identity. The first execution already goes through the encoded and
+decoded physical page. Raw Wasm arithmetic is available only while building
+the source SSA and cannot be called by the state-step executor.
+
+`qm.scalarpage` and `qm.steppage` materialize those schedules
 as fixed-vocabulary, structure-of-arrays pages. Columns and payloads are
 8-byte aligned and mapped through `memoryview`; executing a page reads the
 selected columns without rebuilding the SSA object graph. The target grammar
-is part of a QMS1 page, so `ranks8` has span 2 for BMI2 (`PDEP`, `IMUL`) and
+is part of a scalar page, so `ranks8` has span 2 for BMI2 (`PDEP`, `IMUL`) and
 span 6 for the portable wasm32 representation rather than one unnamed cost.
-`qm.wavearchive` (`QMA1`) keeps a canonical coordinate-ordered directory over
+`qm.pagearchive` keeps a canonical coordinate-ordered directory over
 independent pages. Lookup searches that resident directory directly—there is
 no duplicate hash index—and only the selected inner codec is validated and
 opened. This packed form is also a range-readable model for storing its pages
 as separate OPFS objects.
+
+`qm.stepnormalize` closes the remaining scalar gap before page encoding. A step
+whose complete live arithmetic has one observed result, one external
+stack/local coordinate, one integer width, and no trap is translated to
+`isa.Seq` and passed through the same whole-expression `isa.normalize` used by
+the scalar frontend. `isa.normalize` includes the source form in its candidate
+set, so the canonical winner is always installed even when its `(span, work,
+L(z), rank)` ties the input. The selected physical operations and surrounding
+frame coordinates are encoded together in one state-step page; there is no raw-Wasm
+arithmetic page beside it and no parallel scalar execution page. Loads, stores,
+calls, and control transfers still end the block and use the existing process
+barrier ABI. A later x86 decoder must feed that same single state-step boundary
+rather than introducing an x86-only runtime artifact.
 
 `qm.wasmvm` opens a canonical artifact through the real `vm_buffer` and
 `vm_load` exports, then uses that retained wasm memory as the state of

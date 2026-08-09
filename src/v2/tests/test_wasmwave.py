@@ -5,9 +5,10 @@ from dataclasses import replace
 import json
 import unittest
 
-from qm.wasmstate import decode_module, run_until_boundary, start_state
-from qm.wasmcodec import (decode_plan, execute_mapped, pack, unpack,
-                          WaveCodecError)
+from qm.wasmstate import (decode_module, instruction_step,
+                          run_until_boundary, start_state)
+from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
+                         StatePageError)
 from qm.wasmwave import WaveExecutor, execute_slice, is_barrier
 from tests.test_wasmbinary import module
 
@@ -65,7 +66,34 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(plan.waves.work, 2)
         self.assertEqual(plan.waves.span, 2)
 
-    def test_only_reused_codec_slices_get_a_compiled_transition(self):
+    def test_whole_slice_normalization_becomes_one_state_step_page(self):
+        # ((x + 1) * 3) - 3 is exactly x * 3.  Local Wasm folding cannot
+        # remove the cross-node affine cancellation; whole-expression QM can.
+        body = b'\x00\x20\x00\x42\x01\x7c\x42\x03\x7e\x42\x03\x7d\x0b'
+        decoded = decode_module(module(body, kind=0x7e))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (9,))
+
+        plan = executor.plan(initial.frames[-1])
+        self.assertEqual([node.op for node in plan.nodes], ['lane64.IMUL'])
+        self.assertEqual(plan.waves.work, 1)
+        mapped = executor.mapped(initial.frames[-1])
+        self.assertEqual(mapped.layout()['kind'], 'state-step-page')
+        self.assertEqual(mapped.layout()['work'], 1)
+
+        final, _report = executor.run_with_report(initial)
+        self.assertEqual(final.result, (27,))
+        self.assertEqual(
+            executor.normalization_layout()['normalized_state_steps'], 1)
+
+        for value in (0, 1, 9, 1 << 31, (1 << 64) - 1):
+            reference = start_state(decoded, 'f', (value,))
+            while not reference.halted and reference.waiting is None:
+                reference = instruction_step(decoded, reference)
+            optimized = executor.run(start_state(decoded, 'f', (value,)))
+            self.assertEqual(optimized.result, reference.result)
+
+    def test_every_executed_page_uses_one_compiled_physical_transition(self):
         body = (b'\x00\x20\x00\x41\xff\x01\x71'
                 b'\x20\x00\x41\xd5\x00\x73\x6a\x0b')
         decoded = decode_module(module(body, kind=0x7f))
@@ -73,14 +101,14 @@ class TestWaveExecutor(unittest.TestCase):
 
         first, _cost = executor.run_with_report(
             start_state(decoded, 'f', (9,)))
-        self.assertEqual(len(executor.compiled), 0)
+        self.assertEqual(len(executor.compiled), 1)
         second, _cost = executor.run_with_report(
             start_state(decoded, 'f', (9,)))
 
         self.assertEqual(first.result, second.result)
         self.assertEqual(len(executor.compiled), 1)
         self.assertEqual(
-            executor.normalization_layout()['compiled_hot_slices'], 1)
+            executor.normalization_layout()['compiled_state_steps'], 1)
 
     def test_dead_slice_nodes_keep_trap_sensitive_operations(self):
         # The quotient is dropped, but x / x still traps for x == 0.
@@ -124,8 +152,39 @@ class TestWaveExecutor(unittest.TestCase):
         initial = start_state(decoded, 'f', (2,))
         blob = bytearray(pack(WaveExecutor(decoded).plan(initial.frames[-1])))
         blob.extend(b'\0')
-        with self.assertRaises(WaveCodecError):
+        with self.assertRaises(StatePageError):
             unpack(blob)
+
+    def test_state_page_rejects_a_malformed_physical_lane(self):
+        body = b'\x00\x20\x00\x42\x01\x7c\x42\x03\x7e\x42\x03\x7d\x0b'
+        decoded = decode_module(module(body, kind=0x7e))
+        initial = start_state(decoded, 'f', (2,))
+        plan = WaveExecutor(decoded).plan(initial.frames[-1])
+        blob = bytearray(pack(plan))
+        mapped = unpack(blob)
+        # IMUL has one SSA input followed by one constant.  Re-tag the
+        # constant as a local coordinate while keeping the page in bounds.
+        column = mapped.layout()['columns']['operand_tags']
+        blob[column['offset'] + 1] = 2
+        column = mapped.layout()['columns']['operand_values']
+        blob[column['offset'] + 8:column['offset'] + 16] = bytes(8)
+        with self.assertRaisesRegex(StatePageError,
+                                   'mixes inputs and constants'):
+            unpack(blob)
+
+    def test_state_page_has_no_raw_wasm_operation_escape(self):
+        body = b'\x00\x20\x00\x41\x01\x6a\x0b'
+        decoded = decode_module(module(body, kind=0x7f))
+        initial = start_state(decoded, 'f', (2,))
+        plan = WaveExecutor(decoded).plan(initial.frames[-1])
+        raw = replace(
+            plan,
+            nodes=(replace(plan.nodes[0], op='i32.add'),) + plan.nodes[1:])
+
+        with self.assertRaisesRegex(ValueError, 'no physical code'):
+            pack(raw)
+        with self.assertRaisesRegex(ValueError, 'physical lane operation'):
+            execute_slice(raw, initial)
 
     def test_slice_codec_preserves_dropped_input_stack_extent(self):
         body = b'\x00\x1a\x1a\x41\x01\x0b'
@@ -180,6 +239,15 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertGreater(report.work, 0)
         self.assertGreater(report.barriers, 0)
         self.assertEqual(executor.total_cost, report)
+        plans = [plan for plan in executor.cache.values()
+                 if plan is not None and plan.nodes]
+        self.assertTrue(plans)
+        self.assertTrue(all(
+            node.op.startswith(('lane32.', 'lane64.'))
+            for plan in plans for node in plan.nodes))
+        self.assertGreaterEqual(
+            executor.normalization_layout()['removed_work'], 1)
+        self.assertNotIsInstance(executor.physical, dict)
 
     def test_state_frontend_supplies_zeroes_for_clang_style_entry_params(self):
         from qm.browser import stateful_wasm

@@ -1,10 +1,10 @@
-"""Physical dependency-wave codec for QM's minimized SSA programs."""
+"""Physical page for QM's normalized scalar SSA programs."""
 
 import unittest
 
 from qm import isa
 from qm.bits import clmul, pdep
-from qm.seqcodec import execute, pack, unpack, SequenceCodecError
+from qm.scalarpage import execute, pack, unpack, ScalarPageError
 
 
 ONES = 0x0101010101010101
@@ -55,9 +55,8 @@ class TestSequenceCodec(unittest.TestCase):
         seq.emit('IMUL', [0], const=ONES)
         blob = bytearray(pack(seq))
         blob.append(0)
-        with self.assertRaises(SequenceCodecError):
+        with self.assertRaises(ScalarPageError):
             unpack(blob)
-
 
 if __name__ == '__main__':
     unittest.main()

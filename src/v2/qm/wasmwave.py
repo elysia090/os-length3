@@ -10,6 +10,8 @@ slice instead of once per WebAssembly instruction.
 from dataclasses import dataclass, replace
 
 from .wasmphysical import DependencyWaves
+from .laneops import evaluate as evaluate_physical
+from .stepnormalize import normalize_plan
 from .wasmstate import (Frame, WasmStateError, _numeric, instruction_step)
 
 
@@ -117,7 +119,8 @@ def is_barrier(op):
                 or numeric_arity(op) is not None)
 
 
-def _evaluate(op, arguments):
+def _evaluate_source(op, arguments):
+    """Evaluate a source operation only while constructing the SSA graph."""
     if op == 'select':
         left, right, condition = arguments
         return left if condition else right
@@ -203,7 +206,7 @@ def compile_slice(module, frame):
 
     def emit(op, arguments):
         if all(argument.kind == 'const' for argument in arguments):
-            return Operand('const', _evaluate(
+            return Operand('const', _evaluate_source(
                 op, tuple(argument.value for argument in arguments)))
         name = op.split('.', 1)[-1]
         arguments = tuple(arguments)
@@ -291,9 +294,9 @@ def compile_slice(module, frame):
 
     nodes, waves, stack, locals_ = _live_graph(
         tuple(nodes), tuple(stack), tuple(locals_))
-    return PureSlice(frame.function, frame.pc, pc, pc - frame.pc,
-                     len(frame.stack),
-                     nodes, waves, stack, locals_)
+    return normalize_plan(PureSlice(
+        frame.function, frame.pc, pc, pc - frame.pc, len(frame.stack),
+        nodes, waves, stack, locals_))
 
 
 def execute_slice(plan, state):
@@ -316,10 +319,10 @@ def execute_slice(plan, state):
         # reference executor has the same simultaneous-write semantics as the
         # physical parallel implementation.
         produced = tuple(
-            (value, _evaluate(plan.nodes[value - 1].op,
-                              tuple(resolve(argument)
-                                    for argument
-                                    in plan.nodes[value - 1].arguments)))
+            (value, evaluate_physical(
+                plan.nodes[value - 1].op,
+                tuple(resolve(argument)
+                      for argument in plan.nodes[value - 1].arguments)))
             for value in plan.waves.wave(depth)
         )
         values.update(produced)
@@ -363,7 +366,7 @@ def compile_slice_executor(plan):
     if len(plan.stack) == 1:
         stack_values += ','
     lines.append('    return (%s), (%s)' % (local_values, stack_values))
-    namespace = {'evaluate': _evaluate}
+    namespace = {'evaluate': evaluate_physical}
     exec(compile('\n'.join(lines), '<qm-wasm-slice>', 'exec'),
          namespace, namespace)
     return namespace['execute']
@@ -378,17 +381,72 @@ def execute_compiled(plan, executor, state):
     return replace(state, frames=state.frames[:-1] + (next_frame,))
 
 
+_EMPTY = object()
+
+
+class _CoordinateArray(object):
+    """Direct ``(function, pc)`` storage with stack extent as a guard."""
+
+    def __init__(self, module):
+        self.rows = [[_EMPTY] * len(function.code)
+                     for function in module.functions]
+        self.count = 0
+
+    def _at(self, key):
+        function, pc, extent = map(int, key)
+        if function < 0 or function >= len(self.rows):
+            raise KeyError(key)
+        row = self.rows[function]
+        if pc < 0 or pc >= len(row):
+            raise KeyError(key)
+        return row, pc, extent
+
+    def __contains__(self, key):
+        try:
+            row, pc, extent = self._at(key)
+        except KeyError:
+            return False
+        entry = row[pc]
+        return entry is not _EMPTY and entry[0] == extent
+
+    def __getitem__(self, key):
+        row, pc, extent = self._at(key)
+        entry = row[pc]
+        if entry is _EMPTY or entry[0] != extent:
+            raise KeyError(key)
+        return entry[1]
+
+    def __setitem__(self, key, value):
+        row, pc, extent = self._at(key)
+        entry = row[pc]
+        if entry is not _EMPTY and entry[0] != extent:
+            raise WasmStateError(
+                'state-step coordinate changed its input stack extent')
+        if entry is _EMPTY:
+            self.count += 1
+        row[pc] = (extent, value)
+
+    def values(self):
+        return tuple(entry[1] for row in self.rows for entry in row
+                     if entry is not _EMPTY)
+
+    def __len__(self):
+        return self.count
+
+
 class WaveExecutor:
     """Cached barrier/slice executor for one decoded module."""
 
     def __init__(self, module):
         self.module = module
-        self.cache = {}
-        self.source_work = {}
-        self.physical = {}
-        self.executable = {}
-        self.hits = {}
-        self.compiled = {}
+        # Function and source-pc are already dense physical coordinates. Keep
+        # every derived form in that array instead of building parallel hash
+        # indexes with another identity for the same state step.
+        self.cache = _CoordinateArray(module)
+        self.source_work = _CoordinateArray(module)
+        self.physical = _CoordinateArray(module)
+        self.executable = _CoordinateArray(module)
+        self.compiled = _CoordinateArray(module)
         self.total_cost = WaveCost()
         self.total_source_work = 0
 
@@ -415,12 +473,17 @@ class WaveExecutor:
             'removed_work': source - normalized,
             'cached_slices': sum(plan is not None
                                  for plan in self.cache.values()),
-            'compiled_hot_slices': len(self.compiled),
+            'compiled_state_steps': len(self.compiled),
+            'normalized_state_steps': sum(
+                bool(plan.nodes)
+                and all(node.op.startswith(('lane32.', 'lane64.'))
+                        for node in plan.nodes)
+                for plan in self.cache.values() if plan is not None),
         }
 
     def mapped(self, frame):
-        """The disposable codec page for the current pure slice."""
-        from .wasmcodec import pack, unpack
+        """The sole disposable codec page for the current pure slice."""
+        from .steppage import pack, unpack
         key = (frame.function, frame.pc, len(frame.stack))
         if key not in self.physical:
             plan = self.plan(frame)
@@ -429,7 +492,7 @@ class WaveExecutor:
 
     def decoded(self, frame):
         """Validated execution plan decoded once from its physical page."""
-        from .wasmcodec import decode_plan
+        from .steppage import decode_plan
         key = (frame.function, frame.pc, len(frame.stack))
         if key not in self.executable:
             mapped = self.mapped(frame)
@@ -450,16 +513,10 @@ class WaveExecutor:
         widths = [len(plan.waves.wave(depth))
                   for depth in range(1, plan.waves.span + 1)]
         key = (frame.function, frame.pc, len(frame.stack))
-        hits = self.hits.get(key, 0) + 1
-        self.hits[key] = hits
         decoded = self.decoded(frame)
-        if hits >= 2:
-            if key not in self.compiled:
-                self.compiled[key] = compile_slice_executor(decoded)
-            next_state = execute_compiled(
-                decoded, self.compiled[key], state)
-        else:
-            next_state = execute_slice(decoded, state)
+        if key not in self.compiled:
+            self.compiled[key] = compile_slice_executor(decoded)
+        next_state = execute_compiled(decoded, self.compiled[key], state)
         return next_state, WaveCost(
             instructions=plan.instructions,
             work=plan.waves.work,
