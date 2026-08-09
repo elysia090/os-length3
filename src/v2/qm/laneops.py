@@ -1,7 +1,7 @@
 """Fixed physical lane vocabulary shared by state-step frontends."""
 
 from . import isa
-from .bits import mask_of
+from .bits import clz, ctz, mask_of, popcnt, sar, to_signed
 
 
 GENERIC_ARITY = {
@@ -203,3 +203,145 @@ def evaluate(operation, arguments):
     stack = list(arguments)
     _numeric('i%d.%s' % (bits, wasm_name), stack)
     return stack[0]
+
+
+def bind(operation):
+    """Bind a physical opcode and publication width once per mapped page.
+
+    The returned lane has the same semantics as :func:`evaluate`, but common
+    normalized forms do not re-enter the string decoder or Wasm operand-stack
+    interpreter on every execution.  Trap-bearing and uncommon primitives
+    deliberately retain the reference evaluator.
+    """
+    bits, name = split(operation)
+    mask = mask_of(bits)
+
+    if name == 'ADD':
+        return lambda values: (values[0] + values[1]) & mask
+    if name == 'SUB':
+        return lambda values: (values[0] - values[1]) & mask
+    if name == 'IMUL':
+        return lambda values: (values[0] * values[1]) & mask
+    if name == 'AND':
+        return lambda values: (values[0] & values[1]) & mask
+    if name == 'OR':
+        return lambda values: (values[0] | values[1]) & mask
+    if name == 'XOR':
+        return lambda values: (values[0] ^ values[1]) & mask
+    if name == 'NOT':
+        return lambda values: ~values[0] & mask
+    if name == 'NEG':
+        return lambda values: -values[0] & mask
+    if name == 'SHL':
+        return lambda values: (values[0] << values[1]) & mask
+    if name == 'SHR':
+        return lambda values: (values[0] & mask) >> values[1]
+    if name == 'SAR':
+        return lambda values: sar(values[0], values[1], bits)
+    if name == 'SCANXOR':
+        return lambda values: (values[0] ^ (values[0] << values[1])) & mask
+    if name == 'CLZ':
+        return lambda values: clz(values[0], bits)
+    if name == 'CTZ':
+        return lambda values: ctz(values[0], bits)
+    if name == 'POPCNT':
+        return lambda values: popcnt(values[0] & mask)
+
+    if name == 'ADDR':
+        return lambda values: (values[0] + values[1]) & mask
+    if name == 'SUBR':
+        return lambda values: (values[0] - values[1]) & mask
+    if name == 'ANDR':
+        return lambda values: (values[0] & values[1]) & mask
+    if name == 'ORR':
+        return lambda values: (values[0] | values[1]) & mask
+    if name == 'XORR':
+        return lambda values: (values[0] ^ values[1]) & mask
+    if name == 'ANDNR':
+        return lambda values: (~values[0] & values[1]) & mask
+
+    if name == 'SELECT':
+        return lambda values: values[0] if values[2] else values[1]
+    if name == 'WRAP_I64':
+        return lambda values: values[0] & mask_of(32)
+    if name == 'EXTEND_I32_U':
+        return lambda values: values[0] & mask_of(32)
+    if name == 'EXTEND_I32_S':
+        return lambda values: to_signed(values[0], 32) & mask
+    if name in ('EXTEND8_S', 'EXTEND16_S', 'EXTEND32_S'):
+        width = int(name[len('EXTEND'):-len('_S')])
+        return lambda values: to_signed(values[0], width) & mask
+    if name == 'EQZ':
+        return lambda values: int((values[0] & mask) == 0)
+
+    relations = {
+        'EQ': lambda left, right: left == right,
+        'NE': lambda left, right: left != right,
+        'LT_U': lambda left, right: left < right,
+        'GT_U': lambda left, right: left > right,
+        'LE_U': lambda left, right: left <= right,
+        'GE_U': lambda left, right: left >= right,
+    }
+    if name in relations:
+        relation = relations[name]
+        return lambda values: int(relation(values[0] & mask,
+                                           values[1] & mask))
+    signed_relations = {
+        'LT_S': lambda left, right: left < right,
+        'GT_S': lambda left, right: left > right,
+        'LE_S': lambda left, right: left <= right,
+        'GE_S': lambda left, right: left >= right,
+    }
+    if name in signed_relations:
+        relation = signed_relations[name]
+        return lambda values: int(relation(to_signed(values[0], bits),
+                                           to_signed(values[1], bits)))
+
+    if name == 'MULR':
+        return lambda values: (values[0] * values[1]) & mask
+    if name == 'SHLR':
+        return lambda values: ((values[0] & mask)
+                               << ((values[1] & mask) % bits)) & mask
+    if name == 'SHRR':
+        return lambda values: ((values[0] & mask)
+                               >> ((values[1] & mask) % bits))
+    if name == 'SARR':
+        return lambda values: sar(values[0],
+                                  (values[1] & mask) % bits, bits)
+    if name in ('ROTL', 'ROTR'):
+        left = name == 'ROTL'
+
+        def rotate(values):
+            value = values[0] & mask
+            count = (values[1] & mask) % bits
+            if not count:
+                return value
+            if left:
+                return ((value << count) | (value >> (bits - count))) & mask
+            return ((value >> count) | (value << (bits - count))) & mask
+
+        return rotate
+
+    if name in ('BIT', 'BITZ'):
+        invert = name == 'BITZ'
+        return lambda values: ((((values[0] & mask)
+                                 >> (values[1] % bits)) & 1) ^ invert)
+    if name in ('BIT_MSB8', 'BIT_MSB8Z'):
+        invert = name == 'BIT_MSB8Z'
+        return lambda values: ((((values[0] & mask)
+                                 >> ((~values[1]) & 7)) & 1) ^ invert)
+    if name == 'ADD3':
+        return lambda values: sum(value & mask for value in values) & mask
+    if name == 'BEXTR':
+        return lambda values: (((values[0] & mask)
+                                >> (values[1] % bits))
+                               & mask_of(values[2] % bits))
+    if name in ('UMIN', 'UMAX'):
+        choose = min if name == 'UMIN' else max
+        return lambda values: choose(values[0] & mask, values[1] & mask)
+    if name in ('SMIN', 'SMAX'):
+        choose = min if name == 'SMIN' else max
+        return lambda values: choose(to_signed(values[0], bits),
+                                     to_signed(values[1], bits)) & mask
+
+    return lambda values: evaluate(operation, values)

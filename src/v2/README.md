@@ -420,6 +420,24 @@ to collapse to one scalar result. The stateful VM also retains that derived phys
 executor across `load`, `feed`, and `read`; the executor is excluded from the
 semantic state key and may be discarded and rebuilt.
 
+Ordered guest operations do not each force a persistent state. Branches,
+non-atomic loads/stores, globals, and direct guest calls carry the current
+physical frame and sparse touched pages forward as a transient residual. A
+complete `MachineState` is sealed only where an import/host, fault, interrupt,
+top-level return, or execution budget can observe it. `kernel.run` reports both
+counts as `state cuts`; on the 18-event LKL sample, 89 states are materialized
+and 154,337 internal states are carried without changing the measured work,
+span, or mapped codec pages.
+
+Reached physical pages belong to the decoded module rather than an individual
+executor. A later executor reuses the immutable normalized page and its
+opcode-bound lane function, while counters and continuations remain private.
+This removes the `compile_slice -> normalize -> pack/unpack -> compile` fixed
+cost from repeated runs and prevents minimized lanes from re-entering the
+generic Wasm numeric dispatcher. The ECHO `vm_load` measurement is about 0.17
+seconds for the first construction of 204 pages and about 0.013 seconds for a
+new executor after those coordinates have been reached.
+
 ---
 
 ## Design notes
