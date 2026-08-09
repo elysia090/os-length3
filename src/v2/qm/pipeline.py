@@ -18,6 +18,7 @@ Layer 5.
 
 import time
 
+from . import clang as clang_mod
 from . import corpus as corpus_mod
 from . import frontend as frontend_mod
 from . import isa as isa_mod
@@ -72,9 +73,22 @@ def solve(source, function=None, observer='exact', targets=None,
 def _solve(source, function, observer_spec, targets, frontend_name, options,
            started):
     # -- §2 frontend -------------------------------------------------------
-    front = frontend_mod.choose(frontend_name, source)
-    analysis = front.analyze(source, dict(options, function=function))
+    # A paste may carry a `main` that exercises the kernel, and the minimizer
+    # must not see it: `main` reads a stream rather than a domain, so what
+    # would be reported is the driver's function. The split happens here, at
+    # the one door every caller comes through, rather than in each of them —
+    # the page split it and the command line did not, which meant the same
+    # file answered two different questions depending on where it was pasted.
+    kernel, driver = clang_mod.split_main(source or '')
+    front = frontend_mod.choose(frontend_name, kernel)
+    analysis = front.analyze(kernel, dict(options, function=function))
     sem = analysis.semantics
+    analysis.report['driver'] = {
+        'present': driver is not None,
+        'note': ('a `main` was found and left out of the analysis; it drives '
+                 'the kernel rather than being it'
+                 if driver is not None else 'the paste is a kernel alone'),
+    }
 
     # -- §3 observer -------------------------------------------------------
     obs = observer_mod.parse(observer_spec, sem.output_bits)
