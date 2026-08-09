@@ -18,7 +18,7 @@ Everything else — quotients, synthesis, lowering, verification — runs here.
 import json
 import base64
 
-from .cfront import CFrontError
+from .cfront import CFrontError, NoEntry
 from .clang import read_signature
 from .frontend import list_frontends
 from .pipeline import solve, to_json_safe
@@ -199,6 +199,9 @@ def plan(source, options_json='{}'):
     options = json.loads(options_json or '{}')
     try:
         signature = read_signature(source, options.get('function'))
+    except NoEntry as exc:
+        return _dumps({'ok': False, 'idle': True,
+                       'error': exc.to_dict()})
     except CFrontError as exc:
         return _dumps({'ok': False, 'error': exc.to_dict()})
 

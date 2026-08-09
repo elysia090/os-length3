@@ -9,7 +9,7 @@ from . import nodes as N
 from .ctypes_model import (
     INT, VOID, is_type_name, type_from_keywords,
 )
-from .errors import CFrontError, UnsupportedC
+from .errors import CFrontError, NoEntry, UnsupportedC
 from .lexer import lex
 
 STORAGE = {'static', 'extern', 'inline', 'register', 'auto', '__inline',
@@ -152,9 +152,7 @@ class Parser(object):
         if not functions:
             if skipped:
                 raise skipped[0]['error']
-            raise CFrontError('no function definition found',
-                              hint='paste a complete C function, '
-                                   'e.g. uint64_t f(uint8_t m) { ... }')
+            raise NoEntry()
         return N.TranslationUnit(functions, skipped=skipped)
 
     def _skip_definition(self, error):

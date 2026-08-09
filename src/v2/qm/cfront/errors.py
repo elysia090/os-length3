@@ -37,3 +37,10 @@ class CFrontError(Exception):
 
 class UnsupportedC(CFrontError):
     """A valid C construct that this subset deliberately does not model."""
+
+
+class NoEntry(CFrontError):
+    """The input is valid so far, but contains no scalar entry to minimize."""
+
+    def __init__(self):
+        super(NoEntry, self).__init__('nothing to minimize yet')

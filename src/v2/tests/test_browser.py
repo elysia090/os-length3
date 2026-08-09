@@ -306,6 +306,9 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn('env[plan.function] = evaluator.fn', worker)
         self.assertIn('const runCache = new Map()', worker)
         self.assertIn('prepareRunSnapshot(request.source)', worker)
+        self.assertIn('prepareStandaloneMain(request.source)', worker)
+        self.assertIn('if (plan && artifact)', worker)
+        self.assertIn('standalone_main: true', worker)
         # Every reply from a solve carries whether there was a `main`; the page
         # has no second opinion about what the source contains.
         self.assertEqual(worker.count("has_main: hasMain"),
@@ -372,12 +375,16 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn("$('btn-newtab').addEventListener('click', showExamples)", app)
         self.assertIn("state.tabs.length > 1 ? '' : 'disabled'", app)
         self.assertIn("event.key === 'Delete'", app)
+        self.assertIn('msg.result.idle', app)
+        self.assertIn('result.standalone_main', app)
         head = html.split('id="card-write"')[1].split('</div>')[0]
         self.assertIn('id="btn-run"', head)
         with open(os.path.join(ROOT, 'web', 'styles.css')) as handle:
             styles = handle.read()
-        self.assertIn('--tab-rail-width: 211px', styles)
-        self.assertIn('flex: 0 1 var(--tab-rail-width)', styles)
+        self.assertIn('width: max-content; max-width:', styles)
+        self.assertNotIn('--tab-rail-width', styles)
+        self.assertIn('-webkit-user-select: none', styles)
+        self.assertIn('user-select: none', styles)
 
 
 class TestCapabilities(unittest.TestCase):
@@ -392,6 +399,13 @@ class TestCapabilities(unittest.TestCase):
 
 
 class TestPlan(unittest.TestCase):
+    def test_an_input_without_a_scalar_entry_is_idle_not_a_c_constraint(self):
+        result = json.loads(plan('static int value;', '{}'))
+        self.assertFalse(result['ok'])
+        self.assertTrue(result['idle'])
+        self.assertEqual(result['error']['message'], 'nothing to minimize yet')
+        self.assertIsNone(result['error']['hint'])
+
     def test_plan_returns_the_domain_the_worker_must_evaluate(self):
         result = json.loads(plan(SOURCE, '{}'))
         self.assertTrue(result['ok'])
