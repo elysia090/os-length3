@@ -328,15 +328,27 @@ columns. Function and pc select the page but do not justify retaining a second
 decoded expression graph. A barrier coordinate is not stored as a negative
 physical page because it has no pure residual payload.
 
-This also identifies the next runtime boundary precisely. Load, store, call and
-branch remain ordering barriers, but only a host event, timeslice, fault or
-interrupt is a persistent cut. Materializing a complete immutable
-`MachineState` after every internal barrier preserves more distinctions than
-the future host ABI can observe. The next state-step executor should therefore
-carry an internal residual through ordered barriers and seal the full machine
-state only at those external cuts. This is not ordinary input memoization and
-does not require recompiling a hot block for each value: it changes which state
-is allowed to persist between phases.
+This also identifies the runtime boundary precisely. Load, store, direct call
+and branch remain ordered operations, but only a host/import event, timeslice,
+fault, interrupt, top-level return or quantum limit is a persistent cut. The
+state-step executor carries frame coordinates, control stack, globals and
+touched sparse-memory pages as one transient residual across the internal
+operations. It seals a complete immutable `MachineState` only at the persistent
+cut. Atomic memory operations and unresolved or imported calls remain external
+barriers. This is not ordinary input memoization and does not require
+recompiling a hot block for each value: it removes state distinctions that the
+future host ABI cannot observe.
+
+The cut count is a reported invariant rather than a hidden fast path. On the
+18-event LKL sample, 154,426 ordered slice/barrier transitions produced 89
+complete states; 154,337 internal states (99.94%) were carried without full
+frame materialization. Mapped code remained 1,703 pages / 361,176 bytes and
+normalized work/span remained 41,457 / 40,848, so this reduction did not move
+work into an unmeasured route. On the 21-byte ECHO artifact, 2,959 transitions
+produce six states and carry 2,953 internally. Once its 204 physical pages
+have been reached, a new executor over the same decoded module loads it in
+about 0.013 seconds on the measurement host, down from about 0.105--0.13
+seconds before internal-cut fusion and physical-page reuse.
 
 Residual construction is itself SSA. Renaming produces no provisional wave
 layout. One canonical cut pass first owns backward liveness, physical CSE and
@@ -389,24 +401,32 @@ exactly `(base,step)=(0,1)`; any unproved observer continues to use the one
 transactional VM semantics.
 
 On the 21-byte ECHO artifact, one `vm_load` fell from 2.10 seconds to about
-0.22 seconds for the first cold page construction and 0.13 seconds after Python
-imports were warm while still using a fresh decoded module and executor. Source
-dynamic work fell from 60,153 to 2,400 and normalized work from 52,450 to
-1,671. The codec reader now scans a zero prefix and value tail by touched byte
-chunks rather than reloading the same byte for every bit; this reduced the load
-sample from 10,638 to 8,372 Wasm instructions and from 1,893 to 1,673 internal
-barriers. The compiled module is 8,839 bytes. The affine coefficient arrays are
-zero-initialized logical memory inside the existing 32 MiB reservation and only
-reached coordinates are touched. Under the physical objective, persistent-cut
-count, work and span are measured before accepting an artifact-size tradeoff.
+0.17 seconds when all 204 reached state-step pages must be constructed for the
+first time. A subsequent fresh executor over that decoded module takes about
+0.013 seconds because it reuses those immutable QM pages. Source dynamic work
+fell from 60,153 to 2,400 and normalized work from 52,450 to 1,671. The codec
+reader now scans a zero prefix and value tail by touched byte chunks rather
+than reloading the same byte for every bit; this reduced the load sample from
+10,638 to 8,372 Wasm instructions and from 1,893 to 1,673 internal barriers.
+The compiled module is 8,843 bytes. The affine coefficient arrays are
+zero-initialized logical memory inside the existing 32 MiB reservation and
+only reached coordinates are touched. Under the physical objective,
+persistent-cut count, work and span are measured before accepting an
+artifact-size tradeoff.
 
 The physical executor is also a residual of the module, not part of the VM's
-semantic state. `load`, `feed`, `read`, and finite-closure construction retain
-one executor, so public byte calls do not rebuild the same function SSA, page,
-validation, and terminal transition. All derived pages remain excluded from
-`state_key`; two snapshots are compared only by the globals and cell coordinates
-that later `feed/read` calls can observe. Thus retaining the executor removes
-reconstruction work without inventing an additional VM state distinction.
+semantic state. The decoded module owns each reached immutable mapped page and
+its opcode-bound lane function. Executors share that code while retaining
+independent execution counters, costs and continuations. `load`, `feed`,
+`read`, and finite-closure construction additionally retain one executor, so
+public byte calls do not rebuild the same function SSA, normalization, page,
+validation, or terminal transition. A mapped page binds the selected physical
+opcode and publication width once; common lanes do not fall back through the
+generic string decoder and Wasm numeric stack on every execution. All derived
+pages remain excluded from `state_key`; two snapshots are compared only by the
+globals and cell coordinates that later `feed/read` calls can observe. Thus
+page reuse removes reconstruction work without inventing an additional VM
+state distinction.
 
 Large tool modules use a narrower boundary. `qm.wasmbinary` indexes the code
 section without expanding a complete module into Python objects, then admits

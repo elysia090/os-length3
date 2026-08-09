@@ -3,6 +3,7 @@
 import unittest
 
 from qm import isa
+from qm.laneops import bind, evaluate
 from qm.wasmphysical import (frame_coordinate, lower_module,
                              memory_coordinate, schedule_sequence,
                              summarize_binary)
@@ -92,6 +93,72 @@ class TestPhysicalWasmLayout(unittest.TestCase):
         self.assertEqual(executor.steps.resident_rows, 1)
         self.assertFalse(decoded.functions[1].decoded)
 
+
+class TestBoundPhysicalLanes(unittest.TestCase):
+    def test_bound_hot_lanes_match_the_reference_interpreter(self):
+        cases = {
+            'lane32.ADD': (0xffffffff, 2),
+            'lane64.SUB': (0, 3),
+            'lane32.IMUL': (0x80000001, 7),
+            'lane32.AND': (0xabcdef01, 0xff00ff00),
+            'lane64.OR': (0x100, 3),
+            'lane32.XOR': (0x55, 0xff),
+            'lane32.NOT': (0x12345678,),
+            'lane64.NEG': (7,),
+            'lane32.SHL': (0x80000001, 3),
+            'lane64.SHR': (1 << 63, 17),
+            'lane32.SAR': (0x80000000, 5),
+            'lane64.SCANXOR': (0x1234, 9),
+            'lane32.CLZ': (0x100,),
+            'lane64.CTZ': (0x1000,),
+            'lane32.POPCNT': (0xf0f0f0f0,),
+            'lane32.ADDR': (0xffffffff, 9),
+            'lane64.SUBR': (3, 9),
+            'lane32.ANDR': (0xf0, 0x3c),
+            'lane64.ORR': (0x100, 7),
+            'lane32.XORR': (0xaa, 0xff),
+            'lane64.ANDNR': (0xf0, 0x1ff),
+            'lane64.SELECT': (11, 29, 0),
+            'lane32.WRAP_I64': (0x123456789,),
+            'lane64.EXTEND_I32_U': (0xffffffff,),
+            'lane64.EXTEND_I32_S': (0x80000000,),
+            'lane32.EXTEND8_S': (0x80,),
+            'lane64.EXTEND32_S': (0x80000000,),
+            'lane32.EQZ': (0,),
+            'lane64.EQ': (7, 7),
+            'lane32.NE': (7, 9),
+            'lane64.LT_U': (3, 9),
+            'lane32.GT_U': (9, 3),
+            'lane64.LE_U': (9, 9),
+            'lane32.GE_U': (9, 3),
+            'lane64.LT_S': ((1 << 64) - 1, 0),
+            'lane32.GT_S': (1, 0xffffffff),
+            'lane64.LE_S': ((1 << 63), 0),
+            'lane32.GE_S': (0xffffffff, 0xffffffff),
+            'lane64.MULR': (0x1234, 0x5678),
+            'lane32.SHLR': (0x80000001, 35),
+            'lane64.SHRR': (1 << 63, 67),
+            'lane32.SARR': (0x80000000, 37),
+            'lane64.ROTL': (0x8000000000000001, 17),
+            'lane32.ROTR': (0x80000001, 9),
+            'lane64.BIT': (0x100, 8),
+            'lane32.BITZ': (0, 7),
+            'lane64.BIT_MSB8': (0x80, 0),
+            'lane32.BIT_MSB8Z': (0, 0),
+            'lane64.ADD3': (0xffffffffffffffff, 2, 3),
+            'lane32.BEXTR': (0xabcdef01, 4, 12),
+            'lane64.UMIN': (9, 3),
+            'lane32.UMAX': (9, 3),
+            'lane64.SMIN': ((1 << 64) - 1, 3),
+            'lane32.SMAX': (0xffffffff, 3),
+            # Uncommon/trapping operations retain the reference route.
+            'lane32.DIV_U': (17, 5),
+            'lane64.PDEP': (7, 0x0101010101010101),
+        }
+        for operation, arguments in cases.items():
+            with self.subTest(operation=operation):
+                self.assertEqual(bind(operation)(arguments),
+                                 evaluate(operation, arguments))
 
 if __name__ == '__main__':
     unittest.main()

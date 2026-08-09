@@ -413,6 +413,9 @@ def main(argv=None):
                normalization['normalized_work'],
                normalization['removed_work'],
                normalization['compiled_state_steps']))
+        print('state cuts   %d materialized, %d internal states carried' %
+              (normalization['state_materializations'],
+               normalization['avoided_state_materializations']))
         if 'rootfs' in report:
             root = report['rootfs']
             print('rootfs       %d/%d bytes resident, %d page(s) touched'

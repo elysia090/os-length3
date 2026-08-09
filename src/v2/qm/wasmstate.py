@@ -16,7 +16,7 @@ to the exact finite-transducer quotient.  Unsupported instructions are named;
 an incomplete decode is never used as program semantics.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from .bits import mask_of
 from .cfront.errors import CFrontError, UnsupportedC
@@ -437,6 +437,12 @@ class Module:
     start: object = None
     tables: tuple = ()
     indirect_abi: str = 'strict'
+    # Derived physical pages are code, not machine state.  Executors over the
+    # same decoded module share them while retaining independent counters and
+    # continuations.  Excluding the cache from equality/hash keeps semantic
+    # module identity independent of which coordinates have become hot.
+    _physical_pages: object = field(default_factory=dict, compare=False,
+                                    hash=False, repr=False)
 
     def export(self, name):
         for exported, kind, index in self.exports:

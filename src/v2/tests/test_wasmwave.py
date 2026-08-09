@@ -358,6 +358,25 @@ class TestWaveExecutor(unittest.TestCase):
             final = executor.run(start_state(decoded, 'f', (2,)))
         self.assertEqual(final.result, (3,))
 
+    def test_executors_share_reached_physical_pages_not_runtime_counters(self):
+        body = b'\x00\x20\x00\x41\x01\x6a\x0b'
+        decoded = decode_module(module(body, kind=0x7f))
+        initial = start_state(decoded, 'f', (2,))
+        first = WaveExecutor(decoded)
+        first.run(initial)
+        first_entry = next(first.steps.values())
+
+        second = WaveExecutor(decoded)
+        mapped = second.mapped(initial.frames[-1])
+        second_entry = next(second.steps.values())
+        self.assertIs(mapped, first_entry.mapped)
+        self.assertIs(second_entry.execute, first_entry.execute)
+        self.assertGreater(first_entry.executions, 0)
+        self.assertEqual(second_entry.executions, 0)
+
+        self.assertEqual(second.run(initial).result, (3,))
+        self.assertGreater(second_entry.executions, 0)
+
     def test_local_writes_are_renamed_and_committed_at_slice_end(self):
         # local 1 = x + 1; return x * 2 + local 1.
         body = (b'\x01\x01\x7f\x20\x00\x41\x01\x6a\x21\x01'
@@ -387,6 +406,25 @@ class TestWaveExecutor(unittest.TestCase):
         decoded = decode_module(module(body, kind=0x7f))
         final = run_until_boundary(decoded, start_state(decoded, 'f', (9,)))
         self.assertEqual(final.result, ((9 & 255) + (9 ^ 0x55),))
+
+    def test_internal_control_and_memory_do_not_seal_full_state(self):
+        # block { drop(load32(0)); } return 7. The load remains an ordered
+        # barrier, but no host can observe the frame between these operations.
+        body = (b'\x00\x02\x40\x41\x00\x28\x02\x00\x1a\x0b'
+                b'\x41\x07\x0b')
+        decoded = decode_module(module(body, kind=0x7f, memory=True))
+        executor = WaveExecutor(decoded)
+        final, report = executor.run_with_report(
+            start_state(decoded, 'f', (0,)))
+
+        self.assertEqual(final.result, (7,))
+        self.assertGreater(report.slices + report.barriers, 2)
+        layout = executor.normalization_layout()
+        self.assertEqual(layout['state_materializations'], 2)
+        self.assertEqual(
+            layout['state_materializations']
+            + layout['avoided_state_materializations'],
+            report.slices + report.barriers)
 
     def test_shipped_vm_wasm_runs_through_pure_slices_and_barriers(self):
         with open('web/vm.wasm', 'rb') as handle:

@@ -527,7 +527,7 @@ def execute_mapped(mapped, state):
 
 def compile_mapped_executor(mapped):
     """Specialize one physical page without reconstructing scalar SSA nodes."""
-    from .laneops import evaluate
+    from .laneops import bind
 
     if not mapped.work:
         # A projection page has no SSA to compile.  Its terminal cut is just a
@@ -544,27 +544,26 @@ def compile_mapped_executor(mapped):
         stack_values = coordinates(
             'stack_tags', 'stack_values', mapped.stack_count)
 
-        def execute_projection(frame):
-            sources = (None, frame.stack, frame.locals)
+        def execute_projection(locals_, stack):
+            sources = (None, stack, locals_)
 
             def resolve(spec):
                 tag, value = spec
                 return value if tag == 0 else sources[tag][value]
 
             if local_indices:
-                next_locals = list(frame.locals)
+                next_locals = list(locals_)
                 for coordinate, spec in zip(local_indices, local_values):
                     next_locals[coordinate] = resolve(spec)
                 next_locals = tuple(next_locals)
             else:
-                next_locals = frame.locals
+                next_locals = locals_
             return next_locals, tuple(map(resolve, stack_values))
 
         return execute_projection
 
-    lines = ['def execute(frame, evaluate=evaluate):',
-             '    stack = frame.stack',
-             '    locals_ = frame.locals']
+    lines = ['def execute(locals_, stack):']
+    namespace = {}
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -590,9 +589,12 @@ def compile_mapped_executor(mapped):
                 for index in range(first, last))
             if last - first == 1:
                 arguments += ','
-            operation = OPS[mapped.value('opcodes', node - 1)]
-            lines.append("    value_%d = evaluate(%r, (%s))" %
-                         (node, operation, arguments))
+            opcode = mapped.value('opcodes', node - 1)
+            operation = OPS[opcode]
+            lane = 'lane_%d' % opcode
+            namespace.setdefault(lane, bind(operation))
+            lines.append("    value_%d = %s((%s))" %
+                         (node, lane, arguments))
 
     if mapped.local_updates:
         lines.append('    next_locals = list(locals_)')
@@ -609,7 +611,6 @@ def compile_mapped_executor(mapped):
     if mapped.stack_count == 1:
         stack_values += ','
     lines.append('    return next_locals, (%s)' % stack_values)
-    namespace = {'evaluate': evaluate}
     exec(compile('\n'.join(lines), '<qm-state-page>', 'exec'),
          namespace, namespace)
     return namespace['execute']
