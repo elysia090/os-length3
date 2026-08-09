@@ -16,10 +16,11 @@ implying quotient-aware generation.
 Layer 4: depends on `bits`, `program`, `semantics`, `observer`.
 """
 
-from .bits import M64, clmul, lane_masks, mask_of, pdep, pext
+from .bits import (M64, clmul, clz, ctz, lane_masks, lane_values, mask_of,
+                    pdep, pext, popcnt, smear, to_signed)
 from .program import (
-    Program, compile_program, conv, identity, lin_const, perm_dyn_gather,
-    point, table,
+    Key, Program, compile_program, conv, field_key, identity, lin_const,
+    perm_dyn_gather, point, split, table,
 )
 
 # The deposit/convolution search enumerates the constant's free high bits, and
@@ -621,6 +622,656 @@ def solve_with_prefilter(sem, obs, inner_solvers, options=None):
 
 
 # ---------------------------------------------------------------------------
+# POINT — whole-word reductions
+# ---------------------------------------------------------------------------
+
+# Lane widths a cross-lane maximum is looked for at.  A reduction is only a
+# reduction when the word holds several lanes, so 64 is not on the list.
+REDUCE_LANE_WIDTHS = (8, 16, 32)
+
+
+def solve_lane_reduction(sem, obs, options=None):
+    """`POINT[LANE_MAX]` / `POINT[LANE_MIN]` — the extreme of the lanes.
+
+    Proposed and verified, not searched: there are six candidates and each one
+    is either the function or it is not.  What makes it worth having is that
+    the answer is a *reduction* — the output is one lane wide however wide the
+    input is — and no amount of deposit, convolution or lane predicate can
+    produce one, so without this `max` of eight packed bytes has no program at
+    all rather than an expensive one.
+    """
+    if sem.input_bits < 16:
+        return []
+    # How wide the answer is, read off the answers.  The declared output width
+    # is not it: a listing does not declare one, and a kernel whose C says
+    # `uint64_t` can still be answering with a byte.
+    reach = 0
+    for y in sem.table():
+        reach |= y
+    out = []
+    for lane_bits in REDUCE_LANE_WIDTHS:
+        if lane_bits >= sem.input_bits or reach > mask_of(lane_bits):
+            continue
+        for mnemonic in ('LANE_MAX', 'LANE_MIN'):
+            op = point([(mnemonic, None, lane_bits)],
+                       note='%s over %d-bit lanes' % (mnemonic, lane_bits))
+            prog = Program([op], 1, 1, 'lane-reduction', sem.input_bits,
+                           sem.output_bits,
+                           ['the %s of the %d lanes, verified on the whole '
+                            'domain' % (mnemonic, 64 // lane_bits)])
+            if verify(prog, sem, obs):
+                out.append(prog)
+                return out
+    return out
+
+
+# ---------------------------------------------------------------------------
+# POINT — short chains of whole-word steps, wrapped in an affine
+# ---------------------------------------------------------------------------
+
+# How deep the chain search goes.  Three is not a tuning knob: it is how many
+# steps the whole-word idioms in the teaching literature actually are once the
+# cascades they are built from — smear, popcount, the sign fold — are single
+# steps rather than six shifts each.
+CHAIN_DEPTH = 3
+
+# Probes the search discriminates on before a candidate is put to the whole
+# domain.  Small enough that a few thousand chains cost nothing, spread enough
+# that a wrong chain almost never survives.
+CHAIN_PROBES = 40
+
+
+def _cascade_cost(width):
+    steps = 0
+    shift = 1
+    while shift < width:
+        steps += 2
+        shift <<= 1
+    return steps
+
+
+def chain_steps(width, modulus=None):
+    """The alphabet of whole-word steps, as (label, POINT steps, function, cost).
+
+    Each entry is one recognizable move, not one instruction: `SMEAR` is the
+    doubling cascade and `XOR_SAR` is the two's-complement fold, because those
+    are the units a reader of `round_up_pow2` or `howManyBits` sees.  A search
+    over shifts and ORs instead would need eight levels to reach the same place
+    and would call the answer eight things.
+    """
+    m = mask_of(width)
+    # A mask that keeps every bit of the register is not an instruction, so it
+    # is not emitted; a narrower word needs it after anything that can carry or
+    # complement into the bits above it.
+    trim = [('AND', m, None)] if width < 64 else []
+    narrow = 1 if width < 64 else 0
+    steps = [
+        ('NOT', [('NOT', None, None)] + trim, lambda v: (~v) & m, 1 + narrow),
+        ('NEG', [('NEG', None, None)] + trim, lambda v: (-v) & m, 1 + narrow),
+        ('lowest set bit', [('AND_NEG', None, None)], lambda v: v & ((-v) & m),
+         2),
+        # `x | -x` puts "is anything set" in the top bit, which is the whole of
+        # a logical negation once the bit is shifted down and complemented.
+        ('any bit set', [('OR_NEG', None, None)], lambda v: (v | (-v)) & m, 2),
+        ('clear lowest set bit', [('AND_DEC', None, None)],
+         lambda v: v & ((v - 1) & m), 2),
+        ('smear', [('SMEAR', width, None)], lambda v: smear(v, width),
+         _cascade_cost(width)),
+        ('popcount', [('POPCNT', None, None)], popcnt, 1),
+        ('leading zeros', [('CLZ', width, None)], lambda v: clz(v, width),
+         1 + 2 * narrow),
+        ('trailing zeros', [('CTZ', width, None)], lambda v: ctz(v, width),
+         1 + narrow),
+        ('sign fold', [('XOR_SAR', width, width - 1)],
+         lambda v: (v ^ (to_signed(v, width) >> (width - 1))) & m,
+         2 + 2 * narrow),
+    ]
+    # Doubling shifts, plus the one that reads a word's top bit: a sign or a
+    # "did anything survive" flag lives at `width - 1` and nowhere near a power
+    # of two.
+    if modulus is not None:
+        # The modulus is read off the observed outputs, the way a lane
+        # interval is read off the observed lanes: a function whose values
+        # stop at Q-1 and cover it has said what it is reduced by.
+        steps.append(('mod %d' % modulus, [('MOD', modulus, width)],
+                      lambda v, q=modulus: v % q, 4))
+    for shift in sorted(set([s for s in (1, 2, 4, 8, 16, 32) if s < width]
+                            + [width - 1])):
+        if shift >= width:
+            break
+        steps.append(('>> %d' % shift, [('SHR', None, shift)],
+                      lambda v, s=shift: v >> s, 1))
+        steps.append(('<< %d' % shift, [('SHL', None, shift)] + trim,
+                      lambda v, s=shift: (v << s) & m, 1 + narrow))
+    return steps
+
+
+# What the chain is allowed to be fed: the word, or the word one either side.
+# `round_up_pow2` is `smear(x - 1) + 1` and nothing shorter, so a search that
+# could not subtract before starting would miss it by one.
+CHAIN_ENTRIES = (
+    ('x', 0), ('x - 1', -1), ('x + 1', 1),
+)
+
+
+# What leaving the chain costs in instructions: an add is one, and `c - v` is
+# a negate and an add.
+EXIT_COST = {'ADD': 1, 'SUB': 2}
+
+
+def _affine_exit(values, wanted, output_bits):
+    """`(kind, c)` when `wanted` is `values + c` or `c - values`, else None."""
+    out = mask_of(output_bits)
+    c = (wanted[0] - values[0]) & out
+    if all((v + c) & out == w for v, w in zip(values, wanted)):
+        return ('ADD', c)
+    c = (wanted[0] + values[0]) & out
+    if all((c - v) & out == w for v, w in zip(values, wanted)):
+        return ('SUB', c)
+    return None
+
+
+def _chain_probe_values(sem):
+    values = sem.domain.values()
+    if len(values) <= CHAIN_PROBES:
+        return list(values)
+    step = len(values) // CHAIN_PROBES
+    picked = list(values[::step][:CHAIN_PROBES])
+    picked += [1 << i for i in range(min(sem.input_bits, 8))]
+    return list(dict.fromkeys(v for v in picked if v <= mask_of(sem.input_bits)))
+
+
+# A reduction's reciprocal has to fit a 64-bit multiply, which bounds the
+# value's width plus the modulus's.  Wider than this and there is no lowering,
+# so there is no point offering the step.
+MAX_MOD_PRODUCT_BITS = 62
+
+
+def _modulus_of(outputs, width):
+    """The modulus the outputs imply, or None.
+
+    `Q` when the observed values are exactly `0 .. Q-1`: a function that never
+    reaches Q-1, or that skips a residue below it, is one whose range happens
+    to be small rather than one that was reduced.  A power of two is a mask,
+    and `AND` already has that.
+    """
+    modulus = max(outputs) + 1
+    if modulus < 3 or modulus >= (1 << width):
+        return None
+    if modulus & (modulus - 1) == 0:
+        return None
+    if width + modulus.bit_length() > MAX_MOD_PRODUCT_BITS:
+        return None
+    if len(set(outputs)) != modulus:
+        return None
+    return modulus
+
+
+def solve_point_chain(sem, obs, options=None):
+    """`POINT` — a short chain of whole-word steps, entered and left affinely.
+
+    Breadth-first over the alphabet above, de-duplicated by what a chain *does*
+    to the probes rather than by how it is spelled, so the thousands of ways to
+    write "shift right by three" collapse to one state.  A surviving chain is
+    then put to the whole declared domain like every other candidate.
+
+    This is the family that contains the exercises whose answer is one idiom:
+    `x & -x`, `popcount`, `smear(x-1) + 1`.  It is a search and not a table of
+    names — nothing here knows what `round_up_pow2` is called.
+    """
+    if sem.input_bits < 2:
+        return []
+    width = sem.input_bits
+    probes = _chain_probe_values(sem)
+    wanted = [sem.value_at(x) for x in probes]
+    alphabet = chain_steps(width, _modulus_of(sem.table(), width))
+
+    m = mask_of(width)
+    # Depth is the outer loop and the entry is the inner one, so the shortest
+    # chain wins rather than whichever entry happened to be tried first.  Left
+    # to itself the search would answer `x - 1 ; smear ; + 1` with
+    # `NEG ; NOT ; smear ; + 1`, which is the same function three steps long.
+    searches = []
+    for entry_label, delta in CHAIN_ENTRIES:
+        start = tuple((x + delta) & m for x in probes)
+        searches.append([entry_label, delta, {start: None},
+                         [(start, [], 1 if delta else 0)]])
+
+    for depth in range(CHAIN_DEPTH + 1):
+        # Every chain that reaches the target at this depth, cheapest first.
+        # Depth counts moves and the objective counts instructions, and the two
+        # disagree: `smear` is one move and twelve instructions, so a search
+        # that returned the first match would answer a logical negation with a
+        # cascade where a shift would do.
+        matched = []
+        for entry_label, delta, seen, frontier in searches:
+            for values, chain, cost in frontier:
+                exit_form = _affine_exit(values, wanted, sem.output_bits)
+                if exit_form is None:
+                    continue
+                if not chain and not delta and exit_form[1] == 0:
+                    continue            # the identity; `solve_identity` owns it
+                matched.append((cost + EXIT_COST[exit_form[0]], entry_label,
+                                delta, chain, exit_form))
+        matched.sort(key=lambda item: (item[0], item[1]))
+        for _cost, entry_label, delta, chain, exit_form in matched:
+            prog = _chain_program(sem, entry_label, delta, chain, exit_form)
+            if verify(prog, sem, obs):
+                return [prog]
+        if depth == CHAIN_DEPTH:
+            break
+        for search in searches:
+            seen, frontier = search[2], search[3]
+            nxt = []
+            for values, chain, cost in frontier:
+                for label, steps, fn, weight in alphabet:
+                    moved = tuple(fn(v) for v in values)
+                    if moved in seen:
+                        continue
+                    seen[moved] = None
+                    nxt.append((moved, chain + [(label, steps)], cost + weight))
+            search[3] = nxt
+    return []
+
+
+def _chain_program(sem, entry_label, delta, chain, exit_form):
+    width = sem.input_bits
+    steps = []
+    if delta:
+        steps.append(('ADD' if delta > 0 else 'SUB', abs(delta), None))
+        if width < 64:
+            steps.append(('AND', mask_of(width), None))
+    labels = []
+    for label, sub in chain:
+        steps.extend(sub)
+        labels.append(label)
+    kind, const = exit_form
+    if kind == 'SUB':
+        # `c - v`, and the grammar has no reverse subtract: negate, then add.
+        # The result is masked to the output width either way, so a narrower
+        # word needs no trim of its own.
+        steps.append(('NEG', None, None))
+        if const:
+            steps.append(('ADD', const, None))
+    elif const:
+        steps.append(('ADD', const, None))
+    description = ' ; '.join([entry_label] + labels)
+    if kind == 'SUB':
+        description += ' ; %d - it' % const
+    elif const:
+        description += ' ; + %d' % const
+    return Program(
+        [point(steps, note=description)], 1, len(chain) + 1,
+        'point-chain', sem.input_bits, sem.output_bits,
+        ['whole-word chain: %s' % description,
+         'the chain is forced by the domain, not by a name: nothing in the '
+         'search knows what this function is called'])
+
+
+# ---------------------------------------------------------------------------
+# SPLIT — piecewise, on a whole-word key
+# ---------------------------------------------------------------------------
+
+# How many pieces a split may have.  A split with as many pieces as the domain
+# has points is a lookup table with extra steps, and the point of the class is
+# that the answer is *few* cases; eight is where a teaching kernel's case
+# analysis stops and a table begins.
+MAX_SPLIT_PIECES = 8
+
+# On a sampled domain a piece seen only once or twice is not evidence of
+# anything — an affine map through two points is not a fit, it is a definition.
+MIN_SAMPLED_PIECE = 8
+
+
+class _Gf2AffineFit(object):
+    """`y = c XOR (XOR_j basis[j] . x_j)` fitted incrementally over GF(2).
+
+    Constant, identity, "keep these bits", "shift that field into place" and
+    every combination of them are this one family, which is why a piece does
+    not need to be told which of those it is.
+    """
+
+    label = 'GF(2)-affine'
+
+    def __init__(self, input_bits, output_bits):
+        self.input_bits = input_bits
+        self.mask = mask_of(output_bits)
+        self.pivots = {}
+        self.solution = None
+        self.alive = True
+
+    def clone(self):
+        copy = _Gf2AffineFit.__new__(_Gf2AffineFit)
+        copy.input_bits = self.input_bits
+        copy.mask = self.mask
+        copy.pivots = dict(self.pivots)
+        copy.solution = self.solution
+        copy.alive = self.alive
+        return copy
+
+    def _values(self):
+        """The unknowns, with free ones pinned to zero."""
+        return [self.pivots[i][1] if i in self.pivots else 0
+                for i in range(self.input_bits + 1)]
+
+    def predict(self, x):
+        values = self.solution
+        out = values[self.input_bits]
+        index = 0
+        while x:
+            if x & 1:
+                out ^= values[index]
+            x >>= 1
+            index += 1
+        return out & self.mask
+
+    def add(self, x, y):
+        if not self.alive:
+            return False
+        # Once every unknown has a pivot the system is determined, and a new
+        # point is a check rather than a constraint.  Before that it is not:
+        # a point that happens to agree with the currently pinned solution can
+        # still rule out the solution a later point would force, so it has to
+        # go through the elimination like any other.
+        if self.solution is not None:
+            self.alive = self.predict(x) == (y & self.mask)
+            return self.alive
+        vector = (x & mask_of(self.input_bits)) | (1 << self.input_bits)
+        rhs = y & self.mask
+        for position, (pv, pr) in self.pivots.items():
+            if (vector >> position) & 1:
+                vector ^= pv
+                rhs ^= pr
+        if vector == 0:
+            self.alive = rhs == 0
+            return self.alive
+        # The highest column first, which puts the constant — its column is the
+        # top one — ahead of every input bit.  A piece where some bits never
+        # move leaves the system underdetermined, and pivoting low attributes
+        # the whole constant to whichever low bit happened to appear in the
+        # first row: a correct map, spelled as a fourteen-instruction XOR
+        # network instead of a mask and a constant.
+        position = vector.bit_length() - 1
+        for other, (ov, orhs) in list(self.pivots.items()):
+            if (ov >> position) & 1:
+                self.pivots[other] = (ov ^ vector, orhs ^ rhs)
+        self.pivots[position] = (vector, rhs)
+        if len(self.pivots) == self.input_bits + 1:
+            self.solution = self._values()
+        return True
+
+    @property
+    def settled(self):
+        return self.alive
+
+    def program(self, sem):
+        values = self.solution or self._values()
+        basis = values[:self.input_bits]
+        constant = values[self.input_bits]
+        ops = [lin_const(basis, self.input_bits, note='branch, GF(2)-linear')]
+        if constant:
+            ops.append(point([('XOR', constant, None)], note='branch constant'))
+        return Program(ops, 1, 1, 'split-branch', sem.input_bits,
+                       sem.output_bits)
+
+
+# How many points a scaled fit may see before it has to have pinned its slope.
+# Consecutive inputs differ by one, so in practice the second point settles it;
+# a run whose base never moves by an odd step is one this family cannot claim.
+SCALE_PATIENCE = 16
+
+
+class _ScaledAffineFit(object):
+    """`y = a * base(x) + c` over the integers, modulo the output width.
+
+    `base` is either the word itself or the split's own key.  Both are needed
+    and neither subsumes the other: `2.0^x` scales the *word* into an exponent
+    field, and `(a + b) mod m` subtracts a constant from the *key* the
+    comparison was already made on.
+
+    The slope is not searched.  Two points whose bases differ by an odd number
+    determine it, and everything after that is a check — which is why a piece
+    of three points cannot be talked into fitting.
+    """
+
+    def __init__(self, output_bits, key=None):
+        self.mask = mask_of(output_bits)
+        self.modulus = self.mask + 1
+        self.key = key
+        self.base = key.value if key is not None else (lambda x: x)
+        self.label = ('integer-affine in the key' if key is not None
+                      else 'integer-affine in the word')
+        self.anchor = None
+        self.slope = None
+        self.constant = None
+        self.seen = 0
+        self.alive = True
+
+    def clone(self):
+        copy = _ScaledAffineFit.__new__(_ScaledAffineFit)
+        for name in ('mask', 'modulus', 'key', 'base', 'label', 'anchor',
+                     'slope', 'constant', 'seen', 'alive'):
+            setattr(copy, name, getattr(self, name))
+        return copy
+
+    def add(self, x, y):
+        if not self.alive:
+            return False
+        b = self.base(x) & self.mask
+        y &= self.mask
+        if self.slope is not None:
+            self.alive = (self.slope * b + self.constant) & self.mask == y
+            return self.alive
+        self.seen += 1
+        if self.anchor is None:
+            self.anchor = (b, y)
+            return True
+        b0, y0 = self.anchor
+        step = (b - b0) & self.mask
+        if step & 1:
+            inverse = pow(step, -1, self.modulus)
+            self.slope = ((y - y0) * inverse) & self.mask
+            self.constant = (y0 - self.slope * b0) & self.mask
+            return True
+        if self.seen >= SCALE_PATIENCE:
+            self.alive = False          # nothing here pins a slope
+        return self.alive
+
+    @property
+    def settled(self):
+        return self.alive and self.slope is not None
+
+    def program(self, sem):
+        ops = []
+        if self.key is not None:
+            ops.append(point([('KEY', self.key, None)],
+                             note='branch reads %s' % self.key.label))
+        if self.slope != 1:
+            ops.append(conv('IMUL', self.slope))
+        if self.constant:
+            ops.append(point([('ADD', self.constant, None)],
+                             note='branch, + 0x%X' % self.constant))
+        return Program(ops or [identity()], 1, 1, 'split-branch',
+                       sem.input_bits, sem.output_bits)
+
+
+def _fits_for(sem, key):
+    return [_Gf2AffineFit(sem.input_bits, sem.output_bits),
+            _ScaledAffineFit(sem.output_bits),
+            _ScaledAffineFit(sem.output_bits, key)]
+
+
+def split_keys(input_bits):
+    """The keys a split is allowed to compare, in the order they are tried.
+
+    Deliberately a short list.  The word itself, read either way, is every
+    case analysis on a value; the difference of two halves is every comparison
+    between two arguments packed into one; their sum is every conditional
+    subtract.  A key outside this list is a comparison this grammar does not
+    claim to find.
+    """
+    keys = []
+    if input_bits <= 61:
+        keys.append(field_key(0, input_bits, False))
+        keys.append(field_key(0, input_bits, True))
+        # The word without its top bit.  A float's case analysis is the same on
+        # both halves of the sign, so reading the sign into the key would split
+        # every piece in two and answer with eight where there are four.  The
+        # branches still see the whole word; only the comparison does not.
+        keys.append(field_key(0, input_bits - 1, False))
+    if input_bits >= 8 and input_bits % 2 == 0:
+        half = input_bits // 2
+        for signed in (True, False):
+            keys.append(Key([(0, half, signed, 1), (half, half, signed, -1)]))
+            keys.append(Key([(half, half, signed, 1), (0, half, signed, -1)]))
+        keys.append(Key([(0, half, False, 1), (half, half, False, 1)]))
+    return keys
+
+
+def narrow_keys(input_bits):
+    """Fields near the top of the word, for a split the plain keys missed.
+
+    A float's exponent is the case this exists for: the answer depends on a
+    field, the field is not the word, and reading the word instead would put a
+    piece boundary at every mantissa wrap.
+    """
+    keys = []
+    for width in range(2, 13):
+        for top in (input_bits, input_bits - 1):
+            shift = top - width
+            if shift < 0:
+                continue
+            keys.append(field_key(shift, width, False))
+    return keys
+
+
+def _pieces(sem, obs, key):
+    """Maximal runs, in key order, on which one branch family fits.
+
+    Greedy and left to right, which makes it deterministic; a run is closed the
+    moment no family can still explain it, and reopened at the point that broke
+    it.  The families are refitted over the closed run afterwards rather than
+    carried along, so the walk costs one pass over the domain however many
+    pieces come out of it.
+    """
+    order = sorted(zip((key.value(x) for x in sem.domain.values()),
+                       sem.domain.values(), sem.table()))
+    groups = []
+    for value, x, y in order:
+        if groups and groups[-1][0] == value:
+            groups[-1][1].append((x, y))
+        else:
+            groups.append((value, [(x, y)]))
+
+    minimum = 1 if sem.domain.exhaustive else MIN_SAMPLED_PIECE
+    pieces = []
+    start = 0
+    fits = _fits_for(sem, key)
+    for index, (_value, points) in enumerate(groups):
+        alive = []
+        for fit in fits:
+            if all(fit.add(x, y) for x, y in points):
+                alive.append(fit)
+        if alive:
+            fits = alive
+            continue
+        if index == start:
+            return None                 # a single key value nothing explains
+        pieces.append((start, index))
+        if len(pieces) >= MAX_SPLIT_PIECES:
+            return None
+        start = index
+        fits = _fits_for(sem, key)
+        for x, y in points:
+            for fit in fits:
+                fit.add(x, y)
+        fits = [fit for fit in fits if fit.alive]
+        if not fits:
+            return None
+    pieces.append((start, len(groups)))
+
+    if len(pieces) < 2 or len(pieces) > MAX_SPLIT_PIECES:
+        return None
+    if any(sum(len(groups[k][1]) for k in range(a, b)) < minimum
+           for a, b in pieces):
+        return None
+    return groups, pieces
+
+
+def _piece_program(sem, key, groups, span):
+    """Refit the families over one closed run and hand back the cheapest."""
+    a, b = span
+    fits = _fits_for(sem, key)
+    for index in range(a, b):
+        for x, y in groups[index][1]:
+            for fit in fits:
+                fit.add(x, y)
+    for fit in fits:
+        if fit.settled:
+            return fit.program(sem), fit.label
+    return None, None
+
+
+def _split_from_key(sem, obs, key):
+    found = _pieces(sem, obs, key)
+    if found is None:
+        return None
+    groups, spans = found
+
+    branches = []
+    labels = []
+    for span in spans:
+        branch, label = _piece_program(sem, key, groups, span)
+        if branch is None:
+            return None
+        branches.append(branch)
+        labels.append(label)
+
+    breaks = [groups[a][0] for a, _b in spans[1:]]
+    op = split(key, breaks, branches,
+               note='%d pieces on %s' % (len(branches), key.label))
+    notes = ['key %s, thresholds %s'
+             % (key.label, ', '.join(str(t) for t in breaks))]
+    if not sem.domain.exhaustive:
+        notes.append('the domain is probed, so each threshold is pinned only '
+                     'to within the gap between the keys either side of it: '
+                     'the smallest key that was seen to behave differently is '
+                     'the one reported')
+    notes += ['piece %d: %s' % (index, label)
+              for index, label in enumerate(labels)]
+    prog = Program([op], 1, len(branches), 'split', sem.input_bits,
+                   sem.output_bits, notes)
+    return prog if verify(prog, sem, obs) else None
+
+
+def solve_split(sem, obs, options=None):
+    """The piecewise family: one comparison per boundary, no branches emitted.
+
+    Every key is tried and the one with the fewest pieces wins, because pieces
+    are what a split costs — one comparison and one blend each — and because
+    the fewest of them is the one that found the real case analysis rather than
+    a coincidence of the ordering.
+    """
+    if sem.input_bits < 4:
+        return []
+    candidates = []
+    for key in split_keys(sem.input_bits):
+        prog = _split_from_key(sem, obs, key)
+        if prog is not None:
+            candidates.append(prog)
+    if not candidates:
+        for key in narrow_keys(sem.input_bits):
+            prog = _split_from_key(sem, obs, key)
+            if prog is not None:
+                candidates.append(prog)
+                break
+    if not candidates:
+        return []
+    candidates.sort(key=lambda p: len(p.ops[0].detail['branches']))
+    return [candidates[0]]
+
+
+# ---------------------------------------------------------------------------
 # TABLE — always available on a finite domain, deliberately expensive
 # ---------------------------------------------------------------------------
 
@@ -653,7 +1304,20 @@ COMPACT_SOLVERS = (
     solve_linear,
     solve_lane_predicate,
     solve_point_gather,
+    solve_lane_reduction,
 )
+
+# Run only when nothing above answered.  Both walk the domain many times over
+# — a chain search re-evaluates the probes for every state it reaches, and a
+# split sorts the domain once per candidate key — and neither can beat a
+# deposit-and-convolution on a kernel that has one.  Ordering them after the
+# closed forms is what keeps a `ranks8` costing milliseconds.
+FALLBACK_SOLVERS_ORDER = (
+    solve_point_chain,
+    solve_split,
+)
+
+SEARCH_ORDER = COMPACT_SOLVERS + FALLBACK_SOLVERS_ORDER
 
 
 def solve_all(sem, obs, options=None):
@@ -666,6 +1330,12 @@ def solve_all(sem, obs, options=None):
     if not found or options.get('always_try_prefilters'):
         found.extend(solve_with_prefilter(
             sem, obs, (solve_deposit_conv_family, solve_linear), options))
+
+    if not found:
+        for solver in FALLBACK_SOLVERS_ORDER:
+            found.extend(solver(sem, obs, options))
+            if found:
+                break
 
     if options.get('allow_table', True):
         found.extend(solve_table(sem, obs, options))

@@ -258,20 +258,21 @@ Can any continuation distinguish these states?
 
 # 6. Normalize the Remaining Computation
 
-The current QM corpus normalizes small bit-vector kernels into four major semantic classes.
+The current QM corpus normalizes small bit-vector kernels into five major semantic classes.
 
 ```text
 POINT
 LIN_CONST
 CONV
 PERM_DYN
+SPLIT
 ```
 
 These are semantic classes, not instruction names.
 
 ## POINT
 
-Lane-local or locally nonlinear operations.
+Lane-local or locally nonlinear operations, and reductions of the whole word.
 
 Examples:
 
@@ -282,6 +283,27 @@ range predicates
 carry isolation
 Boolean selection
 run boundaries
+```
+
+A reduction answers with a number rather than with a word of the same shape,
+so it is the one kind of POINT step whose output width does not follow its
+input's.
+
+```text
+population count
+leading and trailing zeros
+maximum or minimum over the lanes
+reduction modulo a constant
+```
+
+The steps that read the word twice belong here for the same reason: their two
+halves are useless apart.
+
+```text
+x & -x            the lowest set bit
+x & (x - 1)       the lowest set bit cleared
+x | x>>1 | ...    every bit below the highest one
+x ^ (x >> w-1)    the two's-complement sign fold
 ```
 
 ## LIN_CONST
@@ -330,9 +352,35 @@ compact
 expand
 ```
 
+## SPLIT
+
+A case analysis: a whole-word key, thresholds on it, and one program per piece.
+
+A key is a signed integer combination of bit-fields of the input.
+
+```text
+the word itself, read signed or unsigned
+the word without its sign bit
+one field of it            a float's exponent
+a minus b                  two arguments packed in one word
+a plus b                   a conditional subtract
+```
+
+Thresholds are read off the data, and a piece is maximal: it runs as far as one
+affine map — over GF(2), or over the integers in the word or in the key — still
+explains it.
+
+`SPLIT` must never be treated as another name for a branch. Every piece is
+computed and the answer is blended under a mask derived from the key, so a
+k-way split has a span and a work count rather than a misprediction.
+
+Where a lane predicate answers the same question about every lane of a word,
+a `SPLIT` answers one question about the word. Comparison *within* a lane is
+`POINT`; comparison *between* two parts of a word is this.
+
 The set of semantic classes may expand in future versions.
 
-The product must not claim that arbitrary machine programs necessarily fall into these four classes.
+The product must not claim that arbitrary machine programs necessarily fall into these five classes.
 
 ---
 

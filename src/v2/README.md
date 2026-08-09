@@ -12,6 +12,20 @@ Two cards: what you paste, and what QM made of it — ready to copy, ready to ru
 Tabs hold one kernel each, with their own source and their own last result. The
 language is read off the paste rather than picked from a menu.
 
+Every example ships with a `main`, and the two halves of a paste go to two
+different places. The minimizer only ever sees the kernel: `main` reads a
+stream rather than a range of inputs, so analysing it would describe the driver
+instead of the function under it. That split is `pipeline.solve`'s, not the
+page's, so the command line and the browser answer the same question about the
+same file. The one control in the source card follows the paste: with a `main`
+it says **Run** and executes it, with the artifact answering every call the
+driver makes; without one it says **Compile** and does now what typing would
+have done after the pause.
+
+The shipped drivers all have the same shape — read whitespace-separated hex
+words, print what the kernel makes of each — so any example can be tried on
+values you choose, whatever its input width.
+
 The minimized program is viewable as any of the machines it lowers to, or as
 the codec: one canonical artifact, `pack(code(z))`, shown as the bytes it is —
 with the fields of the code named — and then the listing those bytes decode to.
@@ -117,6 +131,46 @@ how far that is from what the same function costs written properly.
 
 ---
 
+## The curriculum kernels
+
+`examples/` carries bit-manipulation exercises from the CS:APP Data Lab (CMU
+15-213), the Bit Hacks lecture of MIT 6.172 *Performance Engineering of
+Software Systems*, Stanford's CS107 *Computer Organization and Systems*, and
+sections 5.1 and 5.3 of Sedgewick and Wayne's *Algorithms*, Fourth Edition —
+each stated the obvious way, and each naming its source in the file. They are
+there because they are the ones that used to fall through the grammar: a
+comparison between two words, a count, a case analysis on a float's exponent.
+
+| kernel | QM | |
+| --- | --- | --- |
+| `logical_neg_i32` | 5 | `1 - popcount(x & -x)` |
+| `least_bit_mask_u64` | 2 | `x & -x` |
+| `popcount_u64` | 1 | `POPCNT` |
+| `rabin_karp_roll` | 4 | one reduction of the concatenated word |
+| `how_many_bits_i32` | 8 | sign fold, then leading zeros |
+| `is_less_or_equal_i32` | 9 | `SPLIT` on `b - a`, two constant pieces |
+| `min_i32` | 10 | `SPLIT` on `a - b`, a piece per half |
+| `mod_add_u32` | 9 | `SPLIT` on `a + b`: the conditional subtract |
+| `float_power2_bits` | 17 | `SPLIT` on the word read signed, denormals and all |
+| `float_scale2_bits` | 24 | `SPLIT` on the magnitude, four pieces |
+| `round_up_pow2_u64` | 14 | `smear(x - 1) + 1` |
+| `max_u8x8` | 43 | the halving tournament, branch-free |
+| `middle_bits_u16` | 1 | `PEXT` |
+
+Five more are in `examples/` because they do **not** land, which is a result
+and not an omission. `counting_sort8_u2` and `kmp_scan8_fixed` come back as
+tables — the interesting number for the second one is its future quotient,
+three bits of state against eight bits of history. `float_to_int_bits` and
+`strict_sum4_f64` want a shift by a value, and `histogram4_u2x16` wants four
+answers in four fields of one output. Each says which of the two it is; none
+of them answers with something that merely fits the probes.
+
+The counts above are `work` on the primary target and are checked by
+`tests/test_wholeword.py`, so a change that quietly makes one of them longer
+fails the suite.
+
+---
+
 ## How the browser runs it
 
 Two things run in the page, and the split is deliberate.
@@ -210,10 +264,11 @@ qm/
   observer.py     §3   obs : Output -> Observable
   semantics.py    §4   the finite domain, and its verification strength
   quotient.py     §5   observation quotient, future quotient
-  program.py      §6   POINT / LIN_CONST / CONV / PERM_DYN / TABLE
+  program.py      §6   POINT / LIN_CONST / CONV / PERM_DYN / SPLIT / TABLE
   guards.py       §7   guards derived from the multiply family
   solvers.py      §8   specialized Stage-2 solvers
   isa.py          §10  target profiles, §11 physical representatives, SSA DAG
+                       normalization, known bits, and the three emitters
   recognize.py    §16  known primitives
   corpus.py       §19  semantic keys, §20 opt-in contribution blobs
   clang.py        §2   the Clang entry point (native driver)
@@ -286,6 +341,84 @@ and reported as such. Wider domains get basis, boundary and deterministic
 differential probes, and every report of one says in as many words that it is
 not a proof of global equivalence.
 
+**A lowering is assembled, so it has to be normalized.** Each abstract op is
+lowered on its own, and each branch of a split is lowered on its own, so what
+comes out is correct and says several things twice: the same field extracted
+once per branch, a mask that cannot clear anything, a multiply by `0x800000`
+where a shift was meant. None of that is a fact about the kernel and all of it
+is counted by `work`, `span` and `L(z)` — so `isa.normalize` rewrites, folds,
+shares and prunes to a fixed point before anything is measured or verified. A
+multiply by a power of two becomes a shift, `x - (-125)` becomes `x + 125`, a
+deposit into the low bits becomes a mask, adjacent masks and shifts merge, and
+a value nothing reads is not computed. Every rewrite is an identity over 64-bit
+words, and the composed sequence is still verified over the declared domain
+afterwards, so a wrong one would be caught rather than shipped.
+
+**Which masks are redundant is a question about known bits.** `isa.known_bits`
+propagates, forwards and conservatively, which bits of each value can be set. A
+shift down by 32 leaves nothing above bit 31, so the mask after it is not
+clearing anything and goes. The same analysis decides where the listing may use
+the 32-bit forms: a 32-bit destination zero-extends, so `xorl` computes `xorq`
+exactly when neither operand nor result has an upper half. The input is assumed
+unknown even though the domain declares a width — a listing takes its argument
+in a 64-bit register, and a caller with something else in the top of it should
+still get the answer the C would.
+
+**The listing is written the way the instruction set allows.** A constant that
+fits a sign-extended 32-bit immediate is one, rather than a `movabsq` into a
+scratch register and a second instruction to use it; a value whose last reader
+is the current instruction is overwritten in place, which removes the `movq` in
+front of nearly every operation. None of that changes the program, so the check
+is that the reader still evaluates it to the same function — and that a real
+assembler accepts it, which `tests/test_normalize.py` asks it to.
+
+**Fuzzing is where the properties without a named case get checked.**
+`tests/test_fuzz.py` builds sequences out of the instruction set at random and
+asks the four things that must hold whatever it got: normalizing does not
+change the function, the known-bits analysis never rules out a bit that
+appears, each of the three emitters reads back as the same function, and a
+solved kernel agrees with its lowering on every target. It is deterministic —
+a fixed seed, printed in every message — and `QM_FUZZ=2000` runs it longer. It
+has already earned its place: `shrl $33` is a shift by *one*, because a 32-bit
+shift takes its count modulo 32, so narrowing a wide shift to the short form
+was quietly wrong until a random `CTZ ; SHR 33` found it.
+
+**A comparison between words is a different class from one within a lane.**
+`lt_spread8` asks the same question about eight bytes at once and answers in
+eight bits; `isLessOrEqual` asks one question about two halves of a word and
+answers in one. The first is a `POINT` predicate and the second is a `SPLIT`:
+a whole-word key, thresholds on it read off the data, and one program per
+piece. Nothing branches — every piece is computed and blended under a mask
+that is one subtraction's sign bit — so a four-way case analysis still has a
+span and a work count rather than a mispredict. `float_scale2_bits` is four
+pieces and twenty-four instructions where it used to be a 64 KB table.
+
+**A split's pieces are fitted, not searched.** A piece runs as far as one
+affine map still explains it — over GF(2), over the integers in the word, or
+over the integers in the key the split already compared — and it is closed at
+the first key value none of the three can. That is what stops the class from
+becoming a lookup table written sideways: there are at most eight pieces, and
+each one is a map that two points determine and the rest of the piece checks.
+
+**A reduction is where the output stops having the input's shape.** Population
+count, leading and trailing zeros, the maximum over the lanes, a reduction
+modulo a constant: each answers with a number, and no deposit, convolution or
+lane predicate produces one. They are `POINT` steps because they are where the
+grammar stops being linear, which is what `POINT` has always meant. The
+modulus is read off the observed outputs the way a lane interval is read off
+the observed lanes — `Q` when the values are exactly `0 .. Q-1` — and it lowers
+to a reciprocal multiply, which is why `rabin_karp_roll` comes back as four
+instructions rather than as a 64 KB table.
+
+**The chain search counts instructions, not moves.** `smear`, the sign fold and
+the reductions are one move each and up to twelve instructions each, so a
+breadth-first search that returned its first hit would answer a logical
+negation with a cascade. Every chain that reaches the target at a given depth
+is collected and the cheapest is offered first: `!x` comes out as
+`1 - popcount(x & -x)`, five instructions, and `round_up_pow2` as
+`smear(x - 1) + 1`, which is fourteen because in this grammar there is nothing
+shorter.
+
 **Comparison is a semantic class, not three of them.** A per-lane `==`, `<` or
 pair of bounds arrives as one abstract step carrying the interval; the equality,
 one-sided and two-sided forms in `lanecode.h` are three physical
@@ -311,15 +444,24 @@ function still sees all 256 lane values a few hundred times each.
   it are implemented and tested against a native Clang; no wasm build of Clang is
   vendored, and I could not reach a CDN from the environment this was written in
   to verify a specific one.
-* **Whole-word comparison, reduction and modular arithmetic.** The declared
-  grammar is GF(2)-linear maps, convolutions, lane-local steps and gathers. A
-  predicate *within* a lane is in it; a comparison *between* lanes is not. So
-  the classic teaching kernels — `is_less_or_equal`, `min`, `max` of packed
-  bytes, `round_up_pow2`, `how_many_bits`, `popcount` as a number, `(a + b) % m`,
-  a rolling hash, or float sign/exponent/mantissa surgery — come back as "no
-  program in the declared grammar" rather than as a wrong answer. `middle_bits`
-  is the one of that family that does land, because selecting bits is linear.
-  Extending the grammar to reach the rest is a different change from extending
-  the search, and neither is done.
+* **A shift by a value.** The grammar has shifts by constants, and a dynamic
+  gather, and nothing between them. `float_to_int_bits` needs one — the shift
+  is by the exponent — so its exponent field is thirty-three cases rather than
+  four and it comes back as the table. `strict_sum4_f64` needs one for the same
+  reason, in the normalizing step of every partial sum, and comes back as no
+  program at all. A dynamic shift is a data-dependent permutation and belongs
+  in `PERM_DYN`; it is not there yet.
+* **Several answers in one output.** An abstract program is a chain, so there
+  is no way to say "these four counts go in these four bytes".
+  `histogram4_u2x16` is four lane predicates and four population counts, each
+  of which the grammar has, and it still has no program because they have to
+  be combined. Solving an output field at a time — and joining the results —
+  is the next class, and it is the one that would also make
+  `counting_sort8_u2` something other than a table.
+* **Quotient-aware branch fitting inside a split.** A piece is fitted with an
+  affine map, and only an affine map; a piece whose answer is a deposit and a
+  convolution is not recognized as one, because the fit that finds the pieces
+  is the same fit that names them. Running the full solver set per piece would
+  reach further and cost a solve per piece.
 * **The paid surface** (SPEC §22-§32): API, CLI-over-API, CI, batch, private
   cache, native oracle, team workspaces. v2 is the free interactive product only.
