@@ -42,7 +42,10 @@ class PagedMemory(object):
     writes only a handful of words.  Copying that reservation after every
     store changes the cost of the interpreter without changing its semantics.
     This value keeps the decoded module bytes as one shared base and records
-    only complete 256-byte pages that differ from it.
+    only complete 256-byte pages that differ from it.  The base may be shorter
+    than the logical memory: its absent tail is the implicit WebAssembly zero
+    fill.  A module reserving 32 MiB with one data page therefore retains one
+    page, not a 32 MiB Python bytes object.
     """
 
     __slots__ = ('base', 'length', 'pages', '_hash')
@@ -347,7 +350,12 @@ def decode_module(data):
     minimum, maximum = memories[0] if memories else (0, None)
     if len(memories) > 1:
         raise UnsupportedC('multiple wasm memories are not modelled')
-    memory = PagedMemory(bytes(minimum * PAGE))
+    # The minimum is an address-space limit, not resident data.  WebAssembly
+    # initializes it to zero, so represent that zero tail implicitly and keep
+    # only active data-segment pages.  This is the state-machine equivalent of
+    # a demand-zero mmap and is especially important for compiler/VM modules
+    # that reserve tens of MiB before touching most of it.
+    memory = PagedMemory(b'', minimum * PAGE)
     for memory_index, offset, payload in data_segments:
         if memory_index != 0:
             raise UnsupportedC('multiple wasm memories are not modelled')

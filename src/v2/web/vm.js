@@ -16,11 +16,12 @@ const UNFINISHED = -2;
 const DEAD = 0;
 
 let instance = null;
+let compiled = null;
 
 export class MachineUnavailable extends Error {}
 
-export async function load() {
-  if (instance) return instance;
+export async function compile() {
+  if (compiled) return compiled;
   let response;
   try {
     response = await fetch(MODULE_URL, { cache: 'no-cache' });
@@ -28,8 +29,14 @@ export async function load() {
   } catch (err) {
     throw new MachineUnavailable(`cannot fetch vm.wasm (${err.message})`);
   }
-  const built = await WebAssembly.instantiate(await response.arrayBuffer(), {});
-  instance = built.instance;
+  compiled = await WebAssembly.compile(await response.arrayBuffer());
+  return compiled;
+}
+
+export async function load(precompiled = null) {
+  if (instance) return instance;
+  const module = precompiled || await compile();
+  instance = await WebAssembly.instantiate(module, {});
   return instance;
 }
 
@@ -41,8 +48,8 @@ export async function load() {
  * per-kernel path. `vm_prepare_eval` also enables the VM's exact finite-domain
  * cache (and its stronger right-zero Byte* form when proved at load time).
  */
-export async function prepareEvaluator(artifact, plan) {
-  const loaded = await load();
+export async function prepareEvaluator(artifact, plan, precompiled = null) {
+  const loaded = await load(precompiled);
   const E = loaded.exports;
   const memory = new Uint8Array(E.memory.buffer);
   memory.set(artifact, E.vm_buffer());

@@ -142,6 +142,13 @@ class TestProductionVmBinary(unittest.TestCase):
         self.assertTrue(state.halted)
         return state.result
 
+    def test_reserved_linear_memory_is_demand_zero(self):
+        memory = self.module.memory
+        resident = len(memory.base) + sum(len(page) for _index, page in memory.pages)
+        self.assertEqual(len(memory), 32 * 1024 * 1024)
+        self.assertLessEqual(resident, 256)
+        self.assertEqual(memory.read(2 * 1024 * 1024, 16), bytes(16))
+
     def test_the_lightweight_machine_reads_the_shipped_vm(self):
         buffer_address = self.call('vm_buffer')[0]
         cells_address = self.call('vm_cells')[0]

@@ -14,7 +14,8 @@ import tempfile
 import unittest
 
 from qm.browser import (artifact, capabilities, evaluate, fallback, finish,
-                        plan, prepare, prepare_run, prepare_state)
+                        normalize_wasm, physical_codec, plan, prepare, prepare_run,
+                        prepare_state)
 from qm.clang import NATIVE, read_signature
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -106,13 +107,51 @@ uint64_t ranks8_qm(uint8_t x)
         self.assertIn("callPython('prepare'", worker)
         kernel_compile = worker.split('async function compileWithClang')[1]
         kernel_compile = kernel_compile.split('// Running the paste')[0]
-        for call in re.findall(r'clang\.(?:assembly|wasm)\(\s*(\w+)',
-                               kernel_compile):
-            self.assertEqual(call, 'prepared',
-                             'clang is being handed %r rather than the '
-                             'prepared source' % call)
+        self.assertIn('source: prepared, opt: ORACLE_OPT', kernel_compile)
         self.assertIn("const driver = callPython('prepare_run'", worker)
-        self.assertIn('clang.wasm(driver', worker)
+        self.assertIn('source: driver, opt: ORACLE_OPT', worker)
+
+        with open(os.path.join(ROOT, 'web', 'compile-worker.js')) as handle:
+            compiler = handle.read()
+        self.assertIn("clang.wasm(", compiler)
+        self.assertIn('message.source', compiler)
+        self.assertIn('[wasm.buffer]', compiler)
+
+    def test_compiler_residency_is_disposable(self):
+        with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
+            worker = handle.read()
+        self.assertIn("new URL('./compile-worker.js'", worker)
+        self.assertIn('COMPILER_IDLE_MS', worker)
+        self.assertIn('compilerWorker.terminate()', worker)
+        self.assertIn('setTimeout(disposeCompilerWorker', worker)
+
+    def test_compiled_wasm_is_qm_normalized_before_it_is_retained(self):
+        import base64
+        from tests.test_wasmbinary import module
+
+        # (x + 3) + 4 has one exact function-local replacement: x + 7.
+        raw = module(b'\x00\x20\x00\x42\x03\x7c\x42\x04\x7c\x0b')
+        result = json.loads(normalize_wasm(base64.b64encode(raw).decode()))
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['replaced'], 1)
+        self.assertLess(result['output_bytes'], result['module_bytes'])
+
+        with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
+            worker = handle.read()
+        self.assertIn("callPython('normalize_wasm'", worker)
+        self.assertIn("normalizeCompiledWasm(compiled.wasm, 'kernel oracle')",
+                      worker)
+        self.assertIn("normalizeCompiledWasm(compiled.wasm, 'Run driver')",
+                      worker)
+        self.assertIn("normalizeCompiledWasm(compiled.wasm, 'standalone main')",
+                      worker)
+        self.assertIn("normalizeCompiledWasm(compiled.wasm, 'main state machine')",
+                      worker)
+
+        with open(os.path.join(ROOT, 'vm', 'wasm', 'build.py')) as handle:
+            vm_build = handle.read()
+        self.assertIn('from qm.wasmbinary import optimize_module', vm_build)
+        self.assertIn('report = normalize(out)', vm_build)
 
     def test_the_default_compiler_enters_the_core_directly(self):
         with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
@@ -129,18 +168,16 @@ uint64_t ranks8_qm(uint8_t x)
         self.assertNotIn("from '@yowasp/clang'", driver)
         self.assertNotIn('bundle.js', driver)
 
-    def test_cold_start_warms_the_independent_wasm_runtimes_in_parallel(self):
+    def test_cold_start_does_not_reserve_the_dominant_wasm_runtimes(self):
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
             worker = handle.read()
         boot = worker.split('async function boot(config) {', 1)[1]
         boot = boot.split('\n}', 1)[0]
-        compiler = boot.index('const compilerWarm = clang.load(progress)')
-        vm = boot.index('const vmWarm = loadVm()')
-        python = boot.index('const pythonWarm = loadPyodide_()')
-        wait = boot.index('await Promise.all([compilerWarm, vmWarm])')
-        self.assertLess(max(compiler, vm, python), wait)
-        self.assertNotIn('await clang.load(progress)', boot[:wait])
-        self.assertNotIn('await loadVm()', boot[:wait])
+        self.assertIn('pyodide = await loadPyodide_()', boot)
+        self.assertNotIn('clang.load(', boot)
+        self.assertNotIn('loadVm(', boot)
+        self.assertNotIn('compilerWarm', boot)
+        self.assertNotIn('vmWarm', boot)
 
     def test_run_replaces_only_the_selected_function(self):
         source = '''#include <stdint.h>
@@ -248,6 +285,32 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertEqual(codec['L_bytes'],
                          json.loads(artifact())['bytes'])
 
+    def test_the_span_codec_is_a_separate_disposable_cache(self):
+        import base64
+        from qm.seqcodec import execute as execute_physical, unpack
+
+        self.solved('ranks8.c')
+        canonical = json.loads(artifact())
+        physical = json.loads(physical_codec())
+        bmi2 = json.loads(physical_codec('x86-64-bmi2-pclmul'))
+        self.assertTrue(physical['ok'])
+        self.assertNotIn('codec', canonical)
+        self.assertEqual(physical['format'], 'QMS1')
+        self.assertEqual(physical['target'], 'wasm32')
+        mapped = unpack(base64.b64decode(physical['codec']))
+        self.assertEqual(mapped.layout(), physical['layout'])
+        self.assertEqual(mapped.layout()['span'], 6)
+        self.assertEqual(mapped.layout()['required_features'], [])
+        self.assertEqual(execute_physical(mapped, 5),
+                         int(json.loads(evaluate('', '5'))['output']))
+
+        bmi2_mapped = unpack(base64.b64decode(bmi2['codec']))
+        self.assertEqual(bmi2_mapped.layout()['span'], 2)
+        self.assertEqual(bmi2_mapped.layout()['wave_widths'], [1, 1])
+        self.assertEqual(bmi2_mapped.layout()['required_features'], ['pdep'])
+        self.assertEqual(execute_physical(bmi2_mapped, 5),
+                         execute_physical(mapped, 5))
+
     def test_a_program_with_no_artifact_says_so(self):
         # Preserve a compiler failure as a visible error rather than showing a
         # blank Run result. The injected message checks that it is propagated.
@@ -291,23 +354,37 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         """
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
             worker = handle.read()
+        with open(os.path.join(ROOT, 'web', 'run-worker.js')) as handle:
+            runner = handle.read()
         self.assertIn("msg.type === 'exec'", worker)
         self.assertIn("callPython('split'", worker)
         self.assertIn("callPython('prepare_run'", worker)
         self.assertIn("callPython('prepare_state'", worker)
         self.assertIn("'stateful_wasm'", worker)
-        self.assertIn('qm_getchar', worker)
-        self.assertIn('qm_putchar', worker)
+        self.assertIn('qm_getchar', runner)
+        self.assertIn('qm_putchar', runner)
         # paste -> QM -> codec -> run: the kernel the driver calls is an
         # import, answered by the artifact rather than by Clang's own build of
         # it. `tests/test_browser_run.py` drives the whole chain.
         self.assertIn("callPython('run_plan'", worker)
-        self.assertIn('prepareEvaluator', worker)
-        self.assertIn('env[plan.function] = evaluator.fn', worker)
+        self.assertIn('prepareEvaluator', runner)
+        self.assertIn('env[message.plan.function] = evaluator.fn', runner)
         self.assertIn('const runCache = new Map()', worker)
+        self.assertIn('executionWorker.terminate()', worker)
+        self.assertIn('RUNNER_IDLE_MS', worker)
+        self.assertIn('releaseExecutionMemory', worker)
+        self.assertIn('setTimeout(releaseExecutionMemory', worker)
+        self.assertIn('await primeExecutionWorker()', worker)
+        self.assertIn('const ready = executionReady', worker)
+        self.assertIn('await ready', worker)
+        self.assertIn("new URL('./run-worker.js'", worker)
+        self.assertIn('const vmModule = await compileVm()', worker)
+        self.assertIn('vmModule,', worker)
+        self.assertIn('message.vmModule', runner)
+        self.assertIn("self.postMessage({ type: 'ready' })", runner)
         self.assertIn('prepareRunSnapshot(request.source)', worker)
         self.assertIn('prepareStandaloneMain(request.source)', worker)
-        self.assertIn('if (plan && artifact)', worker)
+        self.assertIn('if (message.plan && message.artifact)', runner)
         self.assertIn('standalone_main: true', worker)
         # Every reply from a solve carries whether there was a `main`; the page
         # has no second opinion about what the source contains.
@@ -338,14 +415,20 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
 
         # Compile latency is not reported as VM latency. The clock starts
         # after the driver and artifact are prepared.
-        self.assertIn('const runStarted = performance.now()', worker)
-        self.assertIn('prepare_ms: runStarted - prepareStarted', worker)
-        self.assertNotIn('result.elapsed_ms = performance.now() - started', worker)
+        self.assertIn('const runStarted = performance.now()', runner)
+        self.assertIn('prepare_ms: runStarted - prepareStarted', runner)
+        self.assertNotIn('result.elapsed_ms = performance.now() - started',
+                         runner)
+        self.assertIn('result.total_ms = performance.now() - started', worker)
+        self.assertIn('result.total_ms ?? result.elapsed_ms', app)
 
         with open(os.path.join(ROOT, 'web', 'vm.js')) as handle:
             vm = handle.read()
         self.assertIn('vm_prepare_eval', vm)
         self.assertIn('vm_eval_${input}_${output}', vm)
+        self.assertIn('export async function compile()', vm)
+        self.assertIn('WebAssembly.compile(', vm)
+        self.assertIn('load(precompiled = null)', vm)
 
     def test_the_page_compiles_without_being_asked(self):
         with open(os.path.join(ROOT, 'web', 'app.js')) as handle:

@@ -339,6 +339,12 @@ def _keep(result):
     blob = vm_codec.pack(vm_codec.code(payload))
     _LAST['*artifact'] = blob
     _LAST['*image'] = picture
+    _LAST['*physical_sources'] = {
+        target['name']: target['seq']
+        for target in result.get('targets') or []
+        if target.get('ok') and target.get('seq') is not None
+    }
+    _LAST['*physical_codecs'] = {}
 
     name = (result['frontend'].get('function') or {}).get('name') or 'kernel'
     primary = next((t for t in result.get('targets') or []
@@ -427,6 +433,70 @@ def artifact(_target_name=''):
         'output_bits': output_bits,
         'in_bytes': -(-input_bits // 8),
         'out_bytes': -(-output_bits // 8),
+    })
+
+
+def physical_codec(_target_name=''):
+    """The disposable span/work execution cache for the minimized program.
+
+    This is separate from :func:`artifact`: the canonical rSUBLEQ code remains
+    the program identity, while this target-shaped page can be loaded on
+    demand, dropped, or rebuilt from the same solved sequence.
+    """
+    import base64
+
+    from . import seqcodec
+
+    sources = _LAST.get('*physical_sources') or {}
+    target_name = _target_name or 'wasm32'
+    seq = sources.get(target_name)
+    if seq is None:
+        return _dumps({'ok': False,
+                       'error': 'no physical execution cache for %s'
+                                % target_name})
+    cache = _LAST['*physical_codecs']
+    if target_name not in cache:
+        blob = seqcodec.pack(seq)
+        cache[target_name] = (blob, seqcodec.unpack(blob).layout())
+    blob, layout = cache[target_name]
+    return _dumps({
+        'ok': True,
+        'format': 'QMS1',
+        'target': target_name,
+        'codec': base64.b64encode(blob).decode('ascii'),
+        'bytes': len(blob),
+        'layout': layout,
+    })
+
+
+def normalize_wasm(encoded):
+    """Apply safe function-local QM to a compiled wasm module.
+
+    Only closed straight-line integer bodies are eligible. Stateful bodies and
+    every call, memory access, global access, trap, or control-flow body remain
+    byte-for-byte intact in :func:`qm.wasmbinary.optimize_module`.
+    """
+    import base64
+
+    from .wasmbinary import optimize_module
+
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+        optimized, report = optimize_module(raw)
+    except (ValueError, TypeError, CFrontError) as error:
+        return _dumps({'ok': False, 'error': str(error)})
+    return _dumps({
+        'ok': True,
+        'wasm': base64.b64encode(optimized).decode('ascii'),
+        'module_bytes': report['module_bytes'],
+        'output_bytes': report['output_bytes'],
+        'pure_integer_slices': report['decoded_pure_integer_expressions'],
+        'physical_work': report['physical_work'],
+        'physical_span': report['physical_span_sum'],
+        'parallel_slices': report['parallel_slices'],
+        'max_wave_width': report['max_wave_width'],
+        'replaced': report['replaced'],
+        'saved_body_bytes': report['saved_body_bytes'],
     })
 
 

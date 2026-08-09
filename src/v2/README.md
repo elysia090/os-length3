@@ -4,7 +4,7 @@
 > observable meaning actually requires.
 
 v2 is the interactive product from [`SPEC.md`](../v1/SPEC.md): open a URL, paste
-C, press **Compile**, copy the program. Compilation, solving and verification
+C, press **Run**, copy the program. Compilation, solving and verification
 all happen on your machine — there is no account, no upload and no server
 component.
 
@@ -49,11 +49,12 @@ that result. Human-authored wasm32 and x86-64 enter at the same QM boundary.
 The minimized wasm32 sequence is the only input to codec compilation; the VM
 then runs the resulting image in its x86-64 or wasm32 implementation.
 
-On Run, the same linked wasm32 also goes through the whole-program state
-frontend. It makes the wasm PC, call stack, locals, globals and memory explicit,
-stops at imported input, and derives a pure `state, byte -> state` function.
-The scalar Minimized Program still excludes `main`; its state-machine proof is
-reported separately.
+Automatic analysis removes `main` and minimizes the selected function. Run
+executes the same source snapshot's `main`, whose selected-function import is
+answered by the codec VM. The explicit whole-program state frontend is a
+separate analysis path: it makes the wasm PC, call stack, locals, globals and
+memory explicit, stops at imported input, and derives a pure
+`state, byte -> state` function without changing what Run reports.
 
 ---
 
@@ -98,17 +99,32 @@ wave has 7 lanes and the longest slice has span 10. `qm.wasmphysical` schedules
 each live SSA node by dependency depth, so one wave writes distinct slots in
 parallel. Calls, memory effects, and control transfers remain barriers.
 
+Those schedules have mapped physical forms. `QMS1` stores a target-shaped QM
+SSA sequence, `QMW1` stores one maximal pure wasm slice, and `QMA1` is the
+coordinate-ordered directory over independent pages. Each codec is columnar,
+8-byte aligned, and validated only when its page is selected. The directory
+has no duplicate hash index. For an exactly proved right-zero `Byte*` future,
+the last byte is the direct 256-slot cache coordinate and the resume token;
+the transition itself stores nothing because `next(_state, byte) = byte`.
+
 The complete core has 24,856,928 decoded instructions in 103 opcode groups.
 Its segmented `(function, pc)` view derives 24,724,978 ordinary `rank + 1`
 coordinates and stores none of them. This sequential view preserves code
 location; it does not impose execution order inside a dependency wave.
 
 The browser does not load the package's generated JavaScript wrapper. On the
-first Compile it fetches the pinned `llvm.core.wasm` and
+first automatic C analysis it fetches the pinned `llvm.core.wasm` and
 `llvm-resources.tar` in parallel, verifies their SHA-256 hashes, and connects
 the core's 29 WASI Preview 1 imports to an in-memory filesystem. The core asks
 Clang for its cc1/link plan and the same core executes each step. The three
-component adapter modules are outside this path. A deployment can point
+component adapter modules are outside this path. The compiler lives in a
+disposable Worker; after its compiled wasm result is transferred out, an idle
+timeout releases the core, its instance memories, and the resource filesystem.
+The codec VM lives in a second disposable Worker, so its linear memory can be
+released without closing the page and rebuilt from the retained artifact on
+the next Run. After releasing the VM instance, a memory-free standby Worker is
+started in advance so Worker startup does not become the next Run's dominant
+cost. A deployment can point
 `QM_CLANG.compilerCoreUrl` at a normalized `compiler.wasm`; its expected digest
 is supplied as `QM_CLANG.compilerCoreSha256`.
 
