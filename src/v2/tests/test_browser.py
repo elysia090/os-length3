@@ -374,6 +374,10 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn("event.key === 'Delete'", app)
         head = html.split('id="card-write"')[1].split('</div>')[0]
         self.assertIn('id="btn-run"', head)
+        with open(os.path.join(ROOT, 'web', 'styles.css')) as handle:
+            styles = handle.read()
+        self.assertIn('--tab-rail-width: 211px', styles)
+        self.assertIn('flex: 0 1 var(--tab-rail-width)', styles)
 
 
 class TestCapabilities(unittest.TestCase):
