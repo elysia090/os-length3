@@ -21,6 +21,21 @@ AFFINE_OPS = frozenset(('IMUL', 'SHL', 'ADD', 'SUB', 'NEG', 'ADDR', 'SUBR'))
 WORD_WORK = frozenset(('IMUL', 'ADD', 'SUB', 'NEG', 'ADDR', 'SUBR'))
 
 
+class _LazyPowers(object):
+    """Allocate only powers the selected framing actually reads."""
+
+    def __init__(self, assembler):
+        self.assembler = assembler
+        self.cells = {}
+
+    def __getitem__(self, bit):
+        if not 0 <= bit < WORD:
+            raise IndexError(bit)
+        if bit not in self.cells:
+            self.cells[bit] = self.assembler.cell('p%d' % bit, 1 << bit)
+        return self.cells[bit]
+
+
 def extract_affine(seq):
     """Return the exact final `(scale, offset)`, or ``None``.
 
@@ -85,12 +100,27 @@ class WordAffineLowering(object):
         self.out_bytes = -(-output_bits // 8)
 
         self.a = Asm()
+        # Wide reduction constants are created only by paths that use them.
+        # Carry-free byte forms such as repeat8 never need 2^64, and retaining
+        # an unused out-of-i64 cell made an otherwise small artifact impossible
+        # for the production wasm VM to open.
+        self._modulus = None
+        self._max_word = None
         self.one = self.a.cell('one', 1)
-        self.pow2 = [self.a.cell('p%d' % bit, 1 << bit)
-                     for bit in range(WORD)]
-        self.modulus = self.a.cell('modulus', LIMIT)
-        self.max_word = self.a.cell('max_word', M64)
+        self.pow2 = _LazyPowers(self.a)
         self._temp = 0
+
+    @property
+    def modulus(self):
+        if self._modulus is None:
+            self._modulus = self.a.cell('modulus', LIMIT)
+        return self._modulus
+
+    @property
+    def max_word(self):
+        if self._max_word is None:
+            self._max_word = self.a.cell('max_word', M64)
+        return self._max_word
 
     def temp(self, hint='w'):
         self._temp += 1

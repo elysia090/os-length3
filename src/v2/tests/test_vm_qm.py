@@ -218,6 +218,50 @@ class TestTheShippedModuleRunsTheSameArtifacts(unittest.TestCase):
                          run.evaluate_many(blob, values, input_bits,
                                            output_bits))
 
+    def drive_kernel_abi(self, blob, values, input_bits, output_bits):
+        with tempfile.TemporaryDirectory() as tmp:
+            driver = os.path.join(tmp, 'eval.mjs')
+            with open(driver, 'w') as handle:
+                handle.write(EVAL_DRIVER)
+            job = {'artifact': list(blob), 'input_bits': input_bits,
+                   'output_bits': output_bits,
+                   'in_bytes': -(-input_bits // 8),
+                   'out_bytes': -(-output_bits // 8),
+                   'values': [str(value) for value in values]}
+            result = subprocess.run(['node', driver, SHIPPED_WASM],
+                                    input=json.dumps(job),
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)
+
+    def test_the_wasm_kernel_abi_runs_the_same_minimized_artifact(self):
+        seq, input_bits, output_bits = minimized('ranks8')
+        blob = run.artifact_for(seq, input_bits, output_bits)
+        values = [0, 1, 5, 255, 5]
+        got = self.drive_kernel_abi(blob, values, input_bits, output_bits)
+        self.assertTrue(got['ok'], got)
+        reference = isa_mod.compile_seq(seq)
+        self.assertEqual([int(value) for value in got['outputs']],
+                         [reference(value) for value in values])
+        self.assertEqual(got['calls'], len(values))
+        self.assertEqual(got['misses'], len(set(values)))
+
+    def test_the_kernel_abi_carries_an_i64_result(self):
+        result = solve('''
+            #include <stdint.h>
+            uint64_t repeat8(uint8_t c) {
+                return (uint64_t)c * 0x0101010101010101ull;
+            }
+        ''', frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        blob = artifact_result(result)
+        values = [0, 1, 65, 255, 65]
+        got = self.drive_kernel_abi(blob, values, 8, 64)
+        self.assertTrue(got['ok'], got)
+        self.assertEqual([int(value) for value in got['outputs']],
+                         [value * 0x0101010101010101 for value in values])
+        self.assertEqual(got['misses'], len(set(values)))
+
     def test_it_agrees_on_an_eight_bit_kernel(self):
         self.check('ranks8', [0, 1, 5, 128, 254, 255])
 
@@ -264,4 +308,30 @@ if (!E.vm_load(artifact.length)) {
   process.stdout.write(JSON.stringify(
     bad ? { error: bad } : { outputs }));
 }
+'''
+
+EVAL_DRIVER = '''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const job = JSON.parse(readFileSync(0, 'utf8'));
+const artifact = Uint8Array.from(job.artifact);
+new Uint8Array(E.memory.buffer).set(artifact, E.vm_buffer());
+const prepared = E.vm_prepare_eval(
+  artifact.length, job.input_bits, job.in_bytes, job.out_bytes);
+const input = job.input_bits > 32 ? 'i64' : 'i32';
+const output = job.output_bits > 32 ? 'i64' : 'i32';
+const evaluate = E[`vm_eval_${input}_${output}`];
+const outputs = prepared ? job.values.map(value => {
+  const argument = input === 'i64' ? BigInt(value) : Number(BigInt(value));
+  const result = evaluate(argument);
+  return BigInt.asUintN(job.output_bits, BigInt(result)).toString();
+}) : [];
+process.stdout.write(JSON.stringify({
+  ok: Boolean(prepared && E.vm_eval_ok()), outputs,
+  calls: E.vm_eval_calls(), misses: E.vm_eval_misses(),
+  table_full: E.vm_table_full(), load_error: E.vm_load_error(),
+  dead: E.vm_dead(),
+}));
 '''

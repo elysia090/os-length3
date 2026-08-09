@@ -12,8 +12,8 @@
 // kernel computes.
 //
 // The bundle is fetched lazily, on the first run that asks for it, so the page
-// is usable immediately and a user who never presses Optimize never pays for
-// it.  If the bundle cannot be fetched the caller falls back to the built-in
+// is usable immediately and a user who never runs or edits a kernel never pays
+// for it. If the bundle cannot be fetched the caller falls back to the built-in
 // frontend; nothing here throws its way out to the UI.
 //
 // The default bundle

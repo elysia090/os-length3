@@ -16,8 +16,8 @@ const $ = (id) => document.getElementById(id);
 
 // Examples are not written here. They live in examples/*.c, and
 // tools/gen_examples.py puts the same text into web/examples.json — one home
-// for the source, and no claim about any result: the numbers appear when you
-// press Compile, which is the only place they can be true.
+// for the source, and no claim about any result: the numbers appear after the
+// source has been analysed, which is the only place they can be true.
 let EXAMPLES = [];
 
 // Filled in once the worker reports what this build is; the editor footer
@@ -235,6 +235,7 @@ function newTab(name, source) {
     source: source || '',
     result: null,
     hasMain: false,
+    runReady: false,
     ranWith: null,
     dirty: false,
   };
@@ -290,19 +291,34 @@ function renderTabs() {
   const list = $('tablist');
   list.innerHTML = state.tabs.map((tab) => `
     <div class="tab${tab.id === state.activeId ? ' is-active' : ''}${
-      tab.dirty ? ' is-dirty' : ''}" data-id="${tab.id}" role="tab">
+      tab.dirty ? ' is-dirty' : ''}" data-id="${tab.id}" role="tab"
+         aria-selected="${tab.id === state.activeId}"
+         tabindex="${tab.id === state.activeId ? '0' : '-1'}">
       <span class="name">${escapeHtml(tab.name)}</span>
       <span class="dot" aria-hidden="true"></span>
-      ${state.tabs.length > 1
-        ? `<button class="close" data-close="${tab.id}" title="Close"
-                   aria-label="Close ${escapeHtml(tab.name)}">&times;</button>`
-        : ''}
+      <button class="close" data-close="${tab.id}" title="Close"
+              aria-label="Close ${escapeHtml(tab.name)}"
+              ${state.tabs.length > 1 ? '' : 'disabled'}>&times;</button>
     </div>`).join('');
 
   list.querySelectorAll('.tab').forEach((el) => {
     el.addEventListener('click', (event) => {
       if (event.target.dataset.close) return;
       selectTab(el.dataset.id);
+    });
+    el.addEventListener('keydown', (event) => {
+      const index = state.tabs.findIndex((tab) => tab.id === el.dataset.id);
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const step = event.key === 'ArrowRight' ? 1 : -1;
+        const next = (index + step + state.tabs.length) % state.tabs.length;
+        selectTab(state.tabs[next].id);
+        list.querySelector(`[data-id="${state.activeId}"]`)?.focus();
+      } else if (event.key === 'Delete' && state.tabs.length > 1) {
+        event.preventDefault();
+        closeTab(el.dataset.id);
+        list.querySelector(`[data-id="${state.activeId}"]`)?.focus();
+      }
     });
   });
   list.querySelectorAll('.close').forEach((el) => {
@@ -323,6 +339,7 @@ function selectTab(id) {
   renderTabs();
   restoreCards();
   persistTabs();
+  if (!tab.result || tab.dirty) scheduleCompile();
 }
 
 function addTab(name, source) {
@@ -335,6 +352,7 @@ function addTab(name, source) {
   restoreCards();
   persistTabs();
   $('source').focus();
+  scheduleCompile();
   return tab;
 }
 
@@ -349,6 +367,7 @@ function closeTab(id) {
     $('source').value = next.source;
     syncSource({ keepDirty: true });
     restoreCards();
+    if (!next.result || next.dirty) scheduleCompile();
   }
   renderTabs();
   persistTabs();
@@ -423,6 +442,7 @@ function syncSource(options) {
     if (changed && !(options && options.keepDirty)) {
       tab.dirty = true;
       tab.hasMain = false;
+      tab.runReady = false;
       renderTabs();
     }
     persistTabs();
@@ -436,6 +456,7 @@ function setSource(code, name) {
   syncSource({ keepDirty: true });
   if (tab) tab.dirty = false;
   renderTabs();
+  scheduleCompile();
 }
 
 // ---------------------------------------------------------------------------
@@ -534,29 +555,24 @@ function currentOptions() {
   return { ...state.options };
 }
 
-function optimize(runRequest) {
+function optimize() {
   if (!state.ready || state.busy) return;
   const source = $('source').value;
   if (!source.trim()) return;
 
+  clearTimeout(autoTimer);
+  autoTimer = null;
   state.busy = true;
   state.pending = false;
   state.solve = {
     tabId: state.activeId,
     source,
     options: optionsSignature(),
-    // Run is a transaction: the worker first rebuilds the minimized kernel
-    // from this exact source, then the driver consumes that fresh artifact.
-    run: runRequest || null,
   };
-  $('foot-note').textContent = runRequest
-    ? 'recompiling the minimized program…' : 'compiling…';
+  renderRunControls();
+  $('foot-note').textContent = 'compiling…';
   state.worker.postMessage({
     type: 'solve', source, options: currentOptions(),
-    // Automatic solves keep `main` out of the scalar Minimized Program. Run
-    // additionally asks the worker to compile the complete unit to wasm and
-    // close its explicit imported-I/O state machine.
-    analyze_main: Boolean(runRequest),
   });
 }
 
@@ -572,15 +588,24 @@ let autoTimer = null;
 // re-enable a Compile button each and none of them knew about the queue.
 function finishBusy() {
   state.busy = false;
+  if (state.pending) { scheduleCompile(); return; }
   renderRunControls();
-  if (state.pending) { state.pending = false; scheduleCompile(); }
 }
 
 function scheduleCompile() {
   clearTimeout(autoTimer);
-  if (!$('source').value.trim()) return;
+  autoTimer = null;
+  if (!$('source').value.trim()) {
+    state.pending = false;
+    renderRunControls();
+    return;
+  }
+  state.pending = true;
+  renderRunControls();
   autoTimer = setTimeout(() => {
-    if (state.busy) { state.pending = true; return; }
+    autoTimer = null;
+    if (state.busy) return;
+    state.pending = false;
     optimize();
   }, AUTO_DELAY);
 }
@@ -620,31 +645,34 @@ function termWrite(text, className) {
 }
 
 function runProgram() {
-  // With a known driver, Run deliberately solves again before executing it.
-  // Automatic compilation is only a preview; execution must use an artifact
-  // rebuilt from the exact source visible when Run was pressed. Without a
-  // known driver, the same control remains an explicit compile request.
+  // Automatic analysis prewarms an exact source snapshot: minimized artifact,
+  // import-only main driver and VM. Run only instantiates that snapshot.
   const tab = activeTab();
-  if (!state.hasMain || (tab && tab.dirty)) {
-    optimize();
-    return;
-  }
-  if (state.busy) return;
+  if (state.busy || state.pending || !state.ready || !tab
+      || tab.dirty || !tab.hasMain || !tab.runReady) return;
   const stdin = $('term-in').value;
-  // With no typed input, keep stdout on the prompt line: an empty echo used
-  // to leave a visually stray `>` above "Hello, world!".
-  termWrite(stdin ? `> ${stdin}\n` : '> ', 'term-echo');
   $('term-in').value = '';
-  optimize({ stdin });
+  state.busy = true;
+  renderRunControls();
+  termWrite(stdin ? `> ${stdin}\n` : '> ', 'term-echo');
+  status('running main through the minimized artifact…');
+  state.worker.postMessage({ type: 'exec', source: tab.source, stdin });
 }
 
 function renderRunControls() {
   const tab = activeTab();
-  const canRun = state.hasMain && tab && !tab.dirty;
+  const canRun = state.hasMain && tab && tab.runReady && !tab.dirty;
   $('term').hidden = !canRun;
-  $('run-label').textContent = canRun ? 'Run' : 'Compile';
+  $('run-label').textContent = 'Run';
   const hasSource = Boolean($('source').value.trim());
-  $('btn-run').disabled = state.busy || !state.ready || !hasSource;
+  $('btn-run').disabled = state.busy || state.pending || !state.ready
+    || !hasSource || !canRun;
+}
+
+function formatElapsed(value) {
+  const elapsed = Math.max(0, Number(value) || 0);
+  if (elapsed < 10) return elapsed.toFixed(2).replace(/\.?0+$/, '');
+  return String(Math.round(elapsed));
 }
 
 function showRunResult(result) {
@@ -654,7 +682,7 @@ function showRunResult(result) {
     return;
   }
   if (result.stdout) termWrite(result.stdout);
-  const elapsed = Math.max(0, Math.round(Number(result.elapsed_ms) || 0));
+  const elapsed = formatElapsed(result.elapsed_ms);
   // Keep the artifact fact, but make completion and elapsed wall time the
   // stable line instead of exposing a process-like exit record for success.
   const via = result.ran
@@ -805,7 +833,14 @@ function onMessage(event) {
 
   if (msg.type === 'progress') { status(msg.message); return; }
   if (msg.type === 'notice') { toast(msg.message, true); return; }
-  if (msg.type === 'ran') { finishBusy(); showRunResult(msg.result); return; }
+  if (msg.type === 'ran') {
+    const tab = activeTab();
+    if (msg.result.stale && tab) tab.runReady = false;
+    finishBusy();
+    showRunResult(msg.result);
+    if (msg.result.stale) scheduleCompile();
+    return;
+  }
 
   if (msg.type === 'ready') {
     state.ready = true;
@@ -839,6 +874,7 @@ function onMessage(event) {
     }
 
     tab.hasMain = Boolean(msg.has_main);
+    tab.runReady = Boolean(msg.run_ready);
     tab.result = msg.result;
     tab.ranWith = request ? request.options : optionsSignature();
     tab.dirty = false;
@@ -878,23 +914,6 @@ function onMessage(event) {
     fillTargets(msg.result);
     renderTakeaway();
     renderRunControls();
-
-    // A Run request is continued only after a successful, non-stale solve.
-    // `solve` removed main before QM and replaced the worker's artifact, so
-    // `execMain` cannot accidentally execute an older minimized program.
-    if (request && request.run) {
-      if (!msg.has_main) {
-        finishBusy();
-        termWrite('the paste defines no main to run\n', 'term-err');
-        status();
-        return;
-      }
-      status('running main through the fresh artifact…');
-      state.worker.postMessage({
-        type: 'exec', source: request.source, stdin: request.run.stdin,
-      });
-      return;
-    }
 
     finishBusy();
     status();

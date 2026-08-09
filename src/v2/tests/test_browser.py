@@ -104,10 +104,15 @@ uint64_t ranks8_qm(uint8_t x)
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
             worker = handle.read()
         self.assertIn("callPython('prepare'", worker)
-        for call in re.findall(r'clang\.(?:assembly|wasm)\(\s*(\w+)', worker):
+        kernel_compile = worker.split('async function compileWithClang')[1]
+        kernel_compile = kernel_compile.split('// Running the paste')[0]
+        for call in re.findall(r'clang\.(?:assembly|wasm)\(\s*(\w+)',
+                               kernel_compile):
             self.assertEqual(call, 'prepared',
                              'clang is being handed %r rather than the '
                              'prepared source' % call)
+        self.assertIn("const driver = callPython('prepare_run'", worker)
+        self.assertIn('clang.wasm(driver', worker)
 
     def test_the_default_compiler_enters_the_core_directly(self):
         with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
@@ -123,6 +128,19 @@ uint64_t ranks8_qm(uint8_t x)
         self.assertIn('WebAssembly.compile(coreBytes)', driver)
         self.assertNotIn("from '@yowasp/clang'", driver)
         self.assertNotIn('bundle.js', driver)
+
+    def test_cold_start_warms_the_independent_wasm_runtimes_in_parallel(self):
+        with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
+            worker = handle.read()
+        boot = worker.split('async function boot(config) {', 1)[1]
+        boot = boot.split('\n}', 1)[0]
+        compiler = boot.index('const compilerWarm = clang.load(progress)')
+        vm = boot.index('const vmWarm = loadVm()')
+        python = boot.index('const pythonWarm = loadPyodide_()')
+        wait = boot.index('await Promise.all([compilerWarm, vmWarm])')
+        self.assertLess(max(compiler, vm, python), wait)
+        self.assertNotIn('await clang.load(progress)', boot[:wait])
+        self.assertNotIn('await loadVm()', boot[:wait])
 
     def test_run_replaces_only_the_selected_function(self):
         source = '''#include <stdint.h>
@@ -267,11 +285,9 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
     def test_run_executes_the_pastes_own_main(self):
         """Same lesson as `prepare`: the fix only counts if it is called.
 
-        Run recompiles the kernel without `main`, then runs the paste's `main`
-        with the terminal beside the source as its stdin and stdout. The
-        explicit solve is required even when automatic compilation produced a
-        preview: execution must consume a fresh artifact for the source that
-        was visible when Run was pressed.
+        Automatic function-level analysis prepares the exact minimized
+        artifact and an import-only main driver. Run reuses that source-keyed
+        snapshot instead of repeating QM or the optional state closure.
         """
         with open(os.path.join(ROOT, 'web', 'worker.js')) as handle:
             worker = handle.read()
@@ -286,8 +302,10 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         # import, answered by the artifact rather than by Clang's own build of
         # it. `tests/test_browser_run.py` drives the whole chain.
         self.assertIn("callPython('run_plan'", worker)
-        self.assertIn('evaluateLoaded', worker)
-        self.assertIn("env[plan.function]", worker)
+        self.assertIn('prepareEvaluator', worker)
+        self.assertIn('env[plan.function] = evaluator.fn', worker)
+        self.assertIn('const runCache = new Map()', worker)
+        self.assertIn('prepareRunSnapshot(request.source)', worker)
         # Every reply from a solve carries whether there was a `main`; the page
         # has no second opinion about what the source contains.
         self.assertEqual(worker.count("has_main: hasMain"),
@@ -299,20 +317,32 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn("msg.type === 'ran'", app)
         self.assertIn("Done. [${elapsed}ms]", app)
         self.assertIn("stdin ? `> ${stdin}\\n` : '> '", app)
-        # There is one context-sensitive control, not separate Run and Compile
-        # buttons, and no value box left to reference.
+        # There is one Run control, not a mode-changing Run/Compile label and
+        # no value box left to reference.
         self.assertNotIn("btn-optimize", app)
-        self.assertIn("canRun ? 'Run' : 'Compile'", app)
+        self.assertIn("$('run-label').textContent = 'Run'", app)
         self.assertIn("tab.hasMain = Boolean(msg.has_main)", app)
+        self.assertIn("tab.runReady = Boolean(msg.run_ready)", app)
         self.assertIn("tab.source !== request.source", app)
-        self.assertIn('if (!state.hasMain || (tab && tab.dirty))', app)
-        self.assertIn('optimize({ stdin });', app)
-        self.assertIn('run: runRequest || null', app)
-        self.assertIn('analyze_main: Boolean(runRequest)', app)
-        self.assertIn("source: request.source, stdin: request.run.stdin", app)
+        self.assertIn('if (state.busy || state.pending || !state.ready || !tab', app)
+        self.assertIn('|| !hasSource || !canRun', app)
+        self.assertIn("type: 'exec', source: tab.source, stdin", app)
+        self.assertNotIn('analyze_main:', app)
+        self.assertNotIn('request.run', app)
         self.assertLess(app.index("type: 'solve', source"),
-                        app.index("type: 'exec', source: request.source"))
+                        app.index("type: 'exec', source: tab.source"))
         self.assertNotIn("run-input", app)
+
+        # Compile latency is not reported as VM latency. The clock starts
+        # after the driver and artifact are prepared.
+        self.assertIn('const runStarted = performance.now()', worker)
+        self.assertIn('prepare_ms: runStarted - prepareStarted', worker)
+        self.assertNotIn('result.elapsed_ms = performance.now() - started', worker)
+
+        with open(os.path.join(ROOT, 'web', 'vm.js')) as handle:
+            vm = handle.read()
+        self.assertIn('vm_prepare_eval', vm)
+        self.assertIn('vm_eval_${input}_${output}', vm)
 
     def test_the_page_compiles_without_being_asked(self):
         with open(os.path.join(ROOT, 'web', 'app.js')) as handle:
@@ -328,6 +358,7 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         # the New tab heading and the + before the examples create a tab.
         self.assertIn('id="btn-run"', html)
         self.assertIn('id="run-label"', html)
+        self.assertIn('id="btn-run" type="button" disabled', html)
         self.assertNotIn('id="btn-examples"', html)
         self.assertIn('aria-label="New tab or example"', html)
         self.assertNotIn('Empty tab', html)
@@ -339,6 +370,8 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn("board.classList.add('is-focused')", app)
         self.assertIn('tabindex="0"', html)
         self.assertIn("$('btn-newtab').addEventListener('click', showExamples)", app)
+        self.assertIn("state.tabs.length > 1 ? '' : 'disabled'", app)
+        self.assertIn("event.key === 'Delete'", app)
         head = html.split('id="card-write"')[1].split('</div>')[0]
         self.assertIn('id="btn-run"', head)
 

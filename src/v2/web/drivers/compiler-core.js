@@ -42,7 +42,9 @@ function config() {
 }
 
 async function fetchBytes(url, label, onProgress, expectedHash = null) {
-  const response = await fetch(url);
+  // Asset URLs include the exact compiler version, so the browser cache is
+  // safe to reuse across visits while a new version naturally gets a new URL.
+  const response = await fetch(url, { cache: 'force-cache' });
   if (!response.ok) throw new Error(`${label}: HTTP ${response.status}`);
   const total = Number(response.headers.get('content-length')) || 0;
   if (!response.body || !onProgress) {
