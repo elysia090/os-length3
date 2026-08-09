@@ -14,6 +14,12 @@ C / C++  →  Clang -O2  →  semantics  →  quotient  →  normalized action
          →  minimum physical representative  →  verification
 ```
 
+The grammar it normalizes into is GF(2)-linear maps, convolutions, lane-local
+steps, gathers, whole-word reductions and a bounded case analysis — so the
+bit-manipulation exercises from CS:APP, MIT 6.172 and Princeton's *Algorithms*
+are in `src/v2/examples/` alongside the lane kernels, and what QM makes of each
+of them is in [`src/v2/README.md`](src/v2/README.md).
+
 ## Contents
 
 | path | what it is |
