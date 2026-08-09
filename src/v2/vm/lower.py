@@ -404,6 +404,9 @@ class Lowering(object):
             return self.negate(one)
         if op == 'SUBR':
             return self.add_words(one, self.negate(two))
+        if op == 'SEXT':
+            return [(one[i] if i < shift else one[shift - 1])
+                    for i in range(WORD)]
         if op == 'CLZ':
             return self.count_leading_zeros(one)
         if op == 'CTZ':

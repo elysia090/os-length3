@@ -138,6 +138,11 @@ def sar(x, s, bits=64):
     return to_signed(x, bits) >> s & mask_of(bits)
 
 
+def sext(x, width, bits=64):
+    """Sign-extend the low `width` bits of `x` to the full word."""
+    return to_signed(x & mask_of(width), width) & mask_of(bits)
+
+
 def smear(x, bits=64):
     """Fill every bit below the highest set one — `x | x>>1 | x>>2 | ...`.
 

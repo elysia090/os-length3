@@ -12,6 +12,20 @@ Two cards: what you paste, and what QM made of it — ready to copy, ready to ru
 Tabs hold one kernel each, with their own source and their own last result. The
 language is read off the paste rather than picked from a menu.
 
+Every example ships with a `main`, and the two halves of a paste go to two
+different places. The minimizer only ever sees the kernel: `main` reads a
+stream rather than a range of inputs, so analysing it would describe the driver
+instead of the function under it. That split is `pipeline.solve`'s, not the
+page's, so the command line and the browser answer the same question about the
+same file. The one control in the source card follows the paste: with a `main`
+it says **Run** and executes it, with the artifact answering every call the
+driver makes; without one it says **Compile** and does now what typing would
+have done after the pause.
+
+The shipped drivers all have the same shape — read whitespace-separated hex
+words, print what the kernel makes of each — so any example can be tried on
+values you choose, whatever its input width.
+
 The minimized program is viewable as any of the machines it lowers to, or as
 the codec: one canonical artifact, `pack(code(z))`, shown as the bytes it is —
 with the fields of the code named — and then the listing those bytes decode to.
@@ -119,9 +133,12 @@ how far that is from what the same function costs written properly.
 
 ## The curriculum kernels
 
-`examples/` carries the bit-manipulation exercises from CMU's CS:APP Data Lab,
-MIT 6.172 and Princeton's *Algorithms* 4/e, each stated the obvious way. They
-are there because they are the ones that used to fall through the grammar: a
+`examples/` carries bit-manipulation exercises from the CS:APP Data Lab (CMU
+15-213), the Bit Hacks lecture of MIT 6.172 *Performance Engineering of
+Software Systems*, Stanford's CS107 *Computer Organization and Systems*, and
+sections 5.1 and 5.3 of Sedgewick and Wayne's *Algorithms*, Fourth Edition —
+each stated the obvious way, and each naming its source in the file. They are
+there because they are the ones that used to fall through the grammar: a
 comparison between two words, a count, a case analysis on a float's exponent.
 
 | kernel | QM | |
@@ -131,10 +148,10 @@ comparison between two words, a count, a case analysis on a float's exponent.
 | `popcount_u64` | 1 | `POPCNT` |
 | `rabin_karp_roll` | 4 | one reduction of the concatenated word |
 | `how_many_bits_i32` | 8 | sign fold, then leading zeros |
-| `is_less_or_equal_i32` | 10 | `SPLIT` on `b - a`, two constant pieces |
-| `min_i32` | 11 | `SPLIT` on `a - b`, a piece per half |
+| `is_less_or_equal_i32` | 9 | `SPLIT` on `b - a`, two constant pieces |
+| `min_i32` | 10 | `SPLIT` on `a - b`, a piece per half |
 | `mod_add_u32` | 9 | `SPLIT` on `a + b`: the conditional subtract |
-| `float_power2_bits` | 11 | `SPLIT` on the word read signed |
+| `float_power2_bits` | 17 | `SPLIT` on the word read signed, denormals and all |
 | `float_scale2_bits` | 24 | `SPLIT` on the magnitude, four pieces |
 | `round_up_pow2_u64` | 14 | `smear(x - 1) + 1` |
 | `max_u8x8` | 43 | the halving tournament, branch-free |
@@ -351,11 +368,20 @@ still get the answer the C would.
 fits a sign-extended 32-bit immediate is one, rather than a `movabsq` into a
 scratch register and a second instruction to use it; a value whose last reader
 is the current instruction is overwritten in place, which removes the `movq` in
-front of nearly every operation. `float_power2_bits` was twenty-nine lines of
-assembly and is now seventeen for the same eleven instructions. None of that
-changes the program, so the check is that the reader still evaluates it to the
-same function — and that a real assembler accepts it, which
-`tests/test_normalize.py` asks it to.
+front of nearly every operation. None of that changes the program, so the check
+is that the reader still evaluates it to the same function — and that a real
+assembler accepts it, which `tests/test_normalize.py` asks it to.
+
+**Fuzzing is where the properties without a named case get checked.**
+`tests/test_fuzz.py` builds sequences out of the instruction set at random and
+asks the four things that must hold whatever it got: normalizing does not
+change the function, the known-bits analysis never rules out a bit that
+appears, each of the three emitters reads back as the same function, and a
+solved kernel agrees with its lowering on every target. It is deterministic —
+a fixed seed, printed in every message — and `QM_FUZZ=2000` runs it longer. It
+has already earned its place: `shrl $33` is a shift by *one*, because a 32-bit
+shift takes its count modulo 32, so narrowing a wide shift to the short form
+was quietly wrong until a random `CTZ ; SHR 33` found it.
 
 **A comparison between words is a different class from one within a lane.**
 `lt_spread8` asks the same question about eight bytes at once and answers in

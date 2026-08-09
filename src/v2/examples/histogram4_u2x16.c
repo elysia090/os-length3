@@ -1,12 +1,10 @@
 #include <stdint.h>
 
-/* Princeton 4/e, key-indexed counting — the counting pass on its own: sixteen
- * two-bit keys, and the four counts that come out of them, one per byte.
+/* The counting pass of key-indexed counting on its own -- section 5.1 of
+ * Sedgewick and Wayne's Algorithms, Fourth Edition.
  *
- * Four independent counts of one word.  Each is a lane predicate and a
- * population count, which the grammar has; what it does not have is a way to
- * say "and these four answers go in these four fields", so an abstract program
- * is still a chain and this is still out of reach. */
+ * Sixteen two-bit keys in one word, and the four counts they produce, packed
+ * one per byte. Four independent answers in four fields of one result. */
 uint32_t histogram4_u2x16(uint32_t v)
 {
     uint32_t out = 0;
@@ -14,4 +12,29 @@ uint32_t histogram4_u2x16(uint32_t v)
     for (unsigned i = 0; i < 16; ++i)
         out += (uint32_t)1 << (8 * ((v >> (2 * i)) & 3u));
     return out;
+}
+
+/* Reads whitespace-separated hex words from the terminal and prints what the
+ * kernel makes of each one. */
+int main(void)
+{
+    uint64_t x = 0;
+    int c, seen = 0;
+
+    while (1) {
+        c = getchar();
+        if (c >= '0' && c <= '9')      { x = x * 16u + (uint64_t)(c - '0');      seen = 1; }
+        else if (c >= 'a' && c <= 'f') { x = x * 16u + (uint64_t)(c - 'a' + 10); seen = 1; }
+        else if (c >= 'A' && c <= 'F') { x = x * 16u + (uint64_t)(c - 'A' + 10); seen = 1; }
+        else {
+            if (seen) {
+                print_hex64((uint64_t)histogram4_u2x16((uint32_t)x));
+                putchar('\n');
+            }
+            x = 0;
+            seen = 0;
+            if (c < 0) break;
+        }
+    }
+    return 0;
 }
