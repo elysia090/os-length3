@@ -3,10 +3,12 @@
 
     python tools/qm_compiler_wasm.py llvm.core.wasm --out compiler.qm.wasm
 
-The tool never models WASI as a constant. It substitutes and normalizes only
-closed straight-line integer functions, preserving independent parameters as
-independent SSA inputs, then rewrites only strict improvements. Every stateful
-or host-observing body stays byte-for-byte intact.
+The tool never models WASI as a constant. Pure straight-line integer functions
+are rewritten only on a strict typed-Wasm work and byte improvement. Stateful
+straight-line functions are lowered through the ordinary persistent-cut and
+physical state-step path, but typed-Wasm re-encoding is diagnostic only: the
+physical page is the optimized form and the module body remains byte-for-byte
+intact. Host-observing bodies also remain intact.
 """
 
 import argparse
@@ -49,12 +51,30 @@ def main(argv=None):
     if args.json:
         print(json.dumps(public, indent=2))
     else:
-        print('%s: %d functions, %d pure integer expressions, %d replaced'
+        print('%s: %d functions, %d pure and %d state integer expressions, '
+              '%d replaced'
               % (os.path.basename(args.module), public['functions'],
-                 public['decoded_pure_integer_expressions'], public['replaced']))
+                 public['decoded_pure_integer_expressions'],
+                 public['decoded_state_integer_expressions'],
+                 public['replaced']))
         print('  %d -> %d bytes (%d body bytes removed)'
               % (public['module_bytes'], public['output_bytes'],
                  public['saved_body_bytes']))
+        print('  %d dominating memory loads substituted'
+              % public['forwarded_memory_loads'])
+        print('  state pages: %d physical operations total; %d have no '
+              'typed-wasm diagnostic spelling'
+              % (public['state_physical_work'],
+                 public['unencodable_state_integer_expressions']))
+        print('  reencodable state work %d physical -> %d typed wasm '
+              '(%d publication/materialization operations)'
+              % (public['reencodable_state_physical_work'],
+                 public['state_reencoded_work'],
+                 public['reencoded_materializations']))
+        if public['rejected_typed_wasm_improvements']:
+            print('  %d typed-wasm state rewrite(s) rejected; physical '
+                  'state pages are the sole execution form'
+                  % public['rejected_typed_wasm_improvements'])
         for item in public['replacements'][:20]:
             print('  function %d: %d -> %d bytes, %d -> %d wasm ops'
                   % (item['function_index'], item['body_bytes'][0],

@@ -3,13 +3,14 @@
 
     python3 tools/build_site.py
 
-The page needs three things next to each other, because the worker installs the
+The page needs four trees next to each other, because workers install the
 Python engine by fetching the files named in `web/qm-manifest.json`:
 
     dist/index.html      the shell, so the bare domain lands on the tool
     dist/web/            app.js, worker.js, clang.js, vm.js, vm.wasm, styles
-    dist/qm/             the minimizer, fetched at runtime by the worker
-    dist/vm/             the machine it normalizes onto, fetched the same way
+    dist/qm/             the minimizer, fetched at runtime by workers
+    dist/vm/             the machine it normalizes onto
+    dist/kernel/         Linux state machine, fetched only by linux-worker
     dist/web/examples.json  the generated kernels the Examples dialog offers
 
 `index.html` is copied to the root with its two asset paths rewritten, so the
@@ -30,7 +31,7 @@ DIST = os.path.join(ROOT, 'dist')
 # Every package the manifest can name has to be here, or the worker
 # installs an engine with a hole in it.  The check at the end of `build`
 # is what makes that a build failure rather than a runtime one.
-TREES = ('qm', 'vm', 'web')
+TREES = ('qm', 'vm', 'kernel', 'web')
 
 
 def _ignore(directory, names):
@@ -63,18 +64,21 @@ def build(dist=DIST):
     shutil.copy(os.path.join(ROOT, 'web', '_headers'),
                 os.path.join(dist, '_headers'))
 
-    with open(os.path.join(ROOT, 'web', 'qm-manifest.json')) as handle:
-        manifest = json.load(handle)
+    manifests = []
+    for name in ('qm-manifest.json', 'kernel-manifest.json'):
+        with open(os.path.join(ROOT, 'web', name)) as handle:
+            manifests.append(json.load(handle))
 
-    missing = [rel for rel in manifest['files']
+    missing = [rel for manifest in manifests for rel in manifest['files']
                if not os.path.exists(os.path.join(dist, rel))]
     if missing:
         raise SystemExit('manifest lists files the build does not contain: %s'
                          % ', '.join(missing))
 
     count = sum(len(files) for _r, _d, files in os.walk(dist))
-    print('built %s (%d files, %d engine modules)'
-          % (dist, count, len(manifest['files'])))
+    print('built %s (%d files, %d ordinary + %d Linux modules)'
+          % (dist, count, len(manifests[0]['files']),
+             len(manifests[1]['files'])))
     return dist
 
 

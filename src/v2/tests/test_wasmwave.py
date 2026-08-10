@@ -335,9 +335,9 @@ class TestWaveExecutor(unittest.TestCase):
     def test_state_page_carries_only_changed_local_coordinates(self):
         # One parameter plus 64 declared locals; only local 64 changes.
         body = (b'\x01\x40\x7f\x20\x00\x41\x01\x6a\x21\x40'
-                b'\x20\x00\x0b')
+                b'\x3f\x00\x1a\x20\x00\x0b')
         decoded = decode_module(module(
-            body, kind=0x7f, parameter_count=1))
+            body, kind=0x7f, parameter_count=1, memory=True))
         initial = start_state(decoded, 'f', (7,))
         plan = WaveExecutor(decoded).plan(initial.frames[-1])
         mapped = unpack(pack(plan))
@@ -393,10 +393,12 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertTrue(final.halted)
         self.assertEqual(report.barriers, 1)  # function end
 
-    def test_load_store_call_and_branches_are_ordered_barriers(self):
-        for op in ('i32.load', 'i64.store', 'call', 'call_indirect',
-                   'br', 'br_if', 'br_table', 'return', 'if', 'loop', 'end',
-                   'global.get', 'memory.grow'):
+    def test_only_observable_machine_operations_are_barriers(self):
+        self.assertFalse(is_barrier('i32.load'))
+        self.assertFalse(is_barrier('i64.store'))
+        for op in ('call', 'call_indirect', 'br', 'br_if', 'br_table',
+                   'return', 'if', 'loop', 'end', 'global.get',
+                   'memory.grow'):
             with self.subTest(op=op):
                 self.assertTrue(is_barrier(op))
 
@@ -408,8 +410,9 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(final.result, ((9 & 255) + (9 ^ 0x55),))
 
     def test_internal_control_and_memory_do_not_seal_full_state(self):
-        # block { drop(load32(0)); } return 7. The load remains an ordered
-        # barrier, but no host can observe the frame between these operations.
+        # block { drop(load32(0)); } return 7. The load remains trap-sensitive
+        # inside the physical cut, but no host can observe an intermediate
+        # frame or memory version.
         body = (b'\x00\x02\x40\x41\x00\x28\x02\x00\x1a\x0b'
                 b'\x41\x07\x0b')
         decoded = decode_module(module(body, kind=0x7f, memory=True))
@@ -426,6 +429,67 @@ class TestWaveExecutor(unittest.TestCase):
             + layout['avoided_state_materializations'],
             report.slices + report.barriers)
 
+    def test_stores_are_forwarded_in_byte_ssa_until_the_external_cut(self):
+        # store32(0, 1); drop(load32(0)); store32(0, 2);
+        # drop(load32(0)); return load32(0).  The second store invalidates the
+        # old load, then the final load observes the new version.
+        body = (b'\x00\x41\x00\x41\x01\x36\x02\x00'
+                b'\x41\x00\x28\x02\x00\x1a'
+                b'\x41\x00\x41\x02\x36\x02\x00'
+                b'\x41\x00\x28\x02\x00\x1a'
+                b'\x41\x00\x28\x02\x00\x0b')
+        decoded = decode_module(module(body, kind=0x7f, memory=True))
+        executor = WaveExecutor(decoded)
+        final = executor.run(start_state(decoded, 'f', (0,)))
+
+        self.assertEqual(final.result, (2,))
+        self.assertEqual(decoded.memory.read(0, 4), bytes(4))
+        self.assertEqual(final.memory.read(0, 4), b'\x02\x00\x00\x00')
+        layout = executor.normalization_layout()
+        self.assertEqual(layout['memory_ssa_stores'], 2)
+        self.assertEqual(layout['memory_ssa_loads'], 0)
+        self.assertEqual(layout['memory_ssa_load_bytes'], 0)
+        self.assertEqual(layout['memory_ssa_store_bytes'], 8)
+        self.assertEqual(layout['memory_final_store_bytes'], 4)
+        self.assertEqual(layout['memory_store_segments'], 1)
+        self.assertEqual(layout['memory_forwarded_loads'], 0)
+        self.assertEqual(layout['memory_source_bytes_loaded'], 0)
+        self.assertEqual(layout['qm_forwarded_memory_loads'], 3)
+        self.assertEqual(layout['memory_state_materializations'], 1)
+        self.assertEqual(layout['avoided_memory_state_materializations'], 1)
+        self.assertEqual(layout['memory_pages_materialized'], 1)
+        self.assertEqual(layout['memory_overwritten_bytes'], 4)
+
+    def test_memory_c_loads_are_substituted_into_one_physical_cut(self):
+        # Clang -O2 for corpus/physical-array/memory.c: store x+1, then load
+        # the same dynamic coordinate twice and add the observations.
+        body = (b'\x01\x01\x7f\x20\x00\x41\x07\x71\x41\x02\x74\x22\x01'
+                b'\x20\x00\x41\x01\x6a\x36\x02\x80\x08'
+                b'\x20\x01\x28\x02\x80\x08'
+                b'\x20\x01\x28\x02\x80\x08\x6a\x0b')
+        decoded = decode_module(module(
+            body, kind=0x7f, parameter_count=1, memory=True))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (5,))
+        plan = executor.plan(initial.frames[-1])
+
+        self.assertEqual(plan.instructions, 15)
+        self.assertEqual(plan.waves.work, 4)
+        self.assertEqual(plan.waves.span, 2)
+        self.assertEqual(sum(node.op.startswith('memory.')
+                             and '.load' in node.op
+                             for node in plan.nodes), 0)
+        self.assertEqual(sum(node.op.startswith('memory.')
+                             and '.store' in node.op
+                             for node in plan.nodes), 1)
+
+        final = executor.run(initial)
+        self.assertEqual(final.result, (12,))
+        self.assertEqual(final.memory.read(1024 + 5 * 4, 4),
+                         b'\x06\x00\x00\x00')
+        self.assertEqual(
+            executor.normalization_layout()['qm_forwarded_memory_loads'], 2)
+
     def test_shipped_vm_wasm_runs_through_pure_slices_and_barriers(self):
         with open('web/vm.wasm', 'rb') as handle:
             decoded = decode_module(handle.read())
@@ -441,7 +505,7 @@ class TestWaveExecutor(unittest.TestCase):
                  if entry is not None and entry.mapped.work]
         self.assertTrue(plans)
         self.assertTrue(all(
-            node.op.startswith(('lane32.', 'lane64.'))
+            node.op.startswith(('lane32.', 'lane64.', 'memory.'))
             for plan in plans for node in plan.nodes))
         self.assertGreaterEqual(
             executor.normalization_layout()['removed_work'], 1)

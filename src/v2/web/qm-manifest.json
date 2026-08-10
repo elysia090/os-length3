@@ -25,6 +25,7 @@
     "qm/guards.py",
     "qm/isa.py",
     "qm/laneops.py",
+    "qm/memorycut.py",
     "qm/observer.py",
     "qm/pagearchive.py",
     "qm/pipeline.py",

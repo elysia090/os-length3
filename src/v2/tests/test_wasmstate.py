@@ -226,6 +226,21 @@ class TestPersistentLinearMemory(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'page aligned'):
             changed.discard(1, 256)
 
+    def test_multiple_pages_commit_in_one_directory_update(self):
+        original = PagedMemory(b'', 3 * 65536)
+        first = bytearray(256)
+        first[7] = 41
+        last = bytearray(256)
+        last[250] = 99
+
+        changed = original.replace_pages(((0, first), (511, last)))
+
+        self.assertEqual(changed.read(7, 1), b')')
+        self.assertEqual(changed.read(511 * 256 + 250, 1), b'c')
+        self.assertEqual([index for index, _page in changed.pages], [0, 511])
+        self.assertIs(changed.replace_pages(((0, first), (511, last))),
+                      changed)
+
 
 class TestExplicitImportedResources(unittest.TestCase):
     def test_imported_memory_table_and_global_are_bound_as_snapshots(self):

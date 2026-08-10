@@ -20,6 +20,7 @@ from qm.clang import NATIVE, read_signature
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(ROOT, 'web', 'qm-manifest.json')
+KERNEL_MANIFEST = os.path.join(ROOT, 'web', 'kernel-manifest.json')
 
 SOURCE = '''#include <stdint.h>
 uint64_t ranks8(uint8_t m)
@@ -858,11 +859,18 @@ class TestManifest(unittest.TestCase):
                          'web/qm-manifest.json is stale; run '
                          'python3 tools/gen_manifest.py')
 
+        with open(KERNEL_MANIFEST) as handle:
+            kernel = json.load(handle)
+        self.assertEqual(kernel, gen_manifest.build_kernel(),
+                         'web/kernel-manifest.json is stale; run '
+                         'python3 tools/gen_manifest.py')
+
     def test_every_listed_file_exists(self):
-        with open(MANIFEST) as handle:
-            stored = json.load(handle)
-        for rel in stored['files']:
-            self.assertTrue(os.path.exists(os.path.join(ROOT, rel)), rel)
+        for path in (MANIFEST, KERNEL_MANIFEST):
+            with open(path) as handle:
+                stored = json.load(handle)
+            for rel in stored['files']:
+                self.assertTrue(os.path.exists(os.path.join(ROOT, rel)), rel)
 
     def test_the_deployed_site_contains_what_the_manifest_names(self):
         """Being on disk is not the same as being deployed.
@@ -880,15 +888,17 @@ class TestManifest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, 'dist')
             build_site.build(out)
-            with open(MANIFEST) as handle:
-                stored = json.load(handle)
-            for rel in stored['files']:
-                self.assertTrue(os.path.exists(os.path.join(out, rel)),
-                                '%s is in the manifest and not in the build'
-                                % rel)
+            for path in (MANIFEST, KERNEL_MANIFEST):
+                with open(path) as handle:
+                    stored = json.load(handle)
+                for rel in stored['files']:
+                    self.assertTrue(os.path.exists(os.path.join(out, rel)),
+                                    '%s is in the manifest and not in the build'
+                                    % rel)
             # And the files the page fetches directly rather than through the
             # manifest.
             for rel in ('web/vm.wasm', 'web/vm.js', 'web/qm-manifest.json',
+                        'web/kernel-manifest.json', 'web/linux-worker.js',
                         'web/examples.json', 'index.html'):
                 self.assertTrue(os.path.exists(os.path.join(out, rel)), rel)
 

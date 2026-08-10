@@ -17,7 +17,7 @@ any layer can be read on its own.
    wasmphysical              wasm code/state coordinates -> physical arrays
    steppage   scalarpage      mapped state-step / scalar-SSA physical pages
    pagearchive                coordinate directory over disposable pages
-   wasmbinary                 large wasm -> closed function-local QM
+   wasmbinary                 large wasm -> scalar rewrite + state-page audit
    frontend                   registry: clang · precompiled · cfront · asm
 4  solvers   isa              Stage-2 search; ISA profiles and lowering
    recognize corpus
@@ -177,14 +177,19 @@ Ordinary fallthrough is the affine `rank + 1` map inside a segment and stores
 no edge. A second view groups equal instruction shapes into contiguous spans,
 with an inverse position map back to sequential ranks. Locals and stack slots
 use `frame_base + index`; linear memory uses `(address // 256, address % 256)`.
+Each memory page carries the final value array plus a 256-bit written domain,
+so a load selects the newest byte coordinate without a hash or dense history.
 This is layout metadata for compiling a state step, not a competing evaluator.
-Pure stack slices are first substituted into SSA. Their physical execution
-domain is `(dependency wave, lane)`, not source instruction order:
+Stack, local, arithmetic and non-atomic memory operations are first substituted
+into SSA. Their physical execution domain is `(dependency wave, lane)`, not
+source instruction order:
 `schedule_sequence` assigns a node to one plus the maximum depth of its inputs.
 Every value in one wave reads only earlier waves and writes a distinct SSA
 slot, so it has no lane order, atomic update, or reduction. Work is the number
-of live nodes and span is the number of waves. Memory effects, calls, and
-control transfers end a slice and form explicit barriers between waves.
+of live nodes and span is the number of waves. Exact store-to-load forwarding
+removes dominated loads during construction. Calls, atomics, host operations,
+faults, and observable control transfers end a slice and form explicit
+barriers between state-step pages.
 
 The execution cache uses those dense `(function, pc)` coordinates directly.
 One coordinate entry owns one mapped page and its terminal executable
@@ -300,11 +305,14 @@ does not first build a second bytes object for every column. Locals use a
 sparse patch: the header carries the logical local extent, while
 `local_indices`, `local_tags`, and `local_values` contain only coordinates whose
 output differs from the identity projection. A diagnostic decoder can rebuild
-the dense local tuple, but the runtime reads the sparse patch directly. On the
-18-event LKL boot sample this changed 1,703 pages from 5,360,464 mapped bytes to
-361,176 bytes. There were 1,607 changed local coordinates across those pages,
-1,256 zero-work projection pages, and no resident scalar plans. Only 82 of
-20,092 function bodies (34,260 of 7,411,642 encoded body bytes) were decoded.
+the dense local tuple, but the runtime reads the sparse patch directly. The
+same rule now covers memory: final page bytes are sealed in one batch and only
+maximal adjacent written segments are published. On the current 18-event LKL
+boot sample the combined physical route reaches 631 pages / 218,840 mapped
+bytes. Of 185,727 requested load bytes, only 33,243 reach the older memory;
+35,671 store bytes collapse to 9,331 final byte coordinates in 207 segments.
+Only 82 of 20,092 function bodies (34,260 of 7,411,642 encoded body bytes) are
+decoded.
 
 ### Persistent cuts and residual state
 
@@ -328,27 +336,27 @@ columns. Function and pc select the page but do not justify retaining a second
 decoded expression graph. A barrier coordinate is not stored as a negative
 physical page because it has no pure residual payload.
 
-This also identifies the runtime boundary precisely. Load, store, direct call
-and branch remain ordered operations, but only a host/import event, timeslice,
-fault, interrupt, top-level return or quantum limit is a persistent cut. The
-state-step executor carries frame coordinates, control stack, globals and
-touched sparse-memory pages as one transient residual across the internal
-operations. It seals a complete immutable `MachineState` only at the persistent
-cut. Atomic memory operations and unresolved or imported calls remain external
+This also identifies the runtime boundary precisely. Non-atomic load/store,
+direct call and branch remain ordered machine operations, but only a
+host/import event, timeslice, fault, interrupt, top-level return or quantum
+limit is a persistent cut. Ordinary loads/stores are physical nodes in the
+same state-step page. A per-page written mask chooses between the newest SSA
+byte and the older page; a complete mask makes even commit independent of the
+source page. The executor carries frame coordinates, control stack, globals
+and touched byte domains as one transient residual across internal operations.
+It seals a complete immutable `MachineState` only at the persistent cut.
+Atomic memory operations and unresolved or imported calls remain external
 barriers. This is not ordinary input memoization and does not require
 recompiling a hot block for each value: it removes state distinctions that the
 future host ABI cannot observe.
 
 The cut count is a reported invariant rather than a hidden fast path. On the
-18-event LKL sample, 154,426 ordered slice/barrier transitions produced 89
-complete states; 154,337 internal states (99.94%) were carried without full
-frame materialization. Mapped code remained 1,703 pages / 361,176 bytes and
-normalized work/span remained 41,457 / 40,848, so this reduction did not move
-work into an unmeasured route. On the 21-byte ECHO artifact, 2,959 transitions
-produce six states and carry 2,953 internally. Once its 204 physical pages
-have been reached, a new executor over the same decoded module loads it in
-about 0.013 seconds on the measurement host, down from about 0.105--0.13
-seconds before internal-cut fusion and physical-page reuse.
+current 18-event read-only-rootfs LKL sample, 31,051 ordered transitions
+produce 95 complete states and carry 30,956 internally. Mapped code is 631
+pages / 218,840 bytes. Reported work/span is 106,527 / 74,373 and now includes
+memory nodes, so it must not be compared directly with older arithmetic-only
+counters. On the ECHO artifact, a new executor over the 127 reached pages loads
+in about 0.0076 seconds on the measurement host.
 
 Residual construction is itself SSA. Renaming produces no provisional wave
 layout. One canonical cut pass first owns backward liveness, physical CSE and
@@ -359,8 +367,9 @@ work and normalizes the dominant root first. It never reopens the pre-cut Wasm
 SSA. After each candidate it CSEs and schedules the result back into the same
 cut. Because two residuals may share a cheaper prefix, a candidate is retained
 only when neither work nor span regresses against the previously selected
-physical DAG. On the same LKL sample this moved normalized work from 41,587 to
-41,457 and span from 40,926 to 40,848 while retaining one execution route.
+physical DAG. On the current LKL sample this moves normalized work from
+106,675 to 106,527 while retaining one execution route; that count includes
+memory nodes.
 
 `qm.stepnormalize` closes the remaining scalar gap after the persistent cut is
 canonical and before its one page is encoded. A future-visible backward slice
@@ -369,9 +378,10 @@ with one external stack/local coordinate, one integer width, and no trap is tran
 the scalar frontend. `isa.normalize` includes the source form in its candidate
 set, so the canonical winner is always installed even when its `(span, work,
 L(z), rank)` ties the input. The selected physical operations and surrounding
-frame coordinates are encoded together in one state-step page; there is no raw-Wasm
-arithmetic page beside it and no parallel scalar execution page. Loads, stores,
-calls, and control transfers still end the block and use the existing process
+frame coordinates are encoded together in one state-step page; there is no
+raw-Wasm arithmetic page beside it and no parallel scalar execution page.
+Non-atomic loads/stores use the same physical page and memory-version edges;
+calls, atomics, host observations and control transfers use the existing
 barrier ABI. A later x86 decoder must feed that same single state-step boundary
 rather than introducing an x86-only runtime artifact.
 
@@ -400,19 +410,17 @@ target. The direct form is selected only when the emitted affine value is
 exactly `(base,step)=(0,1)`; any unproved observer continues to use the one
 transactional VM semantics.
 
-On the 21-byte ECHO artifact, one `vm_load` fell from 2.10 seconds to about
-0.17 seconds when all 204 reached state-step pages must be constructed for the
-first time. A subsequent fresh executor over that decoded module takes about
-0.013 seconds because it reuses those immutable QM pages. Source dynamic work
-fell from 60,153 to 2,400 and normalized work from 52,450 to 1,671. The codec
-reader now scans a zero prefix and value tail by touched byte chunks rather
-than reloading the same byte for every bit; this reduced the load sample from
-10,638 to 8,372 Wasm instructions and from 1,893 to 1,673 internal barriers.
-The compiled module is 8,843 bytes. The affine coefficient arrays are
-zero-initialized logical memory inside the existing 32 MiB reservation and
-only reached coordinates are touched. Under the physical objective,
-persistent-cut count, work and span are measured before accepting an
-artifact-size tradeoff.
+On the 21-byte ECHO artifact, one `vm_load` now takes about 0.089 seconds when
+all 127 reached state-step pages must be constructed for the first time. A
+subsequent fresh executor over that decoded module takes about 0.0076 seconds
+because it reuses those immutable QM pages. The load sample contains 8,372
+Wasm instructions. Its memory cut turns 1,484 requested load bytes into 259
+source bytes and 1,242 store bytes into 337 final coordinates in 15 segments;
+905 overwritten store bytes never materialize. The shipped compiled module is
+8,839 bytes. The affine coefficient arrays are zero-initialized logical memory inside
+the existing 32 MiB reservation and only reached coordinates are touched.
+Under the physical objective, persistent-cut count, work and span are measured
+before accepting an artifact-size tradeoff.
 
 The physical executor is also a residual of the module, not part of the VM's
 semantic state. The decoded module owns each reached immutable mapped page and
@@ -428,14 +436,34 @@ globals and cell coordinates that later `feed/read` calls can observe. Thus
 page reuse removes reconstruction work without inventing an additional VM
 state distinction.
 
-Large tool modules use a narrower boundary. `qm.wasmbinary` indexes the code
-section without expanding a complete module into Python objects, then admits
-only integer functions whose bodies contain no calls, memory, globals, traps,
-or control flow. Their stack expressions become SSA, undergo whole-expression
-substitution and normalization, and are re-encoded only when both wasm work and
-body bytes decrease. This is the path used for YoWASP's `llvm.core.wasm`;
-WASI arguments, clocks, random input and virtual files remain explicit host
-state and are never treated as constants.
+`qm.wasmbinary` audits large tool modules without expanding a complete code
+section into Python objects. Pure straight-line integer functions may be
+re-encoded only when both typed-Wasm work and body bytes decrease. Stateful
+straight-line functions enter the same persistent-cut, physical-SSA and
+state-step normalization used by the machine runtime. Their typed-Wasm
+re-encoding is measurement only and is never installed: publishing it would
+materialize physical coordinates again and create a second state execution
+route. WASI arguments, clocks, random input and virtual files remain explicit
+host state and are never treated as constants.
+
+The distinction is measurable. In the pinned YoWASP compiler core, 5,124 pure
+functions and 2,605 stateful functions are admitted. The stateful pages contain
+14,181 physical operations. Of those functions, 1,952 also have a direct
+typed-Wasm diagnostic spelling; their 8,253 physical operations require 8,305
+typed-Wasm operations, exposing 52 publication/materialization operations.
+The other 653 physical pages do not acquire a typed-Wasm spelling merely to be
+counted. No stateful replacement is installed. The shipped `vm.wasm` similarly
+needs 15 typed operations for 13 physical operations. These files do not
+shrink merely because the optimizer can describe a smaller state step: a
+native Wasm engine cannot consume that physical page.
+
+`corpus/physical-array/memory.c` isolates the same boundary. Clang emits 15
+Wasm operations containing one store and two same-address loads. The canonical
+state cut uses four physical nodes with span two: both loads disappear and the
+scaled address becomes the store's physical coordinate. Expressing that result
+again as typed Wasm needs five operations, so even the smaller typed body is
+rejected. The optimized state representation is the four-node page, not a
+second Wasm body beside it.
 
 The browser enters that core directly, but only inside `compile-worker.js`.
 `web/drivers/compiler-core.js` lazily fetches the version-pinned compiler module
@@ -446,8 +474,22 @@ instances of the same multi-call core execute those steps. The generated
 package wrapper and the three component adapters do not participate. The
 Worker returns an exact-sized compiled wasm buffer and can then be terminated
 with the LLVM memories and resource filesystem still inside it. The compiler
-artifact URL is configurable, so a normalized and QM-processed `compiler.wasm`
-can replace the raw upstream core without changing the frontend contract.
+artifact URL is configurable, so pure scalar rewrites can replace the raw
+upstream core without changing the frontend contract. Stateful QM reductions
+require the Worker to consume the state-step page archive directly; feeding a
+rewritten module back to native `WebAssembly.instantiate` is the known bypass
+and is not counted as a physical reduction.
+
+The Linux browser route is separate from that compiler/oracle route.
+`web/linux-worker.js` installs `kernel.browser` only in a disposable Worker,
+decodes the compact LKL module, and retains the existing `LinuxMachine` and
+`WaveExecutor`. It never instantiates `linux.wasm` in the native browser Wasm
+engine. Rootfs bytes remain in a Blob or an HTTP range source; a block fault
+fetches exactly one 4 KiB page and answers the existing `block_read` event.
+Kernel initialization, read-only root mounting, and `/init` probing are staged
+over the same retained machine state. Worker termination is the residency
+boundary, so the decoded kernel, linear memory, clean block pages and derived
+physical pages are released together.
 
 ## The frontend boundary
 

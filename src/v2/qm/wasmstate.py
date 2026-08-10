@@ -137,6 +137,18 @@ class PagedMemory(object):
             raw += bytes(MEMORY_PAGE - len(raw))
         return raw
 
+    def _page(self, index):
+        """Return one physical page through direct region/span coordinates."""
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        if index < 0 or index >= page_count:
+            raise WasmStateError('wasm memory page is out of bounds')
+        span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+        region_index, span_slot = divmod(span_index, MEMORY_REGION_SPANS)
+        region = self._regions[region_index]
+        span = None if region is None else region[span_slot]
+        page = None if span is None else span[slot]
+        return self._base_page(index) if page is None else page
+
     def read(self, address, size):
         if address < 0 or size < 0 or address + size > self.length:
             raise WasmStateError('wasm memory access is out of bounds')
@@ -147,17 +159,54 @@ class PagedMemory(object):
         while address < end:
             index, offset = divmod(address, MEMORY_PAGE)
             count = min(end - address, MEMORY_PAGE - offset)
-            span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
-            region_index, span_slot = divmod(span_index,
-                                             MEMORY_REGION_SPANS)
-            region = self._regions[region_index]
-            span = None if region is None else region[span_slot]
-            page = None if span is None else span[slot]
-            if page is None:
-                page = self._base_page(index)
+            page = self._page(index)
             out.extend(page[offset:offset + count])
             address += count
         return bytes(out)
+
+    def replace_pages(self, pages):
+        """Commit complete page values in one copy-on-write directory pass."""
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        regions = list(self._regions)
+        changed_regions = {}
+        changed_spans = {}
+        changed = False
+        for raw_index, raw_page in pages:
+            index, page = int(raw_index), bytes(raw_page)
+            if index < 0 or index >= page_count:
+                raise ValueError('changed memory page is outside memory')
+            if len(page) != MEMORY_PAGE:
+                raise ValueError('changed memory page has the wrong size')
+            span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+            region_index, span_slot = divmod(
+                span_index, MEMORY_REGION_SPANS)
+            region = changed_regions.get(region_index)
+            if region is None:
+                old_region = regions[region_index]
+                region = ([None] * MEMORY_REGION_SPANS
+                          if old_region is None else list(old_region))
+            key = (region_index, span_slot)
+            span = changed_spans.get(key)
+            if span is None:
+                old_span = region[span_slot]
+                span = ([None] * MEMORY_SPAN_PAGES if old_span is None
+                        else list(old_span))
+            replacement = None if page == self._base_page(index) else page
+            if span[slot] == replacement:
+                continue
+            changed = True
+            changed_regions[region_index] = region
+            changed_spans[key] = span
+            span[slot] = replacement
+        if not changed:
+            return self
+        for (region_index, span_slot), span in changed_spans.items():
+            changed_regions[region_index][span_slot] = tuple(span) if any(
+                page is not None for page in span) else None
+        for region_index, region in changed_regions.items():
+            regions[region_index] = tuple(region) if any(
+                span is not None for span in region) else None
+        return PagedMemory(self.base, self.length, _regions=tuple(regions))
 
     def write(self, address, payload):
         payload = bytes(payload)

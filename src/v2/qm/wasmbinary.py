@@ -3,14 +3,16 @@
 A compiler module is not a finite scalar function: its arguments, virtual
 filesystem, clocks and output files are part of the state.  It still contains
 many internal functions that are closed integer expressions.  This module
-indexes code bodies without expanding the rest of a large binary, accepts only
-integer functions with no calls, memory, globals or control flow, substitutes
-all locals into a multi-input SSA expression, and rewrites a body only when
-both WebAssembly operation count and encoded size improve.
+indexes code bodies without expanding the rest of a large binary. Pure scalar
+functions use whole-expression QM. Straight-line state functions additionally
+admit ordinary linear-memory operations into the same SSA cut, so dominating
+stores can replace later loads. Stateful results remain physical pages; their
+typed-Wasm re-encoding is measured but never installed as a second runtime.
 
-Every replacement is constructed from exact WebAssembly integer identities.
-Anything with a host observation, trap-sensitive division, indirect call or
-mutable state remains byte-for-byte unchanged.
+Every replacement is constructed from exact WebAssembly integer and memory
+identities. Anything with a host observation, trap-sensitive division,
+indirect call, atomic operation or observable control boundary remains
+byte-for-byte unchanged.
 """
 
 from dataclasses import dataclass
@@ -18,7 +20,7 @@ from dataclasses import dataclass
 from . import isa
 from .bits import mask_of
 from .cfront.errors import CFrontError, UnsupportedC
-from .wasmstate import (_PLAIN, _Reader, _decode_code, _valtype)
+from .wasmstate import (_MEMORY, _PLAIN, _Reader, _decode_code, _valtype)
 
 
 I32 = mask_of(32)
@@ -414,6 +416,49 @@ def pure_single_input(index, body, max_body=4096):
 pure_unary = pure_single_input
 
 
+class _StateModule(object):
+    __slots__ = ('functions',)
+
+    def __init__(self, function):
+        self.functions = (function,)
+
+
+def state_integer_expression(index, body, max_body=4096):
+    """Return one complete straight-line integer/memory state-step plan."""
+    if body.size > max_body or body.type_index >= len(index.types):
+        return None
+    ftype = index.types[body.type_index]
+    if (len(ftype.results) > 1
+            or any(kind not in ('i32', 'i64')
+                   for kind in ftype.params + ftype.results)):
+        return None
+    try:
+        locals_, code, _ends, _elses = index.decode(body)
+    except (CFrontError, ValueError, IndexError):
+        return None
+    if any(kind not in ('i32', 'i64') for kind in locals_):
+        return None
+    if not code or code[-1].op != 'end':
+        return None
+
+    from .wasmstate import Frame, Function
+    from .wasmwave import compile_slice, is_barrier
+
+    if any(is_barrier(instruction.op) for instruction in code[:-1]):
+        return None
+
+    function = Function(body.type_index, locals_, code)
+    frame = Frame(0, 0, tuple(0 for _ in ftype.params + locals_), ())
+    try:
+        plan = compile_slice(_StateModule(function), frame)
+    except (CFrontError, ValueError, IndexError):
+        return None
+    if (plan is None or plan.start != 0 or plan.end != len(code) - 1
+            or plan.stack_inputs or len(plan.stack) != len(ftype.results)):
+        return None
+    return ftype, locals_, code, plan
+
+
 class _NotLowerable(Exception):
     pass
 
@@ -608,6 +653,187 @@ def lower_sequence(ftype, locals_, code, root_local=0):
 
 
 _WASM_OPCODE = dict((name, opcode) for opcode, name in _PLAIN.items())
+_WASM_MEMORY_OPCODE = dict(
+    (shape[0], opcode) for opcode, shape in _MEMORY.items())
+
+
+def _encode_local_groups(locals_):
+    groups = []
+    for kind in locals_:
+        if groups and groups[-1][1] == kind:
+            groups[-1] = (groups[-1][0] + 1, kind)
+        else:
+            groups.append((1, kind))
+    raw = bytearray(encode_uleb(len(groups)))
+    for count, kind in groups:
+        raw += encode_uleb(count)
+        raw.append(VALTYPE[kind])
+    return raw
+
+
+def _state_node_type(operation):
+    name = operation.removeprefix('memory.')
+    if '.store' in name:
+        return None
+    kind, suffix = name.split('.', 1)
+    if suffix in ('eqz', 'eq', 'ne', 'lt_s', 'lt_u', 'gt_s', 'gt_u',
+                  'le_s', 'le_u', 'ge_s', 'ge_u'):
+        return 'i32'
+    return kind
+
+
+def _state_argument_types(operation):
+    name = operation.removeprefix('memory.')
+    kind, suffix = name.split('.', 1)
+    if '.load' in name:
+        return ('i32',)
+    if '.store' in name:
+        return 'i32', kind
+    if suffix == 'wrap_i64':
+        return ('i64',)
+    if suffix in ('extend_i32_s', 'extend_i32_u'):
+        return ('i32',)
+    if suffix in ('eqz', 'clz', 'ctz', 'popcnt',
+                  'extend8_s', 'extend16_s', 'extend32_s'):
+        return (kind,)
+    return kind, kind
+
+
+def encode_state_plan(ftype, locals_, plan):
+    """Encode one normalized integer/memory cut back to a Wasm function."""
+    from .stepnormalize import _semantic_cut
+
+    plan = _semantic_cut(plan)
+    nodes = dict((node.value, node) for node in plan.nodes)
+    if any(not node.op.startswith(('i32.', 'i64.', 'memory.'))
+           for node in plan.nodes):
+        raise _NotLowerable('physical lane has no direct wasm spelling')
+
+    def data_arguments(node):
+        if node.op.startswith('memory.'):
+            return node.arguments[:2 if '.store' in node.op else 1]
+        return node.arguments
+
+    uses = dict((value, 0) for value in nodes)
+    for node in plan.nodes:
+        for operand in data_arguments(node):
+            if operand.kind == 'node':
+                uses[operand.value] += 1
+    for operand in plan.stack:
+        if operand.kind == 'node':
+            uses[operand.value] += 1
+    # Memory observations are roots even when their value feeds another node:
+    # this preserves their source order relative to stores and traps.
+    for node in plan.nodes:
+        if node.op.startswith('memory.') and '.store' not in node.op:
+            uses[node.value] += 1
+
+    original_local_types = tuple(ftype.params) + tuple(locals_)
+    shared = {}
+    temp_types = []
+    for node in plan.nodes:
+        kind = _state_node_type(node.op)
+        if kind is not None and uses[node.value] > 1:
+            shared[node.value] = len(original_local_types) + len(temp_types)
+            temp_types.append(kind)
+
+    emitted = set()
+    wasm_work = 0
+
+    def constant(value, kind):
+        bits = 32 if kind == 'i32' else 64
+        sign = 1 << (bits - 1)
+        value &= mask_of(bits)
+        value = value - (1 << bits) if value & sign else value
+        opcode = 0x41 if kind == 'i32' else 0x42
+        return bytes([opcode]) + encode_sleb(value, bits)
+
+    def operand_bytes(operand, kind):
+        def coerce(raw, actual):
+            nonlocal wasm_work
+            if actual == kind:
+                return raw
+            if actual == 'i32' and kind == 'i64':
+                wasm_work += 1
+                return raw + bytes([_WASM_OPCODE['i64.extend_i32_u']])
+            if actual == 'i64' and kind == 'i32':
+                wasm_work += 1
+                return raw + bytes([_WASM_OPCODE['i32.wrap_i64']])
+            raise _NotLowerable('cannot restore a wasm publication type')
+
+        if operand.kind == 'const':
+            return constant(operand.value, kind)
+        if operand.kind == 'local':
+            if operand.value >= len(original_local_types):
+                raise _NotLowerable('state plan names an unknown local')
+            raw = b'\x20' + encode_uleb(operand.value)
+            return coerce(raw, original_local_types[operand.value])
+        if operand.kind != 'node' or operand.value not in nodes:
+            raise _NotLowerable('state plan has an unknown operand')
+        raw = node_bytes(nodes[operand.value])
+        return coerce(raw, _state_node_type(nodes[operand.value].op))
+
+    def memory_bytes(node):
+        nonlocal wasm_work
+        name = node.op.removeprefix('memory.')
+        arguments = data_arguments(node)
+        kinds = _state_argument_types(node.op)
+        raw = operand_bytes(arguments[0], kinds[0])
+        shape = node.arguments[3 if '.store' in name else 2]
+        offset = node.arguments[2 if '.store' in name else 1]
+        if shape.kind != 'const' or offset.kind != 'const':
+            raise _NotLowerable('memory shape is not a physical constant')
+        width, scale = shape.value & 0xff, shape.value >> 8
+        if scale:
+            raw += constant(scale, 'i32')
+            raw += bytes([_WASM_OPCODE['i32.shl']])
+            wasm_work += 1
+        if '.store' in name:
+            raw += operand_bytes(arguments[1], kinds[1])
+        alignment = max(0, int(width).bit_length() - 1)
+        try:
+            opcode = _WASM_MEMORY_OPCODE[name]
+        except KeyError:
+            raise _NotLowerable('cannot emit %s to wasm' % name)
+        return (raw + bytes([opcode]) + encode_uleb(alignment)
+                + encode_uleb(offset.value))
+
+    def node_bytes(node):
+        nonlocal wasm_work
+        if node.value in emitted:
+            return b'\x20' + encode_uleb(shared[node.value])
+        if node.op.startswith('memory.'):
+            raw = memory_bytes(node)
+        else:
+            argument_types = _state_argument_types(node.op)
+            if len(argument_types) != len(node.arguments):
+                raise _NotLowerable('cannot emit %s argument shape'
+                                    % node.op)
+            raw = b''.join(
+                operand_bytes(operand, kind)
+                for operand, kind in zip(node.arguments, argument_types))
+            try:
+                raw += bytes([_WASM_OPCODE[node.op]])
+            except KeyError:
+                raise _NotLowerable('cannot emit %s to wasm' % node.op)
+        wasm_work += 1
+        if node.value in shared:
+            emitted.add(node.value)
+            raw += b'\x22' + encode_uleb(shared[node.value])
+        return raw
+
+    body = _encode_local_groups(tuple(locals_) + tuple(temp_types))
+    for node in plan.nodes:
+        if not node.op.startswith('memory.'):
+            continue
+        if '.store' in node.op:
+            body += node_bytes(node)
+        else:
+            body += node_bytes(node) + b'\x1a'
+    for operand, kind in zip(plan.stack, ftype.results):
+        body += operand_bytes(operand, kind)
+    body += b'\x0b'
+    return bytes(body), wasm_work
 
 
 def _instruction_bytes(seq, index, kind, root_local, memo):
@@ -721,12 +947,21 @@ class Replacement:
 
 
 def optimize_module(data, max_body=4096):
-    """Return ``(rewritten_bytes, report)`` for all improving pure bodies."""
+    """Return rewritten bytes and the report for every improving body."""
     index = index_module(data)
     replacements = []
     failures = []
     decoded = 0
     lowerable = 0
+    decoded_state = 0
+    lowerable_state = 0
+    unencodable_state = 0
+    forwarded_memory_loads = 0
+    state_physical_work = 0
+    reencodable_state_physical_work = 0
+    state_reencoded_work = 0
+    reencoded_materializations = 0
+    rejected_typed_wasm_improvements = 0
     parallel_slices = 0
     physical_work = 0
     physical_span = 0
@@ -734,23 +969,58 @@ def optimize_module(data, max_body=4096):
     max_slice_span = 0
     for body in index.bodies:
         pure = pure_integer_expression(index, body, max_body=max_body)
-        if pure is None:
-            continue
-        decoded += 1
-        ftype, locals_, code, root_local = pure
-        try:
-            before = lower_sequence(ftype, locals_, code, root_local)
-            after = isa.normalize(before)
-            raw, work = encode_sequence(after, ftype.results[0], root_local)
-        except (_NotLowerable, ValueError, IndexError) as error:
-            failures.append({
-                'function_index': body.function_index,
-                'reason': str(error),
-            })
-            continue
-        lowerable += 1
-        from .wasmphysical import schedule_sequence
-        waves = schedule_sequence(after)
+        state_route = pure is None
+        if pure is not None:
+            decoded += 1
+            ftype, locals_, code, root_local = pure
+            try:
+                before = lower_sequence(ftype, locals_, code, root_local)
+                after = isa.normalize(before)
+                raw, work = encode_sequence(
+                    after, ftype.results[0], root_local)
+            except (_NotLowerable, ValueError, IndexError) as error:
+                failures.append({
+                    'function_index': body.function_index,
+                    'reason': str(error),
+                })
+                continue
+            lowerable += 1
+            from .wasmphysical import schedule_sequence
+            waves = schedule_sequence(after)
+            before_ops = tuple(ins.op for ins in before.ins)
+            after_ops = tuple(ins.op for ins in after.ins)
+        else:
+            state = state_integer_expression(
+                index, body, max_body=max_body)
+            if state is None:
+                continue
+            decoded_state += 1
+            ftype, locals_, code, plan = state
+            waves = plan.waves
+            state_physical_work += waves.work
+            raw = None
+            work = None
+            try:
+                raw, work = encode_state_plan(ftype, locals_, plan)
+            except (_NotLowerable, ValueError, IndexError):
+                # Typed Wasm is only a diagnostic publication format. A lane
+                # without that spelling is still a valid physical state page
+                # and must not disappear from state-route accounting.
+                unencodable_state += 1
+            else:
+                lowerable_state += 1
+                reencodable_state_physical_work += waves.work
+                state_reencoded_work += work
+                reencoded_materializations += max(0, work - waves.work)
+            source_loads = sum(
+                '.load' in instruction.op for instruction in code)
+            remaining_loads = sum(
+                node.op.startswith('memory.') and '.load' in node.op
+                for node in plan.nodes)
+            forwarded_memory_loads += max(0, source_loads - remaining_loads)
+            before_ops = tuple(instruction.op for instruction in code
+                               if instruction.op != 'end')
+            after_ops = tuple(node.op for node in plan.nodes)
         wave_layout = waves.layout()
         physical_work += waves.work
         physical_span += waves.span
@@ -763,12 +1033,16 @@ def optimize_module(data, max_body=4096):
                             if inst.op not in ('local.get', 'local.set',
                                                'local.tee', 'drop', 'end')
                             and not inst.op.endswith('.const'))
+        if state_route:
+            if (raw is not None and work < original_work
+                    and len(raw) < body.size):
+                rejected_typed_wasm_improvements += 1
+            continue
         if work >= original_work or len(raw) >= body.size:
             continue
         replacements.append(Replacement(
             body, raw, body.size, original_work, work,
-            tuple(ins.op for ins in before.ins),
-            tuple(ins.op for ins in after.ins),
+            before_ops, after_ops,
         ))
 
     rewritten = index.rewrite({item.body.ordinal: item.raw
@@ -781,6 +1055,17 @@ def optimize_module(data, max_body=4096):
         # Retained for scripts that consumed the first report schema.
         'decoded_pure_single_coordinate': decoded,
         'lowerable': lowerable,
+        'decoded_state_integer_expressions': decoded_state,
+        'lowerable_state_integer_expressions': lowerable_state,
+        'unencodable_state_integer_expressions': unencodable_state,
+        'forwarded_memory_loads': forwarded_memory_loads,
+        'state_physical_work': state_physical_work,
+        'reencodable_state_physical_work':
+            reencodable_state_physical_work,
+        'state_reencoded_work': state_reencoded_work,
+        'reencoded_materializations': reencoded_materializations,
+        'rejected_typed_wasm_improvements':
+            rejected_typed_wasm_improvements,
         'lowering_failures': failures,
         'physical_work': physical_work,
         'physical_span_sum': physical_span,

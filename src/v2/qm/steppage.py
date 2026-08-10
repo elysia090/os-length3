@@ -2,8 +2,9 @@
 
 The semantic input remains the decoded WebAssembly module.  This codec is a
 deterministic, disposable execution cache derived from it.  One blob is one
-maximal pure slice, so a caller can fetch/map only the slice named by the
-current ``(function, pc)``.  Its physical domains are::
+maximal state-step slice: arithmetic and non-atomic memory nodes continue up
+to an observable boundary.  A caller can fetch/map only the slice named by
+the current ``(function, pc)``.  Its physical domains are::
 
     slice instructions  Region(start_pc, end_pc)
     waves               Region(0, span)
@@ -20,16 +21,28 @@ from dataclasses import dataclass
 import struct
 
 from .cfront.errors import CFrontError
-from .laneops import OPS
+from .bits import mask_of
+from .laneops import OPS as LANE_OPS
 
 
 MAGIC = b'STEP'
-VERSION = 2
+VERSION = 3
 I64 = (1 << 64) - 1
 
 # This is a global physical vocabulary, not a per-file dictionary. Giving the
 # same short code a different operation in another page would make cached state
 # depend on an omitted decoder.
+MEMORY_OPS = tuple(
+    'memory.' + name for name in (
+        'i32.load', 'i32.load8_s', 'i32.load8_u',
+        'i32.load16_s', 'i32.load16_u',
+        'i64.load', 'i64.load8_s', 'i64.load8_u',
+        'i64.load16_s', 'i64.load16_u',
+        'i64.load32_s', 'i64.load32_u',
+        'i32.store', 'i32.store8', 'i32.store16',
+        'i64.store', 'i64.store8', 'i64.store16', 'i64.store32',
+    ))
+OPS = LANE_OPS + MEMORY_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 
 OPERAND_KINDS = ('const', 'stack', 'local', 'node')
@@ -91,6 +104,24 @@ def _write_column(blob, offset, width, values):
     code = '<I' if width == 4 else '<Q'
     for index, value in enumerate(values):
         struct.pack_into(code, blob, offset + index * width, int(value))
+
+
+def _address(address, offset, scale):
+    base = ((int(address) & ((1 << 32) - 1)) << int(scale))
+    return (base & ((1 << 32) - 1)) + offset
+
+
+def _load(memory, address, offset, width, scale, signed, bits):
+    value = memory.load(_address(address, offset, scale), width)
+    if signed and value & (1 << (width * 8 - 1)):
+        value -= 1 << (width * 8)
+    return value & mask_of(bits)
+
+
+def _store(memory, address, value, offset, width, scale):
+    memory.write(
+        _address(address, offset, scale),
+        int(value & mask_of(width * 8)).to_bytes(width, 'little'))
 
 
 def pack(plan):
@@ -361,6 +392,38 @@ def _validate(mapped):
                 raise StatePageError('stack operand is outside the frame region')
             if kind == 'local' and value >= mapped.local_extent:
                 raise StatePageError('local operand is outside the frame region')
+        if operation.startswith('memory.'):
+            name = operation.split('.', 1)[1]
+            store = '.store' in name
+            data_count = 2 if store else 1
+            fixed = data_count + 2
+            if end - begin < fixed:
+                raise StatePageError(
+                    '%s has the wrong physical operand count' % operation)
+            if any(OPERAND_KINDS[mapped.value('operand_tags', at)] != 'const'
+                   for at in range(begin + data_count, begin + fixed)):
+                raise StatePageError(
+                    '%s offset and access shape are not physical constants'
+                    % operation)
+            if any(OPERAND_KINDS[mapped.value('operand_tags', at)] != 'node'
+                   for at in range(begin + fixed, end)):
+                raise StatePageError(
+                    '%s memory dependencies are not SSA nodes' % operation)
+            shape = mapped.value('operand_values', begin + data_count + 1)
+            width, scale = shape & 0xff, shape >> 8
+            if scale >= 32:
+                raise StatePageError('%s has an invalid address scale'
+                                     % operation)
+            suffix = name.split('.', 1)[1]
+            natural = 4 if name.startswith('i32.') else 8
+            expected = (1 if '8_' in suffix or suffix.endswith('store8')
+                        else 2 if '16_' in suffix or suffix.endswith('store16')
+                        else 4 if '32_' in suffix or suffix.endswith('store32')
+                        else natural)
+            if width != expected:
+                raise StatePageError('%s has the wrong access width'
+                                     % operation)
+            continue
         if operation.startswith(('lane32.', 'lane64.')):
             from .laneops import GENERIC_ARITY, shape, split
             try:
@@ -465,6 +528,7 @@ def decode_plan(mapped):
 def execute_mapped(mapped, state):
     """Execute mapped columns directly without rebuilding the SSA objects."""
     from dataclasses import replace
+    from .memorycut import MemoryCut
     from .wasmstate import Frame
     from .laneops import evaluate
 
@@ -477,6 +541,7 @@ def execute_mapped(mapped, state):
         raise StatePageError('state-step local extent does not match')
 
     values = [0] * (mapped.work + 1)
+    memory = MemoryCut(state.memory)
 
     def resolve(tag, value):
         kind = OPERAND_KINDS[tag]
@@ -502,7 +567,24 @@ def execute_mapped(mapped, state):
                 for at in range(begin, end)
             )
             operation = OPS[mapped.value('opcodes', node - 1)]
-            produced.append((node, evaluate(operation, arguments)))
+            if operation.startswith('memory.'):
+                name = operation.split('.', 1)[1]
+                store = '.store' in name
+                data_count = 2 if store else 1
+                offset, shape = arguments[data_count:data_count + 2]
+                width, scale = shape & 0xff, shape >> 8
+                if store:
+                    _store(memory, arguments[0], arguments[1], offset, width,
+                           scale)
+                    value = 0
+                else:
+                    bits = 32 if name.startswith('i32.') else 64
+                    signed = name.endswith('_s')
+                    value = _load(memory, arguments[0], offset, width, scale,
+                                  signed, bits)
+                produced.append((node, value))
+            else:
+                produced.append((node, evaluate(operation, arguments)))
         for node, value in produced:
             values[node] = value
 
@@ -522,7 +604,8 @@ def execute_mapped(mapped, state):
               for index in range(mapped.stack_count)),
         frame.controls,
     )
-    return replace(state, frames=state.frames[:-1] + (next_frame,))
+    return replace(state, frames=state.frames[:-1] + (next_frame,),
+                   memory=memory.commit())
 
 
 def compile_mapped_executor(mapped):
@@ -544,7 +627,7 @@ def compile_mapped_executor(mapped):
         stack_values = coordinates(
             'stack_tags', 'stack_values', mapped.stack_count)
 
-        def execute_projection(locals_, stack):
+        def execute_projection(locals_, stack, memory):
             sources = (None, stack, locals_)
 
             def resolve(spec):
@@ -562,8 +645,8 @@ def compile_mapped_executor(mapped):
 
         return execute_projection
 
-    lines = ['def execute(locals_, stack):']
-    namespace = {}
+    lines = ['def execute(locals_, stack, memory):']
+    namespace = {'memory_load': _load, 'memory_store': _store}
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -591,6 +674,29 @@ def compile_mapped_executor(mapped):
                 arguments += ','
             opcode = mapped.value('opcodes', node - 1)
             operation = OPS[opcode]
+            if operation.startswith('memory.'):
+                name = operation.split('.', 1)[1]
+                store = '.store' in name
+                data_count = 2 if store else 1
+                data = [expression('operand_tags', 'operand_values', index)
+                        for index in range(first, first + data_count)]
+                offset = mapped.value('operand_values', first + data_count)
+                shape = mapped.value(
+                    'operand_values', first + data_count + 1)
+                width, scale = shape & 0xff, shape >> 8
+                if store:
+                    lines.append(
+                        '    memory_store(memory, %s, %s, %d, %d, %d)' %
+                        (data[0], data[1], offset, width, scale))
+                    lines.append('    value_%d = 0' % node)
+                else:
+                    bits = 32 if name.startswith('i32.') else 64
+                    signed = name.endswith('_s')
+                    lines.append(
+                        '    value_%d = memory_load(memory, %s, %d, %d, %d, '
+                        '%r, %d)' %
+                        (node, data[0], offset, width, scale, signed, bits))
+                continue
             lane = 'lane_%d' % opcode
             namespace.setdefault(lane, bind(operation))
             lines.append("    value_%d = %s((%s))" %
