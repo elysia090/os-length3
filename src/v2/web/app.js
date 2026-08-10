@@ -759,7 +759,7 @@ function restoreVfsWidth() {
 }
 
 function setVfsWidth(value, persist = true) {
-  const width = Math.round(Math.min(240, Math.max(96, Number(value) || 120)));
+  const width = Math.round(Math.min(360, Math.max(96, Number(value) || 120)));
   document.querySelector('.workbench-shell').style.setProperty('--vfs-width', `${width}px`);
   $('dock-resizer').setAttribute('aria-valuenow', String(width));
   if (persist) {
@@ -773,6 +773,7 @@ function setupDockResize() {
   const card = $('card-system');
   const handle = $('dock-resizer');
   let dragging = false;
+  let restoreWidth = null;
 
   const move = (event) => {
     if (!dragging) return;
@@ -806,6 +807,20 @@ function setupDockResize() {
     event.preventDefault();
     const current = card.getBoundingClientRect().width;
     setVfsWidth(current + (event.key === 'ArrowLeft' ? 12 : -12));
+  });
+  card.setAttribute('aria-expanded', 'false');
+  card.addEventListener('dblclick', (event) => {
+    if (!matchMedia('(min-width: 1061px)').matches
+        || event.target.closest('.vfs-file, button, input, .pane-resizer')) return;
+    if (restoreWidth === null) {
+      restoreWidth = card.getBoundingClientRect().width;
+      setVfsWidth(Math.max(260, Math.min(360, innerWidth * .236)), false);
+      card.setAttribute('aria-expanded', 'true');
+    } else {
+      setVfsWidth(restoreWidth, false);
+      restoreWidth = null;
+      card.setAttribute('aria-expanded', 'false');
+    }
   });
 }
 
@@ -1197,15 +1212,14 @@ function init() {
     }
   });
 
-  // A desktop double-click on panel chrome turns the two working columns into
-  // one wide reading surface; a second double-click restores the pair. Code,
-  // tabs and controls keep their native double-click behaviour (word
-  // selection, tab actions, and so on).
+  // A desktop double-click changes the two working columns' emphasis without
+  // removing the other surface. Code, tabs and controls retain their native
+  // double-click behaviour.
   const desktopPanels = matchMedia('(min-width: 1061px)');
   const board = document.querySelector('.board');
-  const cards = Array.from(board.querySelectorAll('.card'));
+  const cards = [$('card-write'), $('card-terminal')];
   const restorePanelPair = () => {
-    board.classList.remove('is-focused');
+    board.classList.remove('is-source-wide', 'is-terminal-wide');
     cards.forEach((card) => {
       card.classList.remove('is-expanded');
       card.setAttribute('aria-expanded', 'false');
@@ -1216,7 +1230,8 @@ function init() {
     const restore = card.classList.contains('is-expanded');
     restorePanelPair();
     if (!restore) {
-      board.classList.add('is-focused');
+      board.classList.add(card.id === 'card-write'
+        ? 'is-source-wide' : 'is-terminal-wide');
       card.classList.add('is-expanded');
       card.setAttribute('aria-expanded', 'true');
     }
