@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="workbench-shell">
 
 <header class="topbar">
   <div class="brand">
@@ -27,8 +28,7 @@
 </header>
 
 <main class="board">
-
-  <!-- ================= 1. Write C ================= -->
+  <!-- ================= Source ================= -->
   <section class="card" id="card-write">
     <div class="card-head">
       <h2><span class="step">1.</span> Source</h2>
@@ -45,6 +45,11 @@
     </div>
 
     <div class="framed editor with-tabs">
+      <button class="qm-pill" id="qm-pill" type="button" hidden
+              aria-expanded="false" aria-controls="qm-peek">
+        <span class="qm-mark" aria-hidden="true">QM</span>
+        <span id="qm-pill-label">ready</span>
+      </button>
       <div class="gutter" id="gutter" aria-hidden="true"></div>
       <div class="code-area">
         <pre class="highlight" id="highlight" aria-hidden="true"></pre>
@@ -53,47 +58,101 @@
                   aria-label="C, x86-64 or wasm32 source"
                   placeholder="Paste C, x86-64 or wasm32."></textarea>
       </div>
+
+      <aside class="qm-peek" id="qm-peek" hidden aria-label="Minimized function">
+        <div class="qm-peek-head">
+          <span id="qm-sub">— instructions</span>
+          <div>
+            <button class="overlay-copy" id="btn-copy" type="button"
+                    title="Copy" aria-label="Copy the minimized program">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+            </button>
+            <button class="peek-close" id="btn-peek-close" type="button"
+                    aria-label="Close minimized function">&times;</button>
+          </div>
+        </div>
+        <pre id="qm-listing" tabindex="0"><span class="hint">The minimized program appears here.</span></pre>
+        <div class="qm-peek-foot">
+          <select id="sel-isa-view" aria-label="Lowering target"></select>
+          <label class="check right">
+            <input type="checkbox" id="chk-intrinsics"> C intrinsics
+          </label>
+        </div>
+      </aside>
     </div>
 
     <div class="card-foot">
       <span id="line-count">0 lines</span>
     </div>
 
-    <div class="framed terminal" id="term" hidden>
-      <pre id="term-out"></pre>
+  </section>
+
+  <!-- ================= Run terminal ================= -->
+  <section class="card run-card" id="card-run">
+    <div class="card-head">
+      <h2>Run</h2>
+      <button class="terminal-clear" id="btn-run-clear" type="button">Clear</button>
+    </div>
+    <div class="framed terminal" id="term">
+      <pre id="term-out"><span class="term-echo">Ready.</span>
+</pre>
       <div class="term-line">
-        <span class="term-prompt" aria-hidden="true">&gt;</span>
+        <span class="term-prompt" aria-hidden="true">›</span>
         <input id="term-in" type="text" spellcheck="false" autocomplete="off"
-               autocapitalize="off" placeholder="stdin"
-               aria-label="Standard input for main">
+               autocapitalize="off" placeholder="Run a file with main"
+               aria-label="Standard input for main" disabled>
       </div>
     </div>
-
   </section>
 
-  <!-- ================= 2. Minimized Program ================= -->
-  <section class="card" id="card-copy">
+  <!-- ================= Shell terminal ================= -->
+  <section class="card terminal-card" id="card-terminal">
     <div class="card-head">
-      <h2><span class="step">2.</span> Minimized Program</h2>
+      <h2>Terminal</h2>
+      <button class="terminal-clear" id="btn-shell-clear" type="button">Clear</button>
     </div>
-    <div class="card-sub" id="qm-sub">— instructions</div>
-
-    <div class="framed listing">
-      <button class="overlay-copy" id="btn-copy" type="button"
-              title="Copy" aria-label="Copy the minimized program">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-      </button>
-      <pre id="qm-listing" tabindex="0"><span class="hint">The minimized program appears here.</span></pre>
+    <div class="terminal-meta">
+      <span>shell</span>
+      <span class="session-state"><i aria-hidden="true"></i> local</span>
     </div>
-
-    <div class="card-foot">
-      <select id="sel-isa-view" aria-label="Lowering target"></select>
-      <label class="check right">
-        <input type="checkbox" id="chk-intrinsics"> C intrinsics
-      </label>
+    <div class="framed terminal shell-terminal" id="shell-terminal">
+      <pre id="shell-out"><span class="term-echo">Shell becomes available when linux.wasm is mounted.</span>
+</pre>
+      <div class="term-line">
+        <span class="term-prompt" aria-hidden="true">$</span>
+        <input id="shell-in" type="text" spellcheck="false" autocomplete="off"
+               autocapitalize="off" placeholder="kernel shell not mounted"
+               aria-label="Workspace shell input" disabled>
+      </div>
     </div>
   </section>
+
 </main>
+
+<!-- ================= VFS ================= -->
+<aside class="utility-card" id="card-system" aria-label="Workspace files">
+  <div class="card-head utility-head">
+    <h2>Files</h2>
+    <span class="session-state"><i aria-hidden="true"></i> local</span>
+  </div>
+  <div class="dock-view vfs" id="dock-files">
+    <div class="vfs-section">
+      <div class="vfs-heading"><span class="chevron">⌄</span> workspace</div>
+      <div class="vfs-files" id="vfs-files"></div>
+    </div>
+    <div class="vfs-section vfs-runtime">
+      <div class="vfs-heading"><span class="chevron">⌄</span> runtime</div>
+      <div class="vfs-node is-muted"><span class="folder">dev</span></div>
+      <div class="vfs-node is-muted"><span class="folder">tmp</span></div>
+      <div class="vfs-node is-muted"><span class="file">rootfs.img</span><small>lazy</small></div>
+    </div>
+    <p class="vfs-note">Runtime pages appear only when touched.</p>
+  </div>
+  <div class="pane-resizer" id="dock-resizer" role="separator"
+       aria-label="Resize files" aria-orientation="vertical"
+       aria-valuemin="96" aria-valuemax="240" tabindex="0"></div>
+</aside>
+</div>
 
 <footer class="pagefoot">
   <span id="foot-note">All compilation happens in your browser. No code is sent to any server.</span>

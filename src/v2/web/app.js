@@ -1,10 +1,6 @@
-// Two cards: paste a kernel, take the minimized program.
-//
-// There used to be a middle one showing what Clang made of the paste, with its
-// own target and optimization controls. It was a second compile whose only job
-// was display, and the minimized program is now the single thing this page is
-// about — the artifact, viewable as any of the machines it lowers to, or as
-// the codec itself.
+// Source and terminal are the two work surfaces. Files occupy the narrow right
+// rail, and a minimized function opens as an editor peek from its QM marker
+// instead of competing with the source as a permanent document.
 //
 // Nothing explains itself at you. Each card carries one line of numbers under
 // its title, and the Derivation link in the footer opens everything else for
@@ -57,6 +53,7 @@ const state = {
 
 const TABS_KEY = 'qm.tabs';
 const ACTIVE_KEY = 'qm.activeTab';
+const VFS_WIDTH_KEY = 'qm.vfsWidth';
 
 function activeTab() {
   return state.tabs.find((t) => t.id === state.activeId) || state.tabs[0];
@@ -85,6 +82,10 @@ const C_KEYWORDS = /\b(for|while|do|if|else|return|break|continue|switch|case|de
 
 function escapeHtml(text) {
   return text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/"/g, '&quot;');
 }
 
 function highlightC(code) {
@@ -297,14 +298,18 @@ function renderTabs() {
       <span class="name">${escapeHtml(tab.name)}</span>
       <span class="dot" aria-hidden="true"></span>
       <button class="close" data-close="${tab.id}" title="Close"
-              aria-label="Close ${escapeHtml(tab.name)}"
-              ${state.tabs.length > 1 ? '' : 'disabled'}>&times;</button>
+              aria-label="Close ${escapeAttr(tab.name)}">&times;</button>
     </div>`).join('');
 
   list.querySelectorAll('.tab').forEach((el) => {
     el.addEventListener('click', (event) => {
-      if (event.target.dataset.close) return;
+      if (event.target.dataset.close || event.target.classList.contains('tab-rename')) return;
       selectTab(el.dataset.id);
+    });
+    el.addEventListener('dblclick', (event) => {
+      if (event.target.closest('.close')) return;
+      event.preventDefault();
+      beginTabRename(el.dataset.id, el);
     });
     el.addEventListener('keydown', (event) => {
       const index = state.tabs.findIndex((tab) => tab.id === el.dataset.id);
@@ -314,7 +319,7 @@ function renderTabs() {
         const next = (index + step + state.tabs.length) % state.tabs.length;
         selectTab(state.tabs[next].id);
         list.querySelector(`[data-id="${state.activeId}"]`)?.focus();
-      } else if (event.key === 'Delete' && state.tabs.length > 1) {
+      } else if (event.key === 'Delete') {
         event.preventDefault();
         closeTab(el.dataset.id);
         list.querySelector(`[data-id="${state.activeId}"]`)?.focus();
@@ -325,6 +330,73 @@ function renderTabs() {
     el.addEventListener('click', (event) => {
       event.stopPropagation();
       closeTab(el.dataset.close);
+    });
+  });
+  renderVfs();
+}
+
+function cleanTabName(value) {
+  return value.trim().replace(/[\\/\0]/g, '-').slice(0, 80) || 'untitled';
+}
+
+function beginTabRename(id, element) {
+  const tab = state.tabs.find((candidate) => candidate.id === id);
+  if (!tab || element.querySelector('.tab-rename')) return;
+
+  const label = element.querySelector('.name');
+  const input = document.createElement('input');
+  input.className = 'tab-rename';
+  input.type = 'text';
+  input.value = tab.name;
+  input.setAttribute('aria-label', 'Rename file');
+  label.replaceWith(input);
+
+  let settled = false;
+  const finish = (commit) => {
+    if (settled) return;
+    settled = true;
+    if (commit) tab.name = cleanTabName(input.value);
+    persistTabs();
+    renderTabs();
+    document.querySelector(`.tab[data-id="${id}"]`)?.focus();
+  };
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('dblclick', (event) => event.stopPropagation());
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+    if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.focus();
+  const dot = tab.name.lastIndexOf('.');
+  input.setSelectionRange(0, dot > 0 ? dot : tab.name.length);
+}
+
+function fileKind(name) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.wat') || lower.endsWith('.wasm')) return 'Wasm';
+  if (lower.endsWith('.s') || lower.endsWith('.asm')) return 'x86';
+  return 'C';
+}
+
+function renderVfs() {
+  const files = $('vfs-files');
+  if (!files) return;
+  files.innerHTML = state.tabs.map((tab) => `
+    <button class="vfs-file${tab.id === state.activeId ? ' is-active' : ''}"
+            type="button" data-file="${tab.id}">
+      <span class="file">${escapeHtml(tab.name)}</span>
+      <small>${fileKind(tab.name)}</small>
+    </button>`).join('');
+  files.querySelectorAll('.vfs-file').forEach((file) => {
+    file.addEventListener('click', () => selectTab(file.dataset.file));
+    file.addEventListener('dblclick', () => {
+      const id = file.dataset.file;
+      selectTab(id);
+      requestAnimationFrame(() => {
+        const tab = document.querySelector(`.tab[data-id="${id}"]`);
+        if (tab) beginTabRename(id, tab);
+      });
     });
   });
 }
@@ -357,9 +429,21 @@ function addTab(name, source) {
 }
 
 function closeTab(id) {
-  if (state.tabs.length <= 1) return;
   const index = state.tabs.findIndex((t) => t.id === id);
   if (index < 0) return;
+  if (state.tabs.length === 1) {
+    const replacement = newTab('untitled', '');
+    state.tabs = [replacement];
+    state.activeId = replacement.id;
+    $('source').value = '';
+    syncSource({ keepDirty: true });
+    renderTabs();
+    restoreCards();
+    persistTabs();
+    scheduleCompile();
+    $('source').focus();
+    return;
+  }
   state.tabs.splice(index, 1);
   if (state.activeId === id) {
     const next = state.tabs[Math.min(index, state.tabs.length - 1)];
@@ -373,7 +457,7 @@ function closeTab(id) {
   persistTabs();
 }
 
-/** Repaint cards 2 and 3 from whatever the active tab last produced. */
+/** Repaint the QM peek and Run state from the active tab's last result. */
 function restoreCards() {
   const result = state.result;
   if (!result || !result.ok) {
@@ -381,6 +465,7 @@ function restoreCards() {
       '<span class="hint">The minimized program appears here.</span>';
     $('qm-sub').textContent = '— instructions';
     $('sel-isa-view').innerHTML = '';
+    hideQmPill();
     renderRunControls();
     return;
   }
@@ -428,6 +513,8 @@ function syncSource(options) {
   const language = editorLanguage();
   const lines = code.split('\n');
   const shown = Math.max(lines.length, 14);
+  document.querySelector('.workbench-shell')
+    .style.setProperty('--source-lines', String(shown));
   $('highlight').innerHTML =
     (language === 'C' || !language ? highlightC(code) : highlightAsm(code))
     + '\n';
@@ -443,6 +530,7 @@ function syncSource(options) {
       tab.dirty = true;
       tab.hasMain = false;
       tab.runReady = false;
+      hideQmPill();
       renderTabs();
     }
     persistTabs();
@@ -497,10 +585,28 @@ function optionsSignature() {
   return `${state.options.frontend}|${state.options.observer}`;
 }
 
+function hideQmPill() {
+  $('qm-pill').hidden = true;
+  $('qm-pill').setAttribute('aria-expanded', 'false');
+  $('qm-peek').hidden = true;
+}
+
+function renderQmPill(result, target) {
+  if (!result || !result.ok || result.standalone_main || !target || !target.ok) {
+    hideQmPill();
+    return;
+  }
+  const work = Number(target.work) || 0;
+  $('qm-pill-label').textContent = `${work} op${work === 1 ? '' : 's'}`;
+  $('qm-pill').title = `Peek ${result.frontend.function.name} after minimization`;
+  $('qm-pill').hidden = false;
+}
+
 function renderTakeaway() {
   const result = state.result;
   const target = currentTarget();
   const { text, kind } = takeawayText();
+  renderQmPill(result, target);
 
   if (result && result.ok && result.standalone_main) {
     $('qm-listing').innerHTML =
@@ -642,6 +748,67 @@ function toast(message, isError) {
 // to show a program and not to try it.
 // --------------------------------------------------------------------------
 
+function restoreVfsWidth() {
+  let width = 0;
+  try {
+    width = Number(localStorage.getItem(VFS_WIDTH_KEY)) || width;
+  } catch {
+    /* a blocked store leaves the useful defaults in place */
+  }
+  if (width) setVfsWidth(width, false);
+}
+
+function setVfsWidth(value, persist = true) {
+  const width = Math.round(Math.min(240, Math.max(96, Number(value) || 120)));
+  document.querySelector('.workbench-shell').style.setProperty('--vfs-width', `${width}px`);
+  $('dock-resizer').setAttribute('aria-valuenow', String(width));
+  if (persist) {
+    try { localStorage.setItem(VFS_WIDTH_KEY, String(width)); } catch { /* optional */ }
+  }
+  return width;
+}
+
+function setupDockResize() {
+  const layout = document.querySelector('.workbench-shell');
+  const card = $('card-system');
+  const handle = $('dock-resizer');
+  let dragging = false;
+
+  const move = (event) => {
+    if (!dragging) return;
+    setVfsWidth(card.getBoundingClientRect().right - event.clientX, false);
+  };
+  const stop = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    layout.classList.remove('is-resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (event.pointerId !== undefined && handle.hasPointerCapture(event.pointerId)) {
+      handle.releasePointerCapture(event.pointerId);
+    }
+    setVfsWidth(card.getBoundingClientRect().width);
+  };
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (!matchMedia('(min-width: 1061px)').matches) return;
+    dragging = true;
+    handle.setPointerCapture(event.pointerId);
+    layout.classList.add('is-resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  handle.addEventListener('pointermove', move);
+  handle.addEventListener('pointerup', stop);
+  handle.addEventListener('pointercancel', stop);
+  handle.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const current = card.getBoundingClientRect().width;
+    setVfsWidth(current + (event.key === 'ArrowLeft' ? 12 : -12));
+  });
+}
+
 function termWrite(text, className) {
   const out = $('term-out');
   const line = document.createElement('span');
@@ -658,6 +825,10 @@ function runProgram() {
   const tab = activeTab();
   if (state.busy || state.pending || !state.ready || !tab
       || tab.dirty || !tab.hasMain || !tab.runReady) return;
+  $('card-run').scrollIntoView({
+    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    block: 'center',
+  });
   const stdin = $('term-in').value;
   $('term-in').value = '';
   state.busy = true;
@@ -670,8 +841,9 @@ function runProgram() {
 function renderRunControls() {
   const tab = activeTab();
   const canRun = state.hasMain && tab && tab.runReady && !tab.dirty;
-  $('term').hidden = !canRun;
   $('run-label').textContent = 'Run';
+  $('term-in').disabled = state.busy || state.pending || !state.ready || !canRun;
+  $('term-in').placeholder = canRun ? 'stdin' : 'Run a file with main';
   const hasSource = Boolean($('source').value.trim());
   $('btn-run').disabled = state.busy || state.pending || !state.ready
     || !hasSource || !canRun;
@@ -767,10 +939,12 @@ function wireExamples() {
       }
       const example = EXAMPLES[Number(el.dataset.i)];
       const existing = state.tabs.find((t) => t.name === example.file);
+      const empty = state.tabs.find((t) => !t.source.trim());
       if (existing) {
         selectTab(existing.id);
         setSource(example.source, example.file);
-      } else if (activeTab() && !activeTab().source.trim()) {
+      } else if (empty) {
+        selectTab(empty.id);
         setSource(example.source, example.file);
       } else {
         addTab(example.file, example.source);
@@ -901,6 +1075,7 @@ function onMessage(event) {
       $('qm-listing').innerHTML =
         '<span class="hint">The minimized program appears here.</span>';
       $('qm-sub').textContent = '— instructions';
+      hideQmPill();
       renderRunControls();
       status();
       return;
@@ -912,6 +1087,7 @@ function onMessage(event) {
         `<span class="tok-com">${escapeHtml(
           msg.result.error.text || msg.result.error.message)}</span>`;
       $('qm-sub').textContent = 'no result';
+      hideQmPill();
       // There is no program to run any more, and leaving Run live would offer
       // to evaluate the previous paste's answer under this one's heading.
       renderRunControls();
@@ -992,6 +1168,8 @@ function init() {
   syncSource({ keepDirty: true });
   activeTab().dirty = false;
   renderTabs();
+  restoreVfsWidth();
+  setupDockResize();
 
   // The first example replaces the placeholder only if nothing was restored or
   // shared, so a returning visitor never loses what they had.
@@ -1078,6 +1256,24 @@ function init() {
   $('btn-run').addEventListener('click', runProgram);
   $('btn-newtab').addEventListener('click', showExamples);
   $('btn-copy').addEventListener('click', copyOutput);
+  $('qm-pill').addEventListener('click', () => {
+    const open = $('qm-peek').hidden;
+    $('qm-peek').hidden = !open;
+    $('qm-pill').setAttribute('aria-expanded', String(open));
+  });
+  $('btn-peek-close').addEventListener('click', () => {
+    $('qm-peek').hidden = true;
+    $('qm-pill').setAttribute('aria-expanded', 'false');
+    $('qm-pill').focus();
+  });
+  $('btn-run-clear').addEventListener('click', () => {
+    $('term-out').replaceChildren();
+    $('term-in').focus();
+  });
+  $('btn-shell-clear').addEventListener('click', () => {
+    $('shell-out').replaceChildren();
+    $('shell-in').focus();
+  });
   $('term-in').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') { event.preventDefault(); runProgram(); }
   });
