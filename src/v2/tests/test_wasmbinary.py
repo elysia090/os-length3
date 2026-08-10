@@ -53,6 +53,29 @@ class TestLargeWasmFunctionOptimizer(unittest.TestCase):
         self.assertEqual(report['replaced'], 0)
         self.assertEqual(optimized, raw)
 
+    def test_memory_c_store_forwards_both_loads_in_the_wasm_artifact(self):
+        body = (b'\x01\x01\x7f\x20\x00\x41\x07\x71\x41\x02\x74\x22\x01'
+                b'\x20\x00\x41\x01\x6a\x36\x02\x80\x08'
+                b'\x20\x01\x28\x02\x80\x08'
+                b'\x20\x01\x28\x02\x80\x08\x6a\x0b')
+        raw = module(body, kind=0x7F, memory=True)
+
+        optimized, report = optimize_module(raw)
+
+        self.assertEqual(report['decoded_state_integer_expressions'], 1)
+        self.assertEqual(report['lowerable_state_integer_expressions'], 1)
+        self.assertEqual(report['unencodable_state_integer_expressions'], 0)
+        self.assertEqual(report['forwarded_memory_loads'], 2)
+        self.assertEqual(report['state_physical_work'], 4)
+        self.assertEqual(report['reencodable_state_physical_work'], 4)
+        self.assertEqual(report['state_reencoded_work'], 5)
+        self.assertEqual(report['reencoded_materializations'], 1)
+        self.assertEqual(report['rejected_typed_wasm_improvements'], 1)
+        self.assertEqual(report['replaced'], 0)
+        self.assertIs(optimized, raw)
+        for value in range(16):
+            self.assertEqual(call(raw, value), call(optimized, value))
+
     def test_substitution_normalizes_an_expression_using_two_parameters(self):
         # (a + 3 + 4) xor b: the two additions become one without packing or
         # sampling the independent parameters.

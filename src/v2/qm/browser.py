@@ -487,9 +487,10 @@ def physical_codec(_target_name=''):
 def normalize_wasm(encoded):
     """Apply safe function-local QM to a compiled wasm module.
 
-    Only closed straight-line integer bodies are eligible. Stateful bodies and
-    every call, memory access, global access, trap, or control-flow body remain
-    byte-for-byte intact in :func:`qm.wasmbinary.optimize_module`.
+    Improving closed scalar bodies may be rewritten. Straight-line state bodies
+    are audited through the physical state-step route, but their typed-Wasm
+    bodies remain intact; calls, host observations, traps, atomics, and
+    observable control boundaries are not rewritten.
     """
     import base64
 

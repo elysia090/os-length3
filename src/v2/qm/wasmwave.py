@@ -1,10 +1,11 @@
-"""Execute pure WebAssembly slices as dependency waves.
+"""Execute WebAssembly state-step slices as dependency waves.
 
-Memory, calls, globals and control flow remain exact one-instruction
-boundaries.  Between them, stack and local traffic is renamed into SSA values;
-all nodes at one dependency depth read the previous value snapshot and publish
-their results together.  The machine frame is written once at the end of the
-slice instead of once per WebAssembly instruction.
+Non-atomic linear-memory operations share the same SSA page as arithmetic.
+Calls, atomics, host operations and control-flow observations remain exact
+boundaries.  Between them, stack, local and memory traffic is renamed into SSA
+values; all nodes at one dependency depth read earlier waves and publish their
+results together.  The machine frame and final byte coordinates are sealed
+once at the observable cut instead of once per WebAssembly instruction.
 """
 
 from dataclasses import dataclass, replace
@@ -12,10 +13,11 @@ from dataclasses import dataclass, replace
 from .bits import mask_of
 from .wasmphysical import DependencyWaves
 from .laneops import evaluate as evaluate_physical
+from .memorycut import MemoryCut
 from .stepnormalize import normalize_plan
 from .wasmstate import (I32, Control, Frame, WasmStateError, _block_results,
-                        _branch, _coerce, _memory_read, _memory_write,
-                        _numeric, instruction_step)
+                        _branch, _coerce, _memory_write, _numeric,
+                        instruction_step)
 
 
 _UNARY = {
@@ -112,11 +114,23 @@ def numeric_arity(op):
     return None
 
 
+def memory_arity(op):
+    """Data arity for an ordinary linear-memory operation."""
+    if '.atomic.' in op or op.startswith('memory.atomic.'):
+        return None
+    if '.load' in op:
+        return 1
+    if '.store' in op:
+        return 2
+    return None
+
+
 def is_barrier(op):
     """Whether an instruction must remain an ordered machine-state step."""
     return not (op == 'nop' or op in ('drop', 'select')
                 or op.startswith('local.') or op.endswith('.const')
-                or numeric_arity(op) is not None)
+                or numeric_arity(op) is not None
+                or memory_arity(op) is not None)
 
 
 def _evaluate_source(op, arguments):
@@ -148,6 +162,9 @@ def compile_slice(module, frame):
     locals_ = [Operand('local', index) for index in range(len(frame.locals))]
     nodes = []
     common = {}
+    last_store = None
+    pending_loads = []
+    stored_values = {}
 
     def pop(op):
         if not stack:
@@ -209,6 +226,27 @@ def compile_slice(module, frame):
         common[key] = result
         return result
 
+    def emit_memory(op, arguments, dependencies):
+        """Publish one memory node after every alias-relevant predecessor."""
+        value = len(nodes) + 1
+        arguments = tuple(arguments) + tuple(
+            dependency for dependency in dependencies
+            if dependency not in arguments)
+        nodes.append(WaveNode(value, 'memory.' + op, arguments))
+        return Operand('node', value)
+
+    def forwarded_load(op, value, width, signed):
+        """Project a dominating same-width store into the load's value type."""
+        kind = op.split('.', 1)[0]
+        bits = 32 if kind == 'i32' else 64
+        stored_bits = width * 8
+        if signed and stored_bits < bits:
+            return emit('%s.extend%d_s' % (kind, stored_bits), (value,))
+        if stored_bits < bits:
+            return emit('%s.and' % kind, (
+                value, Operand('const', mask_of(stored_bits))))
+        return value
+
     while pc < len(function.code):
         instruction = function.code[pc]
         op = instruction.op
@@ -236,6 +274,33 @@ def compile_slice(module, frame):
                 locals_[index] = stack[-1]
         elif op.endswith('.const'):
             stack.append(Operand('const', instruction.args[0]))
+        elif memory_arity(op) == 1:
+            _align, offset, width, signed = instruction.args
+            address = pop(op)
+            definition = stored_values.get((address, offset, width))
+            if (definition is not None
+                    and definition[1] == op.split('.', 1)[0]):
+                loaded = forwarded_load(op, definition[0], width, signed)
+            else:
+                dependencies = (() if last_store is None else (last_store,))
+                loaded = emit_memory(
+                    op, (address, Operand('const', offset),
+                         Operand('const', width)), dependencies)
+                pending_loads.append(loaded)
+            stack.append(loaded)
+        elif memory_arity(op) == 2:
+            _align, offset, width, _signed = instruction.args
+            value, address = pop(op), pop(op)
+            dependencies = list(pending_loads)
+            if last_store is not None:
+                dependencies.append(last_store)
+            last_store = emit_memory(
+                op, (address, value, Operand('const', offset),
+                     Operand('const', width)), dependencies)
+            pending_loads[:] = []
+            stored_values.clear()
+            stored_values[(address, offset, width)] = (
+                value, op.split('.', 1)[0])
         else:
             arity = numeric_arity(op)
             arguments = tuple(pop(op) for _ in range(arity))[::-1]
@@ -245,15 +310,24 @@ def compile_slice(module, frame):
     # Renaming does not assign a second, provisional dependency layout.  The
     # persistent cut builder owns liveness, CSE and waves exactly once before
     # any backward work minimization can observe this graph.
+    # A function's final end observes only its result stack. Local coordinates
+    # have no future reader, including when a quantum boundary resumes at that
+    # end, so do not retain their final materializations in the residual page.
+    published_locals = tuple(locals_)
+    if pc == len(function.code) - 1 and function.code[pc].op == 'end':
+        published_locals = tuple(
+            Operand('local', index) for index in range(len(locals_)))
+
     return normalize_plan(PureSlice(
         frame.function, frame.pc, pc, pc - frame.pc, len(frame.stack),
-        tuple(nodes), None, tuple(stack), tuple(locals_)))
+        tuple(nodes), None, tuple(stack), published_locals))
 
 
 def execute_slice(plan, state):
     """Evaluate each wave from a stable snapshot, then commit one frame."""
     frame = state.frames[-1]
     values = {}
+    memory = MemoryCut(state.memory)
 
     def resolve(operand):
         if operand.kind == 'const':
@@ -269,13 +343,29 @@ def execute_slice(plan, state):
         # publication until all lane results have been evaluated so the Python
         # reference executor has the same simultaneous-write semantics as the
         # physical parallel implementation.
-        produced = tuple(
-            (value, evaluate_physical(
-                plan.nodes[value - 1].op,
-                tuple(resolve(argument)
-                      for argument in plan.nodes[value - 1].arguments)))
-            for value in plan.waves.wave(depth)
-        )
+        produced = []
+        for value in plan.waves.wave(depth):
+            node = plan.nodes[value - 1]
+            arguments = tuple(resolve(argument) for argument in node.arguments)
+            if node.op.startswith('memory.'):
+                from .steppage import _load, _store
+                name = node.op.split('.', 1)[1]
+                store = '.store' in name
+                data_count = 2 if store else 1
+                offset, shape = arguments[data_count:data_count + 2]
+                width, scale = shape & 0xff, shape >> 8
+                if store:
+                    _store(memory, arguments[0], arguments[1], offset, width,
+                           scale)
+                    result = 0
+                else:
+                    result = _load(
+                        memory, arguments[0], offset, width, scale,
+                        name.endswith('_s'),
+                        32 if name.startswith('i32.') else 64)
+            else:
+                result = evaluate_physical(node.op, arguments)
+            produced.append((value, result))
         values.update(produced)
 
     next_frame = Frame(
@@ -285,7 +375,8 @@ def execute_slice(plan, state):
         tuple(resolve(value) for value in plan.stack),
         frame.controls,
     )
-    return replace(state, frames=state.frames[:-1] + (next_frame,))
+    return replace(state, frames=state.frames[:-1] + (next_frame,),
+                   memory=memory.commit())
 
 
 _EMPTY = object()
@@ -377,6 +468,7 @@ class _PhysicalStep:
     execute: object
     cost: WaveCost
     source_work: int
+    forwarded_memory_loads: int
     executions: int = 0
 
 
@@ -388,6 +480,9 @@ class _PhysicalPage:
     execute: object
     cost: WaveCost
     source_work: int
+    forwarded_memory_loads: int
+
+
 
 
 class WaveExecutor:
@@ -403,6 +498,21 @@ class WaveExecutor:
         self.total_source_work = 0
         self.state_materializations = 0
         self.avoided_state_materializations = 0
+        self.memory_loads = 0
+        self.memory_load_bytes = 0
+        self.memory_stores = 0
+        self.memory_store_bytes = 0
+        self.memory_final_store_bytes = 0
+        self.memory_store_segments = 0
+        self.memory_state_materializations = 0
+        self.avoided_memory_state_materializations = 0
+        self.memory_pages_materialized = 0
+        self.memory_overwritten_bytes = 0
+        self.memory_forwarded_loads = 0
+        self.memory_source_loads = 0
+        self.memory_merged_loads = 0
+        self.memory_source_bytes_loaded = 0
+        self.qm_forwarded_memory_loads = 0
 
     def _entry(self, frame):
         key = (frame.function, frame.pc, len(frame.stack))
@@ -420,7 +530,14 @@ class WaveExecutor:
                 source_work = sum(
                     1 for instruction in function.code[plan.start:plan.end]
                     if instruction.op == 'select'
-                    or numeric_arity(instruction.op) is not None)
+                    or numeric_arity(instruction.op) is not None
+                    or memory_arity(instruction.op) is not None)
+                source_memory_loads = sum(
+                    memory_arity(instruction.op) == 1
+                    for instruction in function.code[plan.start:plan.end])
+                mapped_memory_loads = sum(
+                    node.op.startswith('memory.') and '.load' in node.op
+                    for node in plan.nodes)
                 mapped = unpack(pack(plan))
                 widths = [
                     mapped.value('wave_offsets', depth + 1)
@@ -436,10 +553,11 @@ class WaveExecutor:
                 )
                 page = _PhysicalPage(
                     mapped, compile_mapped_executor(mapped), cost,
-                    source_work)
+                    source_work, source_memory_loads - mapped_memory_loads)
                 self.module._physical_pages[key] = page
             self.steps[key] = _PhysicalStep(
-                page.mapped, page.execute, page.cost, page.source_work)
+                page.mapped, page.execute, page.cost, page.source_work,
+                page.forwarded_memory_loads)
             entry = self.steps.get(key)
         return entry
 
@@ -480,6 +598,23 @@ class WaveExecutor:
             'state_materializations': self.state_materializations,
             'avoided_state_materializations':
                 self.avoided_state_materializations,
+            'memory_ssa_loads': self.memory_loads,
+            'memory_ssa_load_bytes': self.memory_load_bytes,
+            'memory_ssa_stores': self.memory_stores,
+            'memory_ssa_store_bytes': self.memory_store_bytes,
+            'memory_final_store_bytes': self.memory_final_store_bytes,
+            'memory_store_segments': self.memory_store_segments,
+            'memory_state_materializations':
+                self.memory_state_materializations,
+            'avoided_memory_state_materializations':
+                self.avoided_memory_state_materializations,
+            'memory_pages_materialized': self.memory_pages_materialized,
+            'memory_overwritten_bytes': self.memory_overwritten_bytes,
+            'memory_forwarded_loads': self.memory_forwarded_loads,
+            'memory_source_loads': self.memory_source_loads,
+            'memory_merged_loads': self.memory_merged_loads,
+            'memory_source_bytes_loaded': self.memory_source_bytes_loaded,
+            'qm_forwarded_memory_loads': self.qm_forwarded_memory_loads,
             'dominant_residuals': [
                 {
                     'dynamic_work': work,
@@ -589,8 +724,7 @@ class WaveExecutor:
               and not op.startswith('memory.atomic.')):
             _align, offset, width, signed = instruction.args
             address = (pop() & I32) + offset
-            raw = _memory_read(memory, address, width)
-            value = int.from_bytes(raw, 'little')
+            value = memory.load(address, width)
             bits = 32 if op.startswith('i32') else 64
             if signed and value & (1 << (width * 8 - 1)):
                 value -= 1 << (width * 8)
@@ -624,7 +758,7 @@ class WaveExecutor:
         stack = frame.stack
         controls = frame.controls
         globals_ = state.globals
-        memory = state.memory
+        memory = MemoryCut(state.memory)
         instructions = 0
         work = 0
         span = 0
@@ -651,7 +785,7 @@ class WaveExecutor:
                         'state-step local extent changed at a physical '
                         'coordinate')
                 entry.executions += 1
-                locals_, stack = entry.execute(locals_, stack)
+                locals_, stack = entry.execute(locals_, stack, memory)
                 pc = mapped.end
                 instructions += entry.cost.instructions
                 work += entry.cost.work
@@ -660,6 +794,7 @@ class WaveExecutor:
                 max_parallel_width = max(
                     max_parallel_width, entry.cost.max_parallel_width)
                 self.total_source_work += entry.source_work
+                self.qm_forwarded_memory_loads += entry.forwarded_memory_loads
                 transient_steps += 1
                 continue
 
@@ -714,11 +849,11 @@ class WaveExecutor:
                     transient_steps += 1
                     continue
 
+            if budget is not None and instructions + 1 > budget:
+                break
             advanced = self._internal_control(
                 function_index, pc, stack, controls)
             if advanced is not None:
-                if budget is not None and instructions + 1 > budget:
-                    break
                 pc, stack, controls = advanced
                 instructions += 1
                 barriers += 1
@@ -728,8 +863,6 @@ class WaveExecutor:
             effected = self._internal_effect(
                 function_index, pc, stack, globals_, memory)
             if effected is not None:
-                if budget is not None and instructions + 1 > budget:
-                    break
                 pc, stack, globals_, memory = effected
                 instructions += 1
                 barriers += 1
@@ -741,10 +874,27 @@ class WaveExecutor:
             cost = WaveCost(
                 instructions, work, span, slices, barriers,
                 max_parallel_width)
+            self.memory_loads += memory.loads
+            self.memory_load_bytes += memory.load_bytes
+            self.memory_stores += memory.stores
+            self.memory_store_bytes += memory.store_bytes
+            self.memory_final_store_bytes += memory.final_store_bytes
+            self.memory_store_segments += memory.store_segments
+            self.memory_overwritten_bytes += memory.overwritten_bytes
+            self.memory_forwarded_loads += memory.forwarded_loads
+            self.memory_source_loads += memory.source_loads
+            self.memory_merged_loads += memory.merged_loads
+            self.memory_source_bytes_loaded += memory.source_bytes_loaded
+            sealed_memory = memory.commit()
+            memory_materialized = int(sealed_memory is not memory.source)
+            self.memory_state_materializations += memory_materialized
+            self.avoided_memory_state_materializations += (
+                memory.stores - memory_materialized)
+            self.memory_pages_materialized += len(memory.dirty)
             next_frame = Frame(function_index, pc, locals_, stack, controls)
             next_state = replace(
                 state, frames=tuple(prefix_frames) + (next_frame,),
-                globals=globals_, memory=memory)
+                globals=globals_, memory=sealed_memory)
             self.state_materializations += 1
             self.avoided_state_materializations += transient_steps - 1
             return next_state, cost

@@ -214,7 +214,10 @@ def _physical_plan(plan):
 
     nodes = []
     for node in plan.nodes:
-        operation, arguments = select(node.op, node.arguments)
+        if node.op.startswith('memory.'):
+            operation, arguments = node.op, node.arguments
+        else:
+            operation, arguments = select(node.op, node.arguments)
         nodes.append(WaveNode(node.value, operation, tuple(arguments)))
     return PureSlice(
         plan.function, plan.start, plan.end, plan.instructions,
@@ -265,6 +268,31 @@ def _rewrite_physical(nodes, stack, locals_):
     for node in nodes:
         operation = node.op
         arguments = tuple(map(resolve, node.arguments))
+        if operation.startswith('memory.'):
+            store = '.store' in operation
+            data_count = 2 if store else 1
+            data = arguments[:data_count]
+            offset, shape = arguments[data_count:data_count + 2]
+            dependencies = arguments[data_count + 2:]
+            raw_shape = constant(shape)
+            if raw_shape is None:
+                raise ValueError('memory width is not a physical constant')
+            access_width = raw_shape & 0xff
+            scale = raw_shape >> 8
+            address_form = form(data[0])
+            if (scale == 0 and address_form is not None
+                    and address_form[0] == 'lane32.SHL'
+                    and len(address_form[1]) == 2
+                    and constant(address_form[1][1]) is not None):
+                amount = constant(address_form[1][1]) % 32
+                data = (address_form[1][0],) + data[1:]
+                scale = amount
+            shape = Operand('const', access_width | (scale << 8))
+            arguments = (data + (offset, shape)
+                         + dependencies)
+            operand = emit(operation, arguments)
+            remap[node.value] = operand
+            continue
         width, name = operation.split('.', 1)
         bits = 32 if width == 'lane32' else 64
         full = mask_of(bits)
@@ -384,7 +412,8 @@ def _compact(nodes, stack, locals_):
 
     trapping = {'DIV_S', 'DIV_U', 'REM_S', 'REM_U'}
     live = {node.value for node in nodes
-            if node.op.split('.', 1)[-1] in trapping}
+            if (node.op.startswith('memory.')
+                or node.op.split('.', 1)[-1] in trapping)}
     live.update(operand.value for operand in stack + locals_
                 if operand.kind == 'node')
     pending = list(live)
@@ -406,14 +435,15 @@ def _compact(nodes, stack, locals_):
             if operand.kind == 'node' else operand
             for operand in node.arguments)
         key = (node.op, arguments)
-        previous = common.get(key)
+        previous = None if node.op.startswith('memory.') else common.get(key)
         if previous is not None:
             remap[node.value] = previous
             continue
         value = len(kept) + 1
         remap[node.value] = value
         kept.append(WaveNode(value, node.op, arguments))
-        common[key] = value
+        if not node.op.startswith('memory.'):
+            common[key] = value
 
     def output(operand):
         return (Operand('node', remap[operand.value])
@@ -467,6 +497,9 @@ def _semantic_cut(plan):
     }
     nodes = []
     for node in plan.nodes:
+        if node.op.startswith('memory.'):
+            nodes.append(node)
+            continue
         prefix, name = node.op.split('.', 1)
         semantic = names.get(name)
         operation = node.op

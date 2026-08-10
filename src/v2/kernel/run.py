@@ -416,6 +416,14 @@ def main(argv=None):
         print('state cuts   %d materialized, %d internal states carried' %
               (normalization['state_materializations'],
                normalization['avoided_state_materializations']))
+        print('memory cut  %d/%d source load bytes, %d/%d final store '
+              'bytes in %d segments, %d loads substituted' %
+              (normalization['memory_source_bytes_loaded'],
+               normalization['memory_ssa_load_bytes'],
+               normalization['memory_final_store_bytes'],
+               normalization['memory_ssa_store_bytes'],
+               normalization['memory_store_segments'],
+               normalization['qm_forwarded_memory_loads']))
         if 'rootfs' in report:
             root = report['rootfs']
             print('rootfs       %d/%d bytes resident, %d page(s) touched'

@@ -81,13 +81,19 @@ python3 tools/build_compiler_distribution.py llvm.core.wasm \
 The last command is the large-module path used for YoWASP itself. A compiler
 invocation is not treated as a scalar kernel: arguments, clocks, randomness and
 the virtual filesystem remain host state. The tool scans internal code bodies
-without materializing the 75 MB module as an instruction object graph and sends
-only closed straight-line integer functions through whole-expression
-substitution, normalization, and QM. Multiple parameters remain independent
-SSA inputs; they are not packed into a sampled domain. On
+without materializing the 75 MB module as an instruction object graph. Closed
+scalar functions use whole-expression QM; additional straight-line
+integer/memory functions are lowered to state-step pages for a physical-route
+audit. Multiple parameters remain independent SSA inputs; they are not packed
+into a sampled domain. On
 `@yowasp/clang@22.0.0-git20542-10`, the 75,532,134-byte core contains 133,398
-defined functions; 5,124 functions fit that safe grammar, and all 5,124 are
-already fixed points. The output is therefore intentionally byte-identical.
+defined functions; 5,124 scalar functions are fixed points and 2,605 additional
+state functions reach physical SSA with 14,181 operations. Of those, 1,952
+also have a direct typed-Wasm diagnostic spelling: their 8,253 physical
+operations become 8,305 after publication rematerializes 52 operations. The
+other 653 are still valid physical pages and do not depend on having such a
+spelling. Stateful pages are not re-encoded or installed beside the physical
+executor, and the compiler Wasm remains intentionally byte-identical.
 The component adapters likewise contain only host wrappers and indirect-call
 trampolines in this grammar. A zero replacement count is a result, not licence
 to rewrite host state or claim sampled compiler equivalence.
@@ -97,7 +103,9 @@ Byte-identical does not mean physically serial. After dead-value removal those
 of 3,860. There are 157 slices with more than one independent lane; the widest
 wave has 7 lanes and the longest slice has span 10. `qm.wasmphysical` schedules
 each live SSA node by dependency depth, so one wave writes distinct slots in
-parallel. Calls, memory effects, and control transfers remain barriers.
+parallel. In the machine-state route, ordinary linear-memory loads/stores are
+nodes in those same waves. Calls, atomics, host operations, faults, and
+observable control transfers remain barriers.
 
 Those schedules have mapped physical forms. `qm.scalarpage` stores a
 target-shaped scalar SSA sequence, `qm.steppage` stores one maximal pure state
@@ -349,6 +357,7 @@ kernel/           Linux-in-Wasm execution, deterministic host state and pages
   machine.py      machine_step(state, event) and the external device ABI
   scheduler.py    resumable kernel threads and setjmp/longjmp continuations
   process.py      user/kernel syscall, TLS, and user continuation boundaries
+  browser.py      retained browser sessions and external barrier protocol
   run.py          native LKL wasm entry point and barrier/page trace
   guest/          reproducible read-only virtio root-device wrapper
 
@@ -401,9 +410,13 @@ Only block pages read by Linux become resident. The temporary contiguous
 `/init` extraction buffer is discarded after decoding; clean root-image pages
 and physical codec slices remain independently disposable. Timers advance the
 deterministic virtual clock to the next deadline and enqueue their callbacks as
-ordinary cooperative continuations. Pure slices between load/store/call/control
-barriers are substituted into physical-array SSA, normalized by QM, encoded,
-and compiled directly from one mapped state-step page on their first execution.
+ordinary cooperative continuations. Maximal state-step slices up to a
+call/atomic/host/control boundary are substituted into physical-array SSA,
+normalized by QM, encoded, and compiled directly from one mapped state-step
+page on their first execution. Non-atomic loads/stores carry explicit memory
+versions inside the page: an exact dominating store substitutes a later load,
+while remaining byte coordinates use the direct 256-byte page cut described in
+[Tail-Byte Quotient / CSR Map Rank](https://length3.com/tail-byte-quotient-csr-map-rank).
 The construction SSA is then released; scalar node reconstruction is available
 only to diagnostics. Page locals are sparse changed-coordinate patches rather
 than dense identity projections. Raw Wasm arithmetic cannot be encoded or
@@ -422,21 +435,40 @@ semantic state key and may be discarded and rebuilt.
 
 Ordered guest operations do not each force a persistent state. Branches,
 non-atomic loads/stores, globals, and direct guest calls carry the current
-physical frame and sparse touched pages forward as a transient residual. A
-complete `MachineState` is sealed only where an import/host, fault, interrupt,
-top-level return, or execution budget can observe it. `kernel.run` reports both
-counts as `state cuts`; on the 18-event LKL sample, 89 states are materialized
-and 154,337 internal states are carried without changing the measured work,
-span, or mapped codec pages.
+physical frame and touched byte coordinates forward as a transient residual.
+For each 256-byte page, one bit domain says which final coordinates cover the
+source; covered loads and complete-page commits do not read the older page.
+Adjacent final coordinates publish as one segment. A complete `MachineState`
+is sealed only where an import/host, fault, interrupt, top-level return, or
+execution budget can observe it. On the current 18-event read-only-rootfs LKL
+sample, 95 states are materialized and 30,956 internal states are carried.
 
 Reached physical pages belong to the decoded module rather than an individual
 executor. A later executor reuses the immutable normalized page and its
 opcode-bound lane function, while counters and continuations remain private.
 This removes the `compile_slice -> normalize -> pack/unpack -> compile` fixed
 cost from repeated runs and prevents minimized lanes from re-entering the
-generic Wasm numeric dispatcher. The ECHO `vm_load` measurement is about 0.17
-seconds for the first construction of 204 pages and about 0.013 seconds for a
+generic Wasm numeric dispatcher. The ECHO `vm_load` measurement is about 0.089
+seconds for the first construction of 127 pages and about 0.0076 seconds for a
 new executor after those coordinates have been reached.
+
+The distinction is observable in generated artifacts. `web/vm.wasm` has 13
+state operations in physical form but needs 15 when encoded back to typed
+Wasm; the compiler core has the 8,253 / 8,305 split above. The Linux reductions
+reported here are mapped state-step pages, not rewritten `.wasm` bytes. The
+current browser `WebAssembly.compile/instantiate` route for the compiler core
+and `vm.wasm` is therefore a known bypass: it cannot receive the physical-page
+reduction until the browser worker consumes the same state-step codec directly.
+
+Linux does not take that bypass. `web/linux-worker.js` lazily starts a separate
+disposable Python worker, opens the existing compact LKL module through
+`kernel.browser`, and executes it with the same `WaveExecutor` and physical
+state-step pages used by the native runner. A root image remains a Blob or an
+HTTP range source; only the requested `(device, 4 KiB page)` enters the Worker.
+Clock and console traffic use the existing machine events. The default staged
+drive runs kernel initialization, read-only root mounting, and `/init` probing
+without adding a browser VFS. Terminating the Worker releases the decoded
+module, linear memory, resident backing pages, and physical executor together.
 
 ---
 

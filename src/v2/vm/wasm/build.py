@@ -111,8 +111,24 @@ def main():
         print('vm.c compiles clean (%d bytes)' % size)
     else:
         print('wrote %s (%d bytes)' % (out, size))
-    print('QM checked %d pure wasm bodies; %d replaced'
-          % (report['decoded_pure_integer_expressions'], report['replaced']))
+    print('QM checked %d pure and %d state wasm bodies; %d replaced, '
+          '%d memory loads substituted'
+          % (report['decoded_pure_integer_expressions'],
+             report['decoded_state_integer_expressions'],
+             report['replaced'], report['forwarded_memory_loads']))
+    print('state pages: %d physical operations total; %d have no typed-wasm '
+          'diagnostic spelling'
+          % (report['state_physical_work'],
+             report['unencodable_state_integer_expressions']))
+    print('reencodable state work %d physical -> %d typed wasm '
+          '(%d publication/materialization operations)'
+          % (report['reencodable_state_physical_work'],
+             report['state_reencoded_work'],
+             report['reencoded_materializations']))
+    if report['rejected_typed_wasm_improvements']:
+        print('%d typed-wasm state rewrite(s) rejected; state pages remain '
+              'physical'
+              % report['rejected_typed_wasm_improvements'])
     return 0
 
 
