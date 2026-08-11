@@ -9,6 +9,7 @@ the byte cut is committed.
 
 from dataclasses import dataclass, field, replace as _dataclass_replace
 import gzip
+import hashlib
 from math import gcd
 import struct
 
@@ -363,6 +364,37 @@ _PAGE_RECORD_RELEASE_CHECK = bytes.fromhex(
     '8b 7d d4 4c 89 f6 44 89 fa 45 89 e0 49 89 dc '
     '48 8b 5d a0 4c 8b 75 c8 84 c0 48 8b 45 a8 74 a3 '
     'ff c7 4d 89 ef 48 8b 4d c0 eb a8')
+_RANDOM_U32_CACHE_ENTRY = bytes.fromhex(
+    'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 41 57 41 56 53 '
+    '48 83 ec 50 65 48 8b 05 00 00 00 00 48 89 45 e0 '
+    'e9 9e 00 00 00')
+_RANDOM_U32_CACHE_CORE = bytes.fromhex(
+    'ff 15 00 00 00 00 48 89 c3 ff 15 00 00 00 00 '
+    '65 48 8b 05 00 00 00 00 4c 8d b0 00 00 00 00 '
+    '4c 8b 3d 00 00 00 00 8b 80 00 00 00 00 '
+    '83 f8 17 77 06 4d 3b 7e 60 74 1b be 60 00 00 00 '
+    '4c 89 f7 e8 00 00 00 00 41 c7 46 68 00 00 00 00 '
+    '4d 89 7e 60 31 c0 89 c0 41 8b 0c 86 '
+    '41 c7 04 86 00 00 00 00 41 ff 46 68 '
+    '65 48 8b 05 00 00 00 00 f7 c3 00 02 00 00 74 06 '
+    'ff 15 00 00 00 00 65 48 8b 05 00 00 00 00 '
+    '48 3b 45 e0 75 12 89 c8 48 83 c4 50 5b 41 5e 41 5f 5d '
+    '2e e9 00 00 00 00')
+_RANDOM_U32_CACHE_READY = bytes.fromhex(
+    '83 3d 00 00 00 00 01 0f 87 55 ff ff ff')
+_RANDOM_U32_BELOW_CORE = bytes.fromhex(
+    'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 41 56 53 89 fb '
+    'e8 00 00 00 00 89 c1 85 db 74 11 41 89 de 89 c9 '
+    '49 0f af ce 39 cb 77 10 48 c1 e9 20 89 c8 '
+    '5b 41 5e 5d 2e e9 00 00 00 00 89 d8 f7 d8 31 d2 '
+    'f7 f3 39 ca 76 e4 89 d3 e8 00 00 00 00 89 da 89 c1 '
+    '49 0f af ce 39 cb 76 d1 eb eb')
+_RANDOM_PERMUTATION_LOOP = bytes.fromhex(
+    '89 df e8 00 00 00 00 43 8b 4c be 04 89 c0 '
+    '41 8b 14 86 43 89 54 be 04 41 89 0c 86 '
+    'ff cb 49 ff cc 45 85 ff 4d 89 e7 75 d8')
+_CHACHA_PERMUTATION_SHA256 = bytes.fromhex(
+    '57adb5468be1cc53f20a752dfa990b3f4ee752049bee9846c55a906e9c9053cc')
 _RELATIVE_RECORD_PROJECTION_CORE = bytes.fromhex(
     '48 83 c1 01 48 81 f9 00 00 00 00 77 4b 48 83 ce 02 '
     '48 89 70 08 48 39 fa 74 0e 48 8b 4a 08 83 e1 03 '
@@ -1254,6 +1286,27 @@ def write_virtual(state, address, payload):
         else replace(state, memory=cut.commit())
 
 
+def write_virtual_batch(state, writes):
+    """Publish virtual byte slices only after every mapping is proved."""
+    segments = []
+    for address, payload in writes:
+        payload = bytes(payload)
+        at = 0
+        while at < len(payload):
+            virtual = (int(address) + at) & MASK64
+            physical = translate(state, virtual, 'write')
+            count = min(
+                len(payload) - at, PAGE_BYTES - (physical & 0xfff))
+            segments.append((physical, payload[at:at + count]))
+            at += count
+    cut = state.memory if isinstance(state.memory, MemoryCut) \
+        else MemoryCut(state.memory)
+    for physical, payload in segments:
+        cut.write(physical, payload)
+    return state if isinstance(state.memory, MemoryCut) \
+        else replace(state, memory=cut.commit())
+
+
 def increment_virtual_bytes(state, increments):
     """Join virtual byte deltas into one direct physical projection."""
     physical = {}
@@ -1692,6 +1745,7 @@ class X86DBT(object):
         self.persistent_cuts = 0
         self.materialized_pages = 0
         self.published_pages = 0
+        self.retained_cut_pages = 0
         self.forwarded_loads = 0
         self.source_bytes_loaded = 0
         self.aliased_pages = 0
@@ -1777,6 +1831,7 @@ class X86DBT(object):
         self.collapsed_direct_index_calls = 0
         self.collapsed_lane_permutation_calls = 0
         self.collapsed_lane_permutation_lanes = 0
+        self.collapsed_chacha_rounds = 0
         self.collapsed_sponge_finalize_calls = 0
         self.collapsed_sponge_finalize_bytes = 0
         self.collapsed_hash_finalize_calls = 0
@@ -1831,6 +1886,11 @@ class X86DBT(object):
         self.collapsed_return_sites = 0
         self.collapsed_entry_nop_calls = 0
         self.collapsed_register_projection_calls = 0
+        self.collapsed_machine_leaf_calls = 0
+        self.collapsed_random_u32_cache_hits = 0
+        self.collapsed_random_u32_below_calls = 0
+        self.collapsed_random_u32_below_words = 0
+        self.collapsed_random_permutation_iterations = 0
         self.collapsed_page_record_predicates = 0
         self.collapsed_page_record_projection_iterations = 0
         self.collapsed_return_bytes = 0
@@ -1926,12 +1986,17 @@ class X86DBT(object):
         self._page_record_projection_loops = {}
         self._entry_nop_functions = {}
         self._register_projection_functions = {}
+        self._machine_leaf_functions = {}
+        self._random_u32_cache_functions = {}
+        self._random_u32_below_functions = {}
+        self._random_permutation_loops = {}
         self._page_record_predicate_functions = {}
         self._normalized_compare_functions = {}
         self._normalized_compare_cache = {}
         self._normalized_field_directories = {}
         self._direct_index_functions = {}
         self._lane_permutation_functions = {}
+        self._chacha_permutation_functions = {}
         self._sponge_finalize_functions = {}
         self._hash_stream_functions = {}
         self._hash_init_functions = {}
@@ -2008,6 +2073,31 @@ class X86DBT(object):
         self.aliased_pages += cut.aliased_pages
         self.elided_pages += cut.elided_pages
         return _freeze_state(replace(state, memory=cut.commit()))
+
+    def retain(self, state):
+        """Publish an observable root while retaining direct byte SSA.
+
+        External machine events need an immutable state value, but they do
+        not need a storage artifact.  Sealing the physical directory keeps
+        the same page proof and lets the response fork it copy-on-write.
+        CanonicalPage composition remains reserved for an actual snapshot.
+        """
+        if not isinstance(state.memory, MemoryCut):
+            return _freeze_state(state)
+        cut = state.memory
+        if cut.sealed:
+            return _freeze_state(state)
+        pages = cut.generation_pages
+        if pages:
+            self.persistent_cuts += 1
+            self.published_pages += pages
+            self.retained_cut_pages += pages
+        self.forwarded_loads += cut.forwarded_loads
+        self.source_bytes_loaded += cut.source_bytes_loaded
+        self.aliased_pages += cut.aliased_pages
+        self.elided_pages += cut.elided_pages
+        cut.seal()
+        return _freeze_state(state)
 
     def _sync_proof_cache(self, memory):
         if memory is not self._proof_cache_memory:
@@ -9537,6 +9627,7 @@ class X86DBT(object):
                     self._collapse_strided_predicate_candidates,),
                 'bit_immediate': (
                     self._collapse_strided_record_projection,),
+                'call': (self._collapse_random_permutation_loop,),
                 'lea': (self._collapse_default_record_candidates,),
                 'move_sign_extend': (
                     self._collapse_predicate_record_projection,),
@@ -9908,11 +9999,82 @@ class X86DBT(object):
             self._lane_permutation_functions.pop(target, None)
         return present
 
+    @staticmethod
+    def _chacha_permute(lanes, rounds):
+        """Apply the ChaCha column/diagonal waves to sixteen u32 lanes."""
+        lanes = [int(value) & MASK32 for value in lanes]
+
+        def rotate(value, count):
+            return ((value << count) | (value >> (32 - count))) & MASK32
+
+        def quarter(a, b, c, d):
+            lanes[a] = (lanes[a] + lanes[b]) & MASK32
+            lanes[d] = rotate(lanes[d] ^ lanes[a], 16)
+            lanes[c] = (lanes[c] + lanes[d]) & MASK32
+            lanes[b] = rotate(lanes[b] ^ lanes[c], 12)
+            lanes[a] = (lanes[a] + lanes[b]) & MASK32
+            lanes[d] = rotate(lanes[d] ^ lanes[a], 8)
+            lanes[c] = (lanes[c] + lanes[d]) & MASK32
+            lanes[b] = rotate(lanes[b] ^ lanes[c], 7)
+
+        for _round in range(0, int(rounds), 2):
+            quarter(0, 4, 8, 12)
+            quarter(1, 5, 9, 13)
+            quarter(2, 6, 10, 14)
+            quarter(3, 7, 11, 15)
+            quarter(0, 5, 10, 15)
+            quarter(1, 6, 11, 12)
+            quarter(2, 7, 8, 13)
+            quarter(3, 4, 9, 14)
+        return tuple(lanes)
+
+    def _chacha_permutation_layout(self, state, target):
+        """Prove the current compiled sixteen-lane ChaCha ABI leaf."""
+        target = int(target) & MASK64
+        cached = self._chacha_permutation_functions.get(target)
+        if cached is not None:
+            config, proof, present = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return present
+        reader = _VirtualProofReader(state)
+        present = False
+        try:
+            code = bytearray(reader.read(target, 0x274))
+            displacement = _signed_integer(
+                int.from_bytes(code[-4:], 'little'), 32)
+            return_thunk = (target + len(code) + displacement) & MASK64
+            code[-4:] = bytes(4)
+            present = (
+                hashlib.sha256(code).digest() == _CHACHA_PERMUTATION_SHA256
+                and reader.read(return_thunk, 1) == b'\xc3')
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._chacha_permutation_functions[target] = (
+            config, proof, present)
+        return present
+
     def _collapse_lane_permutation_call(self, state, following, target):
-        """Execute a proved 25-lane permutation without an ABI frame."""
+        """Execute a proved lane permutation without an ABI frame."""
+        address = state.register('rdi') & MASK64
+        if self._chacha_permutation_layout(state, target):
+            rounds = state.register('rsi') & MASK32
+            if rounds not in (12, 20):
+                return None
+            try:
+                lanes = struct.unpack(
+                    '<16I', read_virtual(state, address, 16 * 4))
+                output = struct.pack(
+                    '<16I', *self._chacha_permute(lanes, rounds))
+                state = write_virtual(state, address, output)
+            except (PageFault, struct.error):
+                return None
+            self.collapsed_lane_permutation_calls += 1
+            self.collapsed_lane_permutation_lanes += 16
+            self.collapsed_chacha_rounds += rounds
+            return replace(state, rip=following & MASK64)
         if not self._lane_permutation_layout(state, target):
             return None
-        address = state.register('rdi') & MASK64
         try:
             lanes = struct.unpack(
                 '<25Q', read_virtual(state, address, 25 * 8))
@@ -13000,6 +13162,393 @@ class X86DBT(object):
         return replace(state, registers=registers,
                        rip=int(following) & MASK64)
 
+    def _machine_leaf_layout(self, state, target):
+        """Prove a tail-returning leaf that only projects machine state."""
+        target = int(target) & MASK64
+        cached = self._machine_leaf_functions.get(target)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            code = reader.read(target, 12)
+            candidates = (
+                (bytes.fromhex('f3 0f 1e fa 9c 58 e9'), 11,
+                 'flags'),
+                (bytes.fromhex('f3 0f 1e fa fa e9'), 10,
+                 'irq-disable'),
+                (bytes.fromhex('f3 0f 1e fa fb e9'), 10,
+                 'irq-enable'),
+                (bytes.fromhex('f3 0f 1e fa 0f 20 d0 e9'), 12,
+                 'read-cr2'),
+            )
+            for prefix, extent, operation in candidates:
+                if not code.startswith(prefix):
+                    continue
+                displacement = _signed_integer(
+                    int.from_bytes(code[extent - 4:extent], 'little'), 32)
+                return_thunk = (target + extent + displacement) & MASK64
+                if reader.read(return_thunk, 1) == b'\xc3':
+                    layout = operation
+                break
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._machine_leaf_functions[target] = config, proof, layout
+        return layout
+
+    def _collapse_machine_leaf_call(self, state, following, target):
+        """Compose a proved flags/control-register leaf into its caller."""
+        operation = self._machine_leaf_layout(state, target)
+        if operation is None:
+            return None
+        registers = state.registers
+        flags = state.rflags
+        if operation == 'flags':
+            registers = _write_register(
+                registers, REGISTER_INDEX['rax'], flags, 64)
+        elif operation == 'irq-disable':
+            flags &= ~RFLAGS_INTERRUPT
+        elif operation == 'irq-enable':
+            flags |= RFLAGS_INTERRUPT
+        else:
+            registers = _write_register(
+                registers, REGISTER_INDEX['rax'], state.cr2, 64)
+        self.collapsed_machine_leaf_calls += 1
+        return replace(state, registers=registers, rflags=flags | 2,
+                       rip=int(following) & MASK64)
+
+    def _random_u32_cache_layout(self, state, target):
+        """Prove the selected-coordinate fast path of a cached u32 source."""
+        target = int(target) & MASK64
+        cached = self._random_u32_cache_functions.get(target)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            entry = bytearray(reader.read(
+                target, len(_RANDOM_U32_CACHE_ENTRY)))
+            core_address = target + len(entry)
+            core = bytearray(reader.read(
+                core_address, len(_RANDOM_U32_CACHE_CORE)))
+            ready_address = target + 0xc5
+            ready = bytearray(reader.read(
+                ready_address, len(_RANDOM_U32_CACHE_READY)))
+
+            entry_guard = (target + 30 + _signed_integer(
+                int.from_bytes(entry[26:30], 'little'), 32)) & MASK64
+            cpu_slot = (core_address + 23 + _signed_integer(
+                int.from_bytes(core[19:23], 'little'), 32)) & MASK64
+            cache_offset = _signed_integer(
+                int.from_bytes(core[26:30], 'little'), 32)
+            generation = (core_address + 37 + _signed_integer(
+                int.from_bytes(core[33:37], 'little'), 32)) & MASK64
+            index_offset = _signed_integer(
+                int.from_bytes(core[39:43], 'little'), 32)
+            second_cpu_slot = (core_address + 107 + _signed_integer(
+                int.from_bytes(core[103:107], 'little'), 32)) & MASK64
+            core_guard = (core_address + 129 + _signed_integer(
+                int.from_bytes(core[125:129], 'little'), 32)) & MASK64
+            return_thunk = (core_address + 153 + _signed_integer(
+                int.from_bytes(core[149:153], 'little'), 32)) & MASK64
+            ready_flag = (target + 0xcc + _signed_integer(
+                int.from_bytes(ready[2:6], 'little'), 32)) & MASK64
+
+            entry[26:30] = bytes(4)
+            for start, end in (
+                    (2, 6), (11, 15), (19, 23), (26, 30),
+                    (33, 37), (39, 43), (63, 67), (103, 107),
+                    (117, 121), (125, 129), (149, 153)):
+                core[start:end] = bytes(end - start)
+            ready[2:6] = bytes(4)
+            if (bytes(entry) == _RANDOM_U32_CACHE_ENTRY
+                    and bytes(core) == _RANDOM_U32_CACHE_CORE
+                    and bytes(ready) == _RANDOM_U32_CACHE_READY
+                    and cpu_slot == second_cpu_slot
+                    and entry_guard == core_guard
+                    and index_offset == cache_offset + 0x68
+                    and reader.read(return_thunk, 1) == b'\xc3'):
+                layout = (ready_flag, cpu_slot, cache_offset,
+                          generation, index_offset)
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._random_u32_cache_functions[target] = config, proof, layout
+        return layout
+
+    def _random_u32_cache_window(self, state, target):
+        """Return one proved resident cache window without changing state."""
+        layout = self._random_u32_cache_layout(state, target)
+        if layout is None:
+            return None
+        ready_flag, cpu_slot, cache_offset, generation_slot, \
+            index_offset = layout
+        try:
+            if load_virtual(state, ready_flag, 4) <= 1:
+                return None
+            gs_base = dict(state.msrs).get(IA32_GS_BASE, 0)
+            cpu_offset = load_virtual(
+                state, (gs_base + cpu_slot) & MASK64, 8)
+            cache = (cpu_offset + cache_offset) & MASK64
+            index_slot = (cpu_offset + index_offset) & MASK64
+            index = load_virtual(state, index_slot, 4)
+            generation = load_virtual(state, generation_slot, 8)
+            if (index > 23
+                    or load_virtual(state, cache + 0x60, 8) != generation):
+                return None
+        except PageFault:
+            return None
+        return cache, index_slot, index, 24 - index
+
+    @staticmethod
+    def _publish_random_u32_cache(state, window, consumed):
+        """Zero consumed words and advance the cache index atomically."""
+        cache, index_slot, index, available = window
+        consumed = int(consumed)
+        if consumed <= 0 or consumed > available:
+            raise ValueError('random cache consumption exceeds its window')
+        value_slot = (cache + index * 4) & MASK64
+        return write_virtual_batch(state, (
+            (value_slot, bytes(consumed * 4)),
+            (index_slot, struct.pack('<I', index + consumed)),
+        ))
+
+    def _collapse_random_u32_cache_call(
+            self, state, following, target):
+        """Consume one resident cached word without entering its refill path."""
+        window = self._random_u32_cache_window(state, target)
+        if window is None:
+            return None
+        cache, _index_slot, index, _available = window
+        try:
+            value = load_virtual(state, cache + index * 4, 4)
+            state = self._publish_random_u32_cache(state, window, 1)
+        except PageFault:
+            return None
+
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rax'], value, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rcx'], value, 32)
+        flags = _result_flags(state.rflags, 'cmp', 0, 0, 0, 64)
+        self.collapsed_random_u32_cache_hits += 1
+        return replace(state, registers=registers, rflags=flags,
+                       rip=int(following) & MASK64)
+
+    def _random_u32_below_layout(self, state, target):
+        """Prove a bounded multiply/reject wrapper over cached u32 words."""
+        target = int(target) & MASK64
+        cached = self._random_u32_below_functions.get(target)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            code = bytearray(reader.read(
+                target, len(_RANDOM_U32_BELOW_CORE)))
+            random_target = (target + 23 + _signed_integer(
+                int.from_bytes(code[19:23], 'little'), 32)) & MASK64
+            return_thunk = (target + 58 + _signed_integer(
+                int.from_bytes(code[54:58], 'little'), 32)) & MASK64
+            second_random = (target + 77 + _signed_integer(
+                int.from_bytes(code[73:77], 'little'), 32)) & MASK64
+            code[19:23] = bytes(4)
+            code[54:58] = bytes(4)
+            code[73:77] = bytes(4)
+            if (bytes(code) == _RANDOM_U32_BELOW_CORE
+                    and random_target == second_random
+                    and self._random_u32_cache_layout(
+                        state, random_target) is not None
+                    and reader.read(return_thunk, 1) == b'\xc3'):
+                layout = random_target
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._random_u32_below_functions[target] = config, proof, layout
+        return layout
+
+    def _collapse_random_u32_below_call(
+            self, state, following, target):
+        """Consume one accepted bounded value from a resident cache window."""
+        random_target = self._random_u32_below_layout(state, target)
+        if random_target is None:
+            return None
+        window = self._random_u32_cache_window(state, random_target)
+        if window is None:
+            return None
+        cache, _index_slot, index, available = window
+        ceiling = state.register('rdi') & MASK32
+        try:
+            result = self._bounded_random_word(
+                lambda offset: load_virtual(
+                    state, cache + (index + offset) * 4, 4),
+                available, ceiling)
+            if result is None:
+                return None
+            accepted, product, consumed = result
+            state = self._publish_random_u32_cache(
+                state, window, consumed)
+        except PageFault:
+            return None
+
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rax'], accepted, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rcx'],
+            accepted if not ceiling else product >> 32, 32)
+        self.collapsed_random_u32_cache_hits += consumed
+        self.collapsed_random_u32_below_calls += 1
+        self.collapsed_random_u32_below_words += consumed
+        return replace(state, registers=registers,
+                       rip=int(following) & MASK64)
+
+    @staticmethod
+    def _bounded_random_word(load, available, ceiling):
+        """Return one Lemire-bounded word and the consumed source prefix."""
+        ceiling = int(ceiling) & MASK32
+        for offset in range(int(available)):
+            random_word = int(load(offset)) & MASK32
+            if not ceiling:
+                return random_word, random_word, offset + 1
+            product = random_word * ceiling
+            low = product & MASK32
+            if low >= ceiling:
+                return product >> 32, product, offset + 1
+            threshold = ((-ceiling) & MASK32) % ceiling
+            if low >= threshold:
+                return product >> 32, product, offset + 1
+        return None
+
+    def _random_permutation_layout(self, state, target):
+        """Prove one in-place bounded-random permutation backedge."""
+        target = int(target) & MASK64
+        cached = self._random_permutation_loops.get(target)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            code = bytearray(reader.read(
+                target, len(_RANDOM_PERMUTATION_LOOP)))
+            bounded = (target + 7 + _signed_integer(
+                int.from_bytes(code[3:7], 'little'), 32)) & MASK64
+            code[3:7] = bytes(4)
+            if (bytes(code) == _RANDOM_PERMUTATION_LOOP
+                    and self._random_u32_below_layout(
+                        state, bounded) is not None):
+                layout = bounded
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._random_permutation_loops[target] = config, proof, layout
+        return layout
+
+    def _collapse_random_permutation_loop(self, state, branch):
+        """Join a resident random window into sparse in-place word swaps."""
+        following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return state
+        if branch.rip + len(branch.source) != following:
+            return state
+        bounded = self._random_permutation_layout(state, target)
+        if bounded is None:
+            return state
+        random_target = self._random_u32_below_layout(state, bounded)
+        window = self._random_u32_cache_window(state, random_target)
+        if window is None:
+            return state
+        cache, index_slot, random_index, available = window
+        array = state.register('r14')
+        ceiling = state.register('rbx') & MASK32
+        permutation_index = state.register('r15')
+        if (ceiling < 2 or permutation_index != ceiling - 2
+                or state.register('r12') != permutation_index
+                or permutation_index >= (1 << 24)):
+            return state
+
+        words = {}
+
+        def array_word(coordinate):
+            if coordinate in words:
+                return words[coordinate]
+            return load_virtual(state, array + coordinate * 4, 4)
+
+        consumed = 0
+        iterations = 0
+        last_result = 0
+        last_left = 0
+        last_right = 0
+        try:
+            while iterations <= permutation_index and consumed < available:
+                current_ceiling = ceiling - iterations
+                result = self._bounded_random_word(
+                    lambda offset: load_virtual(
+                        state, cache + (
+                            random_index + consumed + offset) * 4, 4),
+                    available - consumed, current_ceiling)
+                if result is None:
+                    break
+                random_word, _product, used = result
+                consumed += used
+                tail = current_ceiling - 1
+                tail_value = array_word(tail)
+                random_value = array_word(random_word)
+                words[tail] = random_value
+                words[random_word] = tail_value
+                iterations += 1
+                last_result = random_word
+                last_left = tail_value
+                last_right = random_value
+            if not iterations:
+                return state
+            writes = [
+                (array + coordinate * 4, struct.pack('<I', value))
+                for coordinate, value in sorted(words.items())]
+            writes.extend((
+                (cache + random_index * 4, bytes(consumed * 4)),
+                (index_slot,
+                 struct.pack('<I', random_index + consumed)),
+            ))
+            state = write_virtual_batch(state, writes)
+        except PageFault:
+            return state
+
+        final_ceiling = ceiling - iterations
+        final_index = permutation_index - iterations
+        tested = permutation_index - (iterations - 1)
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rbx'], final_ceiling, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['r12'], final_index, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['r15'], final_index, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rdi'], final_ceiling + 1, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rax'], last_result, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rcx'], last_left, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rdx'], last_right, 32)
+        flags = _result_flags(
+            state.rflags, 'and', tested, tested, tested, 32)
+        complete = iterations == permutation_index + 1
+        self.collapsed_random_u32_cache_hits += consumed
+        self.collapsed_random_u32_below_calls += iterations
+        self.collapsed_random_u32_below_words += consumed
+        self.collapsed_random_permutation_iterations += iterations
+        return replace(state, registers=registers, rflags=flags,
+                       rip=int(following) & MASK64 if complete else target)
+
     def _is_page_record_predicate(self, state, target):
         """Prove the direct fixed-lane page-record validity predicate."""
         target = int(target) & MASK64
@@ -13964,6 +14513,9 @@ class X86DBT(object):
             self._collapse_indirect_thunk_call,
             self._collapse_entry_nop_call,
             self._collapse_register_projection_call,
+            self._collapse_machine_leaf_call,
+            self._collapse_random_u32_below_call,
+            self._collapse_random_u32_cache_call,
             self._collapse_page_record_predicate_call,
             self._collapse_range_compaction_call,
             self._collapse_range_table_query_call,
@@ -15533,6 +16085,7 @@ class X86DBT(object):
             'persistent_cuts': self.persistent_cuts,
             'materialized_pages': self.materialized_pages,
             'published_pages': self.published_pages,
+            'retained_cut_pages': self.retained_cut_pages,
             'forwarded_loads': self.forwarded_loads,
             'source_bytes_loaded': self.source_bytes_loaded,
             'aliased_pages': self.aliased_pages,
@@ -15669,6 +16222,7 @@ class X86DBT(object):
                 self.collapsed_lane_permutation_calls,
             'collapsed_lane_permutation_lanes':
                 self.collapsed_lane_permutation_lanes,
+            'collapsed_chacha_rounds': self.collapsed_chacha_rounds,
             'collapsed_sponge_finalize_calls':
                 self.collapsed_sponge_finalize_calls,
             'collapsed_sponge_finalize_bytes':
@@ -15753,6 +16307,16 @@ class X86DBT(object):
             'collapsed_entry_nop_calls': self.collapsed_entry_nop_calls,
             'collapsed_register_projection_calls':
                 self.collapsed_register_projection_calls,
+            'collapsed_machine_leaf_calls':
+                self.collapsed_machine_leaf_calls,
+            'collapsed_random_u32_cache_hits':
+                self.collapsed_random_u32_cache_hits,
+            'collapsed_random_u32_below_calls':
+                self.collapsed_random_u32_below_calls,
+            'collapsed_random_u32_below_words':
+                self.collapsed_random_u32_below_words,
+            'collapsed_random_permutation_iterations':
+                self.collapsed_random_permutation_iterations,
             'collapsed_page_record_predicates':
                 self.collapsed_page_record_predicates,
             'collapsed_page_record_projection_iterations':
@@ -15924,13 +16488,18 @@ class X86Machine(object):
         answered_clock = (state.pending is not None
                           and event is not None
                           and event.operation == 'clock')
-        state = self._answer(state, event)
-        if clock_step is not None and int(clock_step) <= 0:
-            raise ValueError('affine clock step must be positive')
-        if not isinstance(state.cpu.memory, MemoryCut):
+        if isinstance(state.cpu.memory, MemoryCut):
+            if state.cpu.memory.sealed:
+                state = replace(
+                    state, cpu=replace(
+                        state.cpu, memory=state.cpu.memory.fork()))
+        else:
             state = replace(
                 state, cpu=replace(
                     state.cpu, memory=MemoryCut(state.cpu.memory)))
+        state = self._answer(state, event)
+        if clock_step is not None and int(clock_step) <= 0:
+            raise ValueError('affine clock step must be positive')
         if answered_clock:
             state = replace(
                 state,
@@ -15970,7 +16539,7 @@ class X86Machine(object):
         def publish(current):
             if isinstance(current.cpu.memory, MemoryCut):
                 current = replace(
-                    current, cpu=self.dbt.publish(current.cpu))
+                    current, cpu=self.dbt.retain(current.cpu))
             return current
 
         def idle(current):

@@ -3,7 +3,7 @@
 import unittest
 
 from qm.memorycut import BytePage, MemoryCut
-from qm.wasmstate import CanonicalPage, PagedMemory
+from qm.wasmstate import CanonicalPage, PagedMemory, WasmStateError
 
 
 class CountingMemory(PagedMemory):
@@ -263,6 +263,32 @@ class TestMemoryCut(unittest.TestCase):
         self.assertEqual(tuple(pages), (1,))
         self.assertEqual(current, 2)
         self.assertEqual(cut.change_revision, current)
+
+    def test_sealed_cut_forks_only_the_next_written_page(self):
+        source = CountingMemory(bytes(range(256)) * 2)
+        root = MemoryCut(source)
+        root.write(40, b'X')
+        root.seal()
+        retained = root._patch(0)
+
+        child = root.fork()
+
+        self.assertIs(child._patch(0), retained)
+        self.assertIs(child.dirty, root.dirty)
+        self.assertEqual(child.generation_pages, 0)
+        child.write(41, b'Y')
+        self.assertIsNot(child._patch(0), retained)
+        self.assertEqual(root.read(40, 2), b'X)')
+        self.assertEqual(child.read(40, 2), b'XY')
+        self.assertEqual(child.generation_pages, 1)
+
+    def test_sealed_cut_rejects_in_place_state_changes(self):
+        cut = MemoryCut(PagedMemory(bytes(256)))
+        cut.write(1, b'x')
+        cut.seal()
+
+        with self.assertRaises(WasmStateError):
+            cut.write(2, b'y')
 
 
 if __name__ == '__main__':

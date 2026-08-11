@@ -44,6 +44,16 @@ class BytePage(object):
         self.revision += 1
         return overwritten
 
+    def fork(self):
+        """Copy one page only when a newer cut first writes it."""
+        page = BytePage()
+        page.values = (bytearray(self.values)
+                       if isinstance(self.values, bytearray)
+                       else self.values)
+        page.written = self.written
+        page.revision = self.revision
+        return page
+
     @staticmethod
     def _runs(bits):
         """Yield maximal adjacent coordinates from one physical bit domain."""
@@ -173,7 +183,8 @@ class MemoryCut(object):
                  'source_loads', 'merged_loads', 'source_bytes_loaded',
                  'aliased_pages', 'elided_pages',
                  '_last_index', '_last_patch', '_page_changes',
-                 '_proof_tokens')
+                 '_proof_tokens', '_sealed', '_owned_regions',
+                 '_owned_spans', '_owned_patches')
 
     def __init__(self, source):
         self.source = source
@@ -194,16 +205,68 @@ class MemoryCut(object):
         self._last_patch = None
         self._page_changes = []
         self._proof_tokens = {}
+        self._sealed = False
+        self._owned_regions = set()
+        self._owned_spans = set()
+        self._owned_patches = set()
 
     def __len__(self):
         return len(self.source)
 
+    @property
+    def sealed(self):
+        return self._sealed
+
+    def seal(self):
+        """Freeze this generation without resolving untouched coordinates.
+
+        Only the directory nodes owned by this generation are converted to
+        immutable tuples.  Byte pages then remain valid structural proofs for
+        an observable machine state; no page is compared with or copied from
+        the backing memory.
+        """
+        if self._sealed:
+            return self
+        for region_index, span_slot in self._owned_spans:
+            region = self._regions[region_index]
+            region[span_slot] = tuple(region[span_slot])
+        for region_index in self._owned_regions:
+            self._regions[region_index] = tuple(self._regions[region_index])
+        self._regions = tuple(self._regions)
+        if isinstance(self.dirty, list):
+            self.dirty = tuple(self.dirty)
+        self._sealed = True
+        self._last_index = -1
+        self._last_patch = None
+        return self
+
+    def fork(self):
+        """Open a writable SSA generation over this sealed physical root.
+
+        Region, span, page, and dirty-coordinate arrays are shared.  A later
+        store copies only its region path and selected BytePage, so an event
+        boundary does not materialize RAM or add a second memory route.
+        """
+        self.seal()
+        cut = MemoryCut(self.source)
+        cut._regions = list(self._regions)
+        cut.dirty = self.dirty
+        return cut
+
+    def _append_dirty(self, index):
+        if not isinstance(self.dirty, list):
+            self.dirty = list(self.dirty)
+        self.dirty.append(index)
+
     def _patch(self, index, create=False, dirty=False):
+        if dirty and self._sealed:
+            raise WasmStateError('sealed memory cut cannot be written')
         if index == self._last_index:
             patch = self._last_patch
-            if patch is not None or not create:
+            if (patch is not None or not create) and (
+                    not dirty or index in self._owned_patches):
                 if dirty and patch is not None and not patch.written:
-                    self.dirty.append(index)
+                    self._append_dirty(index)
                 return patch
         span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
         region_index, span_slot = divmod(span_index, MEMORY_REGION_SPANS)
@@ -213,18 +276,33 @@ class MemoryCut(object):
                 return None
             region = [None] * MEMORY_REGION_SPANS
             self._regions[region_index] = region
+            self._owned_regions.add(region_index)
+        elif create and region_index not in self._owned_regions:
+            region = list(region)
+            self._regions[region_index] = region
+            self._owned_regions.add(region_index)
         span = region[span_slot]
         if span is None:
             if not create:
                 return None
             span = [None] * MEMORY_SPAN_PAGES
             region[span_slot] = span
+            self._owned_spans.add((region_index, span_slot))
+        elif create and (region_index, span_slot) not in self._owned_spans:
+            span = list(span)
+            region[span_slot] = span
+            self._owned_spans.add((region_index, span_slot))
         patch = span[slot]
         if patch is None and create:
             patch = BytePage()
             span[slot] = patch
+            self._owned_patches.add(index)
+        elif dirty and index not in self._owned_patches:
+            patch = patch.fork()
+            span[slot] = patch
+            self._owned_patches.add(index)
         if dirty and patch is not None and not patch.written:
-            self.dirty.append(index)
+            self._append_dirty(index)
         self._last_index = index
         self._last_patch = patch
         return patch
@@ -802,6 +880,16 @@ class MemoryCut(object):
         """Dirty pages whose final bytes are not a retained canonical page."""
         return sum(isinstance(self._patch(index).values, bytearray)
                    for index in self.dirty)
+
+    @property
+    def generation_pages(self):
+        """Physical pages first written by the current cut generation."""
+        return len(self._owned_patches)
+
+    @property
+    def generation_materialized_pages(self):
+        return sum(isinstance(self._patch(index).values, bytearray)
+                   for index in self._owned_patches)
 
     @property
     def store_segments(self):
