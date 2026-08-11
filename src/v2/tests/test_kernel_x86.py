@@ -27,18 +27,25 @@ from kernel.x86 import (BOOT_PARAMS_ADDRESS, COMMAND_LINE_ADDRESS,
                         _ALTERNATIVE_SCAN_PREFIX,
                         _AFFINE_PAGE_RECORD_CORE,
                         _BIT_SCAN_FIRST_BODY,
+                        _BIT_SCAN_FIRST_DIRECT_BODY,
+                        _BIT_SCAN_FIRST_DIRECT_HEAD,
                         _BIT_SCAN_NEXT_BODY,
+                        _BIT_SCAN_NEXT_DIRECT,
                         _BIT_SCAN_NEXT_RESULT,
                         _BOUNDED_STRING_COMPARE_BODY,
+                        _BOUNDED_STRING_COMPARE_DIRECT,
                         _ENTRY_NOP_PREFIX,
                         _RELATIVE_RECORD_PROJECTION_CORE,
+                        _RELATIVE_RECORD_PROJECTION_FORWARD_CORE,
                         _RANGE_TABLE_QUERY_PREFIX,
                         _RANGE_TABLE_QUERY_SUFFIX,
                         _RANGE_TABLE_QUERY_TYPED,
                         _RANGE_COMPACT_COUNT,
                         _RANGE_COMPACT_CORE,
+                        _RANGE_COMPACT_DIRECT,
                         _RANGE_COMPACT_ENTRY,
                         _RANGE_COMPARE_BODY,
+                        _RANGE_COMPARE_DIRECT,
                         _LENGTH_PREFIX_SKIP_LOOP,
                         _SMP_LOCK_LOOP_CORE,
                         _SYMBOL_POSITION_ENTRY,
@@ -1577,6 +1584,50 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(layout['collapsed_void_memory_copy_calls'], 1)
         self.assertEqual(layout['collapsed_void_memory_copy_bytes'], 64)
 
+    def test_feature_gated_rep_copy_uses_the_same_physical_cut(self):
+        target, feature, feature_state = 0x200, 0x500, 0x800
+        function = bytearray(b'\x90' * 0xc0)
+        function[:9] = bytes.fromhex(
+            'f3 0f 1e fa 0f 1f 44 00 00')
+        function[9:0x20] = bytes.fromhex(
+            '55 48 89 e5 41 57 41 56 53 48 89 d3 '
+            '49 89 f7 49 89 fe bf 04 00 00 00')
+        function[0x20] = 0xe8
+        struct.pack_into('<i', function, 0x21, feature - (target + 0x25))
+        function[0x25:0x29] = bytes.fromhex('84 c0 74 20')
+        function[0x35:0x49] = bytes.fromhex(
+            '41 8a 14 0f 41 88 14 0e 48 63 c8 ff c0 '
+            '48 39 cb 77 ee eb 35')
+        function[0x62:0x71] = bytes.fromhex(
+            '48 89 d9 48 c1 e9 02 4c 89 fe 4c 89 f7 f3 a5')
+        function[0x71:0x80] = bytes.fromhex(
+            'f6 c3 02 74 02 66 a5 f6 c3 01 74 01 a4 5b 41')
+
+        selector = bytearray(b'\x90' * 64)
+        selector[:10] = bytes.fromhex(
+            'f3 0f 1e fa 55 48 89 e5 8b 05')
+        struct.pack_into('<i', selector, 10,
+                         feature_state - (feature + 14))
+        selector[14:32] = bytes.fromhex(
+            '83 f8 02 74 11 83 f8 01 75 18 e8 33 00 00 00 5d 2e e9')
+
+        caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
+        payload = bytes(range(64))
+        dbt = X86DBT()
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, caller), (target, function),
+                        (feature, selector), (feature_state, bytes(4)),
+                        (0x1000, payload), (0x1200, bytes(64))),
+            0x100, {'rdi': 0x1200, 'rsi': 0x1000,
+                    'rdx': len(payload), 'rax': MASK64, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(read_virtual(state, 0x1200, len(payload)), payload)
+        self.assertEqual(state.register('rax'), 0)
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_void_memory_copy_calls'], 1)
+        self.assertEqual(layout['collapsed_void_memory_copy_bytes'], 64)
+
     def test_packed_range_table_query_uses_one_proved_directory(self):
         target, entry, entry_return = 0x200, 0x500, 0x600
         table_pointer, return_thunk, table = 0x700, 0x800, 0x1000
@@ -1635,6 +1686,44 @@ class TestX86StateStep(unittest.TestCase):
                 self.assertEqual(layout['range_table_cache_misses'], 1)
                 self.assertGreaterEqual(
                     layout['collapsed_range_table_records'], 1)
+
+    def test_direct_range_table_query_uses_the_same_directory(self):
+        target, table_pointer, table = 0x200, 0x700, 0x1000
+        function = bytearray(b'\x90' * 0x77)
+        function[:9] = bytes.fromhex(
+            'f3 0f 1e fa 0f 1f 44 00 00')
+        function[9:0x10] = bytes.fromhex(
+            '55 48 89 e5 48 8b 0d')
+        struct.pack_into(
+            '<i', function, 0x10, table_pointer - (target + 0x14))
+        function[0x14:0x53] = bytes.fromhex(
+            '44 8b 01 31 c0 45 85 c0 74 35 48 83 c1 04 eb 07 '
+            'ff c0 41 39 c0 74 2f 4c 63 c8 4f 8d 0c 89 '
+            '4e 8d 0c 89 85 d2 74 06 41 39 51 10 75 e4 '
+            '4d 8b 11 49 39 f2 73 dc 4d 03 51 08 49 39 fa '
+            '76 d3 b0 01')
+        function[0x53:0x5a] = bytes.fromhex(
+            '5d 2e e9 00 00 00 00')
+        function[0x5a:0x63] = bytes.fromhex(
+            '31 c0 5d 2e e9 00 00 00 00')
+
+        records = ((0x1000, 0x100, 1), (0x2000, 0x200, 2))
+        payload = struct.pack('<I', len(records)) + b''.join(
+            struct.pack('<QQI', *record) for record in records)
+        caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
+        dbt = X86DBT()
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with(
+                (0x100, caller), (target, function),
+                (table_pointer, struct.pack('<Q', table)), (table, payload)),
+            0x100, {'rdi': 0x1080, 'rsi': 0x1090, 'rdx': 1,
+                    'rax': MASK64, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 1)
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_range_table_calls'], 1)
+        self.assertEqual(layout['range_table_cache_misses'], 1)
 
     def test_sparse_range_compaction_and_sort_share_one_cut(self):
         target, entry, entry_return = 0x200, 0x500, 0x600
@@ -1701,6 +1790,48 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(
             layout['collapsed_range_compaction_live_records'], 3)
 
+    def test_direct_sparse_range_compaction_uses_the_same_cut(self):
+        target, compare, sort = 0x200, 0x800, 0xa00
+        function = bytearray(b'\x90' * 0xf1)
+        function[:0xde] = _RANGE_COMPACT_DIRECT
+        function[0xde:0xe1] = bytes.fromhex('48 c7 c1')
+        struct.pack_into('<i', function, 0xe1, compare)
+        function[0xe5:0xe8] = bytes.fromhex('45 31 c0')
+        function[0xe8] = 0xe8
+        struct.pack_into('<i', function, 0xe9, sort - (target + 0xed))
+        function[0xed:0xf1] = bytes.fromhex('89 d8 5b 5d')
+        sorter = bytearray(b'\x90' * 96)
+        sorter[:len(_SORT_WRAPPER_CORE)] = _SORT_WRAPPER_CORE
+
+        base = 0x1000
+        records = (
+            (30, 40), (0, 0), (10, 20),
+            (0, 0), (20, 30), (0, 0),
+        )
+        caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
+        state = initial_state(memory_with(
+            (0x100, caller), (target, function),
+            (compare, _RANGE_COMPARE_DIRECT), (sort, sorter),
+            (base, b''.join(struct.pack('<QQ', *record)
+                            for record in records))),
+            0x100, {'rdi': base, 'rsi': len(records), 'rsp': 0x9000})
+
+        dbt = X86DBT()
+        state, boundary, _cost = dbt.run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 3)
+        self.assertEqual(
+            read_virtual(state, base, len(records) * 16),
+            b''.join(struct.pack('<QQ', *record) for record in (
+                (10, 20), (20, 30), (30, 40),
+                (0, 0), (0, 0), (0, 0))))
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_range_compactions'], 1)
+        self.assertEqual(layout['collapsed_range_compaction_records'], 6)
+        self.assertEqual(
+            layout['collapsed_range_compaction_live_records'], 3)
+
     def test_bounded_string_compare_stops_at_first_observed_byte(self):
         target, return_thunk = 0x200, 0x500
         function = bytearray(b'\x90' * 0x34)
@@ -1738,6 +1869,146 @@ class TestX86StateStep(unittest.TestCase):
                     layout['collapsed_bounded_compare_calls'], 1)
                 self.assertEqual(
                     layout['collapsed_bounded_compare_bytes'], observed)
+
+    def test_direct_bounded_compare_uses_the_same_byte_prefix_cut(self):
+        target, return_thunk = 0x200, 0x500
+        function = bytearray(b'\x90' * 0x51)
+        function[:4] = bytes.fromhex('f3 0f 1e fa')
+        function[4:0x2d] = _BOUNDED_STRING_COMPARE_DIRECT
+        function[0x2d:0x30] = bytes.fromhex('5d 2e e9')
+        struct.pack_into(
+            '<i', function, 0x30, return_thunk - (target + 0x34))
+        function[0x34:0x39] = bytes.fromhex('31 c0 5d 2e e9')
+        struct.pack_into(
+            '<i', function, 0x39, return_thunk - (target + 0x3d))
+        function[0x3d:0x4d] = bytes.fromhex(
+            '0f 93 c0 0f b6 c0 8d 04 45 ff ff ff ff 5d 2e e9')
+        struct.pack_into(
+            '<i', function, 0x4d, return_thunk - (target + 0x51))
+        caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
+
+        dbt = X86DBT()
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with(
+                (0x100, caller), (target, function),
+                (return_thunk, b'\xc3'),
+                (0x1000, b'abax'), (0x1100, b'abbx')),
+            0x100, {'rdi': 0x1000, 'rsi': 0x1100,
+                    'rdx': 4, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), MASK32)
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_bounded_compare_calls'], 1)
+        self.assertEqual(layout['collapsed_bounded_compare_bytes'], 3)
+
+    def test_direct_strided_scan_skips_disproved_byte_coordinates(self):
+        loop, compare, return_thunk = 0x200, 0x400, 0x500
+        signature, base = 0x600, 0x1000
+        comparator = bytearray(b'\x90' * 0x51)
+        comparator[:4] = bytes.fromhex('f3 0f 1e fa')
+        comparator[4:0x2d] = _BOUNDED_STRING_COMPARE_DIRECT
+        comparator[0x2d:0x30] = bytes.fromhex('5d 2e e9')
+        struct.pack_into(
+            '<i', comparator, 0x30,
+            return_thunk - (compare + 0x34))
+        comparator[0x34:0x39] = bytes.fromhex('31 c0 5d 2e e9')
+        struct.pack_into(
+            '<i', comparator, 0x39,
+            return_thunk - (compare + 0x3d))
+        comparator[0x3d:0x4d] = bytes.fromhex(
+            '0f 93 c0 0f b6 c0 8d 04 45 ff ff ff ff 5d 2e e9')
+        struct.pack_into(
+            '<i', comparator, 0x4d,
+            return_thunk - (compare + 0x51))
+        scan = (
+            bytes.fromhex('48 83 c3 10 4c 39 f3 73 18 ba 08 00 00 00 '
+                          '48 89 df 48 c7 c6')
+            + struct.pack('<i', signature)
+            + b'\xe8' + struct.pack('<i', compare - (loop + 0x1d))
+            + bytes.fromhex('85 c0 75 df f4'))
+        records = b''.join(
+            byte + bytes(15) for byte in (b'x', b'y', b'z', b'q'))
+
+        dbt = X86DBT()
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with(
+                (loop, scan), (compare, comparator),
+                (return_thunk, b'\xc3'), (signature, b'RSD PTR '),
+                (base, records)),
+            loop, {'rbx': base - 16, 'r14': base + len(records),
+                   'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rbx'), base + len(records))
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_bounded_compare_calls'], 1)
+        self.assertEqual(layout['collapsed_strided_predicate_candidates'], 3)
+
+    def test_fixed_signature_gate_recovers_only_required_coordinates(self):
+        target, return_thunk = 0x200, 0x500
+        function = bytearray(b'\x90' * 0x4c)
+        function[:0x21] = bytes.fromhex(
+            '0f 1f 44 00 00 55 48 89 e5 53 '
+            'b8 5f 53 4d 33 33 07 0f b6 4f 04 '
+            '83 f1 5f 09 c1 bb 01 00 00 00 75 21')
+        function[0x42:0x48] = bytes.fromhex('89 d8 5b 5d 2e e9')
+        struct.pack_into(
+            '<i', function, 0x48,
+            return_thunk - (target + 0x4c))
+        dbt = X86DBT()
+        state = initial_state(memory_with(
+            (target, function), (return_thunk, b'\xc3')), target)
+
+        self.assertEqual(
+            dbt._fixed_signature_gate_layout(state, target),
+            ((0, b'_SM3_'),))
+
+    def test_copy_validate_window_uses_one_signature_projection(self):
+        target, copy, validator = 0x200, 0x400, 0x600
+        base, stack = 0x1000, 0x2000
+        loop = (
+            bytes.fromhex('ba 10 00 00 00 4c 89 f7 4c 89 e6 e8')
+            + struct.pack('<i', copy - (target + 0x10))
+            + bytes.fromhex('4c 89 ff e8')
+            + struct.pack('<i', validator - (target + 0x18))
+            + bytes.fromhex(
+                '85 c0 74 34 49 8b 06 49 8b 4e 08 '
+                '48 89 4c 24 08 48 89 04 24 '
+                '49 83 c4 10 4d 39 ec 72 cb f4'))
+        self.assertEqual(len(loop), 0x36)
+        records = tuple(
+            bytes((value,)) * 16 for value in (1, 2, 3, 4))
+        memory = memory_with(
+            (target, loop), (base, b''.join(records)),
+            (stack, records[0] + bytes(16)))
+
+        class SignatureProjectionDBT(X86DBT):
+            def _fixed_signature_gate_layout(self, state, address):
+                return ((0, b'_SM3_'),) if address == validator else None
+
+            def _is_void_memory_copy_function(self, state, address):
+                return address == copy
+
+        dbt = SignatureProjectionDBT()
+        branch = dbt.block(initial_state(memory, target + 0x33))
+        state = initial_state(
+            memory, target,
+            {'r12': base + 16, 'r13': base + 64,
+             'r14': stack + 16, 'r15': stack, 'rsp': stack})
+
+        exhausted = dbt._collapse_strided_copy_predicate_candidates(
+            state, branch)
+
+        self.assertEqual(exhausted.rip, target + 0x35)
+        self.assertEqual(exhausted.register('r12'), base + 64)
+        self.assertEqual(exhausted.register('rsi'), base + 48)
+        self.assertEqual(exhausted.register('rdi'), stack)
+        self.assertEqual(read_virtual(exhausted, stack, 16), records[-1])
+        self.assertEqual(read_virtual(
+            exhausted, stack + 16, 16), records[-1])
+        self.assertEqual(
+            dbt.layout()['collapsed_strided_predicate_candidates'], 3)
 
     def test_bitmap_scans_project_to_the_first_live_word(self):
         first_target, next_target, return_thunk = 0x200, 0x300, 0x500
@@ -1789,6 +2060,45 @@ class TestX86StateStep(unittest.TestCase):
                 self.assertEqual(layout['collapsed_bit_scan_calls'], 1)
                 self.assertEqual(layout['collapsed_bit_scan_words'], words)
 
+    def test_direct_bitmap_scans_use_the_same_live_word_cut(self):
+        first_target, next_target, return_thunk = 0x200, 0x300, 0x500
+        first = bytearray(b'\x90' * 0x55)
+        first[:0x1e] = _BIT_SCAN_FIRST_DIRECT_HEAD
+        first[0x1e:0x20] = bytes.fromhex('2e e9')
+        struct.pack_into(
+            '<i', first, 0x20,
+            return_thunk - (first_target + 0x24))
+        first[0x24:0x4f] = _BIT_SCAN_FIRST_DIRECT_BODY
+        first[0x4f:0x51] = bytes.fromhex('2e e9')
+        struct.pack_into(
+            '<i', first, 0x51,
+            return_thunk - (first_target + 0x55))
+        next_ = bytearray(b'\x90' * 0x66)
+        next_[:0x60] = _BIT_SCAN_NEXT_DIRECT
+        next_[0x60:0x62] = bytes.fromhex('2e e9')
+        struct.pack_into(
+            '<i', next_, 0x62,
+            return_thunk - (next_target + 0x66))
+        bitmap = struct.pack('<QQQ', 0, 1 << 7, 2)
+
+        for target, offset, expected in (
+                (first_target, 0, 71), (next_target, 72, 129)):
+            with self.subTest(target=target):
+                caller = b'\xe8' + struct.pack(
+                    '<i', target - 0x105) + b'\xf4'
+                dbt = X86DBT()
+                state, boundary, _cost = dbt.run(initial_state(
+                    memory_with(
+                        (0x100, caller), (first_target, first),
+                        (next_target, next_), (return_thunk, b'\xc3'),
+                        (0x1000, bitmap)),
+                    0x100, {'rdi': 0x1000, 'rsi': 130,
+                            'rdx': offset, 'rsp': 0x9000}))
+
+                self.assertEqual(boundary.operation, 'halt')
+                self.assertEqual(state.register('rax'), expected)
+                self.assertEqual(dbt.layout()['collapsed_bit_scan_calls'], 1)
+
     def test_default_record_candidates_use_the_complement_directory(self):
         target, count_address = 0x200, 0x800
         pointer_address, table = 0x808, 0x1000
@@ -1827,6 +2137,42 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(exhausted.register('rax'), 4)
         self.assertEqual(exhausted.register('rcx'), 3)
         self.assertEqual(exhausted.register('rdx'), MASK64)
+        self.assertEqual(
+            dbt.layout()['collapsed_default_record_candidates'], 3)
+
+    def test_pointer_backed_default_records_use_the_same_complement_cut(self):
+        target, pointer_address, count_address = 0x200, 0x800, 0x808
+        table = 0x1000
+        code = bytearray.fromhex(
+            '48 8b 3d 00 00 00 00 48 63 f0 48 85 ff 74 06 '
+            '48 8d 3c b7 eb 0b 48 8b 3c f5 00 00 00 00 48 01 cf '
+            '48 63 3f 48 83 ff ff 74 3b 48 0f a3 3d 00 00 00 00 '
+            '72 31 48 8b 3d 00 00 00 00 48 85 ff 74 09 '
+            'c7 04 b7 ff ff ff ff eb 1c '
+            '48 8b 3c f5 00 00 00 00 89 97 c0 07 df 83 '
+            '48 8b 34 f5 00 00 00 00 89 96 c0 0d e0 83 '
+            'ff c0 3b 05 00 00 00 00 72 92 f4')
+        self.assertEqual(len(code), 0x6f)
+        struct.pack_into(
+            '<i', code, 3, pointer_address - (target + 7))
+        struct.pack_into(
+            '<i', code, 0x36, pointer_address - (target + 0x3a))
+        struct.pack_into(
+            '<i', code, 0x68, count_address - (target + 0x6c))
+        memory = memory_with(
+            (target, code), (pointer_address, struct.pack('<Q', table)),
+            (count_address, struct.pack('<I', 4)),
+            (table, b'\xff' * 16))
+        dbt = X86DBT()
+        branch = dbt.block(initial_state(memory, target + 0x6c))
+
+        state = initial_state(memory, target, {'rax': 1})
+        exhausted = dbt._collapse_default_record_candidates(state, branch)
+
+        self.assertEqual(exhausted.rip, target + 0x6e)
+        self.assertEqual(exhausted.register('rax'), 4)
+        self.assertEqual(exhausted.register('rsi'), 3)
+        self.assertEqual(exhausted.register('rdi'), table + 12)
         self.assertEqual(
             dbt.layout()['collapsed_default_record_candidates'], 3)
 
@@ -2715,6 +3061,57 @@ class TestX86StateStep(unittest.TestCase):
             layout['collapsed_relative_record_projections'], 1)
         self.assertEqual(layout['collapsed_relative_projection_records'], 3)
 
+    def test_forward_relative_records_collapse_before_scalar_materialization(self):
+        loop = bytearray(_RELATIVE_RECORD_PROJECTION_FORWARD_CORE)
+        target = 0x100
+        branch_rip = target + len(loop) - 2
+        storage, coordinate = 0x1000, 0x2000
+        end = storage + 48
+        lower, upper = 0x3000, 0x4000
+        struct.pack_into('<I', loop, 30, lower)
+        struct.pack_into('<I', loop, 47, upper)
+        struct.pack_into('<I', loop, 106, end)
+        values = ((0x4100, 0x5000, 3),
+                  (0x3100, 0x5000, 1),
+                  (0x3200, 0x6000, 0))
+
+        def encoded(index, value):
+            slot = coordinate + index * 16
+            first, node, flags = value
+            return struct.pack(
+                '<IIQ', (first - slot) & MASK32, 0,
+                ((node - slot - 8) & MASK64) | flags)
+
+        payload = b''.join(encoded(index, value)
+                           for index, value in enumerate(values))
+        memory = memory_with(
+            (target, loop), (storage, payload),
+            (0x5000, bytes(8) + struct.pack('<Q', 1)),
+            (0x6000, bytes(8) + struct.pack('<Q', 3)))
+        dbt = X86DBT()
+        branch = dbt.block(initial_state(memory, branch_rip))
+        state = initial_state(
+            memory, target,
+            {'rax': storage, 'rbx': coordinate, 'rcx': 0})
+
+        collapsed = dbt._collapse_relative_record_projection(state, branch)
+
+        self.assertEqual(collapsed.rip, target + len(loop))
+        self.assertEqual(collapsed.register('rax'), end)
+        self.assertEqual(collapsed.register('rbx'), coordinate + 48)
+        self.assertEqual(collapsed.register('rcx'), 0x6000)
+        self.assertEqual(collapsed.register('rdx'), 0x6000)
+        self.assertEqual(collapsed.register('rdi'), 1)
+        flags = [load_virtual(
+            collapsed, storage + index * 16 + 8, 8) & 3
+                 for index in range(3)]
+        self.assertEqual(flags, [1, 3, 2])
+        self.assertEqual(load_virtual(collapsed, 0x5008, 8), coordinate | 1)
+        self.assertEqual(
+            load_virtual(collapsed, 0x6008, 8), coordinate + 32 | 3)
+        self.assertEqual(
+            dbt.layout()['collapsed_relative_projection_records'], 3)
+
     def test_trace_locations_append_as_one_strided_record_span(self):
         target, accepted, exit_target = 0x100, 0x16a, 0x300
         input_address, page, data = 0x600, 0x800, 0x1000
@@ -3294,6 +3691,25 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.register('rsp'), 0x8008)
         self.assertEqual(dbt.layout()['collapsed_return_branches'], 1)
 
+    def test_register_projection_call_is_one_pure_state_cut(self):
+        target, return_thunk = 0x200, 0x300
+        function = (
+            bytes.fromhex('f3 0f 1e fa 48 89 f8 e9')
+            + struct.pack('<i', return_thunk - (target + 12)))
+        caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, caller), (target, function),
+                        (return_thunk, b'\xc3')),
+            0x100, {'rdi': 0x123456789abcdef0, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 0x123456789abcdef0)
+        self.assertEqual(state.register('rsp'), 0x9000)
+        self.assertEqual(
+            dbt.layout()['collapsed_register_projection_calls'], 1)
+
     def test_entry_nop_tail_return_call_is_one_state_step(self):
         target, return_thunk = 0x200, 0x300
         caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
@@ -3700,7 +4116,9 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.register('rbx'), 2)
         self.assertEqual(state.register('rcx'), 3)
         self.assertEqual(cost.instructions, 16)
-        self.assertGreater(dbt.layout()['threaded_controls'], 8)
+        self.assertGreaterEqual(
+            dbt.layout()['register_cut_instructions'], 3)
+        self.assertLess(dbt.layout()['threaded_controls'], 8)
 
     def test_direct_page_proof_invalidates_self_modifying_code(self):
         first = bytes.fromhex('b8 01 00 00 00 f4')

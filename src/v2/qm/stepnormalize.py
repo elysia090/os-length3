@@ -673,8 +673,9 @@ def compose_plans(first, second):
 
     stack = tuple(map(substitute, second.stack))
     locals_ = tuple(map(substitute, second.locals))
+    instructions = first.instructions + second.instructions
     combined = PureSlice(
-        first.function, first.start, second.end,
-        first.instructions + second.instructions,
+        first.function, first.start, first.start + instructions,
+        instructions,
         first.stack_inputs, tuple(nodes), first.waves, stack, locals_)
     return normalize_plan(combined)
