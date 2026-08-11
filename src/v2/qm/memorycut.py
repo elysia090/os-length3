@@ -485,6 +485,148 @@ class MemoryCut(object):
         self.store_bytes += coordinates
         return self
 
+    def project_records(self, records, lanes):
+        """Project selected word lanes without materializing whole records.
+
+        ``records`` are direct physical base coordinates.  Each lane is
+        ``(offset, width, and_mask, or_mask)`` and publishes
+        ``(old & and_mask) | or_mask``.  A zero ``and_mask`` is a constant
+        store and therefore never observes its old coordinate.  All lanes on
+        one physical page are joined into one byte-SSA revision.
+        """
+        records = tuple(int(address) for address in records)
+        lanes = tuple(tuple(int(value) for value in lane) for lane in lanes)
+        if not records or not lanes:
+            return self
+        if any(len(lane) != 4 for lane in lanes):
+            raise ValueError('record projection lanes must have four fields')
+
+        normalized = []
+        occupied = 0
+        for offset, width, and_mask, or_mask in lanes:
+            if offset < 0 or width <= 0:
+                raise ValueError('record projection lane is invalid')
+            bits = width * 8
+            mask = (1 << bits) - 1
+            if and_mask < 0 or or_mask < 0 \
+                    or and_mask & ~mask or or_mask & ~mask:
+                raise ValueError('record projection mask exceeds its lane')
+            selected = mask_of(width) << offset
+            if occupied & selected:
+                raise ValueError('record projection lanes overlap')
+            occupied |= selected
+            normalized.append((offset, width, and_mask, or_mask))
+
+        pages = {}
+        for record in records:
+            if record < 0:
+                raise WasmStateError(
+                    'record projection coordinate is out of bounds')
+            for offset, width, and_mask, or_mask in normalized:
+                address = record + offset
+                if address + width > len(self.source):
+                    raise WasmStateError(
+                        'record projection coordinate is out of bounds')
+                index, page_offset = divmod(address, MEMORY_PAGE)
+                if page_offset + width > MEMORY_PAGE:
+                    raise WasmStateError(
+                        'record projection lane crosses a physical page')
+                pages.setdefault(index, []).append(
+                    (page_offset, width, and_mask, or_mask))
+
+        total_loads = 0
+        total_load_bytes = 0
+        total_stores = 0
+        total_store_bytes = 0
+        for index, entries in pages.items():
+            patch = self._patch(index, create=True, dirty=True)
+            if not isinstance(patch.values, bytearray):
+                patch.values = bytearray(patch.values)
+            selected = 0
+            page_loads = 0
+            page_load_bytes = 0
+            page_source_bytes = 0
+            page_forwarded = 0
+            page_merged = 0
+            for offset, width, and_mask, or_mask in entries:
+                lane_bits = mask_of(width) << offset
+                if selected & lane_bits:
+                    raise ValueError(
+                        'record projection coordinates overlap')
+                selected |= lane_bits
+                if and_mask:
+                    old, missing = patch.load(
+                        self.source, index, offset, width)
+                    page_loads += 1
+                    page_load_bytes += width
+                    page_source_bytes += missing
+                    if not missing:
+                        page_forwarded += 1
+                    elif missing != width:
+                        page_merged += 1
+                    value = (old & and_mask) | or_mask
+                else:
+                    value = or_mask
+                patch.values[offset:offset + width] = value.to_bytes(
+                    width, 'little')
+                total_stores += 1
+                total_store_bytes += width
+            self.overwritten_bytes += (patch.written & selected).bit_count()
+            patch.written |= selected
+            patch.revision += 1
+            self._changed(index)
+            total_loads += page_loads
+            total_load_bytes += page_load_bytes
+            self.source_bytes_loaded += page_source_bytes
+            self.forwarded_loads += page_forwarded
+            self.source_loads += page_loads - page_forwarded - page_merged
+            self.merged_loads += page_merged
+        self.loads += total_loads
+        self.load_bytes += total_load_bytes
+        self.stores += total_stores
+        self.store_bytes += total_store_bytes
+        return self
+
+    def matching_record_prefix(self, records, predicates):
+        """Return the leading records satisfying selected word predicates.
+
+        ``records`` are direct physical base coordinates.  Predicates are
+        ``(offset, width, and_mask, expected, equal)`` tuples.  Only the
+        named lanes are observed; an ``equal`` value of false excludes the
+        masked value.  This is the read-side dual of :meth:`project_records`
+        and keeps record validation in the same direct-coordinate byte SSA.
+        """
+        records = tuple(int(address) for address in records)
+        predicates = tuple(
+            tuple(predicate) for predicate in predicates)
+        normalized = []
+        for predicate in predicates:
+            if len(predicate) != 5:
+                raise ValueError(
+                    'record predicate must have five fields')
+            offset, width, and_mask, expected, equal = predicate
+            offset, width = int(offset), int(width)
+            and_mask, expected = int(and_mask), int(expected)
+            if offset < 0 or width <= 0:
+                raise ValueError('record predicate lane is invalid')
+            mask = mask_of(width * 8)
+            if (and_mask < 0 or expected < 0
+                    or and_mask & ~mask or expected & ~mask):
+                raise ValueError(
+                    'record predicate mask exceeds its lane')
+            normalized.append(
+                (offset, width, and_mask, expected, bool(equal)))
+
+        for index, record in enumerate(records):
+            if record < 0:
+                raise WasmStateError(
+                    'record predicate coordinate is out of bounds')
+            for offset, width, and_mask, expected, equal in normalized:
+                value = self.load(record + offset, width) & and_mask
+                if (value == expected) != equal:
+                    return index
+        return len(records)
+
     def copy(self, source_address, target_address, size):
         """Copy bytes, retaining complete aligned physical pages by reference."""
         source_address = int(source_address)
