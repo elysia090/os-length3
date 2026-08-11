@@ -284,14 +284,14 @@ def unpack(blob):
 _ONE_ARGUMENT = {
     'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'IMUL', 'CLMUL', 'AND',
     'OR', 'XOR', 'ADD', 'SUB', 'NOT', 'SHL', 'SHR', 'BSWAP', 'POPCNT',
-    'LOOP8', 'SCANXOR', 'SAR', 'NEG', 'CLZ', 'CTZ', 'LUT',
+    'LOOP8', 'SCANXOR', 'SAR', 'NEG', 'CLZ', 'CTZ', 'LUT', 'ROL32', 'ROR32',
 }
-_TWO_ARGUMENTS = {'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR'}
+_TWO_ARGUMENTS = {'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR', 'CLMULR'}
 _ONE_CONSTANT = {
     'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'IMUL', 'CLMUL', 'AND',
     'OR', 'XOR', 'ADD', 'SUB', 'LOOP8',
 }
-_ONE_SHIFT = {'SHL', 'SHR', 'SCANXOR', 'SAR'}
+_ONE_SHIFT = {'SHL', 'SHR', 'SCANXOR', 'SAR', 'ROL32', 'ROR32'}
 
 
 def _validate(mapped):
@@ -326,7 +326,7 @@ def _validate(mapped):
             required_features |= FEATURE_TO_BIT['pdep']
         if op in ('PEXT', 'PEXT_DYN', 'LOOP8'):
             required_features |= FEATURE_TO_BIT['pext']
-        if op == 'CLMUL':
+        if op in ('CLMUL', 'CLMULR'):
             required_features |= FEATURE_TO_BIT['clmul']
         if op == 'POPCNT':
             required_features |= FEATURE_TO_BIT['popcnt']
@@ -397,6 +397,7 @@ def _apply(op, args, constants, shift, mask):
     if op == 'PDEP_DYN': return pdep(k, a, bits)
     if op == 'IMUL': return a * k
     if op == 'CLMUL': return clmul(a, k, bits)
+    if op == 'CLMULR': return clmul(a, b, bits)
     if op == 'AND': return a & k
     if op == 'OR': return a | k
     if op == 'XOR': return a ^ k
@@ -421,5 +422,11 @@ def _apply(op, args, constants, shift, mask):
     if op == 'NEG': return -a
     if op == 'CLZ': return clz(a, bits)
     if op == 'CTZ': return ctz(a, bits)
+    if op == 'ROL32':
+        a &= 0xFFFFFFFF
+        return ((a << shift) | (a >> (32 - shift))) & 0xFFFFFFFF
+    if op == 'ROR32':
+        a &= 0xFFFFFFFF
+        return ((a >> shift) | (a << (32 - shift))) & 0xFFFFFFFF
     if op == 'LUT': return constants[a & (len(constants) - 1)]
     raise ScalarPageError('no executor for %s' % op)

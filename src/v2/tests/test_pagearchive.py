@@ -3,11 +3,14 @@
 import unittest
 
 from qm import isa
+from qm.barrierpage import BarrierPage, pack as pack_barrier
 from qm.scalarpage import (execute, pack as pack_scalar, ScalarPageError)
 from qm.steppage import pack as pack_state_step
 from qm.wasmstate import decode_module, start_state
 from qm.wasmwave import WaveExecutor
-from qm.pagearchive import ArchivePage, SCALAR, pack, unpack
+from qm.pagearchive import (ArchivePage, SCALAR, pack, pack_wasm_steps,
+                            unpack, wasm_function_steps)
+from qm.wasmbinary import index_module
 from tests.test_wasmbinary import module
 
 
@@ -65,6 +68,31 @@ class TestPageArchive(unittest.TestCase):
         self.assertEqual(mapped.entry('scalar', 7).kind, SCALAR)
         with self.assertRaisesRegex(KeyError, 'not in the archive'):
             mapped.entry('scalar', 99)
+
+    def test_complete_wasm_functions_project_to_direct_state_pages(self):
+        raw = module(b'\x00\x20\x00\x42\x03\x7c\x0b', kind=0x7e)
+        indexed = index_module(raw)
+        pages = wasm_function_steps(indexed)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(pages[0].key, (2, 0, 0, 0))
+
+        archive = unpack(pack_wasm_steps(indexed))
+        entry = archive.entry('state-step', 0, 0, 0)
+        mapped = archive.open('state-step', 0, 0, 0)
+        self.assertEqual((entry.span, entry.work),
+                         (mapped.span, mapped.work))
+        self.assertEqual(mapped.function, 0)
+
+    def test_barrier_pages_share_the_same_coordinate_directory(self):
+        barrier = BarrierPage(9, 12, 13, 'call', 2, (17, 5, 2, 1))
+        archive = unpack(pack((ArchivePage(
+            'barrier', barrier.function, barrier.start,
+            barrier.stack_extent, pack_barrier(barrier)),)))
+
+        entry = archive.entry('barrier', 9, 12, 2)
+        opened = archive.open('barrier', 9, 12, 2)
+        self.assertEqual((entry.span, entry.work), (0, 0))
+        self.assertEqual(opened, barrier)
 
 
 if __name__ == '__main__':

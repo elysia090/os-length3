@@ -755,11 +755,11 @@ function restoreVfsWidth() {
   } catch {
     /* a blocked store leaves the useful defaults in place */
   }
-  if (width) setVfsWidth(width, false);
+  if (width >= 180) setVfsWidth(width, false);
 }
 
 function setVfsWidth(value, persist = true) {
-  const width = Math.round(Math.min(360, Math.max(96, Number(value) || 120)));
+  const width = Math.round(Math.min(360, Math.max(180, Number(value) || 228)));
   document.querySelector('.workbench-shell').style.setProperty('--vfs-width', `${width}px`);
   $('dock-resizer').setAttribute('aria-valuenow', String(width));
   if (persist) {

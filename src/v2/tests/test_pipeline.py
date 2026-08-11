@@ -18,12 +18,12 @@ class TestSpecNumbers(unittest.TestCase):
     """The residual-freedom regression table, reproduced from pasted C."""
 
     CASES = [
-        ('ranks8.c', 502, ['LIN_CONST', 'CONV'], 'exclusive rank8'),
+        ('ranks8.c', 511, ['LIN_CONST', 'CONV'], 'exclusive rank8'),
         ('inclusive_rank8.c', 1, ['LIN_CONST', 'CONV'], 'inclusive rank8'),
-        ('quote_state_before8.c', 502, ['LIN_CONST', 'CONV'], 'quote-state-before'),
+        ('quote_state_before8.c', 511, ['LIN_CONST', 'CONV'], 'quote-state-before'),
         ('select8.c', 1, ['LIN_CONST', 'CONV', 'PERM_DYN'],
          'select / compaction indices'),
-        ('ranks16_nibble.c', 26, ['LIN_CONST', 'CONV'],
+        ('ranks16_nibble.c', 31, ['LIN_CONST', 'CONV'],
          'exclusive rank (nibble lanes)'),
     ]
 
@@ -45,6 +45,30 @@ class TestSpecNumbers(unittest.TestCase):
         self.assertEqual(result['program']['classes'],
                          ['POINT', 'LIN_CONST', 'CONV'])
         self.assertIn('run IDs', result['recognition'])
+
+    def test_canonical_region_slots_share_the_deposit_as_an_ssa_fork(self):
+        source = '''#include <stdint.h>
+        uint64_t slots(uint8_t dirty) {
+            uint64_t out = 0;
+            for (unsigned i = 0; i < 8; ++i) {
+                if ((dirty >> i) & 1) {
+                    unsigned before = __builtin_popcount(
+                        dirty & ((1u << i) - 1));
+                    out |= (uint64_t)(before + 1) << (8 * i);
+                }
+            }
+            return out;
+        }'''
+        result = solve(source, frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['program']['classes'], ['FORK'])
+        self.assertEqual(result['program']['solver'], 'support-masked-conv')
+        target = next(item for item in result['targets']
+                      if item['name'] == 'x86-64-bmi2-pclmul')
+        self.assertEqual((target['span'], target['work']), (3, 4))
+        self.assertEqual(target['instructions'],
+                         ['PDEP', 'IMUL', 'IMUL', 'ANDR'])
+        self.assertEqual(target['verification']['matched'], 256)
 
 
 class TestDeterminism(unittest.TestCase):

@@ -31,6 +31,7 @@ OPCODES = (
     # canonical rank, so moving one would silently rewrite which of two tied
     # programs is the answer.
     'SAR', 'NEG', 'SUBR', 'CLZ', 'CTZ',
+    'CLMULR', 'ROL32', 'ROR32',
 )
 _OPCODE = dict((name, index + 1) for index, name in enumerate(OPCODES))
 
@@ -119,6 +120,7 @@ _EXPR = {
     'PDEP_DYN': 'pdep({k}, v{a})',
     'IMUL': 'v{a} * {k}',
     'CLMUL': 'clmul(v{a}, {k}, 64)',
+    'CLMULR': 'clmul(v{a}, v{b}, 64)',
     'AND': 'v{a} & {k}',
     'OR': 'v{a} | {k}',
     'XOR': 'v{a} ^ {k}',
@@ -141,11 +143,23 @@ _EXPR = {
     'SUBR': 'v{a} - v{b}',
     'CLZ': 'clz(v{a})',
     'CTZ': 'ctz(v{a})',
+    'ROL32': 'rol32(v{a}, {n})',
+    'ROR32': 'ror32(v{a}, {n})',
 }
+
+
+def _rol32(value, shift):
+    value &= 0xFFFFFFFF
+    return ((value << shift) | (value >> (32 - shift))) & 0xFFFFFFFF
+
+
+def _ror32(value, shift):
+    value &= 0xFFFFFFFF
+    return ((value >> shift) | (value << (32 - shift))) & 0xFFFFFFFF
 
 _ENV = {'M': M64, 'pdep': pdep, 'pext': pext, 'clmul': clmul,
         'popcnt': popcnt, 'bswap64': bswap64, 'sar': sar, 'clz': clz,
-        'ctz': ctz}
+        'ctz': ctz, 'rol32': _rol32, 'ror32': _ror32}
 
 
 def _expression(ins, tables):
@@ -339,10 +353,14 @@ def known_bits(seq, input_bits=None):
             value = _product_bits(a, const)
         elif op == 'CLMUL':
             value = _clmul_bits(a, const)
+        elif op == 'CLMULR':
+            value = _clmul_bits(a, b)
         elif op == 'SCANXOR':
             value = a | ((a << shift) & M64)
         elif op == 'BSWAP':
             value = bswap64(a)
+        elif op in ('ROL32', 'ROR32'):
+            value = mask_of(32)
         elif op == 'PDEP':
             value = const
         elif op == 'PEXT':
@@ -905,19 +923,29 @@ def _seq_partitioned_deposits(groups, isa):
     partials = []
     for group in groups:
         inputs = [item[0] for item in group]
+        input_mask = sum(1 << bit for bit in inputs)
         output_mask = sum(1 << item[1] for item in group)
+        packed_output = output_mask == mask_of(len(inputs))
         contiguous = inputs == list(range(inputs[0], inputs[0] + len(inputs)))
         value = 0
-        if contiguous:
+        if packed_output and isa.has('pext'):
+            # PEXT performs both the source selection and the low packed
+            # publication.  Spelling this as shift/mask/PDEP would re-create
+            # two operations after the closed linear map was already known.
+            value = seq.emit('PEXT', [value], const=input_mask)
+        elif contiguous:
             if inputs[0]:
                 value = seq.emit('SHR', [value], shift=inputs[0])
+            if packed_output and (inputs[0] or len(inputs) < 64):
+                value = seq.emit('AND', [value], const=mask_of(len(inputs)))
         elif isa.has('pext'):
-            input_mask = sum(1 << bit for bit in inputs)
             value = seq.emit('PEXT', [value], const=input_mask)
         else:
             return None
 
-        if isa.has('pdep'):
+        if packed_output:
+            pass
+        elif isa.has('pdep'):
             value = seq.emit('PDEP', [value], const=output_mask)
         else:
             value = seq.extend(_seq_pdep_expand(output_mask), value)
@@ -1192,6 +1220,70 @@ def _lane_reduce_seq(seq, v, lane_bits, want_max):
     return seq.emit('AND', [v], const=mask_of(lane_bits))
 
 
+def _xor_tree(seq, values):
+    values = list(values)
+    while len(values) > 1:
+        combined = [seq.emit('XORR', values[index:index + 2])
+                    for index in range(0, len(values) - 1, 2)]
+        if len(values) & 1:
+            combined.append(values[-1])
+        values = combined
+    return values[0]
+
+
+def _gf256_product_seq(seq, v, isa):
+    """Eight independent partial products followed by one linear reduction."""
+    a = seq.emit('AND', [v], const=0xFF)
+    b = seq.emit('SHR', [v], shift=8)
+    if isa.has('clmul'):
+        product = seq.emit('CLMULR', [a, b])
+    else:
+        terms = []
+        for bit in range(8):
+            flag = b if bit == 0 else seq.emit('SHR', [b], shift=bit)
+            flag = seq.emit('AND', [flag], const=1)
+            flag = seq.emit('NEG', [flag])
+            shifted = a if bit == 0 else seq.emit('SHL', [a], shift=bit)
+            terms.append(seq.emit('ANDR', [shifted, flag]))
+        product = _xor_tree(seq, terms)
+
+    # With P(x)=x^8+0x1d, write product=low+x^8*high and substitute
+    # x^8=0x1d.  high has degree at most six, so q=high*0x1d reaches only
+    # degree ten; its remaining high part has at most three bits and the same
+    # substitution finishes the reduction.  This is two fixed convolutions,
+    # not a fifteen-bit matrix materialized as masks and gathers.
+    def multiply_1d(value):
+        if isa.has('clmul'):
+            return seq.emit('CLMUL', [value], const=0x1D)
+        shifted = [value]
+        shifted.extend(seq.emit('SHL', [value], shift=amount)
+                       for amount in (2, 3, 4))
+        return _xor_tree(seq, shifted)
+
+    low = seq.emit('AND', [product], const=0xFF)
+    high = seq.emit('SHR', [product], shift=8)
+    first = multiply_1d(high)
+    first_low = seq.emit('AND', [first], const=0xFF)
+    overflow = seq.emit('SHR', [first], shift=8)
+    second = multiply_1d(overflow)
+    return _xor_tree(seq, (low, first_low, second))
+
+
+def _arx32_seq(seq, v, key, rotations):
+    right, left = rotations
+    low = mask_of(32)
+    x = seq.emit('SHR', [v], shift=32)
+    y = seq.emit('AND', [v], const=low)
+    x = seq.emit('ROR32', [x], shift=right)
+    x = seq.emit('ADDR', [x, y])
+    x = seq.emit('AND', [x], const=low)
+    x = seq.emit('XOR', [x], const=key)
+    y = seq.emit('ROL32', [y], shift=left)
+    y = seq.emit('XORR', [y, x])
+    high = seq.emit('SHL', [x], shift=32)
+    return seq.emit('ORR', [high, y])
+
+
 def reciprocal(modulus, value_bits):
     """(M, s) with `(v * M) >> s == v // modulus` for every `v < 2^value_bits`.
 
@@ -1229,6 +1321,10 @@ def lower_point(op, isa):
     for mnemonic, const, shift in op.detail['steps']:
         if mnemonic == 'LANE_INTERVAL':
             v = _lane_interval_seq(seq, v, const, shift)
+        elif mnemonic == 'GF256_MUL':
+            v = _gf256_product_seq(seq, v, isa)
+        elif mnemonic == 'ARX32':
+            v = _arx32_seq(seq, v, const, shift)
         elif mnemonic == 'NEG':
             v = seq.emit('NEG', [v])
         elif mnemonic == 'AND_NEG':
@@ -1378,6 +1474,30 @@ def lower_split(op, isa):
     subs = [lower_program(branch, isa, accept=_branch_check(branch))[0]
             for branch in branches]
 
+    out = []
+    if (len(branches) == 2 and breaks == [1]
+            and len(key.terms) == 1
+            and key.terms[0][1:] == (1, False, 1)):
+        # A one-bit key is already the complete selection predicate.  Turning
+        # it into an all-bit mask needs no ordered comparison: extract the bit
+        # and negate it, then use the standard XOR blend.  This is exactly
+        # selector ? right : left after substituting selector in {0,1}.
+        shift = key.terms[0][0]
+        direct = Seq()
+        left = direct.extend(subs[0], 0)
+        right = direct.extend(subs[1], 0)
+        if isa.has('pext'):
+            selector = direct.emit('PEXT', [0], const=1 << shift)
+        else:
+            selector = (0 if not shift
+                        else direct.emit('SHR', [0], shift=shift))
+            selector = direct.emit('AND', [selector], const=1)
+        mask = direct.emit('NEG', [selector])
+        difference = direct.emit('XORR', [left, right])
+        selected = direct.emit('ANDR', [difference, mask])
+        direct.result = direct.emit('XORR', [left, selected])
+        out.append(('one-bit XOR blend', common_subexpressions(direct)))
+
     seq = Seq()
     k = _key_seq(seq, 0, key)
     result = seq.extend(subs[0], 0)
@@ -1389,7 +1509,29 @@ def lower_split(op, isa):
         take = seq.emit('ANDNR', [below, diff])
         result = seq.emit('XORR', [result, take])
     seq.result = result
-    return [('SPLIT', seq)]
+    out.append(('ordered split blend', seq))
+    return out
+
+
+def lower_fork(op, isa):
+    """Lower independent semantic branches from one input into one SSA DAG."""
+    branches = op.detail['branches']
+    merge = op.detail['merge']
+    physical = {
+        'AND': 'ANDR',
+        'OR': 'ORR',
+        'XOR': 'XORR',
+        'ADD': 'ADDR',
+    }[merge]
+    subs = [lower_program(branch, isa, accept=_branch_check(branch))[0]
+            for branch in branches]
+    seq = Seq()
+    values = [seq.extend(sub, 0) for sub in subs]
+    result = values[0]
+    for value in values[1:]:
+        result = seq.emit(physical, [result, value])
+    seq.result = result
+    return [('shared SSA fan-out', common_subexpressions(seq))]
 
 
 # How many inputs a lowered branch is checked on against the branch it lowers.
@@ -1441,6 +1583,7 @@ LOWERERS = {
     'CONV': lower_conv,
     'PERM_DYN': lower_perm_dyn,
     'POINT': lower_point,
+    'FORK': lower_fork,
     'SPLIT': lower_split,
     'TABLE': lower_table,
     'IDENTITY': lower_identity,
@@ -1531,6 +1674,7 @@ C_FORMS = {
     'PDEP_DYN': lambda a, ins: '_pdep_u64(0x%016Xull, %s)' % (ins.const, a[0]),
     'IMUL': lambda a, ins: '%s * 0x%016Xull' % (a[0], ins.const),
     'CLMUL': lambda a, ins: 'qm_clmul64(%s, 0x%016Xull)' % (a[0], ins.const),
+    'CLMULR': lambda a, ins: 'qm_clmul64(%s, %s)' % (a[0], a[1]),
     'AND': lambda a, ins: '%s & 0x%016Xull' % (a[0], ins.const),
     'OR': lambda a, ins: '%s | 0x%016Xull' % (a[0], ins.const),
     'XOR': lambda a, ins: '%s ^ 0x%016Xull' % (a[0], ins.const),
@@ -1556,13 +1700,19 @@ C_FORMS = {
                            % (a[0], a[0])),
     'CTZ': lambda a, ins: ('%s ? (uint64_t)__builtin_ctzll(%s) : 64'
                            % (a[0], a[0])),
+    'ROL32': lambda a, ins: ('(uint32_t)(((uint32_t)%s << %d) | '
+                                  '((uint32_t)%s >> %d))'
+                                 % (a[0], ins.shift, a[0], 32 - ins.shift)),
+    'ROR32': lambda a, ins: ('(uint32_t)(((uint32_t)%s >> %d) | '
+                                  '((uint32_t)%s << %d))'
+                                 % (a[0], ins.shift, a[0], 32 - ins.shift)),
     'LOOP8': lambda a, ins: 'qm_gather_loop(0x%016Xull, %s)' % (ins.const, a[0]),
     'LUT': lambda a, ins: 'qm_lut[%s & %d]'
     % (a[0], len(ins.const) - 1),
 }
 
 NEEDS_BMI2 = {'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN'}
-NEEDS_PCLMUL = {'CLMUL'}
+NEEDS_PCLMUL = {'CLMUL', 'CLMULR'}
 
 
 def emit_c(seq, name, input_ctype='uint8_t', output_ctype='uint64_t'):
@@ -1757,13 +1907,21 @@ def emit_asm(seq, name, input_bits=None):
             mnemonic = 'pext' if ins.op == 'PEXT_DYN' else 'pdep'
             body.append('    %s %s, %s, %s'
                         % (mnemonic, src[0], _ASM_SCRATCH, dst))
-        elif ins.op == 'CLMUL':
+        elif ins.op in ('CLMUL', 'CLMULR'):
             uses_xmm = True
-            load_const(ins.const, _ASM_SCRATCH)
             body.append('    movq %s, %%xmm0' % src[0])
-            body.append('    movq %s, %%xmm1' % _ASM_SCRATCH)
+            if ins.op == 'CLMUL':
+                load_const(ins.const, _ASM_SCRATCH)
+                body.append('    movq %s, %%xmm1' % _ASM_SCRATCH)
+            else:
+                body.append('    movq %s, %%xmm1' % src[1])
             body.append('    pclmulqdq $0x00, %xmm1, %xmm0')
             body.append('    movq %%xmm0, %s' % dst)
+        elif ins.op in ('ROL32', 'ROR32'):
+            carry_in()
+            body.append('    %sl $%d, %s'
+                        % ('rol' if ins.op == 'ROL32' else 'ror', ins.shift,
+                           _ASM_32[dst]))
         elif ins.op in _ASM_RI:
             mnemonic = _ASM_RI[ins.op][:-1] + suffix
             if _fits_imm32(ins.const):
@@ -1868,7 +2026,7 @@ def emit_wasm(seq, name, input_bits=None):
     — a deposit, a carry-less multiply, a lookup table — rather than inventing
     an encoding for it.
     """
-    unsupported = {'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'CLMUL', 'LUT',
+    unsupported = {'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'CLMUL', 'CLMULR', 'LUT',
                    'LOOP8', 'BSWAP'}
     if any(ins.op in unsupported for ins in seq.ins):
         return None
@@ -1908,6 +2066,12 @@ def emit_wasm(seq, name, input_bits=None):
             body.append('    i64.const 0x%X' % ins.shift)
             body.append('    i64.shl')
             body.append('    i64.xor')
+        elif op in ('ROL32', 'ROR32'):
+            body.append('    local.get %d' % ins.args[0])
+            body.append('    i32.wrap_i64')
+            body.append('    i32.const %d' % ins.shift)
+            body.append('    i32.%s' % ('rotl' if op == 'ROL32' else 'rotr'))
+            body.append('    i64.extend_i32_u')
         else:
             return None
         body.append('    local.set %d' % index)

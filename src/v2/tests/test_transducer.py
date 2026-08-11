@@ -3,7 +3,7 @@
 import unittest
 
 from qm.transducer import (CoordinateCell, PhysicalMap, StateLimit,
-                           compile_transducer)
+                           compile_byte_classes, compile_transducer)
 from qm.vmquotient import (FutureMismatch, choose_equivalent, compile_residual,
                            dense_physical_key, same_future)
 from vm import machine, seed
@@ -59,6 +59,32 @@ class TestFiniteTransducer(unittest.TestCase):
         self.assertEqual((dense.kind, dense.storage_cells), ('dense', 4))
         self.assertEqual([affine.at(rank) for rank in range(8)],
                          [3 + 5 * rank for rank in range(8)])
+
+    def test_small_integer_coordinates_pack_without_scalar_slots(self):
+        values = [int(rank in (0, 34, 37, 39, 40, 41, 44, 92))
+                  for rank in range(256)]
+        packed = PhysicalMap(values)
+        self.assertEqual(packed.kind, 'packed')
+        self.assertEqual(packed.storage_cells, 4)
+        self.assertEqual([packed.at(rank) for rank in range(256)], values)
+
+    def test_complete_byte_classifier_erases_history_and_state(self):
+        stops = frozenset((0, 34, 37, 39, 40, 41, 44, 92))
+        classes = compile_byte_classes(lambda byte: byte in stops)
+        self.assertEqual(classes.storage_cells, 6)
+        self.assertEqual(classes.first_not(b'ordinary text,tail', False), 13)
+        self.assertIsNone(classes.first_not(b'ordinary text', False))
+        for byte in range(256):
+            self.assertEqual(classes.classify(byte), byte in stops)
+
+    def test_byte_coordinates_reuse_one_residual_projection(self):
+        classes = compile_byte_classes(lambda byte: byte in (0, 10, 255))
+
+        first = classes.coordinates(True)
+        second = classes.coordinates(True)
+
+        self.assertEqual(first, (0, 10, 255))
+        self.assertIs(first, second)
 
     def test_future_equivalent_reachable_states_are_merged(self):
         # The high bit is redundant: observations and successors depend only

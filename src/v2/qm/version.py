@@ -23,7 +23,7 @@ GRAMMAR_VERSION = 'g3'
 OBJECTIVE_VERSION = 'o1'
 
 # Bumped when solver behaviour changes in a way that can move residual freedom.
-SOLVER_VERSION = 's4'
+SOLVER_VERSION = 's6'
 
 
 def version_block():

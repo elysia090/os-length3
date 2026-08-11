@@ -224,12 +224,15 @@ def summarize_binary(data):
     # Local import keeps the executable state decoder independent of the
     # large-binary indexing path.
     from .wasmbinary import index_module
+    from .wasmwave import is_barrier
 
     index = index_module(data)
     opcodes = Counter()
     instructions = 0
     argument_values = 0
     nonempty_functions = 0
+    pure_instructions = 0
+    barriers = Counter()
     failures = []
     for body in index.bodies:
         try:
@@ -246,6 +249,10 @@ def summarize_binary(data):
         for instruction in code:
             opcodes[instruction.op] += 1
             argument_values += len(instruction.args)
+            if is_barrier(instruction.op):
+                barriers[instruction.op] += 1
+            else:
+                pure_instructions += 1
     return {
         'functions': len(index.bodies),
         'imported_functions': index.imported_functions,
@@ -255,6 +262,12 @@ def summarize_binary(data):
         'nonempty_functions': nonempty_functions,
         'opcode_dictionary': len(opcodes),
         'opcode_groups': dict(sorted(opcodes.items())),
+        'grammar_pure_instructions': pure_instructions,
+        'grammar_barrier_instructions': sum(barriers.values()),
+        'grammar_pure_ratio': (pure_instructions / instructions
+                               if instructions else 1.0),
+        'barrier_groups': dict(sorted(
+            barriers.items(), key=lambda item: (-item[1], item[0]))),
         'argument_values': argument_values,
         'derived_next_coordinates': instructions - nonempty_functions,
         'next_coordinate_storage': 0,

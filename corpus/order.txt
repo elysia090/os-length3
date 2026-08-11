@@ -50,6 +50,20 @@ whole-word/how_many_bits_i32.c
 lanes/max_u8x8.c
 text/rabin_karp_roll.c
 
+# Physical delivery: compression boundaries, erasure arithmetic, encryption.
+storage/canonical_region_value1.c
+storage/canonical_region_changed1.c
+storage/canonical_region_domain1.c
+storage/canonical_region_dirty1.c
+storage/canonical_region_slots8.c
+storage/canonical_region_block_offsets4.c
+storage/ciphertext_row_class64.c
+storage/root_publish_ready5.c
+storage/rle_run_starts8.c
+storage/erasure_gf256_mul.c
+storage/erasure_gf256_mul8_const.c
+storage/arx_round64.c
+
 # Pressure cases that currently use a table or remain outside the compact
 # grammar. They stay in the corpus because a refusal is also a measured result.
 lanes/counting_sort8_u2.c

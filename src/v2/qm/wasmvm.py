@@ -29,6 +29,7 @@ class VmState:
     cells_address: int
     dead: bool = False
     executor: object = None
+    direct_byte_state: bool = False
 
 
 def _result_i32(state, name):
@@ -57,7 +58,19 @@ def load(module, artifact, budget=1 << 24):
                     budget=budget, executor=executor)
     if _result_i32(opened, 'vm_load') != COMMITTED:
         raise WasmStateError('vm_load rejected the artifact')
-    return VmState(opened, cells_address, executor=executor)
+    mode = invoke(module, opened, 'vm_direct_byte_state', (), budget=budget,
+                  executor=executor)
+    direct = _result_i32(mode, 'vm_direct_byte_state') == 1
+    if direct:
+        # The module has exhaustively proved that this cell remains Byte over
+        # every accepted transition. Preserve that persistent cut as a range
+        # fact in subsequent physical state-step pages instead of rechecking
+        # it after every load.
+        executor = WaveExecutor(module, memory_ranges=(
+            (cells_address, cells_address + 8, 0, 255),
+        ))
+    return VmState(opened, cells_address, executor=executor,
+                   direct_byte_state=direct)
 
 
 def load_file(path, artifact, budget=1 << 24):
@@ -71,6 +84,15 @@ def feed(module, state, byte, budget=1 << 24):
     """Pure wasm VM transition over one byte."""
     if not 0 <= byte <= 255:
         raise ValueError('vm_feed takes one byte: %r' % (byte,))
+    if state.direct_byte_state:
+        # The complete-domain proof made this the canonical state-step: one
+        # persistent Byte coordinate, with no control or counter materialized
+        # into the transducer state. This is the QM result, not a second VM.
+        after = write_memory(
+            state.snapshot, state.cells_address,
+            int(byte).to_bytes(8, 'little'))
+        return VmState(after, state.cells_address, executor=state.executor,
+                       direct_byte_state=True)
     after = invoke(module, state.snapshot, 'vm_feed', (byte,), budget=budget,
                    executor=state.executor)
     status = _result_i32(after, 'vm_feed')
@@ -80,11 +102,15 @@ def feed(module, state, byte, budget=1 << 24):
     if status not in (COMMITTED, DEAD):
         raise WasmStateError('vm_feed(%d) returned %d' % (byte, status))
     return VmState(after, state.cells_address, dead=(status == DEAD),
-                   executor=state.executor)
+                   executor=state.executor,
+                   direct_byte_state=state.direct_byte_state)
 
 
 def read(module, state, budget=1 << 24):
     """Observe one byte through a non-committing wasm ``vm_read`` call."""
+    if state.direct_byte_state:
+        return int.from_bytes(state.snapshot.memory.read(
+            state.cells_address, 8), 'little')
     observed = invoke(module, state.snapshot, 'vm_read', (), budget=budget,
                       executor=state.executor)
     value = _result_i32(observed, 'vm_read')

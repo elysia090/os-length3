@@ -19,7 +19,7 @@ Layer 4: depends on `bits`, `program`, `semantics`, `observer`.
 from .bits import (M64, clmul, clz, ctz, lane_masks, lane_values, mask_of,
                     pdep, pext, popcnt, smear, to_signed)
 from .program import (
-    Key, Program, compile_program, conv, field_key, identity, lin_const,
+    Key, Program, compile_program, conv, field_key, fork, identity, lin_const,
     perm_dyn_gather, point, split, table,
 )
 
@@ -116,6 +116,96 @@ def solve_conv_only(sem, obs, options=None):
     return out
 
 
+def solve_ceil_shift(sem, obs, options=None):
+    """Recognize ceiling division by a power of two.
+
+    For a nonnegative integer and ``q = 2**shift``, substitution gives the
+    unique smallest containing class directly:
+
+        ceil(x / q) = (x + q - 1) >> shift
+
+    Every proposed shift is verified on the complete declared domain, so an
+    addition that can wrap at the source width is rejected rather than hidden
+    behind the identity.
+    """
+    if sem.input_bits < 2 or not obs.is_identity:
+        return []
+    for shift in range(1, min(63, sem.input_bits) + 1):
+        program = Program(
+            [point([('ADD', mask_of(shift), None),
+                    ('SHR', None, shift)],
+                   note='ceiling division by 2^%d' % shift)],
+            1, shift, 'ceil-power-two-division',
+            sem.input_bits, sem.output_bits,
+            ['(x + %d) >> %d is verified over the declared domain'
+             % (mask_of(shift), shift)])
+        if verify(program, sem, obs):
+            return [program]
+    return []
+
+
+def solve_field_boundary(sem, obs, options=None):
+    """Recognize zero/nonzero and all-zero/all-one contiguous fields.
+
+    Once a field is range-proved, its boundary predicates have closed forms:
+
+        [z != 0]   = (z + (2**w - 1)) >> w
+        [z == 0]   = (z - 1) >> 63
+        [z == max] = (z + 1) >> w
+
+    The last identity is especially useful for packed publication conditions:
+    it says all required facts are true without branching or scalarizing the
+    facts. Candidate fields are inferred from semantics and then exhaustively
+    verified; function names and source expressions are not inspected.
+    """
+    if (sem.input_bits < 1 or not sem.domain.finite_exact
+            or not obs.is_identity or not set(sem.table()) <= {0, 1}):
+        return []
+    values = sem.domain.values()
+    expected = sem.table()
+    probe_step = max(1, len(values) // PREFILTER)
+    probes = values[::probe_step][:PREFILTER]
+    wanted = expected[::probe_step][:PREFILTER]
+    maximum_width = min(32, sem.input_bits)
+    for width in range(1, maximum_width + 1):
+        field = mask_of(width)
+        for offset in range(0, sem.input_bits - width + 1):
+            def extracted(x, shift=offset, mask=field):
+                return (x >> shift) & mask
+
+            predicates = (
+                ('field-all-one', lambda z, m=field: int(z == m),
+                 [('ADD', 1, None), ('SHR', None, width)]),
+                ('field-nonzero', lambda z: int(z != 0),
+                 [('ADD', field, None), ('SHR', None, width)]),
+                ('field-zero', lambda z: int(z == 0),
+                 [('SUB', 1, None), ('SHR', None, 63)]),
+            )
+            prefix = []
+            if offset:
+                prefix.append(('SHR', None, offset))
+            if offset or width < sem.input_bits:
+                prefix.append(('AND', field, None))
+            for name, predicate, suffix in predicates:
+                for complement in (False, True):
+                    if not all((predicate(extracted(x)) ^ complement) == y
+                               for x, y in zip(probes, wanted)):
+                        continue
+                    steps = prefix + suffix
+                    if complement:
+                        steps += [('XOR', 1, None)]
+                    program = Program(
+                        [point(steps, note='%d-bit field at %d is %s' % (
+                            width, offset, name.replace('field-', '')))],
+                        1, 1, name + ('-complement' if complement else ''),
+                        sem.input_bits, sem.output_bits,
+                        ['the field range forces a boundary predicate; the '
+                         'complete declared domain verifies the candidate'])
+                    if verify(program, sem, obs):
+                        return [program]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # LIN_CONST — constant GF(2)-linear maps
 # ---------------------------------------------------------------------------
@@ -185,7 +275,8 @@ def _apply_conv(value, const, family):
 
 
 def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
-                       accept=None, expected=None, mask=None, tables=None):
+                       accept=None, expected=None, mask=None, tables=None,
+                       geometry_mask=None):
     """Closed-form solver for `LIN_CONST[PDEP(D)] ; CONV(family, M)`.
 
     On a singleton source bit both IMUL and CLMUL act as a shift of M, so
@@ -214,12 +305,18 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
     if tables is None:
         tables = {}
 
-    t0 = target(1) & M64
+    # Candidate geometry historically uses the complete word even when final
+    # acceptance observes fewer bits.  ``geometry_mask`` is explicit for the
+    # one case that needs truncation during generation: inactive coordinates
+    # have already been substituted out of a narrower C result.
+    visible = M64 if geometry_mask is None else geometry_mask & M64
+    t0 = target(1) & visible
     if t0 == 0:
         return [], 0, 'lane 0 maps to zero; deposit+convolution has no solution'
 
     trailing = (t0 & -t0).bit_length() - 1
-    lane_targets = [target(1 << lane) & M64 for lane in range(input_bits)]
+    lane_targets = [target(1 << lane) & visible
+                    for lane in range(input_bits)]
     # `expected` is passed in by callers that already hold the evaluated table.
     # Re-evaluating a 2^16 domain per family is the difference between a
     # responsive page and a minute of dead air.
@@ -267,7 +364,7 @@ def solve_deposit_conv(target, input_bits, family='IMUL', domain=None,
             # below relies on.
             shifts = {}
             for p in range(64):
-                shifts.setdefault((const << p) & M64, []).append(p)
+                shifts.setdefault(((const << p) & M64) & visible, []).append(p)
             allowed = [shifts.get(image) for image in lane_targets]
             if None in allowed or p0 not in allowed[0]:
                 continue
@@ -323,33 +420,165 @@ def solve_deposit_conv_family(sem, obs, options=None):
     """Wrap the closed-form solver into Programs, IMUL first then CLMUL."""
     options = options or {}
     families = options.get('families', ('IMUL', 'CLMUL'))
-    if sem.input_bits > MAX_CLOSED_FORM_BITS or not sem.domain.finite_exact:
+    if not sem.domain.finite_exact or obs(sem.value_at(0)) != obs(0):
         return []
 
+    values = list(sem.domain.values())
+    full_cube = (len(values) == (1 << sem.input_bits)
+                 and values == list(range(1 << sem.input_bits)))
+
+    # C parameter packing often leaves padding or a final field that cannot
+    # affect an exclusive prefix.  Solving as if those zero-basis coordinates
+    # needed PDEP destinations makes the real closed form disappear and lets a
+    # large LUT win by default.  Substitute them out first, solve the active
+    # coordinates, then put zero columns back.  Whole-domain verification below
+    # is the converse: an allegedly inactive nonlinear coordinate cannot slip
+    # through merely because its singleton basis image was zero.
+    active = ([bit for bit in range(sem.input_bits)
+               if obs(sem.value_at(1 << bit)) != obs(0)]
+              if full_cube else list(range(sem.input_bits)))
+    reduced = full_cube and len(active) < sem.input_bits
+    if not active or len(active) > MAX_CLOSED_FORM_BITS:
+        return []
+
+    if reduced:
+        def expand(value):
+            return sum(((value >> lane) & 1) << source
+                       for lane, source in enumerate(active))
+
+        solve_values = range(1 << len(active))
+        solve_expected = dict(
+            (value, sem.value_at(expand(value))) for value in solve_values)
+        solve_target = lambda value: solve_expected[value]
+        geometry_mask = obs.mask
+    else:
+        solve_values = values
+        solve_expected = dict(zip(values, sem.table()))
+        solve_target = sem.target
+        geometry_mask = None
+
     out = []
-    expected = dict(zip(sem.domain.values(), sem.table()))
     tables = {}
     for family in families:
         sols, candidates, err = solve_deposit_conv(
-            sem.target, sem.input_bits, family,
-            domain=sem.domain.values(),
+            solve_target, len(active), family,
+            domain=solve_values,
             accept=lambda a, b: obs(a) == obs(b),
-            expected=expected, mask=obs.mask, tables=tables,
+            expected=solve_expected, mask=obs.mask, tables=tables,
+            geometry_mask=geometry_mask,
         )
         if not sols:
             continue
         deposit, const = sols[0]
-        basis = [1 << p for p in range(64) if (deposit >> p) & 1][:sem.input_bits]
+        positions = [position for position in range(64)
+                     if (deposit >> position) & 1]
+        basis = [0] * sem.input_bits
+        for source, position in zip(active, positions):
+            basis[source] = 1 << position
         prog = Program(
             [lin_const(basis, sem.input_bits, note='PDEP-shaped deposit'),
-             conv(family, const, lane_width=_lane_width(deposit, sem.input_bits))],
+             conv(family, const,
+                  lane_width=_lane_width(deposit, len(active)))],
             len(sols), candidates, 'deposit+conv[%s]' % family,
             sem.input_bits, sem.output_bits,
-            ['deposit mask 0x%016X' % deposit,
+            (['%d inactive input coordinate(s) substituted out' %
+              (sem.input_bits - len(active))] if reduced else []) + [
+             'deposit mask 0x%016X' % deposit,
              'convolution constant 0x%016X' % const])
         if verify(prog, sem, obs):
             out.append(prog)
     return out
+
+
+# ---------------------------------------------------------------------------
+# FORK — support mask and value convolution from one shared deposit
+# ---------------------------------------------------------------------------
+
+def _lane_support(value, lane_bits):
+    lane = mask_of(lane_bits)
+    out = 0
+    for shift in range(0, 64, lane_bits):
+        if (value >> shift) & lane:
+            out |= lane << shift
+    return out & M64
+
+
+def solve_support_masked_conv(sem, obs, options=None):
+    """Factor ``f(x)`` as ``support(x) & convolution(deposit(x))``.
+
+    The support is forced directly by the nonzero output lanes.  Its
+    deposit/convolution form is solved exactly.  If some full-support input has
+    an odd deposited word, multiplication by that word is invertible modulo
+    2^64, so the value convolution constant is uniquely forced.  Exhaustive
+    verification supplies the converse: the factorization is accepted only if
+    those forced branches reproduce every output in the declared domain.
+
+    Keeping the two branches explicit is essential.  Both consume the same
+    deposit, and physical lowering can therefore share it as one SSA node
+    instead of scalarizing either branch or falling back to a table.
+    """
+    if (sem.input_bits > MAX_CLOSED_FORM_BITS or sem.output_bits != 64
+            or not sem.domain.finite_exact or not obs.is_identity):
+        return []
+    values = list(sem.domain.values())
+    expected = list(sem.table())
+    modulus = 1 << 64
+
+    for lane_bits in (2, 4, 8, 16, 32):
+        supports = [_lane_support(y, lane_bits) for y in expected]
+        if not any(supports) or all(mask == M64 for mask in supports):
+            continue
+        support_by_input = dict(zip(values, supports))
+        support_target = support_by_input.__getitem__
+        tables = {}
+        solutions, candidates, _error = solve_deposit_conv(
+            support_target, sem.input_bits, 'IMUL', domain=values,
+            expected=support_by_input, tables=tables,
+        )
+        accepted = []
+        for deposit, support_const in solutions:
+            deposited = tables.get(deposit)
+            if deposited is None:
+                deposited = tables[deposit] = _deposit_table(
+                    deposit, sem.input_bits)
+            anchors = [x for x, support in zip(values, supports)
+                       if support == M64 and deposited[x] & 1]
+            if not anchors:
+                continue
+            anchor = anchors[0]
+            value_const = (expected[values.index(anchor)]
+                           * pow(deposited[anchor], -1, modulus)) & M64
+            if not all(((deposited[x] * value_const) & M64) & support == y
+                       for x, support, y in zip(values, supports, expected)):
+                continue
+
+            basis = [1 << position for position in range(64)
+                     if (deposit >> position) & 1][:sem.input_bits]
+            value_branch = Program(
+                [lin_const(basis, sem.input_bits,
+                           note='shared deposit for supported values'),
+                 conv('IMUL', value_const,
+                      lane_width=_lane_width(deposit, sem.input_bits))],
+                1, 1, 'support-value-branch', sem.input_bits, 64)
+            support_branch = Program(
+                [lin_const(basis, sem.input_bits,
+                           note='shared deposit for lane support'),
+                 conv('IMUL', support_const,
+                      lane_width=_lane_width(deposit, sem.input_bits))],
+                1, 1, 'support-mask-branch', sem.input_bits, 64)
+            program = Program(
+                [fork((value_branch, support_branch), 'AND',
+                      note='support-gated shared convolution')],
+                len(solutions), candidates, 'support-masked-conv',
+                sem.input_bits, sem.output_bits,
+                ['%d-bit lane support is forced by nonzero outputs' % lane_bits,
+                 'full-support odd anchor forces value constant 0x%016X'
+                 % value_const])
+            if verify(program, sem, obs):
+                accepted.append(program)
+        if accepted:
+            return accepted[:1]
+    return []
 
 
 def _lane_width(deposit_mask, input_bits):
@@ -481,6 +710,19 @@ def solve_lane_predicate(sem, obs, options=None):
                     'one of the %d values a %d-bit lane can take was seen, and '
                     'they form the interval [%d, %d]'
                     % (1 << lane_bits, lane_bits, lo, hi)])
+    return [prog] if verify(prog, sem, obs) else []
+
+
+def solve_gf256_multiply(sem, obs, options=None):
+    """Recognize a packed GF(2^8) product instead of materializing its table."""
+    if sem.input_bits != 16 or sem.output_bits > 8:
+        return []
+    prog = Program(
+        [point([('GF256_MUL', 0x11D, 8)],
+               note='two packed coefficients, reduced by x^8+x^4+x^3+x^2+1')],
+        1, 1, 'gf256-product', sem.input_bits, sem.output_bits,
+        ['bilinear erasure arithmetic is retained as arithmetic, not a '
+         '65536-entry materialized table'])
     return [prog] if verify(prog, sem, obs) else []
 
 
@@ -874,6 +1116,158 @@ def solve_point_chain(sem, obs, options=None):
     return []
 
 
+# ---------------------------------------------------------------------------
+# POINT / SPLIT — field inequality and one-bit semantic selection
+# ---------------------------------------------------------------------------
+
+def solve_field_neq(sem, obs, options=None):
+    """Recognize equality or inequality between two packed integer fields.
+
+    The two fields are first XORed by one GF(2)-linear map.  Its proved finite
+    range then reduces nonzero to ``(x + (2**width - 1)) >> width``.  This is
+    the closed form of field inequality; it is not inferred from a function
+    name or a C branch.
+    """
+    if (sem.input_bits < 2 or sem.output_bits != 1
+            or not sem.domain.finite_exact or not obs.is_identity):
+        return []
+    values = sem.domain.values()
+    expected = sem.table()
+    probe_step = max(1, len(values) // PREFILTER)
+    probes = values[::probe_step][:PREFILTER]
+    wanted = expected[::probe_step][:PREFILTER]
+
+    for width in range(1, min(32, sem.input_bits // 2) + 1):
+        field = mask_of(width)
+        shifts = range(0, sem.input_bits - width + 1, width)
+        for left in shifts:
+            for right in shifts:
+                if right <= left or right < left + width:
+                    continue
+
+                def neq(x, a=left, b=right, m=field):
+                    return int((((x >> a) ^ (x >> b)) & m) != 0)
+
+                for complement in (False, True):
+                    if not all((neq(x) ^ complement) == y
+                               for x, y in zip(probes, wanted)):
+                        continue
+                    basis = [0] * sem.input_bits
+                    for bit in range(width):
+                        basis[left + bit] = 1 << bit
+                        basis[right + bit] = 1 << bit
+                    # The XOR difference is proved to be a ``width``-bit
+                    # word.  For 0 <= z < 2**width,
+                    #
+                    #   [z != 0] = (z + (2**width - 1)) >> width
+                    #   [z == 0] = (z - 1) >> 63
+                    #
+                    # so a range-aware two-op reduction replaces the generic
+                    # ``z | -z`` reduction and its third shift/XOR step.
+                    if width == 1:
+                        steps = ([('XOR', 1, None)] if complement else [])
+                    elif complement:
+                        steps = [('SUB', 1, None), ('SHR', None, 63)]
+                    else:
+                        steps = [('ADD', field, None),
+                                 ('SHR', None, width)]
+                    ops = [lin_const(
+                        basis, sem.input_bits,
+                        note='difference of equal-width fields')]
+                    if steps:
+                        ops.append(point(
+                            steps, note='%s field difference' % (
+                                'zero' if complement else 'nonzero')))
+                    program = Program(
+                        ops,
+                        1, 1, 'field-%s' % ('eq' if complement else 'neq'),
+                        sem.input_bits, sem.output_bits,
+                        ['%d-bit fields at %d and %d are compared by their '
+                         'complete XOR difference' % (width, left, right)])
+                    if verify(program, sem, obs):
+                        return [program]
+    return []
+
+
+def _compact_select_branch(sem, obs, options):
+    """Cheapest closed branch used by :func:`solve_bit_select`."""
+    fitted = _fit_affine_map(
+        sem.domain.values(), sem.table(), sem.input_bits, sem.output_bits)
+    if fitted is not None:
+        basis, constant = fitted
+        ops = [lin_const(basis, sem.input_bits,
+                         note='GF(2)-affine selector branch')]
+        if constant:
+            ops.append(point([('XOR', constant, None)],
+                             note='selector branch constant'))
+        program = Program(ops, 1, 1, 'selector-affine-branch',
+                          sem.input_bits, sem.output_bits)
+        if verify(program, sem, obs):
+            return program
+    for solver in (solve_identity, solve_constant, solve_linear,
+                   solve_field_neq):
+        programs = solver(sem, obs, options)
+        if programs:
+            return programs[0]
+    return None
+
+
+def solve_bit_select(sem, obs, options=None):
+    """Derive ``selector ? branch1(x) : branch0(x)`` on one input bit.
+
+    Conditioning on a candidate bit is necessary for a one-bit selector, and
+    two independently verified branch programs plus the final whole-domain
+    verification are sufficient.  Bits are tried from high to low because C
+    parameter packing places narrow control fields after their data fields;
+    the order only affects search time, never acceptance.
+    """
+    options = options or {}
+    if (sem.input_bits < 2 or not sem.domain.finite_exact
+            or not obs.is_identity):
+        return []
+    values = sem.domain.values()
+    for selector in range(sem.input_bits - 1, -1, -1):
+        domains = ([x for x in values if not (x >> selector) & 1],
+                   [x for x in values if (x >> selector) & 1])
+        if not domains[0] or not domains[1]:
+            continue
+        branches = []
+        for domain in domains:
+            branch = _compact_select_branch(sem.restricted(domain), obs,
+                                            options)
+            if branch is None:
+                break
+            branches.append(branch)
+        if len(branches) != 2:
+            continue
+        selector_basis = [0] * sem.input_bits
+        selector_basis[selector] = 1
+        selector_ops = [lin_const(
+            selector_basis, sem.input_bits, note='one-bit selector')]
+        if sem.output_bits > 1:
+            selector_ops.append(point(
+                [('NEG', None, None)], note='selector word mask'))
+        selector_program = Program(
+            selector_ops, 1, 1, 'selector-mask', sem.input_bits,
+            sem.output_bits)
+        difference = Program(
+            [fork(branches, 'XOR', note='difference of selected branches')],
+            1, 1, 'selector-difference', sem.input_bits, sem.output_bits)
+        selected = Program(
+            [fork((selector_program, difference), 'AND',
+                  note='selector gates only the branch difference')],
+            1, 1, 'selector-gate', sem.input_bits, sem.output_bits)
+        program = Program(
+            [fork((branches[0], selected), 'XOR',
+                  note='base branch plus gated difference')],
+            1, 2, 'bit-select-ssa', sem.input_bits, sem.output_bits,
+            ['bit %d forces f0 XOR (selector AND (f0 XOR f1)); both '
+             'directions are verified on the complete domain' % selector])
+        if verify(program, sem, obs):
+            return [program]
+    return []
+
+
 def _chain_program(sem, entry_label, delta, chain, exit_form):
     width = sem.input_bits
     steps = []
@@ -978,7 +1372,11 @@ class _Gf2AffineFit(object):
             return self.alive
         vector = (x & mask_of(self.input_bits)) | (1 << self.input_bits)
         rhs = y & self.mask
-        for position, (pv, pr) in self.pivots.items():
+        # Pivots are chosen from the highest column.  Reduce in that same
+        # order; insertion order is not an echelon order after existing rows
+        # have been rewritten by a later pivot.
+        for position in sorted(self.pivots, reverse=True):
+            pv, pr = self.pivots[position]
             if (vector >> position) & 1:
                 vector ^= pv
                 rhs ^= pr
@@ -1013,6 +1411,158 @@ class _Gf2AffineFit(object):
             ops.append(point([('XOR', constant, None)], note='branch constant'))
         return Program(ops, 1, 1, 'split-branch', sem.input_bits,
                        sem.output_bits)
+
+
+def solve_linear_lane_affine(sem, obs, options=None):
+    """Linear neighbour map, uniform zero predicate, then affine publication.
+
+    Run directories and byte-difference indexes have exactly this shape.  The
+    source may spell the zero test as scalar branches, but the selected form
+    evaluates every lane together and keeps the publication map separate.
+    """
+    if sem.input_bits != 64 or sem.output_bits > 64:
+        return []
+    values = sem.domain.values()
+    expected = sem.table()
+    high_by_width = dict((width, lane_masks(width)[2])
+                         for width in (8, 16, 32))
+    for direction in ('left', 'right'):
+        for shift in (1, 2, 4, 8, 16, 32):
+            if shift >= sem.input_bits:
+                continue
+            basis = []
+            for bit in range(sem.input_bits):
+                source = 1 << bit
+                moved = ((source << shift) & M64 if direction == 'left'
+                         else source >> shift)
+                basis.append(source ^ moved)
+            for lane_bits, high in high_by_width.items():
+                transformed = [
+                    x ^ (((x << shift) & M64) if direction == 'left'
+                         else (x >> shift))
+                    for x in values]
+                predicate = []
+                lane_mask = mask_of(lane_bits)
+                top = 1 << (lane_bits - 1)
+                for word in transformed:
+                    spread = 0
+                    for lane in range(64 // lane_bits):
+                        if ((word >> (lane * lane_bits)) & lane_mask) == 0:
+                            spread |= top << (lane * lane_bits)
+                    predicate.append(spread & high)
+
+                fitted = _fit_affine_map(
+                    predicate, expected, 64, sem.output_bits)
+                if fitted is None:
+                    continue
+                post_basis, post_constant = fitted
+                tail = [lin_const(post_basis, 64,
+                                  note='affine publication')]
+                if post_constant:
+                    tail.append(point([('XOR', post_constant, None)],
+                                      note='affine publication constant'))
+                prog = Program(
+                    [lin_const(basis, sem.input_bits,
+                               note='neighbour XOR, %s %d'
+                               % (direction, shift)),
+                     point([('LANE_INTERVAL', (0, 0), lane_bits)],
+                           note='uniform zero predicate')] + tail,
+                    1, 1, 'linear-lane-affine', sem.input_bits,
+                    sem.output_bits,
+                    ['GF(2)-linear neighbour map; %d-bit zero lanes; affine '
+                     'publication' % lane_bits])
+                if verify(prog, sem, obs):
+                    return [prog]
+    return []
+
+
+def _fit_affine_map(inputs, outputs, input_bits, output_bits):
+    """Solve all output bits together over GF(2), with free terms set to zero."""
+    mask = mask_of(output_bits)
+    pivots = {}
+    rows = []
+    for x, y in zip(inputs, outputs):
+        vector = (x & mask_of(input_bits)) | (1 << input_bits)
+        rhs = y & mask
+        while vector:
+            position = vector.bit_length() - 1
+            previous = pivots.get(position)
+            if previous is None:
+                pivots[position] = (vector, rhs)
+                rows.append(position)
+                break
+            vector ^= previous[0]
+            rhs ^= previous[1]
+        if not vector and rhs:
+            return None
+
+    coefficients = [0] * (input_bits + 1)
+    for position in sorted(rows):
+        vector, rhs = pivots[position]
+        lower = vector & ((1 << position) - 1)
+        while lower:
+            bit = lower & -lower
+            rhs ^= coefficients[bit.bit_length() - 1]
+            lower ^= bit
+        coefficients[position] = rhs & mask
+    constant = coefficients[input_bits]
+    basis = coefficients[:input_bits]
+
+    def evaluate(value):
+        result = constant
+        while value:
+            bit = value & -value
+            index = bit.bit_length() - 1
+            if index < input_bits:
+                result ^= basis[index]
+            value ^= bit
+        return result & mask
+
+    if not all(evaluate(x) == (y & mask)
+               for x, y in zip(inputs, outputs)):
+        return None
+    return basis, constant
+
+
+def solve_arx32(sem, obs, options=None):
+    """Infer a two-word add/rotate/xor round and its fixed round key."""
+    if sem.input_bits != 64 or sem.output_bits != 64:
+        return []
+    at_zero = sem.value_at(0)
+    key = at_zero & 0xFFFFFFFF
+    if at_zero != (key << 32) | key:
+        return []
+    values = sem.domain.values()
+    expected = sem.table()
+
+    def rotate_left(value, shift):
+        return ((value << shift) | (value >> (32 - shift))) & 0xFFFFFFFF
+
+    def rotate_right(value, shift):
+        return ((value >> shift) | (value << (32 - shift))) & 0xFFFFFFFF
+
+    probes = min(64, len(values))
+    for right in range(1, 32):
+        for left in range(1, 32):
+            def evaluate(state, r=right, l=left):
+                x, y = (state >> 32) & 0xFFFFFFFF, state & 0xFFFFFFFF
+                x = (rotate_right(x, r) + y) & 0xFFFFFFFF
+                x ^= key
+                y = rotate_left(y, l) ^ x
+                return (x << 32) | y
+
+            if not _agrees(evaluate, values[:probes], expected[:probes],
+                           obs, obs.mask):
+                continue
+            prog = Program(
+                [point([('ARX32', key, (right, left))],
+                       note='32-bit add/rotate/xor round')],
+                1, 1, 'arx32', sem.input_bits, sem.output_bits,
+                ['round key and both rotations are forced by the observed '
+                 'state transition'])
+            if verify(prog, sem, obs):
+                return [prog]
+    return []
 
 
 # How many points a scaled fit may see before it has to have pinned its slope.
@@ -1314,11 +1864,17 @@ COMPACT_SOLVERS = (
     solve_identity,
     solve_constant,
     solve_conv_only,
+    solve_field_boundary,
+    solve_ceil_shift,
     solve_deposit_conv_family,
+    solve_support_masked_conv,
     solve_linear,
+    solve_gf256_multiply,
     solve_lane_predicate,
+    solve_linear_lane_affine,
     solve_point_gather,
     solve_lane_reduction,
+    solve_arx32,
 )
 
 # Run only when nothing above answered.  Both walk the domain many times over
@@ -1328,6 +1884,8 @@ COMPACT_SOLVERS = (
 # closed forms is what keeps a `ranks8` costing milliseconds.
 FALLBACK_SOLVERS_ORDER = (
     solve_point_chain,
+    solve_field_neq,
+    solve_bit_select,
     solve_split,
 )
 

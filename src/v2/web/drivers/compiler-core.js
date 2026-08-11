@@ -4,9 +4,16 @@
 // downloaded. The generated @yowasp/clang JavaScript bundle and its three
 // component-model adapter modules are not used.
 
-import { MemoryFileSystem, parseTar, WasiExit, WasiPreview1 } from '../wasi-preview1.js';
+import {
+  LazyResourceCatalog, MemoryFileSystem, parseTar, ResourceFault,
+  WasiExit, WasiPreview1,
+} from '../wasi-preview1.js';
+import { openPageBundle } from '../page-fabric.js';
 
 const DEFAULT_VERSION = '22.0.0-git20542-10';
+const DEFAULT_DISTRIBUTION = new URL(
+  '../assets/compiler/compiler.json', import.meta.url,
+).href;
 const DEFAULT_HASHES = {
   core: '24fbed474c7b5b4968fd73fc4827440b93fb351c1b6264516130300eff3e7bf5',
   resources: '79eef0c336fe55cf03ff8f5b42b784c8168f929a3603138b2c6301f4601e4c86',
@@ -24,7 +31,7 @@ export const info = {
   approximateBytes: 75532134 + 29665280,
   listingTriple: null,
   listingIsa: 'wasm32',
-  note: 'the compiler core and standard resources are fetched directly on the first compile',
+  note: 'authenticated physical pages are fetched on the first compile',
 };
 
 let assets = null;
@@ -32,13 +39,68 @@ let loading = null;
 
 function config() {
   const global = globalThis.QM_CLANG || {};
+  const version = global.compilerVersion || global.yowaspVersion || DEFAULT_VERSION;
+  const coreUrl = global.compilerCoreUrl || null;
+  const resourcesUrl = global.compilerResourcesUrl || null;
+  const explicitlyDistributed = Object.prototype.hasOwnProperty.call(
+    global, 'compilerDistributionUrl',
+  );
   return {
-    version: global.compilerVersion || global.yowaspVersion || DEFAULT_VERSION,
-    coreUrl: global.compilerCoreUrl || null,
-    resourcesUrl: global.compilerResourcesUrl || null,
+    version,
+    distributionUrl: explicitlyDistributed
+      ? global.compilerDistributionUrl
+      : (!coreUrl && !resourcesUrl && version === DEFAULT_VERSION
+        ? DEFAULT_DISTRIBUTION : null),
+    coreUrl,
+    resourcesUrl,
     coreHash: global.compilerCoreSha256 || null,
     resourcesHash: global.compilerResourcesSha256 || null,
   };
+}
+
+async function projectedBytes(entry, manifestUrl, label, onProgress) {
+  const fabric = await projectedFabric(entry, manifestUrl, label, onProgress);
+  const bytes = await fabric.readAll();
+  fabric.release();
+  return bytes;
+}
+
+async function projectedFabric(entry, manifestUrl, label, onProgress,
+                               cachePages = 4) {
+  const delivery = entry?.delivery;
+  if (!entry || !delivery) throw new Error(`${label}: delivery metadata is missing`);
+  if (onProgress) onProgress(`opening ${label} physical pages…`);
+  const fabric = await openPageBundle({
+    url: new URL(delivery.file, manifestUrl).href,
+    prefixBytes: delivery.prefix_bytes,
+    prefixSha256: delivery.prefix_sha256,
+    objectSha256: entry.sha256,
+    wavePages: 4,
+    cachePages,
+  });
+  if (fabric.length !== entry.bytes) throw new Error(`${label}: canonical length mismatch`);
+  return fabric;
+}
+
+async function loadDistribution(url, version, onProgress) {
+  const response = await fetch(url, { cache: 'no-cache' });
+  if (!response.ok) throw new Error(`compiler distribution: HTTP ${response.status}`);
+  const manifest = await response.json();
+  if (manifest.version !== version) {
+    throw new Error(`compiler distribution version ${manifest.version} is not ${version}`);
+  }
+  const [coreBytes, resourceFabric] = await Promise.all([
+    projectedBytes(manifest.compiler, url, 'compiler core', onProgress),
+    projectedFabric(manifest.resources, url, 'compiler resources', onProgress),
+  ]);
+  const module = await WebAssembly.compile(coreBytes);
+  const resourceNodes = new LazyResourceCatalog(
+    manifest.resources.index,
+    (offset, length) => resourceFabric.read(offset, length),
+    () => resourceFabric.releaseResident(),
+    () => resourceFabric.release(),
+  );
+  return { module, resourceNodes };
 }
 
 async function fetchBytes(url, label, onProgress, expectedHash = null) {
@@ -99,7 +161,9 @@ async function verifyHash(bytes, label, expectedHash) {
 async function load(onProgress) {
   if (assets) return assets;
   if (loading) return loading;
-  const { version, coreUrl, resourcesUrl, coreHash, resourcesHash } = config();
+  const {
+    version, distributionUrl, coreUrl, resourcesUrl, coreHash, resourcesHash,
+  } = config();
   const pinnedDefaults = !coreUrl && !resourcesUrl && version === DEFAULT_VERSION;
   const candidates = coreUrl || resourcesUrl
     ? [[
@@ -109,6 +173,15 @@ async function load(onProgress) {
     : CDNS.map((cdn) => [cdn(version, 'llvm.core.wasm'), cdn(version, 'llvm-resources.tar')]);
 
   loading = (async () => {
+    if (distributionUrl) {
+      try {
+        assets = await loadDistribution(distributionUrl, version, onProgress);
+        return assets;
+      } catch (error) {
+        loading = null;
+        throw new Error(`could not load compiler distribution ${version}: ${error?.message || error}`);
+      }
+    }
     let lastError = null;
     for (const [candidateCore, candidateResources] of candidates) {
       try {
@@ -149,21 +222,32 @@ function parseCommands(text) {
 }
 
 async function runCore(module, fs, args, output) {
-  const host = new WasiPreview1({
-    args,
-    fs,
-    env: { PATH: '/usr/bin', PWD: '/' },
-    stdout: (bytes) => output.stdout.push(bytes),
-    stderr: (bytes) => output.stderr.push(bytes),
-  });
-  const instance = await WebAssembly.instantiate(module, host.imports);
-  host.setMemory(instance.exports.memory);
-  try {
-    instance.exports._start();
-    return { status: 0, host };
-  } catch (error) {
-    if (error instanceof WasiExit) return { status: error.code, host };
-    throw error;
+  for (;;) {
+    const attempt = fs.fork();
+    const stdout = output.stdout.length;
+    const stderr = output.stderr.length;
+    const host = new WasiPreview1({
+      args,
+      fs: attempt,
+      env: { PATH: '/usr/bin', PWD: '/' },
+      stdout: (bytes) => output.stdout.push(bytes),
+      stderr: (bytes) => output.stderr.push(bytes),
+    });
+    const instance = await WebAssembly.instantiate(module, host.imports);
+    host.setMemory(instance.exports.memory);
+    try {
+      instance.exports._start();
+      return { status: 0, fs: attempt };
+    } catch (error) {
+      if (error instanceof WasiExit) return { status: error.code, fs: attempt };
+      if (!(error instanceof ResourceFault)) throw error;
+      // The failed instance and its linear memory are now disposable. Roll
+      // stdout/stderr and the mutable filesystem back to the command cut,
+      // admit exactly the missing immutable file, and replay deterministically.
+      output.stdout.length = stdout;
+      output.stderr.length = stderr;
+      await fs.materialize(error.path);
+    }
   }
 }
 
@@ -180,7 +264,7 @@ function joined(chunks) {
 
 /** Compile with already loaded assets. Exported so the direct host can be regression-tested. */
 export async function compileWithAssets(module, resourceNodes, args, files, options = {}) {
-  const fs = new MemoryFileSystem(resourceNodes);
+  let fs = new MemoryFileSystem(resourceNodes);
   for (const [name, contents] of Object.entries(files || {})) {
     const path = `/${name.replace(/^\/+/, '')}`;
     fs.writeFile(path, typeof contents === 'string' ? new TextEncoder().encode(contents) : contents);
@@ -188,6 +272,8 @@ export async function compileWithAssets(module, resourceNodes, args, files, opti
 
   const planOutput = { stdout: [], stderr: [] };
   const plan = await runCore(module, fs, [args[0], '-###', ...args.slice(1)], planOutput);
+  fs = plan.fs;
+  fs.releaseResources();
   const planText = new TextDecoder().decode(joined([...planOutput.stdout, ...planOutput.stderr]));
   if (plan.status !== 0) {
     if (options.stderr) options.stderr(new TextEncoder().encode(planText));
@@ -199,6 +285,8 @@ export async function compileWithAssets(module, resourceNodes, args, files, opti
   const output = { stdout: [], stderr: [] };
   for (const command of commands) {
     const result = await runCore(module, fs, command, output);
+    fs = result.fs;
+    fs.releaseResources();
     if (result.status !== 0) {
       const stderr = new TextDecoder().decode(joined(output.stderr));
       if (options.stderr) options.stderr(new TextEncoder().encode(stderr));
@@ -212,7 +300,10 @@ export async function compileWithAssets(module, resourceNodes, args, files, opti
   }
   const stderr = new TextDecoder().decode(joined(output.stderr));
   if (stderr && options.stderr) options.stderr(new TextEncoder().encode(stderr));
-  return { status: 0, stderr, files: produced };
+  return {
+    status: 0, stderr, files: produced,
+    physical: resourceNodes?.layout ? resourceNodes.layout() : null,
+  };
 }
 
 function parentName(path) {

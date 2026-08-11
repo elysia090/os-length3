@@ -293,6 +293,25 @@ class TestDirectPageStore(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.read(self.store.length - 2, 3)
 
+    def test_page_fabric_is_the_only_clean_resident_directory(self):
+        from kernel.pagefabric import PageFabric, project
+
+        payload = b'A' * 16 + b'B' * 16 + b'A' * 16
+        manifest, shards = project(
+            payload, page_size=16, data_shards=2, parity_shards=1)
+        fabric = PageFabric(manifest, (shards,))
+        store = DirectPageStore(
+            len(payload), page_size=16, span_pages=4, page_source=fabric)
+
+        self.assertEqual(store.read(0, 48), payload)
+        self.assertEqual(fabric.resident_pages, 2)
+        self.assertTrue(all(span is None for span in store.directory))
+        store.write(16, b'changed')
+        self.assertEqual(store.cow_pages, 1)
+        store.release_backing()
+        self.assertEqual(fabric.resident_pages, 0)
+        self.assertEqual(store.read(16, 7), b'changed')
+
 
 if __name__ == '__main__':
     unittest.main()

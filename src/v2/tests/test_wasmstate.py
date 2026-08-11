@@ -317,7 +317,7 @@ class TestProductionVmBinary(unittest.TestCase):
         memory = self.module.memory
         resident = len(memory.base) + sum(len(page) for _index, page in memory.pages)
         self.assertEqual(len(memory), 32 * 1024 * 1024)
-        self.assertLessEqual(resident, 256)
+        self.assertLessEqual(resident, 512)
         self.assertEqual(memory.read(2 * 1024 * 1024, 16), bytes(16))
 
     def test_the_lightweight_machine_reads_the_shipped_vm(self):

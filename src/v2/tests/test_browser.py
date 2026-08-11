@@ -588,7 +588,7 @@ class TestFinish(unittest.TestCase):
         result = json.loads(finish(SOURCE, options,
                                    self._table(planned['values']), ''))
         self.assertTrue(result['ok'], result.get('error'))
-        self.assertEqual(result['residual_freedom'], 502)
+        self.assertEqual(result['residual_freedom'], 511)
 
     def test_finish_rejects_a_table_of_the_wrong_length(self):
         options = json.dumps({'function': 'ranks8', 'input_bits': 8,
@@ -613,7 +613,7 @@ class TestFinish(unittest.TestCase):
     def test_fallback_runs_without_a_compiler(self):
         result = json.loads(fallback(SOURCE, '{}'))
         self.assertTrue(result['ok'], result.get('error'))
-        self.assertEqual(result['residual_freedom'], 502)
+        self.assertEqual(result['residual_freedom'], 511)
 
 
 @unittest.skipUnless(NATIVE.available(), 'clang is not installed')
@@ -633,7 +633,7 @@ class TestWorkerProtocolWithRealClang(unittest.TestCase):
         result = json.loads(finish(SOURCE, options,
                                    [str(v) for v in table], assembly))
         self.assertTrue(result['ok'], result.get('error'))
-        self.assertEqual(result['residual_freedom'], 502)
+        self.assertEqual(result['residual_freedom'], 511)
         self.assertTrue(result['frontend']['assembly_stats']['available'])
         primary = next(t for t in result['targets']
                        if t['name'] == result['primary_target'])
@@ -912,8 +912,13 @@ class TestManifest(unittest.TestCase):
                                     % rel)
             # And the files the page fetches directly rather than through the
             # manifest.
-            for rel in ('web/vm.wasm', 'web/vm.js', 'web/qm-manifest.json',
+            for rel in ('web/vm.wasm', 'web/vm.pages',
+                        'web/vm-regions.pages', 'web/vm-steps.pages',
+                        'web/vm.json',
+                        'web/vm.js', 'web/qm-manifest.json',
                         'web/kernel-manifest.json', 'web/linux-worker.js',
+                        'web/page-fabric.js', 'web/function-regions.js',
+                        'web/physical-pages.js', 'web/paged-wasm.js',
                         'web/examples.json', 'index.html'):
                 self.assertTrue(os.path.exists(os.path.join(out, rel)), rel)
 
