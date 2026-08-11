@@ -16,7 +16,7 @@ from qm.memorycut import MemoryCut
 from qm.laneops import select as select_lane
 from qm.steppage import (compile_mapped_executor, pack as pack_step,
                          unpack as unpack_step)
-from qm.stepnormalize import normalize_plan
+from qm.stepnormalize import compose_plans, normalize_plan
 from qm.transducer import compile_byte_classes
 from qm.wasmphysical import DependencyWaves
 from qm.wasmstate import MEMORY_PAGE as PHYSICAL_PAGE_BYTES, PagedMemory
@@ -218,6 +218,23 @@ _RANGE_COMPACT_COUNT = bytes.fromhex(
     '48 63 c8 31 f6 85 c0 7f 0b eb 1c 48 83 c6 01 48 39 f1 '
     '74 13 48 89 f2 48 c1 e2 04 49 83 7c 11 08 00 75 e8 '
     '89 f3 eb 05 48 89 ce 89 c3 45 31 c0')
+_RANGE_COMPACT_DIRECT = bytes.fromhex(
+    'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 53 8d 4e ff '
+    '89 f0 85 c9 0f 8e 98 00 00 00 48 8d 57 08 45 31 c0 '
+    'eb 0f 49 ff c0 4c 63 c9 4d 39 c8 0f 8d 80 00 00 00 '
+    '4d 89 c1 49 c1 e1 04 4a 83 7c 0f 08 00 75 e2 4c 63 d9 '
+    '4d 39 d8 7d 24 49 c1 e3 04 49 01 d3 41 89 ca 49 83 3b 00 '
+    '75 19 41 ff ca 49 63 da 49 83 c3 f0 49 39 d8 7c eb '
+    '45 89 c2 eb 08 41 89 ca eb 03 44 89 d1 45 89 d2 4d 39 d0 '
+    '74 35 49 01 f9 48 63 c9 49 89 ca 49 c1 e2 04 '
+    '4e 8b 1c 17 4d 89 19 4e 8b 5c 17 08 4d 89 59 08 ff c9 '
+    '4a c7 44 17 08 00 00 00 00 4a c7 04 17 00 00 00 00 '
+    'e9 71 ff ff ff 85 f6 7e 1c 48 8d 57 08 31 c9 48 83 3a 00 '
+    '74 0e 48 ff c1 48 83 c2 10 48 39 c8 75 ee eb 02 89 c8 '
+    '48 63 d8 ba 10 00 00 00 48 89 de')
+_RANGE_COMPARE_DIRECT = bytes.fromhex(
+    'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 48 8b 07 '
+    '48 3b 06 0f 97 c0 1c 00 0f be c0 5d')
 _RANGE_COMPARE_BODY = bytes.fromhex(
     '48 8b 17 48 8b 0e 55 b8 ff ff ff ff 48 89 e5 '
     '48 39 ca 72 08 31 c0 48 39 d1 0f 92 c0 5d')
@@ -225,6 +242,10 @@ _BOUNDED_STRING_COMPARE_BODY = bytes.fromhex(
     '48 85 d2 74 24 31 c0 eb 0d 84 c9 74 1c '
     '48 83 c0 01 48 39 d0 74 13 0f b6 0c 07 '
     '3a 0c 06 74 ea 19 c0 83 c8 01')
+_BOUNDED_STRING_COMPARE_DIRECT = bytes.fromhex(
+    '55 48 89 e5 48 85 d2 74 27 48 ff ca 31 c9 '
+    '44 0f b6 04 0f 44 3a 04 0e 75 20 31 c0 '
+    '45 84 c0 74 09 48 39 ca 48 8d 49 01 75 e5')
 _BIT_SCAN_FIRST_BODY = bytes.fromhex(
     '48 89 f0 48 85 f6 74 2d 31 d2 eb 0d '
     '48 83 c2 40 48 83 c7 08 48 39 c2 73 1c '
@@ -239,6 +260,20 @@ _BIT_SCAN_NEXT_BODY = bytes.fromhex(
 _BIT_SCAN_NEXT_RESULT = bytes.fromhex(
     '48 c1 e0 06 f3 48 0f bc d2 48 01 d0 '
     '48 39 c6 48 0f 47 f0 48 89 f0')
+_BIT_SCAN_FIRST_DIRECT_HEAD = bytes.fromhex(
+    'f3 0f 1e fa 48 85 f6 74 13 55 48 89 e5 48 89 f0 '
+    '48 8b 17 48 85 d2 74 0c 31 c9 eb 23 31 c0')
+_BIT_SCAN_FIRST_DIRECT_BODY = bytes.fromhex(
+    '48 83 c7 08 31 c9 48 83 c1 40 48 39 c1 73 1b '
+    '48 8b 17 48 83 c7 08 48 85 d2 74 eb '
+    'f3 48 0f bc d2 48 01 ca 48 39 c2 48 0f 42 c2 5d')
+_BIT_SCAN_NEXT_DIRECT = bytes.fromhex(
+    'f3 0f 1e fa 48 89 f0 48 39 f2 73 54 55 48 89 e5 '
+    '48 89 d1 48 c1 ea 06 48 8b 34 d7 48 d3 ee 48 d3 e6 '
+    '48 85 f6 74 09 48 83 e1 c0 48 89 ca eb 21 '
+    '48 8d 0c d7 48 83 c1 08 48 c1 e2 06 48 83 c2 40 '
+    '48 39 c2 73 1b 48 8b 31 48 83 c1 08 48 85 f6 74 eb '
+    'f3 48 0f bc ce 48 01 d1 48 39 c1 48 0f 42 c1 5d')
 _STRIDED_VALIDATOR_PREFIX = bytes.fromhex(
     '55 ba 08 00 00 00 48 c7 c6')
 _STRIDED_VALIDATOR_ARGUMENT = bytes.fromhex(
@@ -310,6 +345,14 @@ _RELATIVE_RECORD_PROJECTION_CORE = bytes.fromhex(
     '73 2a 48 8b 70 08 48 89 d7 48 89 f2 48 83 e2 fc '
     '48 8d 54 10 08 8b 0a 48 63 08 48 01 c1 '
     '48 81 f9 00 00 00 00 73 a8 48 83 e6 fd eb b3')
+_RELATIVE_RECORD_PROJECTION_FORWARD_CORE = bytes.fromhex(
+    '48 8b 70 08 48 89 f2 48 83 e2 fc 48 01 da 48 83 c2 08 '
+    '8b 3a 48 63 38 4c 8d 04 3b 49 81 f8 00 00 00 00 '
+    '41 0f 93 c0 48 01 df 48 ff c7 48 81 ff 00 00 00 00 '
+    '40 0f 96 c7 44 20 c7 48 83 e6 fd 40 0f b6 ff '
+    '48 8d 34 7e 48 89 70 08 48 39 d1 74 11 '
+    '48 8b 4a 08 83 e1 03 48 09 d9 48 89 4a 08 48 89 d1 '
+    '48 83 c0 10 48 83 c3 10 48 3d 00 00 00 00 72 90')
 
 
 def _signed_integer(value, bits):
@@ -1476,6 +1519,7 @@ class DecodedBlock:
     flag_cut: object = None
     control_block: object = None
     cut_inputs: tuple = ()
+    state_flags: bool = False
 
 
 class _CodeReader(object):
@@ -1665,6 +1709,7 @@ class X86DBT(object):
         self.collapsed_indirect_calls = 0
         self.collapsed_return_sites = 0
         self.collapsed_entry_nop_calls = 0
+        self.collapsed_register_projection_calls = 0
         self.collapsed_return_bytes = 0
         self.collapsed_alternative_tables = 0
         self.collapsed_alternative_entries = 0
@@ -1692,6 +1737,12 @@ class X86DBT(object):
         self.symbol_name_directory_misses = 0
         self.threaded_controls = 0
         self.predicate_cuts = 0
+        self.register_cuts = 0
+        self.register_cut_instructions = 0
+        self.register_cut_work = 0
+        self.register_cut_span = 0
+        self.register_cut_cache_hits = 0
+        self.register_cut_cache_misses = 0
         self.predicate_cut_cache_hits = 0
         self.predicate_cut_cache_misses = 0
         self.predicate_cut_work = 0
@@ -1720,6 +1771,7 @@ class X86DBT(object):
         self._proof_cache_revision = 0
         self._proof_cache = {}
         self._predicate_cuts = {}
+        self._register_cuts = {}
         self._proof_dependents = {}
         self._block_pages = {}
         self._page_blocks = {}
@@ -1732,6 +1784,7 @@ class X86DBT(object):
         self._token_scan_layouts = {}
         self._substring_functions = {}
         self._strided_validator_functions = {}
+        self._fixed_signature_gate_functions = {}
         self._default_record_loops = {}
         self._predicate_record_loops = {}
         self._substring_cache = {}
@@ -1747,6 +1800,7 @@ class X86DBT(object):
         self._range_compaction_functions = {}
         self._relative_record_projection_loops = {}
         self._entry_nop_functions = {}
+        self._register_projection_functions = {}
         self._normalized_compare_functions = {}
         self._normalized_compare_cache = {}
         self._normalized_field_directories = {}
@@ -1886,6 +1940,10 @@ class X86DBT(object):
             proof_blocks, _composed = cached
             if any(rip == proved.rip for proved in proof_blocks):
                 self._predicate_cuts.pop(entry, None)
+        for entry, cached in tuple(self._register_cuts.items()):
+            proof_blocks, _composed = cached
+            if any(rip == proved.rip for proved in proof_blocks):
+                self._register_cuts.pop(entry, None)
         return block
 
     def _remember_block(self, block):
@@ -2862,8 +2920,551 @@ class X86DBT(object):
         return block
 
     @staticmethod
+    def _carry_flags_plan(plan):
+        """Add RFLAGS as one physical frame coordinate beside the GPRs."""
+        if len(plan.locals) < len(REGISTER_NAMES):
+            return None
+        if any(operand.kind == 'local'
+               and operand.value >= len(REGISTER_NAMES)
+               for node in plan.nodes for operand in node.arguments):
+            return None
+        registers = plan.locals[:len(REGISTER_NAMES)]
+        scratch = plan.locals[len(REGISTER_NAMES):]
+        return PureSlice(
+            plan.function, plan.start, plan.end, plan.instructions,
+            plan.stack_inputs, plan.nodes, plan.waves, plan.stack,
+            tuple(registers) + (Operand('local', len(REGISTER_NAMES)),)
+            + tuple(scratch))
+
+    @staticmethod
+    def _lower_flag_boundary(plan, boundary):
+        """Append one register/flags instruction to an open physical cut."""
+        operation, detail = boundary.operation, boundary.detail
+        supported = {
+            'accumulator_test', 'compare', 'flag_control', 'group_ff',
+            'immediate_alu', 'operand_test', 'register_binary',
+            'register_immediate_alu', 'register_immediate_result_flags',
+            'register_result_flags', 'set_condition',
+        }
+        if operation not in supported or len(plan.locals) < 17:
+            return None
+        nodes = list(plan.nodes)
+        common = {(node.op, node.arguments): Operand('node', node.value)
+                  for node in nodes}
+        registers = list(plan.locals[:len(REGISTER_NAMES)])
+        prior_flags = plan.locals[len(REGISTER_NAMES)]
+        scratch = plan.locals[len(REGISTER_NAMES) + 1:]
+
+        def emit(name, arguments):
+            arguments = tuple(arguments)
+            if name.startswith(('i32.', 'i64.')):
+                name, arguments = select_lane(name, arguments)
+            key = name, arguments
+            present = common.get(key)
+            if present is not None:
+                return present
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, name, arguments))
+            common[key] = result
+            return result
+
+        def bit(value, mask):
+            return emit('i64.and', (
+                emit('i64.shr_u', (
+                    value, Operand('const', int(mask).bit_length() - 1))),
+                Operand('const', 1)))
+
+        def invert(value):
+            return emit('i64.xor', (value, Operand('const', 1)))
+
+        def read(operand, bits):
+            if isinstance(operand, MemoryOperand):
+                return None
+            if isinstance(operand, HighByteRegister):
+                value = emit('i64.shr_u', (
+                    registers[operand.index], Operand('const', 8)))
+            elif isinstance(operand, int):
+                value = registers[operand]
+            else:
+                return None
+            if bits < 64:
+                value = emit('i64.and', (
+                    value, Operand('const', (1 << bits) - 1)))
+            return value
+
+        def publish(operand, value, bits):
+            if isinstance(operand, MemoryOperand):
+                return False
+            high = isinstance(operand, HighByteRegister)
+            index = operand.index if high else operand
+            if not isinstance(index, int):
+                return False
+            if bits == 64:
+                registers[index] = value
+                return True
+            if bits == 32:
+                registers[index] = emit('i64.and', (
+                    value, Operand('const', MASK32)))
+                return True
+            shift = 8 if high else 0
+            mask = ((1 << bits) - 1) << shift
+            cleared = emit('i64.and', (
+                registers[index], Operand('const', MASK64 ^ mask)))
+            inserted = emit('i64.and', (
+                value, Operand('const', (1 << bits) - 1)))
+            if shift:
+                inserted = emit('i64.shl', (
+                    inserted, Operand('const', shift)))
+            registers[index] = emit('i64.or', (cleared, inserted))
+            return True
+
+        def result_flags(name, left, right, result, bits,
+                         carry_in=None, preserve_carry=False):
+            mask = (1 << bits) - 1
+            left = emit('i64.and', (left, Operand('const', mask)))
+            right = emit('i64.and', (right, Operand('const', mask)))
+            result = emit('i64.and', (result, Operand('const', mask)))
+            false = Operand('const', 0)
+            if preserve_carry:
+                carry = bit(prior_flags, RFLAGS_CARRY)
+            elif name in ('add', 'adc'):
+                base = emit('i64.add', (left, right))
+                carry = emit('i64.lt_u', (base, left))
+                if carry_in is not None:
+                    final_carry = emit('i64.lt_u', (result, base))
+                    carry = emit('i64.or', (carry, final_carry))
+            elif name in ('sub', 'cmp', 'sbb'):
+                carry = emit('i64.lt_u', (left, right))
+                if carry_in is not None:
+                    equal = emit('i64.eq', (left, right))
+                    carry = emit('i64.or', (
+                        carry, emit('i64.and', (carry_in, equal))))
+            else:
+                carry = false
+            zero = emit('i64.eq', (result, false))
+            sign = emit('i64.and', (
+                emit('i64.shr_u', (
+                    result, Operand('const', bits - 1))),
+                Operand('const', 1)))
+            parity = emit('i64.eq', (
+                emit('i64.and', (
+                    emit('i64.popcnt', (
+                        emit('i64.and', (
+                            result, Operand('const', 0xff))),)),
+                    Operand('const', 1))), false))
+            if name in ('add', 'adc'):
+                overflow_bits = emit('i64.and', (
+                    emit('i64.xor', (
+                        emit('i64.xor', (left, right)),
+                        Operand('const', mask))),
+                    emit('i64.xor', (left, result))))
+                overflow = emit('i64.and', (
+                    emit('i64.shr_u', (
+                        overflow_bits, Operand('const', bits - 1))),
+                    Operand('const', 1)))
+            elif name in ('sub', 'cmp', 'sbb'):
+                overflow_bits = emit('i64.and', (
+                    emit('i64.xor', (left, right)),
+                    emit('i64.xor', (left, result))))
+                overflow = emit('i64.and', (
+                    emit('i64.shr_u', (
+                        overflow_bits, Operand('const', bits - 1))),
+                    Operand('const', 1)))
+            else:
+                overflow = false
+            flags = emit('i64.and', (
+                prior_flags, Operand('const', MASK64 ^ RFLAGS_ARITHMETIC)))
+            for predicate, mask_bit in (
+                    (carry, RFLAGS_CARRY), (parity, RFLAGS_PARITY),
+                    (zero, RFLAGS_ZERO), (sign, RFLAGS_SIGN),
+                    (overflow, RFLAGS_OVERFLOW)):
+                shifted = (predicate if mask_bit == 1 else
+                           emit('i64.shl', (
+                               predicate,
+                               Operand('const', mask_bit.bit_length() - 1))))
+                flags = emit('i64.or', (flags, shifted))
+            return emit('i64.or', (flags, Operand('const', 2)))
+
+        def condition(code):
+            carry = bit(prior_flags, RFLAGS_CARRY)
+            parity = bit(prior_flags, RFLAGS_PARITY)
+            zero = bit(prior_flags, RFLAGS_ZERO)
+            sign = bit(prior_flags, RFLAGS_SIGN)
+            overflow = bit(prior_flags, RFLAGS_OVERFLOW)
+            signed_less = emit('i64.xor', (sign, overflow))
+            return (
+                overflow, invert(overflow), carry, invert(carry),
+                zero, invert(zero), emit('i64.or', (carry, zero)),
+                emit('i64.and', (invert(carry), invert(zero))),
+                sign, invert(sign), parity, invert(parity),
+                signed_less, invert(signed_less),
+                emit('i64.or', (zero, signed_less)),
+                emit('i64.and', (invert(zero), invert(signed_less))),
+            )[int(code) & 15]
+
+        following = detail[0] if isinstance(detail, tuple) else detail
+        flags = prior_flags
+        if operation == 'register_result_flags':
+            _following, name, destination, _source, bits = detail
+            if len(scratch) < 2:
+                return None
+            left, right = scratch[:2]
+            result = read(destination, bits)
+            flags = result_flags(name, left, right, result, bits)
+        elif operation == 'register_immediate_result_flags':
+            _following, name, register, bits, immediate = detail
+            if not scratch:
+                return None
+            left = scratch[0]
+            right = Operand('const', immediate & ((1 << bits) - 1))
+            result = read(register, bits)
+            flags = result_flags(name, left, right, result, bits)
+        elif operation in ('register_binary', 'register_immediate_alu'):
+            if operation == 'register_binary':
+                _following, name, destination, source, bits = detail
+                right = read(source, bits)
+            else:
+                _following, name, destination, bits, immediate = detail
+                right = Operand('const', immediate & ((1 << bits) - 1))
+            left = read(destination, bits)
+            if left is None or right is None:
+                return None
+            carry_in = bit(prior_flags, RFLAGS_CARRY) \
+                if name in ('adc', 'sbb') else None
+            if name in ('add', 'adc'):
+                result = emit('i64.add', (left, right))
+                if carry_in is not None:
+                    result = emit('i64.add', (result, carry_in))
+            elif name in ('sub', 'sbb'):
+                result = emit('i64.sub', (left, right))
+                if carry_in is not None:
+                    result = emit('i64.sub', (result, carry_in))
+            else:
+                result = emit('i64.' + name, (left, right))
+            result = emit('i64.and', (
+                result, Operand('const', (1 << bits) - 1)))
+            if not publish(destination, result, bits):
+                return None
+            flags = result_flags(
+                name, left, right, result, bits, carry_in)
+        elif operation == 'immediate_alu':
+            _following, name, operand, bits, immediate = detail
+            left = read(operand, bits)
+            if left is None:
+                return None
+            right = Operand('const', immediate & ((1 << bits) - 1))
+            carry_in = bit(prior_flags, RFLAGS_CARRY) \
+                if name in ('adc', 'sbb') else None
+            if name in ('add', 'adc'):
+                result = emit('i64.add', (left, right))
+                if carry_in is not None:
+                    result = emit('i64.add', (result, carry_in))
+            elif name in ('sub', 'cmp', 'sbb'):
+                result = emit('i64.sub', (left, right))
+                if carry_in is not None:
+                    result = emit('i64.sub', (result, carry_in))
+            else:
+                result = emit('i64.' + name, (left, right))
+            result = emit('i64.and', (
+                result, Operand('const', (1 << bits) - 1)))
+            if name != 'cmp' and not publish(operand, result, bits):
+                return None
+            flags = result_flags(
+                name, left, right, result, bits, carry_in)
+        elif operation == 'compare':
+            _following, opcode, register, operand, bits = detail
+            register_value = read(register, bits)
+            operand_value = read(operand, bits)
+            if register_value is None or operand_value is None:
+                return None
+            if opcode in (0x38, 0x39):
+                left, right, name = operand_value, register_value, 'cmp'
+                result = emit('i64.sub', (left, right))
+            elif opcode in (0x3a, 0x3b):
+                left, right, name = register_value, operand_value, 'cmp'
+                result = emit('i64.sub', (left, right))
+            else:
+                left, right, name = register_value, operand_value, 'and'
+                result = emit('i64.and', (left, right))
+            flags = result_flags(name, left, right, result, bits)
+        elif operation in ('accumulator_test', 'operand_test'):
+            if operation == 'accumulator_test':
+                _following, bits, immediate = detail
+                left = read(REGISTER_INDEX['rax'], bits)
+            else:
+                _following, operand, bits, immediate = detail
+                left = read(operand, bits)
+            if left is None:
+                return None
+            right = Operand('const', immediate & ((1 << bits) - 1))
+            result = emit('i64.and', (left, right))
+            flags = result_flags('and', left, right, result, bits)
+        elif operation == 'group_ff':
+            _following, group, operand, bits = detail
+            if group not in (0, 1):
+                return None
+            value = read(operand, bits)
+            if value is None:
+                return None
+            name = 'add' if group == 0 else 'sub'
+            result = emit('i64.' + name, (
+                value, Operand('const', 1)))
+            result = emit('i64.and', (
+                result, Operand('const', (1 << bits) - 1)))
+            if not publish(operand, result, bits):
+                return None
+            flags = result_flags(
+                name, value, Operand('const', 1), result, bits,
+                preserve_carry=True)
+        elif operation == 'set_condition':
+            _following, code, operand, high_byte = detail
+            if isinstance(operand, MemoryOperand):
+                return None
+            target = HighByteRegister(operand - 4) if high_byte else operand
+            if not publish(target, condition(code), 8):
+                return None
+        else:
+            _following, opcode = detail
+            if opcode in (0xfa, 0xfc):
+                mask = (RFLAGS_INTERRUPT if opcode == 0xfa
+                        else RFLAGS_DIRECTION)
+                flags = emit('i64.and', (
+                    prior_flags, Operand('const', MASK64 ^ mask)))
+            else:
+                mask = (RFLAGS_INTERRUPT if opcode == 0xfb
+                        else RFLAGS_DIRECTION)
+                flags = emit('i64.or', (
+                    prior_flags, Operand('const', mask)))
+            flags = emit('i64.or', (flags, Operand('const', 2)))
+
+        residual = PureSlice(
+            plan.function, plan.start, plan.end + 1,
+            plan.instructions + 1, plan.stack_inputs,
+            tuple(nodes), plan.waves, plan.stack,
+            tuple(registers) + (flags,))
+        return normalize_plan(residual), int(following) & MASK64
+
+    @staticmethod
+    def _register_plan(boundary):
+        """Lower one non-observing x86 register boundary to physical SSA."""
+        operation, detail = boundary.operation, boundary.detail
+        supported = {
+            'accumulator_high_sign_extend',
+            'accumulator_sign_extend',
+            'lea',
+            'move_sign_extend',
+            'move_zero_extend',
+            'register_byte_immediate',
+            'register_immediate',
+            'register_move',
+        }
+        if operation not in supported:
+            return None
+
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES))]
+        nodes = []
+        common = {}
+
+        def emit(name, arguments):
+            arguments = tuple(arguments)
+            key = name, arguments
+            present = common.get(key)
+            if present is not None:
+                return present
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, name, arguments))
+            common[key] = result
+            return result
+
+        def read(register, bits):
+            if isinstance(register, HighByteRegister):
+                value = emit('i64.shr_u', (
+                    locals_[register.index], Operand('const', 8)))
+            elif isinstance(register, int):
+                value = locals_[register]
+            else:
+                return None
+            if bits < 64:
+                value = emit('i64.and', (
+                    value, Operand('const', (1 << bits) - 1)))
+            return value
+
+        def publish(register, value, bits):
+            high_byte = isinstance(register, HighByteRegister)
+            index = register.index if high_byte else register
+            if not isinstance(index, int):
+                return False
+            if bits == 64:
+                locals_[index] = value
+                return True
+            if bits == 32:
+                locals_[index] = emit('i64.and', (
+                    value, Operand('const', MASK32)))
+                return True
+            shift = 8 if high_byte else 0
+            mask = ((1 << bits) - 1) << shift
+            cleared = emit('i64.and', (
+                locals_[index], Operand('const', MASK64 ^ mask)))
+            inserted = emit('i64.and', (
+                value, Operand('const', (1 << bits) - 1)))
+            if shift:
+                inserted = emit('i64.shl', (
+                    inserted, Operand('const', shift)))
+            locals_[index] = emit('i64.or', (cleared, inserted))
+            return True
+
+        following = detail[0] if isinstance(detail, tuple) else detail
+        if operation == 'register_byte_immediate':
+            _following, register, high_byte, immediate = detail
+            target = HighByteRegister(register - 4) if high_byte else register
+            if not publish(target, Operand('const', immediate), 8):
+                return None
+        elif operation == 'register_immediate':
+            _following, register, bits, immediate = detail
+            if not publish(register, Operand('const', immediate), bits):
+                return None
+        elif operation == 'register_move':
+            _following, destination, source, bits = detail
+            value = read(source, bits)
+            if value is None or not publish(destination, value, bits):
+                return None
+        elif operation in ('move_zero_extend', 'move_sign_extend'):
+            (_following, destination, source_bits,
+             target_bits, source) = detail
+            if isinstance(source, MemoryOperand):
+                return None
+            value = read(source, source_bits)
+            if value is None:
+                return None
+            if operation == 'move_sign_extend' and source_bits < target_bits:
+                if source_bits == 32 and target_bits == 64:
+                    name = 'i64.extend_i32_s'
+                else:
+                    name = 'i%d.extend%d_s' % (target_bits, source_bits)
+                value = emit(name, (value,))
+            if not publish(destination, value, target_bits):
+                return None
+        elif operation == 'accumulator_sign_extend':
+            _following, source_bits, target_bits = detail
+            value = read(REGISTER_INDEX['rax'], source_bits)
+            name = ('i64.extend_i32_s' if source_bits == 32 else
+                    'i%d.extend%d_s' % (target_bits, source_bits))
+            if not publish(
+                    REGISTER_INDEX['rax'], emit(name, (value,)), target_bits):
+                return None
+        elif operation == 'accumulator_high_sign_extend':
+            _following, bits = detail
+            prefix = 'i64.' if bits == 64 else 'i32.'
+            sign = emit(prefix + 'and', (
+                emit(prefix + 'shr_u', (
+                    locals_[REGISTER_INDEX['rax']],
+                    Operand('const', bits - 1))),
+                Operand('const', 1)))
+            high = emit(prefix + 'sub', (Operand('const', 0), sign))
+            if not publish(REGISTER_INDEX['rdx'], high, bits):
+                return None
+        else:
+            _following, destination, bits, operand = detail
+            if operand.segment_msr is not None:
+                return None
+            value = Operand(
+                'const', int(operand.displacement)
+                + (int(following) if operand.rip_relative else 0))
+            if not operand.rip_relative and operand.base is not None:
+                value = emit('i64.add', (value, locals_[operand.base]))
+            if operand.index is not None:
+                index = locals_[operand.index]
+                if operand.scale != 1:
+                    index = emit('i64.shl', (
+                        index,
+                        Operand('const', operand.scale.bit_length() - 1)))
+                value = emit('i64.add', (value, index))
+            if not publish(destination, value, bits):
+                return None
+
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
+        return plan, int(following) & MASK64
+
+    def _compose_register_cut(self, state, block, limit=16):
+        """Keep proof blocks intact while joining register-only state steps."""
+        cached = self._register_cuts.get(block.rip)
+        if (cached is not None and cached[0][0] is block
+                and all(self.blocks.get(proved.rip) is proved
+                        for proved in cached[0])):
+            self.register_cut_cache_hits += 1
+            return cached[1]
+
+        plan = self._carry_flags_plan(block.plan)
+        if plan is None or block.cut_inputs:
+            return block
+        source = block.source
+        instructions = block.instructions
+        proof_blocks = [block]
+        current = block
+        joined = 0
+        while joined < max(1, int(limit)):
+            lowered_flags = self._lower_flag_boundary(
+                plan, current.boundary)
+            if lowered_flags is not None:
+                plan, following = lowered_flags
+            else:
+                lowered = self._register_plan(current.boundary)
+                if lowered is None:
+                    break
+                control, following = lowered
+                control = self._carry_flags_plan(control)
+                if control is None:
+                    break
+                plan = compose_plans(plan, control)
+            if current.rip + len(current.source) != following:
+                break
+            instructions += 1
+            next_block = self.blocks.get(following)
+            if next_block is None:
+                next_block = self.block(replace(
+                    _freeze_state(state), rip=following))
+            next_plan = self._carry_flags_plan(next_block.plan)
+            if next_plan is None or next_block.cut_inputs:
+                break
+            plan = compose_plans(plan, next_plan)
+            source += next_block.source
+            instructions += next_block.instructions
+            proof_blocks.append(next_block)
+            current = next_block
+            joined += 1
+
+        if not joined:
+            return block
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        proof_config, proof = _execution_proof(
+            state, block.rip, len(source))
+        composed = DecodedBlock(
+            block.rip, current.boundary_rip, source, instructions,
+            plan, mapped, execute, current.scratch_count,
+            current.boundary, proof_config, proof,
+            current.flag_cut, current.control_block or current,
+            current.cut_inputs, True)
+        proof_blocks = tuple(proof_blocks)
+        self._register_cuts[block.rip] = proof_blocks, composed
+        self.register_cuts += 1
+        self.register_cut_cache_misses += 1
+        self.register_cut_instructions += joined
+        self.register_cut_work += plan.waves.work
+        self.register_cut_span += plan.waves.span
+        return composed
+
+    @staticmethod
     def _predicate_plan(block, condition):
         """Reopen one decoded flag producer with a terminal predicate root."""
+        if block.state_flags:
+            return None
         plan = block.plan
         nodes = list(plan.nodes)
         common = {(node.op, node.arguments): Operand('node', node.value)
@@ -4603,9 +5204,9 @@ class X86DBT(object):
             if _proof_mismatch(state, config, proof) is None:
                 return layout
 
+        layout = None
         start = (target - 17) & MASK64
         extent = len(_RELATIVE_RECORD_PROJECTION_CORE)
-        layout = None
         try:
             code = bytearray(read_virtual(
                 state, start, extent, 'execute'))
@@ -4619,9 +5220,28 @@ class X86DBT(object):
             code[46:50] = bytes(4)
             code[82:86] = bytes(4)
             if bytes(code) == _RELATIVE_RECORD_PROJECTION_CORE:
-                layout = end, lower, upper
+                layout = 'slot', end, lower, upper
         except PageFault:
             pass
+        if layout is None:
+            start = target
+            extent = len(_RELATIVE_RECORD_PROJECTION_FORWARD_CORE)
+            try:
+                code = bytearray(read_virtual(
+                    state, start, extent, 'execute'))
+                lower = _signed_integer(
+                    int.from_bytes(code[30:34], 'little'), 32) & MASK64
+                upper = _signed_integer(
+                    int.from_bytes(code[47:51], 'little'), 32) & MASK64
+                end = _signed_integer(
+                    int.from_bytes(code[106:110], 'little'), 32) & MASK64
+                code[30:34] = bytes(4)
+                code[47:51] = bytes(4)
+                code[106:110] = bytes(4)
+                if bytes(code) == _RELATIVE_RECORD_PROJECTION_FORWARD_CORE:
+                    layout = 'coordinate', end, lower, upper
+            except PageFault:
+                pass
         config, proof = _execution_proof(state, start, extent)
         if proof is not None:
             self._relative_record_projection_loops[target] = (
@@ -4632,13 +5252,20 @@ class X86DBT(object):
 
     def _collapse_relative_record_projection(self, state, branch):
         """Batch sorted relative records between page-fault barriers."""
-        target = int(branch.boundary.detail) & MASK64
+        if branch.boundary.operation == 'conditional_branch':
+            following, target, condition = branch.boundary.detail
+            if condition != 2:
+                return state
+        else:
+            following = (branch.rip + len(branch.source)) & MASK64
+            target = branch.boundary.detail
+        target = int(target) & MASK64
         if state.rip != target or target >= branch.rip:
             return state
         layout = self._relative_record_projection_layout(state, target)
         if layout is None:
             return state
-        end, lower, upper = layout
+        variant, end, lower, upper = layout
         start = state.register('rax')
         distance = end - start
         if (distance <= 0 or distance > (1 << 24)
@@ -4656,7 +5283,10 @@ class X86DBT(object):
         except PageFault:
             return state
 
-        previous_target = state.register('rdi')
+        coordinate_start = (start if variant == 'slot'
+                            else state.register('rbx'))
+        previous_target = state.register(
+            'rdi' if variant == 'slot' else 'rcx')
         target_updates = []
         last_target = state.register('rdx')
         last_previous_target = previous_target
@@ -4666,7 +5296,7 @@ class X86DBT(object):
         try:
             for index in range(count):
                 offset = index * 16
-                slot = (start + offset) & MASK64
+                slot = (coordinate_start + offset) & MASK64
                 first = struct.unpack_from('<I', payload, offset)[0]
                 raw = struct.unpack_from('<Q', payload, offset + 8)[0]
                 first_target = (
@@ -4707,26 +5337,39 @@ class X86DBT(object):
         except PageFault:
             return state
 
+        last_predicate = int(lower <= last_first < upper)
         last_rcx = (last_node_value if last_node_value is not None
-                    else (last_first + int(lower <= last_first < upper))
-                    & MASK64)
+                    else (last_first + last_predicate) & MASK64)
         registers = _write_register(
             state.registers, REGISTER_INDEX['rax'], end, 64)
-        registers = _write_register(
-            registers, REGISTER_INDEX['rdi'], last_previous_target, 64)
+        if variant == 'slot':
+            registers = _write_register(
+                registers, REGISTER_INDEX['rdi'], last_previous_target, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rcx'], last_rcx, 64)
+        else:
+            registers = _write_register(
+                registers, REGISTER_INDEX['rbx'],
+                coordinate_start + distance, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rcx'], last_target, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rdi'], last_predicate, 32)
+            first_high = last_first & (MASK64 ^ 0xff)
+            registers = _write_register(
+                registers, REGISTER_INDEX['r8'],
+                first_high | int(last_first >= lower), 64)
         registers = _write_register(
             registers, REGISTER_INDEX['rdx'], last_target, 64)
         registers = _write_register(
             registers, REGISTER_INDEX['rsi'], last_value, 64)
-        registers = _write_register(
-            registers, REGISTER_INDEX['rcx'], last_rcx, 64)
         flags = _result_flags(
             state.rflags, 'cmp', end, end, 0, 64)
         self.collapsed_relative_record_projections += 1
         self.collapsed_relative_projection_records += count
         return replace(
             state, registers=registers, rflags=flags,
-            rip=(branch.rip + len(branch.source)) & MASK64)
+            rip=int(following) & MASK64)
 
     def _collapse_ftrace_location_span(self, state, branch):
         """Append a proved run of trace locations as strided records."""
@@ -5382,19 +6025,45 @@ class X86DBT(object):
         _following, target, condition = branch.boundary.detail
         if condition != 5 or state.rip != target or target >= branch.rip:
             return state
+        direct = None
         try:
-            code = read_virtual(state, target, 0x15, 'execute')
+            code = read_virtual(state, target, 0x21, 'execute')
         except PageFault:
-            return state
-        if (code[:0x0d] != _STRIDED_PREDICATE_LOOP
-                or code[0x11:0x15] != bytes.fromhex('85 c0 75 eb')):
-            return state
-        validator = (target + 0x11 + _signed_integer(
-            int.from_bytes(code[0x0d:0x11], 'little'), 32)) & MASK64
-        layout = self._strided_validator_layout(state, validator)
-        if layout is None:
-            return state
-        first_byte, _signature_length = layout
+            try:
+                code = read_virtual(state, target, 0x15, 'execute')
+            except PageFault:
+                return state
+        if (len(code) >= 0x21
+                and code[:7] == bytes.fromhex('48 83 c3 10 4c 39 f3')
+                and code[7] == 0x73
+                and code[9:0x0a] == b'\xba'
+                and code[0x0e:0x14] == bytes.fromhex(
+                    '48 89 df 48 c7 c6')
+                and code[0x18] == 0xe8
+                and code[0x1d:0x21] == bytes.fromhex('85 c0 75 df')):
+            compare = (target + 0x1d + _signed_integer(
+                int.from_bytes(code[0x19:0x1d], 'little'), 32)) & MASK64
+            signature = _signed_integer(
+                int.from_bytes(code[0x14:0x18], 'little'), 32) & MASK64
+            length = int.from_bytes(code[0x0a:0x0e], 'little')
+            try:
+                first_byte = load_virtual(state, signature, 1)
+            except PageFault:
+                return state
+            if (length and self._is_bounded_string_compare_function(
+                    state, compare)):
+                direct = signature, length
+        if direct is None:
+            code = code[:0x15]
+            if (code[:0x0d] != _STRIDED_PREDICATE_LOOP
+                    or code[0x11:0x15] != bytes.fromhex('85 c0 75 eb')):
+                return state
+            validator = (target + 0x11 + _signed_integer(
+                int.from_bytes(code[0x0d:0x11], 'little'), 32)) & MASK64
+            layout = self._strided_validator_layout(state, validator)
+            if layout is None:
+                return state
+            first_byte, _signature_length = layout
         current = state.register('rbx') & MASK64
         bound = state.register('r14') & MASK64
         start = (current + 16) & MASK64
@@ -5427,11 +6096,197 @@ class X86DBT(object):
                 registers, REGISTER_INDEX['rbx'], candidate, 64)
             registers = _write_register(
                 registers, REGISTER_INDEX['rdi'], candidate, 64)
+            if direct is not None:
+                signature, length = direct
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rsi'], signature, 64)
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rdx'], length, 32)
             flags = _result_flags(
                 state.rflags, 'cmp', bound, candidate,
                 (bound - candidate) & MASK64, 64)
-            rip = (target + 0x0c) & MASK64
+            rip = (target + (0x18 if direct is not None else 0x0c)) & MASK64
         self.collapsed_strided_predicate_candidates += skipped
+        return replace(state, registers=registers, rflags=flags, rip=rip)
+
+    def _fixed_signature_gate_layout(self, state, target):
+        """Prove coordinates whose fixed byte signatures gate a validator."""
+        target = int(target) & MASK64
+        cached = self._fixed_signature_gate_functions.get(target)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            code = reader.read(target, 0x4c)
+            smbios3 = (
+                code[:0x21] == bytes.fromhex(
+                    '0f 1f 44 00 00 55 48 89 e5 53 '
+                    'b8 5f 53 4d 33 33 07 0f b6 4f 04 '
+                    '83 f1 5f 09 c1 bb 01 00 00 00 75 21')
+                and code[0x42:0x48] == bytes.fromhex(
+                    '89 d8 5b 5d 2e e9'))
+            if smbios3:
+                return_thunk = (target + 0x4c + _signed_integer(
+                    int.from_bytes(code[0x48:0x4c], 'little'), 32)) & MASK64
+                if reader.read(return_thunk, 1) == b'\xc3':
+                    layout = ((0, b'_SM3_'),)
+            else:
+                code = reader.read(target, 0x11b)
+                first_gate = (
+                    code[:0x16] == bytes.fromhex(
+                        '0f 1f 44 00 00 55 48 89 e5 '
+                        '41 57 41 56 41 54 53 48 89 fb 45 31 ff')
+                    and code[0x16:0x1c] == bytes.fromhex(
+                        '81 3f 5f 53 4d 5f')
+                    and code[0x1c:0x1e] == bytes.fromhex('0f 85')
+                    and (target + 0x22 + _signed_integer(
+                        int.from_bytes(code[0x1e:0x22], 'little'), 32)
+                         & MASK64) == (target + 0xd6) & MASK64)
+                second_gate = (
+                    code[0xd6:0xef] == bytes.fromhex(
+                        'b8 5f 44 4d 49 33 43 10 0f b6 4b 14 '
+                        '83 f1 5f 09 c1 41 be 01 00 00 00 75 1b')
+                    and code[0x10a:0x117] == bytes.fromhex(
+                        '44 89 f0 5b 41 5c 41 5e 41 5f 5d 2e e9'))
+                return_thunk = (target + 0x11b + _signed_integer(
+                    int.from_bytes(code[0x117:0x11b], 'little'), 32)) & MASK64
+                if (first_gate and second_gate
+                        and reader.read(return_thunk, 1) == b'\xc3'):
+                    layout = ((0, b'_SM_'), (16, b'_DMI_'))
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._fixed_signature_gate_functions[target] = \
+            config, proof, layout
+        return layout
+
+    def _collapse_strided_copy_predicate_candidates(self, state, branch):
+        """Project copy/validate records onto fixed signature coordinates."""
+        following, target, condition = branch.boundary.detail
+        if condition != 2 or state.rip != target or target >= branch.rip:
+            return state
+        try:
+            code = read_virtual(state, target, 0x35, 'execute')
+        except PageFault:
+            return state
+        if (code[:8] != bytes.fromhex(
+                'ba 10 00 00 00 4c 89 f7')
+                or code[8:10] != bytes.fromhex('4c 89')
+                or code[11] != 0xe8
+                or code[0x10:0x12] != bytes.fromhex('4c 89')
+                or code[0x13] != 0xe8
+                or code[0x18:0x1b] != bytes.fromhex('85 c0 74')
+                or code[0x1b] not in (0x34, 0x7f)
+                or code[0x1c:0x2e] != bytes.fromhex(
+                    '49 8b 06 49 8b 4e 08 48 89 4c 24 08 '
+                    '48 89 04 24 49 83')
+                or code[0x2f:0x32] != bytes.fromhex('10 4d 39')
+                or code[0x33:0x35] != bytes.fromhex('72 cb')):
+            return state
+        source_modrm = code[10]
+        update_modrm = code[0x2e]
+        argument_modrm = code[0x12]
+        compare_modrm = code[0x32]
+        if (source_modrm & 0xc7 != 0xc6
+                or update_modrm & 0xf8 != 0xc0
+                or argument_modrm & 0xc7 != 0xc7
+                or compare_modrm & 0xf8 != 0xe8):
+            return state
+        source_register = ((source_modrm >> 3) & 7) | 8
+        update_register = (update_modrm & 7) | 8
+        argument_register = ((argument_modrm >> 3) & 7) | 8
+        if (source_register != update_register
+                or (compare_modrm & 7) | 8 != source_register):
+            return state
+        copy = (target + 0x10 + _signed_integer(
+            int.from_bytes(code[0x0c:0x10], 'little'), 32)) & MASK64
+        validator = (target + 0x18 + _signed_integer(
+            int.from_bytes(code[0x14:0x18], 'little'), 32)) & MASK64
+        signatures = self._fixed_signature_gate_layout(state, validator)
+        if (not self._is_void_memory_copy_function(state, copy)
+                or signatures is None):
+            return state
+        current = state.registers[source_register] & MASK64
+        bound = state.register('r13') & MASK64
+        stack = state.register('rsp') & MASK64
+        destination = state.register('r14') & MASK64
+        argument = state.registers[argument_register] & MASK64
+        if (current < 16 or current >= bound or (bound - current) % 16
+                or destination != stack + 16 or argument != stack):
+            return state
+        count = (bound - current) // 16
+        try:
+            payload = read_virtual(state, current - 16, bound - current + 16)
+            if read_virtual(state, stack, 16) != payload[:16]:
+                return state
+        except PageFault:
+            return state
+        candidate = count
+        for offset, signature in signatures:
+            position = payload.find(signature, offset)
+            while position >= 0 and (position - offset) % 16:
+                position = payload.find(signature, position + 1)
+            if position >= 0:
+                candidate = min(candidate, (position - offset) // 16)
+        if not candidate:
+            return state
+        registers = state.registers
+        if candidate < count:
+            previous = payload[candidate * 16:candidate * 16 + 16]
+            try:
+                state = write_virtual(state, stack, previous)
+                state = write_virtual(state, destination, previous)
+            except PageFault:
+                return state
+            coordinate = current + candidate * 16
+            registers = _write_register(
+                state.registers, source_register, coordinate, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rdx'], 16, 32)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rsi'], coordinate - 16, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rdi'], argument, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rax'],
+                int.from_bytes(previous[:8], 'little'), 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rcx'],
+                int.from_bytes(previous[8:], 'little'), 64)
+            rip = target
+            flags = _result_flags(
+                state.rflags, 'cmp', coordinate, bound,
+                (coordinate - bound) & MASK64, 64)
+        else:
+            last = (bound - 16) & MASK64
+            try:
+                record = read_virtual(state, last, 16)
+                state = write_virtual(state, destination, record)
+                state = write_virtual(state, stack, record)
+            except PageFault:
+                return state
+            registers = _write_register(
+                state.registers, source_register, bound, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rdx'], 16, 32)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rsi'], last, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rdi'],
+                argument, 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rax'],
+                int.from_bytes(record[:8], 'little'), 64)
+            registers = _write_register(
+                registers, REGISTER_INDEX['rcx'],
+                int.from_bytes(record[8:], 'little'), 64)
+            flags = _result_flags(
+                state.rflags, 'cmp', bound, bound, 0, 64)
+            rip = following & MASK64
+        self.collapsed_strided_predicate_candidates += candidate
         return replace(state, registers=registers, rflags=flags, rip=rip)
 
     def _default_record_loop_layout(self, state, target):
@@ -5446,24 +6301,55 @@ class X86DBT(object):
         layout = None
         try:
             code = reader.read(target, 0x30)
-            if (code[:0x10] != bytes.fromhex(
-                    '48 8d 14 8a 48 63 12 83 fa ff 74 0a 48 0f a3 15')
-                    or code[0x14:0x1b] != bytes.fromhex(
-                        '73 27 83 c0 01 3b 05')
-                    or code[0x1f:0x24] != bytes.fromhex(
-                        '73 3e 48 8b 15')
-                    or code[0x28:0x30] != bytes.fromhex(
-                        '48 63 c8 48 85 d2 75 d0')):
-                raise ValueError('not a default-record candidate loop')
-            count_address = (target + 0x1f + _signed_integer(
-                int.from_bytes(code[0x1b:0x1f], 'little'), 32)) & MASK64
-            pointer_address = (target + 0x28 + _signed_integer(
-                int.from_bytes(code[0x24:0x28], 'little'), 32)) & MASK64
-            count = reader.load(count_address, 4)
-            pointer = reader.load(pointer_address, 8)
+            if code[:3] == bytes.fromhex('48 8b 3d'):
+                code = reader.read(target, 0x6e)
+            direct = (
+                code[:3] == bytes.fromhex('48 8b 3d')
+                and code[7:0x15] == bytes.fromhex(
+                    '48 63 f0 48 85 ff 74 06 48 8d 3c b7 eb 0b')
+                and code[0x15:0x19] == bytes.fromhex('48 8b 3c f5')
+                and code[0x1d:0x29] == bytes.fromhex(
+                    '48 01 cf 48 63 3f 48 83 ff ff 74 3b')
+                and code[0x29:0x2d] == bytes.fromhex('48 0f a3 3d')
+                and code[0x31:0x36] == bytes.fromhex('72 31 48 8b 3d')
+                and code[0x3a:0x48] == bytes.fromhex(
+                    '48 85 ff 74 09 c7 04 b7 ff ff ff ff eb 1c')
+                and code[0x48:0x4c] == bytes.fromhex('48 8b 3c f5')
+                and code[0x50:0x52] == bytes.fromhex('89 97')
+                and code[0x56:0x5a] == bytes.fromhex('48 8b 34 f5')
+                and code[0x5e:0x68] == bytes.fromhex(
+                    '89 96 c0 0d e0 83 ff c0 3b 05')
+                and code[0x6c:0x6e] == bytes.fromhex('72 92'))
+            if direct:
+                pointer_address = (target + 7 + _signed_integer(
+                    int.from_bytes(code[3:7], 'little'), 32)) & MASK64
+                count_address = (target + 0x6c + _signed_integer(
+                    int.from_bytes(code[0x68:0x6c], 'little'), 32)) & MASK64
+                pointer = reader.load(pointer_address, 8)
+                count = reader.load(count_address, 4)
+                layout = 'direct', pointer, count
+            else:
+                code = code[:0x30]
+                if (code[:0x10] != bytes.fromhex(
+                        '48 8d 14 8a 48 63 12 83 fa ff 74 0a 48 0f a3 15')
+                        or code[0x14:0x1b] != bytes.fromhex(
+                            '73 27 83 c0 01 3b 05')
+                        or code[0x1f:0x24] != bytes.fromhex(
+                            '73 3e 48 8b 15')
+                        or code[0x28:0x30] != bytes.fromhex(
+                            '48 63 c8 48 85 d2 75 d0')):
+                    raise ValueError('not a default-record candidate loop')
+                count_address = (target + 0x1f + _signed_integer(
+                    int.from_bytes(
+                        code[0x1b:0x1f], 'little'), 32)) & MASK64
+                pointer_address = (target + 0x28 + _signed_integer(
+                    int.from_bytes(
+                        code[0x24:0x28], 'little'), 32)) & MASK64
+                count = reader.load(count_address, 4)
+                pointer = reader.load(pointer_address, 8)
+                layout = 'legacy', pointer, count
             if not pointer or count > (1 << 24):
                 raise ValueError('default-record directory is invalid')
-            layout = pointer, count
         except (PageFault, ValueError):
             pass
         config, proof = reader.proof()
@@ -5472,16 +6358,23 @@ class X86DBT(object):
 
     def _collapse_default_record_candidates(self, state, branch):
         """Skip untouched fixed-width records through complement coordinates."""
-        _following, target, condition = branch.boundary.detail
-        if condition != 5 or state.rip != target or target >= branch.rip:
+        following, target, condition = branch.boundary.detail
+        if (condition not in (2, 5) or state.rip != target
+                or target >= branch.rip):
             return state
         layout = self._default_record_loop_layout(state, target)
         if layout is None:
             return state
-        pointer, count = layout
+        mode, pointer, count = layout
+        if ((mode == 'legacy' and condition != 5)
+                or (mode == 'direct' and condition != 2)):
+            return state
         index = state.register('rax') & MASK32
-        if (state.register('rdx') != pointer
-                or state.register('rcx') != index or index >= count):
+        if (mode == 'legacy'
+                and (state.register('rdx') != pointer
+                     or state.register('rcx') != index)):
+            return state
+        if index >= count:
             return state
         try:
             found = find_virtual_not(
@@ -5494,19 +6387,29 @@ class X86DBT(object):
             return state
         registers = _write_register(
             state.registers, REGISTER_INDEX['rax'], candidate, 32)
-        registers = _write_register(
-            registers, REGISTER_INDEX['rcx'], candidate - 1, 64)
-        if candidate == count:
+        if mode == 'legacy':
             registers = _write_register(
-                registers, REGISTER_INDEX['rdx'], MASK64, 64)
+                registers, REGISTER_INDEX['rcx'], candidate - 1, 64)
+        if candidate == count:
+            if mode == 'legacy':
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rdx'], MASK64, 64)
+            else:
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rsi'], count - 1, 64)
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rdi'],
+                    pointer + (count - 1) * 4, 64)
             flags = _result_flags(
                 state.rflags, 'cmp', count, count, 0, 32)
-            rip = (target + 0x5f) & MASK64
+            rip = ((target + 0x5f) & MASK64
+                   if mode == 'legacy' else following & MASK64)
         else:
-            registers = _write_register(
-                registers, REGISTER_INDEX['rcx'], candidate, 64)
-            registers = _write_register(
-                registers, REGISTER_INDEX['rdx'], pointer, 64)
+            if mode == 'legacy':
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rcx'], candidate, 64)
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rdx'], pointer, 64)
             flags = state.rflags
             rip = target
         self.collapsed_default_record_candidates += skipped
@@ -5524,7 +6427,63 @@ class X86DBT(object):
         layout = None
         try:
             code = reader.read(target, 0x88)
-            if (code[:0x11] != bytes.fromhex(
+            direct = (
+                code[:3] == bytes.fromhex('48 8b 15')
+                and code[7:0x1a] == bytes.fromhex(
+                    '49 63 ce 48 85 d2 74 0b 83 3c 8a ff '
+                    '75 5d 89 04 8a eb 25')
+                and code[0x3f:0x42] == bytes.fromhex('ff c0 be')
+                and code[0x46:0x49] == bytes.fromhex('48 c7 c7')
+                and code[0x4d:0x51] == bytes.fromhex('48 89 c2 e8')
+                and code[0x55] == 0x3d
+                and code[0x5a:0x5d] == bytes.fromhex('72 16 be')
+                and code[0x61:0x64] == bytes.fromhex('48 c7 c7')
+                and code[0x68] == 0xe8
+                and code[0x6d:0x75] == bytes.fromhex(
+                    '39 d8 0f 43 c3 41 ff c6')
+                and code[0x75:0x78] == bytes.fromhex('44 3b 35')
+                and code[0x7c:0x7e] == bytes.fromhex('72 82'))
+            if direct:
+                pointer_address = (target + 7 + _signed_integer(
+                    int.from_bytes(code[3:7], 'little'), 32)) & MASK64
+                count_address = (target + 0x7c + _signed_integer(
+                    int.from_bytes(code[0x78:0x7c], 'little'), 32)) & MASK64
+                pointer = reader.load(pointer_address, 8)
+                count = reader.load(count_address, 4)
+                size = int.from_bytes(code[0x42:0x46], 'little')
+                bitmap = _signed_integer(
+                    int.from_bytes(code[0x49:0x4d], 'little'), 32) & MASK64
+                next_scan = (target + 0x55 + _signed_integer(
+                    int.from_bytes(code[0x51:0x55], 'little'), 32)) & MASK64
+                first_scan = (target + 0x6d + _signed_integer(
+                    int.from_bytes(code[0x69:0x6d], 'little'), 32)) & MASK64
+                if (not pointer or count > (1 << 24)
+                        or not size or size > (1 << 20)
+                        or int.from_bytes(code[0x56:0x5a], 'little') != size
+                        or int.from_bytes(code[0x5d:0x61], 'little') != size
+                        or (_signed_integer(
+                            int.from_bytes(code[0x64:0x68], 'little'), 32)
+                            & MASK64) != bitmap
+                        or self._bit_scan_layout(state, next_scan) != 'next'
+                        or self._bit_scan_layout(state, first_scan) != 'first'):
+                    raise ValueError('direct predicate directory changed')
+                for scan in (next_scan, first_scan):
+                    scan_proof = self._bit_scan_functions.get(scan)
+                    if scan_proof is None or not reader.absorb(
+                            scan_proof[0], scan_proof[1]):
+                        raise ValueError('predicate scan proof changed')
+                raw = reader.read(bitmap, (size + 7) // 8)
+                active = tuple(
+                    bit for byte_index, byte in enumerate(raw)
+                    for lane in range(8)
+                    for bit in (byte_index * 8 + lane,)
+                    if bit < size and byte & (1 << lane))
+                if not active:
+                    raise ValueError('predicate directory is empty')
+                layout = ('direct', pointer, count,
+                          (target + 0x7e) & MASK64,
+                          bitmap, size, active)
+            elif (code[:0x11] != bytes.fromhex(
                     '48 63 cb 48 8d 14 8a 83 3a ff 74 78 '
                     '83 c3 01 3b 1d')
                     or code[0x15:0x17] != bytes.fromhex('0f 83')
@@ -5542,48 +6501,51 @@ class X86DBT(object):
                     or code[0x7d:0x88] != bytes.fromhex(
                         '39 d0 0f 47 c2 eb 88 89 02 eb c1')):
                 raise ValueError('not a finite-predicate record projection')
-            count_address = (target + 0x15 + _signed_integer(
-                int.from_bytes(code[0x11:0x15], 'little'), 32)) & MASK64
-            exit_target = (target + 0x1b + _signed_integer(
-                int.from_bytes(code[0x17:0x1b], 'little'), 32)) & MASK64
-            pointer_address = (target + 0x22 + _signed_integer(
-                int.from_bytes(code[0x1e:0x22], 'little'), 32)) & MASK64
-            pointer = reader.load(pointer_address, 8)
-            count = reader.load(count_address, 4)
-            size = int.from_bytes(code[0x4d:0x51], 'little')
-            bitmap = _signed_integer(
-                int.from_bytes(code[0x54:0x58], 'little'), 32) & MASK64
-            if (not pointer or count > (1 << 24)
-                    or not size or size > (1 << 20)
-                    or int.from_bytes(code[0x61:0x65], 'little')
-                    != size - 1
-                    or int.from_bytes(code[0x68:0x6c], 'little') != size
-                    or (_signed_integer(
-                        int.from_bytes(code[0x6f:0x73], 'little'), 32)
-                        & MASK64) != bitmap
-                    or int.from_bytes(code[0x79:0x7d], 'little') != size):
-                raise ValueError('predicate directory constants disagree')
-            next_scan = (target + 0x60 + _signed_integer(
-                int.from_bytes(code[0x5c:0x60], 'little'), 32)) & MASK64
-            first_scan = (target + 0x78 + _signed_integer(
-                int.from_bytes(code[0x74:0x78], 'little'), 32)) & MASK64
-            if (self._bit_scan_layout(state, next_scan) != 'next'
-                    or self._bit_scan_layout(state, first_scan) != 'first'):
-                raise ValueError('predicate scans changed')
-            for scan in (next_scan, first_scan):
-                scan_proof = self._bit_scan_functions.get(scan)
-                if scan_proof is None or not reader.absorb(
-                        scan_proof[0], scan_proof[1]):
-                    raise ValueError('predicate scan proof changed')
-            raw = reader.read(bitmap, (size + 7) // 8)
-            active = tuple(
-                bit for byte_index, byte in enumerate(raw)
-                for lane in range(8)
-                for bit in (byte_index * 8 + lane,)
-                if bit < size and byte & (1 << lane))
-            if not active:
-                raise ValueError('predicate directory is empty')
-            layout = pointer, count, exit_target, bitmap, size, active
+            else:
+                count_address = (target + 0x15 + _signed_integer(
+                    int.from_bytes(code[0x11:0x15], 'little'), 32)) & MASK64
+                exit_target = (target + 0x1b + _signed_integer(
+                    int.from_bytes(code[0x17:0x1b], 'little'), 32)) & MASK64
+                pointer_address = (target + 0x22 + _signed_integer(
+                    int.from_bytes(code[0x1e:0x22], 'little'), 32)) & MASK64
+                pointer = reader.load(pointer_address, 8)
+                count = reader.load(count_address, 4)
+                size = int.from_bytes(code[0x4d:0x51], 'little')
+                bitmap = _signed_integer(
+                    int.from_bytes(code[0x54:0x58], 'little'), 32) & MASK64
+                if (not pointer or count > (1 << 24)
+                        or not size or size > (1 << 20)
+                        or int.from_bytes(code[0x61:0x65], 'little')
+                        != size - 1
+                        or int.from_bytes(code[0x68:0x6c], 'little') != size
+                        or (_signed_integer(
+                            int.from_bytes(code[0x6f:0x73], 'little'), 32)
+                            & MASK64) != bitmap
+                        or int.from_bytes(code[0x79:0x7d], 'little') != size):
+                    raise ValueError(
+                        'predicate directory constants disagree')
+                next_scan = (target + 0x60 + _signed_integer(
+                    int.from_bytes(code[0x5c:0x60], 'little'), 32)) & MASK64
+                first_scan = (target + 0x78 + _signed_integer(
+                    int.from_bytes(code[0x74:0x78], 'little'), 32)) & MASK64
+                if (self._bit_scan_layout(state, next_scan) != 'next'
+                        or self._bit_scan_layout(state, first_scan) != 'first'):
+                    raise ValueError('predicate scans changed')
+                for scan in (next_scan, first_scan):
+                    scan_proof = self._bit_scan_functions.get(scan)
+                    if scan_proof is None or not reader.absorb(
+                            scan_proof[0], scan_proof[1]):
+                        raise ValueError('predicate scan proof changed')
+                raw = reader.read(bitmap, (size + 7) // 8)
+                active = tuple(
+                    bit for byte_index, byte in enumerate(raw)
+                    for lane in range(8)
+                    for bit in (byte_index * 8 + lane,)
+                    if bit < size and byte & (1 << lane))
+                if not active:
+                    raise ValueError('predicate directory is empty')
+                layout = ('legacy', pointer, count, exit_target,
+                          bitmap, size, active)
         except (PageFault, ValueError):
             pass
         config, proof = reader.proof()
@@ -5593,16 +6555,20 @@ class X86DBT(object):
     def _collapse_predicate_record_projection(self, state, branch):
         """Materialize one sealed predicate residual as strided records."""
         _following, target, condition = branch.boundary.detail
-        if condition != 5 or state.rip != target or target >= branch.rip:
+        if (condition not in (2, 5) or state.rip != target
+                or target >= branch.rip):
             return state
         layout = self._predicate_record_loop_layout(state, target)
         if layout is None:
             return state
-        pointer, count, exit_target, bitmap, size, active = layout
-        index = state.register('rbx') & MASK32
+        mode, pointer, count, exit_target, bitmap, size, active = layout
+        if ((mode == 'legacy' and condition != 5)
+                or (mode == 'direct' and condition != 2)):
+            return state
+        index = state.register('rbx' if mode == 'legacy' else 'r14') & MASK32
         current = state.register('rax') & MASK32
-        if (state.register('rdx') != pointer or index >= count
-                or current not in active):
+        if ((mode == 'legacy' and state.register('rdx') != pointer)
+                or index >= count or current not in active):
             return state
         try:
             changed = find_virtual_not(
@@ -5624,7 +6590,8 @@ class X86DBT(object):
         registers = _write_register(
             state.registers, REGISTER_INDEX['rax'], final, 32)
         registers = _write_register(
-            registers, REGISTER_INDEX['rbx'], count, 32)
+            registers, REGISTER_INDEX[
+                'rbx' if mode == 'legacy' else 'r14'], count, 32)
         registers = _write_register(
             registers, REGISTER_INDEX['rcx'], count - 1, 64)
         registers = _write_register(
@@ -8258,6 +9225,12 @@ class X86DBT(object):
         elif condition == 3 \
                 and operation == 'register_immediate_result_flags':
             recipes = (self._collapse_wide_copy_loop,)
+        elif condition == 2 and operation == 'load':
+            recipes = (self._collapse_relative_record_projection,
+                       self._collapse_default_record_candidates,
+                       self._collapse_predicate_record_projection)
+        elif condition == 2 and operation == 'call':
+            recipes = (self._collapse_strided_copy_predicate_candidates,)
         elif condition == 9 and operation == 'register_result_flags':
             recipes = (self._collapse_length_prefix_skip,)
         elif condition == 12 and operation == 'load':
@@ -9823,7 +10796,25 @@ class X86DBT(object):
         present = False
         try:
             code = reader.read(target, 0xc0)
-            if (code[:4] not in (
+            current = (
+                code[:9] == bytes.fromhex(
+                    'f3 0f 1e fa 0f 1f 44 00 00')
+                and code[9:0x20] == bytes.fromhex(
+                    '55 48 89 e5 41 57 41 56 53 48 89 d3 '
+                    '49 89 f7 49 89 fe bf 04 00 00 00')
+                and code[0x20] == 0xe8
+                and code[0x25:0x29] == bytes.fromhex('84 c0 74 20')
+                and code[0x35:0x49] == bytes.fromhex(
+                    '41 8a 14 0f 41 88 14 0e 48 63 c8 ff c0 '
+                    '48 39 cb 77 ee eb 35')
+                and code[0x62:0x71] == bytes.fromhex(
+                    '48 89 d9 48 c1 e9 02 4c 89 fe 4c 89 f7 f3 a5')
+                and code[0x71:0x80] == bytes.fromhex(
+                    'f6 c3 02 74 02 66 a5 f6 c3 01 74 01 a4 5b 41'))
+            if current:
+                feature = (target + 0x25 + _signed_integer(
+                    int.from_bytes(code[0x21:0x25], 'little'), 32)) & MASK64
+            elif (code[:4] not in (
                     bytes.fromhex('f3 0f 1e fa'),
                     bytes.fromhex('0f 1f 40 d6'))
                     or code[4] != 0xe8
@@ -9831,17 +10822,30 @@ class X86DBT(object):
                     or _VOID_COPY_BYTE_LOOP not in code
                     or _VOID_COPY_REP not in code):
                 raise ValueError('not a feature-gated memory copy')
-            feature = (target + 37 + _signed_integer(
-                int.from_bytes(code[33:37], 'little'), 32)) & MASK64
-            feature_code = reader.read(feature, 32)
-            if (feature_code[:5] != bytes.fromhex('f3 0f 1e fa 55')
-                    or feature_code[5:7] != b'\x8b\x05'
-                    or bytes.fromhex(
-                        '83 f8 01 74 18 83 f8 02 74 08 31 c0 5d e9')
-                    not in feature_code):
-                raise ValueError('copy feature selector changed')
-            feature_state = (feature + 11 + _signed_integer(
-                int.from_bytes(feature_code[7:11], 'little'), 32)) & MASK64
+            else:
+                feature = (target + 37 + _signed_integer(
+                    int.from_bytes(code[33:37], 'little'), 32)) & MASK64
+            feature_code = reader.read(feature, 64)
+            if current:
+                if (feature_code[:10] != bytes.fromhex(
+                        'f3 0f 1e fa 55 48 89 e5 8b 05')
+                        or feature_code[14:32] != bytes.fromhex(
+                            '83 f8 02 74 11 83 f8 01 75 18 e8 33 00 00 00 '
+                            '5d 2e e9')):
+                    raise ValueError('copy feature selector changed')
+                feature_state = (feature + 14 + _signed_integer(
+                    int.from_bytes(feature_code[10:14], 'little'), 32)) \
+                    & MASK64
+            else:
+                if (feature_code[:5] != bytes.fromhex('f3 0f 1e fa 55')
+                        or feature_code[5:7] != b'\x8b\x05'
+                        or bytes.fromhex(
+                            '83 f8 01 74 18 83 f8 02 74 08 31 c0 5d e9')
+                        not in feature_code):
+                    raise ValueError('copy feature selector changed')
+                feature_state = (feature + 11 + _signed_integer(
+                    int.from_bytes(feature_code[7:11], 'little'), 32)) \
+                    & MASK64
             present = reader.load(feature_state, 4) == 0
         except (PageFault, ValueError):
             pass
@@ -9900,55 +10904,90 @@ class X86DBT(object):
         reader = _VirtualProofReader(state)
         layout = None
         try:
-            code = reader.read(target, 0x204)
-            range_shape = bytearray(code[0x15f:0x198])
-            range_start = _signed_integer(
-                int.from_bytes(range_shape[3:7], 'little'), 32) & MASK64
-            range_end = _signed_integer(
-                int.from_bytes(range_shape[19:23], 'little'), 32) & MASK64
-            range_shape[3:7] = b'\0' * 4
-            range_shape[19:23] = b'\0' * 4
-            if (code[0] != 0xe8
-                    or code[5:0x32] != _STATIC_CALL_TABLE_PREFIX
-                    or code[0x32:0x35] != bytes.fromhex('49 c7 c0')
-                    or code[0x39:0x3c] != bytes.fromhex('48 c7 c1')
-                    or code[0x40:0x4d] != bytes.fromhex(
-                        '4c 89 ff 4c 89 f6 4c 29 fe 48 c1 fe 03')
-                    or code[0x4d] != 0xe8
-                    or code[0x52:0x75] != _STATIC_CALL_TABLE_ENTRY
-                    or bytes(range_shape) != _STATIC_CALL_TABLE_RANGE
-                    or code[0x198:0x1ad] != _STATIC_CALL_TABLE_PATCH
-                    or code[0x1b1:0x1ce] != _STATIC_CALL_TABLE_FINISH
-                    or code[0x1ce] != 0xe9
-                    or code[0x1d3:0x1f0]
-                    != _STATIC_CALL_TABLE_MARK_INSIDE
-                    or code[0x1f0:0x204]
-                    != _STATIC_CALL_TABLE_MARK_AFTER):
-                raise ValueError('not a sorted relative call-site table')
+            code = reader.read(target, 0x2a2)
+            current = (
+                code[:5] == _STATIC_CALL_NOP5
+                and code[5:0x16] == bytes.fromhex(
+                    '55 48 89 e5 41 57 41 56 41 55 41 54 53 '
+                    '48 83 ec 38')
+                and code[0x3e:0x41] == bytes.fromhex('48 c7 c1')
+                and code[0x49:0x4c] == bytes.fromhex('49 c7 c0')
+                and code[0x50] == 0xe8
+                and code[0xbe] == 0xe8
+                and code[0x175:0x178] == bytes.fromhex('48 81 ff')
+                and code[0x183:0x186] == bytes.fromhex('48 81 f9')
+                and code[0x290:0x2a1] == bytes.fromhex(
+                    '44 89 e8 48 83 c4 38 5b 41 5c 41 5d 41 5e 41 5f 5d'))
+            if current:
+                compare = _signed_integer(
+                    int.from_bytes(code[0x41:0x45], 'little'), 32) & MASK64
+                swap = _signed_integer(
+                    int.from_bytes(code[0x4c:0x50], 'little'), 32) & MASK64
+                sort = (target + 0x55 + _signed_integer(
+                    int.from_bytes(code[0x51:0x55], 'little'), 32)) & MASK64
+                wrapper = (target + 0xc3 + _signed_integer(
+                    int.from_bytes(code[0xbf:0xc3], 'little'), 32)) & MASK64
+                range_start = _signed_integer(
+                    int.from_bytes(code[0x178:0x17c], 'little'), 32) & MASK64
+                range_end = _signed_integer(
+                    int.from_bytes(code[0x186:0x18a], 'little'), 32) & MASK64
+            else:
+                range_shape = bytearray(code[0x15f:0x198])
+                range_start = _signed_integer(
+                    int.from_bytes(range_shape[3:7], 'little'), 32) & MASK64
+                range_end = _signed_integer(
+                    int.from_bytes(range_shape[19:23], 'little'), 32) & MASK64
+                range_shape[3:7] = b'\0' * 4
+                range_shape[19:23] = b'\0' * 4
+                if (code[0] != 0xe8
+                        or code[5:0x32] != _STATIC_CALL_TABLE_PREFIX
+                        or code[0x32:0x35] != bytes.fromhex('49 c7 c0')
+                        or code[0x39:0x3c] != bytes.fromhex('48 c7 c1')
+                        or code[0x40:0x4d] != bytes.fromhex(
+                            '4c 89 ff 4c 89 f6 4c 29 fe 48 c1 fe 03')
+                        or code[0x4d] != 0xe8
+                        or code[0x52:0x75] != _STATIC_CALL_TABLE_ENTRY
+                        or bytes(range_shape) != _STATIC_CALL_TABLE_RANGE
+                        or code[0x198:0x1ad] != _STATIC_CALL_TABLE_PATCH
+                        or code[0x1b1:0x1ce] != _STATIC_CALL_TABLE_FINISH
+                        or code[0x1ce] != 0xe9
+                        or code[0x1d3:0x1f0]
+                        != _STATIC_CALL_TABLE_MARK_INSIDE
+                        or code[0x1f0:0x204]
+                        != _STATIC_CALL_TABLE_MARK_AFTER):
+                    raise ValueError(
+                        'not a sorted relative call-site table')
 
-            entry = (target + 5 + _signed_integer(
-                int.from_bytes(code[1:5], 'little'), 32)) & MASK64
-            entry_code = reader.read(
-                entry, len(_ENTRY_NOP_PREFIX) + 4)
-            if not entry_code.startswith(_ENTRY_NOP_PREFIX):
-                raise ValueError('call-site table entry hook is active')
-            entry_return = (
-                entry + len(entry_code) + _signed_integer(
-                    int.from_bytes(entry_code[-4:], 'little'), 32)) & MASK64
-            if reader.read(entry_return, 1) != b'\xc3':
-                raise ValueError('call-site table entry hook does not return')
+                entry = (target + 5 + _signed_integer(
+                    int.from_bytes(code[1:5], 'little'), 32)) & MASK64
+                entry_code = reader.read(
+                    entry, len(_ENTRY_NOP_PREFIX) + 4)
+                if not entry_code.startswith(_ENTRY_NOP_PREFIX):
+                    raise ValueError('call-site table entry hook is active')
+                entry_return = (
+                    entry + len(entry_code) + _signed_integer(
+                        int.from_bytes(entry_code[-4:], 'little'), 32)) \
+                    & MASK64
+                if reader.read(entry_return, 1) != b'\xc3':
+                    raise ValueError(
+                        'call-site table entry hook does not return')
 
-            return_thunk = (target + 0x1d3 + _signed_integer(
-                int.from_bytes(code[0x1cf:0x1d3], 'little'), 32)) & MASK64
-            if reader.read(return_thunk, 1) != b'\xc3':
-                raise ValueError('call-site table return path changed')
+                return_thunk = (target + 0x1d3 + _signed_integer(
+                    int.from_bytes(code[0x1cf:0x1d3], 'little'), 32)) \
+                    & MASK64
+                if reader.read(return_thunk, 1) != b'\xc3':
+                    raise ValueError('call-site table return path changed')
 
-            swap = _signed_integer(
-                int.from_bytes(code[0x35:0x39], 'little'), 32) & MASK64
-            compare = _signed_integer(
-                int.from_bytes(code[0x3c:0x40], 'little'), 32) & MASK64
-            sort = (target + 0x52 + _signed_integer(
-                int.from_bytes(code[0x4e:0x52], 'little'), 32)) & MASK64
+                swap = _signed_integer(
+                    int.from_bytes(code[0x35:0x39], 'little'), 32) & MASK64
+                compare = _signed_integer(
+                    int.from_bytes(code[0x3c:0x40], 'little'), 32) & MASK64
+                sort = (target + 0x52 + _signed_integer(
+                    int.from_bytes(code[0x4e:0x52], 'little'), 32)) & MASK64
+                wrapper = (target + 0x1b1 + _signed_integer(
+                    int.from_bytes(code[0x1ad:0x1b1], 'little'), 32)) \
+                    & MASK64
+
             if (not self._code_contains_recipe(
                     state, sort,
                     (_SORT_WRAPPER_CORE, _SORT_WRAPPER_DIRECT_CORE))
@@ -9958,9 +10997,6 @@ class X86DBT(object):
             reader.read(sort, 96)
             reader.read(compare, 96)
             reader.read(swap, 96)
-
-            wrapper = (target + 0x1b1 + _signed_integer(
-                int.from_bytes(code[0x1ad:0x1b1], 'little'), 32)) & MASK64
             return_zero = self._static_call_transform_layout(state, wrapper)
             transform_proof = self._static_call_transform_functions.get(
                 wrapper)
@@ -10075,9 +11111,20 @@ class X86DBT(object):
         layout = None
         try:
             wrapper = reader.read(target, 0xa0)
-            if (wrapper[:4] not in (
-                    bytes.fromhex('f3 0f 1e fa'),
-                    bytes.fromhex('0f 1f 40 d6'))
+            current = (
+                wrapper[:9] == bytes.fromhex(
+                    'f3 0f 1e fa 0f 1f 44 00 00')
+                and wrapper[9:0x20] == bytes.fromhex(
+                    '55 48 89 e5 41 57 41 56 41 54 53 41 89 cc '
+                    '48 89 d3 49 89 f7 49 89 fe')
+                and wrapper[0x27] == 0xe8
+                and wrapper[0x4d] == 0xe8
+                and wrapper[0x86] == 0xe8
+                and wrapper[0x92] == 0xe8)
+            if not current and (
+                    wrapper[:4] not in (
+                        bytes.fromhex('f3 0f 1e fa'),
+                        bytes.fromhex('0f 1f 40 d6'))
                     or wrapper[4] != 0xe8
                     or wrapper[9:23] != _STATIC_CALL_WRAPPER_ARGUMENTS
                     or _STATIC_CALL_WRAPPER_SITE not in wrapper
@@ -10086,52 +11133,86 @@ class X86DBT(object):
                 raise ValueError('not a static-call wrapper')
             transform = (target + 0x8b + _signed_integer(
                 int.from_bytes(wrapper[0x87:0x8b], 'little'), 32)) & MASK64
-            code = reader.read(transform, 0x150)
-            if (code[0] != 0xe8
-                    or code[5:27] != bytes.fromhex(
-                        '55 48 89 d0 48 89 e5 41 57 41 56 41 55 41 54 '
-                        '41 89 cc 53 48 89 fb')
-                    or bytes.fromhex('8d 56 fe 83 fa 01 76 50 83 fe 01')
-                    not in code
-                    or code[0x56] != 0xe8
-                    or code[0x6b:0x6d] != b'\x48\x3d'
-                    or code[0x49:0x4c] != b'\x49\xc7\xc5'
-                    or code[0xd1:0xd3] != b'\x8b\x05'
-                    or code[0x127:0x12a] != b'\x4c\x8b\x2d'):
-                raise ValueError('not a five-byte call transformer')
+            code = reader.read(transform, 0x1b1)
+            current_transform = (
+                code[:5] == _STATIC_CALL_NOP5
+                and code[5:0x16] == bytes.fromhex(
+                    '55 48 89 e5 41 57 41 56 41 55 41 54 53 '
+                    '48 83 ec 10')
+                and code[0x8c] == 0xe8
+                and code[0xb3:0xb5] == b'\x48\x3d'
+                and code[0x152] == 0xe8
+                and code[0x160:0x162] == b'\x83\x3d'
+                and code[0x185] == 0xe8)
+            if current_transform:
+                return_zero = _signed_integer(
+                    int.from_bytes(code[0xb5:0xb9], 'little'), 32) & MASK64
+                if reader.read(return_zero, 15) != bytes.fromhex(
+                        'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 31 c0'):
+                    raise ValueError('return-zero implementation changed')
+                if code[0xff:0x102] != bytes.fromhex('4c 8b 3d'):
+                    raise ValueError('five-byte no-op source changed')
+                nop_pointer = (transform + 0x106 + _signed_integer(
+                    int.from_bytes(code[0x102:0x106], 'little'), 32)) \
+                    & MASK64
+                nop_address = reader.load(nop_pointer, 8) & MASK64
+                if reader.read(nop_address, 5) != _STATIC_CALL_NOP5:
+                    raise ValueError('five-byte no-op encoding changed')
+                system_state = (transform + 0x167 + _signed_integer(
+                    int.from_bytes(code[0x162:0x166], 'little'), 32)) \
+                    & MASK64
+                if reader.load(system_state, 4):
+                    raise ValueError('concurrent text patching is active')
+                layout = return_zero
+            else:
+                if (code[0] != 0xe8
+                        or code[5:27] != bytes.fromhex(
+                            '55 48 89 d0 48 89 e5 41 57 41 56 41 55 41 54 '
+                            '41 89 cc 53 48 89 fb')
+                        or bytes.fromhex(
+                            '8d 56 fe 83 fa 01 76 50 83 fe 01') not in code
+                        or code[0x56] != 0xe8
+                        or code[0x6b:0x6d] != b'\x48\x3d'
+                        or code[0x49:0x4c] != b'\x49\xc7\xc5'
+                        or code[0xd1:0xd3] != b'\x8b\x05'
+                        or code[0x127:0x12a] != b'\x4c\x8b\x2d'):
+                    raise ValueError('not a five-byte call transformer')
 
-            translator = (transform + 0x5b + _signed_integer(
-                int.from_bytes(code[0x57:0x5b], 'little'), 32)) & MASK64
-            translator_code = reader.read(translator, 0x93)
-            if (translator_code[:4] != bytes.fromhex('f3 0f 1e fa')
-                    or translator_code[9] != 0x55
-                    or translator_code[10:12] != b'\x80\x3d'
-                    or translator_code[16] != 0):
-                raise ValueError('call destination is not directly gated')
-            translator_gate = (translator + 17 + _signed_integer(
-                int.from_bytes(translator_code[12:16], 'little'), 32)) \
-                & MASK64
-            if reader.load(translator_gate, 1):
-                raise ValueError('call destination translation is active')
+                translator = (transform + 0x5b + _signed_integer(
+                    int.from_bytes(code[0x57:0x5b], 'little'), 32)) & MASK64
+                translator_code = reader.read(translator, 0x93)
+                if (translator_code[:4] != bytes.fromhex('f3 0f 1e fa')
+                        or translator_code[9] != 0x55
+                        or translator_code[10:12] != b'\x80\x3d'
+                        or translator_code[16] != 0):
+                    raise ValueError(
+                        'call destination is not directly gated')
+                translator_gate = (translator + 17 + _signed_integer(
+                    int.from_bytes(translator_code[12:16], 'little'), 32)) \
+                    & MASK64
+                if reader.load(translator_gate, 1):
+                    raise ValueError(
+                        'call destination translation is active')
 
-            system_state = (transform + 0xd7 + _signed_integer(
-                int.from_bytes(code[0xd3:0xd7], 'little'), 32)) & MASK64
-            if reader.load(system_state, 4):
-                raise ValueError('concurrent text patching is active')
+                system_state = (transform + 0xd7 + _signed_integer(
+                    int.from_bytes(code[0xd3:0xd7], 'little'), 32)) & MASK64
+                if reader.load(system_state, 4):
+                    raise ValueError('concurrent text patching is active')
 
-            zero_address = _signed_integer(
-                int.from_bytes(code[0x4c:0x50], 'little'), 32) & MASK64
-            if reader.read(zero_address, 5) != _STATIC_CALL_ZERO5:
-                raise ValueError('return-zero encoding changed')
-            nop_pointer = (transform + 0x12e + _signed_integer(
-                int.from_bytes(code[0x12a:0x12e], 'little'), 32)) & MASK64
-            nop_address = reader.load(nop_pointer, 8) & MASK64
-            if reader.read(nop_address, 5) != _STATIC_CALL_NOP5:
-                raise ValueError('five-byte no-op encoding changed')
+                zero_address = _signed_integer(
+                    int.from_bytes(code[0x4c:0x50], 'little'), 32) & MASK64
+                if reader.read(zero_address, 5) != _STATIC_CALL_ZERO5:
+                    raise ValueError('return-zero encoding changed')
+                nop_pointer = (transform + 0x12e + _signed_integer(
+                    int.from_bytes(code[0x12a:0x12e], 'little'), 32)) \
+                    & MASK64
+                nop_address = reader.load(nop_pointer, 8) & MASK64
+                if reader.read(nop_address, 5) != _STATIC_CALL_NOP5:
+                    raise ValueError('five-byte no-op encoding changed')
 
-            return_zero = _signed_integer(
-                int.from_bytes(code[0x6d:0x71], 'little'), 32) & MASK64
-            layout = return_zero
+                return_zero = _signed_integer(
+                    int.from_bytes(code[0x6d:0x71], 'little'), 32) & MASK64
+                layout = return_zero
         except (PageFault, ValueError):
             pass
         config, proof = reader.proof()
@@ -10413,19 +11494,43 @@ class X86DBT(object):
         present = False
         try:
             code = reader.read(target, 0x34)
+            entry = code[:4] in (
+                bytes.fromhex('f3 0f 1e fa'),
+                bytes.fromhex('0f 1f 40 d6'))
             first_return = (target + 0x2d + _signed_integer(
                 int.from_bytes(code[0x29:0x2d], 'little'), 32)) & MASK64
             second_return = (target + 0x34 + _signed_integer(
                 int.from_bytes(code[0x30:0x34], 'little'), 32)) & MASK64
-            present = (
-                code[:4] in (
-                    bytes.fromhex('f3 0f 1e fa'),
-                    bytes.fromhex('0f 1f 40 d6'))
+            legacy = (
+                entry
                 and code[4:0x28] == _BOUNDED_STRING_COMPARE_BODY
                 and code[0x28] == 0xe9
                 and code[0x2d:0x30] == bytes.fromhex('31 c0 e9')
                 and first_return == second_return
                 and reader.read(first_return, 1) == b'\xc3')
+            if legacy:
+                present = True
+            else:
+                code = reader.read(target, 0x51)
+                direct_returns = tuple(
+                    (target + following + _signed_integer(
+                        int.from_bytes(
+                            code[operand:following], 'little'), 32))
+                    & MASK64
+                    for operand, following in (
+                        (0x30, 0x34), (0x39, 0x3d), (0x4d, 0x51)))
+                present = (
+                    entry
+                    and code[4:0x2d] == _BOUNDED_STRING_COMPARE_DIRECT
+                    and code[0x2d:0x30] == bytes.fromhex('5d 2e e9')
+                    and code[0x34:0x39] == bytes.fromhex(
+                        '31 c0 5d 2e e9')
+                    and code[0x3d:0x4d] == bytes.fromhex(
+                        '0f 93 c0 0f b6 c0 8d 04 45 ff ff ff ff '
+                        '5d 2e e9')
+                    and direct_returns[0] == direct_returns[1]
+                    and direct_returns[1] == direct_returns[2]
+                    and reader.read(direct_returns[0], 1) == b'\xc3')
         except PageFault:
             pass
         config, proof = reader.proof()
@@ -10496,21 +11601,55 @@ class X86DBT(object):
                 )
                 mode = 'first'
             else:
-                code = reader.read(target, 0x61)
-                if (code[4:0x41] != _BIT_SCAN_NEXT_BODY
-                        or code[0x41] != 0xe9
-                        or code[0x46:0x5c] != _BIT_SCAN_NEXT_RESULT
-                        or code[0x5c] != 0xe9):
-                    raise ValueError('not a bit scan primitive')
-                returns = (
-                    (target + 0x46 + _signed_integer(
-                        int.from_bytes(code[0x42:0x46], 'little'), 32))
-                     & MASK64,
-                    (target + 0x61 + _signed_integer(
-                        int.from_bytes(code[0x5d:0x61], 'little'), 32))
-                     & MASK64,
-                )
-                mode = 'next'
+                direct_first = reader.read(target, 0x55)
+                if (direct_first[:0x1e] == _BIT_SCAN_FIRST_DIRECT_HEAD
+                        and direct_first[0x1e:0x20]
+                        == bytes.fromhex('2e e9')
+                        and direct_first[0x24:0x4f]
+                        == _BIT_SCAN_FIRST_DIRECT_BODY
+                        and direct_first[0x4f:0x51]
+                        == bytes.fromhex('2e e9')):
+                    returns = (
+                        (target + 0x24 + _signed_integer(
+                            int.from_bytes(
+                                direct_first[0x20:0x24], 'little'), 32))
+                         & MASK64,
+                        (target + 0x55 + _signed_integer(
+                            int.from_bytes(
+                                direct_first[0x51:0x55], 'little'), 32))
+                         & MASK64,
+                    )
+                    mode = 'first'
+                else:
+                    code = reader.read(target, 0x61)
+                    if (code[4:0x41] == _BIT_SCAN_NEXT_BODY
+                            and code[0x41] == 0xe9
+                            and code[0x46:0x5c] == _BIT_SCAN_NEXT_RESULT
+                            and code[0x5c] == 0xe9):
+                        returns = (
+                            (target + 0x46 + _signed_integer(
+                                int.from_bytes(
+                                    code[0x42:0x46], 'little'), 32))
+                             & MASK64,
+                            (target + 0x61 + _signed_integer(
+                                int.from_bytes(
+                                    code[0x5d:0x61], 'little'), 32))
+                             & MASK64,
+                        )
+                        mode = 'next'
+                    else:
+                        direct_next = reader.read(target, 0x66)
+                        if (direct_next[:0x60] != _BIT_SCAN_NEXT_DIRECT
+                                or direct_next[0x60:0x62]
+                                != bytes.fromhex('2e e9')):
+                            raise ValueError('not a bit scan primitive')
+                        return_target = (
+                            target + 0x66 + _signed_integer(
+                                int.from_bytes(
+                                    direct_next[0x62:0x66], 'little'), 32)
+                            ) & MASK64
+                        returns = return_target, return_target
+                        mode = 'next'
             if returns[0] != returns[1] \
                     or reader.read(returns[0], 1) != b'\xc3':
                 raise ValueError('bit scan return path changed')
@@ -10939,7 +12078,23 @@ class X86DBT(object):
         layout = None
         try:
             code = reader.read(target, 0x77)
-            if (code[:4] not in (
+            current = (
+                code[:9] == bytes.fromhex(
+                    'f3 0f 1e fa 0f 1f 44 00 00')
+                and code[9:0x10] == bytes.fromhex(
+                    '55 48 89 e5 48 8b 0d')
+                and code[0x14:0x53] == bytes.fromhex(
+                    '44 8b 01 31 c0 45 85 c0 74 35 48 83 c1 04 eb 07 '
+                    'ff c0 41 39 c0 74 2f 4c 63 c8 4f 8d 0c 89 '
+                    '4e 8d 0c 89 85 d2 74 06 41 39 51 10 75 e4 '
+                    '4d 8b 11 49 39 f2 73 dc 4d 03 51 08 49 39 fa '
+                    '76 d3 b0 01')
+                and code[0x53:0x56] == bytes.fromhex('5d 2e e9')
+                and code[0x5a:0x5f] == bytes.fromhex('31 c0 5d 2e e9'))
+            if current:
+                layout = (target + 0x14 + _signed_integer(
+                    int.from_bytes(code[0x10:0x14], 'little'), 32)) & MASK64
+            elif (code[:4] not in (
                     bytes.fromhex('f3 0f 1e fa'),
                     bytes.fromhex('0f 1f 40 d6'))
                     or code[4] != 0xe8
@@ -10951,28 +12106,33 @@ class X86DBT(object):
                     or code[0x66] != 0xe9
                     or code[0x6b:0x77] != _RANGE_TABLE_QUERY_SUFFIX):
                 raise ValueError('not a packed range-table query')
+            else:
+                entry = (target + 9 + _signed_integer(
+                    int.from_bytes(code[5:9], 'little'), 32)) & MASK64
+                entry_code = reader.read(
+                    entry, len(_ENTRY_NOP_PREFIX) + 4)
+                if not entry_code.startswith(_ENTRY_NOP_PREFIX):
+                    raise ValueError('range query entry hook is active')
+                entry_return = (
+                    entry + len(entry_code) + _signed_integer(
+                        int.from_bytes(entry_code[-4:], 'little'), 32)) \
+                    & MASK64
+                if reader.read(entry_return, 1) != b'\xc3':
+                    raise ValueError(
+                        'range query entry hook does not return')
 
-            entry = (target + 9 + _signed_integer(
-                int.from_bytes(code[5:9], 'little'), 32)) & MASK64
-            entry_code = reader.read(
-                entry, len(_ENTRY_NOP_PREFIX) + 4)
-            if not entry_code.startswith(_ENTRY_NOP_PREFIX):
-                raise ValueError('range query entry hook is active')
-            entry_return = (
-                entry + len(entry_code) + _signed_integer(
-                    int.from_bytes(entry_code[-4:], 'little'), 32)) & MASK64
-            if reader.read(entry_return, 1) != b'\xc3':
-                raise ValueError('range query entry hook does not return')
-
-            first_return = (target + 0x4d + _signed_integer(
-                int.from_bytes(code[0x49:0x4d], 'little'), 32)) & MASK64
-            second_return = (target + 0x6b + _signed_integer(
-                int.from_bytes(code[0x67:0x6b], 'little'), 32)) & MASK64
-            if (first_return != second_return
-                    or reader.read(first_return, 1) != b'\xc3'):
-                raise ValueError('range query return path changed')
-            layout = (target + 0x13 + _signed_integer(
-                int.from_bytes(code[0x0f:0x13], 'little'), 32)) & MASK64
+                first_return = (target + 0x4d + _signed_integer(
+                    int.from_bytes(code[0x49:0x4d], 'little'), 32)) \
+                    & MASK64
+                second_return = (target + 0x6b + _signed_integer(
+                    int.from_bytes(code[0x67:0x6b], 'little'), 32)) \
+                    & MASK64
+                if (first_return != second_return
+                        or reader.read(first_return, 1) != b'\xc3'):
+                    raise ValueError('range query return path changed')
+                layout = (target + 0x13 + _signed_integer(
+                    int.from_bytes(code[0x0f:0x13], 'little'), 32)) \
+                    & MASK64
         except (PageFault, ValueError):
             pass
         config, proof = reader.proof()
@@ -11057,47 +12217,64 @@ class X86DBT(object):
                 raise ValueError('range entry hook does not return')
 
         try:
-            code = reader.read(target, 0xde)
-            if (code[:4] not in (
-                    bytes.fromhex('f3 0f 1e fa'),
-                    bytes.fromhex('0f 1f 40 d6'))
-                    or code[4] != 0xe8
-                    or code[9:0x22] != _RANGE_COMPACT_ENTRY
-                    or code[0x22:0x8f] != _RANGE_COMPACT_CORE
-                    or code[0x8f:0xbe] != _RANGE_COMPACT_COUNT
-                    or code[0xbe:0xc1] != bytes.fromhex('48 c7 c1')
-                    or code[0xc5:0xcd]
-                    != bytes.fromhex('ba 10 00 00 00 4c 89 cf')
-                    or code[0xcd] != 0xe8
-                    or code[0xd2:0xd9]
-                    != bytes.fromhex('89 d8 48 8b 5d f8 c9')
-                    or code[0xd9] != 0xe9):
-                raise ValueError('not a fixed range compactor')
-            prove_entry(target, code, 5, 9)
-            return_thunk = (target + 0xde + _signed_integer(
-                int.from_bytes(code[0xda:0xde], 'little'), 32)) & MASK64
-            if reader.read(return_thunk, 1) != b'\xc3':
-                raise ValueError('range compactor return path changed')
+            code = reader.read(target, 0xf1)
+            current = (
+                code[:0xde] == _RANGE_COMPACT_DIRECT
+                and code[0xde:0xe1] == bytes.fromhex('48 c7 c1')
+                and code[0xe5:0xe8] == bytes.fromhex('45 31 c0')
+                and code[0xe8] == 0xe8
+                and code[0xed:0xf1] == bytes.fromhex('89 d8 5b 5d'))
+            if current:
+                compare = _signed_integer(
+                    int.from_bytes(code[0xe1:0xe5], 'little'), 32) & MASK64
+                compare_code = reader.read(compare, 0x1c)
+                if compare_code != _RANGE_COMPARE_DIRECT:
+                    raise ValueError('range start comparator changed')
+                sort = (target + 0xed + _signed_integer(
+                    int.from_bytes(code[0xe9:0xed], 'little'), 32)) & MASK64
+            else:
+                if (code[:4] not in (
+                        bytes.fromhex('f3 0f 1e fa'),
+                        bytes.fromhex('0f 1f 40 d6'))
+                        or code[4] != 0xe8
+                        or code[9:0x22] != _RANGE_COMPACT_ENTRY
+                        or code[0x22:0x8f] != _RANGE_COMPACT_CORE
+                        or code[0x8f:0xbe] != _RANGE_COMPACT_COUNT
+                        or code[0xbe:0xc1] != bytes.fromhex('48 c7 c1')
+                        or code[0xc5:0xcd]
+                        != bytes.fromhex('ba 10 00 00 00 4c 89 cf')
+                        or code[0xcd] != 0xe8
+                        or code[0xd2:0xd9]
+                        != bytes.fromhex('89 d8 48 8b 5d f8 c9')
+                        or code[0xd9] != 0xe9):
+                    raise ValueError('not a fixed range compactor')
+                prove_entry(target, code, 5, 9)
+                return_thunk = (target + 0xde + _signed_integer(
+                    int.from_bytes(code[0xda:0xde], 'little'), 32)) \
+                    & MASK64
+                if reader.read(return_thunk, 1) != b'\xc3':
+                    raise ValueError(
+                        'range compactor return path changed')
 
-            compare = _signed_integer(
-                int.from_bytes(code[0xc1:0xc5], 'little'), 32) & MASK64
-            compare_code = reader.read(compare, 0x2b)
-            if (compare_code[:4] not in (
-                    bytes.fromhex('f3 0f 1e fa'),
-                    bytes.fromhex('0f 1f 40 d6'))
-                    or compare_code[4] != 0xe8
-                    or compare_code[9:0x26] != _RANGE_COMPARE_BODY
-                    or compare_code[0x26] != 0xe9):
-                raise ValueError('range start comparator changed')
-            prove_entry(compare, compare_code, 5, 9)
-            compare_return = (compare + 0x2b + _signed_integer(
-                int.from_bytes(compare_code[0x27:0x2b], 'little'), 32)) \
-                & MASK64
-            if reader.read(compare_return, 1) != b'\xc3':
-                raise ValueError('range comparator return path changed')
+                compare = _signed_integer(
+                    int.from_bytes(code[0xc1:0xc5], 'little'), 32) & MASK64
+                compare_code = reader.read(compare, 0x2b)
+                if (compare_code[:4] not in (
+                        bytes.fromhex('f3 0f 1e fa'),
+                        bytes.fromhex('0f 1f 40 d6'))
+                        or compare_code[4] != 0xe8
+                        or compare_code[9:0x26] != _RANGE_COMPARE_BODY
+                        or compare_code[0x26] != 0xe9):
+                    raise ValueError('range start comparator changed')
+                prove_entry(compare, compare_code, 5, 9)
+                compare_return = (compare + 0x2b + _signed_integer(
+                    int.from_bytes(compare_code[0x27:0x2b], 'little'), 32)) \
+                    & MASK64
+                if reader.read(compare_return, 1) != b'\xc3':
+                    raise ValueError('range comparator return path changed')
 
-            sort = (target + 0xd2 + _signed_integer(
-                int.from_bytes(code[0xce:0xd2], 'little'), 32)) & MASK64
+                sort = (target + 0xd2 + _signed_integer(
+                    int.from_bytes(code[0xce:0xd2], 'little'), 32)) & MASK64
             if not self._code_contains_recipe(
                     state, sort,
                     (_SORT_WRAPPER_CORE, _SORT_WRAPPER_DIRECT_CORE)):
@@ -11457,6 +12634,50 @@ class X86DBT(object):
             return None
         self.collapsed_entry_nop_calls += 1
         return replace(state, rip=int(following) & MASK64)
+
+    def _register_projection_layout(self, state, target):
+        """Prove a one-edge register projection ending at a return thunk."""
+        target = int(target) & MASK64
+        cached = self._register_projection_functions.get(target)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            code = reader.read(target, 12)
+            rex, opcode, modrm = code[4:7]
+            return_thunk = (target + 12 + _signed_integer(
+                int.from_bytes(code[8:12], 'little'), 32)) & MASK64
+            if (code[:4] in (
+                    bytes.fromhex('f3 0f 1e fa'),
+                    bytes.fromhex('0f 1f 40 d6'))
+                    and rex & 0xf8 == 0x48
+                    and opcode == 0x89 and modrm & 0xc0 == 0xc0
+                    and code[7] == 0xe9
+                    and reader.read(return_thunk, 1) == b'\xc3'):
+                source = ((modrm >> 3) & 7) | (((rex >> 2) & 1) << 3)
+                destination = (modrm & 7) | ((rex & 1) << 3)
+                layout = destination, source
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._register_projection_functions[target] = config, proof, layout
+        return layout
+
+    def _collapse_register_projection_call(
+            self, state, following, target):
+        """Compose a proved register projection into the caller state."""
+        layout = self._register_projection_layout(state, target)
+        if layout is None:
+            return None
+        destination, source = layout
+        registers = _write_register(
+            state.registers, destination, state.registers[source], 64)
+        self.collapsed_register_projection_calls += 1
+        return replace(state, registers=registers,
+                       rip=int(following) & MASK64)
 
     def _collapse_symbol_position_call(self, state, following, target):
         """Project one Linux kallsyms search from its observed page cut."""
@@ -12251,6 +13472,7 @@ class X86DBT(object):
         reducers = (
             self._collapse_indirect_thunk_call,
             self._collapse_entry_nop_call,
+            self._collapse_register_projection_call,
             self._collapse_range_compaction_call,
             self._collapse_range_table_query_call,
             self._collapse_interval_compare_call,
@@ -12308,22 +13530,30 @@ class X86DBT(object):
             load_virtual(
                 state, operand.address(state, following), bits // 8)
             for following, bits, operand in block.cut_inputs)
-        inputs = (state.registers + input_values
+        inputs = (state.registers
+                  + ((state.rflags,) if block.state_flags else ())
+                  + input_values
                   + (0,) * block.scratch_count)
         outputs, stack = block.execute(inputs, (), cut)
         if stack:
             raise X86Error('x86 state page published a value stack')
         registers = outputs[:len(REGISTER_NAMES)]
+        flags = (outputs[len(REGISTER_NAMES)]
+                 if block.state_flags else state.rflags)
+        extra = len(REGISTER_NAMES) + int(block.state_flags) \
+            + len(block.cut_inputs)
         scratch = outputs[
-            len(REGISTER_NAMES) + len(block.cut_inputs):]
+            extra:]
         if isinstance(state, _X86Frame):
             state.registers = registers
+            state.rflags = flags
             state.rip = block.boundary_rip
             state.memory = cut if transient else cut.commit()
             return state, scratch
         return replace(
             state,
             registers=registers,
+            rflags=flags,
             rip=block.boundary_rip,
             memory=cut if transient else cut.commit()), scratch
 
@@ -13583,6 +14813,7 @@ class X86DBT(object):
             block = self.block(state)
             block = self._compose_setcc_predicate_cut(state, block)
             block = self._compose_predicate_cut(state, block)
+            block = self._compose_register_cut(state, block)
         except PageFault as fault:
             self.last_page_fault = self._page_walk(state, fault)
             state = replace(state, cr2=fault.address)
@@ -13614,7 +14845,9 @@ class X86DBT(object):
             if self._is_stable_backedge(
                     state, control_block, seen_backedges, boundary):
                 boundary = X86Boundary('timeslice', state.rip)
-            while boundary is None and controls < max(1, int(max_controls)):
+            while (boundary is None
+                   and instructions + controls
+                   < max(1, int(max_controls))):
                 following = self.blocks.get(state.rip)
                 if following is None:
                     break
@@ -13622,6 +14855,7 @@ class X86DBT(object):
                 following = self._compose_setcc_predicate_cut(
                     state, following)
                 following = self._compose_predicate_cut(state, following)
+                following = self._compose_register_cut(state, following)
                 control_block = following.control_block or following
                 prior = state
                 state, scratch = self._execute_plan(state, following)
@@ -13793,6 +15027,13 @@ class X86DBT(object):
             'physical_span': self.physical_span,
             'predicate_cuts': self.predicate_cuts,
             'resident_predicate_cuts': len(self._predicate_cuts),
+            'register_cuts': self.register_cuts,
+            'resident_register_cuts': len(self._register_cuts),
+            'register_cut_instructions': self.register_cut_instructions,
+            'register_cut_work': self.register_cut_work,
+            'register_cut_span': self.register_cut_span,
+            'register_cut_cache_hits': self.register_cut_cache_hits,
+            'register_cut_cache_misses': self.register_cut_cache_misses,
             'predicate_cut_cache_hits': self.predicate_cut_cache_hits,
             'predicate_cut_cache_misses': self.predicate_cut_cache_misses,
             'predicate_cut_work': self.predicate_cut_work,
@@ -14018,6 +15259,8 @@ class X86DBT(object):
             'collapsed_indirect_calls': self.collapsed_indirect_calls,
             'collapsed_return_sites': self.collapsed_return_sites,
             'collapsed_entry_nop_calls': self.collapsed_entry_nop_calls,
+            'collapsed_register_projection_calls':
+                self.collapsed_register_projection_calls,
             'collapsed_return_bytes': self.collapsed_return_bytes,
             'collapsed_alternative_tables':
                 self.collapsed_alternative_tables,
