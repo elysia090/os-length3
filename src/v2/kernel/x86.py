@@ -338,6 +338,31 @@ _AFFINE_PAGE_RECORD_CORE = bytes.fromhex(
     'c7 44 08 34 01 00 00 00 c7 44 08 30 ff ff ff ff '
     '48 8d 14 08 48 83 c2 08 48 89 54 08 08 48 89 54 08 10 '
     '41 83 fd 01 75 14')
+_PAGE_RESERVATION_CORE = bytes.fromhex(
+    '4d 39 f7 73 5a 4d 89 fd 49 c1 e5 06 4c 03 2d 00 00 00 00 '
+    '4c 0f a3 25 00 00 00 00 73 1b '
+    '4a 8b 04 e5 00 00 00 00 4c 3b b8 80 1a 02 00 72 0a '
+    '4c 89 ff 89 de e8 00 00 00 00 '
+    '49 0f ba 6d 00 0d 49 ff c7 4d 39 f7 73 19 '
+    '4c 89 f8 48 c1 e0 37 75 b1')
+_PAGE_RECORD_PREDICATE_CORE = bytes.fromhex(
+    '8b 47 30 83 f8 ff 75 46 48 63 47 34 48 0b 47 18 '
+    '48 0b 47 38 48 b9 7c 00 00 00 80 ff ff ff '
+    '48 23 4f 08 48 ba 40 00 00 00 00 00 ad de '
+    '31 f6 48 39 d1 40 0f 94 c6 48 8b 0f '
+    '81 e1 23 e1 14 00 48 09 c1 48 09 f1 75 08 '
+    '31 c0 2e e9 00 00 00 00')
+_PAGE_RECORD_RELEASE_HEAD = bytes.fromhex(
+    '80 7d bc 00 48 89 4d c0 74 05 4d 89 fd eb 3b')
+_PAGE_RECORD_RELEASE_GOOD = bytes.fromhex(
+    '4d 89 ef 48 8b 4d c0 41 81 64 0d 00 00 00 a0 ff '
+    '48 83 c1 40 48 39 c8 75 9b e9 00 00 00 00')
+_PAGE_RECORD_RELEASE_CHECK = bytes.fromhex(
+    '89 7d d4 48 8b 45 c0 4a 8d 3c 28 48 89 5d a0 '
+    '4c 89 e3 45 89 c4 41 89 d7 49 89 f6 e8 00 00 00 00 '
+    '8b 7d d4 4c 89 f6 44 89 fa 45 89 e0 49 89 dc '
+    '48 8b 5d a0 4c 8b 75 c8 84 c0 48 8b 45 a8 74 a3 '
+    'ff c7 4d 89 ef 48 8b 4d c0 eb a8')
 _RELATIVE_RECORD_PROJECTION_CORE = bytes.fromhex(
     '48 83 c1 01 48 81 f9 00 00 00 00 77 4b 48 83 ce 02 '
     '48 89 70 08 48 39 fa 74 0e 48 8b 4a 08 83 e1 03 '
@@ -1243,6 +1268,102 @@ def increment_virtual_bytes(state, increments):
         else replace(state, memory=cut.commit())
 
 
+def _physical_virtual_records(state, address, count, stride, extent,
+                              read_offset=None, write_offset=None):
+    """Resolve fixed records once per virtual page to physical coordinates."""
+    address, count, stride, extent = (
+        int(address), int(count), int(stride), int(extent))
+    if count < 0 or stride <= 0:
+        raise ValueError('virtual record coordinates have an invalid extent')
+    if extent <= 0 or extent > stride:
+        raise ValueError('virtual record coordinates exceed their stride')
+    offsets = tuple(offset for offset in (read_offset, write_offset)
+                    if offset is not None)
+    if not offsets or min(offsets) < 0 or max(offsets) >= extent:
+        raise ValueError('virtual record access offset is invalid')
+
+    physical_pages = {}
+    records = []
+    for index in range(count):
+        record = (address + index * stride) & MASK64
+        page_offset = record & (PAGE_BYTES - 1)
+        if page_offset + extent > PAGE_BYTES:
+            raise ValueError('virtual record crosses a page boundary')
+        page = record >> 12
+        physical_page = physical_pages.get(page)
+        if physical_page is None:
+            mappings = []
+            if read_offset is not None:
+                mappings.append(translate(
+                    state, record + read_offset, 'read') - (
+                        page_offset + read_offset))
+            if write_offset is not None:
+                mappings.append(translate(
+                    state, record + write_offset, 'write') - (
+                        page_offset + write_offset))
+            if len(set(mappings)) != 1:
+                raise ValueError(
+                    'virtual record read/write mappings disagree')
+            physical_page = physical_pages[page] = mappings[0]
+        records.append(physical_page + page_offset)
+    return tuple(records)
+
+
+def project_virtual_records(state, address, count, stride, lanes):
+    """Project sparse record lanes through one translation per virtual page."""
+    address, count, stride = int(address), int(count), int(stride)
+    lanes = tuple(tuple(int(value) for value in lane) for lane in lanes)
+    if count < 0 or stride <= 0:
+        raise ValueError('virtual record projection has an invalid extent')
+    if not count or not lanes:
+        return state
+    extent = max(offset + width for offset, width, _and, _or in lanes)
+    if min(offset for offset, _width, _and, _or in lanes) < 0 \
+            or extent > stride:
+        raise ValueError('virtual record lanes exceed their stride')
+    read_lane = next((lane for lane in lanes if lane[2]), None)
+    records = _physical_virtual_records(
+        state, address, count, stride, extent,
+        None if read_lane is None else read_lane[0], lanes[0][0])
+
+    cut = state.memory if isinstance(state.memory, MemoryCut) \
+        else MemoryCut(state.memory)
+    cut.project_records(records, lanes)
+    return state if isinstance(state.memory, MemoryCut) \
+        else replace(state, memory=cut.commit())
+
+
+def project_matching_virtual_records(
+        state, address, count, stride, predicates, lanes):
+    """Validate and project the matching prefix in direct physical SSA."""
+    address, count, stride = int(address), int(count), int(stride)
+    predicates = tuple(tuple(predicate) for predicate in predicates)
+    lanes = tuple(tuple(int(value) for value in lane) for lane in lanes)
+    if count < 0 or stride <= 0:
+        raise ValueError('virtual record projection has an invalid extent')
+    if not count or not predicates or not lanes:
+        return state, 0
+    extent = max(
+        max(offset + width for offset, width, *_rest in predicates),
+        max(offset + width for offset, width, _and, _or in lanes))
+    if (min(offset for offset, _width, *_rest in predicates) < 0
+            or min(offset for offset, _width, _and, _or in lanes) < 0
+            or extent > stride):
+        raise ValueError('virtual record lanes exceed their stride')
+    records = _physical_virtual_records(
+        state, address, count, stride, extent,
+        predicates[0][0], lanes[0][0])
+    cut = state.memory if isinstance(state.memory, MemoryCut) \
+        else MemoryCut(state.memory)
+    matching = cut.matching_record_prefix(records, predicates)
+    if not matching:
+        return state, 0
+    cut.project_records(records[:matching], lanes)
+    if isinstance(state.memory, MemoryCut):
+        return state, matching
+    return replace(state, memory=cut.commit()), matching
+
+
 def copy_virtual(state, source, target, size):
     """Copy proved virtual extents through direct physical coordinates."""
     source = int(source) & MASK64
@@ -1710,6 +1831,8 @@ class X86DBT(object):
         self.collapsed_return_sites = 0
         self.collapsed_entry_nop_calls = 0
         self.collapsed_register_projection_calls = 0
+        self.collapsed_page_record_predicates = 0
+        self.collapsed_page_record_projection_iterations = 0
         self.collapsed_return_bytes = 0
         self.collapsed_alternative_tables = 0
         self.collapsed_alternative_entries = 0
@@ -1799,8 +1922,11 @@ class X86DBT(object):
         self._range_table_directories = {}
         self._range_compaction_functions = {}
         self._relative_record_projection_loops = {}
+        self._page_reservation_loops = {}
+        self._page_record_projection_loops = {}
         self._entry_nop_functions = {}
         self._register_projection_functions = {}
+        self._page_record_predicate_functions = {}
         self._normalized_compare_functions = {}
         self._normalized_compare_cache = {}
         self._normalized_field_directories = {}
@@ -4539,6 +4665,195 @@ class X86DBT(object):
         self.collapsed_strided_store_iterations += iterations
         return replace(state, registers=registers, rflags=flags,
                        rip=following if final_position == limit else target)
+
+    def _page_reservation_layout(self, state, target):
+        """Prove the fixed-stride PageReserved projection loop."""
+        target = int(target) & MASK64
+        cached = self._page_reservation_loops.get(target)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            code = bytearray(reader.read(
+                target, len(_PAGE_RESERVATION_CORE)))
+            vmemmap_displacement = _signed_integer(
+                int.from_bytes(code[15:19], 'little'), 32)
+            node_states_displacement = _signed_integer(
+                int.from_bytes(code[23:27], 'little'), 32)
+            node_data_base = _signed_integer(
+                int.from_bytes(code[33:37], 'little'), 32) & MASK64
+            code[15:19] = bytes(4)
+            code[23:27] = bytes(4)
+            code[33:37] = bytes(4)
+            code[52:56] = bytes(4)
+            if bytes(code) == _PAGE_RESERVATION_CORE:
+                layout = (
+                    (target + 19 + vmemmap_displacement) & MASK64,
+                    (target + 27 + node_states_displacement) & MASK64,
+                    node_data_base,
+                    (target + 0x5f) & MASK64,
+                    (target + 0x4f) & MASK64,
+                )
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._page_reservation_loops[target] = config, proof, layout
+        return layout
+
+    def _collapse_page_reservation_projection(self, state, branch):
+        """Publish one valid PFN run as a sparse record-bit projection."""
+        _following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return state
+        layout = self._page_reservation_layout(state, target)
+        if layout is None:
+            return state
+        (vmemmap_address, node_states, node_data_base,
+         exit_target, validity_target) = layout
+        pfn = state.register('r15')
+        end = state.register('r14')
+        node = state.register('r12')
+        distance = end - pfn
+        until_validity_check = (-pfn) & 0x1ff
+        if (distance <= 0 or distance > (1 << 24)
+                or not until_validity_check or node > 1023):
+            return state
+        records = min(distance, until_validity_check)
+        try:
+            vmemmap = load_virtual(state, vmemmap_address, 8)
+            node_word = load_virtual(
+                state, node_states + (node // 64) * 8, 8)
+            online = bool(node_word & (1 << (node % 64)))
+            pgdat = None
+            if online:
+                pgdat = load_virtual(state, node_data_base + node * 8, 8)
+                deferred = load_virtual(state, pgdat + 0x21a80, 8)
+                if pfn + records > deferred:
+                    return state
+            state = project_virtual_records(
+                state, vmemmap + pfn * 64, records, 64,
+                ((0, 8, MASK64, 1 << 13),))
+        except (PageFault, ValueError):
+            return state
+
+        final = pfn + records
+        last_record = (vmemmap + (final - 1) * 64) & MASK64
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['r13'], last_record, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['r15'], final, 64)
+        if final == end:
+            if online:
+                registers = _write_register(
+                    registers, REGISTER_INDEX['rax'], pgdat, 64)
+            flags = _result_flags(
+                state.rflags, 'cmp', final, end,
+                (final - end) & MASK64, 64)
+            rip = exit_target
+        else:
+            registers = _write_register(
+                registers, REGISTER_INDEX['rax'], 0, 64)
+            flags = _result_flags(state.rflags, 'and', 0, 0, 0, 64)
+            if (final >> 9) & 1:
+                flags |= RFLAGS_CARRY
+            rip = validity_target
+        self.collapsed_strided_store_bytes += records * 8
+        self.collapsed_strided_store_iterations += records
+        return replace(state, registers=registers, rflags=flags, rip=rip)
+
+    def _collapse_strided_record_projection(self, state, branch):
+        """Join sparse word transforms over fixed-width records by page."""
+        following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return state
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = self.blocks.get(cursor)
+            if block is None:
+                return state
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return state
+            loop.append(block)
+            cursor = end
+        if (cursor != branch.rip or len(loop) != 4
+                or tuple(block.boundary.operation for block in loop) != (
+                    'bit_immediate', 'store_immediate',
+                    'register_immediate_result_flags', 'group_ff')):
+            return state
+
+        bit, store, advance, counter_update = loop
+        (_bit_next, bit_group, bit_operand, bit_bits,
+         bit_index) = bit.boundary.detail
+        (_store_next, store_operand, store_bits,
+         store_value) = store.boundary.detail
+        (_advance_next, advance_name, pointer,
+         pointer_bits, stride) = advance.boundary.detail
+        (_counter_next, counter_group, counter,
+         counter_bits) = counter_update.boundary.detail
+        operands = bit_operand, store_operand
+        if (bit_group not in (5, 6)
+                or bit_bits not in (16, 32, 64)
+                or store_bits not in (8, 16, 32, 64)
+                or any(not isinstance(operand, MemoryOperand)
+                       for operand in operands)
+                or bit_operand.base != pointer
+                or store_operand.base != pointer
+                or any(operand.index is not None
+                       or operand.rip_relative
+                       or operand.segment_msr is not None
+                       for operand in operands)
+                or advance_name != 'add' or pointer_bits != 64
+                or stride <= 0 or stride > (1 << 20)
+                or counter_group != 1
+                or counter_bits not in (32, 64)
+                or isinstance(counter, MemoryOperand)
+                or pointer == counter):
+            return state
+
+        word_bytes = bit_bits // 8
+        bit_offset = ((int(bit_index) // bit_bits) * word_bytes
+                      + bit_operand.displacement)
+        selected = 1 << (int(bit_index) % bit_bits)
+        word_mask = (1 << bit_bits) - 1
+        lanes = (
+            (bit_offset, word_bytes,
+             word_mask if bit_group == 5 else word_mask ^ selected,
+             selected if bit_group == 5 else 0),
+            (store_operand.displacement, store_bits // 8, 0,
+             int(store_value) & ((1 << store_bits) - 1)),
+        )
+        count_mask = (1 << counter_bits) - 1
+        remaining = state.registers[counter] & count_mask
+        if not remaining or remaining > (1 << 20):
+            return state
+        pointer_value = state.registers[pointer] & MASK64
+        try:
+            state = project_virtual_records(
+                state, pointer_value, remaining, stride, lanes)
+        except (PageFault, ValueError):
+            return state
+
+        prior_pointer = (
+            pointer_value + (remaining - 1) * stride) & MASK64
+        final_pointer = (pointer_value + remaining * stride) & MASK64
+        flags = _result_flags(
+            state.rflags, 'add', prior_pointer, stride, final_pointer, 64)
+        flags = _result_flags(
+            flags, 'sub', 1, 1, 0, counter_bits,
+            preserve_carry=True)
+        registers = _write_register(
+            state.registers, pointer, final_pointer, 64)
+        registers = _write_register(registers, counter, 0, counter_bits)
+        self.collapsed_strided_store_bytes += sum(
+            lane[1] for lane in lanes) * remaining
+        self.collapsed_strided_store_iterations += remaining
+        return replace(state, registers=registers, rflags=flags,
+                       rip=int(following) & MASK64)
 
     def _collapse_compare_loop(self, state, branch):
         """Reduce an indexed byte-string comparison to direct chunks."""
@@ -9159,6 +9474,9 @@ class X86DBT(object):
                     state, int(branch.boundary.detail) & MASK64,
                     b'\xc3', extent=1):
                 reducer = self._collapse_return_branch
+            elif self._page_record_projection_layout(
+                    state, branch) is not None:
+                reducer = self._collapse_page_record_projection
             elif (int(branch.boundary.detail) & MASK64) < branch.rip:
                 reducer = self._collapse_backward_direct_branch
             else:
@@ -9211,11 +9529,14 @@ class X86DBT(object):
                                      self._collapse_strided_invariant_byte_run,
                                      self._collapse_loaded_byte_state_slice),
                 'compare': (self._collapse_token_expansion,
-                            self._collapse_byte_search),
+                            self._collapse_byte_search,
+                            self._collapse_page_reservation_projection),
                 'conditional_branch': (
                     self._collapse_strided_predicate_candidates,),
                 'register_immediate_result_flags': (
                     self._collapse_strided_predicate_candidates,),
+                'bit_immediate': (
+                    self._collapse_strided_record_projection,),
                 'lea': (self._collapse_default_record_candidates,),
                 'move_sign_extend': (
                     self._collapse_predicate_record_projection,),
@@ -12679,6 +13000,176 @@ class X86DBT(object):
         return replace(state, registers=registers,
                        rip=int(following) & MASK64)
 
+    def _is_page_record_predicate(self, state, target):
+        """Prove the direct fixed-lane page-record validity predicate."""
+        target = int(target) & MASK64
+        cached = self._page_record_predicate_functions.get(target)
+        if cached is not None:
+            config, proof, present = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return present
+        reader = _VirtualProofReader(state)
+        present = False
+        try:
+            code = bytearray(reader.read(
+                target, len(_PAGE_RECORD_PREDICATE_CORE)))
+            code[-4:] = bytes(4)
+            present = bytes(code) == _PAGE_RECORD_PREDICATE_CORE
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._page_record_predicate_functions[target] = (
+            config, proof, present)
+        return present
+
+    def _collapse_page_record_predicate_call(
+            self, state, following, target):
+        """Evaluate one page record from only its predicate coordinates."""
+        if not self._is_page_record_predicate(state, target):
+            return None
+        record = state.register('rdi')
+        try:
+            mapcount = load_virtual(state, record + 0x30, 4)
+            compound_mapcount = load_virtual(state, record + 0x34, 4)
+            if compound_mapcount & (1 << 31):
+                compound_mapcount -= 1 << 32
+            aggregate = compound_mapcount & MASK64
+            aggregate |= load_virtual(state, record + 0x18, 8)
+            aggregate |= load_virtual(state, record + 0x38, 8)
+            masked_mapping = (
+                load_virtual(state, record + 0x08, 8)
+                & 0xffffff800000007c)
+            mapping_bad = int(masked_mapping == 0xdead000000000040)
+            masked_flags = load_virtual(state, record, 8) & 0x14e123
+        except PageFault:
+            return None
+        if (mapcount != MASK32 or aggregate or mapping_bad
+                or masked_flags):
+            return None
+
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rax'], 0, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rcx'], 0, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rdx'],
+            0xdead000000000040, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rsi'], 0, 32)
+        flags = _result_flags(state.rflags, 'xor', 0, 0, 0, 32)
+        self.collapsed_page_record_predicates += 1
+        return replace(state, registers=registers, rflags=flags,
+                       rip=int(following) & MASK64)
+
+    def _page_record_projection_layout(self, state, branch):
+        """Prove a patched validation edge around one strided page array."""
+        if branch.boundary.operation != 'branch':
+            return None
+        target = int(branch.boundary.detail) & MASK64
+        if (state.rip != target or target != branch.rip + 0x20
+                or branch.source != bytes.fromhex('eb 1e')):
+            return None
+        cached = self._page_record_projection_loops.get(branch.rip)
+        if cached is not None:
+            config, proof, layout = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return layout
+
+        reader = _VirtualProofReader(state)
+        layout = None
+        try:
+            head = reader.read(branch.rip - 0x4a,
+                               len(_PAGE_RECORD_RELEASE_HEAD))
+            good = bytearray(reader.read(
+                branch.rip + 2, len(_PAGE_RECORD_RELEASE_GOOD)))
+            check = bytearray(reader.read(
+                target, len(_PAGE_RECORD_RELEASE_CHECK)))
+            exit_displacement = _signed_integer(
+                int.from_bytes(good[-4:], 'little'), 32)
+            predicate_displacement = _signed_integer(
+                int.from_bytes(check[28:32], 'little'), 32)
+            good[-4:] = bytes(4)
+            check[28:32] = bytes(4)
+            predicate = (target + 32 + predicate_displacement) & MASK64
+            if (head == _PAGE_RECORD_RELEASE_HEAD
+                    and bytes(good) == _PAGE_RECORD_RELEASE_GOOD
+                    and bytes(check) == _PAGE_RECORD_RELEASE_CHECK
+                    and self._is_page_record_predicate(state, predicate)):
+                layout = (target + exit_displacement) & MASK64
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._page_record_projection_loops[branch.rip] = (
+            config, proof, layout)
+        return layout
+
+    def _collapse_page_record_projection(self, state, branch):
+        """Validate and update one good record run as a physical array."""
+        exit_target = self._page_record_projection_layout(state, branch)
+        if exit_target is None:
+            return state
+        frame = state.register('rbp')
+        base = state.register('r13')
+        try:
+            mode = load_virtual(state, frame - 0x44, 1)
+            current = load_virtual(state, frame - 0x40, 8)
+            limit = load_virtual(state, frame - 0x58, 8)
+        except PageFault:
+            return state
+        remaining = limit - current
+        if (not mode or base != state.register('r15')
+                or remaining <= 0 or remaining & 63
+                or remaining > (1 << 26)):
+            return state
+
+        predicates = (
+            (0x30, 4, MASK32, MASK32, True),
+            (0x34, 4, MASK32, 0, True),
+            (0x18, 8, MASK64, 0, True),
+            (0x38, 8, MASK64, 0, True),
+            (0x08, 8, 0xffffff800000007c,
+             0xdead000000000040, False),
+            (0, 8, 0x14e123, 0, True),
+        )
+        count = remaining // 64
+        try:
+            state, matching = project_matching_virtual_records(
+                state, base + current, count, 64, predicates,
+                ((0, 4, 0xffa00000, 0),))
+        except (PageFault, ValueError):
+            return state
+        if not matching:
+            return state
+
+        next_offset = current + matching * 64
+        complete = next_offset == limit
+        saved_offset = limit - 64 if complete else next_offset
+        try:
+            state = write_virtual(
+                state, frame - 0x40,
+                int(saved_offset).to_bytes(8, 'little'))
+        except PageFault:
+            return state
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rcx'], next_offset, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rax'], limit, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['r15'], base, 64)
+        if complete:
+            flags = _result_flags(
+                state.rflags, 'cmp', limit, next_offset,
+                (limit - next_offset) & MASK64, 64)
+            rip = exit_target
+        else:
+            flags = _result_flags(
+                state.rflags, 'cmp', mode, 0, mode, 8)
+            rip = branch.rip
+        self.collapsed_page_record_projection_iterations += matching
+        self.collapsed_strided_store_bytes += matching * 4
+        self.collapsed_strided_store_iterations += matching
+        return replace(state, registers=registers, rflags=flags, rip=rip)
+
     def _collapse_symbol_position_call(self, state, following, target):
         """Project one Linux kallsyms search from its observed page cut."""
         layout = self._symbol_position_layout(state, target)
@@ -13473,6 +13964,7 @@ class X86DBT(object):
             self._collapse_indirect_thunk_call,
             self._collapse_entry_nop_call,
             self._collapse_register_projection_call,
+            self._collapse_page_record_predicate_call,
             self._collapse_range_compaction_call,
             self._collapse_range_table_query_call,
             self._collapse_interval_compare_call,
@@ -15261,6 +15753,10 @@ class X86DBT(object):
             'collapsed_entry_nop_calls': self.collapsed_entry_nop_calls,
             'collapsed_register_projection_calls':
                 self.collapsed_register_projection_calls,
+            'collapsed_page_record_predicates':
+                self.collapsed_page_record_predicates,
+            'collapsed_page_record_projection_iterations':
+                self.collapsed_page_record_projection_iterations,
             'collapsed_return_bytes': self.collapsed_return_bytes,
             'collapsed_alternative_tables':
                 self.collapsed_alternative_tables,
@@ -15431,8 +15927,7 @@ class X86Machine(object):
         state = self._answer(state, event)
         if clock_step is not None and int(clock_step) <= 0:
             raise ValueError('affine clock step must be positive')
-        owns_cut = not isinstance(state.cpu.memory, MemoryCut)
-        if owns_cut:
+        if not isinstance(state.cpu.memory, MemoryCut):
             state = replace(
                 state, cpu=replace(
                     state.cpu, memory=MemoryCut(state.cpu.memory)))
@@ -15473,7 +15968,7 @@ class X86Machine(object):
             return cpu, resolved_clocks >= internal_limit
 
         def publish(current):
-            if owns_cut:
+            if isinstance(current.cpu.memory, MemoryCut):
                 current = replace(
                     current, cpu=self.dbt.publish(current.cpu))
             return current
@@ -15484,7 +15979,7 @@ class X86Machine(object):
                 current = replace(current, console_output=b'')
                 return publish(current), MachineEvent(
                     'console_write', data=payload, cost=total)
-            return publish(current), None
+            return current, None
 
         def emit_console(current):
             payload = current.console_output
@@ -15634,6 +16129,10 @@ class X86Machine(object):
                         and not io.get(0x21, 0xff) & 1):
                     request = MachineEvent('interrupt', (0x30,), cost=total)
                     return publish(replace(state, pending=request)), request
+                if boundary.operation == 'halt':
+                    if state.console_output:
+                        return idle(state)
+                    return publish(state), None
                 return idle(state)
             return publish(state), boundary
         return idle(state)
