@@ -28,6 +28,14 @@ def main(argv=None):
         print('  %d sequential next coordinates derived, %d stored'
               % (report['derived_next_coordinates'],
                  report['next_coordinate_storage']))
+        print('  %d pure grammar instructions, %d barriers (%.2f%% pure)'
+              % (report['grammar_pure_instructions'],
+                 report['grammar_barrier_instructions'],
+                 100.0 * report['grammar_pure_ratio']))
+        if report['barrier_groups']:
+            print('  barrier groups: %s' % ', '.join(
+                '%s=%d' % item
+                for item in list(report['barrier_groups'].items())[:12]))
         for name, count in sorted(report['opcode_groups'].items(),
                                   key=lambda item: (-item[1], item[0]))[:20]:
             print('  %-20s %d' % (name, count))

@@ -2,8 +2,10 @@
 
 import unittest
 
-from qm.wasmbinary import (encode_uleb, optimize_module, section_layout,
+from qm.wasmbinary import (encode_uleb, function_exports, index_module,
+                           optimize_module, section_layout,
                            strip_custom_sections)
+from qm.wasmregions import pack as pack_regions, unpack as unpack_regions
 from qm.wasmstate import decode_module, run_until_boundary, start_state
 
 
@@ -11,9 +13,11 @@ def section(kind, payload):
     return bytes([kind]) + encode_uleb(len(payload)) + payload
 
 
-def module(body, kind=0x7E, memory=False, parameter_count=1):
+def module(body, kind=0x7E, memory=False, parameter_count=1,
+           result_count=1):
     types = (b'\x01\x60' + encode_uleb(parameter_count)
-             + bytes([kind]) * parameter_count + b'\x01' + bytes([kind]))
+             + bytes([kind]) * parameter_count + encode_uleb(result_count)
+             + bytes([kind]) * result_count)
     functions = b'\x01\x00'
     exports = b'\x01\x01f\x00\x00'
     code = b'\x01' + encode_uleb(len(body)) + body
@@ -31,6 +35,21 @@ def call(raw, value):
 
 
 class TestLargeWasmFunctionOptimizer(unittest.TestCase):
+    def test_function_export_index_needs_no_body_decode(self):
+        raw = module(b'\x00\x20\x00\x0b')
+        self.assertEqual(function_exports(raw), (('f', 0),))
+
+    def test_function_region_is_one_direct_fixed_record(self):
+        raw = module(b'\x00\x20\x00\x42\x03\x7c\x0b')
+        indexed = index_module(raw)
+        mapped = unpack_regions(pack_regions(indexed))
+        body = mapped.body(0)
+        self.assertEqual(
+            (body.start, body.end, body.type_index),
+            (indexed.bodies[0].start, indexed.bodies[0].end, 0))
+        self.assertIsNone(mapped.body(1))
+        self.assertEqual(mapped.layout()['record_bytes'], 12)
+
     def test_whole_expression_substitution_combines_two_additions(self):
         # locals=0; get 0; i64.const 3; add; i64.const 4; add; end
         raw = module(b'\x00\x20\x00\x42\x03\x7c\x42\x04\x7c\x0b')
@@ -145,6 +164,22 @@ class TestLargeWasmFunctionOptimizer(unittest.TestCase):
 
         self.assertEqual(report['replaced'], 0)
         self.assertIs(optimized, raw)
+
+    def test_grammar_misses_are_classified_by_dominant_boundary(self):
+        # One nested block makes the whole-function route ineligible even
+        # though each arithmetic region on either side is a valid pure slice.
+        body = b'\x00\x02\x40\x20\x00\x1a\x0b\x20\x00\x0b'
+        raw = module(body)
+
+        _optimized, report = optimize_module(raw)
+
+        self.assertEqual(report['grammar_misses'], {'control-barrier': 1})
+        self.assertEqual(report['grammar_miss_opcodes']['block'], 1)
+        self.assertEqual(report['grammar_miss_body_bytes']['control-barrier'],
+                         len(body))
+
+        _optimized, limited = optimize_module(raw, max_body=4)
+        self.assertEqual(limited['grammar_misses'], {'body-over-limit': 1})
 
 
 if __name__ == '__main__':

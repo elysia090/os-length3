@@ -9,15 +9,18 @@ two independent statements of the same machine, so the last class runs the
 compiled module against the reference rather than assuming they agree.
 """
 
+import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
 
 from vm import codec, image, machine
 from vm.wasm.build import build as build_wasm
+from kernel.x86 import X86DBT
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -366,6 +369,48 @@ class TestWasmAgreesWithTheReference(unittest.TestCase):
         ])
         self.assertEqual(out[4], {'calls': 3, 'misses': 2, 'ok': 1})
 
+    def test_sponge_records_keep_only_lanes_and_the_incomplete_tail(self):
+        lanes = tuple((index * 0x0102030405060708) & ((1 << 64) - 1)
+                      for index in range(25))
+        tail = b'residual'
+        seed = bytes(range(32))
+        records = tuple(
+            (struct.pack('<IIII', index, index + 1, index + 2, index + 3),
+             struct.pack('<Q', 0x1122334455667700 + index))
+            for index in range(5))
+        rounds = 8
+
+        expected_lanes = list(lanes)
+        expected_tail = tail
+        for index, (additional, time_value) in enumerate(records):
+            intermediary = seed if not index else bytes(32)
+            for _unused in range(rounds):
+                intermediary = hashlib.sha3_256(
+                    intermediary + additional).digest()
+            expected_tail += intermediary + time_value
+            while len(expected_tail) >= 136:
+                block, expected_tail = expected_tail[:136], expected_tail[136:]
+                for lane, (word,) in enumerate(
+                        struct.iter_unpack('<Q', block)):
+                    expected_lanes[lane] ^= word
+                expected_lanes = list(X86DBT._keccak_f1600(expected_lanes))
+
+        payload = seed + b''.join(additional + time_value
+                                  for additional, time_value in records)
+        out = self.drive([{
+            'op': 'sponge_records',
+            'lanes': list(struct.pack('<25Q', *lanes)),
+            'tail': list(tail),
+            'payload': list(payload),
+            'records': len(records),
+            'rounds': rounds,
+        }])[0]
+
+        self.assertEqual(out['ok'], 1)
+        self.assertEqual(bytes(out['lanes']),
+                         struct.pack('<25Q', *expected_lanes))
+        self.assertEqual(bytes(out['tail']), expected_tail)
+
     def test_the_wasm_reports_a_budget_it_could_not_finish(self):
         # Not a byte and not a failure: the caller is told the run is
         # unfinished, which is the only honest thing to say about it.
@@ -420,6 +465,17 @@ for (const step of job.ops) {
   } else if (step.op === 'eval_stats') {
     out.push({ calls: E.vm_eval_calls(), misses: E.vm_eval_misses(),
                ok: E.vm_eval_ok() });
+  } else if (step.op === 'sponge_records') {
+    const lanesAt = E.vm_sponge_lanes();
+    const tailAt = E.vm_sponge_tail();
+    mem.set(step.lanes, lanesAt);
+    mem.set(step.tail, tailAt);
+    mem.set(step.payload, E.vm_buffer());
+    const sized = E.vm_set_sponge_tail_size(step.tail.length);
+    const mixed = sized && E.vm_sponge_records(step.records, step.rounds);
+    const tailSize = E.vm_sponge_tail_size();
+    out.push({ ok: mixed, lanes: Array.from(mem.slice(lanesAt, lanesAt + 200)),
+               tail: Array.from(mem.slice(tailAt, tailAt + tailSize)) });
   } else if (step.op === 'budget') {
     E.vm_set_budget(0, step.value);
   } else if (step.op === 'flags') {

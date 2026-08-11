@@ -64,6 +64,20 @@ class TestWasmVmSelfQuotient(unittest.TestCase):
         self.assertEqual(wasmvm.read(self.module, second), 41)
         self.assertEqual(len(self.initial.executor.steps), resident)
 
+    def test_byte_proof_eliminates_redundant_post_load_range_check(self):
+        initial = wasmvm.load(self.module, self.blob)
+        self.assertTrue(initial.direct_byte_state)
+        self.assertEqual(wasmvm.read(self.module, initial), 0)
+        resident = len(initial.executor.steps)
+        after = wasmvm.feed(self.module, initial, 173)
+        self.assertEqual(wasmvm.read(self.module, after), 173)
+
+        # No vm_feed/vm_read body becomes resident. Their complete hot future
+        # is the one-byte physical state-step proved during vm_load.
+        self.assertEqual(len(initial.executor.steps), resident)
+        self.assertEqual(after.snapshot.memory.read(
+            after.cells_address, 8), (173).to_bytes(8, 'little'))
+
     def test_a_nonmatching_artifact_stays_on_the_generic_vm(self):
         picture = image.Image(dict(seed.ECHO.memory), pc_out=3, pc_feed=15)
         initial = wasmvm.load(self.module, artifact(picture))

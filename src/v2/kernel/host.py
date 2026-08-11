@@ -507,7 +507,7 @@ class DirectPageStore(object):
 
     def __init__(self, length, loader=None, writer=None,
                  page_size=BLOCK_PAGE_SIZE, span_pages=SPAN_PAGES,
-                 event_backed=False):
+                 event_backed=False, page_source=None):
         self.length = int(length)
         self.page_size = int(page_size)
         self.span_pages = int(span_pages)
@@ -523,8 +523,16 @@ class DirectPageStore(object):
         self.loader = loader
         self.writer = writer
         self.event_backed = bool(event_backed)
+        self.page_source = page_source
         if self.event_backed and loader is not None:
             raise ValueError('event-backed block storage cannot have a loader')
+        if page_source is not None:
+            if loader is not None or self.event_backed:
+                raise ValueError(
+                    'direct page source cannot be combined with another loader')
+            if (int(page_source.length) != self.length
+                    or int(page_source.page_size) != self.page_size):
+                raise ValueError('direct page source geometry does not match')
 
     def _check_page(self, page):
         page = int(page)
@@ -548,10 +556,19 @@ class DirectPageStore(object):
 
     def _load(self, page):
         span_index, slot = self._coordinates(page)
-        span = self._span(span_index, True)
-        payload = span.cow[slot]
-        if payload is not None:
+        span = self._span(span_index)
+        if span is not None:
+            payload = span.cow[slot]
+            if payload is not None:
+                return span, slot, payload
+        if self.page_source is not None:
+            # The fabric owns the sole clean resident array.  Do not create a
+            # second page directory or materialize the page through a loader.
+            payload = self.page_source.page(page)
+            if len(payload) != self.page_size:
+                raise ValueError('direct page source returned the wrong extent')
             return span, slot, payload
+        span = self._span(span_index, True)
         payload = span.backing[slot]
         if payload is None:
             count = self._valid_bytes(page)
@@ -674,6 +691,8 @@ class DirectPageStore(object):
 
     def release_backing(self):
         """Drop clean image pages while retaining every COW coordinate."""
+        if self.page_source is not None:
+            self.page_source.release_resident()
         for index, span in enumerate(self.directory):
             if span is None:
                 continue
@@ -714,14 +733,20 @@ class DirectPageStore(object):
 
     @property
     def resident_pages(self):
-        return sum(sum(backing is not None or cow is not None
-                       for backing, cow in zip(span.backing, span.cow))
-                   for span in self.directory if span is not None)
+        local = sum(sum(backing is not None or cow is not None
+                        for backing, cow in zip(span.backing, span.cow))
+                    for span in self.directory if span is not None)
+        source = (0 if self.page_source is None
+                  else int(self.page_source.resident_pages))
+        return local + source
 
     @property
     def backing_pages(self):
-        return sum(sum(page is not None for page in span.backing)
-                   for span in self.directory if span is not None)
+        local = sum(sum(page is not None for page in span.backing)
+                    for span in self.directory if span is not None)
+        source = (0 if self.page_source is None
+                  else int(self.page_source.resident_pages))
+        return local + source
 
     @property
     def cow_pages(self):

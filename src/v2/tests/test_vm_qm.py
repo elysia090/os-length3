@@ -10,6 +10,7 @@ which is what these check — on the whole domain where the domain can be walked
 
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
@@ -17,6 +18,8 @@ import unittest
 
 from qm import isa as isa_mod
 from qm.pipeline import solve
+from kernel.pagefabric import (build_erasure_recovery_directory,
+                               _combine, _generator)
 from vm import codec, image, lower, machine, run
 
 from tests.support import EXAMPLES, read_example
@@ -24,6 +27,8 @@ from tests.support import EXAMPLES, read_example
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHIPPED_WASM = os.path.join(ROOT, 'web', 'vm.wasm')
 WASM_SOURCE = os.path.join(ROOT, 'vm', 'wasm', 'vm.c')
+VM_JS = os.path.join(ROOT, 'web', 'vm.js')
+ERASURE_JS = os.path.join(ROOT, 'web', 'erasure-recovery.js')
 
 # The shapes the lowering has to handle: pure wiring, a deposit and a multiply,
 # an extract, a carry-less multiply, and the lane comparisons with their
@@ -179,10 +184,22 @@ class TestTheShippedModuleRunsTheSameArtifacts(unittest.TestCase):
             self.assertEqual(build.returncode, 0, build.stderr)
             with open(fresh, 'rb') as handle:
                 rebuilt = handle.read()
+            fresh_base = os.path.splitext(fresh)[0]
+            rebuilt_delivery = {}
+            for extension in ('.pages', '-regions.pages', '-steps.pages', '.json'):
+                with open(fresh_base + extension, 'rb') as handle:
+                    rebuilt_delivery[extension] = handle.read()
         with open(SHIPPED_WASM, 'rb') as handle:
             shipped = handle.read()
         self.assertEqual(shipped, rebuilt,
                          'web/vm.wasm is stale; rebuild it from vm.c')
+        shipped_base = os.path.splitext(SHIPPED_WASM)[0]
+        for extension in ('.pages', '-regions.pages', '-steps.pages', '.json'):
+            with open(shipped_base + extension, 'rb') as handle:
+                shipped_delivery = handle.read()
+            self.assertEqual(
+                shipped_delivery, rebuilt_delivery[extension],
+                'web/vm%s is stale; rebuild it from vm.c' % extension)
 
     def drive(self, blob, values, input_bits, output_bits):
         """Every input in one node run; spawning per input is all overhead."""
@@ -234,6 +251,48 @@ class TestTheShippedModuleRunsTheSameArtifacts(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             return json.loads(result.stdout)
 
+    def drive_byte_combine(self, blob, sources, fixed_bytes):
+        with tempfile.TemporaryDirectory() as tmp:
+            driver = os.path.join(tmp, 'combine.mjs')
+            with open(driver, 'w') as handle:
+                handle.write(BYTE_COMBINE_DRIVER)
+            job = {
+                'artifact': list(blob),
+                'sources': [list(source) for source in sources],
+                'fixed_bytes': list(fixed_bytes),
+            }
+            result = subprocess.run([
+                'node', driver, SHIPPED_WASM,
+                Path(VM_JS).resolve().as_uri(),
+            ],
+                                    input=json.dumps(job),
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)
+
+    def drive_erasure_recovery(self, blob, geometry, rows, target,
+                               unavailable):
+        with tempfile.TemporaryDirectory() as tmp:
+            driver = os.path.join(tmp, 'recover.mjs')
+            with open(driver, 'w') as handle:
+                handle.write(ERASURE_DRIVER)
+            job = {
+                'artifact': list(blob),
+                'data_shards': geometry.data_shards,
+                'parity_shards': geometry.parity_shards,
+                'ordinal_by_mask': list(geometry.ordinal_by_mask),
+                'coefficients': list(geometry.coefficients),
+                'rows': [list(row) for row in rows],
+                'target': target,
+                'unavailable': list(unavailable),
+            }
+            result = subprocess.run([
+                'node', driver, SHIPPED_WASM,
+                Path(ERASURE_JS).resolve().as_uri(),
+            ], input=json.dumps(job), capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)
+
     def test_the_wasm_kernel_abi_runs_the_same_minimized_artifact(self):
         seq, input_bits, output_bits = minimized('ranks8')
         blob = run.artifact_for(seq, input_bits, output_bits)
@@ -261,6 +320,61 @@ class TestTheShippedModuleRunsTheSameArtifacts(unittest.TestCase):
         self.assertEqual([int(value) for value in got['outputs']],
                          [value * 0x0101010101010101 for value in values])
         self.assertEqual(got['misses'], len(set(values)))
+
+    def test_byte_vectors_use_the_exact_sixteen_bit_cache_inside_wasm(self):
+        source_path = os.path.join(
+            os.path.dirname(os.path.dirname(ROOT)), 'corpus', 'storage',
+            'erasure_gf256_mul.c')
+        with open(source_path, encoding='utf-8') as handle:
+            result = solve(handle.read(), frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        blob = artifact_result(result)
+        values = bytes(range(256)) * 2 + b'\x00'
+        sources = [values, values[::-1]]
+        coefficients = [0x1d, 0x53]
+        got = self.drive_byte_combine(blob, sources, coefficients)
+
+        def multiply(left, right):
+            product = 0
+            for _ in range(8):
+                product ^= left if right & 1 else 0
+                left = ((left << 1) & 0xff) ^ (0x1d if left & 0x80 else 0)
+                right >>= 1
+            return product
+
+        expected = [multiply(left, coefficients[0])
+                    ^ multiply(right, coefficients[1])
+                    for left, right in zip(*sources)]
+        self.assertTrue(got['ok'], got)
+        self.assertEqual(got['first'], expected)
+        self.assertEqual(got['second'], expected)
+        self.assertEqual(got['calls_after_first'], len(values) * len(sources))
+        self.assertEqual(got['calls_after_second'], 2 * len(values) * len(sources))
+        self.assertLessEqual(got['misses_after_first'], 512)
+        self.assertEqual(got['misses_after_second'], got['misses_after_first'])
+
+    def test_ciphertext_erasure_recovery_has_no_scalar_browser_path(self):
+        source_path = os.path.join(
+            os.path.dirname(os.path.dirname(ROOT)), 'corpus', 'storage',
+            'erasure_gf256_mul.c')
+        with open(source_path, encoding='utf-8') as handle:
+            result = solve(handle.read(), frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        blob = artifact_result(result)
+        geometry = build_erasure_recovery_directory(3, 2)
+        data = [bytes((slot * 43 + index) & 255 for index in range(1025))
+                for slot in range(3)]
+        rows = [_combine(coefficients, data, len(data[0]))
+                for coefficients in _generator(3, 2)]
+        got = self.drive_erasure_recovery(
+            blob, geometry, rows, target=1, unavailable=(0,))
+
+        self.assertTrue(got['ok'], got)
+        self.assertEqual(got['first'], list(data[1]))
+        self.assertEqual(got['second'], list(data[1]))
+        self.assertGreater(got['calls_after_first'], 0)
+        self.assertEqual(got['calls_after_second'], 2 * got['calls_after_first'])
+        self.assertEqual(got['misses_after_second'], got['misses_after_first'])
 
     def test_it_agrees_on_an_eight_bit_kernel(self):
         self.check('ranks8', [0, 1, 5, 128, 254, 255])
@@ -333,5 +447,72 @@ process.stdout.write(JSON.stringify({
   calls: E.vm_eval_calls(), misses: E.vm_eval_misses(),
   table_full: E.vm_table_full(), load_error: E.vm_load_error(),
   dead: E.vm_dead(),
+}));
+'''
+
+BYTE_COMBINE_DRIVER = '''\
+import { readFileSync } from 'node:fs';
+const V = await import(process.argv[3]);
+const module = await WebAssembly.compile(readFileSync(process.argv[2]));
+const job = JSON.parse(readFileSync(0, 'utf8'));
+const artifact = Uint8Array.from(job.artifact);
+const combiner = await V.prepareByteCombiner(artifact, module);
+const sources = job.sources.map(source => Uint8Array.from(source));
+const run = () => {
+  return Array.from(combiner.combine(sources, job.fixed_bytes));
+};
+const first = run();
+const callsAfterFirst = combiner.calls();
+const missesAfterFirst = combiner.misses();
+const second = run();
+process.stdout.write(JSON.stringify({
+  ok: combiner.ok(), first, second,
+  calls_after_first: callsAfterFirst,
+  misses_after_first: missesAfterFirst,
+  calls_after_second: combiner.calls(),
+  misses_after_second: combiner.misses(),
+}));
+'''
+
+ERASURE_DRIVER = '''\
+import { readFileSync } from 'node:fs';
+const R = await import(process.argv[3]);
+const module = await WebAssembly.compile(readFileSync(process.argv[2]));
+const job = JSON.parse(readFileSync(0, 'utf8'));
+const geometry = {
+  dataShards: job.data_shards,
+  parityShards: job.parity_shards,
+  ordinalByMask: Int16Array.from(job.ordinal_by_mask),
+  coefficients: Uint8Array.from(job.coefficients),
+};
+const recover = await R.createErasureRecovery({
+  artifact: Uint8Array.from(job.artifact), geometries: [geometry],
+  precompiled: module,
+});
+const rows = job.rows.map(row => Uint8Array.from(row));
+const unavailable = new Set(job.unavailable);
+const directory = {
+  groups: [{
+    dataShards: job.data_shards,
+    rows: rows.map((_row, slot) => ({ slot })),
+  }],
+};
+const fetch = async candidate => {
+  if (unavailable.has(candidate.slot)) throw new Error('unavailable');
+  return rows[candidate.slot];
+};
+const request = {
+  directory, group: 0, target: job.target, fetch,
+};
+const first = Array.from(await recover(request));
+const callsAfterFirst = recover.calls();
+const missesAfterFirst = recover.misses();
+const second = Array.from(await recover(request));
+process.stdout.write(JSON.stringify({
+  ok: recover.ok(), first, second,
+  calls_after_first: callsAfterFirst,
+  misses_after_first: missesAfterFirst,
+  calls_after_second: recover.calls(),
+  misses_after_second: recover.misses(),
 }));
 '''

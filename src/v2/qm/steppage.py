@@ -32,16 +32,22 @@ I64 = (1 << 64) - 1
 # This is a global physical vocabulary, not a per-file dictionary. Giving the
 # same short code a different operation in another page would make cached state
 # depend on an omitted decoder.
-MEMORY_OPS = tuple(
-    'memory.' + name for name in (
-        'i32.load', 'i32.load8_s', 'i32.load8_u',
-        'i32.load16_s', 'i32.load16_u',
-        'i64.load', 'i64.load8_s', 'i64.load8_u',
-        'i64.load16_s', 'i64.load16_u',
-        'i64.load32_s', 'i64.load32_u',
-        'i32.store', 'i32.store8', 'i32.store16',
-        'i64.store', 'i64.store8', 'i64.store16', 'i64.store32',
-    ))
+_MEMORY_LOADS = (
+    'i32.load', 'i32.load8_s', 'i32.load8_u',
+    'i32.load16_s', 'i32.load16_u',
+    'i64.load', 'i64.load8_s', 'i64.load8_u',
+    'i64.load16_s', 'i64.load16_u',
+    'i64.load32_s', 'i64.load32_u',
+)
+_MEMORY_STORES = (
+    'i32.store', 'i32.store8', 'i32.store16',
+    'i64.store', 'i64.store8', 'i64.store16', 'i64.store32',
+)
+MEMORY_OPS = tuple('memory.' + name for name in (
+    _MEMORY_LOADS + _MEMORY_STORES
+    + tuple(name + '.' + observer for name in _MEMORY_LOADS
+            for observer in ('eqz', 'nez'))
+))
 OPS = LANE_OPS + MEMORY_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 
@@ -122,6 +128,23 @@ def _store(memory, address, value, offset, width, scale):
     memory.write(
         _address(address, offset, scale),
         int(value & mask_of(width * 8)).to_bytes(width, 'little'))
+
+
+def _memory_name(name):
+    """Return the source load spelling and its fused observer, if any."""
+    for observer in ('eqz', 'nez'):
+        suffix = '.' + observer
+        if name.endswith(suffix):
+            return name[:-len(suffix)], observer
+    return name, None
+
+
+def _memory_observe(value, observer):
+    if observer == 'eqz':
+        return int(value == 0)
+    if observer == 'nez':
+        return int(value != 0)
+    return value
 
 
 def pack(plan):
@@ -394,7 +417,8 @@ def _validate(mapped):
                 raise StatePageError('local operand is outside the frame region')
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
-            store = '.store' in name
+            source_name, _observer = _memory_name(name)
+            store = '.store' in source_name
             data_count = 2 if store else 1
             fixed = data_count + 2
             if end - begin < fixed:
@@ -414,8 +438,8 @@ def _validate(mapped):
             if scale >= 32:
                 raise StatePageError('%s has an invalid address scale'
                                      % operation)
-            suffix = name.split('.', 1)[1]
-            natural = 4 if name.startswith('i32.') else 8
+            suffix = source_name.split('.', 1)[1]
+            natural = 4 if source_name.startswith('i32.') else 8
             expected = (1 if '8_' in suffix or suffix.endswith('store8')
                         else 2 if '16_' in suffix or suffix.endswith('store16')
                         else 4 if '32_' in suffix or suffix.endswith('store32')
@@ -569,7 +593,8 @@ def execute_mapped(mapped, state):
             operation = OPS[mapped.value('opcodes', node - 1)]
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
-                store = '.store' in name
+                source_name, observer = _memory_name(name)
+                store = '.store' in source_name
                 data_count = 2 if store else 1
                 offset, shape = arguments[data_count:data_count + 2]
                 width, scale = shape & 0xff, shape >> 8
@@ -578,10 +603,11 @@ def execute_mapped(mapped, state):
                            scale)
                     value = 0
                 else:
-                    bits = 32 if name.startswith('i32.') else 64
-                    signed = name.endswith('_s')
-                    value = _load(memory, arguments[0], offset, width, scale,
-                                  signed, bits)
+                    bits = 32 if source_name.startswith('i32.') else 64
+                    signed = source_name.endswith('_s')
+                    value = _memory_observe(_load(
+                        memory, arguments[0], offset, width, scale,
+                        signed, bits), observer)
                 produced.append((node, value))
             else:
                 produced.append((node, evaluate(operation, arguments)))
@@ -676,7 +702,8 @@ def compile_mapped_executor(mapped):
             operation = OPS[opcode]
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
-                store = '.store' in name
+                source_name, observer = _memory_name(name)
+                store = '.store' in source_name
                 data_count = 2 if store else 1
                 data = [expression('operand_tags', 'operand_values', index)
                         for index in range(first, first + data_count)]
@@ -690,12 +717,15 @@ def compile_mapped_executor(mapped):
                         (data[0], data[1], offset, width, scale))
                     lines.append('    value_%d = 0' % node)
                 else:
-                    bits = 32 if name.startswith('i32.') else 64
-                    signed = name.endswith('_s')
-                    lines.append(
-                        '    value_%d = memory_load(memory, %s, %d, %d, %d, '
-                        '%r, %d)' %
-                        (node, data[0], offset, width, scale, signed, bits))
+                    bits = 32 if source_name.startswith('i32.') else 64
+                    signed = source_name.endswith('_s')
+                    loaded = ('memory_load(memory, %s, %d, %d, %d, %r, %d)'
+                              % (data[0], offset, width, scale, signed, bits))
+                    if observer == 'eqz':
+                        loaded = 'int((%s) == 0)' % loaded
+                    elif observer == 'nez':
+                        loaded = 'int((%s) != 0)' % loaded
+                    lines.append('    value_%d = %s' % (node, loaded))
                 continue
             lane = 'lane_%d' % opcode
             namespace.setdefault(lane, bind(operation))

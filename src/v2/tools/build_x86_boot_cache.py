@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Build a disposable directly mapped x86 Linux boot cache from a bzImage."""
+
+import argparse
+from pathlib import Path
+import sys
+from time import perf_counter
+
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from kernel.x86 import load_bzimage_kernel
+from kernel.x86snapshot import dump_x86_boot_cache, load_x86_boot_cache
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('bzimage', type=Path)
+    parser.add_argument('output', type=Path)
+    parser.add_argument('--memory-mib', type=int, default=128)
+    parser.add_argument('--command-line')
+    parser.add_argument('--initrd', type=Path)
+    parser.add_argument('--shards', choices=('data', 'all'), default='data',
+                        help='ship primary data only, or data plus parity')
+    arguments = parser.parse_args(argv)
+
+    image = arguments.bzimage.read_bytes()
+    initrd = (None if arguments.initrd is None
+              else arguments.initrd.read_bytes())
+    started = perf_counter()
+    boot = load_bzimage_kernel(
+        image, memory_bytes=arguments.memory_mib << 20,
+        command_line=arguments.command_line, initrd=initrd)
+    expanded_seconds = perf_counter() - started
+    started = perf_counter()
+    payload = dump_x86_boot_cache(boot, shards=arguments.shards)
+    encoded_seconds = perf_counter() - started
+    arguments.output.write_bytes(payload)
+    started = perf_counter()
+    restored = load_x86_boot_cache(payload)
+    restored_seconds = perf_counter() - started
+    restored_cpu = restored.state.__class__(**{
+        field: getattr(restored.state, field)
+        for field in restored.state.__dataclass_fields__
+        if field != 'memory'
+    }, memory=boot.state.memory)
+    if restored_cpu != boot.state:
+        raise RuntimeError('x86 boot cache changed the prepared CPU state')
+    print('bzimage_bytes=%d' % len(image))
+    print('initrd_bytes=%d' % (0 if initrd is None else len(initrd)))
+    print('cache_bytes=%d' % len(payload))
+    print('resident_pages=%d' % len(boot.state.memory.pages))
+    print('expand_seconds=%.6f' % expanded_seconds)
+    print('encode_seconds=%.6f' % encoded_seconds)
+    print('restore_seconds=%.6f' % restored_seconds)
+    print('restored_spans=%d' %
+          restored.state.memory._backing.layout()['resident_spans'])
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

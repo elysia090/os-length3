@@ -40,11 +40,17 @@ int main(void)
 # `main` the kernel as an import that runs the artifact.
 HARNESS = '''
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 const V2 = process.argv[2];
-globalThis.fetch = async () => ({
-  ok: true,
-  arrayBuffer: async () => readFileSync(V2 + '/web/vm.wasm').buffer,
-});
+globalThis.fetch = async (input, options = {}) => {
+  const bytes = new Uint8Array(readFileSync(fileURLToPath(String(input))));
+  const range = new Headers(options.headers || {}).get('range');
+  if (!range) return new Response(bytes, { status: 200 });
+  const match = /^bytes=(\\d+)-(\\d+)$/.exec(range);
+  if (!match) return new Response('', { status: 416 });
+  const start = Number(match[1]); const end = Number(match[2]) + 1;
+  return new Response(bytes.slice(start, end), { status: 206 });
+};
 const vm = await import(V2 + '/web/vm.js');
 await vm.load();
 

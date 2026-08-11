@@ -9,6 +9,7 @@ once at the observable cut instead of once per WebAssembly instruction.
 """
 
 from dataclasses import dataclass, replace
+from collections import Counter
 
 from .bits import mask_of
 from .wasmphysical import DependencyWaves
@@ -23,7 +24,7 @@ from .wasmstate import (I32, Control, Frame, WasmStateError, _block_results,
 _UNARY = {
     'wrap_i64', 'extend_i32_s', 'extend_i32_u',
     'extend8_s', 'extend16_s', 'extend32_s',
-    'eqz', 'clz', 'ctz', 'popcnt',
+    'eqz', 'clz', 'ctz', 'popcnt', 'bswap',
 }
 _BINARY = {
     'eq', 'ne', 'lt_s', 'lt_u', 'gt_s', 'gt_u',
@@ -151,7 +152,7 @@ def _operand_key(operand):
     return operand.kind == 'const', operand.kind, operand.value
 
 
-def compile_slice(module, frame):
+def compile_slice(module, frame, memory_ranges=()):
     """Rename the maximal pure region at ``frame.pc`` into an SSA wave plan."""
     function = module.functions[frame.function]
     pc = frame.pc
@@ -162,9 +163,31 @@ def compile_slice(module, frame):
     locals_ = [Operand('local', index) for index in range(len(frame.locals))]
     nodes = []
     common = {}
-    last_store = None
-    pending_loads = []
+    memory_nodes = []
     stored_values = {}
+    value_ranges = {}
+    persistent_ranges = {
+        (int(first), int(last)): (int(low), int(high))
+        for first, last, low, high in memory_ranges
+    }
+
+    def value_range(operand):
+        if operand.kind == 'const':
+            return operand.value, operand.value
+        if operand.kind == 'node':
+            return value_ranges.get(operand.value)
+        return None
+
+    def access_range(address, offset, width):
+        """Exact linear-memory interval, or ``None`` for a dynamic address."""
+        if address.kind != 'const':
+            return None
+        first = (address.value & I32) + int(offset)
+        return first, first + int(width)
+
+    def may_alias(left, right):
+        return (left is None or right is None
+                or (left[0] < right[1] and right[0] < left[1]))
 
     def pop(op):
         if not stack:
@@ -186,6 +209,10 @@ def compile_slice(module, frame):
                 return left if condition.value else right
             if left == right:
                 return left
+        elif name == 'wrap_i64':
+            observed = value_range(arguments[0])
+            if observed is not None and 0 <= observed[0] <= observed[1] <= I32:
+                return arguments[0]
         elif len(arguments) == 2:
             left, right = arguments
             bits = 32 if op.startswith('i32.') else 64
@@ -217,6 +244,42 @@ def compile_slice(module, frame):
                 if name in ('rem_s', 'rem_u') and constant == 1:
                     return Operand('const', 0)
 
+            left_range, right_range = map(value_range, arguments)
+            if left_range is not None and right_range is not None:
+                certain = None
+                if name == 'eq':
+                    if (left_range[1] < right_range[0]
+                            or right_range[1] < left_range[0]):
+                        certain = 0
+                    elif (left_range[0] == left_range[1]
+                          == right_range[0] == right_range[1]):
+                        certain = 1
+                elif name == 'ne':
+                    if (left_range[1] < right_range[0]
+                            or right_range[1] < left_range[0]):
+                        certain = 1
+                    elif (left_range[0] == left_range[1]
+                          == right_range[0] == right_range[1]):
+                        certain = 0
+                elif name == 'lt_u':
+                    certain = (1 if left_range[1] < right_range[0]
+                               else 0 if left_range[0] >= right_range[1]
+                               else None)
+                elif name == 'le_u':
+                    certain = (1 if left_range[1] <= right_range[0]
+                               else 0 if left_range[0] > right_range[1]
+                               else None)
+                elif name == 'gt_u':
+                    certain = (1 if left_range[0] > right_range[1]
+                               else 0 if left_range[1] <= right_range[0]
+                               else None)
+                elif name == 'ge_u':
+                    certain = (1 if left_range[0] >= right_range[1]
+                               else 0 if left_range[1] < right_range[0]
+                               else None)
+                if certain is not None:
+                    return Operand('const', certain)
+
         key = (op, arguments)
         if key in common:
             return common[key]
@@ -224,6 +287,17 @@ def compile_slice(module, frame):
         nodes.append(WaveNode(value, op, arguments))
         result = Operand('node', value)
         common[key] = result
+        if name in ('eqz', 'eq', 'ne', 'lt_s', 'lt_u', 'gt_s', 'gt_u',
+                    'le_s', 'le_u', 'ge_s', 'ge_u'):
+            value_ranges[value] = (0, 1)
+        elif name == 'wrap_i64':
+            value_ranges[value] = (0, I32)
+        elif op == 'select':
+            selected = [value_range(argument) for argument in arguments[:2]]
+            if all(item is not None for item in selected):
+                value_ranges[value] = (
+                    min(item[0] for item in selected),
+                    max(item[1] for item in selected))
         return result
 
     def emit_memory(op, arguments, dependencies):
@@ -277,28 +351,39 @@ def compile_slice(module, frame):
         elif memory_arity(op) == 1:
             _align, offset, width, signed = instruction.args
             address = pop(op)
+            interval = access_range(address, offset, width)
             definition = stored_values.get((address, offset, width))
             if (definition is not None
                     and definition[1] == op.split('.', 1)[0]):
                 loaded = forwarded_load(op, definition[0], width, signed)
             else:
-                dependencies = (() if last_store is None else (last_store,))
+                dependencies = tuple(
+                    value for value, previous, store in memory_nodes
+                    if store and may_alias(interval, previous))
                 loaded = emit_memory(
                     op, (address, Operand('const', offset),
                          Operand('const', width)), dependencies)
-                pending_loads.append(loaded)
+                memory_nodes.append((loaded, interval, False))
+                known = persistent_ranges.get(interval)
+                if known is not None:
+                    value_ranges[loaded.value] = known
             stack.append(loaded)
         elif memory_arity(op) == 2:
             _align, offset, width, _signed = instruction.args
             value, address = pop(op), pop(op)
-            dependencies = list(pending_loads)
-            if last_store is not None:
-                dependencies.append(last_store)
-            last_store = emit_memory(
+            interval = access_range(address, offset, width)
+            dependencies = tuple(
+                previous for previous, previous_interval, _store
+                in memory_nodes if may_alias(interval, previous_interval))
+            stored = emit_memory(
                 op, (address, value, Operand('const', offset),
                      Operand('const', width)), dependencies)
-            pending_loads[:] = []
-            stored_values.clear()
+            memory_nodes.append((stored, interval, True))
+            stored_values = {
+                key: definition for key, definition in stored_values.items()
+                if not may_alias(
+                    interval, access_range(key[0], key[1], key[2]))
+            }
             stored_values[(address, offset, width)] = (
                 value, op.split('.', 1)[0])
         else:
@@ -348,9 +433,11 @@ def execute_slice(plan, state):
             node = plan.nodes[value - 1]
             arguments = tuple(resolve(argument) for argument in node.arguments)
             if node.op.startswith('memory.'):
-                from .steppage import _load, _store
+                from .steppage import (_load, _memory_name,
+                                       _memory_observe, _store)
                 name = node.op.split('.', 1)[1]
-                store = '.store' in name
+                source_name, observer = _memory_name(name)
+                store = '.store' in source_name
                 data_count = 2 if store else 1
                 offset, shape = arguments[data_count:data_count + 2]
                 width, scale = shape & 0xff, shape >> 8
@@ -359,10 +446,11 @@ def execute_slice(plan, state):
                            scale)
                     result = 0
                 else:
-                    result = _load(
+                    result = _memory_observe(_load(
                         memory, arguments[0], offset, width, scale,
-                        name.endswith('_s'),
-                        32 if name.startswith('i32.') else 64)
+                        source_name.endswith('_s'),
+                        32 if source_name.startswith('i32.') else 64),
+                        observer)
             else:
                 result = evaluate_physical(node.op, arguments)
             produced.append((value, result))
@@ -488,8 +576,10 @@ class _PhysicalPage:
 class WaveExecutor:
     """Cached barrier/slice executor for one decoded module."""
 
-    def __init__(self, module):
+    def __init__(self, module, memory_ranges=()):
         self.module = module
+        self.memory_ranges = tuple(sorted(
+            tuple(map(int, item)) for item in memory_ranges))
         # Function and source-pc are already dense physical coordinates.  One
         # entry owns the mapped page and its terminal executable projection;
         # the construction SSA is released before the entry becomes resident.
@@ -513,14 +603,17 @@ class WaveExecutor:
         self.memory_merged_loads = 0
         self.memory_source_bytes_loaded = 0
         self.qm_forwarded_memory_loads = 0
+        self.barrier_executions = Counter()
 
     def _entry(self, frame):
         key = (frame.function, frame.pc, len(frame.stack))
         entry = self.steps.get(key)
         if entry is None:
-            page = self.module._physical_pages.get(key)
+            page_key = (key, self.memory_ranges)
+            page = self.module._physical_pages.get(page_key)
             if page is None:
-                plan = compile_slice(self.module, frame)
+                plan = compile_slice(
+                    self.module, frame, memory_ranges=self.memory_ranges)
                 if plan is None:
                     raise WasmStateError(
                         'a barrier has no physical residual state-step')
@@ -554,7 +647,7 @@ class WaveExecutor:
                 page = _PhysicalPage(
                     mapped, compile_mapped_executor(mapped), cost,
                     source_work, source_memory_loads - mapped_memory_loads)
-                self.module._physical_pages[key] = page
+                self.module._physical_pages[page_key] = page
             self.steps[key] = _PhysicalStep(
                 page.mapped, page.execute, page.cost, page.source_work,
                 page.forwarded_memory_loads)
@@ -595,6 +688,7 @@ class WaveExecutor:
             'changed_local_coordinates': sum(
                 entry.mapped.local_updates for entry in self.steps.values()),
             'resident_scalar_plans': 0,
+            'persistent_memory_ranges': len(self.memory_ranges),
             'state_materializations': self.state_materializations,
             'avoided_state_materializations':
                 self.avoided_state_materializations,
@@ -615,6 +709,10 @@ class WaveExecutor:
             'memory_merged_loads': self.memory_merged_loads,
             'memory_source_bytes_loaded': self.memory_source_bytes_loaded,
             'qm_forwarded_memory_loads': self.qm_forwarded_memory_loads,
+            'barrier_executions': sum(self.barrier_executions.values()),
+            'barrier_groups': dict(sorted(
+                self.barrier_executions.items(),
+                key=lambda item: (-item[1], item[0]))),
             'dominant_residuals': [
                 {
                     'dynamic_work': work,
@@ -815,6 +913,7 @@ class WaveExecutor:
                 controls = parent.controls
                 instructions += 1
                 barriers += 1
+                self.barrier_executions[instruction.op] += 1
                 transient_steps += 1
                 continue
 
@@ -846,6 +945,7 @@ class WaveExecutor:
                     controls = ()
                     instructions += 1
                     barriers += 1
+                    self.barrier_executions['call'] += 1
                     transient_steps += 1
                     continue
 
@@ -857,6 +957,7 @@ class WaveExecutor:
                 pc, stack, controls = advanced
                 instructions += 1
                 barriers += 1
+                self.barrier_executions[instruction.op] += 1
                 transient_steps += 1
                 continue
 
@@ -866,6 +967,7 @@ class WaveExecutor:
                 pc, stack, globals_, memory = effected
                 instructions += 1
                 barriers += 1
+                self.barrier_executions[instruction.op] += 1
                 transient_steps += 1
                 continue
             break
@@ -902,6 +1004,11 @@ class WaveExecutor:
         if budget is not None and budget < 1:
             return state, WaveCost()
         self.state_materializations += 1
+        if state.frames:
+            frame = state.frames[-1]
+            function = self.module.functions[frame.function]
+            if frame.pc < len(function.code):
+                self.barrier_executions[function.code[frame.pc].op] += 1
         return instruction_step(self.module, state), WaveCost(
             instructions=1, barriers=1)
 

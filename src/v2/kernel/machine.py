@@ -21,6 +21,7 @@ EXTERNAL_OPERATIONS = (
     'console_write',
     'clock',
     'entropy',
+    'interrupt',
     'network_poll',
 )
 

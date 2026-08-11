@@ -66,7 +66,7 @@ def main(argv=None):
     if args.source == '-':
         source = sys.stdin.read()
     else:
-        with open(args.source) as handle:
+        with open(args.source, encoding='utf-8') as handle:
             source = handle.read()
 
     result = solve(

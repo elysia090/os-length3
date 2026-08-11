@@ -97,9 +97,10 @@ def _omega_payload(number):
 
 
 class PhysicalMap(object):
-    """A coordinate map stored as constant, affine, or dense values."""
+    """A coordinate map stored as constant, affine, packed, or dense values."""
 
-    __slots__ = ('region', 'kind', 'base', 'step', 'values')
+    __slots__ = ('region', 'kind', 'base', 'step', 'values',
+                 'packed_bits', 'packed_per_word', 'packed_words')
 
     def __init__(self, values):
         values = tuple(values)
@@ -107,6 +108,9 @@ class PhysicalMap(object):
         self.base = None
         self.step = None
         self.values = ()
+        self.packed_bits = None
+        self.packed_per_word = None
+        self.packed_words = ()
         if not values:
             self.kind = 'dense'
             return
@@ -122,6 +126,25 @@ class PhysicalMap(object):
                 self.base = values[0]
                 self.step = step
                 return
+        if (len(values) >= 8
+                and all(isinstance(value, int) and value >= 0
+                        for value in values)):
+            bits = max(1, max(values).bit_length())
+            per_word = 64 // bits
+            if per_word > 1:
+                words = []
+                for start in range(0, len(values), per_word):
+                    word = 0
+                    for slot, value in enumerate(
+                            values[start:start + per_word]):
+                        word |= value << (slot * bits)
+                    words.append(word)
+                if len(words) < len(values):
+                    self.kind = 'packed'
+                    self.packed_bits = bits
+                    self.packed_per_word = per_word
+                    self.packed_words = tuple(words)
+                    return
         self.kind = 'dense'
         self.values = values
 
@@ -132,6 +155,10 @@ class PhysicalMap(object):
             return self.base
         if self.kind == 'affine':
             return self.base + self.step * rank
+        if self.kind == 'packed':
+            word, slot = divmod(rank, self.packed_per_word)
+            return ((self.packed_words[word] >> (slot * self.packed_bits))
+                    & ((1 << self.packed_bits) - 1))
         return self.values[rank]
 
     __getitem__ = at
@@ -144,6 +171,8 @@ class PhysicalMap(object):
             return 1
         if self.kind == 'affine':
             return 2
+        if self.kind == 'packed':
+            return len(self.packed_words)
         return len(self.values)
 
     def to_dict(self):
@@ -154,7 +183,71 @@ class PhysicalMap(object):
             report['value'] = self.base
         elif self.kind == 'affine':
             report.update({'base': self.base, 'step': self.step})
+        elif self.kind == 'packed':
+            report.update({'bits': self.packed_bits,
+                           'values_per_word': self.packed_per_word,
+                           'words': len(self.packed_words)})
         return report
+
+
+class DirectByteClasses(object):
+    """One exact class coordinate for each possible input byte.
+
+    A completed right-zero byte transducer has the same successor row at
+    every state.  Its runtime is therefore only that row and the observable
+    attached to each class; state identity and history disappear.
+    """
+
+    __slots__ = ('classes', 'outputs', '_coordinate_cache')
+
+    def __init__(self, classes, outputs):
+        classes = tuple(classes)
+        if len(classes) != 256:
+            raise ValueError('direct byte classes need exactly 256 entries')
+        self.classes = PhysicalMap(classes)
+        self.outputs = PhysicalMap(outputs)
+        self._coordinate_cache = {}
+
+    def class_of(self, byte):
+        if not 0 <= byte < 256:
+            raise ValueError('byte class takes one byte: %r' % byte)
+        return self.classes.at(byte)
+
+    def classify(self, byte):
+        return self.outputs.at(self.class_of(byte))
+
+    def first_not(self, payload, expected):
+        """Return the first coordinate outside ``expected``, if any."""
+        for coordinate, byte in enumerate(payload):
+            if self.classify(byte) != expected:
+                return coordinate
+        return None
+
+    def coordinates(self, expected):
+        """Return all byte coordinates proved to have one observable."""
+        try:
+            return self._coordinate_cache[expected]
+        except (KeyError, TypeError):
+            coordinates = tuple(byte for byte in range(256)
+                                if self.classify(byte) == expected)
+            try:
+                self._coordinate_cache[expected] = coordinates
+            except TypeError:
+                pass
+            return coordinates
+
+    @property
+    def storage_cells(self):
+        return self.classes.storage_cells + self.outputs.storage_cells
+
+    def to_dict(self):
+        return {
+            'domain': 'Byte',
+            'classes': self.outputs.region.count,
+            'class_map': self.classes.to_dict(),
+            'outputs': self.outputs.to_dict(),
+            'storage_cells': self.storage_cells,
+        }
 
 
 class PhysicalTransitions(object):
@@ -365,6 +458,25 @@ class QuotientMachine(object):
                 return None
         return DirectByteProjection(self.initial, state_by_byte)
 
+    def direct_byte_classes(self):
+        """Erase state when every byte has one state-independent class.
+
+        Unlike :meth:`direct_byte_projection`, several bytes may share a
+        class.  The proof still covers all 256 inputs and every quotient
+        state, so runtime classification is one packed coordinate lookup.
+        """
+        if self.alphabet != tuple(range(256)):
+            return None
+        row = tuple(self.transitions.at(self.initial, byte)
+                    for byte in range(256))
+        if any(tuple(self.transitions.at(state, byte)
+                     for byte in range(256)) != row
+               for state in range(self.classes)):
+            return None
+        return DirectByteClasses(
+            row, tuple(self.outputs.at(state)
+                       for state in range(self.classes)))
+
     def to_dict(self):
         result = {
             'reachable_states': self.reachable_states,
@@ -383,6 +495,9 @@ class QuotientMachine(object):
             result['direct_byte_cache'] = projection.cache(
                 self.outputs.at(state) for state in range(self.classes)
             ).to_dict()
+        classes = self.direct_byte_classes()
+        if classes is not None:
+            result['direct_byte_classes'] = classes.to_dict()
         return result
 
     def semantic_key(self):
@@ -478,6 +593,17 @@ def compile_transducer(initial, delta, observe, alphabet, key=None,
         transitions=quotient_transitions,
         reachable_states=len(states),
     )
+
+
+def compile_byte_classes(classify):
+    """Minimize a complete byte classifier and erase its build states."""
+    machine = compile_transducer(
+        0, lambda _state, byte: byte, classify, tuple(range(256)),
+        max_states=256)
+    direct = machine.direct_byte_classes()
+    if direct is None:
+        raise AssertionError('right-zero byte closure lost its direct form')
+    return direct
 
 
 def _initial_classes(outputs):

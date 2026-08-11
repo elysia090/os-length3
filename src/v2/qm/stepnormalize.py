@@ -96,9 +96,9 @@ def _slice_sequence(plan, root):
                 value = before.emit('SHL', [reference(arguments[0])],
                                     shift=shift)
                 result = wrap(before.emit('SAR', [value], shift=shift), False)
-            elif name in ('clz', 'ctz', 'popcnt'):
+            elif name in ('clz', 'ctz', 'popcnt', 'bswap'):
                 op = {'clz': 'CLZ', 'ctz': 'CTZ',
-                      'popcnt': 'POPCNT'}[name]
+                      'popcnt': 'POPCNT', 'bswap': 'BSWAP'}[name]
                 result = wrap(before.emit(op, [reference(arguments[0])]),
                               False)
             elif len(arguments) == 2 and name in (
@@ -216,6 +216,14 @@ def _physical_plan(plan):
     for node in plan.nodes:
         if node.op.startswith('memory.'):
             operation, arguments = node.op, node.arguments
+            # WebAssembly linear memory is an untyped byte array. Floating
+            # loads and stores only change the register view of the same IEEE
+            # bit pattern, so the physical memory lane is exactly the matching
+            # integer-width access. This also lets load/select/store move bits
+            # without materializing a host floating value.
+            operation = (operation
+                         .replace('memory.f32.', 'memory.i32.')
+                         .replace('memory.f64.', 'memory.i64.'))
         else:
             operation, arguments = select(node.op, node.arguments)
         nodes.append(WaveNode(node.value, operation, tuple(arguments)))
@@ -263,6 +271,20 @@ def _rewrite_physical(nodes, stack, locals_):
         operand = Operand('node', value)
         rebuilt.append(WaveNode(value, operation, tuple(arguments)))
         forms[value] = (operation, tuple(arguments))
+        return operand
+
+    def fuse_memory(operand, observer):
+        """Move a zero observer into its sole physical memory-load lane."""
+        source = form(operand)
+        if (source is None or not source[0].startswith('memory.')
+                or '.load' not in source[0]
+                or operand.value in outputs
+                or len(consumers.get(operand.value, ())) != 1):
+            return None
+        operation = source[0] + '.' + observer
+        rebuilt[operand.value - 1] = WaveNode(
+            operand.value, operation, source[1])
+        forms[operand.value] = (operation, source[1])
         return operand
 
     for node in nodes:
@@ -358,7 +380,10 @@ def _rewrite_physical(nodes, stack, locals_):
 
         elif name == 'EQZ' and len(arguments) == 1:
             source = form(arguments[0])
-            if source is not None:
+            fused = fuse_memory(arguments[0], 'eqz')
+            if fused is not None:
+                replacement = fused
+            elif source is not None:
                 inverse = {
                     'EQ': 'NE', 'NE': 'EQ',
                     'LT_S': 'GE_S', 'LT_U': 'GE_U',
@@ -375,6 +400,21 @@ def _rewrite_physical(nodes, stack, locals_):
                 elif source_name in inverse:
                     operation = source_width + '.' + inverse[source_name]
                     arguments = source[1]
+                elif source_name == 'AND':
+                    mask = constant(source[1][1])
+                    if mask and mask & (mask - 1) == 0:
+                        operation = source_width + '.BITZ'
+                        arguments = (source[1][0], Operand(
+                            'const', mask.bit_length() - 1))
+
+        elif name == 'NE' and len(arguments) == 2:
+            left, right = arguments
+            candidate = (left if constant(right) == 0
+                         else right if constant(left) == 0 else None)
+            fused = None if candidate is None else fuse_memory(
+                candidate, 'nez')
+            if fused is not None:
+                replacement = fused
 
         elif name == 'SELECT' and len(arguments) == 3:
             condition = form(arguments[2])
@@ -516,7 +556,15 @@ def normalize_plan(plan):
     """Normalize dominant future-visible work backward into one wave."""
     from .wasmwave import Operand, PureSlice, WaveNode
 
-    raw = _physical_plan(plan)
+    # A decoded basic block may be reopened and extended with another
+    # future-visible root (for example a branch predicate).  Its nodes already
+    # have canonical physical lane names; sending those through frontend
+    # selection a second time used to make residual composition impossible.
+    # Mixed/raw frontend graphs still take the one mandatory selection pass.
+    already_physical = all(
+        node.op.startswith(('lane32.', 'lane64.', 'memory.'))
+        for node in plan.nodes)
+    raw = plan if already_physical else _physical_plan(plan)
     nodes, waves, stack, locals_ = _compact(
         raw.nodes, raw.stack, raw.locals)
     physical = PureSlice(
@@ -582,3 +630,51 @@ def normalize_plan(plan):
     return PureSlice(
         plan.function, plan.start, plan.end, plan.instructions,
         plan.stack_inputs, nodes, waves, stack, locals_)
+
+
+def compose_plans(first, second):
+    """Substitute one physical state-step page into its deterministic next.
+
+    The second page's local and stack inputs are coordinates published by the
+    first page, not a materialized intermediate frame. Memory nodes retain
+    their ordering dependencies and the combined graph goes through the same
+    liveness, quotient and wave normalization as every frontend slice.
+    """
+    from .wasmwave import Operand, PureSlice, WaveNode
+
+    if first.function != second.function:
+        raise ValueError('state-step composition crosses a function boundary')
+    if len(first.stack) < second.stack_inputs:
+        raise ValueError('second state-step reads an unavailable stack slot')
+
+    nodes = list(first.nodes)
+    remap = {}
+
+    def substitute(operand):
+        if operand.kind == 'const':
+            return operand
+        if operand.kind == 'local':
+            if operand.value >= len(first.locals):
+                raise ValueError(
+                    'second state-step reads an unavailable local slot')
+            return first.locals[operand.value]
+        if operand.kind == 'stack':
+            if operand.value >= len(first.stack):
+                raise ValueError(
+                    'second state-step reads an unavailable stack slot')
+            return first.stack[operand.value]
+        return remap[operand.value]
+
+    for node in second.nodes:
+        value = len(nodes) + 1
+        nodes.append(WaveNode(
+            value, node.op, tuple(map(substitute, node.arguments))))
+        remap[node.value] = Operand('node', value)
+
+    stack = tuple(map(substitute, second.stack))
+    locals_ = tuple(map(substitute, second.locals))
+    combined = PureSlice(
+        first.function, first.start, second.end,
+        first.instructions + second.instructions,
+        first.stack_inputs, tuple(nodes), first.waves, stack, locals_)
+    return normalize_plan(combined)

@@ -18,7 +18,7 @@ an incomplete decode is never used as program semantics.
 
 from dataclasses import dataclass, field, replace
 
-from .bits import mask_of
+from .bits import M64, mask_of, pdep
 from .cfront.errors import CFrontError, UnsupportedC
 
 
@@ -37,6 +37,203 @@ class WasmStateError(CFrontError):
     """A malformed module or an invalid machine transition."""
 
 
+_BYTE_ONES = 0x0101010101010101
+_BYTE_EXCLUSIVE = 0x0101010101010100
+
+
+def _bit_runs(bits):
+    """Yield maximal half-open runs in a finite coordinate mask."""
+    while bits:
+        low = bits & -bits
+        start = low.bit_length() - 1
+        tail = bits >> start
+        length = ((~tail) & (tail + 1)).bit_length() - 1
+        yield start, start + length
+        bits &= ~(mask_of(length) << start)
+
+
+def _canonical_slots(domain):
+    """Build direct one-based slots from the proved eight-lane rank form."""
+    if domain == mask_of(MEMORY_PAGE):
+        return None
+    slots = bytearray(MEMORY_PAGE)
+    dirty_blocks = tuple(
+        (domain >> (block * 8)) & 0xff
+        for block in range(MEMORY_PAGE // 8))
+    counts = tuple(dirty.bit_count() for dirty in dirty_blocks)
+
+    # Eight block counts fit in byte lanes and every local prefix is <= 56,
+    # so multiplication by [0,1,1,...] is the exact exclusive scan with no
+    # inter-lane carry.  The four group bases form a depth-two add tree.  No
+    # block therefore depends on the preceding block's scalar accumulator.
+    group_counts = tuple(sum(counts[start:start + 8])
+                         for start in range(0, len(counts), 8))
+    first_pair = group_counts[0] + group_counts[1]
+    group_bases = (0, group_counts[0], first_pair,
+                   first_pair + group_counts[2])
+    local_bases = tuple(
+        (sum(counts[start + lane] << (8 * lane) for lane in range(8))
+         * _BYTE_EXCLUSIVE) & M64
+        for start in range(0, len(counts), 8))
+
+    for block, dirty in enumerate(dirty_blocks):
+        spread = pdep(dirty, _BYTE_ONES)
+        inclusive = (spread * _BYTE_ONES) & M64
+        present = (spread * 0xff) & M64
+        group, lane = divmod(block, 8)
+        base = (group_bases[group]
+                + ((local_bases[group] >> (8 * lane)) & 0xff))
+        word = (inclusive + (base * _BYTE_ONES)) & present & M64
+        slots[block * 8:block * 8 + 8] = word.to_bytes(8, 'little')
+    return bytes(slots)
+
+
+class CanonicalPage(object):
+    """Minimal persistent difference from one immutable 256-byte base page.
+
+    ``domain`` names exactly the coordinates whose final byte differs from the
+    base. ``values`` stores those bytes in coordinate order. ``slots`` is a
+    disposable direct-address cache; zero selects the base and a positive byte
+    selects one dense value. A completely different page has no slot array,
+    because rank 256 does not fit in one byte and direct indexing is cheaper.
+    """
+
+    __slots__ = ('domain', 'values', '_slots', '_hash')
+
+    def __init__(self, domain, values):
+        domain = int(domain) & mask_of(MEMORY_PAGE)
+        values = bytes(values)
+        if not domain or len(values) != domain.bit_count():
+            raise ValueError('canonical page domain and values disagree')
+        self.domain = domain
+        self.values = values
+        self._slots = None if domain == mask_of(MEMORY_PAGE) else False
+        self._hash = None
+
+    @property
+    def full(self):
+        return self.domain == mask_of(MEMORY_PAGE)
+
+    @property
+    def slots(self):
+        slots = self._slots
+        if slots is False:
+            slots = _canonical_slots(self.domain)
+            self._slots = slots
+        return slots
+
+    def evict_direct_cache(self):
+        """Drop the rebuildable coordinate cache while retaining semantics."""
+        if not self.full:
+            self._slots = False
+
+    def __eq__(self, other):
+        return (isinstance(other, CanonicalPage)
+                and self.domain == other.domain
+                and self.values == other.values)
+
+    def __hash__(self):
+        value = self._hash
+        if value is None:
+            value = hash((self.domain, self.values))
+            self._hash = value
+        return value
+
+    def value(self, coordinate):
+        if self.full:
+            return self.values[coordinate]
+        slot = self.slots[coordinate]
+        return None if not slot else self.values[slot - 1]
+
+    def read(self, base_slice, offset, count):
+        selected = (self.domain >> offset) & mask_of(count)
+        if not selected:
+            return bytes(base_slice(offset, count))
+        if selected == mask_of(count):
+            if self.full:
+                return self.values[offset:offset + count]
+            return bytes(self.values[self.slots[offset + position] - 1]
+                         for position in range(count))
+        result = bytearray(count)
+        missing = mask_of(count) ^ selected
+        for start, end in _bit_runs(missing):
+            result[start:end] = base_slice(offset + start, end - start)
+        for start, end in _bit_runs(selected):
+            for position in range(start, end):
+                result[position] = self.value(offset + position)
+        return bytes(result)
+
+    def materialize(self, base_page):
+        if self.full:
+            return self.values
+        result = bytearray(base_page)
+        for coordinate in _bit_runs(self.domain):
+            start, end = coordinate
+            for position in range(start, end):
+                result[position] = self.value(position)
+        return bytes(result)
+
+    @classmethod
+    def compose(cls, base_slice, previous, written, written_values):
+        """Apply one right-biased write domain and renormalize against base."""
+        written = int(written) & mask_of(MEMORY_PAGE)
+        written_values = bytes(written_values)
+
+        if previous is None:
+            old_domain = 0
+            old_value = lambda _coordinate: None
+        elif isinstance(previous, cls):
+            old_domain = previous.domain
+            old_value = previous.value
+        else:
+            raw = bytes(previous)
+            if len(raw) != MEMORY_PAGE:
+                raise ValueError('previous memory page has the wrong size')
+            base = bytes(base_slice(0, MEMORY_PAGE))
+            old_domain = sum(1 << coordinate
+                             for coordinate, (left, right) in enumerate(
+                                 zip(raw, base)) if left != right)
+            old_value = raw.__getitem__
+
+        # Q proves every retained value differs from B.  If a newer write is
+        # byte-identical to that retained value, its dirty result is already
+        # forced and the immutable base must not be touched.
+        unchanged_dirty = 0
+        for start, end in _bit_runs(written & old_domain):
+            for coordinate in range(start, end):
+                if written_values[coordinate] == old_value(coordinate):
+                    unchanged_dirty |= 1 << coordinate
+        needs_base = written & ~unchanged_dirty
+        if not needs_base and isinstance(previous, cls):
+            return previous
+
+        changed = unchanged_dirty
+        for start, end in _bit_runs(needs_base):
+            base = base_slice(start, end - start)
+            for coordinate, value in enumerate(base, start):
+                if written_values[coordinate] != value:
+                    changed |= 1 << coordinate
+        # ``changed`` was constructed only while walking ``written``.  It is
+        # already R = P & [V != B], so applying P again would be a duplicate
+        # path.  R and Q & ~P are disjoint and publish directly.
+        domain = changed | (old_domain & ~written)
+        domain &= mask_of(MEMORY_PAGE)
+        if not domain:
+            return None
+        if domain == mask_of(MEMORY_PAGE) and written == domain:
+            return cls(domain, written_values)
+        values = bytearray()
+        for start, end in _bit_runs(domain):
+            for coordinate in range(start, end):
+                values.append(
+                    old_value(coordinate)
+                    if unchanged_dirty & (1 << coordinate)
+                    else (written_values[coordinate]
+                          if written & (1 << coordinate)
+                          else old_value(coordinate)))
+        return cls(domain, values)
+
+
 class PagedMemory(object):
     """Immutable linear memory with shared unchanged bytes.
 
@@ -53,13 +250,20 @@ class PagedMemory(object):
     implicit WebAssembly zero fill.
     """
 
-    __slots__ = ('base', 'length', '_regions', '_hash')
+    __slots__ = ('base', 'length', '_regions', '_backing', '_hash')
 
-    def __init__(self, base, length=None, pages=(), _regions=None):
+    def __init__(self, base, length=None, pages=(), _regions=None,
+                 _backing=None):
         self.base = bytes(base)
         self.length = len(self.base) if length is None else int(length)
         if self.length < len(self.base):
             raise ValueError('linear memory cannot be shorter than its base')
+        if _backing is not None:
+            if self.base:
+                raise ValueError('paged memory cannot mix byte and mapped backing')
+            if int(_backing.memory_bytes) != self.length:
+                raise ValueError('mapped memory backing has the wrong extent')
+        self._backing = _backing
         page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
         span_count = ((page_count + MEMORY_SPAN_PAGES - 1)
                       // MEMORY_SPAN_PAGES)
@@ -104,50 +308,251 @@ class PagedMemory(object):
     def pages(self):
         """Changed pages as stable ``(index, bytes)`` pairs."""
         return tuple(
-            (((region_index * MEMORY_REGION_SPANS + span_slot)
-              * MEMORY_SPAN_PAGES + slot), page)
+            (index, self._page(index))
             for region_index, region in enumerate(self._regions)
             if region is not None
             for span_slot, span in enumerate(region)
             if span is not None
             for slot, page in enumerate(span)
             if page is not None
+            for index in (((region_index * MEMORY_REGION_SPANS + span_slot)
+                           * MEMORY_SPAN_PAGES + slot),)
         )
+
+    def _canonical_entry(self, index):
+        entry = self._page_entry(index)
+        if entry is None or isinstance(entry, CanonicalPage):
+            return entry
+        return CanonicalPage.compose(
+            lambda offset, count: self._base_page_slice(
+                index, offset, count),
+            None, mask_of(MEMORY_PAGE), entry)
+
+    @property
+    def canonical_pages(self):
+        """Changed pages as minimal immutable-base differences."""
+        return tuple(
+            (index, self._canonical_entry(index))
+            for region_index, region in enumerate(self._regions)
+            if region is not None
+            for span_slot, span in enumerate(region)
+            if span is not None
+            for slot, page in enumerate(span)
+            if page is not None
+            for index in (((region_index * MEMORY_REGION_SPANS + span_slot)
+                           * MEMORY_SPAN_PAGES + slot),)
+        )
+
+    def canonical_difference(self, baseline):
+        """Absolute canonical entries whose semantics differ from baseline."""
+        if not isinstance(baseline, PagedMemory) \
+                or self.length != baseline.length \
+                or self.base != baseline.base \
+                or self._backing is not baseline._backing:
+            raise ValueError('memory difference needs the same base extent')
+        changed = []
+        for region_index, (current_region, previous_region) in enumerate(zip(
+                self._regions, baseline._regions)):
+            if current_region is previous_region:
+                continue
+            for span_slot in range(MEMORY_REGION_SPANS):
+                current_span = (None if current_region is None
+                                else current_region[span_slot])
+                previous_span = (None if previous_region is None
+                                 else previous_region[span_slot])
+                if current_span is previous_span:
+                    continue
+                for slot in range(MEMORY_SPAN_PAGES):
+                    current_entry = (None if current_span is None
+                                     else current_span[slot])
+                    previous_entry = (None if previous_span is None
+                                      else previous_span[slot])
+                    if current_entry is previous_entry:
+                        continue
+                    index = ((region_index * MEMORY_REGION_SPANS + span_slot)
+                             * MEMORY_SPAN_PAGES + slot)
+                    if index * MEMORY_PAGE >= self.length:
+                        break
+                    current = self._canonical_entry(index)
+                    previous = baseline._canonical_entry(index)
+                    if current != previous:
+                        changed.append((index, current))
+        return tuple(changed)
 
     def __len__(self):
         return self.length
 
     def __eq__(self, other):
-        return (isinstance(other, PagedMemory)
-                and self.length == other.length
-                and self._regions == other._regions
-                and (self.base is other.base or self.base == other.base))
+        if (not isinstance(other, PagedMemory)
+                or self.length != other.length
+                or self._backing is not other._backing
+                or not (self.base is other.base or self.base == other.base)):
+            return False
+        return (self._regions == other._regions
+                or self.canonical_pages == other.canonical_pages)
 
     def __hash__(self):
         value = self._hash
         if value is None:
-            value = hash((self.base, self.length, self._regions))
+            value = hash((self.base, self.length, self.canonical_pages,
+                          self._backing))
             self._hash = value
         return value
 
     def _base_page(self, index):
+        if self._backing is not None:
+            return self._backing.page(index)
         start = index * MEMORY_PAGE
         raw = self.base[start:start + MEMORY_PAGE]
         if len(raw) < MEMORY_PAGE:
             raw += bytes(MEMORY_PAGE - len(raw))
         return raw
 
+    def _base_page_slice(self, index, offset, count):
+        """Read immutable base coordinates without consulting page overlays."""
+        if self._backing is not None:
+            direct = getattr(self._backing, 'slice', None)
+            if direct is not None:
+                return direct(index, offset, count)
+            return self._backing.page(index)[offset:offset + count]
+        start = index * MEMORY_PAGE + offset
+        raw = self.base[start:start + count]
+        return raw + bytes(count - len(raw))
+
+    def _page_entry(self, index):
+        span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+        region_index, span_slot = divmod(span_index, MEMORY_REGION_SPANS)
+        region = self._regions[region_index]
+        span = None if region is None else region[span_slot]
+        return None if span is None else span[slot]
+
+    def _page_slice(self, index, offset, count):
+        """Read one page extent without materializing its other coordinates."""
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        if (index < 0 or index >= page_count or offset < 0 or count < 0
+                or offset + count > MEMORY_PAGE):
+            raise WasmStateError('wasm memory page extent is out of bounds')
+        page = self._page_entry(index)
+        if page is not None:
+            if isinstance(page, CanonicalPage):
+                return page.read(
+                    lambda start, size: self._base_page_slice(
+                        index, start, size), offset, count)
+            return page[offset:offset + count]
+        return self._base_page_slice(index, offset, count)
+
+    def _page_find(self, index, offset, count, values):
+        """Find one byte coordinate without slicing the searched extent."""
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        if (index < 0 or index >= page_count or offset < 0 or count < 0
+                or offset + count > MEMORY_PAGE):
+            raise WasmStateError('wasm memory page extent is out of bounds')
+        values = tuple(sorted(set(int(value) for value in values)))
+        if not values or values[0] < 0 or values[-1] > 255:
+            raise ValueError('memory find values must be bytes')
+        page = self._page_entry(index)
+        start = offset
+        end = offset + count
+        if isinstance(page, CanonicalPage):
+            raw = page.read(
+                lambda begin, size: self._base_page_slice(
+                    index, begin, size), start, count)
+            found = [raw.find(bytes((value,))) for value in values]
+            found = [(-1 if coordinate < 0 else start + coordinate)
+                     for coordinate in found]
+        elif page is not None:
+            found = [page.find(bytes((value,)), start, end)
+                     for value in values]
+        elif self._backing is not None:
+            direct_find = getattr(self._backing, 'find', None)
+            if direct_find is not None:
+                coordinate = direct_find(index, start, count, values)
+                return coordinate
+            backing = self._backing.page(index)
+            found = [backing.find(bytes((value,)), start, end)
+                     for value in values]
+        else:
+            absolute_start = index * MEMORY_PAGE + start
+            absolute_end = index * MEMORY_PAGE + end
+            base_end = min(absolute_end, len(self.base))
+            found = [self.base.find(
+                bytes((value,)), absolute_start, base_end)
+                for value in values]
+            found = [(-1 if coordinate < 0 else
+                      coordinate - index * MEMORY_PAGE)
+                     for coordinate in found]
+            if 0 in values and absolute_end > len(self.base):
+                implicit = max(absolute_start, len(self.base)) \
+                    - index * MEMORY_PAGE
+                found.append(implicit)
+        found = [coordinate for coordinate in found
+                 if start <= coordinate < end]
+        return min(found) if found else None
+
+    def _page_find_not(self, index, offset, count, value):
+        """Find the first unequal byte without slicing the page suffix."""
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        if (index < 0 or index >= page_count or offset < 0 or count < 0
+                or offset + count > MEMORY_PAGE):
+            raise WasmStateError('wasm memory page extent is out of bounds')
+        value = int(value)
+        if not 0 <= value <= 255:
+            raise ValueError('memory complement value must be a byte')
+        page = self._page_entry(index)
+        start, end = offset, offset + count
+        if isinstance(page, CanonicalPage):
+            raw = page.read(
+                lambda begin, size: self._base_page_slice(
+                    index, begin, size), start, count)
+            found = next((coordinate for coordinate, byte in enumerate(
+                raw, start) if byte != value), None)
+        elif page is not None:
+            found = next((coordinate for coordinate in range(start, end)
+                          if page[coordinate] != value), None)
+        elif self._backing is not None:
+            direct = getattr(self._backing, 'find_not', None)
+            if direct is not None:
+                return direct(index, start, count, value)
+            backing = self._backing.page(index)
+            found = next((coordinate for coordinate in range(start, end)
+                          if backing[coordinate] != value), None)
+        else:
+            absolute = index * MEMORY_PAGE
+            base_end = min(absolute + end, len(self.base))
+            found = next((coordinate for coordinate in range(start, end)
+                          if ((self.base[absolute + coordinate]
+                               if absolute + coordinate < base_end else 0)
+                              != value)), None)
+        return found
+
     def _page(self, index):
         """Return one physical page through direct region/span coordinates."""
         page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
         if index < 0 or index >= page_count:
             raise WasmStateError('wasm memory page is out of bounds')
-        span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
-        region_index, span_slot = divmod(span_index, MEMORY_REGION_SPANS)
-        region = self._regions[region_index]
-        span = None if region is None else region[span_slot]
-        page = None if span is None else span[slot]
+        page = self._page_entry(index)
+        if isinstance(page, CanonicalPage):
+            return page.materialize(self._base_page(index))
         return self._base_page(index) if page is None else page
+
+    def proof_token(self, index, offset=0, count=MEMORY_PAGE):
+        """Name one page version without loading or hashing its bytes.
+
+        Structural sharing makes the backing object and its direct coordinate
+        a complete proof for unchanged bytes.  ``offset`` and ``count`` are
+        accepted so transient overlays can implement the same interface.
+        """
+        index, offset, count = int(index), int(offset), int(count)
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        if (index < 0 or index >= page_count or offset < 0 or count < 0
+                or offset + count > MEMORY_PAGE):
+            raise WasmStateError('memory proof extent is out of bounds')
+        page = self._page_entry(index)
+        if page is not None:
+            return page, -1
+        if self._backing is not None:
+            return self._backing.proof_token(index, offset, count)
+        return self.base, index
 
     def read(self, address, size):
         if address < 0 or size < 0 or address + size > self.length:
@@ -159,10 +564,26 @@ class PagedMemory(object):
         while address < end:
             index, offset = divmod(address, MEMORY_PAGE)
             count = min(end - address, MEMORY_PAGE - offset)
-            page = self._page(index)
-            out.extend(page[offset:offset + count])
+            out.extend(self._page_slice(index, offset, count))
             address += count
         return bytes(out)
+
+    def evict_direct_caches(self):
+        """Release every rebuildable sparse-page slot array in this memory."""
+        evicted = 0
+        for region in self._regions:
+            if region is None:
+                continue
+            for span in region:
+                if span is None:
+                    continue
+                for page in span:
+                    if (isinstance(page, CanonicalPage)
+                            and page._slots is not False):
+                        page.evict_direct_cache()
+                        if not page.full:
+                            evicted += 1
+        return evicted
 
     def replace_pages(self, pages):
         """Commit complete page values in one copy-on-write directory pass."""
@@ -206,7 +627,91 @@ class PagedMemory(object):
         for region_index, region in changed_regions.items():
             regions[region_index] = tuple(region) if any(
                 span is not None for span in region) else None
-        return PagedMemory(self.base, self.length, _regions=tuple(regions))
+        return PagedMemory(
+            self.base, self.length, _regions=tuple(regions),
+            _backing=self._backing)
+
+    def replace_canonical_pages(self, pages):
+        """Publish minimal page differences without complete materialization."""
+        page_count = ((self.length + MEMORY_PAGE - 1) // MEMORY_PAGE)
+        regions = list(self._regions)
+        changed_regions = {}
+        changed_spans = {}
+        changed = False
+        for raw_index, replacement in pages:
+            index = int(raw_index)
+            if index < 0 or index >= page_count:
+                raise ValueError('changed memory page is outside memory')
+            if replacement is not None and not isinstance(
+                    replacement, CanonicalPage):
+                raise TypeError('canonical page publication needs a difference')
+            span_index, slot = divmod(index, MEMORY_SPAN_PAGES)
+            region_index, span_slot = divmod(
+                span_index, MEMORY_REGION_SPANS)
+            region = changed_regions.get(region_index)
+            if region is None:
+                old_region = regions[region_index]
+                region = ([None] * MEMORY_REGION_SPANS
+                          if old_region is None else list(old_region))
+            key = (region_index, span_slot)
+            span = changed_spans.get(key)
+            if span is None:
+                old_span = region[span_slot]
+                span = ([None] * MEMORY_SPAN_PAGES if old_span is None
+                        else list(old_span))
+            if span[slot] == replacement:
+                continue
+            changed = True
+            changed_regions[region_index] = region
+            changed_spans[key] = span
+            span[slot] = replacement
+        if not changed:
+            return self
+        for (region_index, span_slot), span in changed_spans.items():
+            changed_regions[region_index][span_slot] = tuple(span) if any(
+                page is not None for page in span) else None
+        for region_index, region in changed_regions.items():
+            regions[region_index] = tuple(region) if any(
+                span is not None for span in region) else None
+        return PagedMemory(
+            self.base, self.length, _regions=tuple(regions),
+            _backing=self._backing)
+
+    def difference(self, baseline):
+        """Return changed pages while skipping structurally shared branches."""
+        if not isinstance(baseline, PagedMemory) \
+                or self.length != baseline.length \
+                or self.base != baseline.base \
+                or self._backing is not baseline._backing:
+            raise ValueError('memory difference needs the same base extent')
+        changed = []
+        for region_index, (current_region, baseline_region) in enumerate(zip(
+                self._regions, baseline._regions)):
+            if current_region is baseline_region:
+                continue
+            for span_slot in range(MEMORY_REGION_SPANS):
+                current_span = (None if current_region is None
+                                else current_region[span_slot])
+                baseline_span = (None if baseline_region is None
+                                 else baseline_region[span_slot])
+                if current_span is baseline_span:
+                    continue
+                for slot in range(MEMORY_SPAN_PAGES):
+                    current_page = (None if current_span is None
+                                    else current_span[slot])
+                    baseline_page = (None if baseline_span is None
+                                     else baseline_span[slot])
+                    if current_page is baseline_page:
+                        continue
+                    index = ((region_index * MEMORY_REGION_SPANS + span_slot)
+                             * MEMORY_SPAN_PAGES + slot)
+                    if index * MEMORY_PAGE >= self.length:
+                        break
+                    current_value = self._page(index)
+                    baseline_value = baseline._page(index)
+                    if current_value != baseline_value:
+                        changed.append((index, current_value))
+        return tuple(changed)
 
     def write(self, address, payload):
         payload = bytes(payload)
@@ -239,8 +744,10 @@ class PagedMemory(object):
                         else list(old_span))
                 changed_spans[key] = span
             current = span[slot]
-            page = bytearray(self._base_page(index)
-                             if current is None else current)
+            page = bytearray(
+                self._base_page(index) if current is None
+                else (current.materialize(self._base_page(index))
+                      if isinstance(current, CanonicalPage) else current))
             page[offset:offset + count] = payload[at:at + count]
             page = bytes(page)
             if page == self._base_page(index):
@@ -254,7 +761,9 @@ class PagedMemory(object):
         for region_index, region in changed_regions.items():
             regions[region_index] = tuple(region) if any(
                 span is not None for span in region) else None
-        return PagedMemory(self.base, self.length, _regions=tuple(regions))
+        return PagedMemory(
+            self.base, self.length, _regions=tuple(regions),
+            _backing=self._backing)
 
     def grow(self, pages):
         if pages < 0:
@@ -269,6 +778,8 @@ class PagedMemory(object):
                         // MEMORY_REGION_SPANS)
         regions = self._regions + (None,) * (
             region_count - len(self._regions))
+        if self._backing is not None:
+            raise ValueError('mapped memory backing cannot grow')
         return PagedMemory(self.base, length, _regions=regions)
 
     def discard(self, address, length):
@@ -316,7 +827,9 @@ class PagedMemory(object):
         for region_index, region in changed_regions.items():
             regions[region_index] = tuple(region) if any(
                 span is not None for span in region) else None
-        return PagedMemory(self.base, self.length, _regions=tuple(regions))
+        return PagedMemory(
+            self.base, self.length, _regions=tuple(regions),
+            _backing=self._backing)
 
 
 class _Reader(object):

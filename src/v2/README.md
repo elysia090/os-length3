@@ -165,7 +165,7 @@ uint64_t ranks8(uint8_t m)
 
 ```
 Quotient Minimizer        2 core operations       PDEP ; IMUL
-Residual freedom          502 solutions
+Residual freedom          511 solutions
 Verification              exact exhaustive, 256 / 256
 Artifact                  17,107 bytes            pack(code(z))
 ```
@@ -469,6 +469,27 @@ Clock and console traffic use the existing machine events. The default staged
 drive runs kernel initialization, read-only root mounting, and `/init` probing
 without adding a browser VFS. Terminating the Worker releases the decoded
 module, linear memory, resident backing pages, and physical executor together.
+
+The private storage projection now has a ciphertext-only admission boundary in
+`web/ciphertext-storage.js`. Canonical pages are quotiented before compression;
+an exact capacity-ordered partition trades padding against whole parity groups;
+data rows are AES-GCM sealed; both data and parity rows carry a separate
+HMAC-SHA-256/128 authenticator bound to an opaque keyed locator. Memory, local,
+CDN, and object tiers can therefore promote only ciphertext. A page becomes
+resident only after row authentication, optional VM erasure reconstruction,
+AES-GCM open, frame/decompression, and canonical digest/extent verification.
+Every object projection uses a public 256-bit CSPRNG salt and role-separated
+HKDF contexts. Protocol, algorithm, salt, row coordinate, capacity class, and
+frame identity are canonical AAD. A row coordinate can be sealed once; retry
+returns its retained immutable ciphertext instead of reusing an AES-GCM nonce.
+Erasure inverse matrices are direct encrypted-directory state, while the hot
+GF(256) byte combine executes its minimized artifact through vm.wasm's exact
+16-bit cache in one call per useful shard rather than a JavaScript byte loop.
+Filesystem metadata and the fixed-size root descriptor are separately sealed,
+and the head is one opaque linearizable compare-and-swap. The current public
+`PGB1` compiler/VM bundles remain the migration source format; they are not
+misrepresented as confidential, and are removed only after their builders and
+the vm.wasm erasure callback emit the ciphertext directory contract.
 
 ---
 

@@ -24,7 +24,7 @@ KERNEL_PACKAGES = ('qm', 'kernel')
 SKIP_DIRS = ('__pycache__', 'wasm', 'guest')
 MANIFEST = os.path.join(ROOT, 'web', 'qm-manifest.json')
 KERNEL_MANIFEST = os.path.join(ROOT, 'web', 'kernel-manifest.json')
-KERNEL_SKIP_FILES = ('kernel/run.py', 'kernel/x86.py')
+KERNEL_SKIP_FILES = ('kernel/run.py',)
 BASE = '..'
 
 

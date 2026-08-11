@@ -48,8 +48,8 @@ GENERIC_ARITY = {
     'SMAX': 2,
 }
 
-ISA_BINARY = {'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR'}
-ISA_SHIFT = {'SHL', 'SHR', 'SCANXOR', 'SAR'}
+ISA_BINARY = {'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR', 'CLMULR'}
+ISA_SHIFT = {'SHL', 'SHR', 'SCANXOR', 'SAR', 'ROL32', 'ROR32'}
 LANE_NAMES = tuple(isa.OPCODES) + tuple(GENERIC_ARITY)
 OPS = tuple('lane%d.%s' % (bits, name)
             for bits in (32, 64) for name in LANE_NAMES)
@@ -84,7 +84,10 @@ def select(wasm_operation, arguments):
     bits = 32 if kind == 'i32' else 64
     lane = 'lane%d.' % bits
 
-    unary = {'clz': 'CLZ', 'ctz': 'CTZ', 'popcnt': 'POPCNT'}
+    unary = {
+        'clz': 'CLZ', 'ctz': 'CTZ', 'popcnt': 'POPCNT',
+        'bswap': 'BSWAP',
+    }
     if name in unary:
         return lane + unary[name], arguments
     if name == 'eqz':
@@ -240,6 +243,17 @@ def bind(operation):
         return lambda values: sar(values[0], values[1], bits)
     if name == 'SCANXOR':
         return lambda values: (values[0] ^ (values[0] << values[1])) & mask
+    if name == 'CLMULR':
+        from .bits import clmul
+        return lambda values: clmul(values[0], values[1], bits) & mask
+    if name == 'ROL32':
+        return lambda values: (((values[0] & 0xFFFFFFFF) << values[1]) |
+                               ((values[0] & 0xFFFFFFFF) >>
+                                (32 - values[1]))) & 0xFFFFFFFF
+    if name == 'ROR32':
+        return lambda values: (((values[0] & 0xFFFFFFFF) >> values[1]) |
+                               ((values[0] & 0xFFFFFFFF) <<
+                                (32 - values[1]))) & 0xFFFFFFFF
     if name == 'CLZ':
         return lambda values: clz(values[0], bits)
     if name == 'CTZ':

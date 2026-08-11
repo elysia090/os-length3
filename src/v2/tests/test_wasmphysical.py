@@ -50,6 +50,9 @@ class TestPhysicalWasmLayout(unittest.TestCase):
         self.assertEqual(report['instructions'], 6)
         self.assertEqual(report['derived_next_coordinates'], 5)
         self.assertEqual(report['next_coordinate_storage'], 0)
+        self.assertEqual(report['grammar_pure_instructions'], 5)
+        self.assertEqual(report['grammar_barrier_instructions'], 1)
+        self.assertEqual(report['barrier_groups'], {'end': 1})
 
     def test_independent_ssa_writes_share_one_parallel_wave(self):
         sequence = isa.Seq()

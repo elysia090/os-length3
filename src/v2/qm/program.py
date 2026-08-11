@@ -13,7 +13,7 @@ from .bits import (M64, bswap64, clmul, clz, ctz, lane_masks, lane_values,
 
 # Semantic classes, plus TABLE for the always-available finite-domain
 # representative and SPLIT for the piecewise one.
-CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'SPLIT', 'TABLE',
+CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'FORK', 'SPLIT', 'TABLE',
            'IDENTITY')
 
 
@@ -186,6 +186,23 @@ def point(steps, note=''):
     return Op('POINT', {'steps': list(steps), 'note': note}, label='POINT')
 
 
+def fork(branches, merge, note=''):
+    """Apply independent semantic programs to one value and merge their results.
+
+    This is the semantic counterpart of an SSA fan-out.  It preserves sharing
+    until physical lowering, where common prefixes from independently derived
+    branches are removed once.  ``merge`` is a total word operation, not a
+    control-flow branch.
+    """
+    if merge not in ('AND', 'OR', 'XOR', 'ADD'):
+        raise ValueError('unknown fork merge: %r' % (merge,))
+    branches = list(branches)
+    if len(branches) < 2:
+        raise ValueError('a fork needs at least two branches')
+    return Op('FORK', {'branches': branches, 'merge': merge, 'note': note},
+              label='FORK(%s, %d)' % (merge, len(branches)))
+
+
 def split(key, breaks, branches, note=''):
     """Piecewise program: a whole-word key decides which branch computes `y`.
 
@@ -326,6 +343,38 @@ def _lane_interval(value, bounds, lane_bits):
     return out & high
 
 
+def _gf256_multiply(packed):
+    a = packed & 0xFF
+    b = (packed >> 8) & 0xFF
+    product = 0
+    for _unused in range(8):
+        if b & 1:
+            product ^= a
+        a = ((a << 1) ^ (0x1D if a & 0x80 else 0)) & 0xFF
+        b >>= 1
+    return product
+
+
+def _rotate_left32(value, shift):
+    value &= 0xFFFFFFFF
+    return ((value << shift) | (value >> (32 - shift))) & 0xFFFFFFFF
+
+
+def _rotate_right32(value, shift):
+    value &= 0xFFFFFFFF
+    return ((value >> shift) | (value << (32 - shift))) & 0xFFFFFFFF
+
+
+def _arx32(value, key, rotations):
+    right, left = rotations
+    x = (value >> 32) & 0xFFFFFFFF
+    y = value & 0xFFFFFFFF
+    x = (_rotate_right32(x, right) + y) & 0xFFFFFFFF
+    x ^= key
+    y = _rotate_left32(y, left) ^ x
+    return (x << 32) | y
+
+
 def _eval_point(steps, value):
     v = value & M64
     for mnemonic, const, shift in steps:
@@ -392,6 +441,10 @@ def _eval_point(steps, value):
             v = max(values) if mnemonic == 'LANE_MAX' else min(values)
         elif mnemonic == 'LANE_INTERVAL':
             v = _lane_interval(v, const, shift)
+        elif mnemonic == 'GF256_MUL':
+            v = _gf256_multiply(v)
+        elif mnemonic == 'ARX32':
+            v = _arx32(v, const, shift)
         else:
             raise ValueError('unknown POINT step: %r' % mnemonic)
     return v
@@ -441,6 +494,10 @@ def _op_expression(op, index, data):
         name = 'steps%d' % index
         data[name] = op.detail['steps']
         return 'point(%s, %s)' % (name, source)
+    if kind == 'FORK':
+        name = 'fork%d' % index
+        data[name] = _fork_evaluator(op)
+        return '%s(%s)' % (name, source)
     if kind == 'SPLIT':
         name = 'split%d' % index
         data[name] = _split_evaluator(op)
@@ -450,6 +507,26 @@ def _op_expression(op, index, data):
         data[name] = op.detail['table']
         return '%s[%s & %d]' % (name, source, mask_of(op.detail['input_bits']))
     raise ValueError('cannot evaluate %r' % kind)
+
+
+def _fork_evaluator(op):
+    branches = [compile_program(branch) for branch in op.detail['branches']]
+    merge = op.detail['merge']
+
+    def evaluate(x):
+        values = [branch(x) & M64 for branch in branches]
+        result = values[0]
+        for value in values[1:]:
+            if merge == 'AND':
+                result &= value
+            elif merge == 'OR':
+                result |= value
+            elif merge == 'XOR':
+                result ^= value
+            else:
+                result = (result + value) & M64
+        return result & M64
+    return evaluate
 
 
 def _split_evaluator(op):

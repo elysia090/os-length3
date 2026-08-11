@@ -16,6 +16,7 @@ byte-for-byte unchanged.
 """
 
 from dataclasses import dataclass
+from collections import Counter
 
 from . import isa
 from .bits import mask_of
@@ -117,6 +118,35 @@ def module_sections(data):
         out.append(Section(kind, name, start, payload, end))
         at = end
     return tuple(out)
+
+
+def function_exports(data):
+    """Return exported function names and direct function indices.
+
+    This is delivery metadata, so it scans only the export section and does
+    not decode or materialize any function body.
+    """
+    exported = []
+    for section in module_sections(data):
+        if section.kind != 7:
+            continue
+        count, cursor = _uleb(data, section.payload)
+        for _ in range(count):
+            length, cursor = _uleb(data, cursor)
+            end = cursor + length
+            if end > section.end:
+                raise ValueError('wasm export name is truncated')
+            name = bytes(data[cursor:end]).decode('utf-8')
+            cursor = end
+            if cursor >= section.end:
+                raise ValueError('wasm export descriptor is truncated')
+            kind = data[cursor]
+            index, cursor = _uleb(data, cursor + 1)
+            if kind == 0:
+                exported.append((name, index))
+        if cursor != section.end:
+            raise ValueError('wasm export section has trailing bytes')
+    return tuple(exported)
 
 
 def section_layout(data):
@@ -457,6 +487,50 @@ def state_integer_expression(index, body, max_body=4096):
             or plan.stack_inputs or len(plan.stack) != len(ftype.results)):
         return None
     return ftype, locals_, code, plan
+
+
+def _grammar_miss(index, body, max_body):
+    """Classify a body rejected by both complete-function entry routes."""
+    if body.size > max_body:
+        return 'body-over-limit', ()
+    if body.type_index >= len(index.types):
+        return 'invalid-signature', ()
+    ftype = index.types[body.type_index]
+    if (len(ftype.results) > 1
+            or any(kind not in ('i32', 'i64')
+                   for kind in ftype.params + ftype.results)):
+        return 'non-integer-signature', ()
+    try:
+        locals_, code, _ends, _elses = index.decode(body)
+    except (CFrontError, ValueError, IndexError):
+        return 'decode-failure', ()
+    if any(kind not in ('i32', 'i64') for kind in locals_):
+        return 'non-integer-locals', tuple(inst.op for inst in code)
+
+    from .wasmwave import is_barrier
+    barriers = tuple(inst.op for inst in code[:-1] if is_barrier(inst.op))
+    if not barriers:
+        return 'slice-shape', tuple(inst.op for inst in code)
+    if any('.atomic.' in op or op.startswith('memory.atomic.')
+           for op in barriers):
+        reason = 'atomic-barrier'
+    elif any(op in ('call', 'call_indirect', 'return_call',
+                    'return_call_indirect') for op in barriers):
+        reason = 'call-barrier'
+    elif any(op.startswith(('f32.', 'f64.', 'v128.', 'i8x16.', 'i16x8.',
+                            'i32x4.', 'i64x2.', 'f32x4.', 'f64x2.'))
+             for op in barriers):
+        reason = 'float-or-simd-barrier'
+    elif any(op in ('block', 'loop', 'if', 'else', 'br', 'br_if',
+                    'br_table', 'return', 'unreachable', 'throw', 'rethrow',
+                    'try', 'catch') for op in barriers):
+        reason = 'control-barrier'
+    elif any(op.startswith(('global.', 'table.', 'memory.', 'data.',
+                            'elem.', 'ref.')) for op in barriers):
+        reason = 'state-barrier'
+    else:
+        reason = 'unsupported-barrier'
+    return reason, tuple(inst.op for inst in code)
 
 
 class _NotLowerable(Exception):
@@ -967,6 +1041,9 @@ def optimize_module(data, max_body=4096):
     physical_span = 0
     max_wave_width = 0
     max_slice_span = 0
+    grammar_misses = Counter()
+    grammar_miss_bytes = Counter()
+    grammar_miss_opcodes = Counter()
     for body in index.bodies:
         pure = pure_integer_expression(index, body, max_body=max_body)
         state_route = pure is None
@@ -993,6 +1070,11 @@ def optimize_module(data, max_body=4096):
             state = state_integer_expression(
                 index, body, max_body=max_body)
             if state is None:
+                reason, operations = _grammar_miss(
+                    index, body, max_body)
+                grammar_misses[reason] += 1
+                grammar_miss_bytes[reason] += body.size
+                grammar_miss_opcodes.update(operations)
                 continue
             decoded_state += 1
             ftype, locals_, code, plan = state
@@ -1072,6 +1154,10 @@ def optimize_module(data, max_body=4096):
         'parallel_slices': parallel_slices,
         'max_wave_width': max_wave_width,
         'max_slice_span': max_slice_span,
+        'grammar_misses': dict(sorted(grammar_misses.items())),
+        'grammar_miss_body_bytes': dict(sorted(grammar_miss_bytes.items())),
+        'grammar_miss_opcodes': dict(sorted(
+            grammar_miss_opcodes.items(), key=lambda item: (-item[1], item[0]))),
         'replaced': len(replacements),
         'saved_body_bytes': sum(item.saved_bytes for item in replacements),
         'output_bytes': len(rewritten),

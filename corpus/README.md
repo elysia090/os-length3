@@ -7,6 +7,7 @@ language they were first written in.
 | category | purpose |
 | --- | --- |
 | `physical-array/` | coordinate substitution, region cuts, grouped spans, endpoint moments |
+| `storage/` | run compression, erasure distribution, and cryptographic lane kernels |
 | `vm/` | machine layouts and transition kernels built from those physical forms |
 | `bit-linear/` | fixed bit permutations and GF(2)-linear maps |
 | `whole-word/` | affine integer arithmetic, comparisons, and reductions |

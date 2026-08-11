@@ -9,12 +9,36 @@ from unittest.mock import patch
 from qm.wasmstate import (decode_module, instruction_step,
                           run_until_boundary, start_state)
 from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
-                         StatePageError)
-from qm.wasmwave import WaveExecutor, execute_slice, is_barrier
+                         compile_mapped_executor, StatePageError)
+from qm.stepnormalize import compose_plans, normalize_plan
+from qm.wasmphysical import DependencyWaves
+from qm.wasmwave import (Operand, PureSlice, WaveExecutor, WaveNode,
+                         execute_slice, is_barrier)
 from tests.test_wasmbinary import encode_uleb, module
 
 
 class TestWaveExecutor(unittest.TestCase):
+    def test_deterministic_pages_compose_by_substituting_frame_coordinates(self):
+        empty_waves = DependencyWaves((0,), (), (0,))
+        first = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'i64.add', (
+                Operand('local', 0), Operand('const', 1))),),
+            empty_waves, (), (Operand('node', 1),)))
+        second = normalize_plan(PureSlice(
+            0, 1, 2, 1, 0,
+            (WaveNode(1, 'i64.mul', (
+                Operand('local', 0), Operand('const', 2))),),
+            empty_waves, (), (Operand('node', 1),)))
+
+        composed = compose_plans(first, second)
+        execute = compile_mapped_executor(unpack(pack(composed)))
+        outputs, stack = execute((5,), (), object())
+
+        self.assertEqual(outputs, (12,))
+        self.assertEqual(stack, ())
+        self.assertEqual(composed.instructions, 2)
+
     def test_independent_integer_lanes_execute_in_the_same_wave(self):
         # (x & 255) + (x ^ 85): AND and XOR are independent, ADD joins them.
         body = (b'\x00\x20\x00\x41\xff\x01\x71'
@@ -40,6 +64,10 @@ class TestWaveExecutor(unittest.TestCase):
             'barriers': 0,
             'max_parallel_width': 2,
         })
+        finished, _end_cost = executor.step(state)
+        self.assertTrue(finished.halted)
+        self.assertEqual(
+            executor.normalization_layout()['barrier_groups'], {'end': 1})
 
     def test_slice_normalization_substitutes_locals_and_folds_identities(self):
         # local1 = x + 0; return local1 ^ local1.
@@ -93,6 +121,26 @@ class TestWaveExecutor(unittest.TestCase):
                 reference = instruction_step(decoded, reference)
             optimized = executor.run(start_state(decoded, 'f', (value,)))
             self.assertEqual(optimized.result, reference.result)
+
+    def test_float_memory_is_an_integer_bit_view_not_a_second_column(self):
+        # load f32 bits, select either those bits or +0, then store the bits.
+        body = (b'\x00\x20\x00\x20\x00\x2a\x02\x60'
+                b'\x43\x00\x00\x00\x00\x20\x00\x2d\x00\x64'
+                b'\x1b\x38\x02\x58\x0b')
+        decoded = decode_module(module(
+            body, kind=0x7f, memory=True, result_count=0))
+        frame = start_state(decoded, 'f', (0,)).frames[-1]
+
+        mapped = WaveExecutor(decoded).mapped(frame)
+
+        self.assertEqual(
+            [mapped.value('opcodes', index) for index in range(mapped.work)],
+            [140, 142, 102, 152])
+        self.assertEqual(
+            [decode_plan(mapped).nodes[index].op
+             for index in range(mapped.work)],
+            ['memory.i32.load', 'memory.i32.load8_u',
+             'lane64.SELECT', 'memory.i32.store'])
 
     def test_each_future_visible_ssa_root_is_normalized_before_the_barrier(self):
         # The value and the following if-condition are two residual outputs of
@@ -489,6 +537,60 @@ class TestWaveExecutor(unittest.TestCase):
                          b'\x06\x00\x00\x00')
         self.assertEqual(
             executor.normalization_layout()['qm_forwarded_memory_loads'], 2)
+
+    def test_disjoint_constant_memory_ranges_share_one_wave(self):
+        # Store [100,104), then load [200,204). Their source order carries no
+        # memory dependence, so both physical operations occupy the same wave.
+        body = (b'\x00\x41\xe4\x00\x41\x07\x36\x02\x00'
+                b'\x41\xc8\x01\x28\x02\x00\x0b')
+        decoded = decode_module(module(body, kind=0x7f, memory=True))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (0,))
+        plan = executor.plan(initial.frames[-1])
+
+        self.assertEqual(plan.waves.work, 2)
+        self.assertEqual(plan.waves.span, 1)
+        final = executor.run(initial)
+        self.assertEqual(final.result, (0,))
+        self.assertEqual(final.memory.read(100, 4), b'\x07\x00\x00\x00')
+
+    def test_overlapping_memory_ranges_remain_ordered(self):
+        body = (b'\x00\x41\xe4\x00\x41\x07\x36\x02\x00'
+                b'\x41\xe4\x00\x28\x02\x00\x0b')
+        decoded = decode_module(module(body, kind=0x7f, memory=True))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (0,))
+        plan = executor.plan(initial.frames[-1])
+
+        # The load is forwarded completely; retaining neither a load node nor
+        # an artificial dependency is stronger than merely preserving span.
+        self.assertEqual(plan.waves.work, 1)
+        self.assertEqual(plan.waves.span, 1)
+        self.assertEqual(executor.run(initial).result, (7,))
+
+    def test_zero_observer_is_fused_into_a_memory_lane(self):
+        body = b'\x00\x41\x00\x28\x02\x00\x45\x0b'
+        decoded = decode_module(module(body, kind=0x7f, memory=True))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (0,))
+        plan = executor.plan(initial.frames[-1])
+
+        self.assertEqual(plan.waves.work, 1)
+        self.assertEqual(plan.waves.span, 1)
+        self.assertEqual(plan.nodes[0].op, 'memory.i32.load.eqz')
+        self.assertEqual(executor.run(initial).result, (1,))
+
+    def test_memory_bit_observer_is_one_lane_after_the_load(self):
+        body = b'\x00\x41\x00\x2d\x00\x00\x41\x01\x71\x45\x0b'
+        decoded = decode_module(module(body, kind=0x7f, memory=True))
+        executor = WaveExecutor(decoded)
+        initial = start_state(decoded, 'f', (0,))
+        plan = executor.plan(initial.frames[-1])
+
+        self.assertEqual(plan.waves.work, 2)
+        self.assertEqual(plan.waves.span, 2)
+        self.assertEqual(plan.nodes[-1].op, 'lane32.BITZ')
+        self.assertEqual(executor.run(initial).result, (1,))
 
     def test_shipped_vm_wasm_runs_through_pure_slices_and_barriers(self):
         with open('web/vm.wasm', 'rb') as handle:
