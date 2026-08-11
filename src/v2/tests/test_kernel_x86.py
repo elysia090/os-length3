@@ -37,6 +37,11 @@ from kernel.x86 import (BOOT_PARAMS_ADDRESS, COMMAND_LINE_ADDRESS,
                         _ENTRY_NOP_PREFIX,
                         _RELATIVE_RECORD_PROJECTION_CORE,
                         _RELATIVE_RECORD_PROJECTION_FORWARD_CORE,
+                        _RANDOM_U32_CACHE_ENTRY,
+                        _RANDOM_U32_CACHE_CORE,
+                        _RANDOM_U32_CACHE_READY,
+                        _RANDOM_U32_BELOW_CORE,
+                        _RANDOM_PERMUTATION_LOOP,
                         _RANGE_TABLE_QUERY_PREFIX,
                         _RANGE_TABLE_QUERY_SUFFIX,
                         _RANGE_TABLE_QUERY_TYPED,
@@ -952,6 +957,25 @@ class TestX86StateStep(unittest.TestCase):
         layout = dbt.layout()
         self.assertEqual(layout['collapsed_lane_permutation_calls'], 1)
         self.assertEqual(layout['collapsed_lane_permutation_lanes'], 25)
+
+    def test_chacha_lane_waves_match_the_standard_twenty_round_block(self):
+        initial = (
+            0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+            0x03020100, 0x07060504, 0x0b0a0908, 0x0f0e0d0c,
+            0x13121110, 0x17161514, 0x1b1a1918, 0x1f1e1d1c,
+            0x00000001, 0x09000000, 0x4a000000, 0x00000000,
+        )
+        block = (
+            0xe4e7f110, 0x15593bd1, 0x1fdd0f50, 0xc47120a3,
+            0xc7f4d1c7, 0x0368c033, 0x9aaa2204, 0x4e6cd4c3,
+            0x466482d2, 0x09aa9f07, 0x05d7c214, 0xa2028bd9,
+            0xd19c12b5, 0xb94e16de, 0xe883d0cb, 0x4e3c50a2,
+        )
+        expected = tuple(
+            (output - source) & MASK32
+            for source, output in zip(initial, block))
+
+        self.assertEqual(X86DBT._chacha_permute(initial, 20), expected)
 
     def test_interval_compare_call_uses_one_direct_state_cut(self):
         target, trace, return_thunk = 0x300, 0x500, 0x600
@@ -3633,6 +3657,33 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.cpu.register('rax'), 0x1122334455667788)
         self.assertTrue(state.cpu.rflags & RFLAGS_CARRY)
 
+    def test_entropy_event_forks_one_retained_physical_cut(self):
+        # mov [rbx],1; rdrand rax; mov [rbx+1],2; hlt
+        code = bytes.fromhex(
+            'c6 03 01 48 0f c7 f0 c6 43 01 02 f4')
+        runtime = X86Machine()
+        state = runtime.start(initial_state(
+            memory_with((0x100, code)), 0x100, {'rbx': 0x400}))
+
+        observed, request = runtime.machine_step(state)
+
+        self.assertEqual(request.operation, 'entropy')
+        self.assertIsInstance(observed.cpu.memory, MemoryCut)
+        self.assertTrue(observed.cpu.memory.sealed)
+        self.assertEqual(observed.cpu.memory.read(0x400, 2), b'\x01\0')
+        following, boundary = runtime.machine_step(
+            observed, MachineEvent('entropy', request.coordinate, 7))
+        self.assertIsNone(boundary)
+        self.assertTrue(following.stopped)
+        self.assertIsNot(following.cpu.memory, observed.cpu.memory)
+        self.assertEqual(observed.cpu.memory.read(0x400, 2), b'\x01\0')
+        self.assertEqual(following.cpu.memory.read(0x400, 2), b'\x01\x02')
+        layout = runtime.dbt.layout()
+        self.assertEqual(layout['persistent_cuts'], 2)
+        self.assertEqual(layout['published_pages'], 2)
+        self.assertEqual(layout['retained_cut_pages'], 2)
+        self.assertEqual(layout['materialized_pages'], 0)
+
     def test_model_specific_registers_remain_in_machine_state(self):
         # wrmsr IA32_GS_BASE; clear eax/edx; rdmsr; hlt
         code = bytes.fromhex(
@@ -3787,6 +3838,113 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.register('rsp'), 0x9000)
         self.assertEqual(
             dbt.layout()['collapsed_register_projection_calls'], 1)
+
+    def test_machine_flags_leaf_calls_do_not_materialize_the_stack(self):
+        save, disable, return_thunk = 0x200, 0x300, 0x400
+        caller = (
+            b'\xe8' + struct.pack('<i', save - 0x105)
+            + b'\xe8' + struct.pack('<i', disable - 0x10a)
+            + b'\xf4')
+        save_leaf = (bytes.fromhex('f3 0f 1e fa 9c 58 e9')
+                     + struct.pack('<i', return_thunk - (save + 11)))
+        disable_leaf = (bytes.fromhex('f3 0f 1e fa fa e9')
+                        + struct.pack('<i', return_thunk - (disable + 10)))
+        flags = 2 | (1 << 9) | (1 << 6)
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, caller), (save, save_leaf),
+                        (disable, disable_leaf), (return_thunk, b'\xc3')),
+            0x100, {'rsp': 0}, rflags=flags))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), flags)
+        self.assertEqual(state.register('rsp'), 0)
+        self.assertFalse(state.rflags & (1 << 9))
+        self.assertEqual(dbt.layout()['collapsed_machine_leaf_calls'], 2)
+
+    def test_random_u32_cache_hit_projects_only_the_selected_word(self):
+        target, below, permutation, return_thunk = (
+            0x2000, 0x3000, 0x4000, 0x500)
+        cpu_slot, generation_slot = 0x600, 0x700
+        ready_slot, guard_slot = 0x720, 0x730
+        cache_offset, index_offset = 0x1000, 0x1068
+        entry = bytearray(_RANDOM_U32_CACHE_ENTRY)
+        core = bytearray(_RANDOM_U32_CACHE_CORE)
+        ready = bytearray(_RANDOM_U32_CACHE_READY)
+        core_address = target + len(entry)
+        struct.pack_into('<i', entry, 26, guard_slot - (target + 30))
+        struct.pack_into('<i', core, 19,
+                         cpu_slot - (core_address + 23))
+        struct.pack_into('<i', core, 26, cache_offset)
+        struct.pack_into('<i', core, 33,
+                         generation_slot - (core_address + 37))
+        struct.pack_into('<i', core, 39, index_offset)
+        struct.pack_into('<i', core, 103,
+                         cpu_slot - (core_address + 107))
+        struct.pack_into('<i', core, 125,
+                         guard_slot - (core_address + 129))
+        struct.pack_into('<i', core, 149,
+                         return_thunk - (core_address + 153))
+        struct.pack_into('<i', ready, 2,
+                         ready_slot - (target + 0xcc))
+
+        cache = bytearray(0x70)
+        value = 0x89abcdef
+        struct.pack_into('<I', cache, 8, value)
+        struct.pack_into('<I', cache, 12, MASK32)
+        struct.pack_into('<I', cache, 20, 1)
+        struct.pack_into('<Q', cache, 0x60, 9)
+        struct.pack_into('<I', cache, 0x68, 2)
+        bounded = bytearray(_RANDOM_U32_BELOW_CORE)
+        struct.pack_into('<i', bounded, 19, target - (below + 23))
+        struct.pack_into('<i', bounded, 54,
+                         return_thunk - (below + 58))
+        struct.pack_into('<i', bounded, 73, target - (below + 77))
+        array = 0x1200
+        caller = bytearray(
+            b'\xe8' + struct.pack('<i', target - 0x105)
+            + b'\xbf\x0a\x00\x00\x00'
+            + b'\xe8' + struct.pack('<i', below - 0x10f)
+            + b'\xbb\x04\x00\x00\x00'
+            + b'\x49\xc7\xc7\x02\x00\x00\x00'
+            + b'\x49\xc7\xc4\x02\x00\x00\x00'
+            + b'\x49\xc7\xc6\x00\x12\x00\x00'
+            + b'\xe9\x00\x00\x00\x00')
+        struct.pack_into('<i', caller, len(caller) - 4,
+                         permutation - (0x100 + len(caller)))
+        permutation_code = bytearray(_RANDOM_PERMUTATION_LOOP)
+        struct.pack_into('<i', permutation_code, 3,
+                         below - (permutation + 7))
+        memory = memory_with(
+            (0x100, caller), (return_thunk, b'\xc3'),
+            (cpu_slot, struct.pack('<Q', 0)),
+            (generation_slot, struct.pack('<Q', 9)),
+            (ready_slot, struct.pack('<I', 2)),
+            (guard_slot, struct.pack('<Q', 0xfeedface)),
+            (cache_offset, cache),
+            (array, struct.pack('<4I', 0, 1, 2, 3)),
+            (target, entry), (core_address, core),
+            (target + 0xc5, ready), (below, bounded),
+            (permutation, permutation_code + b'\xf4'))
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory, 0x100, {'rsp': 0}, rflags=2 | (1 << 9)))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 0)
+        self.assertEqual(state.register('rbx'), 1)
+        self.assertEqual(state.register('r15'), MASK64)
+        self.assertEqual(load_virtual(state, cache_offset + 8, 4), 0)
+        self.assertEqual(load_virtual(state, cache_offset + 12, 4), 0)
+        self.assertEqual(load_virtual(state, index_offset, 4), 7)
+        self.assertEqual(read_virtual(state, array, 16),
+                         struct.pack('<4I', 1, 2, 3, 0))
+        self.assertEqual(dbt.layout()['collapsed_random_u32_cache_hits'], 5)
+        self.assertEqual(dbt.layout()['collapsed_random_u32_below_calls'], 4)
+        self.assertEqual(
+            dbt.layout()['collapsed_random_permutation_iterations'], 2)
 
     def test_page_record_predicate_reads_only_its_fixed_lanes(self):
         target, record = 0x200, 0x400
@@ -5262,10 +5420,12 @@ class TestX86StateStep(unittest.TestCase):
 
         self.assertEqual((event.operation, event.data),
                          ('console_write', b'Hi\n'))
-        self.assertNotIsInstance(state.cpu.memory, MemoryCut)
+        self.assertIsInstance(state.cpu.memory, MemoryCut)
+        self.assertTrue(state.cpu.memory.sealed)
         self.assertEqual(state.cpu.memory.read(0x400, 2), b'\x01\x02')
         self.assertEqual(runtime.dbt.layout()['persistent_cuts'], 1)
         self.assertEqual(runtime.dbt.layout()['published_pages'], 1)
+        self.assertEqual(runtime.dbt.layout()['materialized_pages'], 0)
 
     def test_internal_timeslices_retain_the_same_physical_memory_cut(self):
         code = bytes.fromhex(
@@ -5287,10 +5447,12 @@ class TestX86StateStep(unittest.TestCase):
             if state.stopped:
                 break
         self.assertTrue(state.stopped)
-        self.assertNotIsInstance(state.cpu.memory, MemoryCut)
+        self.assertIsInstance(state.cpu.memory, MemoryCut)
+        self.assertTrue(state.cpu.memory.sealed)
         self.assertEqual(state.cpu.memory.read(0x400, 4), b'\x01\x02\x03\x04')
         self.assertEqual(runtime.dbt.layout()['persistent_cuts'], 1)
         self.assertEqual(runtime.dbt.layout()['published_pages'], 1)
+        self.assertEqual(runtime.dbt.layout()['materialized_pages'], 0)
 
     def test_pit_channel_two_advances_inside_one_machine_step(self):
         code = bytes.fromhex(
