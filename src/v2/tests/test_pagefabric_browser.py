@@ -19,7 +19,7 @@ from kernel.pagefabric import (bundle_prefix_size, dump_bundle, project,
 from qm.laneops import OPS as LANE_OPS, evaluate as evaluate_lane, shape
 from qm.pipeline import solve
 from qm.pagearchive import pack_wasm_steps
-from qm.steppage import pack as pack_step, relative_layout
+from qm.steppage import memory_shape, pack as pack_step, relative_layout
 from qm.wasmbinary import index_module
 from qm.wasmregions import pack as pack_regions
 from qm.wasmphysical import DependencyWaves
@@ -43,6 +43,8 @@ class TestBrowserPageFabric(unittest.TestCase):
         right64 = (3 + delta) & ((1 << 64) - 1)
         flags = evaluate_lane('lane64.X86_FLAGS', (
             0x246, delta, 3, right64, 64 | (1 << 8)))
+        compare_flags = evaluate_lane('lane64.X86_FLAGS', (
+            0, 64, 80, delta, 64 | (3 << 8)))
         nodes = (
             WaveNode(1, 'lane64.SUBR', (
                 Operand('local', 0), Operand('local', 1))),
@@ -62,16 +64,31 @@ class TestBrowserPageFabric(unittest.TestCase):
                 Operand('node', 2), Operand('const', 5))),
             WaveNode(7, 'memory.i64.relative_result', (
                 Operand('node', 2), Operand('const', 0xfe))),
+            WaveNode(8, 'memory.i64.relative_address', (
+                Operand('local', 0), Operand('const', 8),
+                Operand('const', (1 << 64) - 4), Operand('const', 8),
+                Operand('const', memory_shape(8, virtual64=True)),
+                Operand('node', 7))),
+            WaveNode(9, 'memory.i64.pre_store', (
+                Operand('local', 5), Operand('local', 4),
+                Operand('const', 8),
+                Operand('const', memory_shape(8, virtual64=True)),
+                Operand('node', 8))),
+            WaveNode(10, 'lane64.X86_COMPARE', (
+                Operand('const', 0), Operand('local', 0),
+                Operand('local', 1),
+                Operand('const', 64 | (3 << 8)))),
         )
         plan = PureSlice(
             0, 0, 1, 1, 0, nodes,
             DependencyWaves(
-                (0, 1, 2, 7), (1, 2, 3, 4, 5, 6, 7),
-                (0, 1, 2, 3, 3, 3, 3, 3)),
+                (0, 2, 3, 8, 9, 10),
+                (1, 10, 2, 3, 4, 5, 6, 7, 8, 9),
+                (0, 1, 2, 3, 3, 3, 3, 3, 4, 5, 1)),
             tuple(Operand('node', value)
-                  for value in (1, 2, 3, 4, 5, 6, 7))
+                  for value in range(1, 11))
             + (Operand('local', 4),),
-            tuple(Operand('local', index) for index in range(5)))
+            tuple(Operand('local', index) for index in range(6)))
         physical = bytes(pack_step(plan))
         page = bytearray(65536)
         page[64:68] = (1).to_bytes(4, 'little')
@@ -110,9 +127,10 @@ view.setBigUint64(locals + 8, 80n, true);
 view.setBigUint64(locals + 16, 0x246n, true);
 view.setBigUint64(locals + 24, 72n, true);
 view.setBigUint64(locals + 32, %dn, true);
+view.setBigUint64(locals + 40, 128n, true);
 const faults = [];
 for (;;) {
-  const status = E.vm_step_execute(session, 5, 0);
+  const status = E.vm_step_execute(session, 6, 0);
   if (status === 2) break;
   if (status !== 1) throw new Error(`execute:${status}:${E.vm_step_error(session)}`);
   const lease = E.vm_step_memory_lease(session);
@@ -127,7 +145,7 @@ for (;;) {
   }
 }
 const stack = E.vm_step_stack(session);
-const outputs = Array.from({length: 8}, (_, index) =>
+const outputs = Array.from({length: 11}, (_, index) =>
   view.getBigUint64(stack + index * 8, true).toString());
 const dirtyPage = E.vm_step_first_dirty_memory_page(session);
 const lease = E.vm_step_memory_lease(session);
@@ -136,9 +154,11 @@ const dirty = new Uint8Array(
   E.vm_step_memory_page_size(session, lease),
 );
 const records = Buffer.from(dirty.slice(64, 96)).toString('hex');
+const savedFrame = Buffer.from(dirty.slice(120, 128)).toString('hex');
 E.vm_step_ack_memory_page(session, lease, dirtyPage);
 E.vm_step_release(session);
-process.stdout.write(JSON.stringify({faults, outputs, dirtyPage, records}));
+process.stdout.write(JSON.stringify(
+  {faults, outputs, dirtyPage, records, savedFrame}));
 ''' % saved, encoding='utf-8')
             run = subprocess.run(
                 ['node', str(driver), wasm, str(step_path), str(memory_path)],
@@ -153,6 +173,8 @@ process.stdout.write(JSON.stringify({faults, outputs, dirtyPage, records}));
                 str((saved_high + delta) & 0xffffffff),
                 str(30 - delta & ((1 << 64) - 1)), str(right64),
                 str(26 | (36 << 32)),
+                str(64 + 8 + ((30 - delta) & ((1 << 64) - 4))),
+                '120', str(compare_flags),
                 str(saved),
             ],
             'dirtyPage': 0,
@@ -163,6 +185,7 @@ process.stdout.write(JSON.stringify({faults, outputs, dirtyPage, records}));
                 + ((saved_low + delta) & 0xffffffff).to_bytes(4, 'little')
                 + ((saved_high + delta) & 0xffffffff).to_bytes(4, 'little')
                 + right64.to_bytes(8, 'little')).hex(),
+            'savedFrame': saved.to_bytes(8, 'little').hex(),
         })
 
     def test_secure_projection_recovers_ciphertext_through_the_vm_artifact(self):

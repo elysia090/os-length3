@@ -457,6 +457,12 @@ def execute_slice(plan, state):
                 selector = arguments[1]
                 results, mode = relative_results[source]
                 result = _relative_select(results, selector, mode)
+            elif node.op == 'memory.i64.relative_address':
+                from .steppage import _relative_address
+                result = _relative_address(memory, *arguments[:5])
+            elif node.op == 'memory.i64.pre_store':
+                from .steppage import _pre_store
+                result = _pre_store(memory, *arguments[:4])
             elif node.op.startswith('memory.'):
                 from .steppage import (_load, _memory_name,
                                        _memory_observe, _store)

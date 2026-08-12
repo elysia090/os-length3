@@ -158,6 +158,51 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(plan.nodes[0].arguments[0], prior)
         self.assertEqual(plan.nodes[0].arguments[1:], second[1:])
 
+    def test_compare_flags_consume_the_difference_without_materializing_it(self):
+        descriptor = 64 | (3 << 8)
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.SUBR', (
+                Operand('local', 0), Operand('local', 1))),
+             WaveNode(2, 'lane64.X86_FLAGS', (
+                 Operand('local', 2), Operand('local', 0),
+                 Operand('local', 1), Operand('node', 1),
+                 Operand('const', descriptor)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('local', 0), Operand('local', 1),
+             Operand('node', 2)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.X86_COMPARE'])
+        execute = compile_mapped_executor(unpack(pack(plan)))
+        outputs, _stack = execute((3, 7, 0x246), (), object())
+        from qm.laneops import evaluate
+        self.assertEqual(outputs[2], evaluate('lane64.X86_FLAGS', (
+            0x246, 3, 7, (3 - 7) & ((1 << 64) - 1), descriptor)))
+
+    def test_pre_store_waits_until_its_saved_value_is_available(self):
+        shape = Operand('const', memory_shape(8, virtual64=True))
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.SUB', (
+                Operand('local', 0), Operand('const', 8))),
+             WaveNode(2, 'lane64.ADD', (
+                 Operand('local', 1), Operand('const', 1))),
+             WaveNode(3, 'memory.i64.store', (
+                 Operand('node', 1), Operand('node', 2),
+                 Operand('const', 0), shape))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('node', 1), Operand('node', 2)))
+
+        plan = normalize_plan(raw)
+
+        self.assertNotIn('memory.i64.pre_store',
+                         [node.op for node in plan.nodes])
+        self.assertIn('memory.i64.store',
+                      [node.op for node in plan.nodes])
+
     def test_deterministic_pages_compose_by_substituting_frame_coordinates(self):
         empty_waves = DependencyWaves((0,), (), (0,))
         first = normalize_plan(PureSlice(

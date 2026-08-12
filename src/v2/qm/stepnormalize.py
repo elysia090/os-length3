@@ -317,7 +317,10 @@ def _rewrite_physical(nodes, stack, locals_):
         if operation in ('memory.i64.repeat', 'memory.i64.find2',
                          'memory.i64.copy_until',
                          'memory.i64.relative_exchange',
-                         'memory.i64.relative_result'):
+                         'memory.i64.relative_result',
+                         'memory.i64.relative_address',
+                         'lane64.X86_COMPARE',
+                         'memory.i64.pre_store'):
             operand = emit(operation, arguments)
             remap[node.value] = operand
             continue
@@ -327,6 +330,32 @@ def _rewrite_physical(nodes, stack, locals_):
             data = arguments[:data_count]
             offset, shape = arguments[data_count:data_count + 2]
             dependencies = arguments[data_count + 2:]
+            if not store:
+                def prior_write(operand):
+                    source = form(operand)
+                    if source is None:
+                        return (operand,)
+                    prior_operation, prior_arguments = source
+                    if prior_operation == 'memory.i64.relative_address':
+                        prior_dependencies = prior_arguments[5:]
+                    elif (prior_operation.startswith('memory.')
+                          and '.load' in prior_operation):
+                        prior_dependencies = prior_arguments[3:]
+                    else:
+                        return (operand,)
+                    flattened = []
+                    for dependency in prior_dependencies:
+                        for resolved in prior_write(dependency):
+                            if resolved not in flattened:
+                                flattened.append(resolved)
+                    return tuple(flattened)
+
+                flattened = []
+                for dependency in dependencies:
+                    for resolved in prior_write(dependency):
+                        if resolved not in flattened:
+                            flattened.append(resolved)
+                dependencies = tuple(flattened)
             raw_shape = constant(shape)
             if raw_shape is None:
                 raise ValueError('memory width is not a physical constant')
@@ -382,10 +411,70 @@ def _rewrite_physical(nodes, stack, locals_):
             source = form(operand)
             return source is not None and source[0].startswith(width + '.')
 
+        # Keep affine constant motion in one modular spelling.  This makes
+        # address updates such as rsp - 8 and rsp + (-8) the same SSA value.
+        if name == 'SUB' and len(arguments) == 2:
+            subtrahend = constant(arguments[1])
+            if subtrahend is not None:
+                name = 'ADD'
+                operation = width + '.ADD'
+                arguments = (arguments[0], Operand(
+                    'const', (-subtrahend) & full))
+
         # Wasm values already use an unsigned host representation.  The
         # unsigned extension therefore changes the type observer, not the
         # stored coordinate.
-        if name == 'X86_FLAGS' and len(arguments) == 5:
+        if name == 'ADD3' and len(arguments) == 3:
+            for candidate in arguments:
+                masked = form(candidate)
+                if (masked is None or masked[0] != 'lane64.AND'
+                        or constant(masked[1][1]) is None):
+                    continue
+                loaded = form(masked[1][0])
+                if (loaded is None or loaded[0] != 'memory.i64.load'
+                        or len(loaded[1]) < 3):
+                    continue
+                base, load_offset, shape = loaded[1][:3]
+                raw_shape = constant(shape)
+                if raw_shape is None:
+                    continue
+                from .steppage import decode_memory_shape
+                try:
+                    access_width, scale, virtual64 = decode_memory_shape(
+                        raw_shape)
+                except ValueError:
+                    continue
+                if access_width != 8 or scale or not virtual64:
+                    continue
+                remainder = list(arguments)
+                remainder.remove(candidate)
+                addend = next((operand for operand in remainder
+                               if operand.kind == 'const'), None)
+                if (addend is None or base not in remainder):
+                    continue
+                loaded_operand = masked[1][0]
+                uses = tuple(
+                    use for use in rebuilt
+                    if loaded_operand in use.arguments)
+                published = any(
+                    original in outputs
+                    and remap.get(original) == loaded_operand
+                    for original in remap)
+                if (published or len(uses) != 1
+                        or uses[0].value != candidate.value):
+                    continue
+                fused_arguments = (
+                    base, load_offset, masked[1][1], addend, shape,
+                ) + loaded[1][3:]
+                rebuilt[loaded_operand.value - 1] = WaveNode(
+                    loaded_operand.value, 'memory.i64.relative_address',
+                    fused_arguments)
+                forms[loaded_operand.value] = (
+                    'memory.i64.relative_address', fused_arguments)
+                replacement = loaded_operand
+                break
+
+        elif name == 'X86_FLAGS' and len(arguments) == 5:
             descriptor = constant(arguments[4])
             if (descriptor is not None
                     and (descriptor >> 8) & 7 not in (2, 4)
@@ -397,6 +486,18 @@ def _rewrite_physical(nodes, stack, locals_):
                     prior = prior_form[1][0]
                     prior_form = form(prior)
                 arguments = (prior,) + arguments[1:]
+            result_form = form(arguments[3])
+            original_result = node.arguments[3]
+            if (descriptor is not None
+                    and (descriptor >> 8) & 7 == 3
+                    and result_form is not None
+                    and result_form[0] == 'lane64.SUBR'
+                    and result_form[1] == arguments[1:3]
+                    and original_result.kind == 'node'
+                    and original_result.value not in outputs
+                    and len(consumers.get(original_result.value, ())) == 1):
+                operation = 'lane64.X86_COMPARE'
+                arguments = arguments[:3] + (arguments[4],)
 
         elif name == 'EXTEND_I32_U':
             replacement = arguments[0]
@@ -560,6 +661,13 @@ def _rewrite_physical(nodes, stack, locals_):
         if replacement is not None:
             remap[node.value] = replacement
             continue
+        prior = next((candidate for candidate in rebuilt
+                      if operation.startswith(('lane32.', 'lane64.'))
+                      and candidate.op == operation
+                      and candidate.arguments == arguments), None)
+        if prior is not None:
+            remap[node.value] = Operand('node', prior.value)
+            continue
         operand = emit(operation, arguments)
         remap[node.value] = operand
 
@@ -569,7 +677,109 @@ def _rewrite_physical(nodes, stack, locals_):
     rewritten = _rewrite_relative_exchange(
         tuple(rebuilt), tuple(map(output, stack)),
         tuple(map(output, locals_)))
-    return _rewrite_balanced_stack(*rewritten)
+    rewritten = _rewrite_balanced_stack(*rewritten)
+    return _rewrite_pre_store(*rewritten)
+
+
+def _rewrite_pre_store(nodes, stack, locals_):
+    """Fuse one published pre-decrement coordinate with its exact store."""
+    from .steppage import decode_memory_shape
+    from .wasmwave import Operand, WaveNode
+
+    outputs = {operand.value for operand in tuple(stack) + tuple(locals_)
+               if operand.kind == 'node'}
+    full = (1 << 64) - 1
+
+    def dependency_start(node):
+        if node.op == 'memory.i64.relative_address':
+            return 5
+        if node.op == 'memory.i64.relative_exchange':
+            return (9 if len(node.arguments) > 6
+                    and node.arguments[6] == Operand('const', 1) else 7)
+        if node.op == 'memory.i64.pre_store':
+            return 4
+        if node.op.startswith('memory.'):
+            return (4 if '.store' in node.op else 3)
+        return None
+
+    for store in nodes:
+        if (store.op != 'memory.i64.store'
+                or len(store.arguments) < 4
+                or store.value in outputs):
+            continue
+        pointer, saved, offset, shape = store.arguments[:4]
+        dependencies = store.arguments[4:]
+        if (offset.kind != 'const' or shape.kind != 'const'
+                or pointer.kind not in ('local', 'stack')):
+            continue
+        try:
+            _width, scale, virtual64 = decode_memory_shape(shape.value)
+        except ValueError:
+            continue
+        if scale or not virtual64:
+            continue
+        decrement = (-offset.value) & full
+        if not decrement:
+            continue
+        address = next((node for node in nodes[:store.value - 1]
+                        if node.op == 'lane64.ADD'
+                        and node.arguments == (
+                            pointer, Operand('const', offset.value))
+                        and node.value in outputs), None)
+        if (address is None
+                or (saved.kind == 'node'
+                    and saved.value >= address.value)
+                or any(dependency.kind == 'node'
+                       and dependency.value >= address.value
+                       for dependency in dependencies)):
+            continue
+        safe = True
+        for consumer in nodes:
+            for index, operand in enumerate(consumer.arguments):
+                if operand != Operand('node', store.value):
+                    continue
+                start = dependency_start(consumer)
+                if start is None or index < start:
+                    safe = False
+                    break
+            if not safe:
+                break
+        if not safe:
+            continue
+
+        replacement = address.value
+        dense = {}
+        rewritten = []
+        for source in nodes:
+            if source.value == store.value:
+                continue
+            operation = source.op
+            arguments = source.arguments
+            if source.value == address.value:
+                operation = 'memory.i64.pre_store'
+                arguments = (pointer, saved, Operand('const', decrement),
+                             shape) + dependencies
+            mapped = []
+            for operand in arguments:
+                if operand.kind != 'node':
+                    mapped.append(operand)
+                    continue
+                old = replacement if operand.value == store.value \
+                    else operand.value
+                mapped.append(Operand('node', dense[old]))
+            value = len(rewritten) + 1
+            dense[source.value] = value
+            rewritten.append(WaveNode(value, operation, tuple(mapped)))
+
+        def publish(operand):
+            if operand.kind != 'node':
+                return operand
+            return Operand('node', dense[operand.value])
+
+        return _rewrite_pre_store(
+            tuple(rewritten), tuple(map(publish, stack)),
+            tuple(map(publish, locals_)))
+    return tuple(nodes), tuple(stack), tuple(locals_)
 
 
 def _rewrite_balanced_stack(nodes, stack, locals_):
@@ -588,6 +798,20 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
         if not node.op.startswith('memory.i64.'):
             return None
         name = node.op[len('memory.i64.'):]
+        if name == 'pre_store':
+            if (len(node.arguments) < 4
+                    or node.arguments[2].kind != 'const'
+                    or node.arguments[3].kind != 'const'):
+                return None
+            try:
+                width, scale, virtual64 = decode_memory_shape(
+                    node.arguments[3].value)
+            except ValueError:
+                return None
+            if scale or node.arguments[2].value != width:
+                return None
+            return (True, Operand('node', node.value), node.arguments[1],
+                    0, width, 0, virtual64, node.arguments[4:])
         if name in ('repeat', 'find2', 'copy_until',
                     'relative_exchange', 'relative_result'):
             return None
@@ -613,22 +837,39 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
 
     for store in nodes:
         stored = ordinary_access(store)
-        if stored is None or not stored[0] or stored[3] != 0:
+        if stored is None or not stored[0]:
             continue
         address = stored[1]
         address_node = (nodes[address.value - 1]
                         if address.kind == 'node' else None)
         saved = stored[2]
-        if (address_node is None or address_node.op != 'lane64.SUB'
-                or len(address_node.arguments) != 2
-                or address_node.arguments[0].kind != 'local'
-                or address_node.arguments[1].kind != 'const'
-                or address_node.arguments[1].value != stored[4]
-                or stored[4] != 8
-                or saved.kind != 'local'):
-            continue
-        pointer = address_node.arguments[0]
         width = stored[4]
+        pointer = None
+        pre_store = store.op == 'memory.i64.pre_store'
+        if (pre_store and len(store.arguments) >= 4
+                and store.arguments[0].kind == 'local'
+                and store.arguments[2] == Operand('const', width)):
+            pointer = store.arguments[0]
+            address_node = None
+        elif (stored[3] == 0 and address_node is not None
+                and address_node.op in ('lane64.SUB', 'lane64.ADD')
+                and len(address_node.arguments) == 2
+                and address_node.arguments[0].kind == 'local'
+                and address_node.arguments[1].kind == 'const'):
+            displacement = (address_node.arguments[1].value
+                            if address_node.op == 'lane64.ADD'
+                            else -address_node.arguments[1].value)
+            if displacement & ((1 << 64) - 1) == -width & ((1 << 64) - 1):
+                pointer = address_node.arguments[0]
+        elif (address.kind == 'local'
+              and stored[3] & ((1 << 64) - 1)
+              == -width & ((1 << 64) - 1)):
+            # Address folding may already have represented rsp-width as the
+            # original pointer plus a modular displacement.
+            pointer = address
+            address_node = None
+        if (pointer is None or width != 8 or saved.kind != 'local'):
+            continue
         load = next((node for node in nodes[store.value:]
                      if (lambda access: access is not None
                          and not access[0]
@@ -644,15 +885,25 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
         published_pointer = locals_[pointer.value]
         pointer_node = (nodes[published_pointer.value - 1]
                         if published_pointer.kind == 'node' else None)
-        if (pointer_node is None or pointer_node.op != 'lane64.ADD'
-                or pointer_node.arguments
-                != (pointer, Operand('const', width))):
+        restored_pointer = None
+        if (pre_store and pointer_node is not None
+                and pointer_node.op == 'lane64.ADD'
+                and pointer_node.arguments == (
+                    Operand('node', store.value),
+                    Operand('const', width))):
+            restored_pointer = pointer_node
+        elif (published_pointer != pointer
+              and (pointer_node is None
+                   or pointer_node.op != 'lane64.ADD'
+                   or pointer_node.arguments
+                   != (pointer, Operand('const', width)))):
             continue
         address_users = [node.value for node in nodes
                          if any(argument == address
                                 for argument in node.arguments)]
-        if any(value not in (store.value, load.value)
-               for value in address_users):
+        if (not pre_store and address_node is not None
+                and any(value not in (store.value, load.value)
+                        for value in address_users)):
             continue
 
         intervening = tuple(
@@ -670,12 +921,18 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
         if intervening and transaction is None:
             continue
 
-        removed = {address_node.value, store.value, load.value}
+        removed = {store.value, load.value}
+        if address_node is not None:
+            removed.add(address_node.value)
+        if restored_pointer is not None:
+            removed.add(restored_pointer.value)
         restore_value = max(node.value for node in nodes) + 1
         value_substitution = {
             load.value: (Operand('node', restore_value)
                          if transaction is not None else saved),
         }
+        if restored_pointer is not None:
+            value_substitution[restored_pointer.value] = pointer
         dependency_substitution = {
             store.value: tuple(stored[-1]),
             load.value: tuple(ordinary_access(load)[-1]),

@@ -577,6 +577,93 @@ class TestX86StateStep(unittest.TestCase):
         self.assertFalse(any(node.op == 'memory.i64.store'
                              for node in cut.plan.nodes))
 
+    def test_relative_key_compare_loads_each_absolute_address_once(self):
+        body = bytes.fromhex(
+            'f30f1efa 0f1f440000 55 4889e5 '
+            '488b4708 4883e0fc 488d0c38 4883c108 '
+            '488b4608 4883e0fc 488d1430 4883c208 '
+            'b8ffffffff 4839d1 7223 b801000000 771c '
+            '48630f 4801f9 486316 4801f2 '
+            'b8ffffffff 4839d1 7206 0f97c0 0fb6c0 5d e9')
+        body += struct.pack('<i', 0x300 - (0x100 + len(body) + 4))
+
+        def start(left_relative, right_relative,
+                  left_delta, right_delta,
+                  left_address=0x400, right_address=0x500):
+            return initial_state(memory_with(
+                (0x100, body), (0x300, b'\xc3'),
+                (left_address, struct.pack(
+                    '<i4xQ', left_delta, left_relative)),
+                (right_address, struct.pack(
+                    '<i4xQ', right_delta, right_relative)),
+                (0x700, b'\xf4'),
+                (0x800, struct.pack('<Q', 0x700))),
+                0x100, {'rdi': left_address, 'rsi': right_address,
+                        'rsp': 0x800, 'rbp': 0x123})
+
+        optimized = X86DBT(enable_function_oracles=False)
+        cases = (
+            (0, 0, 0, 0, 0x400, 0x500, MASK32),
+            (0x200, 0, 0, 0, 0x400, 0x500, 1),
+            (0x100, 0, 0, 0, 0x400, 0x500, MASK32),
+            (0x100, 0, 0x100, 0, 0x400, 0x500, 0),
+            (0x100, 0, 0x200, 0, 0x400, 0x500, 1),
+            (0, 0, 0, 0, 0x7f0, 0x500, 1),
+            (0, 0, 0, 0, 0x400, 0x7f0, MASK32),
+        )
+        for (left_relative, right_relative, left_delta, right_delta,
+             left_address, right_address, expected) in cases:
+            initial = start(left_relative, right_relative,
+                            left_delta, right_delta,
+                            left_address, right_address)
+            fast, fast_boundary, _cost = optimized.run(initial)
+            scalar = X86DBT(enable_function_oracles=False)
+            scalar._compose_register_cut = lambda _state, block: block
+            slow, slow_boundary, _cost = scalar.run(initial)
+
+            self.assertEqual(fast_boundary, slow_boundary)
+            self.assertEqual(fast.registers, slow.registers)
+            self.assertEqual(fast.rflags, slow.rflags)
+            self.assertEqual(fast.register('rax'), expected)
+
+        first_compare = optimized._register_cuts[0x100][1]
+        self.assertEqual((first_compare.plan.waves.work,
+                          first_compare.plan.waves.span), (4, 3))
+        self.assertEqual(sum(
+            node.op == 'memory.i64.relative_address'
+            for node in first_compare.plan.nodes), 2)
+        self.assertEqual(sum(
+            node.op == 'memory.i64.load'
+            for node in first_compare.plan.nodes), 0)
+        self.assertEqual(sum(
+            node.op == 'memory.i64.pre_store'
+            for node in first_compare.plan.nodes), 1)
+        self.assertEqual(sum(
+            node.op == 'lane64.X86_COMPARE'
+            for node in first_compare.plan.nodes), 1)
+
+    def test_signed_test_branch_uses_one_direct_predicate_lane(self):
+        code = bytes.fromhex(
+            '85c0 7f06 b801000000 f4 b802000000 f4')
+        dbt = X86DBT(enable_function_oracles=False)
+
+        for value, expected in (
+                (0, 1), (1, 2), (0x7fffffff, 2),
+                (0x80000000, 1), (0xffffffff, 1)):
+            state, boundary, _cost = dbt.run(initial_state(
+                memory_with((0x100, code)), 0x100, {'rax': value}))
+            self.assertEqual(boundary.operation, 'halt')
+            self.assertEqual(state.register('rax'), expected)
+
+        predicate = dbt._predicate_cuts[0x100][1]
+        self.assertEqual((predicate.plan.waves.work,
+                          predicate.plan.waves.span), (4, 3))
+        self.assertEqual(sum(node.op == 'lane32.GT_S'
+                             for node in predicate.plan.nodes), 1)
+        self.assertFalse(any(node.op in (
+            'lane64.BIT', 'lane64.BITZ')
+            for node in predicate.plan.nodes))
+
     def test_two_sentinel_byte_loop_is_one_persistent_find_cut(self):
         # load byte; stop at NUL or '%'; otherwise increment and repeat.
         code = bytes.fromhex(
