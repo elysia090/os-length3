@@ -32,6 +32,7 @@ OPCODES = (
     # programs is the answer.
     'SAR', 'NEG', 'SUBR', 'CLZ', 'CTZ',
     'CLMULR', 'ROL32', 'ROR32',
+    'SHRR', 'GT_U',
 )
 _OPCODE = dict((name, index + 1) for index, name in enumerate(OPCODES))
 
@@ -145,6 +146,8 @@ _EXPR = {
     'CTZ': 'ctz(v{a})',
     'ROL32': 'rol32(v{a}, {n})',
     'ROR32': 'ror32(v{a}, {n})',
+    'SHRR': 'v{a} >> (v{b} & 63)',
+    'GT_U': 'int(v{a} > v{b})',
 }
 
 
@@ -337,6 +340,10 @@ def known_bits(seq, input_bits=None):
             value = a & b
         elif op in ('ORR', 'XORR'):
             value = a | b
+        elif op in ('GT_U',):
+            value = 1
+        elif op == 'SHRR':
+            value = M64
         elif op == 'ANDNR':
             value = b
         elif op == 'SHL':
@@ -1116,6 +1123,38 @@ def lower_perm_dyn(op, isa):
     return out
 
 
+def _packed_field(seq, source, shift, width):
+    value = source
+    if shift:
+        value = seq.emit('SHR', [value], shift=shift)
+    if width < 64:
+        value = seq.emit('AND', [value], const=mask_of(width))
+    return value
+
+
+def lower_bit_query(op, isa):
+    detail = op.detail
+    seq = Seq()
+    value = _packed_field(
+        seq, 0, detail['value_shift'], detail['value_width'])
+    index = _packed_field(
+        seq, 0, detail['index_shift'], detail['index_width'])
+    selected = seq.emit('SHRR', [value, index])
+    seq.result = seq.emit('AND', [selected], const=1)
+    return [('dynamic bit coordinate', seq)]
+
+
+def lower_field_compare(op, isa):
+    detail = op.detail
+    seq = Seq()
+    left = _packed_field(
+        seq, 0, detail['left_shift'], detail['width'])
+    right = _packed_field(
+        seq, 0, detail['right_shift'], detail['width'])
+    seq.result = seq.emit(detail['relation'], [left, right])
+    return [('scalar field comparison', seq)]
+
+
 def _lane_interval_seq(seq, v, bounds, lane_bits):
     """`lo <= lane <= hi` on every lane, as `corpus/lanes/lanecode.h`.
 
@@ -1582,6 +1621,8 @@ LOWERERS = {
     'LIN_CONST': lower_lin_const,
     'CONV': lower_conv,
     'PERM_DYN': lower_perm_dyn,
+    'BIT_QUERY': lower_bit_query,
+    'FIELD_COMPARE': lower_field_compare,
     'POINT': lower_point,
     'FORK': lower_fork,
     'SPLIT': lower_split,
@@ -1706,6 +1747,8 @@ C_FORMS = {
     'ROR32': lambda a, ins: ('(uint32_t)(((uint32_t)%s >> %d) | '
                                   '((uint32_t)%s << %d))'
                                  % (a[0], ins.shift, a[0], 32 - ins.shift)),
+    'SHRR': lambda a, ins: '%s >> (%s & 63)' % (a[0], a[1]),
+    'GT_U': lambda a, ins: '(uint64_t)(%s > %s)' % (a[0], a[1]),
     'LOOP8': lambda a, ins: 'qm_gather_loop(0x%016Xull, %s)' % (ins.const, a[0]),
     'LUT': lambda a, ins: 'qm_lut[%s & %d]'
     % (a[0], len(ins.const) - 1),
@@ -1826,7 +1869,7 @@ def emit_asm(seq, name, input_bits=None):
     not encode, or needs more live values than the register pool holds — a
     listing that does not assemble would be worse than no listing.
     """
-    unsupported = {'LUT', 'LOOP8', 'POPCNT', 'SCANXOR'}
+    unsupported = {'LUT', 'LOOP8', 'POPCNT', 'SCANXOR', 'SHRR', 'GT_U'}
     if any(ins.op in unsupported for ins in seq.ins):
         return None
 
@@ -2013,7 +2056,8 @@ _WASM_BINOP = {
     'SAR': 'i64.shr_s',
 }
 _WASM_RR = {'XORR': 'i64.xor', 'ANDR': 'i64.and', 'ORR': 'i64.or',
-            'ADDR': 'i64.add', 'SUBR': 'i64.sub'}
+            'ADDR': 'i64.add', 'SUBR': 'i64.sub', 'SHRR': 'i64.shr_u',
+            'GT_U': 'i64.gt_u'}
 # wasm counts leading and trailing zeros of a zero word as 64, which is the
 # definition this grammar uses, so no guard has to be emitted around them.
 _WASM_UNARY = {'POPCNT': 'i64.popcnt', 'CLZ': 'i64.clz', 'CTZ': 'i64.ctz'}
@@ -2043,6 +2087,8 @@ def emit_wasm(seq, name, input_bits=None):
             body.append('    local.get %d' % ins.args[0])
             body.append('    local.get %d' % ins.args[1])
             body.append('    ' + _WASM_RR[op])
+            if op == 'GT_U':
+                body.append('    i64.extend_i32_u')
         elif op == 'NOT':
             body.append('    local.get %d' % ins.args[0])
             body.append('    i64.const -1')

@@ -232,6 +232,111 @@ def _physical_plan(plan):
         plan.stack_inputs, tuple(nodes), plan.waves, plan.stack, plan.locals)
 
 
+def _reopen_consumed_x86_alu(nodes, stack, locals_):
+    """Expose a consumed ALU result to larger backward normal forms.
+
+    X86_ALU is the canonical one-lane representation of arithmetic plus
+    flags.  Once separately normalized blocks are composed, however, its
+    result projection may become an internal input to a larger memory
+    transaction.  Reopening only those projections lets that transaction be
+    proved; the caller keeps this graph only when a larger closed form wins.
+    """
+    from .steppage import (decode_projection_coordinate,
+                           projection_coordinate)
+    from .wasmwave import Operand, WaveNode
+
+    consumed = set()
+    live_flags = set()
+    for operand in tuple(stack) + tuple(locals_):
+        if operand.kind == 'node':
+            live_flags.add(operand.value)
+        elif operand.kind == 'projection':
+            source, selector = decode_projection_coordinate(operand.value)
+            if selector != 16:
+                live_flags.add(source)
+    for node in nodes:
+        descriptor = (node.arguments[3].value
+                      if node.op == 'lane64.X86_ALU'
+                      and len(node.arguments) == 4
+                      and node.arguments[3].kind == 'const' else None)
+        for index, operand in enumerate(node.arguments):
+            if operand.kind == 'node':
+                # A non-carry ALU preserves only flag bits that all preceding
+                # ALUs also preserve, so its prior-flags edge is peeled to the
+                # common root rather than keeping an intermediate producer.
+                peeled_prior = (index == 0 and descriptor is not None
+                                and (descriptor >> 8) & 7 in (1, 3)
+                                and not descriptor & (1 << 11))
+                if not peeled_prior:
+                    live_flags.add(operand.value)
+            if operand.kind != 'projection':
+                continue
+            source, selector = decode_projection_coordinate(operand.value)
+            if selector == 16:
+                consumed.add(source)
+            else:
+                live_flags.add(source)
+    if not consumed:
+        return tuple(nodes), tuple(stack), tuple(locals_)
+
+    remap = {}
+    results = {}
+    flag_roots = {}
+    rewritten = []
+
+    def resolve(operand):
+        if operand.kind == 'node':
+            return remap[operand.value]
+        if operand.kind != 'projection':
+            return operand
+        source, selector = decode_projection_coordinate(operand.value)
+        if selector == 16 and source in results:
+            return results[source]
+        mapped = remap[source]
+        if mapped.kind != 'node':
+            raise ValueError('a live ALU projection lost its flag producer')
+        return Operand('projection', projection_coordinate(
+            mapped.value, selector))
+
+    for node in nodes:
+        arguments = tuple(map(resolve, node.arguments))
+        descriptor = (node.arguments[3].value
+                      if node.op == 'lane64.X86_ALU'
+                      and len(node.arguments) == 4
+                      and node.arguments[3].kind == 'const' else None)
+        width = None if descriptor is None else descriptor & 0x7f
+        mode = None if descriptor is None else (descriptor >> 8) & 7
+        if (node.value in consumed and width in (8, 16, 32, 64)
+                and mode in (1, 3)):
+            prior = arguments[0]
+            original_prior = node.arguments[0]
+            if (not descriptor & (1 << 11)
+                    and original_prior.kind == 'node'):
+                prior = flag_roots.get(original_prior.value, prior)
+            result = Operand('node', len(rewritten) + 1)
+            rewritten.append(WaveNode(
+                result.value,
+                'lane%d.%s' % (width, 'ADDR' if mode == 1 else 'SUBR'),
+                arguments[1:3]))
+            if node.value in live_flags:
+                flags = Operand('node', len(rewritten) + 1)
+                rewritten.append(WaveNode(
+                    flags.value, 'lane64.X86_FLAGS',
+                    (prior,) + arguments[1:3] + (result, arguments[3])))
+                remap[node.value] = flags
+            else:
+                remap[node.value] = prior
+            results[node.value] = result
+            flag_roots[node.value] = prior
+            continue
+        value = len(rewritten) + 1
+        rewritten.append(WaveNode(value, node.op, arguments))
+        remap[node.value] = Operand('node', value)
+
+    return (tuple(rewritten), tuple(map(resolve, stack)),
+            tuple(map(resolve, locals_)))
+
+
 def _rewrite_physical(nodes, stack, locals_):
     """Recompose local quotient identities across a multi-input SSA cut.
 
@@ -245,6 +350,23 @@ def _rewrite_physical(nodes, stack, locals_):
     from .steppage import (decode_projection_coordinate,
                            projection_coordinate)
 
+    # Recover the largest closed memory transaction before local ALU/flags
+    # fusion.  A composed input may already contain ALU result projections;
+    # reopen them speculatively and retain that spelling only when it proves
+    # an additional relative transaction.
+    original = tuple(nodes), tuple(stack), tuple(locals_)
+    folded = _rewrite_relative_exchange(*original)
+    if folded == original:
+        reopened = _reopen_consumed_x86_alu(*original)
+        candidate = _rewrite_relative_exchange(*reopened)
+        before = sum(node.op == 'memory.i64.relative_exchange'
+                     for node in original[0])
+        after = sum(node.op == 'memory.i64.relative_exchange'
+                    for node in candidate[0])
+        if after > before:
+            folded = candidate
+    nodes, stack, locals_ = folded
+
     outputs = {operand.value for operand in stack + locals_
                if operand.kind == 'node'}
     consumers = {node.value: [] for node in nodes}
@@ -256,6 +378,7 @@ def _rewrite_physical(nodes, stack, locals_):
     remap = {}
     rebuilt = []
     forms = {}
+    predicates = {}
 
     def resolve(operand):
         if operand.kind != 'node':
@@ -280,6 +403,22 @@ def _rewrite_physical(nodes, stack, locals_):
                     return False
         return True
 
+    def result_is_only_observed_by_flags(original, resolved):
+        """Reject ALU fusion when CSE gave its result another observer.
+
+        ``consumers`` is indexed by the pre-rewrite SSA coordinate.  Several
+        equivalent arithmetic nodes can already map to one rebuilt node, so
+        consulting only ``original`` loses uses attached to an earlier alias
+        and can hide a larger memory transaction from the following pass.
+        """
+        aliases = [source for source, replacement in remap.items()
+                   if replacement == resolved]
+        if original.kind == 'node' and original.value not in aliases:
+            aliases.append(original.value)
+        observations = [operation for source in aliases
+                        for operation in consumers.get(source, ())]
+        return observations == ['lane64.X86_FLAGS']
+
     def unsigned_bits(operand):
         raw = constant(operand)
         if raw is not None:
@@ -293,6 +432,8 @@ def _rewrite_physical(nodes, stack, locals_):
         if operation in ('lane64.X86_CONDITION',
                          'lane64.X86_TEST_CONDITION'):
             return 1
+        if operation == 'lane64.SELECT_U32':
+            return 32
         if operation.startswith('memory.i64.load'):
             suffix = operation[len('memory.i64.load'):]
             if suffix in ('8_u', '16_u', '32_u'):
@@ -301,6 +442,16 @@ def _rewrite_physical(nodes, stack, locals_):
             mask = constant(arguments[1])
             if mask is not None:
                 return max(1, int(mask).bit_length())
+        if operation.endswith(('.ANDR', '.ORR')) and len(arguments) == 2:
+            widths = tuple(unsigned_bits(argument) for argument in arguments)
+            if all(width is not None for width in widths):
+                return (min(widths) if operation.endswith('.ANDR')
+                        else max(widths))
+        if operation.endswith('.SELECT') and len(arguments) == 3:
+            widths = tuple(unsigned_bits(argument)
+                           for argument in arguments[:2])
+            if all(width is not None for width in widths):
+                return max(widths)
         if operation == 'lane64.BEXTR' and len(arguments) == 3:
             width = constant(arguments[2])
             if width is not None:
@@ -312,6 +463,11 @@ def _rewrite_physical(nodes, stack, locals_):
         operand = Operand('node', value)
         rebuilt.append(WaveNode(value, operation, tuple(arguments)))
         forms[value] = (operation, tuple(arguments))
+        if (operation == 'lane64.X86_CONDITION'
+                and len(arguments) == 2
+                and arguments[1].kind == 'const'
+                and 0 <= arguments[1].value < 16):
+            predicates[(arguments[0], arguments[1].value)] = operand
         return operand
 
     def fuse_memory(operand, observer):
@@ -333,6 +489,7 @@ def _rewrite_physical(nodes, stack, locals_):
         arguments = tuple(map(resolve, node.arguments))
         if operation in ('memory.i64.repeat', 'memory.i64.find2',
                          'memory.i64.copy_until',
+                         'memory.i64.prefix_end',
                          'memory.i64.relative_exchange',
                          'memory.i64.relative_result',
                          'memory.i64.relative_address',
@@ -421,6 +578,7 @@ def _rewrite_physical(nodes, stack, locals_):
         bits = 32 if width == 'lane32' else 64
         full = mask_of(bits)
         replacement = None
+        alu_result = None
 
         def already_projected(operand):
             if bits == 64 or operand.kind == 'const':
@@ -507,6 +665,25 @@ def _rewrite_physical(nodes, stack, locals_):
                     arguments = (remainder[0], masked[1][0], remainder[1])
                     break
 
+        elif name == 'INSERT' and len(arguments) == 3:
+            descriptor = constant(arguments[2])
+            base = form(arguments[0])
+            if (width == 'lane64' and descriptor is not None
+                    and (descriptor & 0xff)
+                    and ((descriptor >> 8) & 0xff)
+                    + (descriptor & 0xff) <= 32
+                    and base is not None
+                    and base[0] == 'lane64.AND'
+                    and constant(base[1][1]) == 0xffffffff):
+                insert_base = base[1][0]
+                prior_insert = form(insert_base)
+                if (prior_insert is not None
+                        and prior_insert[0] == 'lane64.INSERT'
+                        and constant(prior_insert[1][2]) == descriptor):
+                    insert_base = prior_insert[1][0]
+                operation = 'lane32.INSERT'
+                arguments = (insert_base, arguments[1], arguments[2])
+
         elif name == 'X86_FLAGS' and len(arguments) == 5:
             descriptor = constant(arguments[4])
             if (descriptor is not None
@@ -555,6 +732,44 @@ def _rewrite_physical(nodes, stack, locals_):
                                 original.value, ())) == 1):
                         test_arguments[index] = masked[1][0]
                 arguments = tuple(test_arguments) + (arguments[4],)
+            elif (descriptor is not None
+                  and (descriptor >> 8) & 7 in (1, 3)
+                  and result_form is not None
+                  and result_form[0].split('.', 1)[0]
+                  == 'lane%d' % (descriptor & 0x7f)
+                  and (
+                      ((descriptor >> 8) & 7 == 1
+                       and result_form[0].split('.', 1)[1]
+                       in ('ADD', 'ADDR')
+                       and result_form[1] == arguments[1:3])
+                      or ((descriptor >> 8) & 7 == 3
+                          and (result_form[0].split('.', 1)[1]
+                               in ('SUB', 'SUBR')
+                               and result_form[1] == arguments[1:3]
+                               or result_form[0].split('.', 1)[1]
+                               in ('ADD', 'ADDR')
+                               and result_form[1][0] == arguments[1]
+                               and constant(result_form[1][1]) is not None
+                               and constant(arguments[2]) is not None
+                               and (constant(result_form[1][1])
+                                    & mask_of(descriptor & 0x7f))
+                               == ((-constant(arguments[2]))
+                                   & mask_of(descriptor & 0x7f)))))
+                  and original_result.kind == 'node'
+                  and result_is_only_observed_by_flags(
+                      original_result, arguments[3])
+                  and 'lane64.SELECT' not in consumers.get(node.value, ())):
+                operation = 'lane64.X86_ALU'
+                alu_arguments = list(arguments[:3])
+                width_mask = (1 << (descriptor & 0x7f)) - 1
+                for index in (1, 2):
+                    masked = form(alu_arguments[index])
+                    if (masked is not None
+                            and masked[0] == 'lane64.AND'
+                            and constant(masked[1][1]) == width_mask):
+                        alu_arguments[index] = masked[1][0]
+                arguments = tuple(alu_arguments) + (arguments[4],)
+                alu_result = original_result.value
 
         elif name == 'X86_CONDITION' and len(arguments) == 2:
             tested = form(arguments[0])
@@ -597,7 +812,6 @@ def _rewrite_physical(nodes, stack, locals_):
                                 original.value, ())) == 1):
                         test_arguments[index] = masked[1][0]
                 arguments = tuple(test_arguments) + (arguments[3],)
-
         elif name == 'EXTEND_I32_S':
             source = form(arguments[0])
             if (source is not None and source[0] == 'lane64.AND'
@@ -666,22 +880,44 @@ def _rewrite_physical(nodes, stack, locals_):
         elif name == 'AND' and len(arguments) == 2:
             source = form(arguments[0])
             mask = constant(arguments[1])
-            if (source is not None and source[0] == width + '.AND'
+            if (source is not None
+                    and source[0] in ('lane32.INSERT', 'lane64.INSERT')
+                    and mask is not None
+                    and constant(source[1][2]) is not None
+                    and ((constant(source[1][2]) >> 8) & 0xff) == 0
+                    and mask & ~mask_of(
+                        constant(source[1][2]) & 0xff) == 0):
+                selected = source[1][1]
+                selected_bits = unsigned_bits(selected)
+                if (selected_bits is not None
+                        and selected_bits <= max(1, mask.bit_length())
+                        and mask == (1 << mask.bit_length()) - 1):
+                    replacement = selected
+                else:
+                    operation = width + '.AND'
+                    arguments = (selected, arguments[1])
+            elif (source is not None and source[0] == width + '.AND'
                     and mask is not None
                     and constant(source[1][1]) is not None):
                 operation = width + '.AND'
                 arguments = (
                     source[1][0], Operand(
                         'const', mask & constant(source[1][1])))
-            elif source is not None and mask == 1 and source[0] in (
-                    width + '.SHRR', width + '.SHR'):
+            elif (source is not None and mask == 1
+                  and source[0].split('.', 1)[-1] in ('SHRR', 'SHR')):
+                # A one-bit observation has the same value after any integer
+                # width projection.  Keep the shift's source width so mixed
+                # signatures such as (i64 residual, i32 index) do not
+                # materialize an i32 wrapper before the physical bit query.
+                source_width = source[0].split('.', 1)[0]
                 shift = form(source[1][1])
-                if (shift is not None and shift[0] == width + '.ANDNR'
+                if (shift is not None
+                        and shift[0] == source_width + '.ANDNR'
                         and constant(shift[1][1]) == 7):
-                    operation = width + '.BIT_MSB8'
+                    operation = source_width + '.BIT_MSB8'
                     arguments = (source[1][0], shift[1][0])
                 else:
-                    operation = width + '.BIT'
+                    operation = source_width + '.BIT'
                     arguments = source[1]
             elif source is not None and source[0] == width + '.XOR':
                 inverted = source[1]
@@ -759,6 +995,15 @@ def _rewrite_physical(nodes, stack, locals_):
             condition = form(arguments[2])
             left_form = form(arguments[0])
             right_form = form(arguments[1])
+            if (condition is not None
+                    and condition[0] == 'lane64.X86_CONDITION'
+                    and len(condition[1]) == 2
+                    and constant(condition[1][1]) is not None):
+                code = constant(condition[1][1])
+                inverse = predicates.get((condition[1][0], code ^ 1))
+                if inverse is not None and inverse != arguments[2]:
+                    arguments = (arguments[1], arguments[0], inverse)
+                    condition = form(inverse)
             if (left_form is not None and right_form is not None
                     and left_form[0] == 'lane64.X86_FLAGS'
                     and right_form[0] == 'lane64.X86_FLAGS'):
@@ -777,9 +1022,29 @@ def _rewrite_physical(nodes, stack, locals_):
                         and condition[1] == arguments[:2]):
                     operation = condition_width + '.' + extrema[relation]
                     arguments = arguments[:2]
+            if (operation == 'lane64.SELECT'
+                    and all((unsigned_bits(argument) or 65) <= 32
+                            for argument in arguments[:2])):
+                selected = []
+                for argument in arguments[:2]:
+                    source = form(argument)
+                    selected.append(
+                        source[1][0]
+                        if source is not None
+                        and source[0] == 'lane64.AND'
+                        and constant(source[1][1]) == 0xffffffff
+                        else argument)
+                operation = 'lane64.SELECT_U32'
+                arguments = tuple(selected) + (arguments[2],)
 
         if replacement is not None:
             remap[node.value] = replacement
+            continue
+        if operation == 'lane64.X86_ALU':
+            operand = emit(operation, arguments)
+            remap[alu_result] = Operand(
+                'projection', projection_coordinate(operand.value, 16))
+            remap[node.value] = operand
             continue
         prior = next((candidate for candidate in rebuilt
                       if operation.startswith(('lane32.', 'lane64.'))
@@ -810,15 +1075,14 @@ def _rewrite_physical(nodes, stack, locals_):
 
 def _rewrite_terminal_projections(nodes, stack, locals_):
     """Publish unused multi-result lanes as physical output coordinates."""
-    from .steppage import (decode_projection_coordinate,
+    from .steppage import (FLAG_PROJECTION_OPS,
+                           decode_projection_coordinate,
                            projection_coordinate)
     from .wasmwave import Operand, WaveNode
 
     final_source = next((
         node.value for node in reversed(nodes)
         if node.op == 'memory.i64.relative_exchange'), None)
-    if final_source is None:
-        return tuple(nodes), tuple(stack), tuple(locals_)
     outputs = tuple(stack) + tuple(locals_)
     output_values = {operand.value for operand in outputs
                      if operand.kind == 'node'}
@@ -829,14 +1093,22 @@ def _rewrite_terminal_projections(nodes, stack, locals_):
                 consumers.setdefault(operand.value, []).append(node.value)
     projected = {}
     for node in nodes:
-        if (node.op != 'memory.i64.relative_result'
-                or node.value not in output_values
+        if (node.value not in output_values
                 or consumers.get(node.value)
                 or len(node.arguments) != 2
-                or node.arguments[0] != Operand('node', final_source)
+                or node.arguments[0].kind != 'node'
                 or node.arguments[1].kind != 'const'):
             continue
-        projected[node.value] = node.arguments[1].value
+        source = node.arguments[0].value
+        selector = node.arguments[1].value
+        source_operation = nodes[source - 1].op
+        relative = (node.op == 'memory.i64.relative_result'
+                    and source == final_source)
+        condition = (node.op == 'lane64.X86_CONDITION'
+                     and source_operation in FLAG_PROJECTION_OPS
+                     and 0 <= selector < 16)
+        if relative or condition:
+            projected[node.value] = source, selector
     if not projected:
         return tuple(nodes), tuple(stack), tuple(locals_)
 
@@ -852,14 +1124,13 @@ def _rewrite_terminal_projections(nodes, stack, locals_):
             if operand.kind == 'node' else operand
             for operand in node.arguments)))
 
-    source = dense[final_source]
-
     def publish(operand):
         if operand.kind == 'node':
-            selector = projected.get(operand.value)
-            if selector is not None:
+            projection = projected.get(operand.value)
+            if projection is not None:
+                source, selector = projection
                 return Operand('projection', projection_coordinate(
-                    source, selector))
+                    dense[source], selector))
             return Operand('node', dense[operand.value])
         if operand.kind == 'projection':
             old_source, selector = decode_projection_coordinate(
@@ -1572,7 +1843,7 @@ def _rewrite_relative_exchange(nodes, stack, locals_):
     return tuple(nodes), tuple(stack), tuple(locals_)
 
 
-def _compact(nodes, stack, locals_):
+def _compact_once(nodes, stack, locals_):
     """Remove superseded SSA and rebuild dense physical dependency waves."""
     from .wasmphysical import DependencyWaves
     from .wasmwave import Operand, WaveNode
@@ -1587,13 +1858,20 @@ def _compact(nodes, stack, locals_):
                 or node.op.split('.', 1)[-1] in trapping)}
     live.update(operand.value for operand in stack + locals_
                 if operand.kind == 'node')
+    live.update(decode_projection_coordinate(operand.value)[0]
+                for operand in stack + locals_
+                if operand.kind == 'projection')
     pending = list(live)
     while pending:
         value = pending.pop()
         for operand in nodes[value - 1].arguments:
-            if operand.kind == 'node' and operand.value not in live:
-                live.add(operand.value)
-                pending.append(operand.value)
+            dependency = (operand.value if operand.kind == 'node'
+                          else decode_projection_coordinate(
+                              operand.value)[0]
+                          if operand.kind == 'projection' else None)
+            if dependency is not None and dependency not in live:
+                live.add(dependency)
+                pending.append(dependency)
 
     remap = {}
     kept = []
@@ -1601,10 +1879,17 @@ def _compact(nodes, stack, locals_):
     for node in nodes:
         if node.value not in live:
             continue
-        arguments = tuple(
-            Operand('node', remap[operand.value])
-            if operand.kind == 'node' else operand
-            for operand in node.arguments)
+        arguments = []
+        for operand in node.arguments:
+            if operand.kind == 'node':
+                operand = Operand('node', remap[operand.value])
+            elif operand.kind == 'projection':
+                source, selector = decode_projection_coordinate(
+                    operand.value)
+                operand = Operand('projection', projection_coordinate(
+                    remap[source], selector))
+            arguments.append(operand)
+        arguments = tuple(arguments)
         key = (node.op, arguments)
         previous = None if node.op.startswith('memory.') else common.get(key)
         if previous is not None:
@@ -1628,9 +1913,14 @@ def _compact(nodes, stack, locals_):
     depths = [0]
     by_depth = {}
     for node in kept:
-        depth = 1 + max((depths[operand.value]
-                         for operand in node.arguments
-                         if operand.kind == 'node'), default=0)
+        dependencies = []
+        for operand in node.arguments:
+            if operand.kind == 'node':
+                dependencies.append(operand.value)
+            elif operand.kind == 'projection':
+                dependencies.append(decode_projection_coordinate(
+                    operand.value)[0])
+        depth = 1 + max((depths[value] for value in dependencies), default=0)
         depths.append(depth)
         by_depth.setdefault(depth, []).append(node.value)
     offsets = [0]
@@ -1641,6 +1931,23 @@ def _compact(nodes, stack, locals_):
     return (tuple(kept),
             DependencyWaves(tuple(offsets), tuple(values), tuple(depths)),
             tuple(map(output, stack)), tuple(map(output, locals_)))
+
+
+def _compact(nodes, stack, locals_):
+    """Substitute, delete and reschedule until the physical graph is fixed."""
+    current = tuple(nodes), tuple(stack), tuple(locals_)
+    seen = set()
+    limit = max(2, len(current[0]) + 2)
+    for _pass in range(limit):
+        if current in seen:
+            raise ValueError('physical normalization entered a rewrite cycle')
+        seen.add(current)
+        compacted = _compact_once(*current)
+        following = compacted[0], compacted[2], compacted[3]
+        if following == current:
+            return compacted
+        current = following
+    raise ValueError('physical normalization did not reach a fixed point')
 
 
 def _semantic_cut(plan):
@@ -1801,7 +2108,7 @@ def compose_plans(first, second):
     liveness, quotient and wave normalization as every frontend slice.
     """
     from .wasmwave import Operand, PureSlice, WaveNode
-    from .steppage import (decode_projection_coordinate,
+    from .steppage import (FLAG_PROJECTION_OPS, decode_projection_coordinate,
                            projection_coordinate)
 
     if first.function != second.function:
@@ -1841,6 +2148,8 @@ def compose_plans(first, second):
         if resolved.kind != 'projection':
             return resolved
         source, selector = decode_projection_coordinate(resolved.value)
+        if nodes[source - 1].op in FLAG_PROJECTION_OPS:
+            return resolved
         key = source, selector
         projected = projection_nodes.get(key)
         if projected is None:

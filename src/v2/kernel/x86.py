@@ -15,7 +15,9 @@ import struct
 
 from qm.memorycut import MemoryCut
 from qm.laneops import select as select_lane
-from qm.steppage import (compile_mapped_executor, memory_shape,
+from qm.steppage import (compile_mapped_executor,
+                         decode_projection_coordinate, memory_shape,
+                         projection_coordinate,
                          pack as pack_step, unpack as unpack_step)
 from qm.stepnormalize import compose_plans, normalize_plan, physical_work
 from qm.transducer import compile_byte_classes
@@ -2045,8 +2047,6 @@ class X86DBT(object):
         self.collapsed_smp_lock_tables = 0
         self.collapsed_smp_lock_sites = 0
         self.collapsed_length_prefix_entries = 0
-        self.length_prefix_cache_hits = 0
-        self.length_prefix_cache_misses = 0
         self.collapsed_token_entries = 0
         self.collapsed_token_bytes = 0
         self.collapsed_symbol_lookups = 0
@@ -2080,6 +2080,19 @@ class X86DBT(object):
         self.recurrence_cut_cache_misses = 0
         self.recurrence_cut_work = 0
         self.recurrence_cut_span = 0
+        self.recurrence_cut_executions = 0
+        self.recurrence_cut_executed_work = 0
+        self.recurrence_cut_executed_span = 0
+        self.recurrence_source_instructions = 0
+        self.prefix_cuts = 0
+        self.prefix_cut_cache_hits = 0
+        self.prefix_cut_cache_misses = 0
+        self.prefix_cut_work = 0
+        self.prefix_cut_span = 0
+        self.prefix_cut_executions = 0
+        self.prefix_cut_executed_work = 0
+        self.prefix_cut_executed_span = 0
+        self.prefix_source_instructions = 0
         self.stack_cuts = 0
         self.stack_cut_cache_hits = 0
         self.stack_cut_cache_misses = 0
@@ -2122,6 +2135,7 @@ class X86DBT(object):
         self._predicate_cuts = {}
         self._register_cuts = {}
         self._recurrence_cuts = {}
+        self._prefix_cuts = {}
         self._stack_cuts = {}
         self._find_cuts = {}
         self._copy_cuts = {}
@@ -2197,7 +2211,6 @@ class X86DBT(object):
         self._backward_branch_recipes = {}
         self._code_recipes = {}
         self._token_stream_layouts = {}
-        self._length_prefix_cache = {}
         self._symbol_position_functions = {}
         self._symbol_position_cache = {}
         self._symbol_offset_pages = {}
@@ -4647,84 +4660,10 @@ class X86DBT(object):
             plan.locals[len(REGISTER_NAMES)], left, right, result,
             Operand('const', descriptor)))
 
-        condition = int(condition) & 15
-        zero_value = Operand('const', 0)
-        lane_bits = max(32, int(bits))
-        direct = None
-        if mode == 0:
-            direct_name = {
-                4: 'EQZ', 5: 'NE', 6: 'EQZ', 7: 'NE',
-                8: 'LT_S', 9: 'GE_S', 12: 'LT_S', 13: 'GE_S',
-                14: 'LE_S', 15: 'GT_S',
-            }.get(condition)
-            if bits < 32 and condition in (8, 9, 12, 13, 14, 15):
-                direct_name = None
-            if condition in (2, 3):
-                direct = Operand('const', int(condition == 3))
-            elif direct_name is not None:
-                direct = emit(
-                    'lane%d.%s' % (lane_bits, direct_name),
-                    (result,) if direct_name == 'EQZ'
-                    else (result, zero_value))
-        elif mode == 3:
-            direct_name = {
-                2: 'LT_U', 3: 'GE_U', 4: 'EQ', 5: 'NE',
-                6: 'LE_U', 7: 'GT_U',
-                12: 'LT_S', 13: 'GE_S', 14: 'LE_S', 15: 'GT_S',
-            }.get(condition)
-            if bits < 32 and condition in (12, 13, 14, 15):
-                direct_name = None
-            if direct_name is not None:
-                direct = emit(
-                    'lane%d.%s' % (lane_bits, direct_name), (left, right))
-            elif condition in (8, 9) and bits >= 32:
-                direct = emit(
-                    'lane%d.%s' % (
-                        lane_bits, 'LT_S' if condition == 8 else 'GE_S'),
-                    (result, zero_value))
-
-        if direct is not None:
-            residual = PureSlice(
-                plan.function, plan.start, plan.end + 1,
-                plan.instructions + 1, plan.stack_inputs,
-                tuple(nodes), plan.waves, plan.stack,
-                tuple(register_outputs) + (flags,)
-                + tuple(Operand(
-                    'local', len(REGISTER_NAMES) + 1 + index)
-                    for index in range(len(cut_inputs)))
-                + (direct,))
-            return (normalize_plan(residual), (name, bits),
-                    tuple(cut_inputs))
-
-        def flag(mask):
-            return emit('i64.and', (
-                emit('i64.shr_u', (
-                    flags, Operand('const', int(mask).bit_length() - 1))),
-                Operand('const', 1)))
-
-        carry = flag(RFLAGS_CARRY)
-        parity = flag(RFLAGS_PARITY)
-        zero = flag(RFLAGS_ZERO)
-        sign = flag(RFLAGS_SIGN)
-        overflow = flag(RFLAGS_OVERFLOW)
-
-        def inverted(value):
-            return emit('i64.xor', (value, Operand('const', 1)))
-
-        signed_less = emit('i64.xor', (sign, overflow))
-        predicates = (
-            overflow, inverted(overflow),
-            carry, inverted(carry),
-            zero, inverted(zero),
-            emit('i64.or', (carry, zero)),
-            emit('i64.and', (inverted(carry), inverted(zero))),
-            sign, inverted(sign),
-            parity, inverted(parity),
-            signed_less, inverted(signed_less),
-            emit('i64.or', (zero, signed_less)),
-            emit('i64.and', (inverted(zero), inverted(signed_less))),
-        )
-        predicate = predicates[condition]
+        if flags.kind != 'node':
+            return None
+        predicate = Operand('projection', projection_coordinate(
+            flags.value, int(condition) & 15))
         residual = PureSlice(
             plan.function, plan.start, plan.end + 1,
             plan.instructions + 1, plan.stack_inputs,
@@ -4759,6 +4698,10 @@ class X86DBT(object):
             return result
 
         predicate = plan.locals[-1]
+        if predicate.kind == 'projection':
+            source, condition = decode_projection_coordinate(predicate.value)
+            predicate = emit('lane64.X86_CONDITION', (
+                Operand('node', source), Operand('const', condition)))
         registers = list(plan.locals[:len(REGISTER_NAMES)])
         if high_byte:
             register = int(operand) - 4
@@ -5380,7 +5323,13 @@ class X86DBT(object):
             X86Boundary('branch', following),
             branch.proof_config, branch.proof,
             state_flags=True, virtual_memory=True)
-        entry = cut, counter, iteration_bytes
+        # ``instructions`` excludes each block's terminal instruction.  The
+        # recurrence starts after one normally dispatched turn, so this is
+        # exactly the x86 retirement carried by every residual iteration.
+        source_instructions = (
+            sum(block.instructions + 1 for block in loop)
+            + branch.instructions + 1)
+        entry = cut, counter, iteration_bytes, source_instructions
         self._recurrence_cuts[branch.rip] = branch, entry
         self.recurrence_cuts += 1
         self.recurrence_cut_cache_misses += 1
@@ -11027,82 +10976,114 @@ class X86DBT(object):
         return replace(state, registers=registers, rflags=flags,
                        rip=following)
 
-    def _length_prefix_end(self, state, pointer, count, length, limit):
-        """Extend one proved directory index only as far as first requested."""
-        key = int(pointer) & MASK64, int(count), int(length)
-        cached = self._length_prefix_cache.get(key)
-        ends = ()
-        reader = _VirtualProofReader(state)
-        if cached is not None:
-            config, proof, ends = cached
-            if not reader.absorb(config, proof):
-                ends = ()
-                self._length_prefix_cache.pop(key, None)
-        needed = int(limit) - int(count) + 1
-        if needed <= len(ends):
-            self.length_prefix_cache_hits += 1
-            return ends[needed - 1]
-        current = key[0] if not ends else ends[-1]
-        extended = list(ends)
+    def _length_prefix_cut(self, state, branch):
+        """Lower a proved variable-length directory recurrence to state SSA."""
+        following, target, condition = branch.boundary.detail
+        if condition != 9 or state.rip != target:
+            return None
+        target_block = self.blocks.get(target)
+        if (target_block is None
+                or target_block.boundary.operation
+                != 'register_result_flags'):
+            return None
+
+        cached = self._prefix_cuts.get(branch.rip)
+        if cached is not None and cached[0] is branch:
+            _branch, config, proof, cut = cached
+            if _proof_mismatch(state, config, proof) is None:
+                self.prefix_cut_cache_hits += 1
+                return cut
+
         try:
-            while len(extended) < needed:
-                leading = reader.load(current, 1)
-                if leading & 0x80:
-                    entry_length = ((leading & 0x7f)
-                                    + (reader.load(current + 1, 1) << 7)
-                                    + 1)
-                else:
-                    entry_length = leading
-                if not extended and entry_length != int(length):
-                    return None
-                current = (current + entry_length + 1) & MASK64
-                extended.append(current)
+            source = read_virtual(
+                state, target, len(_LENGTH_PREFIX_SKIP_LOOP), 'execute')
         except PageFault:
             return None
-        config, proof = reader.proof()
-        self._length_prefix_cache[key] = config, proof, tuple(extended)
-        self.length_prefix_cache_misses += 1
-        return extended[needed - 1]
+        config, proof = _execution_proof(
+            state, target, len(_LENGTH_PREFIX_SKIP_LOOP))
+        if source != _LENGTH_PREFIX_SKIP_LOOP or proof is None:
+            return None
 
-    def _collapse_length_prefix_skip(self, state, branch):
-        """Skip a bounded variable-length Byte* directory in one scan."""
-        _following, target, condition = branch.boundary.detail
-        if condition != 9 or state.rip != target:
-            return state
-        try:
-            if read_virtual(
-                    state, target, len(_LENGTH_PREFIX_SKIP_LOOP),
-                    'execute') != _LENGTH_PREFIX_SKIP_LOOP:
-                return state
-            pointer = state.register('rcx')
-            length = state.register('rsi') & MASK32
-            count = state.register('rdx') & MASK32
-            limit = state.register('rax') & MASK64
-            if (not 1 <= count <= limit <= 0xff
-                    or length >= 0x80):
-                return state
-            final_pointer = self._length_prefix_end(
-                state, pointer, count, length, limit)
-            if final_pointer is None:
-                return state
-        except PageFault:
-            return state
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
 
-        collapsed = limit - count + 1
-        pointer = final_pointer
-        count = limit
-        registers = _write_register(
-            state.registers, REGISTER_INDEX['rcx'], pointer, 64)
-        registers = _write_register(
-            registers, REGISTER_INDEX['rdx'], count + 1, 32)
-        registers = _write_register(
-            registers, REGISTER_INDEX['rsi'], count, 64)
-        flags = _result_flags(
-            state.rflags, 'cmp', limit, count,
-            (limit - count) & MASK64, 64)
-        self.collapsed_length_prefix_entries += collapsed
-        return replace(state, registers=registers, rflags=flags,
-                       rip=(target + len(_LENGTH_PREFIX_SKIP_LOOP)) & MASK64)
+        def emit(operation, arguments):
+            arguments = tuple(arguments)
+            if operation.startswith(('i32.', 'i64.')):
+                operation, arguments = select_lane(operation, arguments)
+            value = len(nodes) + 1
+            nodes.append(WaveNode(value, operation, arguments))
+            return Operand('node', value)
+
+        pointer = emit('memory.i64.prefix_end', (
+            locals_[REGISTER_INDEX['rcx']],
+            locals_[REGISTER_INDEX['rdx']],
+            locals_[REGISTER_INDEX['rsi']],
+            locals_[REGISTER_INDEX['rax']],
+            Operand('const', memory_shape(1, virtual64=True))))
+        count = emit('i32.add', (
+            locals_[REGISTER_INDEX['rax']], Operand('const', 1)))
+        flags = emit('lane64.X86_COMPARE', (
+            locals_[len(REGISTER_NAMES)],
+            locals_[REGISTER_INDEX['rax']],
+            locals_[REGISTER_INDEX['rax']],
+            Operand('const', 64 | (3 << 8))))
+        locals_[REGISTER_INDEX['rcx']] = pointer
+        locals_[REGISTER_INDEX['rdx']] = count
+        locals_[REGISTER_INDEX['rsi']] = \
+            locals_[REGISTER_INDEX['rax']]
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_[:len(REGISTER_NAMES)]) + (flags,)))
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        cut = DecodedBlock(
+            target,
+            (target + len(_LENGTH_PREFIX_SKIP_LOOP)) & MASK64,
+            source, 1, plan, mapped, execute, 0,
+            X86Boundary(
+                'branch',
+                (target + len(_LENGTH_PREFIX_SKIP_LOOP)) & MASK64),
+            config, proof, state_flags=True, virtual_memory=True)
+        self._prefix_cuts[branch.rip] = branch, config, proof, cut
+        self.prefix_cuts += 1
+        self.prefix_cut_cache_misses += 1
+        self.prefix_cut_work += physical_work(plan)
+        self.prefix_cut_span += plan.waves.span
+        return cut
+
+    @staticmethod
+    def _length_prefix_source_instructions(state, pointer, count,
+                                           first_length, limit):
+        """Count the exact x86 retirement represented by prefix_end.
+
+        The cut is admitted only after proving ``_LENGTH_PREFIX_SKIP_LOOP``.
+        Its outer path retires seven instructions per directory entry.  Each
+        following one-byte length adds three instructions; the two-byte form
+        adds six more.  Sampling performs the extra reads only when physical
+        profiling is enabled.
+        """
+        pointer, count, limit = map(int, (pointer, count, limit))
+        length = int(first_length) & MASK32
+        retired = 0
+        remaining = limit - count + 1
+        for entry in range(remaining):
+            retired += 7
+            pointer = (pointer + length + 1) & MASK64
+            if entry + 1 == remaining:
+                break
+            leading = load_virtual(state, pointer, 1)
+            retired += 3
+            if leading & 0x80:
+                high = load_virtual(state, (pointer + 1) & MASK64, 1)
+                length = (leading & 0x7f) + (high << 7) + 1
+                retired += 6
+            else:
+                length = leading
+        return retired
 
     def _token_stream_layout(self, state, core_start):
         """Prove one compressed-token body and recover its direct arrays."""
@@ -11854,8 +11835,6 @@ class X86DBT(object):
                        self._collapse_predicate_record_projection)
         elif condition == 2 and operation == 'call':
             recipes = (self._collapse_strided_copy_predicate_candidates,)
-        elif condition == 9 and operation == 'register_result_flags':
-            recipes = (self._collapse_length_prefix_skip,)
         elif condition == 12 and operation == 'load':
             recipes = (self._collapse_sequential_freelist_loop,
                        self._collapse_strided_store_loop,
@@ -11877,9 +11856,33 @@ class X86DBT(object):
 
     def _collapse_branch(self, state, branch):
         """Apply only the residual reducers selected for this backedge."""
+        count = state.registers[REGISTER_INDEX['rdx']] & MASK32
+        limit = state.registers[REGISTER_INDEX['rax']] & MASK64
+        length = state.registers[REGISTER_INDEX['rsi']] & MASK32
+        prefix = (self._length_prefix_cut(state, branch)
+                  if 1 <= count <= limit <= 0xff and length < 0x80
+                  else None)
+        if prefix is not None:
+            if self._physical_profile is not None:
+                self.prefix_source_instructions += \
+                    self._length_prefix_source_instructions(
+                        state, state.registers[REGISTER_INDEX['rcx']],
+                        count, length, limit)
+            prior = state
+            state, scratch = self._execute_plan(state, prefix)
+            state, boundary = self._control(
+                state, prefix.boundary, prior, scratch)
+            if boundary is not None:
+                raise X86Error('a pure prefix recurrence published a barrier')
+            self.prefix_cut_executions += 1
+            self.prefix_cut_executed_work += physical_work(prefix.plan)
+            self.prefix_cut_executed_span += prefix.plan.waves.span
+            self.collapsed_length_prefix_entries += limit - count + 1
+            return state
         recurrence = self._counted_repeat_cut(state, branch)
         if recurrence is not None:
-            cut, counter, iteration_bytes = recurrence
+            (cut, counter, iteration_bytes,
+             source_instructions) = recurrence
             iterations = state.registers[counter] & MASK64
             prior = state
             state, scratch = self._execute_plan(state, cut)
@@ -11887,6 +11890,11 @@ class X86DBT(object):
                 state, cut.boundary, prior, scratch)
             if boundary is not None:
                 raise X86Error('a pure recurrence published a barrier')
+            self.recurrence_cut_executions += 1
+            self.recurrence_cut_executed_work += physical_work(cut.plan)
+            self.recurrence_cut_executed_span += cut.plan.waves.span
+            self.recurrence_source_instructions += \
+                iterations * source_instructions
             self.collapsed_repeat_bytes += iterations * iteration_bytes
             self.collapsed_repeat_iterations += iterations
             return state
@@ -18488,6 +18496,24 @@ class X86DBT(object):
             'recurrence_cut_cache_misses': self.recurrence_cut_cache_misses,
             'recurrence_cut_work': self.recurrence_cut_work,
             'recurrence_cut_span': self.recurrence_cut_span,
+            'recurrence_cut_executions': self.recurrence_cut_executions,
+            'recurrence_cut_executed_work':
+                self.recurrence_cut_executed_work,
+            'recurrence_cut_executed_span':
+                self.recurrence_cut_executed_span,
+            'recurrence_source_instructions':
+                self.recurrence_source_instructions,
+            'prefix_cuts': self.prefix_cuts,
+            'resident_prefix_cuts': len(self._prefix_cuts),
+            'prefix_cut_cache_hits': self.prefix_cut_cache_hits,
+            'prefix_cut_cache_misses': self.prefix_cut_cache_misses,
+            'prefix_cut_work': self.prefix_cut_work,
+            'prefix_cut_span': self.prefix_cut_span,
+            'prefix_cut_executions': self.prefix_cut_executions,
+            'prefix_cut_executed_work': self.prefix_cut_executed_work,
+            'prefix_cut_executed_span': self.prefix_cut_executed_span,
+            'prefix_source_instructions':
+                self.prefix_source_instructions,
             'stack_cuts': self.stack_cuts,
             'resident_stack_cuts': len(self._stack_cuts),
             'stack_cut_cache_hits': self.stack_cut_cache_hits,
@@ -18773,8 +18799,6 @@ class X86DBT(object):
             'collapsed_smp_lock_sites': self.collapsed_smp_lock_sites,
             'collapsed_length_prefix_entries':
                 self.collapsed_length_prefix_entries,
-            'length_prefix_cache_hits': self.length_prefix_cache_hits,
-            'length_prefix_cache_misses': self.length_prefix_cache_misses,
             'collapsed_token_entries': self.collapsed_token_entries,
             'collapsed_token_bytes': self.collapsed_token_bytes,
             'collapsed_symbol_lookups': self.collapsed_symbol_lookups,

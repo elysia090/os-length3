@@ -92,6 +92,28 @@ class TestWholeWordKernelsLand(unittest.TestCase):
         self.assertTrue(primary['verification']['pass'])
 
 
+class TestResidualStateQueriesLand(unittest.TestCase):
+    def test_rank_token_is_a_field_comparison_not_a_split(self):
+        result, primary = minimized('rank_token_query8')
+        self.assertEqual(result['program']['solver'], 'rank-token-query')
+        self.assertEqual(result['program']['ops'][0]['class'],
+                         'FIELD_COMPARE')
+        self.assertEqual(primary['instructions'],
+                         ['AND', 'SHR', 'AND', 'GT_U'])
+        self.assertNotIn('LUT', primary['instructions'])
+        self.assertTrue(primary['verification']['exhaustive'])
+
+    def test_predicate_residual_is_a_dynamic_bit_query_not_a_table(self):
+        result, primary = minimized('predicate_bitset_query8')
+        self.assertEqual(result['program']['solver'], 'residual-bit-query')
+        self.assertEqual(result['program']['ops'][0]['class'], 'BIT_QUERY')
+        self.assertEqual(primary['instructions'],
+                         ['AND', 'SHR', 'AND', 'SHRR', 'AND'])
+        self.assertNotIn('LUT', primary['instructions'])
+        self.assertLess(primary['L_bits'], 512)
+        self.assertTrue(primary['verification']['exhaustive'])
+
+
 class TestTheSplitIsTheCaseAnalysis(unittest.TestCase):
     """A split has to have found the kernel's own cases, not the ordering's."""
 

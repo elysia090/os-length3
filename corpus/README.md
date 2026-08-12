@@ -14,6 +14,8 @@ language they were first written in.
 | `lanes/` | fixed-width field and lane kernels |
 | `text/` | bounded string and rolling-hash kernels |
 | `floating/` | explicitly observed floating-point bit kernels |
+| `residual-state/` | word, rank, and finite-predicate layouts for future queries |
+| `residual-state-pressure/` | multi-coordinate residual queries that intentionally exceed the scalar entrance |
 
 The browser's current examples remain in `src/v2/examples` as a compatibility
 surface. They are not moved while the UI is frozen. New VM and physical-array

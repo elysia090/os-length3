@@ -21,6 +21,7 @@ from qm.pipeline import solve
 from qm.pagearchive import pack_wasm_steps
 from qm.steppage import (memory_shape, pack as pack_step,
                          projection_coordinate, relative_layout)
+from qm.stepnormalize import normalize_plan
 from qm.wasmbinary import index_module
 from qm.wasmregions import pack as pack_regions
 from qm.wasmphysical import DependencyWaves
@@ -35,6 +36,105 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(shutil.which('node'), 'node is required')
 class TestBrowserPageFabric(unittest.TestCase):
+    def test_prefix_directory_resumes_inside_the_bootstrap_vm(self):
+        start = 65532
+        alu_descriptor = 32 | (1 << 8) | (1 << 11)
+        alu_flags = evaluate_lane('lane64.X86_FLAGS', (
+            0x247, 0xffffffff, 1, 0, alu_descriptor))
+        source = bytearray(2 * 65536)
+        source[start:start + 134] = b'\x02aa\x81\x01' + b'b' * 129
+        plan = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'memory.i64.prefix_end', (
+                Operand('local', 0), Operand('local', 1),
+                Operand('local', 2), Operand('local', 3),
+                Operand('const', memory_shape(1, virtual64=True)))),
+             WaveNode(2, 'lane32.INSERT', (
+                Operand('const', 0x1122334455667788),
+                Operand('const', 0xaa), Operand('const', 8))),
+             WaveNode(3, 'lane64.SELECT_U32', (
+                Operand('const', 0x100000002),
+                Operand('const', 0x200000003), Operand('const', 0))),
+             WaveNode(4, 'lane64.X86_ALU', (
+                Operand('const', 0x247), Operand('const', 0xffffffff),
+                Operand('const', 1), Operand('const', alu_descriptor))),
+             WaveNode(5, 'lane64.ADD', (
+                Operand('projection', projection_coordinate(4, 16)),
+                Operand('const', 2)))),
+            DependencyWaves((0,), (), (0,)),
+            (Operand('node', 2), Operand('node', 3), Operand('node', 4),
+             Operand('projection', projection_coordinate(4, 16)),
+             Operand('node', 5)),
+            (Operand('node', 1), Operand('local', 1),
+             Operand('local', 2), Operand('local', 3)))
+        physical = bytes(pack_step(normalize_plan(plan)))
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            step_path = root / 'prefix-step.bin'
+            memory_path = root / 'prefix-memory.bin'
+            step_path.write_bytes(physical)
+            memory_path.write_bytes(source)
+            driver = root / 'prefix-step.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            driver.write_text('''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const step = new Uint8Array(readFileSync(process.argv[3]));
+const source = new Uint8Array(readFileSync(process.argv[4]));
+const session = E.vm_step_acquire();
+new Uint8Array(
+  E.memory.buffer, E.vm_step_buffer(session), step.length).set(step);
+if (!E.vm_step_open(session, step.length)
+    || !E.vm_step_memory_open(session, source.length)) {
+  throw new Error('prefix fixture did not open');
+}
+const view = new DataView(E.memory.buffer);
+const locals = E.vm_step_locals(session);
+view.setBigUint64(locals, %dn, true);
+view.setBigUint64(locals + 8, 1n, true);
+view.setBigUint64(locals + 16, 2n, true);
+view.setBigUint64(locals + 24, 2n, true);
+const faults = [];
+for (;;) {
+  const status = E.vm_step_execute(session, 4, 0);
+  if (status === 2) break;
+  if (status !== 1) throw new Error(
+    `execute:${status}:${E.vm_step_error(session)}`);
+  const lease = E.vm_step_memory_lease(session);
+  const page = E.vm_step_memory_page(session, lease);
+  const bytes = E.vm_step_memory_page_size(session, lease);
+  faults.push(page);
+  new Uint8Array(
+    E.memory.buffer, E.vm_step_memory_page_buffer(session, lease), bytes,
+  ).set(source.subarray(page * 65536, page * 65536 + bytes));
+  if (!E.vm_step_supply_memory_page(session, lease, page, bytes)) {
+    throw new Error('supply failed');
+  }
+}
+const end = view.getBigUint64(locals, true).toString();
+const stack = E.vm_step_stack(session);
+const values = [
+  view.getBigUint64(stack, true).toString(),
+  view.getBigUint64(stack + 8, true).toString(),
+  view.getBigUint64(stack + 16, true).toString(),
+  view.getBigUint64(stack + 24, true).toString(),
+  view.getBigUint64(stack + 32, true).toString(),
+];
+E.vm_step_release(session);
+process.stdout.write(JSON.stringify({faults, end, values}));
+''' % start, encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(step_path), str(memory_path)],
+                check=False, capture_output=True, text=True,
+                encoding='utf-8')
+            self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), {
+            'faults': [0, 1], 'end': str(start + 134),
+            'values': [str(0x556677aa), '3', str(alu_flags), '0', '2']})
+
     def test_relative_exchange_resumes_inside_the_bootstrap_vm(self):
         layout = relative_layout((4, 4, 8))
         delta = (64 - 80) & ((1 << 64) - 1)
@@ -59,6 +159,8 @@ class TestBrowserPageFabric(unittest.TestCase):
             0x1122334455667788, 0xab, 8))
         test_condition = evaluate_lane('lane64.X86_TEST_CONDITION', (
             0xab, 0xff, 8 | (5 << 8)))
+        projected_test_condition = evaluate_lane(
+            'lane64.X86_CONDITION', (test_flags, 5))
         nodes = (
             WaveNode(1, 'lane64.SUBR', (
                 Operand('local', 0), Operand('local', 1))),
@@ -127,7 +229,8 @@ class TestBrowserPageFabric(unittest.TestCase):
                  1, 1, 1, 1, 1, 1, 1, 1)),
             tuple(Operand('node', value)
                   for value in range(1, 18))
-            + (Operand('local', 4),
+            + (Operand('projection', projection_coordinate(13, 5)),
+               Operand('local', 4),
                Operand('projection', projection_coordinate(2, 3)),
                Operand('projection', projection_coordinate(2, 0xfe)),
                Operand('projection', projection_coordinate(2, 0xfd))),
@@ -188,7 +291,7 @@ for (;;) {
   }
 }
 const stack = E.vm_step_stack(session);
-const outputs = Array.from({length: 21}, (_, index) =>
+const outputs = Array.from({length: 22}, (_, index) =>
   view.getBigUint64(stack + index * 8, true).toString());
 const dirtyPage = E.vm_step_first_dirty_memory_page(session);
 const lease = E.vm_step_memory_lease(session);
@@ -225,6 +328,7 @@ process.stdout.write(JSON.stringify(
                 str(bit_flags),
                 str(inserted),
                 str(test_condition),
+                str(projected_test_condition),
                 str(saved),
                 str((saved_high + delta) & 0xffffffff),
                 str(26 | (36 << 32)),

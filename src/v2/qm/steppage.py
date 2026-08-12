@@ -73,9 +73,24 @@ STATE_OPS = (
     'lane64.X86_BIT_FLAGS',
     'lane64.INSERT',
     'lane64.X86_TEST_CONDITION',
+    'memory.i64.prefix_end',
+    'lane32.INSERT',
+    'lane64.SELECT_U32',
+    'lane64.X86_ALU',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
+
+# These nodes publish the architectural RFLAGS word.  A terminal projection
+# selector in [0, 16) is the matching x86 condition without another SSA lane.
+# The flags word remains the primary result, so a Jcc observer and future
+# architectural state share one physical computation.
+FLAG_PROJECTION_OPS = frozenset((
+    'lane64.X86_FLAGS', 'lane64.X86_FLAGS_SELECT',
+    'lane64.X86_COMPARE', 'lane64.X86_SHIFT_FLAGS',
+    'lane64.X86_TEST', 'lane64.X86_BIT_FLAGS',
+    'lane64.X86_ALU',
+))
 
 OPERAND_KINDS = ('const', 'stack', 'local', 'node', 'projection')
 OPERAND_TO_TAG = dict((name, tag)
@@ -254,6 +269,29 @@ def _find2(memory, address, first, second, shape):
         distance += count
 
 
+def _prefix_end(memory, pointer, count, first_length, limit, shape):
+    """Advance over a bounded variable-length byte directory."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if width != 1 or scale or not virtual64:
+        raise ValueError('prefix directory needs virtual byte coordinates')
+    pointer, count, limit = map(int, (pointer, count, limit))
+    length = int(first_length) & 0xffffffff
+    if count > limit or length >= 0x80:
+        raise ValueError('prefix directory residual is outside its domain')
+    remaining = limit - count + 1
+    for _entry in range(remaining):
+        pointer = (pointer + length + 1) & I64
+        if _entry + 1 == remaining:
+            break
+        leading = memory.load(pointer, 1)
+        if leading & 0x80:
+            length = ((leading & 0x7f)
+                      + (memory.load((pointer + 1) & I64, 1) << 7) + 1)
+        else:
+            length = leading
+    return pointer
+
+
 def _copy_until(memory, source, target, start, limit, target_end,
                 sentinel, shape):
     """Copy an indexed byte span until its exclusive limit or sentinel.
@@ -412,6 +450,33 @@ def _pre_store(memory, pointer, value, decrement, shape):
     address = (int(pointer) - int(decrement)) & I64
     _store(memory, address, int(value), 0, width, 0, virtual64)
     return address
+
+
+def _x86_alu(prior, left, right, descriptor):
+    """Return flags and result for one width-bounded integer ALU update."""
+    from .laneops import evaluate
+
+    prior, left, right, descriptor = map(
+        int, (prior, left, right, descriptor))
+    width = descriptor & 0x7f
+    mode = (descriptor >> 8) & 7
+    carry = prior & 1
+    if mode == 0:
+        result = left & right
+    elif mode == 1:
+        result = left + right
+    elif mode == 2:
+        result = left + right + carry
+    elif mode == 3:
+        result = left - right
+    elif mode == 4:
+        result = left - right - carry
+    else:
+        raise ValueError('x86 ALU lane has an invalid mode')
+    result &= mask_of(width)
+    flags = evaluate('lane64.X86_FLAGS', (
+        prior, left, right, result, descriptor))
+    return flags, result
 
 
 def relative_exchange_values(left_bytes, right_bytes, delta,
@@ -726,8 +791,22 @@ def _validate(mapped):
                                    or depth[value] >= depth[node]):
                 raise StatePageError('a wave lane depends on its own/later wave')
             if kind == 'projection':
-                raise StatePageError(
-                    'a projection may appear only in state outputs')
+                try:
+                    source, selector = decode_projection_coordinate(value)
+                except ValueError as error:
+                    raise StatePageError(str(error))
+                if (source < 1 or source > mapped.work
+                        or depth[source] >= depth[node]):
+                    raise StatePageError(
+                        'a wave lane depends on its own/later projection')
+                source_operation = OPS[
+                    mapped.value('opcodes', source - 1)]
+                if not (source_operation == 'lane64.X86_ALU'
+                        and selector == 16
+                        or source_operation in FLAG_PROJECTION_OPS
+                        and selector < 16):
+                    raise StatePageError(
+                        'an internal projection has no scalar value')
             if kind == 'stack' and value >= mapped.stack_inputs:
                 raise StatePageError('stack operand is outside the frame region')
             if kind == 'local' and value >= mapped.local_extent:
@@ -774,6 +853,21 @@ def _validate(mapped):
             if width != 1 or scale >= 32:
                 raise StatePageError(
                     'memory.i64.copy_until shape is invalid')
+            continue
+        if operation == 'memory.i64.prefix_end':
+            if (end - begin < 5
+                    or OPERAND_KINDS[
+                        mapped.value('operand_tags', begin + 4)] != 'const'):
+                raise StatePageError(
+                    'memory prefix directory has the wrong operands')
+            try:
+                width, scale, virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', begin + 4))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if width != 1 or scale or not virtual64:
+                raise StatePageError(
+                    'memory prefix directory shape is invalid')
             continue
         if operation == 'memory.i64.relative_exchange':
             if (end - begin < 7
@@ -926,7 +1020,7 @@ def _validate(mapped):
                 'changed local coordinates are not strictly increasing')
         previous = coordinate
 
-    last_projection_source = next((
+    last_relative_source = next((
         value for value in reversed(mapped.values('lane_values'))
         if OPS[mapped.value('opcodes', value - 1)]
         == 'memory.i64.relative_exchange'), None)
@@ -936,14 +1030,22 @@ def _validate(mapped):
             source, selector = decode_projection_coordinate(value)
         except ValueError as error:
             raise StatePageError(str(error))
-        if source != last_projection_source or source > mapped.work:
+        if source > mapped.work:
+            raise StatePageError('state projection source is outside the step')
+        operation = OPS[mapped.value('opcodes', source - 1)]
+        if operation in FLAG_PROJECTION_OPS:
+            limit = 17 if operation == 'lane64.X86_ALU' else 16
+            if selector >= limit:
+                raise StatePageError(
+                    'x86 flag projection has an invalid condition')
+            return
+        if source != last_relative_source:
             raise StatePageError(
                 'state projection does not name the final multi-result node')
         begin, end = (
             mapped.value('argument_offsets', source - 1),
             mapped.value('argument_offsets', source))
-        if (OPS[mapped.value('opcodes', source - 1)]
-                != 'memory.i64.relative_exchange' or end - begin < 7):
+        if operation != 'memory.i64.relative_exchange' or end - begin < 7:
             raise StatePageError(
                 'state projection source is not a relative exchange')
         widths = decode_relative_layout(
@@ -1035,6 +1137,7 @@ def execute_mapped(mapped, state):
     values = [0] * (mapped.work + 1)
     memory = MemoryCut(state.memory)
     relative_results = {}
+    alu_results = {}
 
     def resolve(tag, value):
         kind = OPERAND_KINDS[tag]
@@ -1046,6 +1149,12 @@ def execute_mapped(mapped, state):
             return frame.locals[value]
         if kind == 'projection':
             source, selector = decode_projection_coordinate(value)
+            operation = OPS[mapped.value('opcodes', source - 1)]
+            if operation == 'lane64.X86_ALU' and selector == 16:
+                return alu_results[source][1]
+            if operation in FLAG_PROJECTION_OPS:
+                return evaluate('lane64.X86_CONDITION', (
+                    values[source], selector))
             results, mode = relative_results[source]
             return _relative_select(results, selector, mode)
         return values[value]
@@ -1071,6 +1180,8 @@ def execute_mapped(mapped, state):
                 produced.append((node, _find2(memory, *arguments)))
             elif operation == 'memory.i64.copy_until':
                 produced.append((node, _copy_until(memory, *arguments)))
+            elif operation == 'memory.i64.prefix_end':
+                produced.append((node, _prefix_end(memory, *arguments[:5])))
             elif operation == 'memory.i64.relative_exchange':
                 mode = arguments[6]
                 results = _relative_exchange(
@@ -1091,6 +1202,9 @@ def execute_mapped(mapped, state):
             elif operation == 'memory.i64.pre_store':
                 produced.append((node, _pre_store(
                     memory, *arguments[:4])))
+            elif operation == 'lane64.X86_ALU':
+                alu_results[node] = _x86_alu(*arguments)
+                produced.append((node, alu_results[node][0]))
             elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
@@ -1175,11 +1289,15 @@ def compile_mapped_executor(mapped):
     namespace = {'memory_load': _load, 'memory_store': _store,
                  'memory_repeat': _repeat, 'memory_find2': _find2,
                  'memory_copy_until': _copy_until,
+                 'memory_prefix_end': _prefix_end,
                  'memory_relative_exchange': _relative_exchange,
                  'memory_relative_select': _relative_select,
                  'memory_relative_address': _relative_address,
-                 'memory_pre_store': _pre_store}
+                 'memory_pre_store': _pre_store,
+                 'x86_alu': _x86_alu}
+    namespace['x86_condition'] = bind('lane64.X86_CONDITION')
     lines.append('    relative_results = {}')
+    lines.append('    alu_results = {}')
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -1193,6 +1311,12 @@ def compile_mapped_executor(mapped):
             return 'locals_[%d]' % value
         if kind == 'projection':
             source, selector = decode_projection_coordinate(value)
+            operation = OPS[mapped.value('opcodes', source - 1)]
+            if operation == 'lane64.X86_ALU' and selector == 16:
+                return 'alu_results[%d][1]' % source
+            if operation in FLAG_PROJECTION_OPS:
+                return 'x86_condition((value_%d, %d))' % (
+                    source, selector)
             return ('memory_relative_select(relative_results[%d][0], %d, '
                     'relative_results[%d][1])'
                     % (source, selector, source))
@@ -1223,6 +1347,14 @@ def compile_mapped_executor(mapped):
             if operation == 'memory.i64.copy_until':
                 lines.append('    value_%d = memory_copy_until(memory, %s)' %
                              (node, arguments))
+                continue
+            if operation == 'memory.i64.prefix_end':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 5))
+                lines.append(
+                    '    value_%d = memory_prefix_end(memory, %s)' %
+                    (node, call_arguments))
                 continue
             if operation == 'memory.i64.relative_exchange':
                 leading = ', '.join(
@@ -1266,6 +1398,12 @@ def compile_mapped_executor(mapped):
                 lines.append(
                     '    value_%d = memory_pre_store('
                     'memory, %s)' % (node, call_arguments))
+                continue
+            if operation == 'lane64.X86_ALU':
+                lines.append('    alu_results[%d] = x86_alu(%s)' %
+                             (node, arguments))
+                lines.append('    value_%d = alu_results[%d][0]' %
+                             (node, node))
                 continue
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
