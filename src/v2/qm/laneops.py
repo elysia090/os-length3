@@ -75,10 +75,14 @@ def shape(operation):
         return 2, 0, False
     if name == 'X86_TEST':
         return 4, 0, False
+    if name == 'X86_TEST_CONDITION':
+        return 3, 0, False
     if name == 'ADD3_U32':
         return 3, 0, False
     if name == 'X86_BIT_FLAGS':
         return 4, 0, False
+    if name == 'INSERT':
+        return 3, 0, False
     if name == 'X86_FLAGS_SELECT':
         return 11, 0, False
     if name in GENERIC_ARITY:
@@ -188,6 +192,16 @@ def evaluate(operation, arguments):
         left, unsigned32, right = arguments
         return (int(left) + (int(unsigned32) & 0xffffffff)
                 + int(right)) & mask_of(bits)
+    if name == 'INSERT':
+        base, value, descriptor = map(int, arguments)
+        width = descriptor & 0xff
+        offset = (descriptor >> 8) & 0xff
+        if not width or width > bits or offset + width > bits:
+            raise ValueError('insert lane has an invalid bit field')
+        field = mask_of(width)
+        selected = field << offset
+        return ((base & ~selected) | ((value & field) << offset)) \
+            & mask_of(bits)
     if name == 'BEXTR':
         value, offset, width = arguments
         count = width % bits
@@ -273,6 +287,15 @@ def evaluate(operation, arguments):
         result = (int(left) & int(right)) & mask_of(width)
         return evaluate('lane64.X86_FLAGS', (
             prior, left, right, result, descriptor))
+    if name == 'X86_TEST_CONDITION':
+        left, right, descriptor = map(int, arguments)
+        width = descriptor & 0x7f
+        condition = (descriptor >> 8) & 15
+        if (width not in (8, 16, 32, 64)
+                or descriptor != width | (condition << 8)):
+            raise ValueError('x86 test condition lane has an invalid descriptor')
+        flags = evaluate('lane64.X86_TEST', (0, left, right, width))
+        return evaluate('lane64.X86_CONDITION', (flags, condition))
     if name == 'X86_BIT_FLAGS':
         prior, value, index, descriptor = map(int, arguments)
         width = descriptor & 0x7f

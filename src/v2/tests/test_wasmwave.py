@@ -240,6 +240,86 @@ class TestWaveExecutor(unittest.TestCase):
                     0x2d7, 0, index, width))
                 self.assertEqual(cleared, 0x2d6)
 
+    def test_physical_x86_test_consumes_its_own_width_projections(self):
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.AND', (
+                Operand('local', 0), Operand('const', 0xff))),
+             WaveNode(2, 'lane64.AND', (
+                 Operand('local', 1), Operand('const', 0xff))),
+             WaveNode(3, 'lane64.X86_TEST', (
+                 Operand('local', 2), Operand('node', 1),
+                 Operand('node', 2), Operand('const', 8)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('local', 0), Operand('local', 1),
+             Operand('node', 3)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.X86_TEST'])
+        self.assertEqual(plan.nodes[0].arguments[1:3], (
+            Operand('local', 0), Operand('local', 1)))
+
+    def test_insert_lane_publishes_one_bit_field_without_scalar_masks(self):
+        from qm.laneops import evaluate
+
+        self.assertEqual(
+            evaluate('lane64.INSERT', (0x1122334455667788, 0xab, 8)),
+            0x11223344556677ab)
+        self.assertEqual(
+            evaluate('lane64.INSERT', (
+                0x1122334455667788, 0xcd, 8 | (8 << 8))),
+            0x112233445566cd88)
+
+    def test_test_condition_is_one_closed_physical_lane(self):
+        from qm.laneops import evaluate
+
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.X86_TEST', (
+                Operand('local', 0), Operand('local', 1),
+                Operand('local', 1), Operand('const', 8))),
+             WaveNode(2, 'lane64.X86_CONDITION', (
+                 Operand('node', 1), Operand('const', 5)))),
+            DependencyWaves((0,), (), (0,)),
+            (Operand('node', 2),),
+            (Operand('local', 0), Operand('local', 1)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.X86_TEST_CONDITION'])
+        self.assertEqual(plan.nodes[0].arguments, (
+            Operand('local', 1), Operand('local', 1),
+            Operand('const', 8 | (5 << 8))))
+        self.assertEqual(
+            evaluate('lane64.X86_TEST_CONDITION',
+                     (0xab, 0xff, 8 | (5 << 8))),
+            1)
+
+    def test_test_condition_bypasses_a_following_test_prior_chain(self):
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.X86_TEST', (
+                Operand('local', 0), Operand('local', 1),
+                Operand('local', 1), Operand('const', 64))),
+             WaveNode(2, 'lane64.X86_CONDITION', (
+                 Operand('node', 1), Operand('const', 4))),
+             WaveNode(3, 'lane64.X86_TEST', (
+                 Operand('node', 1), Operand('local', 2),
+                 Operand('local', 2), Operand('const', 8)))),
+            DependencyWaves((0,), (), (0,)),
+            (Operand('node', 2),),
+            (Operand('local', 0), Operand('local', 1),
+             Operand('local', 2), Operand('node', 3)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes], [
+            'lane64.X86_TEST_CONDITION', 'lane64.X86_TEST'])
+        self.assertEqual(plan.nodes[1].arguments[0], Operand('local', 0))
+
     def test_u32_inputs_and_publications_keep_the_hot_cut_at_four_lanes(self):
         raw = PureSlice(
             0, 0, 6, 6, 0,

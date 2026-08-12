@@ -55,6 +55,10 @@ class TestBrowserPageFabric(unittest.TestCase):
             5, 0x100000002, 7))
         bit_flags = evaluate_lane('lane64.X86_BIT_FLAGS', (
             0x2d6, 0x8000, 15, 16))
+        inserted = evaluate_lane('lane64.INSERT', (
+            0x1122334455667788, 0xab, 8))
+        test_condition = evaluate_lane('lane64.X86_TEST_CONDITION', (
+            0xab, 0xff, 8 | (5 << 8)))
         nodes = (
             WaveNode(1, 'lane64.SUBR', (
                 Operand('local', 0), Operand('local', 1))),
@@ -106,17 +110,23 @@ class TestBrowserPageFabric(unittest.TestCase):
             WaveNode(15, 'lane64.X86_BIT_FLAGS', (
                 Operand('const', 0x2d6), Operand('const', 0x8000),
                 Operand('const', 15), Operand('const', 16))),
+            WaveNode(16, 'lane64.INSERT', (
+                Operand('const', 0x1122334455667788),
+                Operand('const', 0xab), Operand('const', 8))),
+            WaveNode(17, 'lane64.X86_TEST_CONDITION', (
+                Operand('const', 0xab), Operand('const', 0xff),
+                Operand('const', 8 | (5 << 8)))),
         )
         plan = PureSlice(
             0, 0, 1, 1, 0, nodes,
             DependencyWaves(
-                (0, 7, 8, 13, 14, 15),
-                (1, 10, 11, 12, 13, 14, 15,
+                (0, 9, 10, 15, 16, 17),
+                (1, 10, 11, 12, 13, 14, 15, 16, 17,
                  2, 3, 4, 5, 6, 7, 8, 9),
                 (0, 1, 2, 3, 3, 3, 3, 3, 4, 5,
-                 1, 1, 1, 1, 1, 1)),
+                 1, 1, 1, 1, 1, 1, 1, 1)),
             tuple(Operand('node', value)
-                  for value in range(1, 16))
+                  for value in range(1, 18))
             + (Operand('local', 4),
                Operand('projection', projection_coordinate(2, 3)),
                Operand('projection', projection_coordinate(2, 0xfe)),
@@ -178,7 +188,7 @@ for (;;) {
   }
 }
 const stack = E.vm_step_stack(session);
-const outputs = Array.from({length: 19}, (_, index) =>
+const outputs = Array.from({length: 21}, (_, index) =>
   view.getBigUint64(stack + index * 8, true).toString());
 const dirtyPage = E.vm_step_first_dirty_memory_page(session);
 const lease = E.vm_step_memory_lease(session);
@@ -213,6 +223,8 @@ process.stdout.write(JSON.stringify(
                 str(condition), str(test_flags),
                 str(add3_u32),
                 str(bit_flags),
+                str(inserted),
+                str(test_condition),
                 str(saved),
                 str((saved_high + delta) & 0xffffffff),
                 str(26 | (36 << 32)),

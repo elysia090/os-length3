@@ -268,6 +268,18 @@ def _rewrite_physical(nodes, stack, locals_):
     def constant(operand):
         return operand.value if operand.kind == 'const' else None
 
+    def condition_can_consume_test(flags, condition_node):
+        """Prove that other uses only carry preserved bits to another TEST."""
+        if flags.kind != 'node' or flags.value in outputs:
+            return False
+        for consumer in nodes:
+            for index, argument in enumerate(consumer.arguments):
+                if argument != flags or consumer.value == condition_node:
+                    continue
+                if consumer.op != 'lane64.X86_TEST' or index != 0:
+                    return False
+        return True
+
     def unsigned_bits(operand):
         raw = constant(operand)
         if raw is not None:
@@ -278,6 +290,9 @@ def _rewrite_physical(nodes, stack, locals_):
         operation, arguments = source
         if operation.startswith('lane32.'):
             return 32
+        if operation in ('lane64.X86_CONDITION',
+                         'lane64.X86_TEST_CONDITION'):
+            return 1
         if operation.startswith('memory.i64.load'):
             suffix = operation[len('memory.i64.load'):]
             if suffix in ('8_u', '16_u', '32_u'):
@@ -526,7 +541,62 @@ def _rewrite_physical(nodes, stack, locals_):
                   and original_result.value not in outputs
                   and len(consumers.get(original_result.value, ())) == 1):
                 operation = 'lane64.X86_TEST'
-                arguments = arguments[:3] + (arguments[4],)
+                test_arguments = list(arguments[:3])
+                width_mask = (1 << (descriptor & 0x7f)) - 1
+                for index in (1, 2):
+                    masked = form(test_arguments[index])
+                    original = node.arguments[index]
+                    if (masked is not None
+                            and masked[0] == 'lane64.AND'
+                            and constant(masked[1][1]) == width_mask
+                            and original.kind == 'node'
+                            and original.value not in outputs
+                            and len(consumers.get(
+                                original.value, ())) == 1):
+                        test_arguments[index] = masked[1][0]
+                arguments = tuple(test_arguments) + (arguments[4],)
+
+        elif name == 'X86_CONDITION' and len(arguments) == 2:
+            tested = form(arguments[0])
+            condition = constant(arguments[1])
+            original_flags = node.arguments[0]
+            if (tested is not None
+                    and tested[0] == 'lane64.X86_TEST'
+                    and len(tested[1]) == 4
+                    and condition is not None
+                    and 0 <= condition < 16
+                    and constant(tested[1][3]) in (8, 16, 32, 64)
+                    and condition_can_consume_test(
+                        original_flags, node.value)):
+                width = constant(tested[1][3])
+                operation = 'lane64.X86_TEST_CONDITION'
+                arguments = (tested[1][1], tested[1][2], Operand(
+                    'const', width | (condition << 8)))
+
+        elif name == 'X86_TEST' and len(arguments) == 4:
+            descriptor = constant(arguments[3])
+            if descriptor in (8, 16, 32, 64):
+                test_arguments = list(arguments[:3])
+                prior = test_arguments[0]
+                prior_form = form(prior)
+                while (prior_form is not None
+                       and prior_form[0] == 'lane64.X86_TEST'):
+                    prior = prior_form[1][0]
+                    prior_form = form(prior)
+                test_arguments[0] = prior
+                width_mask = (1 << descriptor) - 1
+                for index in (1, 2):
+                    masked = form(test_arguments[index])
+                    original = node.arguments[index]
+                    if (masked is not None
+                            and masked[0] == 'lane64.AND'
+                            and constant(masked[1][1]) == width_mask
+                            and original.kind == 'node'
+                            and original.value not in outputs
+                            and len(consumers.get(
+                                original.value, ())) == 1):
+                        test_arguments[index] = masked[1][0]
+                arguments = tuple(test_arguments) + (arguments[3],)
 
         elif name == 'EXTEND_I32_S':
             source = form(arguments[0])
