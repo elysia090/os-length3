@@ -2,6 +2,7 @@
 """Measure the reached x86 physical pages in one Linux machine quantum."""
 
 import argparse
+from collections import Counter
 import json
 from pathlib import Path
 import sys
@@ -17,6 +18,7 @@ from kernel.pagefabric import PageFabric, open_artifact
 from kernel.x86 import X86DBT, X86Machine
 from kernel.x86snapshot import dump_x86_code_pages, load_x86_boot_cache
 from qm.stepnormalize import physical_work
+from qm.steppage import decode_relative_layout
 
 
 def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
@@ -65,7 +67,8 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     code = dump_x86_code_pages(dbt)
     executed_cut_bytes = 0
     boundary_coordinates = []
-    for rip, (count, work, span) in dbt._physical_profile.items():
+
+    def reached_cut(rip):
         cached = dbt._register_cuts.get(rip)
         cut = None if cached is None else cached[1]
         if cut is None:
@@ -74,15 +77,76 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
         if cut is None:
             cached = dbt._predicate_cuts.get(rip)
             cut = None if cached is None else cached[1]
-        if cut is None:
-            cut = dbt.blocks.get(rip)
+        return cut if cut is not None else dbt.blocks.get(rip)
+
+    operation_work = Counter()
+    boundary_cost = {}
+    cut_shape_cost = {}
+    work_buckets = {}
+    dominant_cuts = []
+    for rip, (count, work, span) in dbt._physical_profile.items():
+        cut = reached_cut(rip)
         if cut is None:
             continue
         executed_cut_bytes += len(cut.mapped.data)
+        unit_work = physical_work(cut.plan)
+        unit_span = cut.plan.waves.span
+        for node in cut.plan.nodes:
+            node_work = (len(decode_relative_layout(
+                node.arguments[4].value))
+                if node.op == 'memory.i64.relative_exchange' else 1)
+            operation_work[node.op] += count * node_work
+        boundary_name = cut.boundary.operation
+        aggregate = boundary_cost.setdefault(
+            boundary_name, [0, 0, 0, set()])
+        aggregate[0] += count
+        aggregate[1] += work
+        aggregate[2] += span
+        aggregate[3].add(rip)
+        bucket = work_buckets.setdefault(unit_work, [0, 0, 0, set()])
+        bucket[0] += count
+        bucket[1] += work
+        bucket[2] += span
+        bucket[3].add(rip)
+        operations = tuple(node.op for node in cut.plan.nodes)
+        shape = (boundary_name, unit_work, unit_span, operations)
+        shaped = cut_shape_cost.setdefault(shape, [0, 0, 0, []])
+        shaped[0] += count
+        shaped[1] += work
+        shaped[2] += span
+        if len(shaped[3]) < 8:
+            shaped[3].append(rip)
+        dominant_cuts.append((
+            rip, boundary_name, count, work, span, unit_work, unit_span,
+            len(cut.source), operations))
         boundary_coordinates.append((
-            rip, cut.boundary.operation, count, work, span,
-            physical_work(cut.plan), cut.plan.waves.span))
+            rip, boundary_name, count, work, span, unit_work, unit_span))
     boundary_coordinates.sort(key=lambda item: (-item[2], item[0]))
+    executed_work = sum(
+        work for _count, work, _span in dbt._physical_profile.values())
+    executed_span = sum(
+        span for _count, _work, span in dbt._physical_profile.values())
+    dominant_operations = tuple(
+        (operation, work,
+         0.0 if not executed_work else work / executed_work)
+        for operation, work in operation_work.most_common())
+    dominant_boundaries = tuple(sorted((
+        (boundary, values[0], values[1], values[2], len(values[3]),
+         0.0 if not executed_work else values[1] / executed_work)
+        for boundary, values in boundary_cost.items()),
+        key=lambda item: (-item[2], item[0])))
+    dominant_shapes = tuple(sorted((
+        (shape[0], values[0], values[1], values[2],
+         shape[1], shape[2], shape[3], tuple(values[3]),
+         0.0 if not executed_work else values[1] / executed_work)
+        for shape, values in cut_shape_cost.items()),
+        key=lambda item: (-item[2], item[0], item[4], item[5])))
+    work_distribution = tuple(sorted((
+        (unit_work, values[0], values[1], values[2], len(values[3]),
+         0.0 if not executed_work else values[1] / executed_work)
+        for unit_work, values in work_buckets.items()),
+        key=lambda item: item[0]))
+    dominant_cuts.sort(key=lambda item: (-item[3], -item[4], item[0]))
     inlined_calls = sorted((
         (rip, cut.inlined_call_target, physical_work(cut.plan),
          cut.plan.waves.span, cut.boundary.operation)
@@ -195,12 +259,13 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'executed_cuts': sum(
                 count for count, _work, _span
                 in dbt._physical_profile.values()),
-            'executed_work': sum(
-                work for _count, work, _span
-                in dbt._physical_profile.values()),
-            'executed_span': sum(
-                span for _count, _work, span
-                in dbt._physical_profile.values()),
+            'executed_work': executed_work,
+            'executed_span': executed_span,
+            'dominant_operations': dominant_operations,
+            'dominant_boundaries': dominant_boundaries,
+            'dominant_shapes': dominant_shapes,
+            'work_distribution': work_distribution,
+            'dominant_cuts': tuple(dominant_cuts),
             'boundary_coordinates': boundary_coordinates,
             'inlined_calls': inlined_calls,
             'inspected': inspected,
@@ -242,6 +307,13 @@ def main(argv=None):
             'executed_cuts': result['code']['executed_cuts'],
             'executed_work': result['code']['executed_work'],
             'executed_span': result['code']['executed_span'],
+            'dominant_operations': result['code'][
+                'dominant_operations'][:24],
+            'dominant_boundaries': result['code'][
+                'dominant_boundaries'][:16],
+            'dominant_shapes': result['code']['dominant_shapes'][:16],
+            'work_distribution': result['code']['work_distribution'],
+            'dominant_cuts': result['code']['dominant_cuts'][:24],
             'boundary_coordinates': result['code'][
                 'boundary_coordinates'][:32],
             'inlined_calls': result['code']['inlined_calls'][:16],

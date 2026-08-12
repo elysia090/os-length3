@@ -71,6 +71,8 @@ STATE_OPS = (
     'lane64.X86_CONDITION', 'lane64.X86_TEST',
     'lane64.ADD3_U32',
     'lane64.X86_BIT_FLAGS',
+    'lane64.INSERT',
+    'lane64.X86_TEST_CONDITION',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))

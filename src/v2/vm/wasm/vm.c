@@ -1841,7 +1841,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 198u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 200u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -1908,7 +1908,7 @@ static int step_operand(u32 at, u64 *value)
 
 static u64 step_mask(u32 bits)
 {
-    return bits == 32u ? 0xffffffffull : ~0ull;
+    return bits >= 64u ? ~0ull : (1ull << bits) - 1u;
 }
 
 static i64 step_signed(u64 value, u32 bits)
@@ -2408,13 +2408,8 @@ static int step_x86_shift_flags_lane(u32 begin, u32 end, u64 *result)
     return 1;
 }
 
-static int step_x86_condition_lane(u32 begin, u32 end, u64 *result)
+static int step_x86_condition_value(u64 flags, u64 code, u64 *result)
 {
-    if (end - begin != 2u) return step_fail(7u);
-    u64 flags, code;
-    if (!step_operand(begin, &flags)
-            || !step_operand(begin + 1u, &code))
-        return 0;
     u64 carry = flags & 1u;
     u64 parity = (flags >> 2u) & 1u;
     u64 zero = (flags >> 6u) & 1u;
@@ -2442,6 +2437,16 @@ static int step_x86_condition_lane(u32 begin, u32 end, u64 *result)
     return 1;
 }
 
+static int step_x86_condition_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 2u) return step_fail(7u);
+    u64 flags, code;
+    if (!step_operand(begin, &flags)
+            || !step_operand(begin + 1u, &code))
+        return 0;
+    return step_x86_condition_value(flags, code, result);
+}
+
 static int step_x86_test_lane(u32 begin, u32 end, u64 *result)
 {
     if (end - begin != 4u) return step_fail(7u);
@@ -2459,6 +2464,28 @@ static int step_x86_test_lane(u32 begin, u32 end, u64 *result)
     return step_x86_flags_value(
         prior, left, right, (left & right) & step_mask(width),
         descriptor, result);
+}
+
+static int step_x86_test_condition_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 3u) return step_fail(7u);
+    u64 left, right, descriptor;
+    if (!step_operand(begin, &left)
+            || !step_operand(begin + 1u, &right)
+            || !step_operand(begin + 2u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    u32 condition = ((u32)descriptor >> 8u) & 15u;
+    if ((width != 8u && width != 16u
+            && width != 32u && width != 64u)
+            || descriptor != (u64)(width | (condition << 8u)))
+        return step_fail(7u);
+    u64 flags;
+    if (!step_x86_flags_value(
+            0u, left, right, (left & right) & step_mask(width),
+            width, &flags))
+        return 0;
+    return step_x86_condition_value(flags, condition, result);
 }
 
 static int step_add3_u32_lane(u32 begin, u32 end, u64 *result)
@@ -2489,6 +2516,24 @@ static int step_x86_bit_flags_lane(u32 begin, u32 end, u64 *result)
     u64 carry = ((value & step_mask(width))
                  >> (index & (width - 1u))) & 1u;
     *result = (prior & ~1ull) | carry | 2u;
+    return 1;
+}
+
+static int step_insert_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 3u) return step_fail(7u);
+    u64 base, value, descriptor;
+    if (!step_operand(begin, &base)
+            || !step_operand(begin + 1u, &value)
+            || !step_operand(begin + 2u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 255u;
+    u32 offset = ((u32)descriptor >> 8u) & 255u;
+    if (!width || width > 64u || offset + width > 64u)
+        return step_fail(7u);
+    u64 field = step_mask(width);
+    u64 selected = field << offset;
+    *result = (base & ~selected) | ((value & field) << offset);
     return 1;
 }
 
@@ -3071,6 +3116,12 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                     first, last, &machine->values[node])
                 : opcode == 197u
                 ? step_x86_bit_flags_lane(
+                    first, last, &machine->values[node])
+                : opcode == 198u
+                ? step_insert_lane(
+                    first, last, &machine->values[node])
+                : opcode == 199u
+                ? step_x86_test_condition_lane(
                     first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {

@@ -3459,15 +3459,9 @@ class X86DBT(object):
                     value, Operand('const', MASK32)))
                 return True
             shift = 8 if high else 0
-            mask = ((1 << bits) - 1) << shift
-            cleared = emit('i64.and', (
-                registers[index], Operand('const', MASK64 ^ mask)))
-            inserted = emit('i64.and', (
-                value, Operand('const', (1 << bits) - 1)))
-            if shift:
-                inserted = emit('i64.shl', (
-                    inserted, Operand('const', shift)))
-            registers[index] = emit('i64.or', (cleared, inserted))
+            registers[index] = emit('lane64.INSERT', (
+                registers[index], value,
+                Operand('const', int(bits) | (shift << 8))))
             return True
 
         def result_flags(name, left, right, result, bits,
@@ -4751,7 +4745,9 @@ class X86DBT(object):
                   for node in nodes}
 
         def emit(operation, arguments):
-            operation, arguments = select_lane(operation, tuple(arguments))
+            arguments = tuple(arguments)
+            if not operation.startswith(('lane32.', 'lane64.', 'memory.')):
+                operation, arguments = select_lane(operation, arguments)
             key = operation, tuple(arguments)
             previous = common.get(key)
             if previous is not None:
@@ -4766,18 +4762,13 @@ class X86DBT(object):
         registers = list(plan.locals[:len(REGISTER_NAMES)])
         if high_byte:
             register = int(operand) - 4
-            cleared = emit('i64.and', (
-                registers[register], Operand('const', MASK64 ^ 0xff00)))
-            inserted = emit('i64.shl', (
-                emit('i64.and', (predicate, Operand('const', 1))),
-                Operand('const', 8)))
+            shift = 8
         else:
             register = int(operand)
-            cleared = emit('i64.and', (
-                registers[register], Operand('const', MASK64 ^ 0xff)))
-            inserted = emit(
-                'i64.and', (predicate, Operand('const', 1)))
-        registers[register] = emit('i64.or', (cleared, inserted))
+            shift = 0
+        registers[register] = emit('lane64.INSERT', (
+            registers[register], predicate,
+            Operand('const', 8 | (shift << 8))))
         flags = plan.locals[len(REGISTER_NAMES)]
         inputs = tuple(plan.locals[
             len(REGISTER_NAMES) + 1:
