@@ -3349,6 +3349,7 @@ class X86DBT(object):
             'register_immediate_alu', 'register_immediate_result_flags',
             'register_result_flags', 'set_condition', 'memory_binary',
             'conditional_move', 'shift', 'shift_result_flags',
+            'bit_immediate', 'bit_register',
         }
         if operation not in supported or len(plan.locals) < 17:
             return None
@@ -3419,17 +3420,20 @@ class X86DBT(object):
                 pointer = emit('i64.add', (pointer, index))
             return pointer
 
+        def memory_load(pointer, bits):
+            width = bits // 8
+            load = ('memory.i64.load' if width == 8 else
+                    'memory.i64.load%d_u' % bits)
+            return emit(load, (
+                pointer, Operand('const', 0),
+                Operand('const', memory_shape(
+                    width, virtual64=True))))
+
         def memory_value(operand, bits, following):
             pointer = memory_address(operand, following)
             if pointer is None:
                 return None, None
-            width = bits // 8
-            load = ('memory.i64.load' if width == 8 else
-                    'memory.i64.load%d_u' % bits)
-            value = emit(load, (
-                pointer, Operand('const', 0),
-                Operand('const', memory_shape(
-                    width, virtual64=True))))
+            value = memory_load(pointer, bits)
             return pointer, value
 
         def memory_store(pointer, value, bits):
@@ -3702,6 +3706,63 @@ class X86DBT(object):
             flags = emit('lane64.X86_SHIFT_FLAGS', (
                 prior_flags, source, result, amount,
                 Operand('const', int(bits) | (int(group) << 8))))
+        elif operation in ('bit_immediate', 'bit_register'):
+            if operation == 'bit_immediate':
+                _following, group, operand, bits, immediate = detail
+                raw_index = Operand('const', int(immediate))
+            else:
+                _following, group, operand, index_register, bits = detail
+                if not isinstance(index_register, int):
+                    return None
+                raw_index = registers[index_register]
+            if group not in (4, 5, 6, 7) or bits not in (16, 32, 64):
+                return None
+            bit_index = (Operand('const', int(immediate) & (bits - 1))
+                         if operation == 'bit_immediate' else
+                         emit('i64.and', (
+                             raw_index, Operand('const', bits - 1))))
+            pointer = None
+            if isinstance(operand, MemoryOperand):
+                pointer = memory_address(operand, following)
+                if pointer is None:
+                    return None
+                if operation == 'bit_immediate':
+                    byte_offset = ((int(immediate) // bits)
+                                   * (bits // 8))
+                    if byte_offset:
+                        pointer = emit('i64.add', (
+                            pointer, Operand('const', byte_offset)))
+                else:
+                    signed_index = (raw_index if bits == 64 else emit(
+                        'i64.extend%d_s' % bits, (raw_index,)))
+                    word_index = emit('i64.shr_s', (
+                        signed_index,
+                        Operand('const', bits.bit_length() - 1)))
+                    byte_shift = (bits // 8).bit_length() - 1
+                    byte_offset = (word_index if not byte_shift else emit(
+                        'i64.shl', (
+                            word_index, Operand('const', byte_shift))))
+                    pointer = emit('i64.add', (pointer, byte_offset))
+                value = memory_load(pointer, bits)
+            else:
+                value = read(operand, bits)
+            if value is None:
+                return None
+            flags = emit('lane64.X86_BIT_FLAGS', (
+                prior_flags, value, bit_index, Operand('const', bits)))
+            if group != 4:
+                selected = emit('i64.shl', (
+                    Operand('const', 1), bit_index))
+                if group == 5:
+                    result = emit('i64.or', (value, selected))
+                elif group == 6:
+                    result = emit('lane64.ANDNR', (selected, value))
+                else:
+                    result = emit('i64.xor', (value, selected))
+                if pointer is not None:
+                    memory_store(pointer, result, bits)
+                elif not publish(operand, result, bits):
+                    return None
         elif operation == 'group_ff':
             _following, group, operand, bits = detail
             if group not in (0, 1):

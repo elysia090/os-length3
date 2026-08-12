@@ -582,6 +582,67 @@ class TestX86StateStep(unittest.TestCase):
                             'shift', dict(optimized.layout()[
                                 'physical_boundaries']))
 
+    def test_bit_updates_keep_signed_memory_coordinates_in_the_state_page(self):
+        for second, group in ((0xa3, 4), (0xab, 5),
+                              (0xb3, 6), (0xbb, 7)):
+            for memory_operand in (False, True):
+                with self.subTest(group=group, memory=memory_operand):
+                    modrm = 0x0b if memory_operand else 0xc8
+                    code = bytes((0x48, 0x0f, second, modrm, 0xf4))
+                    memory = memory_with(
+                        (0x100, code),
+                        (0x400, struct.pack('<Q', 1 << 63)))
+                    registers = ({'rbx': 0x408, 'rcx': MASK64}
+                                 if memory_operand else
+                                 {'rax': 2, 'rcx': 65})
+                    initial = initial_state(
+                        memory, 0x100, registers, rflags=0x2d7)
+                    optimized = X86DBT(
+                        enable_function_oracles=False,
+                        profile_controls=True)
+                    fast, fast_boundary, _cost = optimized.run(initial)
+                    scalar = X86DBT(enable_function_oracles=False)
+                    scalar._compose_register_cut = \
+                        lambda _state, block: block
+                    slow, slow_boundary, _cost = scalar.run(initial)
+
+                    self.assertEqual(fast_boundary, slow_boundary)
+                    self.assertEqual(fast.registers, slow.registers)
+                    self.assertEqual(fast.rflags, slow.rflags)
+                    self.assertEqual(
+                        read_virtual(fast, 0x3f8, 0x20),
+                        read_virtual(slow, 0x3f8, 0x20))
+                    self.assertNotIn(
+                        'bit_register', dict(optimized.layout()[
+                            'physical_boundaries']))
+
+    def test_immediate_bit_updates_share_the_register_and_memory_grammar(self):
+        for group in (4, 5, 6, 7):
+            with self.subTest(group=group):
+                modrm = (group << 3) | 3
+                code = bytes((0x48, 0x0f, 0xba, modrm, 65, 0xf4))
+                initial = initial_state(
+                    memory_with(
+                        (0x100, code),
+                        (0x408, struct.pack('<Q', 2))),
+                    0x100, {'rbx': 0x400}, rflags=0x2d7)
+                optimized = X86DBT(
+                    enable_function_oracles=False,
+                    profile_controls=True)
+                fast, fast_boundary, _cost = optimized.run(initial)
+                scalar = X86DBT(enable_function_oracles=False)
+                scalar._compose_register_cut = lambda _state, block: block
+                slow, slow_boundary, _cost = scalar.run(initial)
+
+                self.assertEqual(fast_boundary, slow_boundary)
+                self.assertEqual(fast.rflags, slow.rflags)
+                self.assertEqual(
+                    read_virtual(fast, 0x400, 0x10),
+                    read_virtual(slow, 0x400, 0x10))
+                self.assertNotIn(
+                    'bit_immediate', dict(optimized.layout()[
+                        'physical_boundaries']))
+
     def test_call_and_return_share_the_general_stack_memory_grammar(self):
         caller = bytes.fromhex('e8 fb 00 00 00 f4')
         callee = bytes.fromhex('b8 2a 00 00 00 c3')

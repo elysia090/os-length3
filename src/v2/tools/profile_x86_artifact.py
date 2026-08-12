@@ -64,17 +64,25 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     physical = dbt.layout()
     code = dump_x86_code_pages(dbt)
     executed_cut_bytes = 0
-    for rip, (count, _work, _span) in dbt._physical_profile.items():
+    boundary_coordinates = []
+    for rip, (count, work, span) in dbt._physical_profile.items():
         cached = dbt._register_cuts.get(rip)
         cut = None if cached is None else cached[1]
         if cut is None:
             cached = dbt._stack_cuts.get(rip)
             cut = None if cached is None else cached[1]
         if cut is None:
+            cached = dbt._predicate_cuts.get(rip)
+            cut = None if cached is None else cached[1]
+        if cut is None:
             cut = dbt.blocks.get(rip)
         if cut is None:
             continue
         executed_cut_bytes += len(cut.mapped.data)
+        boundary_coordinates.append((
+            rip, cut.boundary.operation, count, work, span,
+            physical_work(cut.plan), cut.plan.waves.span))
+    boundary_coordinates.sort(key=lambda item: (-item[2], item[0]))
     inlined_calls = sorted((
         (rip, cut.inlined_call_target, physical_work(cut.plan),
          cut.plan.waves.span, cut.boundary.operation)
@@ -84,10 +92,19 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     inspected = []
     for rip in map(int, inspect_rips):
         block = dbt.blocks.get(rip)
+        carried = None if block is None else dbt._carry_flags_plan(block.plan)
+        lowered = (None if carried is None or block is None else
+                   dbt._lower_flag_boundary(carried, block.boundary))
+        lowered_following = None if lowered is None else lowered[1]
+        following_block = (None if lowered_following is None else
+                           dbt.blocks.get(lowered_following))
         stack_cut = dbt._stack_cuts.get(rip)
         stack_cut = None if stack_cut is None else stack_cut[1]
         cut = dbt._register_cuts.get(rip)
         cut = None if cut is None else cut[1]
+        if cut is None:
+            predicate_cut = dbt._predicate_cuts.get(rip)
+            cut = None if predicate_cut is None else predicate_cut[1]
         inspected.append({
             'rip': rip,
             'block_boundary': None if block is None else repr(block.boundary),
@@ -95,6 +112,30 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
                 None if block is None else repr(block.cut_inputs)),
             'block_state_flags': (
                 None if block is None else block.state_flags),
+            'block_nodes': (None if block is None else
+                            tuple(map(repr, block.plan.nodes))),
+            'block_locals': (None if block is None else
+                             tuple(map(repr, block.plan.locals))),
+            'block_linear_end': (None if block is None else
+                                 block.rip + len(block.source)),
+            'lowered_following': lowered_following,
+            'lowered_work': (None if lowered is None else
+                             physical_work(lowered[0])),
+            'following_cut_inputs': (
+                None if following_block is None else
+                repr(following_block.cut_inputs)),
+            'following_boundary': (
+                None if following_block is None else
+                repr(following_block.boundary)),
+            'following_state_flags': (
+                None if following_block is None else
+                following_block.state_flags),
+            'following_locals': (
+                None if following_block is None else
+                tuple(map(repr, following_block.plan.locals))),
+            'following_carries_flags': (
+                None if following_block is None else
+                dbt._carry_flags_plan(following_block.plan) is not None),
             'thunk_layout': (
                 None if block is None
                 or block.boundary.operation != 'call'
@@ -151,6 +192,16 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'executed_boundaries': physical.get(
                 'physical_boundaries', ()),
             'executed_cut_bytes': executed_cut_bytes,
+            'executed_cuts': sum(
+                count for count, _work, _span
+                in dbt._physical_profile.values()),
+            'executed_work': sum(
+                work for _count, work, _span
+                in dbt._physical_profile.values()),
+            'executed_span': sum(
+                span for _count, _work, span
+                in dbt._physical_profile.values()),
+            'boundary_coordinates': boundary_coordinates,
             'inlined_calls': inlined_calls,
             'inspected': inspected,
         },
@@ -188,6 +239,11 @@ def main(argv=None):
             'hot_physical_cuts': result['code']['hot_physical_cuts'][:16],
             'executed_boundaries': result['code']['executed_boundaries'],
             'executed_cut_bytes': result['code']['executed_cut_bytes'],
+            'executed_cuts': result['code']['executed_cuts'],
+            'executed_work': result['code']['executed_work'],
+            'executed_span': result['code']['executed_span'],
+            'boundary_coordinates': result['code'][
+                'boundary_coordinates'][:32],
             'inlined_calls': result['code']['inlined_calls'][:16],
             'inspected': result['code']['inspected'],
         }

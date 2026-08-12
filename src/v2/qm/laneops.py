@@ -77,6 +77,8 @@ def shape(operation):
         return 4, 0, False
     if name == 'ADD3_U32':
         return 3, 0, False
+    if name == 'X86_BIT_FLAGS':
+        return 4, 0, False
     if name == 'X86_FLAGS_SELECT':
         return 11, 0, False
     if name in GENERIC_ARITY:
@@ -271,6 +273,13 @@ def evaluate(operation, arguments):
         result = (int(left) & int(right)) & mask_of(width)
         return evaluate('lane64.X86_FLAGS', (
             prior, left, right, result, descriptor))
+    if name == 'X86_BIT_FLAGS':
+        prior, value, index, descriptor = map(int, arguments)
+        width = descriptor & 0x7f
+        if width not in (16, 32, 64) or descriptor != width:
+            raise ValueError('x86 bit flag lane has an invalid width')
+        carry = ((value & mask_of(width)) >> (index & (width - 1))) & 1
+        return ((prior & ~1) | carry | 2) & mask_of(bits)
     if name == 'X86_FLAGS':
         prior, left, right, result, descriptor = arguments
         width = int(descriptor) & 0x7f
@@ -483,7 +492,8 @@ def bind(operation):
         return lambda values: choose(to_signed(values[0], bits),
                                      to_signed(values[1], bits)) & mask
     if name in ('X86_FLAGS', 'X86_FLAGS_SELECT', 'X86_COMPARE',
-                'X86_SHIFT_FLAGS', 'X86_CONDITION', 'X86_TEST'):
+                'X86_SHIFT_FLAGS', 'X86_CONDITION', 'X86_TEST',
+                'X86_BIT_FLAGS'):
         return lambda values: evaluate(operation, values)
 
     return lambda values: evaluate(operation, values)
