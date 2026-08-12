@@ -2394,14 +2394,16 @@ static int step_x86_alu_lane(u32 node, u32 begin, u32 end, u64 *result)
     u32 mode = ((u32)descriptor >> 8u) & 7u;
     if ((width != 8u && width != 16u
             && width != 32u && width != 64u)
-            || mode > 4u)
+            || mode > 6u)
         return step_fail(7u);
     u64 carry = prior & 1u;
     u64 value = mode == 0u ? left & right
               : mode == 1u ? left + right
               : mode == 2u ? left + right + carry
               : mode == 3u ? left - right
-                           : left - right - carry;
+              : mode == 4u ? left - right - carry
+              : mode == 5u ? left | right
+                           : left ^ right;
     value &= step_mask(width);
     machine->alu_result[node] = value;
     return step_x86_flags_value(
