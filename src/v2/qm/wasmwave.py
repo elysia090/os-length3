@@ -422,6 +422,12 @@ def execute_slice(plan, state):
             return frame.stack[operand.value]
         if operand.kind == 'local':
             return frame.locals[operand.value]
+        if operand.kind == 'projection':
+            from .steppage import (decode_projection_coordinate,
+                                   _relative_select)
+            source, selector = decode_projection_coordinate(operand.value)
+            results, mode = relative_results[source]
+            return _relative_select(results, selector, mode)
         return values[operand.value]
 
     for depth in range(1, plan.waves.span + 1):

@@ -77,6 +77,7 @@ from kernel.x86 import (BOOT_PARAMS_ADDRESS, COMMAND_LINE_ADDRESS,
                         load_virtual, read_virtual, translate, write_virtual)
 from qm.laneops import evaluate as evaluate_lane
 from qm.memorycut import MemoryCut
+from qm.stepnormalize import physical_work
 from qm.steppage import (compile_mapped_executor,
                          unpack as unpack_step)
 from qm.wasmstate import PagedMemory
@@ -519,14 +520,21 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.register('rsp'), 0x808)
         self.assertEqual(read_virtual(state, 0x800, 8),
                          struct.pack('<Q', 0x105))
-        self.assertEqual(dbt.layout()['stack_cuts'], 2)
+        self.assertEqual(dbt.layout()['stack_cuts'], 1)
         self.assertEqual(
             {block.boundary.operation
              for _source, block in dbt._stack_cuts.values()},
-            {'branch', 'dynamic_branch'})
+            {'branch'})
         self.assertTrue(all(
             block.virtual_memory
             for _source, block in dbt._stack_cuts.values()))
+        cut = dbt._register_cuts[0x100][1]
+        self.assertEqual(cut.inlined_call_target, 0x200)
+        self.assertEqual((cut.boundary.operation, cut.boundary.detail),
+                         ('branch', 0x105))
+        self.assertEqual((cut.plan.waves.work, cut.plan.waves.span), (1, 1))
+        self.assertEqual([node.op for node in cut.plan.nodes],
+                         ['memory.i64.pre_store'])
 
     def test_straight_memory_function_is_one_normalized_state_page(self):
         body = bytes.fromhex(
@@ -566,7 +574,11 @@ class TestX86StateStep(unittest.TestCase):
                              read_virtual(slow, 0x3f0, 0x130))
         cut = optimized._register_cuts[0x100][1]
         self.assertEqual((cut.plan.waves.work, cut.plan.waves.span),
-                         (9, 4))
+                         (4, 3))
+        # The three record lanes plus their shared delta are four units.  The
+        # isolated fixture necessarily retains the architectural return load
+        # and rsp advance; a caller-composed cut can cancel those two.
+        self.assertEqual(physical_work(cut.plan), 6)
         self.assertEqual(cut.boundary.operation, 'dynamic_branch')
         self.assertEqual(
             sum(node.op == 'lane64.X86_FLAGS'
@@ -574,8 +586,68 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(
             sum(node.op == 'memory.i64.relative_exchange'
                 for node in cut.plan.nodes), 1)
+        self.assertFalse(any(node.op == 'memory.i64.relative_result'
+                             for node in cut.plan.nodes))
+        self.assertEqual(sum(
+            operand.kind == 'projection'
+            for operand in cut.plan.stack + cut.plan.locals), 5)
         self.assertFalse(any(node.op == 'memory.i64.store'
                              for node in cut.plan.nodes))
+
+    def test_caller_and_leaf_exchange_are_one_affine_stack_transaction(self):
+        body = bytes.fromhex(
+            'f30f1efa 0f1f440000 55 4889e5 4889f8 4829f0 '
+            '8b0e 29c1 8b17 01c2 890f 8b4e04 29c1 '
+            '448b4704 4101c0 894f04 488b4e08 4829c1 '
+            '48034708 48894f08 8916 44894604 48894608 5d e9')
+        body += struct.pack('<i', 0x300 - (0x100 + len(body) + 4))
+
+        def start(caller, registers, left, right):
+            return initial_state(memory_with(
+                (0x80, caller), (0x100, body), (0x300, b'\xc3'),
+                (0x400, bytes(range(16))),
+                (0x500, bytes(range(16, 32))),
+                (0x800, bytes(8))), 0x80,
+                {**registers, 'rdi': left, 'rsi': right,
+                 'rsp': 0x808, 'rbp': 0x123})
+
+        for caller, registers in (
+                (bytes.fromhex('e8 7b 00 00 00 f4'), {}),
+                (bytes.fromhex('ff d0 f4'), {'rax': 0x100})):
+            optimized = X86DBT(enable_function_oracles=False)
+            for left, right in ((0x400, 0x500), (0x7f0, 0x500),
+                                (0x400, 0x7f0), (0x7f0, 0x7f0)):
+                initial = start(caller, registers, left, right)
+                fast, fast_boundary, _cost = optimized.run(initial)
+                scalar = X86DBT(enable_function_oracles=False)
+                scalar._compose_register_cut = lambda _state, block: block
+                slow, slow_boundary, _cost = scalar.run(
+                    start(caller, registers, left, right))
+
+                self.assertEqual(fast_boundary.operation,
+                                 slow_boundary.operation)
+                self.assertEqual(repr(fast_boundary.detail),
+                                 repr(slow_boundary.detail))
+                self.assertEqual(fast.registers, slow.registers)
+                self.assertEqual(fast.rflags, slow.rflags)
+                self.assertEqual(read_virtual(fast, 0x3f0, 0x430),
+                                 read_virtual(slow, 0x3f0, 0x430))
+
+            cut = optimized._register_cuts[0x80][1]
+            self.assertEqual(cut.inlined_call_target, 0x100)
+            self.assertEqual(
+                (cut.plan.waves.work, cut.plan.waves.span), (2, 2))
+            self.assertEqual(physical_work(cut.plan), 4)
+            transaction = next(
+                node for node in cut.plan.nodes
+                if node.op == 'memory.i64.relative_exchange')
+            self.assertEqual(
+                (transaction.arguments[6].kind,
+                 transaction.arguments[6].value), ('const', 2))
+            self.assertEqual(
+                {operand.value & 0xff for operand in cut.plan.locals
+                 if operand.kind == 'projection'},
+                {1, 3, 4, 5, 0xfd, 0xfe})
 
     def test_relative_key_compare_loads_each_absolute_address_once(self):
         body = bytes.fromhex(

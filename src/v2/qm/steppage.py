@@ -71,9 +71,36 @@ STATE_OPS = (
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 
-OPERAND_KINDS = ('const', 'stack', 'local', 'node')
+OPERAND_KINDS = ('const', 'stack', 'local', 'node', 'projection')
 OPERAND_TO_TAG = dict((name, tag)
                       for tag, name in enumerate(OPERAND_KINDS))
+
+# A terminal projection names one result lane of a multi-result physical
+# node without allocating another scalar SSA node.  The low byte is the
+# operation-specific selector and the remaining bits are the dense source
+# coordinate.  Projection operands are legal only in state outputs; plan
+# composition materializes one only when a later node actually consumes it.
+PROJECTION_SELECTOR_BITS = 8
+PROJECTION_SELECTOR_MASK = (1 << PROJECTION_SELECTOR_BITS) - 1
+
+
+def projection_coordinate(source, selector):
+    source, selector = int(source), int(selector)
+    if source <= 0 or source > (I64 >> PROJECTION_SELECTOR_BITS):
+        raise ValueError('projection source is outside the physical page')
+    if selector < 0 or selector > PROJECTION_SELECTOR_MASK:
+        raise ValueError('projection selector is outside one byte')
+    return source << PROJECTION_SELECTOR_BITS | selector
+
+
+def decode_projection_coordinate(coordinate):
+    coordinate = int(coordinate)
+    if coordinate < 0 or coordinate > I64:
+        raise ValueError('projection coordinate is outside one word')
+    source = coordinate >> PROJECTION_SELECTOR_BITS
+    if not source:
+        raise ValueError('projection source is zero')
+    return source, coordinate & PROJECTION_SELECTOR_MASK
 
 # magic, version, header bytes, then:
 # function, start, end, source instructions, span, work, operand values,
@@ -286,9 +313,26 @@ def decode_relative_layout(layout):
     return widths
 
 
+RELATIVE_SAVE_CAP = 4
+
+
+def relative_selector_index(selector, lane_count, save_count):
+    selector = int(selector)
+    lane_count, save_count = int(lane_count), int(save_count)
+    if not 0 <= save_count <= RELATIVE_SAVE_CAP:
+        raise ValueError('relative-exchange save count is invalid')
+    if selector == 0xff:
+        return lane_count * 2
+    restore = 0xfe - selector
+    if 0 <= restore < save_count:
+        return lane_count * 2 + 1 + restore
+    if 0 <= selector < lane_count * 2:
+        return selector
+    raise ValueError('relative-exchange selector is outside its layout')
+
+
 def _relative_exchange(memory, left, right, delta, prior_flags, layout,
-                       mode=0, save_address=0, saved_value=0,
-                       *_dependencies):
+                       mode=0, *_tail):
     """Exchange adjacent relative coordinates without scalar lane state.
 
     For each lane ``i`` this publishes ``left[i] = right[i] - delta`` and
@@ -300,13 +344,16 @@ def _relative_exchange(memory, left, right, delta, prior_flags, layout,
 
     widths = decode_relative_layout(layout)
     mode = int(mode)
-    if mode not in (0, 1):
+    if mode < 0 or mode > RELATIVE_SAVE_CAP or len(_tail) < mode * 3:
         raise ValueError('relative-exchange mode is invalid')
     left, right, delta = int(left), int(right), int(delta) & I64
-    if mode:
-        save_address = (int(save_address) - 8) & I64
-        memory.write(save_address,
-                     (int(saved_value) & I64).to_bytes(8, 'little'))
+    saves = tuple(
+        ((int(_tail[index * 3]) + int(_tail[index * 3 + 1])) & I64,
+         int(_tail[index * 3 + 2]) & I64)
+        for index in range(mode))
+    for save_address, saved_value in saves:
+        memory.write(
+            save_address, saved_value.to_bytes(8, 'little'))
     offset = 0
     results = []
     right_values = []
@@ -329,19 +376,15 @@ def _relative_exchange(memory, left, right, delta, prior_flags, layout,
     descriptor = widths[-1] * 8 | (1 << 8)
     flags = evaluate('lane64.X86_FLAGS', (
         int(prior_flags), delta, last_left, last_right, descriptor))
-    if mode:
-        restored = memory.load(save_address, 8)
-        return tuple(results) + (flags, restored)
-    return tuple(results) + (flags,)
+    restored = tuple(memory.load(save_address, 8)
+                     for save_address, _saved_value in saves)
+    return tuple(results) + (flags,) + restored
 
 
 def _relative_select(results, selector, mode):
-    selector, mode = int(selector), int(mode)
-    if selector == 0xff:
-        return results[-2 if mode else -1]
-    if selector == 0xfe and mode:
-        return results[-1]
-    return results[selector]
+    mode = int(mode)
+    lane_count = (len(results) - 1 - mode) // 2
+    return results[relative_selector_index(selector, lane_count, mode)]
 
 
 def _relative_address(memory, base, load_offset, mask, addend, shape):
@@ -676,6 +719,9 @@ def _validate(mapped):
             if kind == 'node' and (value < 1 or value > mapped.work
                                    or depth[value] >= depth[node]):
                 raise StatePageError('a wave lane depends on its own/later wave')
+            if kind == 'projection':
+                raise StatePageError(
+                    'a projection may appear only in state outputs')
             if kind == 'stack' and value >= mapped.stack_inputs:
                 raise StatePageError('stack operand is outside the frame region')
             if kind == 'local' and value >= mapped.local_extent:
@@ -729,14 +775,14 @@ def _validate(mapped):
                         mapped.value('operand_tags', at)] != 'const'
                            for at in (begin + 4, begin + 5, begin + 6))
                     or mapped.value('operand_values', begin + 6)
-                       not in (0, 1)
-                    or (mapped.value('operand_values', begin + 6) == 1
-                        and end - begin < 9)
+                       > RELATIVE_SAVE_CAP
+                    or end - begin < 7 + 3 * mapped.value(
+                        'operand_values', begin + 6)
                     or any(OPERAND_KINDS[
                         mapped.value('operand_tags', at)] != 'node'
                            for at in range(
-                               begin + (9 if mapped.value(
-                                   'operand_values', begin + 6) else 7),
+                               begin + 7 + 3 * mapped.value(
+                                   'operand_values', begin + 6),
                                end))):
                 raise StatePageError(
                     'memory.i64.relative_exchange has the wrong operands')
@@ -747,10 +793,10 @@ def _validate(mapped):
                 raise StatePageError(str(error))
             selector = mapped.value('operand_values', begin + 5)
             mode = mapped.value('operand_values', begin + 6)
-            if (selector not in ((0xff, 0xfe) if mode else (0xff,))
-                    and selector >= len(widths) * 2):
-                raise StatePageError(
-                    'relative-exchange selector is outside its layout')
+            try:
+                relative_selector_index(selector, len(widths), mode)
+            except ValueError as error:
+                raise StatePageError(str(error))
             continue
         if operation == 'memory.i64.relative_result':
             if (end - begin != 2
@@ -874,6 +920,34 @@ def _validate(mapped):
                 'changed local coordinates are not strictly increasing')
         previous = coordinate
 
+    last_projection_source = next((
+        value for value in reversed(mapped.values('lane_values'))
+        if OPS[mapped.value('opcodes', value - 1)]
+        == 'memory.i64.relative_exchange'), None)
+
+    def validate_projection(value):
+        try:
+            source, selector = decode_projection_coordinate(value)
+        except ValueError as error:
+            raise StatePageError(str(error))
+        if source != last_projection_source or source > mapped.work:
+            raise StatePageError(
+                'state projection does not name the final multi-result node')
+        begin, end = (
+            mapped.value('argument_offsets', source - 1),
+            mapped.value('argument_offsets', source))
+        if (OPS[mapped.value('opcodes', source - 1)]
+                != 'memory.i64.relative_exchange' or end - begin < 7):
+            raise StatePageError(
+                'state projection source is not a relative exchange')
+        widths = decode_relative_layout(
+            mapped.value('operand_values', begin + 4))
+        mode = mapped.value('operand_values', begin + 6)
+        try:
+            relative_selector_index(selector, len(widths), mode)
+        except ValueError as error:
+            raise StatePageError(str(error))
+
     for tag_name, value_name, count in (
             ('stack_tags', 'stack_values', mapped.stack_count),
             ('local_tags', 'local_values', mapped.local_updates)):
@@ -885,6 +959,8 @@ def _validate(mapped):
             kind = OPERAND_KINDS[tag]
             if kind == 'node' and not 1 <= value <= mapped.work:
                 raise StatePageError('state output node is outside the step')
+            if kind == 'projection':
+                validate_projection(value)
             if kind == 'stack' and value >= mapped.stack_inputs:
                 raise StatePageError(
                     'state output stack slot is outside the frame')
@@ -962,6 +1038,10 @@ def execute_mapped(mapped, state):
             return frame.stack[value]
         if kind == 'local':
             return frame.locals[value]
+        if kind == 'projection':
+            source, selector = decode_projection_coordinate(value)
+            results, mode = relative_results[source]
+            return _relative_select(results, selector, mode)
         return values[value]
 
     wave_offsets = mapped.values('wave_offsets')
@@ -1105,6 +1185,11 @@ def compile_mapped_executor(mapped):
             return 'stack[%d]' % value
         if kind == 'local':
             return 'locals_[%d]' % value
+        if kind == 'projection':
+            source, selector = decode_projection_coordinate(value)
+            return ('memory_relative_select(relative_results[%d][0], %d, '
+                    'relative_results[%d][1])'
+                    % (source, selector, source))
         return 'value_%d' % value
 
     for depth in range(mapped.span):

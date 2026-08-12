@@ -78,6 +78,7 @@ typedef long long          i64;
 #define STEP_MEMORY_PAGES 4u
 #define STEP_NO_PAGE 0xffffffffu
 #define STEP_NO_COORDINATE (~0ull)
+#define STEP_RELATIVE_SAVE_CAP 4u
 #define PROGRAM_FRAME_CAP 256u
 #define PROGRAM_GLOBAL_CAP 4096u
 #define STEP_SLOT_STATE_BITS 3u
@@ -209,15 +210,17 @@ typedef struct {
     u32 relative_phase;
     u32 relative_selector;
     u32 relative_mode;
+    u32 relative_save_lane;
+    u32 relative_restore_lane;
     u64 relative_left;
     u64 relative_right;
     u64 relative_delta;
     u64 relative_prior_flags;
     u64 relative_layout;
-    u64 relative_save_address;
-    u64 relative_saved_value;
+    u64 relative_save_address[STEP_RELATIVE_SAVE_CAP];
+    u64 relative_saved_value[STEP_RELATIVE_SAVE_CAP];
     u64 relative_last_left;
-    u64 relative_results[15];
+    u64 relative_results[19];
     u32 error;
 } StepWorkspace;
 
@@ -1356,6 +1359,41 @@ static int step_fail(u32 error)
     return 0;
 }
 
+static int step_relative_selected(u32 count, u32 mode, u32 selector,
+                                  u32 *selected)
+{
+    if (!count || count > 7u || mode > STEP_RELATIVE_SAVE_CAP)
+        return 0;
+    if (selector == 255u) *selected = count * 2u;
+    else if (selector <= 254u && 254u - selector < mode)
+        *selected = count * 2u + 1u + 254u - selector;
+    else if (selector < count * 2u) *selected = selector;
+    else return 0;
+    return 1;
+}
+
+static int step_projection_is(u64 coordinate, u32 final_source)
+{
+    StepWorkspace *machine = step_machine();
+    u64 wide_source = coordinate >> 8u;
+    u32 selector = (u32)coordinate & 255u;
+    if (!wide_source || wide_source != final_source
+            || wide_source > machine->work)
+        return 0;
+    u32 source = (u32)wide_source;
+    if (step_u8(STEP_OPCODES, source - 1u) != 188u)
+        return 0;
+    u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, source - 1u);
+    u32 end = step_u32(STEP_ARGUMENT_OFFSETS, source);
+    if (end - begin < 7u) return 0;
+    u64 layout = step_u64(STEP_OPERAND_VALUES, begin + 4u);
+    u64 mode = step_u64(STEP_OPERAND_VALUES, begin + 6u);
+    u32 count = (u32)layout & 255u;
+    u32 selected;
+    return mode <= STEP_RELATIVE_SAVE_CAP
+        && step_relative_selected(count, (u32)mode, selector, &selected);
+}
+
 static int step_memory_start_flush(StepWorkspace *machine, u32 slot,
                                    u64 observed)
 {
@@ -1826,20 +1864,30 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
             return step_fail(5u);
         previous = coordinate;
     }
+    u32 projection_source = 0u;
+    for (u32 lane = 0; lane < machine->work; ++lane) {
+        u32 node = step_u32(STEP_LANE_VALUES, lane);
+        if (step_u8(STEP_OPCODES, node - 1u) == 188u)
+            projection_source = node;
+    }
     for (u32 output = 0; output < machine->stack_count; ++output) {
         u32 tag = step_u8(STEP_STACK_TAGS, output);
         u64 value = step_u64(STEP_STACK_VALUES, output);
-        if (tag > 3u || (tag == 1u && value >= machine->stack_inputs)
+        if (tag > 4u || (tag == 1u && value >= machine->stack_inputs)
                 || (tag == 2u && value >= machine->local_extent)
-                || (tag == 3u && (!value || value > machine->work)))
+                || (tag == 3u && (!value || value > machine->work))
+                || (tag == 4u
+                    && !step_projection_is(value, projection_source)))
             return step_fail(5u);
     }
     for (u32 output = 0; output < machine->local_updates; ++output) {
         u32 tag = step_u8(STEP_LOCAL_TAGS, output);
         u64 value = step_u64(STEP_LOCAL_VALUES, output);
-        if (tag > 3u || (tag == 1u && value >= machine->stack_inputs)
+        if (tag > 4u || (tag == 1u && value >= machine->stack_inputs)
                 || (tag == 2u && value >= machine->local_extent)
-                || (tag == 3u && (!value || value > machine->work)))
+                || (tag == 3u && (!value || value > machine->work))
+                || (tag == 4u
+                    && !step_projection_is(value, projection_source)))
             return step_fail(5u);
     }
     return 1;
@@ -2566,24 +2614,27 @@ static int step_memory_relative_exchange_lane(
             return 0;
         machine->relative_count = (u32)machine->relative_layout & 255u;
         machine->relative_mode = (u32)mode;
+        u32 selected;
         if (!machine->relative_count || machine->relative_count > 7u
-                || machine->relative_mode > 1u
-                || (machine->relative_mode && end - begin < 9u)
+                || machine->relative_mode > STEP_RELATIVE_SAVE_CAP
+                || end - begin < 7u + machine->relative_mode * 3u
                 || (machine->relative_count < 7u
                     && machine->relative_layout
                        >> (8u * (machine->relative_count + 1u)))
-                || (selector != 255u
-                    && (selector != 254u || !machine->relative_mode)
-                    && selector >= machine->relative_count * 2u))
+                || !step_relative_selected(
+                    machine->relative_count, machine->relative_mode,
+                    (u32)selector, &selected))
             return step_fail(9u);
-        if (machine->relative_mode
-                && (!step_operand(begin + 7u,
-                                  &machine->relative_save_address)
-                    || !step_operand(begin + 8u,
-                                     &machine->relative_saved_value)))
-            return 0;
-        if (machine->relative_mode)
-            machine->relative_save_address -= 8u;
+        for (u32 save = 0; save < machine->relative_mode; ++save) {
+            u64 base, offset;
+            u32 at = begin + 7u + save * 3u;
+            if (!step_operand(at, &base)
+                    || !step_operand(at + 1u, &offset)
+                    || !step_operand(
+                        at + 2u, &machine->relative_saved_value[save]))
+                return 0;
+            machine->relative_save_address[save] = base + offset;
+        }
         for (u32 lane = 0; lane < machine->relative_count; ++lane) {
             u32 width = step_relative_width(machine, lane);
             if (width != 1u && width != 2u
@@ -2594,6 +2645,8 @@ static int step_memory_relative_exchange_lane(
         machine->relative_node = node;
         machine->relative_lane = 0u;
         machine->relative_phase = machine->relative_mode ? 4u : 0u;
+        machine->relative_save_lane = 0u;
+        machine->relative_restore_lane = 0u;
         machine->relative_selector = (u32)selector;
         machine->relative_last_left = 0u;
     } else if (machine->relative_node != node) {
@@ -2601,14 +2654,18 @@ static int step_memory_relative_exchange_lane(
     }
 
     if (machine->relative_phase == 4u) {
-        StepMemoryGuard guard;
-        if (!step_memory_ready(
-                machine->relative_save_address, 8u, &guard))
-            return 0;
-        if (!step_memory_store(
-                machine->relative_save_address,
-                machine->relative_saved_value, 8u, &guard))
-            return 0;
+        while (machine->relative_save_lane < machine->relative_mode) {
+            u32 save = machine->relative_save_lane;
+            StepMemoryGuard guard;
+            if (!step_memory_ready(
+                    machine->relative_save_address[save], 8u, &guard))
+                return 0;
+            if (!step_memory_store(
+                    machine->relative_save_address[save],
+                    machine->relative_saved_value[save], 8u, &guard))
+                return 0;
+            machine->relative_save_lane += 1u;
+        }
         machine->relative_phase = 0u;
     }
 
@@ -2687,25 +2744,27 @@ static int step_memory_relative_exchange_lane(
             last_width * 8u | (1u << 8),
             &machine->relative_results[machine->relative_count * 2u]))
         return 0;
-    if (machine->relative_mode) {
+    while (machine->relative_restore_lane < machine->relative_mode) {
+        u32 save = machine->relative_restore_lane;
         StepMemoryGuard guard;
         if (!step_memory_ready(
-                machine->relative_save_address, 8u, &guard))
+                machine->relative_save_address[save], 8u, &guard))
             return 0;
         if (!step_memory_load(
-                machine->relative_save_address, 8u, &guard,
+                machine->relative_save_address[save], 8u, &guard,
                 &machine->relative_results[
-                    machine->relative_count * 2u + 1u]))
+                    machine->relative_count * 2u + 1u + save]))
             return 0;
+        machine->relative_restore_lane += 1u;
     }
     machine->relative_active = 0u;
     machine->relative_completed_node = node;
-    u32 selector = machine->relative_selector == 255u
-                 ? machine->relative_count * 2u
-                 : machine->relative_selector == 254u
-                 ? machine->relative_count * 2u + 1u
-                 : machine->relative_selector;
-    *result = machine->relative_results[selector];
+    u32 selected;
+    if (!step_relative_selected(
+            machine->relative_count, machine->relative_mode,
+            machine->relative_selector, &selected))
+        return step_fail(9u);
+    *result = machine->relative_results[selected];
     return 1;
 }
 
@@ -2719,15 +2778,12 @@ static int step_memory_relative_result_lane(
     u64 source = step_u64(STEP_OPERAND_VALUES, begin);
     u64 selector;
     if (!step_operand(begin + 1u, &selector)) return 0;
+    u32 selected;
     if (source != machine->relative_completed_node
-            || (selector != 255u
-                && (selector != 254u || !machine->relative_mode)
-                && selector >= machine->relative_count * 2u))
+            || !step_relative_selected(
+                machine->relative_count, machine->relative_mode,
+                (u32)selector, &selected))
         return step_fail(9u);
-    u32 selected = selector == 255u
-                 ? machine->relative_count * 2u
-                 : selector == 254u
-                 ? machine->relative_count * 2u + 1u : (u32)selector;
     *result = machine->relative_results[selected];
     return 1;
 }
@@ -2787,6 +2843,20 @@ static int step_output(u32 tag_column, u32 value_column, u32 index,
     else if (tag == 1u) *result = machine->stack[coordinate];
     else if (tag == 2u) *result = machine->locals[coordinate];
     else if (tag == 3u) *result = machine->values[coordinate];
+    else if (tag == 4u) {
+        u64 source = coordinate >> 8u;
+        u32 selector = (u32)coordinate & 255u;
+        if (source != machine->relative_completed_node
+                || !step_projection_is(
+                    coordinate, machine->relative_completed_node))
+            return step_fail(6u);
+        u32 selected;
+        if (!step_relative_selected(
+                machine->relative_count, machine->relative_mode,
+                selector, &selected))
+            return step_fail(6u);
+        *result = machine->relative_results[selected];
+    }
     else return step_fail(6u);
     return 1;
 }

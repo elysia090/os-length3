@@ -19,7 +19,8 @@ from kernel.pagefabric import (bundle_prefix_size, dump_bundle, project,
 from qm.laneops import OPS as LANE_OPS, evaluate as evaluate_lane, shape
 from qm.pipeline import solve
 from qm.pagearchive import pack_wasm_steps
-from qm.steppage import memory_shape, pack as pack_step, relative_layout
+from qm.steppage import (memory_shape, pack as pack_step,
+                         projection_coordinate, relative_layout)
 from qm.wasmbinary import index_module
 from qm.wasmregions import pack as pack_regions
 from qm.wasmphysical import DependencyWaves
@@ -52,8 +53,11 @@ class TestBrowserPageFabric(unittest.TestCase):
                 Operand('local', 0), Operand('local', 1),
                 Operand('node', 1), Operand('local', 2),
                 Operand('const', layout), Operand('const', 0xff),
-                Operand('const', 1), Operand('local', 3),
-                Operand('local', 4))),
+                Operand('const', 2), Operand('local', 3),
+                Operand('const', (1 << 64) - 8),
+                Operand('local', 4), Operand('local', 3),
+                Operand('const', (1 << 64) - 16),
+                Operand('const', 0xaabbccddeeff0011))),
             WaveNode(3, 'memory.i64.relative_result', (
                 Operand('node', 2), Operand('const', 1))),
             WaveNode(4, 'memory.i64.relative_result', (
@@ -87,7 +91,10 @@ class TestBrowserPageFabric(unittest.TestCase):
                 (0, 1, 2, 3, 3, 3, 3, 3, 4, 5, 1)),
             tuple(Operand('node', value)
                   for value in range(1, 11))
-            + (Operand('local', 4),),
+            + (Operand('local', 4),
+               Operand('projection', projection_coordinate(2, 3)),
+               Operand('projection', projection_coordinate(2, 0xfe)),
+               Operand('projection', projection_coordinate(2, 0xfd))),
             tuple(Operand('local', index) for index in range(6)))
         physical = bytes(pack_step(plan))
         page = bytearray(65536)
@@ -145,7 +152,7 @@ for (;;) {
   }
 }
 const stack = E.vm_step_stack(session);
-const outputs = Array.from({length: 11}, (_, index) =>
+const outputs = Array.from({length: 14}, (_, index) =>
   view.getBigUint64(stack + index * 8, true).toString());
 const dirtyPage = E.vm_step_first_dirty_memory_page(session);
 const lease = E.vm_step_memory_lease(session);
@@ -155,10 +162,11 @@ const dirty = new Uint8Array(
 );
 const records = Buffer.from(dirty.slice(64, 96)).toString('hex');
 const savedFrame = Buffer.from(dirty.slice(120, 128)).toString('hex');
+const savedInjected = Buffer.from(dirty.slice(56, 64)).toString('hex');
 E.vm_step_ack_memory_page(session, lease, dirtyPage);
 E.vm_step_release(session);
 process.stdout.write(JSON.stringify(
-  {faults, outputs, dirtyPage, records, savedFrame}));
+  {faults, outputs, dirtyPage, records, savedFrame, savedInjected}));
 ''' % saved, encoding='utf-8')
             run = subprocess.run(
                 ['node', str(driver), wasm, str(step_path), str(memory_path)],
@@ -176,6 +184,9 @@ process.stdout.write(JSON.stringify(
                 str(64 + 8 + ((30 - delta) & ((1 << 64) - 4))),
                 '120', str(compare_flags),
                 str(saved),
+                str((saved_high + delta) & 0xffffffff),
+                str(26 | (36 << 32)),
+                str(0xaabbccddeeff0011),
             ],
             'dirtyPage': 0,
             'records': (
@@ -186,6 +197,8 @@ process.stdout.write(JSON.stringify(
                 + ((saved_high + delta) & 0xffffffff).to_bytes(4, 'little')
                 + right64.to_bytes(8, 'little')).hex(),
             'savedFrame': saved.to_bytes(8, 'little').hex(),
+            'savedInjected': (0xaabbccddeeff0011).to_bytes(
+                8, 'little').hex(),
         })
 
     def test_secure_projection_recovers_ciphertext_through_the_vm_artifact(self):
