@@ -496,8 +496,11 @@ class TestX86StateStep(unittest.TestCase):
         first = dbt.blocks[0x100]
         self.assertEqual((first.instructions, first.plan.waves.work,
                           first.plan.waves.span), (2, 1, 1))
-        self.assertEqual(dbt.layout()['stack_cuts'], 1)
-        self.assertTrue(dbt._stack_cuts[0x100][1].virtual_memory)
+        self.assertEqual(dbt.layout()['register_cuts'], 1)
+        self.assertTrue(dbt._register_cuts[0x100][1].virtual_memory)
+        self.assertEqual(
+            dbt._register_cuts[0x100][1].boundary.operation,
+            'dynamic_branch')
         self.assertGreater(cost.barriers, 0)
 
     def test_call_and_return_share_the_general_stack_memory_grammar(self):
