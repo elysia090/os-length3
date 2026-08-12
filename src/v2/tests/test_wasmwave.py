@@ -228,6 +228,18 @@ class TestWaveExecutor(unittest.TestCase):
                     evaluate('lane64.X86_CONDITION', (flags, code)),
                     int(selected))
 
+    def test_x86_bit_flags_change_only_the_carry_coordinate(self):
+        from qm.laneops import evaluate
+
+        for width in (16, 32, 64):
+            for index in (0, 1, width - 1, width, width + 1):
+                flags = evaluate('lane64.X86_BIT_FLAGS', (
+                    0x2d7, 1 << (index & (width - 1)), index, width))
+                self.assertEqual(flags, 0x2d7 | 1)
+                cleared = evaluate('lane64.X86_BIT_FLAGS', (
+                    0x2d7, 0, index, width))
+                self.assertEqual(cleared, 0x2d6)
+
     def test_u32_inputs_and_publications_keep_the_hot_cut_at_four_lanes(self):
         raw = PureSlice(
             0, 0, 6, 6, 0,

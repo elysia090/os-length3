@@ -12,18 +12,18 @@
   },
   "schema": 1,
   "vm": {
-    "bytes": 58084,
+    "bytes": 58722,
     "delivery": {
-      "bytes": 19722,
+      "bytes": 19827,
       "data_shards": 8,
-      "file": "module/delivery/b0a1a29d54708ee974f5767bdc88de2e5a3b0c62f1ba7f7b5c2c0035bde80cf0.pages",
+      "file": "module/delivery/832e10fa04f44047c8f36fe1ebf4189430a4180735d5318ccd16c2c16f49e881.pages",
       "included_shards": "data",
       "logical_pages": 1,
       "page_bytes": 65536,
       "parity_shards": 2,
       "prefix_bytes": 172,
-      "prefix_sha256": "f5476d5037fb011b433a7c87e0ab5fff039ef13a31b1f24c1afa18e185a3cc9a",
-      "sha256": "b0a1a29d54708ee974f5767bdc88de2e5a3b0c62f1ba7f7b5c2c0035bde80cf0",
+      "prefix_sha256": "53e98ae123d956c23d4d5ba8b7805016d5babef77c9b72b22ec15b27565ba208",
+      "sha256": "832e10fa04f44047c8f36fe1ebf4189430a4180735d5318ccd16c2c16f49e881",
       "unique_pages": 1
     },
     "exports": {
@@ -42,9 +42,9 @@
         "type_index": 0
       },
       "vm_dead": {
-        "body_end": 55654,
+        "body_end": 56292,
         "body_ordinal": 98,
-        "body_start": 55637,
+        "body_start": 56275,
         "function_index": 98,
         "type_index": 0
       },
@@ -56,86 +56,86 @@
         "type_index": 0
       },
       "vm_eval_batch_capacity": {
-        "body_end": 55192,
+        "body_end": 55830,
         "body_ordinal": 86,
-        "body_start": 55186,
+        "body_start": 55824,
         "function_index": 86,
         "type_index": 0
       },
       "vm_eval_byte_combine": {
-        "body_end": 55506,
+        "body_end": 56144,
         "body_ordinal": 87,
-        "body_start": 55194,
+        "body_start": 55832,
         "function_index": 87,
         "type_index": 6
       },
       "vm_eval_calls": {
-        "body_end": 55518,
+        "body_end": 56156,
         "body_ordinal": 88,
-        "body_start": 55507,
+        "body_start": 56145,
         "function_index": 88,
         "type_index": 0
       },
       "vm_eval_i32_i32": {
-        "body_end": 53998,
+        "body_end": 54636,
         "body_ordinal": 79,
-        "body_start": 53986,
+        "body_start": 54624,
         "function_index": 79,
         "type_index": 1
       },
       "vm_eval_i32_i64": {
-        "body_end": 55144,
+        "body_end": 55782,
         "body_ordinal": 81,
-        "body_start": 55133,
+        "body_start": 55771,
         "function_index": 81,
         "type_index": 20
       },
       "vm_eval_i64_i32": {
-        "body_end": 55156,
+        "body_end": 55794,
         "body_ordinal": 82,
-        "body_start": 55145,
+        "body_start": 55783,
         "function_index": 82,
         "type_index": 8
       },
       "vm_eval_i64_i64": {
-        "body_end": 55167,
+        "body_end": 55805,
         "body_ordinal": 83,
-        "body_start": 55157,
+        "body_start": 55795,
         "function_index": 83,
         "type_index": 9
       },
       "vm_eval_misses": {
-        "body_end": 55530,
+        "body_end": 56168,
         "body_ordinal": 89,
-        "body_start": 55519,
+        "body_start": 56157,
         "function_index": 89,
         "type_index": 0
       },
       "vm_eval_ok": {
-        "body_end": 55542,
+        "body_end": 56180,
         "body_ordinal": 90,
-        "body_start": 55531,
+        "body_start": 56169,
         "function_index": 90,
         "type_index": 0
       },
       "vm_eval_source": {
-        "body_end": 55176,
+        "body_end": 55814,
         "body_ordinal": 84,
-        "body_start": 55168,
+        "body_start": 55806,
         "function_index": 84,
         "type_index": 0
       },
       "vm_eval_target": {
-        "body_end": 55185,
+        "body_end": 55823,
         "body_ordinal": 85,
-        "body_start": 55177,
+        "body_start": 55815,
         "function_index": 85,
         "type_index": 0
       },
       "vm_exhausted": {
-        "body_end": 55636,
+        "body_end": 56274,
         "body_ordinal": 97,
-        "body_start": 55625,
+        "body_start": 56263,
         "function_index": 97,
         "type_index": 0
       },
@@ -217,107 +217,107 @@
         "type_index": 1
       },
       "vm_load_error": {
-        "body_end": 55624,
+        "body_end": 56262,
         "body_ordinal": 96,
-        "body_start": 55613,
+        "body_start": 56251,
         "function_index": 96,
         "type_index": 0
       },
       "vm_overflowed": {
-        "body_end": 55600,
+        "body_end": 56238,
         "body_ordinal": 94,
-        "body_start": 55589,
+        "body_start": 56227,
         "function_index": 94,
         "type_index": 0
       },
       "vm_prepare_eval": {
-        "body_end": 53985,
+        "body_end": 54623,
         "body_ordinal": 78,
-        "body_start": 53703,
+        "body_start": 54341,
         "function_index": 78,
         "type_index": 7
       },
       "vm_program_apply_barrier": {
-        "body_end": 53701,
+        "body_end": 54339,
         "body_ordinal": 77,
-        "body_start": 51638,
+        "body_start": 52276,
         "function_index": 77,
         "type_index": 5
       },
       "vm_program_apply_step": {
-        "body_end": 51636,
+        "body_end": 52274,
         "body_ordinal": 76,
-        "body_start": 50198,
+        "body_start": 50836,
         "function_index": 76,
         "type_index": 5
       },
       "vm_program_error": {
-        "body_end": 50149,
+        "body_end": 50787,
         "body_ordinal": 74,
-        "body_start": 50102,
+        "body_start": 50740,
         "function_index": 74,
         "type_index": 8
       },
       "vm_program_function": {
-        "body_end": 49981,
+        "body_end": 50619,
         "body_ordinal": 71,
-        "body_start": 49922,
+        "body_start": 50560,
         "function_index": 71,
         "type_index": 8
       },
       "vm_program_globals": {
-        "body_end": 49791,
+        "body_end": 50429,
         "body_ordinal": 68,
-        "body_start": 49747,
+        "body_start": 50385,
         "function_index": 68,
         "type_index": 8
       },
       "vm_program_halted": {
-        "body_end": 50196,
+        "body_end": 50834,
         "body_ordinal": 75,
-        "body_start": 50150,
+        "body_start": 50788,
         "function_index": 75,
         "type_index": 8
       },
       "vm_program_locals": {
-        "body_end": 49746,
+        "body_end": 50384,
         "body_ordinal": 67,
-        "body_start": 49702,
+        "body_start": 50340,
         "function_index": 67,
         "type_index": 8
       },
       "vm_program_open": {
-        "body_end": 49701,
+        "body_end": 50339,
         "body_ordinal": 66,
-        "body_start": 49278,
+        "body_start": 49916,
         "function_index": 66,
         "type_index": 19
       },
       "vm_program_pc": {
-        "body_end": 50041,
+        "body_end": 50679,
         "body_ordinal": 72,
-        "body_start": 49982,
+        "body_start": 50620,
         "function_index": 72,
         "type_index": 8
       },
       "vm_program_result_count": {
-        "body_end": 49921,
+        "body_end": 50559,
         "body_ordinal": 70,
-        "body_start": 49862,
+        "body_start": 50500,
         "function_index": 70,
         "type_index": 8
       },
       "vm_program_results": {
-        "body_end": 49861,
+        "body_end": 50499,
         "body_ordinal": 69,
-        "body_start": 49792,
+        "body_start": 50430,
         "function_index": 69,
         "type_index": 8
       },
       "vm_program_stack_size": {
-        "body_end": 50101,
+        "body_end": 50739,
         "body_ordinal": 73,
-        "body_start": 50042,
+        "body_start": 50680,
         "function_index": 73,
         "type_index": 8
       },
@@ -329,9 +329,9 @@
         "type_index": 0
       },
       "vm_set_budget": {
-        "body_end": 55564,
+        "body_end": 56202,
         "body_ordinal": 91,
-        "body_start": 55543,
+        "body_start": 56181,
         "function_index": 91,
         "type_index": 21
       },
@@ -406,7 +406,7 @@
         "type_index": 8
       },
       "vm_step_execute": {
-        "body_end": 45397,
+        "body_end": 46035,
         "body_ordinal": 58,
         "body_start": 24903,
         "function_index": 58,
@@ -574,23 +574,23 @@
         "type_index": 8
       },
       "vm_steps_high": {
-        "body_end": 55588,
+        "body_end": 56226,
         "body_ordinal": 93,
-        "body_start": 55577,
+        "body_start": 56215,
         "function_index": 93,
         "type_index": 0
       },
       "vm_steps_low": {
-        "body_end": 55576,
+        "body_end": 56214,
         "body_ordinal": 92,
-        "body_start": 55565,
+        "body_start": 56203,
         "function_index": 92,
         "type_index": 0
       },
       "vm_table_full": {
-        "body_end": 55612,
+        "body_end": 56250,
         "body_ordinal": 95,
-        "body_start": 55601,
+        "body_start": 56239,
         "function_index": 95,
         "type_index": 0
       }
@@ -599,21 +599,21 @@
     "regions": {
       "bytes": 1252,
       "delivery": {
-        "bytes": 820,
+        "bytes": 817,
         "data_shards": 8,
-        "file": "regions/delivery/816fb8a138598e38863552dcf48f702200d14ac52e8de30a65dace1a5ef34dd3.pages",
+        "file": "regions/delivery/4644553828e8c4331b6d6f3b120508256d9996c13e0bc8a74de89ed9a026cd76.pages",
         "included_shards": "data",
         "logical_pages": 1,
         "page_bytes": 4096,
         "parity_shards": 2,
         "prefix_bytes": 172,
-        "prefix_sha256": "7f1253d624e0987da86d5fee69c29d062682a5f6dd0cd14cfa8094b6fe385b11",
-        "sha256": "816fb8a138598e38863552dcf48f702200d14ac52e8de30a65dace1a5ef34dd3",
+        "prefix_sha256": "8d8b72e5b11838392e9bda9645edf3678d33a77b28efa7b95503870d6b7619b2",
+        "sha256": "4644553828e8c4331b6d6f3b120508256d9996c13e0bc8a74de89ed9a026cd76",
         "unique_pages": 1
       },
-      "sha256": "09bf21824162f9091a524c800088db7648c0ce9122d12b69eb4e90398bd1dcc3"
+      "sha256": "e09bcd2fb9c2f268c2b1c0822e8b5e99e7d9846abba3980f2db1ad0892da105e"
     },
-    "sha256": "2e47f65c20b3c5d6fdfb793e787492e62aa7485708c967bd7612ad817ce52f7c",
+    "sha256": "1e0330902cfb2b2e0f2674a71250f7ee6a7ec4c5f9fce33cd27af4373a708cc1",
     "steps": {
       "bytes": 18368,
       "delivery": {

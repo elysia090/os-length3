@@ -1841,7 +1841,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 197u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 198u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2473,6 +2473,25 @@ static int step_add3_u32_lane(u32 begin, u32 end, u64 *result)
     return 1;
 }
 
+static int step_x86_bit_flags_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 4u) return step_fail(7u);
+    u64 prior, value, index, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &value)
+            || !step_operand(begin + 2u, &index)
+            || !step_operand(begin + 3u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    if ((width != 16u && width != 32u && width != 64u)
+            || descriptor != width)
+        return step_fail(7u);
+    u64 carry = ((value & step_mask(width))
+                 >> (index & (width - 1u))) & 1u;
+    *result = (prior & ~1ull) | carry | 2u;
+    return 1;
+}
+
 static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
 {
     StepWorkspace *machine = step_machine();
@@ -3049,6 +3068,9 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                     first, last, &machine->values[node])
                 : opcode == 196u
                 ? step_add3_u32_lane(
+                    first, last, &machine->values[node])
+                : opcode == 197u
+                ? step_x86_bit_flags_lane(
                     first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {

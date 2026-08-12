@@ -53,6 +53,8 @@ class TestBrowserPageFabric(unittest.TestCase):
             0x246, 0x81, 0x0f, 8))
         add3_u32 = evaluate_lane('lane64.ADD3_U32', (
             5, 0x100000002, 7))
+        bit_flags = evaluate_lane('lane64.X86_BIT_FLAGS', (
+            0x2d6, 0x8000, 15, 16))
         nodes = (
             WaveNode(1, 'lane64.SUBR', (
                 Operand('local', 0), Operand('local', 1))),
@@ -101,15 +103,20 @@ class TestBrowserPageFabric(unittest.TestCase):
             WaveNode(14, 'lane64.ADD3_U32', (
                 Operand('const', 5), Operand('const', 0x100000002),
                 Operand('const', 7))),
+            WaveNode(15, 'lane64.X86_BIT_FLAGS', (
+                Operand('const', 0x2d6), Operand('const', 0x8000),
+                Operand('const', 15), Operand('const', 16))),
         )
         plan = PureSlice(
             0, 0, 1, 1, 0, nodes,
             DependencyWaves(
-                (0, 6, 7, 12, 13, 14),
-                (1, 10, 11, 12, 13, 14, 2, 3, 4, 5, 6, 7, 8, 9),
-                (0, 1, 2, 3, 3, 3, 3, 3, 4, 5, 1, 1, 1, 1, 1)),
+                (0, 7, 8, 13, 14, 15),
+                (1, 10, 11, 12, 13, 14, 15,
+                 2, 3, 4, 5, 6, 7, 8, 9),
+                (0, 1, 2, 3, 3, 3, 3, 3, 4, 5,
+                 1, 1, 1, 1, 1, 1)),
             tuple(Operand('node', value)
-                  for value in range(1, 15))
+                  for value in range(1, 16))
             + (Operand('local', 4),
                Operand('projection', projection_coordinate(2, 3)),
                Operand('projection', projection_coordinate(2, 0xfe)),
@@ -171,7 +178,7 @@ for (;;) {
   }
 }
 const stack = E.vm_step_stack(session);
-const outputs = Array.from({length: 18}, (_, index) =>
+const outputs = Array.from({length: 19}, (_, index) =>
   view.getBigUint64(stack + index * 8, true).toString());
 const dirtyPage = E.vm_step_first_dirty_memory_page(session);
 const lease = E.vm_step_memory_lease(session);
@@ -205,6 +212,7 @@ process.stdout.write(JSON.stringify(
                 str(shift_flags),
                 str(condition), str(test_flags),
                 str(add3_u32),
+                str(bit_flags),
                 str(saved),
                 str((saved_high + delta) & 0xffffffff),
                 str(26 | (36 << 32)),

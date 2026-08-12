@@ -16,10 +16,10 @@
       "path": "linux-x86-64/index.json"
     },
     "vm": {
-      "bytes": 58084,
+      "bytes": 58722,
       "components": "vm/index.json",
       "format": "webassembly-runtime-v1",
-      "identity": "2e47f65c20b3c5d6fdfb793e787492e62aa7485708c967bd7612ad817ce52f7c",
+      "identity": "1e0330902cfb2b2e0f2674a71250f7ee6a7ec4c5f9fce33cd27af4373a708cc1",
       "path": "vm/module/index.json"
     }
   },
