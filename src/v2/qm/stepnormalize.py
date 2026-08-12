@@ -266,6 +266,30 @@ def _rewrite_physical(nodes, stack, locals_):
     def constant(operand):
         return operand.value if operand.kind == 'const' else None
 
+    def unsigned_bits(operand):
+        raw = constant(operand)
+        if raw is not None:
+            return max(1, int(raw).bit_length())
+        source = form(operand)
+        if source is None:
+            return None
+        operation, arguments = source
+        if operation.startswith('lane32.'):
+            return 32
+        if operation.startswith('memory.i64.load'):
+            suffix = operation[len('memory.i64.load'):]
+            if suffix in ('8_u', '16_u', '32_u'):
+                return int(suffix.split('_', 1)[0])
+        if operation == 'lane64.AND' and len(arguments) == 2:
+            mask = constant(arguments[1])
+            if mask is not None:
+                return max(1, int(mask).bit_length())
+        if operation == 'lane64.BEXTR' and len(arguments) == 3:
+            width = constant(arguments[2])
+            if width is not None:
+                return max(1, int(width))
+        return None
+
     def emit(operation, arguments):
         value = len(rebuilt) + 1
         operand = Operand('node', value)
@@ -291,7 +315,9 @@ def _rewrite_physical(nodes, stack, locals_):
         operation = node.op
         arguments = tuple(map(resolve, node.arguments))
         if operation in ('memory.i64.repeat', 'memory.i64.find2',
-                         'memory.i64.copy_until'):
+                         'memory.i64.copy_until',
+                         'memory.i64.relative_exchange',
+                         'memory.i64.relative_result'):
             operand = emit(operation, arguments)
             remap[node.value] = operand
             continue
@@ -307,6 +333,23 @@ def _rewrite_physical(nodes, stack, locals_):
             from .steppage import decode_memory_shape, memory_shape
             access_width, scale, virtual64 = decode_memory_shape(raw_shape)
             address_form = form(data[0])
+            raw_offset = constant(offset)
+            if (scale == 0 and raw_offset is not None
+                    and address_form is not None
+                    and address_form[0] in (
+                        'lane64.ADD', 'lane64.ADDR', 'lane64.ADD3')):
+                constants = tuple(
+                    constant(argument) for argument in address_form[1])
+                coordinates = tuple(
+                    argument for argument, value in zip(
+                        address_form[1], constants) if value is None)
+                if len(coordinates) == 1:
+                    data = (coordinates[0],) + data[1:]
+                    offset = Operand('const', (
+                        raw_offset + sum(
+                            value for value in constants
+                            if value is not None)) & ((1 << 64) - 1))
+                    address_form = form(data[0])
             if (scale == 0 and address_form is not None
                     and address_form[0] == 'lane32.SHL'
                     and len(address_form[1]) == 2
@@ -314,6 +357,13 @@ def _rewrite_physical(nodes, stack, locals_):
                 amount = constant(address_form[1][1]) % 32
                 data = (address_form[1][0],) + data[1:]
                 scale = amount
+            if store:
+                value_form = form(data[1])
+                if (value_form is not None
+                        and value_form[0] == 'lane64.AND'
+                        and constant(value_form[1][1])
+                        == (1 << (access_width * 8)) - 1):
+                    data = (data[0], value_form[1][0])
             shape = Operand('const', memory_shape(
                 access_width, scale, virtual64))
             arguments = (data + (offset, shape)
@@ -335,7 +385,20 @@ def _rewrite_physical(nodes, stack, locals_):
         # Wasm values already use an unsigned host representation.  The
         # unsigned extension therefore changes the type observer, not the
         # stored coordinate.
-        if name == 'EXTEND_I32_U':
+        if name == 'X86_FLAGS' and len(arguments) == 5:
+            descriptor = constant(arguments[4])
+            if (descriptor is not None
+                    and (descriptor >> 8) & 7 not in (2, 4)
+                    and not descriptor & (1 << 11)):
+                prior = arguments[0]
+                prior_form = form(prior)
+                while (prior_form is not None
+                       and prior_form[0] == 'lane64.X86_FLAGS'):
+                    prior = prior_form[1][0]
+                    prior_form = form(prior)
+                arguments = (prior,) + arguments[1:]
+
+        elif name == 'EXTEND_I32_U':
             replacement = arguments[0]
 
         # A wrap only publishes the low word.  When it is not itself visible
@@ -365,6 +428,16 @@ def _rewrite_physical(nodes, stack, locals_):
         elif (name == 'AND' and len(arguments) == 2
               and constant(arguments[1]) == full
               and already_projected(arguments[0])):
+            replacement = arguments[0]
+
+        elif (name == 'AND' and len(arguments) == 2
+              and constant(arguments[1]) is not None
+              and constant(arguments[1]) > 0
+              and unsigned_bits(arguments[0]) is not None
+              and unsigned_bits(arguments[0])
+              <= max(1, constant(arguments[1]).bit_length())
+              and constant(arguments[1])
+              == (1 << constant(arguments[1]).bit_length()) - 1):
             replacement = arguments[0]
 
         elif (name in ('SHL', 'SHR', 'SAR') and len(arguments) == 2
@@ -493,7 +566,453 @@ def _rewrite_physical(nodes, stack, locals_):
     def output(operand):
         return resolve(operand) if operand.kind == 'node' else operand
 
-    return tuple(rebuilt), tuple(map(output, stack)), tuple(map(output, locals_))
+    rewritten = _rewrite_relative_exchange(
+        tuple(rebuilt), tuple(map(output, stack)),
+        tuple(map(output, locals_)))
+    return _rewrite_balanced_stack(*rewritten)
+
+
+def _rewrite_balanced_stack(nodes, stack, locals_):
+    """Substitute a balanced save/restore stack version out of the cut.
+
+    A leaf ``push x; ...; pop x`` creates a transient byte version below the
+    published stack coordinate.  If the matching load only restores the same
+    local and the stack output has advanced by exactly that width, the value
+    and coordinate both substitute to their inputs.  Memory dependencies are
+    bypassed, but later memory still depends on the last intervening effect.
+    """
+    from .steppage import decode_memory_shape
+    from .wasmwave import Operand, WaveNode
+
+    def ordinary_access(node):
+        if not node.op.startswith('memory.i64.'):
+            return None
+        name = node.op[len('memory.i64.'):]
+        if name in ('repeat', 'find2', 'copy_until',
+                    'relative_exchange', 'relative_result'):
+            return None
+        store = name.startswith('store')
+        load = name.startswith('load')
+        if not store and not load:
+            return None
+        fixed = 4 if store else 3
+        if len(node.arguments) < fixed:
+            return None
+        offset_at = 2 if store else 1
+        offset, shape = node.arguments[offset_at:offset_at + 2]
+        if offset.kind != 'const' or shape.kind != 'const':
+            return None
+        try:
+            width, scale, virtual64 = decode_memory_shape(shape.value)
+        except ValueError:
+            return None
+        return (store, node.arguments[0],
+                node.arguments[1] if store else None,
+                int(offset.value), width, scale, virtual64,
+                node.arguments[fixed:])
+
+    for store in nodes:
+        stored = ordinary_access(store)
+        if stored is None or not stored[0] or stored[3] != 0:
+            continue
+        address = stored[1]
+        address_node = (nodes[address.value - 1]
+                        if address.kind == 'node' else None)
+        saved = stored[2]
+        if (address_node is None or address_node.op != 'lane64.SUB'
+                or len(address_node.arguments) != 2
+                or address_node.arguments[0].kind != 'local'
+                or address_node.arguments[1].kind != 'const'
+                or address_node.arguments[1].value != stored[4]
+                or stored[4] != 8
+                or saved.kind != 'local'):
+            continue
+        pointer = address_node.arguments[0]
+        width = stored[4]
+        load = next((node for node in nodes[store.value:]
+                     if (lambda access: access is not None
+                         and not access[0]
+                         and access[1] == address
+                         and access[3:7] == stored[3:7])(
+                             ordinary_access(node))), None)
+        if load is None:
+            continue
+        if (saved.value >= len(locals_)
+                or locals_[saved.value] != Operand('node', load.value)
+                or pointer.value >= len(locals_)):
+            continue
+        published_pointer = locals_[pointer.value]
+        pointer_node = (nodes[published_pointer.value - 1]
+                        if published_pointer.kind == 'node' else None)
+        if (pointer_node is None or pointer_node.op != 'lane64.ADD'
+                or pointer_node.arguments
+                != (pointer, Operand('const', width))):
+            continue
+        address_users = [node.value for node in nodes
+                         if any(argument == address
+                                for argument in node.arguments)]
+        if any(value not in (store.value, load.value)
+               for value in address_users):
+            continue
+
+        intervening = tuple(
+            node for node in nodes[store.value:load.value - 1]
+            if node.op.startswith('memory.')
+            and node.op != 'memory.i64.relative_result')
+        transaction = (intervening[0]
+                       if len(intervening) == 1
+                       and intervening[0].op
+                       == 'memory.i64.relative_exchange' else None)
+        # With no intervening memory effect, store->load is an ordinary SSA
+        # identity.  If one relative transaction intervenes, internalize the
+        # save and restore so arbitrary pointer aliasing keeps the exact x86
+        # order.  Any other effect needs a more general transaction grammar.
+        if intervening and transaction is None:
+            continue
+
+        removed = {address_node.value, store.value, load.value}
+        restore_value = max(node.value for node in nodes) + 1
+        value_substitution = {
+            load.value: (Operand('node', restore_value)
+                         if transaction is not None else saved),
+        }
+        dependency_substitution = {
+            store.value: tuple(stored[-1]),
+            load.value: tuple(ordinary_access(load)[-1]),
+        }
+
+        def dependency_start(node):
+            if node.op == 'memory.i64.relative_exchange':
+                mode = (node.arguments[6]
+                        if len(node.arguments) > 6 else None)
+                return (9 if mode == Operand('const', 1) else 7)
+            access = ordinary_access(node)
+            if access is not None:
+                return 4 if access[0] else 3
+            return len(node.arguments)
+
+        def expand_dependency(operand):
+            if operand.kind != 'node':
+                return (operand,)
+            prior = dependency_substitution.get(operand.value)
+            if prior is None:
+                substituted = value_substitution.get(operand.value)
+                return ((substituted,) if substituted is not None
+                        else (operand,))
+            expanded = []
+            for dependency in prior:
+                for resolved in expand_dependency(dependency):
+                    if resolved not in expanded:
+                        expanded.append(resolved)
+            return tuple(expanded)
+
+        staged = []
+        for node in nodes:
+            if node.value in removed:
+                continue
+            split = dependency_start(node)
+            source_arguments = node.arguments
+            if node is transaction:
+                if (len(source_arguments) < 7
+                        or source_arguments[6] != Operand('const', 0)):
+                    staged = []
+                    break
+                source_arguments = (
+                    source_arguments[:6] + (Operand('const', 1),
+                                            pointer, saved)
+                    + source_arguments[7:])
+                split = 9
+            arguments = []
+            for index, operand in enumerate(source_arguments):
+                if index >= split and operand.kind == 'node' \
+                        and operand.value in dependency_substitution:
+                    arguments.extend(expand_dependency(operand))
+                else:
+                    arguments.append(value_substitution.get(
+                        operand.value, operand)
+                        if operand.kind == 'node' else operand)
+            staged.append(WaveNode(node.value, node.op, tuple(arguments)))
+            if node is transaction:
+                staged.append(WaveNode(
+                    restore_value, 'memory.i64.relative_result', (
+                        Operand('node', transaction.value),
+                        Operand('const', 0xfe))))
+
+        if not staged:
+            continue
+
+        staged_values = {node.value for node in staged}
+        if any(operand.kind == 'node'
+               and operand.value not in staged_values
+               for node in staged for operand in node.arguments):
+            continue
+
+        dense = {}
+        rewritten = []
+        for node in staged:
+            value = len(rewritten) + 1
+            dense[node.value] = value
+            rewritten.append(WaveNode(value, node.op, tuple(
+                Operand('node', dense[operand.value])
+                if operand.kind == 'node' else operand
+                for operand in node.arguments)))
+
+        def publish(operand):
+            if operand.kind != 'node':
+                return operand
+            operand = value_substitution.get(operand.value, operand)
+            return (Operand('node', dense[operand.value])
+                    if operand.kind == 'node' else operand)
+
+        return (tuple(rewritten), tuple(map(publish, stack)),
+                tuple(map(publish, locals_)))
+    return tuple(nodes), tuple(stack), tuple(locals_)
+
+
+def _rewrite_relative_exchange(nodes, stack, locals_):
+    """Fold an adjacent relative-coordinate exchange into one transaction.
+
+    The recognized graph has one shared ``delta = left - right`` and, for
+    every adjacent lane, the closed form ``(right - delta, left + delta)``.
+    Detection is based only on SSA and byte coordinates; it is independent of
+    the source frontend and of symbol names.
+    """
+    from .steppage import decode_memory_shape, relative_layout
+    from .wasmwave import Operand, WaveNode
+
+    by_value = {node.value: node for node in nodes}
+    outputs = tuple(stack) + tuple(locals_)
+    output_values = {operand.value for operand in outputs
+                     if operand.kind == 'node'}
+    consumers = {node.value: [] for node in nodes}
+    for node in nodes:
+        for operand in node.arguments:
+            if operand.kind == 'node':
+                consumers.setdefault(operand.value, []).append(node.value)
+
+    def node_of(operand):
+        return (by_value.get(operand.value)
+                if operand.kind == 'node' else None)
+
+    def access(node):
+        if node is None or not node.op.startswith('memory.i64.'):
+            return None
+        name = node.op[len('memory.i64.'):]
+        if name in ('repeat', 'find2', 'copy_until',
+                    'relative_exchange', 'relative_result'):
+            return None
+        store = name.startswith('store')
+        load = name.startswith('load')
+        if not store and not load:
+            return None
+        fixed = 4 if store else 3
+        if len(node.arguments) < fixed:
+            return None
+        base = node.arguments[0]
+        value = node.arguments[1] if store else None
+        offset_at = 2 if store else 1
+        offset, shape = node.arguments[offset_at:offset_at + 2]
+        if offset.kind != 'const' or shape.kind != 'const':
+            return None
+        try:
+            width, scale, virtual64 = decode_memory_shape(shape.value)
+        except ValueError:
+            return None
+        if scale:
+            return None
+        return (store, base, value, int(offset.value), width, virtual64,
+                node.arguments[fixed:])
+
+    def arithmetic(node, name, delta):
+        if node is None or node.op not in (
+                'lane32.' + name, 'lane64.' + name):
+            return None
+        left, right = node.arguments
+        if right == delta:
+            return left
+        if name == 'ADDR' and left == delta:
+            return right
+        return None
+
+    for delta_node in nodes:
+        if delta_node.op != 'lane64.SUBR':
+            continue
+        left_base, right_base = delta_node.arguments
+        delta = Operand('node', delta_node.value)
+        lanes = []
+        for left_store in nodes:
+            stored = access(left_store)
+            if stored is None or not stored[0] or stored[1] != left_base:
+                continue
+            _store, _base, left_value, offset, width, virtual64, _deps = stored
+            left_result = node_of(left_value)
+            right_load_operand = arithmetic(left_result, 'SUBR', delta)
+            right_load = node_of(right_load_operand) \
+                if right_load_operand is not None else None
+            loaded_right = access(right_load)
+            if (loaded_right is None or loaded_right[0]
+                    or loaded_right[1] != right_base
+                    or loaded_right[3:6] != (offset, width, virtual64)):
+                continue
+            match = None
+            for right_store in nodes:
+                candidate = access(right_store)
+                if (candidate is None or not candidate[0]
+                        or candidate[1] != right_base
+                        or candidate[3:6] != (offset, width, virtual64)):
+                    continue
+                right_value = candidate[2]
+                right_result = node_of(right_value)
+                left_load_operand = arithmetic(right_result, 'ADDR', delta)
+                left_load = node_of(left_load_operand) \
+                    if left_load_operand is not None else None
+                loaded_left = access(left_load)
+                if (loaded_left is not None and not loaded_left[0]
+                        and loaded_left[1] == left_base
+                        and loaded_left[3:6]
+                        == (offset, width, virtual64)):
+                    match = (left_store, right_store, left_result,
+                             right_result, right_load, left_load)
+                    break
+            if match is not None:
+                lanes.append((offset, width, virtual64) + match)
+
+        lanes.sort(key=lambda lane: lane[0])
+        if (len(lanes) < 2 or lanes[0][0] != 0
+                or any(lanes[index][0]
+                       != lanes[index - 1][0] + lanes[index - 1][1]
+                       for index in range(1, len(lanes)))
+                or len({lane[2] for lane in lanes}) != 1):
+            continue
+        left_stores = [lane[3] for lane in lanes]
+        right_stores = [lane[4] for lane in lanes]
+        if ([node.value for node in left_stores]
+                != sorted(node.value for node in left_stores)
+                or min(node.value for node in right_stores)
+                < max(node.value for node in left_stores)):
+            continue
+
+        last = lanes[-1]
+        last_width = last[1]
+        last_right_result = Operand('node', last[6].value)
+        last_left_load = Operand('node', last[8].value)
+        flags = next((node for node in nodes
+                      if node.op == 'lane64.X86_FLAGS'
+                      and len(node.arguments) == 5
+                      and node.arguments[1:4]
+                      == (delta, last_left_load, last_right_result)
+                      and node.arguments[4].kind == 'const'
+                      and node.arguments[4].value
+                      == last_width * 8 | (1 << 8)), None)
+        if flags is None:
+            continue
+
+        replaced = {flags.value}
+        selectors = {flags.value: 0xff}
+        observed_loads = set()
+        for lane_index, lane in enumerate(lanes):
+            (_offset, _width, _virtual64, left_store, right_store,
+             left_result, right_result, right_load, left_load) = lane
+            replaced.update((left_store.value, right_store.value,
+                             left_result.value, right_result.value,
+                             right_load.value, left_load.value))
+            observed_loads.update((right_load.value, left_load.value))
+            selectors[left_result.value] = lane_index * 2
+            selectors[right_result.value] = lane_index * 2 + 1
+
+        # The transaction publishes the transformed lanes, not arbitrary
+        # observations of a pre-transaction load.  Keep the scalar graph when
+        # such an observation survives outside the affine exchange.
+        if any(value in output_values
+               or any(consumer not in replaced
+                      for consumer in consumers.get(value, ()))
+               for value in observed_loads):
+            continue
+
+        first_memory = min(node.value for node in nodes
+                           if node.value in replaced
+                           and node.op.startswith('memory.'))
+        last_memory = max(node.value for node in nodes
+                          if node.value in replaced
+                          and node.op.startswith('memory.'))
+        if any(node.op.startswith('memory.') and node.value not in replaced
+               for node in nodes[first_memory - 1:last_memory]):
+            continue
+        visible = []
+        for value, selector in selectors.items():
+            if (value in output_values
+                    or any(consumer not in replaced
+                           for consumer in consumers.get(value, ()))):
+                visible.append((value, selector))
+        if not visible:
+            visible.append((None, 0))
+
+        dependencies = []
+        for node in nodes:
+            if node.value not in replaced or not node.op.startswith('memory.'):
+                continue
+            details = access(node)
+            if details is None:
+                continue
+            for dependency in details[-1]:
+                if (dependency.kind == 'node'
+                        and dependency.value not in replaced
+                        and dependency not in dependencies):
+                    dependencies.append(dependency)
+
+        next_value = len(nodes) + 1
+        primary_value, primary_selector = visible[0]
+        primary = WaveNode(next_value, 'memory.i64.relative_exchange', (
+            left_base, right_base, delta, flags.arguments[0],
+            Operand('const', relative_layout(
+                tuple(lane[1] for lane in lanes))),
+            Operand('const', primary_selector),
+            Operand('const', 0),
+        ) + tuple(dependencies))
+        inserted = [primary]
+        substitutions = {value: next_value for value in replaced}
+        if primary_value is not None:
+            substitutions[primary_value] = next_value
+        for old_value, selector in visible[1:]:
+            result_value = next_value + len(inserted)
+            inserted.append(WaveNode(
+                result_value, 'memory.i64.relative_result', (
+                    Operand('node', next_value),
+                    Operand('const', selector))))
+            substitutions[old_value] = result_value
+
+        insertion_at = min(replaced)
+        ordered = []
+        for node in nodes:
+            if node.value == insertion_at:
+                ordered.extend(inserted)
+            if node.value not in replaced:
+                ordered.append(node)
+
+        dense = {}
+        rewritten = []
+
+        def substitute(operand):
+            if operand.kind != 'node':
+                return operand
+            value = substitutions.get(operand.value, operand.value)
+            return Operand('node', dense[value])
+
+        for node in ordered:
+            value = len(rewritten) + 1
+            dense[node.value] = value
+            rewritten.append(WaveNode(
+                value, node.op, tuple(map(substitute, node.arguments))))
+
+        def publish(operand):
+            if operand.kind != 'node':
+                return operand
+            value = substitutions.get(operand.value, operand.value)
+            return Operand('node', dense[value])
+
+        return (tuple(rewritten), tuple(map(publish, stack)),
+                tuple(map(publish, locals_)))
+    return tuple(nodes), tuple(stack), tuple(locals_)
 
 
 def _compact(nodes, stack, locals_):

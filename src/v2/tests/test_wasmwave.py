@@ -10,7 +10,10 @@ from qm.wasmstate import (decode_module, instruction_step,
                           run_until_boundary, start_state)
 from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
                          compile_mapped_executor, memory_shape,
+                         relative_layout, relative_exchange_values,
+                         _relative_exchange,
                          StatePageError)
+from qm.memorycut import MemoryCut
 from qm.stepnormalize import compose_plans, normalize_plan
 from qm.wasmphysical import DependencyWaves
 from qm.wasmwave import (Operand, PureSlice, WaveExecutor, WaveNode,
@@ -19,6 +22,61 @@ from tests.test_wasmbinary import encode_uleb, module
 
 
 class TestWaveExecutor(unittest.TestCase):
+    def test_relative_exchange_preserves_sequential_overlap_semantics(self):
+        from qm.laneops import evaluate
+        from qm.wasmstate import PagedMemory
+
+        widths = (4, 4, 8)
+        layout = relative_layout(widths)
+        for left, right in ((64, 80), (64, 68), (68, 64), (64, 64)):
+            source = PagedMemory(bytes(range(160)), 65536)
+            delta = (left - right) & ((1 << 64) - 1)
+            prior_flags = 0x246
+            reference = MemoryCut(source)
+            expected = []
+            pending_right = []
+            offset = 0
+            last_left = last_result = 0
+            for width in widths:
+                mask = (1 << (width * 8)) - 1
+                observed_right = reference.load(right + offset, width)
+                next_left = (observed_right - delta) & mask
+                observed_left = reference.load(left + offset, width)
+                next_right = (observed_left + delta) & mask
+                reference.write(
+                    left + offset, next_left.to_bytes(width, 'little'))
+                expected.extend((next_left, next_right))
+                pending_right.append((offset, width, next_right))
+                last_left, last_result = observed_left, next_right
+                offset += width
+            for offset, width, value in pending_right:
+                reference.write(
+                    right + offset, value.to_bytes(width, 'little'))
+            expected.append(evaluate('lane64.X86_FLAGS', (
+                prior_flags, delta, last_left, last_result,
+                widths[-1] * 8 | (1 << 8))))
+
+            actual = MemoryCut(source)
+            results = _relative_exchange(
+                actual, left, right, delta, prior_flags, layout)
+
+            self.assertEqual(results, tuple(expected))
+            self.assertEqual(actual.read(48, 64), reference.read(48, 64))
+
+    def test_relative_exchange_matches_immutable_three_lane_snapshots(self):
+        widths = (4, 4, 8)
+        layout = relative_layout(widths)
+        left = bytes.fromhex('01000000020000000300000000000000')
+        right = bytes.fromhex('0a000000140000001e00000000000000')
+        delta = (-16) & ((1 << 64) - 1)
+
+        results = relative_exchange_values(left, right, delta, 0x246, layout)
+
+        self.assertEqual(results[:6], (
+            26, (1 + delta) & 0xffffffff,
+            36, (2 + delta) & 0xffffffff,
+            46, (3 + delta) & ((1 << 64) - 1)))
+
     def test_memory_root_does_not_hide_an_address_identity(self):
         empty_waves = DependencyWaves((0,), (), (0,))
         raw = PureSlice(
@@ -79,6 +137,26 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(plan.nodes[0].arguments,
                          limit + sentinel + (Operand('local', 1),))
         self.assertEqual((plan.waves.work, plan.waves.span), (1, 1))
+
+    def test_overwritten_x86_flags_bypass_dead_intermediate_states(self):
+        prior = Operand('local', 0)
+        first = (prior, Operand('const', 9), Operand('const', 4),
+                 Operand('const', 5), Operand('const', 64 | (3 << 8)))
+        second = (Operand('node', 1), Operand('const', 5),
+                  Operand('const', 2), Operand('const', 7),
+                  Operand('const', 64 | (1 << 8)))
+        raw = PureSlice(
+            0, 0, 2, 2, 0,
+            (WaveNode(1, 'lane64.X86_FLAGS', first),
+             WaveNode(2, 'lane64.X86_FLAGS', second)),
+            DependencyWaves((0,), (), (0,)), (), (Operand('node', 2),))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.X86_FLAGS'])
+        self.assertEqual(plan.nodes[0].arguments[0], prior)
+        self.assertEqual(plan.nodes[0].arguments[1:], second[1:])
 
     def test_deterministic_pages_compose_by_substituting_frame_coordinates(self):
         empty_waves = DependencyWaves((0,), (), (0,))

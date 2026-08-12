@@ -64,6 +64,7 @@ MEMORY_OPS = tuple('memory.' + name for name in (
 STATE_OPS = (
     'lane64.X86_FLAGS', 'memory.i64.repeat', 'memory.i64.find2',
     'memory.i64.copy_until', 'lane64.X86_FLAGS_SELECT',
+    'memory.i64.relative_exchange', 'memory.i64.relative_result',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
@@ -257,6 +258,118 @@ def _copy_until(memory, source, target, start, limit, target_end,
             memory.write(coordinate, bytes((byte,)))
         index += 1
     return (byte << 32) | index
+
+
+def relative_layout(widths):
+    """Encode a small adjacent-lane layout in one physical constant."""
+    widths = tuple(map(int, widths))
+    if not widths or len(widths) > 7 or any(
+            width not in (1, 2, 4, 8) for width in widths):
+        raise ValueError('relative-exchange layout is invalid')
+    return len(widths) | sum(
+        width << (8 * (index + 1))
+        for index, width in enumerate(widths))
+
+
+def decode_relative_layout(layout):
+    """Return the adjacent lane widths of a relative-exchange constant."""
+    layout = int(layout)
+    count = layout & 0xff
+    if not 1 <= count <= 7 or layout >> (8 * (count + 1)):
+        raise ValueError('relative-exchange layout is invalid')
+    widths = tuple((layout >> (8 * (index + 1))) & 0xff
+                   for index in range(count))
+    if any(width not in (1, 2, 4, 8) for width in widths):
+        raise ValueError('relative-exchange layout is invalid')
+    return widths
+
+
+def _relative_exchange(memory, left, right, delta, prior_flags, layout,
+                       mode=0, save_address=0, saved_value=0,
+                       *_dependencies):
+    """Exchange adjacent relative coordinates without scalar lane state.
+
+    For each lane ``i`` this publishes ``left[i] = right[i] - delta`` and
+    ``right[i] = left[i] + delta`` modulo that lane's width.  Reads and writes
+    retain their source order, so overlapping byte extents have one exact
+    meaning instead of selecting a separate fallback implementation.
+    """
+    from .laneops import evaluate
+
+    widths = decode_relative_layout(layout)
+    mode = int(mode)
+    if mode not in (0, 1):
+        raise ValueError('relative-exchange mode is invalid')
+    left, right, delta = int(left), int(right), int(delta) & I64
+    if mode:
+        save_address = (int(save_address) - 8) & I64
+        memory.write(save_address,
+                     (int(saved_value) & I64).to_bytes(8, 'little'))
+    offset = 0
+    results = []
+    right_values = []
+    last_left = last_right = 0
+    for width in widths:
+        mask = mask_of(width * 8)
+        observed_right = memory.load((right + offset) & I64, width)
+        next_left = (observed_right - delta) & mask
+        observed_left = memory.load((left + offset) & I64, width)
+        next_right = (observed_left + delta) & mask
+        memory.write((left + offset) & I64,
+                     next_left.to_bytes(width, 'little'))
+        results.extend((next_left, next_right))
+        right_values.append((offset, width, next_right))
+        last_left, last_right = observed_left, next_right
+        offset += width
+    for offset, width, value in right_values:
+        memory.write((right + offset) & I64,
+                     value.to_bytes(width, 'little'))
+    descriptor = widths[-1] * 8 | (1 << 8)
+    flags = evaluate('lane64.X86_FLAGS', (
+        int(prior_flags), delta, last_left, last_right, descriptor))
+    if mode:
+        restored = memory.load(save_address, 8)
+        return tuple(results) + (flags, restored)
+    return tuple(results) + (flags,)
+
+
+def _relative_select(results, selector, mode):
+    selector, mode = int(selector), int(mode)
+    if selector == 0xff:
+        return results[-2 if mode else -1]
+    if selector == 0xfe and mode:
+        return results[-1]
+    return results[selector]
+
+
+def relative_exchange_values(left_bytes, right_bytes, delta,
+                             prior_flags, layout):
+    """Reference outputs of one relative exchange over immutable snapshots."""
+    from .laneops import evaluate
+
+    widths = decode_relative_layout(layout)
+    left_bytes, right_bytes = bytes(left_bytes), bytes(right_bytes)
+    extent = sum(widths)
+    if len(left_bytes) != extent or len(right_bytes) != extent:
+        raise ValueError('relative-exchange snapshot has the wrong extent')
+    delta = int(delta) & I64
+    results = []
+    offset = 0
+    last_left = last_right = 0
+    for width in widths:
+        mask = mask_of(width * 8)
+        old_left = int.from_bytes(left_bytes[offset:offset + width], 'little')
+        old_right = int.from_bytes(
+            right_bytes[offset:offset + width], 'little')
+        next_left = (old_right - delta) & mask
+        next_right = (old_left + delta) & mask
+        results.extend((next_left, next_right))
+        last_left, last_right = old_left, next_right
+        offset += width
+    descriptor = widths[-1] * 8 | (1 << 8)
+    flags = evaluate('lane64.X86_FLAGS', (
+        int(prior_flags), delta, last_left, last_right, descriptor))
+    return tuple(results) + (flags,)
 
 
 def _memory_name(name):
@@ -587,6 +700,44 @@ def _validate(mapped):
                 raise StatePageError(
                     'memory.i64.copy_until shape is invalid')
             continue
+        if operation == 'memory.i64.relative_exchange':
+            if (end - begin < 7
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'const'
+                           for at in (begin + 4, begin + 5, begin + 6))
+                    or mapped.value('operand_values', begin + 6)
+                       not in (0, 1)
+                    or (mapped.value('operand_values', begin + 6) == 1
+                        and end - begin < 9)
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'node'
+                           for at in range(
+                               begin + (9 if mapped.value(
+                                   'operand_values', begin + 6) else 7),
+                               end))):
+                raise StatePageError(
+                    'memory.i64.relative_exchange has the wrong operands')
+            try:
+                widths = decode_relative_layout(
+                    mapped.value('operand_values', begin + 4))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            selector = mapped.value('operand_values', begin + 5)
+            mode = mapped.value('operand_values', begin + 6)
+            if (selector not in ((0xff, 0xfe) if mode else (0xff,))
+                    and selector >= len(widths) * 2):
+                raise StatePageError(
+                    'relative-exchange selector is outside its layout')
+            continue
+        if operation == 'memory.i64.relative_result':
+            if (end - begin != 2
+                    or OPERAND_KINDS[
+                        mapped.value('operand_tags', begin)] != 'node'
+                    or OPERAND_KINDS[
+                        mapped.value('operand_tags', begin + 1)] != 'const'):
+                raise StatePageError(
+                    'memory.i64.relative_result has the wrong operands')
+            continue
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
             source_name, _observer = _memory_name(name)
@@ -741,6 +892,7 @@ def execute_mapped(mapped, state):
 
     values = [0] * (mapped.work + 1)
     memory = MemoryCut(state.memory)
+    relative_results = {}
 
     def resolve(tag, value):
         kind = OPERAND_KINDS[tag]
@@ -773,6 +925,20 @@ def execute_mapped(mapped, state):
                 produced.append((node, _find2(memory, *arguments)))
             elif operation == 'memory.i64.copy_until':
                 produced.append((node, _copy_until(memory, *arguments)))
+            elif operation == 'memory.i64.relative_exchange':
+                mode = arguments[6]
+                results = _relative_exchange(
+                    memory, *arguments[:5], *arguments[6:])
+                relative_results[node] = results, mode
+                selector = arguments[5]
+                produced.append((node, _relative_select(
+                    results, selector, mode)))
+            elif operation == 'memory.i64.relative_result':
+                source = mapped.value('operand_values', begin)
+                selector = arguments[1]
+                results, mode = relative_results[source]
+                produced.append((node, _relative_select(
+                    results, selector, mode)))
             elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
@@ -856,7 +1022,10 @@ def compile_mapped_executor(mapped):
     lines = ['def execute(locals_, stack, memory):']
     namespace = {'memory_load': _load, 'memory_store': _store,
                  'memory_repeat': _repeat, 'memory_find2': _find2,
-                 'memory_copy_until': _copy_until}
+                 'memory_copy_until': _copy_until,
+                 'memory_relative_exchange': _relative_exchange,
+                 'memory_relative_select': _relative_select}
+    lines.append('    relative_results = {}')
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -895,6 +1064,33 @@ def compile_mapped_executor(mapped):
             if operation == 'memory.i64.copy_until':
                 lines.append('    value_%d = memory_copy_until(memory, %s)' %
                              (node, arguments))
+                continue
+            if operation == 'memory.i64.relative_exchange':
+                leading = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 5))
+                trailing = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first + 6, last))
+                selector = mapped.value('operand_values', first + 5)
+                mode = mapped.value('operand_values', first + 6)
+                lines.append(
+                    '    relative_results[%d] = ('
+                    'memory_relative_exchange(memory, %s, %s), %d)' %
+                    (node, leading, trailing, mode))
+                lines.append(
+                    '    value_%d = memory_relative_select('
+                    'relative_results[%d][0], %d, %d)' %
+                    (node, node, selector, mode))
+                continue
+            if operation == 'memory.i64.relative_result':
+                source = mapped.value('operand_values', first)
+                selector = mapped.value('operand_values', first + 1)
+                lines.append(
+                    '    value_%d = memory_relative_select('
+                    'relative_results[%d][0], %d, '
+                    'relative_results[%d][1])' %
+                    (node, source, selector, source))
                 continue
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]

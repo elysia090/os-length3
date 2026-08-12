@@ -528,6 +528,55 @@ class TestX86StateStep(unittest.TestCase):
             block.virtual_memory
             for _source, block in dbt._stack_cuts.values()))
 
+    def test_straight_memory_function_is_one_normalized_state_page(self):
+        body = bytes.fromhex(
+            'f30f1efa 0f1f440000 55 4889e5 4889f8 4829f0 '
+            '8b0e 29c1 8b17 01c2 890f 8b4e04 29c1 '
+            '448b4704 4101c0 894f04 488b4e08 4829c1 '
+            '48034708 48894f08 8916 44894604 48894608 5d e9')
+        body += struct.pack('<i', 0x300 - (0x100 + len(body) + 4))
+
+        def start(left=0x400, right=0x500):
+            return initial_state(memory_with(
+                (0x100, body), (0x300, b'\xc3'),
+                (0x400, bytes(range(16))),
+                (0x500, bytes(range(16, 32))),
+                (0x700, b'\xf4'),
+                (0x800, struct.pack('<Q', 0x700))),
+                0x100, {'rdi': left, 'rsi': right,
+                        'rsp': 0x800, 'rbp': 0x123})
+
+        optimized = X86DBT(enable_function_oracles=False)
+        for left, right in ((0x400, 0x500), (0x400, 0x404),
+                            (0x404, 0x400), (0x400, 0x400),
+                            (0x7f8, 0x400), (0x400, 0x7f8)):
+            fast_start = start(left, right)
+            slow_start = fast_start
+            fast, fast_boundary, _cost = optimized.run(fast_start)
+            scalar = X86DBT(enable_function_oracles=False)
+            scalar._compose_register_cut = lambda _state, block: block
+            slow, slow_boundary, _cost = scalar.run(slow_start)
+
+            self.assertEqual(fast_boundary.operation, slow_boundary.operation)
+            self.assertEqual(repr(fast_boundary.detail),
+                             repr(slow_boundary.detail))
+            self.assertEqual(fast.registers, slow.registers)
+            self.assertEqual(fast.rflags, slow.rflags)
+            self.assertEqual(read_virtual(fast, 0x3f0, 0x130),
+                             read_virtual(slow, 0x3f0, 0x130))
+        cut = optimized._register_cuts[0x100][1]
+        self.assertEqual((cut.plan.waves.work, cut.plan.waves.span),
+                         (9, 4))
+        self.assertEqual(cut.boundary.operation, 'dynamic_branch')
+        self.assertEqual(
+            sum(node.op == 'lane64.X86_FLAGS'
+                for node in cut.plan.nodes), 0)
+        self.assertEqual(
+            sum(node.op == 'memory.i64.relative_exchange'
+                for node in cut.plan.nodes), 1)
+        self.assertFalse(any(node.op == 'memory.i64.store'
+                             for node in cut.plan.nodes))
+
     def test_two_sentinel_byte_loop_is_one_persistent_find_cut(self):
         # load byte; stop at NUL or '%'; otherwise increment and repeat.
         code = bytes.fromhex(

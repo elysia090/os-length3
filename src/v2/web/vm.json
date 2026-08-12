@@ -3,8 +3,8 @@
     "forwarded_memory_loads": 0,
     "grammar_misses": {
       "body-over-limit": 1,
-      "call-barrier": 18,
-      "control-barrier": 28
+      "call-barrier": 19,
+      "control-barrier": 30
     },
     "pure_bodies": 8,
     "replaced": 0,
@@ -12,9 +12,9 @@
   },
   "schema": 1,
   "vm": {
-    "bytes": 47731,
+    "bytes": 51139,
     "delivery": {
-      "bytes": 16954,
+      "bytes": 18173,
       "data_shards": 8,
       "file": "vm.pages",
       "included_shards": "data",
@@ -22,584 +22,584 @@
       "page_bytes": 65536,
       "parity_shards": 2,
       "prefix_bytes": 172,
-      "prefix_sha256": "365571a91e729e3bf4639a0ef2857180343f44836e3520a218c6bb4e6f2a18ef",
-      "sha256": "d7552f91b5677252ec1982f657abffd28993bbd6f2c84bd8545b3fa5872b1584",
+      "prefix_sha256": "2d3d2bc3f2097c9bafff9eb7c22fac3ace16d1e36ca5936adf7f8a53fd6ec6d2",
+      "sha256": "0a66dd0020161fec2fe55dda4ea53fc2535e3fbf4ab02eabead2c022ae1ee7a7",
       "unique_pages": 1
     },
     "exports": {
       "vm_buffer": {
-        "body_end": 1900,
+        "body_end": 1922,
         "body_ordinal": 0,
-        "body_start": 1892,
+        "body_start": 1914,
         "function_index": 0,
         "type_index": 0
       },
       "vm_cells": {
-        "body_end": 1909,
+        "body_end": 1931,
         "body_ordinal": 1,
-        "body_start": 1901,
+        "body_start": 1923,
         "function_index": 1,
         "type_index": 0
       },
       "vm_dead": {
-        "body_end": 45393,
-        "body_ordinal": 93,
-        "body_start": 45376,
-        "function_index": 93,
+        "body_end": 48742,
+        "body_ordinal": 96,
+        "body_start": 48725,
+        "function_index": 96,
         "type_index": 0
       },
       "vm_direct_byte_state": {
-        "body_end": 1921,
+        "body_end": 1943,
         "body_ordinal": 2,
-        "body_start": 1910,
+        "body_start": 1932,
         "function_index": 2,
         "type_index": 0
       },
       "vm_eval_batch_capacity": {
-        "body_end": 44931,
-        "body_ordinal": 81,
-        "body_start": 44925,
-        "function_index": 81,
-        "type_index": 0
-      },
-      "vm_eval_byte_combine": {
-        "body_end": 45245,
-        "body_ordinal": 82,
-        "body_start": 44933,
-        "function_index": 82,
-        "type_index": 6
-      },
-      "vm_eval_calls": {
-        "body_end": 45257,
-        "body_ordinal": 83,
-        "body_start": 45246,
-        "function_index": 83,
-        "type_index": 0
-      },
-      "vm_eval_i32_i32": {
-        "body_end": 43737,
-        "body_ordinal": 74,
-        "body_start": 43725,
-        "function_index": 74,
-        "type_index": 1
-      },
-      "vm_eval_i32_i64": {
-        "body_end": 44883,
-        "body_ordinal": 76,
-        "body_start": 44872,
-        "function_index": 76,
-        "type_index": 18
-      },
-      "vm_eval_i64_i32": {
-        "body_end": 44895,
-        "body_ordinal": 77,
-        "body_start": 44884,
-        "function_index": 77,
-        "type_index": 8
-      },
-      "vm_eval_i64_i64": {
-        "body_end": 44906,
-        "body_ordinal": 78,
-        "body_start": 44896,
-        "function_index": 78,
-        "type_index": 9
-      },
-      "vm_eval_misses": {
-        "body_end": 45269,
+        "body_end": 48280,
         "body_ordinal": 84,
-        "body_start": 45258,
+        "body_start": 48274,
         "function_index": 84,
         "type_index": 0
       },
-      "vm_eval_ok": {
-        "body_end": 45281,
+      "vm_eval_byte_combine": {
+        "body_end": 48594,
         "body_ordinal": 85,
-        "body_start": 45270,
+        "body_start": 48282,
         "function_index": 85,
+        "type_index": 6
+      },
+      "vm_eval_calls": {
+        "body_end": 48606,
+        "body_ordinal": 86,
+        "body_start": 48595,
+        "function_index": 86,
+        "type_index": 0
+      },
+      "vm_eval_i32_i32": {
+        "body_end": 47086,
+        "body_ordinal": 77,
+        "body_start": 47074,
+        "function_index": 77,
+        "type_index": 1
+      },
+      "vm_eval_i32_i64": {
+        "body_end": 48232,
+        "body_ordinal": 79,
+        "body_start": 48221,
+        "function_index": 79,
+        "type_index": 20
+      },
+      "vm_eval_i64_i32": {
+        "body_end": 48244,
+        "body_ordinal": 80,
+        "body_start": 48233,
+        "function_index": 80,
+        "type_index": 8
+      },
+      "vm_eval_i64_i64": {
+        "body_end": 48255,
+        "body_ordinal": 81,
+        "body_start": 48245,
+        "function_index": 81,
+        "type_index": 9
+      },
+      "vm_eval_misses": {
+        "body_end": 48618,
+        "body_ordinal": 87,
+        "body_start": 48607,
+        "function_index": 87,
+        "type_index": 0
+      },
+      "vm_eval_ok": {
+        "body_end": 48630,
+        "body_ordinal": 88,
+        "body_start": 48619,
+        "function_index": 88,
         "type_index": 0
       },
       "vm_eval_source": {
-        "body_end": 44915,
-        "body_ordinal": 79,
-        "body_start": 44907,
-        "function_index": 79,
+        "body_end": 48264,
+        "body_ordinal": 82,
+        "body_start": 48256,
+        "function_index": 82,
         "type_index": 0
       },
       "vm_eval_target": {
-        "body_end": 44924,
-        "body_ordinal": 80,
-        "body_start": 44916,
-        "function_index": 80,
+        "body_end": 48273,
+        "body_ordinal": 83,
+        "body_start": 48265,
+        "function_index": 83,
         "type_index": 0
       },
       "vm_exhausted": {
-        "body_end": 45375,
-        "body_ordinal": 92,
-        "body_start": 45364,
-        "function_index": 92,
+        "body_end": 48724,
+        "body_ordinal": 95,
+        "body_start": 48713,
+        "function_index": 95,
         "type_index": 0
       },
       "vm_feed": {
-        "body_end": 11280,
+        "body_end": 11302,
         "body_ordinal": 15,
-        "body_start": 10298,
+        "body_start": 10320,
         "function_index": 15,
         "type_index": 1
       },
       "vm_guest_begin": {
-        "body_end": 11873,
+        "body_end": 11895,
         "body_ordinal": 22,
-        "body_start": 11590,
+        "body_start": 11612,
         "function_index": 22,
         "type_index": 1
       },
       "vm_guest_error": {
-        "body_end": 11350,
+        "body_end": 11372,
         "body_ordinal": 19,
-        "body_start": 11339,
+        "body_start": 11361,
         "function_index": 19,
         "type_index": 0
       },
       "vm_guest_open": {
-        "body_end": 11588,
+        "body_end": 11610,
         "body_ordinal": 21,
-        "body_start": 11364,
+        "body_start": 11386,
         "function_index": 21,
         "type_index": 6
       },
       "vm_guest_page_buffer": {
-        "body_end": 11317,
+        "body_end": 11339,
         "body_ordinal": 16,
-        "body_start": 11281,
+        "body_start": 11303,
         "function_index": 16,
         "type_index": 0
       },
       "vm_guest_requested_page": {
-        "body_end": 11338,
+        "body_end": 11360,
         "body_ordinal": 18,
-        "body_start": 11327,
+        "body_start": 11349,
         "function_index": 18,
         "type_index": 0
       },
       "vm_guest_result": {
-        "body_end": 11362,
+        "body_end": 11384,
         "body_ordinal": 20,
-        "body_start": 11351,
+        "body_start": 11373,
         "function_index": 20,
         "type_index": 4
       },
       "vm_guest_step": {
-        "body_end": 14913,
+        "body_end": 14935,
         "body_ordinal": 24,
-        "body_start": 11997,
+        "body_start": 12019,
         "function_index": 24,
         "type_index": 1
       },
       "vm_guest_supply_code": {
-        "body_end": 11995,
+        "body_end": 12017,
         "body_ordinal": 23,
-        "body_start": 11874,
+        "body_start": 11896,
         "function_index": 23,
         "type_index": 2
       },
       "vm_guest_values": {
-        "body_end": 11326,
+        "body_end": 11348,
         "body_ordinal": 17,
-        "body_start": 11318,
+        "body_start": 11340,
         "function_index": 17,
         "type_index": 0
       },
       "vm_load": {
-        "body_end": 6664,
+        "body_end": 6686,
         "body_ordinal": 10,
-        "body_start": 4822,
+        "body_start": 4844,
         "function_index": 10,
         "type_index": 1
       },
       "vm_load_error": {
-        "body_end": 45363,
-        "body_ordinal": 91,
-        "body_start": 45352,
-        "function_index": 91,
+        "body_end": 48712,
+        "body_ordinal": 94,
+        "body_start": 48701,
+        "function_index": 94,
         "type_index": 0
       },
       "vm_overflowed": {
-        "body_end": 45339,
-        "body_ordinal": 89,
-        "body_start": 45328,
-        "function_index": 89,
+        "body_end": 48688,
+        "body_ordinal": 92,
+        "body_start": 48677,
+        "function_index": 92,
         "type_index": 0
       },
       "vm_prepare_eval": {
-        "body_end": 43724,
-        "body_ordinal": 73,
-        "body_start": 43442,
-        "function_index": 73,
+        "body_end": 47073,
+        "body_ordinal": 76,
+        "body_start": 46791,
+        "function_index": 76,
         "type_index": 7
       },
       "vm_program_apply_barrier": {
-        "body_end": 43440,
-        "body_ordinal": 72,
-        "body_start": 41377,
-        "function_index": 72,
+        "body_end": 46789,
+        "body_ordinal": 75,
+        "body_start": 44726,
+        "function_index": 75,
         "type_index": 5
       },
       "vm_program_apply_step": {
-        "body_end": 41375,
-        "body_ordinal": 71,
-        "body_start": 39937,
-        "function_index": 71,
+        "body_end": 44724,
+        "body_ordinal": 74,
+        "body_start": 43286,
+        "function_index": 74,
         "type_index": 5
       },
       "vm_program_error": {
-        "body_end": 39888,
-        "body_ordinal": 69,
-        "body_start": 39841,
-        "function_index": 69,
+        "body_end": 43237,
+        "body_ordinal": 72,
+        "body_start": 43190,
+        "function_index": 72,
         "type_index": 8
       },
       "vm_program_function": {
-        "body_end": 39720,
-        "body_ordinal": 66,
-        "body_start": 39661,
-        "function_index": 66,
+        "body_end": 43069,
+        "body_ordinal": 69,
+        "body_start": 43010,
+        "function_index": 69,
         "type_index": 8
       },
       "vm_program_globals": {
-        "body_end": 39530,
-        "body_ordinal": 63,
-        "body_start": 39486,
-        "function_index": 63,
+        "body_end": 42879,
+        "body_ordinal": 66,
+        "body_start": 42835,
+        "function_index": 66,
         "type_index": 8
       },
       "vm_program_halted": {
-        "body_end": 39935,
-        "body_ordinal": 70,
-        "body_start": 39889,
-        "function_index": 70,
+        "body_end": 43284,
+        "body_ordinal": 73,
+        "body_start": 43238,
+        "function_index": 73,
         "type_index": 8
       },
       "vm_program_locals": {
-        "body_end": 39485,
-        "body_ordinal": 62,
-        "body_start": 39441,
-        "function_index": 62,
-        "type_index": 8
-      },
-      "vm_program_open": {
-        "body_end": 39440,
-        "body_ordinal": 61,
-        "body_start": 39017,
-        "function_index": 61,
-        "type_index": 17
-      },
-      "vm_program_pc": {
-        "body_end": 39780,
-        "body_ordinal": 67,
-        "body_start": 39721,
-        "function_index": 67,
-        "type_index": 8
-      },
-      "vm_program_result_count": {
-        "body_end": 39660,
+        "body_end": 42834,
         "body_ordinal": 65,
-        "body_start": 39601,
+        "body_start": 42790,
         "function_index": 65,
         "type_index": 8
       },
-      "vm_program_results": {
-        "body_end": 39600,
+      "vm_program_open": {
+        "body_end": 42789,
         "body_ordinal": 64,
-        "body_start": 39531,
+        "body_start": 42366,
         "function_index": 64,
+        "type_index": 19
+      },
+      "vm_program_pc": {
+        "body_end": 43129,
+        "body_ordinal": 70,
+        "body_start": 43070,
+        "function_index": 70,
         "type_index": 8
       },
-      "vm_program_stack_size": {
-        "body_end": 39840,
+      "vm_program_result_count": {
+        "body_end": 43009,
         "body_ordinal": 68,
-        "body_start": 39781,
+        "body_start": 42950,
         "function_index": 68,
         "type_index": 8
       },
+      "vm_program_results": {
+        "body_end": 42949,
+        "body_ordinal": 67,
+        "body_start": 42880,
+        "function_index": 67,
+        "type_index": 8
+      },
+      "vm_program_stack_size": {
+        "body_end": 43189,
+        "body_ordinal": 71,
+        "body_start": 43130,
+        "function_index": 71,
+        "type_index": 8
+      },
       "vm_read": {
-        "body_end": 9692,
+        "body_end": 9714,
         "body_ordinal": 13,
-        "body_start": 9093,
+        "body_start": 9115,
         "function_index": 13,
         "type_index": 0
       },
       "vm_set_budget": {
-        "body_end": 45303,
-        "body_ordinal": 86,
-        "body_start": 45282,
-        "function_index": 86,
-        "type_index": 19
+        "body_end": 48652,
+        "body_ordinal": 89,
+        "body_start": 48631,
+        "function_index": 89,
+        "type_index": 21
       },
       "vm_set_sponge_tail_size": {
-        "body_end": 1988,
+        "body_end": 2010,
         "body_ordinal": 6,
-        "body_start": 1952,
+        "body_start": 1974,
         "function_index": 6,
         "type_index": 1
       },
       "vm_sponge_lanes": {
-        "body_end": 1930,
+        "body_end": 1952,
         "body_ordinal": 3,
-        "body_start": 1922,
+        "body_start": 1944,
         "function_index": 3,
         "type_index": 0
       },
       "vm_sponge_records": {
-        "body_end": 2947,
+        "body_end": 2969,
         "body_ordinal": 7,
-        "body_start": 1990,
+        "body_start": 2012,
         "function_index": 7,
         "type_index": 2
       },
       "vm_sponge_tail": {
-        "body_end": 1939,
+        "body_end": 1961,
         "body_ordinal": 4,
-        "body_start": 1931,
+        "body_start": 1953,
         "function_index": 4,
         "type_index": 0
       },
       "vm_sponge_tail_size": {
-        "body_end": 1951,
+        "body_end": 1973,
         "body_ordinal": 5,
-        "body_start": 1940,
+        "body_start": 1962,
         "function_index": 5,
         "type_index": 0
       },
       "vm_step_ack_memory_coordinate": {
-        "body_end": 20616,
+        "body_end": 20638,
         "body_ordinal": 53,
-        "body_start": 20602,
+        "body_start": 20624,
         "function_index": 53,
         "type_index": 15
       },
       "vm_step_ack_memory_page": {
-        "body_end": 20237,
+        "body_end": 20259,
         "body_ordinal": 51,
-        "body_start": 20222,
+        "body_start": 20244,
         "function_index": 51,
         "type_index": 14
       },
       "vm_step_acquire": {
-        "body_end": 16566,
+        "body_end": 16588,
         "body_ordinal": 27,
-        "body_start": 16025,
+        "body_start": 16047,
         "function_index": 27,
         "type_index": 4
       },
       "vm_step_buffer": {
-        "body_end": 17258,
+        "body_end": 17280,
         "body_ordinal": 29,
-        "body_start": 17214,
+        "body_start": 17236,
         "function_index": 29,
         "type_index": 8
       },
       "vm_step_error": {
-        "body_end": 17732,
+        "body_end": 17754,
         "body_ordinal": 39,
-        "body_start": 17685,
+        "body_start": 17707,
         "function_index": 39,
         "type_index": 8
       },
       "vm_step_execute": {
-        "body_end": 36688,
+        "body_end": 39049,
         "body_ordinal": 57,
-        "body_start": 24336,
+        "body_start": 24358,
         "function_index": 57,
         "type_index": 16
       },
       "vm_step_first_dirty_memory_coordinate": {
-        "body_end": 22073,
+        "body_end": 22095,
         "body_ordinal": 55,
-        "body_start": 21355,
+        "body_start": 21377,
         "function_index": 55,
         "type_index": 9
       },
       "vm_step_first_dirty_memory_page": {
-        "body_end": 21353,
+        "body_end": 21375,
         "body_ordinal": 54,
-        "body_start": 20618,
+        "body_start": 20640,
         "function_index": 54,
         "type_index": 8
       },
       "vm_step_function": {
-        "body_end": 17540,
+        "body_end": 17562,
         "body_ordinal": 35,
-        "body_start": 17493,
+        "body_start": 17515,
         "function_index": 35,
         "type_index": 8
       },
       "vm_step_input_stack_size": {
-        "body_end": 17396,
+        "body_end": 17418,
         "body_ordinal": 32,
-        "body_start": 17349,
+        "body_start": 17371,
         "function_index": 32,
         "type_index": 8
       },
       "vm_step_local_size": {
-        "body_end": 17492,
+        "body_end": 17514,
         "body_ordinal": 34,
-        "body_start": 17445,
+        "body_start": 17467,
         "function_index": 34,
         "type_index": 8
       },
       "vm_step_locals": {
-        "body_end": 17303,
+        "body_end": 17325,
         "body_ordinal": 30,
-        "body_start": 17259,
+        "body_start": 17281,
         "function_index": 30,
         "type_index": 8
       },
       "vm_step_memory_coordinate": {
-        "body_end": 19189,
+        "body_end": 19211,
         "body_ordinal": 45,
-        "body_start": 19077,
+        "body_start": 19099,
         "function_index": 45,
         "type_index": 11
       },
       "vm_step_memory_generation": {
-        "body_end": 18885,
+        "body_end": 18907,
         "body_ordinal": 42,
-        "body_start": 18838,
+        "body_start": 18860,
         "function_index": 42,
         "type_index": 9
       },
       "vm_step_memory_lease": {
-        "body_end": 18945,
+        "body_end": 18967,
         "body_ordinal": 43,
-        "body_start": 18886,
+        "body_start": 18908,
         "function_index": 43,
         "type_index": 9
       },
       "vm_step_memory_open": {
-        "body_end": 18277,
+        "body_end": 18299,
         "body_ordinal": 40,
-        "body_start": 17734,
+        "body_start": 17756,
         "function_index": 40,
         "type_index": 5
       },
       "vm_step_memory_open_virtual": {
-        "body_end": 18837,
+        "body_end": 18859,
         "body_ordinal": 41,
-        "body_start": 18279,
+        "body_start": 18301,
         "function_index": 41,
         "type_index": 5
       },
       "vm_step_memory_page": {
-        "body_end": 19076,
+        "body_end": 19098,
         "body_ordinal": 44,
-        "body_start": 18947,
+        "body_start": 18969,
         "function_index": 44,
         "type_index": 10
       },
       "vm_step_memory_page_buffer": {
-        "body_end": 19316,
+        "body_end": 19338,
         "body_ordinal": 46,
-        "body_start": 19190,
+        "body_start": 19212,
         "function_index": 46,
         "type_index": 10
       },
       "vm_step_memory_page_size": {
-        "body_end": 19556,
+        "body_end": 19578,
         "body_ordinal": 47,
-        "body_start": 19318,
+        "body_start": 19340,
         "function_index": 47,
         "type_index": 10
       },
       "vm_step_next_pc": {
-        "body_end": 17588,
+        "body_end": 17610,
         "body_ordinal": 36,
-        "body_start": 17541,
+        "body_start": 17563,
         "function_index": 36,
         "type_index": 8
       },
       "vm_step_open": {
-        "body_end": 24334,
+        "body_end": 24356,
         "body_ordinal": 56,
-        "body_start": 22075,
+        "body_start": 22097,
         "function_index": 56,
         "type_index": 5
       },
       "vm_step_release": {
-        "body_end": 17213,
+        "body_end": 17235,
         "body_ordinal": 28,
-        "body_start": 16568,
+        "body_start": 16590,
         "function_index": 28,
         "type_index": 8
       },
       "vm_step_span": {
-        "body_end": 17684,
+        "body_end": 17706,
         "body_ordinal": 38,
-        "body_start": 17637,
+        "body_start": 17659,
         "function_index": 38,
         "type_index": 8
       },
       "vm_step_stack": {
-        "body_end": 17348,
+        "body_end": 17370,
         "body_ordinal": 31,
-        "body_start": 17304,
+        "body_start": 17326,
         "function_index": 31,
         "type_index": 8
       },
       "vm_step_stack_size": {
-        "body_end": 17444,
+        "body_end": 17466,
         "body_ordinal": 33,
-        "body_start": 17397,
+        "body_start": 17419,
         "function_index": 33,
         "type_index": 8
       },
       "vm_step_supply_memory_coordinate": {
-        "body_end": 20221,
+        "body_end": 20243,
         "body_ordinal": 50,
-        "body_start": 20205,
+        "body_start": 20227,
         "function_index": 50,
         "type_index": 13
       },
       "vm_step_supply_memory_page": {
-        "body_end": 19574,
+        "body_end": 19596,
         "body_ordinal": 48,
-        "body_start": 19557,
+        "body_start": 19579,
         "function_index": 48,
         "type_index": 12
       },
       "vm_step_work": {
-        "body_end": 17636,
+        "body_end": 17658,
         "body_ordinal": 37,
-        "body_start": 17589,
+        "body_start": 17611,
         "function_index": 37,
         "type_index": 8
       },
       "vm_steps_high": {
-        "body_end": 45327,
-        "body_ordinal": 88,
-        "body_start": 45316,
-        "function_index": 88,
+        "body_end": 48676,
+        "body_ordinal": 91,
+        "body_start": 48665,
+        "function_index": 91,
         "type_index": 0
       },
       "vm_steps_low": {
-        "body_end": 45315,
-        "body_ordinal": 87,
-        "body_start": 45304,
-        "function_index": 87,
+        "body_end": 48664,
+        "body_ordinal": 90,
+        "body_start": 48653,
+        "function_index": 90,
         "type_index": 0
       },
       "vm_table_full": {
-        "body_end": 45351,
-        "body_ordinal": 90,
-        "body_start": 45340,
-        "function_index": 90,
+        "body_end": 48700,
+        "body_ordinal": 93,
+        "body_start": 48689,
+        "function_index": 93,
         "type_index": 0
       }
     },
     "file": "vm.wasm",
     "regions": {
-      "bytes": 1192,
+      "bytes": 1228,
       "delivery": {
-        "bytes": 787,
+        "bytes": 807,
         "data_shards": 8,
         "file": "vm-regions.pages",
         "included_shards": "data",
@@ -607,17 +607,17 @@
         "page_bytes": 4096,
         "parity_shards": 2,
         "prefix_bytes": 172,
-        "prefix_sha256": "1f0f83fd3821b6e70c7e51e04088e5f5620820d4e89c9a27fc9348c7a04d984d",
-        "sha256": "20e2f63181e5a673a057e3d45d7dc3d8adf77c4b5db5c6b4a424cc924140467e",
+        "prefix_sha256": "27ba76064478ed8f369e568321c03038dc738495bc19e1dee009adb47fada0f7",
+        "sha256": "00ac14d0656f3faa742fce6c4025eda44cdc59985595618a8e2015205a5c741d",
         "unique_pages": 1
       },
-      "sha256": "5f32a19496051c8d31a6d52ac87b6bd1d99ff5e74d0eace729ff1a463a6a58f8"
+      "sha256": "8caf0e3fdfd24dd870809f42805f2f98f05b846700d9fede78c1e6edaa46187c"
     },
-    "sha256": "19b6a5de73b7bc012719f1f38e22b39bcef115b00f68073fbe779e72528bce5e",
+    "sha256": "d15928d92e7305783cbadde77af74cfa45d12cbcc30934d1ca6d817b8a31d6c6",
     "steps": {
       "bytes": 18368,
       "delivery": {
-        "bytes": 2830,
+        "bytes": 2842,
         "data_shards": 8,
         "file": "vm-steps.pages",
         "included_shards": "data",
@@ -625,13 +625,13 @@
         "page_bytes": 4096,
         "parity_shards": 2,
         "prefix_bytes": 364,
-        "prefix_sha256": "7858ee0526e29f100357c0ac34001c09b87436a5bc3a2114bc4560320636b495",
-        "sha256": "162596653e61f66b9e47f460d0f5dd2386d265f41a486f3fdd852a1c03f1528c",
+        "prefix_sha256": "04c06a323b72ad4db9b7b5dac966da5135fa4e20a50c09b7089da0e087022642",
+        "sha256": "24b8eb08a55d56c592d2224475b8d9231afe62fb048fe604a35988909db3f2c5",
         "unique_pages": 5
       },
       "directory_bytes": 1904,
       "pages": 47,
-      "sha256": "0328f54e79074284f8c2b7a124b15508cdf530dfd9319b3197e03198eb8318c3"
+      "sha256": "7213d1ddc61cc6f692d37c5193efbf905e841a29dab0aec33127eeb82d22cdc4"
     }
   }
 }
