@@ -496,7 +496,56 @@ class TestX86StateStep(unittest.TestCase):
         first = dbt.blocks[0x100]
         self.assertEqual((first.instructions, first.plan.waves.work,
                           first.plan.waves.span), (2, 1, 1))
+        self.assertEqual(dbt.layout()['stack_cuts'], 1)
+        self.assertTrue(dbt._stack_cuts[0x100][1].virtual_memory)
         self.assertGreater(cost.barriers, 0)
+
+    def test_call_and_return_share_the_general_stack_memory_grammar(self):
+        caller = bytes.fromhex('e8 fb 00 00 00 f4')
+        callee = bytes.fromhex('b8 2a 00 00 00 c3')
+        dbt = X86DBT(enable_function_oracles=False)
+        state = initial_state(
+            memory_with((0x100, caller), (0x200, callee),
+                        (0x800, bytes(8))),
+            0x100, {'rsp': 0x808})
+
+        state, boundary, _cost = dbt.run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 42)
+        self.assertEqual(state.register('rsp'), 0x808)
+        self.assertEqual(read_virtual(state, 0x800, 8),
+                         struct.pack('<Q', 0x105))
+        self.assertEqual(dbt.layout()['stack_cuts'], 2)
+        self.assertEqual(
+            {block.boundary.operation
+             for _source, block in dbt._stack_cuts.values()},
+            {'branch', 'dynamic_branch'})
+        self.assertTrue(all(
+            block.virtual_memory
+            for _source, block in dbt._stack_cuts.values()))
+
+    def test_two_sentinel_byte_loop_is_one_persistent_find_cut(self):
+        # load byte; stop at NUL or '%'; otherwise increment and repeat.
+        code = bytes.fromhex(
+            '0f b6 34 0f 85 f6 74 0a 83 fe 25 74 05 '
+            '48 ff c1 eb ee f4')
+        dbt = X86DBT(enable_function_oracles=False)
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, code), (0x400, b'abc%tail\0')),
+            0x100, {'rdi': 0x400}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rcx'), 3)
+        self.assertEqual(state.register('rsi'), ord('%'))
+        self.assertEqual(dbt.layout()['find_cuts'], 1)
+        self.assertEqual((dbt.layout()['find_cut_work'],
+                          dbt.layout()['find_cut_span']), (6, 4))
+        cut = next(iter(dbt._find_cuts.values()))[1][1]
+        self.assertTrue(cut.virtual_memory)
+        self.assertIn('memory.i64.find2',
+                      tuple(node.op for node in cut.plan.nodes))
 
     def test_qm_register_result_updates_the_following_branch_flags(self):
         # xor eax,eax; jne bad; mov eax,42; hlt; bad: mov eax,99; hlt

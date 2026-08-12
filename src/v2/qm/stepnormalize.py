@@ -290,7 +290,7 @@ def _rewrite_physical(nodes, stack, locals_):
     for node in nodes:
         operation = node.op
         arguments = tuple(map(resolve, node.arguments))
-        if operation == 'memory.i64.repeat':
+        if operation in ('memory.i64.repeat', 'memory.i64.find2'):
             operand = emit(operation, arguments)
             remap[node.value] = operand
             continue
@@ -382,7 +382,14 @@ def _rewrite_physical(nodes, stack, locals_):
         elif name == 'AND' and len(arguments) == 2:
             source = form(arguments[0])
             mask = constant(arguments[1])
-            if source is not None and mask == 1 and source[0] in (
+            if (source is not None and source[0] == width + '.AND'
+                    and mask is not None
+                    and constant(source[1][1]) is not None):
+                operation = width + '.AND'
+                arguments = (
+                    source[1][0], Operand(
+                        'const', mask & constant(source[1][1])))
+            elif source is not None and mask == 1 and source[0] in (
                     width + '.SHRR', width + '.SHR'):
                 shift = form(source[1][1])
                 if (shift is not None and shift[0] == width + '.ANDNR'

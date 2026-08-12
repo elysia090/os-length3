@@ -436,6 +436,9 @@ def execute_slice(plan, state):
                 from .steppage import _repeat
                 _repeat(memory, *arguments)
                 result = 0
+            elif node.op == 'memory.i64.find2':
+                from .steppage import _find2
+                result = _find2(memory, *arguments)
             elif node.op.startswith('memory.'):
                 from .steppage import (_load, _memory_name,
                                        _memory_observe, _store)

@@ -7,6 +7,7 @@
     "qm/asmfront/wasm.py",
     "qm/asmfront/x86.py",
     "qm/asmstats.py",
+    "qm/barrierpage.py",
     "qm/bits.py",
     "qm/browser.py",
     "qm/cfront/__init__.py",

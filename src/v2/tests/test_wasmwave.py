@@ -38,6 +38,22 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(plan.nodes[0].arguments[0], Operand('local', 0))
         self.assertEqual((plan.waves.work, plan.waves.span), (1, 1))
 
+    def test_nested_publication_masks_intersect_before_materialization(self):
+        empty_waves = DependencyWaves((0,), (), (0,))
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'i64.and', (
+                Operand('local', 0), Operand('const', 0xff))),
+             WaveNode(2, 'i64.and', (
+                 Operand('node', 1), Operand('const', 0xffffffff)))),
+            empty_waves, (), (Operand('node', 2),))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes], ['lane64.AND'])
+        self.assertEqual(plan.nodes[0].arguments,
+                         (Operand('local', 0), Operand('const', 0xff)))
+
     def test_deterministic_pages_compose_by_substituting_frame_coordinates(self):
         empty_waves = DependencyWaves((0,), (), (0,))
         first = normalize_plan(PureSlice(

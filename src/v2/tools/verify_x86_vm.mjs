@@ -47,7 +47,7 @@ const view = new DataView(bytes.buffer);
 if (result.locals[0] !== 42n || view.getBigUint64(0x408, true) !== 42n) {
   throw new Error('x86 virtual state page produced the wrong cut');
 }
-if (result.work !== 6 || result.span !== 4 || reads.length !== 1
+if (result.work !== 5 || result.span !== 3 || reads.length !== 1
     || writes.length !== 1) {
   throw new Error('x86 virtual state page escaped its canonical cost');
 }

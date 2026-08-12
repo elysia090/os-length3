@@ -61,7 +61,9 @@ MEMORY_OPS = tuple('memory.' + name for name in (
 # Existing physical codes are immutable.  Architecture-wide state lanes are
 # appended after the original lane and memory domains, never inserted into
 # either, so an older cached page cannot acquire a different meaning.
-STATE_OPS = ('lane64.X86_FLAGS', 'memory.i64.repeat')
+STATE_OPS = (
+    'lane64.X86_FLAGS', 'memory.i64.repeat', 'memory.i64.find2',
+)
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 
@@ -176,6 +178,43 @@ def _repeat(memory, address, value, size, shape):
         raise ValueError('memory repeat extent is invalid')
     pattern = int(value & mask_of(width * 8)).to_bytes(width, 'little')
     memory.repeat(address, size, pattern)
+
+
+def _find2(memory, address, first, second, shape):
+    """Return ``distance << 8 | byte`` for the first matching byte."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if width != 1:
+        raise ValueError('memory find width is invalid')
+    address = _address(address, 0, scale, virtual64)
+    first, second = int(first) & 0xff, int(second) & 0xff
+    direct = getattr(memory, 'find2', None)
+    if direct is not None:
+        distance, value = direct(address, first, second)
+        return (int(distance) << 8) | int(value)
+    distance = 0
+    values = (first,) if first == second else (first, second)
+    while True:
+        coordinate = address + distance
+        if coordinate > I64:
+            raise ValueError('memory find coordinate wrapped')
+        count = 4096 - (coordinate & 4095)
+        finder = getattr(memory, 'find', None)
+        if finder is None:
+            payload = memory.read(coordinate, count)
+            found = min((position for value in values
+                         for position in (payload.find(bytes((value,))),)
+                         if position >= 0), default=None)
+            value = None if found is None else payload[found]
+        else:
+            found = finder(coordinate, count, values)
+            value = None if found is None else memory.load(
+                coordinate + found, 1)
+        if found is not None:
+            total = distance + found
+            if total >= 1 << 56:
+                raise ValueError('memory find result is not encodable')
+            return (total << 8) | value
+        distance += count
 
 
 def _memory_name(name):
@@ -477,6 +516,20 @@ def _validate(mapped):
             if width not in (1, 2, 4, 8) or scale >= 32:
                 raise StatePageError('memory.i64.repeat shape is invalid')
             continue
+        if operation == 'memory.i64.find2':
+            if (end - begin != 4
+                    or OPERAND_KINDS[
+                        mapped.value('operand_tags', end - 1)] != 'const'):
+                raise StatePageError(
+                    'memory.i64.find2 has the wrong physical operands')
+            try:
+                width, scale, _virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', end - 1))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if width != 1 or scale >= 32:
+                raise StatePageError('memory.i64.find2 shape is invalid')
+            continue
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
             source_name, _observer = _memory_name(name)
@@ -659,6 +712,8 @@ def execute_mapped(mapped, state):
             if operation == 'memory.i64.repeat':
                 _repeat(memory, *arguments)
                 produced.append((node, 0))
+            elif operation == 'memory.i64.find2':
+                produced.append((node, _find2(memory, *arguments)))
             elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
@@ -741,7 +796,7 @@ def compile_mapped_executor(mapped):
 
     lines = ['def execute(locals_, stack, memory):']
     namespace = {'memory_load': _load, 'memory_store': _store,
-                 'memory_repeat': _repeat}
+                 'memory_repeat': _repeat, 'memory_find2': _find2}
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -772,6 +827,10 @@ def compile_mapped_executor(mapped):
             if operation == 'memory.i64.repeat':
                 lines.append('    memory_repeat(memory, %s)' % arguments)
                 lines.append('    value_%d = 0' % node)
+                continue
+            if operation == 'memory.i64.find2':
+                lines.append('    value_%d = memory_find2(memory, %s)' %
+                             (node, arguments))
                 continue
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]

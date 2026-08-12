@@ -180,6 +180,12 @@ typedef struct {
     u64 repeat_address;
     u64 repeat_remaining;
     u64 repeat_pattern;
+    u32 find_active;
+    u32 find_lane;
+    u32 find_first;
+    u32 find_second;
+    u64 find_address;
+    u64 find_offset;
     u32 error;
 } StepWorkspace;
 
@@ -1765,7 +1771,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 185u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 186u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2299,6 +2305,63 @@ static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
     return 1;
 }
 
+static int step_memory_find2_lane(u32 begin, u32 end, u64 *result)
+{
+    StepWorkspace *machine = step_machine();
+    if (end - begin != 4u) return step_fail(9u);
+    if (!machine->find_active) {
+        u64 address, first, second, shape;
+        if (!step_operand(begin, &address)
+                || !step_operand(begin + 1u, &first)
+                || !step_operand(begin + 2u, &second)
+                || !step_operand(begin + 3u, &shape))
+            return 0;
+        u32 width = (u32)shape & 255u;
+        u32 scale = (u32)(shape >> 8) & 31u;
+        int virtual64 = (shape & 0x10000u) != 0u;
+        if (width != 1u || (shape & ~0x11fffull))
+            return step_fail(9u);
+        u64 base = virtual64 ? address : (u64)(u32)address;
+        base <<= scale;
+        if (!virtual64) base = (u32)base;
+        machine->find_active = 1u;
+        machine->find_lane = machine->execution_lane;
+        machine->find_first = (u32)first & 255u;
+        machine->find_second = (u32)second & 255u;
+        machine->find_address = base;
+        machine->find_offset = 0u;
+    } else if (machine->find_lane != machine->execution_lane) {
+        return step_fail(12u);
+    }
+
+    for (;;) {
+        if (machine->find_offset >= (1ull << 56)
+                || machine->find_address > ~0ull - machine->find_offset)
+            return step_fail(10u);
+        u64 address = machine->find_address + machine->find_offset;
+        u32 page_shift = machine->memory_page_shift;
+        u32 page_bytes = 1u << page_shift;
+        u32 offset = (u32)(address & (page_bytes - 1u));
+        u32 count = page_bytes - offset;
+        StepMemoryGuard guard;
+        if (!step_memory_ready(address, count, &guard)) return 0;
+        u64 page = address >> page_shift;
+        u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+        for (u32 byte = 0; byte < count; ++byte) {
+            u32 value = machine->memory[slot][offset + byte];
+            if (value == machine->find_first
+                    || value == machine->find_second) {
+                if (!step_memory_unpin(&guard, 0)) return 0;
+                *result = ((machine->find_offset + byte) << 8) | value;
+                machine->find_active = 0u;
+                return 1;
+            }
+        }
+        if (!step_memory_unpin(&guard, 0)) return 0;
+        machine->find_offset += count;
+    }
+}
+
 static int step_output(u32 tag_column, u32 value_column, u32 index,
                        u64 *result)
 {
@@ -2328,6 +2391,7 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
         machine->execution_depth = 0;
         machine->execution_lane = step_u32(STEP_WAVE_OFFSETS, 0);
         machine->repeat_active = 0;
+        machine->find_active = 0;
     }
     while (machine->execution_depth < machine->span) {
         u32 end = step_u32(
@@ -2347,6 +2411,9 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                 ? step_x86_flags_lane(first, last, &machine->values[node])
                 : opcode == 184u
                 ? step_memory_repeat_lane(first, last, &machine->values[node])
+                : opcode == 185u
+                ? step_memory_find2_lane(first, last,
+                                         &machine->values[node])
                 : step_fail(7u));
             if (!produced) {
                 if (machine->memory_status) return machine->memory_status;
