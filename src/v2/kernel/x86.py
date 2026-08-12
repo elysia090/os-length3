@@ -2209,6 +2209,7 @@ class X86DBT(object):
         self._indirect_thunk_functions = {}
         self._control_profile = {} if profile_controls else None
         self._physical_profile = {} if profile_controls else None
+        self._physical_boundary_profile = {} if profile_controls else None
         self._hash_stream_profile = {} if profile_controls else None
         self._pure_call_profile = {} if profile_controls else None
         self._entropy_recurrence_profile = {} if profile_controls else None
@@ -3347,28 +3348,40 @@ class X86DBT(object):
             'immediate_alu', 'operand_test', 'register_binary',
             'register_immediate_alu', 'register_immediate_result_flags',
             'register_result_flags', 'set_condition', 'memory_binary',
+            'conditional_move', 'shift', 'shift_result_flags',
         }
         if operation not in supported or len(plan.locals) < 17:
             return None
         nodes = list(plan.nodes)
         common = {(node.op, node.arguments): Operand('node', node.value)
                   for node in nodes}
+        last_memory = next((Operand('node', node.value)
+                            for node in reversed(nodes)
+                            if node.op.startswith('memory.')), None)
         registers = list(plan.locals[:len(REGISTER_NAMES)])
         prior_flags = plan.locals[len(REGISTER_NAMES)]
         scratch = plan.locals[len(REGISTER_NAMES) + 1:]
 
         def emit(name, arguments):
+            nonlocal last_memory
             arguments = tuple(arguments)
             if name.startswith(('i32.', 'i64.')):
                 name, arguments = select_lane(name, arguments)
+            memory = name.startswith('memory.')
+            if memory and last_memory is not None \
+                    and last_memory not in arguments:
+                arguments += (last_memory,)
             key = name, arguments
-            present = common.get(key)
+            present = None if memory else common.get(key)
             if present is not None:
                 return present
             value = len(nodes) + 1
             result = Operand('node', value)
             nodes.append(WaveNode(value, name, arguments))
-            common[key] = result
+            if memory:
+                last_memory = result
+            else:
+                common[key] = result
             return result
 
         def bit(value, mask):
@@ -3395,10 +3408,10 @@ class X86DBT(object):
                     value, Operand('const', (1 << bits) - 1)))
             return value
 
-        def memory_value(operand, bits, following):
+        def memory_address(operand, following):
             if (not isinstance(operand, MemoryOperand)
                     or operand.segment_msr is not None):
-                return None, None
+                return None
             pointer = Operand(
                 'const', (int(operand.displacement)
                           + (int(following)
@@ -3413,6 +3426,12 @@ class X86DBT(object):
                         index, Operand(
                             'const', operand.scale.bit_length() - 1)))
                 pointer = emit('i64.add', (pointer, index))
+            return pointer
+
+        def memory_value(operand, bits, following):
+            pointer = memory_address(operand, following)
+            if pointer is None:
+                return None, None
             width = bits // 8
             load = ('memory.i64.load' if width == 8 else
                     'memory.i64.load%d_u' % bits)
@@ -3421,6 +3440,14 @@ class X86DBT(object):
                 Operand('const', memory_shape(
                     width, virtual64=True))))
             return pointer, value
+
+        def memory_store(pointer, value, bits):
+            store = ('memory.i64.store' if bits == 64 else
+                     'memory.i64.store%d' % bits)
+            emit(store, (
+                pointer, value, Operand('const', 0),
+                Operand('const', memory_shape(
+                    bits // 8, virtual64=True))))
 
         def publish(operand, value, bits):
             if isinstance(operand, MemoryOperand):
@@ -3488,6 +3515,18 @@ class X86DBT(object):
             left, right = scratch[:2]
             result = read(destination, bits)
             flags = result_flags(name, left, right, result, bits)
+        elif operation == 'shift_result_flags':
+            _following, group, register, bits, amount = detail
+            amount = int(amount) & (int(bits) - 1)
+            if not scratch:
+                return None
+            source = scratch[0]
+            result = read(register, bits)
+            if result is None or group not in (0, 1, 4, 5, 7):
+                return None
+            flags = emit('lane64.X86_SHIFT_FLAGS', (
+                prior_flags, source, result, Operand('const', amount),
+                Operand('const', int(bits) | (int(group) << 8))))
         elif operation == 'register_immediate_result_flags':
             _following, name, register, bits, immediate = detail
             if not scratch:
@@ -3526,7 +3565,11 @@ class X86DBT(object):
                 name, left, right, result, bits, carry_in)
         elif operation == 'immediate_alu':
             _following, name, operand, bits, immediate = detail
-            left = read(operand, bits)
+            pointer = None
+            if isinstance(operand, MemoryOperand):
+                pointer, left = memory_value(operand, bits, following)
+            else:
+                left = read(operand, bits)
             if left is None:
                 return None
             right = Operand('const', immediate & ((1 << bits) - 1))
@@ -3544,14 +3587,21 @@ class X86DBT(object):
                 result = emit('i64.' + name, (left, right))
             result = emit('i64.and', (
                 result, Operand('const', (1 << bits) - 1)))
-            if name != 'cmp' and not publish(operand, result, bits):
-                return None
+            if name != 'cmp':
+                if pointer is not None:
+                    memory_store(pointer, result, bits)
+                elif not publish(operand, result, bits):
+                    return None
             flags = result_flags(
                 name, left, right, result, bits, carry_in)
         elif operation == 'compare':
             _following, opcode, register, operand, bits = detail
-            register_value = read(register, bits)
-            operand_value = read(operand, bits)
+            register_value = (memory_value(register, bits, following)[1]
+                              if isinstance(register, MemoryOperand)
+                              else read(register, bits))
+            operand_value = (memory_value(operand, bits, following)[1]
+                             if isinstance(operand, MemoryOperand)
+                             else read(operand, bits))
             if register_value is None or operand_value is None:
                 return None
             if opcode in (0x38, 0x39):
@@ -3605,17 +3655,84 @@ class X86DBT(object):
                 left = read(REGISTER_INDEX['rax'], bits)
             else:
                 _following, operand, bits, immediate = detail
-                left = read(operand, bits)
+                left = (memory_value(operand, bits, following)[1]
+                        if isinstance(operand, MemoryOperand)
+                        else read(operand, bits))
             if left is None:
                 return None
             right = Operand('const', immediate & ((1 << bits) - 1))
             result = emit('i64.and', (left, right))
             flags = result_flags('and', left, right, result, bits)
+        elif operation == 'conditional_move':
+            _following, code, destination, source, bits = detail
+            if isinstance(source, MemoryOperand):
+                value = memory_value(source, bits, following)[1]
+            else:
+                value = read(source, bits)
+            current = read(destination, bits)
+            if value is None or current is None:
+                return None
+            selected = emit('lane64.SELECT', (
+                value, current, condition(code)))
+            if not publish(destination, selected, bits):
+                return None
+        elif operation == 'shift':
+            _following, group, operand, bits, raw_amount = detail
+            pointer = None
+            if isinstance(operand, MemoryOperand):
+                pointer, source = memory_value(operand, bits, following)
+            else:
+                source = read(operand, bits)
+            if source is None or group not in (0, 1, 4, 5, 7):
+                return None
+            amount = (emit('i64.and', (
+                registers[REGISTER_INDEX['rcx']],
+                Operand('const', bits - 1)))
+                if raw_amount is None else
+                Operand('const', int(raw_amount) & (bits - 1)))
+            if group in (0, 1) and bits in (32, 64):
+                result = emit(
+                    'i%d.%s' % (bits, 'rotl' if group == 0 else 'rotr'),
+                    (source, amount))
+            elif group == 0:
+                complement = emit('i64.sub', (
+                    Operand('const', bits), amount))
+                result = emit('i64.or', (
+                    emit('i64.shl', (source, amount)),
+                    emit('i64.shr_u', (source, complement))))
+            elif group == 1:
+                complement = emit('i64.sub', (
+                    Operand('const', bits), amount))
+                result = emit('i64.or', (
+                    emit('i64.shr_u', (source, amount)),
+                    emit('i64.shl', (source, complement))))
+            elif group == 4:
+                result = emit('i64.shl', (source, amount))
+            elif group == 5:
+                result = emit('i64.shr_u', (source, amount))
+            else:
+                signed = (source if bits == 64 else emit(
+                    'i64.extend%d_s' % bits, (source,)))
+                result = emit('i64.shr_s', (signed, amount))
+            result = emit('i64.and', (
+                result, Operand('const', (1 << bits) - 1)))
+            if pointer is not None:
+                memory_store(pointer, result, bits)
+            elif not publish(operand, result, bits):
+                return None
+
+            flags = emit('lane64.X86_SHIFT_FLAGS', (
+                prior_flags, source, result, amount,
+                Operand('const', int(bits) | (int(group) << 8))))
         elif operation == 'group_ff':
             _following, group, operand, bits = detail
             if group not in (0, 1):
                 return None
-            value = read(operand, bits)
+            pointer = None
+            if isinstance(operand, MemoryOperand):
+                pointer, value = memory_value(operand, bits, following)
+            else:
+                value = read(operand, bits)
             if value is None:
                 return None
             name = 'add' if group == 0 else 'sub'
@@ -3623,7 +3740,9 @@ class X86DBT(object):
                 value, Operand('const', 1)))
             result = emit('i64.and', (
                 result, Operand('const', (1 << bits) - 1)))
-            if not publish(operand, result, bits):
+            if pointer is not None:
+                memory_store(pointer, result, bits)
+            elif not publish(operand, result, bits):
                 return None
             flags = result_flags(
                 name, value, Operand('const', 1), result, bits,
@@ -3631,10 +3750,15 @@ class X86DBT(object):
         elif operation == 'set_condition':
             _following, code, operand, high_byte = detail
             if isinstance(operand, MemoryOperand):
-                return None
-            target = HighByteRegister(operand - 4) if high_byte else operand
-            if not publish(target, condition(code), 8):
-                return None
+                pointer = memory_address(operand, following)
+                if pointer is None:
+                    return None
+                memory_store(pointer, condition(code), 8)
+            else:
+                target = HighByteRegister(
+                    operand - 4) if high_byte else operand
+                if not publish(target, condition(code), 8):
+                    return None
         else:
             _following, opcode = detail
             if opcode in (0xfa, 0xfc):
@@ -4152,7 +4276,8 @@ class X86DBT(object):
         terminal_scratch = 0
         tail_return = None
         call_edge_used = False
-        while joined < max(1, int(limit)):
+        join_limit = max(1, int(limit))
+        while True:
             boundary_instructions = 1
             lowered_flags = self._lower_flag_boundary(
                 plan, current.boundary)
@@ -4230,6 +4355,17 @@ class X86DBT(object):
                 source += read_virtual(
                     state, linear_end, following - linear_end, 'execute')
             instructions += boundary_instructions
+            if joined >= join_limit:
+                # The current block is already resident in ``plan`` and its
+                # terminal instruction has just been normalized above.  End
+                # the physical page at the resulting coordinate instead of
+                # publishing that instruction as a scalar boundary merely
+                # because the next block would exceed the composition cap.
+                terminal_boundary = X86Boundary(
+                    'branch', int(following) & MASK64)
+                terminal_scratch = max(
+                    0, len(plan.locals) - len(REGISTER_NAMES) - 1)
+                break
             next_block = self.blocks.get(following)
             if next_block is None:
                 next_block = self.block(replace(
@@ -18067,6 +18203,9 @@ class X86DBT(object):
                 self._physical_profile[block.rip] = (
                     count + 1, work + physical_work(block.plan),
                     span + block.plan.waves.span)
+                key = block.boundary.operation
+                self._physical_boundary_profile[key] = \
+                    self._physical_boundary_profile.get(key, 0) + 1
         except PageFault as fault:
             self.last_page_fault = self._page_walk(state, fault)
             state = replace(state, cr2=fault.address)
@@ -18117,6 +18256,9 @@ class X86DBT(object):
                     self._physical_profile[following.rip] = (
                         count + 1, work + physical_work(following.plan),
                         span + following.plan.waves.span)
+                    key = following.boundary.operation
+                    self._physical_boundary_profile[key] = \
+                        self._physical_boundary_profile.get(key, 0) + 1
                 state, boundary = self._control(
                     state, following.boundary, prior, scratch,
                     following.flag_cut)
@@ -18661,6 +18803,9 @@ class X86DBT(object):
                 for rip, (count, work, span) in sorted(
                     self._physical_profile.items(),
                     key=lambda item: (-item[1][1], item[0]))[:32])
+            layout['physical_boundaries'] = tuple(sorted(
+                self._physical_boundary_profile.items(),
+                key=lambda item: (-item[1], item[0])))
             layout['hash_stream_misses'] = tuple(
                 (reason, coordinate, count)
                 for (reason, coordinate), count in sorted(
