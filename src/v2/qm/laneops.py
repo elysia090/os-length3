@@ -67,6 +67,8 @@ def shape(operation):
     bits, name = split(operation)
     if name == 'X86_FLAGS':
         return 5, 0, False
+    if name == 'X86_FLAGS_SELECT':
+        return 11, 0, False
     if name in GENERIC_ARITY:
         return GENERIC_ARITY[name], 0, False
     from .scalarpage import (_ONE_ARGUMENT, _ONE_CONSTANT, _ONE_SHIFT,
@@ -186,6 +188,9 @@ def evaluate(operation, arguments):
         choose_left = (left_key < right_key if name.endswith('MIN')
                        else left_key > right_key)
         return left if choose_left else right
+    if name == 'X86_FLAGS_SELECT':
+        selected = arguments[:5] if arguments[10] else arguments[5:10]
+        return evaluate('lane64.X86_FLAGS', selected)
     if name == 'X86_FLAGS':
         prior, left, right, result, descriptor = arguments
         width = int(descriptor) & 0x7f
@@ -397,7 +402,7 @@ def bind(operation):
         choose = min if name == 'SMIN' else max
         return lambda values: choose(to_signed(values[0], bits),
                                      to_signed(values[1], bits)) & mask
-    if name == 'X86_FLAGS':
+    if name in ('X86_FLAGS', 'X86_FLAGS_SELECT'):
         return lambda values: evaluate(operation, values)
 
     return lambda values: evaluate(operation, values)

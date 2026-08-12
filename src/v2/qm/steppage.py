@@ -63,6 +63,7 @@ MEMORY_OPS = tuple('memory.' + name for name in (
 # either, so an older cached page cannot acquire a different meaning.
 STATE_OPS = (
     'lane64.X86_FLAGS', 'memory.i64.repeat', 'memory.i64.find2',
+    'memory.i64.copy_until', 'lane64.X86_FLAGS_SELECT',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
@@ -215,6 +216,47 @@ def _find2(memory, address, first, second, shape):
                 raise ValueError('memory find result is not encodable')
             return (total << 8) | value
         distance += count
+
+
+def _copy_until(memory, source, target, start, limit, target_end,
+                sentinel, shape):
+    """Copy an indexed byte span until its exclusive limit or sentinel.
+
+    The packed result is ``byte << 32 | final_index``.  A terminal byte equal
+    to the sentinel denotes the sentinel exit; any other byte denotes the
+    exclusive-limit exit.  Keeping
+    only this residual state lets the caller recover its live registers
+    without materializing the visited byte coordinates.
+    """
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if width != 1:
+        raise ValueError('memory copy-until width is invalid')
+    source = _address(source, 0, scale, virtual64)
+    target = _address(target, 0, scale, virtual64)
+    start, limit = int(start), int(limit)
+    target_end = int(target_end) & I64
+    sentinel = int(sentinel) & 0xff
+    if (not 0 <= start <= 0xffffffff
+            or not start < limit <= 0xffffffff):
+        raise ValueError('memory copy-until extent is invalid')
+    direct = getattr(memory, 'copy_until', None)
+    if direct is not None:
+        final, byte, hit = direct(
+            source, target, start, limit, target_end, sentinel)
+        return ((int(byte) & 0xff) << 32) | (int(final) & 0xffffffff)
+
+    index = start
+    byte = 0
+    while index < limit:
+        source_at = (source + index) & I64
+        byte = memory.load(source_at, 1)
+        if byte == sentinel:
+            return (byte << 32) | index
+        coordinate = (target + index) & I64
+        if coordinate < target_end:
+            memory.write(coordinate, bytes((byte,)))
+        index += 1
+    return (byte << 32) | index
 
 
 def _memory_name(name):
@@ -530,6 +572,21 @@ def _validate(mapped):
             if width != 1 or scale >= 32:
                 raise StatePageError('memory.i64.find2 shape is invalid')
             continue
+        if operation == 'memory.i64.copy_until':
+            if (end - begin != 7
+                    or OPERAND_KINDS[
+                        mapped.value('operand_tags', end - 1)] != 'const'):
+                raise StatePageError(
+                    'memory.i64.copy_until has the wrong physical operands')
+            try:
+                width, scale, _virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', end - 1))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if width != 1 or scale >= 32:
+                raise StatePageError(
+                    'memory.i64.copy_until shape is invalid')
+            continue
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
             source_name, _observer = _memory_name(name)
@@ -714,6 +771,8 @@ def execute_mapped(mapped, state):
                 produced.append((node, 0))
             elif operation == 'memory.i64.find2':
                 produced.append((node, _find2(memory, *arguments)))
+            elif operation == 'memory.i64.copy_until':
+                produced.append((node, _copy_until(memory, *arguments)))
             elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
@@ -796,7 +855,8 @@ def compile_mapped_executor(mapped):
 
     lines = ['def execute(locals_, stack, memory):']
     namespace = {'memory_load': _load, 'memory_store': _store,
-                 'memory_repeat': _repeat, 'memory_find2': _find2}
+                 'memory_repeat': _repeat, 'memory_find2': _find2,
+                 'memory_copy_until': _copy_until}
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -830,6 +890,10 @@ def compile_mapped_executor(mapped):
                 continue
             if operation == 'memory.i64.find2':
                 lines.append('    value_%d = memory_find2(memory, %s)' %
+                             (node, arguments))
+                continue
+            if operation == 'memory.i64.copy_until':
+                lines.append('    value_%d = memory_copy_until(memory, %s)' %
                              (node, arguments))
                 continue
             if operation.startswith('memory.'):

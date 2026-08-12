@@ -136,6 +136,7 @@ typedef struct {
     u8 page[STEP_PAGE_BYTES];
     u8 memory[STEP_MEMORY_PAGES][GUEST_PAGE_BYTES];
     u8 memory_transfer[GUEST_PAGE_BYTES];
+    u8 copy_buffer[GUEST_PAGE_BYTES];
     u64 values[STEP_VALUE_CAP + 1u];
     u64 locals[STEP_VALUE_CAP];
     u64 stack[STEP_VALUE_CAP];
@@ -186,6 +187,20 @@ typedef struct {
     u32 find_second;
     u64 find_address;
     u64 find_offset;
+    u32 copy_active;
+    u32 copy_lane;
+    u32 copy_phase;
+    u32 copy_sentinel;
+    u32 copy_pending;
+    u32 copy_pending_at;
+    u32 copy_advance;
+    u32 copy_last;
+    u32 copy_hit;
+    u64 copy_source;
+    u64 copy_target;
+    u64 copy_index;
+    u64 copy_limit;
+    u64 copy_target_end;
     u32 error;
 } StepWorkspace;
 
@@ -1771,7 +1786,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 186u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 188u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2245,6 +2260,15 @@ static int step_x86_flags_lane(u32 begin, u32 end, u64 *result)
     return 1;
 }
 
+static int step_x86_flags_select_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 11u) return step_fail(7u);
+    u64 condition;
+    if (!step_operand(begin + 10u, &condition)) return 0;
+    u32 selected = condition ? begin : begin + 5u;
+    return step_x86_flags_lane(selected, selected + 5u, result);
+}
+
 static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
 {
     StepWorkspace *machine = step_machine();
@@ -2362,6 +2386,123 @@ static int step_memory_find2_lane(u32 begin, u32 end, u64 *result)
     }
 }
 
+static int step_memory_copy_until_lane(u32 begin, u32 end, u64 *result)
+{
+    StepWorkspace *machine = step_machine();
+    if (end - begin != 7u) return step_fail(9u);
+    if (!machine->copy_active) {
+        u64 source, target, start, limit, target_end, sentinel, shape;
+        if (!step_operand(begin, &source)
+                || !step_operand(begin + 1u, &target)
+                || !step_operand(begin + 2u, &start)
+                || !step_operand(begin + 3u, &limit)
+                || !step_operand(begin + 4u, &target_end)
+                || !step_operand(begin + 5u, &sentinel)
+                || !step_operand(begin + 6u, &shape))
+            return 0;
+        u32 width = (u32)shape & 255u;
+        u32 scale = (u32)(shape >> 8) & 31u;
+        int virtual64 = (shape & 0x10000u) != 0u;
+        if (width != 1u || (shape & ~0x11fffull)
+                || start > 0xffffffffull || limit > 0xffffffffull
+                || start >= limit)
+            return step_fail(9u);
+        u64 source_base = virtual64 ? source : (u64)(u32)source;
+        u64 target_base = virtual64 ? target : (u64)(u32)target;
+        source_base <<= scale;
+        target_base <<= scale;
+        if (!virtual64) {
+            source_base = (u32)source_base;
+            target_base = (u32)target_base;
+        }
+        machine->copy_active = 1u;
+        machine->copy_lane = machine->execution_lane;
+        machine->copy_phase = 0u;
+        machine->copy_sentinel = (u32)sentinel & 255u;
+        machine->copy_source = source_base;
+        machine->copy_target = target_base;
+        machine->copy_index = start;
+        machine->copy_limit = limit;
+        machine->copy_target_end = target_end;
+    } else if (machine->copy_lane != machine->execution_lane) {
+        return step_fail(12u);
+    }
+
+    for (;;) {
+        if (machine->copy_phase == 1u) {
+            while (machine->copy_pending_at < machine->copy_pending) {
+                u64 address = machine->copy_target + machine->copy_index
+                            + machine->copy_pending_at;
+                u32 page_shift = machine->memory_page_shift;
+                u32 page_bytes = 1u << page_shift;
+                u32 offset = (u32)(address & (page_bytes - 1u));
+                u32 count = machine->copy_pending
+                          - machine->copy_pending_at;
+                if (count > page_bytes - offset) count = page_bytes - offset;
+                StepMemoryGuard guard;
+                if (!step_memory_ready(address, count, &guard)) return 0;
+                u64 page = address >> page_shift;
+                u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+                for (u32 byte = 0; byte < count; ++byte)
+                    machine->memory[slot][offset + byte]
+                        = machine->copy_buffer[
+                            machine->copy_pending_at + byte];
+                if (!step_memory_unpin(&guard, 1)) return 0;
+                machine->copy_pending_at += count;
+            }
+            machine->copy_index += machine->copy_advance;
+            machine->copy_phase = 0u;
+            if (machine->copy_hit
+                    || machine->copy_index == machine->copy_limit) {
+                *result = ((u64)machine->copy_last << 32)
+                        | machine->copy_index;
+                machine->copy_active = 0u;
+                return 1;
+            }
+        }
+
+        u64 address = machine->copy_source + machine->copy_index;
+        u32 page_shift = machine->memory_page_shift;
+        u32 page_bytes = 1u << page_shift;
+        u32 offset = (u32)(address & (page_bytes - 1u));
+        u64 remaining = machine->copy_limit - machine->copy_index;
+        u32 count = (u32)(remaining < page_bytes - offset
+                        ? remaining : page_bytes - offset);
+        u64 target_at = machine->copy_target + machine->copy_index;
+        if (target_at > ~0ull - (count - 1u))
+            count = (u32)(~target_at + 1u);
+        u64 dependency = machine->copy_target - machine->copy_source;
+        if (target_at < machine->copy_target_end
+                && dependency && dependency < count)
+            count = (u32)dependency;
+        StepMemoryGuard guard;
+        if (!step_memory_ready(address, count, &guard)) return 0;
+        u64 page = address >> page_shift;
+        u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+        u32 observed = count;
+        machine->copy_hit = 0u;
+        for (u32 byte = 0; byte < count; ++byte) {
+            u32 value = machine->memory[slot][offset + byte];
+            if (value == machine->copy_sentinel) {
+                observed = byte;
+                machine->copy_hit = 1u;
+                machine->copy_last = value;
+                break;
+            }
+            machine->copy_buffer[byte] = (u8)value;
+            machine->copy_last = value;
+        }
+        if (!step_memory_unpin(&guard, 0)) return 0;
+        u64 writable = target_at < machine->copy_target_end
+                     ? machine->copy_target_end - target_at : 0u;
+        machine->copy_pending = observed < writable
+                              ? observed : (u32)writable;
+        machine->copy_pending_at = 0u;
+        machine->copy_advance = observed;
+        machine->copy_phase = 1u;
+    }
+}
+
 static int step_output(u32 tag_column, u32 value_column, u32 index,
                        u64 *result)
 {
@@ -2392,6 +2533,7 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
         machine->execution_lane = step_u32(STEP_WAVE_OFFSETS, 0);
         machine->repeat_active = 0;
         machine->find_active = 0;
+        machine->copy_active = 0;
     }
     while (machine->execution_depth < machine->span) {
         u32 end = step_u32(
@@ -2414,6 +2556,12 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                 : opcode == 185u
                 ? step_memory_find2_lane(first, last,
                                          &machine->values[node])
+                : opcode == 186u
+                ? step_memory_copy_until_lane(first, last,
+                                              &machine->values[node])
+                : opcode == 187u
+                ? step_x86_flags_select_lane(first, last,
+                                             &machine->values[node])
                 : step_fail(7u));
             if (!produced) {
                 if (machine->memory_status) return machine->memory_status;
