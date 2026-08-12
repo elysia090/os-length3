@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -19,7 +20,8 @@ from kernel.pagefabric import (bundle_prefix_size, dump_bundle, project,
 from qm.laneops import OPS as LANE_OPS, evaluate as evaluate_lane, shape
 from qm.pipeline import solve
 from qm.pagearchive import pack_wasm_steps
-from qm.steppage import (memory_shape, pack as pack_step,
+from qm.steppage import (load_region_descriptor, memory_shape,
+                         pack as pack_step,
                          projection_coordinate, relative_layout)
 from qm.stepnormalize import normalize_plan
 from qm.wasmbinary import index_module
@@ -36,6 +38,450 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(shutil.which('node'), 'node is required')
 class TestBrowserPageFabric(unittest.TestCase):
+    def test_inline_wasm_function_and_loop_are_owned_by_vm(self):
+        identity = wasm_module(b'\x00\x20\x00\x0b')
+        loop = wasm_module(
+            b'\x01\x01\x7e'
+            b'\x42\x00\x21\x01'
+            b'\x03\x40'
+            b'\x20\x01\x42\x01\x7c\x22\x01'
+            b'\x42\x04\x52\x0d\x00\x0b'
+            b'\x20\x01\x0b')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity_path = root / 'identity.wasm'
+            loop_path = root / 'loop.wasm'
+            identity_path.write_bytes(identity)
+            loop_path.write_bytes(loop)
+            runner = ROOT / 'tools' / 'run_wasm_function_vm.mjs'
+            vm = ROOT / 'web' / 'vm.wasm'
+            widest = str((1 << 64) - 1)
+            direct = subprocess.run([
+                'node', str(runner), str(identity_path), str(vm), 'f',
+                json.dumps([[widest]]),
+            ], check=False, capture_output=True, text=True)
+            repeated = subprocess.run([
+                'node', str(runner), str(loop_path), str(vm), 'f',
+                json.dumps([[0]]),
+            ], check=False, capture_output=True, text=True)
+        self.assertEqual(direct.returncode, 0, direct.stderr)
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        direct_result = json.loads(direct.stdout)
+        loop_result = json.loads(repeated.stdout)
+        self.assertEqual(direct_result['engine'], 'vm.wasm')
+        self.assertEqual(direct_result['results'], [widest])
+        self.assertEqual(loop_result['engine'], 'vm.wasm')
+        self.assertEqual(loop_result['results'], ['4'])
+
+    def test_native_x86_hot_blocks_stay_in_the_resident_direct_cache(self):
+        plan = PureSlice(
+            0, 0, 0, 0, 0, (),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(Operand('local', index) for index in range(17)))
+        page = bytes(pack_step(plan))
+
+        def record(rip, following):
+            return struct.pack(
+                '<4sHHQQIIQQQ8x', b'X86B', 1, 64,
+                rip, rip, len(page), 1, following, 0, 0) + page
+
+        records = record(0x101, 0x202) + record(0x202, 0x101)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record_path = root / 'x86-cache.bin'
+            record_path.write_bytes(records)
+            driver = root / 'x86-cache.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            vm_module = (ROOT / 'web' / 'vm.js').as_uri()
+            driver.write_text(f'''\
+import {{ readFileSync }} from 'node:fs';
+const VM = await import({json.dumps(vm_module)});
+await VM.load(await WebAssembly.compile(readFileSync(process.argv[2])));
+const records = new Uint8Array(readFileSync(process.argv[3]));
+const bytes = records.length / 2;
+const byRip = new Map([
+  ['257', records.slice(0, bytes)],
+  ['514', records.slice(bytes)],
+]);
+const machine = await VM.openX86Machine({{
+  state: {{ registers: Array(16).fill(0n), rip: 0x101n, rflags: 2n }},
+  blocks: {{ async read(rip) {{ return byRip.get(rip.toString()) || null; }} }},
+  memory: {{
+    length: 4096,
+    async read() {{ return new Uint8Array(4096); }},
+    async write() {{}},
+  }},
+}});
+const state = await machine.advance(1000);
+machine.release();
+VM.release();
+process.stdout.write(JSON.stringify({{
+  rip: state.rip.toString(), barriers: state.hostBarriers,
+}}));
+''', encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(record_path)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+        result = json.loads(run.stdout)
+        self.assertEqual(result['rip'], str(0x101))
+        self.assertEqual(result['barriers']['blockRead'], 2)
+        self.assertEqual(result['barriers']['blockCacheMiss'], 2)
+        self.assertEqual(result['barriers']['blockCacheHit'], 998)
+
+    def test_browser_native_x86_api_has_only_block_and_physical_sources(self):
+        plan = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'memory.i64.load', (
+                Operand('const', 0x4000), Operand('const', 0),
+                Operand('const', memory_shape(8, virtual64=True)))),),
+            DependencyWaves((0, 1), (1,), (0, 1)), (),
+            (Operand('node', 1),)
+            + tuple(Operand('local', index) for index in range(1, 17)))
+        page = bytes(pack_step(plan))
+        record = struct.pack(
+            '<4sHHQQIIQQQ8x', b'X86B', 1, 64,
+            0x100, 0x200, len(page), 4,
+            0x200, 0, 0) + page
+        physical = bytearray(16 * 4096)
+        struct.pack_into('<Q', physical, 0x4000, 0xaabbccddeeff0011)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record_path = root / 'x86-browser-block.bin'
+            memory_path = root / 'x86-browser-memory.bin'
+            record_path.write_bytes(record)
+            memory_path.write_bytes(physical)
+            driver = root / 'x86-browser-native.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            vm_module = (ROOT / 'web' / 'vm.js').as_uri()
+            driver.write_text(f'''\
+import {{ readFileSync }} from 'node:fs';
+const VM = await import({json.dumps(vm_module)});
+const wasm = await WebAssembly.compile(readFileSync(process.argv[2]));
+await VM.load(wasm);
+const record = new Uint8Array(readFileSync(process.argv[3]));
+const physical = new Uint8Array(readFileSync(process.argv[4]));
+const blockReads = [];
+const physicalReads = [];
+const machine = await VM.openX86Machine({{
+  state: {{
+    registers: Array(16).fill(0n), rip: 0x100n, rflags: 2n,
+    cr0: 0n, cr3: 0n, cr4: 0n, efer: 0n,
+  }},
+  blocks: {{
+    async read(rip) {{ blockReads.push(rip.toString()); return record; }},
+  }},
+  memory: {{
+    length: physical.length,
+    async read(offset, length) {{
+      physicalReads.push([offset, length]);
+      return physical.slice(offset, offset + length);
+    }},
+    async write() {{ throw new Error('read-only fixture became dirty'); }},
+  }},
+}});
+const state = await machine.advance();
+machine.release();
+VM.release();
+process.stdout.write(JSON.stringify({{
+  halted: state.halted,
+  rip: state.rip.toString(),
+  retired: state.retired.toString(),
+  blockReads,
+  physicalReads,
+}}));
+''', encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(record_path), str(memory_path)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), {
+            'halted': True,
+            'rip': str(0x200),
+            'retired': '1',
+            'blockReads': [str(0x100)],
+            'physicalReads': [[0x4000, 4096]],
+        })
+
+    def test_native_x86_mmu_exposes_only_physical_page_coordinates(self):
+        virtual = 0x4000
+        plan = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'memory.i64.load', (
+                Operand('const', virtual), Operand('const', 0),
+                Operand('const', memory_shape(8, virtual64=True)))),),
+            DependencyWaves((0, 1), (1,), (0, 1)), (),
+            (Operand('node', 1),)
+            + tuple(Operand('local', index) for index in range(1, 17)))
+        page = bytes(pack_step(plan))
+        record = struct.pack(
+            '<4sHHQQIIQQQ8x', b'X86B', 1, 64,
+            0x100, 0x200, len(page), 1,
+            0x200, 0, 0) + page
+
+        physical = bytearray(16 * 4096)
+        for page_number, next_page in ((1, 2), (2, 3), (3, 4)):
+            struct.pack_into('<Q', physical, page_number * 4096,
+                             next_page * 4096 | 3)
+        struct.pack_into('<Q', physical, 4 * 4096 + 4 * 8,
+                         5 * 4096 | 3)
+        struct.pack_into('<Q', physical, 5 * 4096,
+                         0x1122334455667788)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record_path = root / 'x86-memory-block.bin'
+            memory_path = root / 'x86-physical.bin'
+            record_path.write_bytes(record)
+            memory_path.write_bytes(physical)
+            driver = root / 'x86-native-mmu.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            driver.write_text('''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const record = new Uint8Array(readFileSync(process.argv[3]));
+const physical = new Uint8Array(readFileSync(process.argv[4]));
+const session = E.vm_step_acquire();
+if (!E.vm_x86_open(
+  session, 0x100n, 2n, 1n << 31n, 0x1000n, 0n, 0n,
+  BigInt(physical.length),
+)) throw new Error('native x86 state did not open');
+new Uint8Array(E.memory.buffer, E.vm_step_buffer(session), record.length)
+  .set(record);
+if (E.vm_x86_load_block(session, record.length) !== 2) {
+  throw new Error(`block:${E.vm_x86_error(session)}`);
+}
+const requested = [];
+let status;
+for (;;) {
+  status = E.vm_x86_execute(session);
+  if (status !== 7) break;
+  const lease = E.vm_x86_physical_lease(session);
+  const page = E.vm_x86_physical_coordinate(session, lease);
+  requested.push(Number(page));
+  new Uint8Array(E.memory.buffer, E.vm_x86_physical_buffer(session, lease), 4096)
+    .set(physical.subarray(Number(page) * 4096, Number(page + 1n) * 4096));
+  if (!E.vm_x86_supply_physical(session, lease, page, 4096)) {
+    throw new Error(`supply:${page}`);
+  }
+}
+const view = new DataView(E.memory.buffer);
+const result = {
+  status,
+  requested,
+  rax: view.getBigUint64(E.vm_x86_registers(session), true).toString(),
+  rip: E.vm_x86_rip(session).toString(),
+  error: E.vm_x86_error(session),
+};
+if (!E.vm_step_release(session)) throw new Error('release failed');
+process.stdout.write(JSON.stringify(result));
+''', encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(record_path), str(memory_path)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), {
+            'status': 4,
+            'requested': [1, 2, 3, 4, 5],
+            'rax': str(0x1122334455667788),
+            'rip': str(0x200),
+            'error': 0,
+        })
+
+    def test_native_x86_continuation_keeps_control_and_state_in_vm(self):
+        plan = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.ADD', (
+                Operand('local', 0), Operand('const', 1))),),
+            DependencyWaves((0, 1), (1,), (0, 1)), (),
+            (Operand('node', 1),)
+            + tuple(Operand('local', index) for index in range(1, 17)))
+        page = bytes(pack_step(plan))
+        record = struct.pack(
+            '<4sHHQQIIQQQ8x', b'X86B', 1, 64,
+            0x100, 0x200, len(page), 2,
+            0x200, 0x300, 5) + page
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record_path = root / 'x86-block.bin'
+            record_path.write_bytes(record)
+            driver = root / 'x86-native.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            driver.write_text('''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const record = new Uint8Array(readFileSync(process.argv[3]));
+const session = E.vm_step_acquire();
+if (!E.vm_x86_open(
+  session, 0x100n, 2n, 0n, 0n, 0n, 0n, 1n << 27n,
+)) throw new Error('native x86 state did not open');
+const view = new DataView(E.memory.buffer);
+view.setBigUint64(E.vm_x86_registers(session), 41n, true);
+new Uint8Array(E.memory.buffer, E.vm_step_buffer(session), record.length)
+  .set(record);
+if (E.vm_x86_load_block(session, record.length) !== 2) {
+  throw new Error(`block:${E.vm_x86_error(session)}`);
+}
+const status = E.vm_x86_execute(session);
+const result = {
+  status,
+  rax: view.getBigUint64(E.vm_x86_registers(session), true).toString(),
+  rip: E.vm_x86_rip(session).toString(),
+  retired: E.vm_x86_retired(session).toString(),
+  work: E.vm_x86_work(session).toString(),
+  span: E.vm_x86_span(session).toString(),
+  error: E.vm_x86_error(session),
+};
+if (!E.vm_step_release(session)) throw new Error('release failed');
+process.stdout.write(JSON.stringify(result));
+''', encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(record_path)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), {
+            'status': 4,
+            'rax': '42',
+            'rip': '768',
+            'retired': '1',
+            'work': '1',
+            'span': '1',
+            'error': 0,
+        })
+
+    def test_native_x86_clock_resumes_transactionally_inside_vm(self):
+        plan = PureSlice(
+            0, 0, 0, 0, 0, (),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(Operand('local', index) for index in range(17)))
+        page = bytes(pack_step(plan))
+        record = struct.pack(
+            '<4sHHQQIIQQQ8x', b'X86B', 1, 64,
+            0x100, 0x100, len(page), 20,
+            0x102, 0, 0) + page
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record_path = root / 'x86-clock.bin'
+            record_path.write_bytes(record)
+            driver = root / 'x86-clock.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            driver.write_text('''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const record = new Uint8Array(readFileSync(process.argv[3]));
+const session = E.vm_step_acquire();
+if (!E.vm_x86_open(
+  session, 0x100n, 2n, 0n, 0n, 0n, 0n, 1n << 27n,
+)) throw new Error('native x86 state did not open');
+new Uint8Array(E.memory.buffer, E.vm_step_buffer(session), record.length)
+  .set(record);
+if (E.vm_x86_load_block(session, record.length) !== 2) {
+  throw new Error(`block:${E.vm_x86_error(session)}`);
+}
+const status = E.vm_x86_execute(session);
+const lease = E.vm_x86_clock_lease(session);
+const ripBefore = E.vm_x86_rip(session);
+if (!E.vm_x86_supply_clock(session, lease, 0x1122334455667788n)) {
+  throw new Error('clock acknowledgement failed');
+}
+const view = new DataView(E.memory.buffer);
+const registers = E.vm_x86_registers(session);
+const result = {
+  status,
+  lease: lease.toString(),
+  ripBefore: ripBefore.toString(),
+  ripAfter: E.vm_x86_rip(session).toString(),
+  rax: view.getBigUint64(registers, true).toString(),
+  rdx: view.getBigUint64(registers + 2 * 8, true).toString(),
+  error: E.vm_x86_error(session),
+};
+if (!E.vm_step_release(session)) throw new Error('release failed');
+process.stdout.write(JSON.stringify(result));
+''', encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(record_path)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+        result = json.loads(run.stdout)
+        self.assertEqual(result['status'], 11)
+        self.assertNotEqual(result['lease'], '0')
+        self.assertEqual(result['ripBefore'], str(0x100))
+        self.assertEqual(result['ripAfter'], str(0x102))
+        self.assertEqual(result['rax'], str(0x55667788))
+        self.assertEqual(result['rdx'], str(0x11223344))
+        self.assertEqual(result['error'], 0)
+
+    def test_native_x86_pit_state_is_resident(self):
+        plan = PureSlice(
+            0, 0, 0, 0, 0, (),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(Operand('local', index) for index in range(17)))
+        page = bytes(pack_step(plan))
+        records = []
+        for rip, control, following in (
+                (0x100, 18, 0x102), (0x102, 18, 0x104),
+                (0x104, 17, 0x106), (0x106, 17, 0x108)):
+            records.append(struct.pack(
+                '<4sHHQQIIQQQ8x', b'X86B', 1, 64,
+                rip, rip, len(page), control, following, 0x42, 1) + page)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record_path = root / 'x86-pit.bin'
+            record_path.write_bytes(b''.join(records))
+            driver = root / 'x86-pit.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            driver.write_text('''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const records = new Uint8Array(readFileSync(process.argv[3]));
+const bytes = records.length / 4;
+const session = E.vm_step_acquire();
+if (!E.vm_x86_open(
+  session, 0x100n, 2n, 0n, 0n, 0n, 0n, 1n << 27n,
+)) throw new Error('native x86 state did not open');
+const registers = E.vm_x86_registers(session);
+const view = new DataView(E.memory.buffer);
+view.setBigUint64(registers, 0xffffffffn, true);
+for (let index = 0; index < 4; index += 1) {
+  new Uint8Array(E.memory.buffer, E.vm_step_buffer(session), bytes)
+    .set(records.subarray(index * bytes, (index + 1) * bytes));
+  if (E.vm_x86_load_block(session, bytes) !== 2) {
+    throw new Error(`block:${index}:${E.vm_x86_error(session)}`);
+  }
+  if (E.vm_x86_execute(session) !== 4) {
+    throw new Error(`execute:${index}:${E.vm_x86_error(session)}`);
+  }
+}
+const result = {
+  rax: view.getBigUint64(registers, true).toString(),
+  rip: E.vm_x86_rip(session).toString(),
+  error: E.vm_x86_error(session),
+};
+if (!E.vm_step_release(session)) throw new Error('release failed');
+process.stdout.write(JSON.stringify(result));
+''', encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(record_path)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), {
+            'rax': str(0xfffffffd),
+            'rip': str(0x108),
+            'error': 0,
+        })
+
     def test_prefix_directory_resumes_inside_the_bootstrap_vm(self):
         start = 65532
         alu_descriptor = 32 | (1 << 8) | (1 << 11)
@@ -60,11 +506,20 @@ class TestBrowserPageFabric(unittest.TestCase):
                 Operand('const', 1), Operand('const', alu_descriptor))),
              WaveNode(5, 'lane64.ADD', (
                 Operand('projection', projection_coordinate(4, 16)),
-                Operand('const', 2)))),
+                Operand('const', 2))),
+             WaveNode(6, 'memory.i64.load_region', (
+                 Operand('const', start), Operand('const', 0),
+                 Operand('const', load_region_descriptor(8)),
+                 Operand('const', memory_shape(1, virtual64=True))))),
             DependencyWaves((0,), (), (0,)),
             (Operand('node', 2), Operand('node', 3), Operand('node', 4),
              Operand('projection', projection_coordinate(4, 16)),
-             Operand('node', 5)),
+             Operand('node', 5),
+             Operand('projection', projection_coordinate(6, 0)),
+             Operand('projection', projection_coordinate(6, 3)),
+             Operand('projection', projection_coordinate(6, 4)),
+             Operand('projection', projection_coordinate(6, 7)),
+             Operand('projection', projection_coordinate(6, 8))),
             (Operand('node', 1), Operand('local', 1),
              Operand('local', 2), Operand('local', 3)))
         physical = bytes(pack_step(normalize_plan(plan)))
@@ -122,6 +577,11 @@ const values = [
   view.getBigUint64(stack + 16, true).toString(),
   view.getBigUint64(stack + 24, true).toString(),
   view.getBigUint64(stack + 32, true).toString(),
+  view.getBigUint64(stack + 40, true).toString(),
+  view.getBigUint64(stack + 48, true).toString(),
+  view.getBigUint64(stack + 56, true).toString(),
+  view.getBigUint64(stack + 64, true).toString(),
+  view.getBigUint64(stack + 72, true).toString(),
 ];
 E.vm_step_release(session);
 process.stdout.write(JSON.stringify({faults, end, values}));
@@ -133,7 +593,8 @@ process.stdout.write(JSON.stringify({faults, end, values}));
             self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(json.loads(run.stdout), {
             'faults': [0, 1], 'end': str(start + 134),
-            'values': [str(0x556677aa), '3', str(alu_flags), '0', '2']})
+            'values': [str(0x556677aa), '3', str(alu_flags), '0', '2',
+                       '2', '129', '1', '98', str(start + 8)]})
 
     def test_relative_exchange_resumes_inside_the_bootstrap_vm(self):
         layout = relative_layout((4, 4, 8))

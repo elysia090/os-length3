@@ -14,7 +14,7 @@ from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
                          _relative_exchange,
                          StatePageError)
 from qm.memorycut import MemoryCut
-from qm.stepnormalize import compose_plans, normalize_plan
+from qm.stepnormalize import compose_plans, normalize_plan, physical_work
 from qm.wasmphysical import DependencyWaves
 from qm.wasmwave import (Operand, PureSlice, WaveExecutor, WaveNode,
                          execute_slice, is_barrier)
@@ -209,6 +209,158 @@ class TestWaveExecutor(unittest.TestCase):
         expected_flags = evaluate('lane64.X86_FLAGS', (
             prior, 0xa0, 0x0f, 0xaf, 8))
         self.assertEqual(actual, (0xa0, 0x0f, 0x12af, expected_flags))
+
+    def test_affine_add_result_and_flags_share_one_alu_lane(self):
+        from qm.laneops import evaluate
+        from qm.steppage import decode_projection_coordinate
+        from qm.wasmstate import PagedMemory
+
+        descriptor = 32 | (1 << 8)
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane32.ADDR', (
+                Operand('local', 0), Operand('local', 1))),
+             WaveNode(2, 'lane32.ADD3', (
+                Operand('local', 0), Operand('local', 1),
+                Operand('const', 0xfffffff0))),
+             WaveNode(3, 'lane64.X86_FLAGS', (
+                Operand('local', 2), Operand('node', 1),
+                Operand('const', 0xfffffff0), Operand('node', 2),
+                Operand('const', descriptor)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('node', 2), Operand('local', 1),
+             Operand('node', 3)))
+
+        plan = normalize_plan(raw)
+        self.assertEqual((len(plan.nodes), plan.waves.span), (1, 1))
+        self.assertEqual(plan.nodes[0].op, 'lane64.X86_AFFINE_ALU')
+        self.assertEqual(
+            decode_projection_coordinate(plan.locals[0].value), (1, 16))
+        execute = compile_mapped_executor(unpack(pack(plan)))
+        prior = 0x247
+        actual, _stack = execute(
+            (0xfffffff0, 0x30, prior), (),
+            MemoryCut(PagedMemory(b'', 65536)))
+        left = 0x20
+        result = 0x10
+        expected_flags = evaluate('lane64.X86_FLAGS', (
+            prior, left, 0xfffffff0, result, descriptor))
+        self.assertEqual(actual, (result, 0x30, expected_flags))
+
+    def test_carry_arithmetic_and_flags_share_one_alu_lane(self):
+        from qm.laneops import evaluate
+        from qm.steppage import decode_projection_coordinate
+        from qm.wasmstate import PagedMemory
+
+        for mode, arithmetic, expected_result in (
+                (2, 'lane32.ADDR', 1),
+                (4, 'lane32.SUBR', 0xfffffffd)):
+            descriptor = 32 | (mode << 8)
+            carry = WaveNode(1, 'lane64.X86_CONDITION', (
+                Operand('local', 2), Operand('const', 2)))
+            if mode == 2:
+                base = WaveNode(2, arithmetic, (
+                    Operand('local', 0), Operand('local', 1)))
+                result = WaveNode(3, arithmetic, (
+                    Operand('node', 2), Operand('node', 1)))
+            else:
+                base = WaveNode(2, arithmetic, (
+                    Operand('local', 0), Operand('local', 1)))
+                result = WaveNode(3, arithmetic, (
+                    Operand('node', 2), Operand('node', 1)))
+            raw = PureSlice(
+                0, 0, 1, 1, 0,
+                (carry, base, result,
+                 WaveNode(4, 'lane64.X86_FLAGS', (
+                    Operand('local', 2), Operand('local', 0),
+                    Operand('local', 1), Operand('node', 3),
+                    Operand('const', descriptor)))),
+                DependencyWaves((0,), (), (0,)), (),
+                (Operand('node', 3), Operand('local', 1),
+                 Operand('node', 4)))
+
+            plan = normalize_plan(raw)
+            self.assertEqual((len(plan.nodes), plan.waves.span), (1, 1))
+            self.assertEqual(plan.nodes[0].op, 'lane64.X86_ALU')
+            self.assertEqual(
+                decode_projection_coordinate(plan.locals[0].value), (1, 16))
+            execute = compile_mapped_executor(unpack(pack(plan)))
+            prior = 0x247
+            actual, _stack = execute(
+                (0xffffffff, 1, prior), (),
+                MemoryCut(PagedMemory(b'', 65536)))
+            expected_flags = evaluate('lane64.X86_FLAGS', (
+                prior, 0xffffffff, 1, expected_result, descriptor))
+            self.assertEqual(
+                actual, (expected_result, 1, expected_flags))
+
+    def test_affine_pointer_updates_fold_and_disjoint_stores_form_one_wave(self):
+        from qm.steppage import memory_shape
+        from qm.wasmstate import PagedMemory
+
+        shape = Operand('const', memory_shape(8, virtual64=True))
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'memory.i64.pre_store', (
+                Operand('local', 0), Operand('local', 1),
+                Operand('const', 8), shape)),
+             WaveNode(2, 'memory.i64.pre_store', (
+                Operand('node', 1), Operand('local', 2),
+                Operand('const', 8), shape)),
+             WaveNode(3, 'lane64.ADD', (
+                Operand('local', 3), Operand('const', 8))),
+             WaveNode(4, 'lane64.ADD', (
+                Operand('node', 3), Operand('const', 8))),
+             WaveNode(5, 'lane64.ADD', (
+                Operand('node', 4), Operand('const', 8)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('node', 2), Operand('local', 1),
+             Operand('local', 2), Operand('node', 5)))
+
+        plan = normalize_plan(raw)
+        self.assertEqual((len(plan.nodes), plan.waves.span), (3, 1))
+        stores = tuple(node for node in plan.nodes
+                       if node.op == 'memory.i64.pre_store')
+        self.assertEqual(
+            tuple(node.arguments[0] for node in stores),
+            (Operand('local', 0), Operand('local', 0)))
+        self.assertEqual(
+            tuple(node.arguments[2].value for node in stores), (8, 16))
+        execute = compile_mapped_executor(unpack(pack(plan)))
+        locals_, _stack = execute(
+            (32, 0x1122, 0x3344, 5), (),
+            MemoryCut(PagedMemory(bytes(64), 65536)))
+        self.assertEqual((locals_[0], locals_[3]), (16, 29))
+
+    def test_contiguous_terminal_loads_are_one_direct_region(self):
+        from qm.steppage import decode_projection_coordinate, memory_shape
+        from qm.wasmstate import PagedMemory
+
+        shape = Operand('const', memory_shape(8, virtual64=True))
+        loads = tuple(WaveNode(index + 1, 'memory.i64.load', (
+            Operand('local', 0), Operand('const', index * 8), shape))
+            for index in range(5))
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            loads + (WaveNode(6, 'lane64.ADD', (
+                Operand('local', 0), Operand('const', 40))),),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(Operand('node', value) for value in range(1, 7)))
+
+        plan = normalize_plan(raw)
+        self.assertEqual((len(plan.nodes), physical_work(plan),
+                          plan.waves.span), (1, 5, 1))
+        self.assertEqual(plan.nodes[0].op, 'memory.i64.load_region')
+        self.assertEqual(
+            tuple(decode_projection_coordinate(output.value)
+                  for output in plan.locals),
+            tuple((1, selector) for selector in range(6)))
+        payload = b''.join(value.to_bytes(8, 'little')
+                           for value in range(8))
+        execute = compile_mapped_executor(unpack(pack(plan)))
+        locals_, _stack = execute(
+            (0,) * 6, (), MemoryCut(PagedMemory(payload, 65536)))
+        self.assertEqual(locals_, (0, 1, 2, 3, 4, 40))
 
     def test_partial_register_predicate_cut_reaches_its_closed_form(self):
         from qm.laneops import evaluate

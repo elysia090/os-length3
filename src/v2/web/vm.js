@@ -53,6 +53,327 @@ export async function load(precompiled = null) {
   return instance;
 }
 
+const X86_STATUS = Object.freeze({
+  needBlock: 4,
+  yielded: 5,
+  halted: 6,
+  needPhysical: 7,
+  dirtyPhysical: 8,
+  internal: 9,
+  consoleWrite: 10,
+  clock: 11,
+});
+const X86_PHYSICAL_PAGE_BYTES = 4096;
+
+function x86Source(source, name, writable = false) {
+  if (!source || !Number.isSafeInteger(source.length) || source.length <= 0
+      || typeof source.read !== 'function'
+      || (writable && typeof source.write !== 'function')) {
+    throw new TypeError(`${name} needs a finite direct-coordinate source`);
+  }
+  return source;
+}
+
+/**
+ * Open one x86 machine whose persistent state and MMU remain in vm.wasm.
+ *
+ * `blocks.read(rip)` supplies immutable X86B+STEP records. `memory` sees only
+ * 4 KiB physical coordinates; virtual addresses, registers, flags and control
+ * transitions never cross this host API. Python may have produced either
+ * artifact ahead of time, but no Python interpreter participates here.
+ */
+export async function openX86Machine({ state, memory, blocks, devices = {} }) {
+  if (!state || !Array.isArray(state.registers)
+      || state.registers.length !== 16) {
+    throw new TypeError('x86 state needs sixteen registers');
+  }
+  x86Source(memory, 'x86 physical memory', true);
+  if (!blocks || typeof blocks.read !== 'function') {
+    throw new TypeError('x86 machine needs a RIP-coordinate block source');
+  }
+  const loaded = await load();
+  const E = loaded.exports;
+  const session = E.vm_step_acquire();
+  if (session === 0n) throw new Error('vm.wasm has no free x86 lease');
+  const word = (name, fallback = 0n) => BigInt.asUintN(
+    64, BigInt(state[name] ?? fallback),
+  );
+  let opened = false;
+  try {
+    opened = Boolean(E.vm_x86_open(
+      session, word('rip'), word('rflags', 2n), word('cr0'), word('cr3'),
+      word('cr4'), word('efer'), BigInt(memory.length),
+    ));
+    if (!opened) throw new Error('vm.wasm rejected the x86 state');
+    const view = new DataView(E.memory.buffer);
+    const registersAt = E.vm_x86_registers(session);
+    state.registers.forEach((value, index) => view.setBigUint64(
+      registersAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
+    ));
+    if (state.system !== undefined) {
+      if (!Array.isArray(state.system) || state.system.length !== 22) {
+        throw new TypeError('x86 system state needs twenty-two words');
+      }
+      const systemAt = E.vm_x86_system(session);
+      state.system.forEach((value, index) => view.setBigUint64(
+        systemAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
+      ));
+    }
+    if (state.msrs !== undefined) {
+      if (!Array.isArray(state.msrs) || state.msrs.length > 32) {
+        throw new TypeError('x86 MSR state is outside the resident bank');
+      }
+      const keysAt = E.vm_x86_msr_keys(session);
+      const valuesAt = E.vm_x86_msr_values(session);
+      state.msrs.forEach((pair, index) => {
+        if (!Array.isArray(pair) || pair.length !== 2) {
+          throw new TypeError(`x86 MSR ${index} is not a key/value pair`);
+        }
+        view.setBigUint64(
+          keysAt + index * 8, BigInt.asUintN(64, BigInt(pair[0])), true,
+        );
+        view.setBigUint64(
+          valuesAt + index * 8, BigInt.asUintN(64, BigInt(pair[1])), true,
+        );
+      });
+      if (!E.vm_x86_msr_count(session, state.msrs.length)) {
+        throw new Error('vm.wasm rejected the x86 MSR bank');
+      }
+    }
+    const resident = new ResidentX86Machine(
+      E, session, memory, blocks, devices,
+    );
+    const tsc = state.msrs?.find(
+      ([key]) => BigInt.asUintN(32, BigInt(key)) === 0x10n,
+    );
+    resident.virtualClock = tsc
+      ? BigInt.asUintN(64, BigInt(tsc[1])) : 0n;
+    return resident;
+  } catch (error) {
+    E.vm_step_release(session);
+    throw error;
+  }
+}
+
+class ResidentX86Machine {
+  constructor(exports, session, memory, blocks, devices) {
+    this.exports = exports;
+    this.session = session;
+    this.memory = memory;
+    this.blocks = blocks;
+    this.devices = devices;
+    this.hostBarriers = {
+      blockRead: 0,
+      blockCacheHit: 0,
+      blockCacheMiss: 0,
+      physicalRead: 0,
+      physicalWrite: 0,
+      consoleWrite: 0,
+      clock: 0,
+    };
+    this.virtualClock = 0n;
+    this.blockLoaded = false;
+    this.closed = false;
+  }
+
+  assertOpen() {
+    if (this.closed) throw new Error('x86 machine is released');
+  }
+
+  async advance(maxBlocks = 1 << 16) {
+    this.assertOpen();
+    if (!Number.isSafeInteger(maxBlocks) || maxBlocks <= 0) {
+      throw new RangeError('x86 block quantum must be positive');
+    }
+    const E = this.exports;
+    let completed = 0;
+    while (completed < maxBlocks) {
+      const status = E.vm_x86_execute(this.session);
+      if (status === X86_STATUS.needBlock) {
+        if (this.blockLoaded) {
+          this.blockLoaded = false;
+          completed += 1;
+          if (completed >= maxBlocks) return this.status(X86_STATUS.yielded);
+        }
+        const cached = E.vm_x86_load_cached_block(this.session);
+        if (cached === 2) {
+          this.hostBarriers.blockCacheHit += 1;
+          this.blockLoaded = true;
+          continue;
+        }
+        if (cached !== 0) {
+          throw new Error(
+            `vm.wasm rejected its resident x86 block cache (${E.vm_x86_error(this.session)})`,
+          );
+        }
+        this.hostBarriers.blockCacheMiss += 1;
+        const rip = BigInt.asUintN(64, E.vm_x86_rip(this.session));
+        this.hostBarriers.blockRead += 1;
+        const record = await this.blocks.read(rip);
+        if (record == null) {
+          return { ...this.status(X86_STATUS.needBlock), missingBlock: rip };
+        }
+        if (!(record instanceof Uint8Array) || !record.length) {
+          throw new Error(`x86 block 0x${rip.toString(16)} is malformed`);
+        }
+        new Uint8Array(
+          E.memory.buffer, E.vm_step_buffer(this.session), record.length,
+        ).set(record);
+        if (E.vm_x86_load_block(this.session, record.length) !== 2) {
+          throw new Error(
+            `vm.wasm rejected x86 block 0x${rip.toString(16)} (${E.vm_x86_error(this.session)})`,
+          );
+        }
+        this.blockLoaded = true;
+        continue;
+      }
+      if (status === X86_STATUS.needPhysical
+          || status === X86_STATUS.dirtyPhysical) {
+        const lease = E.vm_x86_physical_lease(this.session);
+        const page = BigInt.asUintN(
+          64, E.vm_x86_physical_coordinate(this.session, lease),
+        );
+        const offset = Number(page * BigInt(X86_PHYSICAL_PAGE_BYTES));
+        if (!Number.isSafeInteger(offset)
+            || offset < 0 || offset + X86_PHYSICAL_PAGE_BYTES > this.memory.length) {
+          throw new Error(`x86 physical page ${page} is outside RAM`);
+        }
+        const bufferAt = E.vm_x86_physical_buffer(this.session, lease);
+        if (status === X86_STATUS.needPhysical) {
+          this.hostBarriers.physicalRead += 1;
+          const bytes = await this.memory.read(offset, X86_PHYSICAL_PAGE_BYTES);
+          if (!(bytes instanceof Uint8Array)
+              || bytes.length !== X86_PHYSICAL_PAGE_BYTES) {
+            throw new Error(`x86 physical page ${page} has the wrong extent`);
+          }
+          new Uint8Array(
+            E.memory.buffer, bufferAt, X86_PHYSICAL_PAGE_BYTES,
+          ).set(bytes);
+          if (!E.vm_x86_supply_physical(
+            this.session, lease, page, X86_PHYSICAL_PAGE_BYTES,
+          )) throw new Error(`vm.wasm rejected physical page ${page}`);
+        } else {
+          this.hostBarriers.physicalWrite += 1;
+          const bytes = new Uint8Array(
+            E.memory.buffer, bufferAt, X86_PHYSICAL_PAGE_BYTES,
+          ).slice();
+          await this.memory.write(offset, bytes);
+          if (!E.vm_x86_ack_physical(this.session, lease, page)) {
+            throw new Error(`vm.wasm rejected dirty physical page ${page}`);
+          }
+        }
+        continue;
+      }
+      if (status === X86_STATUS.consoleWrite) {
+        const lease = E.vm_x86_console_lease(this.session);
+        if (!lease) throw new Error('vm.wasm published an invalid console lease');
+        const byte = E.vm_x86_console_value(this.session, lease);
+        this.hostBarriers.consoleWrite += 1;
+        if (typeof this.devices.consoleWrite === 'function') {
+          await this.devices.consoleWrite(Uint8Array.of(byte));
+        }
+        if (!E.vm_x86_ack_console(this.session, lease)) {
+          throw new Error('vm.wasm rejected the console acknowledgement');
+        }
+        continue;
+      }
+      if (status === X86_STATUS.clock) {
+        const lease = E.vm_x86_clock_lease(this.session);
+        if (!lease) throw new Error('vm.wasm published an invalid clock lease');
+        this.hostBarriers.clock += 1;
+        let value;
+        if (typeof this.devices.clock === 'function') {
+          value = await this.devices.clock({
+            retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
+            prior: this.virtualClock,
+          });
+        } else {
+          value = this.virtualClock + 1n;
+        }
+        this.virtualClock = BigInt.asUintN(64, BigInt(value));
+        if (!E.vm_x86_supply_clock(
+          this.session, lease, this.virtualClock,
+        )) throw new Error('vm.wasm rejected the clock acknowledgement');
+        continue;
+      }
+      if (status === X86_STATUS.yielded || status === X86_STATUS.halted) {
+        this.blockLoaded = false;
+        return this.status(status);
+      }
+      if (status === X86_STATUS.internal) {
+        this.blockLoaded = false;
+        continue;
+      }
+      throw new Error(
+        `x86 machine trapped in vm.wasm (`
+        + `x86=${E.vm_x86_error(this.session)}, `
+        + `step=${E.vm_step_error(this.session)})`,
+      );
+    }
+    return this.status(X86_STATUS.yielded);
+  }
+
+  status(status = null) {
+    this.assertOpen();
+    const E = this.exports;
+    return {
+      status,
+      halted: Boolean(E.vm_x86_halted(this.session)),
+      rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
+      retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
+      work: BigInt.asUintN(64, E.vm_x86_work(this.session)),
+      span: BigInt.asUintN(64, E.vm_x86_span(this.session)),
+      hostBarriers: { ...this.hostBarriers },
+    };
+  }
+
+  snapshot() {
+    this.assertOpen();
+    const E = this.exports;
+    const view = new DataView(E.memory.buffer);
+    const words = (address, count) => Array.from(
+      { length: count }, (_unused, index) =>
+        view.getBigUint64(address + index * 8, true),
+    );
+    const count = E.vm_x86_msr_extent(this.session);
+    const keys = words(E.vm_x86_msr_keys(this.session), count);
+    const values = words(E.vm_x86_msr_values(this.session), count);
+    return {
+      registers: words(E.vm_x86_registers(this.session), 16),
+      rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
+      rflags: BigInt.asUintN(64, E.vm_x86_rflags(this.session)),
+      cr0: BigInt.asUintN(64, E.vm_x86_cr0(this.session)),
+      cr3: BigInt.asUintN(64, E.vm_x86_cr3(this.session)),
+      cr4: BigInt.asUintN(64, E.vm_x86_cr4(this.session)),
+      efer: BigInt.asUintN(64, E.vm_x86_efer(this.session)),
+      system: words(E.vm_x86_system(this.session), 22),
+      msrs: keys.map((key, index) => [key, values[index]]),
+    };
+  }
+
+  feedConsole(bytes) {
+    this.assertOpen();
+    if (typeof bytes === 'string') bytes = new TextEncoder().encode(bytes);
+    if (!(bytes instanceof Uint8Array)) {
+      throw new TypeError('x86 console input must be bytes or text');
+    }
+    for (const byte of bytes) {
+      if (!this.exports.vm_x86_console_feed(this.session, byte)) {
+        throw new Error('vm.wasm console input queue is full');
+      }
+    }
+    return bytes.length;
+  }
+
+  release() {
+    if (this.closed) return;
+    if (!this.exports.vm_step_release(this.session)) {
+      throw new Error('vm.wasm rejected the x86 lease release');
+    }
+    this.closed = true;
+  }
+}
+
 /** Release this worker's linear memory while retaining compiled code. */
 export function release() {
   instance = null;
@@ -67,8 +388,9 @@ export function release() {
  * WebAssembly.compile. A page miss returns to this outer barrier, is filled,
  * and resumes the retained machine state.
  */
-export async function executeGuestBody(source, bodyStart, bodyEnd,
-                                       args = [], quantum = 1 << 16) {
+async function executeGuestFunctionBatchExclusive(
+  source, bodyStart, bodyEnd, argumentRows, quantum,
+) {
   if (!source || !Number.isSafeInteger(source.length)
       || typeof source.read !== 'function') {
     throw new TypeError('child Wasm needs a direct-coordinate byte source');
@@ -80,40 +402,69 @@ export async function executeGuestBody(source, bodyStart, bodyEnd,
   if (!Number.isSafeInteger(quantum) || quantum <= 0) {
     throw new RangeError('child Wasm quantum must be positive');
   }
+  if (!Array.isArray(argumentRows)
+      || argumentRows.some((row) => !Array.isArray(row))) {
+    throw new TypeError('child Wasm batch needs argument rows');
+  }
   const loaded = await load();
   const E = loaded.exports;
   if (!E.vm_guest_open(source.length, bodyStart, bodyEnd)) {
     throw new Error('vm.wasm rejected the child module extent');
   }
-  const valuesAt = E.vm_guest_values();
-  const memory = new DataView(E.memory.buffer);
-  args.forEach((value, index) => {
-    memory.setBigUint64(valuesAt + index * 8, BigInt.asUintN(64, BigInt(value)), true);
-  });
-  if (!E.vm_guest_begin(args.length)) {
-    throw new Error('vm.wasm rejected the child arguments');
-  }
-
-  for (;;) {
-    const status = E.vm_guest_step(quantum);
-    if (status === 0) continue;
-    if (status === 1) {
-      const page = E.vm_guest_requested_page();
-      const offset = page * 65536;
-      const length = Math.min(65536, source.length - offset);
-      const bytes = await source.read(offset, length);
-      if (!(bytes instanceof Uint8Array) || bytes.length !== length) {
-        throw new Error('child Wasm code page has the wrong extent');
-      }
-      new Uint8Array(E.memory.buffer, E.vm_guest_page_buffer(), length).set(bytes);
-      if (!E.vm_guest_supply_code(page, length)) {
-        throw new Error('vm.wasm rejected the requested child code page');
-      }
-      continue;
+  const results = [];
+  for (const args of argumentRows) {
+    const valuesAt = E.vm_guest_values();
+    const memory = new DataView(E.memory.buffer);
+    args.forEach((value, index) => {
+      memory.setBigUint64(
+        valuesAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
+      );
+    });
+    if (!E.vm_guest_begin(args.length)) {
+      throw new Error('vm.wasm rejected the child arguments');
     }
-    if (status === 2) return E.vm_guest_result();
-    throw new Error(`child Wasm trapped in vm.wasm (${E.vm_guest_error()})`);
+
+    for (;;) {
+      const status = E.vm_guest_step(quantum);
+      if (status === 0) continue;
+      if (status === 1) {
+        const page = E.vm_guest_requested_page();
+        const offset = page * 65536;
+        const length = Math.min(65536, source.length - offset);
+        const bytes = await source.read(offset, length);
+        if (!(bytes instanceof Uint8Array) || bytes.length !== length) {
+          throw new Error('child Wasm code page has the wrong extent');
+        }
+        new Uint8Array(E.memory.buffer, E.vm_guest_page_buffer(), length).set(bytes);
+        if (!E.vm_guest_supply_code(page, length)) {
+          throw new Error('vm.wasm rejected the requested child code page');
+        }
+        continue;
+      }
+      if (status === 2) {
+        results.push(E.vm_guest_result());
+        break;
+      }
+      throw new Error(`child Wasm trapped in vm.wasm (${E.vm_guest_error()})`);
+    }
   }
+  return results;
+}
+
+/** Execute many calls while retaining code pages and VM state in vm.wasm. */
+export function executeGuestFunctionBatch(source, bodyStart, bodyEnd,
+                                          argumentRows, quantum = 1 << 16) {
+  return serializeStep(() => executeGuestFunctionBatchExclusive(
+    source, bodyStart, bodyEnd, argumentRows, quantum,
+  ));
+}
+
+export async function executeGuestBody(source, bodyStart, bodyEnd,
+                                       args = [], quantum = 1 << 16) {
+  const results = await executeGuestFunctionBatch(
+    source, bodyStart, bodyEnd, [args], quantum,
+  );
+  return results[0];
 }
 
 /**

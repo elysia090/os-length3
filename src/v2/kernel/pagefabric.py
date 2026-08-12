@@ -1655,7 +1655,7 @@ def write_artifact(
         page_bytes=DEFAULT_ARTIFACT_PAGE_BYTES,
         data_shards=DEFAULT_ARTIFACT_DATA_SHARDS,
         parity_shards=DEFAULT_ARTIFACT_PARITY_SHARDS,
-        included_shards='data'):
+        included_shards='data', replace=False):
     """Add a delivery below ``artifact_root/<locator>``.
 
     No canonical copy is written. Another page or erasure geometry appends a
@@ -1670,7 +1670,16 @@ def write_artifact(
     }
     object_root = Path(artifact_root) / _artifact_locator(name)
     index_path = object_root / 'index.json'
-    index = _read_artifact_index(index_path, identity)
+    try:
+        index = _read_artifact_index(index_path, identity)
+    except ValueError:
+        if not replace:
+            raise
+        index = {
+            'schema': ARTIFACT_SCHEMA,
+            'identity': identity,
+            'deliveries': {},
+        }
     wire, metadata = artifact_delivery_bytes(
         payload, page_bytes=page_bytes, data_shards=data_shards,
         parity_shards=parity_shards, included_shards=included_shards)

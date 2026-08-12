@@ -244,46 +244,45 @@ fails the suite.
 
 ## How the browser runs it
 
-Two things run in the page, and the split is deliberate.
-
-**Clang/WASM compiles and executes.** The paste is compiled once, to `wasm32`,
-which is instantiated and called over the whole input domain. That is the only
-thing the compiler is for. Executing compiled code is why a 16-bit kernel
-(65,536 inputs) is extracted in milliseconds rather than in a minute.
+The execution boundary is ownership, not source language. Browser-reachable
+guest CPU state, memory and control belong to `vm.wasm`. Python, C, wasm32 and
+x86-64 are all valid guest or build inputs; none is allowed to introduce a
+second runtime owner. Compiled scalar functions are located in their original
+Wasm bytes and interpreted by the resident VM over the whole input domain.
 
 There used to be a second compile producing an x86-64 listing for a pane to
 show, with a target and an optimization level to choose. The pane is gone and so
 are both controls: they changed what was displayed, never what the kernel
 computes, and the minimized program is what this page is about.
 
-**Python decides everything else.** Quotients, synthesis, lowering, ranking and
-verification run under Pyodide, because that is where the engine lives and where
-it is tested. The worker hands Python a table of outputs; Python never sees the
-compiler.
+The migration is not complete. Pyodide still owns its native Wasm instance and
+filesystem, the compiler core still owns a native Wasm/WASI instance, and Run's
+arbitrary `main` still owns a native Wasm instance. These are measured escape
+routes, not architectural exceptions. The static audit walks imports, dynamic
+imports, module URLs and Workers and reports every reachable alternate owner:
+
+```sh
+python3 tools/audit_runtime_routes.py --web-root web --entry app.js
+python3 tools/audit_runtime_routes.py --web-root web \
+  --entry linux-terminal.js --strict
+```
+
+The second command is already strict and empty: x86 Linux enters through
+`linux-worker.js`, and CPU, MMU, resident devices and continuation control stay
+inside `vm.wasm`. A native cProfile can be classified separately as `build`,
+`oracle` or `runtime`; in the last phase every sampled project frame is host
+work. Function names cannot claim VM ownership.
 
 The Clang bundle is fetched lazily, on the first run that needs it, so the page
 is usable immediately. If it cannot be fetched, the built-in C-subset frontend
 takes over and the page still answers.
 
-### Configuring the Clang bundle
+### Clang artifact
 
-No clang-in-wasm build is bundled with this repository. Point the page at one:
-
-```js
-// before app.js loads, or via ?clang=<url>
-window.QM_CLANG = { driverUrl: 'https://example.com/clang-wasm/driver.mjs' };
-```
-
-The driver contract is one function, so any build can be adapted with a short
-shim:
-
-```js
-export async function init(onProgress) {}          // optional
-export async function compile(args, files) {
-  // files: { '/in.c': '<source>' }
-  return { status: 0, stderr: '', files: { '/out.s': '…', '/out.wasm': Uint8Array } };
-}
-```
+The page lazily imports the repository's fixed `compiler-core.js` adapter and
+opens the pinned compiler and resource artifacts by physical page. Executable
+driver URLs are intentionally not configurable: allowing an arbitrary module
+would create a second, statically unprovable execution route beside vm.wasm.
 
 `qm/clang.py` prepends a freestanding prelude and strips `#include <…>`, so the
 bundle needs **no sysroot** — that is the difference between a ~50 MB download
@@ -456,19 +455,16 @@ The distinction is observable in generated artifacts. `web/vm.wasm` has 13
 state operations in physical form but needs 15 when encoded back to typed
 Wasm; the compiler core has the 8,253 / 8,305 split above. The Linux reductions
 reported here are mapped state-step pages, not rewritten `.wasm` bytes. The
-current browser `WebAssembly.compile/instantiate` route for the compiler core
-and `vm.wasm` is therefore a known bypass: it cannot receive the physical-page
-reduction until the browser worker consumes the same state-step codec directly.
+current native `WebAssembly.compile/instantiate` routes for the compiler,
+Pyodide and Run are therefore known bypasses: they cannot receive the
+physical-page reduction until they consume the same state-step codec directly.
 
-Linux does not take that bypass. `web/linux-worker.js` lazily starts a separate
-disposable Python worker, opens the existing compact LKL module through
-`kernel.browser`, and executes it with the same `WaveExecutor` and physical
-state-step pages used by the native runner. A root image remains a Blob or an
-HTTP range source; only the requested `(device, 4 KiB page)` enters the Worker.
-Clock and console traffic use the existing machine events. The default staged
-drive runs kernel initialization, read-only root mounting, and `/init` probing
-without adding a browser VFS. Terminating the Worker releases the decoded
-module, linear memory, resident backing pages, and physical executor together.
+Linux does not take that bypass. `web/linux-worker.js` opens the canonical boot
+and native-machine projections and passes their page sources to `vm.wasm`.
+Only block/page faults, console, clock and other machine events cross back to
+JavaScript. A root image remains an HTTP range source; only requested physical
+coordinates become resident. Terminating the Worker releases the VM linear
+memory and resident pages together.
 
 The private storage projection now has a ciphertext-only admission boundary in
 `web/ciphertext-storage.js`. Canonical pages are quotiented before compression;

@@ -179,7 +179,7 @@
       "name": "ranks8",
       "file": "ranks8.s",
       "language": "asm",
-      "source": "# Exclusive prefix popcount of an 8-bit mask, as x86-64.\n#\n# The two instructions deposit the mask bits into byte lanes and multiply them\n# into exclusive prefix counts.\n    # qm-input-bits: 8\n    .text\n    .globl ranks8_qm\n    .type ranks8_qm, @function\nranks8_qm:\n    movabsq $0x101010101010101, %r11\n    pdep %r11, %rdi, %rdi\n    movabsq $0x101010101010100, %r11\n    imulq %r11, %rdi\n    movq %rdi, %rax\n    ret\n    .size ranks8_qm, .-ranks8_qm\n    .section .note.GNU-stack,\"\",@progbits\n"
+      "source": "# Exclusive prefix popcount of an 8-bit mask, as x86-64.\n#\n# The two instructions deposit the mask bits into byte lanes and multiply them\n# into exclusive prefix counts.\n    # qm-input-bits: 8\n    .text\n    .globl ranks8_qm\n    .type ranks8_qm, @function\nranks8_qm:\n    movabsq $0x1010101010101, %r11\n    pdep %r11, %rdi, %rdi\n    movabsq $0x101010101010100, %r11\n    imulq %r11, %rdi\n    movq %rdi, %rax\n    ret\n    .size ranks8_qm, .-ranks8_qm\n    .section .note.GNU-stack,\"\",@progbits\n"
     },
     {
       "name": "prefix_xor64",

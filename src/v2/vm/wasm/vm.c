@@ -72,6 +72,7 @@ typedef long long          i64;
 #define GUEST_PAGE_BYTES (1u << 16)
 #define GUEST_CODE_PAGES 4u
 #define GUEST_VALUE_CAP 4096u
+#define GUEST_CONTROL_CAP 128u
 #define STEP_PAGE_BYTES ARTIFACT_BYTES
 #define STEP_VALUE_CAP GUEST_VALUE_CAP
 #define STEP_COLUMN_COUNT 11u
@@ -79,8 +80,20 @@ typedef long long          i64;
 #define STEP_NO_PAGE 0xffffffffu
 #define STEP_NO_COORDINATE (~0ull)
 #define STEP_RELATIVE_SAVE_CAP 4u
+#define STEP_REGION_CAP 32u
+#define STEP_REGION_RESULT_CAP 9u
 #define PROGRAM_FRAME_CAP 256u
 #define PROGRAM_GLOBAL_CAP 4096u
+#define X86_REGISTER_COUNT 16u
+#define X86_BLOCK_HEADER_BYTES 64u
+#define X86_PHYSICAL_PAGE_BYTES 4096u
+#define X86_PHYSICAL_PAGES 16u
+#define X86_BLOCK_CACHE_SLOTS 256u
+#define X86_BLOCK_CACHE_BYTES 1024u
+#define X86_NO_PAGE (~0ull)
+#define X86_SYSTEM_COUNT 22u
+#define X86_MSR_CAP 32u
+#define X86_CONSOLE_CAP 4096u
 #define STEP_SLOT_STATE_BITS 3u
 #define STEP_SLOT_PIN_SHIFT STEP_SLOT_STATE_BITS
 #define STEP_SLOT_PIN_BITS 9u
@@ -117,6 +130,9 @@ typedef struct {
     u32 code_valid[GUEST_CODE_PAGES];
     u64 values[GUEST_VALUE_CAP];
     u64 locals[GUEST_VALUE_CAP];
+    u32 control_target[GUEST_CONTROL_CAP];
+    u32 control_stack[GUEST_CONTROL_CAP];
+    u8 control_kind[GUEST_CONTROL_CAP];
     u32 code_bytes;
     u32 body_start;
     u32 body_end;
@@ -125,6 +141,7 @@ typedef struct {
     u32 stack_size;
     u32 local_count;
     u32 local_groups;
+    u32 control_size;
     u32 phase;
     u32 error;
     u64 result;
@@ -140,6 +157,10 @@ typedef struct {
     u8 copy_buffer[GUEST_PAGE_BYTES];
     u64 values[STEP_VALUE_CAP + 1u];
     u64 alu_result[STEP_VALUE_CAP + 1u];
+    u64 region_results[STEP_REGION_CAP][STEP_REGION_RESULT_CAP];
+    u32 region_source[STEP_REGION_CAP];
+    u32 region_width[STEP_REGION_CAP];
+    u32 region_slots;
     u64 locals[STEP_VALUE_CAP];
     u64 stack[STEP_VALUE_CAP];
     u32 column_offset[STEP_COLUMN_COUNT];
@@ -166,6 +187,7 @@ typedef struct {
     u64 memory_last_ack_page[STEP_MEMORY_PAGES];
     u64 memory_bytes;
     u64 requested_memory_page;
+    u64 requested_memory_address;
     u64 flush_memory_page;
     u32 memory_page_shift;
     u32 memory_unbounded;
@@ -267,10 +289,70 @@ typedef struct {
     u32 error;
 } ProgramWorkspace;
 
+/* A native x86 continuation consumes build-time packed STEP/control records.
+ * The browser supplies records and physical pages by coordinate; CPU state,
+ * control selection, and the virtual-memory lease remain in this module. */
+typedef struct {
+    u64 registers[X86_REGISTER_COUNT];
+    u64 rip;
+    u64 rflags;
+    u64 cr0;
+    u64 cr3;
+    u64 cr4;
+    u64 efer;
+    u64 system[X86_SYSTEM_COUNT];
+    u64 msr_keys[X86_MSR_CAP];
+    u64 msr_values[X86_MSR_CAP];
+    u32 msr_count;
+    u64 memory_bytes;
+    u64 retired;
+    u64 work;
+    u64 span;
+    u64 control_argument[3];
+    u8 block_cache[X86_BLOCK_CACHE_SLOTS][X86_BLOCK_CACHE_BYTES];
+    u64 block_cache_rip[X86_BLOCK_CACHE_SLOTS];
+    u32 block_cache_bytes[X86_BLOCK_CACHE_SLOTS];
+    u32 block_cache_valid[X86_BLOCK_CACHE_SLOTS];
+    u8 physical[X86_PHYSICAL_PAGES][X86_PHYSICAL_PAGE_BYTES];
+    u8 physical_transfer[X86_PHYSICAL_PAGE_BYTES];
+    u64 physical_page[X86_PHYSICAL_PAGES];
+    u64 physical_age[X86_PHYSICAL_PAGES];
+    u64 physical_clock;
+    u64 physical_lease;
+    u64 physical_coordinate;
+    u32 physical_valid[X86_PHYSICAL_PAGES];
+    u32 physical_dirty[X86_PHYSICAL_PAGES];
+    u32 step_physical_slot[STEP_MEMORY_PAGES];
+    u32 step_physical_valid[STEP_MEMORY_PAGES];
+    u32 physical_status;
+    u32 control;
+    u32 block_loaded;
+    u32 exception_pending;
+    u32 exception_error;
+    u64 console_lease;
+    u32 console_status;
+    u32 console_value;
+    u64 clock_lease;
+    u32 clock_status;
+    u8 uart[8];
+    u8 uart_valid[8];
+    u32 pit_counter;
+    u32 pit_low_latch;
+    u32 pit_read_phase;
+    u32 pit_write_phase;
+    u8 console_input[X86_CONSOLE_CAP];
+    u32 console_head;
+    u32 console_count;
+    u32 active;
+    u32 halted;
+    u32 error;
+} X86Workspace;
+
 typedef struct {
     GuestWorkspace guest;
     StepWorkspace step;
     ProgramWorkspace program;
+    X86Workspace x86;
 } RuntimeWorkspace;
 
 typedef union {
@@ -280,6 +362,26 @@ typedef union {
 
 static MachineWorkspace workspace;
 static u32 workspace_mode;
+
+/* x86 STEP pages and the MMU share one physical byte array.  The STEP slot
+ * retains a virtual tag/lease only; its data pointer is the translated
+ * physical cache slot.  Generic Wasm state execution continues to use the
+ * local STEP array. */
+static int step_memory_is_direct(StepWorkspace *machine, u32 slot)
+{
+    X86Workspace *x86 = &workspace.runtime.x86;
+    return machine == &workspace.runtime.step && x86->active
+        && slot < STEP_MEMORY_PAGES && x86->step_physical_valid[slot]
+        && x86->step_physical_slot[slot] < X86_PHYSICAL_PAGES;
+}
+
+static u8 *step_memory_bytes(StepWorkspace *machine, u32 slot)
+{
+    X86Workspace *x86 = &workspace.runtime.x86;
+    return step_memory_is_direct(machine, slot)
+         ? x86->physical[x86->step_physical_slot[slot]]
+         : machine->memory[slot];
+}
 /* Capabilities are never reused. Exhaustion retires this instance instead of
  * wrapping: a fresh instance has a distinct host lifetime, so an old async
  * completion cannot name its workspace. */
@@ -477,6 +579,12 @@ static u64 load_u64(const u8 *source)
     u64 value = 0;
     for (u32 i = 0; i < 8u; ++i) value |= (u64)source[i] << (8u * i);
     return value;
+}
+
+static void store_u64(u8 *target, u64 value)
+{
+    for (u32 i = 0; i < 8u; ++i)
+        target[i] = (u8)(value >> (8u * i));
 }
 
 static u64 rotate_left(u64 value, u32 count)
@@ -1029,6 +1137,12 @@ EXPORT u8 *vm_guest_page_buffer(void)
 }
 
 EXPORT u64 *vm_guest_values(void) { return guest()->values; }
+EXPORT u32 vm_guest_local_count(void) { return guest()->local_count; }
+EXPORT u64 vm_guest_local(u32 index)
+{
+    GuestWorkspace *machine = guest();
+    return index < machine->local_count ? machine->locals[index] : 0;
+}
 EXPORT u32 vm_guest_requested_page(void) { return guest()->requested_page; }
 EXPORT u32 vm_guest_error(void) { return guest()->error; }
 EXPORT u64 vm_guest_result(void) { return guest()->result; }
@@ -1049,6 +1163,7 @@ EXPORT int vm_guest_open(u32 code_bytes, u32 body_start, u32 body_end)
     machine->stack_size = 0;
     machine->local_count = 0;
     machine->local_groups = 0;
+    machine->control_size = 0;
     machine->phase = 0;
     machine->error = 0;
     machine->result = 0;
@@ -1067,6 +1182,7 @@ EXPORT int vm_guest_begin(u32 arguments)
         machine->locals[index - 1u] = machine->values[index - 1u];
     machine->local_count = arguments;
     machine->stack_size = 0;
+    machine->control_size = 0;
     machine->cursor = 0;
     machine->phase = 0;
     machine->error = 0;
@@ -1145,12 +1261,47 @@ EXPORT int vm_guest_step(u32 budget)
         if (!guest_byte(at++, &opcode))
             return machine->error ? GUEST_TRAP : GUEST_CODE_PAGE;
 
-        if (opcode == 0x0bu || opcode == 0x0fu) {
+        if (opcode == 0x0fu
+                || (opcode == 0x0bu && !machine->control_size)) {
             machine->cursor = at;
             machine->result = machine->stack_size
                               ? machine->values[machine->stack_size - 1u] : 0;
             machine->phase = 4u;
             return GUEST_RETURNED;
+        } else if (opcode == 0x0bu) {
+            machine->control_size -= 1u;
+        } else if (opcode == 0x03u) {
+            u8 block_type;
+            if (!guest_byte(at++, &block_type))
+                return machine->error ? GUEST_TRAP : GUEST_CODE_PAGE;
+            if (block_type != 0x40u
+                    || machine->control_size >= GUEST_CONTROL_CAP) {
+                guest_trap(7u);
+                return GUEST_TRAP;
+            }
+            u32 slot = machine->control_size++;
+            machine->control_target[slot] = at;
+            machine->control_stack[slot] = machine->stack_size;
+            machine->control_kind[slot] = 1u;
+        } else if (opcode == 0x0cu || opcode == 0x0du) {
+            if (!guest_uleb(at, 32u, &index, &at))
+                return machine->error ? GUEST_TRAP : GUEST_CODE_PAGE;
+            u64 selected = 1u;
+            if (opcode == 0x0du && !guest_pop(&selected)) return GUEST_TRAP;
+            if (selected) {
+                if (index >= machine->control_size) {
+                    guest_trap(7u);
+                    return GUEST_TRAP;
+                }
+                u32 slot = machine->control_size - 1u - (u32)index;
+                if (machine->control_kind[slot] != 1u) {
+                    guest_trap(7u);
+                    return GUEST_TRAP;
+                }
+                machine->stack_size = machine->control_stack[slot];
+                machine->control_size = slot + 1u;
+                at = machine->control_target[slot];
+            }
         } else if (opcode == 0x01u) {
             /* nop */
         } else if (opcode == 0x1au) {
@@ -1172,9 +1323,61 @@ EXPORT int vm_guest_step(u32 budget)
             if (!guest_push((u64)constant)) return GUEST_TRAP;
         } else if (opcode == 0x45u || opcode == 0x50u) {
             if (!guest_pop(&left) || !guest_push(left == 0)) return GUEST_TRAP;
+        } else if (opcode == 0x1bu) {
+            u64 condition;
+            if (!guest_pop(&condition) || !guest_pop(&right)
+                    || !guest_pop(&left)
+                    || !guest_push(condition ? left : right))
+                return GUEST_TRAP;
+        } else if (opcode >= 0x67u && opcode <= 0x69u) {
+            if (!guest_pop(&left)) return GUEST_TRAP;
+            u32 value = (u32)left;
+            if (opcode == 0x67u) left = value ? (u32)__builtin_clz(value) : 32u;
+            else if (opcode == 0x68u)
+                left = value ? (u32)__builtin_ctz(value) : 32u;
+            else left = (u32)__builtin_popcount(value);
+            if (!guest_push(left)) return GUEST_TRAP;
+        } else if (opcode >= 0x79u && opcode <= 0x7bu) {
+            if (!guest_pop(&left)) return GUEST_TRAP;
+            if (opcode == 0x79u)
+                left = left ? (u64)__builtin_clzll(left) : 64u;
+            else if (opcode == 0x7au)
+                left = left ? (u64)__builtin_ctzll(left) : 64u;
+            else left = (u64)__builtin_popcountll(left);
+            if (!guest_push(left)) return GUEST_TRAP;
+        } else if (opcode == 0xa7u || opcode == 0xacu || opcode == 0xadu) {
+            if (!guest_pop(&left)) return GUEST_TRAP;
+            if (opcode == 0xa7u) left = (u32)left;
+            else if (opcode == 0xacu) left = (u64)(i64)(int)(u32)left;
+            else left = (u32)left;
+            if (!guest_push(left)) return GUEST_TRAP;
         } else {
             if (!guest_pop(&right) || !guest_pop(&left)) return GUEST_TRAP;
-            if (opcode == 0x6au) left = (u32)left + (u32)right;
+            if (opcode == 0x46u) left = (u32)left == (u32)right;
+            else if (opcode == 0x47u) left = (u32)left != (u32)right;
+            else if (opcode == 0x48u)
+                left = (int)(u32)left < (int)(u32)right;
+            else if (opcode == 0x49u) left = (u32)left < (u32)right;
+            else if (opcode == 0x4au)
+                left = (int)(u32)left > (int)(u32)right;
+            else if (opcode == 0x4bu) left = (u32)left > (u32)right;
+            else if (opcode == 0x4cu)
+                left = (int)(u32)left <= (int)(u32)right;
+            else if (opcode == 0x4du) left = (u32)left <= (u32)right;
+            else if (opcode == 0x4eu)
+                left = (int)(u32)left >= (int)(u32)right;
+            else if (opcode == 0x4fu) left = (u32)left >= (u32)right;
+            else if (opcode == 0x51u) left = left == right;
+            else if (opcode == 0x52u) left = left != right;
+            else if (opcode == 0x53u) left = (i64)left < (i64)right;
+            else if (opcode == 0x54u) left = left < right;
+            else if (opcode == 0x55u) left = (i64)left > (i64)right;
+            else if (opcode == 0x56u) left = left > right;
+            else if (opcode == 0x57u) left = (i64)left <= (i64)right;
+            else if (opcode == 0x58u) left = left <= right;
+            else if (opcode == 0x59u) left = (i64)left >= (i64)right;
+            else if (opcode == 0x5au) left = left >= right;
+            else if (opcode == 0x6au) left = (u32)left + (u32)right;
             else if (opcode == 0x6bu) left = (u32)left - (u32)right;
             else if (opcode == 0x6cu) left = (u32)left * (u32)right;
             else if (opcode == 0x71u) left = (u32)left & (u32)right;
@@ -1384,6 +1587,7 @@ enum {
     STEP_PROJECTION_RELATIVE = 1,
     STEP_PROJECTION_FLAGS = 2,
     STEP_PROJECTION_ALU_RESULT = 3,
+    STEP_PROJECTION_REGION = 4,
 };
 
 static int step_flag_projection_opcode(u32 opcode)
@@ -1401,10 +1605,22 @@ static u32 step_projection_kind(u64 coordinate, u32 final_relative_source)
         return STEP_PROJECTION_NONE;
     u32 source = (u32)wide_source;
     u32 opcode = step_u8(STEP_OPCODES, source - 1u);
-    if (opcode == 203u)
+    if (opcode == 203u || opcode == 204u)
         return selector < 16u ? STEP_PROJECTION_FLAGS
              : selector == 16u ? STEP_PROJECTION_ALU_RESULT
                                : STEP_PROJECTION_NONE;
+    if (opcode == 205u) {
+        u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, source - 1u);
+        u32 end = step_u32(STEP_ARGUMENT_OFFSETS, source);
+        if (end - begin < 4u
+                || step_u8(STEP_OPERAND_TAGS, begin + 2u) != 0u)
+            return STEP_PROJECTION_NONE;
+        u64 descriptor = step_u64(STEP_OPERAND_VALUES, begin + 2u);
+        u32 count = (u32)descriptor & 255u;
+        return count && count <= 8u && !(descriptor & ~0x3ffull)
+                && selector <= count
+            ? STEP_PROJECTION_REGION : STEP_PROJECTION_NONE;
+    }
     if (step_flag_projection_opcode(opcode))
         return selector < 16u ? STEP_PROJECTION_FLAGS
                               : STEP_PROJECTION_NONE;
@@ -1442,8 +1658,11 @@ static int step_memory_start_flush(StepWorkspace *machine, u32 slot,
     machine->flush_memory_page = machine->memory_page[slot];
     machine->flush_memory_epoch = step_slot_epoch(flushing);
     machine->memory_lease = lease;
-    for (u32 byte = 0; byte < machine->memory_valid[slot]; ++byte)
-        machine->memory_transfer[byte] = machine->memory[slot][byte];
+    if (!step_memory_is_direct(machine, slot)) {
+        u8 *source = step_memory_bytes(machine, slot);
+        for (u32 byte = 0; byte < machine->memory_valid[slot]; ++byte)
+            machine->memory_transfer[byte] = source[byte];
+    }
     machine->memory_status = STEP_DIRTY_PAGE;
     return 1;
 }
@@ -1488,6 +1707,7 @@ EXPORT u64 vm_step_acquire(void)
     }
     workspace_mode = 2u;
     machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->requested_memory_address = STEP_NO_COORDINATE;
     machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
@@ -1516,9 +1736,13 @@ EXPORT int vm_step_release(u64 session)
     }
     machine->execution_active = 0;
     machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->requested_memory_address = STEP_NO_COORDINATE;
     machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
+    workspace.runtime.x86.active = 0;
+    for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot)
+        workspace.runtime.x86.step_physical_valid[slot] = 0;
     step_session = 0;
     return 1;
 }
@@ -1584,6 +1808,7 @@ EXPORT int vm_step_memory_open(u64 session, u32 bytes)
     machine->memory_unbounded = 0;
     machine->memory_generation = generation;
     machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->requested_memory_address = STEP_NO_COORDINATE;
     machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
@@ -1604,6 +1829,7 @@ EXPORT int vm_step_memory_open_virtual(u64 session, u32 page_shift)
     machine->memory_unbounded = 1u;
     machine->memory_generation = generation;
     machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->requested_memory_address = STEP_NO_COORDINATE;
     machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
@@ -1684,14 +1910,18 @@ static int step_supply_memory_coordinate(
             STEP_SLOT_RETIRED, 0, step_slot_epoch(word)));
         return step_fail(11u);
     }
-    for (u32 byte = 0; byte < bytes; ++byte)
-        machine->memory[slot][byte] = machine->memory_transfer[byte];
+    if (!step_memory_is_direct(machine, slot)) {
+        u8 *target = step_memory_bytes(machine, slot);
+        for (u32 byte = 0; byte < bytes; ++byte)
+            target[byte] = machine->memory_transfer[byte];
+    }
     machine->memory_page[slot] = page;
     machine->memory_valid[slot] = bytes;
     machine->memory_next_epoch[slot] = epoch + 1u;
     step_slot_store(machine, slot,
                     step_slot_word(STEP_SLOT_CLEAN, 0, epoch));
     machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->requested_memory_address = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
     return 1;
@@ -1871,7 +2101,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 204u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 209u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -1948,6 +2178,16 @@ static int step_operand(u32 at, u64 *value)
         else if (projection == STEP_PROJECTION_FLAGS)
             return step_x86_condition_value(
                 machine->values[source], selector, value);
+        else if (projection == STEP_PROJECTION_REGION) {
+            for (u32 slot = 0; slot < machine->region_slots; ++slot) {
+                if (machine->region_source[slot] != source) continue;
+                if (selector > machine->region_width[slot])
+                    return step_fail(6u);
+                *value = machine->region_results[slot][selector];
+                return 1;
+            }
+            return step_fail(6u);
+        }
         else
             return step_fail(6u);
     } else return step_fail(6u);
@@ -2223,6 +2463,8 @@ static int step_memory_ready(u64 address, u32 width, StepMemoryGuard *guard)
         u64 page_first = page << page_shift;
         u64 required = address + width - page_first;
         if (required > page_bytes) required = page_bytes;
+        machine->requested_memory_address = address > page_first
+                                          ? address : page_first;
         if (!step_memory_pin(page, (u32)required, guard)) {
             step_memory_unpin(guard, 0);
             return 0;
@@ -2231,8 +2473,7 @@ static int step_memory_ready(u64 address, u32 width, StepMemoryGuard *guard)
     return 1;
 }
 
-static int step_memory_load(u64 address, u32 width,
-                            StepMemoryGuard *guard, u64 *result)
+static u64 step_memory_read_pinned(u64 address, u32 width)
 {
     StepWorkspace *machine = step_machine();
     u64 value = 0;
@@ -2241,10 +2482,16 @@ static int step_memory_load(u64 address, u32 width,
         u64 page = coordinate >> machine->memory_page_shift;
         u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
         u64 offset = coordinate & ((1ull << machine->memory_page_shift) - 1u);
-        value |= (u64)machine->memory[slot][offset]
+        value |= (u64)step_memory_bytes(machine, slot)[offset]
                  << (8u * byte);
     }
-    *result = value;
+    return value;
+}
+
+static int step_memory_load(u64 address, u32 width,
+                            StepMemoryGuard *guard, u64 *result)
+{
+    *result = step_memory_read_pinned(address, width);
     return step_memory_unpin(guard, 0);
 }
 
@@ -2257,7 +2504,7 @@ static int step_memory_store(u64 address, u64 value, u32 width,
         u64 page = coordinate >> machine->memory_page_shift;
         u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
         u64 offset = coordinate & ((1ull << machine->memory_page_shift) - 1u);
-        machine->memory[slot][offset]
+        step_memory_bytes(machine, slot)[offset]
             = (u8)(value >> (8u * byte));
     }
     return step_memory_unpin(guard, 1);
@@ -2326,6 +2573,62 @@ static int step_memory_lane(u32 opcode, u32 begin, u32 end, u64 *result)
     if (observer != STEP_NO_PAGE) value = observer ? value != 0u : value == 0u;
     *result = value;
     return 1;
+}
+
+static int step_memory_load_region_lane(u32 node, u32 begin, u32 end,
+                                        u64 *result)
+{
+    if (end - begin < 4u) return step_fail(9u);
+    u64 address, offset, descriptor, shape;
+    if (!step_operand(begin, &address)
+            || !step_operand(begin + 1u, &offset)
+            || !step_operand(begin + 2u, &descriptor)
+            || !step_operand(begin + 3u, &shape))
+        return 0;
+    u32 count = (u32)descriptor & 255u;
+    u32 bits = descriptor & 0x200u ? 32u : 64u;
+    int signed_load = (descriptor & 0x100u) != 0u;
+    u32 width = (u32)shape & 255u;
+    u32 scale = (u32)(shape >> 8u) & 31u;
+    int virtual64 = (shape & 0x10000u) != 0u;
+    if (!count || count > 8u || (descriptor & ~0x3ffull)
+            || (width != 1u && width != 2u
+                && width != 4u && width != 8u)
+            || scale || (shape & ~0x11fffull) || width * 8u > bits
+            || (signed_load && width * 8u >= bits))
+        return step_fail(9u);
+
+    u64 base = virtual64 ? address : (u64)(u32)address;
+    if (!virtual64 && offset > ~0ull - base) return step_fail(10u);
+    u64 effective = base + offset;
+    u32 extent = count * width;
+    StepMemoryGuard guard;
+    if (!step_memory_ready(effective, extent, &guard)) return 0;
+
+    StepWorkspace *machine = step_machine();
+    u32 slot = machine->region_slots;
+    for (u32 at = 0; at < machine->region_slots; ++at)
+        if (machine->region_source[at] == node) { slot = at; break; }
+    if (slot == machine->region_slots) {
+        if (slot == STEP_REGION_CAP) {
+            step_memory_unpin(&guard, 0);
+            return step_fail(9u);
+        }
+        machine->region_slots += 1u;
+        machine->region_source[slot] = node;
+    }
+    machine->region_width[slot] = count;
+    u64 mask = step_mask(bits);
+    for (u32 index = 0; index < count; ++index) {
+        u64 value = step_memory_read_pinned(
+            effective + index * width, width);
+        if (signed_load && value & (1ull << (width * 8u - 1u)))
+            value |= ~0ull << (width * 8u);
+        machine->region_results[slot][index] = value & mask;
+    }
+    machine->region_results[slot][count] = effective + extent;
+    *result = machine->region_results[slot][0];
+    return step_memory_unpin(&guard, 0);
 }
 
 static int step_x86_flags_value(u64 prior, u64 left, u64 right, u64 value,
@@ -2405,6 +2708,40 @@ static int step_x86_alu_lane(u32 node, u32 begin, u32 end, u64 *result)
               : mode == 5u ? left | right
                            : left ^ right;
     value &= step_mask(width);
+    machine->alu_result[node] = value;
+    return step_x86_flags_value(
+        prior, left, right, value, descriptor, result);
+}
+
+static int step_x86_affine_alu_lane(
+        u32 node, u32 begin, u32 end, u64 *result)
+{
+    StepWorkspace *machine = step_machine();
+    if (end - begin != 5u) return step_fail(7u);
+    u64 prior, left_base, left_addend, right, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &left_base)
+            || !step_operand(begin + 2u, &left_addend)
+            || !step_operand(begin + 3u, &right)
+            || !step_operand(begin + 4u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    u32 mode = ((u32)descriptor >> 8u) & 7u;
+    if ((width != 8u && width != 16u
+            && width != 32u && width != 64u)
+            || mode > 6u)
+        return step_fail(7u);
+    u64 lane_mask = step_mask(width);
+    u64 left = (left_base + left_addend) & lane_mask;
+    u64 carry = prior & 1u;
+    u64 value = mode == 0u ? left & right
+              : mode == 1u ? left + right
+              : mode == 2u ? left + right + carry
+              : mode == 3u ? left - right
+              : mode == 4u ? left - right - carry
+              : mode == 5u ? left | right
+                           : left ^ right;
+    value &= lane_mask;
     machine->alu_result[node] = value;
     return step_x86_flags_value(
         prior, left, right, value, descriptor, result);
@@ -2609,6 +2946,80 @@ static int step_x86_bit_flags_lane(u32 begin, u32 end, u64 *result)
     return 1;
 }
 
+static int step_mul_high_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 3u) return step_fail(7u);
+    u64 left, right, descriptor;
+    if (!step_operand(begin, &left)
+            || !step_operand(begin + 1u, &right)
+            || !step_operand(begin + 2u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    u32 signed_product = ((u32)descriptor >> 8u) & 1u;
+    if ((width != 8u && width != 16u
+            && width != 32u && width != 64u)
+            || descriptor != (u64)(width | (signed_product << 8u)))
+        return step_fail(7u);
+    u64 lane_mask = step_mask(width);
+    left &= lane_mask;
+    right &= lane_mask;
+    if (width < 64u) {
+        u64 product = left * right;
+        if (signed_product) {
+            i64 signed_left = (i64)(left | ((left & (1ull << (width - 1u)))
+                                      ? ~lane_mask : 0u));
+            i64 signed_right = (i64)(right | ((right & (1ull << (width - 1u)))
+                                        ? ~lane_mask : 0u));
+            product = (u64)(signed_left * signed_right);
+        }
+        *result = (product >> width) & lane_mask;
+        return 1;
+    }
+    u64 left_low = (u32)left;
+    u64 right_low = (u32)right;
+    u64 left_high = left >> 32u;
+    u64 right_high = right >> 32u;
+    u64 product_low = left_low * right_low;
+    u64 cross_left = left_low * right_high;
+    u64 cross_right = left_high * right_low;
+    u64 middle = (product_low >> 32u)
+               + (u32)cross_left + (u32)cross_right;
+    u64 high = left_high * right_high
+             + (cross_left >> 32u) + (cross_right >> 32u)
+             + (middle >> 32u);
+    if (signed_product) {
+        if (left >> 63u) high -= right;
+        if (right >> 63u) high -= left;
+    }
+    *result = high;
+    return 1;
+}
+
+static int step_x86_mul_flags_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 4u) return step_fail(7u);
+    u64 prior, low, high, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &low)
+            || !step_operand(begin + 2u, &high)
+            || !step_operand(begin + 3u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    u32 signed_product = ((u32)descriptor >> 8u) & 1u;
+    if ((width != 8u && width != 16u
+            && width != 32u && width != 64u)
+            || descriptor != (u64)(width | (signed_product << 8u)))
+        return step_fail(7u);
+    u64 mask = step_mask(width);
+    low &= mask;
+    high &= mask;
+    u64 expected = signed_product && (low & (1ull << (width - 1u)))
+                 ? mask : 0u;
+    u64 overflow = high != expected;
+    *result = (prior & ~0x801ull) | 2u | (overflow * 0x801u);
+    return 1;
+}
+
 static int step_insert_lane(u32 begin, u32 end, u32 bits, u64 *result)
 {
     if (end - begin != 3u) return step_fail(7u);
@@ -2631,7 +3042,10 @@ static int step_insert_lane(u32 begin, u32 end, u32 bits, u64 *result)
 static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
 {
     StepWorkspace *machine = step_machine();
-    if (end - begin != 4u) return step_fail(9u);
+    /* Later operands are dependency tokens.  Composition appends them to
+     * serialize memory effects; the first four operands remain the complete
+     * repeat semantics. */
+    if (end - begin < 4u) return step_fail(9u);
     if (!machine->repeat_active) {
         u64 address, pattern, size, shape;
         if (!step_operand(begin, &address)
@@ -2674,7 +3088,7 @@ static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
         u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
         for (u32 byte = 0; byte < count; ++byte) {
             u32 phase = machine->repeat_phase;
-            machine->memory[slot][offset + byte] =
+            step_memory_bytes(machine, slot)[offset + byte] =
                 (u8)(machine->repeat_pattern >> (phase * 8u));
             machine->repeat_phase = (phase + 1u == machine->repeat_width)
                                   ? 0u : phase + 1u;
@@ -2688,10 +3102,122 @@ static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
     return 1;
 }
 
+static int step_memory_copy_lane(u32 begin, u32 end, u64 *result)
+{
+    StepWorkspace *machine = step_machine();
+    /* Later operands are dependency tokens.  The first four completely name
+     * the immutable source extent and its destination. */
+    if (end - begin < 4u) return step_fail(9u);
+    if (!machine->copy_active) {
+        u64 source, target, size, shape;
+        if (!step_operand(begin, &source)
+                || !step_operand(begin + 1u, &target)
+                || !step_operand(begin + 2u, &size)
+                || !step_operand(begin + 3u, &shape))
+            return 0;
+        u32 width = (u32)shape & 255u;
+        u32 scale = (u32)(shape >> 8u) & 31u;
+        int virtual64 = (shape & 0x10000u) != 0u;
+        if (width != 1u || (shape & ~0x11fffull))
+            return step_fail(9u);
+        u64 source_base = virtual64 ? source : (u64)(u32)source;
+        u64 target_base = virtual64 ? target : (u64)(u32)target;
+        source_base <<= scale;
+        target_base <<= scale;
+        if (!virtual64) {
+            source_base = (u32)source_base;
+            target_base = (u32)target_base;
+        }
+        if (size && (source_base > ~0ull - (size - 1u)
+                || target_base > ~0ull - (size - 1u)))
+            return step_fail(10u);
+        if (!size || source_base == target_base) {
+            *result = 0;
+            return 1;
+        }
+        machine->copy_active = 1u;
+        machine->copy_lane = machine->execution_lane;
+        machine->copy_phase = 0u;
+        machine->copy_sentinel = source_base < target_base
+                              && target_base - source_base < size;
+        machine->copy_source = source_base;
+        machine->copy_target = target_base;
+        machine->copy_index = 0;
+        machine->copy_limit = size;
+    } else if (machine->copy_lane != machine->execution_lane) {
+        return step_fail(12u);
+    }
+
+    for (;;) {
+        if (machine->copy_phase == 1u) {
+            u64 at = machine->copy_sentinel
+                   ? machine->copy_limit - machine->copy_index
+                     - machine->copy_pending
+                   : machine->copy_index;
+            while (machine->copy_pending_at < machine->copy_pending) {
+                u64 address = machine->copy_target + at
+                            + machine->copy_pending_at;
+                u32 page_bytes = 1u << machine->memory_page_shift;
+                u32 offset = (u32)(address & (page_bytes - 1u));
+                u32 count = machine->copy_pending
+                          - machine->copy_pending_at;
+                if (count > page_bytes - offset) count = page_bytes - offset;
+                StepMemoryGuard guard;
+                if (!step_memory_ready(address, count, &guard)) return 0;
+                u64 page = address >> machine->memory_page_shift;
+                u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+                for (u32 byte = 0; byte < count; ++byte)
+                    step_memory_bytes(machine, slot)[offset + byte]
+                        = machine->copy_buffer[
+                            machine->copy_pending_at + byte];
+                if (!step_memory_unpin(&guard, 1)) return 0;
+                machine->copy_pending_at += count;
+            }
+            machine->copy_index += machine->copy_pending;
+            machine->copy_phase = 0u;
+            if (machine->copy_index == machine->copy_limit) {
+                machine->copy_active = 0u;
+                *result = 0;
+                return 1;
+            }
+        }
+
+        u64 remaining = machine->copy_limit - machine->copy_index;
+        u32 page_bytes = 1u << machine->memory_page_shift;
+        u64 at = machine->copy_index;
+        u32 count;
+        if (machine->copy_sentinel) {
+            u64 end = machine->copy_source + remaining;
+            u32 tail = (u32)(end & (page_bytes - 1u));
+            count = tail ? tail : page_bytes;
+            if (count > remaining) count = (u32)remaining;
+            at = remaining - count;
+        } else {
+            u64 address = machine->copy_source + at;
+            u32 offset = (u32)(address & (page_bytes - 1u));
+            count = (u32)(remaining < page_bytes - offset
+                        ? remaining : page_bytes - offset);
+        }
+        u64 address = machine->copy_source + at;
+        StepMemoryGuard guard;
+        if (!step_memory_ready(address, count, &guard)) return 0;
+        u64 page = address >> machine->memory_page_shift;
+        u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+        u32 offset = (u32)(address & (page_bytes - 1u));
+        for (u32 byte = 0; byte < count; ++byte)
+            machine->copy_buffer[byte] =
+                step_memory_bytes(machine, slot)[offset + byte];
+        if (!step_memory_unpin(&guard, 0)) return 0;
+        machine->copy_pending = count;
+        machine->copy_pending_at = 0u;
+        machine->copy_phase = 1u;
+    }
+}
+
 static int step_memory_find2_lane(u32 begin, u32 end, u64 *result)
 {
     StepWorkspace *machine = step_machine();
-    if (end - begin != 4u) return step_fail(9u);
+    if (end - begin < 4u) return step_fail(9u);
     if (!machine->find_active) {
         u64 address, first, second, shape;
         if (!step_operand(begin, &address)
@@ -2731,7 +3257,7 @@ static int step_memory_find2_lane(u32 begin, u32 end, u64 *result)
         u64 page = address >> page_shift;
         u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
         for (u32 byte = 0; byte < count; ++byte) {
-            u32 value = machine->memory[slot][offset + byte];
+            u32 value = step_memory_bytes(machine, slot)[offset + byte];
             if (value == machine->find_first
                     || value == machine->find_second) {
                 if (!step_memory_unpin(&guard, 0)) return 0;
@@ -2814,7 +3340,7 @@ static int step_memory_prefix_end_lane(u32 begin, u32 end, u64 *result)
 static int step_memory_copy_until_lane(u32 begin, u32 end, u64 *result)
 {
     StepWorkspace *machine = step_machine();
-    if (end - begin != 7u) return step_fail(9u);
+    if (end - begin < 7u) return step_fail(9u);
     if (!machine->copy_active) {
         u64 source, target, start, limit, target_end, sentinel, shape;
         if (!step_operand(begin, &source)
@@ -2869,7 +3395,7 @@ static int step_memory_copy_until_lane(u32 begin, u32 end, u64 *result)
                 u64 page = address >> page_shift;
                 u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
                 for (u32 byte = 0; byte < count; ++byte)
-                    machine->memory[slot][offset + byte]
+                    step_memory_bytes(machine, slot)[offset + byte]
                         = machine->copy_buffer[
                             machine->copy_pending_at + byte];
                 if (!step_memory_unpin(&guard, 1)) return 0;
@@ -2907,7 +3433,7 @@ static int step_memory_copy_until_lane(u32 begin, u32 end, u64 *result)
         u32 observed = count;
         machine->copy_hit = 0u;
         for (u32 byte = 0; byte < count; ++byte) {
-            u32 value = machine->memory[slot][offset + byte];
+            u32 value = step_memory_bytes(machine, slot)[offset + byte];
             if (value == machine->copy_sentinel) {
                 observed = byte;
                 machine->copy_hit = 1u;
@@ -3191,6 +3717,16 @@ static int step_output(u32 tag_column, u32 value_column, u32 index,
         if (projection == STEP_PROJECTION_FLAGS)
             return step_x86_condition_value(
                 machine->values[source], selector, result);
+        if (projection == STEP_PROJECTION_REGION) {
+            for (u32 slot = 0; slot < machine->region_slots; ++slot) {
+                if (machine->region_source[slot] != source) continue;
+                if (selector > machine->region_width[slot])
+                    return step_fail(6u);
+                *result = machine->region_results[slot][selector];
+                return 1;
+            }
+            return step_fail(6u);
+        }
         if (projection != STEP_PROJECTION_RELATIVE
                 || source != machine->relative_completed_node)
             return step_fail(6u);
@@ -3225,6 +3761,7 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
         machine->copy_active = 0;
         machine->relative_active = 0;
         machine->relative_completed_node = 0;
+        machine->region_slots = 0;
     }
     while (machine->execution_depth < machine->span) {
         u32 end = step_u32(
@@ -3301,6 +3838,21 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                 : opcode == 203u
                 ? step_x86_alu_lane(
                     node, first, last, &machine->values[node])
+                : opcode == 204u
+                ? step_x86_affine_alu_lane(
+                    node, first, last, &machine->values[node])
+                : opcode == 205u
+                ? step_memory_load_region_lane(
+                    node, first, last, &machine->values[node])
+                : opcode == 206u
+                ? step_memory_copy_lane(
+                    first, last, &machine->values[node])
+                : opcode == 207u
+                ? step_mul_high_lane(
+                    first, last, &machine->values[node])
+                : opcode == 208u
+                ? step_x86_mul_flags_lane(
+                    first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {
                 if (machine->memory_status) return machine->memory_status;
@@ -3315,18 +3867,32 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                 STEP_WAVE_OFFSETS, machine->execution_depth);
     }
 
+    /* State-page outputs are one SSA publication, not sequential assigns.
+     * Resolve every value against the input frame before changing any local
+     * or stack coordinate.  memory_transfer is idle at a completed slice and
+     * exactly spans the maximum local+stack publication (8192 i64 words). */
     for (u32 index = 0; index < machine->local_updates; ++index) {
-        u32 coordinate = step_u32(STEP_LOCAL_INDICES, index);
         u64 value;
         if (!step_output(STEP_LOCAL_TAGS, STEP_LOCAL_VALUES, index, &value))
             { machine->execution_active = 0; return STEP_TRAP; }
-        machine->locals[coordinate] = value;
+        store_u64(machine->memory_transfer + index * 8u, value);
     }
     for (u32 index = 0; index < machine->stack_count; ++index) {
         u64 value;
         if (!step_output(STEP_STACK_TAGS, STEP_STACK_VALUES, index, &value))
             { machine->execution_active = 0; return STEP_TRAP; }
-        machine->stack[index] = value;
+        store_u64(machine->memory_transfer
+                  + (machine->local_updates + index) * 8u, value);
+    }
+    for (u32 index = 0; index < machine->local_updates; ++index) {
+        u32 coordinate = step_u32(STEP_LOCAL_INDICES, index);
+        machine->locals[coordinate] = load_u64(
+            machine->memory_transfer + index * 8u);
+    }
+    for (u32 index = 0; index < machine->stack_count; ++index) {
+        machine->stack[index] = load_u64(
+            machine->memory_transfer
+            + (machine->local_updates + index) * 8u);
     }
     machine->execution_active = 0;
     return STEP_OK;
@@ -3573,6 +4139,1134 @@ EXPORT int vm_program_apply_barrier(u64 session, u32 bytes)
         return program_fail(14u);
     }
     return STEP_OK;
+}
+
+/* ------------------------------------------------ native x86 machine --- */
+enum {
+    X86_CONTROL_NEXT = 0,
+    X86_CONTROL_BRANCH = 1,
+    X86_CONTROL_CONDITIONAL = 2,
+    X86_CONTROL_DYNAMIC = 3,
+    X86_CONTROL_HALT = 4,
+    X86_CONTROL_TIMESLICE = 5,
+    X86_CONTROL_WRITE_MSR = 6,
+    X86_CONTROL_READ_MSR = 7,
+    X86_CONTROL_CPUID = 8,
+    X86_CONTROL_REGISTER = 9,
+    X86_CONTROL_SEGMENT = 10,
+    X86_CONTROL_DESCRIPTOR = 11,
+    X86_CONTROL_FAR_RETURN = 12,
+    X86_CONTROL_DIVIDE = 13,
+    X86_CONTROL_INTERRUPT_RETURN = 14,
+    X86_CONTROL_INTERNAL = 15,
+    X86_CONTROL_READ_SEGMENT = 16,
+    X86_CONTROL_PORT_READ = 17,
+    X86_CONTROL_PORT_WRITE = 18,
+    X86_CONTROL_INVALIDATE_PAGE = 19,
+    X86_CONTROL_CLOCK = 20,
+};
+
+enum {
+    X86_SYS_CR2 = 0,
+    X86_SYS_CR8 = 1,
+    X86_SYS_GDTR_BASE = 2,
+    X86_SYS_GDTR_LIMIT = 3,
+    X86_SYS_IDTR_BASE = 4,
+    X86_SYS_IDTR_LIMIT = 5,
+    X86_SYS_ES = 6,
+    X86_SYS_CS = 7,
+    X86_SYS_SS = 8,
+    X86_SYS_DS = 9,
+    X86_SYS_FS = 10,
+    X86_SYS_GS = 11,
+    X86_SYS_LDTR = 12,
+    X86_SYS_TR = 13,
+    X86_SYS_DEBUG = 14,
+};
+
+enum {
+    X86_RAX = 0,
+    X86_RCX = 1,
+    X86_RDX = 2,
+    X86_RBX = 3,
+    X86_RSP = 4,
+};
+
+enum {
+    X86_NEED_BLOCK = 4,
+    X86_YIELDED = 5,
+    X86_HALTED = 6,
+    X86_NEED_PHYSICAL = 7,
+    X86_DIRTY_PHYSICAL = 8,
+    X86_INTERNAL = 9,
+    X86_CONSOLE_WRITE = 10,
+    X86_CLOCK = 11,
+};
+
+static X86Workspace *x86_machine(void)
+{
+    return &workspace.runtime.x86;
+}
+
+static u64 x86_msr_read(u64 key)
+{
+    X86Workspace *x86 = x86_machine();
+    if ((u32)key == 0xc0000080u) return x86->efer;
+    for (u32 index = 0; index < x86->msr_count; ++index)
+        if ((u32)x86->msr_keys[index] == (u32)key)
+            return x86->msr_values[index];
+    return 0;
+}
+
+static int x86_msr_write(u64 key, u64 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if ((u32)key == 0xc0000080u) x86->efer = value;
+    for (u32 index = 0; index < x86->msr_count; ++index) {
+        if ((u32)x86->msr_keys[index] == (u32)key) {
+            x86->msr_values[index] = value;
+            return 1;
+        }
+    }
+    if (x86->msr_count >= X86_MSR_CAP) return 0;
+    x86->msr_keys[x86->msr_count] = (u32)key;
+    x86->msr_values[x86->msr_count] = value;
+    x86->msr_count += 1u;
+    return 1;
+}
+
+static u64 x86_control_register_read(u32 coordinate)
+{
+    X86Workspace *x86 = x86_machine();
+    if (coordinate == 0u) return x86->cr0;
+    if (coordinate == 2u) return x86->system[X86_SYS_CR2];
+    if (coordinate == 3u) return x86->cr3;
+    if (coordinate == 4u) return x86->cr4;
+    if (coordinate == 8u) return x86->system[X86_SYS_CR8];
+    return 0;
+}
+
+static int x86_control_register_write(u32 coordinate, u64 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (coordinate == 0u) x86->cr0 = value;
+    else if (coordinate == 2u) x86->system[X86_SYS_CR2] = value;
+    else if (coordinate == 3u) x86->cr3 = value;
+    else if (coordinate == 4u) x86->cr4 = value;
+    else if (coordinate == 8u) x86->system[X86_SYS_CR8] = value;
+    else return 0;
+    return 1;
+}
+
+static u64 x86_port_read(u32 port, u32 width)
+{
+    X86Workspace *x86 = x86_machine();
+    if (width == 1u && port == 0x42u) {
+        x86->pit_counter = (x86->pit_counter - 0x100u) & 0xffffu;
+        u32 value = (x86->pit_counter >> (x86->pit_read_phase * 8u))
+                  & 0xffu;
+        x86->pit_read_phase ^= 1u;
+        return value;
+    }
+    if (width == 1u && port == 0x3fdu)
+        return 0x60u | (x86->console_count != 0u);
+    if (width == 1u && port == 0x3fau) return 1u;
+    if (width == 1u && port == 0x3feu) return 0xb0u;
+    if (width == 1u && port == 0x3f8u
+            && !(x86->uart[3] & 0x80u)) {
+        if (!x86->console_count) return 0u;
+        u32 value = x86->console_input[x86->console_head];
+        x86->console_head = (x86->console_head + 1u)
+                          & (X86_CONSOLE_CAP - 1u);
+        x86->console_count -= 1u;
+        return value;
+    }
+    if (width == 1u && port >= 0x3f8u && port <= 0x3ffu) {
+        u32 slot = port - 0x3f8u;
+        return x86->uart_valid[slot] ? x86->uart[slot] : 0xffu;
+    }
+    return width == 1u ? 0xffu
+         : width == 2u ? 0xffffu : 0xffffffffu;
+}
+
+static int x86_port_write(u32 port, u32 width, u64 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (width == 1u && port == 0x43u) {
+        if (((u32)value & 0xc0u) == 0x80u
+                && ((u32)value & 0x30u) == 0x30u) {
+            x86->pit_write_phase = 0;
+            x86->pit_read_phase = 0;
+        }
+        return 1;
+    }
+    if (width == 1u && port == 0x42u) {
+        if (!x86->pit_write_phase) {
+            x86->pit_low_latch = (u32)value & 0xffu;
+            x86->pit_write_phase = 1u;
+        } else {
+            x86->pit_counter = x86->pit_low_latch
+                             | (((u32)value & 0xffu) << 8u);
+            x86->pit_write_phase = 0;
+            x86->pit_read_phase = 0;
+        }
+        return 1;
+    }
+    if (width == 1u && (port == 0xe9u
+            || (port == 0x3f8u && !(x86->uart[3] & 0x80u)))) {
+        if (x86->console_status) return 0;
+        x86->console_lease = step_new_capability();
+        if (!x86->console_lease) return 0;
+        x86->console_value = (u32)value & 0xffu;
+        x86->console_status = X86_CONSOLE_WRITE;
+        return 1;
+    }
+    if (width == 1u && port >= 0x3f8u && port <= 0x3ffu) {
+        u32 slot = port - 0x3f8u;
+        x86->uart[slot] = (u8)value;
+        x86->uart_valid[slot] = 1u;
+    }
+    return 1;
+}
+
+static int x86_fail(u32 error)
+{
+    X86Workspace *x86 = x86_machine();
+    x86->error = error;
+    x86->block_loaded = 0;
+    return STEP_TRAP;
+}
+
+static u32 x86_physical_slot(u64 page)
+{
+    X86Workspace *x86 = x86_machine();
+    for (u32 slot = 0; slot < X86_PHYSICAL_PAGES; ++slot)
+        if (x86->physical_valid[slot] && x86->physical_page[slot] == page)
+            return slot;
+    for (u32 slot = 0; slot < X86_PHYSICAL_PAGES; ++slot)
+        if (!x86->physical_valid[slot]) return slot;
+    /* A STEP virtual tag may point directly into this cache.  Never evict a
+     * slot while that tag is clean, dirty, or being flushed. */
+    u32 first = (u32)page & (X86_PHYSICAL_PAGES - 1u);
+    u32 selected = X86_PHYSICAL_PAGES;
+    u64 oldest = ~0ull;
+    StepWorkspace *step = step_machine();
+    for (u32 offset = 0; offset < X86_PHYSICAL_PAGES; ++offset) {
+        u32 candidate = (first + offset) & (X86_PHYSICAL_PAGES - 1u);
+        int bound = 0;
+        for (u32 step_slot = 0; step_slot < STEP_MEMORY_PAGES; ++step_slot) {
+            if (!x86->step_physical_valid[step_slot]
+                    || x86->step_physical_slot[step_slot] != candidate)
+                continue;
+            u32 kind = step_slot_kind(step_slot_load(step, step_slot));
+            if (kind == STEP_SLOT_CLEAN || kind == STEP_SLOT_DIRTY
+                    || kind == STEP_SLOT_FLUSHING) {
+                bound = 1;
+                break;
+            }
+        }
+        if (!bound && (selected == X86_PHYSICAL_PAGES
+                || x86->physical_age[candidate] < oldest)) {
+            selected = candidate;
+            oldest = x86->physical_age[candidate];
+        }
+    }
+    return selected < X86_PHYSICAL_PAGES ? selected : first;
+}
+
+static void x86_physical_touch(u32 slot)
+{
+    X86Workspace *x86 = x86_machine();
+    x86->physical_clock += 1u;
+    if (!x86->physical_clock) {
+        /* Recency is not identity: collapsing it on wrap cannot revive an
+         * old lease or change guest-visible state. */
+        x86->physical_clock = 1u;
+        for (u32 index = 0; index < X86_PHYSICAL_PAGES; ++index)
+            x86->physical_age[index] = x86->physical_valid[index] ? 1u : 0u;
+    }
+    x86->physical_age[slot] = x86->physical_clock;
+}
+
+static int x86_start_physical(u64 page)
+{
+    X86Workspace *x86 = x86_machine();
+    if (x86->physical_status) return 0;
+    u32 slot = x86_physical_slot(page);
+    u64 present = x86->physical_page[slot];
+    u64 lease = step_new_capability();
+    if (!lease) return x86_fail(20u);
+    x86->physical_lease = lease;
+    if (x86->physical_valid[slot] && x86->physical_dirty[slot]
+            && present != page) {
+        for (u32 index = 0; index < X86_PHYSICAL_PAGE_BYTES; ++index)
+            x86->physical_transfer[index] = x86->physical[slot][index];
+        x86->physical_coordinate = present;
+        x86->physical_status = X86_DIRTY_PHYSICAL;
+    } else {
+        x86->physical_coordinate = page;
+        x86->physical_status = X86_NEED_PHYSICAL;
+    }
+    return 0;
+}
+
+static int x86_physical_present(u64 page)
+{
+    X86Workspace *x86 = x86_machine();
+    u32 slot = x86_physical_slot(page);
+    if (x86->physical_valid[slot] && x86->physical_page[slot] == page) {
+        x86_physical_touch(slot);
+        return 1;
+    }
+    x86_start_physical(page);
+    return 0;
+}
+
+static int x86_physical_u64(u64 address, u64 *value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (address > x86->memory_bytes
+            || x86->memory_bytes - address < 8u)
+        return -1;
+    u64 page = address >> 12u;
+    if (!x86_physical_present(page)) return 0;
+    u32 offset = (u32)address & (X86_PHYSICAL_PAGE_BYTES - 1u);
+    if (offset > X86_PHYSICAL_PAGE_BYTES - 8u) return -1;
+    *value = load_u64(
+        x86->physical[x86_physical_slot(page)] + offset);
+    return 1;
+}
+
+static int x86_translate_page(u64 virtual_page, u64 *physical_page)
+{
+    X86Workspace *x86 = x86_machine();
+    u64 address = virtual_page << 12u;
+    u64 upper = address >> 48u;
+    if ((upper != 0 && upper != 0xffffu)
+            || (!!upper != !!(address & (1ull << 47u))))
+        return -1;
+    if (!(x86->cr0 & (1ull << 31u))) {
+        if (address >= x86->memory_bytes) return -1;
+        *physical_page = virtual_page;
+        return 1;
+    }
+    u64 table = x86->cr3 & 0x000ffffffffff000ull;
+    static const u8 shifts[4] = {39u, 30u, 21u, 12u};
+    for (u32 level = 0; level < 4u; ++level) {
+        u64 slot = (address >> shifts[level]) & 0x1ffu;
+        u64 entry = 0;
+        int loaded = x86_physical_u64(table + slot * 8u, &entry);
+        if (loaded <= 0) return loaded;
+        if (!(entry & 1u)) return -1;
+        if ((level == 1u || level == 2u) && (entry & (1u << 7u))) {
+            u32 shift = shifts[level];
+            u64 mask = 0x000fffffffffffffull
+                     & ~((1ull << shift) - 1u);
+            u64 physical = (entry & mask)
+                         | (address & ((1ull << shift) - 1u));
+            if (physical >= x86->memory_bytes) return -1;
+            *physical_page = physical >> 12u;
+            return 1;
+        }
+        table = entry & 0x000ffffffffff000ull;
+    }
+    if (table >= x86->memory_bytes) return -1;
+    *physical_page = table >> 12u;
+    return 1;
+}
+
+static int x86_virtual_read(u64 address, u8 *target, u32 bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    while (bytes) {
+        u64 physical_page;
+        int translated = x86_translate_page(address >> 12u, &physical_page);
+        if (translated <= 0) return translated;
+        if (!x86_physical_present(physical_page)) return 0;
+        u32 offset = (u32)address & (X86_PHYSICAL_PAGE_BYTES - 1u);
+        u32 count = X86_PHYSICAL_PAGE_BYTES - offset;
+        if (count > bytes) count = bytes;
+        u32 slot = x86_physical_slot(physical_page);
+        for (u32 index = 0; index < count; ++index)
+            target[index] = x86->physical[slot][offset + index];
+        target += count;
+        address += count;
+        bytes -= count;
+    }
+    return 1;
+}
+
+static int x86_virtual_write_u64(u64 address, u64 value)
+{
+    X86Workspace *x86 = x86_machine();
+    u8 bytes[8];
+    store_u64(bytes, value);
+    u32 written = 0;
+    while (written < 8u) {
+        u64 at = address + written;
+        u64 physical_page;
+        int translated = x86_translate_page(at >> 12u, &physical_page);
+        if (translated <= 0) return translated;
+        if (!x86_physical_present(physical_page)) return 0;
+        u32 offset = (u32)at & (X86_PHYSICAL_PAGE_BYTES - 1u);
+        u32 count = X86_PHYSICAL_PAGE_BYTES - offset;
+        if (count > 8u - written) count = 8u - written;
+        u32 slot = x86_physical_slot(physical_page);
+        for (u32 index = 0; index < count; ++index)
+            x86->physical[slot][offset + index] = bytes[written + index];
+        x86->physical_dirty[slot] = 1u;
+        x86_physical_touch(slot);
+        written += count;
+    }
+    return 1;
+}
+
+static void x86_cancel_step_execution(void)
+{
+    X86Workspace *x86 = x86_machine();
+    StepWorkspace *step = step_machine();
+    /* A fault discards the transient SSA publication, but memory lanes that
+     * completed before the fault already own canonical physical pages. */
+    for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
+        u32 kind = step_slot_kind(step_slot_load(step, slot));
+        if (kind == STEP_SLOT_DIRTY && x86->step_physical_valid[slot]) {
+            u32 physical = x86->step_physical_slot[slot];
+            if (physical < X86_PHYSICAL_PAGES
+                    && x86->physical_valid[physical])
+                x86->physical_dirty[physical] = 1u;
+        }
+        x86->step_physical_valid[slot] = 0;
+    }
+    step_memory_slots_empty(step);
+    step->memory_generation = step_new_capability();
+    step->requested_memory_page = STEP_NO_COORDINATE;
+    step->requested_memory_address = STEP_NO_COORDINATE;
+    step->flush_memory_page = STEP_NO_COORDINATE;
+    step->memory_lease = 0;
+    step->memory_status = 0;
+    step->execution_active = 0;
+    step->repeat_active = 0;
+    step->find_active = 0;
+    step->prefix_active = 0;
+    step->copy_active = 0;
+    step->relative_active = 0;
+    step->region_slots = 0;
+    x86->block_loaded = 0;
+}
+
+static int x86_step_fault_is_write(void)
+{
+    StepWorkspace *step = step_machine();
+    if (step->execution_lane >= step->work) return 0;
+    u32 node = step_u32(STEP_LANE_VALUES, step->execution_lane);
+    u32 opcode = step_u8(STEP_OPCODES, node - 1u);
+    if (opcode >= 152u && opcode <= 158u) return 1;
+    if (opcode == 184u || opcode == 192u) return 1;
+    if (opcode == 186u || opcode == 206u) return step->copy_phase == 1u;
+    /* A relative exchange is one indivisible read/write transaction. */
+    if (opcode == 188u) return 1;
+    return 0;
+}
+
+static int x86_deliver_page_fault(void)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!x86->exception_pending) return X86_NEED_BLOCK;
+    u64 base = x86->system[X86_SYS_IDTR_BASE];
+    u64 limit = x86->system[X86_SYS_IDTR_LIMIT];
+    u64 offset = 14u * 16u;
+    if (!base || offset + 15u > limit) return x86_fail(31u);
+    u8 gate[16];
+    int loaded = x86_virtual_read(base + offset, gate, sizeof(gate));
+    if (!loaded) return (int)x86->physical_status;
+    if (loaded < 0 || !(gate[5] & 0x80u) || (gate[4] & 7u))
+        return x86_fail(31u);
+    u64 target = (u64)read_u16(gate)
+               | ((u64)read_u16(gate + 6u) << 16u)
+               | ((u64)read_u32(gate + 8u) << 32u);
+    u64 selector = read_u16(gate + 2u);
+    if ((selector & 3u) != (x86->system[X86_SYS_CS] & 3u))
+        return x86_fail(31u);
+
+    u64 pointer = x86->registers[X86_RSP];
+    const u64 values[6] = {
+        x86->system[X86_SYS_SS], pointer, x86->rflags,
+        x86->system[X86_SYS_CS], x86->rip, x86->exception_error,
+    };
+    for (u32 index = 0; index < 6u; ++index) {
+        pointer -= 8u;
+        int written = x86_virtual_write_u64(pointer, values[index]);
+        if (!written) return (int)x86->physical_status;
+        if (written < 0) return x86_fail(31u);
+    }
+    x86->registers[X86_RSP] = pointer;
+    x86->rip = target;
+    x86->system[X86_SYS_CS] = selector;
+    if ((gate[5] & 0x0fu) == 0x0eu) x86->rflags &= ~(1u << 9u);
+    x86->rflags |= 2u;
+    x86->halted = 0;
+    x86->exception_pending = 0;
+    return X86_NEED_BLOCK;
+}
+
+static int x86_raise_page_fault(u64 address, int write)
+{
+    X86Workspace *x86 = x86_machine();
+    x86_cancel_step_execution();
+    if (!step_machine()->memory_generation) return x86_fail(20u);
+    x86->system[X86_SYS_CR2] = address;
+    x86->exception_error = write ? 2u : 0u;
+    if (x86->system[X86_SYS_CS] & 3u) x86->exception_error |= 4u;
+    x86->exception_pending = 1u;
+    return x86_deliver_page_fault();
+}
+
+static int x86_service_step_memory(u64 session, int status)
+{
+    X86Workspace *x86 = x86_machine();
+    StepWorkspace *step = step_machine();
+    u64 lease = step->memory_lease;
+    u64 virtual_page = status == STEP_DIRTY_PAGE
+                     ? step->flush_memory_page : step->requested_memory_page;
+    u32 step_slot = (u32)virtual_page & (STEP_MEMORY_PAGES - 1u);
+    u64 physical_page = 0;
+    u32 slot = 0;
+    if (status == STEP_DIRTY_PAGE) {
+        if (!x86->step_physical_valid[step_slot])
+            return x86_fail(21u);
+        slot = x86->step_physical_slot[step_slot];
+        if (slot >= X86_PHYSICAL_PAGES || !x86->physical_valid[slot])
+            return x86_fail(21u);
+        physical_page = x86->physical_page[slot];
+    } else {
+        int translated = x86_translate_page(virtual_page, &physical_page);
+        if (translated < 0) return x86_raise_page_fault(
+            step->requested_memory_address, x86_step_fault_is_write());
+        if (!translated) return (int)x86->physical_status;
+        if (!x86_physical_present(physical_page))
+            return (int)x86->physical_status;
+        slot = x86_physical_slot(physical_page);
+    }
+    if (status == STEP_MEMORY_PAGE) {
+        x86->step_physical_slot[step_slot] = slot;
+        x86->step_physical_valid[step_slot] = 1u;
+        if (!vm_step_supply_memory_coordinate(
+                session, lease, virtual_page, X86_PHYSICAL_PAGE_BYTES))
+            return x86_fail(22u);
+    } else {
+        x86->physical_dirty[slot] = 1u;
+        if (!vm_step_ack_memory_coordinate(
+                session, lease, virtual_page))
+            return x86_fail(23u);
+    }
+    return STEP_OK;
+}
+
+static int x86_invalidate_virtual(u64 address)
+{
+    X86Workspace *x86 = x86_machine();
+    StepWorkspace *step = step_machine();
+    u64 page = address >> 12u;
+    u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+    u64 word = step_slot_load(step, slot);
+    u32 kind = step_slot_kind(word);
+    if (step->memory_page[slot] != page || kind == STEP_SLOT_EMPTY)
+        return 1;
+    if (kind != STEP_SLOT_CLEAN || step_slot_pins(word))
+        return 0;
+    x86->step_physical_valid[slot] = 0;
+    step->memory_page[slot] = STEP_NO_COORDINATE;
+    step->memory_valid[slot] = 0;
+    step_slot_store(step, slot, step_slot_word(
+        STEP_SLOT_EMPTY, 0, step_slot_epoch(word)));
+    return 1;
+}
+
+EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
+                       u64 cr0, u64 cr3, u64 cr4, u64 efer,
+                       u64 memory_bytes)
+{
+    if (!step_session_is(session) || !memory_bytes
+            || step_machine()->execution_active
+            || step_machine()->memory_status)
+        return 0;
+    X86Workspace *x86 = x86_machine();
+    for (u32 index = 0; index < X86_REGISTER_COUNT; ++index)
+        x86->registers[index] = 0;
+    x86->rip = rip;
+    x86->rflags = rflags | 2u;
+    x86->cr0 = cr0;
+    x86->cr3 = cr3;
+    x86->cr4 = cr4;
+    x86->efer = efer;
+    for (u32 index = 0; index < X86_SYSTEM_COUNT; ++index)
+        x86->system[index] = 0;
+    for (u32 index = 0; index < X86_MSR_CAP; ++index) {
+        x86->msr_keys[index] = 0;
+        x86->msr_values[index] = 0;
+    }
+    x86->msr_count = 0;
+    x86->memory_bytes = memory_bytes;
+    x86->retired = 0;
+    x86->work = 0;
+    x86->span = 0;
+    x86->control = X86_CONTROL_NEXT;
+    x86->block_loaded = 0;
+    for (u32 slot = 0; slot < X86_BLOCK_CACHE_SLOTS; ++slot) {
+        x86->block_cache_rip[slot] = 0;
+        x86->block_cache_bytes[slot] = 0;
+        x86->block_cache_valid[slot] = 0;
+    }
+    x86->exception_pending = 0;
+    x86->exception_error = 0;
+    x86->console_lease = 0;
+    x86->console_status = 0;
+    x86->console_value = 0;
+    x86->clock_lease = 0;
+    x86->clock_status = 0;
+    x86->console_head = 0;
+    x86->console_count = 0;
+    for (u32 index = 0; index < 8u; ++index) {
+        x86->uart[index] = 0;
+        x86->uart_valid[index] = 0;
+    }
+    x86->pit_counter = 0xffffu;
+    x86->pit_low_latch = 0;
+    x86->pit_read_phase = 0;
+    x86->pit_write_phase = 0;
+    x86->active = 1;
+    x86->halted = 0;
+    x86->error = 0;
+    x86->physical_lease = 0;
+    x86->physical_coordinate = X86_NO_PAGE;
+    x86->physical_status = 0;
+    x86->physical_clock = 0;
+    for (u32 slot = 0; slot < X86_PHYSICAL_PAGES; ++slot) {
+        x86->physical_page[slot] = X86_NO_PAGE;
+        x86->physical_valid[slot] = 0;
+        x86->physical_dirty[slot] = 0;
+        x86->physical_age[slot] = 0;
+    }
+    for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
+        x86->step_physical_slot[slot] = 0;
+        x86->step_physical_valid[slot] = 0;
+    }
+    return vm_step_memory_open_virtual(session, 12u);
+}
+
+EXPORT u64 vm_x86_physical_lease(u64 session)
+{
+    return step_session_is(session) && x86_machine()->physical_status
+         ? x86_machine()->physical_lease : 0;
+}
+
+EXPORT u64 vm_x86_physical_coordinate(u64 session, u64 lease)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && lease
+        && x86->physical_status && x86->physical_lease == lease
+         ? x86->physical_coordinate : X86_NO_PAGE;
+}
+
+EXPORT u8 *vm_x86_physical_buffer(u64 session, u64 lease)
+{
+    return vm_x86_physical_coordinate(session, lease) == X86_NO_PAGE
+         ? (u8 *)0 : x86_machine()->physical_transfer;
+}
+
+EXPORT int vm_x86_supply_physical(u64 session, u64 lease,
+                                  u64 page, u32 bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session)
+            || x86->physical_status != X86_NEED_PHYSICAL
+            || x86->physical_lease != lease
+            || x86->physical_coordinate != page
+            || bytes != X86_PHYSICAL_PAGE_BYTES
+            || page >= (x86->memory_bytes + X86_PHYSICAL_PAGE_BYTES - 1u)
+                       / X86_PHYSICAL_PAGE_BYTES)
+        return 0;
+    u32 slot = x86_physical_slot(page);
+    for (u32 index = 0; index < X86_PHYSICAL_PAGE_BYTES; ++index)
+        x86->physical[slot][index] = x86->physical_transfer[index];
+    x86->physical_page[slot] = page;
+    x86->physical_valid[slot] = 1u;
+    x86->physical_dirty[slot] = 0;
+    x86_physical_touch(slot);
+    x86->physical_lease = 0;
+    x86->physical_coordinate = X86_NO_PAGE;
+    x86->physical_status = 0;
+    return 1;
+}
+
+EXPORT int vm_x86_ack_physical(u64 session, u64 lease, u64 page)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session)
+            || x86->physical_status != X86_DIRTY_PHYSICAL
+            || x86->physical_lease != lease
+            || x86->physical_coordinate != page)
+        return 0;
+    u32 slot = x86_physical_slot(page);
+    if (!x86->physical_valid[slot]
+            || x86->physical_page[slot] != page
+            || !x86->physical_dirty[slot])
+        return 0;
+    x86->physical_dirty[slot] = 0;
+    x86_physical_touch(slot);
+    x86->physical_lease = 0;
+    x86->physical_coordinate = X86_NO_PAGE;
+    x86->physical_status = 0;
+    return 1;
+}
+
+EXPORT u64 vm_x86_console_lease(u64 session)
+{
+    return step_session_is(session) && x86_machine()->console_status
+         ? x86_machine()->console_lease : 0;
+}
+
+EXPORT u32 vm_x86_console_value(u64 session, u64 lease)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+        && x86->console_status == X86_CONSOLE_WRITE
+        && lease && x86->console_lease == lease
+         ? x86->console_value : 0;
+}
+
+EXPORT int vm_x86_ack_console(u64 session, u64 lease)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session)
+            || x86->console_status != X86_CONSOLE_WRITE
+            || !lease || x86->console_lease != lease)
+        return 0;
+    x86->console_lease = 0;
+    x86->console_status = 0;
+    x86->console_value = 0;
+    return 1;
+}
+
+EXPORT int vm_x86_console_feed(u64 session, u32 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active
+            || value > 0xffu || x86->console_count >= X86_CONSOLE_CAP)
+        return 0;
+    u32 tail = (x86->console_head + x86->console_count)
+             & (X86_CONSOLE_CAP - 1u);
+    x86->console_input[tail] = (u8)value;
+    x86->console_count += 1u;
+    return 1;
+}
+
+EXPORT u64 vm_x86_clock_lease(u64 session)
+{
+    return step_session_is(session) && x86_machine()->clock_status
+         ? x86_machine()->clock_lease : 0;
+}
+
+EXPORT int vm_x86_supply_clock(u64 session, u64 lease, u64 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session)
+            || x86->clock_status != X86_CLOCK
+            || !lease || x86->clock_lease != lease)
+        return 0;
+    if (!x86_msr_write(0x10u, value)) return 0;
+    x86->registers[X86_RAX] = (u32)value;
+    x86->registers[X86_RDX] = (u32)(value >> 32u);
+    x86->rip = x86->control_argument[0];
+    x86->clock_lease = 0;
+    x86->clock_status = 0;
+    return 1;
+}
+
+EXPORT u64 *vm_x86_registers(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->registers : (u64 *)0;
+}
+
+EXPORT u64 *vm_x86_system(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->system : (u64 *)0;
+}
+
+EXPORT u64 *vm_x86_msr_keys(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->msr_keys : (u64 *)0;
+}
+
+EXPORT u64 *vm_x86_msr_values(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->msr_values : (u64 *)0;
+}
+
+EXPORT int vm_x86_msr_count(u64 session, u32 count)
+{
+    if (!step_session_is(session) || !x86_machine()->active
+            || count > X86_MSR_CAP) return 0;
+    x86_machine()->msr_count = count;
+    return 1;
+}
+
+EXPORT u64 vm_x86_rip(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->rip : 0;
+}
+
+EXPORT u64 vm_x86_rflags(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->rflags : 0;
+}
+
+EXPORT u64 vm_x86_cr0(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->cr0 : 0;
+}
+
+EXPORT u64 vm_x86_cr3(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->cr3 : 0;
+}
+
+EXPORT u64 vm_x86_cr4(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->cr4 : 0;
+}
+
+EXPORT u64 vm_x86_efer(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->efer : 0;
+}
+
+EXPORT u32 vm_x86_msr_extent(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->msr_count : 0;
+}
+
+EXPORT u64 vm_x86_retired(u64 session)
+{
+    return step_session_is(session) ? x86_machine()->retired : 0;
+}
+
+EXPORT u64 vm_x86_work(u64 session)
+{
+    return step_session_is(session) ? x86_machine()->work : 0;
+}
+
+EXPORT u64 vm_x86_span(u64 session)
+{
+    return step_session_is(session) ? x86_machine()->span : 0;
+}
+
+EXPORT u32 vm_x86_error(u64 session)
+{
+    return step_session_is(session) ? x86_machine()->error : 1u;
+}
+
+EXPORT int vm_x86_halted(u64 session)
+{
+    return step_session_is(session) && x86_machine()->halted;
+}
+
+/* The caller places one record in vm_step_buffer().  A record is a 64-byte
+ * fixed header followed directly by one packed STEP page. */
+EXPORT int vm_x86_load_block(u64 session, u32 bytes)
+{
+    if (!step_session_is(session)) return STEP_TRAP;
+    X86Workspace *x86 = x86_machine();
+    StepWorkspace *step = step_machine();
+    const u8 *record = step->page;
+    if (!x86->active || x86->halted || x86->error || x86->block_loaded
+            || step->execution_active || step->memory_status
+            || bytes < X86_BLOCK_HEADER_BYTES
+            || record[0] != 'X' || record[1] != '8'
+            || record[2] != '6' || record[3] != 'B'
+            || read_u16(record + 4u) != 1u
+            || read_u16(record + 6u) != X86_BLOCK_HEADER_BYTES
+            || load_u64(record + 8u) != x86->rip)
+        return x86_fail(1u);
+    u64 boundary_rip = load_u64(record + 16u);
+    u32 step_bytes = read_u32(record + 24u);
+    u32 control = read_u32(record + 28u);
+    if (!step_bytes || step_bytes != bytes - X86_BLOCK_HEADER_BYTES
+            || control > X86_CONTROL_CLOCK)
+        return x86_fail(2u);
+    x86->control = control;
+    x86->control_argument[0] = load_u64(record + 32u);
+    x86->control_argument[1] = load_u64(record + 40u);
+    x86->control_argument[2] = load_u64(record + 48u);
+    u32 cache_slot = (u32)x86->rip & (X86_BLOCK_CACHE_SLOTS - 1u);
+    u32 cacheable = bytes <= X86_BLOCK_CACHE_BYTES;
+    if (cacheable) {
+        x86->block_cache_valid[cache_slot] = 0;
+        for (u32 index = 0; index < bytes; ++index)
+            x86->block_cache[cache_slot][index] = record[index];
+    }
+    /* NEXT and TIMESLICE use the boundary coordinate without duplicating it
+     * in the control argument columns. */
+    if (control == X86_CONTROL_NEXT || control == X86_CONTROL_TIMESLICE)
+        x86->control_argument[0] = boundary_rip;
+    for (u32 index = 0; index < step_bytes; ++index)
+        step->page[index] = step->page[X86_BLOCK_HEADER_BYTES + index];
+    if (!vm_step_open(session, step_bytes)
+            || step->local_extent < X86_REGISTER_COUNT + 1u)
+        return x86_fail(3u);
+    for (u32 index = 0; index < step->local_extent; ++index)
+        step->locals[index] = 0;
+    for (u32 index = 0; index < X86_REGISTER_COUNT; ++index)
+        step->locals[index] = x86->registers[index];
+    step->locals[X86_REGISTER_COUNT] = x86->rflags;
+    if (control == X86_CONTROL_READ_SEGMENT
+            && (x86->control_argument[2] & (1u << 16u))) {
+        u32 segment = (u32)x86->control_argument[1];
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 local = descriptor & 0xffu;
+        if (segment >= 6u || local < X86_REGISTER_COUNT + 1u
+                || local >= step->local_extent
+                || descriptor != (local | (16u << 8u) | (1u << 16u)))
+            return x86_fail(3u);
+        step->locals[local] = x86->system[X86_SYS_ES + segment] & 0xffffu;
+    }
+    if (cacheable) {
+        x86->block_cache_rip[cache_slot] = x86->rip;
+        x86->block_cache_bytes[cache_slot] = bytes;
+        x86->block_cache_valid[cache_slot] = 1u;
+    }
+    x86->block_loaded = 1;
+    return STEP_OK;
+}
+
+/* Exact-tagged direct cache: the RIP byte chooses a slot, while the full RIP
+ * proves identity. A collision is only a miss and never aliases code. */
+EXPORT int vm_x86_load_cached_block(u64 session)
+{
+    if (!step_session_is(session)) return STEP_TRAP;
+    X86Workspace *x86 = x86_machine();
+    StepWorkspace *step = step_machine();
+    if (!x86->active || x86->halted || x86->error || x86->block_loaded)
+        return STEP_TRAP;
+    u32 slot = (u32)x86->rip & (X86_BLOCK_CACHE_SLOTS - 1u);
+    if (!x86->block_cache_valid[slot]
+            || x86->block_cache_rip[slot] != x86->rip)
+        return 0;
+    u32 bytes = x86->block_cache_bytes[slot];
+    if (bytes < X86_BLOCK_HEADER_BYTES || bytes > X86_BLOCK_CACHE_BYTES)
+        return x86_fail(36u);
+    for (u32 index = 0; index < bytes; ++index)
+        step->page[index] = x86->block_cache[slot][index];
+    return vm_x86_load_block(session, bytes);
+}
+
+EXPORT int vm_x86_execute(u64 session)
+{
+    if (!step_session_is(session)) return STEP_TRAP;
+    X86Workspace *x86 = x86_machine();
+    StepWorkspace *step = step_machine();
+    if (!x86->active || x86->error) return x86_fail(4u);
+    if (x86->halted) return X86_HALTED;
+    if (x86->console_status) return (int)x86->console_status;
+    if (x86->clock_status) return (int)x86->clock_status;
+    if (x86->exception_pending) return x86_deliver_page_fault();
+    if (!x86->block_loaded) return X86_NEED_BLOCK;
+    int status;
+    for (;;) {
+        status = vm_step_execute(
+            session, step->local_extent, step->stack_inputs);
+        if (status != STEP_MEMORY_PAGE && status != STEP_DIRTY_PAGE)
+            break;
+        int serviced = x86_service_step_memory(session, status);
+        if (serviced != STEP_OK) return serviced;
+    }
+    if (status != STEP_OK) return x86_fail(5u);
+    if (step->stack_count) return x86_fail(6u);
+    for (u32 index = 0; index < X86_REGISTER_COUNT; ++index)
+        x86->registers[index] = step->locals[index];
+    x86->rflags = step->locals[X86_REGISTER_COUNT] | 2u;
+    x86->retired += step->instructions;
+    x86->work += step->work;
+    x86->span += step->span;
+
+    u64 next = x86->control_argument[0];
+    if (x86->control == X86_CONTROL_BRANCH) {
+        next = x86->control_argument[0];
+    } else if (x86->control == X86_CONTROL_CONDITIONAL) {
+        u64 selected = 0;
+        if (!step_x86_condition_value(
+                x86->rflags, x86->control_argument[2], &selected))
+            return x86_fail(7u);
+        next = selected ? x86->control_argument[1]
+                        : x86->control_argument[0];
+    } else if (x86->control == X86_CONTROL_DYNAMIC) {
+        u64 local = x86->control_argument[0];
+        if (local >= step->local_extent) return x86_fail(8u);
+        next = step->locals[(u32)local];
+    } else if (x86->control == X86_CONTROL_WRITE_MSR) {
+        u64 key = (u32)x86->registers[X86_RCX];
+        u64 value = ((u64)(u32)x86->registers[X86_RDX] << 32u)
+                  | (u32)x86->registers[X86_RAX];
+        if (!x86_msr_write(key, value)) return x86_fail(24u);
+    } else if (x86->control == X86_CONTROL_READ_MSR) {
+        u64 value = x86_msr_read((u32)x86->registers[X86_RCX]);
+        x86->registers[X86_RAX] = (u32)value;
+        x86->registers[X86_RDX] = (u32)(value >> 32u);
+    } else if (x86->control == X86_CONTROL_CPUID) {
+        u32 leaf = (u32)x86->registers[X86_RAX];
+        u32 subleaf = (u32)x86->registers[X86_RCX];
+        u32 eax = 0, ebx = 0, ecx = 0, edx = 0;
+        if (leaf == 0u) {
+            eax = 7u; ebx = 0x756e6547u;
+            ecx = 0x6c65746eu; edx = 0x49656e69u;
+        } else if (leaf == 1u) {
+            eax = 0x000306a9u; ecx = 1u << 30u;
+            edx = 0x07008131u | (1u << 3u);
+        } else if (leaf == 7u && subleaf == 0u) {
+            ebx = 1u << 18u;
+        } else if (leaf == 0x80000000u) {
+            eax = 0x80000008u;
+        } else if (leaf == 0x80000001u) {
+            ecx = 1u;
+            edx = (1u << 11u) | (1u << 20u) | (1u << 29u);
+        } else if (leaf == 0x80000008u) {
+            eax = (48u << 8u) | 40u;
+        }
+        x86->registers[X86_RAX] = eax;
+        x86->registers[X86_RBX] = ebx;
+        x86->registers[X86_RCX] = ecx;
+        x86->registers[X86_RDX] = edx;
+    } else if (x86->control == X86_CONTROL_REGISTER) {
+        u32 descriptor = (u32)x86->control_argument[1];
+        u32 opcode = descriptor & 0xffu;
+        u32 coordinate = (descriptor >> 8u) & 0xffu;
+        u32 reg = (descriptor >> 16u) & 0xffu;
+        if (reg >= X86_REGISTER_COUNT) return x86_fail(25u);
+        if (opcode == 0x20u) {
+            x86->registers[reg] = x86_control_register_read(coordinate);
+        } else if (opcode == 0x22u) {
+            if (!x86_control_register_write(
+                    coordinate, x86->registers[reg]))
+                return x86_fail(25u);
+        } else {
+            return x86_fail(25u);
+        }
+    } else if (x86->control == X86_CONTROL_SEGMENT) {
+        u32 segment = (u32)x86->control_argument[1];
+        u32 reg = (u32)x86->control_argument[2];
+        if (segment >= 6u || reg >= X86_REGISTER_COUNT)
+            return x86_fail(26u);
+        x86->system[X86_SYS_ES + segment] = x86->registers[reg] & 0xffffu;
+    } else if (x86->control == X86_CONTROL_DESCRIPTOR) {
+        u32 base = x86->control_argument[1]
+                 ? X86_SYS_IDTR_BASE : X86_SYS_GDTR_BASE;
+        if (step->local_extent < X86_REGISTER_COUNT + 3u)
+            return x86_fail(27u);
+        x86->system[base] = step->locals[X86_REGISTER_COUNT + 2u];
+        x86->system[base + 1u] =
+            step->locals[X86_REGISTER_COUNT + 1u] & 0xffffu;
+    } else if (x86->control == X86_CONTROL_FAR_RETURN) {
+        u32 target = (u32)x86->control_argument[0];
+        u32 selector = (u32)x86->control_argument[1];
+        if (target >= step->local_extent || selector >= step->local_extent)
+            return x86_fail(28u);
+        next = step->locals[target];
+        x86->system[X86_SYS_CS] = step->locals[selector] & 0xffffu;
+    } else if (x86->control == X86_CONTROL_DIVIDE) {
+        u32 error = (u32)x86->control_argument[1];
+        if (error >= step->local_extent || step->locals[error])
+            return x86_fail(29u);
+    } else if (x86->control == X86_CONTROL_INTERRUPT_RETURN) {
+        u32 target = (u32)x86->control_argument[0];
+        u32 selector = (u32)x86->control_argument[1];
+        u32 restored_ss = (u32)x86->control_argument[2];
+        if (target >= step->local_extent || selector >= step->local_extent
+                || restored_ss >= step->local_extent)
+            return x86_fail(30u);
+        next = step->locals[target];
+        x86->system[X86_SYS_CS] = step->locals[selector] & 0xffffu;
+        x86->system[X86_SYS_SS] = step->locals[restored_ss] & 0xffffu;
+    } else if (x86->control == X86_CONTROL_INTERNAL) {
+        next = x86->control_argument[0];
+    } else if (x86->control == X86_CONTROL_READ_SEGMENT) {
+        u32 segment = (u32)x86->control_argument[1];
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 reg = descriptor & 0xffu;
+        u32 bits = (descriptor >> 8u) & 0xffu;
+        u32 memory = (descriptor >> 16u) & 1u;
+        if (segment >= 6u
+                || (memory && (bits != 16u
+                    || reg < X86_REGISTER_COUNT + 1u
+                    || reg >= step->local_extent
+                    || descriptor != (reg | (16u << 8u) | (1u << 16u))))
+                || (!memory && (reg >= X86_REGISTER_COUNT
+                    || (bits != 16u && bits != 32u && bits != 64u)
+                    || descriptor != (reg | (bits << 8u)))))
+            return x86_fail(31u);
+        u64 value = x86->system[X86_SYS_ES + segment] & 0xffffu;
+        if (memory) {
+            /* The value was admitted before STEP execution; its store and any
+             * page fault have already crossed the canonical memory barrier. */
+        } else if (bits == 16u)
+            x86->registers[reg] =
+                (x86->registers[reg] & ~0xffffull) | value;
+        else
+            x86->registers[reg] = value;
+    } else if (x86->control == X86_CONTROL_PORT_READ
+            || x86->control == X86_CONTROL_PORT_WRITE) {
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 width = descriptor & 0xffu;
+        u32 dynamic = (descriptor >> 8u) & 1u;
+        u64 encoded_port = x86->control_argument[1];
+        u32 port = dynamic ? (u32)x86->registers[X86_RDX] & 0xffffu
+                           : (u32)encoded_port;
+        if ((width != 1u && width != 2u && width != 4u)
+                || descriptor != (width | (dynamic << 8u))
+                || (!dynamic && encoded_port > 0xffffu))
+            return x86_fail(32u);
+        if (x86->control == X86_CONTROL_PORT_READ) {
+            u64 value = x86_port_read(port, width);
+            u64 mask = step_mask(width * 8u);
+            x86->registers[X86_RAX] = width == 4u ? value & mask
+                : (x86->registers[X86_RAX] & ~mask) | (value & mask);
+        } else {
+            u64 value = x86->registers[X86_RAX]
+                      & step_mask(width * 8u);
+            if (!x86_port_write(port, width, value))
+                return x86_fail(33u);
+        }
+    } else if (x86->control == X86_CONTROL_INVALIDATE_PAGE) {
+        u64 local = x86->control_argument[1];
+        if (local >= step->local_extent
+                || !x86_invalidate_virtual(step->locals[(u32)local]))
+            return x86_fail(34u);
+    } else if (x86->control == X86_CONTROL_CLOCK) {
+        x86->clock_lease = step_new_capability();
+        if (!x86->clock_lease) return x86_fail(35u);
+        x86->clock_status = X86_CLOCK;
+    } else if (x86->control == X86_CONTROL_HALT) {
+        x86->halted = 1;
+    }
+    if (!x86->clock_status) x86->rip = next;
+    u32 control = x86->control;
+    x86->block_loaded = 0;
+    return x86->console_status ? (int)x86->console_status
+         : x86->clock_status ? (int)x86->clock_status
+         : control == X86_CONTROL_HALT ? X86_HALTED
+         : control == X86_CONTROL_TIMESLICE ? X86_YIELDED
+         : control == X86_CONTROL_INTERNAL ? X86_INTERNAL
+                                           : X86_NEED_BLOCK;
 }
 
 /* --------------------------------------------------------- kernel ABI ---

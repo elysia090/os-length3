@@ -3,9 +3,8 @@
 // The browser compiles C locally and QM works on the optimized output. Two
 // artifacts come from one paste:
 //
-//   * wasm32 -O2, instantiated here and called over the input domain.  That is
-//     the execution oracle: 65,536 inputs cost milliseconds because the kernel
-//     runs as compiled code.
+//   * wasm32 -O2, whose selected function body is called over the input domain
+//     by vm.wasm. The compiled module is not instantiated as a second runtime.
 // That is the only thing it is for.  There was a second compile producing an
 // assembly listing for a pane to show; the pane is gone, and with it the
 // listing target and the optimization level, neither of which changed what the
@@ -25,23 +24,10 @@
 // adapter is loaded. This build has only the WebAssembly target, which is all
 // the execution oracle needs.
 //
-// Configuring another bundle
-// --------------------------
-// A deployment points at its own build by setting, before this module loads:
-//
-//     window.QM_CLANG = {
-//       // module exporting { compile(args, files) -> { files, stderr, status } }
-//       driverUrl: 'https://example.com/clang-wasm/driver.mjs',
-//     };
-//
-// or by passing ?clang=<url> in the query string.  The driver contract is
-// deliberately tiny — one `compile` call — so that any clang-in-wasm build can
-// be adapted with a short shim.
-
-const DEFAULT_DRIVER = new URL('./drivers/compiler-core.js', import.meta.url).href;
+import { executeGuestFunctionBatch } from './vm.js';
+import { openWasmFunction } from './wasm-function.js';
 
 const DEFAULT_CONFIG = {
-  driverUrl: DEFAULT_DRIVER,
   // Flags shared by both compiles.  -ffreestanding + the prelude that qm/clang.py
   // injects is what removes the need for a sysroot, and with it tens of MB.
   common: ['-std=gnu11', '-ffreestanding', '-O2'],
@@ -66,7 +52,6 @@ export class ClangDriver {
       available: this.state === 'ready',
       state: this.state,
       reason: this.reason,
-      driverUrl: this.config.driverUrl,
       configured: this.configured(),
       bundle: this.info || null,
     };
@@ -74,18 +59,11 @@ export class ClangDriver {
 
 
   configured() {
-    return Boolean(this.config.driverUrl);
+    return true;
   }
 
   async load(onProgress) {
     if (this.state === 'ready') return this.module;
-    if (!this.configured()) {
-      this.state = 'unavailable';
-      this.reason =
-        'no Clang/WASM bundle is configured for this deployment; set ' +
-        'window.QM_CLANG.driverUrl or pass ?clang=<url>';
-      throw new ClangUnavailable(this.reason);
-    }
     if (this.loading) return this.loading;
 
     this.state = 'loading';
@@ -93,7 +71,9 @@ export class ClangDriver {
 
     this.loading = (async () => {
       try {
-        const mod = await import(/* webpackIgnore: true */ this.config.driverUrl);
+        // Keep the 100 MiB compiler cold, but keep executable-code ownership
+        // static. An arbitrary driver URL is an unprovable second runtime.
+        const mod = await import('./drivers/compiler-core.js');
         if (typeof mod.compile !== 'function') {
           throw new Error('the driver module does not export compile()');
         }
@@ -130,7 +110,7 @@ export class ClangDriver {
   // --- the one artefact ----------------------------------------------------
 
   /**
-   * The oracle: a wasm32 module, instantiated and called over the domain.
+   * The oracle input: a wasm32 module whose selected body runs in vm.wasm.
    * This is the only thing the compiler is asked for.
    */
   async wasm(source, { opt = '-O2' } = {}, onProgress) {
@@ -167,26 +147,14 @@ function asText(value) {
 // ---------------------------------------------------------------------------
 
 /**
- * Instantiate a compiled wasm32 module and evaluate the kernel over `values`.
+ * Evaluate one compiled wasm32 function over `values` inside vm.wasm.
  *
- * wasm32 has no 64-bit integer in its JS boundary before BigInt, so i64 results
- * arrive as BigInt and are normalized here.  Values wider than the declared
- * output width are masked on the Python side, not here — masking twice is how
- * a frontend quietly changes the semantics it is supposed to report.
+ * Coordinates stay as decimal strings until they enter the VM's integer
+ * argument bank, so no 64-bit value passes through a JavaScript Number.
  */
 export async function evaluateWasm(bytes, functionName, values, outputBits,
                                    inputBits, parameters = null) {
-  const { instance } = await WebAssembly.instantiate(bytes, {});
-  const fn = instance.exports[functionName];
-  if (typeof fn !== 'function') {
-    const exported = Object.keys(instance.exports).filter(
-      (k) => typeof instance.exports[k] === 'function',
-    );
-    throw new Error(
-      `the compiled module does not export ${functionName} ` +
-        `(exports: ${exported.join(', ') || 'none'})`,
-    );
-  }
+  const opened = openWasmFunction(bytes, functionName);
 
   // A wasm parameter wider than 32 bits is an i64, and the JS API takes a
   // BigInt for one — handing it a Number throws, which is why every 64-bit
@@ -205,18 +173,16 @@ export async function evaluateWasm(bytes, functionName, values, outputBits,
       return parameter.bits > 32 ? raw : Number(raw);
     });
   };
-  const out = new Array(values.length);
-  for (let i = 0; i < values.length; i += 1) {
-    const y = fn(...argumentsFor(values[i]));
-    out[i] = typeof y === 'bigint' ? y : BigInt.asUintN(64, BigInt(y));
-  }
+  const out = await executeGuestFunctionBatch(
+    opened.source, opened.start, opened.end,
+    values.map(argumentsFor),
+  );
   // Python receives decimal strings: a JSON number cannot carry 64 bits.
   return out.map((v) => BigInt.asUintN(wide ? 64 : outputBits, v).toString());
 }
 
 export function readConfig(search) {
-  const params = new URLSearchParams(search || '');
-  const fromQuery = params.get('clang');
   const global = (typeof self !== 'undefined' && self.QM_CLANG) || {};
-  return Object.assign({}, global, fromQuery ? { driverUrl: fromQuery } : {});
+  const { driverUrl: _untrustedExecutable, ...config } = global;
+  return config;
 }

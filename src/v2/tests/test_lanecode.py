@@ -20,6 +20,7 @@ from tests.support import (example, example_names, example_path,
                            solved as solve, target)
 
 ONES = '0101010101010101'
+EXCLUSIVE_ONES = '0001010101010101'
 IOTA = '0706050403020100'
 ALL_ONES = 'FFFFFFFFFFFFFFFF'
 HIGH = '8080808080808080'
@@ -43,7 +44,8 @@ class TestMatchesHandWritten(unittest.TestCase):
 
     CASES = [
         # example                 lanecode              instructions        constants
-        ('ranks8', 'lc_ranks8', ['PDEP', 'IMUL'], [ONES, '0101010101010100']),
+        ('ranks8', 'lc_ranks8', ['PDEP', 'IMUL'],
+         [EXCLUSIVE_ONES, '0101010101010100']),
         ('inclusive_rank8', 'lc_inclusive_ranks8', ['PDEP', 'IMUL'], [ONES, ONES]),
         ('byte_mask8', 'lc_byte_mask8', ['PDEP', 'IMUL'], [ONES, BYTE]),
         # No deposit: the run-start mask is already in the bits the output
@@ -60,14 +62,14 @@ class TestMatchesHandWritten(unittest.TestCase):
         ('byte_mask_from_spread', 'lc_byte_mask_from_spread',
          ['AND', 'SHR', 'IMUL'], [HIGH, BYTE]),
         ('ranks16_nibble', 'lc_ranks16_nibble', ['PDEP', 'IMUL'],
-         ['1111111111111111', '1111111111111110']),
+         ['0111111111111111', '1111111111111110']),
         ('morton_dilate16', 'lc_morton_dilate32', ['PDEP'], ['0000000055555555']),
         ('morton_compact_even16', 'lc_morton_compact_even', ['PEXT'],
          ['0000000000005555']),
         ('prefix_parity_mask8', 'lc_prefix_parity_mask8', ['PDEP', 'CLMUL'],
          [ONES, ALL_ONES]),
         ('quote_state_before8', 'lc_quote_state_before8', ['PDEP', 'CLMUL'],
-         [ONES, 'FFFFFFFFFFFFFF00']),
+         [EXCLUSIVE_ONES, 'FFFFFFFFFFFFFF00']),
         ('prefix_xor64', 'lc_prefix_xor64', ['CLMUL'], [ALL_ONES]),
         ('select8', 'lc_select8', ['PDEP', 'IMUL', 'PEXT_DYN'],
          [ONES, '00000000000000FF', IOTA]),
@@ -291,8 +293,9 @@ class TestIntrinsics(unittest.TestCase):
     CASES = [
         ('lc_ranks8',
          'uint64_t lc_ranks8(uint8_t m)\n'
-         '{ return _pdep_u64((uint64_t)m, LC_ONES) * 0x0101010101010100ull; }',
-         ['PDEP', 'IMUL'], [ONES, '0101010101010100']),
+         '{ return _pdep_u64((uint64_t)m, 0x0001010101010101ull)'
+         ' * 0x0101010101010100ull; }',
+         ['PDEP', 'IMUL'], [EXCLUSIVE_ONES, '0101010101010100']),
 
         ('lc_select8',
          BYTE_MASK
@@ -321,18 +324,19 @@ class TestIntrinsics(unittest.TestCase):
         ('lc_quote_state_before8',
          'uint64_t lc_quote_state_before8(uint8_t q)\n'
          '{\n'
-         '    const uint64_t a = _pdep_u64((uint64_t)q, LC_ONES);\n'
+         '    const uint64_t a = _pdep_u64((uint64_t)q,'
+         ' 0x0001010101010101ull);\n'
          '    return (uint64_t)_mm_cvtsi128_si64(\n'
          '        _mm_clmulepi64_si128(_mm_cvtsi64_si128((long long)a),\n'
          '            _mm_set_epi64x(0, (long long)0xFFFFFFFFFFFFFF00ull), 0));\n'
          '}',
-         ['PDEP', 'CLMUL'], [ONES, 'FFFFFFFFFFFFFF00']),
+         ['PDEP', 'CLMUL'], [EXCLUSIVE_ONES, 'FFFFFFFFFFFFFF00']),
 
         ('lc_ranks16_nibble',
          'uint64_t lc_ranks16_nibble(uint16_t m)\n'
-         '{ return _pdep_u64((uint64_t)m, 0x1111111111111111ull)\n'
+         '{ return _pdep_u64((uint64_t)m, 0x0111111111111111ull)\n'
          '       * 0x1111111111111110ull; }',
-         ['PDEP', 'IMUL'], ['1111111111111111', '1111111111111110']),
+         ['PDEP', 'IMUL'], ['0111111111111111', '1111111111111110']),
     ]
 
     def test_intrinsic_kernels_reach_the_same_form(self):

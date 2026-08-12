@@ -88,7 +88,13 @@ def shape(operation):
         return 3, 0, False
     if name == 'X86_ALU':
         return 4, 0, False
+    if name == 'X86_AFFINE_ALU':
+        return 5, 0, False
     if name == 'X86_BIT_FLAGS':
+        return 4, 0, False
+    if name == 'MUL_HIGH':
+        return 3, 0, False
+    if name == 'X86_MUL_FLAGS':
         return 4, 0, False
     if name == 'INSERT':
         return 3, 0, False
@@ -228,6 +234,13 @@ def evaluate(operation, arguments):
         result &= mask_of(width)
         return evaluate('lane64.X86_FLAGS', (
             prior, left, right, result, descriptor))
+    if name == 'X86_AFFINE_ALU':
+        prior, left_base, left_addend, right, descriptor = map(
+            int, arguments)
+        width = descriptor & 0x7f
+        left = (left_base + left_addend) & mask_of(width)
+        return evaluate('lane64.X86_ALU', (
+            prior, left, right, descriptor))
     if name == 'INSERT':
         base, value, descriptor = map(int, arguments)
         width = descriptor & 0xff
@@ -339,6 +352,34 @@ def evaluate(operation, arguments):
             raise ValueError('x86 bit flag lane has an invalid width')
         carry = ((value & mask_of(width)) >> (index & (width - 1))) & 1
         return ((prior & ~1) | carry | 2) & mask_of(bits)
+    if name == 'MUL_HIGH':
+        left, right, descriptor = map(int, arguments)
+        width = descriptor & 0x7f
+        signed = bool(descriptor & 0x100)
+        if (width not in (8, 16, 32, 64)
+                or descriptor != width | (int(signed) << 8)):
+            raise ValueError('multiply-high lane has an invalid descriptor')
+        lane_mask = mask_of(width)
+        left &= lane_mask
+        right &= lane_mask
+        if signed:
+            left = to_signed(left, width)
+            right = to_signed(right, width)
+        return ((left * right) >> width) & lane_mask
+    if name == 'X86_MUL_FLAGS':
+        prior, low, high, descriptor = map(int, arguments)
+        width = descriptor & 0x7f
+        signed = bool(descriptor & 0x100)
+        if (width not in (8, 16, 32, 64)
+                or descriptor != width | (int(signed) << 8)):
+            raise ValueError('multiply flag lane has an invalid descriptor')
+        lane_mask = mask_of(width)
+        low &= lane_mask
+        high &= lane_mask
+        expected = lane_mask if signed and low >> (width - 1) else 0
+        overflow = high != expected
+        flags = prior & ~((1 << 11) | 1)
+        return flags | 2 | (int(overflow) * ((1 << 11) | 1))
     if name == 'X86_FLAGS':
         prior, left, right, result, descriptor = arguments
         width = int(descriptor) & 0x7f

@@ -77,6 +77,11 @@ STATE_OPS = (
     'lane32.INSERT',
     'lane64.SELECT_U32',
     'lane64.X86_ALU',
+    'lane64.X86_AFFINE_ALU',
+    'memory.i64.load_region',
+    'memory.i64.copy',
+    'lane64.MUL_HIGH',
+    'lane64.X86_MUL_FLAGS',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
@@ -85,12 +90,15 @@ OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 # selector in [0, 16) is the matching x86 condition without another SSA lane.
 # The flags word remains the primary result, so a Jcc observer and future
 # architectural state share one physical computation.
+ALU_PROJECTION_OPS = frozenset((
+    'lane64.X86_ALU', 'lane64.X86_AFFINE_ALU',
+))
+REGION_PROJECTION_OPS = frozenset(('memory.i64.load_region',))
 FLAG_PROJECTION_OPS = frozenset((
     'lane64.X86_FLAGS', 'lane64.X86_FLAGS_SELECT',
     'lane64.X86_COMPARE', 'lane64.X86_SHIFT_FLAGS',
     'lane64.X86_TEST', 'lane64.X86_BIT_FLAGS',
-    'lane64.X86_ALU',
-))
+)) | ALU_PROJECTION_OPS
 
 OPERAND_KINDS = ('const', 'stack', 'local', 'node', 'projection')
 OPERAND_TO_TAG = dict((name, tag)
@@ -122,6 +130,24 @@ def decode_projection_coordinate(coordinate):
     if not source:
         raise ValueError('projection source is zero')
     return source, coordinate & PROJECTION_SELECTOR_MASK
+
+
+def load_region_descriptor(count, bits=64, signed=False):
+    """Encode one same-width contiguous read and its end coordinate."""
+    count, bits = int(count), int(bits)
+    if not 1 <= count <= 8 or bits not in (32, 64):
+        raise ValueError('load region shape is outside the physical limits')
+    return count | (int(bool(signed)) << 8) | (int(bits == 32) << 9)
+
+
+def decode_load_region_descriptor(descriptor):
+    descriptor = int(descriptor)
+    count = descriptor & 0xff
+    bits = 32 if descriptor & (1 << 9) else 64
+    signed = bool(descriptor & (1 << 8))
+    if not 1 <= count <= 8 or descriptor & ~((1 << 10) - 1):
+        raise ValueError('load region descriptor is invalid')
+    return count, bits, signed
 
 # magic, version, header bytes, then:
 # function, start, end, source instructions, span, work, operand values,
@@ -230,6 +256,33 @@ def _repeat(memory, address, value, size, shape):
         raise ValueError('memory repeat extent is invalid')
     pattern = int(value & mask_of(width * 8)).to_bytes(width, 'little')
     memory.repeat(address, size, pattern)
+
+
+def _copy(memory, source, target, size, shape):
+    """Move one byte extent without materializing it in the state page."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if width != 1:
+        raise ValueError('memory copy width is invalid')
+    source = _address(source, 0, scale, virtual64)
+    target = _address(target, 0, scale, virtual64)
+    size = int(size)
+    if (size < 0 or size and (source > I64 - (size - 1)
+                             or target > I64 - (size - 1))):
+        raise ValueError('memory copy extent is invalid')
+    direct = getattr(memory, 'copy', None)
+    if direct is not None:
+        direct(source, target, size)
+        return
+    # Match a single immutable source extent even on overlap.  Page-size
+    # staging is sufficient when traversal follows memmove's safe direction.
+    backwards = source < target < source + size
+    moved = 0
+    while moved < size:
+        count = min(4096, size - moved)
+        at = size - moved - count if backwards else moved
+        payload = memory.read(source + at, count)
+        memory.write(target + at, payload)
+        moved += count
 
 
 def _find2(memory, address, first, second, shape):
@@ -452,6 +505,21 @@ def _pre_store(memory, pointer, value, decrement, shape):
     return address
 
 
+def _load_region(memory, base, offset, descriptor, shape):
+    """Read one contiguous physical extent and publish its end coordinate."""
+    count, bits, signed = decode_load_region_descriptor(descriptor)
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if scale:
+        raise ValueError('load region cannot carry an address scale')
+    base, offset = int(base), int(offset)
+    values = tuple(_load(
+        memory, base, offset + index * width,
+        width, 0, signed, bits, virtual64)
+        for index in range(count))
+    end = (base + offset + count * width) & I64
+    return values + (end,)
+
+
 def _x86_alu(prior, left, right, descriptor):
     """Return flags and result for one width-bounded integer ALU update."""
     from .laneops import evaluate
@@ -481,6 +549,16 @@ def _x86_alu(prior, left, right, descriptor):
     flags = evaluate('lane64.X86_FLAGS', (
         prior, left, right, result, descriptor))
     return flags, result
+
+
+def _x86_affine_alu(prior, left_base, left_addend, right, descriptor):
+    """Apply an x86 ALU update to a width-bounded two-term affine left."""
+    descriptor = int(descriptor)
+    width = descriptor & 0x7f
+    if width not in (8, 16, 32, 64):
+        raise ValueError('x86 affine ALU lane has an invalid width')
+    left = (int(left_base) + int(left_addend)) & mask_of(width)
+    return _x86_alu(prior, left, right, descriptor)
 
 
 def relative_exchange_values(left_bytes, right_bytes, delta,
@@ -805,10 +883,22 @@ def _validate(mapped):
                         'a wave lane depends on its own/later projection')
                 source_operation = OPS[
                     mapped.value('opcodes', source - 1)]
-                if not (source_operation == 'lane64.X86_ALU'
+                region_projection = False
+                if source_operation in REGION_PROJECTION_OPS:
+                    source_begin = mapped.value(
+                        'argument_offsets', source - 1)
+                    try:
+                        count, _bits, _signed = \
+                            decode_load_region_descriptor(mapped.value(
+                                'operand_values', source_begin + 2))
+                        region_projection = selector <= count
+                    except (IndexError, ValueError):
+                        region_projection = False
+                if not (source_operation in ALU_PROJECTION_OPS
                         and selector == 16
                         or source_operation in FLAG_PROJECTION_OPS
-                        and selector < 16):
+                        and selector < 16
+                        or region_projection):
                     raise StatePageError(
                         'an internal projection has no scalar value')
             if kind == 'stack' and value >= mapped.stack_inputs:
@@ -816,42 +906,56 @@ def _validate(mapped):
             if kind == 'local' and value >= mapped.local_extent:
                 raise StatePageError('local operand is outside the frame region')
         if operation == 'memory.i64.repeat':
-            if (end - begin != 4
+            if (end - begin < 4
                     or OPERAND_KINDS[
-                        mapped.value('operand_tags', end - 1)] != 'const'):
+                        mapped.value('operand_tags', begin + 3)] != 'const'):
                 raise StatePageError(
                     'memory.i64.repeat has the wrong physical operands')
             try:
                 width, scale, _virtual64 = decode_memory_shape(
-                    mapped.value('operand_values', end - 1))
+                    mapped.value('operand_values', begin + 3))
             except ValueError as error:
                 raise StatePageError(str(error))
             if width not in (1, 2, 4, 8) or scale >= 32:
                 raise StatePageError('memory.i64.repeat shape is invalid')
             continue
-        if operation == 'memory.i64.find2':
-            if (end - begin != 4
+        if operation == 'memory.i64.copy':
+            if (end - begin < 4
                     or OPERAND_KINDS[
-                        mapped.value('operand_tags', end - 1)] != 'const'):
+                        mapped.value('operand_tags', begin + 3)] != 'const'):
+                raise StatePageError(
+                    'memory.i64.copy has the wrong physical operands')
+            try:
+                width, scale, _virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', begin + 3))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if width != 1 or scale >= 32:
+                raise StatePageError('memory.i64.copy shape is invalid')
+            continue
+        if operation == 'memory.i64.find2':
+            if (end - begin < 4
+                    or OPERAND_KINDS[
+                        mapped.value('operand_tags', begin + 3)] != 'const'):
                 raise StatePageError(
                     'memory.i64.find2 has the wrong physical operands')
             try:
                 width, scale, _virtual64 = decode_memory_shape(
-                    mapped.value('operand_values', end - 1))
+                    mapped.value('operand_values', begin + 3))
             except ValueError as error:
                 raise StatePageError(str(error))
             if width != 1 or scale >= 32:
                 raise StatePageError('memory.i64.find2 shape is invalid')
             continue
         if operation == 'memory.i64.copy_until':
-            if (end - begin != 7
+            if (end - begin < 7
                     or OPERAND_KINDS[
-                        mapped.value('operand_tags', end - 1)] != 'const'):
+                        mapped.value('operand_tags', begin + 6)] != 'const'):
                 raise StatePageError(
                     'memory.i64.copy_until has the wrong physical operands')
             try:
                 width, scale, _virtual64 = decode_memory_shape(
-                    mapped.value('operand_values', end - 1))
+                    mapped.value('operand_values', begin + 6))
             except ValueError as error:
                 raise StatePageError(str(error))
             if width != 1 or scale >= 32:
@@ -936,7 +1040,8 @@ def _validate(mapped):
                         mapped.value('operand_tags', at)] != 'const'
                            for at in (begin + 2, begin + 3))
                     or any(OPERAND_KINDS[
-                        mapped.value('operand_tags', at)] != 'node'
+                        mapped.value('operand_tags', at)] not in (
+                            'node', 'projection')
                            for at in range(begin + 4, end))):
                 raise StatePageError(
                     'memory.i64.pre_store has the wrong operands')
@@ -947,6 +1052,30 @@ def _validate(mapped):
                 raise StatePageError(str(error))
             if width not in (1, 2, 4, 8) or scale or not virtual64:
                 raise StatePageError('memory.i64.pre_store shape is invalid')
+            continue
+        if operation == 'memory.i64.load_region':
+            if (end - begin < 4
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'const'
+                           for at in (begin + 1, begin + 2, begin + 3))
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] not in (
+                            'node', 'projection')
+                           for at in range(begin + 4, end))):
+                raise StatePageError(
+                    'memory.i64.load_region has the wrong operands %r' %
+                    (tuple(OPERAND_KINDS[mapped.value(
+                        'operand_tags', at)] for at in range(begin, end)),))
+            try:
+                count, bits, signed = decode_load_region_descriptor(
+                    mapped.value('operand_values', begin + 2))
+                width, scale, _virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', begin + 3))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if (width not in (1, 2, 4, 8) or scale or width * 8 > bits
+                    or signed and width * 8 >= bits):
+                raise StatePageError('memory load region shape is invalid')
             continue
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
@@ -962,10 +1091,16 @@ def _validate(mapped):
                 raise StatePageError(
                     '%s offset and access shape are not physical constants'
                     % operation)
-            if any(OPERAND_KINDS[mapped.value('operand_tags', at)] != 'node'
+            if any(OPERAND_KINDS[mapped.value(
+                    'operand_tags', at)] not in ('node', 'projection')
                    for at in range(begin + fixed, end)):
                 raise StatePageError(
-                    '%s memory dependencies are not SSA nodes' % operation)
+                    '%s memory dependencies are not SSA nodes: %r %r' % (
+                        operation, tuple(OPERAND_KINDS[mapped.value(
+                            'operand_tags', at)]
+                            for at in range(begin, end)),
+                        tuple(mapped.value('operand_values', at)
+                              for at in range(begin, end))))
             shape = mapped.value('operand_values', begin + data_count + 1)
             try:
                 width, scale, _virtual64 = decode_memory_shape(shape)
@@ -1037,8 +1172,16 @@ def _validate(mapped):
         if source > mapped.work:
             raise StatePageError('state projection source is outside the step')
         operation = OPS[mapped.value('opcodes', source - 1)]
+        if operation in REGION_PROJECTION_OPS:
+            begin = mapped.value('argument_offsets', source - 1)
+            count, _bits, _signed = decode_load_region_descriptor(
+                mapped.value('operand_values', begin + 2))
+            if selector > count:
+                raise StatePageError(
+                    'memory region projection is outside its extent')
+            return
         if operation in FLAG_PROJECTION_OPS:
-            limit = 17 if operation == 'lane64.X86_ALU' else 16
+            limit = 17 if operation in ALU_PROJECTION_OPS else 16
             if selector >= limit:
                 raise StatePageError(
                     'x86 flag projection has an invalid condition')
@@ -1142,6 +1285,7 @@ def execute_mapped(mapped, state):
     memory = MemoryCut(state.memory)
     relative_results = {}
     alu_results = {}
+    region_results = {}
 
     def resolve(tag, value):
         kind = OPERAND_KINDS[tag]
@@ -1154,8 +1298,10 @@ def execute_mapped(mapped, state):
         if kind == 'projection':
             source, selector = decode_projection_coordinate(value)
             operation = OPS[mapped.value('opcodes', source - 1)]
-            if operation == 'lane64.X86_ALU' and selector == 16:
+            if operation in ALU_PROJECTION_OPS and selector == 16:
                 return alu_results[source][1]
+            if operation in REGION_PROJECTION_OPS:
+                return region_results[source][selector]
             if operation in FLAG_PROJECTION_OPS:
                 return evaluate('lane64.X86_CONDITION', (
                     values[source], selector))
@@ -1178,12 +1324,15 @@ def execute_mapped(mapped, state):
             )
             operation = OPS[mapped.value('opcodes', node - 1)]
             if operation == 'memory.i64.repeat':
-                _repeat(memory, *arguments)
+                _repeat(memory, *arguments[:4])
+                produced.append((node, 0))
+            elif operation == 'memory.i64.copy':
+                _copy(memory, *arguments[:4])
                 produced.append((node, 0))
             elif operation == 'memory.i64.find2':
-                produced.append((node, _find2(memory, *arguments)))
+                produced.append((node, _find2(memory, *arguments[:4])))
             elif operation == 'memory.i64.copy_until':
-                produced.append((node, _copy_until(memory, *arguments)))
+                produced.append((node, _copy_until(memory, *arguments[:7])))
             elif operation == 'memory.i64.prefix_end':
                 produced.append((node, _prefix_end(memory, *arguments[:5])))
             elif operation == 'memory.i64.relative_exchange':
@@ -1206,8 +1355,15 @@ def execute_mapped(mapped, state):
             elif operation == 'memory.i64.pre_store':
                 produced.append((node, _pre_store(
                     memory, *arguments[:4])))
+            elif operation == 'memory.i64.load_region':
+                region_results[node] = _load_region(
+                    memory, *arguments[:4])
+                produced.append((node, region_results[node][0]))
             elif operation == 'lane64.X86_ALU':
                 alu_results[node] = _x86_alu(*arguments)
+                produced.append((node, alu_results[node][0]))
+            elif operation == 'lane64.X86_AFFINE_ALU':
+                alu_results[node] = _x86_affine_alu(*arguments)
                 produced.append((node, alu_results[node][0]))
             elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
@@ -1291,17 +1447,21 @@ def compile_mapped_executor(mapped):
 
     lines = ['def execute(locals_, stack, memory):']
     namespace = {'memory_load': _load, 'memory_store': _store,
-                 'memory_repeat': _repeat, 'memory_find2': _find2,
+                 'memory_repeat': _repeat, 'memory_copy': _copy,
+                 'memory_find2': _find2,
                  'memory_copy_until': _copy_until,
                  'memory_prefix_end': _prefix_end,
                  'memory_relative_exchange': _relative_exchange,
                  'memory_relative_select': _relative_select,
                  'memory_relative_address': _relative_address,
                  'memory_pre_store': _pre_store,
-                 'x86_alu': _x86_alu}
+                 'memory_load_region': _load_region,
+                 'x86_alu': _x86_alu,
+                 'x86_affine_alu': _x86_affine_alu}
     namespace['x86_condition'] = bind('lane64.X86_CONDITION')
     lines.append('    relative_results = {}')
     lines.append('    alu_results = {}')
+    lines.append('    region_results = {}')
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -1316,8 +1476,10 @@ def compile_mapped_executor(mapped):
         if kind == 'projection':
             source, selector = decode_projection_coordinate(value)
             operation = OPS[mapped.value('opcodes', source - 1)]
-            if operation == 'lane64.X86_ALU' and selector == 16:
+            if operation in ALU_PROJECTION_OPS and selector == 16:
                 return 'alu_results[%d][1]' % source
+            if operation in REGION_PROJECTION_OPS:
+                return 'region_results[%d][%d]' % (source, selector)
             if operation in FLAG_PROJECTION_OPS:
                 return 'x86_condition((value_%d, %d))' % (
                     source, selector)
@@ -1341,16 +1503,34 @@ def compile_mapped_executor(mapped):
             opcode = mapped.value('opcodes', node - 1)
             operation = OPS[opcode]
             if operation == 'memory.i64.repeat':
-                lines.append('    memory_repeat(memory, %s)' % arguments)
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 4))
+                lines.append(
+                    '    memory_repeat(memory, %s)' % call_arguments)
+                lines.append('    value_%d = 0' % node)
+                continue
+            if operation == 'memory.i64.copy':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 4))
+                lines.append(
+                    '    memory_copy(memory, %s)' % call_arguments)
                 lines.append('    value_%d = 0' % node)
                 continue
             if operation == 'memory.i64.find2':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 4))
                 lines.append('    value_%d = memory_find2(memory, %s)' %
-                             (node, arguments))
+                             (node, call_arguments))
                 continue
             if operation == 'memory.i64.copy_until':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 7))
                 lines.append('    value_%d = memory_copy_until(memory, %s)' %
-                             (node, arguments))
+                             (node, call_arguments))
                 continue
             if operation == 'memory.i64.prefix_end':
                 call_arguments = ', '.join(
@@ -1403,9 +1583,26 @@ def compile_mapped_executor(mapped):
                     '    value_%d = memory_pre_store('
                     'memory, %s)' % (node, call_arguments))
                 continue
+            if operation == 'memory.i64.load_region':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 4))
+                lines.append(
+                    '    region_results[%d] = memory_load_region('
+                    'memory, %s)' % (node, call_arguments))
+                lines.append('    value_%d = region_results[%d][0]' %
+                             (node, node))
+                continue
             if operation == 'lane64.X86_ALU':
                 lines.append('    alu_results[%d] = x86_alu(%s)' %
                              (node, arguments))
+                lines.append('    value_%d = alu_results[%d][0]' %
+                             (node, node))
+                continue
+            if operation == 'lane64.X86_AFFINE_ALU':
+                lines.append(
+                    '    alu_results[%d] = x86_affine_alu(%s)' %
+                    (node, arguments))
                 lines.append('    value_%d = alu_results[%d][0]' %
                              (node, node))
                 continue

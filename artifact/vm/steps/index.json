@@ -1,25 +1,25 @@
 {
   "deliveries": {
-    "49ccd796d013fc75f356eb844a33a25dda8d64bf20616d170a6bdb4f7b32b17e": {
-      "bytes": 2862,
+    "c1d0bfe30aa739f09938b2750c48a4372b424a4baee6532cbcf43b4095745e0e": {
+      "bytes": 4758,
       "data_shards": 8,
-      "file": "delivery/49ccd796d013fc75f356eb844a33a25dda8d64bf20616d170a6bdb4f7b32b17e.pages",
+      "file": "delivery/c1d0bfe30aa739f09938b2750c48a4372b424a4baee6532cbcf43b4095745e0e.pages",
       "format": "page-fabric-v1",
       "included_shards": "data",
-      "logical_pages": 5,
+      "logical_pages": 8,
       "page_bytes": 4096,
       "parity_shards": 2,
-      "prefix_bytes": 364,
-      "prefix_sha256": "78cc0f663049028de33b4a10539fd7d242aa8869ab3fd0cccaa69aa3fb90e180",
-      "sha256": "49ccd796d013fc75f356eb844a33a25dda8d64bf20616d170a6bdb4f7b32b17e",
-      "unique_pages": 5
+      "prefix_bytes": 508,
+      "prefix_sha256": "61a023d01ac48b85e86a66a194a111394b7e57178c22bab7b6161b3942d0f5d4",
+      "sha256": "c1d0bfe30aa739f09938b2750c48a4372b424a4baee6532cbcf43b4095745e0e",
+      "unique_pages": 8
     }
   },
   "identity": {
     "algorithm": "sha256",
-    "bytes": 18368,
-    "digest": "931398f9f2a6abb8b179d2e63518ae570d2bb3bffdf43daa2b39414e840bb619"
+    "bytes": 31408,
+    "digest": "3d18d1b103d10db99eb1dddf9c627e7ccbbc8b38436261f3b7c214110298fad3"
   },
-  "preferred": "49ccd796d013fc75f356eb844a33a25dda8d64bf20616d170a6bdb4f7b32b17e",
+  "preferred": "c1d0bfe30aa739f09938b2750c48a4372b424a4baee6532cbcf43b4095745e0e",
   "schema": 1
 }

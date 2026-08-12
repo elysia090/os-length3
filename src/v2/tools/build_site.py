@@ -24,8 +24,11 @@ drift apart.
 import argparse
 import json
 import os
+from pathlib import Path
 import shutil
 import sys
+
+from audit_runtime_routes import audit_web_runtime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPOSITORY_ROOT = os.path.dirname(os.path.dirname(ROOT))
@@ -55,7 +58,40 @@ def _ignore(directory, names):
             if n in skip or n.endswith(('.pyc', '.pyo'))]
 
 
+def _prune_unindexed_deliveries(artifact_root):
+    """Keep only delivery objects authenticated by their sibling index."""
+    root = Path(artifact_root)
+    for delivery_root in root.rglob('delivery'):
+        if not delivery_root.is_dir():
+            continue
+        index_path = delivery_root.parent / 'index.json'
+        if not index_path.is_file():
+            raise SystemExit(
+                'artifact delivery has no identity index: %s' % delivery_root)
+        index = json.loads(index_path.read_text(encoding='utf-8'))
+        named = index.get('deliveries')
+        if not isinstance(named, dict):
+            raise SystemExit(
+                'artifact delivery index has no delivery map: %s' % index_path)
+        keep = {
+            Path(descriptor['file']).name
+            for descriptor in named.values()
+            if isinstance(descriptor, dict) and descriptor.get('file')
+        }
+        for candidate in delivery_root.iterdir():
+            if candidate.is_file() and candidate.name not in keep:
+                candidate.unlink()
+
+
 def build(dist=DIST):
+    linux_routes = audit_web_runtime(
+        os.path.join(ROOT, 'web'), entries=['linux-terminal.js'],
+        foundation='vm.js')
+    if linux_routes['violations']:
+        first = linux_routes['violations'][0]
+        raise SystemExit(
+            'Linux runtime escapes vm.wasm at %s:%d (%s)'
+            % (first['path'], first['line'], first['owner']))
     if os.path.exists(dist):
         shutil.rmtree(dist)
     os.makedirs(dist)
@@ -64,14 +100,16 @@ def build(dist=DIST):
         shutil.copytree(os.path.join(ROOT, tree), os.path.join(dist, tree),
                         ignore=_ignore)
     if os.path.isdir(ARTIFACT_ROOT):
-        shutil.copytree(ARTIFACT_ROOT, os.path.join(dist, 'artifact'))
+        deployed_artifacts = os.path.join(dist, 'artifact')
+        shutil.copytree(ARTIFACT_ROOT, deployed_artifacts)
+        _prune_unindexed_deliveries(deployed_artifacts)
 
-    with open(os.path.join(ROOT, 'web', 'index.html')) as handle:
+    with open(os.path.join(ROOT, 'web', 'index.html'), encoding='utf-8') as handle:
         shell = handle.read()
     shell = (shell
              .replace('href="styles.css"', 'href="web/styles.css"')
              .replace('src="app.js"', 'src="web/app.js"'))
-    with open(os.path.join(dist, 'index.html'), 'w') as handle:
+    with open(os.path.join(dist, 'index.html'), 'w', encoding='utf-8') as handle:
         handle.write(shell)
 
     shutil.copy(os.path.join(ROOT, 'web', '_headers'),
@@ -79,7 +117,7 @@ def build(dist=DIST):
 
     manifests = []
     for name in ('qm-manifest.json', 'kernel-manifest.json'):
-        with open(os.path.join(ROOT, 'web', name)) as handle:
+        with open(os.path.join(ROOT, 'web', name), encoding='utf-8') as handle:
             manifests.append(json.load(handle))
 
     missing = [rel for manifest in manifests for rel in manifest['files']
