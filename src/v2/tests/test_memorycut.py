@@ -216,6 +216,46 @@ class TestMemoryCut(unittest.TestCase):
         self.assertEqual(cut.change_revision, 3)
         self.assertEqual(cut.final_store_bytes, 3)
 
+    def test_record_multiply_observes_only_selected_word_lanes(self):
+        source = CountingMemory(bytes(range(256)) * 2)
+        cut = MemoryCut(source)
+        records = (4, 260)
+
+        cut.multiply_records(records, 0, 4, 3)
+
+        first = int.from_bytes(bytes(range(4, 8)), 'little')
+        expected = ((first * 3) & 0xffffffff).to_bytes(4, 'little')
+        self.assertEqual(cut.read(4, 4), expected)
+        self.assertEqual(cut.read(260, 4), expected)
+        self.assertEqual(source.page_reads, 0)
+        self.assertEqual(source.base_slice_bytes, 8)
+        self.assertEqual(cut.generation_pages, 2)
+
+    def test_computed_record_values_do_not_observe_old_lanes(self):
+        source = CountingMemory(bytes(512))
+        cut = MemoryCut(source)
+
+        cut.store_record_values((0, 64, 320), 8, 8, (3, 5, 7))
+
+        self.assertEqual(cut.load(8, 8), 3)
+        self.assertEqual(cut.load(72, 8), 5)
+        self.assertEqual(cut.load(328, 8), 7)
+        self.assertEqual(source.page_reads, 0)
+        self.assertEqual(source.base_slice_bytes, 0)
+        self.assertEqual(cut.generation_pages, 2)
+
+    def test_record_projection_addend_stays_in_the_selected_lane(self):
+        source = CountingMemory(bytes(256))
+        cut = MemoryCut(source)
+
+        cut.project_records(
+            (0, 64), ((52, 4, 0xffffffff, 0, 1),))
+
+        self.assertEqual(cut.load(52, 4), 1)
+        self.assertEqual(cut.load(116, 4), 1)
+        self.assertEqual(source.base_slice_bytes, 8)
+        self.assertEqual(source.page_reads, 0)
+
     def test_mask_boundaries_are_maximal_parallel_segments(self):
         page = BytePage()
         page.write(1, b'ab')
