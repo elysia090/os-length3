@@ -1823,6 +1823,7 @@ class DecodedBlock:
     state_flags: bool = False
     virtual_memory: bool = False
     indirect_register: object = None
+    tail_return: object = None
 
 
 class _CodeReader(object):
@@ -4034,11 +4035,16 @@ class X86DBT(object):
         return composed
 
     def _compose_register_cut(self, state, block, limit=16):
-        """Keep proof blocks intact while joining register-only state steps."""
+        """Join one straight state path through the shared physical grammar."""
         cached = self._register_cuts.get(block.rip)
         if (cached is not None and cached[0][0] is block
-                and all(self.blocks.get(proved.rip) is proved
-                        for proved in cached[0])):
+                and all(self.blocks.get(
+                    (proved.control_block or proved).rip)
+                    is (proved.control_block or proved)
+                        for proved in cached[0])
+                and (cached[1].tail_return is None
+                     or self._code_contains_recipe(
+                         state, cached[1].tail_return, b'\xc3', extent=1))):
             self.register_cut_cache_hits += 1
             return cached[1]
 
@@ -4050,7 +4056,11 @@ class X86DBT(object):
         proof_blocks = [block]
         current = block
         joined = 0
+        terminal_boundary = None
+        terminal_scratch = 0
+        tail_return = None
         while joined < max(1, int(limit)):
+            boundary_instructions = 1
             lowered_flags = self._lower_flag_boundary(
                 plan, current.boundary)
             if lowered_flags is not None:
@@ -4059,16 +4069,64 @@ class X86DBT(object):
                 lowered = self._register_plan(current.boundary)
                 if lowered is None:
                     lowered = self._memory_plan(current.boundary)
-                if lowered is None:
-                    break
-                control, following = lowered
-                control = self._carry_flags_plan(control)
-                if control is None:
-                    break
-                plan = compose_plans(plan, control)
-            if current.rip + len(current.source) != following:
+                if lowered is not None:
+                    control, following = lowered
+                    control = self._carry_flags_plan(control)
+                    if control is None:
+                        break
+                    plan = compose_plans(plan, control)
+                else:
+                    stack = (None
+                             if current.boundary.operation == 'call'
+                             else self._stack_plan(current.boundary))
+                    if (stack is not None and not stack[2]
+                            and stack[1].operation == 'branch'):
+                        control, boundary, _scratch = stack
+                        plan = compose_plans(plan, control)
+                        following = int(boundary.detail) & MASK64
+                    elif stack is not None:
+                        control, terminal_boundary, terminal_scratch = stack
+                        plan = compose_plans(plan, control)
+                        instructions += 1
+                        joined += 1
+                        break
+                    elif (current.boundary.operation == 'branch'
+                            and isinstance(current.boundary.detail, int)
+                            and self._code_contains_recipe(
+                                state,
+                                int(current.boundary.detail) & MASK64,
+                                b'\xc3', extent=1)):
+                        control, terminal_boundary, terminal_scratch = \
+                            self._stack_plan(X86Boundary(
+                                'return', int(current.boundary.detail)
+                                & MASK64))
+                        plan = compose_plans(plan, control)
+                        tail_return = int(current.boundary.detail) & MASK64
+                        instructions += 2
+                        joined += 1
+                        break
+                    elif (current.boundary.operation == 'branch'
+                            and isinstance(
+                                current.boundary.detail, int)
+                            and (int(current.boundary.detail) & MASK64)
+                            == current.rip + len(current.source)):
+                        following = int(current.boundary.detail) & MASK64
+                        boundary_instructions = int(
+                            current.control_block is None)
+                    else:
+                        break
+            linear_end = current.rip + len(current.source)
+            synthetic_boundary = (
+                current.control_block is not None
+                and current.control_block.boundary.operation
+                != current.boundary.operation)
+            if ((not synthetic_boundary and linear_end != following)
+                    or (synthetic_boundary and linear_end > following)):
                 break
-            instructions += 1
+            if synthetic_boundary and linear_end < following:
+                source += read_virtual(
+                    state, linear_end, following - linear_end, 'execute')
+            instructions += boundary_instructions
             next_block = self.blocks.get(following)
             if next_block is None:
                 next_block = self.block(replace(
@@ -4092,11 +4150,14 @@ class X86DBT(object):
             state, block.rip, len(source))
         composed = DecodedBlock(
             block.rip, current.boundary_rip, source, instructions,
-            plan, mapped, execute, current.scratch_count,
-            current.boundary, proof_config, proof,
+            plan, mapped, execute,
+            terminal_scratch if terminal_boundary is not None
+            else current.scratch_count,
+            terminal_boundary or current.boundary, proof_config, proof,
             current.flag_cut, current.control_block or current,
             current.cut_inputs, True,
             any(node.op.startswith('memory.') for node in plan.nodes))
+        composed = replace(composed, tail_return=tail_return)
         proof_blocks = tuple(proof_blocks)
         self._register_cuts[block.rip] = proof_blocks, composed
         self.register_cuts += 1
@@ -17806,8 +17867,10 @@ class X86DBT(object):
             block = self.block(state)
             block = self._compose_setcc_predicate_cut(state, block)
             block = self._compose_predicate_cut(state, block)
-            block = self._compose_register_cut(state, block)
             block = self._compose_stack_cut(state, block)
+            block = self._compose_register_cut(state, block)
+            if block.tail_return is not None:
+                self.collapsed_return_branches += 1
             if block.indirect_register is not None:
                 self.collapsed_indirect_calls += 1
         except PageFault as fault:
@@ -17851,8 +17914,10 @@ class X86DBT(object):
                 following = self._compose_setcc_predicate_cut(
                     state, following)
                 following = self._compose_predicate_cut(state, following)
-                following = self._compose_register_cut(state, following)
                 following = self._compose_stack_cut(state, following)
+                following = self._compose_register_cut(state, following)
+                if following.tail_return is not None:
+                    self.collapsed_return_branches += 1
                 if following.indirect_register is not None:
                     self.collapsed_indirect_calls += 1
                 control_block = following.control_block or following
