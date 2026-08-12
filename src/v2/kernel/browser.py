@@ -77,6 +77,15 @@ class X86BrowserSession:
         physical = self.runtime.dbt.layout()
         return {
             'stopped': self.state.stopped,
+            'halted': bool(self.state.cpu.halted),
+            'rip': int(self.state.cpu.rip),
+            'rip_hex': '%016x' % int(self.state.cpu.rip),
+            'rsp': int(self.state.cpu.registers[4]),
+            'rsp_hex': '%016x' % int(self.state.cpu.registers[4]),
+            'rflags': int(self.state.cpu.rflags),
+            'rflags_hex': '%016x' % int(self.state.cpu.rflags),
+            'io_ports': tuple((int(port), int(value))
+                              for port, value in self.state.io_ports),
             'pending': (None if self.state.pending is None
                         else self.state.pending.operation),
             'result': None,
@@ -84,6 +93,7 @@ class X86BrowserSession:
             'normalization': physical,
             'physical_pages': physical['resident_basic_blocks'],
             'console_input_bytes': len(self.state.console_input),
+            'console_output_bytes': len(self.state.console_output),
         }
 
     def console_input(self, payload):

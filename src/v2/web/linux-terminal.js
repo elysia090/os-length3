@@ -1,6 +1,6 @@
-// One terminal owns one disposable Linux worker.  Python may build the x86
-// state pages in the current prototype, but none of that construction leaks
-// into this UI: it receives only download progress, barrier events and bytes.
+// One terminal owns one disposable Linux worker. Build tools may produce the
+// x86 state pages, but browser execution receives only artifact progress,
+// physical page/barrier observations and console bytes from vm.wasm.
 
 const textDecoder = new TextDecoder();
 
@@ -51,7 +51,9 @@ export function readLinuxConfig(search = location.search) {
     || queryValue(query, 'linux-kernel');
   const kernelArtifact = supplied.kernelArtifact
     || queryValue(query, 'linux-artifact');
-  if (!kernelUrl && !kernelArtifact) return null;
+  const machineArtifact = supplied.machineArtifact
+    || queryValue(query, 'linux-machine-artifact');
+  if (!kernelUrl && !kernelArtifact && !machineArtifact) return null;
   const rootfsBytes = finite(
     supplied.rootfsBytes ?? queryValue(query, 'linux-rootfs-bytes'),
   );
@@ -60,6 +62,7 @@ export function readLinuxConfig(search = location.search) {
       || queryValue(query, 'linux-architecture', 'x86-64'),
     kernelUrl,
     kernelArtifact,
+    machineArtifact,
     artifactRoot: supplied.artifactRoot
       || queryValue(query, 'linux-artifact-root'),
     initrdUrl: supplied.initrdUrl || queryValue(query, 'linux-initrd'),
@@ -225,6 +228,18 @@ export class LinuxTerminal {
       return;
     }
     this.handle = message.handle ?? this.handle;
+    if (message.result?.state?.halted && !this.outputStarted) {
+      const rip = String(message.result.state.rip_hex || '');
+      this.showProgress({
+        state: 'error',
+        label: 'Linux halted before console output',
+        detail: /^[0-9a-f]{16}$/.test(rip) ? `RIP 0x${rip}` : '',
+      });
+      this.setSession('failed');
+      this.input.disabled = true;
+      this.input.placeholder = 'kernel halted before /init';
+      return;
+    }
     this.coldMs = performance.now() - this.startedAt;
     this.showProgress({
       state: 'complete',

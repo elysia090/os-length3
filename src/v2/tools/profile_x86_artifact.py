@@ -15,8 +15,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from kernel.pagefabric import PageFabric, open_artifact
-from kernel.x86 import X86DBT, X86Machine
-from kernel.x86snapshot import dump_x86_code_pages, load_x86_boot_cache
+from kernel.x86 import (REGISTER_NAMES, X86DBT, X86Machine,
+                        load_virtual)
+from kernel.x86snapshot import (dump_x86_code_pages, load_x86_boot_cache,
+                                pack_native_x86_block,
+                                select_physical_cut)
 from qm.stepnormalize import physical_work
 from qm.steppage import (decode_projection_coordinate,
                          decode_relative_layout)
@@ -44,7 +47,10 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     dbt = X86DBT(profile_controls=True)
     execute_plan = dbt._execute_plan
     control = dbt._control
+    deliver_exception = dbt._deliver_exception
     conditional_transitions = Counter()
+    device_boundaries = Counter()
+    exception_trace = []
 
     def execute_with_context(state, block):
         try:
@@ -70,9 +76,32 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             state, boundary, prior, scratch, flag_cut)
         if boundary.operation == 'conditional_branch' and published is None:
             conditional_transitions[(int(source), int(after.rip))] += 1
+        if (published is not None
+                and published.operation in ('port_read', 'port_write')):
+            device_boundaries[(published.operation,
+                               tuple(map(int, published.detail)))] += 1
         return after, published
 
     dbt._control = control_with_transition
+
+    def deliver_with_trace(state, vector, error_code):
+        if len(exception_trace) < 32:
+            msrs = dict(state.msrs)
+            exception_trace.append({
+                'vector': int(vector),
+                'error_code': (None if error_code is None
+                               else int(error_code)),
+                'rip': int(state.rip),
+                'rsp': int(state.register('rsp')),
+                'cr2': int(state.cr2),
+                'cs': int(state.cs),
+                'fs_base': int(msrs.get(0xc0000100, 0)),
+                'gs_base': int(msrs.get(0xc0000101, 0)),
+                'kernel_gs_base': int(msrs.get(0xc0000102, 0)),
+            })
+        return deliver_exception(state, vector, error_code)
+
+    dbt._deliver_exception = deliver_with_trace
     runtime = X86Machine(dbt)
     started = perf_counter()
     state, boundary = runtime.machine_step(
@@ -80,21 +109,42 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
         max_internal=max_internal, clock_step=clock_step,
         clock_variation_bits=clock_variation_bits)
     execute_seconds = perf_counter() - started
+
+    def probe_words(address, count=16):
+        words = []
+        for index in range(count):
+            try:
+                words.append(load_virtual(
+                    state.cpu, address + index * 8, 8))
+            except Exception:
+                words.append(None)
+        return tuple(words)
+
     physical = dbt.layout()
     code = dump_x86_code_pages(dbt)
     executed_cut_bytes = 0
     boundary_coordinates = []
 
     def reached_cut(rip):
-        cached = dbt._register_cuts.get(rip)
-        cut = None if cached is None else cached[1]
+        return select_physical_cut(dbt, rip)
+
+    native_blocks = []
+    native_rejections = Counter()
+    native_rejection_coordinates = []
+    native_source_instructions = 0
+    for rip in dbt._physical_profile:
+        cut = reached_cut(rip)
         if cut is None:
-            cached = dbt._stack_cuts.get(rip)
-            cut = None if cached is None else cached[1]
-        if cut is None:
-            cached = dbt._predicate_cuts.get(rip)
-            cut = None if cached is None else cached[1]
-        return cut if cut is not None else dbt.blocks.get(rip)
+            native_rejections['executed coordinate has no resident cut'] += 1
+            continue
+        try:
+            native_blocks.append(pack_native_x86_block(cut))
+            native_source_instructions += cut.instructions
+        except (TypeError, ValueError) as error:
+            native_rejections[str(error)] += 1
+            native_rejection_coordinates.append((
+                int(rip), cut.boundary.operation, repr(cut.boundary.detail),
+                str(error)))
 
     operation_work = Counter()
     boundary_cost = {}
@@ -103,7 +153,9 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     dominant_cuts = []
     conditional_residuals = []
     alu_residuals = Counter()
+    alu_residual_coordinates = []
     fused_alus = Counter()
+    fused_affine_alus = Counter()
     dispatched_source_instructions = 0
     for rip, (count, work, span) in dbt._physical_profile.items():
         cut = reached_cut(rip)
@@ -114,9 +166,13 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
         unit_span = cut.plan.waves.span
         dispatched_source_instructions += count * (cut.instructions + 1)
         for node in cut.plan.nodes:
-            node_work = (len(decode_relative_layout(
-                node.arguments[4].value))
-                if node.op == 'memory.i64.relative_exchange' else 1)
+            if node.op == 'memory.i64.relative_exchange':
+                node_work = len(decode_relative_layout(
+                    node.arguments[4].value))
+            elif node.op == 'memory.i64.load_region':
+                node_work = node.arguments[2].value & 0xff
+            else:
+                node_work = 1
             operation_work[node.op] += count * node_work
         boundary_name = cut.boundary.operation
         aggregate = boundary_cost.setdefault(
@@ -163,6 +219,16 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
                             bool(descriptor & (1 << 11)),
                             node.value in published,
                             tuple(consumers.get(node.value, ())))] += count
+            if (node.op == 'lane64.X86_AFFINE_ALU'
+                    and len(node.arguments) == 5
+                    and node.arguments[4].kind == 'const'):
+                descriptor = node.arguments[4].value
+                fused_affine_alus[(descriptor & 0x7f,
+                                   (descriptor >> 8) & 7,
+                                   bool(descriptor & (1 << 11)),
+                                   node.value in published,
+                                   tuple(consumers.get(
+                                       node.value, ())))] += count
             if (node.op != 'lane64.X86_FLAGS'
                     or len(node.arguments) != 5
                     or node.arguments[4].kind != 'const'):
@@ -211,13 +277,15 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
                 operation for operation in consumers.get(
                     result.value, ()) if operation != 'lane64.X86_FLAGS') \
                 if result.kind == 'node' else ()
-            alu_residuals[(width, mode,
-                           bool(descriptor & (1 << 11)), matched,
-                           result_op, result.value in published
-                           if result.kind == 'node' else False,
-                           result_consumers,
-                           node.value in published,
-                           tuple(consumers.get(node.value, ())))] += count
+            residual_shape = (
+                width, mode, bool(descriptor & (1 << 11)), matched,
+                result_op, result.value in published
+                if result.kind == 'node' else False,
+                result_consumers, node.value in published,
+                tuple(consumers.get(node.value, ())))
+            alu_residuals[residual_shape] += count
+            alu_residual_coordinates.append((
+                int(count), int(rip), int(node.value)) + residual_shape)
         shape = (boundary_name, unit_work, unit_span, operations)
         shaped = cut_shape_cost.setdefault(shape, [0, 0, 0, []])
         shaped[0] += count
@@ -371,7 +439,24 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'open_seconds': open_seconds,
             'initial_rip': int(boot.state.rip),
             'terminal_rip': int(state.cpu.rip),
+            'terminal_rsp': int(state.cpu.registers[4]),
+            'terminal_rflags': int(state.cpu.rflags),
+            'terminal_registers': dict(
+                (name, int(state.cpu.register(name)))
+                for name in REGISTER_NAMES),
+            'terminal_stack_words': probe_words(
+                state.cpu.register('rsp')),
+            'terminal_rbx_words': probe_words(
+                state.cpu.register('rbx')),
+            'terminal_rbx_aligned_words': probe_words(
+                state.cpu.register('rbx') & ~7),
+            'halted': bool(state.cpu.halted),
+            'pending': (None if state.pending is None
+                        else state.pending.operation),
+            'console_bytes': len(state.console_output),
+            'console_hex': state.console_output.hex(),
             'boundary': None if boundary is None else boundary.operation,
+            'exception_trace': tuple(exception_trace),
             'execute_seconds': execute_seconds,
         },
         'code': {
@@ -380,6 +465,14 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'resident_blocks': physical['resident_basic_blocks'],
             'source_instructions': physical['source_instructions'],
             'source_bytes_loaded': physical['source_bytes_loaded'],
+            'native_blocks': len(native_blocks),
+            'native_bytes': sum(map(len, native_blocks)),
+            'native_source_instructions': native_source_instructions,
+            'native_rejections': tuple(
+                (count, reason) for reason, count
+                in native_rejections.most_common()),
+            'native_rejection_coordinates': tuple(
+                native_rejection_coordinates),
             'mapped_bytes': physical['mapped_bytes'],
             'raw_work': physical['frontend_raw_work'],
             'raw_span': physical['frontend_raw_span'],
@@ -420,9 +513,15 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'alu_residuals': tuple(
                 (executions,) + shape
                 for shape, executions in alu_residuals.most_common()),
+            'alu_residual_coordinates': tuple(sorted(
+                alu_residual_coordinates,
+                key=lambda item: (-item[0], item[1], item[2]))),
             'fused_alus': tuple(
                 (executions,) + shape
                 for shape, executions in fused_alus.most_common()),
+            'fused_affine_alus': tuple(
+                (executions,) + shape for shape, executions
+                in fused_affine_alus.most_common()),
             'work_distribution': work_distribution,
             'dominant_cuts': tuple(dominant_cuts),
             'boundary_coordinates': boundary_coordinates,
@@ -432,6 +531,10 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
                 (count, source, target)
                 for (source, target), count
                 in conditional_transitions.most_common()),
+            'device_boundaries': tuple(
+                (count, operation, detail)
+                for (operation, detail), count
+                in device_boundaries.most_common()),
             'residual_counters': dict((name, physical.get(name, 0)) for name in (
                 'recurrence_cuts', 'recurrence_cut_executions',
                 'recurrence_cut_executed_work',
@@ -497,7 +600,12 @@ def main(argv=None):
                 'retired_source_instructions_per_physical_work'],
             'residual_counters': result['code']['residual_counters'],
             'alu_residuals': result['code']['alu_residuals'][:24],
+            'alu_residual_coordinates': result['code'][
+                'alu_residual_coordinates'][:48],
             'fused_alus': result['code']['fused_alus'][:16],
+            'fused_affine_alus': result['code'][
+                'fused_affine_alus'][:16],
+            'device_boundaries': result['code']['device_boundaries'],
             'dominant_shapes': result['code']['dominant_shapes'][:8],
         }
     elif args.summary:
@@ -508,7 +616,10 @@ def main(argv=None):
                 key: result['code'][key]
                 for key in ('decoded_blocks', 'resident_blocks',
                             'raw_work', 'raw_span', 'work', 'span',
-                            'removed_work', 'removed_span')
+                            'removed_work', 'removed_span', 'native_blocks',
+                            'native_bytes', 'native_source_instructions',
+                            'native_rejections',
+                            'native_rejection_coordinates')
             },
             'hot_physical_cuts': result['code']['hot_physical_cuts'][:16],
             'executed_boundaries': result['code']['executed_boundaries'],
@@ -527,13 +638,18 @@ def main(argv=None):
             'retired_source_instructions_per_physical_work': result['code'][
                 'retired_source_instructions_per_physical_work'],
             'residual_counters': result['code']['residual_counters'],
+            'device_boundaries': result['code']['device_boundaries'],
             'dominant_operations': result['code'][
                 'dominant_operations'][:24],
             'dominant_boundaries': result['code'][
                 'dominant_boundaries'][:16],
             'dominant_shapes': result['code']['dominant_shapes'][:16],
             'alu_residuals': result['code']['alu_residuals'][:32],
+            'alu_residual_coordinates': result['code'][
+                'alu_residual_coordinates'][:64],
             'fused_alus': result['code']['fused_alus'][:16],
+            'fused_affine_alus': result['code'][
+                'fused_affine_alus'][:16],
             'work_distribution': result['code']['work_distribution'],
             'dominant_cuts': result['code']['dominant_cuts'][:24],
             'boundary_coordinates': result['code'][

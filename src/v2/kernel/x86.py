@@ -699,6 +699,7 @@ def load_bzimage(image, memory_bytes=None, command_line=None,
     setup = bytearray(4096)
     setup[0x1f1:header_end] = image[0x1f1:header_end]
     setup[0x210] = 0xff
+    struct.pack_into('<I', setup, 0x214, load_address & MASK32)
     struct.pack_into('<I', setup, 0x228, COMMAND_LINE_ADDRESS)
     if initrd_address is not None:
         struct.pack_into('<I', setup, 0x218,
@@ -816,6 +817,13 @@ def _load_kernel_elf(memory, image, load_address):
 def load_bzimage_kernel(image, memory_bytes=None, command_line=None,
                         load_address=None, initrd=None):
     """Normalize a bzImage once and enter the real x86 kernel directly."""
+    header = parse_bzimage(image)
+    # ``code32_start`` names the compressed protected-mode payload.  Once the
+    # payload has been expanded offline, its ELF PT_LOAD image belongs at the
+    # preferred physical base even for a non-relocatable kernel.  Reusing the
+    # compressed coordinate can violate the kernel's 2 MiB startup invariant.
+    if load_address is None:
+        load_address = header.preferred_address or header.code32_start
     boot = load_bzimage(
         image, memory_bytes=memory_bytes, command_line=command_line,
         load_address=load_address, initrd=initrd)
@@ -3372,7 +3380,9 @@ class X86DBT(object):
             'register_immediate_alu', 'register_immediate_result_flags',
             'register_result_flags', 'set_condition', 'memory_binary',
             'conditional_move', 'shift', 'shift_result_flags',
-            'bit_immediate', 'bit_register',
+            'bit_immediate', 'bit_register', 'bit_scan',
+            'compare_exchange', 'register_immediate_multiply_flags',
+            'register_multiply_flags', 'multiply_immediate', 'unary',
         }
         if operation not in supported or len(plan.locals) < 17:
             return None
@@ -3501,6 +3511,13 @@ class X86DBT(object):
                 prior_flags, left, right, result,
                 Operand('const', descriptor)))
 
+        def multiply_flags(left, right, low, bits):
+            descriptor = int(bits) | (1 << 8)
+            high = emit('lane64.MUL_HIGH', (
+                left, right, Operand('const', descriptor)))
+            return emit('lane64.X86_MUL_FLAGS', (
+                prior_flags, low, high, Operand('const', descriptor)))
+
         def condition(code):
             return emit('lane64.X86_CONDITION', (
                 prior_flags, Operand('const', int(code) & 15)))
@@ -3534,6 +3551,138 @@ class X86DBT(object):
             right = Operand('const', immediate & ((1 << bits) - 1))
             result = read(register, bits)
             flags = result_flags(name, left, right, result, bits)
+        elif operation == 'multiply_immediate':
+            (_following, register, operand, bits, immediate) = detail
+            if not isinstance(register, int):
+                return None
+            left = memory_value(operand, bits, following)[1]
+            if left is None:
+                return None
+            right = Operand('const', immediate & ((1 << bits) - 1))
+            result = emit('i64.mul', (left, right))
+            if not publish(register, result, bits):
+                return None
+            flags = multiply_flags(left, right, result, bits)
+        elif operation in ('register_immediate_multiply_flags',
+                            'register_multiply_flags'):
+            if not scratch:
+                return None
+            if operation == 'register_immediate_multiply_flags':
+                (_following, _register, bits, immediate) = detail
+                right = Operand('const', immediate & ((1 << bits) - 1))
+            else:
+                _following, _register, bits = detail
+                if len(scratch) < 2:
+                    return None
+                right = scratch[1]
+            left = scratch[0]
+            result = read(_register, bits)
+            if result is None:
+                return None
+            flags = multiply_flags(left, right, result, bits)
+        elif operation == 'compare_exchange':
+            following, source, operand, bits, _locked = detail
+            accumulator = read(REGISTER_INDEX['rax'], bits)
+            source_value = read(source, bits)
+            pointer = None
+            if isinstance(operand, MemoryOperand):
+                pointer, destination = memory_value(
+                    operand, bits, following)
+            else:
+                destination = read(operand, bits)
+            if (accumulator is None or source_value is None
+                    or destination is None):
+                return None
+            equal = emit('i64.eq', (accumulator, destination))
+            difference = emit('i64.sub', (
+                accumulator, destination))
+            difference = emit('i64.and', (
+                difference, Operand('const', (1 << bits) - 1)))
+            flags = result_flags(
+                'cmp', accumulator, destination, difference, bits)
+            next_accumulator = emit('lane64.SELECT', (
+                accumulator, destination, equal))
+            if not publish(
+                    REGISTER_INDEX['rax'], next_accumulator, bits):
+                return None
+            next_destination = emit('lane64.SELECT', (
+                source_value, destination, equal))
+            if pointer is not None:
+                memory_store(pointer, next_destination, bits)
+            elif not publish(operand, next_destination, bits):
+                return None
+        elif operation == 'bit_scan':
+            following, destination, operand, bits, reverse = detail
+            if isinstance(operand, MemoryOperand):
+                value = memory_value(operand, bits, following)[1]
+            else:
+                value = read(operand, bits)
+            if value is None or not isinstance(destination, int):
+                return None
+            current = registers[destination]
+            if reverse:
+                result = emit('i64.clz', (value,))
+                result = emit('i64.sub', (
+                    Operand('const', 63), result))
+            else:
+                result = emit('i64.ctz', (value,))
+            if not publish(destination, result, bits):
+                return None
+            registers[destination] = emit('lane64.SELECT', (
+                registers[destination], current, value))
+            zero = emit('i64.eqz', (value,))
+            flags = emit('i64.and', (
+                prior_flags, Operand('const', MASK64 ^ RFLAGS_ZERO)))
+            zero = emit('i64.shl', (
+                zero, Operand('const', RFLAGS_ZERO.bit_length() - 1)))
+            flags = emit('i64.or', (flags, zero))
+            flags = emit('i64.or', (flags, Operand('const', 2)))
+        elif operation == 'unary':
+            following, group, operand, bits, _instruction = detail
+            if group not in (2, 3, 4, 5):
+                return None
+            pointer = None
+            if isinstance(operand, MemoryOperand):
+                pointer, value = memory_value(operand, bits, following)
+            else:
+                value = read(operand, bits)
+            if value is None:
+                return None
+            if group in (4, 5):
+                accumulator = read(REGISTER_INDEX['rax'], bits)
+                if accumulator is None:
+                    return None
+                descriptor = int(bits) | (int(group == 5) << 8)
+                product = emit('i64.mul', (accumulator, value))
+                high = emit('lane64.MUL_HIGH', (
+                    accumulator, value, Operand('const', descriptor)))
+                flags = emit('lane64.X86_MUL_FLAGS', (
+                    prior_flags, product, high,
+                    Operand('const', descriptor)))
+                if bits == 8:
+                    registers[REGISTER_INDEX['rax']] = emit(
+                        'lane64.INSERT', (
+                            registers[REGISTER_INDEX['rax']], product,
+                            Operand('const', 16)))
+                else:
+                    if not publish(REGISTER_INDEX['rax'], product, bits):
+                        return None
+                    if not publish(REGISTER_INDEX['rdx'], high, bits):
+                        return None
+            elif group == 2:
+                result = emit('i64.xor', (
+                    value, Operand('const', (1 << bits) - 1)))
+            else:
+                result = emit('i64.sub', (Operand('const', 0), value))
+                result = emit('i64.and', (
+                    result, Operand('const', (1 << bits) - 1)))
+                flags = result_flags(
+                    'sub', Operand('const', 0), value, result, bits)
+            if group in (2, 3):
+                if pointer is not None:
+                    memory_store(pointer, result, bits)
+                elif not publish(operand, result, bits):
+                    return None
         elif operation in ('register_binary', 'register_immediate_alu'):
             if operation == 'register_binary':
                 _following, name, destination, source, bits = detail
@@ -3985,7 +4134,7 @@ class X86DBT(object):
     def _memory_plan(boundary):
         """Lower an ordinary x86 memory instruction into shared memory SSA."""
         operation, detail = boundary.operation, boundary.detail
-        supported = {'load', 'store', 'store_immediate',
+        supported = {'load', 'repeat_move', 'repeat_store', 'store', 'store_immediate',
                      'move_sign_extend', 'move_zero_extend'}
         if operation not in supported:
             return None
@@ -4076,7 +4225,52 @@ class X86DBT(object):
                     else 'memory.i64.store%d' % (width * 8))
 
         following = detail[0]
-        if operation == 'load':
+        if operation in ('repeat_move', 'repeat_store'):
+            _following, width = detail
+            count = locals_[REGISTER_INDEX['rcx']]
+            target = locals_[REGISTER_INDEX['rdi']]
+            shift = int(width).bit_length() - 1
+            byte_count = (count if not shift else emit('i64.shl', (
+                count, Operand('const', shift))))
+            previous = emit('i64.sub', (
+                count, Operand('const', 1)))
+            if shift:
+                previous = emit('i64.shl', (
+                    previous, Operand('const', shift)))
+            previous = emit('select', (
+                previous, Operand('const', 0), count))
+            backwards_start = emit('i64.sub', (target, previous))
+            direction = emit('i64.shr_u', (
+                locals_[len(REGISTER_NAMES)], Operand('const', 10)))
+            direction = emit('i64.and', (
+                direction, Operand('const', 1)))
+            start = emit('select', (
+                backwards_start, target, direction))
+            forward_end = emit('i64.add', (target, byte_count))
+            backward_end = emit('i64.sub', (target, byte_count))
+            final_target = emit('select', (
+                backward_end, forward_end, direction))
+            if operation == 'repeat_move':
+                source = locals_[REGISTER_INDEX['rsi']]
+                backwards_source = emit('i64.sub', (source, previous))
+                source_start = emit('select', (
+                    backwards_source, source, direction))
+                forward_source_end = emit('i64.add', (source, byte_count))
+                backward_source_end = emit('i64.sub', (source, byte_count))
+                final_source = emit('select', (
+                    backward_source_end, forward_source_end, direction))
+                emit('memory.i64.copy', (
+                    source_start, start, byte_count,
+                    Operand('const', memory_shape(1, virtual64=True))))
+                locals_[REGISTER_INDEX['rsi']] = final_source
+            else:
+                emit('memory.i64.repeat', (
+                    start, locals_[REGISTER_INDEX['rax']], byte_count,
+                    Operand('const', memory_shape(
+                        width, virtual64=True))))
+            locals_[REGISTER_INDEX['rcx']] = Operand('const', 0)
+            locals_[REGISTER_INDEX['rdi']] = final_target
+        elif operation == 'load':
             _following, destination, bits, operand = detail
             width = bits // 8
             pointer = address(operand, following)
@@ -4131,18 +4325,260 @@ class X86DBT(object):
         return plan, int(following) & MASK64
 
     @staticmethod
+    def _read_segment_memory_plan(boundary, value_local):
+        """Store a resident segment selector through the shared memory SSA."""
+        if boundary.operation != 'read_segment':
+            return None
+        following, segment, target, bits = boundary.detail
+        if (not isinstance(target, MemoryOperand)
+                or target.segment_msr is not None
+                or not 0 <= int(segment) < 6 or int(bits) != 16
+                or int(value_local) < len(REGISTER_NAMES) + 1):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(int(value_local) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        address = Operand(
+            'const', (int(target.displacement)
+                      + (int(following) if target.rip_relative else 0))
+            & MASK64)
+        if not target.rip_relative and target.base is not None:
+            address = emit('i64.add', (address, locals_[target.base]))
+        if target.index is not None:
+            index = locals_[target.index]
+            if target.scale != 1:
+                index = emit('i64.shl', (
+                    index,
+                    Operand('const', target.scale.bit_length() - 1)))
+            address = emit('i64.add', (address, index))
+        emit('memory.i64.store16', (
+            address, locals_[int(value_local)], Operand('const', 0),
+            Operand('const', memory_shape(2, virtual64=True))))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
+        return plan, int(following) & MASK64, int(segment), int(value_local)
+
+    @staticmethod
+    def _invalidate_plan(boundary):
+        """Publish an INVLPG virtual coordinate without reading memory."""
+        if boundary.operation != 'invalidate_page':
+            return None
+        following, operand = boundary.detail
+        if (not isinstance(operand, MemoryOperand)
+                or operand.segment_msr is not None):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        address = Operand(
+            'const', (int(operand.displacement)
+                      + (int(following) if operand.rip_relative else 0))
+            & MASK64)
+        if not operand.rip_relative and operand.base is not None:
+            address = emit('i64.add', (address, locals_[operand.base]))
+        if operand.index is not None:
+            index = locals_[operand.index]
+            if operand.scale != 1:
+                index = emit('i64.shl', (
+                    index, Operand(
+                        'const', operand.scale.bit_length() - 1)))
+            address = emit('i64.add', (address, index))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_) + (address,)))
+        return plan, int(following) & MASK64
+
+    @staticmethod
+    def _descriptor_plan(boundary):
+        """Lower LGDT/LIDT address and mixed-width reads to physical SSA."""
+        if boundary.operation != 'load_descriptor_table':
+            return None
+        following, name, operand = boundary.detail
+        if (name not in ('gdtr', 'idtr')
+                or not isinstance(operand, MemoryOperand)
+                or operand.segment_msr is not None):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        address = Operand(
+            'const', (int(operand.displacement)
+                      + (int(following) if operand.rip_relative else 0))
+            & MASK64)
+        if not operand.rip_relative and operand.base is not None:
+            address = emit('i64.add', (address, locals_[operand.base]))
+        if operand.index is not None:
+            index = locals_[operand.index]
+            if operand.scale != 1:
+                index = emit('i64.shl', (
+                    index,
+                    Operand('const', operand.scale.bit_length() - 1)))
+            address = emit('i64.add', (address, index))
+        limit = emit('memory.i64.load16_u', (
+            address, Operand('const', 0),
+            Operand('const', memory_shape(2, virtual64=True))))
+        base = emit('memory.i64.load', (
+            address, Operand('const', 2),
+            Operand('const', memory_shape(8, virtual64=True))))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_) + (limit, base)))
+        return plan, int(following) & MASK64, name
+
+    @staticmethod
+    def _indirect_control_plan(boundary):
+        """Lower indirect CALL/JMP target discovery to the shared memory SSA."""
+        if boundary.operation != 'group_ff':
+            return None
+        following, group, operand, bits = boundary.detail
+        if group not in (2, 4) or bits != 64:
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        if isinstance(operand, MemoryOperand):
+            if operand.segment_msr is not None:
+                return None
+            address = Operand(
+                'const', (int(operand.displacement)
+                          + (int(following)
+                             if operand.rip_relative else 0)) & MASK64)
+            if not operand.rip_relative and operand.base is not None:
+                address = emit('i64.add', (address, locals_[operand.base]))
+            if operand.index is not None:
+                index = locals_[operand.index]
+                if operand.scale != 1:
+                    index = emit('i64.shl', (
+                        index,
+                        Operand('const', operand.scale.bit_length() - 1)))
+                address = emit('i64.add', (address, index))
+            target = emit('memory.i64.load', (
+                address, Operand('const', 0),
+                Operand('const', memory_shape(8, virtual64=True))))
+        elif isinstance(operand, int) and 0 <= operand < len(REGISTER_NAMES):
+            target = locals_[operand]
+        else:
+            return None
+        if group == 2:
+            rsp = REGISTER_INDEX['rsp']
+            pointer = emit('i64.sub', (
+                locals_[rsp], Operand('const', 8)))
+            emit('memory.i64.store', (
+                pointer, Operand('const', int(following) & MASK64),
+                Operand('const', 0),
+                Operand('const', memory_shape(8, virtual64=True))))
+            locals_[rsp] = pointer
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_) + (target,)))
+        return plan
+
+    @staticmethod
+    def _divide_plan(boundary):
+        """Lower 32-bit DIV/IDIV to total SSA plus one exception predicate."""
+        if boundary.operation != 'unary':
+            return None
+        following, group, operand, bits, _instruction = boundary.detail
+        if group not in (6, 7) or bits != 32 or not isinstance(operand, int):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        low = emit('i64.and', (
+            locals_[REGISTER_INDEX['rax']], Operand('const', MASK32)))
+        high = emit('i64.and', (
+            locals_[REGISTER_INDEX['rdx']], Operand('const', MASK32)))
+        dividend = emit('i64.or', (
+            emit('i64.shl', (high, Operand('const', 32))), low))
+        divisor = emit('i64.and', (
+            locals_[operand], Operand('const', MASK32)))
+        if group == 7:
+            divisor = emit('i64.extend_i32_s', (divisor,))
+        zero = emit('i64.eqz', (divisor,))
+        invalid = zero
+        if group == 7:
+            minimum = emit('i64.eq', (
+                dividend, Operand('const', 1 << 63)))
+            negative_one = emit('i64.eq', (
+                divisor, Operand('const', MASK64)))
+            invalid = emit('i64.or', (
+                zero, emit('i64.and', (minimum, negative_one))))
+        safe_divisor = emit('select', (
+            Operand('const', 1), divisor, invalid))
+        division = 'i64.div_s' if group == 7 else 'i64.div_u'
+        remainder = 'i64.rem_s' if group == 7 else 'i64.rem_u'
+        quotient = emit(division, (dividend, safe_divisor))
+        residual = emit(remainder, (dividend, safe_divisor))
+        low_quotient = emit('i64.and', (
+            quotient, Operand('const', MASK32)))
+        if group == 7:
+            widened = emit('i64.extend_i32_s', (low_quotient,))
+            overflow = emit('i64.ne', (quotient, widened))
+        else:
+            overflow = emit('i64.gt_u', (
+                quotient, Operand('const', MASK32)))
+        error = emit('i64.or', (invalid, overflow))
+        locals_[REGISTER_INDEX['rax']] = low_quotient
+        locals_[REGISTER_INDEX['rdx']] = emit('i64.and', (
+            residual, Operand('const', MASK32)))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_) + (error,)))
+        return plan, int(following) & MASK64
+
+    @staticmethod
     def _stack_plan(boundary, indirect_register=None):
         """Lower stack memory and its control result to shared physical SSA."""
         operation, detail = boundary.operation, boundary.detail
         supported = {
-            'call', 'pop', 'pop_flags', 'push', 'push_flags',
-            'push_immediate', 'return',
+            'call', 'far_return', 'interrupt_return', 'leave', 'pop', 'pop_flags', 'push',
+            'pop_operand', 'push_flags', 'push_immediate', 'return',
         }
         if operation not in supported:
             return None
 
-        scratch_count = int(
-            operation == 'return' or indirect_register is not None)
+        scratch_count = (3 if operation == 'interrupt_return'
+                         else 2 if operation == 'far_return' else int(
+                             operation == 'return'
+                             or indirect_register is not None))
         locals_ = [Operand('local', index)
                    for index in range(
                        len(REGISTER_NAMES) + 1 + scratch_count)]
@@ -4165,15 +4601,58 @@ class X86DBT(object):
                 common[key] = result
             return result
 
-        def load(pointer):
-            return emit('memory.i64.load', (
+        def load(pointer, width=8):
+            operation = ('memory.i64.load' if width == 8
+                         else 'memory.i64.load%d_u' % (width * 8))
+            return emit(operation, (
                 pointer, Operand('const', 0),
-                Operand('const', memory_shape(8, virtual64=True))))
+                Operand('const', memory_shape(width, virtual64=True))))
 
-        def store(pointer, value):
-            return emit('memory.i64.store', (
+        def store(pointer, value, width=8):
+            operation = ('memory.i64.store' if width == 8
+                         else 'memory.i64.store%d' % (width * 8))
+            return emit(operation, (
                 pointer, value, Operand('const', 0),
-                Operand('const', memory_shape(8, virtual64=True))))
+                Operand('const', memory_shape(width, virtual64=True))))
+
+        def address(operand, following):
+            if (not isinstance(operand, MemoryOperand)
+                    or operand.segment_msr is not None):
+                return None
+            pointer = Operand(
+                'const', (int(operand.displacement)
+                          + (int(following)
+                             if operand.rip_relative else 0)) & MASK64)
+            if not operand.rip_relative and operand.base is not None:
+                pointer = emit('i64.add', (
+                    pointer, locals_[operand.base]))
+            if operand.index is not None:
+                index = locals_[operand.index]
+                if operand.scale != 1:
+                    index = emit('i64.shl', (
+                        index, Operand(
+                            'const', operand.scale.bit_length() - 1)))
+                pointer = emit('i64.add', (pointer, index))
+            return pointer
+
+        def publish(operand, value, bits):
+            if isinstance(operand, MemoryOperand):
+                return False
+            high = isinstance(operand, HighByteRegister)
+            index = operand.index if high else operand
+            if not isinstance(index, int):
+                return False
+            if bits == 64:
+                locals_[index] = value
+            elif bits == 32:
+                locals_[index] = emit('i64.and', (
+                    value, Operand('const', MASK32)))
+            else:
+                shift = 8 if high else 0
+                locals_[index] = emit('lane64.INSERT', (
+                    locals_[index], value,
+                    Operand('const', int(bits) | (shift << 8))))
+            return True
 
         rsp = REGISTER_INDEX['rsp']
         pointer = locals_[rsp]
@@ -4185,6 +4664,44 @@ class X86DBT(object):
                 pointer, Operand('const', 8)))
             scratch = (target,)
             control = X86Boundary('dynamic_branch', None)
+        elif operation == 'far_return':
+            pointer = locals_[rsp]
+            target = load(pointer)
+            selector = load(emit('i64.add', (
+                pointer, Operand('const', 8))))
+            locals_[rsp] = emit('i64.add', (
+                pointer, Operand('const', 16)))
+            scratch = (target, selector)
+            control = X86Boundary('native_far_return', None)
+        elif operation == 'interrupt_return':
+            pointer = locals_[rsp]
+            target = load(pointer)
+            selector = load(emit('i64.add', (
+                pointer, Operand('const', 8))))
+            flags = emit('i64.or', (load(emit('i64.add', (
+                pointer, Operand('const', 16)))), Operand('const', 2)))
+            locals_[rsp] = load(emit('i64.add', (
+                pointer, Operand('const', 24))))
+            restored_ss = load(emit('i64.add', (
+                pointer, Operand('const', 32))))
+            scratch = (target, selector, restored_ss)
+            control = X86Boundary('native_interrupt_return', None)
+        elif operation == 'leave':
+            following, bits = detail
+            width = int(bits) // 8
+            pointer = locals_[REGISTER_INDEX['rbp']]
+            value = load(pointer, width)
+            if bits == 64:
+                locals_[REGISTER_INDEX['rbp']] = value
+            else:
+                cleared = emit('i64.and', (
+                    locals_[REGISTER_INDEX['rbp']],
+                    Operand('const', MASK64 ^ ((1 << bits) - 1))))
+                locals_[REGISTER_INDEX['rbp']] = emit('i64.or', (
+                    cleared, value))
+            locals_[rsp] = emit('i64.add', (
+                pointer, Operand('const', width)))
+            control = X86Boundary('branch', int(following) & MASK64)
         elif operation == 'call':
             following, target = detail
             pointer = emit('i64.sub', (
@@ -4210,6 +4727,20 @@ class X86DBT(object):
                 pointer, Operand('const', 8)))
             store(pointer, value)
             locals_[rsp] = pointer
+            control = X86Boundary('branch', int(following) & MASK64)
+        elif operation == 'pop_operand':
+            following, operand, bits = detail
+            width = int(bits) // 8
+            value = load(pointer, width)
+            locals_[rsp] = emit('i64.add', (
+                pointer, Operand('const', width)))
+            if isinstance(operand, MemoryOperand):
+                target = address(operand, following)
+                if target is None:
+                    return None
+                store(target, value, width)
+            elif not publish(operand, value, bits):
+                return None
             control = X86Boundary('branch', int(following) & MASK64)
         else:
             value = load(pointer)
@@ -17031,10 +17562,15 @@ class X86DBT(object):
 
     def _is_stable_backedge(self, state, block, seen, boundary):
         """Prove a backward edge reached an unchanged mutable state twice."""
-        if (boundary is not None
-                or block.boundary.operation != 'conditional_branch'):
+        if boundary is not None:
             return False
-        _following, target, _condition = block.boundary.detail
+        operation = block.boundary.operation
+        if operation == 'conditional_branch':
+            _following, target, _condition = block.boundary.detail
+        elif operation == 'branch':
+            target = block.boundary.detail
+        else:
+            return False
         target = int(target) & MASK64
         if target > block.rip or state.rip != target:
             return False
@@ -17370,6 +17906,19 @@ class X86DBT(object):
                                (pointer + 16) & MASK64
                                if index == REGISTER_INDEX['rsp'] else value
                                for index, value in enumerate(state.registers))), None
+        if operation == 'native_far_return':
+            if len(scratch) != 2:
+                return state, boundary
+            return replace(
+                state, rip=int(scratch[0]) & MASK64,
+                cs=int(scratch[1]) & 0xffff), None
+        if operation == 'native_interrupt_return':
+            if len(scratch) != 3:
+                return state, boundary
+            return replace(
+                state, rip=int(scratch[0]) & MASK64,
+                cs=int(scratch[1]) & 0xffff,
+                ss=int(scratch[2]) & 0xffff), None
         if operation == 'interrupt_return':
             pointer = state.register('rsp')
             target = load_virtual(state, pointer, 8)
@@ -18983,6 +19532,7 @@ class X86Machine(object):
     def __init__(self, dbt=None):
         self.dbt = X86DBT() if dbt is None else dbt
         self.affine_clock_events = 0
+        self.last_cost = WaveCost()
 
     def start(self, cpu):
         return X86MachineState(cpu)
@@ -19040,6 +19590,7 @@ class X86Machine(object):
     def machine_step(self, state, event=None, budget=1 << 20,
                      max_internal=1024, clock_step=None,
                      clock_variation_bits=0):
+        self.last_cost = WaveCost()
         answered_clock = (state.pending is not None
                           and event is not None
                           and event.operation == 'clock')
@@ -19098,6 +19649,7 @@ class X86Machine(object):
             return current
 
         def idle(current):
+            self.last_cost = total
             if current.console_output:
                 payload = current.console_output
                 current = replace(current, console_output=b'')
@@ -19106,6 +19658,7 @@ class X86Machine(object):
             return current, None
 
         def emit_console(current):
+            self.last_cost = total
             payload = current.console_output
             current = replace(current, console_output=b'')
             return publish(current), MachineEvent(
@@ -19256,6 +19809,7 @@ class X86Machine(object):
                 if boundary.operation == 'halt':
                     if state.console_output:
                         return idle(state)
+                    self.last_cost = total
                     return publish(state), None
                 return idle(state)
             return publish(state), boundary

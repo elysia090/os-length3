@@ -1,119 +1,29 @@
-// Disposable browser host for the existing Linux-in-WebAssembly machine.
+// Disposable host for the native x86 machine.
 //
-// The compact LKL module is decoded by kernel.browser. Reached basic blocks
-// become QM state-step pages; this worker supplies only external barrier
-// events. Root images stay as Blob/HTTP range sources and only requested
-// 4 KiB pages cross into Python memory.
+// The Worker owns only artifact/page delivery and scheduling. CPU state, MMU,
+// exceptions, control flow, and QM state-step execution remain in vm.wasm.
+// Missing native coverage is an error: there is no interpreter fallback.
 
+import { readArtifact } from './artifact.js';
+import { openNativeX86Artifact } from './x86-machine.js';
 import {
-  executeVirtualStateStepLoaded,
-  load as loadVM,
-  mixSpongeRecordsLoaded,
+  openX86Machine,
   release as releaseVM,
 } from './vm.js';
-import { openPageBundle } from './page-fabric.js';
-import { readArtifact } from './artifact.js';
 
-const PYODIDE_VERSIONS = [
-  'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
-  'https://unpkg.com/pyodide@314.0.3/',
-  'https://cdn.jsdelivr.net/pyodide/v0.29.4/full/',
-];
-
-const BLOCK_PAGE_SIZE = 4096;
-let pyodide = null;
-let loading = null;
-let manifest = null;
-const roots = new Map();
-const architectures = new Map();
-const bootProfiles = new Map();
-const x86StepPages = [];
-const x86StepTokens = new Map();
+const sessions = new Map();
+const profiles = new Map();
+let nextHandle = 1;
+let queue = Promise.resolve();
 
 function send(type, payload = {}) {
   self.postMessage(Object.assign({ type }, payload));
 }
 
-function profileStart(id) {
-  const profile = { started: performance.now(), marks: {} };
-  bootProfiles.set(id, profile);
-  return profile;
-}
-
-function profileMark(id, name) {
-  const profile = bootProfiles.get(id);
-  if (!profile) return;
-  profile.marks[name] = Math.round(
-    (performance.now() - profile.started) * 1000,
-  ) / 1000;
-}
-
-function profileLayout(id) {
-  const profile = bootProfiles.get(id);
-  return profile ? { ...profile.marks } : {};
-}
-
-async function loadRuntime(id) {
-  if (pyodide) return pyodide;
-  if (loading) return loading;
-  loading = (async () => {
-    let lastError = null;
-    for (const indexURL of PYODIDE_VERSIONS) {
-      try {
-        send('progress', { id, message: `loading Linux runtime from ${new URL(indexURL).host}…` });
-        const mod = await import(/* webpackIgnore: true */ `${indexURL}pyodide.mjs`);
-        profileMark(id, 'pyodide_module');
-        pyodide = await mod.loadPyodide({ indexURL });
-        profileMark(id, 'pyodide_runtime');
-        break;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    if (!pyodide) throw new Error(`no Pyodide build could be loaded (${lastError?.message || lastError})`);
-
-    manifest = await (await fetch('./kernel-manifest.json', { cache: 'no-cache' })).json();
-    const root = '/home/pyodide/kernel_pkg';
-    pyodide.FS.mkdirTree(root);
-    const texts = await Promise.all(manifest.files.map(async (relative) => {
-      const response = await fetch(`${manifest.base}/${relative}`, { cache: 'no-cache' });
-      if (!response.ok) throw new Error(`${relative}: HTTP ${response.status}`);
-      return response.text();
-    }));
-    profileMark(id, 'python_modules_fetched');
-    const directories = new Set();
-    manifest.files.forEach((relative, index) => {
-      const path = `${root}/${relative}`;
-      const directory = path.slice(0, path.lastIndexOf('/'));
-      if (!directories.has(directory)) {
-        pyodide.FS.mkdirTree(directory);
-        directories.add(directory);
-      }
-      pyodide.FS.writeFile(path, texts[index]);
-    });
-    profileMark(id, 'python_modules_installed');
-    pyodide.runPython(`
-import sys
-if '/home/pyodide/kernel_pkg' not in sys.path:
-    sys.path.insert(0, '/home/pyodide/kernel_pkg')
-import kernel.browser as klb
-`);
-    profileMark(id, 'python_kernel_imported');
-    return pyodide;
-  })();
-  try {
-    return await loading;
-  } finally {
-    loading = null;
-  }
-}
-
-function python(expression) {
-  return pyodide.runPython(expression);
-}
-
-function pythonJson(expression) {
-  return JSON.parse(python(expression));
+function base64(bytes) {
+  let raw = '';
+  for (const byte of bytes) raw += String.fromCharCode(byte);
+  return btoa(raw);
 }
 
 function positiveInteger(value, fallback, name) {
@@ -126,444 +36,206 @@ function positiveInteger(value, fallback, name) {
 
 function sessionHandle(value) {
   const result = Number(value);
-  if (!Number.isSafeInteger(result) || result < 0) throw new Error('invalid Linux session handle');
+  if (!Number.isSafeInteger(result) || !sessions.has(result)) {
+    throw new Error('Linux session handle is not resident');
+  }
   return result;
 }
 
-async function readBootResponse(asset, report) {
-  const { response } = asset;
-  if (!response.body) {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    asset.loaded = bytes.length;
-    report(asset, true);
-    return bytes;
-  }
-  const reader = response.body.getReader();
-  const chunks = [];
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    asset.loaded += value.length;
-    report(asset, false);
-  }
-  const bytes = new Uint8Array(asset.loaded);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  report(asset, true);
-  return bytes;
+function profileStart(id) {
+  const profile = { started: performance.now(), marks: {} };
+  profiles.set(id, profile);
+  return profile;
 }
 
-async function bootBytes(message) {
-  if (!message.kernel && !message.kernelUrl && !message.kernelArtifact) {
-    throw new Error('boot needs kernel, kernelUrl, or kernelArtifact');
-  }
-  const result = {
-    kernel: message.kernel ? new Uint8Array(message.kernel) : null,
-    initrd: message.initrd ? new Uint8Array(message.initrd) : null,
+function profileMark(id, name) {
+  const profile = profiles.get(id);
+  if (!profile) return;
+  profile.marks[name] = Math.round(
+    (performance.now() - profile.started) * 1000,
+  ) / 1000;
+}
+
+function profileLayout(id) {
+  return { ...(profiles.get(id)?.marks || {}) };
+}
+
+function status(machine, raw = machine.status()) {
+  return {
+    halted: raw.halted,
+    rip_hex: raw.rip.toString(16).padStart(16, '0'),
+    retired: raw.retired.toString(),
+    work: raw.work.toString(),
+    span: raw.span.toString(),
+    stopped: raw.halted,
   };
-  const requested = [];
-  if (!result.kernel && !message.kernelArtifact) requested.push({
-    key: 'kernel', label: 'bzImage', url: message.kernelUrl,
-  });
-  if ((message.architecture || 'wasm32') === 'x86-64'
-      && !result.initrd && message.initrdUrl) requested.push({
-    key: 'initrd', label: 'initramfs', url: message.initrdUrl,
-  });
-  if (message.kernelArtifact && !result.kernel) {
-    send('progress', {
-      id: message.id,
-      phase: 'download',
-      label: 'Opening Linux artifact',
-      asset: 'boot cache',
-      loaded: 0,
-      total: null,
-    });
-    const opened = await readArtifact(message.kernelArtifact, {
-      root: message.artifactRoot || undefined,
-      wavePages: 4,
-      cachePages: 16,
-      onProgress({ loaded, total }) {
-        send('progress', {
-          id: message.id,
-          phase: 'download',
-          label: 'Downloading Linux artifact',
-          asset: 'boot cache',
-          loaded,
-          total,
-        });
-      },
-    });
-    result.kernel = opened.bytes;
-    opened.fabric.release();
-    profileMark(message.id, 'boot_artifact_verified');
-    send('progress', {
-      id: message.id,
-      phase: 'download',
-      state: 'complete',
-      label: 'Linux artifact verified',
-      loaded: result.kernel.length,
-      total: result.kernel.length,
-    });
-  }
-  if (!requested.length) return result;
-
-  const responses = await Promise.all(requested.map(async (asset) => {
-    const response = await fetch(asset.url);
-    if (!response.ok) throw new Error(`${asset.label}: HTTP ${response.status}`);
-    return Object.assign(asset, {
-      response,
-      loaded: 0,
-      total: Number(response.headers.get('content-length')) || null,
-    });
-  }));
-  const knownTotal = responses.every((asset) => asset.total != null);
-  const total = knownTotal
-    ? responses.reduce((sum, asset) => sum + asset.total, 0) : null;
-  let lastReport = 0;
-  let lastPercent = -1;
-  const report = (asset, force) => {
-    const loaded = responses.reduce((sum, item) => sum + item.loaded, 0);
-    const percent = total ? Math.floor((loaded * 100) / total) : -1;
-    const now = performance.now();
-    if (!force && percent === lastPercent && now - lastReport < 80) return;
-    lastPercent = percent;
-    lastReport = now;
-    send('progress', {
-      id: message.id,
-      phase: 'download',
-      label: 'Downloading boot image',
-      asset: asset.label,
-      loaded,
-      total,
-    });
-  };
-  await Promise.all(responses.map(async (asset) => {
-    result[asset.key] = await readBootResponse(asset, report);
-  }));
-  const loaded = responses.reduce((sum, asset) => sum + asset.loaded, 0);
-  send('progress', {
-    id: message.id,
-    phase: 'download',
-    state: 'complete',
-    label: 'Boot image downloaded',
-    loaded,
-    total: total || loaded,
-  });
-  return result;
 }
 
-async function rootSource(message) {
-  const delivery = message.rootfsDelivery || null;
-  if (delivery) {
-    const fabric = await openPageBundle({
-      blob: delivery.blob || null,
-      url: delivery.url || null,
-      prefixBytes: delivery.prefixBytes,
-      prefixSha256: delivery.prefixSha256,
-      objectSha256: delivery.objectSha256 || null,
-      // Quotient ranks follow first physical occurrence. A small forward wave
-      // therefore coalesces filesystem readahead without inventing paths or a
-      // second browser VFS cache.
-      wavePages: delivery.wavePages == null ? 4 : delivery.wavePages,
-      cachePages: delivery.cachePages == null ? 32 : delivery.cachePages,
-    });
-    const requested = message.rootfsBytes == null
-      ? fabric.length : Number(message.rootfsBytes);
-    if (!Number.isSafeInteger(requested) || requested !== fabric.length) {
-      throw new Error('rootfsBytes does not match the delivered canonical object');
-    }
-    return { fabric, blob: null, url: null, length: fabric.length };
-  }
-  const root = message.rootfs || null;
-  const length = Number(message.rootfsBytes || root?.size || 0);
-  if (!Number.isSafeInteger(length) || length < 0) {
-    throw new Error('rootfsBytes must be a nonnegative safe integer');
-  }
-  if (length && !root && !message.rootfsUrl) {
-    throw new Error('a nonempty rootfs needs a Blob or rootfsUrl');
-  }
-  return { blob: root, url: message.rootfsUrl || null, length };
-}
-
-async function readRootPage(root, page, id) {
-  const start = page * BLOCK_PAGE_SIZE;
-  if (start < 0 || start >= root.length) throw new Error(`rootfs page ${page} is outside the image`);
-  const end = Math.min(root.length, start + BLOCK_PAGE_SIZE);
-  let bytes;
-  if (root.fabric) bytes = await root.fabric.read(start, end - start);
-  else if (root.blob) {
-    bytes = new Uint8Array(await root.blob.slice(start, end).arrayBuffer());
-  } else {
-    const response = await fetch(root.url, {
-      headers: { Range: `bytes=${start}-${end - 1}` },
-      cache: 'no-cache',
-    });
-    if (response.status !== 206) {
-      throw new Error(`rootfs range ${start}-${end - 1}: expected HTTP 206, got ${response.status}`);
-    }
-    bytes = new Uint8Array(await response.arrayBuffer());
-  }
-  if (bytes.length !== end - start) throw new Error('rootfs range returned the wrong byte count');
-  if (!root.touchedPages) root.touchedPages = new Set();
-  root.touchedPages.add(page);
-  send('progress', {
-    id,
-    phase: 'rootfs',
-    label: 'Reading rootfs on demand',
-    detail: `${root.touchedPages.size} resident page${root.touchedPages.size === 1 ? '' : 's'}`,
-  });
-  return bytes;
-}
-
-function encodeBase64(bytes) {
-  let binary = '';
-  for (let at = 0; at < bytes.length; at += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-  }
-  return btoa(binary);
-}
-
-function decodeBase64(value) {
-  const raw = atob(String(value));
-  const bytes = new Uint8Array(raw.length);
-  for (let index = 0; index < raw.length; index += 1) {
-    bytes[index] = raw.charCodeAt(index);
-  }
-  return bytes;
-}
-
-async function installX86VmKernels(id) {
-  send('progress', { id, phase: 'vm', label: 'Opening normalized VM pages' });
-  await loadVM();
-  profileMark(id, 'vm_resident');
-  self.mixSpongeRecords = (lanes, tail, seed, records, rounds) => {
-    const mixed = mixSpongeRecordsLoaded(
-      decodeBase64(lanes), decodeBase64(tail), decodeBase64(seed),
-      decodeBase64(records), Number(rounds),
-    );
-    return JSON.stringify({
-      lanes: encodeBase64(mixed.lanes),
-      tail: encodeBase64(mixed.tail),
-    });
-  };
-  self.installX86StateStep = (pageBase64) => {
-    pageBase64 = String(pageBase64);
-    const present = x86StepTokens.get(pageBase64);
-    if (present != null) return present;
-    const token = x86StepPages.length + 1;
-    x86StepPages.push(decodeBase64(pageBase64));
-    x86StepTokens.set(pageBase64, token);
-    return token;
-  };
-  self.executeX86StateStep = (
-    token, valuesBase64, readPage, writePage,
-  ) => {
-    token = Number(token);
-    if (!Number.isSafeInteger(token) || token <= 0
-        || token > x86StepPages.length) {
-      throw new Error('x86 state-step token is invalid');
-    }
-    const page = x86StepPages[token - 1];
-    const entry = decodeBase64(valuesBase64);
-    if (entry.length % 8) throw new Error('x86 state cut is not uint64-aligned');
-    const view = new DataView(entry.buffer, entry.byteOffset, entry.byteLength);
-    const locals = Array.from(
-      { length: entry.length / 8 },
-      (_unused, index) => view.getBigUint64(index * 8, true),
-    );
-    const cut = executeVirtualStateStepLoaded(
-      page, locals, [], readPage, writePage,
-    );
-    if (cut.stack.length || cut.locals.length !== locals.length) {
-      throw new Error('vm.wasm returned a malformed x86 state cut');
-    }
-    const output = new Uint8Array(cut.locals.length * 8);
-    const outputView = new DataView(output.buffer);
-    cut.locals.forEach((value, index) => {
-      outputView.setBigUint64(index * 8, value, true);
-    });
-    return encodeBase64(output);
-  };
-  send('progress', { id, phase: 'vm', label: 'Normalized VM is resident' });
-}
-
-function step(handle, event, budget, maxInternal) {
-  pyodide.globals.set('_linux_event', JSON.stringify(event));
-  try {
-    return pythonJson(
-      `klb.step(${handle}, _linux_event, ${budget}, ${maxInternal})`,
-    );
-  } finally {
-    pyodide.globals.delete('_linux_event');
-  }
+function machineArtifact(message) {
+  const explicit = message.machineArtifact || message.x86?.machineArtifact;
+  if (explicit) return String(explicit);
+  const source = String(message.kernelArtifact || 'linux-x86-64');
+  return source.endsWith('-machine') ? source : `${source}-machine`;
 }
 
 async function drive(id, handle, options = {}) {
   handle = sessionHandle(handle);
-  const root = roots.get(handle);
-  if (!root) throw new Error('Linux session has no root source');
-  const architecture = architectures.get(handle);
-  const budget = positiveInteger(options.budget, 1 << 21, 'budget');
-  const maxInternal = positiveInteger(options.maxInternal, 1024, 'maxInternal');
-  const maxSteps = positiveInteger(options.maxSteps, 1 << 16, 'maxSteps');
-  const stages = Array.from(options.stages || ['rootfs_mount', 'init_probe']);
-  let event = null;
-  let result = null;
-  for (let count = 0; count < maxSteps; count += 1) {
-    result = step(handle, event, budget, maxInternal);
-    event = null;
-    if (result.event) send('trace', { id, handle, event: result.event });
-    const operation = result.event?.operation;
-    if (operation === 'block_read') {
-      const [device, page] = result.event.coordinate;
-      if (device !== 0) throw new Error(`no browser block device ${device}`);
-      const bytes = await readRootPage(root, page, id);
-      event = { operation, coordinate: [device, page], data_base64: encodeBase64(bytes) };
-      continue;
+  const session = sessions.get(handle);
+  const quantum = positiveInteger(
+    options.quantum ?? options.maxBlocks, 512, 'x86 block quantum',
+  );
+  const maxQuanta = positiveInteger(options.maxQuanta, 2048, 'x86 quanta');
+  let raw = session.machine.status();
+  for (let count = 0; count < maxQuanta; count += 1) {
+    raw = await session.machine.advance(quantum);
+    if (raw.missingBlock != null) {
+      const rip = raw.missingBlock.toString(16).padStart(16, '0');
+      throw new Error(
+        `native QM artifact has no x86 block at RIP 0x${rip}`,
+      );
     }
-    if (operation === 'clock') {
-      if (architecture === 'x86-64') {
-        throw new Error('x86 replayable clock escaped its machine step');
-      }
-      event = { operation, coordinate: [], data: Math.floor(performance.now() * 1e6) };
-      continue;
+    if (raw.halted) break;
+    if ((count & 15) === 15) {
+      send('progress', {
+        id,
+        phase: 'execute',
+        label: 'Running Linux in vm.wasm',
+        detail: `${raw.retired.toString()} source instructions`,
+      });
+      // A scheduling yield is not an execution fallback or guest barrier.
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    if (operation === 'interrupt') {
-      event = { operation, coordinate: result.event.coordinate };
-      continue;
-    }
-    if (operation === 'console_write' || operation === 'block_write') continue;
-    if (result.event) return result;
-    if (result.state.stopped) {
-      if (!stages.length || result.state.result !== 0) return result;
-      const stage = stages.shift();
-      pythonJson(`klb.invoke(${handle}, ${JSON.stringify(stage)})`);
-      send('stage', { id, handle, stage });
-      continue;
-    }
-    // A bounded state-step quantum ended without external I/O. Yield so the
-    // browser remains responsive, then resume the exact continuation.
-    await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  throw new Error(`Linux did not reach an external boundary in ${maxSteps} steps`);
+  return {
+    state: status(session.machine, raw),
+    layout: session.artifact.layout(),
+  };
 }
 
 async function boot(message) {
+  if ((message.architecture || 'x86-64') !== 'x86-64') {
+    throw new Error('Linux browser runtime currently accepts native x86-64 artifacts only');
+  }
   profileStart(message.id);
-  const architecture = message.architecture || 'wasm32';
-  if (!['wasm32', 'x86-64'].includes(architecture)) {
-    throw new Error(`unknown Linux architecture ${architecture}`);
-  }
-  const [, bootImage] = await Promise.all([
-    loadRuntime(message.id), bootBytes(message),
-  ]);
-  profileMark(message.id, 'runtime_and_boot_ready');
-  const requestId = positiveInteger(message.id, null, 'request id');
-  const kernel = bootImage.kernel;
-  const initrd = architecture === 'x86-64' ? bootImage.initrd : null;
-  const root = await rootSource(message);
-  const path = `/tmp/linux-${requestId}.wasm`;
-  const initrdPath = `/tmp/linux-${requestId}.initramfs`;
-  pyodide.FS.writeFile(path, kernel);
-  let handle;
-  try {
-    if (architecture === 'x86-64') {
-      await installX86VmKernels(message.id);
-      const x86 = Object.assign({}, message.x86 || {});
-      if (initrd) {
-        pyodide.FS.writeFile(initrdPath, initrd);
-        x86.initrd_path = initrdPath;
-      }
-      pyodide.globals.set('_x86_options', JSON.stringify(x86));
-      try {
-        send('progress', {
-          id: message.id,
-          phase: 'normalize',
-          label: 'Normalizing the x86 machine',
-        });
-        handle = Number(python(`klb.boot_x86_file(${JSON.stringify(path)}, _x86_options)`));
-        profileMark(message.id, 'machine_opened');
-      } finally {
-        pyodide.globals.delete('_x86_options');
-      }
-    } else {
-      handle = Number(python(`klb.boot_file(${JSON.stringify(path)}, ${root.length}, ${JSON.stringify(message.entry || 'init')})`));
-    }
-  } finally {
-    pyodide.FS.unlink(path);
-    if (initrd) pyodide.FS.unlink(initrdPath);
-  }
-  roots.set(handle, root);
-  architectures.set(handle, architecture);
-  send('booted', { id: message.id, handle, architecture });
-  const driveOptions = Object.assign({}, message.options || {});
-  if (architecture === 'x86-64' && driveOptions.stages === undefined) {
-    driveOptions.stages = [];
-  }
-  const result = await drive(message.id, handle, driveOptions);
-  profileMark(message.id, 'first_drive_complete');
-  send('result', {
-    id: message.id, ok: true, handle, result,
-    profile: profileLayout(message.id),
+  const name = machineArtifact(message);
+  send('progress', {
+    id: message.id,
+    phase: 'download',
+    label: 'Opening the native Linux machine',
+    asset: name,
   });
-  bootProfiles.delete(message.id);
-}
-
-self.onmessage = async (event) => {
-  const message = event.data || {};
+  const opened = await readArtifact(name, {
+    root: message.artifactRoot || null,
+    onProgress({ loaded, total, fetched }) {
+      send('progress', {
+        id: message.id,
+        phase: 'download',
+        label: 'Opening the native Linux machine',
+        asset: name,
+        loaded,
+        total,
+        detail: `${fetched} delivered bytes`,
+      });
+    },
+  });
+  profileMark(message.id, 'artifact_verified');
+  let artifact;
+  let machine;
   try {
-    if (message.action === 'boot') {
-      await boot(message);
-    } else if (message.action === 'drive') {
-      const handle = sessionHandle(message.handle);
-      const result = await drive(message.id, handle, message.options);
-      send('result', { id: message.id, ok: true, handle, result });
-    } else if (message.action === 'release') {
-      await loadRuntime(message.id);
-      const handle = sessionHandle(message.handle);
-      const architecture = architectures.get(handle);
-      pythonJson(`klb.release(${handle})`);
-      const root = roots.get(handle);
-      if (root?.fabric) root.fabric.release();
-      roots.delete(handle);
-      architectures.delete(handle);
-      if (architecture === 'x86-64'
-          && !Array.from(architectures.values()).includes('x86-64')) {
-        delete self.mixSpongeRecords;
-        delete self.installX86StateStep;
-        delete self.executeX86StateStep;
-        x86StepPages.length = 0;
-        x86StepTokens.clear();
-        releaseVM();
-      }
-      send('result', { id: message.id, ok: true, handle });
-    } else if (message.action === 'input') {
-      await loadRuntime(message.id);
-      const handle = sessionHandle(message.handle);
-      const bytes = new TextEncoder().encode(String(message.data || ''));
-      pyodide.globals.set('_console_input', encodeBase64(bytes));
-      let result;
-      try {
-        result = pythonJson(`klb.console_input(${handle}, data_base64=_console_input)`);
-      } finally {
-        pyodide.globals.delete('_console_input');
-      }
-      send('result', { id: message.id, ok: true, handle, result });
-    } else {
-      throw new Error(`unknown Linux worker action ${message.action}`);
-    }
+    artifact = await openNativeX86Artifact(opened.bytes, message.x86 || {});
+    profileMark(message.id, 'physical_pages_opened');
+    machine = await openX86Machine({
+      ...artifact,
+      devices: {
+        consoleWrite(bytes) {
+          send('trace', {
+            event: {
+              operation: 'console_write',
+              data_base64: base64(bytes),
+            },
+          });
+        },
+      },
+    });
+    profileMark(message.id, 'vm_opened');
   } catch (error) {
-    profileMark(message.id, 'failed');
+    artifact?.release();
+    opened.fabric.release();
+    throw error;
+  }
+  const handle = nextHandle++;
+  sessions.set(handle, { artifact, machine, opened });
+  send('booted', { id: message.id, handle, architecture: 'x86-64' });
+  try {
+    const result = await drive(
+      message.id, handle, message.options || {},
+    );
+    profileMark(message.id, 'first_drive_complete');
     send('result', {
-      id: message.id, ok: false, error: error?.message || String(error),
+      id: message.id,
+      ok: true,
+      handle,
+      result,
       profile: profileLayout(message.id),
     });
-    bootProfiles.delete(message.id);
+  } finally {
+    profiles.delete(message.id);
   }
+}
+
+function releaseSession(handle) {
+  handle = sessionHandle(handle);
+  const session = sessions.get(handle);
+  session.machine.release();
+  session.artifact.release();
+  session.opened.fabric.release();
+  sessions.delete(handle);
+  if (!sessions.size) releaseVM();
+  return handle;
+}
+
+async function handleMessage(message) {
+  if (message.action === 'boot') {
+    await boot(message);
+    return;
+  }
+  if (message.action === 'drive') {
+    const handle = sessionHandle(message.handle);
+    const result = await drive(message.id, handle, message.options || {});
+    send('result', { id: message.id, ok: true, handle, result });
+    return;
+  }
+  if (message.action === 'release') {
+    const handle = releaseSession(message.handle);
+    send('result', { id: message.id, ok: true, handle });
+    return;
+  }
+  if (message.action === 'input') {
+    const handle = sessionHandle(message.handle);
+    const session = sessions.get(handle);
+    const bytes = new TextEncoder().encode(String(message.data || ''));
+    const accepted = session.machine.feedConsole(bytes);
+    send('result', { id: message.id, ok: true, handle, accepted });
+    return;
+  }
+  throw new Error(`unknown Linux worker action ${message.action}`);
+}
+
+self.onmessage = (event) => {
+  const message = event.data || {};
+  queue = queue.then(
+    () => handleMessage(message),
+    () => handleMessage(message),
+  ).catch((error) => {
+    profileMark(message.id, 'failed');
+    send('result', {
+      id: message.id,
+      ok: false,
+      error: error?.message || String(error),
+      profile: profileLayout(message.id),
+    });
+    profiles.delete(message.id);
+  });
 };
 
 send('ready');

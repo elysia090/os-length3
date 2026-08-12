@@ -7,7 +7,7 @@
     .globl ranks8_qm
     .type ranks8_qm, @function
 ranks8_qm:
-    movabsq $0x101010101010101, %r11
+    movabsq $0x1010101010101, %r11
     pdep %r11, %rdi, %rdi
     movabsq $0x101010101010100, %r11
     imulq %r11, %rdi

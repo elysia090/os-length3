@@ -20,11 +20,11 @@ from kernel.pagefabric import write_artifact
 
 
 def build(source, output, name, page_bytes=1 << 16, data_shards=8,
-          parity_shards=2, included_shards='data'):
+          parity_shards=2, included_shards='data', replace=False):
     return write_artifact(
         Path(source).read_bytes(), output, name, page_bytes=page_bytes,
         data_shards=data_shards, parity_shards=parity_shards,
-        included_shards=included_shards)
+        included_shards=included_shards, replace=replace)
 
 
 def main(argv=None):
@@ -38,13 +38,18 @@ def main(argv=None):
     parser.add_argument('--data-shards', type=int, default=8)
     parser.add_argument('--parity-shards', type=int, default=2)
     parser.add_argument('--include-parity', action='store_true')
+    parser.add_argument(
+        '--replace', action='store_true',
+        help=('replace an existing locator index when it names different '
+              'canonical bytes; old delivery files remain recoverable'))
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     name = args.name or args.source.stem
     index = build(
         args.source, args.out, name, page_bytes=args.page_bytes,
         data_shards=args.data_shards, parity_shards=args.parity_shards,
-        included_shards='all' if args.include_parity else 'data')
+        included_shards='all' if args.include_parity else 'data',
+        replace=args.replace)
     if args.json:
         print(json.dumps(index, indent=2, sort_keys=True))
     else:

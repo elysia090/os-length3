@@ -8,18 +8,25 @@
       "path": "compiler/module/index.json"
     },
     "linux-x86-64": {
-      "bytes": 16903828,
+      "bytes": 2097021,
       "format": "x86-boot-cache-v1",
-      "identity": "0a1e490d74834cb5da9d960d19cee7816902eedd170bf7682ec3b0fef0a71d02",
-      "initrd_bytes": 0,
+      "identity": "2dc3fab08b457bd03df8a609eadbbfe954d4404698db0e36fac229076a78cb51",
+      "initrd_bytes": 200704,
       "memory_bytes": 134217728,
       "path": "linux-x86-64/index.json"
     },
+    "linux-x86-64-machine": {
+      "bytes": 4767768,
+      "format": "x86-native-machine-v1",
+      "identity": "aa7d353fbeca1e7d0451a61a23b6bc45eabb091ffa1b3996ddd91c1aa9a0ff12",
+      "path": "linux-x86-64-machine/index.json",
+      "source_identity": "2dc3fab08b457bd03df8a609eadbbfe954d4404698db0e36fac229076a78cb51"
+    },
     "vm": {
-      "bytes": 55315,
+      "bytes": 78341,
       "components": "vm/index.json",
       "format": "webassembly-runtime-v1",
-      "identity": "61cc2094e876b6c000385b561baac685d61cae24a3cd3a84bf253ba0e25c6f80",
+      "identity": "989c384f069e388c6f70889115852706ee95e260f9a2a955524f41d7bf681a21",
       "path": "vm/module/index.json"
     }
   },

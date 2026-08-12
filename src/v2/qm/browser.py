@@ -9,10 +9,10 @@ the Python side:
     plan(source, options)     what to compile, and which inputs to evaluate
     finish(source, options)   the full result, given the evaluated table
 
-The split exists because the *evaluation* is the one step that must not happen
-in Python: `web/worker.js` compiles the paste with clang.wasm, instantiates the
-wasm32 module and calls the exported function over the domain at native speed.
-Everything else — quotients, synthesis, lowering, verification — runs here.
+The browser evaluates one compact function projection over the selected
+domain: `web/worker.js` compiles the paste with clang.wasm, then vm.wasm
+executes the selected body. Quotients, synthesis, lowering and verification
+remain available here as build logic and as an independent oracle.
 """
 
 import json

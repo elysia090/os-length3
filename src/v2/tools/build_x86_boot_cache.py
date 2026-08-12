@@ -2,6 +2,7 @@
 """Build a disposable directly mapped x86 Linux boot cache from a bzImage."""
 
 import argparse
+import json
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -14,6 +15,30 @@ if str(ROOT) not in sys.path:
 from kernel.x86 import load_bzimage_kernel
 from kernel.x86snapshot import dump_x86_boot_cache, load_x86_boot_cache
 from kernel.pagefabric import write_artifact
+
+
+def update_catalog(artifact_root, name, artifact, memory_bytes, initrd_bytes):
+    """Publish the selected boot object through the root artifact catalog."""
+    artifact_root = Path(artifact_root)
+    path = artifact_root / 'index.json'
+    catalog = (json.loads(path.read_text(encoding='utf-8'))
+               if path.exists() else {'schema': 1, 'artifacts': {}})
+    if (catalog.get('schema') != 1
+            or not isinstance(catalog.get('artifacts'), dict)):
+        raise ValueError('artifact root catalog is invalid')
+    identity = artifact['identity']
+    catalog['artifacts'][str(name)] = {
+        'bytes': int(identity['bytes']),
+        'format': 'x86-boot-cache-v1',
+        'identity': identity['digest'],
+        'initrd_bytes': int(initrd_bytes),
+        'memory_bytes': int(memory_bytes),
+        'path': '%s/index.json' % name,
+    }
+    catalog['artifacts'] = dict(sorted(catalog['artifacts'].items()))
+    path.write_text(json.dumps(catalog, indent=2, sort_keys=True) + '\n',
+                    encoding='utf-8', newline='\n')
+    return catalog['artifacts'][str(name)]
 
 
 def main(argv=None):
@@ -29,6 +54,8 @@ def main(argv=None):
                         help='also publish a chunked identity-addressed copy')
     parser.add_argument('--artifact-name', default='linux-x86-64')
     parser.add_argument('--delivery-page-bytes', type=int, default=1 << 16)
+    parser.add_argument('--replace-artifact', action='store_true',
+                        help='publish new canonical bytes at an existing name')
     arguments = parser.parse_args(argv)
 
     image = arguments.bzimage.read_bytes()
@@ -66,7 +93,11 @@ def main(argv=None):
         artifact = write_artifact(
             payload, arguments.artifact_root, arguments.artifact_name,
             page_bytes=arguments.delivery_page_bytes,
-            included_shards=arguments.shards)
+            included_shards=arguments.shards,
+            replace=arguments.replace_artifact)
+        update_catalog(
+            arguments.artifact_root, arguments.artifact_name, artifact,
+            len(boot.state.memory), 0 if initrd is None else len(initrd))
         print('artifact_identity=%s' % artifact['identity']['digest'])
         print('artifact_delivery=%s' % artifact['preferred'])
     return 0

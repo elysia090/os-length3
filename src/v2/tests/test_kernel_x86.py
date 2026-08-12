@@ -297,6 +297,22 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(boundary.operation, 'halt')
         self.assertEqual(state.register('rax'), 0xffff888080100000)
 
+    def test_cmov_preserves_sign_extended_immediate_coordinates(self):
+        # mov rdx,0xffffffff818ac084; mov rax,0xffffffff81951068;
+        # cmovne rax,rdx; hlt.  The composed register cut must not narrow
+        # either sign-extended C7 /0 constant to SELECT_U32.
+        code = bytes.fromhex(
+            '48 c7 c2 84 c0 8a 81 '
+            '48 c7 c0 68 10 95 81 '
+            '48 0f 45 c2 f4')
+
+        state, boundary, _cost = X86DBT().run(initial_state(
+            memory_with((0x100, code)), 0x100))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 0xffffffff818ac084)
+        self.assertEqual(state.register('rdx'), 0xffffffff818ac084)
+
     def test_cdq_sign_extends_eax_into_edx(self):
         # mov eax,-2; cdq; hlt
         code = bytes.fromhex('b8 fe ff ff ff 99 f4')
@@ -378,6 +394,20 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(boot.state.rip, 0x200000)
         self.assertEqual(boot.state.memory.read(0x200000, 4), b'qm\xf4\0')
         self.assertEqual(boot.state.register('rsi'), BOOT_PARAMS_ADDRESS)
+
+    def test_direct_kernel_uses_preferred_base_when_not_relocatable(self):
+        image = bytearray(synthetic_kernel_bzimage())
+        image[0x234] = 0
+        struct.pack_into('<Q', image, 0x258, 0x400000)
+
+        boot = load_bzimage_kernel(bytes(image), memory_bytes=16 << 20)
+
+        self.assertEqual(boot.load_address, 0x400000)
+        self.assertEqual(boot.state.rip, 0x400000)
+        self.assertEqual(boot.state.memory.read(0x400000, 4), b'qm\xf4\0')
+        self.assertEqual(
+            boot.state.memory.read(BOOT_PARAMS_ADDRESS + 0x214, 4),
+            struct.pack('<I', 0x400000))
 
     def test_kernel_elf_uses_virtual_not_physical_alignment_congruence(self):
         image = bytearray(synthetic_kernel_bzimage())
@@ -5187,7 +5217,7 @@ class TestX86StateStep(unittest.TestCase):
         self.assertGreater(dbt.layout()['block_proof_hits'], 100)
         self.assertEqual(dbt.layout()['block_proof_misses'], 0)
 
-    def test_instruction_budget_has_no_hidden_basic_block_ceiling(self):
+    def test_direct_self_loop_yields_at_its_persistent_cut(self):
         dbt = X86DBT()
         state = initial_state(
             memory_with((0x100, bytes.fromhex('eb fe'))), 0x100)
@@ -5195,7 +5225,8 @@ class TestX86StateStep(unittest.TestCase):
         _state, boundary, cost = dbt.run(state, budget=65540)
 
         self.assertEqual(boundary.operation, 'timeslice')
-        self.assertEqual(cost.instructions, 65540)
+        self.assertLess(cost.instructions, 4)
+        self.assertEqual(dbt.layout()['collapsed_spin_waits'], 1)
 
     def test_zero_work_control_states_thread_inside_one_step(self):
         code = bytes.fromhex('b0 01 b3 02 b1 03 eb f8')
@@ -5208,10 +5239,11 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.register('rax'), 1)
         self.assertEqual(state.register('rbx'), 2)
         self.assertEqual(state.register('rcx'), 3)
-        self.assertEqual(cost.instructions, 16)
+        self.assertEqual(cost.instructions, 8)
         self.assertGreaterEqual(
             dbt.layout()['register_cut_instructions'], 3)
         self.assertLess(dbt.layout()['threaded_controls'], 8)
+        self.assertEqual(dbt.layout()['collapsed_spin_waits'], 1)
 
     def test_direct_page_proof_invalidates_self_modifying_code(self):
         first = bytes.fromhex('b8 01 00 00 00 f4')
@@ -6218,6 +6250,7 @@ class TestX86StateStep(unittest.TestCase):
             state, budget=2, max_internal=1)
 
         self.assertIsNone(event)
+        self.assertGreater(runtime.last_cost.instructions, 0)
         self.assertIsInstance(state.cpu.memory, MemoryCut)
         # A maximal physical page may now reach HLT in this first quantum.
         # If it does, the one dirty byte cut is already the terminal root;
@@ -6225,9 +6258,12 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(
             runtime.dbt.layout()['persistent_cuts'], int(state.stopped))
         for _unused in range(8):
+            if state.stopped:
+                break
             state, event = runtime.machine_step(
                 state, budget=2, max_internal=1)
             self.assertIsNone(event)
+            self.assertGreater(runtime.last_cost.instructions, 0)
             if state.stopped:
                 break
         self.assertTrue(state.stopped)

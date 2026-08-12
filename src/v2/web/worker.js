@@ -1,10 +1,10 @@
-// Worker: Pyodide runs the Quotient Minimizer; Clang/WASM compiles and executes
-// the pasted kernel.
+// Analysis worker. vm.wasm owns evaluation of compiled function bodies.
+// Pyodide still owns the analysis interpreter and its filesystem, and the
+// compiler worker still owns a Wasm/WASI instance; the runtime-route audit
+// deliberately reports both until their state-step migrations are complete.
 //
-// The split matters.  Everything that decides something — quotients, synthesis,
-// lowering, verification — is Python, because that is where the engine lives and
-// where it can be tested.  The one thing that must not be Python is *evaluating*
-// the kernel over 2^16 inputs, so that is done by calling the compiled wasm.
+// Source language is not the boundary. Evaluation over the input domain crosses
+// the VM byte/state boundary instead of creating another Wasm instance here.
 //
 // The UI thread stays responsive because all of this happens here.
 

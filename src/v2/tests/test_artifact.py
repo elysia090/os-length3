@@ -12,12 +12,34 @@ import unittest
 from urllib.request import Request, urlopen
 
 from kernel.pagefabric import PageFabric, open_artifact, write_artifact
+from tools.build_x86_boot_cache import update_catalog
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestArtifactDelivery(unittest.TestCase):
+    def test_x86_publication_updates_the_root_catalog(self):
+        artifact = {
+            'identity': {
+                'algorithm': 'sha256', 'digest': '12' * 32, 'bytes': 4096,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            entry = update_catalog(
+                directory, 'linux-test', artifact, 128 << 20, 8192)
+            catalog = json.loads(
+                (Path(directory) / 'index.json').read_text(encoding='utf-8'))
+        self.assertEqual(entry, catalog['artifacts']['linux-test'])
+        self.assertEqual(entry, {
+            'bytes': 4096,
+            'format': 'x86-boot-cache-v1',
+            'identity': '12' * 32,
+            'initrd_bytes': 8192,
+            'memory_bytes': 128 << 20,
+            'path': 'linux-test/index.json',
+        })
+
     def test_identity_does_not_contain_delivery_granularity(self):
         payload = (bytes(range(251)) * 7) + b'canonical tail'
         digest = hashlib.sha256(payload).hexdigest()
@@ -38,6 +60,7 @@ class TestArtifactDelivery(unittest.TestCase):
             })
             self.assertNotEqual(first_delivery, second['preferred'])
             self.assertEqual(len(second['deliveries']), 2)
+
             object_root = root / 'fixture'
             self.assertEqual(
                 {path.name for path in object_root.iterdir()},
@@ -53,6 +76,17 @@ class TestArtifactDelivery(unittest.TestCase):
                     stored, root, 'fixture', delivery_digest)
                 opened = PageFabric(manifest, (store,))
                 self.assertEqual(opened.read(0, opened.length), payload)
+
+    def test_replacing_a_named_artifact_starts_a_fresh_identity_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'artifact'
+            first = write_artifact(b'first', root, 'role', page_bytes=64)
+            with self.assertRaises(ValueError):
+                write_artifact(b'second', root, 'role', page_bytes=64)
+            second = write_artifact(
+                b'second', root, 'role', page_bytes=64, replace=True)
+        self.assertNotEqual(first['identity'], second['identity'])
+        self.assertEqual(len(second['deliveries']), 1)
 
     def test_a_tampered_projection_cannot_claim_the_identity(self):
         payload = b'page identity' * 100
@@ -152,8 +186,26 @@ class TestArtifactDelivery(unittest.TestCase):
             child.is_dir() and len(child.name) == 64
             for child in catalog_path.parent.iterdir()))
         self.assertEqual(
-            {'compiler', 'linux-x86-64', 'vm'},
+            {'compiler', 'linux-x86-64', 'linux-x86-64-machine', 'vm'},
             set(catalog['artifacts']))
+
+    def test_published_vm_is_the_shipped_x86_runtime(self):
+        repository = ROOT.parents[1]
+        artifact_root = repository / 'artifact'
+        catalog = json.loads(
+            (artifact_root / 'index.json').read_text(encoding='utf-8'))
+        entry = catalog['artifacts']['vm']
+        index = json.loads(
+            (artifact_root / entry['path']).read_text(encoding='utf-8'))
+        manifest, store = open_artifact(
+            index, artifact_root / 'vm', 'module')
+        opened = PageFabric(manifest, (store,))
+        self.assertEqual(
+            opened.read(0, opened.length),
+            (ROOT / 'web' / 'vm.wasm').read_bytes())
+        category = json.loads(
+            (artifact_root / 'vm' / 'index.json').read_text(encoding='utf-8'))
+        self.assertIn('vm_x86_open', category['vm']['exports'])
 
     def test_browser_resolves_the_locator_and_verifies_canonical_bytes(self):
         node = os.environ.get('NODE_BINARY') or shutil.which('node')

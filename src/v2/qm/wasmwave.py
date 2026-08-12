@@ -441,14 +441,18 @@ def execute_slice(plan, state):
             arguments = tuple(resolve(argument) for argument in node.arguments)
             if node.op == 'memory.i64.repeat':
                 from .steppage import _repeat
-                _repeat(memory, *arguments)
+                _repeat(memory, *arguments[:4])
+                result = 0
+            elif node.op == 'memory.i64.copy':
+                from .steppage import _copy
+                _copy(memory, *arguments[:4])
                 result = 0
             elif node.op == 'memory.i64.find2':
                 from .steppage import _find2
-                result = _find2(memory, *arguments)
+                result = _find2(memory, *arguments[:4])
             elif node.op == 'memory.i64.copy_until':
                 from .steppage import _copy_until
-                result = _copy_until(memory, *arguments)
+                result = _copy_until(memory, *arguments[:7])
             elif node.op == 'memory.i64.relative_exchange':
                 from .steppage import _relative_exchange, _relative_select
                 mode = arguments[6]

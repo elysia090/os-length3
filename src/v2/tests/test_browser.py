@@ -8,6 +8,7 @@ does not, so a break here is a break in the browser.
 
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 import tempfile
@@ -157,7 +158,8 @@ uint64_t ranks8_qm(uint8_t x)
     def test_the_default_compiler_enters_the_core_directly(self):
         with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
             clang = handle.read()
-        self.assertIn("./drivers/compiler-core.js", clang)
+        self.assertIn("import('./drivers/compiler-core.js')", clang)
+        self.assertNotIn('this.config.driverUrl', clang)
         self.assertNotIn(
             "DEFAULT_DRIVER = new URL('./drivers/yowasp-clang.js'", clang)
         with open(os.path.join(ROOT, 'web', 'drivers',
@@ -501,12 +503,19 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn("track.removeAttribute('aria-valuenow')", linux_terminal)
         self.assertIn("new URL('linux-worker.js', import.meta.url)",
                       linux_terminal)
+        self.assertIn('Linux halted before console output', linux_terminal)
+        self.assertIn('kernel halted before /init', linux_terminal)
 
         with open(os.path.join(ROOT, 'web', 'linux-worker.js')) as handle:
             linux_worker = handle.read()
-        self.assertIn('response.body.getReader()', linux_worker)
+        self.assertIn('readArtifact(name, {', linux_worker)
+        self.assertIn('openNativeX86Artifact(opened.bytes', linux_worker)
+        self.assertIn('openX86Machine({', linux_worker)
+        self.assertIn('...artifact,', linux_worker)
+        self.assertNotIn('loadPyodide', linux_worker)
+        self.assertNotIn('executeX86StateStep', linux_worker)
         self.assertIn("phase: 'download'", linux_worker)
-        self.assertIn("phase: 'rootfs'", linux_worker)
+        self.assertIn("phase: 'execute'", linux_worker)
 
 
 class TestCapabilities(unittest.TestCase):
@@ -716,24 +725,26 @@ class TestPackedValueTransportWithoutToolchain(unittest.TestCase):
             wasm_path = os.path.join(tmp, 'packed.wasm')
             with open(wasm_path, 'wb') as handle:
                 handle.write(wasm)
-            with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
-                shipped = handle.read()
-            with open(os.path.join(tmp, 'clang.mjs'), 'w') as handle:
-                handle.write(shipped)
             runner = os.path.join(tmp, 'run.mjs')
+            clang_url = (Path(ROOT) / 'web' / 'clang.js').as_uri()
+            vm_url = (Path(ROOT) / 'web' / 'vm.js').as_uri()
+            vm_wasm = str(Path(ROOT) / 'web' / 'vm.wasm')
             with open(runner, 'w') as handle:
                 handle.write(
                     "import { readFileSync } from 'node:fs';\n"
-                    "import { evaluateWasm } from './clang.mjs';\n"
+                    f"const VM = await import({json.dumps(vm_url)});\n"
+                    f"const Clang = await import({json.dumps(clang_url)});\n"
+                    "await VM.load(await WebAssembly.compile("
+                    "readFileSync(process.argv[5])));\n"
                     "const values = JSON.parse(process.argv[3]);\n"
                     "const layout = JSON.parse(process.argv[4]);\n"
-                    "const out = await evaluateWasm(readFileSync(process.argv[2]),"
+                    "const out = await Clang.evaluateWasm(readFileSync(process.argv[2]),"
                     " 'f', values, 64, 64, layout);\n"
                     "process.stdout.write(JSON.stringify(out));\n")
             run = subprocess.run(
                 ['node', runner, wasm_path,
                  json.dumps([str(value) for value in values]),
-                 json.dumps(layout)], capture_output=True, text=True)
+                 json.dumps(layout), vm_wasm], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(json.loads(run.stdout),
                          [str(value) for value in values])
@@ -742,14 +753,11 @@ class TestPackedValueTransportWithoutToolchain(unittest.TestCase):
 @unittest.skipUnless(NATIVE.available() and _have('node'),
                      'needs native Clang and node')
 class TestValueTransport(unittest.TestCase):
-    """Getting the domain into the wasm and the results back out.
+    """Getting the domain into vm.wasm and the results back out.
 
     Two separate things used to go wrong on the way, and neither shows up in a
     Python test, because neither is in Python:
 
-      * an i64 parameter takes a BigInt across the JS boundary — a Number
-        throws `Cannot convert 255 to a BigInt`, so every 64-bit kernel died
-        the moment the oracle was called;
       * a JSON number is a double, and 4,177 of the 4,287 points in a 64-bit
         domain are above 2^53, so the inputs QM verified against were not the
         inputs the kernel was evaluated at.
@@ -760,7 +768,7 @@ class TestValueTransport(unittest.TestCase):
 
     def _evaluate(self, source, function, values, output_bits, input_bits,
                   parameters=None):
-        """`evaluateWasm` from web/clang.js, on a real WebAssembly engine."""
+        """Run shipped `evaluateWasm`; vm.wasm owns every function step."""
         with tempfile.TemporaryDirectory() as tmp:
             from qm.clang import prepare_source
             csrc = os.path.join(tmp, 'k.c')
@@ -774,19 +782,19 @@ class TestValueTransport(unittest.TestCase):
                 capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr)
 
-            # .mjs because the repo has no "type": "module"; the bytes are the
-            # shipped file's, so a break in it is a break here.
-            with open(os.path.join(ROOT, 'web', 'clang.js')) as handle:
-                shipped = handle.read()
-            with open(os.path.join(tmp, 'clang.mjs'), 'w') as handle:
-                handle.write(shipped)
+            clang_url = (Path(ROOT) / 'web' / 'clang.js').as_uri()
+            vm_url = (Path(ROOT) / 'web' / 'vm.js').as_uri()
+            vm_wasm = str(Path(ROOT) / 'web' / 'vm.wasm')
             with open(os.path.join(tmp, 'run.mjs'), 'w') as handle:
                 handle.write(
                     "import { readFileSync } from 'node:fs';\n"
-                    "import { evaluateWasm } from './clang.mjs';\n"
+                    f"const VM = await import({json.dumps(vm_url)});\n"
+                    f"const Clang = await import({json.dumps(clang_url)});\n"
                     "const [wasm, fn, bits, inBits, layout] = process.argv.slice(2);\n"
+                    f"await VM.load(await WebAssembly.compile(readFileSync("
+                    f"{json.dumps(vm_wasm)})));\n"
                     "const values = JSON.parse(readFileSync(0, 'utf8'));\n"
-                    "const out = await evaluateWasm(readFileSync(wasm), fn,"
+                    "const out = await Clang.evaluateWasm(readFileSync(wasm), fn,"
                     " values, Number(bits), Number(inBits), JSON.parse(layout));\n"
                     "process.stdout.write(JSON.stringify(out));\n")
             run = subprocess.run(
