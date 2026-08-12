@@ -471,6 +471,10 @@ def _x86_alu(prior, left, right, descriptor):
         result = left - right
     elif mode == 4:
         result = left - right - carry
+    elif mode == 5:
+        result = left | right
+    elif mode == 6:
+        result = left ^ right
     else:
         raise ValueError('x86 ALU lane has an invalid mode')
     result &= mask_of(width)

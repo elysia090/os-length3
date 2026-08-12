@@ -2103,12 +2103,22 @@ class X86DBT(object):
         self.find_cut_cache_misses = 0
         self.find_cut_work = 0
         self.find_cut_span = 0
+        self.find_cut_executions = 0
+        self.find_cut_executed_work = 0
+        self.find_cut_executed_span = 0
+        self.find_source_instructions = 0
         self.copy_cuts = 0
         self.copy_cut_cache_hits = 0
         self.copy_cut_cache_misses = 0
         self.copy_cut_work = 0
         self.copy_cut_span = 0
         self.copy_cut_bytes = 0
+        self.copy_cut_executions = 0
+        self.copy_cut_executed_work = 0
+        self.copy_cut_executed_span = 0
+        self.copy_source_instructions = 0
+        self.direct_return_branches = 0
+        self.direct_return_source_instructions = 0
         self.collapse_recipe_hits = 0
         self.collapse_recipe_misses = 0
         self.collapse_recipe_negative = 0
@@ -11277,6 +11287,8 @@ class X86DBT(object):
         registers = _write_register(
             state.registers, REGISTER_INDEX['rsp'], pointer + 8, 64)
         self.collapsed_return_branches += 1
+        self.direct_return_branches += 1
+        self.direct_return_source_instructions += 1
         return replace(state, registers=registers,
                        rip=following & MASK64)
 
@@ -11433,12 +11445,30 @@ class X86DBT(object):
         cut = self._byte_find_cut(state, branch)
         if cut is None:
             return state
+        proof_blocks = self._find_cuts[branch.rip][1][0]
+        (_next, destination, _source_bits,
+         _target_bits, _operand) = proof_blocks[0].boundary.detail
+        (_next, _group, counter,
+         counter_bits) = proof_blocks[5].boundary.detail
+        before = state.registers[counter] & ((1 << counter_bits) - 1)
         prior = state
         state, scratch = self._execute_plan(state, cut)
         state, boundary = self._control(
             state, cut.boundary, prior, scratch)
         if boundary is not None:
             raise X86Error('a pure byte find published a barrier')
+        after = state.registers[counter] & ((1 << counter_bits) - 1)
+        distance = (after - before) & ((1 << counter_bits) - 1)
+        found = _register_operand_value(
+            state.registers, destination, 8)
+        full_turn = sum(block.instructions + 1 for block in proof_blocks)
+        final_blocks = proof_blocks[:3 if found == 0 else 5]
+        self.find_cut_executions += 1
+        self.find_cut_executed_work += physical_work(cut.plan)
+        self.find_cut_executed_span += cut.plan.waves.span
+        self.find_source_instructions += (
+            distance * full_turn
+            + sum(block.instructions + 1 for block in final_blocks))
         return state
 
     @staticmethod
@@ -11691,17 +11721,58 @@ class X86DBT(object):
         cut = self._copy_until_cut(state, branch)
         if cut is None:
             return state
-        registers = self._copy_cuts[branch.rip][1][2]
-        index = registers[2]
+        proof_blocks, _cut, registers = self._copy_cuts[branch.rip][1]
+        _source_base, target_base, index, limit, target_end = registers
         start = state.registers[index] & MASK32
+        stop = state.registers[limit] & MASK32
+        target = state.registers[target_base] & MASK64
+        target_limit = state.registers[target_end] & MASK64
         prior = state
         state, scratch = self._execute_plan(state, cut)
         state, boundary = self._control(
             state, cut.boundary, prior, scratch)
         if boundary is not None:
             raise X86Error('a pure byte copy published a barrier')
-        self.copy_cut_bytes += ((state.registers[index] & MASK32) - start) \
-            & MASK32
+        final = state.registers[index] & MASK32
+        turns = (final - start) & MASK32
+        self.copy_cut_bytes += turns
+        self.copy_cut_executions += 1
+        self.copy_cut_executed_work += physical_work(cut.plan)
+        self.copy_cut_executed_span += cut.plan.waves.span
+
+        # Count the actual source path without replaying the copy.  The
+        # residual's final index says how many non-sentinel turns retired;
+        # the final byte distinguishes the sentinel and limit exits.  Writes
+        # are a modular coordinate interval intersected with [0,target_end).
+        head = sum(block.instructions + 1
+                   for block in proof_blocks[4:8])
+        capacity = sum(block.instructions + 1
+                       for block in proof_blocks[8:10])
+        write_path = sum(block.instructions + 1
+                         for block in proof_blocks[10:12])
+        update = sum(block.instructions + 1
+                     for block in proof_blocks[1:4])
+        coordinate = (target + start) & MASK64
+        extent_end = coordinate + turns
+        if extent_end <= 1 << 64:
+            writes = max(0, min(extent_end, target_limit)
+                         - min(coordinate, target_limit))
+        else:
+            writes = (max(0, target_limit - coordinate)
+                      + min(extent_end - (1 << 64), target_limit))
+        retired = turns * (head + capacity + update) + writes * write_path
+        (_next, byte_register, _source_bits,
+         _target_bits, _operand) = proof_blocks[5].boundary.detail
+        final_byte = _register_operand_value(
+            state.registers, byte_register, 8)
+        if final < stop and final_byte == 0:
+            retired += head
+            retired += proof_blocks[12].instructions + 1
+            retired += proof_blocks[13].instructions
+        else:
+            retired += proof_blocks[14].instructions + 1
+            retired += proof_blocks[15].instructions
+        self.copy_source_instructions += retired
         return state
 
     def _collapse_backward_direct_branch(self, state, branch):
@@ -18526,6 +18597,10 @@ class X86DBT(object):
             'find_cut_cache_misses': self.find_cut_cache_misses,
             'find_cut_work': self.find_cut_work,
             'find_cut_span': self.find_cut_span,
+            'find_cut_executions': self.find_cut_executions,
+            'find_cut_executed_work': self.find_cut_executed_work,
+            'find_cut_executed_span': self.find_cut_executed_span,
+            'find_source_instructions': self.find_source_instructions,
             'copy_cuts': self.copy_cuts,
             'resident_copy_cuts': len(self._copy_cuts),
             'copy_cut_cache_hits': self.copy_cut_cache_hits,
@@ -18533,6 +18608,13 @@ class X86DBT(object):
             'copy_cut_work': self.copy_cut_work,
             'copy_cut_span': self.copy_cut_span,
             'copy_cut_bytes': self.copy_cut_bytes,
+            'copy_cut_executions': self.copy_cut_executions,
+            'copy_cut_executed_work': self.copy_cut_executed_work,
+            'copy_cut_executed_span': self.copy_cut_executed_span,
+            'copy_source_instructions': self.copy_source_instructions,
+            'direct_return_branches': self.direct_return_branches,
+            'direct_return_source_instructions':
+                self.direct_return_source_instructions,
             'persistent_cuts': self.persistent_cuts,
             'materialized_pages': self.materialized_pages,
             'published_pages': self.published_pages,

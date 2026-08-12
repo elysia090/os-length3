@@ -868,7 +868,7 @@ class TestX86StateStep(unittest.TestCase):
 
         predicate = dbt._predicate_cuts[0x100][1]
         self.assertEqual((predicate.plan.waves.work,
-                          predicate.plan.waves.span), (3, 3))
+                          predicate.plan.waves.span), (1, 1))
         self.assertEqual(sum(node.op == 'lane32.GT_S'
                              for node in predicate.plan.nodes), 0)
         self.assertEqual(predicate.plan.locals[-1].kind, 'projection')
@@ -893,6 +893,10 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(dbt.layout()['find_cuts'], 1)
         self.assertEqual((dbt.layout()['find_cut_work'],
                           dbt.layout()['find_cut_span']), (6, 4))
+        self.assertEqual(dbt.layout()['find_cut_executions'], 1)
+        self.assertEqual((dbt.layout()['find_cut_executed_work'],
+                          dbt.layout()['find_cut_executed_span']), (6, 4))
+        self.assertEqual(dbt.layout()['find_source_instructions'], 19)
         cut = next(iter(dbt._find_cuts.values()))[1][1]
         self.assertTrue(cut.virtual_memory)
         self.assertIn('memory.i64.find2',
@@ -914,10 +918,11 @@ class TestX86StateStep(unittest.TestCase):
                 0x100, {'rax': 0x400, 'rdi': 0x500,
                         'rdx': target_end, 'rsi': limit, 'rsp': 0x808})
 
-        for source, target_end, limit, expected in (
-                (b'abc\0tail', 0x508, 8, b'abc' + bytes(5)),
-                (b'abcdefghZ', 0x503, 8, b'abc' + bytes(5)),
-                (b'abc\0tail', 0x508, MASK32, b'abc' + bytes(5))):
+        for source, target_end, limit, expected, retired in (
+                (b'abc\0tail', 0x508, 8, b'abc' + bytes(5), 40),
+                (b'abcdefghZ', 0x503, 8, b'abc' + bytes(5), 82),
+                (b'abc\0tail', 0x508, MASK32,
+                 b'abc' + bytes(5), 40)):
             optimized = X86DBT(enable_function_oracles=False)
             fast, fast_boundary, _cost = optimized.run(
                 initial(source, target_end, limit))
@@ -936,6 +941,12 @@ class TestX86StateStep(unittest.TestCase):
             cut = next(iter(optimized._copy_cuts.values()))[1][1]
             self.assertEqual((optimized.layout()['copy_cut_work'],
                               optimized.layout()['copy_cut_span']), (5, 4))
+            self.assertEqual(optimized.layout()['copy_cut_executions'], 1)
+            self.assertEqual(
+                (optimized.layout()['copy_cut_executed_work'],
+                 optimized.layout()['copy_cut_executed_span']), (5, 4))
+            self.assertEqual(
+                optimized.layout()['copy_source_instructions'], retired)
             self.assertEqual([node.op for node in cut.plan.nodes], [
                 'memory.i64.copy_until', 'lane64.BEXTR',
                 'lane64.BEXTR', 'lane64.ADDR',

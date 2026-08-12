@@ -238,8 +238,9 @@ def _reopen_consumed_x86_alu(nodes, stack, locals_):
     X86_ALU is the canonical one-lane representation of arithmetic plus
     flags.  Once separately normalized blocks are composed, however, its
     result projection may become an internal input to a larger memory
-    transaction.  Reopening only those projections lets that transaction be
-    proved; the caller keeps this graph only when a larger closed form wins.
+    transaction. Reopening those projections restores the ordinary SSA
+    spelling before memory recomposition; the final observer-aware pass fuses
+    any arithmetic and flags that remain genuinely adjacent.
     """
     from .steppage import (decode_projection_coordinate,
                            projection_coordinate)
@@ -307,17 +308,21 @@ def _reopen_consumed_x86_alu(nodes, stack, locals_):
         width = None if descriptor is None else descriptor & 0x7f
         mode = None if descriptor is None else (descriptor >> 8) & 7
         if (node.value in consumed and width in (8, 16, 32, 64)
-                and mode in (1, 3)):
+                and mode in (0, 1, 3, 5, 6)):
             prior = arguments[0]
             original_prior = node.arguments[0]
             if (not descriptor & (1 << 11)
                     and original_prior.kind == 'node'):
                 prior = flag_roots.get(original_prior.value, prior)
             result = Operand('node', len(rewritten) + 1)
+            semantic = {
+                0: 'and', 1: 'add', 3: 'sub',
+                5: 'or', 6: 'xor',
+            }[mode]
+            arithmetic, arithmetic_arguments = select(
+                'i%d.%s' % (width, semantic), arguments[1:3])
             rewritten.append(WaveNode(
-                result.value,
-                'lane%d.%s' % (width, 'ADDR' if mode == 1 else 'SUBR'),
-                arguments[1:3]))
+                result.value, arithmetic, arithmetic_arguments))
             if node.value in live_flags:
                 flags = Operand('node', len(rewritten) + 1)
                 rewritten.append(WaveNode(
@@ -337,6 +342,176 @@ def _reopen_consumed_x86_alu(nodes, stack, locals_):
             tuple(map(resolve, locals_)))
 
 
+def _fuse_live_x86_alu(nodes, stack, locals_):
+    """Share one ALU lane after every live result observer is explicit.
+
+    During forward rebuilding, a result can acquire a consumer from a later
+    composed block that was not visible when its FLAGS node was first seen.
+    At this final SSA graph there are no hidden CSE aliases: replace the
+    arithmetic producer, route all of its value consumers through selector 16,
+    and route flag consumers through the primary result.  One candidate is
+    fused per fixed-point pass so coordinate renaming stays mechanical.
+    """
+    from .steppage import (decode_projection_coordinate,
+                           projection_coordinate)
+    from .wasmwave import Operand, WaveNode
+
+    by_value = {node.value: node for node in nodes}
+    def constant(operand):
+        return operand.value if operand.kind == 'const' else None
+
+    def modulo(operand, width):
+        mask = mask_of(width)
+        if operand.kind == 'const':
+            return Operand('const', operand.value & mask)
+        node = by_value.get(operand.value) if operand.kind == 'node' else None
+        if (node is not None and node.op == 'lane64.AND'
+                and len(node.arguments) == 2):
+            left, right = node.arguments
+            if constant(right) == mask:
+                return modulo(left, width)
+            if constant(left) == mask:
+                return modulo(right, width)
+        return operand
+
+    def result_mode(flags, result):
+        descriptor = constant(flags.arguments[4])
+        if descriptor is None:
+            return None
+        width = descriptor & 0x7f
+        mode = (descriptor >> 8) & 7
+        if width not in (8, 16, 32, 64):
+            return None
+        left, right = (modulo(argument, width)
+                       for argument in flags.arguments[1:3])
+        source = result
+        while (source.op == 'lane64.AND'
+               and len(source.arguments) == 2
+               and constant(source.arguments[1]) == mask_of(width)
+               and source.arguments[0].kind == 'node'):
+            source = by_value.get(source.arguments[0].value)
+            if source is None:
+                return None
+        actual = tuple(modulo(argument, width)
+                       for argument in source.arguments)
+        expected = (left, right)
+        name = source.op.split('.', 1)[-1]
+        if mode in (0, 5, 6):
+            logical = {
+                'AND': 0, 'ANDR': 0,
+                'OR': 5, 'ORR': 5,
+                'XOR': 6, 'XORR': 6,
+            }.get(name)
+            if (logical is not None and mode in (0, logical)
+                    and (actual == expected or actual == expected[::-1])):
+                return logical
+        if mode == 1 and name in ('ADD', 'ADDR') \
+                and (actual == expected or actual == expected[::-1]):
+            return mode
+        if mode == 3:
+            if name in ('SUB', 'SUBR') and actual == expected:
+                return mode
+            if name in ('ADD', 'ADDR') and len(actual) == 2:
+                negated = (None if constant(right) is None else
+                           Operand('const', (-constant(right))
+                                   & mask_of(width)))
+                if (negated is not None
+                        and (actual == (left, negated)
+                             or actual == (negated, left))):
+                    return mode
+        return None
+
+    candidate = None
+    for flags in nodes:
+        if flags.op != 'lane64.X86_FLAGS' or len(flags.arguments) != 5:
+            continue
+        result_operand = flags.arguments[3]
+        if result_operand.kind != 'node':
+            continue
+        result = by_value.get(result_operand.value)
+        if result is None or result.op.startswith('memory.'):
+            continue
+        mode = result_mode(flags, result)
+        descriptor = constant(flags.arguments[4])
+        if mode is None or descriptor is None:
+            continue
+        width = descriptor & 0x7f
+        alu_arguments = (
+            flags.arguments[0], modulo(flags.arguments[1], width),
+            modulo(flags.arguments[2], width), Operand(
+                'const', (descriptor & ~(7 << 8)) | (mode << 8)))
+        dependencies = []
+        for operand in alu_arguments:
+            if operand.kind == 'node':
+                dependencies.append(operand.value)
+            elif operand.kind == 'projection':
+                dependencies.append(decode_projection_coordinate(
+                    operand.value)[0])
+        if any(dependency >= result.value for dependency in dependencies):
+            continue
+        candidate = result, flags, alu_arguments
+        break
+    if candidate is None:
+        return tuple(nodes), tuple(stack), tuple(locals_)
+
+    result, flags, alu_arguments = candidate
+    dense = {}
+    rewritten = []
+    for node in nodes:
+        if node.value == flags.value:
+            continue
+        value = len(rewritten) + 1
+        dense[node.value] = value
+        if node.value == result.value:
+            arguments = tuple(
+                Operand('node', dense[operand.value])
+                if operand.kind == 'node'
+                else Operand('projection', projection_coordinate(
+                    dense[decode_projection_coordinate(operand.value)[0]],
+                    decode_projection_coordinate(operand.value)[1]))
+                if operand.kind == 'projection' else operand
+                for operand in alu_arguments)
+            rewritten.append(WaveNode(
+                value, 'lane64.X86_ALU', arguments))
+            continue
+
+        arguments = []
+        for operand in node.arguments:
+            if operand.kind == 'node' and operand.value == result.value:
+                operand = Operand('projection', projection_coordinate(
+                    dense[result.value], 16))
+            elif operand.kind == 'node' and operand.value == flags.value:
+                operand = Operand('node', dense[result.value])
+            elif operand.kind == 'node':
+                operand = Operand('node', dense[operand.value])
+            elif operand.kind == 'projection':
+                source, selector = decode_projection_coordinate(
+                    operand.value)
+                source = result.value if source == flags.value else source
+                operand = Operand('projection', projection_coordinate(
+                    dense[source], selector))
+            arguments.append(operand)
+        rewritten.append(WaveNode(value, node.op, tuple(arguments)))
+
+    def publish(operand):
+        if operand.kind == 'node' and operand.value == result.value:
+            return Operand('projection', projection_coordinate(
+                dense[result.value], 16))
+        if operand.kind == 'node' and operand.value == flags.value:
+            return Operand('node', dense[result.value])
+        if operand.kind == 'node':
+            return Operand('node', dense[operand.value])
+        if operand.kind == 'projection':
+            source, selector = decode_projection_coordinate(operand.value)
+            source = result.value if source == flags.value else source
+            return Operand('projection', projection_coordinate(
+                dense[source], selector))
+        return operand
+
+    return (tuple(rewritten), tuple(map(publish, stack)),
+            tuple(map(publish, locals_)))
+
+
 def _rewrite_physical(nodes, stack, locals_):
     """Recompose local quotient identities across a multi-input SSA cut.
 
@@ -351,26 +526,20 @@ def _rewrite_physical(nodes, stack, locals_):
                            projection_coordinate)
 
     # Recover the largest closed memory transaction before local ALU/flags
-    # fusion.  A composed input may already contain ALU result projections;
-    # reopen them speculatively and retain that spelling only when it proves
-    # an additional relative transaction.
-    original = tuple(nodes), tuple(stack), tuple(locals_)
+    # fusion. A composed input may already contain ALU result projections;
+    # reopen them so memory recomposition sees the ordinary value graph.
+    original = _reopen_consumed_x86_alu(
+        tuple(nodes), tuple(stack), tuple(locals_))
     folded = _rewrite_relative_exchange(*original)
-    if folded == original:
-        reopened = _reopen_consumed_x86_alu(*original)
-        candidate = _rewrite_relative_exchange(*reopened)
-        before = sum(node.op == 'memory.i64.relative_exchange'
-                     for node in original[0])
-        after = sum(node.op == 'memory.i64.relative_exchange'
-                    for node in candidate[0])
-        if after > before:
-            folded = candidate
     nodes, stack, locals_ = folded
 
     outputs = {operand.value for operand in stack + locals_
                if operand.kind == 'node'}
     consumers = {node.value: [] for node in nodes}
+    equivalent_nodes = {}
     for node in nodes:
+        equivalent_nodes.setdefault((node.op, node.arguments), []).append(
+            node.value)
         for operand in node.arguments:
             if operand.kind == 'node':
                 consumers[operand.value].append(node.op)
@@ -391,6 +560,104 @@ def _rewrite_physical(nodes, stack, locals_):
     def constant(operand):
         return operand.value if operand.kind == 'const' else None
 
+    def result_observation(original, resolved):
+        """Return all pre-rewrite coordinates sharing an arithmetic value."""
+        aliases = [source for source, replacement in remap.items()
+                   if replacement == resolved]
+        if original.kind == 'node' and original.value not in aliases:
+            aliases.append(original.value)
+        if original.kind == 'node':
+            source = nodes[original.value - 1]
+            for alias in equivalent_nodes.get(
+                    (source.op, source.arguments), ()):
+                if alias not in aliases:
+                    aliases.append(alias)
+        observations = [operation for source in aliases
+                        for operation in consumers.get(source, ())]
+        return aliases, observations
+
+    def modulo_operand(operand, bits):
+        """Canonicalize one coordinate modulo its architectural width."""
+        mask = mask_of(bits)
+        if operand.kind == 'const':
+            return Operand('const', operand.value & mask)
+        source = form(operand)
+        if (source is not None
+                and source[0] == 'lane64.AND'
+                and len(source[1]) == 2):
+            left, right = source[1]
+            if constant(right) == mask:
+                return modulo_operand(left, bits)
+            if constant(left) == mask:
+                return modulo_operand(right, bits)
+        return operand
+
+    def x86_alu_result(arguments, descriptor):
+        """Prove the result expression and return its physical ALU mode."""
+        bits = descriptor & 0x7f
+        mode = (descriptor >> 8) & 7
+        if bits not in (8, 16, 32, 64):
+            return None
+        left, right = (modulo_operand(argument, bits)
+                       for argument in arguments[1:3])
+        result = modulo_operand(arguments[3], bits)
+        source = form(result)
+
+        def pair(expected, commutative=False):
+            if source is None or len(source[1]) != 2:
+                return False
+            actual = tuple(modulo_operand(argument, bits)
+                           for argument in source[1])
+            return (actual == expected
+                    or commutative and actual == expected[::-1])
+
+        expected = (left, right)
+        if mode == 0 and source is not None:
+            logical = {
+                'lane64.AND': 0, 'lane64.ANDR': 0,
+                'lane32.AND': 0, 'lane32.ANDR': 0,
+                'lane64.OR': 5, 'lane64.ORR': 5,
+                'lane32.OR': 5, 'lane32.ORR': 5,
+                'lane64.XOR': 6, 'lane64.XORR': 6,
+                'lane32.XOR': 6, 'lane32.XORR': 6,
+            }.get(source[0])
+            if logical is not None and pair(expected, commutative=True):
+                return logical
+        if mode == 1:
+            if (source is not None
+                    and source[0] in (
+                        'lane64.ADD', 'lane64.ADDR',
+                        'lane32.ADD', 'lane32.ADDR')
+                    and pair(expected, commutative=True)):
+                return mode
+            if constant(right) == 0 and result == left:
+                return mode
+        if mode == 3:
+            if (source is not None
+                    and source[0] in (
+                        'lane64.SUB', 'lane64.SUBR',
+                        'lane32.SUB', 'lane32.SUBR')
+                    and pair(expected)):
+                return mode
+            if (source is not None
+                    and source[0] in (
+                        'lane64.ADD', 'lane64.ADDR',
+                        'lane32.ADD', 'lane32.ADDR')
+                    and len(source[1]) == 2):
+                actual = tuple(modulo_operand(argument, bits)
+                               for argument in source[1])
+                negated = (None if constant(right) is None else
+                           Operand('const', (-constant(right))
+                                   & mask_of(bits)))
+                if (negated is not None
+                        and (actual == (left, negated)
+                             or actual == (negated, left))):
+                    return mode
+            if (constant(right) == 0 and result == left
+                    or left == right and constant(result) == 0):
+                return mode
+        return None
+
     def condition_can_consume_test(flags, condition_node):
         """Prove that other uses only carry preserved bits to another TEST."""
         if flags.kind != 'node' or flags.value in outputs:
@@ -402,22 +669,6 @@ def _rewrite_physical(nodes, stack, locals_):
                 if consumer.op != 'lane64.X86_TEST' or index != 0:
                     return False
         return True
-
-    def result_is_only_observed_by_flags(original, resolved):
-        """Reject ALU fusion when CSE gave its result another observer.
-
-        ``consumers`` is indexed by the pre-rewrite SSA coordinate.  Several
-        equivalent arithmetic nodes can already map to one rebuilt node, so
-        consulting only ``original`` loses uses attached to an earlier alias
-        and can hide a larger memory transaction from the following pass.
-        """
-        aliases = [source for source, replacement in remap.items()
-                   if replacement == resolved]
-        if original.kind == 'node' and original.value not in aliases:
-            aliases.append(original.value)
-        observations = [operation for source in aliases
-                        for operation in consumers.get(source, ())]
-        return observations == ['lane64.X86_FLAGS']
 
     def unsigned_bits(operand):
         raw = constant(operand)
@@ -692,84 +943,49 @@ def _rewrite_physical(nodes, stack, locals_):
                 prior = arguments[0]
                 prior_form = form(prior)
                 while (prior_form is not None
-                       and prior_form[0] == 'lane64.X86_FLAGS'):
+                       and prior_form[0] in (
+                           'lane64.X86_FLAGS', 'lane64.X86_ALU')):
                     prior = prior_form[1][0]
                     prior_form = form(prior)
                 arguments = (prior,) + arguments[1:]
-            result_form = form(arguments[3])
             original_result = node.arguments[3]
-            if (descriptor is not None
-                    and (descriptor >> 8) & 7 == 3
-                    and result_form is not None
-                    and result_form[0] == 'lane64.SUBR'
-                    and result_form[1] == arguments[1:3]
-                    and original_result.kind == 'node'
-                    and original_result.value not in outputs
-                    and len(consumers.get(original_result.value, ())) == 1):
+            alu_mode = (None if descriptor is None else
+                        x86_alu_result(arguments, descriptor))
+            aliases, observations = result_observation(
+                original_result, arguments[3])
+            flags_only_result = observations == ['lane64.X86_FLAGS']
+            result_published = any(alias in outputs for alias in aliases)
+            if (descriptor is not None and alu_mode == 3
+                    and flags_only_result and not result_published):
                 operation = 'lane64.X86_COMPARE'
-                arguments = arguments[:3] + (arguments[4],)
-            elif (descriptor is not None
-                  and (descriptor >> 8) & 7 == 0
+                width = descriptor & 0x7f
+                arguments = ((arguments[0],)
+                             + tuple(modulo_operand(argument, width)
+                                     for argument in arguments[1:3])
+                             + (arguments[4],))
+            elif (descriptor is not None and alu_mode == 0
                   and not descriptor & (1 << 11)
-                  and result_form is not None
-                  and result_form[0] in ('lane64.AND', 'lane64.ANDR')
-                  and result_form[1] == arguments[1:3]
-                  and original_result.kind == 'node'
-                  and original_result.value not in outputs
-                  and len(consumers.get(original_result.value, ())) == 1):
+                  and flags_only_result and not result_published):
                 operation = 'lane64.X86_TEST'
-                test_arguments = list(arguments[:3])
-                width_mask = (1 << (descriptor & 0x7f)) - 1
-                for index in (1, 2):
-                    masked = form(test_arguments[index])
-                    original = node.arguments[index]
-                    if (masked is not None
-                            and masked[0] == 'lane64.AND'
-                            and constant(masked[1][1]) == width_mask
-                            and original.kind == 'node'
-                            and original.value not in outputs
-                            and len(consumers.get(
-                                original.value, ())) == 1):
-                        test_arguments[index] = masked[1][0]
-                arguments = tuple(test_arguments) + (arguments[4],)
-            elif (descriptor is not None
-                  and (descriptor >> 8) & 7 in (1, 3)
-                  and result_form is not None
-                  and result_form[0].split('.', 1)[0]
-                  == 'lane%d' % (descriptor & 0x7f)
-                  and (
-                      ((descriptor >> 8) & 7 == 1
-                       and result_form[0].split('.', 1)[1]
-                       in ('ADD', 'ADDR')
-                       and result_form[1] == arguments[1:3])
-                      or ((descriptor >> 8) & 7 == 3
-                          and (result_form[0].split('.', 1)[1]
-                               in ('SUB', 'SUBR')
-                               and result_form[1] == arguments[1:3]
-                               or result_form[0].split('.', 1)[1]
-                               in ('ADD', 'ADDR')
-                               and result_form[1][0] == arguments[1]
-                               and constant(result_form[1][1]) is not None
-                               and constant(arguments[2]) is not None
-                               and (constant(result_form[1][1])
-                                    & mask_of(descriptor & 0x7f))
-                               == ((-constant(arguments[2]))
-                                   & mask_of(descriptor & 0x7f)))))
-                  and original_result.kind == 'node'
-                  and result_is_only_observed_by_flags(
-                      original_result, arguments[3])
+                arguments = ((arguments[0],)
+                             + tuple(modulo_operand(argument,
+                                      descriptor & 0x7f)
+                                     for argument in arguments[1:3])
+                             + (arguments[4],))
+            elif (descriptor is not None and alu_mode is not None
+                  and flags_only_result
                   and 'lane64.SELECT' not in consumers.get(node.value, ())):
+                width = descriptor & 0x7f
+                descriptor = ((descriptor & ~(7 << 8))
+                              | (alu_mode << 8))
+                alu_arguments = ((arguments[0],)
+                                 + tuple(modulo_operand(argument, width)
+                                         for argument in arguments[1:3])
+                                 + (Operand('const', descriptor),))
                 operation = 'lane64.X86_ALU'
-                alu_arguments = list(arguments[:3])
-                width_mask = (1 << (descriptor & 0x7f)) - 1
-                for index in (1, 2):
-                    masked = form(alu_arguments[index])
-                    if (masked is not None
-                            and masked[0] == 'lane64.AND'
-                            and constant(masked[1][1]) == width_mask):
-                        alu_arguments[index] = masked[1][0]
-                arguments = tuple(alu_arguments) + (arguments[4],)
-                alu_result = original_result.value
+                arguments = alu_arguments
+                alu_result = (original_result.value
+                              if original_result.kind == 'node' else None)
 
         elif name == 'X86_CONDITION' and len(arguments) == 2:
             tested = form(arguments[0])
@@ -1042,8 +1258,9 @@ def _rewrite_physical(nodes, stack, locals_):
             continue
         if operation == 'lane64.X86_ALU':
             operand = emit(operation, arguments)
-            remap[alu_result] = Operand(
-                'projection', projection_coordinate(operand.value, 16))
+            if alu_result is not None:
+                remap[alu_result] = Operand(
+                    'projection', projection_coordinate(operand.value, 16))
             remap[node.value] = operand
             continue
         prior = next((candidate for candidate in rebuilt
@@ -1070,6 +1287,7 @@ def _rewrite_physical(nodes, stack, locals_):
         tuple(map(output, locals_)))
     rewritten = _rewrite_balanced_stack(*rewritten)
     rewritten = _rewrite_pre_store(*rewritten)
+    rewritten = _fuse_live_x86_alu(*rewritten)
     return _rewrite_terminal_projections(*rewritten)
 
 

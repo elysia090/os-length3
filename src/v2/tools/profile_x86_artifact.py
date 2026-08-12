@@ -18,7 +18,8 @@ from kernel.pagefabric import PageFabric, open_artifact
 from kernel.x86 import X86DBT, X86Machine
 from kernel.x86snapshot import dump_x86_code_pages, load_x86_boot_cache
 from qm.stepnormalize import physical_work
-from qm.steppage import decode_relative_layout
+from qm.steppage import (decode_projection_coordinate,
+                         decode_relative_layout)
 
 
 def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
@@ -101,6 +102,8 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     work_buckets = {}
     dominant_cuts = []
     conditional_residuals = []
+    alu_residuals = Counter()
+    fused_alus = Counter()
     dispatched_source_instructions = 0
     for rip, (count, work, span) in dbt._physical_profile.items():
         cut = reached_cut(rip)
@@ -128,6 +131,93 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
         bucket[2] += span
         bucket[3].add(rip)
         operations = tuple(node.op for node in cut.plan.nodes)
+        nodes_by_value = {node.value: node for node in cut.plan.nodes}
+        consumers = {node.value: [] for node in cut.plan.nodes}
+        for consumer in cut.plan.nodes:
+            for argument in consumer.arguments:
+                if argument.kind == 'node':
+                    consumers.setdefault(argument.value, []).append(
+                        consumer.op)
+                elif argument.kind == 'projection':
+                    source, selector = decode_projection_coordinate(
+                        argument.value)
+                    consumers.setdefault(source, []).append(
+                        '%s[%d]' % (consumer.op, selector))
+        published = set()
+        for output in cut.plan.stack + cut.plan.locals:
+            if output.kind == 'node':
+                published.add(output.value)
+            elif output.kind == 'projection':
+                published.add(decode_projection_coordinate(output.value)[0])
+
+        def constant(operand):
+            return operand.value if operand.kind == 'const' else None
+
+        for node in cut.plan.nodes:
+            if (node.op == 'lane64.X86_ALU'
+                    and len(node.arguments) == 4
+                    and node.arguments[3].kind == 'const'):
+                descriptor = node.arguments[3].value
+                fused_alus[(descriptor & 0x7f,
+                            (descriptor >> 8) & 7,
+                            bool(descriptor & (1 << 11)),
+                            node.value in published,
+                            tuple(consumers.get(node.value, ())))] += count
+            if (node.op != 'lane64.X86_FLAGS'
+                    or len(node.arguments) != 5
+                    or node.arguments[4].kind != 'const'):
+                continue
+            descriptor = node.arguments[4].value
+            width = descriptor & 0x7f
+            mode = (descriptor >> 8) & 7
+            result = node.arguments[3]
+            result_node = (nodes_by_value.get(result.value)
+                           if result.kind == 'node' else None)
+            result_op = (result.kind if result_node is None
+                         else result_node.op)
+            matched = 'other'
+            if result_node is not None:
+                expected = node.arguments[1:3]
+                if (mode == 0
+                        and result_node.op in (
+                            'lane64.AND', 'lane64.ANDR')
+                        and result_node.arguments == expected):
+                    matched = 'logical'
+                elif (mode == 1
+                      and result_node.op in (
+                          'lane%d.ADD' % width,
+                          'lane%d.ADDR' % width)
+                      and result_node.arguments == expected):
+                    matched = 'add'
+                elif (mode == 3
+                      and result_node.op in (
+                          'lane%d.SUB' % width,
+                          'lane%d.SUBR' % width)
+                      and result_node.arguments == expected):
+                    matched = 'sub'
+                elif (mode == 3
+                      and result_node.op in (
+                          'lane%d.ADD' % width,
+                          'lane%d.ADDR' % width)
+                      and result_node.arguments[0] == expected[0]
+                      and constant(result_node.arguments[1]) is not None
+                      and constant(expected[1]) is not None
+                      and (constant(result_node.arguments[1])
+                           & ((1 << width) - 1))
+                      == ((-constant(expected[1]))
+                          & ((1 << width) - 1))):
+                    matched = 'sub-as-add'
+            result_consumers = tuple(
+                operation for operation in consumers.get(
+                    result.value, ()) if operation != 'lane64.X86_FLAGS') \
+                if result.kind == 'node' else ()
+            alu_residuals[(width, mode,
+                           bool(descriptor & (1 << 11)), matched,
+                           result_op, result.value in published
+                           if result.kind == 'node' else False,
+                           result_consumers,
+                           node.value in published,
+                           tuple(consumers.get(node.value, ())))] += count
         shape = (boundary_name, unit_work, unit_span, operations)
         shaped = cut_shape_cost.setdefault(shape, [0, 0, 0, []])
         shaped[0] += count
@@ -158,14 +248,21 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     executed_work = (sum(
         work for _count, work, _span in dbt._physical_profile.values())
         + physical.get('recurrence_cut_executed_work', 0)
-        + physical.get('prefix_cut_executed_work', 0))
+        + physical.get('prefix_cut_executed_work', 0)
+        + physical.get('find_cut_executed_work', 0)
+        + physical.get('copy_cut_executed_work', 0))
     executed_span = (sum(
         span for _count, _work, span in dbt._physical_profile.values())
         + physical.get('recurrence_cut_executed_span', 0)
-        + physical.get('prefix_cut_executed_span', 0))
+        + physical.get('prefix_cut_executed_span', 0)
+        + physical.get('find_cut_executed_span', 0)
+        + physical.get('copy_cut_executed_span', 0))
     residual_source_instructions = (
         physical.get('recurrence_source_instructions', 0)
-        + physical.get('prefix_source_instructions', 0))
+        + physical.get('prefix_source_instructions', 0)
+        + physical.get('find_source_instructions', 0)
+        + physical.get('copy_source_instructions', 0)
+        + physical.get('direct_return_source_instructions', 0))
     retired_source_instructions = (
         dispatched_source_instructions + residual_source_instructions)
     dominant_operations = tuple(
@@ -262,7 +359,7 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
                            tuple(map(repr, cut.plan.locals))),
             'cut_source': None if cut is None else cut.source.hex(),
         })
-    return {
+    result = {
         'artifact': {
             'identity': entry['identity'],
             'canonical_bytes': fabric.length,
@@ -302,7 +399,9 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
                 count for count, _work, _span
                 in dbt._physical_profile.values())
                 + physical.get('recurrence_cut_executions', 0)
-                + physical.get('prefix_cut_executions', 0)),
+                + physical.get('prefix_cut_executions', 0)
+                + physical.get('find_cut_executions', 0)
+                + physical.get('copy_cut_executions', 0)),
             'executed_work': executed_work,
             'executed_span': executed_span,
             'dispatched_source_instructions':
@@ -318,6 +417,12 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'dominant_operations': dominant_operations,
             'dominant_boundaries': dominant_boundaries,
             'dominant_shapes': dominant_shapes,
+            'alu_residuals': tuple(
+                (executions,) + shape
+                for shape, executions in alu_residuals.most_common()),
+            'fused_alus': tuple(
+                (executions,) + shape
+                for shape, executions in fused_alus.most_common()),
             'work_distribution': work_distribution,
             'dominant_cuts': tuple(dominant_cuts),
             'boundary_coordinates': boundary_coordinates,
@@ -337,11 +442,22 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
                 'prefix_cut_executed_work', 'prefix_cut_executed_span',
                 'prefix_source_instructions',
                 'collapsed_length_prefix_entries',
+                'find_cuts', 'find_cut_cache_hits', 'find_cut_executions',
+                'find_cut_executed_work', 'find_cut_executed_span',
+                'find_source_instructions',
+                'copy_cuts', 'copy_cut_cache_hits', 'copy_cut_bytes',
+                'copy_cut_executions', 'copy_cut_executed_work',
+                'copy_cut_executed_span', 'copy_source_instructions',
+                'collapsed_return_branches', 'direct_return_branches',
+                'direct_return_source_instructions',
                 'compiled_byte_dispatches', 'collapsed_dispatch_iterations',
                 'collapsed_residual_controls', 'threaded_controls')),
             'inspected': inspected,
         },
     }
+    result['code']['residual_counters']['affine_clock_events'] = \
+        runtime.affine_clock_events
+    return result
 
 
 def main(argv=None):
@@ -380,6 +496,8 @@ def main(argv=None):
             'retired_source_instructions_per_physical_work': result['code'][
                 'retired_source_instructions_per_physical_work'],
             'residual_counters': result['code']['residual_counters'],
+            'alu_residuals': result['code']['alu_residuals'][:24],
+            'fused_alus': result['code']['fused_alus'][:16],
             'dominant_shapes': result['code']['dominant_shapes'][:8],
         }
     elif args.summary:
@@ -414,6 +532,8 @@ def main(argv=None):
             'dominant_boundaries': result['code'][
                 'dominant_boundaries'][:16],
             'dominant_shapes': result['code']['dominant_shapes'][:16],
+            'alu_residuals': result['code']['alu_residuals'][:32],
+            'fused_alus': result['code']['fused_alus'][:16],
             'work_distribution': result['code']['work_distribution'],
             'dominant_cuts': result['code']['dominant_cuts'][:24],
             'boundary_coordinates': result['code'][
