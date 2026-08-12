@@ -1841,7 +1841,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 194u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 197u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2405,6 +2405,71 @@ static int step_x86_shift_flags_lane(u32 begin, u32 end, u64 *result)
             overflow = (source >> (width - 1u)) & 1u;
     }
     *result = (flags & ~(1ull << 11)) | (overflow << 11);
+    return 1;
+}
+
+static int step_x86_condition_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 2u) return step_fail(7u);
+    u64 flags, code;
+    if (!step_operand(begin, &flags)
+            || !step_operand(begin + 1u, &code))
+        return 0;
+    u64 carry = flags & 1u;
+    u64 parity = (flags >> 2u) & 1u;
+    u64 zero = (flags >> 6u) & 1u;
+    u64 sign = (flags >> 7u) & 1u;
+    u64 overflow = (flags >> 11u) & 1u;
+    u64 less = sign ^ overflow;
+    switch ((u32)code & 15u) {
+    case 0u: *result = overflow; break;
+    case 1u: *result = overflow ^ 1u; break;
+    case 2u: *result = carry; break;
+    case 3u: *result = carry ^ 1u; break;
+    case 4u: *result = zero; break;
+    case 5u: *result = zero ^ 1u; break;
+    case 6u: *result = carry | zero; break;
+    case 7u: *result = (carry | zero) ^ 1u; break;
+    case 8u: *result = sign; break;
+    case 9u: *result = sign ^ 1u; break;
+    case 10u: *result = parity; break;
+    case 11u: *result = parity ^ 1u; break;
+    case 12u: *result = less; break;
+    case 13u: *result = less ^ 1u; break;
+    case 14u: *result = zero | less; break;
+    default: *result = (zero | less) ^ 1u; break;
+    }
+    return 1;
+}
+
+static int step_x86_test_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 4u) return step_fail(7u);
+    u64 prior, left, right, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &left)
+            || !step_operand(begin + 2u, &right)
+            || !step_operand(begin + 3u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    if ((width != 8u && width != 16u
+            && width != 32u && width != 64u)
+            || descriptor != width)
+        return step_fail(7u);
+    return step_x86_flags_value(
+        prior, left, right, (left & right) & step_mask(width),
+        descriptor, result);
+}
+
+static int step_add3_u32_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 3u) return step_fail(7u);
+    u64 left, unsigned32, right;
+    if (!step_operand(begin, &left)
+            || !step_operand(begin + 1u, &unsigned32)
+            || !step_operand(begin + 2u, &right))
+        return 0;
+    *result = left + (unsigned32 & 0xffffffffu) + right;
     return 1;
 }
 
@@ -2975,6 +3040,15 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                     first, last, &machine->values[node])
                 : opcode == 193u
                 ? step_x86_shift_flags_lane(
+                    first, last, &machine->values[node])
+                : opcode == 194u
+                ? step_x86_condition_lane(
+                    first, last, &machine->values[node])
+                : opcode == 195u
+                ? step_x86_test_lane(
+                    first, last, &machine->values[node])
+                : opcode == 196u
+                ? step_add3_u32_lane(
                     first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {

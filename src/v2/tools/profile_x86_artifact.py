@@ -110,9 +110,10 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'cut_work': None if cut is None else physical_work(cut.plan),
             'cut_span': None if cut is None else cut.plan.waves.span,
             'cut_nodes': (None if cut is None else
-                          tuple(node.op for node in cut.plan.nodes)),
+                          tuple(map(repr, cut.plan.nodes))),
             'cut_locals': (None if cut is None else
                            tuple(map(repr, cut.plan.locals))),
+            'cut_source': None if cut is None else cut.source.hex(),
         })
     return {
         'artifact': {
