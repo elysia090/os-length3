@@ -413,6 +413,7 @@ def execute_slice(plan, state):
     frame = state.frames[-1]
     values = {}
     memory = MemoryCut(state.memory)
+    relative_results = {}
 
     def resolve(operand):
         if operand.kind == 'const':
@@ -442,6 +443,20 @@ def execute_slice(plan, state):
             elif node.op == 'memory.i64.copy_until':
                 from .steppage import _copy_until
                 result = _copy_until(memory, *arguments)
+            elif node.op == 'memory.i64.relative_exchange':
+                from .steppage import _relative_exchange, _relative_select
+                mode = arguments[6]
+                results = _relative_exchange(
+                    memory, *arguments[:5], *arguments[6:])
+                relative_results[value] = results, mode
+                selector = arguments[5]
+                result = _relative_select(results, selector, mode)
+            elif node.op == 'memory.i64.relative_result':
+                from .steppage import _relative_select
+                source = node.arguments[0].value
+                selector = arguments[1]
+                results, mode = relative_results[source]
+                result = _relative_select(results, selector, mode)
             elif node.op.startswith('memory.'):
                 from .steppage import (_load, _memory_name,
                                        _memory_observe, _store)

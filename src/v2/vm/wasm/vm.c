@@ -201,6 +201,23 @@ typedef struct {
     u64 copy_index;
     u64 copy_limit;
     u64 copy_target_end;
+    u32 relative_active;
+    u32 relative_node;
+    u32 relative_completed_node;
+    u32 relative_count;
+    u32 relative_lane;
+    u32 relative_phase;
+    u32 relative_selector;
+    u32 relative_mode;
+    u64 relative_left;
+    u64 relative_right;
+    u64 relative_delta;
+    u64 relative_prior_flags;
+    u64 relative_layout;
+    u64 relative_save_address;
+    u64 relative_saved_value;
+    u64 relative_last_left;
+    u64 relative_results[15];
     u32 error;
 } StepWorkspace;
 
@@ -1786,7 +1803,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 188u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 190u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2215,16 +2232,9 @@ static int step_memory_lane(u32 opcode, u32 begin, u32 end, u64 *result)
     return 1;
 }
 
-static int step_x86_flags_lane(u32 begin, u32 end, u64 *result)
+static int step_x86_flags_value(u64 prior, u64 left, u64 right, u64 value,
+                                u64 descriptor, u64 *result)
 {
-    if (end - begin != 5u) return step_fail(7u);
-    u64 prior, left, right, value, descriptor;
-    if (!step_operand(begin, &prior)
-            || !step_operand(begin + 1u, &left)
-            || !step_operand(begin + 2u, &right)
-            || !step_operand(begin + 3u, &value)
-            || !step_operand(begin + 4u, &descriptor))
-        return 0;
     u32 width = (u32)descriptor & 0x7fu;
     u32 mode = ((u32)descriptor >> 8) & 7u;
     int preserve_carry = ((u32)descriptor & (1u << 11)) != 0;
@@ -2258,6 +2268,20 @@ static int step_x86_flags_lane(u32 begin, u32 end, u64 *result)
     if (overflow) flags |= 1u << 11;
     *result = flags | 2u;
     return 1;
+}
+
+static int step_x86_flags_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 5u) return step_fail(7u);
+    u64 prior, left, right, value, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &left)
+            || !step_operand(begin + 2u, &right)
+            || !step_operand(begin + 3u, &value)
+            || !step_operand(begin + 4u, &descriptor))
+        return 0;
+    return step_x86_flags_value(
+        prior, left, right, value, descriptor, result);
 }
 
 static int step_x86_flags_select_lane(u32 begin, u32 end, u64 *result)
@@ -2503,6 +2527,194 @@ static int step_memory_copy_until_lane(u32 begin, u32 end, u64 *result)
     }
 }
 
+static u32 step_relative_width(StepWorkspace *machine, u32 lane)
+{
+    return (u32)(machine->relative_layout >> (8u * (lane + 1u))) & 255u;
+}
+
+static int step_memory_relative_exchange_lane(
+    u32 node, u32 begin, u32 end, u64 *result)
+{
+    StepWorkspace *machine = step_machine();
+    if (end - begin < 7u) return step_fail(9u);
+    if (!machine->relative_active) {
+        u64 selector, mode;
+        if (!step_operand(begin, &machine->relative_left)
+                || !step_operand(begin + 1u, &machine->relative_right)
+                || !step_operand(begin + 2u, &machine->relative_delta)
+                || !step_operand(begin + 3u, &machine->relative_prior_flags)
+                || !step_operand(begin + 4u, &machine->relative_layout)
+                || !step_operand(begin + 5u, &selector)
+                || !step_operand(begin + 6u, &mode))
+            return 0;
+        machine->relative_count = (u32)machine->relative_layout & 255u;
+        machine->relative_mode = (u32)mode;
+        if (!machine->relative_count || machine->relative_count > 7u
+                || machine->relative_mode > 1u
+                || (machine->relative_mode && end - begin < 9u)
+                || (machine->relative_count < 7u
+                    && machine->relative_layout
+                       >> (8u * (machine->relative_count + 1u)))
+                || (selector != 255u
+                    && (selector != 254u || !machine->relative_mode)
+                    && selector >= machine->relative_count * 2u))
+            return step_fail(9u);
+        if (machine->relative_mode
+                && (!step_operand(begin + 7u,
+                                  &machine->relative_save_address)
+                    || !step_operand(begin + 8u,
+                                     &machine->relative_saved_value)))
+            return 0;
+        if (machine->relative_mode)
+            machine->relative_save_address -= 8u;
+        for (u32 lane = 0; lane < machine->relative_count; ++lane) {
+            u32 width = step_relative_width(machine, lane);
+            if (width != 1u && width != 2u
+                    && width != 4u && width != 8u)
+                return step_fail(9u);
+        }
+        machine->relative_active = 1u;
+        machine->relative_node = node;
+        machine->relative_lane = 0u;
+        machine->relative_phase = machine->relative_mode ? 4u : 0u;
+        machine->relative_selector = (u32)selector;
+        machine->relative_last_left = 0u;
+    } else if (machine->relative_node != node) {
+        return step_fail(12u);
+    }
+
+    if (machine->relative_phase == 4u) {
+        StepMemoryGuard guard;
+        if (!step_memory_ready(
+                machine->relative_save_address, 8u, &guard))
+            return 0;
+        if (!step_memory_store(
+                machine->relative_save_address,
+                machine->relative_saved_value, 8u, &guard))
+            return 0;
+        machine->relative_phase = 0u;
+    }
+
+    u32 offset = 0u;
+    for (u32 lane = 0; lane < machine->relative_lane; ++lane)
+        offset += step_relative_width(machine, lane);
+    while (machine->relative_phase < 3u) {
+        u32 lane = machine->relative_lane;
+        u32 width = step_relative_width(machine, lane);
+        u64 mask = step_mask(width * 8u);
+        StepMemoryGuard guard;
+        if (machine->relative_phase == 0u) {
+            u64 value;
+            if (!step_memory_ready(
+                    machine->relative_right + offset, width, &guard))
+                return 0;
+            if (!step_memory_load(
+                    machine->relative_right + offset, width, &guard, &value))
+                return 0;
+            machine->relative_results[lane * 2u]
+                = (value - machine->relative_delta) & mask;
+            machine->relative_phase = 1u;
+        }
+        if (machine->relative_phase == 1u) {
+            u64 value;
+            if (!step_memory_ready(
+                    machine->relative_left + offset, width, &guard))
+                return 0;
+            if (!step_memory_load(
+                    machine->relative_left + offset, width, &guard, &value))
+                return 0;
+            machine->relative_last_left = value;
+            machine->relative_results[lane * 2u + 1u]
+                = (value + machine->relative_delta) & mask;
+            machine->relative_phase = 2u;
+        }
+        if (!step_memory_ready(
+                machine->relative_left + offset, width, &guard))
+            return 0;
+        if (!step_memory_store(
+                machine->relative_left + offset,
+                machine->relative_results[lane * 2u], width, &guard))
+            return 0;
+        machine->relative_lane += 1u;
+        if (machine->relative_lane == machine->relative_count) {
+            machine->relative_lane = 0u;
+            machine->relative_phase = 3u;
+            break;
+        }
+        offset += width;
+        machine->relative_phase = 0u;
+    }
+
+    offset = 0u;
+    while (machine->relative_lane < machine->relative_count) {
+        u32 lane = machine->relative_lane;
+        u32 width = step_relative_width(machine, lane);
+        StepMemoryGuard guard;
+        if (!step_memory_ready(
+                machine->relative_right + offset, width, &guard))
+            return 0;
+        if (!step_memory_store(
+                machine->relative_right + offset,
+                machine->relative_results[lane * 2u + 1u], width, &guard))
+            return 0;
+        machine->relative_lane += 1u;
+        offset += width;
+    }
+
+    u32 last_width = step_relative_width(
+        machine, machine->relative_count - 1u);
+    if (!step_x86_flags_value(
+            machine->relative_prior_flags, machine->relative_delta,
+            machine->relative_last_left,
+            machine->relative_results[machine->relative_count * 2u - 1u],
+            last_width * 8u | (1u << 8),
+            &machine->relative_results[machine->relative_count * 2u]))
+        return 0;
+    if (machine->relative_mode) {
+        StepMemoryGuard guard;
+        if (!step_memory_ready(
+                machine->relative_save_address, 8u, &guard))
+            return 0;
+        if (!step_memory_load(
+                machine->relative_save_address, 8u, &guard,
+                &machine->relative_results[
+                    machine->relative_count * 2u + 1u]))
+            return 0;
+    }
+    machine->relative_active = 0u;
+    machine->relative_completed_node = node;
+    u32 selector = machine->relative_selector == 255u
+                 ? machine->relative_count * 2u
+                 : machine->relative_selector == 254u
+                 ? machine->relative_count * 2u + 1u
+                 : machine->relative_selector;
+    *result = machine->relative_results[selector];
+    return 1;
+}
+
+static int step_memory_relative_result_lane(
+    u32 begin, u32 end, u64 *result)
+{
+    StepWorkspace *machine = step_machine();
+    if (end - begin != 2u
+            || step_u8(STEP_OPERAND_TAGS, begin) != 3u)
+        return step_fail(9u);
+    u64 source = step_u64(STEP_OPERAND_VALUES, begin);
+    u64 selector;
+    if (!step_operand(begin + 1u, &selector)) return 0;
+    if (source != machine->relative_completed_node
+            || (selector != 255u
+                && (selector != 254u || !machine->relative_mode)
+                && selector >= machine->relative_count * 2u))
+        return step_fail(9u);
+    u32 selected = selector == 255u
+                 ? machine->relative_count * 2u
+                 : selector == 254u
+                 ? machine->relative_count * 2u + 1u : (u32)selector;
+    *result = machine->relative_results[selected];
+    return 1;
+}
+
 static int step_output(u32 tag_column, u32 value_column, u32 index,
                        u64 *result)
 {
@@ -2534,6 +2746,8 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
         machine->repeat_active = 0;
         machine->find_active = 0;
         machine->copy_active = 0;
+        machine->relative_active = 0;
+        machine->relative_completed_node = 0;
     }
     while (machine->execution_depth < machine->span) {
         u32 end = step_u32(
@@ -2562,6 +2776,12 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                 : opcode == 187u
                 ? step_x86_flags_select_lane(first, last,
                                              &machine->values[node])
+                : opcode == 188u
+                ? step_memory_relative_exchange_lane(
+                    node, first, last, &machine->values[node])
+                : opcode == 189u
+                ? step_memory_relative_result_lane(
+                    first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {
                 if (machine->memory_status) return machine->memory_status;

@@ -2207,6 +2207,7 @@ class X86DBT(object):
         self._ftrace_record_loops = {}
         self._indirect_thunk_functions = {}
         self._control_profile = {} if profile_controls else None
+        self._physical_profile = {} if profile_controls else None
         self._hash_stream_profile = {} if profile_controls else None
         self._pure_call_profile = {} if profile_controls else None
         self._entropy_recurrence_profile = {} if profile_controls else None
@@ -3344,7 +3345,7 @@ class X86DBT(object):
             'accumulator_test', 'compare', 'flag_control', 'group_ff',
             'immediate_alu', 'operand_test', 'register_binary',
             'register_immediate_alu', 'register_immediate_result_flags',
-            'register_result_flags', 'set_condition',
+            'register_result_flags', 'set_condition', 'memory_binary',
         }
         if operation not in supported or len(plan.locals) < 17:
             return None
@@ -3392,6 +3393,33 @@ class X86DBT(object):
                 value = emit('i64.and', (
                     value, Operand('const', (1 << bits) - 1)))
             return value
+
+        def memory_value(operand, bits, following):
+            if (not isinstance(operand, MemoryOperand)
+                    or operand.segment_msr is not None):
+                return None, None
+            pointer = Operand(
+                'const', (int(operand.displacement)
+                          + (int(following)
+                             if operand.rip_relative else 0)) & MASK64)
+            if not operand.rip_relative and operand.base is not None:
+                pointer = emit('i64.add', (
+                    pointer, registers[operand.base]))
+            if operand.index is not None:
+                index = registers[operand.index]
+                if operand.scale != 1:
+                    index = emit('i64.shl', (
+                        index, Operand(
+                            'const', operand.scale.bit_length() - 1)))
+                pointer = emit('i64.add', (pointer, index))
+            width = bits // 8
+            load = ('memory.i64.load' if width == 8 else
+                    'memory.i64.load%d_u' % bits)
+            value = emit(load, (
+                pointer, Operand('const', 0),
+                Operand('const', memory_shape(
+                    width, virtual64=True))))
+            return pointer, value
 
         def publish(operand, value, bits):
             if isinstance(operand, MemoryOperand):
@@ -3535,6 +3563,41 @@ class X86DBT(object):
                 left, right, name = register_value, operand_value, 'and'
                 result = emit('i64.and', (left, right))
             flags = result_flags(name, left, right, result, bits)
+        elif operation == 'memory_binary':
+            (following, name, reverse, register,
+             bits, operand) = detail
+            pointer, loaded = memory_value(operand, bits, following)
+            register_value = read(register, bits)
+            if pointer is None or register_value is None:
+                return None
+            left, right = ((register_value, loaded) if reverse
+                           else (loaded, register_value))
+            carry_in = bit(prior_flags, RFLAGS_CARRY) \
+                if name in ('adc', 'sbb') else None
+            if name in ('add', 'adc'):
+                result = emit('i64.add', (left, right))
+                if carry_in is not None:
+                    result = emit('i64.add', (result, carry_in))
+            elif name in ('sub', 'sbb'):
+                result = emit('i64.sub', (left, right))
+                if carry_in is not None:
+                    result = emit('i64.sub', (result, carry_in))
+            else:
+                result = emit('i64.' + name, (left, right))
+            result = emit('i64.and', (
+                result, Operand('const', (1 << bits) - 1)))
+            if reverse:
+                if not publish(register, result, bits):
+                    return None
+            else:
+                store = ('memory.i64.store' if bits == 64 else
+                         'memory.i64.store%d' % bits)
+                emit(store, (
+                    pointer, result, Operand('const', 0),
+                    Operand('const', memory_shape(
+                        bits // 8, virtual64=True))))
+            flags = result_flags(
+                name, left, right, result, bits, carry_in)
         elif operation in ('accumulator_test', 'operand_test'):
             if operation == 'accumulator_test':
                 _following, bits, immediate = detail
@@ -4034,7 +4097,7 @@ class X86DBT(object):
         self.stack_cut_span += plan.waves.span
         return composed
 
-    def _compose_register_cut(self, state, block, limit=16):
+    def _compose_register_cut(self, state, block, limit=64):
         """Join one straight state path through the shared physical grammar."""
         cached = self._register_cuts.get(block.rip)
         if (cached is not None and cached[0][0] is block
@@ -17882,6 +17945,12 @@ class X86DBT(object):
         prior = state
         try:
             state, scratch = self._execute_plan(state, block)
+            if self._physical_profile is not None:
+                count, work, span = self._physical_profile.get(
+                    block.rip, (0, 0, 0))
+                self._physical_profile[block.rip] = (
+                    count + 1, work + block.plan.waves.work,
+                    span + block.plan.waves.span)
         except PageFault as fault:
             self.last_page_fault = self._page_walk(state, fault)
             state = replace(state, cr2=fault.address)
@@ -17923,6 +17992,12 @@ class X86DBT(object):
                 control_block = following.control_block or following
                 prior = state
                 state, scratch = self._execute_plan(state, following)
+                if self._physical_profile is not None:
+                    count, work, span = self._physical_profile.get(
+                        following.rip, (0, 0, 0))
+                    self._physical_profile[following.rip] = (
+                        count + 1, work + following.plan.waves.work,
+                        span + following.plan.waves.span)
                 state, boundary = self._control(
                     state, following.boundary, prior, scratch,
                     following.flag_cut)
@@ -18462,6 +18537,11 @@ class X86DBT(object):
                 for (rip, operation), count in sorted(
                     self._control_profile.items(),
                     key=lambda item: (-item[1], item[0]))[:32])
+            layout['hot_physical_cuts'] = tuple(
+                (rip, count, work, span)
+                for rip, (count, work, span) in sorted(
+                    self._physical_profile.items(),
+                    key=lambda item: (-item[1][1], item[0]))[:32])
             layout['hash_stream_misses'] = tuple(
                 (reason, coordinate, count)
                 for (reason, coordinate), count in sorted(

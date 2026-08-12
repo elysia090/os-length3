@@ -19,7 +19,7 @@ from kernel.pagefabric import (bundle_prefix_size, dump_bundle, project,
 from qm.laneops import OPS as LANE_OPS, evaluate as evaluate_lane, shape
 from qm.pipeline import solve
 from qm.pagearchive import pack_wasm_steps
-from qm.steppage import pack as pack_step
+from qm.steppage import pack as pack_step, relative_layout
 from qm.wasmbinary import index_module
 from qm.wasmregions import pack as pack_regions
 from qm.wasmphysical import DependencyWaves
@@ -34,6 +34,137 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(shutil.which('node'), 'node is required')
 class TestBrowserPageFabric(unittest.TestCase):
+    def test_relative_exchange_resumes_inside_the_bootstrap_vm(self):
+        layout = relative_layout((4, 4, 8))
+        delta = (64 - 80) & ((1 << 64) - 1)
+        saved = 0x1122334455667788
+        saved_low = saved & 0xffffffff
+        saved_high = saved >> 32
+        right64 = (3 + delta) & ((1 << 64) - 1)
+        flags = evaluate_lane('lane64.X86_FLAGS', (
+            0x246, delta, 3, right64, 64 | (1 << 8)))
+        nodes = (
+            WaveNode(1, 'lane64.SUBR', (
+                Operand('local', 0), Operand('local', 1))),
+            WaveNode(2, 'memory.i64.relative_exchange', (
+                Operand('local', 0), Operand('local', 1),
+                Operand('node', 1), Operand('local', 2),
+                Operand('const', layout), Operand('const', 0xff),
+                Operand('const', 1), Operand('local', 3),
+                Operand('local', 4))),
+            WaveNode(3, 'memory.i64.relative_result', (
+                Operand('node', 2), Operand('const', 1))),
+            WaveNode(4, 'memory.i64.relative_result', (
+                Operand('node', 2), Operand('const', 3))),
+            WaveNode(5, 'memory.i64.relative_result', (
+                Operand('node', 2), Operand('const', 4))),
+            WaveNode(6, 'memory.i64.relative_result', (
+                Operand('node', 2), Operand('const', 5))),
+            WaveNode(7, 'memory.i64.relative_result', (
+                Operand('node', 2), Operand('const', 0xfe))),
+        )
+        plan = PureSlice(
+            0, 0, 1, 1, 0, nodes,
+            DependencyWaves(
+                (0, 1, 2, 7), (1, 2, 3, 4, 5, 6, 7),
+                (0, 1, 2, 3, 3, 3, 3, 3)),
+            tuple(Operand('node', value)
+                  for value in (1, 2, 3, 4, 5, 6, 7))
+            + (Operand('local', 4),),
+            tuple(Operand('local', index) for index in range(5)))
+        physical = bytes(pack_step(plan))
+        page = bytearray(65536)
+        page[64:68] = (1).to_bytes(4, 'little')
+        page[68:72] = (2).to_bytes(4, 'little')
+        page[72:80] = (3).to_bytes(8, 'little')
+        page[80:84] = (10).to_bytes(4, 'little')
+        page[84:88] = (20).to_bytes(4, 'little')
+        page[88:96] = (30).to_bytes(8, 'little')
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            step_path = root / 'relative-step.bin'
+            memory_path = root / 'relative-memory.bin'
+            step_path.write_bytes(physical)
+            memory_path.write_bytes(page)
+            driver = root / 'relative-step.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            driver.write_text('''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const step = new Uint8Array(readFileSync(process.argv[3]));
+const source = new Uint8Array(readFileSync(process.argv[4]));
+const session = E.vm_step_acquire();
+new Uint8Array(
+  E.memory.buffer, E.vm_step_buffer(session), step.length).set(step);
+if (!E.vm_step_open(session, step.length)
+    || !E.vm_step_memory_open(session, source.length)) {
+  throw new Error('relative fixture did not open');
+}
+const view = new DataView(E.memory.buffer);
+const locals = E.vm_step_locals(session);
+view.setBigUint64(locals, 64n, true);
+view.setBigUint64(locals + 8, 80n, true);
+view.setBigUint64(locals + 16, 0x246n, true);
+view.setBigUint64(locals + 24, 72n, true);
+view.setBigUint64(locals + 32, %dn, true);
+const faults = [];
+for (;;) {
+  const status = E.vm_step_execute(session, 5, 0);
+  if (status === 2) break;
+  if (status !== 1) throw new Error(`execute:${status}:${E.vm_step_error(session)}`);
+  const lease = E.vm_step_memory_lease(session);
+  const page = E.vm_step_memory_page(session, lease);
+  const bytes = E.vm_step_memory_page_size(session, lease);
+  faults.push(page);
+  new Uint8Array(
+    E.memory.buffer, E.vm_step_memory_page_buffer(session, lease), bytes,
+  ).set(source.subarray(page * 65536, page * 65536 + bytes));
+  if (!E.vm_step_supply_memory_page(session, lease, page, bytes)) {
+    throw new Error('supply failed');
+  }
+}
+const stack = E.vm_step_stack(session);
+const outputs = Array.from({length: 8}, (_, index) =>
+  view.getBigUint64(stack + index * 8, true).toString());
+const dirtyPage = E.vm_step_first_dirty_memory_page(session);
+const lease = E.vm_step_memory_lease(session);
+const dirty = new Uint8Array(
+  E.memory.buffer, E.vm_step_memory_page_buffer(session, lease),
+  E.vm_step_memory_page_size(session, lease),
+);
+const records = Buffer.from(dirty.slice(64, 96)).toString('hex');
+E.vm_step_ack_memory_page(session, lease, dirtyPage);
+E.vm_step_release(session);
+process.stdout.write(JSON.stringify({faults, outputs, dirtyPage, records}));
+''' % saved, encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(step_path), str(memory_path)],
+                check=False, capture_output=True, text=True,
+                encoding='utf-8')
+            self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), {
+            'faults': [0],
+            'outputs': [
+                str(delta), str(flags),
+                str((saved_low + delta) & 0xffffffff),
+                str((saved_high + delta) & 0xffffffff),
+                str(30 - delta & ((1 << 64) - 1)), str(right64),
+                str(26 | (36 << 32)),
+                str(saved),
+            ],
+            'dirtyPage': 0,
+            'records': (
+                (10 - delta & 0xffffffff).to_bytes(4, 'little')
+                + (20 - delta & 0xffffffff).to_bytes(4, 'little')
+                + (30 - delta & ((1 << 64) - 1)).to_bytes(8, 'little')
+                + ((saved_low + delta) & 0xffffffff).to_bytes(4, 'little')
+                + ((saved_high + delta) & 0xffffffff).to_bytes(4, 'little')
+                + right64.to_bytes(8, 'little')).hex(),
+        })
+
     def test_secure_projection_recovers_ciphertext_through_the_vm_artifact(self):
         source = (Path(__file__).resolve().parents[3] / 'corpus' / 'storage'
                   / 'erasure_gf256_mul.c').read_text(encoding='utf-8')
