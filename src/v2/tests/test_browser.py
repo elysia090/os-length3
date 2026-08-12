@@ -470,6 +470,9 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn('id="card-terminal"', html)
         self.assertIn('id="card-run"', html)
         self.assertIn('id="shell-terminal"', html)
+        self.assertIn('id="boot-transfer"', html)
+        self.assertIn('role="progressbar"', html)
+        self.assertIn('aria-valuemin="0" aria-valuemax="100"', html)
         self.assertNotIn('id="terminal-tab-run"', html)
         self.assertIn('id="vfs-files"', html)
         self.assertIn('id="dock-resizer"', html)
@@ -488,6 +491,22 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertNotIn('--tab-rail-width', styles)
         self.assertIn('-webkit-user-select: none', styles)
         self.assertIn('user-select: none', styles)
+        self.assertIn('.boot-transfer.is-indeterminate', styles)
+        self.assertIn('@media (prefers-reduced-motion: reduce)', styles)
+
+        with open(os.path.join(ROOT, 'web', 'linux-terminal.js')) as handle:
+            linux_terminal = handle.read()
+        self.assertIn('export class LinuxTerminal', linux_terminal)
+        self.assertIn("track.setAttribute('aria-valuenow'", linux_terminal)
+        self.assertIn("track.removeAttribute('aria-valuenow')", linux_terminal)
+        self.assertIn("new URL('linux-worker.js', import.meta.url)",
+                      linux_terminal)
+
+        with open(os.path.join(ROOT, 'web', 'linux-worker.js')) as handle:
+            linux_worker = handle.read()
+        self.assertIn('response.body.getReader()', linux_worker)
+        self.assertIn("phase: 'download'", linux_worker)
+        self.assertIn("phase: 'rootfs'", linux_worker)
 
 
 class TestCapabilities(unittest.TestCase):
@@ -917,6 +936,7 @@ class TestManifest(unittest.TestCase):
                         'web/vm.json',
                         'web/vm.js', 'web/qm-manifest.json',
                         'web/kernel-manifest.json', 'web/linux-worker.js',
+                        'web/linux-terminal.js',
                         'web/page-fabric.js', 'web/function-regions.js',
                         'web/physical-pages.js', 'web/paged-wasm.js',
                         'web/examples.json', 'index.html'):

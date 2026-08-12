@@ -512,6 +512,17 @@ input:disabled { opacity: .45; }
   width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
   box-shadow: 0 0 8px color-mix(in srgb, var(--ok) 42%, transparent);
 }
+#shell-state:not(.is-active):not(.is-booting):not(.is-error) i {
+  background: var(--muted); box-shadow: none;
+}
+#shell-state.is-booting i {
+  background: var(--accent-hi);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 46%, transparent);
+}
+#shell-state.is-error i {
+  background: var(--bad);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--bad) 42%, transparent);
+}
 
 .dock-view {
   flex: 1 1 auto; min-height: 0;
@@ -899,6 +910,84 @@ input:disabled { opacity: .45; }
 .shell-terminal #shell-out {
   margin: 0; padding: 12px 13px 0; overflow: auto; flex: 1;
   font: 10px/16px var(--mono); white-space: pre; color: var(--ink);
+}
+.boot-transfer {
+  position: relative;
+  margin: 10px 11px 0;
+  padding: 9px 10px 8px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--code-edge) 62%, transparent);
+  border-radius: 7px;
+  background:
+    linear-gradient(105deg, rgba(237, 99, 50, .055), transparent 42%),
+    color-mix(in srgb, var(--code-frame) 84%, #12171b);
+  box-shadow:
+    inset 0 1px rgba(247, 251, 253, .055),
+    0 5px 18px rgba(5, 6, 7, .14);
+}
+.boot-transfer::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg,
+    transparent 0 72%, rgba(183, 221, 238, .035) 84%, transparent 94%);
+}
+.boot-transfer-head, .boot-transfer-detail {
+  position: relative; z-index: 1;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 14px; min-width: 0;
+}
+.boot-transfer-head {
+  margin-bottom: 7px;
+  font: 550 10px/1.15 var(--sans);
+  letter-spacing: .012em;
+}
+.boot-transfer-title { color: var(--ink); }
+.boot-transfer-value {
+  color: var(--ink-2);
+  font: 500 9px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.boot-transfer-track {
+  position: relative; z-index: 1;
+  height: 3px; overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--edge-soft) 72%, #101316);
+  box-shadow: inset 0 1px 1px rgba(2, 3, 4, .45);
+}
+.boot-transfer-fill {
+  display: block; width: var(--boot-progress, 0%); height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hi) 72%, #ff9168);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 36%, transparent);
+  transition: width 160ms cubic-bezier(.22, .72, .24, 1);
+}
+.boot-transfer.is-indeterminate .boot-transfer-fill {
+  width: 28%;
+  animation: boot-transfer-scan 1.05s cubic-bezier(.48, 0, .52, 1) infinite;
+}
+.boot-transfer.is-complete .boot-transfer-fill { background: var(--ok); }
+.boot-transfer.is-error .boot-transfer-fill { width: 100%; background: var(--bad); }
+.boot-transfer-detail {
+  margin-top: 6px;
+  color: var(--muted);
+  font: 450 8.5px/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.boot-transfer-detail > :first-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.boot-transfer-detail > :last-child { flex: 0 0 auto; }
+@keyframes boot-transfer-scan {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(360%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-transfer-fill { transition: none; }
+  .boot-transfer.is-indeterminate .boot-transfer-fill {
+    width: 42%; transform: none; animation: none;
+  }
 }
 .terminal {
   display: flex; flex-direction: column; flex: 1 1 auto;

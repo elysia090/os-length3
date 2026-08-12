@@ -113,9 +113,26 @@
     </div>
     <div class="terminal-meta">
       <span>shell</span>
-      <span class="session-state"><i aria-hidden="true"></i> local</span>
+      <span class="session-state" id="shell-state"><i aria-hidden="true"></i> idle</span>
     </div>
-    <div class="framed terminal shell-terminal" id="shell-terminal">
+    <div class="framed terminal shell-terminal" id="shell-terminal"
+         aria-describedby="boot-transfer-label">
+      <section class="boot-transfer" id="boot-transfer" hidden
+               aria-live="polite" aria-busy="true">
+        <div class="boot-transfer-head">
+          <span class="boot-transfer-title" id="boot-transfer-label">Starting Linux</span>
+          <span class="boot-transfer-value" id="boot-transfer-value"></span>
+        </div>
+        <div class="boot-transfer-track" id="boot-transfer-track"
+             role="progressbar" aria-labelledby="boot-transfer-label"
+             aria-valuemin="0" aria-valuemax="100">
+          <span class="boot-transfer-fill" id="boot-transfer-fill"></span>
+        </div>
+        <div class="boot-transfer-detail">
+          <span id="boot-transfer-phase">Opening the machine</span>
+          <span id="boot-transfer-bytes"></span>
+        </div>
+      </section>
       <pre id="shell-out"><span class="term-echo">Shell becomes available when linux.wasm is mounted.</span>
 </pre>
       <div class="term-line">
