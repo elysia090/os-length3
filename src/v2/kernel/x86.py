@@ -1323,6 +1323,36 @@ class _VirtualMemoryCut(object):
                         self.state.memory.load(physical + found, 1))
             distance += count
 
+    def copy_until(self, source, target, start, limit, target_end, sentinel):
+        """Run one indexed byte-copy residual through virtual page cuts."""
+        source, target = int(source) & MASK64, int(target) & MASK64
+        index, limit = int(start), int(limit)
+        target_end, sentinel = int(target_end) & MASK64, int(sentinel) & 0xff
+        dependency = (target - source) & MASK64
+        last = 0
+        while index < limit:
+            virtual = (source + index) & MASK64
+            count = min(limit - index,
+                        PAGE_BYTES - (virtual & (PAGE_BYTES - 1)))
+            target_at = (target + index) & MASK64
+            if target_at > MASK64 - (count - 1):
+                count = MASK64 - target_at + 1
+            if (target_at < target_end and dependency
+                    and dependency < count):
+                count = dependency
+            payload = read_virtual(self.state, virtual, count)
+            found = payload.find(bytes((sentinel,)))
+            observed = count if found < 0 else found
+            eligible = min(observed, target_end - target_at) \
+                if target_at < target_end else 0
+            if eligible:
+                write_virtual(self.state, target_at, payload[:eligible])
+            if found >= 0:
+                return index + found, sentinel, True
+            last = payload[-1]
+            index += count
+        return index, last, False
+
 
 def write_virtual_batch(state, writes):
     """Publish virtual byte slices only after every mapping is proved."""
@@ -2057,6 +2087,12 @@ class X86DBT(object):
         self.find_cut_cache_misses = 0
         self.find_cut_work = 0
         self.find_cut_span = 0
+        self.copy_cuts = 0
+        self.copy_cut_cache_hits = 0
+        self.copy_cut_cache_misses = 0
+        self.copy_cut_work = 0
+        self.copy_cut_span = 0
+        self.copy_cut_bytes = 0
         self.collapse_recipe_hits = 0
         self.collapse_recipe_misses = 0
         self.collapse_recipe_negative = 0
@@ -2085,6 +2121,7 @@ class X86DBT(object):
         self._recurrence_cuts = {}
         self._stack_cuts = {}
         self._find_cuts = {}
+        self._copy_cuts = {}
         self._proof_dependents = {}
         self._block_pages = {}
         self._page_blocks = {}
@@ -11003,6 +11040,269 @@ class X86DBT(object):
             raise X86Error('a pure byte find published a barrier')
         return state
 
+    @staticmethod
+    def _copy_until_state_valid(state, registers):
+        source, target, index, limit, target_end = registers
+        start = state.registers[index] & MASK32
+        stop = state.registers[limit] & MASK32
+        return (state.registers[index] == start
+                and state.registers[limit] == stop
+                and start < stop)
+
+    def _copy_until_cut(self, state, branch):
+        """Compile a bounded NUL-copy loop to one persistent state node."""
+        if (branch.boundary.operation != 'branch'
+                or not isinstance(branch.boundary.detail, int)):
+            return None
+        target = int(branch.boundary.detail) & MASK64
+        if state.rip != target or target <= branch.rip:
+            return None
+        cached = self._copy_cuts.get(branch.rip)
+        if cached is not None and cached[0] is branch:
+            proof_blocks, cut, registers = cached[1]
+            if (all(self.blocks.get(block.rip) is block
+                    for block in proof_blocks)
+                    and self._copy_until_state_valid(state, registers)):
+                self.copy_cut_cache_hits += 1
+                return cut
+
+        def block_at(rip):
+            present = self.blocks.get(int(rip) & MASK64)
+            if present is not None:
+                return present
+            return self.block(replace(
+                _freeze_state(state), rip=int(rip) & MASK64))
+
+        address = block_at(target)
+        if address.boundary.operation != 'lea':
+            return None
+        after_address, target_register, address_bits, target_operand = \
+            address.boundary.detail
+        if (address_bits != 64 or not isinstance(target_register, int)
+                or not isinstance(target_operand, MemoryOperand)
+                or target_operand.base is None
+                or target_operand.index is None
+                or target_operand.scale != 1
+                or target_operand.displacement
+                or target_operand.rip_relative
+                or target_operand.segment_msr is not None):
+            return None
+        target_base, index = target_operand.base, target_operand.index
+
+        load = block_at(after_address)
+        if load.boundary.operation != 'move_zero_extend':
+            return None
+        (after_load, byte_register, source_bits,
+         target_bits, source_operand) = load.boundary.detail
+        if (source_bits != 8 or target_bits not in (32, 64)
+                or not isinstance(byte_register, int)
+                or not isinstance(source_operand, MemoryOperand)
+                or source_operand.base is None
+                or source_operand.index != index
+                or source_operand.scale != 1
+                or source_operand.displacement
+                or source_operand.rip_relative
+                or source_operand.segment_msr is not None):
+            return None
+        source_base = source_operand.base
+
+        test = block_at(after_load)
+        if test.boundary.operation != 'compare':
+            return None
+        after_test, opcode, left, right, compare_bits = test.boundary.detail
+        if (opcode not in (0x84, 0x85) or left != byte_register
+                or right != byte_register or compare_bits != 8):
+            return None
+        sentinel_branch = block_at(after_test)
+        if sentinel_branch.boundary.operation != 'conditional_branch':
+            return None
+        after_sentinel, sentinel_exit, sentinel_condition = \
+            sentinel_branch.boundary.detail
+        if sentinel_condition != 4:
+            return None
+
+        capacity = block_at(after_sentinel)
+        if capacity.boundary.operation != 'compare':
+            return None
+        after_capacity, opcode, target_end, compared_address, bits = \
+            capacity.boundary.detail
+        if (opcode != 0x39 or compared_address != target_register
+                or not isinstance(target_end, int) or bits != 64):
+            return None
+        capacity_branch = block_at(after_capacity)
+        if capacity_branch.boundary.operation != 'conditional_branch':
+            return None
+        store_rip, update_rip, capacity_condition = \
+            capacity_branch.boundary.detail
+        if capacity_condition != 3:
+            return None
+
+        store = block_at(store_rip)
+        if store.boundary.operation != 'store':
+            return None
+        after_store, stored, stored_bits, store_operand = \
+            store.boundary.detail
+        if (stored != byte_register or stored_bits != 8
+                or not isinstance(store_operand, MemoryOperand)
+                or store_operand.base != target_register
+                or store_operand.index is not None
+                or store_operand.displacement
+                or store_operand.rip_relative
+                or store_operand.segment_msr is not None):
+            return None
+        backedge = block_at(after_store)
+        if (backedge.boundary.operation != 'branch'
+                or int(backedge.boundary.detail) & MASK64 != update_rip):
+            return None
+
+        update = block_at(update_rip)
+        if update.boundary.operation != 'group_ff':
+            return None
+        after_update, group, updated, index_bits = update.boundary.detail
+        if group != 0 or updated != index or index_bits != 64:
+            return None
+        count_compare = block_at(after_update)
+        if count_compare.boundary.operation != 'compare':
+            return None
+        after_count, opcode, counted, limit, count_bits = \
+            count_compare.boundary.detail
+        if (opcode != 0x39 or counted != index
+                or not isinstance(limit, int) or count_bits != 32):
+            return None
+        limit_branch = block_at(after_count)
+        if limit_branch.boundary.operation != 'conditional_branch':
+            return None
+        loop_entry, limit_exit, limit_condition = \
+            limit_branch.boundary.detail
+        if loop_entry != target or limit_condition != 4:
+            return None
+        if (int(capacity_branch.boundary.detail[1]) & MASK64 != update.rip
+                or int(backedge.boundary.detail) & MASK64 != update.rip
+                or branch.rip + len(branch.source) != update.rip):
+            return None
+
+        sentinel_path = block_at(sentinel_exit)
+        if (sentinel_path.boundary.operation != 'branch'
+                or len(sentinel_path.plan.nodes) != 1):
+            return None
+        sentinel_value = sentinel_path.plan.locals[REGISTER_INDEX['rsi']]
+        sentinel_node = sentinel_path.plan.nodes[0]
+        if (sentinel_value != Operand('node', sentinel_node.value)
+                or sentinel_node.op != 'lane64.AND'
+                or sentinel_node.arguments != (
+                    Operand('local', index), Operand('const', MASK32))):
+            return None
+        common_rip = int(sentinel_path.boundary.detail) & MASK64
+        common = block_at(common_rip)
+        if (common.boundary.operation != 'call'
+                or common.plan.locals[target_base]
+                != Operand('local', target_register)):
+            return None
+
+        limit_add = block_at(limit_exit)
+        if limit_add.boundary.operation != 'register_result_flags':
+            return None
+        after_limit_add, name, destination, added, add_bits = \
+            limit_add.boundary.detail
+        if (name != 'add' or destination != target_base
+                or added != index or add_bits != 64):
+            return None
+        limit_tail = block_at(after_limit_add)
+        if (limit_tail.boundary.operation != 'call'
+                or limit_tail.boundary.detail != common.boundary.detail
+                or limit_tail.boundary_rip != common.boundary_rip
+                or limit_tail.plan.locals[target_register]
+                != Operand('local', target_base)):
+            return None
+
+        proof_blocks = (
+            branch, update, count_compare, limit_branch, address, load,
+            test, sentinel_branch, capacity, capacity_branch, store,
+            backedge, sentinel_path, common, limit_add, limit_tail)
+        registers = (source_base, target_base, index, limit, target_end)
+        if not self._copy_until_state_valid(state, registers):
+            return None
+
+        locals_ = [Operand('local', coordinate)
+                   for coordinate in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            arguments = tuple(arguments)
+            if operation.startswith(('i32.', 'i64.')):
+                operation, arguments = select_lane(operation, arguments)
+            value = len(nodes) + 1
+            nodes.append(WaveNode(value, operation, arguments))
+            return Operand('node', value)
+
+        copied = emit('memory.i64.copy_until', (
+            locals_[source_base], locals_[target_base], locals_[index],
+            locals_[limit], locals_[target_end], Operand('const', 0),
+            Operand('const', memory_shape(1, virtual64=True))))
+        final_index = emit('lane64.BEXTR', (
+            copied, Operand('const', 0), Operand('const', 32)))
+        final_byte = emit('lane64.BEXTR', (
+            copied, Operand('const', 32), Operand('const', 8)))
+        final_pointer = emit('i64.add', (
+            locals_[target_base], final_index))
+        prior_flags = locals_[len(REGISTER_NAMES)]
+        limit_flags = emit('lane64.X86_FLAGS', (
+            prior_flags, locals_[target_base], final_index, final_pointer,
+            Operand('const', 64 | (1 << 8))))
+        sentinel_flags = emit('lane64.X86_FLAGS', (
+            prior_flags, final_byte, final_byte, final_byte,
+            Operand('const', 8)))
+        flags = emit('lane64.SELECT', (
+            limit_flags, sentinel_flags, final_byte))
+        locals_[index] = final_index
+        locals_[REGISTER_INDEX['rsi']] = final_index
+        locals_[byte_register] = final_byte
+        locals_[target_register] = final_pointer
+        locals_[target_base] = final_pointer
+        plan = normalize_plan(PureSlice(
+            0, 0, len(proof_blocks), len(proof_blocks), 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_[:len(REGISTER_NAMES)]) + (flags,)))
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        proof_start = branch.rip
+        proof_stop = common.boundary_rip
+        if proof_stop <= proof_start:
+            return None
+        proof_config, proof = _execution_proof(
+            state, proof_start, proof_stop - proof_start)
+        cut = DecodedBlock(
+            target, backedge.rip,
+            b''.join(block.source for block in proof_blocks),
+            len(proof_blocks), plan, mapped, execute, 0,
+            X86Boundary('branch', common.boundary_rip),
+            proof_config, proof, state_flags=True, virtual_memory=True)
+        self._copy_cuts[branch.rip] = branch, (
+            proof_blocks, cut, registers)
+        self.copy_cuts += 1
+        self.copy_cut_cache_misses += 1
+        self.copy_cut_work += plan.waves.work
+        self.copy_cut_span += plan.waves.span
+        return cut
+
+    def _collapse_copy_until(self, state, branch):
+        cut = self._copy_until_cut(state, branch)
+        if cut is None:
+            return state
+        registers = self._copy_cuts[branch.rip][1][2]
+        index = registers[2]
+        start = state.registers[index] & MASK32
+        prior = state
+        state, scratch = self._execute_plan(state, cut)
+        state, boundary = self._control(
+            state, cut.boundary, prior, scratch)
+        if boundary is not None:
+            raise X86Error('a pure byte copy published a barrier')
+        self.copy_cut_bytes += ((state.registers[index] & MASK32) - start) \
+            & MASK32
+        return state
+
     def _collapse_backward_direct_branch(self, state, branch):
         """Apply direct-coordinate reducers selected by a backward jump."""
         cached = self._backward_branch_recipes.get(branch.rip)
@@ -11034,6 +11334,9 @@ class X86DBT(object):
                 or not isinstance(branch.boundary.detail, int)):
             return state
         state = self._collapse_byte_find(state, branch)
+        if state.rip != (int(branch.boundary.detail) & MASK64):
+            return state
+        state = self._collapse_copy_until(state, branch)
         if state.rip != (int(branch.boundary.detail) & MASK64):
             return state
         if not self.enable_function_oracles:
@@ -17742,6 +18045,13 @@ class X86DBT(object):
             'find_cut_cache_misses': self.find_cut_cache_misses,
             'find_cut_work': self.find_cut_work,
             'find_cut_span': self.find_cut_span,
+            'copy_cuts': self.copy_cuts,
+            'resident_copy_cuts': len(self._copy_cuts),
+            'copy_cut_cache_hits': self.copy_cut_cache_hits,
+            'copy_cut_cache_misses': self.copy_cut_cache_misses,
+            'copy_cut_work': self.copy_cut_work,
+            'copy_cut_span': self.copy_cut_span,
+            'copy_cut_bytes': self.copy_cut_bytes,
             'persistent_cuts': self.persistent_cuts,
             'materialized_pages': self.materialized_pages,
             'published_pages': self.published_pages,

@@ -224,6 +224,9 @@ def main(argv=None):
     parser.add_argument('--clock-step', type=int, default=1 << 20)
     parser.add_argument('--clock-variation-bits', type=int, default=12)
     parser.add_argument('--profile-controls', action='store_true')
+    parser.add_argument(
+        '--profile-range', action='append', default=[], metavar='START:STOP',
+        help='print decoded blocks whose RIP is inside one hexadecimal range')
     parser.add_argument('--max-internal', type=int, default=1024)
     parser.add_argument('--wasm-sponge', type=Path)
     arguments = parser.parse_args(argv)
@@ -283,6 +286,19 @@ def main(argv=None):
     print('stopped=%r' % cpu.halted)
     print('console=%r' % console[-512:])
     print('layout=%r' % dbt.layout())
+    for spelling in arguments.profile_range:
+        try:
+            start_text, stop_text = spelling.split(':', 1)
+            start, stop = int(start_text, 0), int(stop_text, 0)
+        except (TypeError, ValueError) as error:
+            parser.error('profile range must be START:STOP: %s' % error)
+        if start >= stop:
+            parser.error('profile range must have START < STOP')
+        for rip, block in sorted(dbt.blocks.items()):
+            if start <= rip < stop:
+                print('profile_block=0x%x source=%s boundary=%s detail=%r'
+                      % (rip, block.source.hex(),
+                         block.boundary.operation, block.boundary.detail))
     if arguments.kernel_entry:
         return 0 if cpu.halted else 1
     if mismatch is None:

@@ -54,6 +54,32 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(plan.nodes[0].arguments,
                          (Operand('local', 0), Operand('const', 0xff)))
 
+    def test_conditional_x86_flags_are_one_physical_lane(self):
+        empty_waves = DependencyWaves((0,), (), (0,))
+        prior = Operand('local', 0)
+        limit = (
+            prior, Operand('const', 10), Operand('const', 2),
+            Operand('const', 12), Operand('const', 64 | (1 << 8)))
+        sentinel = (
+            prior, Operand('const', 0), Operand('const', 0),
+            Operand('const', 0), Operand('const', 8))
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.X86_FLAGS', limit),
+             WaveNode(2, 'lane64.X86_FLAGS', sentinel),
+             WaveNode(3, 'lane64.SELECT', (
+                 Operand('node', 1), Operand('node', 2),
+                 Operand('local', 1)))),
+            empty_waves, (), (Operand('node', 3), Operand('local', 1)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.X86_FLAGS_SELECT'])
+        self.assertEqual(plan.nodes[0].arguments,
+                         limit + sentinel + (Operand('local', 1),))
+        self.assertEqual((plan.waves.work, plan.waves.span), (1, 1))
+
     def test_deterministic_pages_compose_by_substituting_frame_coordinates(self):
         empty_waves = DependencyWaves((0,), (), (0,))
         first = normalize_plan(PureSlice(

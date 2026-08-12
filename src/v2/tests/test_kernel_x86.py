@@ -547,6 +547,49 @@ class TestX86StateStep(unittest.TestCase):
         self.assertIn('memory.i64.find2',
                       tuple(node.op for node in cut.plan.nodes))
 
+    def test_bounded_nul_copy_is_one_five_op_physical_cut(self):
+        # The loop copies source[index] while it is nonzero, but stops writes
+        # at target_end and continues scanning to the exclusive index limit.
+        code = bytes.fromhex(
+            'eb08 49ffc1 4439ce 7430 4e8d040f 460fb61408 '
+            '4584d2 741d 4939d0 73e5 458810 ebe0 '
+            '4489ce eb06 4c01cf 4889f9 4889cf 4889c1 eb0e '
+            '4489ce eb06 4c01cf 4989f8 4c89c7 e8fb1b0000')
+
+        def initial(source, target_end, limit=8):
+            return initial_state(memory_with(
+                (0x100, code), (0x400, source), (0x500, bytes(16)),
+                (0x800, bytes(8)), (0x1d45, b'\xf4')),
+                0x100, {'rax': 0x400, 'rdi': 0x500,
+                        'rdx': target_end, 'rsi': limit, 'rsp': 0x808})
+
+        for source, target_end, limit, expected in (
+                (b'abc\0tail', 0x508, 8, b'abc' + bytes(5)),
+                (b'abcdefghZ', 0x503, 8, b'abc' + bytes(5)),
+                (b'abc\0tail', 0x508, MASK32, b'abc' + bytes(5))):
+            optimized = X86DBT(enable_function_oracles=False)
+            fast, fast_boundary, _cost = optimized.run(
+                initial(source, target_end, limit))
+            scalar = X86DBT(enable_function_oracles=False)
+            scalar._collapse_copy_until = lambda state, branch: state
+            slow, slow_boundary, _cost = scalar.run(
+                initial(source, target_end, limit))
+
+            self.assertEqual(fast_boundary, slow_boundary)
+            self.assertEqual(fast.registers, slow.registers)
+            self.assertEqual(fast.rflags, slow.rflags)
+            self.assertEqual(read_virtual(fast, 0x500, 8), expected)
+            self.assertEqual(read_virtual(fast, 0x500, 8),
+                             read_virtual(slow, 0x500, 8))
+            self.assertEqual(optimized.layout()['copy_cuts'], 1)
+            self.assertEqual((optimized.layout()['copy_cut_work'],
+                              optimized.layout()['copy_cut_span']), (5, 4))
+            cut = next(iter(optimized._copy_cuts.values()))[1][1]
+            self.assertEqual([node.op for node in cut.plan.nodes], [
+                'memory.i64.copy_until', 'lane64.BEXTR',
+                'lane64.BEXTR', 'lane64.ADDR',
+                'lane64.X86_FLAGS_SELECT'])
+
     def test_qm_register_result_updates_the_following_branch_flags(self):
         # xor eax,eax; jne bad; mov eax,42; hlt; bad: mov eax,99; hlt
         code = bytes.fromhex(

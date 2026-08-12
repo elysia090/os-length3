@@ -290,7 +290,8 @@ def _rewrite_physical(nodes, stack, locals_):
     for node in nodes:
         operation = node.op
         arguments = tuple(map(resolve, node.arguments))
-        if operation in ('memory.i64.repeat', 'memory.i64.find2'):
+        if operation in ('memory.i64.repeat', 'memory.i64.find2',
+                         'memory.i64.copy_until'):
             operand = emit(operation, arguments)
             remap[node.value] = operand
             continue
@@ -462,6 +463,14 @@ def _rewrite_physical(nodes, stack, locals_):
 
         elif name == 'SELECT' and len(arguments) == 3:
             condition = form(arguments[2])
+            left_form = form(arguments[0])
+            right_form = form(arguments[1])
+            if (left_form is not None and right_form is not None
+                    and left_form[0] == 'lane64.X86_FLAGS'
+                    and right_form[0] == 'lane64.X86_FLAGS'):
+                operation = 'lane64.X86_FLAGS_SELECT'
+                arguments = (left_form[1] + right_form[1]
+                             + (arguments[2],))
             if condition is not None:
                 condition_width, relation = condition[0].split('.', 1)
                 extrema = {
