@@ -1822,6 +1822,7 @@ class DecodedBlock:
     cut_inputs: tuple = ()
     state_flags: bool = False
     virtual_memory: bool = False
+    indirect_register: object = None
 
 
 class _CodeReader(object):
@@ -3885,7 +3886,7 @@ class X86DBT(object):
         return plan, int(following) & MASK64
 
     @staticmethod
-    def _stack_plan(boundary):
+    def _stack_plan(boundary, indirect_register=None):
         """Lower stack memory and its control result to shared physical SSA."""
         operation, detail = boundary.operation, boundary.detail
         supported = {
@@ -3895,7 +3896,8 @@ class X86DBT(object):
         if operation not in supported:
             return None
 
-        scratch_count = int(operation == 'return')
+        scratch_count = int(
+            operation == 'return' or indirect_register is not None)
         locals_ = [Operand('local', index)
                    for index in range(
                        len(REGISTER_NAMES) + 1 + scratch_count)]
@@ -3944,7 +3946,11 @@ class X86DBT(object):
                 pointer, Operand('const', 8)))
             store(pointer, Operand('const', int(following) & MASK64))
             locals_[rsp] = pointer
-            control = X86Boundary('branch', int(target) & MASK64)
+            if indirect_register is None:
+                control = X86Boundary('branch', int(target) & MASK64)
+            else:
+                scratch = (locals_[indirect_register],)
+                control = X86Boundary('dynamic_branch', None)
         elif operation in ('push', 'push_immediate', 'push_flags'):
             if operation == 'push':
                 following, register = detail
@@ -3987,11 +3993,21 @@ class X86DBT(object):
         # stack mappings, so they must observe the original scalar boundary.
         if self.enable_function_oracles:
             return block
+        indirect_register = None
+        if block.boundary.operation == 'call':
+            _following, target = block.boundary.detail
+            layout = self._indirect_thunk_layout(state, target)
+            if layout is not None:
+                register, return_thunk = layout
+                if self._code_contains_recipe(
+                        state, return_thunk, b'\xc3', extent=1):
+                    indirect_register = register
         cached = self._stack_cuts.get(block.rip)
-        if cached is not None and cached[0] is block:
+        if (cached is not None and cached[0] is block
+                and cached[1].indirect_register == indirect_register):
             self.stack_cut_cache_hits += 1
             return cached[1]
-        lowered = self._stack_plan(block.boundary)
+        lowered = self._stack_plan(block.boundary, indirect_register)
         if lowered is None:
             return block
         control, boundary, scratch_count = lowered
@@ -4008,7 +4024,8 @@ class X86DBT(object):
             block.instructions + 1, plan, mapped, execute, scratch_count,
             boundary, block.proof_config, block.proof,
             control_block=block.control_block or block,
-            state_flags=True, virtual_memory=True)
+            state_flags=True, virtual_memory=True,
+            indirect_register=indirect_register)
         self._stack_cuts[block.rip] = block, composed
         self.stack_cuts += 1
         self.stack_cut_cache_misses += 1
@@ -11339,6 +11356,10 @@ class X86DBT(object):
         state = self._collapse_copy_until(state, branch)
         if state.rip != (int(branch.boundary.detail) & MASK64):
             return state
+        if self._code_contains_recipe(
+                state, int(branch.boundary.detail) & MASK64,
+                b'\xc3', extent=1):
+            return self._collapse_return_branch(state, branch)
         if not self.enable_function_oracles:
             return state
         cached = self._direct_branch_recipes.get(branch.rip)
@@ -11347,10 +11368,6 @@ class X86DBT(object):
         else:
             if branch.source.endswith(_TOKEN_STREAM_BRANCH):
                 reducer = self._collapse_token_stream_entry
-            elif self._code_contains_recipe(
-                    state, int(branch.boundary.detail) & MASK64,
-                    b'\xc3', extent=1):
-                reducer = self._collapse_return_branch
             elif self._page_record_projection_layout(
                     state, branch) is not None:
                 reducer = self._collapse_page_record_projection
@@ -16417,6 +16434,10 @@ class X86DBT(object):
         return state
 
     def _collapse_pure_call(self, state, following, target):
+        collapsed = self._collapse_indirect_thunk_call(
+            state, following, target)
+        if collapsed is not None:
+            return collapsed
         if not self.enable_function_oracles:
             return None
         """Apply the shared direct/indirect ABI summary route."""
@@ -16432,7 +16453,6 @@ class X86DBT(object):
                 return collapsed
             self._pure_call_recipes.pop(target, None)
         reducers = (
-            self._collapse_indirect_thunk_call,
             self._collapse_entry_nop_call,
             self._collapse_register_projection_call,
             self._collapse_machine_leaf_call,
@@ -17788,6 +17808,8 @@ class X86DBT(object):
             block = self._compose_predicate_cut(state, block)
             block = self._compose_register_cut(state, block)
             block = self._compose_stack_cut(state, block)
+            if block.indirect_register is not None:
+                self.collapsed_indirect_calls += 1
         except PageFault as fault:
             self.last_page_fault = self._page_walk(state, fault)
             state = replace(state, cr2=fault.address)
@@ -17831,6 +17853,8 @@ class X86DBT(object):
                 following = self._compose_predicate_cut(state, following)
                 following = self._compose_register_cut(state, following)
                 following = self._compose_stack_cut(state, following)
+                if following.indirect_register is not None:
+                    self.collapsed_indirect_calls += 1
                 control_block = following.control_block or following
                 prior = state
                 state, scratch = self._execute_plan(state, following)

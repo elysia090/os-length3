@@ -4083,7 +4083,7 @@ class TestX86StateStep(unittest.TestCase):
         memory = memory_with(
             (0x100, code), (0x200, b'\xc3'),
             (0x8000, struct.pack('<Q', 0x105)))
-        dbt = X86DBT()
+        dbt = X86DBT(enable_function_oracles=False)
 
         state, boundary, _cost = dbt.run(initial_state(
             memory, 0x100, {'rsp': 0x8000}))
@@ -4460,7 +4460,7 @@ class TestX86StateStep(unittest.TestCase):
         memory = memory_with(
             (0x100, caller), (0x200, thunk),
             (0x300, b'\xc3'), (0x400, b'\xc3'))
-        dbt = X86DBT()
+        dbt = X86DBT(enable_function_oracles=False)
 
         state, boundary, _cost = dbt.run(initial_state(
             memory, 0x100, {'r11': 0x400, 'rsp': 0x8000}))
