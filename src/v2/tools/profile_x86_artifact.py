@@ -42,6 +42,8 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
 
     dbt = X86DBT(profile_controls=True)
     execute_plan = dbt._execute_plan
+    control = dbt._control
+    conditional_transitions = Counter()
 
     def execute_with_context(state, block):
         try:
@@ -51,11 +53,25 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             if isinstance(error, PageFault):
                 raise
             raise RuntimeError(
-                'x86 cut %#x failed: locals=%d scratch=%d boundary=%s'
+                'x86 cut %#x failed: locals=%d scratch=%d boundary=%s '
+                'waves=%r nodes=%r locals_out=%r'
                 % (block.rip, block.mapped.local_extent,
-                   block.scratch_count, block.boundary.operation)) from error
+                   block.scratch_count, block.boundary.operation,
+                   block.plan.waves, block.plan.nodes,
+                   block.plan.locals)) from error
 
     dbt._execute_plan = execute_with_context
+
+    def control_with_transition(state, boundary, prior=None, scratch=(),
+                                flag_cut=None):
+        source = state.rip if prior is None else prior.rip
+        after, published = control(
+            state, boundary, prior, scratch, flag_cut)
+        if boundary.operation == 'conditional_branch' and published is None:
+            conditional_transitions[(int(source), int(after.rip))] += 1
+        return after, published
+
+    dbt._control = control_with_transition
     runtime = X86Machine(dbt)
     started = perf_counter()
     state, boundary = runtime.machine_step(
@@ -84,6 +100,8 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     cut_shape_cost = {}
     work_buckets = {}
     dominant_cuts = []
+    conditional_residuals = []
+    dispatched_source_instructions = 0
     for rip, (count, work, span) in dbt._physical_profile.items():
         cut = reached_cut(rip)
         if cut is None:
@@ -91,6 +109,7 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
         executed_cut_bytes += len(cut.mapped.data)
         unit_work = physical_work(cut.plan)
         unit_span = cut.plan.waves.span
+        dispatched_source_instructions += count * (cut.instructions + 1)
         for node in cut.plan.nodes:
             node_work = (len(decode_relative_layout(
                 node.arguments[4].value))
@@ -121,11 +140,34 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             len(cut.source), operations))
         boundary_coordinates.append((
             rip, boundary_name, count, work, span, unit_work, unit_span))
+    for (rip, operation), count in dbt._control_profile.items():
+        if operation != 'conditional_branch':
+            continue
+        cut = reached_cut(rip)
+        if cut is None or cut.boundary.operation != operation:
+            continue
+        following, target, condition = cut.boundary.detail
+        target_block = dbt.blocks.get(int(target))
+        conditional_residuals.append((
+            int(count), int(rip), int(target), int(condition),
+            None if target_block is None
+            else target_block.boundary.operation,
+            int(target) < int(cut.rip), int(following)))
+    conditional_residuals.sort(reverse=True)
     boundary_coordinates.sort(key=lambda item: (-item[2], item[0]))
-    executed_work = sum(
+    executed_work = (sum(
         work for _count, work, _span in dbt._physical_profile.values())
-    executed_span = sum(
+        + physical.get('recurrence_cut_executed_work', 0)
+        + physical.get('prefix_cut_executed_work', 0))
+    executed_span = (sum(
         span for _count, _work, span in dbt._physical_profile.values())
+        + physical.get('recurrence_cut_executed_span', 0)
+        + physical.get('prefix_cut_executed_span', 0))
+    residual_source_instructions = (
+        physical.get('recurrence_source_instructions', 0)
+        + physical.get('prefix_source_instructions', 0))
+    retired_source_instructions = (
+        dispatched_source_instructions + residual_source_instructions)
     dominant_operations = tuple(
         (operation, work,
          0.0 if not executed_work else work / executed_work)
@@ -256,11 +298,23 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'executed_boundaries': physical.get(
                 'physical_boundaries', ()),
             'executed_cut_bytes': executed_cut_bytes,
-            'executed_cuts': sum(
+            'executed_cuts': (sum(
                 count for count, _work, _span
-                in dbt._physical_profile.values()),
+                in dbt._physical_profile.values())
+                + physical.get('recurrence_cut_executions', 0)
+                + physical.get('prefix_cut_executions', 0)),
             'executed_work': executed_work,
             'executed_span': executed_span,
+            'dispatched_source_instructions':
+                dispatched_source_instructions,
+            'residual_source_instructions': residual_source_instructions,
+            'retired_source_instructions': retired_source_instructions,
+            'physical_work_per_retired_source_instruction': (
+                0.0 if not retired_source_instructions
+                else executed_work / retired_source_instructions),
+            'retired_source_instructions_per_physical_work': (
+                0.0 if not executed_work
+                else retired_source_instructions / executed_work),
             'dominant_operations': dominant_operations,
             'dominant_boundaries': dominant_boundaries,
             'dominant_shapes': dominant_shapes,
@@ -268,6 +322,23 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'dominant_cuts': tuple(dominant_cuts),
             'boundary_coordinates': boundary_coordinates,
             'inlined_calls': inlined_calls,
+            'conditional_residuals': tuple(conditional_residuals),
+            'conditional_transitions': tuple(
+                (count, source, target)
+                for (source, target), count
+                in conditional_transitions.most_common()),
+            'residual_counters': dict((name, physical.get(name, 0)) for name in (
+                'recurrence_cuts', 'recurrence_cut_executions',
+                'recurrence_cut_executed_work',
+                'recurrence_cut_executed_span',
+                'recurrence_source_instructions',
+                'collapsed_repeat_iterations',
+                'prefix_cuts', 'prefix_cut_executions',
+                'prefix_cut_executed_work', 'prefix_cut_executed_span',
+                'prefix_source_instructions',
+                'collapsed_length_prefix_entries',
+                'compiled_byte_dispatches', 'collapsed_dispatch_iterations',
+                'collapsed_residual_controls', 'threaded_controls')),
             'inspected': inspected,
         },
     }
@@ -285,13 +356,33 @@ def main(argv=None):
     parser.add_argument('--inlined-only', action='store_true')
     parser.add_argument('--summary', action='store_true',
                         help='print timings and only the hottest physical cuts')
+    parser.add_argument('--metrics', action='store_true',
+                        help='print only quantum retirement/work metrics')
     parser.add_argument('--inspect-rip', action='append', default=[],
                         type=lambda value: int(value, 0))
     args = parser.parse_args(argv)
     result = profile(
         args.artifact_root, args.name, args.budget, args.max_internal,
         args.clock_step, args.clock_variation_bits, args.inspect_rip)
-    if args.summary:
+    if args.metrics:
+        selected = {
+            'boot': result['boot'],
+            'executed_work': result['code']['executed_work'],
+            'executed_span': result['code']['executed_span'],
+            'dispatched_source_instructions': result['code'][
+                'dispatched_source_instructions'],
+            'residual_source_instructions': result['code'][
+                'residual_source_instructions'],
+            'retired_source_instructions': result['code'][
+                'retired_source_instructions'],
+            'physical_work_per_retired_source_instruction': result['code'][
+                'physical_work_per_retired_source_instruction'],
+            'retired_source_instructions_per_physical_work': result['code'][
+                'retired_source_instructions_per_physical_work'],
+            'residual_counters': result['code']['residual_counters'],
+            'dominant_shapes': result['code']['dominant_shapes'][:8],
+        }
+    elif args.summary:
         selected = {
             'artifact': result['artifact'],
             'boot': result['boot'],
@@ -307,6 +398,17 @@ def main(argv=None):
             'executed_cuts': result['code']['executed_cuts'],
             'executed_work': result['code']['executed_work'],
             'executed_span': result['code']['executed_span'],
+            'dispatched_source_instructions': result['code'][
+                'dispatched_source_instructions'],
+            'residual_source_instructions': result['code'][
+                'residual_source_instructions'],
+            'retired_source_instructions': result['code'][
+                'retired_source_instructions'],
+            'physical_work_per_retired_source_instruction': result['code'][
+                'physical_work_per_retired_source_instruction'],
+            'retired_source_instructions_per_physical_work': result['code'][
+                'retired_source_instructions_per_physical_work'],
+            'residual_counters': result['code']['residual_counters'],
             'dominant_operations': result['code'][
                 'dominant_operations'][:24],
             'dominant_boundaries': result['code'][

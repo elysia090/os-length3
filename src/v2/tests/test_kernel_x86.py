@@ -853,7 +853,7 @@ class TestX86StateStep(unittest.TestCase):
             node.op == 'lane64.X86_COMPARE'
             for node in first_compare.plan.nodes), 1)
 
-    def test_signed_test_branch_uses_one_direct_predicate_lane(self):
+    def test_signed_test_branch_projects_from_its_published_flags(self):
         code = bytes.fromhex(
             '85c0 7f06 b801000000 f4 b802000000 f4')
         dbt = X86DBT(enable_function_oracles=False)
@@ -868,9 +868,10 @@ class TestX86StateStep(unittest.TestCase):
 
         predicate = dbt._predicate_cuts[0x100][1]
         self.assertEqual((predicate.plan.waves.work,
-                          predicate.plan.waves.span), (4, 3))
+                          predicate.plan.waves.span), (3, 3))
         self.assertEqual(sum(node.op == 'lane32.GT_S'
-                             for node in predicate.plan.nodes), 1)
+                             for node in predicate.plan.nodes), 0)
+        self.assertEqual(predicate.plan.locals[-1].kind, 'projection')
         self.assertFalse(any(node.op in (
             'lane64.BIT', 'lane64.BITZ')
             for node in predicate.plan.nodes))
@@ -932,9 +933,9 @@ class TestX86StateStep(unittest.TestCase):
             self.assertEqual(read_virtual(fast, 0x500, 8),
                              read_virtual(slow, 0x500, 8))
             self.assertEqual(optimized.layout()['copy_cuts'], 1)
+            cut = next(iter(optimized._copy_cuts.values()))[1][1]
             self.assertEqual((optimized.layout()['copy_cut_work'],
                               optimized.layout()['copy_cut_span']), (5, 4))
-            cut = next(iter(optimized._copy_cuts.values()))[1][1]
             self.assertEqual([node.op for node in cut.plan.nodes], [
                 'memory.i64.copy_until', 'lane64.BEXTR',
                 'lane64.BEXTR', 'lane64.ADDR',
@@ -4410,6 +4411,12 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(dbt.layout()['recurrence_cuts'], 1)
         self.assertEqual((dbt.layout()['recurrence_cut_work'],
                           dbt.layout()['recurrence_cut_span']), (4, 2))
+        self.assertEqual(dbt.layout()['recurrence_cut_executions'], 1)
+        self.assertEqual(
+            (dbt.layout()['recurrence_cut_executed_work'],
+             dbt.layout()['recurrence_cut_executed_span']), (4, 2))
+        self.assertEqual(
+            dbt.layout()['recurrence_source_instructions'], 15)
 
     def test_single_store_counted_memset_folds_the_branch_block_lea(self):
         # dec ecx; mov [rdi],rax; lea rdi,[rdi+8]; jne loop; hlt
@@ -5284,7 +5291,7 @@ class TestX86StateStep(unittest.TestCase):
         directory = (b'\x02aa' + b'\x81\x01' + b'b' * 129
                      + b'\x01c' + b'\x03ddd')
         code = _LENGTH_PREFIX_SKIP_LOOP + b'\xf4'
-        dbt = X86DBT()
+        dbt = X86DBT(profile_controls=True)
         memory = memory_with((0x100, code), (0x1000, directory))
 
         for _unused in range(2):
@@ -5297,8 +5304,13 @@ class TestX86StateStep(unittest.TestCase):
             self.assertEqual(state.register('rsi'), 4)
         layout = dbt.layout()
         self.assertEqual(layout['collapsed_length_prefix_entries'], 4)
-        self.assertEqual(layout['length_prefix_cache_misses'], 1)
-        self.assertEqual(layout['length_prefix_cache_hits'], 1)
+        self.assertEqual(layout['prefix_cuts'], 1)
+        self.assertEqual(layout['prefix_cut_cache_misses'], 1)
+        self.assertEqual(layout['prefix_cut_cache_hits'], 1)
+        self.assertEqual((layout['prefix_cut_work'],
+                          layout['prefix_cut_span']), (3, 1))
+        self.assertEqual(layout['prefix_cut_executions'], 2)
+        self.assertEqual(layout['prefix_source_instructions'], 34)
 
     def test_token_expansion_uses_direct_index_and_output_coordinates(self):
         token_index, token_table = 0x2000, 0x2200

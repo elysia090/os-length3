@@ -50,7 +50,12 @@ GENERIC_ARITY = {
 
 ISA_BINARY = {'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR', 'CLMULR'}
 ISA_SHIFT = {'SHL', 'SHR', 'SCANXOR', 'SAR', 'ROL32', 'ROR32'}
-LANE_NAMES = tuple(isa.OPCODES) + tuple(GENERIC_ARITY)
+# Description-code operations may grow by appending a lowering opcode that the
+# state vocabulary already spells generically.  Keep the physical numbering
+# immutable by retaining that generic operation at its original coordinate.
+LANE_NAMES = (tuple(name for name in isa.OPCODES
+                    if name not in GENERIC_ARITY)
+              + tuple(GENERIC_ARITY))
 OPS = tuple('lane%d.%s' % (bits, name)
             for bits in (32, 64) for name in LANE_NAMES)
 
@@ -79,6 +84,10 @@ def shape(operation):
         return 3, 0, False
     if name == 'ADD3_U32':
         return 3, 0, False
+    if name == 'SELECT_U32':
+        return 3, 0, False
+    if name == 'X86_ALU':
+        return 4, 0, False
     if name == 'X86_BIT_FLAGS':
         return 4, 0, False
     if name == 'INSERT':
@@ -162,7 +171,7 @@ def select(wasm_operation, arguments):
 def evaluate(operation, arguments):
     """Execute one lane primitive with its declared publication width."""
     bits, name = split(operation)
-    if name in isa.OPCODES:
+    if name in isa.OPCODES and name not in GENERIC_ARITY:
         arity = 2 if name in ISA_BINARY else 1
         # A lane boundary is also its publication-width projection.  This is
         # important when QM removes an otherwise redundant i64->i32 materialize
@@ -192,6 +201,29 @@ def evaluate(operation, arguments):
         left, unsigned32, right = arguments
         return (int(left) + (int(unsigned32) & 0xffffffff)
                 + int(right)) & mask_of(bits)
+    if name == 'SELECT_U32':
+        left, right, condition = arguments
+        return int(left if condition else right) & 0xffffffff
+    if name == 'X86_ALU':
+        prior, left, right, descriptor = map(int, arguments)
+        width = descriptor & 0x7f
+        mode = (descriptor >> 8) & 7
+        carry = prior & 1
+        if mode == 0:
+            result = left & right
+        elif mode == 1:
+            result = left + right
+        elif mode == 2:
+            result = left + right + carry
+        elif mode == 3:
+            result = left - right
+        elif mode == 4:
+            result = left - right - carry
+        else:
+            raise ValueError('x86 ALU lane has an invalid mode')
+        result &= mask_of(width)
+        return evaluate('lane64.X86_FLAGS', (
+            prior, left, right, result, descriptor))
     if name == 'INSERT':
         base, value, descriptor = map(int, arguments)
         width = descriptor & 0xff
@@ -516,7 +548,7 @@ def bind(operation):
                                      to_signed(values[1], bits)) & mask
     if name in ('X86_FLAGS', 'X86_FLAGS_SELECT', 'X86_COMPARE',
                 'X86_SHIFT_FLAGS', 'X86_CONDITION', 'X86_TEST',
-                'X86_BIT_FLAGS'):
+                'X86_BIT_FLAGS', 'X86_ALU'):
         return lambda values: evaluate(operation, values)
 
     return lambda values: evaluate(operation, values)

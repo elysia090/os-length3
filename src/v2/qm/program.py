@@ -13,8 +13,8 @@ from .bits import (M64, bswap64, clmul, clz, ctz, lane_masks, lane_values,
 
 # Semantic classes, plus TABLE for the always-available finite-domain
 # representative and SPLIT for the piecewise one.
-CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'FORK', 'SPLIT', 'TABLE',
-           'IDENTITY')
+CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'BIT_QUERY',
+           'FIELD_COMPARE', 'FORK', 'SPLIT', 'TABLE', 'IDENTITY')
 
 
 class Key(object):
@@ -168,6 +168,30 @@ def perm_dyn_gather(source):
 def perm_dyn_scatter(source):
     return Op('PERM_DYN', {'direction': 'scatter', 'source': source},
               label='PERM_DYN(scatter)')
+
+
+def bit_query(value_shift, value_width, index_shift, index_width):
+    """One dynamic bit query over two packed input fields."""
+    return Op('BIT_QUERY', {
+        'value_shift': int(value_shift),
+        'value_width': int(value_width),
+        'index_shift': int(index_shift),
+        'index_width': int(index_width),
+    }, label='BIT_QUERY(x[%d:%d], x[%d:%d])' % (
+        value_shift + value_width - 1, value_shift,
+        index_shift + index_width - 1, index_shift))
+
+
+def field_compare(relation, left_shift, right_shift, width):
+    """One unsigned comparison between equal-width packed fields."""
+    if relation not in ('GT_U',):
+        raise ValueError('unknown field comparison: %r' % relation)
+    return Op('FIELD_COMPARE', {
+        'relation': relation,
+        'left_shift': int(left_shift),
+        'right_shift': int(right_shift),
+        'width': int(width),
+    }, label='FIELD_COMPARE(%s, %d-bit)' % (relation, width))
 
 
 def point(steps, note=''):
@@ -490,6 +514,24 @@ def _op_expression(op, index, data):
         if op.detail['direction'] == 'gather':
             return 'pext(%s, %s)' % (name, source)
         return 'pdep(%s, %s)' % (name, source)
+    if kind == 'BIT_QUERY':
+        detail = op.detail
+        value = '((%s >> %d) & %d)' % (
+            source, detail['value_shift'], mask_of(detail['value_width']))
+        index = '((%s >> %d) & %d)' % (
+            source, detail['index_shift'], mask_of(detail['index_width']))
+        return '((%s >> %s) & 1)' % (value, index)
+    if kind == 'FIELD_COMPARE':
+        detail = op.detail
+        field = mask_of(detail['width'])
+        left = '((%s >> %d) & %d)' % (
+            source, detail['left_shift'], field)
+        right = '((%s >> %d) & %d)' % (
+            source, detail['right_shift'], field)
+        if detail['relation'] == 'GT_U':
+            return 'int(%s > %s)' % (left, right)
+        raise ValueError('cannot evaluate field comparison %r'
+                         % detail['relation'])
     if kind == 'POINT':
         name = 'steps%d' % index
         data[name] = op.detail['steps']

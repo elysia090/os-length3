@@ -14,10 +14,14 @@ def section(kind, payload):
 
 
 def module(body, kind=0x7E, memory=False, parameter_count=1,
-           result_count=1):
-    types = (b'\x01\x60' + encode_uleb(parameter_count)
-             + bytes([kind]) * parameter_count + encode_uleb(result_count)
-             + bytes([kind]) * result_count)
+           result_count=1, parameter_kinds=None, result_kinds=None):
+    parameter_kinds = (bytes([kind]) * parameter_count
+                       if parameter_kinds is None else bytes(parameter_kinds))
+    result_kinds = (bytes([kind]) * result_count
+                    if result_kinds is None else bytes(result_kinds))
+    types = (b'\x01\x60' + encode_uleb(len(parameter_kinds))
+             + parameter_kinds + encode_uleb(len(result_kinds))
+             + result_kinds)
     functions = b'\x01\x00'
     exports = b'\x01\x01f\x00\x00'
     code = b'\x01' + encode_uleb(len(body)) + body
@@ -106,6 +110,30 @@ class TestLargeWasmFunctionOptimizer(unittest.TestCase):
         for values in ((0, 0), (1, 2), (0x1234, 0x5678),
                        ((1 << 64) - 1, 9)):
             self.assertEqual(call(raw, values), call(optimized, values))
+
+    def test_word_packed_residual_query_uses_the_state_ssa_entrance(self):
+        # (i64 residual, i32 index) -> i32.  Its 96-bit Wasm parameter frame
+        # cannot be represented as one scalar coordinate, but the independent
+        # SSA leaves reduce shift-and-mask to one physical bit-query lane.
+        body = (b'\x00\x20\x00\x20\x01\xad\x88\xa7'
+                b'\x41\x01\x71\x0b')
+        raw = module(body, parameter_kinds=(0x7e, 0x7f),
+                     result_kinds=(0x7f,))
+
+        optimized, report = optimize_module(raw)
+
+        self.assertEqual(report['decoded_pure_integer_expressions'], 0)
+        self.assertEqual(report['decoded_state_integer_expressions'], 1)
+        self.assertEqual((report['state_physical_work'],
+                          report['physical_span_sum']), (1, 1))
+        self.assertEqual(report['unencodable_state_integer_expressions'], 1)
+        self.assertIs(optimized, raw)
+        for residual, index in ((0, 0), (1, 0), (2, 1),
+                                (1 << 63, 63),
+                                (0x123456789abcdef0, 68)):
+            self.assertEqual(
+                call(raw, (residual, index)),
+                (residual >> (index & 63)) & 1)
 
     def test_arithmetic_is_normalized_across_an_integer_comparison(self):
         # ((a & 255) & 15) == b. i32.eq remains an exact opaque node while its

@@ -50,6 +50,10 @@ whole-word/how_many_bits_i32.c
 lanes/max_u8x8.c
 text/rabin_karp_roll.c
 
+# Persistent residual decoders: build once, then answer future queries locally.
+residual-state/rank_token_query8.c
+residual-state/predicate_bitset_query8.c
+
 # Physical delivery: compression boundaries, erasure arithmetic, encryption.
 storage/canonical_region_value1.c
 storage/canonical_region_changed1.c

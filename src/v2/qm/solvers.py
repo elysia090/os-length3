@@ -19,8 +19,8 @@ Layer 4: depends on `bits`, `program`, `semantics`, `observer`.
 from .bits import (M64, clmul, clz, ctz, lane_masks, lane_values, mask_of,
                     pdep, pext, popcnt, smear, to_signed)
 from .program import (
-    Key, Program, compile_program, conv, field_key, fork, identity, lin_const,
-    perm_dyn_gather, point, split, table,
+    Key, Program, bit_query, compile_program, conv, field_compare, field_key,
+    fork, identity, lin_const, perm_dyn_gather, point, split, table,
 )
 
 # The deposit/convolution search enumerates the constant's free high bits, and
@@ -1189,6 +1189,99 @@ def solve_field_neq(sem, obs, options=None):
     return []
 
 
+def solve_residual_bit_query(sem, obs, options=None):
+    """Recognize a dynamic bit query over a packed residual and selector.
+
+    This is the finite-predicate residual decoder from the two-phase model:
+    the answer vector has already crossed the temporal cut, so the future
+    query is one indexed bit observation rather than a table over both fields.
+    """
+    if (sem.input_bits < 3 or not sem.domain.finite_exact
+            or not obs.is_identity):
+        return []
+    values = sem.domain.values()
+    expected = sem.table()
+    if any(value not in (0, 1) for value in expected):
+        return []
+    step = max(1, len(values) // PREFILTER)
+    probes = values[::step][:PREFILTER]
+    wanted = expected[::step][:PREFILTER]
+    widths = tuple(width for width in (64, 32, 16, 8, 4, 2)
+                   if width <= sem.input_bits)
+    for value_width in widths:
+        index_width = (value_width - 1).bit_length()
+        if value_width + index_width > sem.input_bits:
+            continue
+        for value_shift in range(
+                0, sem.input_bits - value_width + 1, value_width):
+            value_mask = mask_of(value_width) << value_shift
+            for index_shift in range(sem.input_bits - index_width + 1):
+                index_mask = mask_of(index_width) << index_shift
+                if value_mask & index_mask:
+                    continue
+
+                def evaluate(x, vs=value_shift, vw=value_width,
+                             is_=index_shift, iw=index_width):
+                    value = (x >> vs) & mask_of(vw)
+                    index = (x >> is_) & mask_of(iw)
+                    return (value >> index) & 1
+
+                if not all(evaluate(x) == y
+                           for x, y in zip(probes, wanted)):
+                    continue
+                program = Program(
+                    [bit_query(value_shift, value_width,
+                               index_shift, index_width)],
+                    1, 1, 'residual-bit-query', sem.input_bits,
+                    sem.output_bits,
+                    ['the future selector observes one bit of a sealed '
+                     '%d-bit answer residual' % value_width])
+                if verify(program, sem, obs):
+                    return [program]
+    return []
+
+
+def solve_rank_token_query(sem, obs, options=None):
+    """Recognize ``rank > query`` between equal-width unsigned fields."""
+    if (sem.input_bits < 2 or not sem.domain.finite_exact
+            or not obs.is_identity):
+        return []
+    values = sem.domain.values()
+    expected = sem.table()
+    if any(value not in (0, 1) for value in expected):
+        return []
+    step = max(1, len(values) // PREFILTER)
+    probes = values[::step][:PREFILTER]
+    wanted = expected[::step][:PREFILTER]
+    maximum = min(32, sem.input_bits // 2)
+    for width in range(maximum, 0, -1):
+        field = mask_of(width)
+        shifts = range(0, sem.input_bits - width + 1, width)
+        for left_shift in shifts:
+            left_mask = field << left_shift
+            for right_shift in shifts:
+                if right_shift == left_shift \
+                        or left_mask & (field << right_shift):
+                    continue
+
+                def evaluate(x, ls=left_shift, rs=right_shift, m=field):
+                    return int(((x >> ls) & m) > ((x >> rs) & m))
+
+                if not all(evaluate(x) == y
+                           for x, y in zip(probes, wanted)):
+                    continue
+                program = Program(
+                    [field_compare('GT_U', left_shift,
+                                   right_shift, width)],
+                    1, 1, 'rank-token-query', sem.input_bits,
+                    sem.output_bits,
+                    ['an ordered threshold family has already been reduced '
+                     'to one %d-bit rank token' % width])
+                if verify(program, sem, obs):
+                    return [program]
+    return []
+
+
 def _compact_select_branch(sem, obs, options):
     """Cheapest closed branch used by :func:`solve_bit_select`."""
     fitted = _fit_affine_map(
@@ -1871,6 +1964,8 @@ COMPACT_SOLVERS = (
     solve_linear,
     solve_gf256_multiply,
     solve_lane_predicate,
+    solve_residual_bit_query,
+    solve_rank_token_query,
     solve_linear_lane_affine,
     solve_point_gather,
     solve_lane_reduction,

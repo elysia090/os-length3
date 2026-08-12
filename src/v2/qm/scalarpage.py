@@ -286,7 +286,10 @@ _ONE_ARGUMENT = {
     'OR', 'XOR', 'ADD', 'SUB', 'NOT', 'SHL', 'SHR', 'BSWAP', 'POPCNT',
     'LOOP8', 'SCANXOR', 'SAR', 'NEG', 'CLZ', 'CTZ', 'LUT', 'ROL32', 'ROR32',
 }
-_TWO_ARGUMENTS = {'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR', 'CLMULR'}
+_TWO_ARGUMENTS = {
+    'XORR', 'ANDR', 'ORR', 'ADDR', 'ANDNR', 'SUBR', 'CLMULR',
+    'SHRR', 'GT_U',
+}
 _ONE_CONSTANT = {
     'PDEP', 'PEXT', 'PEXT_DYN', 'PDEP_DYN', 'IMUL', 'CLMUL', 'AND',
     'OR', 'XOR', 'ADD', 'SUB', 'LOOP8',
@@ -398,6 +401,8 @@ def _apply(op, args, constants, shift, mask):
     if op == 'IMUL': return a * k
     if op == 'CLMUL': return clmul(a, k, bits)
     if op == 'CLMULR': return clmul(a, b, bits)
+    if op == 'SHRR': return a >> (b & (bits - 1))
+    if op == 'GT_U': return int(a > b)
     if op == 'AND': return a & k
     if op == 'OR': return a | k
     if op == 'XOR': return a ^ k

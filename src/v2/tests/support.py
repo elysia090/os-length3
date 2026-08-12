@@ -22,6 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLES = os.path.abspath(os.path.join(ROOT, '..', '..', 'corpus'))
 EXAMPLE_CATEGORIES = (
     'bit-linear', 'whole-word', 'lanes', 'text', 'floating', 'demos',
+    'residual-state',
 )
 
 _CACHE = {}

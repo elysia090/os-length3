@@ -50,6 +50,18 @@ class TestSequenceCodec(unittest.TestCase):
                              clmul(value, (1 << 64) - 1, 64)
                              & ((1 << 64) - 1))
 
+    def test_residual_query_binary_lanes_round_trip(self):
+        seq = isa.Seq()
+        selected = seq.emit('SHRR', [0, 0])
+        seq.emit('GT_U', [selected, 0])
+        mapped = unpack(pack(seq))
+
+        self.assertEqual(mapped.layout()['work'], 2)
+        for value in (0, 1, 3, 0x80, 0x1234):
+            selected = value >> (value & 63)
+            self.assertEqual(execute(mapped, value),
+                             int(selected > value))
+
     def test_noncanonical_trailing_data_is_rejected(self):
         seq = isa.Seq()
         seq.emit('IMUL', [0], const=ONES)
