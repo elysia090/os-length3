@@ -1307,6 +1307,22 @@ class _VirtualMemoryCut(object):
         repeat_virtual(
             self.state, int(address) & MASK64, int(size), bytes(pattern))
 
+    def find2(self, address, first, second):
+        start = int(address) & MASK64
+        distance = 0
+        values = (int(first) & 0xff, int(second) & 0xff)
+        while True:
+            virtual = start + distance
+            if virtual > MASK64:
+                raise X86Error('x86 virtual find coordinate wrapped')
+            physical = translate(self.state, virtual, 'read')
+            count = PAGE_BYTES - (virtual & (PAGE_BYTES - 1))
+            found = self.state.memory.find(physical, count, values)
+            if found is not None:
+                return (distance + found,
+                        self.state.memory.load(physical + found, 1))
+            distance += count
+
 
 def write_virtual_batch(state, writes):
     """Publish virtual byte slices only after every mapping is proved."""
@@ -2031,6 +2047,16 @@ class X86DBT(object):
         self.recurrence_cut_cache_misses = 0
         self.recurrence_cut_work = 0
         self.recurrence_cut_span = 0
+        self.stack_cuts = 0
+        self.stack_cut_cache_hits = 0
+        self.stack_cut_cache_misses = 0
+        self.stack_cut_work = 0
+        self.stack_cut_span = 0
+        self.find_cuts = 0
+        self.find_cut_cache_hits = 0
+        self.find_cut_cache_misses = 0
+        self.find_cut_work = 0
+        self.find_cut_span = 0
         self.collapse_recipe_hits = 0
         self.collapse_recipe_misses = 0
         self.collapse_recipe_negative = 0
@@ -2057,6 +2083,8 @@ class X86DBT(object):
         self._predicate_cuts = {}
         self._register_cuts = {}
         self._recurrence_cuts = {}
+        self._stack_cuts = {}
+        self._find_cuts = {}
         self._proof_dependents = {}
         self._block_pages = {}
         self._page_blocks = {}
@@ -3818,6 +3846,138 @@ class X86DBT(object):
             0, 0, 1, 1, 0, tuple(nodes),
             DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
         return plan, int(following) & MASK64
+
+    @staticmethod
+    def _stack_plan(boundary):
+        """Lower stack memory and its control result to shared physical SSA."""
+        operation, detail = boundary.operation, boundary.detail
+        supported = {
+            'call', 'pop', 'pop_flags', 'push', 'push_flags',
+            'push_immediate', 'return',
+        }
+        if operation not in supported:
+            return None
+
+        scratch_count = int(operation == 'return')
+        locals_ = [Operand('local', index)
+                   for index in range(
+                       len(REGISTER_NAMES) + 1 + scratch_count)]
+        nodes = []
+        common = {}
+
+        def emit(name, arguments):
+            arguments = tuple(arguments)
+            if name.startswith(('i32.', 'i64.')):
+                name, arguments = select_lane(name, arguments)
+            key = name, arguments
+            previous = None if name.startswith('memory.') \
+                else common.get(key)
+            if previous is not None:
+                return previous
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, name, arguments))
+            if not name.startswith('memory.'):
+                common[key] = result
+            return result
+
+        def load(pointer):
+            return emit('memory.i64.load', (
+                pointer, Operand('const', 0),
+                Operand('const', memory_shape(8, virtual64=True))))
+
+        def store(pointer, value):
+            return emit('memory.i64.store', (
+                pointer, value, Operand('const', 0),
+                Operand('const', memory_shape(8, virtual64=True))))
+
+        rsp = REGISTER_INDEX['rsp']
+        pointer = locals_[rsp]
+        flags = locals_[len(REGISTER_NAMES)]
+        scratch = ()
+        if operation == 'return':
+            target = load(pointer)
+            locals_[rsp] = emit('i64.add', (
+                pointer, Operand('const', 8)))
+            scratch = (target,)
+            control = X86Boundary('dynamic_branch', None)
+        elif operation == 'call':
+            following, target = detail
+            pointer = emit('i64.sub', (
+                pointer, Operand('const', 8)))
+            store(pointer, Operand('const', int(following) & MASK64))
+            locals_[rsp] = pointer
+            control = X86Boundary('branch', int(target) & MASK64)
+        elif operation in ('push', 'push_immediate', 'push_flags'):
+            if operation == 'push':
+                following, register = detail
+                value = locals_[register]
+            elif operation == 'push_immediate':
+                following, immediate = detail
+                value = Operand('const', int(immediate) & MASK64)
+            else:
+                following = detail
+                value = flags
+            pointer = emit('i64.sub', (
+                pointer, Operand('const', 8)))
+            store(pointer, value)
+            locals_[rsp] = pointer
+            control = X86Boundary('branch', int(following) & MASK64)
+        else:
+            value = load(pointer)
+            next_pointer = emit('i64.add', (
+                pointer, Operand('const', 8)))
+            if operation == 'pop':
+                following, register = detail
+                locals_[rsp] = next_pointer
+                locals_[register] = value
+            else:
+                following = detail
+                locals_[rsp] = next_pointer
+                flags = emit('i64.or', (value, Operand('const', 2)))
+            control = X86Boundary('branch', int(following) & MASK64)
+
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_[:len(REGISTER_NAMES)]) + (flags,) + scratch))
+        return plan, control, scratch_count
+
+    def _compose_stack_cut(self, state, block):
+        """Keep stack loads/stores inside the same resident state-page ABI."""
+        # Retired function recognizers remain available only as differential
+        # test oracles.  Their synthetic fixtures intentionally omit real
+        # stack mappings, so they must observe the original scalar boundary.
+        if self.enable_function_oracles:
+            return block
+        cached = self._stack_cuts.get(block.rip)
+        if cached is not None and cached[0] is block:
+            self.stack_cut_cache_hits += 1
+            return cached[1]
+        lowered = self._stack_plan(block.boundary)
+        if lowered is None:
+            return block
+        control, boundary, scratch_count = lowered
+        plan = block.plan if block.state_flags \
+            else self._carry_flags_plan(block.plan)
+        if plan is None or block.cut_inputs:
+            return block
+        plan = compose_plans(plan, control)
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        composed = DecodedBlock(
+            block.rip, block.boundary_rip, block.source,
+            block.instructions + 1, plan, mapped, execute, scratch_count,
+            boundary, block.proof_config, block.proof,
+            control_block=block.control_block or block,
+            state_flags=True, virtual_memory=True)
+        self._stack_cuts[block.rip] = block, composed
+        self.stack_cuts += 1
+        self.stack_cut_cache_misses += 1
+        self.stack_cut_work += plan.waves.work
+        self.stack_cut_span += plan.waves.span
+        return composed
 
     def _compose_register_cut(self, state, block, limit=16):
         """Keep proof blocks intact while joining register-only state steps."""
@@ -10682,6 +10842,167 @@ class X86DBT(object):
         return replace(state, registers=registers,
                        rip=following & MASK64)
 
+    def _byte_find_cut(self, state, branch):
+        """Compile a two-sentinel byte-search loop to one persistent node."""
+        target = int(branch.boundary.detail) & MASK64
+        if state.rip != target or target >= branch.rip:
+            return None
+        cached = self._find_cuts.get(branch.rip)
+        if cached is not None and cached[0] is branch:
+            proof_blocks, cut = cached[1]
+            if all(self.blocks.get(block.rip) is block
+                   for block in proof_blocks):
+                self.find_cut_cache_hits += 1
+                return cut
+
+        def block_at(rip):
+            present = self.blocks.get(int(rip) & MASK64)
+            if present is not None:
+                return present
+            return self.block(replace(
+                _freeze_state(state), rip=int(rip) & MASK64))
+
+        load = block_at(target)
+        if load.boundary.operation != 'move_zero_extend':
+            return None
+        (after_load, destination, source_bits,
+         target_bits, operand) = load.boundary.detail
+        if (source_bits != 8 or target_bits not in (32, 64)
+                or not isinstance(destination, int)
+                or not isinstance(operand, MemoryOperand)
+                or operand.base is None or operand.index is None
+                or operand.scale != 1 or operand.rip_relative
+                or operand.segment_msr is not None):
+            return None
+
+        test = block_at(after_load)
+        if test.boundary.operation != 'compare':
+            return None
+        after_test, opcode, left, right, compare_bits = test.boundary.detail
+        if (opcode not in (0x84, 0x85) or left != destination
+                or right != destination or compare_bits != target_bits):
+            return None
+        zero_branch = block_at(after_test)
+        if zero_branch.boundary.operation != 'conditional_branch':
+            return None
+        after_zero, exit_target, zero_condition = zero_branch.boundary.detail
+        if zero_condition != 4:
+            return None
+
+        compare = block_at(after_zero)
+        if compare.boundary.operation != 'immediate_alu':
+            return None
+        (after_compare, name, compared,
+         second_bits, second_value) = compare.boundary.detail
+        if (name != 'cmp' or compared != destination
+                or second_bits != target_bits):
+            return None
+        second_branch = block_at(after_compare)
+        if second_branch.boundary.operation != 'conditional_branch':
+            return None
+        after_second, second_exit, second_condition = \
+            second_branch.boundary.detail
+        if second_condition != 4 or second_exit != exit_target:
+            return None
+
+        increment = block_at(after_second)
+        if increment.boundary.operation != 'group_ff':
+            return None
+        after_increment, group, counter, counter_bits = \
+            increment.boundary.detail
+        if (group != 0 or counter != operand.index
+                or counter_bits not in (32, 64)
+                or int(after_increment) & MASK64 != branch.rip):
+            return None
+
+        proof_blocks = (load, test, zero_branch, compare,
+                        second_branch, increment, branch)
+        if any(block.rip + len(block.source) != next_block.rip
+               for block, next_block in zip(
+                   proof_blocks, proof_blocks[1:])):
+            return None
+
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+        common = {}
+
+        def emit(operation, arguments):
+            arguments = tuple(arguments)
+            if operation.startswith(('i32.', 'i64.')):
+                operation, arguments = select_lane(operation, arguments)
+            key = operation, arguments
+            present = None if operation.startswith('memory.') \
+                else common.get(key)
+            if present is not None:
+                return present
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, arguments))
+            if not operation.startswith('memory.'):
+                common[key] = result
+            return result
+
+        address = emit('i64.add', (
+            locals_[operand.base], locals_[operand.index]))
+        if operand.displacement:
+            address = emit('i64.add', (
+                address, Operand('const', operand.displacement & MASK64)))
+        found = emit('memory.i64.find2', (
+            address, Operand('const', 0),
+            Operand('const', int(second_value) & 0xff),
+            Operand('const', memory_shape(1, virtual64=True))))
+        distance = emit('i64.shr_u', (
+            found, Operand('const', 8)))
+        next_counter = emit('i64.add', (
+            locals_[counter], distance))
+        if counter_bits == 32:
+            next_counter = emit('i64.and', (
+                next_counter, Operand('const', MASK32)))
+        locals_[counter] = next_counter
+        byte = emit('i64.and', (found, Operand('const', 0xff)))
+        locals_[destination] = (byte if target_bits == 64 else
+                                emit('i64.and', (
+                                    byte, Operand('const', MASK32))))
+        descriptor = target_bits
+        flags = emit('lane64.X86_FLAGS', (
+            locals_[len(REGISTER_NAMES)], Operand('const', 0),
+            Operand('const', 0), Operand('const', 0),
+            Operand('const', descriptor)))
+        plan = normalize_plan(PureSlice(
+            0, 0, len(proof_blocks), len(proof_blocks), 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_[:len(REGISTER_NAMES)]) + (flags,)))
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        source = b''.join(block.source for block in proof_blocks)
+        proof_config, proof = _execution_proof(
+            state, target, len(source))
+        cut = DecodedBlock(
+            target, branch.rip, source, len(proof_blocks),
+            plan, mapped, execute, 0,
+            X86Boundary('branch', int(exit_target) & MASK64),
+            proof_config, proof, state_flags=True, virtual_memory=True)
+        self._find_cuts[branch.rip] = branch, (proof_blocks, cut)
+        self.find_cuts += 1
+        self.find_cut_cache_misses += 1
+        self.find_cut_work += plan.waves.work
+        self.find_cut_span += plan.waves.span
+        return cut
+
+    def _collapse_byte_find(self, state, branch):
+        cut = self._byte_find_cut(state, branch)
+        if cut is None:
+            return state
+        prior = state
+        state, scratch = self._execute_plan(state, cut)
+        state, boundary = self._control(
+            state, cut.boundary, prior, scratch)
+        if boundary is not None:
+            raise X86Error('a pure byte find published a barrier')
+        return state
+
     def _collapse_backward_direct_branch(self, state, branch):
         """Apply direct-coordinate reducers selected by a backward jump."""
         cached = self._backward_branch_recipes.get(branch.rip)
@@ -10709,6 +11030,12 @@ class X86DBT(object):
 
     def _collapse_direct_branch(self, state, branch):
         """Apply a structural reducer selected by one direct branch block."""
+        if (branch.boundary.operation != 'branch'
+                or not isinstance(branch.boundary.detail, int)):
+            return state
+        state = self._collapse_byte_find(state, branch)
+        if state.rip != (int(branch.boundary.detail) & MASK64):
+            return state
         if not self.enable_function_oracles:
             return state
         cached = self._direct_branch_recipes.get(branch.rip)
@@ -15931,6 +16258,12 @@ class X86DBT(object):
                 state.rip = rip
                 return state, None
             return replace(state, rip=rip), None
+        if operation == 'dynamic_branch':
+            rip = int(scratch[0]) & MASK64
+            if isinstance(state, _X86Frame):
+                state.rip = rip
+                return state, None
+            return replace(state, rip=rip), None
         if operation == 'conditional_branch':
             following, target, condition = detail
             if flag_cut is None:
@@ -17151,6 +17484,7 @@ class X86DBT(object):
             block = self._compose_setcc_predicate_cut(state, block)
             block = self._compose_predicate_cut(state, block)
             block = self._compose_register_cut(state, block)
+            block = self._compose_stack_cut(state, block)
         except PageFault as fault:
             self.last_page_fault = self._page_walk(state, fault)
             state = replace(state, cr2=fault.address)
@@ -17193,6 +17527,7 @@ class X86DBT(object):
                     state, following)
                 following = self._compose_predicate_cut(state, following)
                 following = self._compose_register_cut(state, following)
+                following = self._compose_stack_cut(state, following)
                 control_block = following.control_block or following
                 prior = state
                 state, scratch = self._execute_plan(state, following)
@@ -17395,6 +17730,18 @@ class X86DBT(object):
             'recurrence_cut_cache_misses': self.recurrence_cut_cache_misses,
             'recurrence_cut_work': self.recurrence_cut_work,
             'recurrence_cut_span': self.recurrence_cut_span,
+            'stack_cuts': self.stack_cuts,
+            'resident_stack_cuts': len(self._stack_cuts),
+            'stack_cut_cache_hits': self.stack_cut_cache_hits,
+            'stack_cut_cache_misses': self.stack_cut_cache_misses,
+            'stack_cut_work': self.stack_cut_work,
+            'stack_cut_span': self.stack_cut_span,
+            'find_cuts': self.find_cuts,
+            'resident_find_cuts': len(self._find_cuts),
+            'find_cut_cache_hits': self.find_cut_cache_hits,
+            'find_cut_cache_misses': self.find_cut_cache_misses,
+            'find_cut_work': self.find_cut_work,
+            'find_cut_span': self.find_cut_span,
             'persistent_cuts': self.persistent_cuts,
             'materialized_pages': self.materialized_pages,
             'published_pages': self.published_pages,
