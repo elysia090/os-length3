@@ -14,7 +14,7 @@ import argparse
 import http.server
 import os
 import posixpath
-import socketserver
+import re
 from urllib.parse import unquote, urlsplit
 import webbrowser
 
@@ -34,6 +34,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     })
 
     def __init__(self, *args, **kwargs):
+        self._byte_range = None
         super().__init__(*args, directory=ROOT, **kwargs)
 
     def translate_path(self, path):
@@ -49,6 +50,53 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return os.path.join(ARTIFACT_ROOT, '__invalid__')
             return selected
         return super().translate_path(path)
+
+    def send_head(self):
+        """Serve one explicit byte range so page bundles stay page-lazy."""
+        requested = self.headers.get('Range')
+        path = self.translate_path(self.path)
+        if requested and os.path.isfile(path):
+            match = re.fullmatch(r'bytes=(\d+)-(\d*)', requested.strip())
+            size = os.path.getsize(path)
+            if match is None:
+                self.send_error(416, 'invalid byte range')
+                return None
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else size - 1
+            if start >= size or end < start:
+                self.send_response(416)
+                self.send_header('Content-Range', 'bytes */%d' % size)
+                self.end_headers()
+                return None
+            end = min(end, size - 1)
+            try:
+                source = open(path, 'rb')
+            except OSError:
+                self.send_error(404, 'file not found')
+                return None
+            self._byte_range = start, end
+            self.send_response(206)
+            self.send_header('Content-Type', self.guess_type(path))
+            self.send_header('Content-Length', str(end - start + 1))
+            self.send_header('Content-Range',
+                             'bytes %d-%d/%d' % (start, end, size))
+            self.send_header('Accept-Ranges', 'bytes')
+            self.end_headers()
+            source.seek(start)
+            return source
+        self._byte_range = None
+        return super().send_head()
+
+    def copyfile(self, source, output):
+        if self._byte_range is None:
+            return super().copyfile(source, output)
+        remaining = self._byte_range[1] - self._byte_range[0] + 1
+        while remaining:
+            block = source.read(min(64 * 1024, remaining))
+            if not block:
+                break
+            output.write(block)
+            remaining -= len(block)
 
     def end_headers(self):
         self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
@@ -67,8 +115,11 @@ def main():
     parser.add_argument('--no-open', action='store_true')
     args = parser.parse_args()
 
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(('', args.port), Handler) as httpd:
+    http.server.ThreadingHTTPServer.allow_reuse_address = True
+    # Page fabrics deliberately fetch independent ranges concurrently. A
+    # single-request server serializes compiler, VM, and Linux chunks and can
+    # make the local cold profile several times slower than deployment.
+    with http.server.ThreadingHTTPServer(('', args.port), Handler) as httpd:
         url = 'http://localhost:%d/web/index.html' % args.port
         print('Quotient Minimizer: %s' % url)
         print('serving %s (Ctrl-C to stop)' % ROOT)

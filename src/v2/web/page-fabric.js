@@ -376,7 +376,7 @@ export class PageBundle {
    * in one range wave, while decoded pages are copied directly into the result
    * and are not retained as a second full resident representation.
    */
-  async readAll(concurrency = 16) {
+  async readAll(concurrency = 16, onProgress = null) {
     concurrency = safeInteger(concurrency, 'decode concurrency');
     if (!concurrency) throw new Error('decode concurrency must be positive');
     const coordinates = Array.from(
@@ -398,6 +398,7 @@ export class PageBundle {
       ? await sourceRange(this.source, this.prefix.length, payloadBytes)
       : new Uint8Array();
     const output = new Uint8Array(this.length);
+    if (onProgress) onProgress({ decoded: 0, total: work.length });
     for (let start = 0; start < work.length; start += concurrency) {
       const decoded = await Promise.all(
         work.slice(start, start + concurrency).map(async ({ rank, record }) => ({
@@ -413,6 +414,10 @@ export class PageBundle {
           output.set(raw.subarray(0, Math.min(this.pageBytes, this.length - at)), at);
         }
       }
+      if (onProgress) onProgress({
+        decoded: Math.min(start + decoded.length, work.length),
+        total: work.length,
+      });
     }
     return output;
   }
