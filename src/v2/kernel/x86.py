@@ -17,7 +17,7 @@ from qm.memorycut import MemoryCut
 from qm.laneops import select as select_lane
 from qm.steppage import (compile_mapped_executor, memory_shape,
                          pack as pack_step, unpack as unpack_step)
-from qm.stepnormalize import compose_plans, normalize_plan
+from qm.stepnormalize import compose_plans, normalize_plan, physical_work
 from qm.transducer import compile_byte_classes
 from qm.wasmphysical import DependencyWaves
 from qm.wasmstate import MEMORY_PAGE as PHYSICAL_PAGE_BYTES, PagedMemory
@@ -1824,6 +1824,7 @@ class DecodedBlock:
     virtual_memory: bool = False
     indirect_register: object = None
     tail_return: object = None
+    inlined_call_target: object = None
 
 
 class _CodeReader(object):
@@ -3276,7 +3277,7 @@ class X86DBT(object):
         self.frontend_boundary_only_slices += int(not instruction_count)
         self._frontend_boundaries[boundary.operation] = \
             self._frontend_boundaries.get(boundary.operation, 0) + 1
-        self.physical_work += plan.waves.work
+        self.physical_work += physical_work(plan)
         self.physical_span += plan.waves.span
         return block
 
@@ -4058,6 +4059,8 @@ class X86DBT(object):
         if self.enable_function_oracles:
             return block
         indirect_register = None
+        stack_boundary = block.boundary
+        call_target = None
         if block.boundary.operation == 'call':
             _following, target = block.boundary.detail
             layout = self._indirect_thunk_layout(state, target)
@@ -4066,12 +4069,22 @@ class X86DBT(object):
                 if self._code_contains_recipe(
                         state, return_thunk, b'\xc3', extent=1):
                     indirect_register = register
+                    call_target = state.registers[register] & MASK64
+        elif block.boundary.operation == 'group_ff':
+            following, group, operand, bits = block.boundary.detail
+            if group == 2 and bits == 64 and isinstance(operand, int):
+                indirect_register = operand
+                call_target = state.registers[operand] & MASK64
+                stack_boundary = X86Boundary(
+                    'call', (int(following) & MASK64, call_target))
         cached = self._stack_cuts.get(block.rip)
         if (cached is not None and cached[0] is block
-                and cached[1].indirect_register == indirect_register):
+                and cached[1].indirect_register == indirect_register
+                and (cached[1].inlined_call_target is None
+                     or cached[1].inlined_call_target == call_target)):
             self.stack_cut_cache_hits += 1
             return cached[1]
-        lowered = self._stack_plan(block.boundary, indirect_register)
+        lowered = self._stack_plan(stack_boundary, indirect_register)
         if lowered is None:
             return block
         control, boundary, scratch_count = lowered
@@ -4089,16 +4102,31 @@ class X86DBT(object):
             boundary, block.proof_config, block.proof,
             control_block=block.control_block or block,
             state_flags=True, virtual_memory=True,
-            indirect_register=indirect_register)
+            indirect_register=indirect_register,
+            inlined_call_target=call_target)
         self._stack_cuts[block.rip] = block, composed
         self.stack_cuts += 1
         self.stack_cut_cache_misses += 1
-        self.stack_cut_work += plan.waves.work
+        self.stack_cut_work += physical_work(plan)
         self.stack_cut_span += plan.waves.span
         return composed
 
     def _compose_register_cut(self, state, block, limit=64):
         """Join one straight state path through the shared physical grammar."""
+        call_target = None
+        call_origin = block.control_block
+        if block.inlined_call_target is not None:
+            call_target = int(block.inlined_call_target) & MASK64
+        elif (call_origin is not None
+                and call_origin.boundary.operation == 'call'):
+            _return_address, encoded_target = call_origin.boundary.detail
+            if block.indirect_register is not None:
+                call_target = state.registers[block.indirect_register] \
+                    & MASK64
+            elif block.boundary.operation == 'branch':
+                call_target = int(block.boundary.detail) & MASK64
+            else:
+                call_target = int(encoded_target) & MASK64
         cached = self._register_cuts.get(block.rip)
         if (cached is not None and cached[0][0] is block
                 and all(self.blocks.get(
@@ -4108,8 +4136,9 @@ class X86DBT(object):
                 and (cached[1].tail_return is None
                      or self._code_contains_recipe(
                          state, cached[1].tail_return, b'\xc3', extent=1))):
-            self.register_cut_cache_hits += 1
-            return cached[1]
+            if cached[1].inlined_call_target == call_target:
+                self.register_cut_cache_hits += 1
+                return cached[1]
 
         plan = self._carry_flags_plan(block.plan)
         if plan is None or block.cut_inputs:
@@ -4122,6 +4151,7 @@ class X86DBT(object):
         terminal_boundary = None
         terminal_scratch = 0
         tail_return = None
+        call_edge_used = False
         while joined < max(1, int(limit)):
             boundary_instructions = 1
             lowered_flags = self._lower_flag_boundary(
@@ -4147,6 +4177,13 @@ class X86DBT(object):
                         control, boundary, _scratch = stack
                         plan = compose_plans(plan, control)
                         following = int(boundary.detail) & MASK64
+                    elif (not call_edge_used and current is block
+                          and call_target is not None
+                          and current.boundary.operation
+                          in ('branch', 'dynamic_branch')):
+                        following = call_target
+                        boundary_instructions = 0
+                        call_edge_used = True
                     elif stack is not None:
                         control, terminal_boundary, terminal_scratch = stack
                         plan = compose_plans(plan, control)
@@ -4183,8 +4220,11 @@ class X86DBT(object):
                 current.control_block is not None
                 and current.control_block.boundary.operation
                 != current.boundary.operation)
-            if ((not synthetic_boundary and linear_end != following)
-                    or (synthetic_boundary and linear_end > following)):
+            call_edge = current is block and call_edge_used \
+                and following == call_target
+            if (not call_edge
+                    and ((not synthetic_boundary and linear_end != following)
+                    or (synthetic_boundary and linear_end > following))):
                 break
             if synthetic_boundary and linear_end < following:
                 source += read_virtual(
@@ -4206,27 +4246,51 @@ class X86DBT(object):
 
         if not joined:
             return block
+        final_boundary = terminal_boundary or current.boundary
+        final_scratch = (terminal_scratch if terminal_boundary is not None
+                         else current.scratch_count)
+        if (final_boundary.operation == 'dynamic_branch'
+                and final_scratch == 1 and plan.locals
+                and plan.locals[-1].kind == 'const'):
+            final_boundary = X86Boundary(
+                'branch', plan.locals[-1].value & MASK64)
+            final_scratch = 0
+            plan = _dataclass_replace(plan, locals=plan.locals[:-1])
         packed = pack_step(plan)
         mapped = unpack_step(packed)
         execute = self._bind_state_page(mapped, packed)
-        proof_config, proof = _execution_proof(
-            state, block.rip, len(source))
+        if call_edge_used:
+            proof_config = block.proof_config
+            sparse = {}
+            for proved in proof_blocks:
+                if (proved.proof_config != proof_config
+                        or proved.proof is None):
+                    sparse = None
+                    break
+                for item in proved.proof:
+                    sparse[item[:3]] = item
+            proof = (None if sparse is None else tuple(
+                sparse[key] for key in sorted(sparse)))
+        else:
+            proof_config, proof = _execution_proof(
+                state, block.rip, len(source))
         composed = DecodedBlock(
             block.rip, current.boundary_rip, source, instructions,
             plan, mapped, execute,
-            terminal_scratch if terminal_boundary is not None
-            else current.scratch_count,
-            terminal_boundary or current.boundary, proof_config, proof,
+            final_scratch, final_boundary, proof_config, proof,
             current.flag_cut, current.control_block or current,
             current.cut_inputs, True,
             any(node.op.startswith('memory.') for node in plan.nodes))
-        composed = replace(composed, tail_return=tail_return)
+        composed = replace(
+            composed, tail_return=tail_return,
+            indirect_register=block.indirect_register,
+            inlined_call_target=call_target if call_edge_used else None)
         proof_blocks = tuple(proof_blocks)
         self._register_cuts[block.rip] = proof_blocks, composed
         self.register_cuts += 1
         self.register_cut_cache_misses += 1
         self.register_cut_instructions += joined
-        self.register_cut_work += plan.waves.work
+        self.register_cut_work += physical_work(plan)
         self.register_cut_span += plan.waves.span
         return composed
 
@@ -4628,7 +4692,7 @@ class X86DBT(object):
         self._predicate_cuts[block.rip] = proof_blocks, composed
         self.predicate_cuts += 1
         self.predicate_cut_cache_misses += 1
-        self.predicate_cut_work += plan.waves.work
+        self.predicate_cut_work += physical_work(plan)
         self.predicate_cut_span += plan.waves.span
         return composed
 
@@ -4683,7 +4747,7 @@ class X86DBT(object):
         self._predicate_cuts[block.rip] = (block, control), composed
         self.predicate_cuts += 1
         self.predicate_cut_cache_misses += 1
-        self.predicate_cut_work += plan.waves.work
+        self.predicate_cut_work += physical_work(plan)
         self.predicate_cut_span += plan.waves.span
         return composed
 
@@ -5154,7 +5218,7 @@ class X86DBT(object):
         self._recurrence_cuts[branch.rip] = branch, entry
         self.recurrence_cuts += 1
         self.recurrence_cut_cache_misses += 1
-        self.recurrence_cut_work += plan.waves.work
+        self.recurrence_cut_work += physical_work(plan)
         self.recurrence_cut_span += plan.waves.span
         return entry
 
@@ -11214,7 +11278,7 @@ class X86DBT(object):
         self._find_cuts[branch.rip] = branch, (proof_blocks, cut)
         self.find_cuts += 1
         self.find_cut_cache_misses += 1
-        self.find_cut_work += plan.waves.work
+        self.find_cut_work += physical_work(plan)
         self.find_cut_span += plan.waves.span
         return cut
 
@@ -11472,7 +11536,7 @@ class X86DBT(object):
             proof_blocks, cut, registers)
         self.copy_cuts += 1
         self.copy_cut_cache_misses += 1
-        self.copy_cut_work += plan.waves.work
+        self.copy_cut_work += physical_work(plan)
         self.copy_cut_span += plan.waves.span
         return cut
 
@@ -17981,6 +18045,9 @@ class X86DBT(object):
             block = self._compose_predicate_cut(state, block)
             block = self._compose_stack_cut(state, block)
             block = self._compose_register_cut(state, block)
+            stacked = self._compose_stack_cut(state, block)
+            block = (self._compose_register_cut(state, stacked)
+                     if stacked is not block else block)
             if block.tail_return is not None:
                 self.collapsed_return_branches += 1
             if block.indirect_register is not None:
@@ -17998,7 +18065,7 @@ class X86DBT(object):
                 count, work, span = self._physical_profile.get(
                     block.rip, (0, 0, 0))
                 self._physical_profile[block.rip] = (
-                    count + 1, work + block.plan.waves.work,
+                    count + 1, work + physical_work(block.plan),
                     span + block.plan.waves.span)
         except PageFault as fault:
             self.last_page_fault = self._page_walk(state, fault)
@@ -18007,7 +18074,7 @@ class X86DBT(object):
                 instructions=1, barriers=1)
         controls = 1
         instructions = block.instructions
-        work = block.plan.waves.work
+        work = physical_work(block.plan)
         span = block.plan.waves.span
         slices = int(bool(block.instructions))
         control_block = block.control_block or block
@@ -18034,6 +18101,9 @@ class X86DBT(object):
                 following = self._compose_predicate_cut(state, following)
                 following = self._compose_stack_cut(state, following)
                 following = self._compose_register_cut(state, following)
+                stacked = self._compose_stack_cut(state, following)
+                following = (self._compose_register_cut(state, stacked)
+                             if stacked is not following else following)
                 if following.tail_return is not None:
                     self.collapsed_return_branches += 1
                 if following.indirect_register is not None:
@@ -18045,14 +18115,14 @@ class X86DBT(object):
                     count, work, span = self._physical_profile.get(
                         following.rip, (0, 0, 0))
                     self._physical_profile[following.rip] = (
-                        count + 1, work + following.plan.waves.work,
+                        count + 1, work + physical_work(following.plan),
                         span + following.plan.waves.span)
                 state, boundary = self._control(
                     state, following.boundary, prior, scratch,
                     following.flag_cut)
                 controls += 1
                 instructions += following.instructions
-                work += following.plan.waves.work
+                work += physical_work(following.plan)
                 span += following.plan.waves.span
                 slices += int(bool(following.instructions))
                 if (boundary is None

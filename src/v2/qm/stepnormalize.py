@@ -242,6 +242,8 @@ def _rewrite_physical(nodes, stack, locals_):
     following liveness pass proves the resulting work/span objective.
     """
     from .wasmwave import Operand, WaveNode
+    from .steppage import (decode_projection_coordinate,
+                           projection_coordinate)
 
     outputs = {operand.value for operand in stack + locals_
                if operand.kind == 'node'}
@@ -672,18 +674,91 @@ def _rewrite_physical(nodes, stack, locals_):
         remap[node.value] = operand
 
     def output(operand):
-        return resolve(operand) if operand.kind == 'node' else operand
+        if operand.kind == 'node':
+            return resolve(operand)
+        if operand.kind == 'projection':
+            source, selector = decode_projection_coordinate(operand.value)
+            return Operand('projection', projection_coordinate(
+                remap[source].value, selector))
+        return operand
 
     rewritten = _rewrite_relative_exchange(
         tuple(rebuilt), tuple(map(output, stack)),
         tuple(map(output, locals_)))
     rewritten = _rewrite_balanced_stack(*rewritten)
-    return _rewrite_pre_store(*rewritten)
+    rewritten = _rewrite_pre_store(*rewritten)
+    return _rewrite_terminal_projections(*rewritten)
+
+
+def _rewrite_terminal_projections(nodes, stack, locals_):
+    """Publish unused multi-result lanes as physical output coordinates."""
+    from .steppage import (decode_projection_coordinate,
+                           projection_coordinate)
+    from .wasmwave import Operand, WaveNode
+
+    final_source = next((
+        node.value for node in reversed(nodes)
+        if node.op == 'memory.i64.relative_exchange'), None)
+    if final_source is None:
+        return tuple(nodes), tuple(stack), tuple(locals_)
+    outputs = tuple(stack) + tuple(locals_)
+    output_values = {operand.value for operand in outputs
+                     if operand.kind == 'node'}
+    consumers = {node.value: [] for node in nodes}
+    for node in nodes:
+        for operand in node.arguments:
+            if operand.kind == 'node':
+                consumers.setdefault(operand.value, []).append(node.value)
+    projected = {}
+    for node in nodes:
+        if (node.op != 'memory.i64.relative_result'
+                or node.value not in output_values
+                or consumers.get(node.value)
+                or len(node.arguments) != 2
+                or node.arguments[0] != Operand('node', final_source)
+                or node.arguments[1].kind != 'const'):
+            continue
+        projected[node.value] = node.arguments[1].value
+    if not projected:
+        return tuple(nodes), tuple(stack), tuple(locals_)
+
+    dense = {}
+    rewritten = []
+    for node in nodes:
+        if node.value in projected:
+            continue
+        value = len(rewritten) + 1
+        dense[node.value] = value
+        rewritten.append(WaveNode(value, node.op, tuple(
+            Operand('node', dense[operand.value])
+            if operand.kind == 'node' else operand
+            for operand in node.arguments)))
+
+    source = dense[final_source]
+
+    def publish(operand):
+        if operand.kind == 'node':
+            selector = projected.get(operand.value)
+            if selector is not None:
+                return Operand('projection', projection_coordinate(
+                    source, selector))
+            return Operand('node', dense[operand.value])
+        if operand.kind == 'projection':
+            old_source, selector = decode_projection_coordinate(
+                operand.value)
+            return Operand('projection', projection_coordinate(
+                dense[old_source], selector))
+        return operand
+
+    return (tuple(rewritten), tuple(map(publish, stack)),
+            tuple(map(publish, locals_)))
 
 
 def _rewrite_pre_store(nodes, stack, locals_):
     """Fuse one published pre-decrement coordinate with its exact store."""
-    from .steppage import decode_memory_shape
+    from .steppage import (decode_memory_shape,
+                           decode_projection_coordinate,
+                           projection_coordinate)
     from .wasmwave import Operand, WaveNode
 
     outputs = {operand.value for operand in tuple(stack) + tuple(locals_)
@@ -694,8 +769,9 @@ def _rewrite_pre_store(nodes, stack, locals_):
         if node.op == 'memory.i64.relative_address':
             return 5
         if node.op == 'memory.i64.relative_exchange':
-            return (9 if len(node.arguments) > 6
-                    and node.arguments[6] == Operand('const', 1) else 7)
+            mode = node.arguments[6] if len(node.arguments) > 6 else None
+            return (7 + 3 * mode.value
+                    if mode is not None and mode.kind == 'const' else 7)
         if node.op == 'memory.i64.pre_store':
             return 4
         if node.op.startswith('memory.'):
@@ -772,9 +848,14 @@ def _rewrite_pre_store(nodes, stack, locals_):
             rewritten.append(WaveNode(value, operation, tuple(mapped)))
 
         def publish(operand):
-            if operand.kind != 'node':
-                return operand
-            return Operand('node', dense[operand.value])
+            if operand.kind == 'node':
+                return Operand('node', dense[operand.value])
+            if operand.kind == 'projection':
+                source, selector = decode_projection_coordinate(
+                    operand.value)
+                return Operand('projection', projection_coordinate(
+                    dense[source], selector))
+            return operand
 
         return _rewrite_pre_store(
             tuple(rewritten), tuple(map(publish, stack)),
@@ -791,7 +872,9 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
     and coordinate both substitute to their inputs.  Memory dependencies are
     bypassed, but later memory still depends on the last intervening effect.
     """
-    from .steppage import decode_memory_shape
+    from .steppage import (decode_memory_shape, RELATIVE_SAVE_CAP,
+                           decode_projection_coordinate,
+                           projection_coordinate)
     from .wasmwave import Operand, WaveNode
 
     def ordinary_access(node):
@@ -847,14 +930,14 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
         pointer = None
         pre_store = store.op == 'memory.i64.pre_store'
         if (pre_store and len(store.arguments) >= 4
-                and store.arguments[0].kind == 'local'
+                and store.arguments[0].kind in (
+                    'local', 'stack', 'node', 'const')
                 and store.arguments[2] == Operand('const', width)):
             pointer = store.arguments[0]
             address_node = None
         elif (stored[3] == 0 and address_node is not None
                 and address_node.op in ('lane64.SUB', 'lane64.ADD')
                 and len(address_node.arguments) == 2
-                and address_node.arguments[0].kind == 'local'
                 and address_node.arguments[1].kind == 'const'):
             displacement = (address_node.arguments[1].value
                             if address_node.op == 'lane64.ADD'
@@ -868,7 +951,7 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
             # original pointer plus a modular displacement.
             pointer = address
             address_node = None
-        if (pointer is None or width != 8 or saved.kind != 'local'):
+        if pointer is None or width != 8:
             continue
         load = next((node for node in nodes[store.value:]
                      if (lambda access: access is not None
@@ -878,25 +961,20 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
                              ordinary_access(node))), None)
         if load is None:
             continue
-        if (saved.value >= len(locals_)
-                or locals_[saved.value] != Operand('node', load.value)
-                or pointer.value >= len(locals_)):
+        if (not any(operand == Operand('node', load.value)
+                           for operand in tuple(stack) + tuple(locals_))
+                and not any(Operand('node', load.value) in node.arguments
+                            for node in nodes[load.value:])):
             continue
-        published_pointer = locals_[pointer.value]
-        pointer_node = (nodes[published_pointer.value - 1]
-                        if published_pointer.kind == 'node' else None)
-        restored_pointer = None
-        if (pre_store and pointer_node is not None
-                and pointer_node.op == 'lane64.ADD'
-                and pointer_node.arguments == (
-                    Operand('node', store.value),
-                    Operand('const', width))):
-            restored_pointer = pointer_node
-        elif (published_pointer != pointer
-              and (pointer_node is None
-                   or pointer_node.op != 'lane64.ADD'
-                   or pointer_node.arguments
-                   != (pointer, Operand('const', width)))):
+        restored_pointer = next((
+            node for node in nodes[store.value:]
+            if node.op == 'lane64.ADD'
+            and node.arguments == (
+                Operand('node', store.value), Operand('const', width))), None)
+        pointer_already_published = (
+            pointer.kind == 'local' and pointer.value < len(locals_)
+            and locals_[pointer.value] == pointer)
+        if restored_pointer is None and not pointer_already_published:
             continue
         address_users = [node.value for node in nodes
                          if any(argument == address
@@ -921,9 +999,11 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
         if intervening and transaction is None:
             continue
 
-        removed = {store.value, load.value}
-        if address_node is not None:
-            removed.add(address_node.value)
+        removed = {load.value}
+        if transaction is not None:
+            removed.add(store.value)
+            if address_node is not None:
+                removed.add(address_node.value)
         if restored_pointer is not None:
             removed.add(restored_pointer.value)
         restore_value = max(node.value for node in nodes) + 1
@@ -934,15 +1014,20 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
         if restored_pointer is not None:
             value_substitution[restored_pointer.value] = pointer
         dependency_substitution = {
-            store.value: tuple(stored[-1]),
-            load.value: tuple(ordinary_access(load)[-1]),
+            load.value: (
+                tuple(ordinary_access(load)[-1])
+                if transaction is not None
+                else (Operand('node', store.value),)),
         }
+        if transaction is not None:
+            dependency_substitution[store.value] = tuple(stored[-1])
 
         def dependency_start(node):
             if node.op == 'memory.i64.relative_exchange':
                 mode = (node.arguments[6]
                         if len(node.arguments) > 6 else None)
-                return (9 if mode == Operand('const', 1) else 7)
+                return (7 + 3 * mode.value
+                        if mode is not None and mode.kind == 'const' else 7)
             access = ordinary_access(node)
             if access is not None:
                 return 4 if access[0] else 3
@@ -964,21 +1049,72 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
             return tuple(expanded)
 
         staged = []
+        valid = True
         for node in nodes:
             if node.value in removed:
                 continue
             split = dependency_start(node)
             source_arguments = node.arguments
+            if (transaction is not None
+                    and node.op == 'memory.i64.relative_result'
+                    and len(source_arguments) >= 2
+                    and source_arguments[0]
+                    == Operand('node', transaction.value)
+                    and source_arguments[1].kind == 'const'):
+                old_mode = transaction.arguments[6].value
+                selector = source_arguments[1].value
+                if 0xfe - old_mode < selector <= 0xfe:
+                    source_arguments = (
+                        source_arguments[:1]
+                        + (Operand('const', selector - 1),)
+                        + source_arguments[2:])
+            access = ordinary_access(node)
+            if (transaction is not None and pre_store
+                    and access is not None and source_arguments
+                    and source_arguments[0]
+                    == Operand('node', store.value)
+                    and node is not transaction):
+                offset_at = 2 if access[0] else 1
+                if source_arguments[offset_at].kind != 'const':
+                    valid = False
+                    break
+                adjusted = list(source_arguments)
+                adjusted[0] = pointer
+                adjusted[offset_at] = Operand(
+                    'const', (adjusted[offset_at].value - width)
+                    & ((1 << 64) - 1))
+                source_arguments = tuple(adjusted)
             if node is transaction:
-                if (len(source_arguments) < 7
-                        or source_arguments[6] != Operand('const', 0)):
-                    staged = []
+                mode = (source_arguments[6]
+                        if len(source_arguments) > 6 else None)
+                if (mode is None or mode.kind != 'const'
+                        or mode.value < 0
+                        or mode.value >= RELATIVE_SAVE_CAP
+                        or len(source_arguments) < 7 + 3 * mode.value):
+                    valid = False
+                    break
+                dependency_at = 7 + 3 * mode.value
+                existing = list(source_arguments[7:dependency_at])
+                for at in range(0, len(existing), 3):
+                    if existing[at] != Operand('node', store.value):
+                        continue
+                    if existing[at + 1].kind != 'const':
+                        valid = False
+                        break
+                    existing[at] = pointer
+                    existing[at + 1] = Operand(
+                        'const', (existing[at + 1].value - width)
+                        & ((1 << 64) - 1))
+                if not valid:
                     break
                 source_arguments = (
-                    source_arguments[:6] + (Operand('const', 1),
-                                            pointer, saved)
-                    + source_arguments[7:])
-                split = 9
+                    source_arguments[:6]
+                    + (Operand('const', mode.value + 1),)
+                    + (pointer, Operand(
+                        'const', (-width) & ((1 << 64) - 1)), saved)
+                    + tuple(existing)
+                    + source_arguments[dependency_at:])
+                split = dependency_at + 3
             arguments = []
             for index, operand in enumerate(source_arguments):
                 if index >= split and operand.kind == 'node' \
@@ -995,7 +1131,7 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
                         Operand('node', transaction.value),
                         Operand('const', 0xfe))))
 
-        if not staged:
+        if not valid:
             continue
 
         staged_values = {node.value for node in staged}
@@ -1015,6 +1151,20 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
                 for operand in node.arguments)))
 
         def publish(operand):
+            if operand.kind == 'projection':
+                source, selector = decode_projection_coordinate(
+                    operand.value)
+                if transaction is not None and source == transaction.value:
+                    old_mode = transaction.arguments[6].value
+                    if 0xfe - old_mode < selector <= 0xfe:
+                        selector -= 1
+                source_operand = value_substitution.get(
+                    source, Operand('node', source))
+                if source_operand.kind != 'node':
+                    raise ValueError(
+                        'a projected transaction was removed from its cut')
+                return Operand('projection', projection_coordinate(
+                    dense[source_operand.value], selector))
             if operand.kind != 'node':
                 return operand
             operand = value_substitution.get(operand.value, operand)
@@ -1034,7 +1184,9 @@ def _rewrite_relative_exchange(nodes, stack, locals_):
     Detection is based only on SSA and byte coordinates; it is independent of
     the source frontend and of symbol names.
     """
-    from .steppage import decode_memory_shape, relative_layout
+    from .steppage import (decode_memory_shape,
+                           decode_projection_coordinate,
+                           projection_coordinate, relative_layout)
     from .wasmwave import Operand, WaveNode
 
     by_value = {node.value: node for node in nodes}
@@ -1200,9 +1352,27 @@ def _rewrite_relative_exchange(nodes, stack, locals_):
             if (value in output_values
                     or any(consumer not in replaced
                            for consumer in consumers.get(value, ()))):
-                visible.append((value, selector))
+                visible.append((
+                    value, selector,
+                    any(consumer not in replaced
+                        for consumer in consumers.get(value, ()))))
         if not visible:
-            visible.append((None, 0))
+            visible.append((None, 0, False))
+
+        # A transaction already owns all result lanes in one physical array.
+        # Only values consumed by another SSA node need scalar result nodes.
+        # Terminal frame publications name the array lane directly, so they
+        # do not add work or another materialized state coordinate.
+        materialized = [entry for entry in visible if entry[2]]
+        if materialized:
+            primary_entry = materialized[0]
+        else:
+            primary_entry = visible[0]
+        projected = {
+            value: selector for value, selector, consumed in visible
+            if value is not None and not consumed
+            and value != primary_entry[0]
+        }
 
         dependencies = []
         for node in nodes:
@@ -1218,7 +1388,7 @@ def _rewrite_relative_exchange(nodes, stack, locals_):
                     dependencies.append(dependency)
 
         next_value = len(nodes) + 1
-        primary_value, primary_selector = visible[0]
+        primary_value, primary_selector, _primary_consumed = primary_entry
         primary = WaveNode(next_value, 'memory.i64.relative_exchange', (
             left_base, right_base, delta, flags.arguments[0],
             Operand('const', relative_layout(
@@ -1230,7 +1400,10 @@ def _rewrite_relative_exchange(nodes, stack, locals_):
         substitutions = {value: next_value for value in replaced}
         if primary_value is not None:
             substitutions[primary_value] = next_value
-        for old_value, selector in visible[1:]:
+        for old_value, selector, consumed in visible:
+            if (old_value is None or old_value == primary_value
+                    or not consumed):
+                continue
             result_value = next_value + len(inserted)
             inserted.append(WaveNode(
                 result_value, 'memory.i64.relative_result', (
@@ -1262,8 +1435,17 @@ def _rewrite_relative_exchange(nodes, stack, locals_):
                 value, node.op, tuple(map(substitute, node.arguments))))
 
         def publish(operand):
+            if operand.kind == 'projection':
+                source, selector = decode_projection_coordinate(
+                    operand.value)
+                return Operand('projection', projection_coordinate(
+                    dense[source], selector))
             if operand.kind != 'node':
                 return operand
+            selector = projected.get(operand.value)
+            if selector is not None:
+                return Operand('projection', projection_coordinate(
+                    dense[next_value], selector))
             value = substitutions.get(operand.value, operand.value)
             return Operand('node', dense[value])
 
@@ -1276,6 +1458,8 @@ def _compact(nodes, stack, locals_):
     """Remove superseded SSA and rebuild dense physical dependency waves."""
     from .wasmphysical import DependencyWaves
     from .wasmwave import Operand, WaveNode
+    from .steppage import (decode_projection_coordinate,
+                           projection_coordinate)
 
     nodes, stack, locals_ = _rewrite_physical(nodes, stack, locals_)
 
@@ -1315,8 +1499,13 @@ def _compact(nodes, stack, locals_):
             common[key] = value
 
     def output(operand):
-        return (Operand('node', remap[operand.value])
-                if operand.kind == 'node' else operand)
+        if operand.kind == 'node':
+            return Operand('node', remap[operand.value])
+        if operand.kind == 'projection':
+            source, selector = decode_projection_coordinate(operand.value)
+            return Operand('projection', projection_coordinate(
+                remap[source], selector))
+        return operand
 
     depths = [0]
     by_depth = {}
@@ -1461,6 +1650,30 @@ def normalize_plan(plan):
         plan.stack_inputs, nodes, waves, stack, locals_)
 
 
+def physical_work(plan):
+    """Count primitive lane work, excluding terminal scalarization.
+
+    Most SSA nodes are one physical operation.  A relative exchange is one
+    multi-result transaction whose adjacent record lanes remain the actual
+    parallel work domain, so its encoded node contributes one unit per lane.
+    Output projections are coordinates and therefore contribute no node at
+    all after normalization.
+    """
+    from .steppage import decode_relative_layout
+
+    work = 0
+    for node in plan.nodes:
+        if node.op != 'memory.i64.relative_exchange':
+            work += 1
+            continue
+        if (len(node.arguments) < 5
+                or node.arguments[4].kind != 'const'):
+            raise ValueError(
+                'relative exchange layout is not a physical constant')
+        work += len(decode_relative_layout(node.arguments[4].value))
+    return work
+
+
 def compose_plans(first, second):
     """Substitute one physical state-step page into its deterministic next.
 
@@ -1470,6 +1683,8 @@ def compose_plans(first, second):
     liveness, quotient and wave normalization as every frontend slice.
     """
     from .wasmwave import Operand, PureSlice, WaveNode
+    from .steppage import (decode_projection_coordinate,
+                           projection_coordinate)
 
     if first.function != second.function:
         raise ValueError('state-step composition crosses a function boundary')
@@ -1481,8 +1696,9 @@ def compose_plans(first, second):
                         for node in reversed(nodes)
                         if node.op.startswith('memory.')), None)
     remap = {}
+    projection_nodes = {}
 
-    def substitute(operand):
+    def substitute_output(operand):
         if operand.kind == 'const':
             return operand
         if operand.kind == 'local':
@@ -1495,11 +1711,34 @@ def compose_plans(first, second):
                 raise ValueError(
                     'second state-step reads an unavailable stack slot')
             return first.stack[operand.value]
+        if operand.kind == 'projection':
+            source, selector = decode_projection_coordinate(operand.value)
+            return Operand('projection', projection_coordinate(
+                remap[source].value, selector))
         return remap[operand.value]
+
+    def substitute_argument(operand):
+        nonlocal last_memory
+        resolved = substitute_output(operand)
+        if resolved.kind != 'projection':
+            return resolved
+        source, selector = decode_projection_coordinate(resolved.value)
+        key = source, selector
+        projected = projection_nodes.get(key)
+        if projected is None:
+            value = len(nodes) + 1
+            arguments = (
+                Operand('node', source), Operand('const', selector))
+            nodes.append(WaveNode(
+                value, 'memory.i64.relative_result', arguments))
+            projected = Operand('node', value)
+            projection_nodes[key] = projected
+            last_memory = projected
+        return projected
 
     for node in second.nodes:
         value = len(nodes) + 1
-        arguments = tuple(map(substitute, node.arguments))
+        arguments = tuple(map(substitute_argument, node.arguments))
         if (node.op.startswith('memory.') and last_memory is not None
                 and last_memory not in arguments):
             arguments += (last_memory,)
@@ -1509,8 +1748,8 @@ def compose_plans(first, second):
         if node.op.startswith('memory.'):
             last_memory = remap[node.value]
 
-    stack = tuple(map(substitute, second.stack))
-    locals_ = tuple(map(substitute, second.locals))
+    stack = tuple(map(substitute_output, second.stack))
+    locals_ = tuple(map(substitute_output, second.locals))
     instructions = first.instructions + second.instructions
     combined = PureSlice(
         first.function, first.start, first.start + instructions,
