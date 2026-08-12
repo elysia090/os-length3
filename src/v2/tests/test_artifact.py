@@ -7,7 +7,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
+from urllib.request import Request, urlopen
 
 from kernel.pagefabric import PageFabric, open_artifact, write_artifact
 
@@ -94,6 +96,42 @@ class TestArtifactDelivery(unittest.TestCase):
             self.assertTrue((copied / 'index.json').is_file())
             self.assertEqual(
                 len(list((copied / 'delivery').glob('*.pages'))), 1)
+
+    def test_local_server_preserves_direct_artifact_ranges(self):
+        import sys
+        tools = Path(__file__).resolve().parents[1] / 'tools'
+        sys.path.insert(0, str(tools))
+        import build_site
+        import serve
+
+        catalog_path = Path(build_site.ARTIFACT_ROOT) / 'index.json'
+        if not catalog_path.exists():
+            self.skipTest('repository has no prebuilt artifact catalog')
+        catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
+        entry = catalog['artifacts']['linux-x86-64']
+        object_index = json.loads(
+            (catalog_path.parent / entry['path']).read_text(encoding='utf-8'))
+        delivery = object_index['deliveries'][object_index['preferred']]
+        relative = ('/artifact/linux-x86-64/' + delivery['file'])
+        source = catalog_path.parent / 'linux-x86-64' / delivery['file']
+
+        server = serve.http.server.ThreadingHTTPServer(
+            ('127.0.0.1', 0), serve.Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = Request(
+                'http://127.0.0.1:%d%s' % (server.server_port, relative),
+                headers={'Range': 'bytes=0-171'})
+            with urlopen(request, timeout=5) as response:
+                self.assertEqual(response.status, 206)
+                self.assertEqual(response.headers['Content-Range'],
+                                 'bytes 0-171/%d' % source.stat().st_size)
+                self.assertEqual(response.read(), source.read_bytes()[:172])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
     def test_repository_catalog_uses_a_readable_locator(self):
         repository = ROOT.parents[1]

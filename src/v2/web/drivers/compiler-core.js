@@ -9,11 +9,10 @@ import {
   WasiExit, WasiPreview1,
 } from '../wasi-preview1.js';
 import { openPageBundle } from '../page-fabric.js';
+import { artifactUrl } from '../artifact.js';
 
 const DEFAULT_VERSION = '22.0.0-git20542-10';
-const DEFAULT_DISTRIBUTION = new URL(
-  '../../artifact/compiler/index.json', import.meta.url,
-).href;
+const DEFAULT_DISTRIBUTION = artifactUrl('compiler/index.json').href;
 const DEFAULT_HASHES = {
   core: '24fbed474c7b5b4968fd73fc4827440b93fb351c1b6264516130300eff3e7bf5',
   resources: '79eef0c336fe55cf03ff8f5b42b784c8168f929a3603138b2c6301f4601e4c86',

@@ -26,11 +26,31 @@ let loading = null;
 let manifest = null;
 const roots = new Map();
 const architectures = new Map();
+const bootProfiles = new Map();
 const x86StepPages = [];
 const x86StepTokens = new Map();
 
 function send(type, payload = {}) {
   self.postMessage(Object.assign({ type }, payload));
+}
+
+function profileStart(id) {
+  const profile = { started: performance.now(), marks: {} };
+  bootProfiles.set(id, profile);
+  return profile;
+}
+
+function profileMark(id, name) {
+  const profile = bootProfiles.get(id);
+  if (!profile) return;
+  profile.marks[name] = Math.round(
+    (performance.now() - profile.started) * 1000,
+  ) / 1000;
+}
+
+function profileLayout(id) {
+  const profile = bootProfiles.get(id);
+  return profile ? { ...profile.marks } : {};
 }
 
 async function loadRuntime(id) {
@@ -42,7 +62,9 @@ async function loadRuntime(id) {
       try {
         send('progress', { id, message: `loading Linux runtime from ${new URL(indexURL).host}…` });
         const mod = await import(/* webpackIgnore: true */ `${indexURL}pyodide.mjs`);
+        profileMark(id, 'pyodide_module');
         pyodide = await mod.loadPyodide({ indexURL });
+        profileMark(id, 'pyodide_runtime');
         break;
       } catch (error) {
         lastError = error;
@@ -58,6 +80,7 @@ async function loadRuntime(id) {
       if (!response.ok) throw new Error(`${relative}: HTTP ${response.status}`);
       return response.text();
     }));
+    profileMark(id, 'python_modules_fetched');
     const directories = new Set();
     manifest.files.forEach((relative, index) => {
       const path = `${root}/${relative}`;
@@ -68,12 +91,14 @@ async function loadRuntime(id) {
       }
       pyodide.FS.writeFile(path, texts[index]);
     });
+    profileMark(id, 'python_modules_installed');
     pyodide.runPython(`
 import sys
 if '/home/pyodide/kernel_pkg' not in sys.path:
     sys.path.insert(0, '/home/pyodide/kernel_pkg')
 import kernel.browser as klb
 `);
+    profileMark(id, 'python_kernel_imported');
     return pyodide;
   })();
   try {
@@ -174,6 +199,7 @@ async function bootBytes(message) {
     });
     result.kernel = opened.bytes;
     opened.fabric.release();
+    profileMark(message.id, 'boot_artifact_verified');
     send('progress', {
       id: message.id,
       phase: 'download',
@@ -313,6 +339,7 @@ function decodeBase64(value) {
 async function installX86VmKernels(id) {
   send('progress', { id, phase: 'vm', label: 'Opening normalized VM pages' });
   await loadVM();
+  profileMark(id, 'vm_resident');
   self.mixSpongeRecords = (lanes, tail, seed, records, rounds) => {
     const mixed = mixSpongeRecordsLoaded(
       decodeBase64(lanes), decodeBase64(tail), decodeBase64(seed),
@@ -426,6 +453,7 @@ async function drive(id, handle, options = {}) {
 }
 
 async function boot(message) {
+  profileStart(message.id);
   const architecture = message.architecture || 'wasm32';
   if (!['wasm32', 'x86-64'].includes(architecture)) {
     throw new Error(`unknown Linux architecture ${architecture}`);
@@ -433,6 +461,7 @@ async function boot(message) {
   const [, bootImage] = await Promise.all([
     loadRuntime(message.id), bootBytes(message),
   ]);
+  profileMark(message.id, 'runtime_and_boot_ready');
   const requestId = positiveInteger(message.id, null, 'request id');
   const kernel = bootImage.kernel;
   const initrd = architecture === 'x86-64' ? bootImage.initrd : null;
@@ -457,6 +486,7 @@ async function boot(message) {
           label: 'Normalizing the x86 machine',
         });
         handle = Number(python(`klb.boot_x86_file(${JSON.stringify(path)}, _x86_options)`));
+        profileMark(message.id, 'machine_opened');
       } finally {
         pyodide.globals.delete('_x86_options');
       }
@@ -475,7 +505,12 @@ async function boot(message) {
     driveOptions.stages = [];
   }
   const result = await drive(message.id, handle, driveOptions);
-  send('result', { id: message.id, ok: true, handle, result });
+  profileMark(message.id, 'first_drive_complete');
+  send('result', {
+    id: message.id, ok: true, handle, result,
+    profile: profileLayout(message.id),
+  });
+  bootProfiles.delete(message.id);
 }
 
 self.onmessage = async (event) => {
@@ -522,7 +557,12 @@ self.onmessage = async (event) => {
       throw new Error(`unknown Linux worker action ${message.action}`);
     }
   } catch (error) {
-    send('result', { id: message.id, ok: false, error: error?.message || String(error) });
+    profileMark(message.id, 'failed');
+    send('result', {
+      id: message.id, ok: false, error: error?.message || String(error),
+      profile: profileLayout(message.id),
+    });
+    bootProfiles.delete(message.id);
   }
 };
 

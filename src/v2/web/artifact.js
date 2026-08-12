@@ -24,6 +24,16 @@ async function jsonAt(url) {
   return response.json();
 }
 
+export function artifactUrl(path = '', configured = null) {
+  let root = configured || globalThis.QM_ARTIFACT_ROOT || null;
+  if (root) return new URL(path, new URL(root, import.meta.url));
+  root = new URL('../artifact/', import.meta.url);
+  // The deployed trees are siblings. Source-level Node parity tests import
+  // this file three directories below the repository artifact mount.
+  if (root.protocol === 'file:') root = new URL('../../../artifact/', import.meta.url);
+  return new URL(path, root);
+}
+
 async function resolveArtifact(name, root) {
   const normalized = String(name || '').toLowerCase();
   const catalog = await jsonAt(new URL('index.json', root));
@@ -44,7 +54,7 @@ async function resolveArtifact(name, root) {
 
 /** Open one physical projection without reconstructing the canonical object. */
 export async function openArtifact(name, options = {}) {
-  const root = new URL(options.root || '../artifact/', import.meta.url);
+  const root = artifactUrl('', options.root || null);
   const resolved = await resolveArtifact(name, root);
   const { identity } = resolved;
   const indexUrl = new URL(resolved.path, root);
@@ -81,18 +91,14 @@ export async function openArtifact(name, options = {}) {
 export async function readArtifact(name, options = {}) {
   const opened = await openArtifact(name, options);
   const { fabric, identity } = opened;
-  const output = new Uint8Array(fabric.length);
-  const waveBytes = fabric.pageBytes * fabric.wavePages;
   try {
-    for (let offset = 0; offset < output.length; offset += waveBytes) {
-      const count = Math.min(waveBytes, output.length - offset);
-      output.set(await fabric.read(offset, count), offset);
+    const output = await fabric.readAll(16, ({ decoded, total }) => {
       options.onProgress?.({
-        loaded: offset + count,
-        total: output.length,
+        loaded: total ? Math.round((fabric.length * decoded) / total) : 0,
+        total: fabric.length,
         fetched: fabric.layout().fetchedBytes,
       });
-    }
+    });
     const actual = hex(new Uint8Array(
       await crypto.subtle.digest('SHA-256', output),
     ));

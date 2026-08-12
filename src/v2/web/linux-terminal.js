@@ -82,6 +82,7 @@ export class LinuxTerminal {
     this.startedAt = null;
     this.coldMs = null;
     this.outputStarted = false;
+    this.profile = null;
     this.progress = root.getElementById('boot-transfer');
     this.track = root.getElementById('boot-transfer-track');
     this.fill = root.getElementById('boot-transfer-fill');
@@ -195,6 +196,10 @@ export class LinuxTerminal {
 
     const action = this.pending.get(message.id);
     this.pending.delete(message.id);
+    if (message.profile) {
+      this.profile = message.profile;
+      this.progress.dataset.bootProfile = JSON.stringify(message.profile);
+    }
     if (!message.ok) {
       const elapsed = this.startedAt == null ? null
         : performance.now() - this.startedAt;
