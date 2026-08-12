@@ -182,6 +182,83 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(outputs[2], evaluate('lane64.X86_FLAGS', (
             0x246, 3, 7, (3 - 7) & ((1 << 64) - 1), descriptor)))
 
+    def test_test_flags_consume_the_mask_without_materializing_the_and(self):
+        descriptor = 64
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.ANDR', (
+                Operand('local', 0), Operand('local', 1))),
+             WaveNode(2, 'lane64.X86_FLAGS', (
+                 Operand('local', 2), Operand('local', 0),
+                 Operand('local', 1), Operand('node', 1),
+                 Operand('const', descriptor)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('local', 0), Operand('local', 1),
+             Operand('node', 2)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.X86_TEST'])
+        execute = compile_mapped_executor(unpack(pack(plan)))
+        outputs, _stack = execute((0x81, 0x0f, 0x246), (), object())
+        from qm.laneops import evaluate
+        self.assertEqual(outputs[2], evaluate('lane64.X86_TEST', (
+            0x246, 0x81, 0x0f, descriptor)))
+
+    def test_x86_condition_lane_covers_every_condition_code(self):
+        from qm.laneops import evaluate
+
+        for flags in (0, 1, 1 << 2, 1 << 6, 1 << 7, 1 << 11,
+                      0x8c5):
+            carry = bool(flags & 1)
+            parity = bool(flags & (1 << 2))
+            zero = bool(flags & (1 << 6))
+            sign = bool(flags & (1 << 7))
+            overflow = bool(flags & (1 << 11))
+            less = sign != overflow
+            expected = (
+                overflow, not overflow, carry, not carry,
+                zero, not zero, carry or zero, not carry and not zero,
+                sign, not sign, parity, not parity,
+                less, not less, zero or less, not zero and not less,
+            )
+            for code, selected in enumerate(expected):
+                self.assertEqual(
+                    evaluate('lane64.X86_CONDITION', (flags, code)),
+                    int(selected))
+
+    def test_u32_inputs_and_publications_keep_the_hot_cut_at_four_lanes(self):
+        raw = PureSlice(
+            0, 0, 6, 6, 0,
+            (WaveNode(1, 'lane64.AND', (
+                Operand('local', 2), Operand('const', 0xffffffff))),
+             WaveNode(2, 'lane64.ADD3', (
+                 Operand('local', 1), Operand('node', 1),
+                 Operand('const', 1))),
+             WaveNode(3, 'lane64.AND', (
+                 Operand('local', 3), Operand('const', 0xffffffff))),
+             WaveNode(4, 'lane64.EXTEND_I32_S', (
+                 Operand('node', 3),)),
+             WaveNode(5, 'lane64.ADD', (
+                 Operand('node', 4), Operand('const', 1))),
+             WaveNode(6, 'lane64.AND', (
+                 Operand('node', 5), Operand('const', 0xffffffff))),
+             WaveNode(7, 'lane64.X86_COMPARE', (
+                 Operand('local', 4), Operand('local', 0),
+                 Operand('node', 4), Operand('const', 64 | (3 << 8))))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('local', 0), Operand('node', 2),
+             Operand('node', 6), Operand('node', 4),
+             Operand('node', 7)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes], [
+            'lane64.ADD3_U32', 'lane64.EXTEND_I32_S',
+            'lane32.ADD', 'lane64.X86_COMPARE'])
+        self.assertEqual((plan.waves.work, plan.waves.span), (4, 2))
+
     def test_pre_store_waits_until_its_saved_value_is_available(self):
         shape = Operand('const', memory_shape(8, virtual64=True))
         raw = PureSlice(

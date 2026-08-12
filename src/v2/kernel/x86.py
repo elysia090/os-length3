@@ -3384,15 +3384,6 @@ class X86DBT(object):
                 common[key] = result
             return result
 
-        def bit(value, mask):
-            return emit('i64.and', (
-                emit('i64.shr_u', (
-                    value, Operand('const', int(mask).bit_length() - 1))),
-                Operand('const', 1)))
-
-        def invert(value):
-            return emit('i64.xor', (value, Operand('const', 1)))
-
         def read(operand, bits):
             if isinstance(operand, MemoryOperand):
                 return None
@@ -3490,21 +3481,8 @@ class X86DBT(object):
                 Operand('const', descriptor)))
 
         def condition(code):
-            carry = bit(prior_flags, RFLAGS_CARRY)
-            parity = bit(prior_flags, RFLAGS_PARITY)
-            zero = bit(prior_flags, RFLAGS_ZERO)
-            sign = bit(prior_flags, RFLAGS_SIGN)
-            overflow = bit(prior_flags, RFLAGS_OVERFLOW)
-            signed_less = emit('i64.xor', (sign, overflow))
-            return (
-                overflow, invert(overflow), carry, invert(carry),
-                zero, invert(zero), emit('i64.or', (carry, zero)),
-                emit('i64.and', (invert(carry), invert(zero))),
-                sign, invert(sign), parity, invert(parity),
-                signed_less, invert(signed_less),
-                emit('i64.or', (zero, signed_less)),
-                emit('i64.and', (invert(zero), invert(signed_less))),
-            )[int(code) & 15]
+            return emit('lane64.X86_CONDITION', (
+                prior_flags, Operand('const', int(code) & 15)))
 
         following = detail[0] if isinstance(detail, tuple) else detail
         flags = prior_flags
@@ -3545,7 +3523,7 @@ class X86DBT(object):
             left = read(destination, bits)
             if left is None or right is None:
                 return None
-            carry_in = bit(prior_flags, RFLAGS_CARRY) \
+            carry_in = condition(2) \
                 if name in ('adc', 'sbb') else None
             if name in ('add', 'adc'):
                 result = emit('i64.add', (left, right))
@@ -3573,7 +3551,7 @@ class X86DBT(object):
             if left is None:
                 return None
             right = Operand('const', immediate & ((1 << bits) - 1))
-            carry_in = bit(prior_flags, RFLAGS_CARRY) \
+            carry_in = condition(2) \
                 if name in ('adc', 'sbb') else None
             if name in ('add', 'adc'):
                 result = emit('i64.add', (left, right))
@@ -3623,7 +3601,7 @@ class X86DBT(object):
                 return None
             left, right = ((register_value, loaded) if reverse
                            else (loaded, register_value))
-            carry_in = bit(prior_flags, RFLAGS_CARRY) \
+            carry_in = condition(2) \
                 if name in ('adc', 'sbb') else None
             if name in ('add', 'adc'):
                 result = emit('i64.add', (left, right))

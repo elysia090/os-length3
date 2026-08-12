@@ -475,6 +475,22 @@ def _rewrite_physical(nodes, stack, locals_):
                     'memory.i64.relative_address', fused_arguments)
                 replacement = loaded_operand
                 break
+            if replacement is None:
+                for index, candidate in enumerate(arguments):
+                    masked = form(candidate)
+                    original = node.arguments[index]
+                    if (masked is None
+                            or masked[0] != 'lane64.AND'
+                            or constant(masked[1][1]) != 0xffffffff
+                            or original.kind != 'node'
+                            or original.value in outputs
+                            or len(consumers.get(original.value, ())) != 1):
+                        continue
+                    remainder = list(arguments)
+                    remainder.remove(candidate)
+                    operation = 'lane64.ADD3_U32'
+                    arguments = (remainder[0], masked[1][0], remainder[1])
+                    break
 
         elif name == 'X86_FLAGS' and len(arguments) == 5:
             descriptor = constant(arguments[4])
@@ -500,6 +516,27 @@ def _rewrite_physical(nodes, stack, locals_):
                     and len(consumers.get(original_result.value, ())) == 1):
                 operation = 'lane64.X86_COMPARE'
                 arguments = arguments[:3] + (arguments[4],)
+            elif (descriptor is not None
+                  and (descriptor >> 8) & 7 == 0
+                  and not descriptor & (1 << 11)
+                  and result_form is not None
+                  and result_form[0] in ('lane64.AND', 'lane64.ANDR')
+                  and result_form[1] == arguments[1:3]
+                  and original_result.kind == 'node'
+                  and original_result.value not in outputs
+                  and len(consumers.get(original_result.value, ())) == 1):
+                operation = 'lane64.X86_TEST'
+                arguments = arguments[:3] + (arguments[4],)
+
+        elif name == 'EXTEND_I32_S':
+            source = form(arguments[0])
+            if (source is not None and source[0] == 'lane64.AND'
+                    and constant(source[1][1]) == 0xffffffff
+                    and node.arguments[0].kind == 'node'
+                    and node.arguments[0].value not in outputs
+                    and len(consumers.get(
+                        node.arguments[0].value, ())) == 1):
+                arguments = (source[1][0],)
 
         elif name == 'EXTEND_I32_U':
             replacement = arguments[0]
@@ -583,6 +620,17 @@ def _rewrite_physical(nodes, stack, locals_):
                         and mask is not None):
                     operation = width + '.ANDNR'
                     arguments = (inverted[0], arguments[1])
+            elif (width == 'lane64' and mask == 0xffffffff
+                  and source is not None
+                  and node.arguments[0].kind == 'node'
+                  and node.arguments[0].value not in outputs
+                  and len(consumers.get(node.arguments[0].value, ())) == 1
+                  and source[0] in (
+                      'lane64.ADD', 'lane64.ADDR', 'lane64.ADD3',
+                      'lane64.SUBR', 'lane64.MULR', 'lane64.AND',
+                      'lane64.ANDR', 'lane64.ORR', 'lane64.XORR')):
+                operation = 'lane32.' + source[0].split('.', 1)[1]
+                arguments = source[1]
 
         elif name == 'ANDR' and len(arguments) == 2:
             shifted = form(arguments[0])

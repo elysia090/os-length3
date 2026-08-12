@@ -48,6 +48,11 @@ class TestBrowserPageFabric(unittest.TestCase):
             0, 64, 80, delta, 64 | (3 << 8)))
         shift_flags = evaluate_lane('lane64.X86_SHIFT_FLAGS', (
             0x246, 0x80000001, 2, 1, 32 | (4 << 8)))
+        condition = evaluate_lane('lane64.X86_CONDITION', (0x246, 6))
+        test_flags = evaluate_lane('lane64.X86_TEST', (
+            0x246, 0x81, 0x0f, 8))
+        add3_u32 = evaluate_lane('lane64.ADD3_U32', (
+            5, 0x100000002, 7))
         nodes = (
             WaveNode(1, 'lane64.SUBR', (
                 Operand('local', 0), Operand('local', 1))),
@@ -88,15 +93,23 @@ class TestBrowserPageFabric(unittest.TestCase):
                 Operand('local', 2), Operand('const', 0x80000001),
                 Operand('const', 2), Operand('const', 1),
                 Operand('const', 32 | (4 << 8)))),
+            WaveNode(12, 'lane64.X86_CONDITION', (
+                Operand('local', 2), Operand('const', 6))),
+            WaveNode(13, 'lane64.X86_TEST', (
+                Operand('local', 2), Operand('const', 0x81),
+                Operand('const', 0x0f), Operand('const', 8))),
+            WaveNode(14, 'lane64.ADD3_U32', (
+                Operand('const', 5), Operand('const', 0x100000002),
+                Operand('const', 7))),
         )
         plan = PureSlice(
             0, 0, 1, 1, 0, nodes,
             DependencyWaves(
-                (0, 3, 4, 9, 10, 11),
-                (1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9),
-                (0, 1, 2, 3, 3, 3, 3, 3, 4, 5, 1, 1)),
+                (0, 6, 7, 12, 13, 14),
+                (1, 10, 11, 12, 13, 14, 2, 3, 4, 5, 6, 7, 8, 9),
+                (0, 1, 2, 3, 3, 3, 3, 3, 4, 5, 1, 1, 1, 1, 1)),
             tuple(Operand('node', value)
-                  for value in range(1, 12))
+                  for value in range(1, 15))
             + (Operand('local', 4),
                Operand('projection', projection_coordinate(2, 3)),
                Operand('projection', projection_coordinate(2, 0xfe)),
@@ -158,7 +171,7 @@ for (;;) {
   }
 }
 const stack = E.vm_step_stack(session);
-const outputs = Array.from({length: 15}, (_, index) =>
+const outputs = Array.from({length: 18}, (_, index) =>
   view.getBigUint64(stack + index * 8, true).toString());
 const dirtyPage = E.vm_step_first_dirty_memory_page(session);
 const lease = E.vm_step_memory_lease(session);
@@ -190,6 +203,8 @@ process.stdout.write(JSON.stringify(
                 str(64 + 8 + ((30 - delta) & ((1 << 64) - 4))),
                 '120', str(compare_flags),
                 str(shift_flags),
+                str(condition), str(test_flags),
+                str(add3_u32),
                 str(saved),
                 str((saved_high + delta) & 0xffffffff),
                 str(26 | (36 << 32)),
