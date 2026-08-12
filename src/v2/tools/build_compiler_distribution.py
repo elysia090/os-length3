@@ -28,8 +28,7 @@ if str(ROOT) not in sys.path:
 from qm.wasmbinary import function_exports, index_module, optimize_module
 from qm.pagearchive import pack_wasm_steps, unpack as unpack_pages
 from qm.wasmregions import pack as pack_regions
-from kernel.pagefabric import (bundle_prefix_size, dump_bundle, dump_manifest,
-                               project)
+from kernel.pagefabric import write_artifact_delivery
 
 
 DELIVERY_PAGE_BYTES = 1 << 16
@@ -81,38 +80,13 @@ def resource_index(payload):
     return {'format': 'tar-cut-v1', 'mount': '/usr', 'entries': entries}
 
 
-def digest(path):
-    result = hashlib.sha256()
-    with path.open('rb') as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b''):
-            result.update(block)
-    return result.hexdigest()
-
-
 def delivery(payload, output, page_bytes=DELIVERY_PAGE_BYTES):
     """Write the disposable direct-page projection for one canonical object."""
-    manifest, store = project(
-        payload, page_size=page_bytes,
+    return write_artifact_delivery(
+        payload, output, page_bytes=page_bytes,
         data_shards=DELIVERY_DATA_SHARDS,
-        parity_shards=DELIVERY_PARITY_SHARDS)
-    wire = dump_bundle(manifest, store, 'data')
-    output.write_bytes(wire)
-    prefix_bytes = bundle_prefix_size(wire)
-    return {
-        'file': output.name,
-        'bytes': len(wire),
-        'sha256': digest(output),
-        'prefix_bytes': prefix_bytes,
-        'prefix_sha256': hashlib.sha256(
-            wire[:prefix_bytes]).hexdigest(),
-        'page_bytes': manifest.page_size,
-        'logical_pages': manifest.page_count,
-        'unique_pages': manifest.rank_count,
-        'manifest_bytes': len(dump_manifest(manifest)),
-        'data_shards': manifest.data_shards,
-        'parity_shards': manifest.parity_shards,
-        'included_shards': 'data',
-    }
+        parity_shards=DELIVERY_PARITY_SHARDS,
+        include_manifest_bytes=True)
 
 
 def build(core, resources, output, version, max_body=4096,

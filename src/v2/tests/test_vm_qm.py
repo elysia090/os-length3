@@ -185,21 +185,36 @@ class TestTheShippedModuleRunsTheSameArtifacts(unittest.TestCase):
             with open(fresh, 'rb') as handle:
                 rebuilt = handle.read()
             fresh_base = os.path.splitext(fresh)[0]
-            rebuilt_delivery = {}
-            for extension in ('.pages', '-regions.pages', '-steps.pages', '.json'):
+            with open(fresh_base + '.json') as handle:
+                rebuilt_manifest = json.load(handle)
+            rebuilt_deliveries = {}
+            for extension in ('.pages', '-regions.pages', '-steps.pages'):
                 with open(fresh_base + extension, 'rb') as handle:
-                    rebuilt_delivery[extension] = handle.read()
+                    rebuilt_deliveries[extension] = handle.read()
         with open(SHIPPED_WASM, 'rb') as handle:
             shipped = handle.read()
         self.assertEqual(shipped, rebuilt,
                          'web/vm.wasm is stale; rebuild it from vm.c')
-        shipped_base = os.path.splitext(SHIPPED_WASM)[0]
-        for extension in ('.pages', '-regions.pages', '-steps.pages', '.json'):
-            with open(shipped_base + extension, 'rb') as handle:
+        artifact_root = os.path.join(
+            os.path.dirname(os.path.dirname(ROOT)), 'artifact', 'vm')
+        with open(os.path.join(artifact_root, 'index.json')) as handle:
+            shipped_manifest = json.load(handle)
+        for field, component, extension in (
+                ('delivery', 'module', '.pages'),
+                ('regions', 'regions', '-regions.pages'),
+                ('steps', 'steps', '-steps.pages')):
+            rebuilt_entry = (rebuilt_manifest['vm'] if field == 'delivery'
+                             else rebuilt_manifest['vm'][field])
+            shipped_entry = (shipped_manifest['vm'] if field == 'delivery'
+                             else shipped_manifest['vm'][field])
+            self.assertEqual(shipped_entry['sha256'], rebuilt_entry['sha256'])
+            delivery = shipped_entry['delivery']
+            with open(os.path.join(
+                    artifact_root, delivery['file']), 'rb') as handle:
                 shipped_delivery = handle.read()
             self.assertEqual(
-                shipped_delivery, rebuilt_delivery[extension],
-                'web/vm%s is stale; rebuild it from vm.c' % extension)
+                shipped_delivery, rebuilt_deliveries[extension],
+                'artifact/vm/%s delivery is stale' % component)
 
     def drive(self, blob, values, input_bits, output_bits):
         """Every input in one node run; spawning per input is all overhead."""

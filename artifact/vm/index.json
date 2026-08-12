@@ -16,7 +16,7 @@
     "delivery": {
       "bytes": 18600,
       "data_shards": 8,
-      "file": "vm.pages",
+      "file": "module/delivery/77e37cfcf30c78ef084fda24bed116840cffc3d790239fd47807ac16954017f8.pages",
       "included_shards": "data",
       "logical_pages": 1,
       "page_bytes": 65536,
@@ -601,7 +601,7 @@
       "delivery": {
         "bytes": 804,
         "data_shards": 8,
-        "file": "vm-regions.pages",
+        "file": "regions/delivery/c3376f7caac500567d8aec89f501d9c0e8db88d02b0349a1c71ba342b4109d1b.pages",
         "included_shards": "data",
         "logical_pages": 1,
         "page_bytes": 4096,
@@ -619,7 +619,7 @@
       "delivery": {
         "bytes": 2842,
         "data_shards": 8,
-        "file": "vm-steps.pages",
+        "file": "steps/delivery/24b8eb08a55d56c592d2224475b8d9231afe62fb048fe604a35988909db3f2c5.pages",
         "included_shards": "data",
         "logical_pages": 5,
         "page_bytes": 4096,

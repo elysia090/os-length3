@@ -8,9 +8,7 @@
 // `vm/wasm/vm.c` is the source; `vm/wasm/build.py` compiles it and
 // `tests/test_vm.py` holds it against the Python reference in `vm/machine.py`.
 
-import { openPageBundle } from './page-fabric.js';
-
-const MANIFEST_URL = new URL('./vm.json', import.meta.url);
+import { readArtifact } from './artifact.js';
 
 // Outcomes, shared with the C and the Python.
 const BOTTOM = -1;
@@ -39,25 +37,12 @@ export class MachineUnavailable extends Error {}
 export async function compile() {
   if (compiled) return compiled;
   try {
-    const response = await fetch(MANIFEST_URL, { cache: 'no-cache' });
-    if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
-    const manifest = await response.json();
-    const vm = manifest?.vm;
-    const delivery = vm?.delivery;
-    if (!vm || !delivery) throw new Error('vm delivery manifest is invalid');
-    const fabric = await openPageBundle({
-      url: new URL(delivery.file, MANIFEST_URL).href,
-      prefixBytes: delivery.prefix_bytes,
-      prefixSha256: delivery.prefix_sha256,
-      objectSha256: vm.sha256,
-    });
-    if (fabric.length !== vm.bytes) throw new Error('vm delivery length is invalid');
-    const bytes = await fabric.read(0, fabric.length);
-    compiled = await WebAssembly.compile(bytes);
-    fabric.release();
+    const opened = await readArtifact('vm');
+    compiled = await WebAssembly.compile(opened.bytes);
+    opened.fabric.release();
     return compiled;
   } catch (err) {
-    throw new MachineUnavailable(`cannot load vm.wasm delivery (${err.message})`);
+    throw new MachineUnavailable(`cannot load vm artifact (${err.message})`);
   }
 }
 

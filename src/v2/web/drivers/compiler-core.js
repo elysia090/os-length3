@@ -12,7 +12,7 @@ import { openPageBundle } from '../page-fabric.js';
 
 const DEFAULT_VERSION = '22.0.0-git20542-10';
 const DEFAULT_DISTRIBUTION = new URL(
-  '../assets/compiler/compiler.json', import.meta.url,
+  '../../artifact/compiler/index.json', import.meta.url,
 ).href;
 const DEFAULT_HASHES = {
   core: '24fbed474c7b5b4968fd73fc4827440b93fb351c1b6264516130300eff3e7bf5',

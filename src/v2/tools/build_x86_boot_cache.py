@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 from kernel.x86 import load_bzimage_kernel
 from kernel.x86snapshot import dump_x86_boot_cache, load_x86_boot_cache
+from kernel.pagefabric import write_artifact
 
 
 def main(argv=None):
@@ -24,6 +25,10 @@ def main(argv=None):
     parser.add_argument('--initrd', type=Path)
     parser.add_argument('--shards', choices=('data', 'all'), default='data',
                         help='ship primary data only, or data plus parity')
+    parser.add_argument('--artifact-root', type=Path,
+                        help='also publish a chunked identity-addressed copy')
+    parser.add_argument('--artifact-name', default='linux-x86-64')
+    parser.add_argument('--delivery-page-bytes', type=int, default=1 << 16)
     arguments = parser.parse_args(argv)
 
     image = arguments.bzimage.read_bytes()
@@ -57,6 +62,13 @@ def main(argv=None):
     print('restore_seconds=%.6f' % restored_seconds)
     print('restored_spans=%d' %
           restored.state.memory._backing.layout()['resident_spans'])
+    if arguments.artifact_root is not None:
+        artifact = write_artifact(
+            payload, arguments.artifact_root, arguments.artifact_name,
+            page_bytes=arguments.delivery_page_bytes,
+            included_shards=arguments.shards)
+        print('artifact_identity=%s' % artifact['identity']['digest'])
+        print('artifact_delivery=%s' % artifact['preferred'])
     return 0
 
 

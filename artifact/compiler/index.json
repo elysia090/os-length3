@@ -4,7 +4,7 @@
     "delivery": {
       "bytes": 23619300,
       "data_shards": 8,
-      "file": "compiler.pages",
+      "file": "module/delivery/d9120b6e539e2a4d54974757e1a1f719b41549e73ea39fe41e9fd4538f619073.pages",
       "included_shards": "data",
       "logical_pages": 1153,
       "manifest_bytes": 3436,
@@ -29,7 +29,7 @@
       "delivery": {
         "bytes": 749386,
         "data_shards": 8,
-        "file": "compiler-regions.pages",
+        "file": "regions/delivery/5523224de00881d9b8f6640a8ce2a11a6a09f1de23ce62e721ea1bf2d7d7c5cd.pages",
         "included_shards": "data",
         "logical_pages": 391,
         "manifest_bytes": 1150,
@@ -49,7 +49,7 @@
       "delivery": {
         "bytes": 314022,
         "data_shards": 8,
-        "file": "compiler-steps.pages",
+        "file": "steps/delivery/a1ef4e2215658bb733897e5958cb7da56331d31846798bf5e005d2bec3196a27.pages",
         "included_shards": "data",
         "logical_pages": 614,
         "manifest_bytes": 1819,
@@ -266,7 +266,7 @@
     "delivery": {
       "bytes": 4558574,
       "data_shards": 8,
-      "file": "compiler-resources.pages",
+      "file": "resources/delivery/ddf01493df52e1d263c827ded433eaf4d7df5f9b291025bffdfdb36bb225e297.pages",
       "included_shards": "data",
       "logical_pages": 453,
       "manifest_bytes": 1336,
@@ -17307,5 +17307,5 @@
     "sha256": "79eef0c336fe55cf03ff8f5b42b784c8168f929a3603138b2c6301f4601e4c86"
   },
   "schema": 1,
-  "version": "1.4.0"
+  "version": "22.0.0-git20542-10"
 }
