@@ -104,20 +104,94 @@ function sessionHandle(value) {
   return result;
 }
 
-async function kernelBytes(message) {
-  if (message.kernel) return new Uint8Array(message.kernel);
-  if (!message.kernelUrl) throw new Error('boot needs kernel or kernelUrl');
-  const response = await fetch(message.kernelUrl);
-  if (!response.ok) throw new Error(`kernel: HTTP ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+async function readBootResponse(asset, report) {
+  const { response } = asset;
+  if (!response.body) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    asset.loaded = bytes.length;
+    report(asset, true);
+    return bytes;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    asset.loaded += value.length;
+    report(asset, false);
+  }
+  const bytes = new Uint8Array(asset.loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  report(asset, true);
+  return bytes;
 }
 
-async function initrdBytes(message) {
-  if (message.initrd) return new Uint8Array(message.initrd);
-  if (!message.initrdUrl) return null;
-  const response = await fetch(message.initrdUrl);
-  if (!response.ok) throw new Error(`initramfs: HTTP ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+async function bootBytes(message) {
+  if (!message.kernel && !message.kernelUrl) {
+    throw new Error('boot needs kernel or kernelUrl');
+  }
+  const result = {
+    kernel: message.kernel ? new Uint8Array(message.kernel) : null,
+    initrd: message.initrd ? new Uint8Array(message.initrd) : null,
+  };
+  const requested = [];
+  if (!result.kernel) requested.push({
+    key: 'kernel', label: 'bzImage', url: message.kernelUrl,
+  });
+  if ((message.architecture || 'wasm32') === 'x86-64'
+      && !result.initrd && message.initrdUrl) requested.push({
+    key: 'initrd', label: 'initramfs', url: message.initrdUrl,
+  });
+  if (!requested.length) return result;
+
+  const responses = await Promise.all(requested.map(async (asset) => {
+    const response = await fetch(asset.url);
+    if (!response.ok) throw new Error(`${asset.label}: HTTP ${response.status}`);
+    return Object.assign(asset, {
+      response,
+      loaded: 0,
+      total: Number(response.headers.get('content-length')) || null,
+    });
+  }));
+  const knownTotal = responses.every((asset) => asset.total != null);
+  const total = knownTotal
+    ? responses.reduce((sum, asset) => sum + asset.total, 0) : null;
+  let lastReport = 0;
+  let lastPercent = -1;
+  const report = (asset, force) => {
+    const loaded = responses.reduce((sum, item) => sum + item.loaded, 0);
+    const percent = total ? Math.floor((loaded * 100) / total) : -1;
+    const now = performance.now();
+    if (!force && percent === lastPercent && now - lastReport < 80) return;
+    lastPercent = percent;
+    lastReport = now;
+    send('progress', {
+      id: message.id,
+      phase: 'download',
+      label: 'Downloading boot image',
+      asset: asset.label,
+      loaded,
+      total,
+    });
+  };
+  await Promise.all(responses.map(async (asset) => {
+    result[asset.key] = await readBootResponse(asset, report);
+  }));
+  const loaded = responses.reduce((sum, asset) => sum + asset.loaded, 0);
+  send('progress', {
+    id: message.id,
+    phase: 'download',
+    state: 'complete',
+    label: 'Boot image downloaded',
+    loaded,
+    total: total || loaded,
+  });
+  return result;
 }
 
 async function rootSource(message) {
@@ -153,21 +227,33 @@ async function rootSource(message) {
   return { blob: root, url: message.rootfsUrl || null, length };
 }
 
-async function readRootPage(root, page) {
+async function readRootPage(root, page, id) {
   const start = page * BLOCK_PAGE_SIZE;
   if (start < 0 || start >= root.length) throw new Error(`rootfs page ${page} is outside the image`);
   const end = Math.min(root.length, start + BLOCK_PAGE_SIZE);
-  if (root.fabric) return root.fabric.read(start, end - start);
-  if (root.blob) return new Uint8Array(await root.blob.slice(start, end).arrayBuffer());
-  const response = await fetch(root.url, {
-    headers: { Range: `bytes=${start}-${end - 1}` },
-    cache: 'no-cache',
-  });
-  if (response.status !== 206) {
-    throw new Error(`rootfs range ${start}-${end - 1}: expected HTTP 206, got ${response.status}`);
+  let bytes;
+  if (root.fabric) bytes = await root.fabric.read(start, end - start);
+  else if (root.blob) {
+    bytes = new Uint8Array(await root.blob.slice(start, end).arrayBuffer());
+  } else {
+    const response = await fetch(root.url, {
+      headers: { Range: `bytes=${start}-${end - 1}` },
+      cache: 'no-cache',
+    });
+    if (response.status !== 206) {
+      throw new Error(`rootfs range ${start}-${end - 1}: expected HTTP 206, got ${response.status}`);
+    }
+    bytes = new Uint8Array(await response.arrayBuffer());
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.length !== end - start) throw new Error('rootfs range returned the wrong byte count');
+  if (!root.touchedPages) root.touchedPages = new Set();
+  root.touchedPages.add(page);
+  send('progress', {
+    id,
+    phase: 'rootfs',
+    label: 'Reading rootfs on demand',
+    detail: `${root.touchedPages.size} resident page${root.touchedPages.size === 1 ? '' : 's'}`,
+  });
   return bytes;
 }
 
@@ -188,7 +274,8 @@ function decodeBase64(value) {
   return bytes;
 }
 
-async function installX86VmKernels() {
+async function installX86VmKernels(id) {
+  send('progress', { id, phase: 'vm', label: 'Opening normalized VM pages' });
   await loadVM();
   self.mixSpongeRecords = (lanes, tail, seed, records, rounds) => {
     const mixed = mixSpongeRecordsLoaded(
@@ -238,6 +325,7 @@ async function installX86VmKernels() {
     });
     return encodeBase64(output);
   };
+  send('progress', { id, phase: 'vm', label: 'Normalized VM is resident' });
 }
 
 function step(handle, event, budget, maxInternal) {
@@ -270,7 +358,7 @@ async function drive(id, handle, options = {}) {
     if (operation === 'block_read') {
       const [device, page] = result.event.coordinate;
       if (device !== 0) throw new Error(`no browser block device ${device}`);
-      const bytes = await readRootPage(root, page);
+      const bytes = await readRootPage(root, page, id);
       event = { operation, coordinate: [device, page], data_base64: encodeBase64(bytes) };
       continue;
     }
@@ -302,24 +390,24 @@ async function drive(id, handle, options = {}) {
 }
 
 async function boot(message) {
-  await loadRuntime(message.id);
-  const requestId = positiveInteger(message.id, null, 'request id');
   const architecture = message.architecture || 'wasm32';
-  const kernel = await kernelBytes(message);
-  const initrd = architecture === 'x86-64'
-    ? await initrdBytes(message)
-    : null;
-  const root = await rootSource(message);
   if (!['wasm32', 'x86-64'].includes(architecture)) {
     throw new Error(`unknown Linux architecture ${architecture}`);
   }
+  const [, bootImage] = await Promise.all([
+    loadRuntime(message.id), bootBytes(message),
+  ]);
+  const requestId = positiveInteger(message.id, null, 'request id');
+  const kernel = bootImage.kernel;
+  const initrd = architecture === 'x86-64' ? bootImage.initrd : null;
+  const root = await rootSource(message);
   const path = `/tmp/linux-${requestId}.wasm`;
   const initrdPath = `/tmp/linux-${requestId}.initramfs`;
   pyodide.FS.writeFile(path, kernel);
   let handle;
   try {
     if (architecture === 'x86-64') {
-      await installX86VmKernels();
+      await installX86VmKernels(message.id);
       const x86 = Object.assign({}, message.x86 || {});
       if (initrd) {
         pyodide.FS.writeFile(initrdPath, initrd);
@@ -327,6 +415,11 @@ async function boot(message) {
       }
       pyodide.globals.set('_x86_options', JSON.stringify(x86));
       try {
+        send('progress', {
+          id: message.id,
+          phase: 'normalize',
+          label: 'Normalizing the x86 machine',
+        });
         handle = Number(python(`klb.boot_x86_file(${JSON.stringify(path)}, _x86_options)`));
       } finally {
         pyodide.globals.delete('_x86_options');

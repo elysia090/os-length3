@@ -7,6 +7,7 @@
 // anyone who wants it.
 
 import { readConfig } from './clang.js';
+import { mountLinuxTerminal } from './linux-terminal.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,6 +35,7 @@ async function loadExamples() {
 
 const state = {
   worker: null,
+  linux: null,
   ready: false,
   busy: false,
   capabilities: null,
@@ -1316,6 +1318,8 @@ function init() {
     search: location.search,
     config: readConfig(location.search),
   });
+  state.linux = mountLinuxTerminal(location.search);
+  addEventListener('pagehide', () => state.linux?.release(), { once: true });
   status('starting the engine…');
 }
 
