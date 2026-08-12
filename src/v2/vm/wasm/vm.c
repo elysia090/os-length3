@@ -1803,7 +1803,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 190u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 193u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2293,6 +2293,23 @@ static int step_x86_flags_select_lane(u32 begin, u32 end, u64 *result)
     return step_x86_flags_lane(selected, selected + 5u, result);
 }
 
+static int step_x86_compare_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 4u) return step_fail(7u);
+    u64 prior, left, right, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &left)
+            || !step_operand(begin + 2u, &right)
+            || !step_operand(begin + 3u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    if (width != 8u && width != 16u && width != 32u && width != 64u)
+        return step_fail(7u);
+    return step_x86_flags_value(
+        prior, left, right, (left - right) & step_mask(width),
+        descriptor, result);
+}
+
 static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
 {
     StepWorkspace *machine = step_machine();
@@ -2715,6 +2732,51 @@ static int step_memory_relative_result_lane(
     return 1;
 }
 
+static int step_memory_relative_address_lane(
+    u32 begin, u32 end, u64 *result)
+{
+    if (end - begin < 5u) return step_fail(9u);
+    u64 base, load_offset, mask, addend, shape;
+    if (!step_operand(begin, &base)
+            || !step_operand(begin + 1u, &load_offset)
+            || !step_operand(begin + 2u, &mask)
+            || !step_operand(begin + 3u, &addend)
+            || !step_operand(begin + 4u, &shape))
+        return 0;
+    if ((shape & ~0x11fffull) || (shape & 255u) != 8u
+            || ((shape >> 8) & 31u) || !(shape & 0x10000u))
+        return step_fail(9u);
+    u64 address = base + load_offset;
+    StepMemoryGuard guard;
+    u64 observed;
+    if (!step_memory_ready(address, 8u, &guard)) return 0;
+    if (!step_memory_load(address, 8u, &guard, &observed)) return 0;
+    *result = base + addend + (observed & mask);
+    return 1;
+}
+
+static int step_memory_pre_store_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin < 4u) return step_fail(9u);
+    u64 pointer, value, decrement, shape;
+    if (!step_operand(begin, &pointer)
+            || !step_operand(begin + 1u, &value)
+            || !step_operand(begin + 2u, &decrement)
+            || !step_operand(begin + 3u, &shape))
+        return 0;
+    u32 width = (u32)shape & 255u;
+    if ((shape & ~0x11fffull) || !width || width > 8u
+            || (width & (width - 1u)) || ((shape >> 8) & 31u)
+            || !(shape & 0x10000u))
+        return step_fail(9u);
+    u64 address = pointer - decrement;
+    StepMemoryGuard guard;
+    if (!step_memory_ready(address, width, &guard)) return 0;
+    if (!step_memory_store(address, value, width, &guard)) return 0;
+    *result = address;
+    return 1;
+}
+
 static int step_output(u32 tag_column, u32 value_column, u32 index,
                        u64 *result)
 {
@@ -2781,6 +2843,15 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                     node, first, last, &machine->values[node])
                 : opcode == 189u
                 ? step_memory_relative_result_lane(
+                    first, last, &machine->values[node])
+                : opcode == 190u
+                ? step_memory_relative_address_lane(
+                    first, last, &machine->values[node])
+                : opcode == 191u
+                ? step_x86_compare_lane(
+                    first, last, &machine->values[node])
+                : opcode == 192u
+                ? step_memory_pre_store_lane(
                     first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {

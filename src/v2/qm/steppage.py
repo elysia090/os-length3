@@ -65,6 +65,8 @@ STATE_OPS = (
     'lane64.X86_FLAGS', 'memory.i64.repeat', 'memory.i64.find2',
     'memory.i64.copy_until', 'lane64.X86_FLAGS_SELECT',
     'memory.i64.relative_exchange', 'memory.i64.relative_result',
+    'memory.i64.relative_address',
+    'lane64.X86_COMPARE', 'memory.i64.pre_store',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
@@ -340,6 +342,27 @@ def _relative_select(results, selector, mode):
     if selector == 0xfe and mode:
         return results[-1]
     return results[selector]
+
+
+def _relative_address(memory, base, load_offset, mask, addend, shape):
+    """Load one relative coordinate directly into its absolute address."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if width != 8 or scale or not virtual64:
+        raise ValueError('relative-address load shape is invalid')
+    base = int(base) & I64
+    observed = _load(
+        memory, base, int(load_offset), 8, 0, False, 64, virtual64)
+    return (base + int(addend) + (observed & int(mask))) & I64
+
+
+def _pre_store(memory, pointer, value, decrement, shape):
+    """Store at a pre-decremented coordinate and publish that coordinate."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if scale or not virtual64:
+        raise ValueError('pre-store shape is invalid')
+    address = (int(pointer) - int(decrement)) & I64
+    _store(memory, address, int(value), 0, width, 0, virtual64)
+    return address
 
 
 def relative_exchange_values(left_bytes, right_bytes, delta,
@@ -738,6 +761,43 @@ def _validate(mapped):
                 raise StatePageError(
                     'memory.i64.relative_result has the wrong operands')
             continue
+        if operation == 'memory.i64.relative_address':
+            if (end - begin < 5
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'const'
+                           for at in range(begin + 1, begin + 5))
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'node'
+                           for at in range(begin + 5, end))):
+                raise StatePageError(
+                    'memory.i64.relative_address has the wrong operands')
+            try:
+                width, scale, _virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', begin + 4))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if width != 8 or scale or not _virtual64:
+                raise StatePageError(
+                    'memory.i64.relative_address shape is invalid')
+            continue
+        if operation == 'memory.i64.pre_store':
+            if (end - begin < 4
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'const'
+                           for at in (begin + 2, begin + 3))
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'node'
+                           for at in range(begin + 4, end))):
+                raise StatePageError(
+                    'memory.i64.pre_store has the wrong operands')
+            try:
+                width, scale, virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', begin + 3))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if width not in (1, 2, 4, 8) or scale or not virtual64:
+                raise StatePageError('memory.i64.pre_store shape is invalid')
+            continue
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
             source_name, _observer = _memory_name(name)
@@ -939,6 +999,12 @@ def execute_mapped(mapped, state):
                 results, mode = relative_results[source]
                 produced.append((node, _relative_select(
                     results, selector, mode)))
+            elif operation == 'memory.i64.relative_address':
+                produced.append((node, _relative_address(
+                    memory, *arguments[:5])))
+            elif operation == 'memory.i64.pre_store':
+                produced.append((node, _pre_store(
+                    memory, *arguments[:4])))
             elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
@@ -1024,7 +1090,9 @@ def compile_mapped_executor(mapped):
                  'memory_repeat': _repeat, 'memory_find2': _find2,
                  'memory_copy_until': _copy_until,
                  'memory_relative_exchange': _relative_exchange,
-                 'memory_relative_select': _relative_select}
+                 'memory_relative_select': _relative_select,
+                 'memory_relative_address': _relative_address,
+                 'memory_pre_store': _pre_store}
     lines.append('    relative_results = {}')
 
     def expression(tag_name, value_name, index):
@@ -1091,6 +1159,22 @@ def compile_mapped_executor(mapped):
                     'relative_results[%d][0], %d, '
                     'relative_results[%d][1])' %
                     (node, source, selector, source))
+                continue
+            if operation == 'memory.i64.relative_address':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 5))
+                lines.append(
+                    '    value_%d = memory_relative_address('
+                    'memory, %s)' % (node, call_arguments))
+                continue
+            if operation == 'memory.i64.pre_store':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 4))
+                lines.append(
+                    '    value_%d = memory_pre_store('
+                    'memory, %s)' % (node, call_arguments))
                 continue
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]

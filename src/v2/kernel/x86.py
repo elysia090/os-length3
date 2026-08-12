@@ -4414,6 +4414,55 @@ class X86DBT(object):
             plan.locals[len(REGISTER_NAMES)], left, right, result,
             Operand('const', descriptor)))
 
+        condition = int(condition) & 15
+        zero_value = Operand('const', 0)
+        lane_bits = max(32, int(bits))
+        direct = None
+        if mode == 0:
+            direct_name = {
+                4: 'EQZ', 5: 'NE', 6: 'EQZ', 7: 'NE',
+                8: 'LT_S', 9: 'GE_S', 12: 'LT_S', 13: 'GE_S',
+                14: 'LE_S', 15: 'GT_S',
+            }.get(condition)
+            if bits < 32 and condition in (8, 9, 12, 13, 14, 15):
+                direct_name = None
+            if condition in (2, 3):
+                direct = Operand('const', int(condition == 3))
+            elif direct_name is not None:
+                direct = emit(
+                    'lane%d.%s' % (lane_bits, direct_name),
+                    (result,) if direct_name == 'EQZ'
+                    else (result, zero_value))
+        elif mode == 3:
+            direct_name = {
+                2: 'LT_U', 3: 'GE_U', 4: 'EQ', 5: 'NE',
+                6: 'LE_U', 7: 'GT_U',
+                12: 'LT_S', 13: 'GE_S', 14: 'LE_S', 15: 'GT_S',
+            }.get(condition)
+            if bits < 32 and condition in (12, 13, 14, 15):
+                direct_name = None
+            if direct_name is not None:
+                direct = emit(
+                    'lane%d.%s' % (lane_bits, direct_name), (left, right))
+            elif condition in (8, 9) and bits >= 32:
+                direct = emit(
+                    'lane%d.%s' % (
+                        lane_bits, 'LT_S' if condition == 8 else 'GE_S'),
+                    (result, zero_value))
+
+        if direct is not None:
+            residual = PureSlice(
+                plan.function, plan.start, plan.end + 1,
+                plan.instructions + 1, plan.stack_inputs,
+                tuple(nodes), plan.waves, plan.stack,
+                tuple(register_outputs) + (flags,)
+                + tuple(Operand(
+                    'local', len(REGISTER_NAMES) + 1 + index)
+                    for index in range(len(cut_inputs)))
+                + (direct,))
+            return (normalize_plan(residual), (name, bits),
+                    tuple(cut_inputs))
+
         def flag(mask):
             return emit('i64.and', (
                 emit('i64.shr_u', (
@@ -4442,7 +4491,7 @@ class X86DBT(object):
             emit('i64.or', (zero, signed_less)),
             emit('i64.and', (inverted(zero), inverted(signed_less))),
         )
-        predicate = predicates[int(condition) & 15]
+        predicate = predicates[condition]
         residual = PureSlice(
             plan.function, plan.start, plan.end + 1,
             plan.instructions + 1, plan.stack_inputs,

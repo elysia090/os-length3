@@ -67,6 +67,8 @@ def shape(operation):
     bits, name = split(operation)
     if name == 'X86_FLAGS':
         return 5, 0, False
+    if name == 'X86_COMPARE':
+        return 4, 0, False
     if name == 'X86_FLAGS_SELECT':
         return 11, 0, False
     if name in GENERIC_ARITY:
@@ -191,6 +193,12 @@ def evaluate(operation, arguments):
     if name == 'X86_FLAGS_SELECT':
         selected = arguments[:5] if arguments[10] else arguments[5:10]
         return evaluate('lane64.X86_FLAGS', selected)
+    if name == 'X86_COMPARE':
+        prior, left, right, descriptor = arguments
+        width = int(descriptor) & 0x7f
+        result = (int(left) - int(right)) & mask_of(width)
+        return evaluate('lane64.X86_FLAGS', (
+            prior, left, right, result, descriptor))
     if name == 'X86_FLAGS':
         prior, left, right, result, descriptor = arguments
         width = int(descriptor) & 0x7f
@@ -402,7 +410,7 @@ def bind(operation):
         choose = min if name == 'SMIN' else max
         return lambda values: choose(to_signed(values[0], bits),
                                      to_signed(values[1], bits)) & mask
-    if name in ('X86_FLAGS', 'X86_FLAGS_SELECT'):
+    if name in ('X86_FLAGS', 'X86_FLAGS_SELECT', 'X86_COMPARE'):
         return lambda values: evaluate(operation, values)
 
     return lambda values: evaluate(operation, values)
