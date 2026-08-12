@@ -504,6 +504,84 @@ class TestX86StateStep(unittest.TestCase):
             'dynamic_branch')
         self.assertGreater(cost.barriers, 0)
 
+    def test_register_cut_cap_publishes_only_the_next_coordinate(self):
+        # The composition cap bounds one resident page; it must not leak the
+        # already-decoded terminal arithmetic instruction back to scalar
+        # control.  Sixty-five adds fit in the first capped page and only its
+        # next instruction coordinate is published.
+        code = bytes.fromhex('83 c0 01') * 66 + b'\xf4'
+        dbt = X86DBT(
+            enable_function_oracles=False, profile_controls=True)
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, code)), 0x100, {'rax': 0}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 66)
+        first = dbt._register_cuts[0x100][1]
+        self.assertEqual(
+            (first.boundary.operation, first.boundary.detail),
+            ('branch', 0x100 + 65 * 3))
+        self.assertNotIn(
+            'register_immediate_result_flags',
+            dict(dbt.layout()['physical_boundaries']))
+
+    def test_memory_flags_stay_inside_the_general_state_page(self):
+        # add [rbx],1; cmp [rbx],1; setz [rbx+4]; inc [rbx];
+        # test [rbx],2; setz [rbx+5]; hlt
+        code = bytes.fromhex(
+            '83 03 01 83 3b 01 0f 94 43 04 ff 03 '
+            'f7 03 02 00 00 00 0f 94 43 05 f4')
+        memory = memory_with((0x100, code), (0x400, bytes(8)))
+        dbt = X86DBT(
+            enable_function_oracles=False, profile_controls=True)
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory, 0x100, {'rbx': 0x400}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(read_virtual(state, 0x400, 6),
+                         bytes((2, 0, 0, 0, 1, 0)))
+        boundaries = dict(dbt.layout()['physical_boundaries'])
+        for operation in (
+                'immediate_alu', 'compare', 'group_ff',
+                'operand_test', 'set_condition'):
+            self.assertNotIn(operation, boundaries)
+
+    def test_memory_shifts_use_the_same_state_page_as_register_shifts(self):
+        for opcode, amount in ((0xd1, 1), (0xd3, 0),
+                               (0xd3, 3), (0xd3, 31)):
+            for group in (0, 1, 4, 5, 7):
+                for value in (0, 1, 0x80000001, 0xffffffff):
+                    with self.subTest(opcode=opcode, group=group,
+                                      amount=amount, value=value):
+                        code = bytes((opcode, (group << 3) | 3, 0xf4))
+                        memory = memory_with(
+                            (0x100, code),
+                            (0x400, struct.pack('<I', value)))
+                        registers = {'rbx': 0x400, 'rcx': amount}
+                        initial = initial_state(
+                            memory, 0x100, registers,
+                            rflags=0x2d7)
+                        optimized = X86DBT(
+                            enable_function_oracles=False,
+                            profile_controls=True)
+                        fast, fast_boundary, _cost = optimized.run(initial)
+                        scalar = X86DBT(enable_function_oracles=False)
+                        scalar._compose_register_cut = \
+                            lambda _state, block: block
+                        slow, slow_boundary, _cost = scalar.run(initial)
+
+                        self.assertEqual(fast_boundary, slow_boundary)
+                        self.assertEqual(fast.registers, slow.registers)
+                        self.assertEqual(fast.rflags, slow.rflags)
+                        self.assertEqual(
+                            read_virtual(fast, 0x400, 4),
+                            read_virtual(slow, 0x400, 4))
+                        self.assertNotIn(
+                            'shift', dict(optimized.layout()[
+                                'physical_boundaries']))
+
     def test_call_and_return_share_the_general_stack_memory_grammar(self):
         caller = bytes.fromhex('e8 fb 00 00 00 f4')
         callee = bytes.fromhex('b8 2a 00 00 00 c3')

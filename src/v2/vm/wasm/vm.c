@@ -1841,7 +1841,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 193u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 194u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2356,6 +2356,56 @@ static int step_x86_compare_lane(u32 begin, u32 end, u64 *result)
     return step_x86_flags_value(
         prior, left, right, (left - right) & step_mask(width),
         descriptor, result);
+}
+
+static int step_x86_shift_flags_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 5u) return step_fail(7u);
+    u64 prior, source, value, amount, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &source)
+            || !step_operand(begin + 2u, &value)
+            || !step_operand(begin + 3u, &amount)
+            || !step_operand(begin + 4u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    u32 group = ((u32)descriptor >> 8) & 7u;
+    if ((width != 8u && width != 16u
+            && width != 32u && width != 64u)
+            || (group != 0u && group != 1u && group != 4u
+                && group != 5u && group != 7u))
+        return step_fail(7u);
+    amount &= width - 1u;
+    if (!amount) {
+        *result = prior;
+        return 1;
+    }
+    u64 lane_mask = step_mask(width);
+    source &= lane_mask;
+    value &= lane_mask;
+    u64 carry;
+    if (group == 0u) carry = value & 1u;
+    else if (group == 1u) carry = (value >> (width - 1u)) & 1u;
+    else if (group == 4u) carry = (source >> (width - amount)) & 1u;
+    else carry = (source >> (amount - 1u)) & 1u;
+    u64 flags = prior;
+    if (group != 0u && group != 1u
+            && !step_x86_flags_value(
+                prior, value, 0u, value, width, &flags))
+        return 0;
+    flags = (flags & ~1ull) | carry;
+    u64 overflow = 0u;
+    if (amount == 1u) {
+        if (group == 0u || group == 4u)
+            overflow = ((value >> (width - 1u)) ^ carry) & 1u;
+        else if (group == 1u)
+            overflow = ((value >> (width - 1u))
+                       ^ (value >> (width - 2u))) & 1u;
+        else if (group == 5u)
+            overflow = (source >> (width - 1u)) & 1u;
+    }
+    *result = (flags & ~(1ull << 11)) | (overflow << 11);
+    return 1;
 }
 
 static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
@@ -2922,6 +2972,9 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                     first, last, &machine->values[node])
                 : opcode == 192u
                 ? step_memory_pre_store_lane(
+                    first, last, &machine->values[node])
+                : opcode == 193u
+                ? step_x86_shift_flags_lane(
                     first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {

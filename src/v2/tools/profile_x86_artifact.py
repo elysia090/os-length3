@@ -39,6 +39,21 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     open_seconds = perf_counter() - started
 
     dbt = X86DBT(profile_controls=True)
+    execute_plan = dbt._execute_plan
+
+    def execute_with_context(state, block):
+        try:
+            return execute_plan(state, block)
+        except Exception as error:
+            from kernel.x86 import PageFault
+            if isinstance(error, PageFault):
+                raise
+            raise RuntimeError(
+                'x86 cut %#x failed: locals=%d scratch=%d boundary=%s'
+                % (block.rip, block.mapped.local_extent,
+                   block.scratch_count, block.boundary.operation)) from error
+
+    dbt._execute_plan = execute_with_context
     runtime = X86Machine(dbt)
     started = perf_counter()
     state, boundary = runtime.machine_step(
@@ -48,6 +63,18 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
     execute_seconds = perf_counter() - started
     physical = dbt.layout()
     code = dump_x86_code_pages(dbt)
+    executed_cut_bytes = 0
+    for rip, (count, _work, _span) in dbt._physical_profile.items():
+        cached = dbt._register_cuts.get(rip)
+        cut = None if cached is None else cached[1]
+        if cut is None:
+            cached = dbt._stack_cuts.get(rip)
+            cut = None if cached is None else cached[1]
+        if cut is None:
+            cut = dbt.blocks.get(rip)
+        if cut is None:
+            continue
+        executed_cut_bytes += len(cut.mapped.data)
     inlined_calls = sorted((
         (rip, cut.inlined_call_target, physical_work(cut.plan),
          cut.plan.waves.span, cut.boundary.operation)
@@ -82,6 +109,10 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'cut_target': None if cut is None else cut.inlined_call_target,
             'cut_work': None if cut is None else physical_work(cut.plan),
             'cut_span': None if cut is None else cut.plan.waves.span,
+            'cut_nodes': (None if cut is None else
+                          tuple(node.op for node in cut.plan.nodes)),
+            'cut_locals': (None if cut is None else
+                           tuple(map(repr, cut.plan.locals))),
         })
     return {
         'artifact': {
@@ -116,6 +147,9 @@ def profile(artifact_root, name='linux-x86-64', budget=1 << 21,
             'forwarded_loads': physical['forwarded_loads'],
             'hot_controls': physical.get('hot_controls', ()),
             'hot_physical_cuts': physical.get('hot_physical_cuts', ()),
+            'executed_boundaries': physical.get(
+                'physical_boundaries', ()),
+            'executed_cut_bytes': executed_cut_bytes,
             'inlined_calls': inlined_calls,
             'inspected': inspected,
         },
@@ -151,6 +185,8 @@ def main(argv=None):
                             'removed_work', 'removed_span')
             },
             'hot_physical_cuts': result['code']['hot_physical_cuts'][:16],
+            'executed_boundaries': result['code']['executed_boundaries'],
+            'executed_cut_bytes': result['code']['executed_cut_bytes'],
             'inlined_calls': result['code']['inlined_calls'][:16],
             'inspected': result['code']['inspected'],
         }

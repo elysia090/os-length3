@@ -46,6 +46,8 @@ class TestBrowserPageFabric(unittest.TestCase):
             0x246, delta, 3, right64, 64 | (1 << 8)))
         compare_flags = evaluate_lane('lane64.X86_FLAGS', (
             0, 64, 80, delta, 64 | (3 << 8)))
+        shift_flags = evaluate_lane('lane64.X86_SHIFT_FLAGS', (
+            0x246, 0x80000001, 2, 1, 32 | (4 << 8)))
         nodes = (
             WaveNode(1, 'lane64.SUBR', (
                 Operand('local', 0), Operand('local', 1))),
@@ -82,15 +84,19 @@ class TestBrowserPageFabric(unittest.TestCase):
                 Operand('const', 0), Operand('local', 0),
                 Operand('local', 1),
                 Operand('const', 64 | (3 << 8)))),
+            WaveNode(11, 'lane64.X86_SHIFT_FLAGS', (
+                Operand('local', 2), Operand('const', 0x80000001),
+                Operand('const', 2), Operand('const', 1),
+                Operand('const', 32 | (4 << 8)))),
         )
         plan = PureSlice(
             0, 0, 1, 1, 0, nodes,
             DependencyWaves(
-                (0, 2, 3, 8, 9, 10),
-                (1, 10, 2, 3, 4, 5, 6, 7, 8, 9),
-                (0, 1, 2, 3, 3, 3, 3, 3, 4, 5, 1)),
+                (0, 3, 4, 9, 10, 11),
+                (1, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9),
+                (0, 1, 2, 3, 3, 3, 3, 3, 4, 5, 1, 1)),
             tuple(Operand('node', value)
-                  for value in range(1, 11))
+                  for value in range(1, 12))
             + (Operand('local', 4),
                Operand('projection', projection_coordinate(2, 3)),
                Operand('projection', projection_coordinate(2, 0xfe)),
@@ -152,7 +158,7 @@ for (;;) {
   }
 }
 const stack = E.vm_step_stack(session);
-const outputs = Array.from({length: 14}, (_, index) =>
+const outputs = Array.from({length: 15}, (_, index) =>
   view.getBigUint64(stack + index * 8, true).toString());
 const dirtyPage = E.vm_step_first_dirty_memory_page(session);
 const lease = E.vm_step_memory_lease(session);
@@ -183,6 +189,7 @@ process.stdout.write(JSON.stringify(
                 str(26 | (36 << 32)),
                 str(64 + 8 + ((30 - delta) & ((1 << 64) - 4))),
                 '120', str(compare_flags),
+                str(shift_flags),
                 str(saved),
                 str((saved_high + delta) & 0xffffffff),
                 str(26 | (36 << 32)),

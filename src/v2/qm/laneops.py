@@ -69,6 +69,8 @@ def shape(operation):
         return 5, 0, False
     if name == 'X86_COMPARE':
         return 4, 0, False
+    if name == 'X86_SHIFT_FLAGS':
+        return 5, 0, False
     if name == 'X86_FLAGS_SELECT':
         return 11, 0, False
     if name in GENERIC_ARITY:
@@ -199,6 +201,43 @@ def evaluate(operation, arguments):
         result = (int(left) - int(right)) & mask_of(width)
         return evaluate('lane64.X86_FLAGS', (
             prior, left, right, result, descriptor))
+    if name == 'X86_SHIFT_FLAGS':
+        prior, source, result, amount, descriptor = map(int, arguments)
+        width = descriptor & 0x7f
+        if width not in (8, 16, 32, 64):
+            raise ValueError('x86 shift flag lane has an invalid width')
+        group = (descriptor >> 8) & 7
+        if group not in (0, 1, 4, 5, 7):
+            raise ValueError('x86 shift flag lane has an invalid group')
+        amount &= width - 1
+        if not amount:
+            return prior & mask_of(bits)
+        lane_mask = mask_of(width)
+        source &= lane_mask
+        result &= lane_mask
+        if group == 0:
+            carry = result & 1
+        elif group == 1:
+            carry = (result >> (width - 1)) & 1
+        elif group == 4:
+            carry = (source >> (width - amount)) & 1
+        else:
+            carry = (source >> (amount - 1)) & 1
+        flags = (prior if group in (0, 1) else
+                 evaluate('lane64.X86_FLAGS', (
+                     prior, result, 0, result, width)))
+        flags = (flags & ~1) | carry
+        overflow = 0
+        if amount == 1:
+            if group in (0, 4):
+                overflow = ((result >> (width - 1)) ^ carry) & 1
+            elif group == 1:
+                overflow = ((result >> (width - 1))
+                            ^ (result >> (width - 2))) & 1
+            elif group == 5:
+                overflow = (source >> (width - 1)) & 1
+        flags = (flags & ~(1 << 11)) | (overflow << 11)
+        return flags & mask_of(bits)
     if name == 'X86_FLAGS':
         prior, left, right, result, descriptor = arguments
         width = int(descriptor) & 0x7f
@@ -410,7 +449,8 @@ def bind(operation):
         choose = min if name == 'SMIN' else max
         return lambda values: choose(to_signed(values[0], bits),
                                      to_signed(values[1], bits)) & mask
-    if name in ('X86_FLAGS', 'X86_FLAGS_SELECT', 'X86_COMPARE'):
+    if name in ('X86_FLAGS', 'X86_FLAGS_SELECT', 'X86_COMPARE',
+                'X86_SHIFT_FLAGS'):
         return lambda values: evaluate(operation, values)
 
     return lambda values: evaluate(operation, values)
