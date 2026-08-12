@@ -49,7 +49,9 @@ export function readLinuxConfig(search = location.search) {
   const supplied = globalThis.QM_LINUX || {};
   const kernelUrl = supplied.kernelUrl
     || queryValue(query, 'linux-kernel');
-  if (!kernelUrl) return null;
+  const kernelArtifact = supplied.kernelArtifact
+    || queryValue(query, 'linux-artifact');
+  if (!kernelUrl && !kernelArtifact) return null;
   const rootfsBytes = finite(
     supplied.rootfsBytes ?? queryValue(query, 'linux-rootfs-bytes'),
   );
@@ -57,6 +59,9 @@ export function readLinuxConfig(search = location.search) {
     architecture: supplied.architecture
       || queryValue(query, 'linux-architecture', 'x86-64'),
     kernelUrl,
+    kernelArtifact,
+    artifactRoot: supplied.artifactRoot
+      || queryValue(query, 'linux-artifact-root'),
     initrdUrl: supplied.initrdUrl || queryValue(query, 'linux-initrd'),
     rootfsUrl: supplied.rootfsUrl || queryValue(query, 'linux-rootfs'),
     rootfsBytes,

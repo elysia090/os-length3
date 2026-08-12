@@ -12,6 +12,7 @@ import {
   release as releaseVM,
 } from './vm.js';
 import { openPageBundle } from './page-fabric.js';
+import { readArtifact } from './artifact.js';
 
 const PYODIDE_VERSIONS = [
   'https://cdn.jsdelivr.net/npm/pyodide@314.0.3/',
@@ -132,21 +133,56 @@ async function readBootResponse(asset, report) {
 }
 
 async function bootBytes(message) {
-  if (!message.kernel && !message.kernelUrl) {
-    throw new Error('boot needs kernel or kernelUrl');
+  if (!message.kernel && !message.kernelUrl && !message.kernelArtifact) {
+    throw new Error('boot needs kernel, kernelUrl, or kernelArtifact');
   }
   const result = {
     kernel: message.kernel ? new Uint8Array(message.kernel) : null,
     initrd: message.initrd ? new Uint8Array(message.initrd) : null,
   };
   const requested = [];
-  if (!result.kernel) requested.push({
+  if (!result.kernel && !message.kernelArtifact) requested.push({
     key: 'kernel', label: 'bzImage', url: message.kernelUrl,
   });
   if ((message.architecture || 'wasm32') === 'x86-64'
       && !result.initrd && message.initrdUrl) requested.push({
     key: 'initrd', label: 'initramfs', url: message.initrdUrl,
   });
+  if (message.kernelArtifact && !result.kernel) {
+    send('progress', {
+      id: message.id,
+      phase: 'download',
+      label: 'Opening Linux artifact',
+      asset: 'boot cache',
+      loaded: 0,
+      total: null,
+    });
+    const opened = await readArtifact(message.kernelArtifact, {
+      root: message.artifactRoot || undefined,
+      wavePages: 4,
+      cachePages: 16,
+      onProgress({ loaded, total }) {
+        send('progress', {
+          id: message.id,
+          phase: 'download',
+          label: 'Downloading Linux artifact',
+          asset: 'boot cache',
+          loaded,
+          total,
+        });
+      },
+    });
+    result.kernel = opened.bytes;
+    opened.fabric.release();
+    send('progress', {
+      id: message.id,
+      phase: 'download',
+      state: 'complete',
+      label: 'Linux artifact verified',
+      loaded: result.kernel.length,
+      total: result.kernel.length,
+    });
+  }
   if (!requested.length) return result;
 
   const responses = await Promise.all(requested.map(async (asset) => {

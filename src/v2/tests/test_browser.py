@@ -931,16 +931,22 @@ class TestManifest(unittest.TestCase):
                                     % rel)
             # And the files the page fetches directly rather than through the
             # manifest.
-            for rel in ('web/vm.wasm', 'web/vm.pages',
-                        'web/vm-regions.pages', 'web/vm-steps.pages',
-                        'web/vm.json',
-                        'web/vm.js', 'web/qm-manifest.json',
+            for rel in ('web/vm.js', 'web/artifact.js',
+                        'artifact/index.json',
+                        'artifact/vm/index.json',
+                        'artifact/compiler/index.json',
+                        'artifact/linux-x86-64/index.json',
+                        'web/qm-manifest.json',
                         'web/kernel-manifest.json', 'web/linux-worker.js',
                         'web/linux-terminal.js',
                         'web/page-fabric.js', 'web/function-regions.js',
                         'web/physical-pages.js', 'web/paged-wasm.js',
                         'web/examples.json', 'index.html'):
                 self.assertTrue(os.path.exists(os.path.join(out, rel)), rel)
+            for rel in ('web/vm.wasm', 'web/vm.pages',
+                        'web/vm-regions.pages', 'web/vm-steps.pages',
+                        'web/vm.json', 'web/assets/compiler'):
+                self.assertFalse(os.path.exists(os.path.join(out, rel)), rel)
 
 
 class TestExamplesJson(unittest.TestCase):

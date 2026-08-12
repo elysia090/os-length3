@@ -1,0 +1,27 @@
+{
+  "artifacts": {
+    "compiler": {
+      "bytes": 75532134,
+      "components": "compiler/index.json",
+      "format": "webassembly-compiler-v1",
+      "identity": "24fbed474c7b5b4968fd73fc4827440b93fb351c1b6264516130300eff3e7bf5",
+      "path": "compiler/module/index.json"
+    },
+    "linux-x86-64": {
+      "bytes": 16903828,
+      "format": "x86-boot-cache-v1",
+      "identity": "0a1e490d74834cb5da9d960d19cee7816902eedd170bf7682ec3b0fef0a71d02",
+      "initrd_bytes": 0,
+      "memory_bytes": 134217728,
+      "path": "linux-x86-64/index.json"
+    },
+    "vm": {
+      "bytes": 53672,
+      "components": "vm/index.json",
+      "format": "webassembly-runtime-v1",
+      "identity": "3325ba53e486c6f737b8ac655abd3f547857e3c20f0c64effcb15515b6e96981",
+      "path": "vm/module/index.json"
+    }
+  },
+  "schema": 1
+}

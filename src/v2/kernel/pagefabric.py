@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from collections.abc import MutableMapping
 import hashlib
 import hmac
+import json
+from pathlib import Path
 import struct
 import zlib
 
@@ -1558,3 +1560,175 @@ class PageFabric(object):
             'recovered_pages': self.recovered_pages,
             'mapped_records_materialized': mapped_materializations,
         }
+
+
+# ------------------------------------- content-addressed artifact delivery ---
+
+ARTIFACT_SCHEMA = 1
+DEFAULT_ARTIFACT_PAGE_BYTES = 1 << 16
+DEFAULT_ARTIFACT_DATA_SHARDS = 8
+DEFAULT_ARTIFACT_PARITY_SHARDS = 2
+
+
+def _artifact_sha256(payload):
+    return hashlib.sha256(payload).hexdigest()
+
+
+def artifact_delivery_bytes(
+        payload, page_bytes=DEFAULT_ARTIFACT_PAGE_BYTES,
+        data_shards=DEFAULT_ARTIFACT_DATA_SHARDS,
+        parity_shards=DEFAULT_ARTIFACT_PARITY_SHARDS,
+        included_shards='data'):
+    """Return one disposable page bundle and its storage-neutral metadata."""
+    payload = bytes(payload)
+    manifest, store = project(
+        payload, page_size=int(page_bytes),
+        data_shards=int(data_shards),
+        parity_shards=int(parity_shards))
+    wire = dump_bundle(manifest, store, included_shards)
+    prefix_bytes = bundle_prefix_size(wire)
+    metadata = {
+        'bytes': len(wire),
+        'sha256': _artifact_sha256(wire),
+        'prefix_bytes': prefix_bytes,
+        'prefix_sha256': _artifact_sha256(wire[:prefix_bytes]),
+        'page_bytes': manifest.page_size,
+        'logical_pages': manifest.page_count,
+        'unique_pages': manifest.rank_count,
+        'data_shards': manifest.data_shards,
+        'parity_shards': manifest.parity_shards,
+        'included_shards': included_shards,
+        'manifest_bytes': len(dump_manifest(manifest)),
+    }
+    return wire, metadata
+
+
+def write_artifact_delivery(
+        payload, output, page_bytes=DEFAULT_ARTIFACT_PAGE_BYTES,
+        data_shards=DEFAULT_ARTIFACT_DATA_SHARDS,
+        parity_shards=DEFAULT_ARTIFACT_PARITY_SHARDS,
+        included_shards='data', include_manifest_bytes=False):
+    """Write a range-readable bundle without making it part of identity."""
+    output = Path(output)
+    wire, metadata = artifact_delivery_bytes(
+        payload, page_bytes=page_bytes, data_shards=data_shards,
+        parity_shards=parity_shards, included_shards=included_shards)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(wire)
+    result = dict(metadata)
+    result['file'] = output.name
+    if not include_manifest_bytes:
+        result.pop('manifest_bytes')
+    return result
+
+
+def _read_artifact_index(path, identity):
+    if not path.exists():
+        return {
+            'schema': ARTIFACT_SCHEMA,
+            'identity': identity,
+            'deliveries': {},
+        }
+    try:
+        current = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError('artifact delivery index is invalid') from error
+    if (current.get('schema') != ARTIFACT_SCHEMA
+            or current.get('identity') != identity
+            or not isinstance(current.get('deliveries'), dict)):
+        raise ValueError('artifact delivery index names another object')
+    return current
+
+
+def _artifact_locator(name):
+    name = str(name)
+    if (not name or name in ('.', '..')
+            or any(not (character.isascii()
+                        and (character.isalnum() or character in '._-'))
+                   for character in name)):
+        raise ValueError('artifact locator must be one portable path segment')
+    return name
+
+
+def write_artifact(
+        payload, artifact_root, name,
+        page_bytes=DEFAULT_ARTIFACT_PAGE_BYTES,
+        data_shards=DEFAULT_ARTIFACT_DATA_SHARDS,
+        parity_shards=DEFAULT_ARTIFACT_PARITY_SHARDS,
+        included_shards='data'):
+    """Add a delivery below ``artifact_root/<locator>``.
+
+    No canonical copy is written. Another page or erasure geometry appends a
+    projection below the same object identity. The locator is deliberately not
+    derived from identity; a catalog binds a human role to canonical bytes.
+    """
+    payload = bytes(payload)
+    identity = {
+        'algorithm': 'sha256',
+        'digest': _artifact_sha256(payload),
+        'bytes': len(payload),
+    }
+    object_root = Path(artifact_root) / _artifact_locator(name)
+    index_path = object_root / 'index.json'
+    index = _read_artifact_index(index_path, identity)
+    wire, metadata = artifact_delivery_bytes(
+        payload, page_bytes=page_bytes, data_shards=data_shards,
+        parity_shards=parity_shards, included_shards=included_shards)
+    delivery_digest = metadata['sha256']
+    relative = Path('delivery') / (delivery_digest + '.pages')
+    output = object_root / relative
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.exists():
+        if _artifact_sha256(output.read_bytes()) != delivery_digest:
+            raise ValueError('artifact delivery path contains other bytes')
+    else:
+        output.write_bytes(wire)
+
+    descriptor = dict(metadata)
+    descriptor.update({
+        'format': 'page-fabric-v1',
+        'file': relative.as_posix(),
+    })
+    index['deliveries'][delivery_digest] = descriptor
+    # Preference is a mutable delivery policy, not part of content identity.
+    index['preferred'] = delivery_digest
+    index['deliveries'] = dict(sorted(index['deliveries'].items()))
+    index_path.write_text(
+        json.dumps(index, indent=2, sort_keys=True) + '\n',
+        encoding='utf-8', newline='\n')
+    return index
+
+
+def open_artifact(index, artifact_root, name, delivery_digest=None):
+    """Open a local projection and check its claimed canonical coordinate."""
+    if not isinstance(index, dict) \
+            or index.get('schema') != ARTIFACT_SCHEMA:
+        raise ValueError('artifact index has an unknown schema')
+    identity = index.get('identity')
+    deliveries = index.get('deliveries')
+    if not isinstance(identity, dict) or not isinstance(deliveries, dict):
+        raise ValueError('artifact index is incomplete')
+    selected = delivery_digest or index.get('preferred')
+    descriptor = deliveries.get(selected)
+    if not isinstance(descriptor, dict):
+        raise ValueError('artifact delivery is unavailable')
+    expected_file = 'delivery/%s.pages' % selected
+    if descriptor.get('file') != expected_file:
+        raise ValueError('artifact delivery path is invalid')
+    path = (Path(artifact_root) / _artifact_locator(name)
+            / Path(expected_file))
+    wire = path.read_bytes()
+    if len(wire) != descriptor['bytes'] \
+            or _artifact_sha256(wire) != selected:
+        raise ValueError('artifact delivery bytes are invalid')
+    prefix_bytes = int(descriptor['prefix_bytes'])
+    if prefix_bytes < 0 or prefix_bytes > len(wire):
+        raise ValueError('artifact delivery prefix extent is invalid')
+    if _artifact_sha256(wire[:prefix_bytes]) \
+            != descriptor['prefix_sha256']:
+        raise ValueError('artifact delivery prefix is invalid')
+    manifest, store = load_bundle(memoryview(wire))
+    if (manifest.object_digest.hex() != identity['digest']
+            or manifest.length != int(identity['bytes'])):
+        raise ValueError('artifact delivery reconstructs another object')
+    return manifest, store
