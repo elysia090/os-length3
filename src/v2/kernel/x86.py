@@ -1370,8 +1370,8 @@ def project_virtual_records(state, address, count, stride, lanes):
         raise ValueError('virtual record projection has an invalid extent')
     if not count or not lanes:
         return state
-    extent = max(offset + width for offset, width, _and, _or in lanes)
-    if min(offset for offset, _width, _and, _or in lanes) < 0 \
+    extent = max(lane[0] + lane[1] for lane in lanes)
+    if min(lane[0] for lane in lanes) < 0 \
             or extent > stride:
         raise ValueError('virtual record lanes exceed their stride')
     read_lane = next((lane for lane in lanes if lane[2]), None)
@@ -1382,6 +1382,65 @@ def project_virtual_records(state, address, count, stride, lanes):
     cut = state.memory if isinstance(state.memory, MemoryCut) \
         else MemoryCut(state.memory)
     cut.project_records(records, lanes)
+    return state if isinstance(state.memory, MemoryCut) \
+        else replace(state, memory=cut.commit())
+
+
+def multiply_virtual_records(
+        state, address, count, stride, offset, width, multiplier):
+    """Multiply a strided virtual lane through the physical record array."""
+    address, count, stride, offset, width = (
+        int(address), int(count), int(stride), int(offset), int(width))
+    if count < 0 or stride <= 0 or offset < 0 or offset + width > stride:
+        raise ValueError('virtual record multiply has an invalid extent')
+    if not count:
+        return state
+    records = _physical_virtual_records(
+        state, address + offset, count, stride, width, 0, 0)
+    cut = state.memory if isinstance(state.memory, MemoryCut) \
+        else MemoryCut(state.memory)
+    cut.multiply_records(records, 0, width, multiplier)
+    return state if isinstance(state.memory, MemoryCut) \
+        else replace(state, memory=cut.commit())
+
+
+def store_virtual_record_values(
+        state, address, count, stride, offset, width, values):
+    """Publish computed record lanes after resolving their page directory."""
+    address, count, stride, offset, width = (
+        int(address), int(count), int(stride), int(offset), int(width))
+    values = tuple(int(value) for value in values)
+    if count < 0 or stride <= 0 or offset < 0 or offset + width > stride:
+        raise ValueError('virtual record values have an invalid extent')
+    if len(values) != count:
+        raise ValueError('virtual record values have the wrong count')
+    if not count:
+        return state
+    records = _physical_virtual_records(
+        state, address + offset, count, stride, width, None, 0)
+    cut = state.memory if isinstance(state.memory, MemoryCut) \
+        else MemoryCut(state.memory)
+    cut.store_record_values(records, 0, width, values)
+    return state if isinstance(state.memory, MemoryCut) \
+        else replace(state, memory=cut.commit())
+
+
+def store_virtual_values(state, addresses, width, values):
+    """Scatter selected virtual coordinates through one physical page cut."""
+    addresses = tuple(int(address) & MASK64 for address in addresses)
+    values = tuple(int(value) for value in values)
+    width = int(width)
+    if width <= 0 or len(addresses) != len(values):
+        raise ValueError('virtual values have an invalid shape')
+    physical = []
+    for address in addresses:
+        coordinate = translate(state, address, 'write')
+        if coordinate & (PAGE_BYTES - 1) > PAGE_BYTES - width:
+            raise ValueError('virtual value crosses a page boundary')
+        physical.append(coordinate)
+    cut = state.memory if isinstance(state.memory, MemoryCut) \
+        else MemoryCut(state.memory)
+    cut.store_record_values(physical, 0, width, values)
     return state if isinstance(state.memory, MemoryCut) \
         else replace(state, memory=cut.commit())
 
@@ -1398,9 +1457,9 @@ def project_matching_virtual_records(
         return state, 0
     extent = max(
         max(offset + width for offset, width, *_rest in predicates),
-        max(offset + width for offset, width, _and, _or in lanes))
+        max(lane[0] + lane[1] for lane in lanes))
     if (min(offset for offset, _width, *_rest in predicates) < 0
-            or min(offset for offset, _width, _and, _or in lanes) < 0
+            or min(lane[0] for lane in lanes) < 0
             or extent > stride):
         raise ValueError('virtual record lanes exceed their stride')
     records = _physical_virtual_records(
@@ -1771,6 +1830,10 @@ class X86DBT(object):
         self.collapsed_relative_projection_records = 0
         self.collapsed_strided_store_bytes = 0
         self.collapsed_strided_store_iterations = 0
+        self.collapsed_record_multiply_words = 0
+        self.collapsed_sequential_freelist_links = 0
+        self.collapsed_random_freelist_links = 0
+        self.collapsed_random_freelist_words = 0
         self.collapsed_search_bytes = 0
         self.collapsed_substring_candidates = 0
         self.collapsed_strided_predicate_candidates = 0
@@ -1887,6 +1950,10 @@ class X86DBT(object):
         self.collapsed_entry_nop_calls = 0
         self.collapsed_register_projection_calls = 0
         self.collapsed_machine_leaf_calls = 0
+        self.collapsed_page_bootmem_calls = 0
+        self.collapsed_page_bootmem_records = 0
+        self.collapsed_store_word_calls = 0
+        self.collapsed_repeated_store_calls = 0
         self.collapsed_random_u32_cache_hits = 0
         self.collapsed_random_u32_below_calls = 0
         self.collapsed_random_u32_below_words = 0
@@ -1987,6 +2054,8 @@ class X86DBT(object):
         self._entry_nop_functions = {}
         self._register_projection_functions = {}
         self._machine_leaf_functions = {}
+        self._page_bootmem_functions = {}
+        self._store_word_functions = {}
         self._random_u32_cache_functions = {}
         self._random_u32_below_functions = {}
         self._random_permutation_loops = {}
@@ -4755,6 +4824,768 @@ class X86DBT(object):
         self.collapsed_strided_store_iterations += iterations
         return replace(state, registers=registers, rflags=flags,
                        rip=following if final_position == limit else target)
+
+    def _collapse_strided_multiply_loop(self, state, branch):
+        """Map an unrolled in-place word multiply to physical record SSA."""
+        following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return state
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = self.blocks.get(cursor)
+            if block is None:
+                return state
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return state
+            loop.append(block)
+            cursor = end
+        operations = tuple(block.boundary.operation for block in loop)
+        if cursor != branch.rip or operations != (
+                'load', 'load', 'multiply', 'store',
+                'load', 'load', 'multiply', 'store',
+                'register_immediate_result_flags', 'compare'):
+            return state
+        pointer0, data0, multiply0, store0, pointer1, data1, \
+            multiply1, store1, update, compare = loop
+        (_next, pointer, pointer_bits,
+         pointer_operand) = pointer0.boundary.detail
+        (_next, first_data, data_bits,
+         first_operand) = data0.boundary.detail
+        (_next, first_product, first_multiplier,
+         multiply_bits) = multiply0.boundary.detail
+        (_next, first_store, first_store_bits,
+         first_target) = store0.boundary.detail
+        (_next, second_pointer, second_pointer_bits,
+         second_pointer_operand) = pointer1.boundary.detail
+        (_next, second_data, second_bits,
+         second_operand) = data1.boundary.detail
+        (_next, second_product, second_multiplier,
+         second_multiply_bits) = multiply1.boundary.detail
+        (_next, second_store, second_store_bits,
+         second_target) = store1.boundary.detail
+        (_next, update_name, counter, counter_bits,
+         induction) = update.boundary.detail
+        (_next, opcode, compared, limit,
+         compare_bits) = compare.boundary.detail
+
+        operands = (pointer_operand, first_operand, first_multiplier,
+                    first_target, second_pointer_operand, second_operand,
+                    second_multiplier, second_target)
+        if any(not isinstance(operand, MemoryOperand)
+               for operand in operands):
+            return state
+        word_bytes = data_bits // 8
+        if (pointer_bits != 64 or second_pointer != pointer
+                or second_pointer_bits != 64
+                or second_pointer_operand != pointer_operand
+                or pointer_operand.base is None
+                or pointer_operand.index is not None
+                or pointer_operand.rip_relative
+                or pointer_operand.segment_msr is not None
+                or data_bits not in (32, 64)
+                or second_bits != data_bits
+                or multiply_bits != data_bits
+                or second_multiply_bits != data_bits
+                or first_store_bits != data_bits
+                or second_store_bits != data_bits
+                or len({first_data, second_data, first_product,
+                        second_product, first_store, second_store}) != 1
+                or first_operand.base != pointer
+                or second_operand.base != pointer
+                or first_operand.index != counter
+                or second_operand.index != counter
+                or first_operand.scale != word_bytes
+                or second_operand.scale != word_bytes
+                or first_operand.displacement != 0
+                or second_operand.displacement != word_bytes
+                or first_target != first_operand
+                or second_target != second_operand
+                or first_multiplier != second_multiplier
+                or first_multiplier.base != pointer_operand.base
+                or first_multiplier.index is not None
+                or first_multiplier.rip_relative
+                or first_multiplier.segment_msr is not None
+                or update_name != 'add' or counter_bits != 64
+                or induction != 2 or opcode != 0x39
+                or compared != counter or not isinstance(limit, int)
+                or compare_bits != 64):
+            return state
+
+        position = state.registers[counter] & MASK64
+        bound = state.registers[limit] & MASK64
+        remaining = bound - position
+        if remaining < 2 or remaining & 1:
+            return state
+        iterations = min(remaining // 2, 1 << 16)
+        words = iterations * 2
+        try:
+            array = load_virtual(
+                state, pointer_operand.address(
+                    state, pointer0.boundary.detail[0]), 8)
+            multiplier = load_virtual(
+                state, first_multiplier.address(
+                    state, multiply0.boundary.detail[0]), word_bytes)
+            state = multiply_virtual_records(
+                state, array + position * word_bytes,
+                words, word_bytes, 0, word_bytes, multiplier)
+            final_word = load_virtual(
+                state, array + (position + words - 1) * word_bytes,
+                word_bytes)
+        except (PageFault, ValueError):
+            return state
+
+        final_position = position + words
+        registers = _write_register(
+            state.registers, pointer, array, 64)
+        registers = _write_register(
+            registers, first_data, final_word, data_bits)
+        registers = _write_register(
+            registers, counter, final_position, 64)
+        result = (bound - final_position) & MASK64
+        flags = _result_flags(
+            state.rflags, 'cmp', bound, final_position, result, 64)
+        self.collapsed_record_multiply_words += words
+        return replace(
+            state, registers=registers, rflags=flags,
+            rip=following if final_position == bound else target)
+
+    def _collapse_sequential_freelist_loop(self, state, branch):
+        """Project an encoded fixed-stride link chain without scalar stores."""
+        following, target, condition = branch.boundary.detail
+        if condition != 12 or state.rip != target or target >= branch.rip:
+            return state
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = self.blocks.get(cursor)
+            if block is None:
+                return state
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return state
+            loop.append(block)
+            cursor = end
+        if (cursor != branch.rip
+                or tuple(block.boundary.operation for block in loop) != (
+                    'load', 'lea', 'load', 'compare',
+                    'conditional_branch', 'compare', 'conditional_branch',
+                    'load', 'lea', 'load', 'register_result_flags',
+                    'register_result_flags', 'store', 'group_ff',
+                    'move_zero_extend', 'immediate_alu', 'group_ff',
+                    'compare')):
+            return state
+        (stride_load, next_address, hook_load, hook_test, hook_branch,
+         stride_test, zero_branch, offset_load, slot_address, secret_load,
+         xor_next, xor_slot, store, increment, object_load, mask_object,
+         decrement, compare) = loop
+        (_next, stride_register, stride_bits,
+         stride_operand) = stride_load.boundary.detail
+        (_next, next_register, next_bits,
+         next_operand) = next_address.boundary.detail
+        (_next, hook_register, hook_bits,
+         hook_operand) = hook_load.boundary.detail
+        (_next, hook_opcode, hook_left,
+         hook_right, hook_compare_bits) = hook_test.boundary.detail
+        (_next, _hook_target,
+         hook_condition) = hook_branch.boundary.detail
+        (_next, stride_opcode, stride_left,
+         stride_right, stride_compare_bits) = stride_test.boundary.detail
+        (_next, _zero_target,
+         zero_condition) = zero_branch.boundary.detail
+        (_next, offset_register, offset_bits,
+         offset_operand) = offset_load.boundary.detail
+        (_next, slot_register, slot_bits,
+         slot_operand) = slot_address.boundary.detail
+        (_next, secret_register, secret_bits,
+         secret_operand) = secret_load.boundary.detail
+        (_next, xor_next_name, xor_next_target,
+         xor_next_source, xor_next_bits) = xor_next.boundary.detail
+        (_next, xor_slot_name, xor_slot_target,
+         xor_slot_source, xor_slot_bits) = xor_slot.boundary.detail
+        (_next, stored_register, store_bits,
+         store_operand) = store.boundary.detail
+        (_next, increment_group, counter,
+         counter_bits) = increment.boundary.detail
+        (_next, object_register, object_source_bits,
+         object_bits, object_operand) = object_load.boundary.detail
+        (_next, mask_name, masked_register,
+         mask_bits, object_mask) = mask_object.boundary.detail
+        (_next, decrement_group, decrement_register,
+         decrement_bits) = decrement.boundary.detail
+        (_next, compare_opcode, compared_limit,
+         compared_counter, compare_bits) = compare.boundary.detail
+
+        operands = (stride_operand, next_operand, hook_operand,
+                    offset_operand, slot_operand, secret_operand,
+                    store_operand, object_operand)
+        if any(not isinstance(operand, MemoryOperand)
+               for operand in operands):
+            return state
+        metadata = stride_operand.base
+        current = next_operand.base
+        if (stride_bits != 32 or metadata is None
+                or stride_operand.index is not None
+                or stride_operand.rip_relative
+                or stride_operand.segment_msr is not None
+                or next_bits != 64 or current is None
+                or next_operand.index != stride_register
+                or next_operand.scale != 1
+                or next_operand.displacement != 0
+                or next_operand.rip_relative
+                or next_operand.segment_msr is not None
+                or hook_bits != 64 or hook_operand.base != metadata
+                or hook_operand.index is not None
+                or hook_operand.rip_relative
+                or hook_operand.segment_msr is not None
+                or hook_opcode != 0x85 or hook_left != hook_register
+                or hook_right != hook_register or hook_compare_bits != 64
+                or hook_condition != 5
+                or stride_opcode != 0x85
+                or stride_left != stride_register
+                or stride_right != stride_register
+                or stride_compare_bits != 32 or zero_condition != 4
+                or offset_bits != 32 or offset_operand.base != metadata
+                or offset_operand.index is not None
+                or offset_operand.rip_relative
+                or offset_operand.segment_msr is not None
+                or slot_bits != 64 or slot_operand.base != offset_register
+                or slot_operand.index != current
+                or slot_operand.scale != 1
+                or slot_operand.displacement != 0
+                or secret_bits != 64 or secret_operand.base != metadata
+                or secret_operand.index is not None
+                or secret_operand.rip_relative
+                or secret_operand.segment_msr is not None
+                or xor_next_name != 'xor'
+                or xor_next_target != secret_register
+                or xor_next_source != next_register
+                or xor_next_bits != 64
+                or xor_slot_name != 'xor'
+                or xor_slot_target != secret_register
+                or xor_slot_source != slot_register
+                or xor_slot_bits != 64
+                or stored_register != secret_register or store_bits != 64
+                or store_operand.base != offset_register
+                or store_operand.index != current
+                or store_operand.scale != 1
+                or store_operand.displacement != 0
+                or increment_group != 0 or counter_bits != 32
+                or object_source_bits != 16 or object_bits != 32
+                or object_operand.base is None
+                or object_operand.index is not None
+                or object_operand.rip_relative
+                or object_operand.segment_msr is not None
+                or mask_name != 'and' or masked_register != object_register
+                or mask_bits != 32 or object_mask != 0x7fff
+                or decrement_group != 1
+                or decrement_register != object_register
+                or decrement_bits != 32 or offset_register != object_register
+                or compare_opcode != 0x39
+                or compared_limit != object_register
+                or compared_counter != counter or compare_bits != 32
+                or not compare.source.startswith(b'\x4d\x89\xfc')):
+            return state
+
+        try:
+            stride = load_virtual(
+                state, stride_operand.address(
+                    state, stride_load.boundary.detail[0]), 4)
+            hook = load_virtual(
+                state, hook_operand.address(
+                    state, hook_load.boundary.detail[0]), 8)
+            offset = load_virtual(
+                state, offset_operand.address(
+                    state, offset_load.boundary.detail[0]), 4)
+            secret = load_virtual(
+                state, secret_operand.address(
+                    state, secret_load.boundary.detail[0]), 8)
+            objects = load_virtual(
+                state, object_operand.address(
+                    state, object_load.boundary.detail[0]), 2) & 0x7fff
+        except PageFault:
+            return state
+        position = state.registers[counter] & MASK32
+        limit = (objects - 1) & MASK32
+        if (hook or not stride or objects < 2 or position >= limit
+                or offset + 8 > stride):
+            return state
+        iterations = min(limit - position, 1 << 16)
+        first = state.registers[current] & MASK64
+
+        def byte_swap(value):
+            return int.from_bytes(
+                int(value & MASK64).to_bytes(8, 'little'), 'big')
+
+        values = tuple(
+            (secret
+             ^ ((first + (index + 1) * stride) & MASK64)
+             ^ byte_swap(first + index * stride + offset)) & MASK64
+            for index in range(iterations))
+        try:
+            state = store_virtual_record_values(
+                state, first, iterations, stride, offset, 8, values)
+        except (PageFault, ValueError):
+            return state
+
+        final_counter = position + iterations
+        last_record = (first + (iterations - 1) * stride) & MASK64
+        final_current = (first + iterations * stride) & MASK64
+        final_slot = byte_swap(last_record + offset)
+        registers = _write_register(
+            state.registers, stride_register, stride, 32)
+        registers = _write_register(
+            registers, next_register, final_current, 64)
+        registers = _write_register(registers, hook_register, 0, 64)
+        registers = _write_register(registers, slot_register, final_slot, 64)
+        registers = _write_register(
+            registers, secret_register, values[-1], 64)
+        registers = _write_register(
+            registers, counter, final_counter, 32)
+        registers = _write_register(
+            registers, object_register, limit, 32)
+        registers = _write_register(
+            registers, current, final_current, 64)
+        result = (final_counter - limit) & MASK32
+        flags = _result_flags(
+            state.rflags, 'cmp', final_counter, limit, result, 32)
+        self.collapsed_sequential_freelist_links += iterations
+        return replace(
+            state, registers=registers, rflags=flags,
+            rip=following if final_counter >= limit else target)
+
+    def _collapse_random_freelist_loop(self, state, branch):
+        """Join selected random coordinates into one encoded link scatter."""
+        following, target, condition = branch.boundary.detail
+        if condition != 2 or state.rip != target or target >= branch.rip:
+            return state
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = self.blocks.get(cursor)
+            if block is None:
+                return state
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return state
+            loop.append(block)
+            cursor = end
+        if (cursor != branch.rip
+                or tuple(block.boundary.operation for block in loop) != (
+                    'load', 'load', 'group_ff', 'compare',
+                    'conditional_move', 'compare', 'conditional_branch',
+                    'register_result_flags', 'load', 'compare',
+                    'conditional_branch', 'compare', 'conditional_branch',
+                    'load', 'lea', 'load', 'register_result_flags',
+                    'register_result_flags', 'store', 'group_ff',
+                    'move_zero_extend', 'immediate_alu', 'compare')):
+            return state
+        (sequence_load, value_load, position_increment, wrap_compare,
+         wrap_move, limit_compare, reject_branch, add_start, hook_load,
+         hook_test, hook_branch, duplicate_compare, duplicate_branch,
+         offset_load, slot_address, secret_load, xor_next, xor_slot,
+         store, counter_increment, object_load, mask_object,
+         compare) = loop
+        (_next, sequence_register, sequence_bits,
+         sequence_operand) = sequence_load.boundary.detail
+        (_next, value_register, value_bits,
+         value_operand) = value_load.boundary.detail
+        (_next, position_group, position,
+         position_bits) = position_increment.boundary.detail
+        (_next, wrap_opcode, count_register,
+         compared_position, wrap_bits) = wrap_compare.boundary.detail
+        (_next, wrap_condition, wrap_target,
+         zero_register, wrap_move_bits) = wrap_move.boundary.detail
+        (_next, limit_opcode, compared_value,
+         page_limit_register, limit_bits) = limit_compare.boundary.detail
+        (reject_following, reject_target,
+         reject_condition) = reject_branch.boundary.detail
+        (_next, add_name, added_register,
+         start_register, add_bits) = add_start.boundary.detail
+        (_next, hook_register, hook_bits,
+         hook_operand) = hook_load.boundary.detail
+        (_next, hook_opcode, hook_left,
+         hook_right, hook_compare_bits) = hook_test.boundary.detail
+        (_next, _hook_target,
+         hook_condition) = hook_branch.boundary.detail
+        (_next, duplicate_opcode, next_register,
+         current_register, duplicate_bits) = duplicate_compare.boundary.detail
+        (_next, _duplicate_target,
+         duplicate_condition) = duplicate_branch.boundary.detail
+        (_next, offset_register, offset_bits,
+         offset_operand) = offset_load.boundary.detail
+        (_next, slot_register, slot_bits,
+         slot_operand) = slot_address.boundary.detail
+        (_next, secret_register, secret_bits,
+         secret_operand) = secret_load.boundary.detail
+        (_next, xor_next_name, xor_next_target,
+         xor_next_source, xor_next_bits) = xor_next.boundary.detail
+        (_next, xor_slot_name, xor_slot_target,
+         xor_slot_source, xor_slot_bits) = xor_slot.boundary.detail
+        (_next, stored_register, store_bits,
+         store_operand) = store.boundary.detail
+        (_next, counter_group, counter,
+         counter_bits) = counter_increment.boundary.detail
+        (_next, object_register, object_source_bits,
+         object_bits, object_operand) = object_load.boundary.detail
+        (_next, mask_name, masked_register,
+         mask_bits, object_mask) = mask_object.boundary.detail
+        (_next, compare_opcode, compared_objects,
+         compared_counter, compare_bits) = compare.boundary.detail
+
+        operands = (sequence_operand, value_operand, hook_operand,
+                    offset_operand, slot_operand, secret_operand,
+                    store_operand, object_operand)
+        if any(not isinstance(operand, MemoryOperand)
+               for operand in operands):
+            return state
+        metadata = sequence_operand.base
+        if (sequence_bits != 64 or metadata is None
+                or sequence_operand.index is not None
+                or sequence_operand.rip_relative
+                or sequence_operand.segment_msr is not None
+                or value_bits != 32 or value_operand.base != sequence_register
+                or value_operand.index != position or value_operand.scale != 4
+                or value_operand.displacement != 0
+                or value_operand.rip_relative
+                or value_operand.segment_msr is not None
+                or position_group != 0 or position_bits != 64
+                or wrap_opcode != 0x39
+                or compared_position != position or wrap_bits != 64
+                or wrap_condition != 3 or wrap_target != position
+                or wrap_move_bits != 64
+                or limit_opcode != 0x39
+                or compared_value != value_register or limit_bits != 32
+                or reject_condition != 6
+                or reject_target != value_load.rip
+                or reject_following != add_start.rip
+                or add_name != 'add' or added_register != value_register
+                or add_bits != 64 or next_register != value_register
+                or hook_bits != 64 or hook_operand.base != metadata
+                or hook_operand.index is not None
+                or hook_operand.rip_relative
+                or hook_operand.segment_msr is not None
+                or hook_opcode != 0x85 or hook_left != hook_register
+                or hook_right != hook_register or hook_compare_bits != 64
+                or hook_condition != 5
+                or duplicate_opcode != 0x39
+                or current_register == next_register or duplicate_bits != 64
+                or duplicate_condition != 4
+                or offset_bits != 32 or offset_operand.base != metadata
+                or offset_operand.index is not None
+                or offset_operand.rip_relative
+                or offset_operand.segment_msr is not None
+                or slot_bits != 64 or slot_operand.base != offset_register
+                or slot_operand.index != current_register
+                or slot_operand.scale != 1
+                or slot_operand.displacement != 0
+                or secret_bits != 64 or secret_operand.base != metadata
+                or secret_operand.index is not None
+                or secret_operand.rip_relative
+                or secret_operand.segment_msr is not None
+                or xor_next_name != 'xor'
+                or xor_next_target != secret_register
+                or xor_next_source != next_register or xor_next_bits != 64
+                or xor_slot_name != 'xor'
+                or xor_slot_target != secret_register
+                or xor_slot_source != slot_register or xor_slot_bits != 64
+                or stored_register != secret_register or store_bits != 64
+                or store_operand.base != offset_register
+                or store_operand.index != current_register
+                or store_operand.scale != 1
+                or store_operand.displacement != 0
+                or counter_group != 0 or counter_bits != 64
+                or object_source_bits != 16 or object_bits != 32
+                or object_operand.base is None
+                or object_operand.index is not None
+                or object_operand.rip_relative
+                or object_operand.segment_msr is not None
+                or mask_name != 'and' or masked_register != object_register
+                or mask_bits != 32 or object_mask != 0x7fff
+                or offset_register != object_register
+                or compare_opcode != 0x39
+                or compared_objects != object_register
+                or compared_counter != counter or compare_bits != 64
+                or not compare.source.startswith(b'\x4d\x89\xfd')):
+            return state
+
+        try:
+            sequence = load_virtual(
+                state, sequence_operand.address(
+                    state, sequence_load.boundary.detail[0]), 8)
+            hook = load_virtual(
+                state, hook_operand.address(
+                    state, hook_load.boundary.detail[0]), 8)
+            offset = load_virtual(
+                state, offset_operand.address(
+                    state, offset_load.boundary.detail[0]), 4)
+            secret = load_virtual(
+                state, secret_operand.address(
+                    state, secret_load.boundary.detail[0]), 8)
+            objects = load_virtual(
+                state, object_operand.address(
+                    state, object_load.boundary.detail[0]), 2) & 0x7fff
+        except PageFault:
+            return state
+        count = state.registers[count_register] & MASK64
+        page_limit = state.registers[page_limit_register] & MASK32
+        start = state.registers[start_register] & MASK64
+        current = state.registers[current_register] & MASK64
+        position_value = state.registers[position] & MASK64
+        counter_value = state.registers[counter] & MASK64
+        if (hook or not count or objects < 2 or counter_value >= objects
+                or position_value >= count or offset + 8 > page_limit
+                or state.registers[zero_register] & MASK64):
+            return state
+
+        def byte_swap(value):
+            return int.from_bytes(
+                int(value & MASK64).to_bytes(8, 'little'), 'big')
+
+        records = []
+        values = []
+        consumed = 0
+        requested = min(objects - counter_value, 1 << 16)
+        word_limit = min(1 << 20, max(count, requested) * requested)
+        try:
+            while len(records) < requested and consumed < word_limit:
+                selected = load_virtual(
+                    state, sequence + position_value * 4, 4)
+                position_value += 1
+                if position_value >= count:
+                    position_value = 0
+                consumed += 1
+                if selected >= page_limit:
+                    continue
+                next_value = (start + selected) & MASK64
+                if next_value == current:
+                    return state
+                records.append((current + offset) & MASK64)
+                encoded = (secret ^ next_value
+                           ^ byte_swap(current + offset)) & MASK64
+                values.append(encoded)
+                current = next_value
+        except PageFault:
+            return state
+        if not records:
+            return state
+        try:
+            state = store_virtual_values(state, records, 8, values)
+        except (PageFault, ValueError):
+            return state
+
+        links = len(records)
+        final_counter = counter_value + links
+        last_record = records[-1]
+        final_slot = byte_swap(last_record)
+        registers = _write_register(
+            state.registers, sequence_register, objects, 32)
+        registers = _write_register(
+            registers, value_register, current, 64)
+        registers = _write_register(
+            registers, position, position_value, 64)
+        registers = _write_register(registers, hook_register, 0, 64)
+        registers = _write_register(
+            registers, offset_register, objects, 32)
+        registers = _write_register(
+            registers, slot_register, final_slot, 64)
+        registers = _write_register(
+            registers, secret_register, values[-1], 64)
+        registers = _write_register(
+            registers, counter, final_counter, 64)
+        registers = _write_register(
+            registers, current_register, current, 64)
+        result = (final_counter - objects) & MASK64
+        flags = _result_flags(
+            state.rflags, 'cmp', final_counter, objects, result, 64)
+        self.collapsed_random_freelist_links += links
+        self.collapsed_random_freelist_words += consumed
+        return replace(
+            state, registers=registers, rflags=flags,
+            rip=following if final_counter >= objects else target)
+
+    def _collapse_page_bootmem_loop(self, state, branch):
+        """Project a page-record run through one proved metadata call."""
+        following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return state
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = self.blocks.get(cursor)
+            if block is None:
+                return state
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return state
+            loop.append(block)
+            cursor = end
+        if (cursor != branch.rip or len(loop) != 3
+                or tuple(block.boundary.operation for block in loop)
+                != ('lea', 'call', 'group_ff')):
+            return state
+        advance, call, decrement = loop
+        (_next, advanced, advance_bits,
+         advance_operand) = advance.boundary.detail
+        (_next, call_target) = call.boundary.detail
+        (_next, group, counter, counter_bits) = decrement.boundary.detail
+        if (advance_bits != 64
+                or not isinstance(advance_operand, MemoryOperand)
+                or advance_operand.base != REGISTER_INDEX['rsi']
+                or advance_operand.index is not None
+                or advance_operand.scale != 1
+                or advance_operand.displacement != 64
+                or advance_operand.rip_relative
+                or advance_operand.segment_msr is not None
+                or advanced != REGISTER_INDEX['r15']
+                or call.source[:8] != bytes.fromhex(
+                    '4c 89 f7 ba 01 00 00 00')
+                or not self._page_bootmem_layout(state, call_target)
+                or group != 1 or counter != REGISTER_INDEX['rbx']
+                or counter_bits != 32
+                or not decrement.source.startswith(b'\x4c\x89\xfe')):
+            return state
+        count = state.register('rbx') & MASK32
+        if not count:
+            return state
+        iterations = min(count, 1 << 16)
+        page = state.register('rsi') & MASK64
+        info = state.register('r14') & MASK64
+        if info >> 60:
+            return state
+        encoded = ((info << 4) | 1) & MASK64
+        try:
+            state = project_virtual_records(
+                state, page, iterations, 64, (
+                    (1, 1, 0xff, 0x40, 0),
+                    (0x28, 8, 0, encoded, 0),
+                    (0x34, 4, MASK32, 0, 1),
+                ))
+        except (PageFault, ValueError):
+            return state
+        remaining = count - iterations
+        final_page = (page + iterations * 64) & MASK64
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rax'], encoded, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rbx'], remaining, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rdx'], 1, 32)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rdi'], info << 4, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rsi'], final_page, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['r15'], final_page, 64)
+        before = remaining + 1
+        flags = _result_flags(
+            state.rflags & ~RFLAGS_CARRY, 'sub', before, 1,
+            remaining, 32, preserve_carry=True)
+        self.collapsed_page_bootmem_calls += iterations
+        self.collapsed_page_bootmem_records += iterations
+        return replace(
+            state, registers=registers, rflags=flags,
+            rip=following if not remaining else target)
+
+    def _collapse_repeated_store_call_loop(self, state, branch):
+        """Compose a store-only indirect call loop into one physical repeat."""
+        following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return state
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = self.blocks.get(cursor)
+            if block is None:
+                return state
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return state
+            loop.append(block)
+            cursor = end
+        if (cursor != branch.rip or len(loop) != 5
+                or tuple(block.boundary.operation for block in loop) != (
+                    'load', 'lea', 'group_ff',
+                    'register_immediate_result_flags', 'immediate_alu')):
+            return state
+        base_load, address, call, update, compare = loop
+        (_next, base_register, base_bits,
+         base_operand) = base_load.boundary.detail
+        (_next, destination, destination_bits,
+         destination_operand) = address.boundary.detail
+        (call_following, call_group, call_operand,
+         call_bits) = call.boundary.detail
+        (_next, update_name, induction,
+         induction_bits, stride) = update.boundary.detail
+        (_next, compare_name, compared,
+         compare_bits, limit) = compare.boundary.detail
+        if (base_bits != 64
+                or not isinstance(base_operand, MemoryOperand)
+                or base_operand.index is not None
+                or base_operand.rip_relative
+                or base_operand.segment_msr is not None
+                or destination_bits != 64
+                or not isinstance(destination_operand, MemoryOperand)
+                or destination_operand.base != base_register
+                or destination_operand.index != induction
+                or destination_operand.scale != 1
+                or destination_operand.displacement != 0
+                or destination_operand.rip_relative
+                or destination_operand.segment_msr is not None
+                or destination != REGISTER_INDEX['rdi']
+                or call_group != 2 or call_bits != 64
+                or not isinstance(call_operand, MemoryOperand)
+                or not call.source.startswith(b'\x4c\x89\xfe')
+                or update_name != 'add' or induction_bits != 64
+                or stride != 8 or compare_name != 'cmp'
+                or compared != induction or compare_bits != 64
+                or limit <= 0 or limit & 7):
+            return state
+        try:
+            actual_target = load_virtual(
+                state, call_operand.address(state, call_following), 8)
+            if not self._store_word_layout(state, actual_target):
+                return state
+            base = load_virtual(
+                state, base_operand.address(
+                    state, base_load.boundary.detail[0]), 8)
+        except PageFault:
+            return state
+        offset = state.registers[induction] & MASK64
+        if offset >= limit or (limit - offset) & 7:
+            return state
+        iterations = min((limit - offset) // 8, 1 << 16)
+        byte_count = iterations * 8
+        stack = state.register('rsp') & MASK64
+        start = (base + offset) & MASK64
+        end = start + byte_count
+        if start < stack and end > (stack - 24) & MASK64:
+            return state
+        value = state.register('r15') & MASK64
+        try:
+            state = repeat_virtual(
+                state, start, byte_count, struct.pack('<Q', value))
+        except (PageFault, ValueError):
+            return state
+        final_offset = offset + byte_count
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rax'], value, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rdi'],
+            base + final_offset - 8, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rsi'], value, 64)
+        registers = _write_register(
+            registers, induction, final_offset, 64)
+        result = (final_offset - limit) & MASK64
+        flags = _result_flags(
+            state.rflags, 'cmp', final_offset, limit, result, 64)
+        self.collapsed_store_word_calls += iterations
+        self.collapsed_repeated_store_calls += iterations
+        return replace(
+            state, registers=registers, rflags=flags,
+            rip=following if final_offset == limit else target)
 
     def _page_reservation_layout(self, state, target):
         """Prove the fixed-stride PageReserved projection loop."""
@@ -9609,6 +10440,8 @@ class X86DBT(object):
                              self._collapse_indirect_field_search,
                              self._collapse_btf_name_loop),
                 'load': (self._collapse_normalized_field_search,
+                         self._collapse_repeated_store_call_loop,
+                         self._collapse_strided_multiply_loop,
                          self._collapse_btf_nonmodifier_span,
                          self._collapse_copy_loop),
                 'move_zero_extend': (self._collapse_classified_byte_scan,
@@ -9628,7 +10461,8 @@ class X86DBT(object):
                 'bit_immediate': (
                     self._collapse_strided_record_projection,),
                 'call': (self._collapse_random_permutation_loop,),
-                'lea': (self._collapse_default_record_candidates,),
+                'lea': (self._collapse_page_bootmem_loop,
+                        self._collapse_default_record_candidates),
                 'move_sign_extend': (
                     self._collapse_predicate_record_projection,),
             }.get(operation, ())
@@ -9638,7 +10472,8 @@ class X86DBT(object):
                 and operation == 'register_immediate_result_flags':
             recipes = (self._collapse_wide_copy_loop,)
         elif condition == 2 and operation == 'load':
-            recipes = (self._collapse_relative_record_projection,
+            recipes = (self._collapse_random_freelist_loop,
+                       self._collapse_relative_record_projection,
                        self._collapse_default_record_candidates,
                        self._collapse_predicate_record_projection)
         elif condition == 2 and operation == 'call':
@@ -9646,7 +10481,8 @@ class X86DBT(object):
         elif condition == 9 and operation == 'register_result_flags':
             recipes = (self._collapse_length_prefix_skip,)
         elif condition == 12 and operation == 'load':
-            recipes = (self._collapse_strided_store_loop,
+            recipes = (self._collapse_sequential_freelist_loop,
+                       self._collapse_strided_store_loop,
                        self._collapse_ftrace_record_span)
         elif condition == 4 \
                 and operation == 'register_immediate_result_flags':
@@ -13220,6 +14056,119 @@ class X86DBT(object):
         return replace(state, registers=registers, rflags=flags | 2,
                        rip=int(following) & MASK64)
 
+    def _page_bootmem_layout(self, state, target):
+        """Prove the sparse page-metadata initialization leaf."""
+        target = int(target) & MASK64
+        cached = self._page_bootmem_functions.get(target)
+        if cached is not None:
+            config, proof, present = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return present
+        reader = _VirtualProofReader(state)
+        present = False
+        try:
+            code = bytearray(reader.read(target, 60))
+            displacement = _signed_integer(
+                int.from_bytes(code[52:56], 'little'), 32)
+            return_thunk = (target + 56 + displacement) & MASK64
+            code[52:56] = bytes(4)
+            present = (
+                bytes(code) == bytes.fromhex(
+                    'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 '
+                    '83 fa 10 73 26 48 89 f8 48 c1 e8 3c 75 1f '
+                    'f0 80 4e 01 40 48 c1 e7 04 89 d0 48 09 f8 '
+                    '48 89 46 28 f0 ff 46 34 5d 2e e9 00 00 00 00 '
+                    '0f 0b 0f 0b')
+                and reader.read(return_thunk, 1) == b'\xc3')
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._page_bootmem_functions[target] = config, proof, present
+        return present
+
+    def _collapse_page_bootmem_call(self, state, following, target):
+        """Initialize only the three selected page-metadata lanes."""
+        if not self._page_bootmem_layout(state, target):
+            return None
+        info = state.register('rdi') & MASK64
+        page = state.register('rsi') & MASK64
+        kind = state.register('rdx') & MASK32
+        if kind >= 16 or info >> 60:
+            return None
+        try:
+            flags_byte = load_virtual(state, page + 1, 1)
+            references = load_virtual(state, page + 0x34, 4)
+            encoded = ((info << 4) | kind) & MASK64
+            state = write_virtual_batch(state, (
+                (page + 1, bytes((flags_byte | 0x40,))),
+                (page + 0x28, struct.pack('<Q', encoded)),
+                (page + 0x34,
+                 struct.pack('<I', (references + 1) & MASK32)),
+            ))
+        except PageFault:
+            return None
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rdi'], info << 4, 64)
+        registers = _write_register(
+            registers, REGISTER_INDEX['rax'], encoded, 64)
+        flags = _result_flags(
+            state.rflags & ~RFLAGS_CARRY, 'add', references, 1,
+            (references + 1) & MASK32, 32, preserve_carry=True)
+        self.collapsed_page_bootmem_calls += 1
+        return replace(state, registers=registers, rflags=flags,
+                       rip=int(following) & MASK64)
+
+    def _store_word_layout(self, state, target):
+        """Prove a compiler-shaped ABI leaf storing RSI through RDI."""
+        target = int(target) & MASK64
+        cached = self._store_word_functions.get(target)
+        if cached is not None:
+            config, proof, present = cached
+            if _proof_mismatch(state, config, proof) is None:
+                return present
+        reader = _VirtualProofReader(state)
+        present = False
+        try:
+            code = bytearray(reader.read(target, 31))
+            displacement = _signed_integer(
+                int.from_bytes(code[27:31], 'little'), 32)
+            return_thunk = (target + 31 + displacement) & MASK64
+            code[27:31] = bytes(4)
+            present = (
+                bytes(code) == bytes.fromhex(
+                    'f3 0f 1e fa 55 48 89 e5 50 48 89 75 f8 '
+                    '48 8b 45 f8 48 89 07 48 83 c4 08 5d 2e e9 '
+                    '00 00 00 00')
+                and reader.read(return_thunk, 1) == b'\xc3')
+        except PageFault:
+            pass
+        config, proof = reader.proof()
+        self._store_word_functions[target] = config, proof, present
+        return present
+
+    def _collapse_store_word_call(self, state, following, target):
+        """Store one ABI word without materializing its call frame."""
+        if not self._store_word_layout(state, target):
+            return None
+        address = state.register('rdi') & MASK64
+        value = state.register('rsi') & MASK64
+        stack = state.register('rsp') & MASK64
+        if (stack - 24) & MASK64 <= address < stack:
+            return None
+        try:
+            state = write_virtual(state, address, struct.pack('<Q', value))
+        except PageFault:
+            return None
+        registers = _write_register(
+            state.registers, REGISTER_INDEX['rax'], value, 64)
+        before = (stack - 24) & MASK64
+        result = (before + 8) & MASK64
+        flags = _result_flags(
+            state.rflags, 'add', before, 8, result, 64)
+        self.collapsed_store_word_calls += 1
+        return replace(state, registers=registers, rflags=flags,
+                       rip=int(following) & MASK64)
+
     def _random_u32_cache_layout(self, state, target):
         """Prove the selected-coordinate fast path of a cached u32 source."""
         target = int(target) & MASK64
@@ -14514,6 +15463,8 @@ class X86DBT(object):
             self._collapse_entry_nop_call,
             self._collapse_register_projection_call,
             self._collapse_machine_leaf_call,
+            self._collapse_page_bootmem_call,
+            self._collapse_store_word_call,
             self._collapse_random_u32_below_call,
             self._collapse_random_u32_cache_call,
             self._collapse_page_record_predicate_call,
@@ -16117,6 +17068,14 @@ class X86DBT(object):
                 self.collapsed_strided_store_bytes,
             'collapsed_strided_store_iterations':
                 self.collapsed_strided_store_iterations,
+            'collapsed_record_multiply_words':
+                self.collapsed_record_multiply_words,
+            'collapsed_sequential_freelist_links':
+                self.collapsed_sequential_freelist_links,
+            'collapsed_random_freelist_links':
+                self.collapsed_random_freelist_links,
+            'collapsed_random_freelist_words':
+                self.collapsed_random_freelist_words,
             'collapsed_search_bytes': self.collapsed_search_bytes,
             'collapsed_substring_candidates':
                 self.collapsed_substring_candidates,
@@ -16309,6 +17268,14 @@ class X86DBT(object):
                 self.collapsed_register_projection_calls,
             'collapsed_machine_leaf_calls':
                 self.collapsed_machine_leaf_calls,
+            'collapsed_page_bootmem_calls':
+                self.collapsed_page_bootmem_calls,
+            'collapsed_page_bootmem_records':
+                self.collapsed_page_bootmem_records,
+            'collapsed_store_word_calls':
+                self.collapsed_store_word_calls,
+            'collapsed_repeated_store_calls':
+                self.collapsed_repeated_store_calls,
             'collapsed_random_u32_cache_hits':
                 self.collapsed_random_u32_cache_hits,
             'collapsed_random_u32_below_calls':

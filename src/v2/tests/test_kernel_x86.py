@@ -3308,6 +3308,121 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(layout['collapsed_strided_store_bytes'], 24)
         self.assertEqual(layout['collapsed_strided_store_iterations'], 3)
 
+    def test_in_place_word_scale_is_one_physical_record_map(self):
+        code = bytes.fromhex(
+            '48 8b 93 d0 00 00 00 8b 34 82 0f af 73 20 89 34 82 '
+            '48 8b 93 d0 00 00 00 8b 74 82 04 0f af 73 20 '
+            '89 74 82 04 48 83 c0 02 48 39 c1 75 d3 f4')
+        metadata, words = 0x800, 0x1000
+        values = tuple(range(1, 9))
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with(
+                (0x100, code),
+                (metadata + 0x20, struct.pack('<I', 7)),
+                (metadata + 0xd0, struct.pack('<Q', words)),
+                (words, struct.pack('<8I', *values))),
+            0x100, {'rbx': metadata, 'rax': 0, 'rcx': len(values)}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), len(values))
+        self.assertEqual(state.register('rdx'), words)
+        self.assertEqual(state.register('rsi'), values[-1] * 7)
+        self.assertEqual(
+            tuple(struct.unpack('<8I', read_virtual(state, words, 32))),
+            tuple(value * 7 for value in values))
+        self.assertEqual(
+            dbt.layout()['collapsed_record_multiply_words'], 6)
+
+    def test_sequential_freelist_is_one_encoded_link_projection(self):
+        code = bytes.fromhex(
+            '44 8b 6b 20 4f 8d 3c 2c 66 90 4c 8b 5b 50 '
+            '4d 85 db 75 3f 45 85 ed 0f 84 7d 03 00 00 '
+            '8b 43 30 4a 8d 0c 20 48 0f c9 '
+            '48 8b 93 c0 00 00 00 4c 31 fa 48 31 ca '
+            '4a 89 14 20 41 ff c6 0f b7 46 2a '
+            '25 ff 7f 00 00 ff c8 4d 89 fc 41 39 c6 7c b3 f4')
+        metadata, slab, objects = 0x800, 0xc00, 0x1000
+        stride, offset, secret, count = 16, 8, 0x123456789abcdef0, 4
+        header = bytearray(256)
+        struct.pack_into('<I', header, 0x20, stride)
+        struct.pack_into('<I', header, 0x30, offset)
+        struct.pack_into('<Q', header, 0xc0, secret)
+        slab_record = bytearray(64)
+        struct.pack_into('<H', slab_record, 0x2a, count)
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, code), (metadata, header),
+                        (slab, slab_record), (objects, bytes(128))),
+            0x100, {'rbx': metadata, 'r12': objects,
+                    'r14': 0, 'rsi': slab}))
+
+        def byte_swap(value):
+            return int.from_bytes(value.to_bytes(8, 'little'), 'big')
+
+        self.assertEqual(boundary.operation, 'halt')
+        for index in range(count - 1):
+            current = objects + index * stride
+            following = current + stride
+            expected = secret ^ following ^ byte_swap(current + offset)
+            self.assertEqual(load_virtual(state, current + offset, 8),
+                             expected & MASK64)
+        self.assertEqual(state.register('r12'), objects + 3 * stride)
+        self.assertEqual(state.register('r15'), objects + 3 * stride)
+        self.assertEqual(state.register('r14'), count - 1)
+        self.assertEqual(
+            dbt.layout()['collapsed_sequential_freelist_links'], 2)
+
+    def test_random_freelist_is_one_selected_coordinate_scatter(self):
+        code = bytes.fromhex(
+            '48 8b 83 d0 00 00 00 46 8b 3c a0 49 ff c4 '
+            '49 39 fc 4d 0f 43 e2 45 39 f8 76 ed 4d 01 cf '
+            '66 90 4c 8b 5b 50 4d 85 db 75 3d 4d 39 fd '
+            '0f 84 bd 01 00 00 8b 43 30 4a 8d 0c 28 48 0f c9 '
+            '48 8b 93 c0 00 00 00 4c 31 fa 48 31 ca '
+            '4a 89 14 28 49 ff c6 0f b7 46 2a 25 ff 7f 00 00 '
+            '4d 89 fd 49 39 c6 72 a0 f4')
+        metadata, slab, start, sequence = 0x800, 0xc00, 0x1000, 0x1400
+        offsets = (0, 16, 32, 48)
+        offset, secret = 8, 0x123456789abcdef0
+        header = bytearray(256)
+        struct.pack_into('<I', header, 0x30, offset)
+        struct.pack_into('<Q', header, 0xc0, secret)
+        struct.pack_into('<Q', header, 0xd0, sequence)
+        slab_record = bytearray(64)
+        struct.pack_into('<H', slab_record, 0x2a, len(offsets))
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with(
+                (0x100, code), (metadata, header), (slab, slab_record),
+                (start, bytes(128)),
+                (sequence, struct.pack('<4I', *offsets))),
+            0x100, {
+                'rbx': metadata, 'rsi': slab, 'rdi': len(offsets),
+                'r8': 64, 'r9': start, 'r10': 0,
+                'r12': 1, 'r13': start, 'r14': 1,
+            }))
+
+        def byte_swap(value):
+            return int.from_bytes(value.to_bytes(8, 'little'), 'big')
+
+        self.assertEqual(boundary.operation, 'halt')
+        for current_offset, next_offset in zip(offsets, offsets[1:]):
+            current = start + current_offset
+            following = start + next_offset
+            expected = secret ^ following ^ byte_swap(current + offset)
+            self.assertEqual(load_virtual(state, current + offset, 8),
+                             expected & MASK64)
+        self.assertEqual(state.register('r12'), 0)
+        self.assertEqual(state.register('r13'), start + offsets[-1])
+        self.assertEqual(state.register('r14'), len(offsets))
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_random_freelist_links'], 2)
+        self.assertEqual(layout['collapsed_random_freelist_words'], 2)
+
     def test_sparse_record_words_share_one_physical_projection(self):
         # btrq $13,(%rdx); movl $0,0x34(%rdx); add $64,%rdx;
         # dec %ecx; jne loop; hlt
@@ -3862,6 +3977,134 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.register('rsp'), 0)
         self.assertFalse(state.rflags & (1 << 9))
         self.assertEqual(dbt.layout()['collapsed_machine_leaf_calls'], 2)
+
+    def test_page_bootmem_leaf_projects_only_metadata_lanes(self):
+        target, return_thunk, page = 0x200, 0x400, 0x800
+        function = bytearray(bytes.fromhex(
+            'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 '
+            '83 fa 10 73 26 48 89 f8 48 c1 e8 3c 75 1f '
+            'f0 80 4e 01 40 48 c1 e7 04 89 d0 48 09 f8 '
+            '48 89 46 28 f0 ff 46 34 5d 2e e9 00 00 00 00 '
+            '0f 0b 0f 0b'))
+        struct.pack_into('<i', function, 52,
+                         return_thunk - (target + 56))
+        caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
+        record = bytearray(64)
+        record[1] = 1
+        struct.pack_into('<I', record, 0x34, 2)
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, caller), (target, function),
+                        (return_thunk, b'\xc3'), (page, record)),
+            0x100, {'rdi': 0x123, 'rsi': page,
+                    'rdx': 3, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(load_virtual(state, page + 1, 1), 0x41)
+        self.assertEqual(load_virtual(state, page + 0x28, 8), 0x1233)
+        self.assertEqual(load_virtual(state, page + 0x34, 4), 3)
+        self.assertEqual(state.register('rax'), 0x1233)
+        self.assertEqual(state.register('rdi'), 0x1230)
+        self.assertEqual(state.register('rsp'), 0x9000)
+        self.assertEqual(dbt.layout()['collapsed_page_bootmem_calls'], 1)
+
+    def test_page_bootmem_loop_is_one_physical_record_projection(self):
+        target, return_thunk, pages = 0x500, 0x700, 0x1000
+        function = bytearray(bytes.fromhex(
+            'f3 0f 1e fa 0f 1f 44 00 00 55 48 89 e5 '
+            '83 fa 10 73 26 48 89 f8 48 c1 e8 3c 75 1f '
+            'f0 80 4e 01 40 48 c1 e7 04 89 d0 48 09 f8 '
+            '48 89 46 28 f0 ff 46 34 5d 2e e9 00 00 00 00 '
+            '0f 0b 0f 0b'))
+        struct.pack_into('<i', function, 52,
+                         return_thunk - (target + 56))
+        caller = bytearray(bytes.fromhex(
+            '4c 8d 7e 40 4c 89 f7 ba 01 00 00 00 '
+            'e8 00 00 00 00 4c 89 fe ff cb 75 e8 f4'))
+        struct.pack_into('<i', caller, 13, target - (0x100 + 17))
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, caller), (target, function),
+                        (return_thunk, b'\xc3'), (pages, bytes(256))),
+            0x100, {'rsi': pages, 'r14': 3,
+                    'rbx': 4, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        for index in range(4):
+            page = pages + index * 64
+            self.assertEqual(load_virtual(state, page + 1, 1), 0x40)
+            self.assertEqual(load_virtual(state, page + 0x28, 8), 0x31)
+            self.assertEqual(load_virtual(state, page + 0x34, 4), 1)
+        self.assertEqual(state.register('rsi'), pages + 256)
+        self.assertEqual(state.register('r15'), pages + 256)
+        self.assertEqual(state.register('rbx'), 0)
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_page_bootmem_calls'], 4)
+        self.assertEqual(layout['collapsed_page_bootmem_records'], 3)
+
+    def test_stack_shaped_store_leaf_is_one_word_projection(self):
+        target, return_thunk, address = 0x200, 0x400, 0x800
+        function = bytearray(bytes.fromhex(
+            'f3 0f 1e fa 55 48 89 e5 50 48 89 75 f8 '
+            '48 8b 45 f8 48 89 07 48 83 c4 08 5d 2e e9 '
+            '00 00 00 00'))
+        struct.pack_into('<i', function, 27,
+                         return_thunk - (target + 31))
+        caller = b'\xe8' + struct.pack('<i', target - 0x105) + b'\xf4'
+        value = 0x123456789abcdef0
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with((0x100, caller), (target, function),
+                        (return_thunk, b'\xc3'), (address, bytes(8))),
+            0x100, {'rdi': address, 'rsi': value, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(load_virtual(state, address, 8), value)
+        self.assertEqual(state.register('rax'), value)
+        self.assertEqual(state.register('rsp'), 0x9000)
+        self.assertEqual(dbt.layout()['collapsed_store_word_calls'], 1)
+
+    def test_indirect_store_loop_is_one_physical_repeat(self):
+        function_address, return_thunk = 0x500, 0x700
+        function = bytearray(bytes.fromhex(
+            'f3 0f 1e fa 55 48 89 e5 50 48 89 75 f8 '
+            '48 8b 45 f8 48 89 07 48 83 c4 08 5d 2e e9 '
+            '00 00 00 00'))
+        struct.pack_into('<i', function, 27,
+                         return_thunk - (function_address + 31))
+        function_slot, frame, page = 0x400, 0x800, 0x1000
+        caller = bytearray(bytes.fromhex(
+            '48 8b 45 c8 4a 8d 3c 30 4c 89 fe '
+            'ff 15 00 00 00 00 49 83 c6 08 '
+            '49 81 fe 00 10 00 00 75 e2 f4'))
+        struct.pack_into('<i', caller, 13,
+                         function_slot - (0x100 + 17))
+        frame_bytes = bytearray(128)
+        struct.pack_into('<Q', frame_bytes, 0x48, page)
+        value = 0x123456789abcdef0
+        dbt = X86DBT()
+
+        state, boundary, _cost = dbt.run(initial_state(
+            memory_with(
+                (0x100, caller),
+                (function_slot, struct.pack('<Q', function_address)),
+                (function_address, function), (return_thunk, b'\xc3'),
+                (frame, frame_bytes), (page, bytes(4096))),
+            0x100, {'rbp': frame + 0x80, 'r14': 0,
+                    'r15': value, 'rsp': 0x9000}))
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(read_virtual(state, page, 4096),
+                         struct.pack('<Q', value) * 512)
+        self.assertEqual(state.register('r14'), 4096)
+        self.assertEqual(state.register('rdi'), page + 4088)
+        self.assertEqual(state.register('rsi'), value)
+        layout = dbt.layout()
+        self.assertEqual(layout['collapsed_store_word_calls'], 512)
+        self.assertEqual(layout['collapsed_repeated_store_calls'], 511)
 
     def test_random_u32_cache_hit_projects_only_the_selected_word(self):
         target, below, permutation, return_thunk = (
