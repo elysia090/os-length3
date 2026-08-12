@@ -29,6 +29,16 @@ MAGIC = b'STEP'
 VERSION = 3
 I64 = (1 << 64) - 1
 
+# Access shape is shared by every frontend.  The low byte is the physical
+# width, the next five bits are a power-of-two address scale, and this bit
+# selects an untruncated 64-bit machine coordinate.  Wasm leaves it clear;
+# x86 sets it after its effective-address expression has entered the SSA cut.
+MEMORY_SCALE_SHIFT = 8
+MEMORY_SCALE_MASK = 0x1f
+MEMORY_VIRTUAL64 = 1 << 16
+MEMORY_SHAPE_MASK = 0xff | (MEMORY_SCALE_MASK << MEMORY_SCALE_SHIFT) \
+    | MEMORY_VIRTUAL64
+
 # This is a global physical vocabulary, not a per-file dictionary. Giving the
 # same short code a different operation in another page would make cached state
 # depend on an omitted decoder.
@@ -48,7 +58,11 @@ MEMORY_OPS = tuple('memory.' + name for name in (
     + tuple(name + '.' + observer for name in _MEMORY_LOADS
             for observer in ('eqz', 'nez'))
 ))
-OPS = LANE_OPS + MEMORY_OPS
+# Existing physical codes are immutable.  Architecture-wide state lanes are
+# appended after the original lane and memory domains, never inserted into
+# either, so an older cached page cannot acquire a different meaning.
+STATE_OPS = ('lane64.X86_FLAGS', 'memory.i64.repeat')
+OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 
 OPERAND_KINDS = ('const', 'stack', 'local', 'node')
@@ -112,22 +126,56 @@ def _write_column(blob, offset, width, values):
         struct.pack_into(code, blob, offset + index * width, int(value))
 
 
-def _address(address, offset, scale):
-    base = ((int(address) & ((1 << 32) - 1)) << int(scale))
-    return (base & ((1 << 32) - 1)) + offset
+def memory_shape(width, scale=0, virtual64=False):
+    width, scale = int(width), int(scale)
+    if width <= 0 or width > 0xff or not 0 <= scale <= MEMORY_SCALE_MASK:
+        raise ValueError('memory access shape is invalid')
+    return (width | (scale << MEMORY_SCALE_SHIFT)
+            | (MEMORY_VIRTUAL64 if virtual64 else 0))
 
 
-def _load(memory, address, offset, width, scale, signed, bits):
-    value = memory.load(_address(address, offset, scale), width)
+def decode_memory_shape(shape):
+    shape = int(shape)
+    if shape & ~MEMORY_SHAPE_MASK:
+        raise ValueError('memory access shape has unknown flags')
+    return (shape & 0xff,
+            (shape >> MEMORY_SCALE_SHIFT) & MEMORY_SCALE_MASK,
+            bool(shape & MEMORY_VIRTUAL64))
+
+
+def _address(address, offset, scale, virtual64=False):
+    mask = I64 if virtual64 else (1 << 32) - 1
+    base = ((int(address) & mask) << int(scale)) & mask
+    effective = base + int(offset)
+    return effective & I64 if virtual64 else effective
+
+
+def _load(memory, address, offset, width, scale, signed, bits,
+          virtual64=False):
+    value = memory.load(
+        _address(address, offset, scale, virtual64), width)
     if signed and value & (1 << (width * 8 - 1)):
         value -= 1 << (width * 8)
     return value & mask_of(bits)
 
 
-def _store(memory, address, value, offset, width, scale):
+def _store(memory, address, value, offset, width, scale, virtual64=False):
     memory.write(
-        _address(address, offset, scale),
+        _address(address, offset, scale, virtual64),
         int(value & mask_of(width * 8)).to_bytes(width, 'little'))
+
+
+def _repeat(memory, address, value, size, shape):
+    """Repeat one fixed-width word without materializing the byte extent."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if width not in (1, 2, 4, 8):
+        raise ValueError('memory repeat width is invalid')
+    address = _address(address, 0, scale, virtual64)
+    size = int(size)
+    if size < 0 or address > I64 - size:
+        raise ValueError('memory repeat extent is invalid')
+    pattern = int(value & mask_of(width * 8)).to_bytes(width, 'little')
+    memory.repeat(address, size, pattern)
 
 
 def _memory_name(name):
@@ -415,6 +463,20 @@ def _validate(mapped):
                 raise StatePageError('stack operand is outside the frame region')
             if kind == 'local' and value >= mapped.local_extent:
                 raise StatePageError('local operand is outside the frame region')
+        if operation == 'memory.i64.repeat':
+            if (end - begin != 4
+                    or OPERAND_KINDS[
+                        mapped.value('operand_tags', end - 1)] != 'const'):
+                raise StatePageError(
+                    'memory.i64.repeat has the wrong physical operands')
+            try:
+                width, scale, _virtual64 = decode_memory_shape(
+                    mapped.value('operand_values', end - 1))
+            except ValueError as error:
+                raise StatePageError(str(error))
+            if width not in (1, 2, 4, 8) or scale >= 32:
+                raise StatePageError('memory.i64.repeat shape is invalid')
+            continue
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
             source_name, _observer = _memory_name(name)
@@ -434,7 +496,10 @@ def _validate(mapped):
                 raise StatePageError(
                     '%s memory dependencies are not SSA nodes' % operation)
             shape = mapped.value('operand_values', begin + data_count + 1)
-            width, scale = shape & 0xff, shape >> 8
+            try:
+                width, scale, _virtual64 = decode_memory_shape(shape)
+            except ValueError as error:
+                raise StatePageError(str(error))
             if scale >= 32:
                 raise StatePageError('%s has an invalid address scale'
                                      % operation)
@@ -591,23 +656,26 @@ def execute_mapped(mapped, state):
                 for at in range(begin, end)
             )
             operation = OPS[mapped.value('opcodes', node - 1)]
-            if operation.startswith('memory.'):
+            if operation == 'memory.i64.repeat':
+                _repeat(memory, *arguments)
+                produced.append((node, 0))
+            elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
                 store = '.store' in source_name
                 data_count = 2 if store else 1
                 offset, shape = arguments[data_count:data_count + 2]
-                width, scale = shape & 0xff, shape >> 8
+                width, scale, virtual64 = decode_memory_shape(shape)
                 if store:
                     _store(memory, arguments[0], arguments[1], offset, width,
-                           scale)
+                           scale, virtual64)
                     value = 0
                 else:
                     bits = 32 if source_name.startswith('i32.') else 64
                     signed = source_name.endswith('_s')
                     value = _memory_observe(_load(
                         memory, arguments[0], offset, width, scale,
-                        signed, bits), observer)
+                        signed, bits, virtual64), observer)
                 produced.append((node, value))
             else:
                 produced.append((node, evaluate(operation, arguments)))
@@ -672,7 +740,8 @@ def compile_mapped_executor(mapped):
         return execute_projection
 
     lines = ['def execute(locals_, stack, memory):']
-    namespace = {'memory_load': _load, 'memory_store': _store}
+    namespace = {'memory_load': _load, 'memory_store': _store,
+                 'memory_repeat': _repeat}
 
     def expression(tag_name, value_name, index):
         tag = mapped.value(tag_name, index)
@@ -700,6 +769,10 @@ def compile_mapped_executor(mapped):
                 arguments += ','
             opcode = mapped.value('opcodes', node - 1)
             operation = OPS[opcode]
+            if operation == 'memory.i64.repeat':
+                lines.append('    memory_repeat(memory, %s)' % arguments)
+                lines.append('    value_%d = 0' % node)
+                continue
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
@@ -710,17 +783,18 @@ def compile_mapped_executor(mapped):
                 offset = mapped.value('operand_values', first + data_count)
                 shape = mapped.value(
                     'operand_values', first + data_count + 1)
-                width, scale = shape & 0xff, shape >> 8
+                width, scale, virtual64 = decode_memory_shape(shape)
                 if store:
                     lines.append(
-                        '    memory_store(memory, %s, %s, %d, %d, %d)' %
-                        (data[0], data[1], offset, width, scale))
+                        '    memory_store(memory, %s, %s, %d, %d, %d, %r)' %
+                        (data[0], data[1], offset, width, scale, virtual64))
                     lines.append('    value_%d = 0' % node)
                 else:
                     bits = 32 if source_name.startswith('i32.') else 64
                     signed = source_name.endswith('_s')
-                    loaded = ('memory_load(memory, %s, %d, %d, %d, %r, %d)'
-                              % (data[0], offset, width, scale, signed, bits))
+                    loaded = ('memory_load(memory, %s, %d, %d, %d, %r, %d, %r)'
+                              % (data[0], offset, width, scale, signed, bits,
+                                 virtual64))
                     if observer == 'eqz':
                         loaded = 'int((%s) == 0)' % loaded
                     elif observer == 'nez':

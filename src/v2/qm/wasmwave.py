@@ -432,7 +432,11 @@ def execute_slice(plan, state):
         for value in plan.waves.wave(depth):
             node = plan.nodes[value - 1]
             arguments = tuple(resolve(argument) for argument in node.arguments)
-            if node.op.startswith('memory.'):
+            if node.op == 'memory.i64.repeat':
+                from .steppage import _repeat
+                _repeat(memory, *arguments)
+                result = 0
+            elif node.op.startswith('memory.'):
                 from .steppage import (_load, _memory_name,
                                        _memory_observe, _store)
                 name = node.op.split('.', 1)[1]
@@ -440,16 +444,18 @@ def execute_slice(plan, state):
                 store = '.store' in source_name
                 data_count = 2 if store else 1
                 offset, shape = arguments[data_count:data_count + 2]
-                width, scale = shape & 0xff, shape >> 8
+                from .steppage import decode_memory_shape
+                width, scale, virtual64 = decode_memory_shape(shape)
                 if store:
                     _store(memory, arguments[0], arguments[1], offset, width,
-                           scale)
+                           scale, virtual64)
                     result = 0
                 else:
                     result = _memory_observe(_load(
                         memory, arguments[0], offset, width, scale,
                         source_name.endswith('_s'),
-                        32 if source_name.startswith('i32.') else 64),
+                        32 if source_name.startswith('i32.') else 64,
+                        virtual64),
                         observer)
             else:
                 result = evaluate_physical(node.op, arguments)

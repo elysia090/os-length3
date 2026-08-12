@@ -211,6 +211,125 @@ export function executePureStateStepLoaded(page, locals = [], stack = []) {
   }
 }
 
+function encodeBytes(bytes) {
+  let binary = '';
+  for (let at = 0; at < bytes.length; at += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Execute one x86 virtual-memory state page wholly inside vm.wasm.
+ *
+ * Only demanded 4 KiB virtual coordinates cross this synchronous bridge.
+ * The callbacks are the frontend's MMU view; arithmetic, memory ordering,
+ * flags, and the complete SSA cut remain resident in vm.wasm.
+ */
+export function executeVirtualStateStepLoaded(
+  page, locals = [], stack = [], readPage, writePage,
+) {
+  if (!instance) throw new MachineUnavailable('vm.wasm is not loaded yet');
+  if (!(page instanceof Uint8Array) || !page.length) {
+    throw new TypeError('virtual state step must be a packed byte page');
+  }
+  if (typeof readPage !== 'function' || typeof writePage !== 'function') {
+    throw new TypeError('virtual state step needs memory callbacks');
+  }
+  const E = instance.exports;
+  const session = E.vm_step_acquire();
+  if (session === 0n) throw new Error('vm.wasm has no free state-step lease');
+  const noCoordinate = 0xffffffffffffffffn;
+  try {
+    if (!E.vm_step_memory_open_virtual(session, 12)) {
+      throw new Error('vm.wasm rejected the x86 virtual address space');
+    }
+    const stepAt = E.vm_step_buffer(session);
+    new Uint8Array(E.memory.buffer, stepAt, page.length).set(page);
+    if (!E.vm_step_open(session, page.length)) {
+      throw new Error(`vm.wasm rejected the state-step page (${E.vm_step_error(session)})`);
+    }
+    const localSize = E.vm_step_local_size(session);
+    const stackSize = E.vm_step_input_stack_size(session);
+    if (locals.length !== localSize || stack.length !== stackSize) {
+      throw new Error('virtual state-step entry cut has the wrong extent');
+    }
+    const memory = new DataView(E.memory.buffer);
+    const localsAt = E.vm_step_locals(session);
+    const stackAt = E.vm_step_stack(session);
+    locals.forEach((value, index) => memory.setBigUint64(
+      localsAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
+    ));
+    stack.forEach((value, index) => memory.setBigUint64(
+      stackAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
+    ));
+
+    const transfer = (dirty) => {
+      const lease = E.vm_step_memory_lease(session);
+      const coordinate = BigInt.asUintN(
+        64, E.vm_step_memory_coordinate(session, lease),
+      );
+      if (coordinate === noCoordinate) {
+        throw new Error('vm.wasm returned an invalid virtual coordinate');
+      }
+      const pageBytes = E.vm_step_memory_page_size(session, lease);
+      const address = BigInt.asUintN(64, coordinate << 12n).toString();
+      const bufferAt = E.vm_step_memory_page_buffer(session, lease);
+      if (dirty) {
+        const bytes = new Uint8Array(
+          E.memory.buffer, bufferAt, pageBytes,
+        ).slice();
+        writePage(address, encodeBytes(bytes));
+        if (!E.vm_step_ack_memory_coordinate(session, lease, coordinate)) {
+          throw new Error('vm.wasm rejected a dirty virtual page');
+        }
+      } else {
+        const bytes = decodeArtifact(String(readPage(address, pageBytes)));
+        if (bytes.length !== pageBytes) {
+          throw new Error('x86 virtual page has the wrong extent');
+        }
+        new Uint8Array(E.memory.buffer, bufferAt, pageBytes).set(bytes);
+        if (!E.vm_step_supply_memory_coordinate(
+          session, lease, coordinate, pageBytes,
+        )) {
+          throw new Error('vm.wasm rejected a supplied virtual page');
+        }
+      }
+    };
+
+    for (;;) {
+      const status = E.vm_step_execute(session, locals.length, stack.length);
+      if (status === 2) break;
+      if (status === 1) transfer(false);
+      else if (status === 3) transfer(true);
+      else throw new Error(
+        `virtual state step trapped in vm.wasm (${E.vm_step_error(session)})`,
+      );
+    }
+    for (;;) {
+      const coordinate = BigInt.asUintN(
+        64, E.vm_step_first_dirty_memory_coordinate(session),
+      );
+      if (coordinate === noCoordinate) break;
+      transfer(true);
+    }
+    return {
+      functionIndex: E.vm_step_function(session),
+      nextPc: E.vm_step_next_pc(session),
+      locals: Array.from({ length: E.vm_step_local_size(session) },
+        (_unused, index) => memory.getBigUint64(localsAt + index * 8, true)),
+      stack: Array.from({ length: E.vm_step_stack_size(session) },
+        (_unused, index) => memory.getBigUint64(stackAt + index * 8, true)),
+      work: E.vm_step_work(session),
+      span: E.vm_step_span(session),
+    };
+  } finally {
+    if (!E.vm_step_release(session)) {
+      throw new Error('vm.wasm rejected the virtual state-step lease release');
+    }
+  }
+}
+
 async function executeStateStepExclusive(source, offset, length,
                                          locals, stack, options) {
   if (!source || typeof source.read !== 'function'

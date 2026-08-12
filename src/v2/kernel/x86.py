@@ -15,8 +15,8 @@ import struct
 
 from qm.memorycut import MemoryCut
 from qm.laneops import select as select_lane
-from qm.steppage import (compile_mapped_executor, pack as pack_step,
-                         unpack as unpack_step)
+from qm.steppage import (compile_mapped_executor, memory_shape,
+                         pack as pack_step, unpack as unpack_step)
 from qm.stepnormalize import compose_plans, normalize_plan
 from qm.transducer import compile_byte_classes
 from qm.wasmphysical import DependencyWaves
@@ -1286,6 +1286,28 @@ def write_virtual(state, address, payload):
         else replace(state, memory=cut.commit())
 
 
+class _VirtualMemoryCut(object):
+    """Present x86 virtual bytes to the shared physical state-page executor."""
+
+    __slots__ = ('state',)
+
+    def __init__(self, state, cut):
+        self.state = replace(_freeze_state(state), memory=cut)
+
+    def load(self, address, width):
+        return load_virtual(self.state, int(address) & MASK64, int(width))
+
+    def read(self, address, width):
+        return read_virtual(self.state, int(address) & MASK64, int(width))
+
+    def write(self, address, payload):
+        write_virtual(self.state, int(address) & MASK64, bytes(payload))
+
+    def repeat(self, address, size, pattern):
+        repeat_virtual(
+            self.state, int(address) & MASK64, int(size), bytes(pattern))
+
+
 def write_virtual_batch(state, writes):
     """Publish virtual byte slices only after every mapping is proved."""
     segments = []
@@ -1753,6 +1775,7 @@ class DecodedBlock:
     control_block: object = None
     cut_inputs: tuple = ()
     state_flags: bool = False
+    virtual_memory: bool = False
 
 
 class _CodeReader(object):
@@ -1785,11 +1808,13 @@ class X86DBT(object):
 
     def __init__(self, max_block_bytes=256, profile_controls=False,
                  sponge_records=None, step_executor_factory=None,
-                 allow_reference_executor=True):
+                 allow_reference_executor=True,
+                 enable_function_oracles=False):
         self.max_block_bytes = int(max_block_bytes)
         self.sponge_records = sponge_records
         self.step_executor_factory = step_executor_factory
         self.allow_reference_executor = bool(allow_reference_executor)
+        self.enable_function_oracles = bool(enable_function_oracles)
         if (not self.allow_reference_executor
                 and self.step_executor_factory is None):
             raise X86Error(
@@ -1799,6 +1824,10 @@ class X86DBT(object):
         self.blocks = {}
         self.decoded_blocks = 0
         self.source_instructions = 0
+        self.frontend_raw_work = 0
+        self.frontend_raw_span = 0
+        self.frontend_boundary_only_slices = 0
+        self._frontend_boundaries = {}
         self.physical_work = 0
         self.physical_span = 0
         self.persistent_cuts = 0
@@ -1997,6 +2026,11 @@ class X86DBT(object):
         self.predicate_cut_cache_misses = 0
         self.predicate_cut_work = 0
         self.predicate_cut_span = 0
+        self.recurrence_cuts = 0
+        self.recurrence_cut_cache_hits = 0
+        self.recurrence_cut_cache_misses = 0
+        self.recurrence_cut_work = 0
+        self.recurrence_cut_span = 0
         self.collapse_recipe_hits = 0
         self.collapse_recipe_misses = 0
         self.collapse_recipe_negative = 0
@@ -2022,6 +2056,7 @@ class X86DBT(object):
         self._proof_cache = {}
         self._predicate_cuts = {}
         self._register_cuts = {}
+        self._recurrence_cuts = {}
         self._proof_dependents = {}
         self._block_pages = {}
         self._page_blocks = {}
@@ -3144,6 +3179,14 @@ class X86DBT(object):
         if boundary is None:
             boundary = X86Boundary('unsupported', ('block_limit', reader.at))
         boundary_rip = start + instruction_start
+        raw_depths = [0]
+        for node in nodes:
+            raw_depths.append(1 + max(
+                (raw_depths[operand.value]
+                 for operand in node.arguments if operand.kind == 'node'),
+                default=0))
+        raw_work = len(nodes)
+        raw_span = max(raw_depths, default=0)
         plan = normalize_plan(PureSlice(
             0, 0, instruction_count, instruction_count, 0,
             tuple(nodes), DependencyWaves((0,), (), (0,)),
@@ -3160,6 +3203,11 @@ class X86DBT(object):
         self._remember_block(block)
         self.decoded_blocks += 1
         self.source_instructions += instruction_count
+        self.frontend_raw_work += raw_work
+        self.frontend_raw_span += raw_span
+        self.frontend_boundary_only_slices += int(not instruction_count)
+        self._frontend_boundaries[boundary.operation] = \
+            self._frontend_boundaries.get(boundary.operation, 0) + 1
         self.physical_work += plan.waves.work
         self.physical_span += plan.waves.span
         return block
@@ -3306,70 +3354,17 @@ class X86DBT(object):
 
         def result_flags(name, left, right, result, bits,
                          carry_in=None, preserve_carry=False):
-            mask = (1 << bits) - 1
-            left = emit('i64.and', (left, Operand('const', mask)))
-            right = emit('i64.and', (right, Operand('const', mask)))
-            result = emit('i64.and', (result, Operand('const', mask)))
-            false = Operand('const', 0)
-            if preserve_carry:
-                carry = bit(prior_flags, RFLAGS_CARRY)
-            elif name in ('add', 'adc'):
-                base = emit('i64.add', (left, right))
-                carry = emit('i64.lt_u', (base, left))
-                if carry_in is not None:
-                    final_carry = emit('i64.lt_u', (result, base))
-                    carry = emit('i64.or', (carry, final_carry))
-            elif name in ('sub', 'cmp', 'sbb'):
-                carry = emit('i64.lt_u', (left, right))
-                if carry_in is not None:
-                    equal = emit('i64.eq', (left, right))
-                    carry = emit('i64.or', (
-                        carry, emit('i64.and', (carry_in, equal))))
-            else:
-                carry = false
-            zero = emit('i64.eq', (result, false))
-            sign = emit('i64.and', (
-                emit('i64.shr_u', (
-                    result, Operand('const', bits - 1))),
-                Operand('const', 1)))
-            parity = emit('i64.eq', (
-                emit('i64.and', (
-                    emit('i64.popcnt', (
-                        emit('i64.and', (
-                            result, Operand('const', 0xff))),)),
-                    Operand('const', 1))), false))
-            if name in ('add', 'adc'):
-                overflow_bits = emit('i64.and', (
-                    emit('i64.xor', (
-                        emit('i64.xor', (left, right)),
-                        Operand('const', mask))),
-                    emit('i64.xor', (left, result))))
-                overflow = emit('i64.and', (
-                    emit('i64.shr_u', (
-                        overflow_bits, Operand('const', bits - 1))),
-                    Operand('const', 1)))
-            elif name in ('sub', 'cmp', 'sbb'):
-                overflow_bits = emit('i64.and', (
-                    emit('i64.xor', (left, right)),
-                    emit('i64.xor', (left, result))))
-                overflow = emit('i64.and', (
-                    emit('i64.shr_u', (
-                        overflow_bits, Operand('const', bits - 1))),
-                    Operand('const', 1)))
-            else:
-                overflow = false
-            flags = emit('i64.and', (
-                prior_flags, Operand('const', MASK64 ^ RFLAGS_ARITHMETIC)))
-            for predicate, mask_bit in (
-                    (carry, RFLAGS_CARRY), (parity, RFLAGS_PARITY),
-                    (zero, RFLAGS_ZERO), (sign, RFLAGS_SIGN),
-                    (overflow, RFLAGS_OVERFLOW)):
-                shifted = (predicate if mask_bit == 1 else
-                           emit('i64.shl', (
-                               predicate,
-                               Operand('const', mask_bit.bit_length() - 1))))
-                flags = emit('i64.or', (flags, shifted))
-            return emit('i64.or', (flags, Operand('const', 2)))
+            del carry_in
+            mode = {
+                'and': 0, 'or': 0, 'xor': 0,
+                'add': 1, 'adc': 2,
+                'sub': 3, 'cmp': 3, 'sbb': 4,
+            }[name]
+            descriptor = (int(bits) | (mode << 8)
+                          | (int(bool(preserve_carry)) << 11))
+            return emit('lane64.X86_FLAGS', (
+                prior_flags, left, right, result,
+                Operand('const', descriptor)))
 
         def condition(code):
             carry = bit(prior_flags, RFLAGS_CARRY)
@@ -3675,6 +3670,155 @@ class X86DBT(object):
             DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
         return plan, int(following) & MASK64
 
+    @staticmethod
+    def _memory_plan(boundary):
+        """Lower an ordinary x86 memory instruction into shared memory SSA."""
+        operation, detail = boundary.operation, boundary.detail
+        supported = {'load', 'store', 'store_immediate',
+                     'move_sign_extend', 'move_zero_extend'}
+        if operation not in supported:
+            return None
+
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+        common = {}
+
+        def emit(name, arguments):
+            arguments = tuple(arguments)
+            key = name, arguments
+            previous = None if name.startswith('memory.') \
+                else common.get(key)
+            if previous is not None:
+                return previous
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, name, arguments))
+            if not name.startswith('memory.'):
+                common[key] = result
+            return result
+
+        def read(register, bits):
+            if isinstance(register, HighByteRegister):
+                value = emit('i64.shr_u', (
+                    locals_[register.index], Operand('const', 8)))
+            elif isinstance(register, int):
+                value = locals_[register]
+            else:
+                return None
+            if bits < 64:
+                value = emit('i64.and', (
+                    value, Operand('const', (1 << bits) - 1)))
+            return value
+
+        def publish(register, value, bits):
+            high = isinstance(register, HighByteRegister)
+            index = register.index if high else register
+            if not isinstance(index, int):
+                return False
+            if bits == 64:
+                locals_[index] = value
+                return True
+            if bits == 32:
+                locals_[index] = emit('i64.and', (
+                    value, Operand('const', MASK32)))
+                return True
+            shift = 8 if high else 0
+            mask = ((1 << bits) - 1) << shift
+            cleared = emit('i64.and', (
+                locals_[index], Operand('const', MASK64 ^ mask)))
+            inserted = emit('i64.and', (
+                value, Operand('const', (1 << bits) - 1)))
+            if shift:
+                inserted = emit('i64.shl', (
+                    inserted, Operand('const', shift)))
+            locals_[index] = emit('i64.or', (cleared, inserted))
+            return True
+
+        def address(operand, following):
+            if (not isinstance(operand, MemoryOperand)
+                    or operand.segment_msr is not None):
+                return None
+            value = Operand(
+                'const', (int(operand.displacement)
+                          + (int(following)
+                             if operand.rip_relative else 0)) & MASK64)
+            if not operand.rip_relative and operand.base is not None:
+                value = emit('i64.add', (value, locals_[operand.base]))
+            if operand.index is not None:
+                index = locals_[operand.index]
+                if operand.scale != 1:
+                    index = emit('i64.shl', (
+                        index,
+                        Operand('const', operand.scale.bit_length() - 1)))
+                value = emit('i64.add', (value, index))
+            return value
+
+        def load_name(width, signed=False):
+            if width == 8:
+                return 'memory.i64.load'
+            suffix = str(width * 8) + ('_s' if signed else '_u')
+            return 'memory.i64.load' + suffix
+
+        def store_name(width):
+            return ('memory.i64.store' if width == 8
+                    else 'memory.i64.store%d' % (width * 8))
+
+        following = detail[0]
+        if operation == 'load':
+            _following, destination, bits, operand = detail
+            width = bits // 8
+            pointer = address(operand, following)
+            if pointer is None:
+                return None
+            value = emit(load_name(width), (
+                pointer, Operand('const', 0),
+                Operand('const', memory_shape(
+                    width, virtual64=True))))
+            if not publish(destination, value, bits):
+                return None
+        elif operation == 'store':
+            _following, source, bits, operand = detail
+            width = bits // 8
+            pointer, value = address(operand, following), read(source, bits)
+            if pointer is None or value is None:
+                return None
+            emit(store_name(width), (
+                pointer, value, Operand('const', 0),
+                Operand('const', memory_shape(
+                    width, virtual64=True))))
+        elif operation == 'store_immediate':
+            _following, operand, bits, immediate = detail
+            width = bits // 8
+            pointer = address(operand, following)
+            if pointer is None:
+                return None
+            emit(store_name(width), (
+                pointer, Operand('const', immediate & ((1 << bits) - 1)),
+                Operand('const', 0), Operand('const', memory_shape(
+                    width, virtual64=True))))
+        else:
+            (_following, destination, source_bits,
+             target_bits, operand) = detail
+            if not isinstance(operand, MemoryOperand):
+                return None
+            width = source_bits // 8
+            pointer = address(operand, following)
+            if pointer is None:
+                return None
+            value = emit(load_name(
+                width, signed=operation == 'move_sign_extend'), (
+                    pointer, Operand('const', 0),
+                    Operand('const', memory_shape(
+                        width, virtual64=True))))
+            if not publish(destination, value, target_bits):
+                return None
+
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
+        return plan, int(following) & MASK64
+
     def _compose_register_cut(self, state, block, limit=16):
         """Keep proof blocks intact while joining register-only state steps."""
         cached = self._register_cuts.get(block.rip)
@@ -3699,6 +3843,8 @@ class X86DBT(object):
                 plan, following = lowered_flags
             else:
                 lowered = self._register_plan(current.boundary)
+                if lowered is None:
+                    lowered = self._memory_plan(current.boundary)
                 if lowered is None:
                     break
                 control, following = lowered
@@ -3735,7 +3881,8 @@ class X86DBT(object):
             plan, mapped, execute, current.scratch_count,
             current.boundary, proof_config, proof,
             current.flag_cut, current.control_block or current,
-            current.cut_inputs, True)
+            current.cut_inputs, True,
+            any(node.op.startswith('memory.') for node in plan.nodes))
         proof_blocks = tuple(proof_blocks)
         self._register_cuts[block.rip] = proof_blocks, composed
         self.register_cuts += 1
@@ -3748,15 +3895,41 @@ class X86DBT(object):
     @staticmethod
     def _predicate_plan(block, condition):
         """Reopen one decoded flag producer with a terminal predicate root."""
-        if block.state_flags:
-            return None
         plan = block.plan
+        if not block.state_flags:
+            if len(plan.locals) < len(REGISTER_NAMES):
+                return None
+
+            def shifted(operand):
+                if (operand.kind == 'local'
+                        and operand.value >= len(REGISTER_NAMES)):
+                    return Operand(operand.kind, operand.value + 1)
+                return operand
+
+            plan = PureSlice(
+                plan.function, plan.start, plan.end, plan.instructions,
+                plan.stack_inputs,
+                tuple(WaveNode(
+                    node.value, node.op,
+                    tuple(shifted(operand) for operand in node.arguments))
+                    for node in plan.nodes),
+                plan.waves,
+                tuple(shifted(operand) for operand in plan.stack),
+                tuple(shifted(operand) for operand in
+                      plan.locals[:len(REGISTER_NAMES)])
+                + (Operand('local', len(REGISTER_NAMES)),)
+                + tuple(shifted(operand) for operand in
+                        plan.locals[len(REGISTER_NAMES):]))
+        if plan is None:
+            return None
         nodes = list(plan.nodes)
         common = {(node.op, node.arguments): Operand('node', node.value)
                   for node in nodes}
 
         def emit(operation, arguments):
-            operation, arguments = select_lane(operation, tuple(arguments))
+            arguments = tuple(arguments)
+            if not operation.startswith(('lane32.', 'lane64.', 'memory.')):
+                operation, arguments = select_lane(operation, arguments)
             key = operation, tuple(arguments)
             previous = common.get(key)
             if previous is not None:
@@ -3771,14 +3944,29 @@ class X86DBT(object):
 
         def value_operand(operand, bits, following):
             if isinstance(operand, MemoryOperand):
-                for register in (operand.base, operand.index):
-                    if (register is not None
-                            and plan.locals[register]
-                            != Operand('local', register)):
-                        return None
-                index = len(REGISTER_NAMES) + len(cut_inputs)
-                cut_inputs.append((following, bits, operand))
-                return Operand('local', index)
+                if operand.segment_msr is not None:
+                    return None
+                pointer = Operand(
+                    'const', int(operand.displacement)
+                    + (int(following) if operand.rip_relative else 0)
+                    & MASK64)
+                if not operand.rip_relative and operand.base is not None:
+                    pointer = emit('i64.add', (
+                        pointer, plan.locals[operand.base]))
+                if operand.index is not None:
+                    index = plan.locals[operand.index]
+                    if operand.scale != 1:
+                        index = emit('i64.shl', (
+                            index, Operand(
+                                'const', operand.scale.bit_length() - 1)))
+                    pointer = emit('i64.add', (pointer, index))
+                width = int(bits) // 8
+                load_operation = ('memory.i64.load' if width == 8 else
+                                  'memory.i64.load%d_u' % (width * 8))
+                return emit(load_operation, (
+                    pointer, Operand('const', 0),
+                    Operand('const', memory_shape(
+                        width, virtual64=True))))
             if isinstance(operand, HighByteRegister):
                 value = emit('i64.shr_u', (
                     plan.locals[operand.index], Operand('const', 8)))
@@ -3878,42 +4066,27 @@ class X86DBT(object):
         else:
             return None
 
-        prefix = 'i%d.' % bits
-        zero = emit(prefix + 'eq', (result, Operand('const', 0)))
-        sign = emit(prefix + 'and', (
-            emit(prefix + 'shr_u', (
-                result, Operand('const', bits - 1))),
-            Operand('const', 1)))
-        parity = emit('i64.xor', (
-            emit('i64.and', (
-                emit('i64.popcnt', (
-                    emit('i64.and', (
-                        result, Operand('const', 0xff))),)),
-                Operand('const', 1))),
-            Operand('const', 1)))
-        false = Operand('const', 0)
-        if name == 'add':
-            carry = emit(prefix + 'lt_u', (result, left))
-            overflow_bits = emit(prefix + 'and', (
-                emit(prefix + 'xor', (
-                    emit(prefix + 'xor', (left, right)),
-                    Operand('const', (1 << bits) - 1))),
-                emit(prefix + 'xor', (left, result))))
-            overflow = emit(prefix + 'and', (
-                emit(prefix + 'shr_u', (
-                    overflow_bits, Operand('const', bits - 1))),
+        mode = {
+            'and': 0, 'or': 0, 'xor': 0,
+            'add': 1, 'adc': 2,
+            'sub': 3, 'cmp': 3, 'sbb': 4,
+        }[name]
+        descriptor = int(bits) | (mode << 8)
+        flags = emit('lane64.X86_FLAGS', (
+            plan.locals[len(REGISTER_NAMES)], left, right, result,
+            Operand('const', descriptor)))
+
+        def flag(mask):
+            return emit('i64.and', (
+                emit('i64.shr_u', (
+                    flags, Operand('const', int(mask).bit_length() - 1))),
                 Operand('const', 1)))
-        elif name in ('sub', 'cmp'):
-            carry = emit(prefix + 'lt_u', (left, right))
-            overflow_bits = emit(prefix + 'and', (
-                emit(prefix + 'xor', (left, right)),
-                emit(prefix + 'xor', (left, result))))
-            overflow = emit(prefix + 'and', (
-                emit(prefix + 'shr_u', (
-                    overflow_bits, Operand('const', bits - 1))),
-                Operand('const', 1)))
-        else:
-            carry = overflow = false
+
+        carry = flag(RFLAGS_CARRY)
+        parity = flag(RFLAGS_PARITY)
+        zero = flag(RFLAGS_ZERO)
+        sign = flag(RFLAGS_SIGN)
+        overflow = flag(RFLAGS_OVERFLOW)
 
         def inverted(value):
             return emit('i64.xor', (value, Operand('const', 1)))
@@ -3936,10 +4109,10 @@ class X86DBT(object):
             plan.function, plan.start, plan.end + 1,
             plan.instructions + 1, plan.stack_inputs,
             tuple(nodes), plan.waves, plan.stack,
-            tuple(register_outputs)
-            + tuple(Operand('local', len(REGISTER_NAMES) + index)
+            tuple(register_outputs) + (flags,)
+            + tuple(Operand('local', len(REGISTER_NAMES) + 1 + index)
                     for index in range(len(cut_inputs)))
-            + (left, right, result, predicate))
+            + (predicate,))
         return normalize_plan(residual), (name, bits), tuple(cut_inputs)
 
     @staticmethod
@@ -3979,14 +4152,15 @@ class X86DBT(object):
             inserted = emit(
                 'i64.and', (predicate, Operand('const', 1)))
         registers[register] = emit('i64.or', (cleared, inserted))
+        flags = plan.locals[len(REGISTER_NAMES)]
         inputs = tuple(plan.locals[
-            len(REGISTER_NAMES):len(REGISTER_NAMES) + cut_input_count])
-        scratch = tuple(plan.locals[-4:])
+            len(REGISTER_NAMES) + 1:
+            len(REGISTER_NAMES) + 1 + cut_input_count])
         residual = PureSlice(
             plan.function, plan.start, plan.end + 1,
             plan.instructions + 1, plan.stack_inputs,
             tuple(nodes), plan.waves, plan.stack,
-            tuple(registers) + inputs + scratch)
+            tuple(registers) + (flags,) + inputs + (predicate,))
         return normalize_plan(residual)
 
     def _compose_setcc_predicate_cut(self, state, block):
@@ -4043,9 +4217,11 @@ class X86DBT(object):
         _following, _target, final_condition = branch.boundary.detail
         interim = DecodedBlock(
             block.rip, middle.rip, block.source + setcc.source,
-            block.instructions + 2, first_plan, None, None, 4,
+            block.instructions + 2, first_plan, None, None, 1,
             middle.boundary, block.proof_config, block.proof,
-            None, middle, first_inputs)
+            None, middle, first_inputs, True,
+            any(node.op.startswith('memory.')
+                for node in first_plan.nodes))
         final = self._predicate_plan(interim, final_condition)
         if final is None:
             return block
@@ -4058,8 +4234,9 @@ class X86DBT(object):
             state, block.rip, len(source))
         composed = DecodedBlock(
             block.rip, branch.rip, source, block.instructions + 3,
-            plan, mapped, execute, 4, branch.boundary,
-            proof_config, proof, flag_cut, branch, cut_inputs)
+            plan, mapped, execute, 1, branch.boundary,
+            proof_config, proof, flag_cut, branch, cut_inputs, True,
+            any(node.op.startswith('memory.') for node in plan.nodes))
         proof_blocks = (block, setcc, middle, branch)
         self._predicate_cuts[block.rip] = proof_blocks, composed
         self.predicate_cuts += 1
@@ -4113,8 +4290,9 @@ class X86DBT(object):
             state, block.rip, len(source))
         composed = DecodedBlock(
             block.rip, control.rip, source, block.instructions + 1,
-            plan, mapped, execute, 4, control.boundary,
-            proof_config, proof, flag_cut, control, cut_inputs)
+            plan, mapped, execute, 1, control.boundary,
+            proof_config, proof, flag_cut, control, cut_inputs, True,
+            any(node.op.startswith('memory.') for node in plan.nodes))
         self._predicate_cuts[block.rip] = (block, control), composed
         self.predicate_cuts += 1
         self.predicate_cut_cache_misses += 1
@@ -4446,6 +4624,152 @@ class X86DBT(object):
         self.collapsed_repeat_iterations += iterations
         return replace(state, registers=registers, rip=following,
                        rflags=flags)
+
+    def _counted_repeat_cut(self, state, branch):
+        """Compile a counted contiguous-store backedge to one state page."""
+        cached = self._recurrence_cuts.get(branch.rip)
+        if cached is not None and cached[0] is branch:
+            self.recurrence_cut_cache_hits += 1
+            return cached[1]
+
+        following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return None
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = self.blocks.get(cursor)
+            if block is None:
+                return None
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return None
+            loop.append(block)
+            cursor = end
+        if cursor != branch.rip or len(loop) < 3:
+            self._recurrence_cuts[branch.rip] = branch, None
+            self.recurrence_cut_cache_misses += 1
+            return None
+
+        counter_update, *stores, pointer_update = loop
+        if (counter_update.boundary.operation != 'group_ff'
+                or pointer_update.boundary.operation != 'lea'
+                or not stores
+                or any(block.boundary.operation != 'store'
+                       for block in stores)):
+            self._recurrence_cuts[branch.rip] = branch, None
+            self.recurrence_cut_cache_misses += 1
+            return None
+        _next, group, counter, counter_bits = \
+            counter_update.boundary.detail
+        _next, source, bits, first_operand = stores[0].boundary.detail
+        if (group != 1 or not isinstance(counter, int)
+                or counter_bits not in (32, 64)
+                or bits not in (8, 16, 32, 64)
+                or not isinstance(source, int)
+                or not isinstance(first_operand, MemoryOperand)
+                or first_operand.rip_relative
+                or first_operand.segment_msr is not None
+                or first_operand.base is None
+                or first_operand.index is not None):
+            self._recurrence_cuts[branch.rip] = branch, None
+            self.recurrence_cut_cache_misses += 1
+            return None
+        pointer = first_operand.base
+        if source in (pointer, counter) or pointer == counter:
+            self._recurrence_cuts[branch.rip] = branch, None
+            self.recurrence_cut_cache_misses += 1
+            return None
+        width = bits // 8
+        displacements = []
+        for store in stores:
+            (_next, candidate_source, candidate_bits,
+             candidate) = store.boundary.detail
+            if (candidate_source != source or candidate_bits != bits
+                    or not isinstance(candidate, MemoryOperand)
+                    or candidate.base != pointer
+                    or candidate.index is not None
+                    or candidate.rip_relative
+                    or candidate.segment_msr is not None):
+                self._recurrence_cuts[branch.rip] = branch, None
+                self.recurrence_cut_cache_misses += 1
+                return None
+            displacements.append(candidate.displacement)
+        first_displacement = min(displacements)
+        iteration_bytes = len(stores) * width
+        if sorted(displacements) != list(range(
+                first_displacement,
+                first_displacement + iteration_bytes, width)):
+            self._recurrence_cuts[branch.rip] = branch, None
+            self.recurrence_cut_cache_misses += 1
+            return None
+        (_next, updated_pointer, pointer_bits,
+         pointer_operand) = pointer_update.boundary.detail
+        if (updated_pointer != pointer or pointer_bits != 64
+                or pointer_operand.base != pointer
+                or pointer_operand.index is not None
+                or pointer_operand.rip_relative
+                or pointer_operand.segment_msr is not None
+                or pointer_operand.displacement != iteration_bytes):
+            self._recurrence_cuts[branch.rip] = branch, None
+            self.recurrence_cut_cache_misses += 1
+            return None
+
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            arguments = tuple(arguments)
+            if operation.startswith(('i32.', 'i64.')):
+                operation, arguments = select_lane(operation, arguments)
+            value = len(nodes) + 1
+            nodes.append(WaveNode(value, operation, arguments))
+            return Operand('node', value)
+
+        count = locals_[counter]
+        if counter_bits == 32:
+            count = emit('i64.and', (count, Operand('const', MASK32)))
+        byte_count = emit('i64.mul', (
+            count, Operand('const', iteration_bytes)))
+        address = emit('i64.add', (
+            locals_[pointer], Operand('const', first_displacement)))
+        value = locals_[source]
+        if bits < 64:
+            value = emit('i64.and', (
+                value, Operand('const', (1 << bits) - 1)))
+        emit('memory.i64.repeat', (
+            address, value, byte_count,
+            Operand('const', memory_shape(width, virtual64=True))))
+        locals_[pointer] = emit('i64.add', (
+            locals_[pointer], byte_count))
+        locals_[counter] = Operand('const', 0)
+        descriptor = counter_bits | (3 << 8) | (1 << 11)
+        flags = emit('lane64.X86_FLAGS', (
+            locals_[len(REGISTER_NAMES)], Operand('const', 1),
+            Operand('const', 1), Operand('const', 0),
+            Operand('const', descriptor)))
+        plan = normalize_plan(PureSlice(
+            0, 0, len(loop) + 1, len(loop) + 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_[:len(REGISTER_NAMES)]) + (flags,)))
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        cut = DecodedBlock(
+            target, branch.rip,
+            b''.join(block.source for block in loop) + branch.source,
+            len(loop) + 1, plan, mapped, execute, 0,
+            X86Boundary('branch', following),
+            branch.proof_config, branch.proof,
+            state_flags=True, virtual_memory=True)
+        entry = cut, counter, iteration_bytes
+        self._recurrence_cuts[branch.rip] = branch, entry
+        self.recurrence_cuts += 1
+        self.recurrence_cut_cache_misses += 1
+        self.recurrence_cut_work += plan.waves.work
+        self.recurrence_cut_span += plan.waves.span
+        return entry
 
     def _collapse_copy_loop(self, state, branch):
         """Reduce a proven unrolled byte-copy loop to one direct memory cut."""
@@ -10385,6 +10709,8 @@ class X86DBT(object):
 
     def _collapse_direct_branch(self, state, branch):
         """Apply a structural reducer selected by one direct branch block."""
+        if not self.enable_function_oracles:
+            return state
         cached = self._direct_branch_recipes.get(branch.rip)
         if cached is not None and cached[0] is branch:
             reducer = cached[1]
@@ -10501,6 +10827,21 @@ class X86DBT(object):
 
     def _collapse_branch(self, state, branch):
         """Apply only the residual reducers selected for this backedge."""
+        recurrence = self._counted_repeat_cut(state, branch)
+        if recurrence is not None:
+            cut, counter, iteration_bytes = recurrence
+            iterations = state.registers[counter] & MASK64
+            prior = state
+            state, scratch = self._execute_plan(state, cut)
+            state, boundary = self._control(
+                state, cut.boundary, prior, scratch)
+            if boundary is not None:
+                raise X86Error('a pure recurrence published a barrier')
+            self.collapsed_repeat_bytes += iterations * iteration_bytes
+            self.collapsed_repeat_iterations += iterations
+            return state
+        if not self.enable_function_oracles:
+            return state
         for reducer in self._collapse_recipe(state, branch):
             self.collapse_recipe_attempts += 1
             state = reducer(state, branch)
@@ -15446,6 +15787,8 @@ class X86DBT(object):
         return state
 
     def _collapse_pure_call(self, state, following, target):
+        if not self.enable_function_oracles:
+            return None
         """Apply the shared direct/indirect ABI summary route."""
         target &= MASK64
         if self._pure_call_profile is not None:
@@ -15529,7 +15872,9 @@ class X86DBT(object):
                   + ((state.rflags,) if block.state_flags else ())
                   + input_values
                   + (0,) * block.scratch_count)
-        outputs, stack = block.execute(inputs, (), cut)
+        memory = _VirtualMemoryCut(state, cut) \
+            if block.virtual_memory else cut
+        outputs, stack = block.execute(inputs, (), memory)
         if stack:
             raise X86Error('x86 state page published a value stack')
         registers = outputs[:len(REGISTER_NAMES)]
@@ -15592,11 +15937,8 @@ class X86DBT(object):
                 flags = state.rflags
                 selected = _condition(flags, condition)
             else:
-                name, bits = flag_cut
-                left, right, result, predicate = scratch
-                flags = _result_flags(
-                    prior.rflags, name, left, right, result, bits)
-                selected = bool(predicate)
+                flags = state.rflags
+                selected = bool(scratch[0])
             rip = int(target if selected else following) & MASK64
             if isinstance(state, _X86Frame):
                 state.rip = rip
@@ -17013,13 +17355,25 @@ class X86DBT(object):
 
     def layout(self):
         layout = {
+            'function_oracles_enabled': self.enable_function_oracles,
             'decoded_basic_blocks': self.decoded_blocks,
             'resident_basic_blocks': len(self.blocks),
             'restored_code_blocks': self.restored_code_blocks,
             'rejected_code_blocks': self.rejected_code_blocks,
             'source_instructions': self.source_instructions,
+            'frontend_raw_work': self.frontend_raw_work,
+            'frontend_raw_span': self.frontend_raw_span,
+            'frontend_boundary_only_slices':
+                self.frontend_boundary_only_slices,
+            'frontend_boundaries': tuple(sorted(
+                self._frontend_boundaries.items(),
+                key=lambda item: (-item[1], item[0]))),
             'physical_work': self.physical_work,
             'physical_span': self.physical_span,
+            'qm_removed_work':
+                self.frontend_raw_work - self.physical_work,
+            'qm_removed_span':
+                self.frontend_raw_span - self.physical_span,
             'predicate_cuts': self.predicate_cuts,
             'resident_predicate_cuts': len(self._predicate_cuts),
             'register_cuts': self.register_cuts,
@@ -17033,6 +17387,14 @@ class X86DBT(object):
             'predicate_cut_cache_misses': self.predicate_cut_cache_misses,
             'predicate_cut_work': self.predicate_cut_work,
             'predicate_cut_span': self.predicate_cut_span,
+            'recurrence_cuts': self.recurrence_cuts,
+            'resident_recurrence_cuts': len(tuple(
+                entry for _branch, entry in self._recurrence_cuts.values()
+                if entry is not None)),
+            'recurrence_cut_cache_hits': self.recurrence_cut_cache_hits,
+            'recurrence_cut_cache_misses': self.recurrence_cut_cache_misses,
+            'recurrence_cut_work': self.recurrence_cut_work,
+            'recurrence_cut_span': self.recurrence_cut_span,
             'persistent_cuts': self.persistent_cuts,
             'materialized_pages': self.materialized_pages,
             'published_pages': self.published_pages,

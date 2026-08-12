@@ -77,6 +77,7 @@ typedef long long          i64;
 #define STEP_COLUMN_COUNT 11u
 #define STEP_MEMORY_PAGES 4u
 #define STEP_NO_PAGE 0xffffffffu
+#define STEP_NO_COORDINATE (~0ull)
 #define PROGRAM_FRAME_CAP 256u
 #define PROGRAM_GLOBAL_CAP 4096u
 #define STEP_SLOT_STATE_BITS 3u
@@ -152,17 +153,19 @@ typedef struct {
     u32 stack_count;
     u32 local_extent;
     u32 local_updates;
-    u32 memory_page[STEP_MEMORY_PAGES];
+    u64 memory_page[STEP_MEMORY_PAGES];
     u32 memory_valid[STEP_MEMORY_PAGES];
     u64 memory_state[STEP_MEMORY_PAGES];
     u64 memory_next_epoch[STEP_MEMORY_PAGES];
     u64 memory_last_ack_session[STEP_MEMORY_PAGES];
     u64 memory_last_ack_generation[STEP_MEMORY_PAGES];
     u64 memory_last_ack_lease[STEP_MEMORY_PAGES];
-    u32 memory_last_ack_page[STEP_MEMORY_PAGES];
-    u32 memory_bytes;
-    u32 requested_memory_page;
-    u32 flush_memory_page;
+    u64 memory_last_ack_page[STEP_MEMORY_PAGES];
+    u64 memory_bytes;
+    u64 requested_memory_page;
+    u64 flush_memory_page;
+    u32 memory_page_shift;
+    u32 memory_unbounded;
     u64 memory_generation;
     u64 memory_lease;
     u64 flush_memory_epoch;
@@ -170,6 +173,13 @@ typedef struct {
     u32 execution_active;
     u32 execution_depth;
     u32 execution_lane;
+    u32 repeat_active;
+    u32 repeat_lane;
+    u32 repeat_width;
+    u32 repeat_phase;
+    u64 repeat_address;
+    u64 repeat_remaining;
+    u64 repeat_pattern;
     u32 error;
 } StepWorkspace;
 
@@ -1257,13 +1267,13 @@ static int step_slot_change(StepWorkspace *machine, u32 slot,
 static void step_memory_slots_empty(StepWorkspace *machine)
 {
     for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
-        machine->memory_page[slot] = STEP_NO_PAGE;
+        machine->memory_page[slot] = STEP_NO_COORDINATE;
         machine->memory_valid[slot] = 0;
         machine->memory_next_epoch[slot] = 1u;
         machine->memory_last_ack_session[slot] = 0;
         machine->memory_last_ack_generation[slot] = 0;
         machine->memory_last_ack_lease[slot] = 0;
-        machine->memory_last_ack_page[slot] = STEP_NO_PAGE;
+        machine->memory_last_ack_page[slot] = STEP_NO_COORDINATE;
         step_slot_store(machine, slot,
                         step_slot_word(STEP_SLOT_EMPTY, 0, 0));
     }
@@ -1332,7 +1342,7 @@ static int step_memory_start_flush(StepWorkspace *machine, u32 slot,
     return 1;
 }
 
-static int step_memory_start_load(StepWorkspace *machine, u32 page,
+static int step_memory_start_load(StepWorkspace *machine, u64 page,
                                   u32 slot, u64 observed)
 {
     u32 kind = step_slot_kind(observed);
@@ -1364,13 +1374,15 @@ EXPORT u64 vm_step_acquire(void)
     StepWorkspace *machine = step_machine();
     if (!step_workspace_initialized) {
         machine->memory_bytes = 0;
+        machine->memory_page_shift = 16u;
+        machine->memory_unbounded = 0;
         machine->memory_generation = 0;
         step_memory_slots_empty(machine);
         step_workspace_initialized = 1u;
     }
     workspace_mode = 2u;
-    machine->requested_memory_page = STEP_NO_PAGE;
-    machine->flush_memory_page = STEP_NO_PAGE;
+    machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
     machine->execution_active = 0;
@@ -1397,8 +1409,8 @@ EXPORT int vm_step_release(u64 session)
         machine->memory_generation = 0;
     }
     machine->execution_active = 0;
-    machine->requested_memory_page = STEP_NO_PAGE;
-    machine->flush_memory_page = STEP_NO_PAGE;
+    machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
     step_session = 0;
@@ -1462,9 +1474,31 @@ EXPORT int vm_step_memory_open(u64 session, u32 bytes)
     u64 generation = step_new_capability();
     if (!generation) return 0;
     machine->memory_bytes = bytes;
+    machine->memory_page_shift = 16u;
+    machine->memory_unbounded = 0;
     machine->memory_generation = generation;
-    machine->requested_memory_page = STEP_NO_PAGE;
-    machine->flush_memory_page = STEP_NO_PAGE;
+    machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->flush_memory_page = STEP_NO_COORDINATE;
+    machine->memory_lease = 0;
+    machine->memory_status = 0;
+    step_memory_slots_empty(machine);
+    return 1;
+}
+
+EXPORT int vm_step_memory_open_virtual(u64 session, u32 page_shift)
+{
+    StepWorkspace *machine = step_machine();
+    if (!step_session_is(session) || page_shift < 12u || page_shift > 16u
+            || machine->execution_active || machine->memory_status)
+        return 0;
+    u64 generation = step_new_capability();
+    if (!generation) return 0;
+    machine->memory_bytes = 0;
+    machine->memory_page_shift = page_shift;
+    machine->memory_unbounded = 1u;
+    machine->memory_generation = generation;
+    machine->requested_memory_page = STEP_NO_COORDINATE;
+    machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
     step_memory_slots_empty(machine);
@@ -1489,31 +1523,44 @@ EXPORT u32 vm_step_memory_page(u64 session, u64 lease)
     if (!step_session_is(session) || !lease
             || machine->memory_lease != lease || !machine->memory_status)
         return STEP_NO_PAGE;
+    u64 page = machine->memory_status == STEP_DIRTY_PAGE
+             ? machine->flush_memory_page : machine->requested_memory_page;
+    return page < STEP_NO_PAGE ? (u32)page : STEP_NO_PAGE;
+}
+
+EXPORT u64 vm_step_memory_coordinate(u64 session, u64 lease)
+{
+    StepWorkspace *machine = step_machine();
+    if (!step_session_is(session) || !lease
+            || machine->memory_lease != lease || !machine->memory_status)
+        return STEP_NO_COORDINATE;
     return machine->memory_status == STEP_DIRTY_PAGE
          ? machine->flush_memory_page : machine->requested_memory_page;
 }
 
 EXPORT u8 *vm_step_memory_page_buffer(u64 session, u64 lease)
 {
-    return vm_step_memory_page(session, lease) == STEP_NO_PAGE
+    return vm_step_memory_coordinate(session, lease) == STEP_NO_COORDINATE
          ? (u8 *)0 : step_machine()->memory_transfer;
 }
 
 EXPORT u32 vm_step_memory_page_size(u64 session, u64 lease)
 {
     StepWorkspace *machine = step_machine();
-    u32 page = vm_step_memory_page(session, lease);
-    if (page == STEP_NO_PAGE) return 0;
+    u64 page = vm_step_memory_coordinate(session, lease);
+    if (page == STEP_NO_COORDINATE) return 0;
     if (machine->memory_status == STEP_DIRTY_PAGE)
-        return machine->memory_valid[page & (STEP_MEMORY_PAGES - 1u)];
-    u64 first = (u64)page * GUEST_PAGE_BYTES;
+        return machine->memory_valid[(u32)page & (STEP_MEMORY_PAGES - 1u)];
+    u32 page_bytes = 1u << machine->memory_page_shift;
+    if (machine->memory_unbounded) return page_bytes;
+    u64 first = page << machine->memory_page_shift;
     if (first >= machine->memory_bytes) return 0;
-    u32 remaining = machine->memory_bytes - (u32)first;
-    return remaining < GUEST_PAGE_BYTES ? remaining : GUEST_PAGE_BYTES;
+    u64 remaining = machine->memory_bytes - first;
+    return remaining < page_bytes ? (u32)remaining : page_bytes;
 }
 
-EXPORT int vm_step_supply_memory_page(u64 session, u64 lease,
-                                      u32 page, u32 bytes)
+static int step_supply_memory_coordinate(
+        u64 session, u64 lease, u64 page, u32 bytes)
 {
     StepWorkspace *machine = step_machine();
     if (!step_session_is(session) || machine->memory_status != STEP_MEMORY_PAGE
@@ -1521,7 +1568,7 @@ EXPORT int vm_step_supply_memory_page(u64 session, u64 lease,
             || machine->requested_memory_page != page
             || vm_step_memory_page_size(session, lease) != bytes)
         return 0;
-    u32 slot = page & (STEP_MEMORY_PAGES - 1u);
+    u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
     u64 word = step_slot_load(machine, slot);
     if (step_slot_kind(word) != STEP_SLOT_LOADING || step_slot_pins(word))
         return 0;
@@ -1538,17 +1585,29 @@ EXPORT int vm_step_supply_memory_page(u64 session, u64 lease,
     machine->memory_next_epoch[slot] = epoch + 1u;
     step_slot_store(machine, slot,
                     step_slot_word(STEP_SLOT_CLEAN, 0, epoch));
-    machine->requested_memory_page = STEP_NO_PAGE;
+    machine->requested_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
     return 1;
 }
 
-EXPORT int vm_step_ack_memory_page(u64 session, u64 lease, u32 page)
+EXPORT int vm_step_supply_memory_page(u64 session, u64 lease,
+                                      u32 page, u32 bytes)
+{
+    return step_supply_memory_coordinate(session, lease, page, bytes);
+}
+
+EXPORT int vm_step_supply_memory_coordinate(u64 session, u64 lease,
+                                             u64 page, u32 bytes)
+{
+    return step_supply_memory_coordinate(session, lease, page, bytes);
+}
+
+static int step_ack_memory_coordinate(u64 session, u64 lease, u64 page)
 {
     StepWorkspace *machine = step_machine();
     if (!step_session_is(session) || !lease) return 0;
-    u32 slot = page & (STEP_MEMORY_PAGES - 1u);
+    u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
     if (machine->memory_last_ack_session[slot] == session
             && machine->memory_last_ack_generation[slot]
                 == machine->memory_generation
@@ -1571,10 +1630,20 @@ EXPORT int vm_step_ack_memory_page(u64 session, u64 lease, u32 page)
     machine->memory_last_ack_generation[slot] = machine->memory_generation;
     machine->memory_last_ack_lease[slot] = lease;
     machine->memory_last_ack_page[slot] = page;
-    machine->flush_memory_page = STEP_NO_PAGE;
+    machine->flush_memory_page = STEP_NO_COORDINATE;
     machine->memory_lease = 0;
     machine->memory_status = 0;
     return 1;
+}
+
+EXPORT int vm_step_ack_memory_page(u64 session, u64 lease, u32 page)
+{
+    return step_ack_memory_coordinate(session, lease, page);
+}
+
+EXPORT int vm_step_ack_memory_coordinate(u64 session, u64 lease, u64 page)
+{
+    return step_ack_memory_coordinate(session, lease, page);
 }
 
 EXPORT u32 vm_step_first_dirty_memory_page(u64 session)
@@ -1585,10 +1654,26 @@ EXPORT u32 vm_step_first_dirty_memory_page(u64 session)
         return STEP_NO_PAGE;
     for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
         u64 word = step_slot_load(machine, slot);
+        if (step_memory_start_flush(machine, slot, word)) {
+            u64 page = machine->flush_memory_page;
+            return page < STEP_NO_PAGE ? (u32)page : STEP_NO_PAGE;
+        }
+    }
+    return STEP_NO_PAGE;
+}
+
+EXPORT u64 vm_step_first_dirty_memory_coordinate(u64 session)
+{
+    StepWorkspace *machine = step_machine();
+    if (!step_session_is(session) || machine->execution_active
+            || machine->memory_status)
+        return STEP_NO_COORDINATE;
+    for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
+        u64 word = step_slot_load(machine, slot);
         if (step_memory_start_flush(machine, slot, word))
             return machine->flush_memory_page;
     }
-    return STEP_NO_PAGE;
+    return STEP_NO_COORDINATE;
 }
 
 EXPORT int vm_step_open(u64 session, u32 bytes)
@@ -1680,7 +1765,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 183u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 185u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -1912,15 +1997,15 @@ static int step_lane(u32 opcode, u32 begin, u32 end, u64 *result)
 
 typedef struct {
     u32 count;
-    u32 page[2];
+    u64 page[2];
     u32 slot[2];
     u64 epoch[2];
 } StepMemoryGuard;
 
-static int step_memory_resident(u32 page)
+static int step_memory_resident(u64 page)
 {
     StepWorkspace *machine = step_machine();
-    u32 slot = page & (STEP_MEMORY_PAGES - 1u);
+    u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
     u64 word = step_slot_load(machine, slot);
     u32 kind = step_slot_kind(word);
     if ((kind == STEP_SLOT_CLEAN || kind == STEP_SLOT_DIRTY)
@@ -1959,10 +2044,10 @@ static int step_memory_unpin(StepMemoryGuard *guard, int dirty)
     return ok;
 }
 
-static int step_memory_pin(u32 page, u32 required, StepMemoryGuard *guard)
+static int step_memory_pin(u64 page, u32 required, StepMemoryGuard *guard)
 {
     StepWorkspace *machine = step_machine();
-    u32 slot = page & (STEP_MEMORY_PAGES - 1u);
+    u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
     for (;;) {
         u64 word = step_slot_load(machine, slot);
         u32 kind = step_slot_kind(word);
@@ -1991,16 +2076,19 @@ static int step_memory_ready(u64 address, u32 width, StepMemoryGuard *guard)
 {
     StepWorkspace *machine = step_machine();
     guard->count = 0;
-    if (!machine->memory_bytes || !width
-            || address > machine->memory_bytes
-            || width > (u64)machine->memory_bytes - address)
+    if ((!machine->memory_unbounded
+            && (!machine->memory_bytes || address > machine->memory_bytes
+                || width > machine->memory_bytes - address))
+            || !width || address > ~0ull - (width - 1u))
         return step_fail(10u);
-    u32 first = (u32)(address >> 16);
-    u32 last = (u32)((address + width - 1u) >> 16);
-    for (u32 page = first; page <= last; ++page) {
-        u64 page_first = (u64)page << 16;
+    u32 page_shift = machine->memory_page_shift;
+    u32 page_bytes = 1u << page_shift;
+    u64 first = address >> page_shift;
+    u64 last = (address + width - 1u) >> page_shift;
+    for (u64 page = first; page <= last; ++page) {
+        u64 page_first = page << page_shift;
         u64 required = address + width - page_first;
-        if (required > GUEST_PAGE_BYTES) required = GUEST_PAGE_BYTES;
+        if (required > page_bytes) required = page_bytes;
         if (!step_memory_pin(page, (u32)required, guard)) {
             step_memory_unpin(guard, 0);
             return 0;
@@ -2016,9 +2104,10 @@ static int step_memory_load(u64 address, u32 width,
     u64 value = 0;
     for (u32 byte = 0; byte < width; ++byte) {
         u64 coordinate = address + byte;
-        u32 page = (u32)(coordinate >> 16);
-        u32 slot = page & (STEP_MEMORY_PAGES - 1u);
-        value |= (u64)machine->memory[slot][coordinate & 0xffffu]
+        u64 page = coordinate >> machine->memory_page_shift;
+        u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+        u64 offset = coordinate & ((1ull << machine->memory_page_shift) - 1u);
+        value |= (u64)machine->memory[slot][offset]
                  << (8u * byte);
     }
     *result = value;
@@ -2031,9 +2120,10 @@ static int step_memory_store(u64 address, u64 value, u32 width,
     StepWorkspace *machine = step_machine();
     for (u32 byte = 0; byte < width; ++byte) {
         u64 coordinate = address + byte;
-        u32 page = (u32)(coordinate >> 16);
-        u32 slot = page & (STEP_MEMORY_PAGES - 1u);
-        machine->memory[slot][coordinate & 0xffffu]
+        u64 page = coordinate >> machine->memory_page_shift;
+        u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+        u64 offset = coordinate & ((1ull << machine->memory_page_shift) - 1u);
+        machine->memory[slot][offset]
             = (u8)(value >> (8u * byte));
     }
     return step_memory_unpin(guard, 1);
@@ -2079,10 +2169,14 @@ static int step_memory_lane(u32 opcode, u32 begin, u32 end, u64 *result)
             || !step_operand(begin + data_count + 1u, &shape))
         return 0;
     u32 physical_width = (u32)shape & 255u;
-    u32 scale = (u32)(shape >> 8);
-    if (physical_width != width || scale >= 32u) return step_fail(9u);
-    u64 base = (u64)(u32)address << scale;
-    if (offset > ~0ull - base) return step_fail(10u);
+    u32 scale = (u32)(shape >> 8) & 31u;
+    int virtual64 = (shape & 0x10000u) != 0u;
+    if (physical_width != width || (shape & ~0x11fffu))
+        return step_fail(9u);
+    u64 base = virtual64 ? address : (u64)(u32)address;
+    base <<= scale;
+    if (!virtual64) base = (u32)base;
+    if (!virtual64 && offset > ~0ull - base) return step_fail(10u);
     u64 effective = base + offset;
     StepMemoryGuard guard;
     if (!step_memory_ready(effective, width, &guard)) return 0;
@@ -2097,6 +2191,111 @@ static int step_memory_lane(u32 opcode, u32 begin, u32 end, u64 *result)
     value &= step_mask(bits);
     if (observer != STEP_NO_PAGE) value = observer ? value != 0u : value == 0u;
     *result = value;
+    return 1;
+}
+
+static int step_x86_flags_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 5u) return step_fail(7u);
+    u64 prior, left, right, value, descriptor;
+    if (!step_operand(begin, &prior)
+            || !step_operand(begin + 1u, &left)
+            || !step_operand(begin + 2u, &right)
+            || !step_operand(begin + 3u, &value)
+            || !step_operand(begin + 4u, &descriptor))
+        return 0;
+    u32 width = (u32)descriptor & 0x7fu;
+    u32 mode = ((u32)descriptor >> 8) & 7u;
+    int preserve_carry = ((u32)descriptor & (1u << 11)) != 0;
+    if (width != 8u && width != 16u && width != 32u && width != 64u)
+        return step_fail(7u);
+    u64 lane_mask = step_mask(width);
+    u64 sign = 1ull << (width - 1u);
+    left &= lane_mask;
+    right &= lane_mask;
+    value &= lane_mask;
+    u64 carry_in = (mode == 2u || mode == 4u) ? prior & 1u : 0u;
+    u64 flags = prior & ~0x8c5ull;
+    int carry = preserve_carry ? (prior & 1u) != 0u : 0;
+    if (!preserve_carry) {
+        if (mode == 1u || mode == 2u)
+            carry = left > lane_mask - right
+                 || (carry_in && left + right == lane_mask);
+        else if (mode == 3u || mode == 4u)
+            carry = left < right || (carry_in && left == right);
+    }
+    if (carry) flags |= 1u;
+    if ((__builtin_popcount((u32)value & 255u) & 1u) == 0u)
+        flags |= 1u << 2;
+    if (!value) flags |= 1u << 6;
+    if (value & sign) flags |= 1u << 7;
+    int overflow = 0;
+    if (mode == 1u || mode == 2u)
+        overflow = !((left ^ right) & sign) && ((left ^ value) & sign);
+    else if (mode == 3u || mode == 4u)
+        overflow = ((left ^ right) & sign) && ((left ^ value) & sign);
+    if (overflow) flags |= 1u << 11;
+    *result = flags | 2u;
+    return 1;
+}
+
+static int step_memory_repeat_lane(u32 begin, u32 end, u64 *result)
+{
+    StepWorkspace *machine = step_machine();
+    if (end - begin != 4u) return step_fail(9u);
+    if (!machine->repeat_active) {
+        u64 address, pattern, size, shape;
+        if (!step_operand(begin, &address)
+                || !step_operand(begin + 1u, &pattern)
+                || !step_operand(begin + 2u, &size)
+                || !step_operand(begin + 3u, &shape))
+            return 0;
+        u32 width = (u32)shape & 255u;
+        u32 scale = (u32)(shape >> 8) & 31u;
+        int virtual64 = (shape & 0x10000u) != 0u;
+        if ((width != 1u && width != 2u && width != 4u && width != 8u)
+                || (shape & ~0x11fffull))
+            return step_fail(9u);
+        u64 base = virtual64 ? address : (u64)(u32)address;
+        base <<= scale;
+        if (!virtual64) base = (u32)base;
+        if (size && base > ~0ull - (size - 1u)) return step_fail(10u);
+        machine->repeat_active = 1u;
+        machine->repeat_lane = machine->execution_lane;
+        machine->repeat_width = width;
+        machine->repeat_phase = 0u;
+        machine->repeat_address = base;
+        machine->repeat_remaining = size;
+        machine->repeat_pattern = pattern;
+    } else if (machine->repeat_lane != machine->execution_lane) {
+        return step_fail(12u);
+    }
+
+    while (machine->repeat_remaining) {
+        u32 page_shift = machine->memory_page_shift;
+        u32 page_bytes = 1u << page_shift;
+        u32 offset = (u32)(machine->repeat_address & (page_bytes - 1u));
+        u64 available = page_bytes - offset;
+        u32 count = (u32)(machine->repeat_remaining < available
+                        ? machine->repeat_remaining : available);
+        StepMemoryGuard guard;
+        if (!step_memory_ready(machine->repeat_address, count, &guard))
+            return 0;
+        u64 page = machine->repeat_address >> page_shift;
+        u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+        for (u32 byte = 0; byte < count; ++byte) {
+            u32 phase = machine->repeat_phase;
+            machine->memory[slot][offset + byte] =
+                (u8)(machine->repeat_pattern >> (phase * 8u));
+            machine->repeat_phase = (phase + 1u == machine->repeat_width)
+                                  ? 0u : phase + 1u;
+        }
+        if (!step_memory_unpin(&guard, 1)) return 0;
+        machine->repeat_address += count;
+        machine->repeat_remaining -= count;
+    }
+    machine->repeat_active = 0u;
+    *result = 0;
     return 1;
 }
 
@@ -2128,6 +2327,7 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
         machine->execution_active = 1;
         machine->execution_depth = 0;
         machine->execution_lane = step_u32(STEP_WAVE_OFFSETS, 0);
+        machine->repeat_active = 0;
     }
     while (machine->execution_depth < machine->span) {
         u32 end = step_u32(
@@ -2140,8 +2340,14 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
             u32 opcode = step_u8(STEP_OPCODES, node - 1u);
             int produced = (opcode < 140u
                 ? step_lane(opcode, first, last, &machine->values[node])
-                : step_memory_lane(opcode, first, last,
-                                   &machine->values[node]));
+                : opcode < 183u
+                ? step_memory_lane(opcode, first, last,
+                                   &machine->values[node])
+                : opcode == 183u
+                ? step_x86_flags_lane(first, last, &machine->values[node])
+                : opcode == 184u
+                ? step_memory_repeat_lane(first, last, &machine->values[node])
+                : step_fail(7u));
             if (!produced) {
                 if (machine->memory_status) return machine->memory_status;
                 machine->execution_active = 0;

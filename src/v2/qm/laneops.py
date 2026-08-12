@@ -65,6 +65,8 @@ def split(operation):
 def shape(operation):
     """Return ``(SSA arity, constant count, is_shift)`` for validation."""
     bits, name = split(operation)
+    if name == 'X86_FLAGS':
+        return 5, 0, False
     if name in GENERIC_ARITY:
         return GENERIC_ARITY[name], 0, False
     from .scalarpage import (_ONE_ARGUMENT, _ONE_CONSTANT, _ONE_SHIFT,
@@ -184,6 +186,44 @@ def evaluate(operation, arguments):
         choose_left = (left_key < right_key if name.endswith('MIN')
                        else left_key > right_key)
         return left if choose_left else right
+    if name == 'X86_FLAGS':
+        prior, left, right, result, descriptor = arguments
+        width = int(descriptor) & 0x7f
+        if width not in (8, 16, 32, 64):
+            raise ValueError('x86 flag lane has an invalid width')
+        mode = (int(descriptor) >> 8) & 7
+        preserve_carry = bool(int(descriptor) & (1 << 11))
+        lane_mask = mask_of(width)
+        sign = 1 << (width - 1)
+        left, right, result = (value & lane_mask
+                               for value in (left, right, result))
+        carry_in = int(bool(prior & 1)) if mode in (2, 4) else 0
+        flags = prior & ~0x8c5
+        carry = bool(prior & 1) if preserve_carry else False
+        if not preserve_carry:
+            if mode in (1, 2):
+                carry = left + right + carry_in > lane_mask
+            elif mode in (3, 4):
+                carry = left < right + carry_in
+        if carry:
+            flags |= 1
+        if (result & 0xff).bit_count() % 2 == 0:
+            flags |= 1 << 2
+        if result == 0:
+            flags |= 1 << 6
+        if result & sign:
+            flags |= 1 << 7
+        if mode in (1, 2):
+            overflow = not ((left ^ right) & sign) \
+                and bool((left ^ result) & sign)
+        elif mode in (3, 4):
+            overflow = bool((left ^ right) & sign) \
+                and bool((left ^ result) & sign)
+        else:
+            overflow = False
+        if overflow:
+            flags |= 1 << 11
+        return (flags | 2) & mask_of(bits)
 
     wasm_name = {
         'WRAP_I64': 'wrap_i64',
@@ -357,5 +397,7 @@ def bind(operation):
         choose = min if name == 'SMIN' else max
         return lambda values: choose(to_signed(values[0], bits),
                                      to_signed(values[1], bits)) & mask
+    if name == 'X86_FLAGS':
+        return lambda values: evaluate(operation, values)
 
     return lambda values: evaluate(operation, values)

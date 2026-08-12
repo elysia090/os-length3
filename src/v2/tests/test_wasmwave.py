@@ -9,7 +9,8 @@ from unittest.mock import patch
 from qm.wasmstate import (decode_module, instruction_step,
                           run_until_boundary, start_state)
 from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
-                         compile_mapped_executor, StatePageError)
+                         compile_mapped_executor, memory_shape,
+                         StatePageError)
 from qm.stepnormalize import compose_plans, normalize_plan
 from qm.wasmphysical import DependencyWaves
 from qm.wasmwave import (Operand, PureSlice, WaveExecutor, WaveNode,
@@ -18,6 +19,25 @@ from tests.test_wasmbinary import encode_uleb, module
 
 
 class TestWaveExecutor(unittest.TestCase):
+    def test_memory_root_does_not_hide_an_address_identity(self):
+        empty_waves = DependencyWaves((0,), (), (0,))
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'i64.add', (
+                Operand('local', 0), Operand('const', 0))),
+             WaveNode(2, 'memory.i64.load', (
+                 Operand('node', 1), Operand('const', 0),
+                 Operand('const', memory_shape(8, virtual64=True))))),
+            empty_waves, (Operand('node', 2),),
+            (Operand('local', 0),))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['memory.i64.load'])
+        self.assertEqual(plan.nodes[0].arguments[0], Operand('local', 0))
+        self.assertEqual((plan.waves.work, plan.waves.span), (1, 1))
+
     def test_deterministic_pages_compose_by_substituting_frame_coordinates(self):
         empty_waves = DependencyWaves((0,), (), (0,))
         first = normalize_plan(PureSlice(

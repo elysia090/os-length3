@@ -129,8 +129,18 @@ def _wasm_x86_step_executor(packed):
             raise ValueError('x86 pure state page cannot carry a value stack')
         values = tuple(int(value) & 0xffffffffffffffff for value in inputs)
         entry = struct.pack('<%dQ' % len(values), *values)
+        def read_page(address, width):
+            payload = memory.read(int(str(address)), int(width))
+            return base64.b64encode(payload).decode('ascii')
+
+        def write_page(address, payload):
+            memory.write(
+                int(str(address)),
+                base64.b64decode(str(payload), validate=True))
+
         encoded = str(executeX86StateStep(
-            token, base64.b64encode(entry).decode('ascii')))
+            token, base64.b64encode(entry).decode('ascii'),
+            read_page, write_page))
         raw = base64.b64decode(encoded, validate=True)
         if len(raw) != len(entry):
             raise ValueError('vm.wasm returned an invalid x86 state cut')
