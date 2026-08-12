@@ -70,14 +70,27 @@ from kernel.x86 import (BOOT_PARAMS_ADDRESS, COMMAND_LINE_ADDRESS,
                         _VOID_COPY_BYTE_LOOP,
                         _VOID_COPY_REP,
                         MASK32, MASK64, X86DBT, X86Error, X86Machine,
+                        _result_flags,
                         advance_virtual_clock,
                         initial_state,
                         load_bzimage, load_bzimage_kernel, parse_bzimage,
                         load_virtual, read_virtual, translate, write_virtual)
+from qm.laneops import evaluate as evaluate_lane
 from qm.memorycut import MemoryCut
 from qm.steppage import (compile_mapped_executor,
                          unpack as unpack_step)
 from qm.wasmstate import PagedMemory
+
+
+class OracleX86DBT(X86DBT):
+    """Keep retired function recognizers available only as test oracles."""
+
+    def __init__(self, *arguments, **options):
+        options.setdefault('enable_function_oracles', True)
+        super().__init__(*arguments, **options)
+
+
+X86DBT = OracleX86DBT
 
 
 def memory_with(*writes):
@@ -131,6 +144,46 @@ def synthetic_kernel_bzimage():
 
 
 class TestX86StateStep(unittest.TestCase):
+    def test_x86_flags_lane_matches_the_architectural_reference(self):
+        operations = (
+            ('and', 0, False), ('or', 0, False), ('xor', 0, False),
+            ('add', 1, False), ('adc', 2, False),
+            ('sub', 3, False), ('cmp', 3, False), ('sbb', 4, False),
+            ('add', 1, True), ('sub', 3, True),
+        )
+        for bits in (8, 16, 32, 64):
+            mask = (1 << bits) - 1
+            values = (0, 1, mask >> 1, 1 << (bits - 1), mask - 1, mask)
+            for prior in (0, 1, 0x8d5, 0x123456789abcdef1):
+                for name, mode, preserve_carry in operations:
+                    carry_in = int(bool(prior & 1)) \
+                        if name in ('adc', 'sbb') else 0
+                    descriptor = (bits | (mode << 8)
+                                  | (int(preserve_carry) << 11))
+                    for left in values:
+                        for right in values:
+                            result = {
+                                'and': left & right,
+                                'or': left | right,
+                                'xor': left ^ right,
+                                'add': left + right + carry_in,
+                                'adc': left + right + carry_in,
+                                'sub': left - right - carry_in,
+                                'cmp': left - right,
+                                'sbb': left - right - carry_in,
+                            }[name] & mask
+                            expected = _result_flags(
+                                prior, name, left, right, result, bits,
+                                preserve_carry=preserve_carry,
+                                carry_in=carry_in)
+                            actual = evaluate_lane(
+                                'lane64.X86_FLAGS',
+                                (prior, left, right, result, descriptor))
+                            self.assertEqual(
+                                actual, expected,
+                                (bits, prior, name, preserve_carry,
+                                 left, right, result))
+
     def test_browser_vm_registers_each_x86_step_page_once(self):
         installed = []
         executed = []
@@ -140,7 +193,7 @@ class TestX86StateStep(unittest.TestCase):
             installed.append(page)
             return 7
 
-        def execute(token, values):
+        def execute(token, values, _read_page, _write_page):
             executed.append((int(token), values))
             return values
 
@@ -432,7 +485,7 @@ class TestX86StateStep(unittest.TestCase):
             (0x200, b'\xf4'))
         state = initial_state(
             memory, 0x100, {'rdi': 41, 'rsp': 0x800})
-        dbt = X86DBT()
+        dbt = X86DBT(enable_function_oracles=False)
 
         state, boundary, cost = dbt.run(state)
 
@@ -449,13 +502,19 @@ class TestX86StateStep(unittest.TestCase):
         # xor eax,eax; jne bad; mov eax,42; hlt; bad: mov eax,99; hlt
         code = bytes.fromhex(
             '31 c0 75 06 b8 2a 00 00 00 f4 b8 63 00 00 00 f4')
-        dbt = X86DBT()
+        dbt = X86DBT(enable_function_oracles=False)
 
         state, boundary, _cost = dbt.run(initial_state(
             memory_with((0x100, code)), 0x100))
 
         self.assertEqual(boundary.operation, 'halt')
         self.assertEqual(state.register('rax'), 42)
+        layout = dbt.layout()
+        self.assertFalse(layout['function_oracles_enabled'])
+        self.assertGreaterEqual(layout['frontend_raw_work'],
+                                layout['physical_work'])
+        self.assertIn(('conditional_branch', 1),
+                      layout['frontend_boundaries'])
 
     def test_compare_branch_predicate_enters_the_shared_qm_cut(self):
         # The adjacent form becomes one PureSlice terminal predicate.  A NOP
@@ -526,7 +585,8 @@ class TestX86StateStep(unittest.TestCase):
             self.assertEqual(fused_state.rflags, scalar_state.rflags)
             composed = fused._predicate_cuts[0x100][1]
             self.assertEqual(composed.flag_cut, ('cmp', 64))
-            self.assertEqual(len(composed.cut_inputs), 1)
+            self.assertEqual(len(composed.cut_inputs), 0)
+            self.assertTrue(composed.virtual_memory)
 
     def test_memory_binary_result_and_branch_share_one_qm_cut(self):
         # andb (rdi),al; jne bad
@@ -553,7 +613,8 @@ class TestX86StateStep(unittest.TestCase):
             self.assertEqual(fused_state.rflags, scalar_state.rflags)
             composed = fused._predicate_cuts[0x100][1]
             self.assertEqual(composed.flag_cut, ('and', 8))
-            self.assertEqual(len(composed.cut_inputs), 1)
+            self.assertEqual(len(composed.cut_inputs), 0)
+            self.assertTrue(composed.virtual_memory)
 
     def test_setcc_memory_chain_is_one_backward_residual_cut(self):
         # cmpq $2,(rdi); sete dl; andb (rsi),dl; jne bad
@@ -584,7 +645,8 @@ class TestX86StateStep(unittest.TestCase):
             proof_blocks, composed = fused._predicate_cuts[0x100]
             self.assertEqual(len(proof_blocks), 4)
             self.assertEqual(composed.flag_cut, ('and', 8))
-            self.assertEqual(len(composed.cut_inputs), 2)
+            self.assertEqual(len(composed.cut_inputs), 0)
+            self.assertTrue(composed.virtual_memory)
             self.assertEqual(
                 fused.blocks[0x100].boundary.operation, 'immediate_alu')
 
@@ -3889,7 +3951,7 @@ class TestX86StateStep(unittest.TestCase):
             '48 ff c9 48 89 07 48 89 47 08 '
             '48 8d 7f 10 75 f0 f4')
         pattern = 0x0102030405060708
-        dbt = X86DBT()
+        dbt = X86DBT(enable_function_oracles=False)
         memory = memory_with((0x100, code), (0x400, bytes(64)))
 
         state, boundary, _cost = dbt.run(initial_state(
@@ -3903,6 +3965,9 @@ class TestX86StateStep(unittest.TestCase):
                          struct.pack('<Q', pattern) * 8)
         self.assertEqual(dbt.layout()['collapsed_repeat_bytes'], 48)
         self.assertEqual(dbt.layout()['collapsed_repeat_iterations'], 3)
+        self.assertEqual(dbt.layout()['recurrence_cuts'], 1)
+        self.assertEqual((dbt.layout()['recurrence_cut_work'],
+                          dbt.layout()['recurrence_cut_span']), (4, 2))
 
     def test_single_store_counted_memset_folds_the_branch_block_lea(self):
         # dec ecx; mov [rdi],rax; lea rdi,[rdi+8]; jne loop; hlt
@@ -4733,7 +4798,7 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.register('rax'), 50)
         self.assertGreater(dbt.layout()['block_proof_fast_hits'], 40)
 
-    def test_memory_operands_cut_pure_register_work_at_load_and_store(self):
+    def test_memory_operands_share_one_normalized_state_page(self):
         # mov rax,[rbx]; add rax,1; mov [rbx+8],rax; hlt
         code = bytes.fromhex(
             '48 8b 03 48 83 c0 01 48 89 43 08 f4')
@@ -4741,7 +4806,7 @@ class TestX86StateStep(unittest.TestCase):
             (0x100, code),
             (0x400, struct.pack('<Q', 41)))
         state = initial_state(memory, 0x100, {'rbx': 0x400})
-        dbt = X86DBT()
+        dbt = X86DBT(enable_function_oracles=False)
 
         state, boundary, _cost = dbt.run(state)
 
@@ -4750,6 +4815,13 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(read_virtual(state, 0x408, 8),
                          struct.pack('<Q', 42))
         self.assertEqual(dbt.blocks[0x103].plan.waves.work, 1)
+        composed = dbt._register_cuts[0x100][1]
+        self.assertTrue(composed.virtual_memory)
+        self.assertEqual(
+            [node.op for node in composed.plan.nodes
+             if node.op.startswith('memory.')],
+            ['memory.i64.load', 'memory.i64.store'])
+        self.assertEqual(_cost.barriers, 1)
 
     def test_hot_non_loop_branch_reuses_negative_collapse_recipe(self):
         # xor eax,eax; test eax,eax; je -4
@@ -5682,7 +5754,11 @@ class TestX86StateStep(unittest.TestCase):
 
         self.assertIsNone(event)
         self.assertIsInstance(state.cpu.memory, MemoryCut)
-        self.assertEqual(runtime.dbt.layout()['persistent_cuts'], 0)
+        # A maximal physical page may now reach HLT in this first quantum.
+        # If it does, the one dirty byte cut is already the terminal root;
+        # otherwise it remains unpublished across the internal timeslice.
+        self.assertEqual(
+            runtime.dbt.layout()['persistent_cuts'], int(state.stopped))
         for _unused in range(8):
             state, event = runtime.machine_step(
                 state, budget=2, max_internal=1)

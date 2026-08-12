@@ -290,6 +290,10 @@ def _rewrite_physical(nodes, stack, locals_):
     for node in nodes:
         operation = node.op
         arguments = tuple(map(resolve, node.arguments))
+        if operation == 'memory.i64.repeat':
+            operand = emit(operation, arguments)
+            remap[node.value] = operand
+            continue
         if operation.startswith('memory.'):
             store = '.store' in operation
             data_count = 2 if store else 1
@@ -299,8 +303,8 @@ def _rewrite_physical(nodes, stack, locals_):
             raw_shape = constant(shape)
             if raw_shape is None:
                 raise ValueError('memory width is not a physical constant')
-            access_width = raw_shape & 0xff
-            scale = raw_shape >> 8
+            from .steppage import decode_memory_shape, memory_shape
+            access_width, scale, virtual64 = decode_memory_shape(raw_shape)
             address_form = form(data[0])
             if (scale == 0 and address_form is not None
                     and address_form[0] == 'lane32.SHL'
@@ -309,7 +313,8 @@ def _rewrite_physical(nodes, stack, locals_):
                 amount = constant(address_form[1][1]) % 32
                 data = (address_form[1][0],) + data[1:]
                 scale = amount
-            shape = Operand('const', access_width | (scale << 8))
+            shape = Operand('const', memory_shape(
+                access_width, scale, virtual64))
             arguments = (data + (offset, shape)
                          + dependencies)
             operand = emit(operation, arguments)
@@ -319,6 +324,12 @@ def _rewrite_physical(nodes, stack, locals_):
         bits = 32 if width == 'lane32' else 64
         full = mask_of(bits)
         replacement = None
+
+        def already_projected(operand):
+            if bits == 64 or operand.kind == 'const':
+                return True
+            source = form(operand)
+            return source is not None and source[0].startswith(width + '.')
 
         # Wasm values already use an unsigned host representation.  The
         # unsigned extension therefore changes the type observer, not the
@@ -333,6 +344,32 @@ def _rewrite_physical(nodes, stack, locals_):
               and consumers[node.value]
               and all(op.startswith('lane32.')
                       for op in consumers[node.value])):
+            replacement = arguments[0]
+
+        elif (name in ('ADD', 'OR', 'XOR') and len(arguments) == 2
+              and constant(arguments[1]) == 0
+              and already_projected(arguments[0])):
+            replacement = arguments[0]
+
+        elif (name == 'SUB' and len(arguments) == 2
+              and constant(arguments[1]) == 0
+              and already_projected(arguments[0])):
+            replacement = arguments[0]
+
+        elif (name == 'IMUL' and len(arguments) == 2
+              and constant(arguments[1]) == 1
+              and already_projected(arguments[0])):
+            replacement = arguments[0]
+
+        elif (name == 'AND' and len(arguments) == 2
+              and constant(arguments[1]) == full
+              and already_projected(arguments[0])):
+            replacement = arguments[0]
+
+        elif (name in ('SHL', 'SHR', 'SAR') and len(arguments) == 2
+              and constant(arguments[1]) is not None
+              and constant(arguments[1]) % bits == 0
+              and already_projected(arguments[0])):
             replacement = arguments[0]
 
         elif name == 'ADD' and len(arguments) == 2:
@@ -648,6 +685,9 @@ def compose_plans(first, second):
         raise ValueError('second state-step reads an unavailable stack slot')
 
     nodes = list(first.nodes)
+    last_memory = next((Operand('node', node.value)
+                        for node in reversed(nodes)
+                        if node.op.startswith('memory.')), None)
     remap = {}
 
     def substitute(operand):
@@ -667,9 +707,15 @@ def compose_plans(first, second):
 
     for node in second.nodes:
         value = len(nodes) + 1
+        arguments = tuple(map(substitute, node.arguments))
+        if (node.op.startswith('memory.') and last_memory is not None
+                and last_memory not in arguments):
+            arguments += (last_memory,)
         nodes.append(WaveNode(
-            value, node.op, tuple(map(substitute, node.arguments))))
+            value, node.op, arguments))
         remap[node.value] = Operand('node', value)
+        if node.op.startswith('memory.'):
+            last_memory = remap[node.value]
 
     stack = tuple(map(substitute, second.stack))
     locals_ = tuple(map(substitute, second.locals))

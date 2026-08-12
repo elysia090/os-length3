@@ -6,7 +6,7 @@
 // 4 KiB pages cross into Python memory.
 
 import {
-  executePureStateStepLoaded,
+  executeVirtualStateStepLoaded,
   load as loadVM,
   mixSpongeRecordsLoaded,
   release as releaseVM,
@@ -209,7 +209,9 @@ async function installX86VmKernels() {
     x86StepTokens.set(pageBase64, token);
     return token;
   };
-  self.executeX86StateStep = (token, valuesBase64) => {
+  self.executeX86StateStep = (
+    token, valuesBase64, readPage, writePage,
+  ) => {
     token = Number(token);
     if (!Number.isSafeInteger(token) || token <= 0
         || token > x86StepPages.length) {
@@ -223,7 +225,9 @@ async function installX86VmKernels() {
       { length: entry.length / 8 },
       (_unused, index) => view.getBigUint64(index * 8, true),
     );
-    const cut = executePureStateStepLoaded(page, locals, []);
+    const cut = executeVirtualStateStepLoaded(
+      page, locals, [], readPage, writePage,
+    );
     if (cut.stack.length || cut.locals.length !== locals.length) {
       throw new Error('vm.wasm returned a malformed x86 state cut');
     }
