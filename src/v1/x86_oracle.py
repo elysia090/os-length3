@@ -554,12 +554,20 @@ class X86ExecutionOracle:
         if self.proc and self.proc.poll() is None:
             return
         cmd = self.runner_prefix + [str(self.exe)]
+        address_sanitized = any(
+            'sanitize=address' in flag for flag in self.cflags)
         def sandbox_limits():
             # Defense in depth around the already-isolated helper.  CPU timeout
             # is also enforced by the parent per record.
             try:
                 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-                resource.setrlimit(resource.RLIMIT_AS, (1 << 30, 1 << 30))
+                # ASan reserves a large sparse shadow address range.  An
+                # RLIMIT_AS that is sensible for an ordinary oracle prevents
+                # the sanitizer runtime itself from starting; physical memory
+                # remains bounded by the parent and the finite input stream.
+                if not address_sanitized:
+                    resource.setrlimit(
+                        resource.RLIMIT_AS, (1 << 30, 1 << 30))
                 resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, 1 << 20))
                 resource.setrlimit(resource.RLIMIT_NOFILE, (32, 32))
             except Exception:

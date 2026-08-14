@@ -4,7 +4,7 @@
 // exceptions, control flow, and QM state-step execution remain in vm.wasm.
 // Missing native coverage is an error: there is no interpreter fallback.
 
-import { readArtifact } from './artifact.js';
+import { openArtifact } from './artifact.js';
 import { openNativeX86Artifact } from './x86-machine.js';
 import {
   openX86Machine,
@@ -15,6 +15,23 @@ const sessions = new Map();
 const profiles = new Map();
 let nextHandle = 1;
 let queue = Promise.resolve();
+
+function consoleState() {
+  return {
+    decoder: new TextDecoder(),
+    tail: '',
+    boot: true,
+    ready: false,
+  };
+}
+
+function observeConsole(runtime, bytes) {
+  runtime.tail = (runtime.tail
+    + runtime.decoder.decode(bytes, { stream: true })).slice(-4096);
+  const prompt = /(?:^|\r?\n)# $/.test(runtime.tail);
+  runtime.ready = prompt
+    && (!runtime.boot || runtime.tail.includes('BusyBox is ready.'));
+}
 
 function send(type, payload = {}) {
   self.postMessage(Object.assign({ type }, payload));
@@ -82,9 +99,9 @@ async function drive(id, handle, options = {}) {
   handle = sessionHandle(handle);
   const session = sessions.get(handle);
   const quantum = positiveInteger(
-    options.quantum ?? options.maxBlocks, 512, 'x86 block quantum',
+    options.quantum ?? options.maxBlocks, 65536, 'x86 block quantum',
   );
-  const maxQuanta = positiveInteger(options.maxQuanta, 2048, 'x86 quanta');
+  const maxQuanta = positiveInteger(options.maxQuanta, 256, 'x86 quanta');
   let raw = session.machine.status();
   for (let count = 0; count < maxQuanta; count += 1) {
     raw = await session.machine.advance(quantum);
@@ -94,7 +111,7 @@ async function drive(id, handle, options = {}) {
         `native QM artifact has no x86 block at RIP 0x${rip}`,
       );
     }
-    if (raw.halted) break;
+    if (raw.halted || session.console.ready) break;
     if ((count & 15) === 15) {
       send('progress', {
         id,
@@ -108,6 +125,7 @@ async function drive(id, handle, options = {}) {
   }
   return {
     state: status(session.machine, raw),
+    ready: session.console.ready,
     layout: session.artifact.layout(),
   };
 }
@@ -124,30 +142,27 @@ async function boot(message) {
     label: 'Opening the native Linux machine',
     asset: name,
   });
-  const opened = await readArtifact(name, {
+  const opened = await openArtifact(name, {
     root: message.artifactRoot || null,
-    onProgress({ loaded, total, fetched }) {
-      send('progress', {
-        id: message.id,
-        phase: 'download',
-        label: 'Opening the native Linux machine',
-        asset: name,
-        loaded,
-        total,
-        detail: `${fetched} delivered bytes`,
-      });
-    },
+    // The outer machine descriptor is one known sequential extent.  Give it
+    // a wider transfer wave without changing the small on-demand RAM wave
+    // passed below to openNativeX86Artifact.
+    wavePages: message.x86?.deliveryWavePages
+      ?? message.x86?.wavePages ?? 4,
+    cachePages: message.x86?.deliveryCachePages ?? 16,
   });
-  profileMark(message.id, 'artifact_verified');
+  profileMark(message.id, 'artifact_mapped');
   let artifact;
   let machine;
+  const console = consoleState();
   try {
-    artifact = await openNativeX86Artifact(opened.bytes, message.x86 || {});
+    artifact = await openNativeX86Artifact(opened.fabric, message.x86 || {});
     profileMark(message.id, 'physical_pages_opened');
     machine = await openX86Machine({
       ...artifact,
       devices: {
         consoleWrite(bytes) {
+          observeConsole(console, bytes);
           send('trace', {
             event: {
               operation: 'console_write',
@@ -164,7 +179,7 @@ async function boot(message) {
     throw error;
   }
   const handle = nextHandle++;
-  sessions.set(handle, { artifact, machine, opened });
+  sessions.set(handle, { artifact, machine, opened, console });
   send('booted', { id: message.id, handle, architecture: 'x86-64' });
   try {
     const result = await drive(
@@ -214,6 +229,9 @@ async function handleMessage(message) {
     const handle = sessionHandle(message.handle);
     const session = sessions.get(handle);
     const bytes = new TextEncoder().encode(String(message.data || ''));
+    session.console.tail = '';
+    session.console.boot = false;
+    session.console.ready = false;
     const accepted = session.machine.feedConsole(bytes);
     send('result', { id: message.id, ok: true, handle, accepted });
     return;

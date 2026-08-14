@@ -308,6 +308,22 @@ class TestPageFabric(unittest.TestCase):
         self.assertLess(len(data_wire),
                         len(dump_bundle(manifest, complete, 'all')))
 
+    def test_data_delivery_does_not_materialize_discarded_parity_payloads(self):
+        payload = self.object()
+        complete_manifest, complete = project(
+            payload, page_size=64, data_shards=3, parity_shards=2)
+        data_manifest, data = project(
+            payload, page_size=64, data_shards=3, parity_shards=2,
+            stored_shards='data')
+
+        self.assertEqual(data_manifest, complete_manifest)
+        self.assertTrue(data.records)
+        self.assertTrue(all(
+            key[3] < data_manifest.data_shards for key in data.records))
+        self.assertEqual(
+            dump_bundle(data_manifest, data, 'data'),
+            dump_bundle(complete_manifest, complete, 'data'))
+
     def test_bundle_open_keeps_payloads_and_digests_mapped(self):
         manifest, complete = project(
             self.object(), page_size=64, data_shards=3, parity_shards=2)

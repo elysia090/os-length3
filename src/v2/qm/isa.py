@@ -384,6 +384,15 @@ def known_bits(seq, input_bits=None):
     return known
 
 
+def _canonical_delta(delta):
+    """Shortest stable spelling of an additive delta modulo 2^64."""
+    delta &= M64
+    inverse = (-delta) & M64
+    if delta <= inverse:
+        return 'ADD', delta, None
+    return 'SUB', inverse, None
+
+
 def _rewrite_one(op, const, shift, incoming):
     """One instruction's canonical form, or None when it is a copy.
 
@@ -410,10 +419,10 @@ def _rewrite_one(op, const, shift, incoming):
         # and an AND.
         return 'AND', const, None
     if op == 'SUB' and const is not None and const >> 63:
-        # Subtracting a negative constant is adding its magnitude, and the
-        # magnitude is the shorter of the two to write.  The mirror rewrite is
-        # deliberately not made: an addition whose constant is large is usually
-        # one a lane form put there, and `0xB9B9B9B9B9B9B9BA` says what it is.
+        # Subtracting a negative constant is adding its magnitude.  Keep the
+        # mirror form in ordinary lowering because replicated lane constants
+        # are meaningful there; recovered source SSA gets a stronger physical
+        # canonicalization at its frontend boundary.
         return 'ADD', (-const) & M64, None
     if op in ('SHL', 'SHR', 'SAR') and shift == 0:
         return None
@@ -432,8 +441,10 @@ def _merge(producer, op, const, shift):
                     'OR': producer.const | const,
                     'XOR': producer.const ^ const}[op]
         return op, combined, None
-    if previous == 'ADD' and op == 'ADD':
-        return 'ADD', (producer.const + const) & M64, None
+    if previous in ('ADD', 'SUB') and op in ('ADD', 'SUB'):
+        left = producer.const if previous == 'ADD' else -producer.const
+        right = const if op == 'ADD' else -const
+        return _canonical_delta(left + right)
     if previous == op and op in ('SHL', 'SHR'):
         total = producer.shift + shift
         if total >= 64:
@@ -444,13 +455,39 @@ def _merge(producer, op, const, shift):
     return None
 
 
-def _rewrite(seq):
-    known = known_bits(seq)
+def _rewrite(seq, input_bits=None):
+    known = known_bits(seq, input_bits)
     out = Seq()
     remap = {0: 0}
     for index, ins in enumerate(seq.ins, start=1):
         args = [remap[a] for a in ins.args]
-        form = _rewrite_one(ins.op, ins.const, ins.shift,
+        op, const, shift = ins.op, ins.const, ins.shift
+        if len(args) == 2 and args[0] == args[1]:
+            if op in ('XORR', 'SUBR', 'ANDNR'):
+                remap[index] = out.emit('AND', [0], const=0)
+                continue
+            if op in ('ANDR', 'ORR'):
+                remap[index] = args[0]
+                continue
+        if len(args) == 2:
+            left_zero = known[ins.args[0]] == 0
+            right_zero = known[ins.args[1]] == 0
+            if op in ('ADDR', 'ORR', 'XORR') and left_zero:
+                remap[index] = args[1]
+                continue
+            if op in ('ADDR', 'SUBR', 'ORR', 'XORR') and right_zero:
+                remap[index] = args[0]
+                continue
+            if op == 'SUBR' and left_zero:
+                op, const, shift, args = 'NEG', None, None, [args[1]]
+            elif op == 'ANDNR' and left_zero:
+                remap[index] = args[1]
+                continue
+            elif ((op == 'ANDNR' and right_zero)
+                  or (op == 'ANDR' and (left_zero or right_zero))):
+                remap[index] = out.emit('AND', [0], const=0)
+                continue
+        form = _rewrite_one(op, const, shift,
                             known[ins.args[0]] if ins.args else M64)
         if form is None:
             remap[index] = args[0]
@@ -521,11 +558,12 @@ def _shape(seq):
 NORMALIZE_ROUNDS = 8
 
 
-def _normalize_local(seq):
+def _normalize_local(seq, input_bits=None):
     """Apply instruction-local identities to a fixed point."""
     current = seq
     for _round in range(NORMALIZE_ROUNDS):
-        stepped = dead_code(common_subexpressions(_fold(_rewrite(current))))
+        stepped = dead_code(common_subexpressions(
+            _fold(_rewrite(current, input_bits))))
         if _shape(stepped) == _shape(current):
             return current
         current = stepped
@@ -656,9 +694,9 @@ def _seq_gf2_affine(form, notes=()):
     return out
 
 
-def normalize(seq):
+def normalize(seq, input_bits=None):
     """Rewrite locally, then extract and directly emit exact whole forms."""
-    current = _normalize_local(seq)
+    current = _normalize_local(seq, input_bits)
     candidates = [current]
     forms = (
         (_extract_integer_affine, _seq_integer_affine),
@@ -667,8 +705,32 @@ def normalize(seq):
     for extract, emit in forms:
         form = extract(current)
         if form is not None:
-            candidates.append(_normalize_local(emit(form, current.notes)))
+            candidates.append(_normalize_local(
+                emit(form, current.notes), input_bits))
     return min(candidates, key=objective_key)
+
+
+def normalize_physical(seq, input_bits=None):
+    """Canonicalize recovered source SSA without changing authored kernels.
+
+    Compiler listings may spell the same modular delta as either ``ADD k`` or
+    ``SUB -k``.  Source SSA has no authored lane notation to preserve, so its
+    final representative uses the smaller unsigned magnitude.  This is done
+    after whole-expression extraction, which otherwise deliberately retains
+    the established spelling used by hand-derived lane kernels.
+    """
+    current = normalize(seq, input_bits)
+    out = Seq(notes=list(current.notes))
+    for ins in current.ins:
+        op, const, shift = ins.op, ins.const, ins.shift
+        if op == 'XOR' and const == M64:
+            op, const, shift = 'NOT', None, None
+        if op in ('ADD', 'SUB'):
+            delta = const if op == 'ADD' else -const
+            op, const, shift = _canonical_delta(delta)
+        out.emit(op, list(ins.args), const, shift)
+    out.result = current.result
+    return _normalize_local(out, input_bits)
 
 
 # ---------------------------------------------------------------------------
@@ -834,6 +896,19 @@ def _lin_select_shift_conv(basis, input_bits):
     return mask, lead, const
 
 
+def _lin_single_bit_const(basis, input_bits):
+    """Return the one source coordinate and its complete output image.
+
+    A one-bit linear map is not usefully represented as one shift term per
+    destination bit.  Extracting the bit and multiplying by its image is the
+    direct physical form, and covers masks such as ``bit * 0xff`` in three
+    portable operations instead of an eight-way shift/XOR tree.
+    """
+    support = [(index, image) for index, image
+               in enumerate(basis[:input_bits]) if image]
+    return support[0] if len(support) == 1 else None
+
+
 def _lin_shift_terms(basis, input_bits):
     """Decompose a GF(2)-linear map into XOR of ((x & mask) shifted by s).
 
@@ -975,6 +1050,23 @@ def lower_lin_const(op, isa):
     basis = op.detail['basis']
     input_bits = op.detail['input_bits']
     out = []
+
+    singleton = _lin_single_bit_const(basis, input_bits)
+    if singleton is not None and popcnt(singleton[1]) > 1:
+        source, image = singleton
+        s = Seq()
+        value = 0
+        if isa.has('pext'):
+            value = s.emit('PEXT', [value], const=1 << source)
+        else:
+            if source:
+                value = s.emit('SHR', [value], shift=source)
+            if source != input_bits - 1:
+                value = s.emit('AND', [value], const=1)
+        if image != 1:
+            value = s.emit('IMUL', [value], const=image)
+        s.result = value
+        out.append(('single-bit extract + constant image', s))
 
     if isa.has('pdep'):
         mask = _lin_pdep_mask(basis)
@@ -1613,6 +1705,23 @@ def lower_table(op, isa):
     return [('lookup table', s)]
 
 
+def lower_ssa(op, isa):
+    """Retain a frontend-recovered SSA only where the target can spell it."""
+    sequence = normalize_physical(op.detail['sequence'])
+    # wasm32 is the codec input, so a source candidate must have an actual
+    # Wasm representation rather than becoming an implicit target fallback.
+    if isa.name == 'wasm32' and emit_wasm(sequence, 'candidate') is None:
+        return []
+    if not isa.has('pdep') and any(ins.op == 'PDEP' for ins in sequence.ins):
+        return []
+    if not isa.has('pext') and any(ins.op == 'PEXT' for ins in sequence.ins):
+        return []
+    if not isa.has('clmul') and any(
+            ins.op in ('CLMUL', 'CLMULR') for ins in sequence.ins):
+        return []
+    return [('verified frontend SSA', sequence)]
+
+
 def lower_identity(op, isa):
     return [('identity', Seq())]
 
@@ -1628,6 +1737,7 @@ LOWERERS = {
     'SPLIT': lower_split,
     'TABLE': lower_table,
     'IDENTITY': lower_identity,
+    'SSA': lower_ssa,
 }
 
 
@@ -1661,7 +1771,9 @@ def lower_program(program, isa, verify_against=None, accept=None):
         # Rank the representatives by what they cost after normalization, not
         # by what the lowerer happened to write: a multiply by a power of two
         # and the shift it becomes are not two candidates.
-        options = sorted(((name, normalize(sub)) for name, sub in options),
+        normalizer = normalize_physical if op.kind == 'SSA' else normalize
+        options = sorted(((name, normalizer(sub, program.input_bits))
+                          for name, sub in options),
                          key=lambda pair: objective_key(pair[1]))
         chosen.append((op, options))
 
@@ -1680,7 +1792,9 @@ def lower_program(program, isa, verify_against=None, accept=None):
         # Pieces that were lowered independently say the same thing several
         # times over; what is asked of them is the whole sequence, so that is
         # what is normalized and what is then verified and measured.
-        seq = normalize(seq)
+        seq = (normalize_physical(seq, program.input_bits)
+               if len(program.ops) == 1 and program.ops[0].kind == 'SSA'
+               else normalize(seq, program.input_bits))
 
         if verify_against is None and accept is None:
             return seq, used

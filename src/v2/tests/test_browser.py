@@ -508,8 +508,8 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
 
         with open(os.path.join(ROOT, 'web', 'linux-worker.js')) as handle:
             linux_worker = handle.read()
-        self.assertIn('readArtifact(name, {', linux_worker)
-        self.assertIn('openNativeX86Artifact(opened.bytes', linux_worker)
+        self.assertIn('openArtifact(name, {', linux_worker)
+        self.assertIn('openNativeX86Artifact(opened.fabric', linux_worker)
         self.assertIn('openX86Machine({', linux_worker)
         self.assertIn('...artifact,', linux_worker)
         self.assertNotIn('loadPyodide', linux_worker)

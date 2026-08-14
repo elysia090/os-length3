@@ -54,6 +54,24 @@ class TestEveryRewriteIsAnIdentity(unittest.TestCase):
          build(('IMUL', [0], 0, None)), ['AND']),
         ('subtracting a negative constant is adding',
          build(('SUB', [0], (-125) & M64, None)), ['ADD']),
+        ('mixed adjacent deltas are one',
+         build(('ADD', [0], 257, None), ('SUB', [1], 7, None)), ['ADD']),
+        ('xor with all ones is complement',
+         build(('XOR', [0], M64, None)), ['NOT']),
+        ('a value xor itself is zero',
+         build(('XORR', [0, 0], None, None)), ['AND']),
+        ('a value minus itself is zero',
+         build(('SUBR', [0, 0], None, None)), ['AND']),
+        ('a value and itself is itself',
+         build(('ANDR', [0, 0], None, None),
+               ('XOR', [1], 7, None)), ['XOR']),
+        ('zero minus a value is its negation',
+         build(('AND', [0], 0, None),
+               ('SUBR', [1, 0], None, None)), ['NEG']),
+        ('not zero and a value is the value',
+         build(('AND', [0], 0, None),
+               ('ANDNR', [1, 0], None, None),
+               ('XOR', [2], 7, None)), ['XOR']),
         ('a mask that cannot clear anything goes',
          build(('SHR', [0], None, 32), ('AND', [1], mask_of(32), None)),
          ['SHR']),
@@ -98,6 +116,13 @@ class TestEveryRewriteIsAnIdentity(unittest.TestCase):
         seq = build(('PEXT', [0], 0xFF0, None))
         self.assertEqual([ins.op for ins in isa_mod.normalize(seq).ins],
                          ['PEXT'])
+
+    def test_recovered_source_uses_one_modular_delta_spelling(self):
+        seq = build(('ADD', [0], (-125) & M64, None))
+        self.assertEqual(isa_mod.normalize(seq).ins[0].op, 'ADD')
+        physical = isa_mod.normalize_physical(seq)
+        self.assertEqual((physical.ins[0].op, physical.ins[0].const),
+                         ('SUB', 125))
 
     def test_a_long_integer_expression_is_substituted_then_reformed(self):
         seq = build(('ADD', [0], 1, None),

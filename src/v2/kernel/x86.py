@@ -8,6 +8,7 @@ the byte cut is committed.
 """
 
 from dataclasses import dataclass, field, replace as _dataclass_replace
+from collections import deque
 import gzip
 import hashlib
 from math import gcd
@@ -16,7 +17,8 @@ import struct
 from qm.memorycut import MemoryCut
 from qm.laneops import select as select_lane
 from qm.steppage import (compile_mapped_executor,
-                         decode_projection_coordinate, memory_shape,
+                         decode_projection_coordinate,
+                         load_region_descriptor, memory_shape,
                          projection_coordinate,
                          pack as pack_step, unpack as unpack_step)
 from qm.stepnormalize import compose_plans, normalize_plan, physical_work
@@ -41,6 +43,9 @@ IA32_FS_BASE = 0xc0000100
 IA32_GS_BASE = 0xc0000101
 IA32_KERNEL_GS_BASE = 0xc0000102
 IA32_TIME_STAMP_COUNTER = 0x10
+IA32_STAR = 0xc0000081
+IA32_LSTAR = 0xc0000082
+IA32_FMASK = 0xc0000084
 CPUID_PSE = 1 << 3
 CPUID_RDRAND = 1 << 30
 CPUID_RDSEED = 1 << 18
@@ -88,6 +93,7 @@ _PIT_COUNTER = 0x10042
 _PIT_READ_PHASE = 0x10043
 _PIT_WRITE_PHASE = 0x10044
 _PIT_LOW_LATCH = 0x10045
+_UART_TX_PENDING = 0x10047
 _CMOS_INDEX = 0x10070
 _CMOS_REGISTER_BASE = 0x10100
 
@@ -857,6 +863,7 @@ class X86State:
     tr: int = 0
     debug: tuple = (0,) * 8
     msrs: tuple = ()
+    xmm: tuple = (0,) * 32
     halted: bool = False
     interrupts: tuple = ()
     translations: object = field(default_factory=dict, compare=False,
@@ -865,6 +872,8 @@ class X86State:
     def __post_init__(self):
         if len(self.registers) != len(REGISTER_NAMES):
             raise ValueError('x86 state needs sixteen general registers')
+        if len(self.xmm) != 32:
+            raise ValueError('x86 state needs sixteen 128-bit vector registers')
 
     def register(self, name):
         return self.registers[REGISTER_INDEX[name]]
@@ -878,7 +887,8 @@ class X86State:
 _X86_STATE_FIELDS = (
     'registers', 'rip', 'memory', 'rflags', 'cr0', 'cr2', 'cr3', 'cr4',
     'cr8', 'efer', 'gdtr', 'idtr', 'cs', 'ds', 'es', 'ss', 'fs', 'gs',
-    'ldtr', 'tr', 'debug', 'msrs', 'halted', 'interrupts', 'translations')
+    'ldtr', 'tr', 'debug', 'msrs', 'xmm', 'halted', 'interrupts',
+    'translations')
 
 
 class _X86Frame(object):
@@ -1835,6 +1845,56 @@ class DecodedBlock:
     indirect_register: object = None
     tail_return: object = None
     inlined_call_target: object = None
+    code_extents: tuple = ()
+    source_instructions: object = None
+
+
+_COUNTED_BOUNDARY_OPERATIONS = frozenset((
+    'register_immediate_multiply_flags',
+    'register_immediate_result_flags',
+    'register_multiply_flags',
+    'register_result_flags',
+    'shift_result_flags',
+))
+
+
+def _block_source_instructions(block):
+    """Exact x86 instructions represented by one decoded/physical cut."""
+    if block.source_instructions is not None:
+        return int(block.source_instructions)
+    return int(block.instructions) + int(
+        block.boundary.operation not in _COUNTED_BOUNDARY_OPERATIONS)
+
+
+def _block_code_extents(block):
+    """Return the exact executable byte extents that authorize one block."""
+    if block.code_extents:
+        return tuple((int(address) & MASK64, bytes(payload))
+                     for address, payload in block.code_extents)
+    return ((int(block.rip) & MASK64, bytes(block.source)),)
+
+
+def _merge_code_extents(blocks):
+    """Join adjacent executable proofs without materializing address gaps."""
+    source = []
+    for block in blocks:
+        for address, payload in _block_code_extents(block):
+            if not payload:
+                continue
+            source.append((address, payload))
+    extents = []
+    for address, payload in sorted(source):
+        if not extents or address > extents[-1][0] + len(extents[-1][1]):
+            extents.append((address, payload))
+            continue
+        prior_address, prior = extents[-1]
+        offset = address - prior_address
+        overlap = min(len(payload), len(prior) - offset)
+        if offset < 0 or prior[offset:offset + overlap] != payload[:overlap]:
+            raise X86Error('composed x86 code proofs disagree')
+        if overlap < len(payload):
+            extents[-1] = prior_address, prior + payload[overlap:]
+    return tuple(extents)
 
 
 class _CodeReader(object):
@@ -2092,6 +2152,15 @@ class X86DBT(object):
         self.recurrence_cut_executed_work = 0
         self.recurrence_cut_executed_span = 0
         self.recurrence_source_instructions = 0
+        self.scan_cuts = 0
+        self.scan_cut_cache_hits = 0
+        self.scan_cut_cache_misses = 0
+        self.scan_cut_work = 0
+        self.scan_cut_span = 0
+        self.scan_cut_executions = 0
+        self.scan_cut_executed_work = 0
+        self.scan_cut_executed_span = 0
+        self.scan_source_instructions = 0
         self.prefix_cuts = 0
         self.prefix_cut_cache_hits = 0
         self.prefix_cut_cache_misses = 0
@@ -2153,10 +2222,12 @@ class X86DBT(object):
         self._predicate_cuts = {}
         self._register_cuts = {}
         self._recurrence_cuts = {}
+        self._scan_cuts = {}
         self._prefix_cuts = {}
         self._stack_cuts = {}
         self._find_cuts = {}
         self._copy_cuts = {}
+        self._wide_copy_cuts = {}
         self._proof_dependents = {}
         self._block_pages = {}
         self._page_blocks = {}
@@ -2240,6 +2311,9 @@ class X86DBT(object):
         self._indirect_thunk_functions = {}
         self._control_profile = {} if profile_controls else None
         self._physical_profile = {} if profile_controls else None
+        self._physical_trace = deque(maxlen=256) \
+            if profile_controls else None
+        self._physical_retry_cuts = {} if profile_controls else None
         self._physical_boundary_profile = {} if profile_controls else None
         self._hash_stream_profile = {} if profile_controls else None
         self._pure_call_profile = {} if profile_controls else None
@@ -2523,7 +2597,23 @@ class X86DBT(object):
             bits = 16 if operand_override else (64 if rex & 8 else 32)
             prefix = 'i%d.' % bits
 
-            if opcode == 0x90:
+            if opcode == 0x90 and not rex & 1:
+                instruction_count += 1
+                continue
+            if 0x90 <= opcode <= 0x97:
+                register = (opcode - 0x90) | ((rex & 1) << 3)
+                left = locals_[REGISTER_INDEX['rax']]
+                right = locals_[register]
+                if bits == 32:
+                    left = emit('i64.and', (left, Operand('const', MASK32)))
+                    right = emit('i64.and', (right, Operand('const', MASK32)))
+                write(REGISTER_INDEX['rax'], right, bits)
+                write(register, left, bits)
+                instruction_count += 1
+                continue
+            if opcode == 0x9b:
+                # No x87 exception is pending in the integer-resident FPU
+                # model, so FWAIT retires as an ordinary pure instruction.
                 instruction_count += 1
                 continue
             if opcode in (0xfa, 0xfb, 0xfc, 0xfd):
@@ -2993,6 +3083,8 @@ class X86DBT(object):
                 next_rip = start + reader.at
                 if second == 0x05:
                     boundary = X86Boundary('syscall', next_rip)
+                elif second == 0x07:
+                    boundary = X86Boundary('sysret', next_rip)
                 elif second == 0x0b:
                     boundary = X86Boundary(
                         'exception',
@@ -3063,6 +3155,54 @@ class X86DBT(object):
                         boundary = X86Boundary(
                             'debug_register',
                             (start + reader.at, second, debug, register))
+                elif second == 0x6e and operand_override and rex & 8:
+                    vector, operand, _group = self._modrm(reader, rex)
+                    boundary = X86Boundary(
+                        'simd_move_to',
+                        (start + reader.at, vector, operand))
+                elif second == 0x6c and operand_override:
+                    vector, operand, _group = self._modrm(reader, rex)
+                    if isinstance(operand, MemoryOperand):
+                        boundary = X86Boundary(
+                            'unsupported',
+                            (opcode, second, instruction_start))
+                    else:
+                        boundary = X86Boundary(
+                            'simd_unpack_low',
+                            (start + reader.at, vector, operand))
+                elif second == 0xef and operand_override:
+                    vector, operand, _group = self._modrm(reader, rex)
+                    if isinstance(operand, MemoryOperand):
+                        boundary = X86Boundary(
+                            'unsupported',
+                            (opcode, second, instruction_start))
+                    else:
+                        boundary = X86Boundary(
+                            'simd_xor',
+                            (start + reader.at, vector, operand))
+                elif second in (0x10, 0x11, 0x28, 0x29) \
+                        and not operand_override:
+                    vector, operand, _group = self._modrm(reader, rex)
+                    if not isinstance(operand, MemoryOperand):
+                        boundary = X86Boundary(
+                            'unsupported',
+                            (opcode, second, instruction_start))
+                    else:
+                        boundary = X86Boundary(
+                            'simd_load' if second in (0x10, 0x28)
+                            else 'simd_store',
+                            (start + reader.at, vector, operand))
+                elif second in (0x6f, 0x7f) \
+                        and (operand_override or repeat):
+                    vector, operand, _group = self._modrm(reader, rex)
+                    if not isinstance(operand, MemoryOperand):
+                        boundary = X86Boundary(
+                            'unsupported',
+                            (opcode, second, instruction_start))
+                    else:
+                        boundary = X86Boundary(
+                            'simd_load' if second == 0x6f else 'simd_store',
+                            (start + reader.at, vector, operand))
                 elif second in (0xb0, 0xb1):
                     register, operand, _group = self._modrm(reader, rex)
                     exchange_bits = 8 if second == 0xb0 else bits
@@ -3102,6 +3242,11 @@ class X86DBT(object):
                     if group == 0 and isinstance(operand, MemoryOperand):
                         boundary = X86Boundary(
                             'save_fpu',
+                            (start + reader.at, operand))
+                    elif group in (1, 5) and isinstance(
+                            operand, MemoryOperand):
+                        boundary = X86Boundary(
+                            'restore_fpu',
                             (start + reader.at, operand))
                     elif group in (5, 6, 7) and isinstance(operand, int):
                         boundary = X86Boundary(
@@ -3267,6 +3412,11 @@ class X86DBT(object):
                     'repeat_move',
                     (next_rip, 1 if opcode == 0xa4
                      else (8 if rex & 8 else 4)))
+            elif opcode in (0xa4, 0xa5):
+                boundary = X86Boundary(
+                    'move_string',
+                    (next_rip, 1 if opcode == 0xa4
+                     else (8 if rex & 8 else 4)))
             elif opcode in (0xaa, 0xab) and repeat:
                 boundary = X86Boundary(
                     'repeat_store',
@@ -3300,7 +3450,7 @@ class X86DBT(object):
         block = DecodedBlock(
             start, boundary_rip, source, instruction_count,
             plan, mapped, execute, len(scratch), boundary,
-            proof_config, proof)
+            proof_config, proof, code_extents=((start, source),))
         self._remember_block(block)
         self.decoded_blocks += 1
         self.source_instructions += instruction_count
@@ -3371,7 +3521,7 @@ class X86DBT(object):
             + tuple(scratch))
 
     @staticmethod
-    def _lower_flag_boundary(plan, boundary):
+    def _lower_flag_boundary(plan, boundary, segment_local=None):
         """Append one register/flags instruction to an open physical cut."""
         operation, detail = boundary.operation, boundary.detail
         supported = {
@@ -3380,9 +3530,12 @@ class X86DBT(object):
             'register_immediate_alu', 'register_immediate_result_flags',
             'register_result_flags', 'set_condition', 'memory_binary',
             'conditional_move', 'shift', 'shift_result_flags',
+            'double_shift',
             'bit_immediate', 'bit_register', 'bit_scan',
-            'compare_exchange', 'register_immediate_multiply_flags',
-            'register_multiply_flags', 'multiply_immediate', 'unary',
+            'compare_exchange', 'exchange_add',
+            'register_immediate_multiply_flags',
+            'register_multiply_flags', 'multiply',
+            'multiply_immediate', 'unary',
         }
         if operation not in supported or len(plan.locals) < 17:
             return None
@@ -3434,8 +3587,7 @@ class X86DBT(object):
             return value
 
         def memory_address(operand, following):
-            if (not isinstance(operand, MemoryOperand)
-                    or operand.segment_msr is not None):
+            if not isinstance(operand, MemoryOperand):
                 return None
             pointer = Operand(
                 'const', (int(operand.displacement)
@@ -3451,6 +3603,11 @@ class X86DBT(object):
                         index, Operand(
                             'const', operand.scale.bit_length() - 1)))
                 pointer = emit('i64.add', (pointer, index))
+            if operand.segment_msr is not None:
+                if segment_local is None:
+                    return None
+                pointer = emit('i64.add', (
+                    pointer, plan.locals[int(segment_local)]))
             return pointer
 
         def memory_load(pointer, bits):
@@ -3563,6 +3720,18 @@ class X86DBT(object):
             if not publish(register, result, bits):
                 return None
             flags = multiply_flags(left, right, result, bits)
+        elif operation == 'multiply':
+            (_following, register, operand, bits) = detail
+            left = read(register, bits)
+            right = (memory_value(operand, bits, following)[1]
+                     if isinstance(operand, MemoryOperand)
+                     else read(operand, bits))
+            if left is None or right is None:
+                return None
+            result = emit('i64.mul', (left, right))
+            if not publish(register, result, bits):
+                return None
+            flags = multiply_flags(left, right, result, bits)
         elif operation in ('register_immediate_multiply_flags',
                             'register_multiply_flags'):
             if not scratch:
@@ -3611,6 +3780,28 @@ class X86DBT(object):
                 memory_store(pointer, next_destination, bits)
             elif not publish(operand, next_destination, bits):
                 return None
+        elif operation == 'exchange_add':
+            following, source, operand, bits, _locked = detail
+            source_value = read(source, bits)
+            pointer = None
+            if isinstance(operand, MemoryOperand):
+                pointer, destination = memory_value(
+                    operand, bits, following)
+            else:
+                destination = read(operand, bits)
+            if source_value is None or destination is None:
+                return None
+            result = emit('i64.add', (destination, source_value))
+            result = emit('i64.and', (
+                result, Operand('const', (1 << bits) - 1)))
+            if not publish(source, destination, bits):
+                return None
+            if pointer is not None:
+                memory_store(pointer, result, bits)
+            elif not publish(operand, result, bits):
+                return None
+            flags = result_flags(
+                'add', destination, source_value, result, bits)
         elif operation == 'bit_scan':
             following, destination, operand, bits, reverse = detail
             if isinstance(operand, MemoryOperand):
@@ -3813,17 +4004,27 @@ class X86DBT(object):
             flags = result_flags('and', left, right, result, bits)
         elif operation == 'conditional_move':
             _following, code, destination, source, bits = detail
+            if not isinstance(destination, int):
+                return None
             if isinstance(source, MemoryOperand):
                 value = memory_value(source, bits, following)[1]
             else:
                 value = read(source, bits)
-            current = read(destination, bits)
-            if value is None or current is None:
+            current = registers[destination]
+            if value is None:
                 return None
+            if bits == 32:
+                # A 32-bit CMOV zero-extends only when its condition is true.
+                # Publishing a selected low word as an unconditional 32-bit
+                # write incorrectly clears the upper half on the false arm.
+                value = emit('i64.and', (
+                    value, Operand('const', MASK32)))
+            elif bits < 64:
+                value = emit('lane64.INSERT', (
+                    current, value, Operand('const', int(bits))))
             selected = emit('lane64.SELECT', (
                 value, current, condition(code)))
-            if not publish(destination, selected, bits):
-                return None
+            registers[destination] = selected
         elif operation == 'shift':
             _following, group, operand, bits, raw_amount = detail
             pointer = None
@@ -3872,6 +4073,49 @@ class X86DBT(object):
             flags = emit('lane64.X86_SHIFT_FLAGS', (
                 prior_flags, source, result, amount,
                 Operand('const', int(bits) | (int(group) << 8))))
+        elif operation == 'double_shift':
+            (_following, direction, destination, source_register,
+             bits, raw_amount) = detail
+            if direction not in ('left', 'right') \
+                    or bits not in (16, 32, 64):
+                return None
+            pointer = None
+            if isinstance(destination, MemoryOperand):
+                pointer, left = memory_value(
+                    destination, bits, following)
+            else:
+                left = read(destination, bits)
+            right = read(source_register, bits)
+            if left is None or right is None:
+                return None
+            amount = (emit('i64.and', (
+                registers[REGISTER_INDEX['rcx']],
+                Operand('const', bits - 1)))
+                if raw_amount is None else
+                Operand('const', int(raw_amount) & (bits - 1)))
+            complement = emit('i64.sub', (
+                Operand('const', bits), amount))
+            if direction == 'right':
+                shifted = emit('i64.or', (
+                    emit('i64.shr_u', (left, amount)),
+                    emit('i64.shl', (right, complement))))
+                flag_group = 6
+            else:
+                shifted = emit('i64.or', (
+                    emit('i64.shl', (left, amount)),
+                    emit('i64.shr_u', (right, complement))))
+                flag_group = 4
+            shifted = emit('i64.and', (
+                shifted, Operand('const', (1 << bits) - 1)))
+            result = emit('lane64.SELECT', (
+                left, shifted, emit('i64.eqz', (amount,))))
+            if pointer is not None:
+                memory_store(pointer, result, bits)
+            elif not publish(destination, result, bits):
+                return None
+            flags = emit('lane64.X86_SHIFT_FLAGS', (
+                prior_flags, left, result, amount,
+                Operand('const', int(bits) | (flag_group << 8))))
         elif operation in ('bit_immediate', 'bit_register'):
             if operation == 'bit_immediate':
                 _following, group, operand, bits, immediate = detail
@@ -3982,7 +4226,7 @@ class X86DBT(object):
             plan.function, plan.start, plan.end + 1,
             plan.instructions + 1, plan.stack_inputs,
             tuple(nodes), plan.waves, plan.stack,
-            tuple(registers) + (flags,))
+            tuple(registers) + (flags,) + tuple(scratch))
         return normalize_plan(residual), int(following) & MASK64
 
     @staticmethod
@@ -4131,16 +4375,21 @@ class X86DBT(object):
         return plan, int(following) & MASK64
 
     @staticmethod
-    def _memory_plan(boundary):
+    def _memory_plan(boundary, segment_local=None):
         """Lower an ordinary x86 memory instruction into shared memory SSA."""
         operation, detail = boundary.operation, boundary.detail
-        supported = {'load', 'repeat_move', 'repeat_store', 'store', 'store_immediate',
+        supported = {'exchange', 'load', 'move_string',
+                     'repeat_move', 'repeat_store',
+                     'save_fpu', 'store', 'store_immediate',
                      'move_sign_extend', 'move_zero_extend'}
         if operation not in supported:
             return None
 
+        local_extent = max(
+            len(REGISTER_NAMES) + 1,
+            0 if segment_local is None else int(segment_local) + 1)
         locals_ = [Operand('local', index)
-                   for index in range(len(REGISTER_NAMES) + 1)]
+                   for index in range(local_extent)]
         nodes = []
         common = {}
 
@@ -4196,8 +4445,7 @@ class X86DBT(object):
             return True
 
         def address(operand, following):
-            if (not isinstance(operand, MemoryOperand)
-                    or operand.segment_msr is not None):
+            if not isinstance(operand, MemoryOperand):
                 return None
             value = Operand(
                 'const', (int(operand.displacement)
@@ -4212,6 +4460,11 @@ class X86DBT(object):
                         index,
                         Operand('const', operand.scale.bit_length() - 1)))
                 value = emit('i64.add', (value, index))
+            if operand.segment_msr is not None:
+                if segment_local is None:
+                    return None
+                value = emit('i64.add', (
+                    value, locals_[int(segment_local)]))
             return value
 
         def load_name(width, signed=False):
@@ -4225,7 +4478,49 @@ class X86DBT(object):
                     else 'memory.i64.store%d' % (width * 8))
 
         following = detail[0]
-        if operation in ('repeat_move', 'repeat_store'):
+        if operation == 'save_fpu':
+            _following, operand = detail
+            pointer = address(operand, following)
+            if pointer is None:
+                return None
+            # The integer-resident FPU state is the architectural reset image.
+            # Publish it as one zero extent plus its three non-zero fields;
+            # dependency operands make the sparse overlay one ordered memory
+            # transaction without materializing the 512-byte image in STEP.
+            zeroed = emit('memory.i64.repeat', (
+                pointer, Operand('const', 0), Operand('const', 512),
+                Operand('const', memory_shape(1, virtual64=True))))
+            control = emit('memory.i64.store16', (
+                pointer, Operand('const', 0x037f), Operand('const', 0),
+                Operand('const', memory_shape(2, virtual64=True)), zeroed))
+            mxcsr = emit('memory.i64.store32', (
+                pointer, Operand('const', 0x1f80), Operand('const', 24),
+                Operand('const', memory_shape(4, virtual64=True)), control))
+            emit('memory.i64.store32', (
+                pointer, Operand('const', 0x0000ffff), Operand('const', 28),
+                Operand('const', memory_shape(4, virtual64=True)), mxcsr))
+        elif operation == 'move_string':
+            _following, width = detail
+            source = locals_[REGISTER_INDEX['rsi']]
+            target = locals_[REGISTER_INDEX['rdi']]
+            shape = Operand('const', memory_shape(
+                int(width), virtual64=True))
+            loaded = emit(load_name(int(width)), (
+                source, Operand('const', 0), shape))
+            emit(store_name(int(width)), (
+                target, loaded, Operand('const', 0), shape, loaded))
+            direction = emit('i64.and', (
+                emit('i64.shr_u', (
+                    locals_[len(REGISTER_NAMES)], Operand('const', 10))),
+                Operand('const', 1)))
+            delta = emit('select', (
+                Operand('const', (-int(width)) & MASK64),
+                Operand('const', int(width)), direction))
+            locals_[REGISTER_INDEX['rsi']] = emit(
+                'i64.add', (source, delta))
+            locals_[REGISTER_INDEX['rdi']] = emit(
+                'i64.add', (target, delta))
+        elif operation in ('repeat_move', 'repeat_store'):
             _following, width = detail
             count = locals_[REGISTER_INDEX['rcx']]
             target = locals_[REGISTER_INDEX['rdi']]
@@ -4270,6 +4565,22 @@ class X86DBT(object):
                         width, virtual64=True))))
             locals_[REGISTER_INDEX['rcx']] = Operand('const', 0)
             locals_[REGISTER_INDEX['rdi']] = final_target
+        elif operation == 'exchange':
+            _following, register, operand, bits = detail
+            width = bits // 8
+            pointer, value = address(operand, following), read(register, bits)
+            if pointer is None or value is None:
+                return None
+            loaded = emit(load_name(width), (
+                pointer, Operand('const', 0),
+                Operand('const', memory_shape(
+                    width, virtual64=True))))
+            emit(store_name(width), (
+                pointer, value, Operand('const', 0),
+                Operand('const', memory_shape(
+                    width, virtual64=True))))
+            if not publish(register, loaded, bits):
+                return None
         elif operation == 'load':
             _following, destination, bits, operand = detail
             width = bits // 8
@@ -4325,6 +4636,34 @@ class X86DBT(object):
         return plan, int(following) & MASK64
 
     @staticmethod
+    def _segment_memory_plan(boundary, segment_local):
+        """Admit an FS/GS base once, then use the ordinary memory SSA."""
+        detail = boundary.detail
+        if not isinstance(detail, tuple):
+            return None
+        operands = tuple(value for value in detail
+                         if isinstance(value, MemoryOperand))
+        if len(operands) != 1 or operands[0].segment_msr not in (
+                IA32_FS_BASE, IA32_GS_BASE):
+            return None
+        lowered = X86DBT._memory_plan(boundary, segment_local)
+        if lowered is None:
+            local_extent = max(len(REGISTER_NAMES) + 1,
+                               int(segment_local) + 1)
+            base = PureSlice(
+                0, 0, 0, 0, 0, (), DependencyWaves((0,), (), (0,)), (),
+                tuple(Operand('local', index)
+                      for index in range(local_extent)))
+            lowered = X86DBT._lower_flag_boundary(
+                base, boundary, segment_local)
+        if lowered is None:
+            return None
+        plan, following = lowered
+        return (plan, following,
+                int(operands[0].segment_msr == IA32_GS_BASE),
+                int(segment_local))
+
+    @staticmethod
     def _read_segment_memory_plan(boundary, value_local):
         """Store a resident segment selector through the shared memory SSA."""
         if boundary.operation != 'read_segment':
@@ -4365,6 +4704,101 @@ class X86DBT(object):
             0, 0, 1, 1, 0, tuple(nodes),
             DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
         return plan, int(following) & MASK64, int(segment), int(value_local)
+
+    @staticmethod
+    def _simd_store_plan(boundary, low_local, high_local):
+        """Store one resident vector through two disjoint 64-bit SSA lanes."""
+        if boundary.operation != 'simd_store':
+            return None
+        following, vector, operand = boundary.detail
+        if (not 0 <= int(vector) < 16
+                or not isinstance(operand, MemoryOperand)
+                or operand.segment_msr is not None
+                or int(low_local) < len(REGISTER_NAMES) + 1
+                or int(high_local) != int(low_local) + 1):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(int(high_local) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        address = Operand(
+            'const', (int(operand.displacement)
+                      + (int(following) if operand.rip_relative else 0))
+            & MASK64)
+        if not operand.rip_relative and operand.base is not None:
+            address = emit('i64.add', (address, locals_[operand.base]))
+        if operand.index is not None:
+            index = locals_[operand.index]
+            if operand.scale != 1:
+                index = emit('i64.shl', (
+                    index,
+                    Operand('const', operand.scale.bit_length() - 1)))
+            address = emit('i64.add', (address, index))
+        shape = Operand('const', memory_shape(8, virtual64=True))
+        emit('memory.i64.store', (
+            address, locals_[int(low_local)], Operand('const', 0), shape))
+        high_address = emit('i64.add', (address, Operand('const', 8)))
+        emit('memory.i64.store', (
+            high_address, locals_[int(high_local)],
+            Operand('const', 0), shape))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
+        return (plan, int(following) & MASK64, int(vector),
+                int(low_local), int(high_local))
+
+    @staticmethod
+    def _simd_load_plan(boundary, low_local, high_local):
+        """Load one 128-bit vector through two disjoint 64-bit SSA lanes."""
+        if boundary.operation != 'simd_load':
+            return None
+        following, vector, operand = boundary.detail
+        if (not 0 <= int(vector) < 16
+                or not isinstance(operand, MemoryOperand)
+                or operand.segment_msr is not None
+                or int(low_local) < len(REGISTER_NAMES) + 1
+                or int(high_local) != int(low_local) + 1):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(int(high_local) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        address = Operand(
+            'const', (int(operand.displacement)
+                      + (int(following) if operand.rip_relative else 0))
+            & MASK64)
+        if not operand.rip_relative and operand.base is not None:
+            address = emit('i64.add', (address, locals_[operand.base]))
+        if operand.index is not None:
+            index = locals_[operand.index]
+            if operand.scale != 1:
+                index = emit('i64.shl', (
+                    index,
+                    Operand('const', operand.scale.bit_length() - 1)))
+            address = emit('i64.add', (address, index))
+        shape = Operand('const', memory_shape(8, virtual64=True))
+        locals_[int(low_local)] = emit('memory.i64.load', (
+            address, Operand('const', 0), shape))
+        high_address = emit('i64.add', (address, Operand('const', 8)))
+        locals_[int(high_local)] = emit('memory.i64.load', (
+            high_address, Operand('const', 0), shape))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
+        return (plan, int(following) & MASK64, int(vector),
+                int(low_local), int(high_local))
 
     @staticmethod
     def _invalidate_plan(boundary):
@@ -4450,6 +4884,94 @@ class X86DBT(object):
         return plan, int(following) & MASK64, name
 
     @staticmethod
+    def _store_descriptor_plan(boundary, limit_local, base_local):
+        """Lower SGDT/SIDT to two stores fed by resident system state."""
+        if boundary.operation != 'store_descriptor_table':
+            return None
+        following, name, operand = boundary.detail
+        if (name not in ('gdtr', 'idtr')
+                or not isinstance(operand, MemoryOperand)
+                or operand.segment_msr is not None
+                or int(limit_local) < len(REGISTER_NAMES) + 1
+                or int(base_local) != int(limit_local) + 1):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(int(base_local) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        address = Operand(
+            'const', (int(operand.displacement)
+                      + (int(following) if operand.rip_relative else 0))
+            & MASK64)
+        if not operand.rip_relative and operand.base is not None:
+            address = emit('i64.add', (address, locals_[operand.base]))
+        if operand.index is not None:
+            index = locals_[operand.index]
+            if operand.scale != 1:
+                index = emit('i64.shl', (
+                    index,
+                    Operand('const', operand.scale.bit_length() - 1)))
+            address = emit('i64.add', (address, index))
+        emit('memory.i64.store16', (
+            address, locals_[int(limit_local)], Operand('const', 0),
+            Operand('const', memory_shape(2, virtual64=True))))
+        emit('memory.i64.store', (
+            address, locals_[int(base_local)], Operand('const', 2),
+            Operand('const', memory_shape(8, virtual64=True))))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_)))
+        return (plan, int(following) & MASK64, name,
+                int(limit_local), int(base_local))
+
+    @staticmethod
+    def _load_system_segment_plan(boundary):
+        """Lower memory-source LLDT/LTR to one shared virtual-memory load."""
+        if boundary.operation != 'load_system_segment':
+            return None
+        following, name, operand = boundary.detail
+        if (name not in ('ldtr', 'tr')
+                or not isinstance(operand, MemoryOperand)
+                or operand.segment_msr is not None):
+            return None
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            return result
+
+        address = Operand(
+            'const', (int(operand.displacement)
+                      + (int(following) if operand.rip_relative else 0))
+            & MASK64)
+        if not operand.rip_relative and operand.base is not None:
+            address = emit('i64.add', (address, locals_[operand.base]))
+        if operand.index is not None:
+            index = locals_[operand.index]
+            if operand.scale != 1:
+                index = emit('i64.shl', (
+                    index,
+                    Operand('const', operand.scale.bit_length() - 1)))
+            address = emit('i64.add', (address, index))
+        value = emit('memory.i64.load16_u', (
+            address, Operand('const', 0),
+            Operand('const', memory_shape(2, virtual64=True))))
+        plan = normalize_plan(PureSlice(
+            0, 0, 1, 1, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (), tuple(locals_) + (value,)))
+        return plan, int(following) & MASK64, name, len(locals_)
+
+    @staticmethod
     def _indirect_control_plan(boundary):
         """Lower indirect CALL/JMP target discovery to the shared memory SSA."""
         if boundary.operation != 'group_ff':
@@ -4509,18 +5031,45 @@ class X86DBT(object):
         """Lower 32-bit DIV/IDIV to total SSA plus one exception predicate."""
         if boundary.operation != 'unary':
             return None
-        following, group, operand, bits, _instruction = boundary.detail
-        if group not in (6, 7) or bits != 32 or not isinstance(operand, int):
+        following, group, operand, bits, instruction = boundary.detail
+        if group not in (6, 7) or bits != 32:
             return None
         locals_ = [Operand('local', index)
                    for index in range(len(REGISTER_NAMES) + 1)]
         nodes = []
 
         def emit(operation, arguments):
+            arguments = tuple(arguments)
             value = len(nodes) + 1
             result = Operand('node', value)
-            nodes.append(WaveNode(value, operation, tuple(arguments)))
+            nodes.append(WaveNode(value, operation, arguments))
             return result
+
+        if isinstance(operand, MemoryOperand):
+            if operand.segment_msr is not None:
+                return None
+            divisor = Operand(
+                'const', (int(operand.displacement)
+                          + (int(following)
+                             if operand.rip_relative else 0)) & MASK64)
+            if not operand.rip_relative and operand.base is not None:
+                divisor = emit('i64.add', (
+                    divisor, locals_[operand.base]))
+            if operand.index is not None:
+                index = locals_[operand.index]
+                if operand.scale != 1:
+                    index = emit('i64.shl', (
+                        index, Operand(
+                            'const', operand.scale.bit_length() - 1)))
+                divisor = emit('i64.add', (divisor, index))
+            divisor = emit('memory.i64.load32_u', (
+                divisor, Operand('const', 0),
+                Operand('const', memory_shape(4, virtual64=True))))
+        elif isinstance(operand, int):
+            divisor = emit('i64.and', (
+                locals_[operand], Operand('const', MASK32)))
+        else:
+            return None
 
         low = emit('i64.and', (
             locals_[REGISTER_INDEX['rax']], Operand('const', MASK32)))
@@ -4528,8 +5077,6 @@ class X86DBT(object):
             locals_[REGISTER_INDEX['rdx']], Operand('const', MASK32)))
         dividend = emit('i64.or', (
             emit('i64.shl', (high, Operand('const', 32))), low))
-        divisor = emit('i64.and', (
-            locals_[operand], Operand('const', MASK32)))
         if group == 7:
             divisor = emit('i64.extend_i32_s', (divisor,))
         zero = emit('i64.eqz', (divisor,))
@@ -4562,7 +5109,8 @@ class X86DBT(object):
         plan = normalize_plan(PureSlice(
             0, 0, 1, 1, 0, tuple(nodes),
             DependencyWaves((0,), (), (0,)), (), tuple(locals_) + (error,)))
-        return plan, int(following) & MASK64
+        return (plan, int(following) & MASK64,
+                int(instruction) & MASK64)
 
     @staticmethod
     def _stack_plan(boundary, indirect_register=None):
@@ -4570,10 +5118,14 @@ class X86DBT(object):
         operation, detail = boundary.operation, boundary.detail
         supported = {
             'call', 'far_return', 'interrupt_return', 'leave', 'pop', 'pop_flags', 'push',
-            'pop_operand', 'push_flags', 'push_immediate', 'return',
+            'group_ff', 'pop_operand', 'push_flags', 'push_immediate', 'return',
         }
         if operation not in supported:
             return None
+        if operation == 'group_ff':
+            _following, group, _operand, bits = detail
+            if group != 6 or bits != 64:
+                return None
 
         scratch_count = (3 if operation == 'interrupt_return'
                          else 2 if operation == 'far_return' else int(
@@ -4713,6 +5265,23 @@ class X86DBT(object):
             else:
                 scratch = (locals_[indirect_register],)
                 control = X86Boundary('dynamic_branch', None)
+        elif operation == 'group_ff':
+            following, _group, operand, _bits = detail
+            if isinstance(operand, MemoryOperand):
+                source = address(operand, following)
+                if source is None:
+                    return None
+                value = load(source)
+            elif isinstance(operand, int) and 0 <= operand < len(
+                    REGISTER_NAMES):
+                value = locals_[operand]
+            else:
+                return None
+            pointer = emit('i64.sub', (
+                pointer, Operand('const', 8)))
+            store(pointer, value)
+            locals_[rsp] = pointer
+            control = X86Boundary('branch', int(following) & MASK64)
         elif operation in ('push', 'push_immediate', 'push_flags'):
             if operation == 'push':
                 following, register = detail
@@ -4772,6 +5341,7 @@ class X86DBT(object):
         indirect_register = None
         stack_boundary = block.boundary
         call_target = None
+
         if block.boundary.operation == 'call':
             _following, target = block.boundary.detail
             layout = self._indirect_thunk_layout(state, target)
@@ -4780,14 +5350,13 @@ class X86DBT(object):
                 if self._code_contains_recipe(
                         state, return_thunk, b'\xc3', extent=1):
                     indirect_register = register
-                    call_target = state.registers[register] & MASK64
         elif block.boundary.operation == 'group_ff':
             following, group, operand, bits = block.boundary.detail
             if group == 2 and bits == 64 and isinstance(operand, int):
                 indirect_register = operand
-                call_target = state.registers[operand] & MASK64
                 stack_boundary = X86Boundary(
-                    'call', (int(following) & MASK64, call_target))
+                    'call', (int(following) & MASK64,
+                             0))
         cached = self._stack_cuts.get(block.rip)
         if (cached is not None and cached[0] is block
                 and cached[1].indirect_register == indirect_register
@@ -4814,7 +5383,9 @@ class X86DBT(object):
             control_block=block.control_block or block,
             state_flags=True, virtual_memory=True,
             indirect_register=indirect_register,
-            inlined_call_target=call_target)
+            inlined_call_target=call_target,
+            code_extents=_block_code_extents(block),
+            source_instructions=_block_source_instructions(block))
         self._stack_cuts[block.rip] = block, composed
         self.stack_cuts += 1
         self.stack_cut_cache_misses += 1
@@ -4832,8 +5403,12 @@ class X86DBT(object):
                 and call_origin.boundary.operation == 'call'):
             _return_address, encoded_target = call_origin.boundary.detail
             if block.indirect_register is not None:
-                call_target = state.registers[block.indirect_register] \
-                    & MASK64
+                # The register value belongs to runtime state.  Baking it into
+                # a portable block would make an old code-byte proof select a
+                # callee specialized for a different task/context.  Keep the
+                # push and dynamic control inside vm.wasm, then continue from
+                # its resident target without a host boundary.
+                call_target = None
             elif block.boundary.operation == 'branch':
                 call_target = int(block.boundary.detail) & MASK64
             else:
@@ -4863,6 +5438,7 @@ class X86DBT(object):
         terminal_scratch = 0
         tail_return = None
         call_edge_used = False
+        sparse_code = False
         join_limit = max(1, int(limit))
         while True:
             boundary_instructions = 1
@@ -4939,8 +5515,11 @@ class X86DBT(object):
                     or (synthetic_boundary and linear_end > following))):
                 break
             if synthetic_boundary and linear_end < following:
-                source += read_virtual(
-                    state, linear_end, following - linear_end, 'execute')
+                # The skipped bytes are not part of the executed block.  The
+                # code guard already supports exact sparse extents, so reading
+                # and materializing the address gap only makes the quotient
+                # depend on unrelated cold code between caller and callee.
+                sparse_code = True
             instructions += boundary_instructions
             if joined >= join_limit:
                 # The current block is already resident in ``plan`` and its
@@ -4982,7 +5561,7 @@ class X86DBT(object):
         packed = pack_step(plan)
         mapped = unpack_step(packed)
         execute = self._bind_state_page(mapped, packed)
-        if call_edge_used:
+        if call_edge_used or sparse_code:
             proof_config = block.proof_config
             sparse = {}
             for proved in proof_blocks:
@@ -5003,11 +5582,17 @@ class X86DBT(object):
             final_scratch, final_boundary, proof_config, proof,
             current.flag_cut, current.control_block or current,
             current.cut_inputs, True,
-            any(node.op.startswith('memory.') for node in plan.nodes))
+            any(node.op.startswith('memory.') for node in plan.nodes),
+            code_extents=(_merge_code_extents(proof_blocks)
+                          if call_edge_used or sparse_code
+                          else ((block.rip, source),)))
         composed = replace(
             composed, tail_return=tail_return,
             indirect_register=block.indirect_register,
-            inlined_call_target=call_target if call_edge_used else None)
+            inlined_call_target=call_target if call_edge_used else None,
+            source_instructions=sum(
+                _block_source_instructions(proved)
+                for proved in proof_blocks))
         proof_blocks = tuple(proof_blocks)
         self._register_cuts[block.rip] = proof_blocks, composed
         self.register_cuts += 1
@@ -5322,7 +5907,11 @@ class X86DBT(object):
             middle.boundary, block.proof_config, block.proof,
             None, middle, first_inputs, True,
             any(node.op.startswith('memory.')
-                for node in first_plan.nodes))
+                for node in first_plan.nodes),
+            code_extents=((block.rip, block.source + setcc.source),),
+            source_instructions=(
+                _block_source_instructions(block)
+                + _block_source_instructions(setcc)))
         final = self._predicate_plan(interim, final_condition)
         if final is None:
             return block
@@ -5337,7 +5926,11 @@ class X86DBT(object):
             block.rip, branch.rip, source, block.instructions + 3,
             plan, mapped, execute, 1, branch.boundary,
             proof_config, proof, flag_cut, branch, cut_inputs, True,
-            any(node.op.startswith('memory.') for node in plan.nodes))
+            any(node.op.startswith('memory.') for node in plan.nodes),
+            code_extents=((block.rip, source),),
+            source_instructions=sum(_block_source_instructions(proved)
+                                    for proved in (
+                                        block, setcc, middle, branch)))
         proof_blocks = (block, setcc, middle, branch)
         self._predicate_cuts[block.rip] = proof_blocks, composed
         self.predicate_cuts += 1
@@ -5393,7 +5986,11 @@ class X86DBT(object):
             block.rip, control.rip, source, block.instructions + 1,
             plan, mapped, execute, 1, control.boundary,
             proof_config, proof, flag_cut, control, cut_inputs, True,
-            any(node.op.startswith('memory.') for node in plan.nodes))
+            any(node.op.startswith('memory.') for node in plan.nodes),
+            code_extents=((block.rip, source),),
+            source_instructions=(
+                _block_source_instructions(block)
+                + _block_source_instructions(control)))
         self._predicate_cuts[block.rip] = (block, control), composed
         self.predicate_cuts += 1
         self.predicate_cut_cache_misses += 1
@@ -5747,6 +6344,54 @@ class X86DBT(object):
                 return None
             loop.append(block)
             cursor = end
+        if cursor == branch.rip and len(loop) == 1:
+            counter_update = loop[0]
+            if counter_update.boundary.operation == 'group_ff':
+                _next, group, counter, counter_bits = \
+                    counter_update.boundary.detail
+                if (group == 1 and isinstance(counter, int)
+                        and counter_bits in (32, 64)):
+                    locals_ = [Operand('local', index)
+                               for index in range(
+                                   len(REGISTER_NAMES) + 1)]
+                    nodes = []
+
+                    def emit(operation, arguments):
+                        arguments = tuple(arguments)
+                        if operation.startswith(('i32.', 'i64.')):
+                            operation, arguments = select_lane(
+                                operation, arguments)
+                        value = len(nodes) + 1
+                        nodes.append(WaveNode(value, operation, arguments))
+                        return Operand('node', value)
+
+                    locals_[counter] = Operand('const', 0)
+                    descriptor = counter_bits | (3 << 8) | (1 << 11)
+                    flags = emit('lane64.X86_FLAGS', (
+                        locals_[len(REGISTER_NAMES)], Operand('const', 1),
+                        Operand('const', 1), Operand('const', 0),
+                        Operand('const', descriptor)))
+                    plan = normalize_plan(PureSlice(
+                        0, 0, 2, 2, 0, tuple(nodes),
+                        DependencyWaves((0,), (), (0,)), (),
+                        tuple(locals_[:len(REGISTER_NAMES)]) + (flags,)))
+                    packed = pack_step(plan)
+                    mapped = unpack_step(packed)
+                    execute = self._bind_state_page(mapped, packed)
+                    cut = DecodedBlock(
+                        target, branch.rip,
+                        counter_update.source + branch.source,
+                        2, plan, mapped, execute, 0,
+                        X86Boundary('branch', following),
+                        branch.proof_config, branch.proof,
+                        state_flags=True, virtual_memory=False)
+                    entry = cut, counter, 0, 2, counter_bits
+                    self._recurrence_cuts[branch.rip] = branch, entry
+                    self.recurrence_cuts += 1
+                    self.recurrence_cut_cache_misses += 1
+                    self.recurrence_cut_work += physical_work(plan)
+                    self.recurrence_cut_span += plan.waves.span
+                    return entry
         if cursor != branch.rip or len(loop) < 3:
             self._recurrence_cuts[branch.rip] = branch, None
             self.recurrence_cut_cache_misses += 1
@@ -5870,12 +6515,130 @@ class X86DBT(object):
         source_instructions = (
             sum(block.instructions + 1 for block in loop)
             + branch.instructions + 1)
-        entry = cut, counter, iteration_bytes, source_instructions
+        entry = (cut, counter, iteration_bytes, source_instructions,
+                 counter_bits)
         self._recurrence_cuts[branch.rip] = branch, entry
         self.recurrence_cuts += 1
         self.recurrence_cut_cache_misses += 1
         self.recurrence_cut_work += physical_work(plan)
         self.recurrence_cut_span += plan.waves.span
+        return entry
+
+    def _zero_scan_cut(self, state, branch):
+        """Reduce an increment/load-zero backedge to one direct byte scan."""
+        cached = self._scan_cuts.get(branch.rip)
+        if cached is not None and cached[0] is branch:
+            self.scan_cut_cache_hits += 1
+            return cached[1]
+
+        following, target, condition = branch.boundary.detail
+        if condition != 5 or state.rip != target or target >= branch.rip:
+            return None
+
+        increment = self.blocks.get(target)
+        if increment is None:
+            increment = self.block(state)
+        if increment.boundary.operation != 'register_immediate_result_flags':
+            self._scan_cuts[branch.rip] = branch, None
+            self.scan_cut_cache_misses += 1
+            return None
+        (compare_rip, name, counter,
+         counter_bits, immediate) = increment.boundary.detail
+        if (name != 'add' or not isinstance(counter, int)
+                or counter_bits not in (32, 64) or immediate != 1):
+            self._scan_cuts[branch.rip] = branch, None
+            self.scan_cut_cache_misses += 1
+            return None
+
+        compare = self.blocks.get(compare_rip)
+        if compare is None:
+            compare = self.block(replace(
+                _freeze_state(state), rip=int(compare_rip) & MASK64))
+        if compare.boundary.operation != 'immediate_alu':
+            self._scan_cuts[branch.rip] = branch, None
+            self.scan_cut_cache_misses += 1
+            return None
+        branch_rip, compare_name, operand, bits, sentinel = \
+            compare.boundary.detail
+        if (compare_name != 'cmp' or bits != 8 or sentinel != 0
+                or not isinstance(operand, MemoryOperand)
+                or operand.base != counter or operand.index is not None
+                or operand.displacement != 0 or operand.rip_relative
+                or operand.segment_msr is not None
+                or int(branch_rip) & MASK64 != branch.rip
+                or increment.rip + len(increment.source) != compare.rip
+                or compare.rip + len(compare.source) != branch.rip):
+            self._scan_cuts[branch.rip] = branch, None
+            self.scan_cut_cache_misses += 1
+            return None
+
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+        common = {}
+
+        def emit(operation, arguments):
+            arguments = tuple(arguments)
+            if operation.startswith(('i32.', 'i64.')):
+                operation, arguments = select_lane(operation, arguments)
+            key = operation, arguments
+            present = None if operation.startswith('memory.') \
+                else common.get(key)
+            if present is not None:
+                return present
+            value = len(nodes) + 1
+            result = Operand('node', value)
+            nodes.append(WaveNode(value, operation, arguments))
+            if not operation.startswith('memory.'):
+                common[key] = result
+            return result
+
+        address = emit('i64.add', (
+            locals_[counter], Operand('const', 1)))
+        if counter_bits == 32:
+            address = emit('i64.and', (address, Operand('const', MASK32)))
+        found = emit('memory.i64.find2', (
+            address, Operand('const', 0), Operand('const', 0),
+            Operand('const', memory_shape(1, virtual64=True))))
+        distance = emit('i64.shr_u', (found, Operand('const', 8)))
+        iterations = emit('i64.add', (
+            distance, Operand('const', 1)))
+        next_counter = emit('i64.add', (
+            locals_[counter], iterations))
+        if counter_bits == 32:
+            next_counter = emit('i64.and', (
+                next_counter, Operand('const', MASK32)))
+        locals_[counter] = next_counter
+        descriptor = 8 | (3 << 8)
+        flags = emit('lane64.X86_FLAGS', (
+            locals_[len(REGISTER_NAMES)], Operand('const', 0),
+            Operand('const', 0), Operand('const', 0),
+            Operand('const', descriptor)))
+        # The increment result is already in its decoded plan; only the
+        # memory compare and the conditional jump remain terminal controls.
+        source_instructions = (
+            increment.instructions + compare.instructions
+            + branch.instructions + 2)
+        plan = normalize_plan(PureSlice(
+            0, 0, 0, 0, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_[:len(REGISTER_NAMES)])
+            + (flags, iterations)))
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        source = increment.source + compare.source + branch.source
+        proof_config, proof = _execution_proof(state, target, len(source))
+        cut = DecodedBlock(
+            target, branch.rip, source, 0, plan, mapped, execute, 1,
+            X86Boundary('branch', int(following) & MASK64),
+            proof_config, proof, state_flags=True, virtual_memory=True)
+        entry = cut, counter, source_instructions, counter_bits
+        self._scan_cuts[branch.rip] = branch, entry
+        self.scan_cuts += 1
+        self.scan_cut_cache_misses += 1
+        self.scan_cut_work += physical_work(plan)
+        self.scan_cut_span += plan.waves.span
         return entry
 
     def _collapse_copy_loop(self, state, branch):
@@ -6000,6 +6763,277 @@ class X86DBT(object):
         return replace(state, registers=registers, rip=following,
                        rflags=flags)
 
+    def _wide_copy_cut(self, state, branch):
+        """Compile a contiguous multiword-copy backedge to one state page.
+
+        This is a quotient over the decoded block graph, not a kernel symbol
+        recognizer.  The loop's load/store lanes become one physical copy and
+        one projected final source row; the iteration count remains an SSA
+        value so native retirement can account for the original x86 path.
+        """
+        cached = self._wide_copy_cuts.get(branch.rip)
+        if cached is not None and cached[0] is branch:
+            proof_blocks, cut, source_instructions, chunk_bytes = cached[1]
+            if all(self.blocks.get(block.rip) is block
+                   for block in proof_blocks):
+                self.copy_cut_cache_hits += 1
+                return cut, source_instructions, chunk_bytes
+
+        following, target, condition = branch.boundary.detail
+        if condition != 3 or state.rip != target or target >= branch.rip:
+            return None
+
+        def block_at(rip):
+            present = self.blocks.get(int(rip) & MASK64)
+            if present is not None:
+                return present
+            return self.block(replace(
+                _freeze_state(state), rip=int(rip) & MASK64))
+
+        loop = []
+        cursor = target
+        while cursor < branch.rip:
+            block = block_at(cursor)
+            end = block.rip + len(block.source)
+            if end <= cursor or end > branch.rip:
+                return None
+            loop.append(block)
+            cursor = end
+        if cursor != branch.rip or len(loop) < 6:
+            return None
+
+        counter_update = loop.pop(0)
+        if counter_update.boundary.operation \
+                != 'register_immediate_result_flags':
+            return None
+        (_counter_next, counter_name, counter, counter_bits,
+         chunk_bytes) = counter_update.boundary.detail
+        if (counter_name != 'sub' or not isinstance(counter, int)
+                or counter_bits not in (32, 64) or chunk_bytes <= 0):
+            return None
+
+        loads = []
+        while loop and loop[0].boundary.operation == 'load':
+            loads.append(loop.pop(0))
+        if not loads or not loop or loop[0].boundary.operation != 'lea':
+            return None
+        source_update = loop.pop(0)
+        stores = []
+        while loop and loop[0].boundary.operation == 'store':
+            stores.append(loop.pop(0))
+        if (len(stores) != len(loads) or len(loop) != 1
+                or loop[0].boundary.operation != 'lea'):
+            return None
+        target_update = loop[0]
+
+        (_load_next, first_temporary, word_bits,
+         first_source) = loads[0].boundary.detail
+        if (word_bits not in (32, 64)
+                or not isinstance(first_source, MemoryOperand)
+                or first_source.base is None
+                or first_source.index is not None
+                or first_source.rip_relative
+                or first_source.segment_msr is not None):
+            return None
+        source_pointer = first_source.base
+        first_target = stores[0].boundary.detail[3]
+        if not isinstance(first_target, MemoryOperand):
+            return None
+        target_pointer = first_target.base
+        word_bytes = word_bits // 8
+        temporaries = []
+        displacements = []
+        for load, store in zip(loads, stores):
+            (_next, temporary, bits, source_operand) = \
+                load.boundary.detail
+            (_next, stored, store_bits, target_operand) = \
+                store.boundary.detail
+            if (bits != word_bits or store_bits != word_bits
+                    or stored != temporary
+                    or not isinstance(source_operand, MemoryOperand)
+                    or not isinstance(target_operand, MemoryOperand)
+                    or source_operand.base != source_pointer
+                    or source_operand.index is not None
+                    or source_operand.rip_relative
+                    or source_operand.segment_msr is not None
+                    or target_operand.base != target_pointer
+                    or target_operand.index is not None
+                    or target_operand.rip_relative
+                    or target_operand.segment_msr is not None
+                    or target_operand.displacement
+                    != source_operand.displacement):
+                return None
+            temporaries.append(temporary)
+            displacements.append(source_operand.displacement)
+        if (target_pointer is None or source_pointer == target_pointer
+                or len(set(temporaries)) != len(temporaries)
+                or counter in temporaries
+                or source_pointer in temporaries
+                or target_pointer in temporaries):
+            return None
+        first_displacement = min(displacements)
+        if sorted(displacements) != list(range(
+                first_displacement,
+                first_displacement + len(loads) * word_bytes,
+                word_bytes)):
+            return None
+        if len(loads) * word_bytes != chunk_bytes:
+            return None
+
+        def pointer_induction(block, register):
+            _next, updated, bits, operand = block.boundary.detail
+            if (updated != register or bits != 64
+                    or not isinstance(operand, MemoryOperand)
+                    or operand.base != register or operand.index is not None
+                    or abs(operand.displacement) != chunk_bytes
+                    or operand.rip_relative
+                    or operand.segment_msr is not None):
+                return None
+            return 1 if operand.displacement > 0 else -1
+
+        direction = pointer_induction(source_update, source_pointer)
+        target_direction = pointer_induction(
+            target_update, target_pointer)
+        if direction is None or target_direction != direction:
+            return None
+
+        # The physical copy reads one immutable source extent.  A scalar loop
+        # has the same result for equal/disjoint ranges and for overlap in its
+        # safe traversal direction.  Reject the opposite overlap rather than
+        # silently changing the source recurrence into memmove semantics.
+        mask = (1 << counter_bits) - 1
+        remaining = state.registers[counter] & mask
+        total_iterations = remaining // chunk_bytes + 1
+        byte_count_value = total_iterations * chunk_bytes
+        extent_adjustment = first_displacement if direction > 0 else \
+            first_displacement + chunk_bytes - byte_count_value
+        source_address_value = (state.registers[source_pointer]
+                                + extent_adjustment) & MASK64
+        target_address_value = (state.registers[target_pointer]
+                                + extent_adjustment) & MASK64
+        disjoint = (target_address_value + byte_count_value
+                    <= source_address_value
+                    or source_address_value + byte_count_value
+                    <= target_address_value)
+        safe_overlap = ((direction > 0
+                         and target_address_value < source_address_value)
+                        or (direction < 0
+                            and target_address_value > source_address_value))
+        if (source_address_value != target_address_value
+                and not disjoint and not safe_overlap):
+            return None
+
+        locals_ = [Operand('local', index)
+                   for index in range(len(REGISTER_NAMES) + 1)]
+        nodes = []
+
+        def emit(operation, arguments):
+            arguments = tuple(arguments)
+            if operation.startswith(('i32.', 'i64.')):
+                operation, arguments = select_lane(operation, arguments)
+            value = len(nodes) + 1
+            nodes.append(WaveNode(value, operation, arguments))
+            return Operand('node', value)
+
+        remaining_operand = locals_[counter]
+        if counter_bits == 32:
+            remaining_operand = emit('i64.and', (
+                remaining_operand, Operand('const', MASK32)))
+        iterations = emit('i64.div_u', (
+            remaining_operand, Operand('const', chunk_bytes)))
+        iterations = emit('i64.add', (
+            iterations, Operand('const', 1)))
+        byte_count = emit('i64.mul', (
+            iterations, Operand('const', chunk_bytes)))
+        if direction > 0:
+            source_address = emit('i64.add', (
+                locals_[source_pointer],
+                Operand('const', first_displacement & MASK64)))
+            target_address = emit('i64.add', (
+                locals_[target_pointer],
+                Operand('const', first_displacement & MASK64)))
+            final_source = emit('i64.add', (
+                source_address,
+                emit('i64.sub', (
+                    byte_count, Operand('const', chunk_bytes)))))
+        else:
+            extent_adjustment = first_displacement + chunk_bytes
+            source_address = emit('i64.add', (
+                emit('i64.sub', (
+                    locals_[source_pointer], byte_count)),
+                Operand('const', extent_adjustment & MASK64)))
+            target_address = emit('i64.add', (
+                emit('i64.sub', (
+                    locals_[target_pointer], byte_count)),
+                Operand('const', extent_adjustment & MASK64)))
+            final_source = source_address
+        final_row = emit('memory.i64.load_region', (
+            final_source, Operand('const', 0),
+            Operand('const', load_region_descriptor(
+                len(loads), word_bits, False)),
+            Operand('const', memory_shape(
+                word_bytes, virtual64=True))))
+        emit('memory.i64.copy', (
+            source_address, target_address, byte_count,
+            Operand('const', memory_shape(1, virtual64=True)),
+            final_row))
+        for temporary, displacement in zip(temporaries, displacements):
+            selector = (displacement - first_displacement) // word_bytes
+            locals_[temporary] = Operand(
+                'projection', projection_coordinate(
+                    final_row.value, selector))
+        pointer_operation = 'i64.add' if direction > 0 else 'i64.sub'
+        locals_[source_pointer] = emit(pointer_operation, (
+            locals_[source_pointer], byte_count))
+        locals_[target_pointer] = emit(pointer_operation, (
+            locals_[target_pointer], byte_count))
+        final_counter = emit('i64.sub', (
+            remaining_operand, byte_count))
+        if counter_bits == 32:
+            final_counter = emit('i64.and', (
+                final_counter, Operand('const', MASK32)))
+        locals_[counter] = final_counter
+        prior_counter = emit('i64.add', (
+            final_counter, Operand('const', chunk_bytes)))
+        if counter_bits == 32:
+            prior_counter = emit('i64.and', (
+                prior_counter, Operand('const', MASK32)))
+        flags = emit('lane64.X86_FLAGS', (
+            locals_[len(REGISTER_NAMES)], prior_counter,
+            Operand('const', chunk_bytes), final_counter,
+            Operand('const', counter_bits | (3 << 8))))
+        plan = normalize_plan(PureSlice(
+            0, 0, 0, 0, 0, tuple(nodes),
+            DependencyWaves((0,), (), (0,)), (),
+            tuple(locals_[:len(REGISTER_NAMES)]) + (flags, iterations)))
+        packed = pack_step(plan)
+        mapped = unpack_step(packed)
+        execute = self._bind_state_page(mapped, packed)
+        proof_blocks = tuple(
+            [counter_update] + loads + [source_update]
+            + stores + [target_update, branch])
+        source = b''.join(block.source for block in proof_blocks)
+        proof_config, proof = _execution_proof(state, target, len(source))
+        # ``register_immediate_result_flags`` already counts its arithmetic
+        # instruction in the decoded SSA prefix; the remaining boundary-only
+        # blocks each contribute their terminal x86 instruction.
+        source_instructions = (
+            counter_update.instructions
+            + sum(block.instructions + 1
+                  for block in proof_blocks[1:]))
+        cut = DecodedBlock(
+            target, branch.rip, source, 0, plan, mapped, execute, 1,
+            X86Boundary('branch', int(following) & MASK64),
+            proof_config, proof, state_flags=True, virtual_memory=True,
+            code_extents=((target, source),))
+        self._wide_copy_cuts[branch.rip] = branch, (
+            proof_blocks, cut, source_instructions, chunk_bytes)
+        self.copy_cuts += 1
+        self.copy_cut_cache_misses += 1
+        self.copy_cut_work += physical_work(plan)
+        self.copy_cut_span += plan.waves.span
+        return cut, source_instructions, chunk_bytes
+
     def _collapse_wide_copy_loop(self, state, branch):
         """Reduce a bounded multiword copy loop to one direct memory cut."""
         following, target, condition = branch.boundary.detail
@@ -6098,15 +7132,19 @@ class X86DBT(object):
 
         def pointer_induction(block, register):
             _next, updated, bits, operand = block.boundary.detail
-            return (updated == register and bits == 64
-                    and isinstance(operand, MemoryOperand)
-                    and operand.base == register and operand.index is None
-                    and operand.displacement == chunk_bytes
-                    and not operand.rip_relative
-                    and operand.segment_msr is None)
+            if (updated != register or bits != 64
+                    or not isinstance(operand, MemoryOperand)
+                    or operand.base != register or operand.index is not None
+                    or abs(operand.displacement) != chunk_bytes
+                    or operand.rip_relative
+                    or operand.segment_msr is not None):
+                return None
+            return 1 if operand.displacement > 0 else -1
 
-        if (not pointer_induction(source_update, source_pointer)
-                or not pointer_induction(target_update, target_pointer)):
+        direction = pointer_induction(source_update, source_pointer)
+        target_direction = pointer_induction(
+            target_update, target_pointer)
+        if direction is None or target_direction != direction:
             return state
 
         mask = (1 << counter_bits) - 1
@@ -6115,21 +7153,30 @@ class X86DBT(object):
         iterations = min(total_iterations,
                          max(1, (1 << 20) // chunk_bytes))
         byte_count = iterations * chunk_bytes
+        first_displacement = min(displacements)
+        extent_adjustment = first_displacement if direction > 0 else \
+            first_displacement + chunk_bytes - byte_count
         source_address = (state.registers[source_pointer]
-                          + min(displacements)) & MASK64
+                          + extent_adjustment) & MASK64
         target_address = (state.registers[target_pointer]
-                          + min(displacements)) & MASK64
+                          + extent_adjustment) & MASK64
+        disjoint = (target_address + byte_count <= source_address
+                    or source_address + byte_count <= target_address)
+        safe_overlap = ((direction > 0 and target_address < source_address)
+                        or (direction < 0
+                            and target_address > source_address))
         if (source_address != target_address
-                and not (target_address + byte_count <= source_address
-                         or source_address + byte_count <= target_address)):
+                and not disjoint and not safe_overlap):
             return state
-        final_source = source_address + byte_count - chunk_bytes
+        final_source = source_address + (byte_count - chunk_bytes
+                                         if direction > 0 else 0)
         final_values = read_virtual(
             state, final_source, chunk_bytes)
-        state = copy_forward_virtual(
+        state = copy_virtual(
             state, source_address, target_address, byte_count)
         registers = state.registers
-        for offset, temporary in enumerate(temporaries):
+        for displacement, temporary in zip(displacements, temporaries):
+            offset = (displacement - first_displacement) // word_bytes
             value = int.from_bytes(
                 final_values[offset * word_bytes:(offset + 1) * word_bytes],
                 'little')
@@ -6137,10 +7184,10 @@ class X86DBT(object):
                 registers, temporary, value, word_bits)
         registers = _write_register(
             registers, source_pointer,
-            state.registers[source_pointer] + byte_count, 64)
+            state.registers[source_pointer] + direction * byte_count, 64)
         registers = _write_register(
             registers, target_pointer,
-            state.registers[target_pointer] + byte_count, 64)
+            state.registers[target_pointer] + direction * byte_count, 64)
         final_counter = (remaining - iterations * chunk_bytes) & mask
         registers = _write_register(
             registers, counter, final_counter, counter_bits)
@@ -12481,11 +13528,28 @@ class X86DBT(object):
             self.prefix_cut_executed_span += prefix.plan.waves.span
             self.collapsed_length_prefix_entries += limit - count + 1
             return state
+        scan = self._zero_scan_cut(state, branch)
+        if scan is not None:
+            cut, _counter, source_instructions, _counter_bits = scan
+            prior = state
+            state, scratch = self._execute_plan(state, cut)
+            state, boundary = self._control(
+                state, cut.boundary, prior, scratch)
+            if boundary is not None:
+                raise X86Error('a pure byte scan published a barrier')
+            iterations = int(scratch[-1]) & MASK64
+            self.scan_cut_executions += 1
+            self.scan_cut_executed_work += physical_work(cut.plan)
+            self.scan_cut_executed_span += cut.plan.waves.span
+            self.scan_source_instructions += iterations * source_instructions
+            return state
         recurrence = self._counted_repeat_cut(state, branch)
         if recurrence is not None:
             (cut, counter, iteration_bytes,
-             source_instructions) = recurrence
+             source_instructions, counter_bits) = recurrence
             iterations = state.registers[counter] & MASK64
+            if counter_bits == 32:
+                iterations &= MASK32
             prior = state
             state, scratch = self._execute_plan(state, cut)
             state, boundary = self._control(
@@ -12499,6 +13563,25 @@ class X86DBT(object):
                 iterations * source_instructions
             self.collapsed_repeat_bytes += iterations * iteration_bytes
             self.collapsed_repeat_iterations += iterations
+            return state
+        wide_copy = self._wide_copy_cut(state, branch)
+        if wide_copy is not None:
+            cut, source_instructions, chunk_bytes = wide_copy
+            prior = state
+            state, scratch = self._execute_plan(state, cut)
+            state, boundary = self._control(
+                state, cut.boundary, prior, scratch)
+            if boundary is not None:
+                raise X86Error('a pure wide copy published a barrier')
+            iterations = int(scratch[-1]) & MASK64
+            self.copy_cut_bytes += iterations * chunk_bytes
+            self.copy_cut_executions += 1
+            self.copy_cut_executed_work += physical_work(cut.plan)
+            self.copy_cut_executed_span += cut.plan.waves.span
+            self.copy_source_instructions += \
+                iterations * source_instructions
+            self.collapsed_copy_bytes += iterations * chunk_bytes
+            self.collapsed_copy_iterations += iterations
             return state
         if not self.enable_function_oracles:
             return state
@@ -18623,6 +19706,43 @@ class X86DBT(object):
             values[IA32_KERNEL_GS_BASE] = current
             return replace(state, rip=following,
                            msrs=tuple(sorted(values.items()))), None
+        if operation == 'simd_move_to':
+            following, vector, operand = detail
+            value = (load_virtual(
+                        state, operand.address(state, following), 8)
+                     if isinstance(operand, MemoryOperand)
+                     else state.registers[operand])
+            values = list(state.xmm)
+            values[vector * 2] = value & MASK64
+            values[vector * 2 + 1] = 0
+            return replace(state, rip=following, xmm=tuple(values)), None
+        if operation == 'simd_unpack_low':
+            following, vector, source = detail
+            values = list(state.xmm)
+            values[vector * 2 + 1] = values[source * 2]
+            return replace(state, rip=following, xmm=tuple(values)), None
+        if operation == 'simd_xor':
+            following, vector, source = detail
+            values = list(state.xmm)
+            values[vector * 2] ^= values[source * 2]
+            values[vector * 2 + 1] ^= values[source * 2 + 1]
+            return replace(state, rip=following, xmm=tuple(values)), None
+        if operation == 'simd_load':
+            following, vector, operand = detail
+            payload = read_virtual(
+                state, operand.address(state, following), 16)
+            values = list(state.xmm)
+            values[vector * 2] = int.from_bytes(payload[:8], 'little')
+            values[vector * 2 + 1] = int.from_bytes(payload[8:], 'little')
+            return replace(state, rip=following, xmm=tuple(values)), None
+        if operation == 'simd_store':
+            following, vector, operand = detail
+            payload = (int(state.xmm[vector * 2]).to_bytes(8, 'little')
+                       + int(state.xmm[vector * 2 + 1]).to_bytes(
+                           8, 'little'))
+            state = write_virtual(
+                state, operand.address(state, following), payload)
+            return replace(state, rip=following), None
         if operation == 'bit_immediate':
             following, group, operand, bits, immediate = detail
             bit_index = int(immediate)
@@ -18744,6 +19864,12 @@ class X86DBT(object):
             address = operand.address(state, following)
             state = write_virtual(state, address, _FXSAVE_RESET)
             return replace(state, rip=following), None
+        if operation == 'restore_fpu':
+            # The integer machine has no live x87/SSE register file.  Keep
+            # the restore as an explicit state transition without selecting
+            # a host execution path.
+            following, _operand = detail
+            return replace(state, rip=following), None
         if operation == 'memory_fence':
             return replace(state, rip=int(detail)), None
         if operation == 'repeat_move':
@@ -18772,6 +19898,18 @@ class X86DBT(object):
             registers[REGISTER_INDEX['rcx']] = 0
             registers[REGISTER_INDEX['rsi']] = final_source & MASK64
             registers[REGISTER_INDEX['rdi']] = final_target & MASK64
+            return replace(state, registers=tuple(registers),
+                           rip=following), None
+        if operation == 'move_string':
+            following, width = detail
+            source = state.register('rsi')
+            target = state.register('rdi')
+            payload = read_virtual(state, source, width)
+            state = write_virtual(state, target, payload)
+            delta = -width if state.rflags & RFLAGS_DIRECTION else width
+            registers = list(state.registers)
+            registers[REGISTER_INDEX['rsi']] = (source + delta) & MASK64
+            registers[REGISTER_INDEX['rdi']] = (target + delta) & MASK64
             return replace(state, registers=tuple(registers),
                            rip=following), None
         if operation == 'repeat_store':
@@ -18822,26 +19960,62 @@ class X86DBT(object):
         if operation == 'random':
             return state, boundary
         if operation == 'syscall':
-            arguments = (
-                state.register('rax'), state.register('rdi'),
-                state.register('rsi'), state.register('rdx'),
-                state.register('r10'), state.register('r8'),
-                state.register('r9'), detail)
-            return state, X86Boundary('syscall', arguments)
+            following = int(detail) & MASK64
+            msrs = dict(state.msrs)
+            star = msrs.get(IA32_STAR, 0)
+            registers = list(state.registers)
+            registers[REGISTER_INDEX['rcx']] = following
+            registers[REGISTER_INDEX['r11']] = state.rflags
+            target_cs = (star >> 32) & 0xfffc
+            return replace(
+                state, registers=tuple(registers),
+                rip=msrs.get(IA32_LSTAR, 0) & MASK64,
+                rflags=(state.rflags & ~msrs.get(IA32_FMASK, 0)) | 2,
+                cs=target_cs, ss=(target_cs + 8) & 0xffff), None
+        if operation == 'sysret':
+            star = dict(state.msrs).get(IA32_STAR, 0)
+            user_base = (star >> 48) & 0xffff
+            return replace(
+                state, rip=state.register('rcx'),
+                rflags=state.register('r11') | 2,
+                cs=(user_base + 16) | 3,
+                ss=(user_base + 8) | 3), None
         return state, boundary
+
+    def physical_block(self, state):
+        """Return one block after every shared physical-cut composition.
+
+        Artifact closure and execution must publish the same state-step.  A
+        caller that uses ``block`` directly can otherwise retain a decoded
+        x86 control such as an indirect FF-group operation after the normal
+        stack/register SSA path has already eliminated it.
+        """
+        block = self.block(state)
+        block = self._compose_setcc_predicate_cut(state, block)
+        block = self._compose_predicate_cut(state, block)
+        block = self._compose_stack_cut(state, block)
+        block = self._compose_register_cut(state, block)
+        stacked = self._compose_stack_cut(state, block)
+        return (self._compose_register_cut(state, stacked)
+                if stacked is not block else block)
+
+    def _remember_physical_retry(self, state):
+        if self._physical_retry_cuts is None:
+            return
+        try:
+            block = self.block(_freeze_state(state))
+        except PageFault:
+            # An instruction-fetch fault has no decoded retry cut.  The guest
+            # page-fault handler creates the mapping before this RIP can enter
+            # the artifact cache.
+            return
+        self._physical_retry_cuts.setdefault(state.rip, block)
 
     def step(self, state, max_controls=1):
         if state.halted:
             return state, X86Boundary('halt', state.rip), WaveCost()
         try:
-            block = self.block(state)
-            block = self._compose_setcc_predicate_cut(state, block)
-            block = self._compose_predicate_cut(state, block)
-            block = self._compose_stack_cut(state, block)
-            block = self._compose_register_cut(state, block)
-            stacked = self._compose_stack_cut(state, block)
-            block = (self._compose_register_cut(state, stacked)
-                     if stacked is not block else block)
+            block = self.physical_block(state)
             if block.tail_return is not None:
                 self.collapsed_return_branches += 1
             if block.indirect_register is not None:
@@ -18856,6 +20030,10 @@ class X86DBT(object):
         try:
             state, scratch = self._execute_plan(state, block)
             if self._physical_profile is not None:
+                self._physical_trace.append((
+                    int(block.rip) & MASK64,
+                    int(block.boundary_rip) & MASK64,
+                    block.boundary.operation))
                 count, work, span = self._physical_profile.get(
                     block.rip, (0, 0, 0))
                 self._physical_profile[block.rip] = (
@@ -18865,6 +20043,10 @@ class X86DBT(object):
                 self._physical_boundary_profile[key] = \
                     self._physical_boundary_profile.get(key, 0) + 1
         except PageFault as fault:
+            # A composed page can contain several memory operations.  A fault
+            # exposes the architectural RIP, not a resumable node inside that
+            # page, so retain the smallest decodable cut at that coordinate.
+            self._remember_physical_retry(state)
             self.last_page_fault = self._page_walk(state, fault)
             state = replace(state, cr2=fault.address)
             return state, X86Boundary('page_fault', fault), WaveCost(
@@ -18892,15 +20074,7 @@ class X86DBT(object):
                 following = self.blocks.get(state.rip)
                 if following is None:
                     break
-                following = self.block(state)
-                following = self._compose_setcc_predicate_cut(
-                    state, following)
-                following = self._compose_predicate_cut(state, following)
-                following = self._compose_stack_cut(state, following)
-                following = self._compose_register_cut(state, following)
-                stacked = self._compose_stack_cut(state, following)
-                following = (self._compose_register_cut(state, stacked)
-                             if stacked is not following else following)
+                following = self.physical_block(state)
                 if following.tail_return is not None:
                     self.collapsed_return_branches += 1
                 if following.indirect_register is not None:
@@ -18909,6 +20083,10 @@ class X86DBT(object):
                 prior = state
                 state, scratch = self._execute_plan(state, following)
                 if self._physical_profile is not None:
+                    self._physical_trace.append((
+                        int(following.rip) & MASK64,
+                        int(following.boundary_rip) & MASK64,
+                        following.boundary.operation))
                     count, work, span = self._physical_profile.get(
                         following.rip, (0, 0, 0))
                     self._physical_profile[following.rip] = (
@@ -18937,6 +20115,7 @@ class X86DBT(object):
                         state, control_block, seen_backedges, boundary):
                     boundary = X86Boundary('timeslice', state.rip)
         except PageFault as fault:
+            self._remember_physical_retry(state)
             self.last_page_fault = self._page_walk(state, fault)
             state = replace(state, cr2=fault.address)
             boundary = X86Boundary('page_fault', fault)
@@ -18966,8 +20145,32 @@ class X86DBT(object):
             pass
         return (fault.address, fault.access, fault.present, tuple(entries))
 
+    @staticmethod
+    def _tss_stack(state, selector, ist):
+        """Read the long-mode interrupt stack selected by an IDT gate."""
+        descriptor_offset = state.tr & ~7
+        if (not state.gdtr[0]
+                or descriptor_offset + 15 > state.gdtr[1]):
+            return None
+        try:
+            descriptor = read_virtual(
+                state, state.gdtr[0] + descriptor_offset, 16)
+            descriptor_type = descriptor[5] & 0x0f
+            if not descriptor[5] & 0x80 or descriptor_type not in (9, 11):
+                return None
+            base = (int.from_bytes(descriptor[2:4], 'little')
+                    | (descriptor[4] << 16)
+                    | (descriptor[7] << 24)
+                    | (int.from_bytes(descriptor[8:12], 'little') << 32))
+            offset = (36 + (ist - 1) * 8 if ist
+                      else 4 + (selector & 3) * 8)
+            pointer = load_virtual(state, base + offset, 8)
+        except PageFault:
+            return None
+        return pointer or None
+
     def _deliver_gate(self, state, vector, error_code=None):
-        """Enter one present ring-local 64-bit interrupt gate."""
+        """Enter one present long-mode interrupt gate."""
         base, limit = state.idtr
         offset = int(vector) * 16
         if not base or offset + 15 > limit:
@@ -18983,10 +20186,17 @@ class X86DBT(object):
                   | (int.from_bytes(gate[6:8], 'little') << 16)
                   | (int.from_bytes(gate[8:12], 'little') << 32))
         selector = int.from_bytes(gate[2:4], 'little')
-        if selector & 3 != state.cs & 3:
+        current_privilege = state.cs & 3
+        target_privilege = selector & 3
+        if target_privilege > current_privilege:
             return None
-        pointer = state.register('rsp')
-        restored_stack = pointer
+        restored_stack = state.register('rsp')
+        ist = gate[4] & 7
+        switched = target_privilege < current_privilege or bool(ist)
+        pointer = (self._tss_stack(state, selector, ist)
+                   if switched else restored_stack)
+        if pointer is None:
+            return None
         try:
             values = (state.ss, restored_stack, state.rflags,
                       state.cs, state.rip)
@@ -19003,8 +20213,11 @@ class X86DBT(object):
         flags = state.rflags
         if attributes & 0x0f == 0x0e:
             flags &= ~RFLAGS_INTERRUPT
+        new_ss = ((selector + 8) & 0xffff
+                  if target_privilege < current_privilege else state.ss)
         return replace(state, registers=registers, rip=target,
-                       cs=selector, halted=False, rflags=flags | 2)
+                       cs=selector, ss=new_ss,
+                       halted=False, rflags=flags | 2)
 
     def _deliver_exception(self, state, vector, error_code):
         delivered = self._deliver_gate(state, vector, error_code)
@@ -19123,6 +20336,18 @@ class X86DBT(object):
                 self.recurrence_cut_executed_span,
             'recurrence_source_instructions':
                 self.recurrence_source_instructions,
+            'scan_cuts': self.scan_cuts,
+            'resident_scan_cuts': len(tuple(
+                entry for _branch, entry in self._scan_cuts.values()
+                if entry is not None)),
+            'scan_cut_cache_hits': self.scan_cut_cache_hits,
+            'scan_cut_cache_misses': self.scan_cut_cache_misses,
+            'scan_cut_work': self.scan_cut_work,
+            'scan_cut_span': self.scan_cut_span,
+            'scan_cut_executions': self.scan_cut_executions,
+            'scan_cut_executed_work': self.scan_cut_executed_work,
+            'scan_cut_executed_span': self.scan_cut_executed_span,
+            'scan_source_instructions': self.scan_source_instructions,
             'prefix_cuts': self.prefix_cuts,
             'resident_prefix_cuts': len(self._prefix_cuts),
             'prefix_cut_cache_hits': self.prefix_cut_cache_hits,
@@ -19151,7 +20376,8 @@ class X86DBT(object):
             'find_cut_executed_span': self.find_cut_executed_span,
             'find_source_instructions': self.find_source_instructions,
             'copy_cuts': self.copy_cuts,
-            'resident_copy_cuts': len(self._copy_cuts),
+            'resident_copy_cuts': (
+                len(self._copy_cuts) + len(self._wide_copy_cuts)),
             'copy_cut_cache_hits': self.copy_cut_cache_hits,
             'copy_cut_cache_misses': self.copy_cut_cache_misses,
             'copy_cut_work': self.copy_cut_work,
@@ -19488,6 +20714,8 @@ class X86DBT(object):
                 for rip, (count, work, span) in sorted(
                     self._physical_profile.items(),
                     key=lambda item: (-item[1][1], item[0]))[:32])
+            layout['physical_retry_cuts'] = len(self._physical_retry_cuts)
+            layout['physical_trace'] = tuple(self._physical_trace)
             layout['physical_boundaries'] = tuple(sorted(
                 self._physical_boundary_profile.items(),
                 key=lambda item: (-item[1], item[0])))
@@ -19523,7 +20751,9 @@ class X86MachineState:
     @property
     def stopped(self):
         return (self.cpu.halted and self.pending is None
-                and not self.console_output)
+                and not self.console_input
+                and not self.console_output
+                and not dict(self.io_ports).get(_UART_TX_PENDING, 0))
 
 
 class X86Machine(object):
@@ -19664,6 +20894,19 @@ class X86Machine(object):
             return publish(current), MachineEvent(
                 'console_write', data=payload, cost=total)
 
+        if state.cpu.halted and state.cpu.rflags & RFLAGS_INTERRUPT:
+            io = dict(state.io_ports)
+            uart_irq = (((state.console_input
+                          and io.get(0x3f9, 0) & 1)
+                         or (io.get(_UART_TX_PENDING, 0)
+                             and io.get(0x3f9, 0) & 2))
+                        and not io.get(0x21, 0xff) & (1 << 4))
+            timer_irq = not io.get(0x21, 0xff) & 1
+            if uart_irq or timer_irq:
+                request = MachineEvent(
+                    'interrupt', (0x34 if uart_irq else 0x30,), cost=total)
+                return publish(replace(state, pending=request)), request
+
         for _unused in range(internal_limit):
             remaining = max(1, budget - total.instructions)
             cpu, boundary, cost = self.dbt.run(
@@ -19704,9 +20947,18 @@ class X86Machine(object):
                 if port == 0x3fd and width == 1:
                     value = 0x60 | int(bool(incoming))
                 elif port == 0x3fa and width == 1:
-                    value = 1
+                    if incoming and io.get(0x3f9, 0) & 1:
+                        value = 4
+                    elif (io.get(_UART_TX_PENDING, 0)
+                            and io.get(0x3f9, 0) & 2):
+                        value = 2
+                        io[_UART_TX_PENDING] = 0
+                    else:
+                        value = 1
                 elif port == 0x3fe and width == 1:
                     value = 0xb0
+                elif port == 0x64 and width == 1:
+                    value = 0
                 elif port in (0x20, 0xa0) and width == 1:
                     value = 0
                 elif port in (0x21, 0xa1) and width == 1:
@@ -19785,10 +21037,12 @@ class X86Machine(object):
                         state, io_ports=tuple(sorted(io.items())))
                 elif 0x3f8 <= port <= 0x3ff and width == 1:
                     if port == 0x3f8 and not io.get(0x3fb, 0) & 0x80:
+                        io[_UART_TX_PENDING] = 1
                         state = replace(
                             state, console_output=(
                                 state.console_output
-                                + bytes((value & 0xff,))))
+                                + bytes((value & 0xff,))),
+                            io_ports=tuple(sorted(io.items())))
                     else:
                         io[port] = value & 0xff
                         state = replace(
@@ -19801,14 +21055,22 @@ class X86Machine(object):
                     return idle(state)
                 continue
             if boundary.operation in ('halt', 'timeslice'):
+                if state.console_output:
+                    return idle(state)
                 io = dict(state.io_ports)
-                if (cpu.rflags & RFLAGS_INTERRUPT
-                        and not io.get(0x21, 0xff) & 1):
-                    request = MachineEvent('interrupt', (0x30,), cost=total)
+                uart_irq = (((state.console_input
+                              and io.get(0x3f9, 0) & 1)
+                             or (io.get(_UART_TX_PENDING, 0)
+                                 and io.get(0x3f9, 0) & 2))
+                            and not io.get(0x21, 0xff) & (1 << 4))
+                timer_irq = not io.get(0x21, 0xff) & 1
+                if cpu.rflags & RFLAGS_INTERRUPT and (uart_irq or timer_irq):
+                    # A completed UART byte is older than the next periodic
+                    # tick and must release the tty writer first.
+                    vector = 0x34 if uart_irq else 0x30
+                    request = MachineEvent('interrupt', (vector,), cost=total)
                     return publish(replace(state, pending=request)), request
                 if boundary.operation == 'halt':
-                    if state.console_output:
-                        return idle(state)
                     self.last_cost = total
                     return publish(state), None
                 return idle(state)

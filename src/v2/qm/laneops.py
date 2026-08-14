@@ -82,6 +82,8 @@ def shape(operation):
         return 4, 0, False
     if name == 'X86_TEST_CONDITION':
         return 3, 0, False
+    if name == 'BIT_ADDRESS':
+        return 3, 0, False
     if name == 'ADD3_U32':
         return 3, 0, False
     if name == 'SELECT_U32':
@@ -210,6 +212,19 @@ def evaluate(operation, arguments):
     if name == 'SELECT_U32':
         left, right, condition = arguments
         return int(left if condition else right) & 0xffffffff
+    if name == 'BIT_ADDRESS':
+        base, index, descriptor = map(int, arguments)
+        word_bits = descriptor & 0x7f
+        index_bits = (descriptor >> 8) & 0x7f
+        if (word_bits not in (16, 32, 64)
+                or index_bits not in (32, 64)
+                or descriptor != word_bits | (index_bits << 8)):
+            raise ValueError('bit address lane has an invalid descriptor')
+        word_shift = word_bits.bit_length() - 1
+        byte_shift = word_shift - 3
+        displacement = (to_signed(index, index_bits) >> word_shift) \
+            << byte_shift
+        return (base + displacement) & mask_of(bits)
     if name == 'X86_ALU':
         prior, left, right, descriptor = map(int, arguments)
         width = descriptor & 0x7f
@@ -282,7 +297,7 @@ def evaluate(operation, arguments):
         if width not in (8, 16, 32, 64):
             raise ValueError('x86 shift flag lane has an invalid width')
         group = (descriptor >> 8) & 7
-        if group not in (0, 1, 4, 5, 7):
+        if group not in (0, 1, 4, 5, 6, 7):
             raise ValueError('x86 shift flag lane has an invalid group')
         amount &= width - 1
         if not amount:
@@ -311,6 +326,8 @@ def evaluate(operation, arguments):
                             ^ (result >> (width - 2))) & 1
             elif group == 5:
                 overflow = (source >> (width - 1)) & 1
+            elif group == 6:
+                overflow = ((source ^ result) >> (width - 1)) & 1
         flags = (flags & ~(1 << 11)) | (overflow << 11)
         return flags & mask_of(bits)
     if name == 'X86_CONDITION':

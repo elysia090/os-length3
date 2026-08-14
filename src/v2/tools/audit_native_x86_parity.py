@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import struct
 import sys
 
 
@@ -21,10 +20,12 @@ REPOSITORY = ROOT.parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from kernel.machine import MachineEvent
 from kernel.x86 import X86DBT, X86Machine
-from kernel.x86snapshot import (load_x86_boot_cache, NATIVE_BLOCK_HEADER,
-                                NATIVE_MACHINE_MAGIC)
+from kernel.x86snapshot import (load_native_x86_machine,
+                                load_x86_boot_cache, NATIVE_BLOCK_HEADER)
 from tools.build_native_x86_machine import _open_boot
+from tools.close_native_x86_runtime import load_runtime_cut
 
 
 MASK64 = (1 << 64) - 1
@@ -45,23 +46,13 @@ def _word(value):
 
 def _native_control_owners(path):
     """Index resident control ownership without executing or decoding SSA."""
-    payload = memoryview(Path(path).read_bytes())
-    prefix = len(NATIVE_MACHINE_MAGIC)
-    if (len(payload) < prefix + 4
-            or bytes(payload[:prefix]) != NATIVE_MACHINE_MAGIC):
-        raise ValueError('native parity artifact header is invalid')
-    header_bytes = struct.unpack_from('<I', payload, prefix)[0]
-    header_start = prefix + 4
-    header_end = header_start + header_bytes
-    header = json.loads(bytes(payload[header_start:header_end]))
-    block_base = header_end + int(header['memory']['bytes'])
+    _header, _memory, records = load_native_x86_machine(
+        Path(path).read_bytes())
     controls = {}
-    for raw_rip, raw_offset, raw_length in header['blocks']:
-        offset, length = int(raw_offset), int(raw_length)
-        record = payload[block_base + offset:block_base + offset + length]
+    for rip, record in records:
         fields = NATIVE_BLOCK_HEADER.unpack_from(record)
         control = int(fields[6])
-        controls[str(raw_rip).lower()] = {
+        controls[_word(rip)] = {
             'control': control,
             'operation': _NATIVE_CONTROLS.get(control, 'unknown'),
             'owner': ('resident-device' if control in (17, 18)
@@ -80,11 +71,14 @@ def _expected(state):
     }
 
 
-def _samples(node, runner, native, wasm, blocks):
+def _samples(node, runner, native, wasm, blocks, resume=None):
     environment = os.environ.copy()
     environment['QM_X86_STATE_TRACE'] = '1'
+    command = (str(node), str(runner), str(native), str(wasm), str(blocks))
+    if resume is not None:
+        command += ('-', str(resume))
     completed = subprocess.run(
-        (str(node), str(runner), str(native), str(wasm), str(blocks)),
+        command,
         cwd=REPOSITORY, env=environment, capture_output=True, text=True,
         encoding='utf-8', errors='replace', check=False)
     samples = []
@@ -107,14 +101,18 @@ def _samples(node, runner, native, wasm, blocks):
 
 
 def audit(node, runner, native, wasm, artifact_root, source, blocks,
-          alignment_window=16):
+          alignment_window=16, resume=None):
     samples, observed_terminal = _samples(
-        node, runner, native, wasm, blocks)
+        node, runner, native, wasm, blocks, resume)
     control_owners = _native_control_owners(native)
-    boot_payload, identity = _open_boot(artifact_root, source)
-    boot = load_x86_boot_cache(boot_payload)
     runtime = X86Machine(X86DBT(profile_controls=True))
-    oracle_state = runtime.start(boot.state)
+    if resume is None:
+        boot_payload, identity = _open_boot(artifact_root, source)
+        boot = load_x86_boot_cache(boot_payload)
+        oracle_state = runtime.start(boot.state)
+    else:
+        oracle_state, identity, _dirty_pages = load_runtime_cut(
+            artifact_root, source, Path(resume))
     expected_samples = []
 
     def ensure_expected(count):
@@ -122,6 +120,21 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
         while len(expected_samples) < count:
             oracle_state, event = runtime.machine_step(
                 oracle_state, budget=1, max_internal=1, clock_step=1)
+            while event is not None and event.operation in (
+                    'console_write', 'entropy', 'interrupt'):
+                response = None
+                if event.operation == 'entropy':
+                    value = ((oracle_state.cpu.rip
+                              * 0x9e3779b97f4a7c15
+                              + 0xd1b54a32d192ed03) & MASK64)
+                    response = MachineEvent(
+                        'entropy', event.coordinate, value)
+                elif event.operation == 'interrupt':
+                    response = MachineEvent(
+                        'interrupt', event.coordinate)
+                oracle_state, event = runtime.machine_step(
+                    oracle_state, response, budget=1,
+                    max_internal=1, clock_step=1)
             expected_samples.append((_expected(oracle_state), event))
 
     def actual_state(observed):
@@ -134,6 +147,16 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
     oracle_extra_cuts = 0
     alignment_points = 0
     window = max(1, int(alignment_window))
+    # vm.wasm may publish a completed internal admission/delivery turn before
+    # retiring source code (notably when a pending interrupt is admitted from
+    # a resumed cut).  It is an extra physical cut, not an architectural
+    # mismatch, when the complete state is still the saved initial state.
+    initial = _expected(oracle_state)
+    while (actual_index < len(samples)
+           and actual_state(samples[actual_index]) == initial):
+        actual_index += 1
+        actual_extra_cuts += 1
+        alignment_points += 1
     while actual_index < len(samples):
         # A long run can accumulate many local cut-grouping differences. Keep
         # the lookahead bounded at each comparison without bounding total skew.
@@ -234,6 +257,8 @@ def main(argv=None):
                         default=REPOSITORY / 'artifact')
     parser.add_argument('--source', default='linux-x86-64')
     parser.add_argument('--blocks', type=int, default=1200)
+    parser.add_argument('--resume', type=Path,
+                        help='compare from this saved architectural cut')
     parser.add_argument('--alignment-window', type=int, default=16)
     arguments = parser.parse_args(argv)
     if arguments.blocks <= 0:
@@ -242,7 +267,7 @@ def main(argv=None):
         arguments.node.resolve(), arguments.runner.resolve(),
         arguments.native.resolve(), arguments.wasm.resolve(),
         arguments.artifact_root.resolve(), arguments.source,
-        arguments.blocks, arguments.alignment_window)
+        arguments.blocks, arguments.alignment_window, arguments.resume)
     print(json.dumps(result, indent=2, sort_keys=True))
     return int(not result['ok'])
 

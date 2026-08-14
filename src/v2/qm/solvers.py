@@ -91,6 +91,102 @@ def solve_constant(sem, obs, options=None):
     return [prog] if verify(prog, sem, obs) else []
 
 
+def solve_modular_affine(sem, obs, options=None):
+    """Derive the closed integer form ``a*x + b`` by substitution.
+
+    ``b = f(0)`` and ``a = f(1) - b`` are forced.  Substitution into every
+    domain point is both the acceptance test and the proof on an exhaustive
+    domain.  This recovers long add/subtract/multiply chains without retaining
+    their intermediate materializations or rediscovering them as a table.
+    """
+    if sem.input_bits < 1 or not obs.is_identity:
+        return []
+    modulus = mask_of(sem.output_bits)
+    constant = sem.value_at(0) & modulus
+    scale = (sem.value_at(1) - constant) & modulus
+    if scale in (0, 1) and constant == 0:
+        return []
+    steps = []
+    if scale != 1:
+        steps.append(('IMUL', scale, None))
+    if constant:
+        steps.append(('ADD', constant, None))
+    program = Program(
+        [point(steps, note='forced modular affine form')],
+        1, 1, 'modular-affine', sem.input_bits, sem.output_bits,
+        ['f(0) forces the offset; f(1)-f(0) forces the scale; the complete '
+         'declared domain verifies their substitution'])
+    return [program] if verify(program, sem, obs) else []
+
+
+def _intersect_intervals(left, right):
+    """Intersection of two sorted unions of closed integer intervals."""
+    out = []
+    for a0, a1 in left:
+        for b0, b1 in right:
+            lo, hi = max(a0, b0), min(a1, b1)
+            if lo <= hi:
+                out.append((lo, hi))
+    return out
+
+
+def solve_signed_affine_projection(sem, obs, options=None):
+    """Derive ``sar((x << left) + offset, right)`` from its exact image.
+
+    For fixed shifts, every observed result gives a necessary and sufficient
+    modular interval for ``offset``.  Intersecting those intervals over the
+    complete domain either proves that no constant exists or leaves the exact
+    set of valid constants.  This recovers a common compiler-normalized cut
+    without searching instruction strings or trusting one frontend's shape.
+    """
+    if (not obs.is_identity or sem.output_bits != 64
+            or sem.input_bits > 8):
+        return []
+    values = tuple(sem.table())
+    candidates = []
+    for left_shift in range(64):
+        scale = (1 << left_shift) & M64
+        for right_shift in range(1, 64):
+            limit = 1 << (63 - right_shift)
+            allowed = [(0, M64)]
+            width = (1 << right_shift) - 1
+            for x, output in enumerate(values):
+                signed = to_signed(output, 64)
+                if signed < -limit or signed >= limit:
+                    allowed = []
+                    break
+                delta = (scale * x) & M64
+                lo = ((signed << right_shift) - delta) & M64
+                hi = ((signed << right_shift) + width - delta) & M64
+                interval = ([(lo, hi)] if lo <= hi
+                            else [(0, hi), (lo, M64)])
+                allowed = _intersect_intervals(allowed, interval)
+                if not allowed:
+                    break
+            if not allowed:
+                continue
+            offset = allowed[0][0]
+            steps = []
+            if left_shift:
+                steps.append(('SHL', None, left_shift))
+            if offset:
+                steps.append(('ADD', offset, None))
+            steps.append(('SAR', None, right_shift))
+            candidates.append((len(steps), left_shift, right_shift,
+                               offset, steps))
+
+    if not candidates:
+        return []
+    _work, left_shift, right_shift, offset, steps = min(candidates)
+    program = Program(
+        [point(steps, note='forced signed affine projection')],
+        1, 1, 'signed-affine-projection', sem.input_bits, sem.output_bits,
+        ['each output fixes one modular interval for the additive offset; '
+         'their complete-domain intersection is nonempty for shifts %d/%d'
+         % (left_shift, right_shift)])
+    return [program] if verify(program, sem, obs) else []
+
+
 def solve_conv_only(sem, obs, options=None):
     """`CONV(family, M)` with no deposit in front of it.
 
@@ -247,6 +343,100 @@ def solve_linear(sem, obs, options=None):
                    ['the linear map is forced by f(1<<i); only the physical '
                     'representative remains free'])
     return [prog] if verify(prog, sem, obs) else []
+
+
+def solve_gf2_affine(sem, obs, options=None):
+    """Recognize ``constant XOR linear(x)`` from forced basis images."""
+    if not obs.is_identity:
+        return []
+    constant = sem.value_at(0)
+    if constant == 0:
+        return []
+    basis = [sem.value_at(1 << bit) ^ constant
+             for bit in range(sem.input_bits)]
+    if not any(basis):
+        return []
+    program = Program(
+        [lin_const(basis, sem.input_bits,
+                   note='linear part forced after substituting f(0)'),
+         point([('XOR', constant, None)],
+               note='GF(2)-affine constant')],
+        1, 1, 'gf2-affine', sem.input_bits, sem.output_bits,
+        ['f(0) forces the XOR constant; f(1<<i) XOR f(0) forces every '
+         'basis image; the complete declared domain verifies substitution'])
+    return [program] if verify(program, sem, obs) else []
+
+
+def solve_additive_bit_delta(sem, obs, options=None):
+    """Factor one conditional update as ``base(x) + bit(x) * delta``.
+
+    A compiler commonly lowers ``predicate ? value - 1 : value`` to a
+    conditional move.  Looking at the two arms independently hides the much
+    smaller normal form: after substituting the selector, their modular
+    difference is constant.  The base and the one-bit delta are both GF(2)
+    affine maps and remain independent SSA branches until one final add.
+
+    The condition is inferred from the complete truth table.  Requiring every
+    input coordinate here makes the constant-difference test necessary and
+    sufficient, rather than an extrapolation from probes.
+    """
+    if (sem.input_bits < 2 or not sem.domain.exhaustive
+            or not obs.is_identity):
+        return []
+    inputs = sem.domain.values()
+    outputs = sem.table()
+    output_mask = mask_of(sem.output_bits)
+    by_input = dict(zip(inputs, outputs))
+
+    for selector in range(sem.input_bits - 1, -1, -1):
+        selector_mask = 1 << selector
+        clear = [value for value in inputs if not value & selector_mask]
+        if not clear:
+            continue
+        deltas = {
+            (by_input[value | selector_mask] - by_input[value]) & output_mask
+            for value in clear
+        }
+        if len(deltas) != 1:
+            continue
+        delta = deltas.pop()
+        if delta == 0:
+            continue
+        fitted = _fit_affine_map(
+            clear, [by_input[value] for value in clear],
+            sem.input_bits, sem.output_bits)
+        if fitted is None:
+            continue
+        base_basis, base_constant = fitted
+
+        base_ops = []
+        if any(base_basis):
+            base_ops.append(lin_const(
+                base_basis, sem.input_bits,
+                note='selector-cleared affine base'))
+        if base_constant or not base_ops:
+            base_ops.append(point(
+                [('AND', 0, None), ('OR', base_constant, None)],
+                note='selector-cleared affine constant'))
+        base = Program(base_ops, 1, 1, 'additive-base',
+                       sem.input_bits, sem.output_bits)
+
+        delta_basis = [0] * sem.input_bits
+        delta_basis[selector] = delta
+        selected_delta = Program(
+            [lin_const(delta_basis, sem.input_bits,
+                       note='one-bit modular delta')],
+            1, 1, 'additive-delta', sem.input_bits, sem.output_bits)
+        program = Program(
+            [fork((base, selected_delta), 'ADD',
+                  note='affine base plus one-bit modular delta')],
+            1, 1, 'additive-bit-delta',
+            sem.input_bits, sem.output_bits,
+            ['bit %d has the same modular delta 0x%X after every other '
+             'coordinate is substituted' % (selector, delta)])
+        if verify(program, sem, obs):
+            return [program]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -1956,12 +2146,15 @@ def solve_table(sem, obs, options=None):
 COMPACT_SOLVERS = (
     solve_identity,
     solve_constant,
+    solve_modular_affine,
+    solve_additive_bit_delta,
     solve_conv_only,
     solve_field_boundary,
     solve_ceil_shift,
     solve_deposit_conv_family,
     solve_support_masked_conv,
     solve_linear,
+    solve_gf2_affine,
     solve_gf256_multiply,
     solve_lane_predicate,
     solve_residual_bit_query,
@@ -1978,6 +2171,7 @@ COMPACT_SOLVERS = (
 # deposit-and-convolution on a kernel that has one.  Ordering them after the
 # closed forms is what keeps a `ranks8` costing milliseconds.
 FALLBACK_SOLVERS_ORDER = (
+    solve_signed_affine_projection,
     solve_point_chain,
     solve_field_neq,
     solve_bit_select,

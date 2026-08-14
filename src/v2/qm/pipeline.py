@@ -27,6 +27,7 @@ from . import recognize as recognize_mod
 from . import solvers as solvers_mod
 from .cfront import CFrontError, NoEntry
 from .guards import derive_guard, guard_evidence
+from .program import Program, ssa
 from .version import version_block
 
 DEFAULT_TARGETS = list(isa_mod.DEFAULT_PROFILES)
@@ -94,6 +95,19 @@ def _solve(source, function, observer_spec, targets, frontend_name, options,
 
     # -- synthesis ---------------------------------------------------------
     programs = solvers_mod.solve_all(sem, obs, options)
+    physical = analysis.physical
+    if physical is not None:
+        physical = isa_mod.normalize_physical(physical, sem.input_bits)
+        # The retained candidate is a floor, not a trusted shortcut: it enters
+        # only after the same semantic verification as synthesized programs,
+        # and only when it is representable by the wasm32 codec input.
+        if (isa_mod.emit_wasm(physical, 'candidate') is not None
+                and isa_mod.agrees(physical, sem, obs)):
+            programs.append(Program(
+                [ssa(physical)], 1, 1, 'source-ssa',
+                sem.input_bits, sem.output_bits,
+                ['verified straight-line frontend SSA retained as the compact '
+                 'fallback before any materialized table']))
 
     result = {
         'ok': True,
@@ -259,12 +273,13 @@ def _rank_key(entry, targets):
     solution".
     """
     fallback = 1 if entry['program'].solver in FALLBACK_SOLVERS else 0
+    source_floor = 1 if entry['program'].solver == 'source-ssa' else 0
     for name in targets:
         rec = entry['targets'].get(name)
         if rec and rec.get('ok'):
-            return (fallback, 0, rec['span'], rec['work'], rec['L_bits'],
-                    rec['rank'])
-    return (fallback, 1, 1 << 30, 1 << 30, 1 << 30, 0)
+            return (fallback, 0, rec['span'], rec['work'], source_floor,
+                    rec['L_bits'], rec['rank'])
+    return (fallback, 1, 1 << 30, 1 << 30, source_floor, 1 << 30, 0)
 
 
 def _best_span(entry, targets):

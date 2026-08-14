@@ -16,17 +16,17 @@
       "path": "linux-x86-64/index.json"
     },
     "linux-x86-64-machine": {
-      "bytes": 4767768,
-      "format": "x86-native-machine-v1",
-      "identity": "aa7d353fbeca1e7d0451a61a23b6bc45eabb091ffa1b3996ddd91c1aa9a0ff12",
+      "bytes": 15344707,
+      "format": "x86-native-machine-v5",
+      "identity": "8aa1f9ff1f0825765423fdc96dbd15c0ca9fb49a53a0ddcf5111c78fff69d25b",
       "path": "linux-x86-64-machine/index.json",
       "source_identity": "2dc3fab08b457bd03df8a609eadbbfe954d4404698db0e36fac229076a78cb51"
     },
     "vm": {
-      "bytes": 78341,
+      "bytes": 93272,
       "components": "vm/index.json",
       "format": "webassembly-runtime-v1",
-      "identity": "989c384f069e388c6f70889115852706ee95e260f9a2a955524f41d7bf681a21",
+      "identity": "ce28902751df6262e486e861fe6d13d357ce20843fb6d2d8cf49d1e712d96049",
       "path": "vm/module/index.json"
     }
   },

@@ -228,6 +228,17 @@ export class LinuxTerminal {
       return;
     }
     this.handle = message.handle ?? this.handle;
+    if (!message.result?.ready) {
+      this.showProgress({
+        state: 'error',
+        label: 'Linux stopped before the shell prompt',
+        detail: 'state-step quantum exhausted',
+      });
+      this.setSession('failed');
+      this.input.disabled = true;
+      this.input.placeholder = 'shell prompt unavailable';
+      return;
+    }
     if (message.result?.state?.halted && !this.outputStarted) {
       const rip = String(message.result.state.rip_hex || '');
       this.showProgress({

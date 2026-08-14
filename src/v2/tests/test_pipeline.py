@@ -5,11 +5,12 @@ something is wrong; both cases need a human, so they are asserted exactly.
 """
 
 import os
+from pathlib import Path
 import subprocess
 import unittest
 
 from qm.clang import NATIVE
-from qm import pipeline
+from qm import isa, pipeline
 from qm.frontend import CSubsetFrontend
 from tests.support import read_example as example, solved as solve
 
@@ -121,6 +122,71 @@ class TestVerification(unittest.TestCase):
         # must never outrank a real program on a kernel that has one.
         result = solve(example('ranks8.c'), frontend='cfront')
         self.assertNotEqual(result['program']['solver'], 'table')
+
+    def test_vm_poll_projection_is_an_additive_ssa_cut_not_a_table(self):
+        source = (Path(__file__).resolve().parents[3] / 'corpus' / 'vm' /
+                  'poll_delay_projection8.c').read_text(encoding='utf-8')
+        result = pipeline.solve(
+            source, function='poll_delay_projection8', frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['program']['solver'], 'additive-bit-delta')
+        wasm = next(target for target in result['targets']
+                    if target['name'] == 'wasm32')
+        self.assertNotIn('LUT', wasm['instructions'])
+        self.assertEqual((wasm['span'], wasm['work']), (4, 5))
+
+    def test_fuzzed_affine_chain_is_substituted_instead_of_materialized(self):
+        source = (Path(__file__).resolve().parents[3] / 'corpus' / 'vm' /
+                  'affine_compose8.c').read_text(encoding='utf-8')
+        result = pipeline.solve(
+            source, function='affine_compose8', frontend='cfront')
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['program']['solver'], 'modular-affine')
+        wasm = next(target for target in result['targets']
+                    if target['name'] == 'wasm32')
+        self.assertEqual((wasm['span'], wasm['work']), (2, 2))
+        self.assertEqual(wasm['instructions'], ['IMUL', 'ADD'])
+
+    def test_wasm_zero_minus_value_retains_the_four_op_source_cut(self):
+        seq = isa.Seq()
+        a = seq.emit('NEG', [0])
+        b = seq.emit('SUB', [a], const=7)
+        c = seq.emit('XORR', [b, 0])
+        d = seq.emit('XOR', [c], const=0x419BB78768F0D0E3)
+        seq.result = seq.emit('XOR', [d], const=0xB4FF7F7BAC3C7F34)
+        source = isa.emit_wasm(seq, 'xor_residual8', input_bits=8)
+        result = pipeline.solve(source, options={'input_bits': 8})
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['program']['solver'], 'source-ssa')
+        wasm = next(target for target in result['targets']
+                    if target['name'] == 'wasm32')
+        self.assertEqual((wasm['span'], wasm['work']), (4, 4))
+        self.assertEqual(wasm['instructions'], ['NEG', 'SUB', 'XORR', 'XOR'])
+
+    def test_signed_projection_is_derived_before_the_split_fallback(self):
+        source = (Path(__file__).resolve().parents[3] / 'corpus' / 'vm' /
+                  'signed_projection_cut8.c').read_text(encoding='utf-8')
+        result = pipeline.solve(
+            source, function='signed_projection_cut8', frontend=None)
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['program']['solver'],
+                         'signed-affine-projection')
+        wasm = next(target for target in result['targets']
+                    if target['name'] == 'wasm32')
+        self.assertEqual((wasm['span'], wasm['work']), (3, 3))
+        self.assertEqual(wasm['instructions'], ['SHL', 'ADD', 'SAR'])
+
+    def test_nonzero_gf2_constant_keeps_the_input_width_into_lowering(self):
+        source = (Path(__file__).resolve().parents[3] / 'corpus' / 'vm' /
+                  'gf2_affine_cut8.c').read_text(encoding='utf-8')
+        result = pipeline.solve(
+            source, function='gf2_affine_cut8', frontend=None)
+        self.assertTrue(result['ok'], result.get('error'))
+        self.assertEqual(result['program']['solver'], 'gf2-affine')
+        wasm = next(target for target in result['targets']
+                    if target['name'] == 'wasm32')
+        self.assertEqual((wasm['span'], wasm['work']), (4, 4))
+        self.assertNotEqual(wasm['instructions'][0:2], ['AND', 'AND'])
 
 
 class TestObserverChangesTheAnswer(unittest.TestCase):

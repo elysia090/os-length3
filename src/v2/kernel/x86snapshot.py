@@ -18,10 +18,13 @@ from .pagefabric import (PageFabric, SubpageBacking, bundle_prefix_size,
                          dump_bundle, load_bundle, project_sparse)
 from .x86 import (BzImageBoot, BzImageHeader, DecodedBlock,
                   HighByteRegister, MASK64, MemoryOperand, X86DBT, X86Error,
-                  X86Boundary, X86MachineState, X86State, _execution_proof,
+                  X86Boundary, X86MachineState, X86State,
+                  _block_code_extents, _block_source_instructions,
+                  _execution_proof,
                   read_virtual)
-from qm.steppage import (decode_plan, pack as pack_step, StatePageError,
-                         unpack as unpack_step)
+from qm.steppage import (decode_plan, instantiate_step_template,
+                         pack as pack_step, project_step_template,
+                         StatePageError, unpack as unpack_step)
 
 
 MAGIC = b'x86-state-v1\n'
@@ -29,13 +32,27 @@ MACHINE_MAGIC = b'x86-machine-v1\n'
 BOOT_CACHE_MAGIC = b'x86-boot-cache-v1\n'
 CODE_MAGIC = b'x86-code-v1\n'
 NATIVE_BLOCK_MAGIC = b'X86B'
-NATIVE_MACHINE_MAGIC = b'x86-native-machine-v1\n'
+NATIVE_DESCRIPTOR_MAGIC = b'X86D'
+NATIVE_MACHINE_V1_MAGIC = b'x86-native-machine-v1\n'
+NATIVE_MACHINE_V2_MAGIC = b'x86-native-machine-v2\n'
+NATIVE_MACHINE_V3_MAGIC = b'x86-native-machine-v3\n'
+NATIVE_MACHINE_V4_MAGIC = b'x86-native-machine-v4\n'
+NATIVE_MACHINE_MAGIC = b'x86-native-machine-v5\n'
 RECORD = struct.Struct('<QB')
 PAGE_BASE = 0
 PAGE_DOMAIN = 1
 PAGE_RAW = 2
 CODE_RECORD = struct.Struct('<QQIIIII')
 NATIVE_BLOCK_HEADER = struct.Struct('<4sHHQQIIQQQ8x')
+NATIVE_DESCRIPTOR_HEADER = struct.Struct('<4sHHQQIIQQQII')
+NATIVE_BLOCK_INSTANCE = struct.Struct('<QIII')
+NATIVE_CONTROL_TEMPLATE = struct.Struct('<IIQQQQ')
+NATIVE_CONTINUATION_OFFSET = struct.Struct('<I')
+NATIVE_STEP_EXTENT = struct.Struct('<II')
+NATIVE_STEP_INSTANCE = struct.Struct('<IIII')
+NATIVE_STEP_HASH_EXTENT = struct.Struct('<32sII')
+NATIVE_CODE_GUARD_EXTENT = struct.Struct('<QH')
+NATIVE_REGION_BYTES = 1 << 16
 _COST_FIELDS = (
     'instructions', 'work', 'span', 'slices', 'barriers',
     'max_parallel_width',
@@ -43,6 +60,116 @@ _COST_FIELDS = (
 
 BOOT_SPAN_BYTES = 1 << 16
 BOOT_SPAN_PAGES = BOOT_SPAN_BYTES // MEMORY_PAGE
+
+
+def _project_native_x86_continuation(fields):
+    """Return the RIP-relative control residual of one native block.
+
+    The block coordinate already identifies RIP.  Static successors are
+    therefore displacements, while local/register/control descriptors remain
+    exact words.  Boundary RIP is retained as a displacement even where the
+    current executor does not observe it, so loading an artifact reconstructs
+    the exact canonical X86B record.
+    """
+    rip = int(fields[3]) & MASK64
+    boundary = (int(fields[4]) - rip) & MASK64
+    control = int(fields[6])
+    first, second, third = (int(value) & MASK64 for value in fields[7:10])
+    if control == 2:
+        first = (first - rip) & MASK64
+        second = (second - rip) & MASK64
+    elif control not in (0, 3, 4, 5, 12, 14, 22):
+        first = (first - rip) & MASK64
+    return control, boundary, first, second, third
+
+
+def _instantiate_native_x86_continuation(rip, continuation):
+    control, boundary, first, second, third = continuation
+    rip = int(rip) & MASK64
+    boundary = (rip + int(boundary)) & MASK64
+    if control == 2:
+        first = (rip + int(first)) & MASK64
+        second = (rip + int(second)) & MASK64
+    elif control not in (0, 3, 4, 5, 12, 14, 22):
+        first = (rip + int(first)) & MASK64
+    return boundary, int(control), int(first), int(second), int(third)
+
+
+def _native_signed_residual(value):
+    value = int(value) & MASK64
+    signed = value if value < (1 << 63) else value - (1 << 64)
+    for code, width in ((3, 1), (4, 2), (5, 4)):
+        limit = 1 << (width * 8 - 1)
+        if -limit <= signed < limit:
+            return code, width, signed
+    return 6, 8, signed
+
+
+def _encode_native_x86_continuation(continuation):
+    """Encode one continuation as canonical residual fields.
+
+    Four three-bit tags select zero, a prior field, or the shortest signed
+    scalar.  Static targets have already been projected relative to RIP, so
+    the common branch row is only a tag plus one small displacement.
+    """
+    control, boundary, first, second, third = map(int, continuation)
+    if not 0 <= control <= 36:
+        raise ValueError('native x86 continuation control is invalid')
+    values = tuple(value & MASK64 for value in (
+        boundary, first, second, third))
+    tags = 0
+    payload = bytearray()
+    for index, value in enumerate(values):
+        if not value:
+            code = 0
+        elif index and value == values[0]:
+            code = 1
+        elif index > 1 and value == values[1]:
+            code = 2
+        else:
+            code, width, signed = _native_signed_residual(value)
+            payload.extend(int(signed).to_bytes(
+                width, 'little', signed=True))
+        tags |= code << (index * 3)
+    return bytes((control, tags & 0xff, tags >> 8)) + bytes(payload)
+
+
+def _decode_native_x86_continuation(payload):
+    """Decode and prove the unique minimal continuation representation."""
+    payload = bytes(payload)
+    if len(payload) < 3:
+        raise ValueError('native x86 continuation is truncated')
+    control = payload[0]
+    tags = payload[1] | payload[2] << 8
+    if control > 36 or tags >> 12:
+        raise ValueError('native x86 continuation tag is invalid')
+    cursor = 3
+    values = []
+    widths = {3: 1, 4: 2, 5: 4, 6: 8}
+    for index in range(4):
+        code = (tags >> (index * 3)) & 7
+        if code == 0:
+            value = 0
+        elif code == 1 and index:
+            value = values[0]
+        elif code == 2 and index > 1:
+            value = values[1]
+        elif code in widths:
+            width = widths[code]
+            if cursor + width > len(payload):
+                raise ValueError('native x86 continuation is truncated')
+            value = int.from_bytes(
+                payload[cursor:cursor + width], 'little', signed=True) \
+                & MASK64
+            cursor += width
+        else:
+            raise ValueError('native x86 continuation field is invalid')
+        values.append(value)
+    continuation = (control, *values)
+    if cursor != len(payload) \
+            or _encode_native_x86_continuation(continuation) != payload:
+        raise ValueError('native x86 continuation is not canonical')
+    return continuation
 
 
 def _dump_boot_memory(memory, shards):
@@ -176,14 +303,22 @@ def _boot_cache_memory_bytes(payload):
 
 def canonical_native_x86_records(blocks):
     """Choose the one strongest portable record at every native coordinate."""
-    by_rip = {}
-    internal_coordinates = set()
+    variants = {}
+    internal_variants = set()
     for block in blocks:
-        for rip, record in pack_native_x86_records(block):
-            prior = by_rip.get(rip)
+        try:
+            packed_records = pack_native_x86_records(block)
+        except (StatePageError, TypeError, ValueError) as error:
+            raise ValueError(
+                'native x86 cut %#x cannot be packed: %s'
+                % (int(block.rip) & MASK64, error)) from error
+        for rip, record in packed_records:
+            _fields, guard, _step = split_native_x86_record(record)
+            key = int(rip) & MASK64, guard
+            prior = variants.get(key)
             if prior is not None and prior != record:
                 internal = rip != int(block.rip) & MASK64
-                prior_internal = rip in internal_coordinates
+                prior_internal = key in internal_variants
                 # A faultable terminal is deliberately split from its pure
                 # prefix.  If normal control also reached that instruction,
                 # its primary cut starts at the same architectural retry
@@ -191,34 +326,27 @@ def canonical_native_x86_records(blocks):
                 # Prefer it so native and reference quanta retain the same
                 # maximal-cut boundary.
                 if prior_internal and not internal:
-                    by_rip[rip] = record
-                    internal_coordinates.discard(rip)
+                    variants[key] = record
+                    internal_variants.discard(key)
                     continue
                 if not prior_internal and internal:
                     continue
                 raise ValueError(
                     'native x86 coordinate %#x has distinct %s records'
                     % (rip, 'internal' if internal else 'primary'))
-            by_rip[rip] = record
+            variants[key] = record
             if rip != int(block.rip) & MASK64:
-                internal_coordinates.add(rip)
-    return tuple(sorted(by_rip.items()))
+                internal_variants.add(key)
+    return tuple((rip, record)
+                 for (rip, _guard), record in sorted(variants.items()))
 
 
 def dump_native_x86_machine(boot_cache, state, blocks):
-    """Join boot state, sparse physical RAM, and reached native STEP records."""
+    """Join boot state, sparse RAM, descriptors, and shared STEP identities."""
     if not isinstance(state, X86State):
         raise TypeError('native x86 machine needs an X86State')
     memory = _boot_cache_memory_bytes(boot_cache)
     prefix_bytes = bundle_prefix_size(memory)
-    records = []
-    directory = []
-    offset = 0
-    for rip, record in canonical_native_x86_records(blocks):
-        directory.append(('%016x' % rip, offset, len(record)))
-        records.append(record)
-        offset += len(record)
-
     def word(value):
         return '%016x' % (int(value) & MASK64)
 
@@ -228,8 +356,7 @@ def dump_native_x86_machine(boot_cache, state, blocks):
         state.es, state.cs, state.ss, state.ds, state.fs, state.gs,
         state.ldtr, state.tr,
     ) + tuple(state.debug)
-    header = json.dumps({
-        'schema': 1,
+    header = {
         'state': {
             'registers': [word(value) for value in state.registers],
             'rip': word(state.rip), 'rflags': word(state.rflags),
@@ -237,6 +364,7 @@ def dump_native_x86_machine(boot_cache, state, blocks):
             'cr4': word(state.cr4), 'efer': word(state.efer),
             'system': [word(value) for value in system],
             'msrs': [[word(key), word(value)] for key, value in state.msrs],
+            'xmm': [word(value) for value in state.xmm],
         },
         'memory': {
             'bytes': len(memory),
@@ -245,21 +373,243 @@ def dump_native_x86_machine(boot_cache, state, blocks):
             'prefix_sha256': hashlib.sha256(
                 memory[:prefix_bytes]).hexdigest(),
         },
-        'blocks': directory,
-        'block_bytes': offset,
-    }, sort_keys=True, separators=(',', ':')).encode('ascii')
-    return b''.join((
-        NATIVE_MACHINE_MAGIC, struct.pack('<I', len(header)), header,
-        memory, *records,
-    ))
+    }
+    return _encode_native_x86_machine(
+        header, memory, canonical_native_x86_records(blocks))
 
 
-def extend_native_x86_machine(payload, records, reject_conflicts=True):
-    """Add proved X86B records without decoding or rewriting physical RAM."""
-    payload = memoryview(payload)
-    prefix = len(NATIVE_MACHINE_MAGIC)
-    if (len(payload) < prefix + 4
-            or bytes(payload[:prefix]) != NATIVE_MACHINE_MAGIC):
+def _align_native_region(value):
+    return (int(value) + NATIVE_REGION_BYTES - 1) \
+        & -NATIVE_REGION_BYTES
+
+
+def _encode_native_x86_machine(header, memory, records):
+    """Encode block descriptors over shared SSA templates and parameters."""
+    variants = {}
+    for raw_rip, raw_record in records:
+        rip = int(raw_rip) & MASK64
+        _fields, guard, physical = physical_native_x86_record(
+            raw_record, rip)
+        key = rip, guard
+        prior = variants.get(key)
+        if prior is not None and prior != physical:
+            raise ValueError(
+                'native x86 coordinate %#x has distinct records for one proof'
+                % rip)
+        variants[key] = physical
+
+    return _encode_native_x86_physical(header, memory, variants)
+
+
+def physical_native_x86_record(record, coordinate):
+    """Return one validated record in the rank-native physical identity."""
+    rip = int(coordinate) & MASK64
+    record = bytes(record)
+    validate_native_x86_record(record, rip)
+    fields, guard, step = split_native_x86_record(record)
+    template, parameters = project_step_template(step)
+    return fields, guard, (
+        guard, (template, parameters, len(step)),
+        _project_native_x86_continuation(fields))
+
+
+def _encode_native_x86_physical(header, memory, variants):
+    """Encode canonical rank directories from already projected STEP rows."""
+    memory = bytes(memory)
+
+    # First-coordinate ranking is canonical because block coordinates are
+    # sorted. It also preserves execution locality; sorting by a random-looking
+    # digest would destroy the delivery codec's compression neighborhoods.
+    steps = {}
+    guards = {}
+    continuations = {}
+    record_fields = {}
+    ordered_keys = sorted(variants)
+    for key in ordered_keys:
+        guard, step, continuation = variants[key]
+        steps.setdefault(step, None)
+        if guard:
+            guards.setdefault(guard, None)
+        continuations.setdefault(continuation, None)
+        record_fields[key] = (guard, step, continuation)
+
+    ordered_steps = tuple(steps)
+    ordered_guards = tuple(guards)
+    guard_rank_by_identity = {
+        guard: rank for rank, guard in enumerate(ordered_guards, 1)
+    }
+    ordered_continuations = tuple(continuations)
+    continuation_rank = {
+        continuation: rank
+        for rank, continuation in enumerate(ordered_continuations, 1)
+    }
+    templates = {}
+    for step in ordered_steps:
+        template, _parameters, _step_bytes = step
+        templates.setdefault(template, None)
+    ordered_templates = tuple(templates)
+    template_rank = {
+        template: rank for rank, template in enumerate(ordered_templates, 1)
+    }
+    step_rank = {
+        step: rank for rank, step in enumerate(ordered_steps, 1)
+    }
+
+    template_directory = []
+    step_directory = []
+    guard_directory = []
+    execution = bytearray()
+    for template in ordered_templates:
+        template_directory.append((len(execution), len(template)))
+        execution.extend(template)
+    template_execution_bytes = len(execution)
+    for step in ordered_steps:
+        template, parameters, step_bytes = step
+        step_directory.append((
+            template_rank[template], len(execution),
+            len(parameters), step_bytes))
+        execution.extend(parameters)
+    parameter_execution_bytes = len(execution) - template_execution_bytes
+    for guard in ordered_guards:
+        guard_directory.append((len(execution), len(guard)))
+        execution.extend(guard)
+
+    descriptors = bytearray()
+    block_directory = []
+    for key in ordered_keys:
+        rip, _identity = key
+        guard, step, continuation = record_fields[key]
+        descriptors.extend(NATIVE_BLOCK_INSTANCE.pack(
+            rip, step_rank[step], continuation_rank[continuation],
+            0 if not guard else guard_rank_by_identity[guard]))
+        block_directory.append('%016x' % rip)
+    for instance in step_directory:
+        descriptors.extend(NATIVE_STEP_INSTANCE.pack(*instance))
+    for offset, length in template_directory:
+        descriptors.extend(NATIVE_STEP_EXTENT.pack(offset, length))
+    for offset, length in guard_directory:
+        descriptors.extend(NATIVE_STEP_EXTENT.pack(offset, length))
+    continuation_payload = bytearray()
+    continuation_offsets = [0]
+    for continuation in ordered_continuations:
+        continuation_payload.extend(
+            _encode_native_x86_continuation(continuation))
+        continuation_offsets.append(len(continuation_payload))
+    for offset in continuation_offsets:
+        descriptors.extend(NATIVE_CONTINUATION_OFFSET.pack(offset))
+    descriptors.extend(continuation_payload)
+
+    encoded_header = dict(header)
+    encoded_header.update({
+        'schema': 5,
+        'block_count': len(block_directory),
+        'step_count': len(step_directory),
+        'template_count': len(template_directory),
+        'guard_count': len(guard_directory),
+        'continuation_count': len(ordered_continuations),
+        'continuation_bytes': len(continuation_payload),
+        'descriptor_bytes': len(descriptors),
+        'execution_bytes': len(execution),
+        'template_execution_bytes': template_execution_bytes,
+        'parameter_execution_bytes': parameter_execution_bytes,
+        'guard_execution_bytes': (
+            len(execution) - template_execution_bytes
+            - parameter_execution_bytes),
+        'step_identity': {
+            'kind': 'template-parameter-rank',
+            'order': 'first-rip',
+            'records': len(block_directory),
+            'unique': len(ordered_steps),
+            'shared': len(block_directory) - len(ordered_steps),
+        },
+        'step_template_identity': {
+            'kind': 'normalized-ssa-frame-projection',
+            'order': 'first-rip',
+            'instances': len(ordered_steps),
+            'unique': len(ordered_templates),
+            'shared': len(ordered_steps) - len(ordered_templates),
+        },
+        'code_identity': {
+            'kind': 'exact-byte-extents',
+            'order': 'first-rip',
+            'records': len(block_directory),
+            'unique': len(ordered_guards),
+            'shared': len(block_directory) - len(ordered_guards),
+        },
+        'continuation_identity': {
+            'kind': 'field-residual-tail-offset-csr',
+            'order': 'first-rip',
+            'records': len(block_directory),
+            'unique': len(ordered_continuations),
+            'shared': len(block_directory) - len(ordered_continuations),
+        },
+        'regions': {
+            'page_bytes': NATIVE_REGION_BYTES,
+            'memory': [0, len(memory)],
+            'descriptors': [0, len(descriptors)],
+            'execution': [0, len(execution)],
+        },
+    })
+    # Region coordinates are absolute artifact offsets. Iterate because the
+    # decimal coordinates live in the JSON whose own length sets the first
+    # aligned coordinate.
+    for _ in range(8):
+        encoded = json.dumps(
+            encoded_header, sort_keys=True,
+            separators=(',', ':')).encode('ascii')
+        memory_offset = _align_native_region(
+            len(NATIVE_MACHINE_MAGIC) + 4 + len(encoded))
+        descriptor_offset = _align_native_region(
+            memory_offset + len(memory))
+        execution_offset = _align_native_region(
+            descriptor_offset + len(descriptors))
+        regions = {
+            'page_bytes': NATIVE_REGION_BYTES,
+            'memory': [memory_offset, len(memory)],
+            'descriptors': [descriptor_offset, len(descriptors)],
+            'execution': [execution_offset, len(execution)],
+        }
+        if encoded_header['regions'] == regions:
+            break
+        encoded_header['regions'] = regions
+    else:
+        raise AssertionError('native x86 region directory did not converge')
+    encoded = json.dumps(
+        encoded_header, sort_keys=True, separators=(',', ':')).encode('ascii')
+    end = execution_offset + len(execution)
+    payload = bytearray(end)
+    cursor = len(NATIVE_MACHINE_MAGIC)
+    payload[:cursor] = NATIVE_MACHINE_MAGIC
+    struct.pack_into('<I', payload, cursor, len(encoded))
+    payload[cursor + 4:cursor + 4 + len(encoded)] = encoded
+    payload[memory_offset:memory_offset + len(memory)] = memory
+    payload[descriptor_offset:descriptor_offset + len(descriptors)] = \
+        descriptors
+    payload[execution_offset:end] = execution
+    return bytes(payload)
+
+
+def load_native_x86_machine(payload, scrub_invalid=False):
+    """Return ``(metadata, memory bundle, full records)`` from any schema."""
+    payload = payload if isinstance(payload, memoryview) else memoryview(payload)
+    if bytes(payload[:len(NATIVE_MACHINE_MAGIC)]) == NATIVE_MACHINE_MAGIC:
+        magic, schema = NATIVE_MACHINE_MAGIC, 5
+    elif bytes(payload[:len(NATIVE_MACHINE_V4_MAGIC)]) == \
+            NATIVE_MACHINE_V4_MAGIC:
+        magic, schema = NATIVE_MACHINE_V4_MAGIC, 4
+    elif bytes(payload[:len(NATIVE_MACHINE_V3_MAGIC)]) == \
+            NATIVE_MACHINE_V3_MAGIC:
+        magic, schema = NATIVE_MACHINE_V3_MAGIC, 3
+    elif bytes(payload[:len(NATIVE_MACHINE_V2_MAGIC)]) == \
+            NATIVE_MACHINE_V2_MAGIC:
+        magic, schema = NATIVE_MACHINE_V2_MAGIC, 2
+    elif bytes(payload[:len(NATIVE_MACHINE_V1_MAGIC)]) == \
+            NATIVE_MACHINE_V1_MAGIC:
+        magic, schema = NATIVE_MACHINE_V1_MAGIC, 1
+    else:
+        raise X86Error('native x86 machine header is invalid')
+    prefix = len(magic)
+    if len(payload) < prefix + 4:
         raise X86Error('native x86 machine header is invalid')
     header_bytes = struct.unpack_from('<I', payload, prefix)[0]
     header_start = prefix + 4
@@ -268,66 +618,787 @@ def extend_native_x86_machine(payload, records, reject_conflicts=True):
         raise X86Error('native x86 machine metadata is truncated')
     try:
         header = json.loads(bytes(payload[header_start:header_end]))
-        memory_bytes = int(header['memory']['bytes'])
-        block_bytes = int(header['block_bytes'])
-        directory = tuple(header['blocks'])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise X86Error('native x86 machine metadata is invalid') from error
-    memory_end = header_end + memory_bytes
-    if (min(memory_bytes, block_bytes) < 0
-            or memory_end + block_bytes != len(payload)):
-        raise X86Error('native x86 machine extents are invalid')
-    block_base = memory_end
-    by_rip = {}
-    for raw_rip, raw_offset, raw_length in directory:
-        try:
-            rip = int(str(raw_rip), 16) & MASK64
-            offset = int(raw_offset)
-            length = int(raw_length)
-        except (TypeError, ValueError) as error:
-            raise X86Error('native x86 block directory is invalid') from error
-        if min(offset, length) < 0 or offset + length > block_bytes:
-            raise X86Error('native x86 block directory is invalid')
-        record = bytes(payload[
-            block_base + offset:block_base + offset + length])
-        try:
-            validate_native_x86_record(record, rip)
-        except (StatePageError, ValueError):
-            # Extension is also a canonical scrub: a malformed speculative
-            # record is removed so the resident runtime reports a missing cut
-            # instead of trapping after accepting its coordinate.
+    if int(header.get('schema', -1)) != schema:
+        raise X86Error('native x86 machine schema is invalid')
+
+    records = []
+    try:
+        memory_bytes = int(header['memory']['bytes'])
+        if schema == 1:
+            directory = tuple(header['blocks'])
+            block_bytes = int(header['block_bytes'])
+            memory_offset = header_end
+            descriptor_offset = memory_offset + memory_bytes
+            if (min(memory_bytes, block_bytes) < 0
+                    or descriptor_offset + block_bytes != len(payload)):
+                raise X86Error('native x86 machine extents are invalid')
+            for raw_rip, raw_offset, raw_length in directory:
+                rip = int(str(raw_rip), 16) & MASK64
+                offset, length = int(raw_offset), int(raw_length)
+                if min(offset, length) < 0 or offset + length > block_bytes:
+                    raise X86Error('native x86 block directory is invalid')
+                record = bytes(payload[
+                    descriptor_offset + offset:
+                    descriptor_offset + offset + length])
+                try:
+                    validate_native_x86_record(record, rip)
+                except (StatePageError, ValueError):
+                    if scrub_invalid:
+                        continue
+                    raise X86Error('native x86 block record is invalid')
+                records.append((rip, record))
+        elif schema in (4, 5):
+            block_count = int(header['block_count'])
+            step_count = int(header['step_count'])
+            template_count = int(header['template_count'])
+            guard_count = int(header['guard_count'])
+            continuation_count = int(header['continuation_count'])
+            continuation_bytes = (int(header['continuation_bytes'])
+                                  if schema == 5 else 0)
+            template_bytes = int(header['template_execution_bytes'])
+            parameter_bytes = int(header['parameter_execution_bytes'])
+            regions = header['regions']
+            if int(regions['page_bytes']) != NATIVE_REGION_BYTES:
+                raise X86Error('native x86 region geometry is invalid')
+            memory_offset, memory_extent = map(int, regions['memory'])
+            descriptor_offset, descriptor_bytes = map(
+                int, regions['descriptors'])
+            execution_offset, execution_bytes = map(
+                int, regions['execution'])
+            expected_descriptors = (
+                block_count * NATIVE_BLOCK_INSTANCE.size
+                + step_count * NATIVE_STEP_INSTANCE.size
+                + (template_count + guard_count) * NATIVE_STEP_EXTENT.size
+                + (continuation_count * NATIVE_CONTROL_TEMPLATE.size
+                   if schema == 4 else
+                   (continuation_count + 1)
+                   * NATIVE_CONTINUATION_OFFSET.size
+                   + continuation_bytes))
+            if (memory_extent != memory_bytes
+                    or descriptor_bytes != int(header['descriptor_bytes'])
+                    or descriptor_bytes != expected_descriptors
+                    or execution_bytes != int(header['execution_bytes'])
+                    or min(block_count, step_count, template_count,
+                           guard_count, continuation_count, template_bytes,
+                           parameter_bytes, continuation_bytes) < 0
+                    or (block_count and not continuation_count)
+                    or template_bytes + parameter_bytes > execution_bytes
+                    or memory_offset % NATIVE_REGION_BYTES
+                    or descriptor_offset % NATIVE_REGION_BYTES
+                    or execution_offset % NATIVE_REGION_BYTES
+                    or not (header_end <= memory_offset
+                            <= memory_offset + memory_bytes
+                            <= descriptor_offset
+                            <= descriptor_offset + descriptor_bytes
+                            <= execution_offset
+                            <= execution_offset + execution_bytes
+                            == len(payload))):
+                raise X86Error('native x86 machine extents are invalid')
+
+            step_base = (descriptor_offset
+                         + block_count * NATIVE_BLOCK_INSTANCE.size)
+            template_base = step_base + step_count * NATIVE_STEP_INSTANCE.size
+            guard_base = template_base + template_count * NATIVE_STEP_EXTENT.size
+            continuation_base = guard_base \
+                + guard_count * NATIVE_STEP_EXTENT.size
+            templates = []
+            expected_offset = 0
+            identities = set()
+            for index in range(template_count):
+                offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                    payload, template_base + index * NATIVE_STEP_EXTENT.size)
+                if (offset != expected_offset or length <= 0
+                        or offset + length > template_bytes):
+                    raise X86Error('native STEP template directory is invalid')
+                template = bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length])
+                if template in identities:
+                    raise X86Error('native STEP template rank is not minimal')
+                identities.add(template)
+                templates.append(template)
+                expected_offset += length
+            if expected_offset != template_bytes:
+                raise X86Error('native STEP template extent is invalid')
+
+            steps = []
+            identities = set()
+            expected_offset = template_bytes
+            for index in range(step_count):
+                rank, offset, length, step_bytes = \
+                    NATIVE_STEP_INSTANCE.unpack_from(
+                        payload, step_base
+                        + index * NATIVE_STEP_INSTANCE.size)
+                if (rank <= 0 or rank > len(templates)
+                        or offset != expected_offset or length < 0
+                        or offset + length > template_bytes + parameter_bytes
+                        or step_bytes <= 0):
+                    raise X86Error('native STEP instance directory is invalid')
+                parameters = bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length])
+                step = instantiate_step_template(
+                    templates[rank - 1], parameters)
+                if step in identities:
+                    raise X86Error('native STEP instance rank is not minimal')
+                identities.add(step)
+                steps.append(step)
+                expected_offset += length
+            if expected_offset != template_bytes + parameter_bytes:
+                raise X86Error('native STEP parameter extent is invalid')
+
+            guards = []
+            guard_identities = set()
+            expected_offset = template_bytes + parameter_bytes
+            for index in range(guard_count):
+                offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                    payload, guard_base + index * NATIVE_STEP_EXTENT.size)
+                if (offset != expected_offset or length <= 0
+                        or offset + length > execution_bytes):
+                    raise X86Error('native code proof directory is invalid')
+                guard = bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length])
+                if guard in guard_identities:
+                    raise X86Error('native code proof rank is not minimal')
+                guards.append(guard)
+                guard_identities.add(guard)
+                expected_offset += length
+            if expected_offset != execution_bytes:
+                raise X86Error('native code proof extent is invalid')
+
+            continuations = []
+            identities = set()
+            if schema == 5:
+                offset_bytes = (continuation_count + 1) \
+                    * NATIVE_CONTINUATION_OFFSET.size
+                payload_base = continuation_base + offset_bytes
+                offsets = [NATIVE_CONTINUATION_OFFSET.unpack_from(
+                    payload, continuation_base
+                    + index * NATIVE_CONTINUATION_OFFSET.size)[0]
+                           for index in range(continuation_count + 1)]
+                if (not offsets or offsets[0]
+                        or offsets[-1] != continuation_bytes
+                        or any(first >= second for first, second
+                               in zip(offsets, offsets[1:]))):
+                    raise X86Error(
+                        'native x86 continuation directory is invalid')
+                for start, end in zip(offsets, offsets[1:]):
+                    try:
+                        continuation = _decode_native_x86_continuation(
+                            payload[payload_base + start:payload_base + end])
+                    except ValueError as error:
+                        raise X86Error(
+                            'native x86 continuation is invalid') from error
+                    if continuation in identities:
+                        raise X86Error(
+                            'native x86 continuation rank is not minimal')
+                    identities.add(continuation)
+                    continuations.append(continuation)
+            else:
+                for index in range(continuation_count):
+                    fields = NATIVE_CONTROL_TEMPLATE.unpack_from(
+                        payload, continuation_base
+                        + index * NATIVE_CONTROL_TEMPLATE.size)
+                    control, reserved, boundary, first, second, third = fields
+                    continuation = control, boundary, first, second, third
+                    if (reserved or control > 36
+                            or continuation in identities):
+                        raise X86Error(
+                            'native x86 continuation rank is not minimal')
+                    identities.add(continuation)
+                    continuations.append(continuation)
+
+            prior_rip = -1
+            prior_guard = None
+            for index in range(block_count):
+                fields = NATIVE_BLOCK_INSTANCE.unpack_from(
+                    payload, descriptor_offset
+                    + index * NATIVE_BLOCK_INSTANCE.size)
+                rip, rank, continuation_rank, guard_rank = map(int, fields)
+                guard = (b'' if not guard_rank else
+                         guards[guard_rank - 1]
+                         if guard_rank <= len(guards) else None)
+                continuation = (
+                    continuations[continuation_rank - 1]
+                    if 0 < continuation_rank <= len(continuations) else None)
+                if (rip < prior_rip or guard is None or continuation is None
+                        or rank <= 0 or rank > len(steps)
+                        or (rip == prior_rip and guard <= prior_guard)):
+                    raise X86Error(
+                        'native x86 block instance %d at %#x is invalid'
+                        % (index, rip))
+                boundary, control, first, second, third = \
+                    _instantiate_native_x86_continuation(rip, continuation)
+                record = NATIVE_BLOCK_HEADER.pack(
+                    NATIVE_BLOCK_MAGIC, 2 if guard else 1,
+                    NATIVE_BLOCK_HEADER.size, rip, boundary,
+                    len(steps[rank - 1]), control, first, second, third) \
+                    + guard + steps[rank - 1]
+                try:
+                    validate_native_x86_record(record, rip)
+                except (StatePageError, ValueError):
+                    if scrub_invalid:
+                        continue
+                    raise X86Error('native x86 block record is invalid')
+                records.append((rip, record))
+                prior_rip = rip
+                prior_guard = guard
+        elif schema == 3:
+            block_count = int(header['block_count'])
+            step_count = int(header['step_count'])
+            template_count = int(header['template_count'])
+            guard_count = int(header['guard_count'])
+            template_bytes = int(header['template_execution_bytes'])
+            parameter_bytes = int(header['parameter_execution_bytes'])
+            regions = header['regions']
+            if int(regions['page_bytes']) != NATIVE_REGION_BYTES:
+                raise X86Error('native x86 region geometry is invalid')
+            memory_offset, memory_extent = map(int, regions['memory'])
+            descriptor_offset, descriptor_bytes = map(
+                int, regions['descriptors'])
+            execution_offset, execution_bytes = map(
+                int, regions['execution'])
+            expected_descriptors = (
+                block_count * NATIVE_DESCRIPTOR_HEADER.size
+                + step_count * NATIVE_STEP_INSTANCE.size
+                + (template_count + guard_count) * NATIVE_STEP_EXTENT.size)
+            if (memory_extent != memory_bytes
+                    or descriptor_bytes != int(header['descriptor_bytes'])
+                    or descriptor_bytes != expected_descriptors
+                    or execution_bytes != int(header['execution_bytes'])
+                    or min(block_count, step_count, template_count,
+                           guard_count, template_bytes,
+                           parameter_bytes) < 0
+                    or template_bytes + parameter_bytes > execution_bytes
+                    or memory_offset % NATIVE_REGION_BYTES
+                    or descriptor_offset % NATIVE_REGION_BYTES
+                    or execution_offset % NATIVE_REGION_BYTES
+                    or not (header_end <= memory_offset
+                            <= memory_offset + memory_bytes
+                            <= descriptor_offset
+                            <= descriptor_offset + descriptor_bytes
+                            <= execution_offset
+                            <= execution_offset + execution_bytes
+                            == len(payload))):
+                raise X86Error('native x86 machine extents are invalid')
+
+            step_base = (descriptor_offset
+                         + block_count * NATIVE_DESCRIPTOR_HEADER.size)
+            template_base = step_base + step_count * NATIVE_STEP_INSTANCE.size
+            guard_base = template_base + template_count * NATIVE_STEP_EXTENT.size
+            templates = []
+            expected_offset = 0
+            identities = set()
+            for index in range(template_count):
+                offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                    payload, template_base + index * NATIVE_STEP_EXTENT.size)
+                if (offset != expected_offset or length <= 0
+                        or offset + length > template_bytes):
+                    raise X86Error('native STEP template directory is invalid')
+                template = bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length])
+                if template in identities:
+                    raise X86Error('native STEP template rank is not minimal')
+                identities.add(template)
+                templates.append(template)
+                expected_offset += length
+            if expected_offset != template_bytes:
+                raise X86Error('native STEP template extent is invalid')
+
+            steps = []
+            identities = set()
+            expected_offset = template_bytes
+            for index in range(step_count):
+                rank, offset, length, step_bytes = \
+                    NATIVE_STEP_INSTANCE.unpack_from(
+                        payload, step_base
+                        + index * NATIVE_STEP_INSTANCE.size)
+                if (rank <= 0 or rank > len(templates)
+                        or offset != expected_offset or length < 0
+                        or offset + length > template_bytes + parameter_bytes
+                        or step_bytes <= 0):
+                    raise X86Error('native STEP instance directory is invalid')
+                parameters = bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length])
+                step = instantiate_step_template(
+                    templates[rank - 1], parameters)
+                if step in identities:
+                    raise X86Error('native STEP instance rank is not minimal')
+                identities.add(step)
+                steps.append(step)
+                expected_offset += length
+            if expected_offset != template_bytes + parameter_bytes:
+                raise X86Error('native STEP parameter extent is invalid')
+
+            guards = []
+            expected_offset = template_bytes + parameter_bytes
+            for index in range(guard_count):
+                offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                    payload, guard_base + index * NATIVE_STEP_EXTENT.size)
+                if (offset != expected_offset or length <= 0
+                        or offset + length > execution_bytes):
+                    raise X86Error('native code proof directory is invalid')
+                guards.append(bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length]))
+                expected_offset += length
+            if expected_offset != execution_bytes:
+                raise X86Error('native code proof extent is invalid')
+
+            prior_rip = -1
+            prior_guard = None
+            for index in range(block_count):
+                start = descriptor_offset + index * NATIVE_DESCRIPTOR_HEADER.size
+                fields = NATIVE_DESCRIPTOR_HEADER.unpack_from(payload, start)
+                rip = int(fields[3]) & MASK64
+                rank = int(fields[10])
+                guard_rank = int(fields[11])
+                guard = (b'' if not guard_rank else
+                         guards[guard_rank - 1]
+                         if guard_rank <= len(guards) else None)
+                if (rip < prior_rip or fields[0] != NATIVE_DESCRIPTOR_MAGIC
+                        or fields[1] != 3
+                        or fields[2] != NATIVE_DESCRIPTOR_HEADER.size
+                        or fields[3] != rip or guard is None
+                        or rank <= 0 or rank > len(steps)
+                        or fields[5] != len(steps[rank - 1])
+                        or (rip == prior_rip and guard <= prior_guard)):
+                    raise X86Error(
+                        'native x86 descriptor %d at %#x is invalid: %r'
+                        % (index, rip, fields))
+                record = NATIVE_BLOCK_HEADER.pack(
+                    NATIVE_BLOCK_MAGIC, 2 if guard else 1,
+                    NATIVE_BLOCK_HEADER.size,
+                    *fields[3:10]) + guard + steps[rank - 1]
+                try:
+                    validate_native_x86_record(record, rip)
+                except (StatePageError, ValueError):
+                    if scrub_invalid:
+                        continue
+                    raise X86Error('native x86 block record is invalid')
+                records.append((rip, record))
+                prior_rip = rip
+                prior_guard = guard
+        else:
+            legacy_blocks = header.get('blocks')
+            legacy_steps = header.get('steps')
+            legacy_directory = isinstance(legacy_blocks, list) \
+                and isinstance(legacy_steps, list)
+            hashed_directory = (not legacy_directory
+                                and header.get('step_identity', {}).get(
+                                    'algorithm') == 'sha256')
+            block_count = (len(legacy_blocks) if legacy_directory
+                           else int(header['block_count']))
+            step_count = (len(legacy_steps) if legacy_directory
+                          else int(header['step_count']))
+            guard_count = (0 if legacy_directory or hashed_directory
+                           else int(header.get('guard_count', 0)))
+            step_execution_bytes = int(header.get(
+                'step_execution_bytes', header['execution_bytes']))
+            regions = header['regions']
+            if int(regions['page_bytes']) != NATIVE_REGION_BYTES:
+                raise X86Error('native x86 region geometry is invalid')
+            memory_offset, memory_extent = map(int, regions['memory'])
+            descriptor_offset, descriptor_bytes = map(
+                int, regions['descriptors'])
+            execution_offset, execution_bytes = map(
+                int, regions['execution'])
+            if (memory_extent != memory_bytes
+                    or descriptor_bytes != int(header['descriptor_bytes'])
+                    or execution_bytes != int(header['execution_bytes'])
+                    or memory_offset % NATIVE_REGION_BYTES
+                    or descriptor_offset % NATIVE_REGION_BYTES
+                    or execution_offset % NATIVE_REGION_BYTES
+                    or not (header_end <= memory_offset
+                            <= memory_offset + memory_bytes
+                            <= descriptor_offset
+                            <= descriptor_offset + descriptor_bytes
+                            <= execution_offset
+                            <= execution_offset + execution_bytes
+                            == len(payload))
+                    or min(block_count, step_count, guard_count,
+                           step_execution_bytes) < 0
+                    or step_execution_bytes > execution_bytes
+                    or descriptor_bytes != (
+                        block_count * NATIVE_DESCRIPTOR_HEADER.size
+                        + (0 if legacy_directory else
+                           step_count * (NATIVE_STEP_HASH_EXTENT.size
+                                         if hashed_directory else
+                                         NATIVE_STEP_EXTENT.size)
+                           + guard_count * NATIVE_STEP_EXTENT.size))):
+                raise X86Error('native x86 machine extents are invalid')
+            steps = []
+            identities = set()
+            expected_offset = 0
+            for index in range(step_count):
+                if legacy_directory:
+                    identity, offset, length = legacy_steps[index]
+                    identity = str(identity)
+                    offset, length = int(offset), int(length)
+                else:
+                    step_base = (descriptor_offset + block_count
+                                 * NATIVE_DESCRIPTOR_HEADER.size)
+                    if hashed_directory:
+                        raw_identity, offset, length = \
+                            NATIVE_STEP_HASH_EXTENT.unpack_from(
+                                payload, step_base
+                                + index * NATIVE_STEP_HASH_EXTENT.size)
+                        identity = raw_identity.hex()
+                    else:
+                        offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                            payload, step_base
+                            + index * NATIVE_STEP_EXTENT.size)
+                        identity = None
+                if ((identity is not None and identity in identities)
+                        or offset != expected_offset or length < 0
+                        or offset + length > step_execution_bytes):
+                    raise X86Error('native STEP directory is invalid')
+                step = bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length])
+                if identity is not None \
+                        and hashlib.sha256(step).hexdigest() != identity:
+                    raise X86Error('native STEP identity is invalid')
+                if step in identities:
+                    raise X86Error('native STEP rank is not minimal')
+                steps.append(step)
+                identities.add(step if identity is None else identity)
+                expected_offset += length
+            if expected_offset != step_execution_bytes:
+                raise X86Error('native STEP extent is invalid')
+            guards = []
+            guard_base = (descriptor_offset
+                          + block_count * NATIVE_DESCRIPTOR_HEADER.size
+                          + step_count * (NATIVE_STEP_HASH_EXTENT.size
+                                          if hashed_directory else
+                                          NATIVE_STEP_EXTENT.size))
+            expected_offset = step_execution_bytes
+            for index in range(guard_count):
+                offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                    payload, guard_base + index * NATIVE_STEP_EXTENT.size)
+                if (offset != expected_offset or length <= 0
+                        or offset + length > execution_bytes):
+                    raise X86Error('native code proof directory is invalid')
+                guard = bytes(payload[
+                    execution_offset + offset:
+                    execution_offset + offset + length])
+                guards.append(guard)
+                expected_offset += length
+            if expected_offset != execution_bytes:
+                raise X86Error('native code proof extent is invalid')
+            prior_rip = -1
+            prior_guard = None
+            for index in range(block_count):
+                start = descriptor_offset + index * NATIVE_DESCRIPTOR_HEADER.size
+                fields = NATIVE_DESCRIPTOR_HEADER.unpack_from(payload, start)
+                rip = int(fields[3]) & MASK64
+                if legacy_directory:
+                    named = int(str(legacy_blocks[index]), 16) & MASK64
+                    if named != rip:
+                        raise X86Error('native x86 descriptor is invalid')
+                version = int(fields[1])
+                guard_rank = int(fields[11])
+                guard = (b'' if not guard_rank else
+                         guards[guard_rank - 1]
+                         if guard_rank <= len(guards) else None)
+                if (rip < prior_rip or fields[0] != NATIVE_DESCRIPTOR_MAGIC
+                        or version not in (1, 2)
+                        or fields[2] != NATIVE_DESCRIPTOR_HEADER.size
+                        or fields[3] != rip or guard is None
+                        or (version == 1 and guard)
+                        or (version == 2 and not guard)
+                        or (rip == prior_rip and guard <= prior_guard)):
+                    raise X86Error('native x86 descriptor is invalid')
+                rank = int(fields[10])
+                if rank <= 0 or rank > len(steps) \
+                        or fields[5] != len(steps[rank - 1]):
+                    raise X86Error('native x86 descriptor rank is invalid')
+                record = NATIVE_BLOCK_HEADER.pack(
+                    NATIVE_BLOCK_MAGIC, version, NATIVE_BLOCK_HEADER.size,
+                    *fields[3:10]) + guard + steps[rank - 1]
+                try:
+                    validate_native_x86_record(record, rip)
+                except (StatePageError, ValueError):
+                    if scrub_invalid:
+                        continue
+                    raise X86Error('native x86 block record is invalid')
+                records.append((rip, record))
+                prior_rip = rip
+                prior_guard = guard
+    except (KeyError, TypeError, ValueError, struct.error) as error:
+        if isinstance(error, X86Error):
+            raise
+        raise X86Error('native x86 machine metadata is invalid') from error
+    memory = bytes(payload[memory_offset:memory_offset + memory_bytes])
+    return header, memory, tuple(records)
+
+
+def repack_native_x86_machine(payload):
+    """Canonicalize any machine into the current block quotient schema."""
+    view = payload if isinstance(payload, memoryview) else memoryview(payload)
+    if bytes(view[:len(NATIVE_MACHINE_MAGIC)]) == NATIVE_MACHINE_MAGIC:
+        # Schema 5 already stores shared templates, parameter rows, guards,
+        # and continuations as ranked physical directories.  Re-encoding those
+        # directories is sufficient to canonicalize their order; expanding
+        # every STEP into an executable record and projecting it again only
+        # repeats validation and materializes the scalar representation.
+        header, memory, variants = load_native_x86_physical_machine(view)
+        return _encode_native_x86_physical(header, memory, variants)
+    header, memory, records = load_native_x86_machine(
+        view, scrub_invalid=True)
+    base = {'state': header['state'], 'memory': header['memory']}
+    return _encode_native_x86_machine(base, memory, records)
+
+
+def load_native_x86_physical_machine(payload):
+    """Load schema 5 rank identities without materializing scalar STEP rows."""
+    payload = payload if isinstance(payload, memoryview) else memoryview(payload)
+    if bytes(payload[:len(NATIVE_MACHINE_MAGIC)]) != NATIVE_MACHINE_MAGIC:
+        header, memory, records = load_native_x86_machine(
+            payload, scrub_invalid=True)
+        variants = {}
+        for rip, record in records:
+            _fields, guard, physical = physical_native_x86_record(record, rip)
+            variants[int(rip) & MASK64, guard] = physical
+        return header, memory, variants
+    prefix = len(NATIVE_MACHINE_MAGIC)
+    if len(payload) < prefix + 4:
+        raise X86Error('native x86 machine header is invalid')
+    header_bytes = struct.unpack_from('<I', payload, prefix)[0]
+    header_start = prefix + 4
+    header_end = header_start + header_bytes
+    if header_end > len(payload):
+        raise X86Error('native x86 machine metadata is truncated')
+    try:
+        header = json.loads(bytes(payload[header_start:header_end]))
+        if int(header.get('schema', -1)) != 5:
+            raise X86Error('native x86 machine schema is invalid')
+        memory_bytes = int(header['memory']['bytes'])
+        block_count = int(header['block_count'])
+        step_count = int(header['step_count'])
+        template_count = int(header['template_count'])
+        guard_count = int(header['guard_count'])
+        continuation_count = int(header['continuation_count'])
+        continuation_bytes = int(header['continuation_bytes'])
+        template_bytes = int(header['template_execution_bytes'])
+        parameter_bytes = int(header['parameter_execution_bytes'])
+        regions = header['regions']
+        if int(regions['page_bytes']) != NATIVE_REGION_BYTES:
+            raise X86Error('native x86 region geometry is invalid')
+        memory_offset, memory_extent = map(int, regions['memory'])
+        descriptor_offset, descriptor_bytes = map(
+            int, regions['descriptors'])
+        execution_offset, execution_bytes = map(int, regions['execution'])
+        expected_descriptors = (
+            block_count * NATIVE_BLOCK_INSTANCE.size
+            + step_count * NATIVE_STEP_INSTANCE.size
+            + (template_count + guard_count) * NATIVE_STEP_EXTENT.size
+            + (continuation_count + 1) * NATIVE_CONTINUATION_OFFSET.size
+            + continuation_bytes)
+        if (memory_extent != memory_bytes
+                or descriptor_bytes != int(header['descriptor_bytes'])
+                or descriptor_bytes != expected_descriptors
+                or execution_bytes != int(header['execution_bytes'])
+                or min(memory_bytes, block_count, step_count, template_count,
+                       guard_count, continuation_count, continuation_bytes,
+                       template_bytes, parameter_bytes) < 0
+                or (block_count and not continuation_count)
+                or template_bytes + parameter_bytes > execution_bytes
+                or memory_offset % NATIVE_REGION_BYTES
+                or descriptor_offset % NATIVE_REGION_BYTES
+                or execution_offset % NATIVE_REGION_BYTES
+                or not (header_end <= memory_offset
+                        <= memory_offset + memory_bytes
+                        <= descriptor_offset
+                        <= descriptor_offset + descriptor_bytes
+                        <= execution_offset
+                        <= execution_offset + execution_bytes == len(payload))):
+            raise X86Error('native x86 machine extents are invalid')
+
+        step_base = (descriptor_offset
+                     + block_count * NATIVE_BLOCK_INSTANCE.size)
+        template_base = step_base + step_count * NATIVE_STEP_INSTANCE.size
+        guard_base = template_base + template_count * NATIVE_STEP_EXTENT.size
+        continuation_base = guard_base + guard_count * NATIVE_STEP_EXTENT.size
+
+        templates = []
+        identities = set()
+        expected_offset = 0
+        for index in range(template_count):
+            offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                payload, template_base + index * NATIVE_STEP_EXTENT.size)
+            if (offset != expected_offset or length <= 0
+                    or offset + length > template_bytes):
+                raise X86Error('native STEP template directory is invalid')
+            template = bytes(payload[
+                execution_offset + offset:execution_offset + offset + length])
+            if template in identities:
+                raise X86Error('native STEP template rank is not minimal')
+            identities.add(template)
+            templates.append(template)
+            expected_offset += length
+        if expected_offset != template_bytes:
+            raise X86Error('native STEP template extent is invalid')
+
+        steps = []
+        identities = set()
+        expected_offset = template_bytes
+        for index in range(step_count):
+            rank, offset, length, step_bytes = NATIVE_STEP_INSTANCE.unpack_from(
+                payload, step_base + index * NATIVE_STEP_INSTANCE.size)
+            if (rank <= 0 or rank > len(templates)
+                    or offset != expected_offset or length < 0
+                    or offset + length > template_bytes + parameter_bytes
+                    or step_bytes <= 0):
+                raise X86Error('native STEP instance directory is invalid')
+            identity = (
+                templates[rank - 1],
+                bytes(payload[execution_offset + offset:
+                              execution_offset + offset + length]),
+                int(step_bytes))
+            if identity in identities:
+                raise X86Error('native STEP instance rank is not minimal')
+            identities.add(identity)
+            steps.append(identity)
+            expected_offset += length
+        if expected_offset != template_bytes + parameter_bytes:
+            raise X86Error('native STEP parameter extent is invalid')
+
+        guards = []
+        identities = set()
+        expected_offset = template_bytes + parameter_bytes
+        for index in range(guard_count):
+            offset, length = NATIVE_STEP_EXTENT.unpack_from(
+                payload, guard_base + index * NATIVE_STEP_EXTENT.size)
+            if (offset != expected_offset or length <= 0
+                    or offset + length > execution_bytes):
+                raise X86Error('native code proof directory is invalid')
+            guard = bytes(payload[
+                execution_offset + offset:execution_offset + offset + length])
+            if guard in identities:
+                raise X86Error('native code proof rank is not minimal')
+            identities.add(guard)
+            guards.append(guard)
+            expected_offset += length
+        if expected_offset != execution_bytes:
+            raise X86Error('native code proof extent is invalid')
+
+        offset_count = continuation_count + 1
+        payload_base = (continuation_base
+                        + offset_count * NATIVE_CONTINUATION_OFFSET.size)
+        offsets = [NATIVE_CONTINUATION_OFFSET.unpack_from(
+            payload, continuation_base
+            + index * NATIVE_CONTINUATION_OFFSET.size)[0]
+                   for index in range(offset_count)]
+        if (not offsets or offsets[0] or offsets[-1] != continuation_bytes
+                or any(first >= second
+                       for first, second in zip(offsets, offsets[1:]))):
+            raise X86Error('native x86 continuation directory is invalid')
+        continuations = []
+        identities = set()
+        for start, end in zip(offsets, offsets[1:]):
+            continuation = _decode_native_x86_continuation(
+                payload[payload_base + start:payload_base + end])
+            if continuation in identities:
+                raise X86Error('native x86 continuation rank is not minimal')
+            identities.add(continuation)
+            continuations.append(continuation)
+
+        variants = {}
+        prior_rip = -1
+        prior_guard = b''
+        for index in range(block_count):
+            rip, step_rank, continuation_rank, guard_rank = map(
+                int, NATIVE_BLOCK_INSTANCE.unpack_from(
+                    payload, descriptor_offset
+                    + index * NATIVE_BLOCK_INSTANCE.size))
+            guard = (b'' if not guard_rank else
+                     guards[guard_rank - 1]
+                     if guard_rank <= len(guards) else None)
+            continuation = (
+                continuations[continuation_rank - 1]
+                if 0 < continuation_rank <= len(continuations) else None)
+            if (rip < prior_rip or guard is None or continuation is None
+                    or not 0 < step_rank <= len(steps)
+                    or (rip == prior_rip and guard <= prior_guard)):
+                raise X86Error(
+                    'native x86 block instance %d at %#x is invalid'
+                    % (index, rip))
+            variants[rip, guard] = (guard, steps[step_rank - 1], continuation)
+            prior_rip, prior_guard = rip, guard
+    except (KeyError, TypeError, ValueError, struct.error) as error:
+        if isinstance(error, X86Error):
+            raise
+        raise X86Error('native x86 machine metadata is invalid') from error
+    memory = bytes(payload[memory_offset:memory_offset + memory_bytes])
+    return header, memory, variants
+
+
+def _extend_native_x86_physical(payload, records, reject_conflicts,
+                                replace_proved):
+    header, memory, variants = load_native_x86_physical_machine(payload)
+    return extend_loaded_native_x86_physical_machine(
+        header, memory, variants, records, reject_conflicts, replace_proved)
+
+
+def extend_loaded_native_x86_physical_machine(
+        header, memory, variants, records, reject_conflicts=True,
+        replace_proved=False):
+    """Merge records into a loaded physical rank directory."""
+    incoming = []
+    dynamic_entries = {}
+    for raw_rip, raw_record in records:
+        rip = int(raw_rip) & MASK64
+        fields, guard, physical = physical_native_x86_record(raw_record, rip)
+        incoming.append((rip, guard, physical))
+        extents = _native_code_guard_extents(guard)
+        if int(fields[6]) == 3 and len(extents) == 1 \
+                and int(extents[0][0]) == rip:
+            dynamic_entries.setdefault(rip, []).append((extents[0], guard))
+
+    guard_extents = {}
+    retained = {}
+    for (rip, guard), physical in variants.items():
+        extents = guard_extents.get(guard)
+        if extents is None:
+            extents = guard_extents[guard] = _native_code_guard_extents(guard)
+        if extents and any(
+                extents[0] == entry and guard != general_guard
+                for entry, general_guard in dynamic_entries.get(rip, ())):
             continue
-        by_rip[rip] = record
-    for rip, record in records:
-        rip = int(rip) & MASK64
-        record = bytes(record)
-        validate_native_x86_record(record, rip)
-        prior = by_rip.get(rip)
-        if prior is not None and prior != record:
+        retained[rip, guard] = physical
+    variants = retained
+    for rip, guard, physical in incoming:
+        key = rip, guard
+        prior = variants.get(key)
+        if prior is not None and prior != physical:
             if reject_conflicts:
                 raise ValueError(
-                    'native x86 extension changes coordinate %#x' % rip)
-            # Runtime closure is append-only.  A resident coordinate already
-            # proved itself along the vm.wasm prefix and is never replaced by
-            # a later oracle variant.
-            continue
-        by_rip[rip] = record
+                    'native x86 extension changes proved coordinate %#x'
+                    % rip)
+            if not replace_proved:
+                continue
+        variants[key] = physical
+    return _encode_native_x86_physical(header, memory, variants)
 
-    packed = []
-    next_directory = []
-    offset = 0
-    for rip, record in sorted(by_rip.items()):
-        next_directory.append(('%016x' % rip, offset, len(record)))
-        packed.append(record)
-        offset += len(record)
-    header['blocks'] = next_directory
-    header['block_bytes'] = offset
-    encoded = json.dumps(
-        header, sort_keys=True, separators=(',', ':')).encode('ascii')
-    return b''.join((
-        NATIVE_MACHINE_MAGIC, struct.pack('<I', len(encoded)), encoded,
-        bytes(payload[header_end:memory_end]), *packed,
-    ))
+
+def extend_native_x86_machine(payload, records, reject_conflicts=True,
+                              replace_proved=False):
+    """Add proved X86B records without rewriting physical RAM.
+
+    ``replace_proved`` is the optimizer-closure mode: an incoming record with
+    the exact same executable guard replaces the resident lowering.  This is
+    how a newly discovered stronger block quotient supersedes a scalar record
+    without creating a second coordinate or weakening its code proof.
+    """
+    records = tuple(records)
+    return _extend_native_x86_physical(
+        payload, records, reject_conflicts, replace_proved)
 
 
 def _dump_code_value(value):
@@ -430,6 +1501,86 @@ def dump_x86_code_pages(dbt):
     return bytes(output)
 
 
+def _pack_native_code_guard(block):
+    extents = tuple((int(address) & MASK64, bytes(payload))
+                    for address, payload in _block_code_extents(block)
+                    if payload)
+    if not extents or len(extents) > 0xffff:
+        raise ValueError('native x86 block needs finite executable proof')
+    output = bytearray(struct.pack('<H', len(extents)))
+    prior_end = None
+    for address, payload in extents:
+        if len(payload) > 0xffff:
+            raise ValueError('native x86 executable proof extent is too large')
+        if prior_end is not None and address < prior_end:
+            raise ValueError('native x86 executable proof extents overlap')
+        output.extend(NATIVE_CODE_GUARD_EXTENT.pack(address, len(payload)))
+        output.extend(payload)
+        prior_end = address + len(payload)
+    return bytes(output)
+
+
+def split_native_x86_record(record):
+    """Return ``(header fields, code guard, STEP)`` for one portable record."""
+    record = bytes(record)
+    if len(record) < NATIVE_BLOCK_HEADER.size:
+        raise ValueError('native x86 record is truncated')
+    fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+    version = int(fields[1])
+    step_bytes = int(fields[5])
+    if fields[2] != NATIVE_BLOCK_HEADER.size or step_bytes <= 0:
+        raise ValueError('native x86 record extent is invalid')
+    guard_bytes = len(record) - NATIVE_BLOCK_HEADER.size - step_bytes
+    if guard_bytes < 0 or (version == 1 and guard_bytes):
+        raise ValueError('native x86 record extent is invalid')
+    if version not in (1, 2):
+        raise ValueError('native x86 record version is unsupported')
+    guard = record[NATIVE_BLOCK_HEADER.size:
+                   NATIVE_BLOCK_HEADER.size + guard_bytes]
+    if version == 2:
+        if len(guard) < 2:
+            raise ValueError('native x86 executable proof is truncated')
+        count = struct.unpack_from('<H', guard)[0]
+        cursor = 2
+        prior_end = None
+        for _unused in range(count):
+            if cursor + NATIVE_CODE_GUARD_EXTENT.size > len(guard):
+                raise ValueError('native x86 executable proof is truncated')
+            address, length = NATIVE_CODE_GUARD_EXTENT.unpack_from(
+                guard, cursor)
+            cursor += NATIVE_CODE_GUARD_EXTENT.size
+            if (not length or cursor + length > len(guard)
+                    or (prior_end is not None and address < prior_end)):
+                raise ValueError('native x86 executable proof is invalid')
+            cursor += length
+            prior_end = address + length
+        if not count or cursor != len(guard):
+            raise ValueError('native x86 executable proof is invalid')
+    step = record[len(record) - step_bytes:]
+    return fields, guard, step
+
+
+def _native_code_guard_extents(guard):
+    """Decode an already-validated executable proof into exact extents."""
+    guard = bytes(guard)
+    if len(guard) < 2:
+        return ()
+    count = struct.unpack_from('<H', guard)[0]
+    cursor = 2
+    extents = []
+    for _unused in range(count):
+        if cursor + NATIVE_CODE_GUARD_EXTENT.size > len(guard):
+            return ()
+        address, length = NATIVE_CODE_GUARD_EXTENT.unpack_from(guard, cursor)
+        cursor += NATIVE_CODE_GUARD_EXTENT.size
+        end = cursor + length
+        if not length or end > len(guard):
+            return ()
+        extents.append((address, guard[cursor:end]))
+        cursor = end
+    return tuple(extents) if cursor == len(guard) else ()
+
+
 def pack_native_x86_block(block):
     """Pack one complete register/flags cut for the resident native VM."""
     if not isinstance(block, DecodedBlock):
@@ -443,6 +1594,58 @@ def pack_native_x86_block(block):
             raise ValueError('native x86 block cannot publish flags')
     operation = block.boundary.operation
     detail = block.boundary.detail
+    # The integer machine has no additional resident x87/SSE register file.
+    # These complete architectural effects are ordinary next-RIP quotients,
+    # not host fallbacks.
+    if operation == 'restore_fpu':
+        operation = 'branch'
+        detail = detail[0]
+    elif operation == 'fpu_init':
+        operation = 'branch'
+    elif operation == 'memory_fence':
+        # The record boundary already prevents composition across the fence.
+        # Its architectural transition is therefore exactly the ordinary
+        # next-instruction continuation.
+        operation = 'branch'
+    elif operation == 'simd_store':
+        low_local = len(plan.locals)
+        lowered = X86DBT._simd_store_plan(
+            block.boundary, low_local, low_local + 1)
+        if lowered is None:
+            raise ValueError('native x86 SIMD store is not normalized')
+        simd_plan, following, vector, low_local, high_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', low_local), Operand('local', high_local)))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_store'
+        detail = following, vector, low_local, high_local
+    elif operation == 'simd_load':
+        low_local = len(plan.locals)
+        lowered = X86DBT._simd_load_plan(
+            block.boundary, low_local, low_local + 1)
+        if lowered is None:
+            raise ValueError('native x86 SIMD load is not normalized')
+        simd_plan, following, vector, low_local, high_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', low_local), Operand('local', high_local)))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_load'
+        detail = following, vector, low_local, high_local
+    if not operation.startswith('native_'):
+        segment_local = len(plan.locals)
+        segment_lowered = X86DBT._segment_memory_plan(
+            block.boundary, segment_local)
+        if segment_lowered is not None:
+            (segment_plan, following, segment,
+             segment_local) = segment_lowered
+            plan = replace(
+                plan, locals=tuple(plan.locals)
+                + (Operand('local', segment_local),))
+            plan = compose_plans(plan, segment_plan)
+            operation = 'native_segment_memory'
+            detail = following, segment, segment_local
     lowered = X86DBT._lower_flag_boundary(plan, block.boundary)
     if lowered is not None:
         plan, following = lowered
@@ -495,7 +1698,31 @@ def pack_native_x86_block(block):
                     operation = 'descriptor'
                     detail = following, name
                 else:
-                    lowered = X86DBT._indirect_control_plan(block.boundary)
+                    limit_local = len(plan.locals)
+                    lowered = X86DBT._store_descriptor_plan(
+                        block.boundary, limit_local, limit_local + 1)
+                    if lowered is not None:
+                        (descriptor_plan, following, name,
+                         limit_local, base_local) = lowered
+                        plan = replace(
+                            plan, locals=tuple(plan.locals)
+                            + (Operand('local', limit_local),
+                               Operand('local', base_local)))
+                        plan = compose_plans(plan, descriptor_plan)
+                        operation = 'native_store_descriptor'
+                        detail = (following, name,
+                                  limit_local, base_local)
+                    else:
+                        lowered = X86DBT._load_system_segment_plan(
+                            block.boundary)
+                        if lowered is not None:
+                            (segment_plan, following, name,
+                             value_local) = lowered
+                            plan = compose_plans(plan, segment_plan)
+                            operation = 'native_load_system_segment'
+                            detail = following, name, value_local
+                    lowered = None if lowered is not None else \
+                        X86DBT._indirect_control_plan(block.boundary)
                     if lowered is not None:
                         plan = compose_plans(plan, lowered)
                         operation = 'dynamic_branch'
@@ -503,10 +1730,10 @@ def pack_native_x86_block(block):
                     else:
                         lowered = X86DBT._divide_plan(block.boundary)
                         if lowered is not None:
-                            divide_plan, following = lowered
-                            plan = compose_plans(plan, divide_plan)
-                            operation = 'native_divide'
-                            detail = following
+                                divide_plan, following, instruction = lowered
+                                plan = compose_plans(plan, divide_plan)
+                                operation = 'native_divide'
+                                detail = following, instruction
                         else:
                             lowered = X86DBT._invalidate_plan(block.boundary)
                             if lowered is not None:
@@ -567,7 +1794,9 @@ def pack_native_x86_block(block):
         arguments = [17, 18, 0]
     elif operation == 'native_divide':
         control = 13
-        arguments = [int(detail) & MASK64, 17, 0]
+        following, instruction = detail
+        arguments = [int(following) & MASK64, 17,
+                     int(instruction) & MASK64]
     elif operation == 'native_interrupt_return':
         control = 14
         arguments = [17, 18, 19]
@@ -612,18 +1841,170 @@ def pack_native_x86_block(block):
     elif operation == 'clock':
         control = 20
         arguments = [int(detail) & MASK64, 0, 0]
+    elif operation == 'debug_register':
+        following, opcode, debug, register = detail
+        if (opcode not in (0x21, 0x23)
+                or not 0 <= int(debug) < 8
+                or not 0 <= int(register) < 16):
+            raise ValueError('native x86 debug-register shape is invalid')
+        control = 21
+        arguments = [int(following) & MASK64,
+                     int(opcode) | (int(debug) << 8)
+                     | (int(register) << 16), 0]
+    elif operation == 'exception':
+        following, vector, error_code = detail
+        if (not 0 <= int(vector) <= 0xff
+                or (error_code is not None
+                    and not 0 <= int(error_code) <= 0xffffffff)):
+            raise ValueError('native x86 exception shape is invalid')
+        control = 22
+        arguments = [int(following) & MASK64, int(vector),
+                     MASK64 if error_code is None else int(error_code)]
+    elif operation == 'unary':
+        following, group, operand, bits, instruction = detail
+        if (group not in (6, 7) or int(bits) != 64
+                or not isinstance(operand, int)
+                or not 0 <= operand < 16):
+            raise ValueError('native x86 wide-divide shape is invalid')
+        control = 23
+        arguments = [int(following) & MASK64,
+                     int(instruction) & MASK64,
+                     int(operand) | (int(group == 7) << 8)]
+    elif operation == 'native_recurrence':
+        following, counter_local, source_instructions, counter_bits = detail
+        if (not 17 <= int(counter_local) < 256
+                or int(source_instructions) <= 0
+                or int(source_instructions) > MASK64
+                or int(counter_bits) not in (32, 64)):
+            raise ValueError('native x86 recurrence shape is invalid')
+        control = 24
+        arguments = [int(following) & MASK64,
+                     int(counter_local) | (int(counter_bits) << 8),
+                     int(source_instructions)]
+    elif operation == 'random':
+        following, register, bits, source = detail
+        if (not isinstance(register, int)
+                or not 0 <= register < 16
+                or int(bits) not in (32, 64)
+                or int(source) not in (0, 1)):
+            raise ValueError('native x86 entropy shape is invalid')
+        control = 25
+        arguments = [int(following) & MASK64,
+                     int(register) | (int(bits) << 8)
+                     | (int(source) << 16), 0]
+    elif operation == 'native_store_descriptor':
+        following, name, limit_local, base_local = detail
+        if (name not in ('gdtr', 'idtr')
+                or not 17 <= int(limit_local) < 256
+                or int(base_local) != int(limit_local) + 1
+                or int(base_local) >= 256):
+            raise ValueError('native x86 descriptor-store shape is invalid')
+        control = 26
+        arguments = [int(following) & MASK64, int(name == 'idtr'),
+                     int(limit_local) | (int(base_local) << 8)]
+    elif operation in ('load_system_segment',
+                       'native_load_system_segment'):
+        following, name, source = detail
+        memory = operation == 'native_load_system_segment'
+        if (name not in ('ldtr', 'tr')
+                or not isinstance(source, int)
+                or not 0 <= source < 256
+                or (memory and source < 17)
+                or (not memory and source >= 16)):
+            raise ValueError('native x86 system-segment shape is invalid')
+        control = 27
+        arguments = [int(following) & MASK64, int(name == 'tr'),
+                     int(source) | (int(memory) << 8)]
+    elif operation == 'swap_gs':
+        control = 28
+        arguments = [int(detail) & MASK64, 0, 0]
+    elif operation == 'syscall':
+        control = 29
+        arguments = [int(detail) & MASK64, 0, 0]
+    elif operation == 'sysret':
+        control = 30
+        arguments = [int(detail) & MASK64, 0, 0]
+    elif operation == 'simd_move_to':
+        following, vector, source = detail
+        if (not 0 <= int(vector) < 16
+                or not isinstance(source, int)
+                or not 0 <= source < 16):
+            raise ValueError('native x86 SIMD move shape is invalid')
+        control = 31
+        arguments = [int(following) & MASK64,
+                     int(vector) | (int(source) << 8), 0]
+    elif operation == 'simd_unpack_low':
+        following, vector, source = detail
+        if (not 0 <= int(vector) < 16
+                or not isinstance(source, int)
+                or not 0 <= source < 16):
+            raise ValueError('native x86 SIMD unpack shape is invalid')
+        control = 32
+        arguments = [int(following) & MASK64,
+                     int(vector) | (int(source) << 8), 0]
+    elif operation == 'native_simd_store':
+        following, vector, low_local, high_local = detail
+        if (not 0 <= int(vector) < 16
+                or not 17 <= int(low_local) < 256
+                or int(high_local) != int(low_local) + 1
+                or int(high_local) >= 256):
+            raise ValueError('native x86 SIMD store shape is invalid')
+        control = 33
+        arguments = [int(following) & MASK64, int(vector),
+                     int(low_local) | (int(high_local) << 8)]
+    elif operation == 'native_segment_memory':
+        following, segment, segment_local = detail
+        if (int(segment) not in (0, 1)
+                or not 17 <= int(segment_local) < 256):
+            raise ValueError('native x86 segment memory shape is invalid')
+        control = 34
+        arguments = [int(following) & MASK64,
+                     int(segment), int(segment_local)]
+    elif operation == 'simd_xor':
+        following, vector, source = detail
+        if (not 0 <= int(vector) < 16
+                or not isinstance(source, int)
+                or not 0 <= source < 16):
+            raise ValueError('native x86 SIMD xor shape is invalid')
+        control = 35
+        arguments = [int(following) & MASK64,
+                     int(vector) | (int(source) << 8), 0]
+    elif operation == 'native_simd_load':
+        following, vector, low_local, high_local = detail
+        if (not 0 <= int(vector) < 16
+                or not 17 <= int(low_local) < 256
+                or int(high_local) != int(low_local) + 1
+                or int(high_local) >= 256):
+            raise ValueError('native x86 SIMD load shape is invalid')
+        control = 36
+        arguments = [int(following) & MASK64, int(vector),
+                     int(low_local) | (int(high_local) << 8)]
     else:
         raise ValueError(
-            'native x86 control is not normalized: %s' % operation)
+            'native x86 control is not normalized: %s %r'
+            % (operation, detail))
+    # The decoded prefix excludes a boundary-only instruction.  A raw cut
+    # therefore retires that final instruction here; a predicate cut likewise
+    # retains its Jcc after folding the flag producer.  Other composed cuts
+    # already counted the lowered terminal instruction and expose only a
+    # synthetic resident control.  This count drives both architectural
+    # retirement and the deterministic timer cut in vm.wasm.
+    retired = (0 if control == 24
+               else _block_source_instructions(block))
+    if control != 24 and retired <= 0:
+        raise ValueError('native x86 block retires no source instruction')
+    plan = replace(
+        plan, function=0, start=0, end=retired, instructions=retired)
     page = bytes(pack_step(plan))
+    guard = _pack_native_code_guard(block)
     # The resident VM is deliberately stricter than the Python executor.
     # Validate the physical columns at artifact construction time so no
     # malformed record can become a browser-only fallback or late trap.
     header = NATIVE_BLOCK_HEADER.pack(
-        NATIVE_BLOCK_MAGIC, 1, NATIVE_BLOCK_HEADER.size,
+        NATIVE_BLOCK_MAGIC, 2, NATIVE_BLOCK_HEADER.size,
         int(block.rip) & MASK64, int(block.boundary_rip) & MASK64,
         len(page), control, *arguments)
-    record = header + page
+    record = header + guard + page
     validate_native_x86_record(record, block.rip)
     return record
 
@@ -635,14 +2016,14 @@ def native_x86_static_successors(record):
         raise ValueError('native x86 record is truncated')
     (magic, version, header_bytes, _rip, boundary_rip, page_bytes,
      control, first, second, _third) = NATIVE_BLOCK_HEADER.unpack_from(record)
-    if (magic != NATIVE_BLOCK_MAGIC or version != 1
+    if (magic != NATIVE_BLOCK_MAGIC or version not in (1, 2)
             or header_bytes != NATIVE_BLOCK_HEADER.size
-            or page_bytes != len(record) - header_bytes
-            or control > 20):
+            or page_bytes <= 0 or page_bytes > len(record) - header_bytes
+            or control > 36):
         raise ValueError('native x86 record header is invalid')
     if control == 2:
         return tuple(dict.fromkeys((first & MASK64, second & MASK64)))
-    if control in (3, 4, 12, 14):
+    if control in (3, 4, 12, 14, 22, 29, 30):
         return ()
     if control in (0, 5):
         return (boundary_rip & MASK64,)
@@ -652,19 +2033,17 @@ def native_x86_static_successors(record):
 def validate_native_x86_record(record, coordinate=None):
     """Validate one complete X86B record exactly as the resident VM will."""
     record = bytes(record)
-    if len(record) < NATIVE_BLOCK_HEADER.size:
-        raise ValueError('native x86 record is truncated')
+    fields, _guard, step = split_native_x86_record(record)
     (magic, version, header_bytes, rip, _boundary_rip, page_bytes,
-     control, _first, _second, _third) = \
-        NATIVE_BLOCK_HEADER.unpack_from(record)
-    if (magic != NATIVE_BLOCK_MAGIC or version != 1
+     control, _first, _second, _third) = fields
+    if (magic != NATIVE_BLOCK_MAGIC or version not in (1, 2)
             or header_bytes != NATIVE_BLOCK_HEADER.size
-            or page_bytes != len(record) - header_bytes
-            or control > 20
+            or page_bytes != len(step)
+            or control > 36
             or (coordinate is not None
                 and rip != int(coordinate) & MASK64)):
         raise ValueError('native x86 record header is invalid')
-    mapped = unpack_step(record[header_bytes:])
+    mapped = unpack_step(step)
     if mapped.local_extent < 17:
         # The resident ABI needs the sixteen GPRs plus RFLAGS.  Spell the
         # constant directly in the error because X86State has non-frame fields.
@@ -691,6 +2070,11 @@ def _lowered_boundary_memory(boundary):
     if plan is None:
         plan = X86DBT._indirect_control_plan(boundary)
     if plan is None:
+        lowered = X86DBT._simd_store_plan(boundary, 17, 18)
+        if lowered is None:
+            lowered = X86DBT._simd_load_plan(boundary, 17, 18)
+        plan = None if lowered is None else lowered[0]
+    if plan is None:
         identity = X86DBT._carry_flags_plan(_identity_register_plan())
         lowered = X86DBT._lower_flag_boundary(identity, boundary)
         plan = None if lowered is None else lowered[0]
@@ -710,21 +2094,60 @@ def pack_native_x86_records(block):
             or not _lowered_boundary_memory(block.boundary)):
         record = pack_native_x86_block(block)
         return ((int(block.rip) & MASK64, record),)
+    source_instructions = _block_source_instructions(block)
+    if source_instructions < 2:
+        raise ValueError(
+            'faultable terminal split has no retiring pure prefix')
     prefix = replace(
         block,
         boundary=X86Boundary(
-            'native_internal_branch', int(block.boundary_rip) & MASK64))
+            'native_internal_branch', int(block.boundary_rip) & MASK64),
+        source_instructions=source_instructions - 1)
+    terminal_coordinate = int(block.boundary_rip) & MASK64
+    terminal_extent = next((
+        (terminal_coordinate,
+         payload[terminal_coordinate - address:])
+        for address, payload in _block_code_extents(block)
+        if address <= terminal_coordinate < address + len(payload)
+    ), None)
+    if terminal_extent is None:
+        raise ValueError('faultable terminal has no executable proof')
     terminal = replace(
-        block, rip=int(block.boundary_rip) & MASK64,
+        block, rip=terminal_coordinate,
         source=b'', instructions=0,
         plan=_identity_register_plan(), scratch_count=0,
         flag_cut=None, control_block=None, cut_inputs=(), state_flags=False,
         virtual_memory=False, indirect_register=None, tail_return=None,
-        inlined_call_target=None)
+        inlined_call_target=None,
+        code_extents=(terminal_extent,), source_instructions=1)
     return (
         (int(prefix.rip) & MASK64, pack_native_x86_block(prefix)),
         (int(terminal.rip) & MASK64, pack_native_x86_block(terminal)),
     )
+
+
+def native_x86_cut_coordinates(dbt):
+    """Return every reached entry whose strongest physical cut is resident.
+
+    A residual can execute directly from a predecessor's conditional control,
+    so its own entry need not appear in the ordinary block execution profile.
+    Artifact closure must nevertheless publish that stronger quotient.
+    """
+    coordinates = set(() if dbt._physical_profile is None
+                      else dbt._physical_profile)
+    for _branch, entry in dbt._recurrence_cuts.values():
+        if entry is not None:
+            coordinates.add(int(entry[0].rip) & MASK64)
+    for _branch, entry in dbt._scan_cuts.values():
+        if entry is not None:
+            coordinates.add(int(entry[0].rip) & MASK64)
+    for _branch, _config, _proof, cut in dbt._prefix_cuts.values():
+        coordinates.add(int(cut.rip) & MASK64)
+    for cache in (dbt._find_cuts, dbt._copy_cuts,
+                  dbt._wide_copy_cuts):
+        for _branch, entry in cache.values():
+            coordinates.add(int(entry[1].rip) & MASK64)
+    return tuple(sorted(coordinates))
 
 
 def select_physical_cut(dbt, rip):
@@ -738,7 +2161,44 @@ def select_physical_cut(dbt, rip):
     residuals = []
     for _branch, entry in dbt._recurrence_cuts.values():
         if entry is not None:
-            residuals.append(entry[0])
+            (cut, counter, _iteration_bytes,
+             source_instructions, counter_bits) = entry
+            if cut.rip == rip:
+                plan = replace(
+                    cut.plan, start=0, end=0, instructions=0,
+                    locals=tuple(cut.plan.locals)
+                    + (Operand('local', int(counter)),))
+                return replace(
+                    cut, plan=plan,
+                    boundary=X86Boundary('native_recurrence', (
+                        int(cut.boundary.detail) & MASK64,
+                        len(plan.locals) - 1,
+                        int(source_instructions),
+                        int(counter_bits))))
+    for _branch, entry in dbt._scan_cuts.values():
+        if entry is not None:
+            cut, _counter, source_instructions, counter_bits = entry
+            if cut.rip == rip:
+                plan = replace(
+                    cut.plan, start=0, end=0, instructions=0)
+                return replace(
+                    cut, plan=plan,
+                    boundary=X86Boundary('native_recurrence', (
+                        int(cut.boundary.detail) & MASK64,
+                        len(plan.locals) - 1,
+                        int(source_instructions),
+                        int(counter_bits))))
+    for _branch, entry in dbt._wide_copy_cuts.values():
+        proof_blocks, cut, source_instructions, _chunk_bytes = entry
+        if cut.rip == rip:
+            plan = replace(
+                cut.plan, start=0, end=0, instructions=0)
+            return replace(
+                cut, plan=plan,
+                boundary=X86Boundary('native_recurrence', (
+                    int(cut.boundary.detail) & MASK64,
+                    len(plan.locals) - 1,
+                    int(source_instructions), 64)))
     for _branch, _config, _proof, cut in dbt._prefix_cuts.values():
         residuals.append(cut)
     for _branch, entry in dbt._find_cuts.values():
@@ -841,7 +2301,7 @@ def load_x86_code_pages(payload, state, dbt=None):
             rip, boundary_rip, source, instructions,
             decode_plan(mapped), mapped, dbt._bind_state_page(mapped),
             scratch_count, X86Boundary(operation, detail),
-            proof_config, proof)
+            proof_config, proof, code_extents=((rip, source),))
         dbt._remember_block(block)
         dbt.restored_code_blocks += 1
         dbt.source_instructions += instructions
@@ -883,6 +2343,7 @@ def dump_x86_state(state, baseline=None):
         'tr': int(state.tr),
         'debug': list(state.debug),
         'msrs': [list(item) for item in state.msrs],
+        'xmm': list(state.xmm),
         'halted': bool(state.halted),
         'interrupts': list(state.interrupts),
         'memory_length': len(memory),
@@ -1011,6 +2472,10 @@ def load_x86_state(payload, baseline=None):
         raise X86Error('x86 snapshot debug-register bank has the wrong size')
     interrupts = tuple(int(value) & 0xff
                        for value in header.get('interrupts', ()))
+    xmm = tuple(int(value) & MASK64
+                for value in header.get('xmm', (0,) * 32))
+    if len(xmm) != 32:
+        raise X86Error('x86 snapshot vector-register bank has the wrong size')
     return X86State(
         registers, int(header['rip']) & MASK64, memory,
         rflags=int(header['rflags']) & MASK64,
@@ -1025,7 +2490,8 @@ def load_x86_state(payload, baseline=None):
         ss=segments[3], fs=segments[4], gs=segments[5],
         ldtr=int(header.get('ldtr', 0)) & 0xffff,
         tr=int(header.get('tr', 0)) & 0xffff,
-        debug=debug, msrs=msrs, halted=bool(header.get('halted', False)),
+        debug=debug, msrs=msrs, xmm=xmm,
+        halted=bool(header.get('halted', False)),
         interrupts=interrupts)
 
 

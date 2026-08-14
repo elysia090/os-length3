@@ -87,13 +87,14 @@ typedef long long          i64;
 #define X86_REGISTER_COUNT 16u
 #define X86_BLOCK_HEADER_BYTES 64u
 #define X86_PHYSICAL_PAGE_BYTES 4096u
-#define X86_PHYSICAL_PAGES 16u
-#define X86_BLOCK_CACHE_SLOTS 256u
+#define X86_PHYSICAL_PAGES 256u
+#define X86_BLOCK_CACHE_SLOTS 2048u
 #define X86_BLOCK_CACHE_BYTES 1024u
 #define X86_NO_PAGE (~0ull)
 #define X86_SYSTEM_COUNT 22u
 #define X86_MSR_CAP 32u
 #define X86_CONSOLE_CAP 4096u
+#define X86_CONSOLE_OUTPUT_CAP 256u
 #define STEP_SLOT_STATE_BITS 3u
 #define STEP_SLOT_PIN_SHIFT STEP_SLOT_STATE_BITS
 #define STEP_SLOT_PIN_BITS 9u
@@ -294,6 +295,7 @@ typedef struct {
  * control selection, and the virtual-memory lease remain in this module. */
 typedef struct {
     u64 registers[X86_REGISTER_COUNT];
+    u64 xmm[32];
     u64 rip;
     u64 rflags;
     u64 cr0;
@@ -324,22 +326,33 @@ typedef struct {
     u32 physical_dirty[X86_PHYSICAL_PAGES];
     u32 step_physical_slot[STEP_MEMORY_PAGES];
     u32 step_physical_valid[STEP_MEMORY_PAGES];
+    u32 step_physical_write[STEP_MEMORY_PAGES];
     u32 physical_status;
     u32 control;
     u32 block_loaded;
     u32 exception_pending;
+    u32 exception_vector;
+    u32 exception_has_error;
     u32 exception_error;
+    u32 quantum_blocks;
+    u32 quantum_cache_hits;
     u64 console_lease;
     u32 console_status;
-    u32 console_value;
+    u8 console_output[X86_CONSOLE_OUTPUT_CAP];
+    u32 console_output_count;
     u64 clock_lease;
     u32 clock_status;
+    u64 entropy_lease;
+    u32 entropy_status;
     u8 uart[8];
     u8 uart_valid[8];
     u32 pit_counter;
     u32 pit_low_latch;
     u32 pit_read_phase;
     u32 pit_write_phase;
+    u8 pic_mask[2];
+    u32 timer_source_instructions;
+    u32 uart_tx_pending;
     u8 console_input[X86_CONSOLE_CAP];
     u32 console_head;
     u32 console_count;
@@ -584,6 +597,12 @@ static u64 load_u64(const u8 *source)
 static void store_u64(u8 *target, u64 value)
 {
     for (u32 i = 0; i < 8u; ++i)
+        target[i] = (u8)(value >> (8u * i));
+}
+
+static void store_u32(u8 *target, u32 value)
+{
+    for (u32 i = 0; i < 4u; ++i)
         target[i] = (u8)(value >> (8u * i));
 }
 
@@ -2101,7 +2120,7 @@ EXPORT int vm_step_open(u64 session, u32 bytes)
         }
     }
     for (u32 node = 1; node <= machine->work; ++node) {
-        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 209u)
+        if (!machine->values[node] || step_u8(STEP_OPCODES, node - 1u) >= 210u)
             return step_fail(5u);
         u32 begin = step_u32(STEP_ARGUMENT_OFFSETS, node - 1u);
         u32 end = step_u32(STEP_ARGUMENT_OFFSETS, node);
@@ -2376,6 +2395,8 @@ typedef struct {
     u64 epoch[2];
 } StepMemoryGuard;
 
+static int x86_step_fault_is_write(void);
+
 static int step_memory_resident(u64 page)
 {
     StepWorkspace *machine = step_machine();
@@ -2460,6 +2481,22 @@ static int step_memory_ready(u64 address, u32 width, StepMemoryGuard *guard)
     u64 first = address >> page_shift;
     u64 last = (address + width - 1u) >> page_shift;
     for (u64 page = first; page <= last; ++page) {
+        X86Workspace *x86 = &workspace.runtime.x86;
+        u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
+        if (x86->active && x86_step_fault_is_write()
+                && machine->memory_page[slot] == page
+                && x86->step_physical_valid[slot]
+                && !x86->step_physical_write[slot]) {
+            u64 word = step_slot_load(machine, slot);
+            if (step_slot_kind(word) != STEP_SLOT_CLEAN
+                    || step_slot_pins(word))
+                return step_fail(12u);
+            x86->step_physical_valid[slot] = 0;
+            machine->memory_page[slot] = STEP_NO_COORDINATE;
+            machine->memory_valid[slot] = 0;
+            step_slot_store(machine, slot, step_slot_word(
+                STEP_SLOT_EMPTY, 0, step_slot_epoch(word)));
+        }
         u64 page_first = page << page_shift;
         u64 required = address + width - page_first;
         if (required > page_bytes) required = page_bytes;
@@ -2788,7 +2825,7 @@ static int step_x86_shift_flags_lane(u32 begin, u32 end, u64 *result)
     if ((width != 8u && width != 16u
             && width != 32u && width != 64u)
             || (group != 0u && group != 1u && group != 4u
-                && group != 5u && group != 7u))
+                && group != 5u && group != 6u && group != 7u))
         return step_fail(7u);
     amount &= width - 1u;
     if (!amount) {
@@ -2818,6 +2855,8 @@ static int step_x86_shift_flags_lane(u32 begin, u32 end, u64 *result)
                        ^ (value >> (width - 2u))) & 1u;
         else if (group == 5u)
             overflow = (source >> (width - 1u)) & 1u;
+        else if (group == 6u)
+            overflow = ((source ^ value) >> (width - 1u)) & 1u;
     }
     *result = (flags & ~(1ull << 11)) | (overflow << 11);
     return 1;
@@ -2901,6 +2940,34 @@ static int step_x86_test_condition_lane(u32 begin, u32 end, u64 *result)
             width, &flags))
         return 0;
     return step_x86_condition_value(flags, condition, result);
+}
+
+static int step_bit_address_lane(u32 begin, u32 end, u64 *result)
+{
+    if (end - begin != 3u) return step_fail(7u);
+    u64 base, index, descriptor;
+    if (!step_operand(begin, &base)
+            || !step_operand(begin + 1u, &index)
+            || !step_operand(begin + 2u, &descriptor))
+        return 0;
+    u32 word_bits = (u32)descriptor & 0x7fu;
+    u32 index_bits = ((u32)descriptor >> 8u) & 0x7fu;
+    if ((word_bits != 16u && word_bits != 32u && word_bits != 64u)
+            || (index_bits != 32u && index_bits != 64u)
+            || descriptor != (u64)(word_bits | (index_bits << 8u)))
+        return step_fail(7u);
+    u32 word_shift = word_bits == 16u ? 4u : word_bits == 32u ? 5u : 6u;
+    u32 byte_shift = word_shift - 3u;
+    i64 signed_index = (i64)index;
+    if (index_bits == 32u) {
+        u32 low = (u32)index;
+        signed_index = low & 0x80000000u
+            ? (i64)((u64)low | ~0xffffffffull) : (i64)low;
+    }
+    i64 displacement = (signed_index >> word_shift)
+                     * (i64)(1u << byte_shift);
+    *result = base + (u64)displacement;
+    return 1;
 }
 
 static int step_add3_u32_lane(u32 begin, u32 end, u64 *result)
@@ -3853,6 +3920,9 @@ EXPORT int vm_step_execute(u64 session, u32 local_count, u32 stack_count)
                 : opcode == 208u
                 ? step_x86_mul_flags_lane(
                     first, last, &machine->values[node])
+                : opcode == 209u
+                ? step_bit_address_lane(
+                    first, last, &machine->values[node])
                 : step_fail(7u));
             if (!produced) {
                 if (machine->memory_status) return machine->memory_status;
@@ -4164,6 +4234,22 @@ enum {
     X86_CONTROL_PORT_WRITE = 18,
     X86_CONTROL_INVALIDATE_PAGE = 19,
     X86_CONTROL_CLOCK = 20,
+    X86_CONTROL_DEBUG_REGISTER = 21,
+    X86_CONTROL_EXCEPTION = 22,
+    X86_CONTROL_WIDE_DIVIDE = 23,
+    X86_CONTROL_RECURRENCE = 24,
+    X86_CONTROL_ENTROPY = 25,
+    X86_CONTROL_STORE_DESCRIPTOR = 26,
+    X86_CONTROL_SYSTEM_SEGMENT = 27,
+    X86_CONTROL_SWAP_GS = 28,
+    X86_CONTROL_SYSCALL = 29,
+    X86_CONTROL_SYSRET = 30,
+    X86_CONTROL_SIMD_MOVE = 31,
+    X86_CONTROL_SIMD_UNPACK = 32,
+    X86_CONTROL_SIMD_STORE = 33,
+    X86_CONTROL_SEGMENT_MEMORY = 34,
+    X86_CONTROL_SIMD_XOR = 35,
+    X86_CONTROL_SIMD_LOAD = 36,
 };
 
 enum {
@@ -4190,6 +4276,7 @@ enum {
     X86_RDX = 2,
     X86_RBX = 3,
     X86_RSP = 4,
+    X86_R11 = 11,
 };
 
 enum {
@@ -4201,6 +4288,8 @@ enum {
     X86_INTERNAL = 9,
     X86_CONSOLE_WRITE = 10,
     X86_CLOCK = 11,
+    X86_ENTROPY = 12,
+    X86_CODE_MISMATCH = 13,
 };
 
 static X86Workspace *x86_machine(void)
@@ -4246,13 +4335,66 @@ static u64 x86_control_register_read(u32 coordinate)
     return 0;
 }
 
+static int x86_invalidate_address_space(void)
+{
+    X86Workspace *x86 = x86_machine();
+    StepWorkspace *step = step_machine();
+    if (step->execution_active || step->memory_status) return 0;
+    u64 generation = step_new_capability();
+    if (!generation) return 0;
+    for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
+        u64 word = step_slot_load(step, slot);
+        u32 kind = step_slot_kind(word);
+        if (step_slot_pins(word)
+                || (kind != STEP_SLOT_EMPTY && kind != STEP_SLOT_CLEAN
+                    && kind != STEP_SLOT_DIRTY))
+            return 0;
+        if (kind == STEP_SLOT_DIRTY) {
+            if (!x86->step_physical_valid[slot]) return 0;
+            u32 physical = x86->step_physical_slot[slot];
+            if (physical >= X86_PHYSICAL_PAGES
+                    || !x86->physical_valid[physical])
+                return 0;
+        }
+    }
+    for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
+        u32 kind = step_slot_kind(step_slot_load(step, slot));
+        if (kind == STEP_SLOT_DIRTY) {
+            u32 physical = x86->step_physical_slot[slot];
+            x86->physical_dirty[physical] = 1u;
+        }
+        x86->step_physical_valid[slot] = 0;
+        x86->step_physical_write[slot] = 0;
+    }
+    step_memory_slots_empty(step);
+    step->memory_generation = generation;
+    step->requested_memory_page = STEP_NO_COORDINATE;
+    step->requested_memory_address = STEP_NO_COORDINATE;
+    step->flush_memory_page = STEP_NO_COORDINATE;
+    step->memory_lease = 0;
+    step->memory_status = 0;
+    return 1;
+}
+
 static int x86_control_register_write(u32 coordinate, u64 value)
 {
     X86Workspace *x86 = x86_machine();
-    if (coordinate == 0u) x86->cr0 = value;
+    if (coordinate == 0u) {
+        if (x86->cr0 != value && !x86_invalidate_address_space()) return 0;
+        x86->cr0 = value;
+    }
     else if (coordinate == 2u) x86->system[X86_SYS_CR2] = value;
-    else if (coordinate == 3u) x86->cr3 = value;
-    else if (coordinate == 4u) x86->cr4 = value;
+    else if (coordinate == 3u) {
+        /* A CR3 write is a translation invalidation even when the numeric
+         * root is unchanged.  The resident virtual tags are not PCID-tagged,
+         * so retaining one here could bind another task's user page. */
+        if (!x86_invalidate_address_space()) return 0;
+        x86->cr3 = value;
+    }
+    else if (coordinate == 4u) {
+        if (x86->cr4 != value && !x86_invalidate_address_space()) return 0;
+        x86->cr4 = value;
+    }
     else if (coordinate == 8u) x86->system[X86_SYS_CR8] = value;
     else return 0;
     return 1;
@@ -4261,6 +4403,9 @@ static int x86_control_register_write(u32 coordinate, u64 value)
 static u64 x86_port_read(u32 port, u32 width)
 {
     X86Workspace *x86 = x86_machine();
+    if (width == 1u && (port == 0x20u || port == 0xa0u)) return 0u;
+    if (width == 1u && (port == 0x21u || port == 0xa1u))
+        return x86->pic_mask[port == 0xa1u];
     if (width == 1u && port == 0x42u) {
         x86->pit_counter = (x86->pit_counter - 0x100u) & 0xffffu;
         u32 value = (x86->pit_counter >> (x86->pit_read_phase * 8u))
@@ -4270,8 +4415,16 @@ static u64 x86_port_read(u32 port, u32 width)
     }
     if (width == 1u && port == 0x3fdu)
         return 0x60u | (x86->console_count != 0u);
-    if (width == 1u && port == 0x3fau) return 1u;
+    if (width == 1u && port == 0x3fau) {
+        if (x86->console_count && (x86->uart[1] & 1u)) return 4u;
+        if (x86->uart_tx_pending && (x86->uart[1] & 2u)) {
+            x86->uart_tx_pending = 0;
+            return 2u;
+        }
+        return 1u;
+    }
     if (width == 1u && port == 0x3feu) return 0xb0u;
+    if (width == 1u && port == 0x64u) return 0u;
     if (width == 1u && port == 0x3f8u
             && !(x86->uart[3] & 0x80u)) {
         if (!x86->console_count) return 0u;
@@ -4289,9 +4442,25 @@ static u64 x86_port_read(u32 port, u32 width)
          : width == 2u ? 0xffffu : 0xffffffffu;
 }
 
+static int x86_publish_console_output(X86Workspace *x86)
+{
+    if (x86->console_status) return (int)x86->console_status;
+    if (!x86->console_output_count) return 0;
+    x86->console_lease = step_new_capability();
+    if (!x86->console_lease) return 0;
+    x86->console_status = X86_CONSOLE_WRITE;
+    return X86_CONSOLE_WRITE;
+}
+
 static int x86_port_write(u32 port, u32 width, u64 value)
 {
     X86Workspace *x86 = x86_machine();
+    if (width == 1u && (port == 0x20u || port == 0xa0u))
+        return 1;
+    if (width == 1u && (port == 0x21u || port == 0xa1u)) {
+        x86->pic_mask[port == 0xa1u] = (u8)value;
+        return 1;
+    }
     if (width == 1u && port == 0x43u) {
         if (((u32)value & 0xc0u) == 0x80u
                 && ((u32)value & 0x30u) == 0x30u) {
@@ -4314,11 +4483,16 @@ static int x86_port_write(u32 port, u32 width, u64 value)
     }
     if (width == 1u && (port == 0xe9u
             || (port == 0x3f8u && !(x86->uart[3] & 0x80u)))) {
-        if (x86->console_status) return 0;
-        x86->console_lease = step_new_capability();
-        if (!x86->console_lease) return 0;
-        x86->console_value = (u32)value & 0xffu;
-        x86->console_status = X86_CONSOLE_WRITE;
+        if (x86->console_status
+                || x86->console_output_count >= X86_CONSOLE_OUTPUT_CAP)
+            return 0;
+        u32 byte = (u32)value & 0xffu;
+        x86->console_output[x86->console_output_count++] = (u8)byte;
+        if (!x86_publish_console_output(x86)) {
+            x86->console_output_count -= 1u;
+            return 0;
+        }
+        if (port == 0x3f8u) x86->uart_tx_pending = 1u;
         return 1;
     }
     if (width == 1u && port >= 0x3f8u && port <= 0x3ffu) {
@@ -4335,6 +4509,23 @@ static int x86_fail(u32 error)
     x86->error = error;
     x86->block_loaded = 0;
     return STEP_TRAP;
+}
+
+static u32 x86_scheduling_interrupt(
+        const X86Workspace *x86, u32 timer_ready)
+{
+    if (!(x86->rflags & (1u << 9u))) return 0;
+    if (((x86->console_count && (x86->uart[1] & 1u))
+                || (x86->uart_tx_pending && (x86->uart[1] & 2u)))
+            && !(x86->pic_mask[0] & (1u << 4u)))
+        return 0x34u;
+    return timer_ready && !(x86->pic_mask[0] & 1u) ? 0x30u : 0u;
+}
+
+static u32 x86_block_cache_slot(u64 rip)
+{
+    return (u32)(rip ^ (rip >> 12u) ^ (rip >> 24u))
+         & (X86_BLOCK_CACHE_SLOTS - 1u);
 }
 
 static u32 x86_physical_slot(u64 page)
@@ -4437,7 +4628,8 @@ static int x86_physical_u64(u64 address, u64 *value)
     return 1;
 }
 
-static int x86_translate_page(u64 virtual_page, u64 *physical_page)
+static int x86_translate_page(u64 virtual_page, int write, int execute,
+                              int user_access, u64 *physical_page)
 {
     X86Workspace *x86 = x86_machine();
     u64 address = virtual_page << 12u;
@@ -4451,6 +4643,9 @@ static int x86_translate_page(u64 virtual_page, u64 *physical_page)
         return 1;
     }
     u64 table = x86->cr3 & 0x000ffffffffff000ull;
+    u32 writable = 1u;
+    u32 user = 1u;
+    u32 no_execute = 0u;
     static const u8 shifts[4] = {39u, 30u, 21u, 12u};
     for (u32 level = 0; level < 4u; ++level) {
         u64 slot = (address >> shifts[level]) & 0x1ffu;
@@ -4458,6 +4653,10 @@ static int x86_translate_page(u64 virtual_page, u64 *physical_page)
         int loaded = x86_physical_u64(table + slot * 8u, &entry);
         if (loaded <= 0) return loaded;
         if (!(entry & 1u)) return -1;
+        writable &= (entry >> 1u) & 1u;
+        user &= (entry >> 2u) & 1u;
+        if ((x86->efer & (1ull << 11u)) && (entry >> 63u))
+            no_execute = 1u;
         if ((level == 1u || level == 2u) && (entry & (1u << 7u))) {
             u32 shift = shifts[level];
             u64 mask = 0x000fffffffffffffull
@@ -4465,12 +4664,20 @@ static int x86_translate_page(u64 virtual_page, u64 *physical_page)
             u64 physical = (entry & mask)
                          | (address & ((1ull << shift) - 1u));
             if (physical >= x86->memory_bytes) return -1;
+            if ((user_access && !user) || (execute && no_execute)
+                    || (write && !writable
+                        && (user_access || (x86->cr0 & (1u << 16u)))))
+                return -2;
             *physical_page = physical >> 12u;
             return 1;
         }
         table = entry & 0x000ffffffffff000ull;
     }
     if (table >= x86->memory_bytes) return -1;
+    if ((user_access && !user) || (execute && no_execute)
+            || (write && !writable
+                && (user_access || (x86->cr0 & (1u << 16u)))))
+        return -2;
     *physical_page = table >> 12u;
     return 1;
 }
@@ -4480,7 +4687,8 @@ static int x86_virtual_read(u64 address, u8 *target, u32 bytes)
     X86Workspace *x86 = x86_machine();
     while (bytes) {
         u64 physical_page;
-        int translated = x86_translate_page(address >> 12u, &physical_page);
+        int translated = x86_translate_page(
+            address >> 12u, 0, 0, 0, &physical_page);
         if (translated <= 0) return translated;
         if (!x86_physical_present(physical_page)) return 0;
         u32 offset = (u32)address & (X86_PHYSICAL_PAGE_BYTES - 1u);
@@ -4496,7 +4704,31 @@ static int x86_virtual_read(u64 address, u8 *target, u32 bytes)
     return 1;
 }
 
-static int x86_virtual_write_u64(u64 address, u64 value)
+static int x86_virtual_matches(u64 address, const u8 *expected, u32 bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    while (bytes) {
+        u64 physical_page;
+        int translated = x86_translate_page(
+            address >> 12u, 0, 1,
+            (x86->system[X86_SYS_CS] & 3u) != 0u, &physical_page);
+        if (translated <= 0) return translated < 0 ? -1 : 0;
+        if (!x86_physical_present(physical_page)) return 0;
+        u32 offset = (u32)address & (X86_PHYSICAL_PAGE_BYTES - 1u);
+        u32 count = X86_PHYSICAL_PAGE_BYTES - offset;
+        if (count > bytes) count = bytes;
+        u32 slot = x86_physical_slot(physical_page);
+        for (u32 index = 0; index < count; ++index)
+            if (x86->physical[slot][offset + index] != expected[index])
+                return -1;
+        expected += count;
+        address += count;
+        bytes -= count;
+    }
+    return 1;
+}
+
+static int x86_virtual_write_u64(u64 address, u64 value, int user_access)
 {
     X86Workspace *x86 = x86_machine();
     u8 bytes[8];
@@ -4505,7 +4737,8 @@ static int x86_virtual_write_u64(u64 address, u64 value)
     while (written < 8u) {
         u64 at = address + written;
         u64 physical_page;
-        int translated = x86_translate_page(at >> 12u, &physical_page);
+        int translated = x86_translate_page(
+            at >> 12u, 1, 0, user_access, &physical_page);
         if (translated <= 0) return translated;
         if (!x86_physical_present(physical_page)) return 0;
         u32 offset = (u32)at & (X86_PHYSICAL_PAGE_BYTES - 1u);
@@ -4536,6 +4769,7 @@ static void x86_cancel_step_execution(void)
                 x86->physical_dirty[physical] = 1u;
         }
         x86->step_physical_valid[slot] = 0;
+        x86->step_physical_write[slot] = 0;
     }
     step_memory_slots_empty(step);
     step->memory_generation = step_new_capability();
@@ -4554,6 +4788,33 @@ static void x86_cancel_step_execution(void)
     x86->block_loaded = 0;
 }
 
+static int x86_tss_stack(u32 selector, u32 ist, u64 *pointer)
+{
+    X86Workspace *x86 = x86_machine();
+    u64 descriptor_offset = x86->system[X86_SYS_TR] & ~7ull;
+    u64 gdt_base = x86->system[X86_SYS_GDTR_BASE];
+    u64 gdt_limit = x86->system[X86_SYS_GDTR_LIMIT];
+    if (!gdt_base || descriptor_offset + 15u > gdt_limit) return -1;
+    u8 descriptor[16];
+    int loaded = x86_virtual_read(
+        gdt_base + descriptor_offset, descriptor, sizeof(descriptor));
+    if (loaded <= 0) return loaded;
+    u32 type = descriptor[5] & 0x0fu;
+    if (!(descriptor[5] & 0x80u) || (type != 9u && type != 11u))
+        return -1;
+    u64 base = (u64)read_u16(descriptor + 2u)
+             | ((u64)descriptor[4] << 16u)
+             | ((u64)descriptor[7] << 24u)
+             | ((u64)read_u32(descriptor + 8u) << 32u);
+    u64 offset = ist ? 36u + ((u64)ist - 1u) * 8u
+                     : 4u + ((u64)selector & 3u) * 8u;
+    u8 encoded[8];
+    loaded = x86_virtual_read(base + offset, encoded, sizeof(encoded));
+    if (loaded <= 0) return loaded;
+    *pointer = load_u64(encoded);
+    return *pointer ? 1 : -1;
+}
+
 static int x86_step_fault_is_write(void)
 {
     StepWorkspace *step = step_machine();
@@ -4568,13 +4829,13 @@ static int x86_step_fault_is_write(void)
     return 0;
 }
 
-static int x86_deliver_page_fault(void)
+static int x86_deliver_exception(void)
 {
     X86Workspace *x86 = x86_machine();
     if (!x86->exception_pending) return X86_NEED_BLOCK;
     u64 base = x86->system[X86_SYS_IDTR_BASE];
     u64 limit = x86->system[X86_SYS_IDTR_LIMIT];
-    u64 offset = 14u * 16u;
+    u64 offset = (u64)x86->exception_vector * 16u;
     if (!base || offset + 15u > limit) return x86_fail(31u);
     u8 gate[16];
     int loaded = x86_virtual_read(base + offset, gate, sizeof(gate));
@@ -4585,40 +4846,143 @@ static int x86_deliver_page_fault(void)
                | ((u64)read_u16(gate + 6u) << 16u)
                | ((u64)read_u32(gate + 8u) << 32u);
     u64 selector = read_u16(gate + 2u);
-    if ((selector & 3u) != (x86->system[X86_SYS_CS] & 3u))
-        return x86_fail(31u);
+    u32 current_privilege = (u32)x86->system[X86_SYS_CS] & 3u;
+    u32 target_privilege = (u32)selector & 3u;
+    if (target_privilege > current_privilege) return x86_fail(31u);
 
-    u64 pointer = x86->registers[X86_RSP];
+    u64 restored_stack = x86->registers[X86_RSP];
+    u32 ist = gate[4] & 7u;
+    u64 pointer = restored_stack;
+    if (target_privilege < current_privilege || ist) {
+        int loaded_stack = x86_tss_stack((u32)selector, ist, &pointer);
+        if (!loaded_stack) return (int)x86->physical_status;
+        if (loaded_stack < 0) return x86_fail(31u);
+    }
     const u64 values[6] = {
-        x86->system[X86_SYS_SS], pointer, x86->rflags,
+        x86->system[X86_SYS_SS], restored_stack, x86->rflags,
         x86->system[X86_SYS_CS], x86->rip, x86->exception_error,
     };
-    for (u32 index = 0; index < 6u; ++index) {
+    u32 count = 5u + x86->exception_has_error;
+    for (u32 index = 0; index < count; ++index) {
         pointer -= 8u;
-        int written = x86_virtual_write_u64(pointer, values[index]);
+        int written = x86_virtual_write_u64(
+            pointer, values[index], target_privilege != 0u);
         if (!written) return (int)x86->physical_status;
         if (written < 0) return x86_fail(31u);
     }
     x86->registers[X86_RSP] = pointer;
     x86->rip = target;
     x86->system[X86_SYS_CS] = selector;
+    if (target_privilege < current_privilege)
+        x86->system[X86_SYS_SS] = (selector + 8u) & 0xffffu;
     if ((gate[5] & 0x0fu) == 0x0eu) x86->rflags &= ~(1u << 9u);
     x86->rflags |= 2u;
     x86->halted = 0;
     x86->exception_pending = 0;
+    x86->exception_vector = 0;
+    x86->exception_has_error = 0;
+    x86->exception_error = 0;
+    x86->quantum_blocks = 0;
+    x86->quantum_cache_hits = 0;
     return X86_NEED_BLOCK;
 }
 
-static int x86_raise_page_fault(u64 address, int write)
+static int x86_begin_exception(u32 vector, u64 rip,
+                               u32 has_error, u32 error)
+{
+    X86Workspace *x86 = x86_machine();
+    if (vector > 0xffu || has_error > 1u) return x86_fail(31u);
+    x86->rip = rip;
+    x86->exception_vector = vector;
+    x86->exception_has_error = has_error;
+    x86->exception_error = error;
+    x86->exception_pending = 1u;
+    x86->block_loaded = 0;
+    return x86_deliver_exception();
+}
+
+static int x86_raise_page_fault(u64 address, int write, int execute,
+                                int present)
 {
     X86Workspace *x86 = x86_machine();
     x86_cancel_step_execution();
     if (!step_machine()->memory_generation) return x86_fail(20u);
     x86->system[X86_SYS_CR2] = address;
-    x86->exception_error = write ? 2u : 0u;
+    x86->exception_error = present ? 1u : 0u;
+    if (write) x86->exception_error |= 2u;
     if (x86->system[X86_SYS_CS] & 3u) x86->exception_error |= 4u;
-    x86->exception_pending = 1u;
-    return x86_deliver_page_fault();
+    if (execute) x86->exception_error |= 16u;
+    return x86_begin_exception(
+        14u, x86->rip, 1u, x86->exception_error);
+}
+
+/* A missing artifact record is meaningful only after instruction fetch has
+ * proved that RIP is mapped.  In particular, user entry commonly lands on a
+ * guard page first; publishing that coordinate as a build-time grammar miss
+ * would bypass the guest's ordinary #PF handler and make coverage closure
+ * depend on runtime page-table state. */
+static int x86_classify_block_miss(void)
+{
+    X86Workspace *x86 = x86_machine();
+    u64 physical_page;
+    int translated = x86_translate_page(
+        x86->rip >> 12u, 0, 1,
+        (x86->system[X86_SYS_CS] & 3u) != 0u, &physical_page);
+    if (translated < 0)
+        return x86_raise_page_fault(x86->rip, 0, 1, translated == -2);
+    if (!translated) return (int)x86->physical_status;
+    return X86_NEED_BLOCK;
+}
+
+static int x86_unsigned_divide_wide(u64 high, u64 low, u64 divisor,
+                                    u64 *quotient, u64 *remainder)
+{
+    if (!divisor || high >= divisor) return 0;
+    u64 result = 0;
+    u64 residual = high;
+    for (int bit = 63; bit >= 0; --bit) {
+        u64 carry = residual >> 63u;
+        u64 shifted = (residual << 1u) | ((low >> (u32)bit) & 1u);
+        if (carry || shifted >= divisor) {
+            shifted -= divisor;
+            result |= 1ull << (u32)bit;
+        }
+        residual = shifted;
+    }
+    *quotient = result;
+    *remainder = residual;
+    return 1;
+}
+
+static int x86_divide_wide(u64 high, u64 low, u64 divisor, u32 signed_divide,
+                           u64 *quotient, u64 *remainder)
+{
+    if (!signed_divide)
+        return x86_unsigned_divide_wide(
+            high, low, divisor, quotient, remainder);
+    u32 dividend_negative = (u32)(high >> 63u);
+    u32 divisor_negative = (u32)(divisor >> 63u);
+    u64 magnitude_high = high;
+    u64 magnitude_low = low;
+    if (dividend_negative) {
+        magnitude_low = ~low + 1u;
+        magnitude_high = ~high + (magnitude_low == 0);
+    }
+    u64 magnitude_divisor = divisor_negative ? 0u - divisor : divisor;
+    u64 magnitude_quotient = 0;
+    u64 magnitude_remainder = 0;
+    if (!x86_unsigned_divide_wide(
+            magnitude_high, magnitude_low, magnitude_divisor,
+            &magnitude_quotient, &magnitude_remainder))
+        return 0;
+    u32 negative = dividend_negative ^ divisor_negative;
+    if ((!negative && magnitude_quotient > 0x7fffffffffffffffull)
+            || (negative && magnitude_quotient > 0x8000000000000000ull))
+        return 0;
+    *quotient = negative ? 0u - magnitude_quotient : magnitude_quotient;
+    *remainder = dividend_negative
+               ? 0u - magnitude_remainder : magnitude_remainder;
+    return 1;
 }
 
 static int x86_service_step_memory(u64 session, int status)
@@ -4639,9 +5003,12 @@ static int x86_service_step_memory(u64 session, int status)
             return x86_fail(21u);
         physical_page = x86->physical_page[slot];
     } else {
-        int translated = x86_translate_page(virtual_page, &physical_page);
+        int write = x86_step_fault_is_write();
+        int translated = x86_translate_page(
+            virtual_page, write, 0,
+            (x86->system[X86_SYS_CS] & 3u) != 0u, &physical_page);
         if (translated < 0) return x86_raise_page_fault(
-            step->requested_memory_address, x86_step_fault_is_write());
+            step->requested_memory_address, write, 0, translated == -2);
         if (!translated) return (int)x86->physical_status;
         if (!x86_physical_present(physical_page))
             return (int)x86->physical_status;
@@ -4650,6 +5017,7 @@ static int x86_service_step_memory(u64 session, int status)
     if (status == STEP_MEMORY_PAGE) {
         x86->step_physical_slot[step_slot] = slot;
         x86->step_physical_valid[step_slot] = 1u;
+        x86->step_physical_write[step_slot] = x86_step_fault_is_write();
         if (!vm_step_supply_memory_coordinate(
                 session, lease, virtual_page, X86_PHYSICAL_PAGE_BYTES))
             return x86_fail(22u);
@@ -4718,12 +5086,16 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
         x86->block_cache_valid[slot] = 0;
     }
     x86->exception_pending = 0;
+    x86->exception_vector = 0;
+    x86->exception_has_error = 0;
     x86->exception_error = 0;
     x86->console_lease = 0;
     x86->console_status = 0;
-    x86->console_value = 0;
+    x86->console_output_count = 0;
     x86->clock_lease = 0;
     x86->clock_status = 0;
+    x86->entropy_lease = 0;
+    x86->entropy_status = 0;
     x86->console_head = 0;
     x86->console_count = 0;
     for (u32 index = 0; index < 8u; ++index) {
@@ -4734,6 +5106,10 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
     x86->pit_low_latch = 0;
     x86->pit_read_phase = 0;
     x86->pit_write_phase = 0;
+    x86->pic_mask[0] = 0xffu;
+    x86->pic_mask[1] = 0xffu;
+    x86->timer_source_instructions = 0;
+    x86->uart_tx_pending = 0;
     x86->active = 1;
     x86->halted = 0;
     x86->error = 0;
@@ -4750,6 +5126,7 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
     for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
         x86->step_physical_slot[slot] = 0;
         x86->step_physical_valid[slot] = 0;
+        x86->step_physical_write[slot] = 0;
     }
     return vm_step_memory_open_virtual(session, 12u);
 }
@@ -4758,6 +5135,39 @@ EXPORT u64 vm_x86_physical_lease(u64 session)
 {
     return step_session_is(session) && x86_machine()->physical_status
          ? x86_machine()->physical_lease : 0;
+}
+
+EXPORT u64 vm_x86_first_dirty_physical_page(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || x86->physical_status
+            || step_machine()->execution_active)
+        return X86_NO_PAGE;
+    /* A completed STEP may still own dirty virtual slots.  Their bytes live
+     * directly in the x86 physical cache, but ownership is not published to
+     * physical_dirty until the STEP flush is acknowledged.  Drain that first
+     * so a persistent cut has one canonical backing-store root. */
+    while (vm_step_first_dirty_memory_coordinate(session)
+            != STEP_NO_COORDINATE) {
+        int serviced = x86_service_step_memory(session, STEP_DIRTY_PAGE);
+        if (serviced != STEP_OK) return X86_NO_PAGE;
+    }
+    for (u32 slot = 0; slot < X86_PHYSICAL_PAGES; ++slot) {
+        if (!x86->physical_valid[slot] || !x86->physical_dirty[slot])
+            continue;
+        u64 lease = step_new_capability();
+        if (!lease) {
+            x86_fail(20u);
+            return X86_NO_PAGE;
+        }
+        for (u32 index = 0; index < X86_PHYSICAL_PAGE_BYTES; ++index)
+            x86->physical_transfer[index] = x86->physical[slot][index];
+        x86->physical_lease = lease;
+        x86->physical_coordinate = x86->physical_page[slot];
+        x86->physical_status = X86_DIRTY_PHYSICAL;
+        return x86->physical_coordinate;
+    }
+    return X86_NO_PAGE;
 }
 
 EXPORT u64 vm_x86_physical_coordinate(u64 session, u64 lease)
@@ -4832,7 +5242,27 @@ EXPORT u32 vm_x86_console_value(u64 session, u64 lease)
     return step_session_is(session)
         && x86->console_status == X86_CONSOLE_WRITE
         && lease && x86->console_lease == lease
-         ? x86->console_value : 0;
+         ? x86->console_output[0] : 0;
+}
+
+EXPORT u32 vm_x86_console_output_count(u64 session, u64 lease)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+        && x86->console_status == X86_CONSOLE_WRITE
+        && lease && x86->console_lease == lease
+         ? x86->console_output_count : 0;
+}
+
+EXPORT u32 vm_x86_console_output_peek(
+        u64 session, u64 lease, u32 index)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+        && x86->console_status == X86_CONSOLE_WRITE
+        && lease && x86->console_lease == lease
+        && index < x86->console_output_count
+         ? x86->console_output[index] : 0;
 }
 
 EXPORT int vm_x86_ack_console(u64 session, u64 lease)
@@ -4844,8 +5274,36 @@ EXPORT int vm_x86_ack_console(u64 session, u64 lease)
         return 0;
     x86->console_lease = 0;
     x86->console_status = 0;
-    x86->console_value = 0;
+    x86->console_output_count = 0;
     return 1;
+}
+
+EXPORT int vm_x86_restore_console_output(u64 session, u32 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active || x86->console_status
+            || value > 0xffu
+            || x86->console_output_count >= X86_CONSOLE_OUTPUT_CAP)
+        return 0;
+    x86->console_output[x86->console_output_count++] = (u8)value;
+    if ((x86->uart[1] & 2u) && !(x86->uart[3] & 0x80u))
+        x86->uart_tx_pending = 1u;
+    return 1;
+}
+
+EXPORT u32 vm_x86_pending_console_output_count(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->active
+         ? x86->console_output_count : 0;
+}
+
+EXPORT u32 vm_x86_pending_console_output_peek(u64 session, u32 index)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->active
+        && index < x86->console_output_count
+         ? x86->console_output[index] : 0;
 }
 
 EXPORT int vm_x86_console_feed(u64 session, u32 value)
@@ -4858,7 +5316,82 @@ EXPORT int vm_x86_console_feed(u64 session, u32 value)
              & (X86_CONSOLE_CAP - 1u);
     x86->console_input[tail] = (u8)value;
     x86->console_count += 1u;
+    x86->halted = 0;
     return 1;
+}
+
+/* Canonical device coordinates used by the build-time machine as well.  A
+ * restart needs device state, not cache contents: the latter may be dropped
+ * and reconstructed without changing the next port observation. */
+EXPORT int vm_x86_io_valid(u64 session, u32 coordinate)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active) return 0;
+    if (coordinate >= 0x3f8u && coordinate <= 0x3ffu)
+        return x86->uart_valid[coordinate - 0x3f8u] != 0u;
+    if (coordinate == 0x21u || coordinate == 0xa1u) return 1;
+    return coordinate >= 0x10042u && coordinate <= 0x10047u;
+}
+
+EXPORT u64 vm_x86_io_value(u64 session, u32 coordinate)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!vm_x86_io_valid(session, coordinate)) return 0;
+    if (coordinate >= 0x3f8u && coordinate <= 0x3ffu)
+        return x86->uart[coordinate - 0x3f8u];
+    if (coordinate == 0x21u || coordinate == 0xa1u)
+        return x86->pic_mask[coordinate == 0xa1u];
+    if (coordinate == 0x10042u) return x86->pit_counter;
+    if (coordinate == 0x10043u) return x86->pit_read_phase;
+    if (coordinate == 0x10044u) return x86->pit_write_phase;
+    if (coordinate == 0x10045u) return x86->pit_low_latch;
+    if (coordinate == 0x10046u) return x86->timer_source_instructions;
+    return x86->uart_tx_pending;
+}
+
+EXPORT int vm_x86_restore_io(u64 session, u32 coordinate, u64 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active || value > 0xffffffffu)
+        return 0;
+    if (coordinate >= 0x3f8u && coordinate <= 0x3ffu) {
+        u32 slot = coordinate - 0x3f8u;
+        if (value > 0xffu) return 0;
+        x86->uart[slot] = (u8)value;
+        x86->uart_valid[slot] = 1u;
+        return 1;
+    }
+    if (coordinate == 0x21u || coordinate == 0xa1u) {
+        if (value > 0xffu) return 0;
+        x86->pic_mask[coordinate == 0xa1u] = (u8)value;
+        return 1;
+    }
+    if (coordinate == 0x10042u) x86->pit_counter = (u32)value & 0xffffu;
+    else if (coordinate == 0x10043u) x86->pit_read_phase = (u32)value & 1u;
+    else if (coordinate == 0x10044u) x86->pit_write_phase = (u32)value & 1u;
+    else if (coordinate == 0x10045u)
+        x86->pit_low_latch = (u32)value & 0xffu;
+    else if (coordinate == 0x10046u)
+        x86->timer_source_instructions = (u32)value & 0xfffu;
+    else if (coordinate == 0x10047u)
+        x86->uart_tx_pending = (u32)value & 1u;
+    else return 0;
+    return 1;
+}
+
+EXPORT u32 vm_x86_console_count(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->console_count : 0;
+}
+
+EXPORT u32 vm_x86_console_peek(u64 session, u32 index)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || index >= x86->console_count)
+        return 0;
+    return x86->console_input[(x86->console_head + index)
+                            & (X86_CONSOLE_CAP - 1u)];
 }
 
 EXPORT u64 vm_x86_clock_lease(u64 session)
@@ -4883,10 +5416,44 @@ EXPORT int vm_x86_supply_clock(u64 session, u64 lease, u64 value)
     return 1;
 }
 
+EXPORT u64 vm_x86_entropy_lease(u64 session)
+{
+    return step_session_is(session) && x86_machine()->entropy_status
+         ? x86_machine()->entropy_lease : 0;
+}
+
+EXPORT int vm_x86_supply_entropy(u64 session, u64 lease, u64 value)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session)
+            || x86->entropy_status != X86_ENTROPY
+            || !lease || x86->entropy_lease != lease)
+        return 0;
+    u32 descriptor = (u32)x86->control_argument[1];
+    u32 reg = descriptor & 0xffu;
+    u32 bits = (descriptor >> 8u) & 0xffu;
+    u32 source = (descriptor >> 16u) & 1u;
+    if (reg >= X86_REGISTER_COUNT || (bits != 32u && bits != 64u)
+            || descriptor != (reg | (bits << 8u) | (source << 16u)))
+        return 0;
+    x86->registers[reg] = bits == 32u ? (u32)value : value;
+    x86->rflags = (x86->rflags & ~0x8d5ull) | 3u;
+    x86->rip = x86->control_argument[0];
+    x86->entropy_lease = 0;
+    x86->entropy_status = 0;
+    return 1;
+}
+
 EXPORT u64 *vm_x86_registers(u64 session)
 {
     return step_session_is(session) && x86_machine()->active
          ? x86_machine()->registers : (u64 *)0;
+}
+
+EXPORT u64 *vm_x86_xmm(u64 session)
+{
+    return step_session_is(session) && x86_machine()->active
+         ? x86_machine()->xmm : (u64 *)0;
 }
 
 EXPORT u64 *vm_x86_system(u64 session)
@@ -4982,8 +5549,127 @@ EXPORT int vm_x86_halted(u64 session)
     return step_session_is(session) && x86_machine()->halted;
 }
 
-/* The caller places one record in vm_step_buffer().  A record is a 64-byte
- * fixed header followed directly by one packed STEP page. */
+static int x86_apply_step_parameters(u8 *page, u32 bytes,
+                                     const u8 *template, u32 template_bytes,
+                                     const u8 *parameters,
+                                     u32 parameter_bytes)
+{
+    static const u8 widths[STEP_COLUMN_COUNT] = {
+        4, 4, 1, 4, 1, 8, 1, 8, 4, 1, 8,
+    };
+    if (bytes < STEP_HEADER_BYTES || template_bytes < 52u
+            || template[0] != 'S' || template[1] != 'T'
+            || template[2] != 'Q' || template[3] != 'T'
+            || read_u16(template + 4u) != 1u
+            || read_u16(template + 6u) != 52u)
+        return 0;
+    u32 span = read_u32(template + 24u);
+    u32 work = read_u32(template + 28u);
+    u32 operands = read_u32(template + 32u);
+    u32 stack_count = read_u32(template + 40u);
+    u32 local_updates = read_u32(template + 48u);
+    u32 expected[STEP_COLUMN_COUNT] = {
+        span + 1u, work, work, work + 1u, operands, operands,
+        stack_count, stack_count, local_updates, local_updates,
+        local_updates,
+    };
+    u32 offset[STEP_COLUMN_COUNT];
+    u32 count[STEP_COLUMN_COUNT];
+    u32 end = STEP_HEADER_BYTES;
+    for (u32 column = 0; column < STEP_COLUMN_COUNT; ++column) {
+        end = align8(end);
+        offset[column] = end;
+        count[column] = expected[column];
+        if (count[column] > (bytes - end) / widths[column])
+            return 0;
+        end += count[column] * widths[column];
+    }
+    if (end != bytes) return 0;
+
+    for (u32 index = 0; index < bytes; ++index) page[index] = 0;
+    page[0] = 'S'; page[1] = 'T'; page[2] = 'E'; page[3] = 'P';
+    page[4] = 3u; page[5] = 0u;
+    page[6] = (u8)STEP_HEADER_BYTES;
+    page[7] = (u8)(STEP_HEADER_BYTES >> 8u);
+    for (u32 index = 8u; index < 52u; ++index)
+        page[index] = template[index];
+    for (u32 column = 0; column < STEP_COLUMN_COUNT; ++column) {
+        u32 directory = 52u + column * 8u;
+        store_u32(page + directory, offset[column]);
+        store_u32(page + directory + 4u, count[column]);
+    }
+
+    u32 template_cursor = 52u;
+    static const u8 fixed_columns[4] = {
+        STEP_WAVE_OFFSETS, STEP_LANE_VALUES,
+        STEP_OPCODES, STEP_ARGUMENT_OFFSETS,
+    };
+    for (u32 fixed = 0; fixed < 4u; ++fixed) {
+        u32 column = fixed_columns[fixed];
+        u32 extent = count[column] * widths[column];
+        if (template_cursor > template_bytes
+                || extent > template_bytes - template_cursor)
+            return 0;
+        for (u32 index = 0; index < extent; ++index)
+            page[offset[column] + index] = template[template_cursor + index];
+        template_cursor += extent;
+    }
+
+    u32 parameter_cursor = 0;
+    static const u8 tag_columns[3] = {
+        STEP_OPERAND_TAGS, STEP_STACK_TAGS, STEP_LOCAL_TAGS,
+    };
+    static const u8 value_columns[3] = {
+        STEP_OPERAND_VALUES, STEP_STACK_VALUES, STEP_LOCAL_VALUES,
+    };
+    for (u32 pair = 0; pair < 3u; ++pair) {
+        u32 tags = tag_columns[pair];
+        u32 values = value_columns[pair];
+        if (template_cursor > template_bytes
+                || count[tags] > template_bytes - template_cursor)
+            return 0;
+        for (u32 index = 0; index < count[tags]; ++index)
+            page[offset[tags] + index] = template[template_cursor + index];
+        template_cursor += count[tags];
+        for (u32 index = 0; index < count[tags]; ++index) {
+            u32 tag = page[offset[tags] + index];
+            if (tag > 4u) return 0;
+            u32 width = tag == 0u ? 8u : tag == 1u || tag == 2u ? 2u : 0u;
+            u8 *target = page + offset[values] + index * 8u;
+            u64 value;
+            if (width) {
+                if (parameter_cursor > parameter_bytes
+                        || width > parameter_bytes - parameter_cursor)
+                    return 0;
+                value = width == 8u
+                      ? load_u64(parameters + parameter_cursor)
+                      : read_u16(parameters + parameter_cursor);
+                parameter_cursor += width;
+            } else {
+                if (template_cursor > template_bytes
+                        || 8u > template_bytes - template_cursor)
+                    return 0;
+                value = load_u64(template + template_cursor);
+                template_cursor += 8u;
+            }
+            store_u64(target, value);
+        }
+    }
+    for (u32 index = 0; index < count[STEP_LOCAL_INDICES]; ++index) {
+        u8 *target = page + offset[STEP_LOCAL_INDICES] + index * 4u;
+        if (parameter_cursor > parameter_bytes
+                || 2u > parameter_bytes - parameter_cursor)
+            return 0;
+        store_u32(target, read_u16(parameters + parameter_cursor));
+        parameter_cursor += 2u;
+    }
+    return (template_cursor == template_bytes
+            && parameter_cursor == parameter_bytes);
+}
+
+/* The caller places one record in vm_step_buffer(). Version two carries exact
+ * executable bytes and a STEP. Version three carries the same proof followed
+ * by a typed parameter projection and a shared SSA template. */
 EXPORT int vm_x86_load_block(u64 session, u32 bytes)
 {
     if (!step_session_is(session)) return STEP_TRAP;
@@ -4992,36 +5678,106 @@ EXPORT int vm_x86_load_block(u64 session, u32 bytes)
     const u8 *record = step->page;
     if (!x86->active || x86->halted || x86->error || x86->block_loaded
             || step->execution_active || step->memory_status
+            || bytes > STEP_PAGE_BYTES
             || bytes < X86_BLOCK_HEADER_BYTES
             || record[0] != 'X' || record[1] != '8'
             || record[2] != '6' || record[3] != 'B'
-            || read_u16(record + 4u) != 1u
+            || (read_u16(record + 4u) != 1u
+                && read_u16(record + 4u) != 2u
+                && read_u16(record + 4u) != 3u)
             || read_u16(record + 6u) != X86_BLOCK_HEADER_BYTES
             || load_u64(record + 8u) != x86->rip)
         return x86_fail(1u);
+    u32 version = read_u16(record + 4u);
     u64 boundary_rip = load_u64(record + 16u);
     u32 step_bytes = read_u32(record + 24u);
     u32 control = read_u32(record + 28u);
-    if (!step_bytes || step_bytes != bytes - X86_BLOCK_HEADER_BYTES
-            || control > X86_CONTROL_CLOCK)
+    u32 parameter_bytes = version == 3u ? read_u32(record + 56u) : 0u;
+    u32 template_bytes = version == 3u ? read_u32(record + 60u)
+                                         : step_bytes;
+    if (!step_bytes || !template_bytes
+            || template_bytes > bytes - X86_BLOCK_HEADER_BYTES
+            || parameter_bytes > bytes - X86_BLOCK_HEADER_BYTES
+                                  - template_bytes
+            || control > X86_CONTROL_SIMD_LOAD)
         return x86_fail(2u);
+    u32 guard_bytes = bytes - X86_BLOCK_HEADER_BYTES
+                    - parameter_bytes - template_bytes;
+    u32 cache_slot = x86_block_cache_slot(x86->rip);
+    if ((version == 1u && (guard_bytes || parameter_bytes))
+            || (version == 2u && guard_bytes < 2u))
+        return x86_fail(2u);
+    if (version == 2u || (version == 3u && guard_bytes)) {
+        const u8 *guard = record + X86_BLOCK_HEADER_BYTES;
+        u32 count = read_u16(guard);
+        u32 cursor = 2u;
+        if (!count) return x86_fail(2u);
+        for (u32 index = 0; index < count; ++index) {
+            if (cursor > guard_bytes || guard_bytes - cursor < 10u)
+                return x86_fail(2u);
+            u64 address = load_u64(guard + cursor);
+            u32 length = read_u16(guard + cursor + 8u);
+            cursor += 10u;
+            if (!length || cursor > guard_bytes
+                    || guard_bytes - cursor < length)
+                return x86_fail(2u);
+            int matches = x86_virtual_matches(
+                address, guard + cursor, length);
+            if (!matches) return (int)x86->physical_status;
+            if (matches < 0) {
+                x86->block_cache_valid[cache_slot] = 0;
+                return X86_CODE_MISMATCH;
+            }
+            cursor += length;
+        }
+        if (cursor != guard_bytes) return x86_fail(2u);
+    }
     x86->control = control;
     x86->control_argument[0] = load_u64(record + 32u);
     x86->control_argument[1] = load_u64(record + 40u);
     x86->control_argument[2] = load_u64(record + 48u);
-    u32 cache_slot = (u32)x86->rip & (X86_BLOCK_CACHE_SLOTS - 1u);
-    u32 cacheable = bytes <= X86_BLOCK_CACHE_BYTES;
+    u32 resident_bytes = X86_BLOCK_HEADER_BYTES + guard_bytes + step_bytes;
+    u32 cacheable = resident_bytes <= X86_BLOCK_CACHE_BYTES;
     if (cacheable) {
         x86->block_cache_valid[cache_slot] = 0;
-        for (u32 index = 0; index < bytes; ++index)
+        for (u32 index = 0; index < X86_BLOCK_HEADER_BYTES + guard_bytes;
+             ++index)
             x86->block_cache[cache_slot][index] = record[index];
+        if (version == 3u) {
+            x86->block_cache[cache_slot][4] = guard_bytes ? 2u : 1u;
+            x86->block_cache[cache_slot][5] = 0u;
+            for (u32 index = 56u; index < X86_BLOCK_HEADER_BYTES; ++index)
+                x86->block_cache[cache_slot][index] = 0u;
+        }
     }
     /* NEXT and TIMESLICE use the boundary coordinate without duplicating it
      * in the control argument columns. */
     if (control == X86_CONTROL_NEXT || control == X86_CONTROL_TIMESLICE)
         x86->control_argument[0] = boundary_rip;
-    for (u32 index = 0; index < step_bytes; ++index)
-        step->page[index] = step->page[X86_BLOCK_HEADER_BYTES + index];
+    u32 step_offset = X86_BLOCK_HEADER_BYTES + guard_bytes + parameter_bytes;
+    if (version == 3u) {
+        u32 projection_bytes = parameter_bytes + template_bytes;
+        u32 projection_source = X86_BLOCK_HEADER_BYTES + guard_bytes;
+        u32 projection_target = STEP_PAGE_BYTES - projection_bytes;
+        if (step_bytes > projection_target) return x86_fail(3u);
+        for (u32 index = projection_bytes; index; --index)
+            step->page[projection_target + index - 1u] =
+                step->page[projection_source + index - 1u];
+        if (!x86_apply_step_parameters(
+                step->page, step_bytes,
+                step->page + projection_target + parameter_bytes,
+                template_bytes, step->page + projection_target,
+                parameter_bytes))
+            return x86_fail(3u);
+    } else {
+        for (u32 index = 0; index < step_bytes; ++index)
+            step->page[index] = step->page[step_offset + index];
+    }
+    if (cacheable)
+        for (u32 index = 0; index < step_bytes; ++index)
+            x86->block_cache[cache_slot][
+                X86_BLOCK_HEADER_BYTES + guard_bytes + index] =
+                step->page[index];
     if (!vm_step_open(session, step_bytes)
             || step->local_extent < X86_REGISTER_COUNT + 1u)
         return x86_fail(3u);
@@ -5041,9 +5797,43 @@ EXPORT int vm_x86_load_block(u64 session, u32 bytes)
             return x86_fail(3u);
         step->locals[local] = x86->system[X86_SYS_ES + segment] & 0xffffu;
     }
+    if (control == X86_CONTROL_STORE_DESCRIPTOR) {
+        u32 name = (u32)x86->control_argument[1];
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 limit_local = descriptor & 0xffu;
+        u32 base_local = (descriptor >> 8u) & 0xffu;
+        u32 system = name ? X86_SYS_IDTR_BASE : X86_SYS_GDTR_BASE;
+        if (name > 1u || limit_local < X86_REGISTER_COUNT + 1u
+                || base_local != limit_local + 1u
+                || base_local >= step->local_extent
+                || descriptor != (limit_local | (base_local << 8u)))
+            return x86_fail(3u);
+        step->locals[limit_local] = x86->system[system + 1u] & 0xffffu;
+        step->locals[base_local] = x86->system[system];
+    }
+    if (control == X86_CONTROL_SIMD_STORE) {
+        u32 vector = (u32)x86->control_argument[1];
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 low = descriptor & 0xffu;
+        u32 high = (descriptor >> 8u) & 0xffu;
+        if (vector >= 16u || low < X86_REGISTER_COUNT + 1u
+                || high != low + 1u || high >= step->local_extent
+                || descriptor != (low | (high << 8u)))
+            return x86_fail(44u);
+        step->locals[low] = x86->xmm[vector * 2u];
+        step->locals[high] = x86->xmm[vector * 2u + 1u];
+    }
+    if (control == X86_CONTROL_SEGMENT_MEMORY) {
+        u32 segment = (u32)x86->control_argument[1];
+        u32 local = (u32)x86->control_argument[2];
+        if (segment > 1u || local < X86_REGISTER_COUNT + 1u
+                || local >= step->local_extent)
+            return x86_fail(47u);
+        step->locals[local] = x86_msr_read(0xc0000100u + segment);
+    }
     if (cacheable) {
         x86->block_cache_rip[cache_slot] = x86->rip;
-        x86->block_cache_bytes[cache_slot] = bytes;
+        x86->block_cache_bytes[cache_slot] = resident_bytes;
         x86->block_cache_valid[cache_slot] = 1u;
     }
     x86->block_loaded = 1;
@@ -5059,7 +5849,7 @@ EXPORT int vm_x86_load_cached_block(u64 session)
     StepWorkspace *step = step_machine();
     if (!x86->active || x86->halted || x86->error || x86->block_loaded)
         return STEP_TRAP;
-    u32 slot = (u32)x86->rip & (X86_BLOCK_CACHE_SLOTS - 1u);
+    u32 slot = x86_block_cache_slot(x86->rip);
     if (!x86->block_cache_valid[slot]
             || x86->block_cache_rip[slot] != x86->rip)
         return 0;
@@ -5068,7 +5858,10 @@ EXPORT int vm_x86_load_cached_block(u64 session)
         return x86_fail(36u);
     for (u32 index = 0; index < bytes; ++index)
         step->page[index] = x86->block_cache[slot][index];
-    return vm_x86_load_block(session, bytes);
+    int loaded = vm_x86_load_block(session, bytes);
+    if (loaded == X86_CODE_MISMATCH)
+        x86->block_cache_valid[slot] = 0;
+    return loaded;
 }
 
 EXPORT int vm_x86_execute(u64 session)
@@ -5078,9 +5871,15 @@ EXPORT int vm_x86_execute(u64 session)
     StepWorkspace *step = step_machine();
     if (!x86->active || x86->error) return x86_fail(4u);
     if (x86->halted) return X86_HALTED;
+    /* A restored snapshot may already own bytes written before its cut.
+     * Publish them before executing another guest block. */
+    if (!x86->console_status && x86->console_output_count
+            && !x86_publish_console_output(x86))
+        return x86_fail(44u);
     if (x86->console_status) return (int)x86->console_status;
     if (x86->clock_status) return (int)x86->clock_status;
-    if (x86->exception_pending) return x86_deliver_page_fault();
+    if (x86->entropy_status) return (int)x86->entropy_status;
+    if (x86->exception_pending) return x86_deliver_exception();
     if (!x86->block_loaded) return X86_NEED_BLOCK;
     int status;
     for (;;) {
@@ -5162,6 +5961,20 @@ EXPORT int vm_x86_execute(u64 session)
         } else {
             return x86_fail(25u);
         }
+    } else if (x86->control == X86_CONTROL_DEBUG_REGISTER) {
+        u32 descriptor = (u32)x86->control_argument[1];
+        u32 opcode = descriptor & 0xffu;
+        u32 debug = (descriptor >> 8u) & 0xffu;
+        u32 reg = (descriptor >> 16u) & 0xffu;
+        if (debug >= 8u || reg >= X86_REGISTER_COUNT
+                || descriptor != (opcode | (debug << 8u) | (reg << 16u)))
+            return x86_fail(37u);
+        if (opcode == 0x21u)
+            x86->registers[reg] = x86->system[X86_SYS_DEBUG + debug];
+        else if (opcode == 0x23u)
+            x86->system[X86_SYS_DEBUG + debug] = x86->registers[reg];
+        else
+            return x86_fail(37u);
     } else if (x86->control == X86_CONTROL_SEGMENT) {
         u32 segment = (u32)x86->control_argument[1];
         u32 reg = (u32)x86->control_argument[2];
@@ -5185,8 +5998,9 @@ EXPORT int vm_x86_execute(u64 session)
         x86->system[X86_SYS_CS] = step->locals[selector] & 0xffffu;
     } else if (x86->control == X86_CONTROL_DIVIDE) {
         u32 error = (u32)x86->control_argument[1];
-        if (error >= step->local_extent || step->locals[error])
-            return x86_fail(29u);
+        if (error >= step->local_extent) return x86_fail(29u);
+        if (step->locals[error]) return x86_begin_exception(
+            0u, x86->control_argument[2], 0u, 0u);
     } else if (x86->control == X86_CONTROL_INTERRUPT_RETURN) {
         u32 target = (u32)x86->control_argument[0];
         u32 selector = (u32)x86->control_argument[1];
@@ -5255,18 +6069,239 @@ EXPORT int vm_x86_execute(u64 session)
         x86->clock_lease = step_new_capability();
         if (!x86->clock_lease) return x86_fail(35u);
         x86->clock_status = X86_CLOCK;
+    } else if (x86->control == X86_CONTROL_EXCEPTION) {
+        u64 encoded_error = x86->control_argument[2];
+        if (x86->control_argument[1] > 0xffu
+                || (encoded_error != ~0ull && encoded_error > 0xffffffffu))
+            return x86_fail(38u);
+        return x86_begin_exception(
+            (u32)x86->control_argument[1], next,
+            encoded_error != ~0ull, (u32)encoded_error);
+    } else if (x86->control == X86_CONTROL_WIDE_DIVIDE) {
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 reg = descriptor & 0xffu;
+        u32 signed_divide = (descriptor >> 8u) & 1u;
+        u64 quotient = 0;
+        u64 remainder = 0;
+        if (reg >= X86_REGISTER_COUNT
+                || descriptor != (reg | (signed_divide << 8u)))
+            return x86_fail(39u);
+        if (!x86_divide_wide(
+                x86->registers[X86_RDX], x86->registers[X86_RAX],
+                x86->registers[reg], signed_divide,
+                &quotient, &remainder))
+            return x86_begin_exception(
+                0u, x86->control_argument[1], 0u, 0u);
+        x86->registers[X86_RAX] = quotient;
+        x86->registers[X86_RDX] = remainder;
+    } else if (x86->control == X86_CONTROL_RECURRENCE) {
+        u32 descriptor = (u32)x86->control_argument[1];
+        u32 local = descriptor & 0xffu;
+        u32 bits = (descriptor >> 8u) & 0xffu;
+        u64 source_instructions = x86->control_argument[2];
+        if (local < X86_REGISTER_COUNT + 1u || local >= step->local_extent
+                || (bits != 32u && bits != 64u)
+                || descriptor != (local | (bits << 8u))
+                || !source_instructions)
+            return x86_fail(40u);
+        u64 iterations = step->locals[local];
+        if (bits == 32u) iterations = (u32)iterations;
+        x86->retired -= step->instructions;
+        x86->retired += iterations * source_instructions;
+    } else if (x86->control == X86_CONTROL_ENTROPY) {
+        u32 descriptor = (u32)x86->control_argument[1];
+        u32 reg = descriptor & 0xffu;
+        u32 bits = (descriptor >> 8u) & 0xffu;
+        u32 source = (descriptor >> 16u) & 1u;
+        if (reg >= X86_REGISTER_COUNT || (bits != 32u && bits != 64u)
+                || descriptor != (reg | (bits << 8u) | (source << 16u)))
+            return x86_fail(41u);
+        x86->entropy_lease = step_new_capability();
+        if (!x86->entropy_lease) return x86_fail(41u);
+        x86->entropy_status = X86_ENTROPY;
+    } else if (x86->control == X86_CONTROL_STORE_DESCRIPTOR) {
+        /* The descriptor value was injected before STEP execution; the two
+         * stores and any page fault therefore use the common memory path. */
+    } else if (x86->control == X86_CONTROL_SYSTEM_SEGMENT) {
+        u32 name = (u32)x86->control_argument[1];
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 source = descriptor & 0xffu;
+        u32 memory = (descriptor >> 8u) & 1u;
+        if (name > 1u || source >= step->local_extent
+                || (memory && source < X86_REGISTER_COUNT + 1u)
+                || (!memory && source >= X86_REGISTER_COUNT)
+                || descriptor != (source | (memory << 8u)))
+            return x86_fail(42u);
+        x86->system[X86_SYS_LDTR + name] = step->locals[source] & 0xffffu;
+    } else if (x86->control == X86_CONTROL_SWAP_GS) {
+        u64 current = x86_msr_read(0xc0000101u);
+        u64 kernel = x86_msr_read(0xc0000102u);
+        if (!x86_msr_write(0xc0000101u, kernel)
+                || !x86_msr_write(0xc0000102u, current))
+            return x86_fail(43u);
+    } else if (x86->control == X86_CONTROL_SYSCALL) {
+        if (!(x86->efer & 1u))
+            return x86_begin_exception(6u, x86->rip, 0u, 0u);
+        u64 star = x86_msr_read(0xc0000081u);
+        x86->registers[X86_RCX] = next;
+        x86->registers[X86_R11] = x86->rflags;
+        x86->rflags &= ~x86_msr_read(0xc0000084u);
+        x86->rflags |= 2u;
+        u64 selector = (star >> 32u) & 0xfffcu;
+        x86->system[X86_SYS_CS] = selector;
+        x86->system[X86_SYS_SS] = (selector + 8u) & 0xffffu;
+        next = x86_msr_read(0xc0000082u);
+    } else if (x86->control == X86_CONTROL_SYSRET) {
+        u64 star = x86_msr_read(0xc0000081u);
+        u64 selector = (star >> 48u) & 0xffffu;
+        next = x86->registers[X86_RCX];
+        x86->rflags = x86->registers[X86_R11] | 2u;
+        x86->system[X86_SYS_CS] = (selector + 16u) | 3u;
+        x86->system[X86_SYS_SS] = (selector + 8u) | 3u;
+    } else if (x86->control == X86_CONTROL_SIMD_MOVE) {
+        u32 descriptor = (u32)x86->control_argument[1];
+        u32 vector = descriptor & 0xffu;
+        u32 source = (descriptor >> 8u) & 0xffu;
+        if (vector >= 16u || source >= X86_REGISTER_COUNT
+                || descriptor != (vector | (source << 8u)))
+            return x86_fail(45u);
+        x86->xmm[vector * 2u] = x86->registers[source];
+        x86->xmm[vector * 2u + 1u] = 0;
+    } else if (x86->control == X86_CONTROL_SIMD_UNPACK) {
+        u32 descriptor = (u32)x86->control_argument[1];
+        u32 vector = descriptor & 0xffu;
+        u32 source = (descriptor >> 8u) & 0xffu;
+        if (vector >= 16u || source >= 16u
+                || descriptor != (vector | (source << 8u)))
+            return x86_fail(46u);
+        x86->xmm[vector * 2u + 1u] = x86->xmm[source * 2u];
+    } else if (x86->control == X86_CONTROL_SIMD_STORE) {
+        /* Both disjoint 64-bit stores ran through the ordinary memory STEP. */
+    } else if (x86->control == X86_CONTROL_SEGMENT_MEMORY) {
+        /* The admitted FS/GS base participated in the ordinary memory STEP. */
+    } else if (x86->control == X86_CONTROL_SIMD_XOR) {
+        u32 descriptor = (u32)x86->control_argument[1];
+        u32 vector = descriptor & 0xffu;
+        u32 source = (descriptor >> 8u) & 0xffu;
+        if (vector >= 16u || source >= 16u
+                || descriptor != (vector | (source << 8u)))
+            return x86_fail(48u);
+        x86->xmm[vector * 2u] ^= x86->xmm[source * 2u];
+        x86->xmm[vector * 2u + 1u] ^= x86->xmm[source * 2u + 1u];
+    } else if (x86->control == X86_CONTROL_SIMD_LOAD) {
+        u32 vector = (u32)x86->control_argument[1];
+        u32 descriptor = (u32)x86->control_argument[2];
+        u32 low = descriptor & 0xffu;
+        u32 high = (descriptor >> 8u) & 0xffu;
+        if (vector >= 16u || low < X86_REGISTER_COUNT + 1u
+                || high != low + 1u || high >= step->local_extent
+                || descriptor != (low | (high << 8u)))
+            return x86_fail(49u);
+        x86->xmm[vector * 2u] = step->locals[low];
+        x86->xmm[vector * 2u + 1u] = step->locals[high];
     } else if (x86->control == X86_CONTROL_HALT) {
         x86->halted = 1;
     }
-    if (!x86->clock_status) x86->rip = next;
+    if (!x86->clock_status && !x86->entropy_status) x86->rip = next;
     u32 control = x86->control;
     x86->block_loaded = 0;
+    /* The build-time machine treats the legacy timer as the deterministic
+     * event at a scheduling cut.  Keep the native path identical: PIC state
+     * is guest-owned, and an unmasked IRQ0 enters the installed 0x30 gate
+     * before another basic block is requested. */
+    if ((control == X86_CONTROL_TIMESLICE || control == X86_CONTROL_HALT)
+            && (x86->rflags & (1u << 9u))) {
+        u32 vector = x86_scheduling_interrupt(x86, 1u);
+        if (vector) {
+            x86->halted = 0;
+            return x86_begin_exception(vector, next, 0u, 0u);
+        }
+    }
     return x86->console_status ? (int)x86->console_status
          : x86->clock_status ? (int)x86->clock_status
+         : x86->entropy_status ? (int)x86->entropy_status
          : control == X86_CONTROL_HALT ? X86_HALTED
          : control == X86_CONTROL_TIMESLICE ? X86_YIELDED
          : control == X86_CONTROL_INTERNAL ? X86_INTERNAL
                                            : X86_NEED_BLOCK;
+}
+
+/* Keep the quotient closed across cached basic-block boundaries.  Host code
+ * regains control only for an absent record, a physical/device barrier, or a
+ * requested scheduling cut; the common cache-hit path never crosses the
+ * WebAssembly boundary. */
+EXPORT int vm_x86_execute_quantum(u64 session, u32 max_blocks)
+{
+    if (!step_session_is(session) || !max_blocks) return STEP_TRAP;
+    X86Workspace *x86 = x86_machine();
+    x86->quantum_blocks = 0;
+    x86->quantum_cache_hits = 0;
+    while (x86->quantum_blocks < max_blocks) {
+        if (!x86->console_status && x86->console_output_count
+                && !x86_publish_console_output(x86))
+            return x86_fail(44u);
+        if (x86->console_status) return (int)x86->console_status;
+        if (!x86->block_loaded && !x86->exception_pending) {
+            int loaded = vm_x86_load_cached_block(session);
+            if (loaded == STEP_OK) {
+                x86->quantum_cache_hits += 1u;
+            } else if (loaded == 0) {
+                return x86_classify_block_miss();
+            } else {
+                return loaded;
+            }
+        }
+        u32 had_block = x86->block_loaded;
+        u64 retired_before = x86->retired;
+        int status = vm_x86_execute(session);
+        if (had_block && !x86->block_loaded && status != X86_INTERNAL) {
+            x86->quantum_blocks += 1u;
+            /* Work while IRQ0 cannot be accepted belongs to the current
+             * barrier interval. Counting the handler itself toward the next
+             * period would publish another IRQ immediately after iret and
+             * starve the interrupted pure path. */
+            if ((x86->rflags & (1u << 9u))
+                    && !(x86->pic_mask[0] & 1u)) {
+                u64 source = x86->retired - retired_before;
+                if (source > 4096u) source = 4096u;
+                source += x86->timer_source_instructions;
+                x86->timer_source_instructions = source >= 4096u
+                                                ? 4096u : (u32)source;
+            }
+        }
+        /* A timer cut belongs to the persistent machine, not to a particular
+         * decoded block.  Otherwise quotienting a polling loop into one
+         * recurrence can accidentally remove the only point at which IRQ0
+         * becomes observable. */
+        u32 vector = x86_scheduling_interrupt(
+            x86, x86->timer_source_instructions >= 4096u);
+        if (vector
+                && !x86->block_loaded && !x86->exception_pending
+                && !x86->console_status && !x86->clock_status
+                && !x86->entropy_status) {
+            u32 blocks = x86->quantum_blocks;
+            u32 hits = x86->quantum_cache_hits;
+            if (vector == 0x30u) x86->timer_source_instructions = 0;
+            status = x86_begin_exception(vector, x86->rip, 0u, 0u);
+            /* Exception entry resets its local execution window.  Preserve
+             * the publication counters that belong to this host quantum. */
+            x86->quantum_blocks = blocks;
+            x86->quantum_cache_hits = hits;
+        }
+        if (status != X86_NEED_BLOCK && status != X86_INTERNAL)
+            return status;
+    }
+    return X86_YIELDED;
+}
+
+EXPORT u32 vm_x86_quantum_blocks(u64 session)
+{
+    return step_session_is(session) ? x86_machine()->quantum_blocks : 0;
+}
+
+EXPORT u32 vm_x86_quantum_cache_hits(u64 session)
+{
+    return step_session_is(session) ? x86_machine()->quantum_cache_hits : 0;
 }
 
 /* --------------------------------------------------------- kernel ABI ---

@@ -10,6 +10,7 @@ from qm.wasmstate import (decode_module, instruction_step,
                           run_until_boundary, start_state)
 from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
                          compile_mapped_executor, memory_shape,
+                         instantiate_step_template, project_step_template,
                          relative_layout, relative_exchange_values,
                          _relative_exchange,
                          StatePageError)
@@ -22,6 +23,24 @@ from tests.test_wasmbinary import encode_uleb, module
 
 
 class TestWaveExecutor(unittest.TestCase):
+    def test_constant_physical_subgraph_is_substituted_before_liveness(self):
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.SHL', (
+                Operand('const', 8590), Operand('const', 2))),
+             WaveNode(2, 'lane64.ADD', (
+                Operand('local', 0), Operand('node', 1)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('node', 2),))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual(physical_work(plan), 1)
+        self.assertEqual(plan.nodes[0].op, 'lane64.ADD')
+        self.assertEqual(
+            plan.nodes[0].arguments,
+            (Operand('local', 0), Operand('const', 34360)))
+
     def test_u32_update_and_flags_share_one_physical_alu_lane(self):
         from qm.laneops import evaluate
         from qm.steppage import (decode_projection_coordinate,
@@ -246,6 +265,37 @@ class TestWaveExecutor(unittest.TestCase):
         expected_flags = evaluate('lane64.X86_FLAGS', (
             prior, left, 0xfffffff0, result, descriptor))
         self.assertEqual(actual, (result, 0x30, expected_flags))
+
+    def test_affine_alu_does_not_remove_a_reused_prefix_dependency(self):
+        from qm.laneops import evaluate
+        from qm.wasmstate import PagedMemory
+
+        descriptor = 64 | (1 << 8)
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.ADDR', (
+                Operand('local', 0), Operand('local', 1))),
+             WaveNode(2, 'lane64.ADDR', (
+                Operand('node', 1), Operand('node', 1))),
+             WaveNode(3, 'lane64.X86_FLAGS', (
+                Operand('local', 2), Operand('node', 1),
+                Operand('node', 1), Operand('node', 2),
+                Operand('const', descriptor)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('node', 2), Operand('local', 1),
+             Operand('node', 3)))
+
+        plan = normalize_plan(raw)
+        execute = compile_mapped_executor(unpack(pack(plan)))
+        actual, _stack = execute(
+            (7, 5, 0x247), (),
+            MemoryCut(PagedMemory(b'', 65536)))
+        expected_flags = evaluate(
+            'lane64.X86_FLAGS', (0x247, 12, 12, 24, descriptor))
+
+        self.assertEqual([node.op for node in plan.nodes], [
+            'lane64.ADDR', 'lane64.X86_ALU'])
+        self.assertEqual(actual, (24, 5, expected_flags))
 
     def test_carry_arithmetic_and_flags_share_one_alu_lane(self):
         from qm.laneops import evaluate
@@ -752,6 +802,60 @@ class TestWaveExecutor(unittest.TestCase):
             'lane64.X86_TEST_CONDITION', 'lane64.X86_TEST'])
         self.assertEqual(plan.nodes[1].arguments[0], Operand('local', 0))
 
+    def test_full_flag_writes_do_not_serialize_through_a_shift(self):
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.SHR', (
+                Operand('local', 1), Operand('const', 10))),
+             WaveNode(2, 'lane64.X86_SHIFT_FLAGS', (
+                 Operand('local', 0), Operand('local', 1),
+                 Operand('node', 1), Operand('const', 10),
+                 Operand('const', 64 | (5 << 8)))),
+             WaveNode(3, 'lane64.X86_TEST', (
+                 Operand('node', 2), Operand('local', 1),
+                 Operand('local', 1), Operand('const', 64))),
+             WaveNode(4, 'lane64.X86_CONDITION', (
+                 Operand('node', 3), Operand('const', 4))),
+             WaveNode(5, 'lane64.X86_COMPARE', (
+                 Operand('node', 3), Operand('local', 2),
+                 Operand('const', 2), Operand('const', 64 | (3 << 8))))),
+            DependencyWaves((0,), (), (0,)),
+            (Operand('node', 4),),
+            (Operand('local', 0), Operand('node', 1),
+             Operand('local', 2), Operand('node', 5)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes], [
+            'lane64.SHR', 'lane64.X86_TEST_CONDITION',
+            'lane64.X86_COMPARE'])
+        self.assertEqual(plan.nodes[2].arguments[0], Operand('local', 0))
+
+    def test_bit_word_address_is_one_signed_coordinate_lane(self):
+        from qm.laneops import evaluate
+
+        raw = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'lane64.SAR', (
+                Operand('local', 1), Operand('const', 6))),
+             WaveNode(2, 'lane64.SHL', (
+                 Operand('node', 1), Operand('const', 3))),
+             WaveNode(3, 'lane64.ADDR', (
+                 Operand('local', 0), Operand('node', 2)))),
+            DependencyWaves((0,), (), (0,)), (),
+            (Operand('node', 3), Operand('local', 1)))
+
+        plan = normalize_plan(raw)
+
+        self.assertEqual([node.op for node in plan.nodes],
+                         ['lane64.BIT_ADDRESS'])
+        self.assertEqual(plan.nodes[0].arguments, (
+            Operand('local', 0), Operand('local', 1),
+            Operand('const', 64 | (64 << 8))))
+        self.assertEqual(evaluate(
+            'lane64.BIT_ADDRESS', (0x1000, -65, 64 | (64 << 8))),
+            0x0ff0)
+
     def test_terminal_branch_condition_projects_from_published_flags(self):
         from qm.steppage import (decode_projection_coordinate, pack, unpack)
 
@@ -1141,6 +1245,45 @@ class TestWaveExecutor(unittest.TestCase):
                          execute_slice(plan, initial))
         self.assertEqual(execute_mapped(mapped, initial),
                          execute_slice(plan, initial))
+
+    def test_step_template_projects_literals_and_frame_coordinates(self):
+        body = b'\x00\x20\x00\x41\x07\x6a\x0b'
+        decoded = decode_module(module(body, kind=0x7f))
+        initial = start_state(decoded, 'f', (5,))
+        plan = WaveExecutor(decoded).plan(initial.frames[-1])
+        blob = bytes(pack(plan))
+
+        template, parameters = project_step_template(blob)
+
+        self.assertNotEqual(template, blob)
+        self.assertLess(len(template) + len(parameters), len(blob))
+        self.assertEqual(
+            instantiate_step_template(template, parameters), blob)
+        with self.assertRaises(StatePageError):
+            instantiate_step_template(template, parameters[:-1])
+
+    def test_step_template_identity_excludes_literal_and_frame_coordinates(self):
+        def plan(source, target, literal):
+            outputs = [Operand('local', 0), Operand('local', 1)]
+            outputs[target] = Operand('node', 1)
+            return PureSlice(
+                0, 0, 1, 1, 0,
+                (WaveNode(1, 'lane64.ADD', (
+                    Operand('local', source), Operand('const', literal))),),
+                DependencyWaves((0, 1), (1,), (0, 1)), (), tuple(outputs))
+
+        left = bytes(pack(plan(0, 0, 7)))
+        right = bytes(pack(plan(1, 1, 19)))
+        left_template, left_parameters = project_step_template(left)
+        right_template, right_parameters = project_step_template(right)
+
+        self.assertEqual(left_template, right_template)
+        self.assertNotEqual(left_parameters, right_parameters)
+        self.assertEqual(
+            instantiate_step_template(left_template, left_parameters), left)
+        self.assertEqual(
+            instantiate_step_template(right_template, right_parameters),
+            right)
 
     def test_slice_codec_rejects_a_second_encoding(self):
         body = b'\x00\x20\x00\x41\x01\x6a\x0b'
