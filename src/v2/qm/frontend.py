@@ -24,13 +24,15 @@ SCALAR_INPUT_HINT = ('integer parameters are packed low-to-high in declaration '
 class FrontendResult(object):
     """What a frontend hands to the pipeline."""
 
-    __slots__ = ('semantics', 'report', 'function', 'unit')
+    __slots__ = ('semantics', 'report', 'function', 'unit', 'physical')
 
-    def __init__(self, semantics, report, function=None, unit=None):
+    def __init__(self, semantics, report, function=None, unit=None,
+                 physical=None):
         self.semantics = semantics
         self.report = report
         self.function = function
         self.unit = unit
+        self.physical = physical
 
 
 def analysable(ret, params, max_input_bits=64):
@@ -328,6 +330,13 @@ class ClangFrontend(object):
 
         asm = self.toolchain.assembly(source, opt=opt, target=target)
         stats = analyze_asm(asm, signature['name'])
+        physical = None
+        try:
+            from . import asmfront
+            parsed = asmfront.x86.parse(asm, signature['name'])
+            physical = asmfront.x86.physical_sequence(parsed)
+        except CFrontError:
+            pass
 
         report = {
             'frontend': self.describe(),
@@ -348,7 +357,7 @@ class ClangFrontend(object):
                           % (stats.get('isa', 'machine'), opt, target),
             },
         }
-        return FrontendResult(sem, report, None, None)
+        return FrontendResult(sem, report, None, None, physical)
 
 
 class PrecompiledFrontend(object):
@@ -403,6 +412,17 @@ class PrecompiledFrontend(object):
         stats = (analyze_asm(asm, name, compile_info.get('listing_isa'))
                  if asm else {'available': False,
                               'reason': 'the toolchain produced no listing'})
+        physical = None
+        if asm:
+            try:
+                from . import asmfront
+                parsed, dialect = asmfront.parse(
+                    asm, name, compile_info.get('listing_isa'))
+                reader = (asmfront.wasm if dialect == 'wasm32'
+                          else asmfront.x86)
+                physical = reader.physical_sequence(parsed)
+            except CFrontError:
+                pass
         describe = self.describe()
         toolchain = options.get('toolchain') or {}
         if toolchain.get('title'):
@@ -434,7 +454,7 @@ class PrecompiledFrontend(object):
                              compile_info.get('opt', '-O2')),
             },
         }
-        return FrontendResult(sem, report, None, None)
+        return FrontendResult(sem, report, None, None, physical)
 
 
 class AssemblyFrontend(object):
@@ -475,9 +495,13 @@ class AssemblyFrontend(object):
         options = options or {}
         dialect = options.get('dialect') or asmfront.detect(source)
         fast_error = None
+        physical = None
         try:
             function, dialect = asmfront.parse(source,
                                                options.get('function'), dialect)
+            reader = (asmfront.wasm if dialect == 'wasm32'
+                      else asmfront.x86)
+            physical = reader.physical_sequence(function)
             evaluate = asmfront.compile_function(function)
         except CFrontError as exc:
             fast_error = exc
@@ -556,7 +580,7 @@ class AssemblyFrontend(object):
                           % (count, dialect),
             },
         }
-        return FrontendResult(sem, report, None, None)
+        return FrontendResult(sem, report, None, None, physical)
 
 
 def _ctype(bits):

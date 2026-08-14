@@ -62,6 +62,8 @@ const X86_STATUS = Object.freeze({
   internal: 9,
   consoleWrite: 10,
   clock: 11,
+  entropy: 12,
+  codeMismatch: 13,
 });
 const X86_PHYSICAL_PAGE_BYTES = 4096;
 
@@ -110,6 +112,15 @@ export async function openX86Machine({ state, memory, blocks, devices = {} }) {
     state.registers.forEach((value, index) => view.setBigUint64(
       registersAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
     ));
+    if (state.xmm !== undefined) {
+      if (!Array.isArray(state.xmm) || state.xmm.length !== 32) {
+        throw new TypeError('x86 vector state needs thirty-two words');
+      }
+      const xmmAt = E.vm_x86_xmm(session);
+      state.xmm.forEach((value, index) => view.setBigUint64(
+        xmmAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
+      ));
+    }
     if (state.system !== undefined) {
       if (!Array.isArray(state.system) || state.system.length !== 22) {
         throw new TypeError('x86 system state needs twenty-two words');
@@ -138,6 +149,39 @@ export async function openX86Machine({ state, memory, blocks, devices = {} }) {
       });
       if (!E.vm_x86_msr_count(session, state.msrs.length)) {
         throw new Error('vm.wasm rejected the x86 MSR bank');
+      }
+    }
+    if (state.ioPorts !== undefined) {
+      if (!Array.isArray(state.ioPorts)) {
+        throw new TypeError('x86 I/O state must be coordinate/value pairs');
+      }
+      for (const pair of state.ioPorts) {
+        if (!Array.isArray(pair) || pair.length !== 2
+            || !Number.isSafeInteger(pair[0]) || pair[0] < 0
+            || pair[0] > 0xffffffff
+            || !E.vm_x86_restore_io(session, pair[0], BigInt(pair[1]))) {
+          throw new TypeError('x86 I/O state has an invalid coordinate');
+        }
+      }
+    }
+    if (state.consoleInput !== undefined) {
+      const input = state.consoleInput instanceof Uint8Array
+        ? state.consoleInput : Uint8Array.from(state.consoleInput);
+      for (const byte of input) {
+        if (!E.vm_x86_console_feed(session, byte)) {
+          throw new TypeError('x86 console state exceeds the resident queue');
+        }
+      }
+    }
+    if (state.consoleOutput !== undefined) {
+      const output = state.consoleOutput instanceof Uint8Array
+        ? state.consoleOutput : Uint8Array.from(state.consoleOutput);
+      for (const byte of output) {
+        if (!E.vm_x86_restore_console_output(session, byte)) {
+          throw new TypeError(
+            'x86 console output state exceeds the resident buffer',
+          );
+        }
       }
     }
     const resident = new ResidentX86Machine(
@@ -170,9 +214,10 @@ class ResidentX86Machine {
       physicalWrite: 0,
       consoleWrite: 0,
       clock: 0,
+      entropy: 0,
     };
     this.virtualClock = 0n;
-    this.blockLoaded = false;
+    this.blockCandidate = new Map();
     this.closed = false;
   }
 
@@ -187,31 +232,32 @@ class ResidentX86Machine {
     }
     const E = this.exports;
     let completed = 0;
+    const finish = (status) => ({
+      ...this.status(status), completedBlocks: completed,
+    });
     while (completed < maxBlocks) {
-      const status = E.vm_x86_execute(this.session);
+      const requested = Math.min(maxBlocks - completed, 0xffffffff);
+      let status = E.vm_x86_execute_quantum(
+        this.session, requested,
+      );
+      const batch = E.vm_x86_quantum_blocks(this.session);
+      const cacheHits = E.vm_x86_quantum_cache_hits(this.session);
+      if (!Number.isSafeInteger(batch) || batch < 0
+          || batch > requested
+          || !Number.isSafeInteger(cacheHits) || cacheHits < 0) {
+        throw new Error('vm.wasm published an invalid x86 quantum');
+      }
+      completed += batch;
+      this.hostBarriers.blockCacheHit += cacheHits;
       if (status === X86_STATUS.needBlock) {
-        if (this.blockLoaded) {
-          this.blockLoaded = false;
-          completed += 1;
-          if (completed >= maxBlocks) return this.status(X86_STATUS.yielded);
-        }
-        const cached = E.vm_x86_load_cached_block(this.session);
-        if (cached === 2) {
-          this.hostBarriers.blockCacheHit += 1;
-          this.blockLoaded = true;
-          continue;
-        }
-        if (cached !== 0) {
-          throw new Error(
-            `vm.wasm rejected its resident x86 block cache (${E.vm_x86_error(this.session)})`,
-          );
-        }
         this.hostBarriers.blockCacheMiss += 1;
         const rip = BigInt.asUintN(64, E.vm_x86_rip(this.session));
         this.hostBarriers.blockRead += 1;
-        const record = await this.blocks.read(rip);
+        const key = rip.toString();
+        const candidate = this.blockCandidate.get(key) || 0;
+        const record = await this.blocks.read(rip, candidate);
         if (record == null) {
-          return { ...this.status(X86_STATUS.needBlock), missingBlock: rip };
+          return { ...finish(X86_STATUS.needBlock), missingBlock: rip };
         }
         if (!(record instanceof Uint8Array) || !record.length) {
           throw new Error(`x86 block 0x${rip.toString(16)} is malformed`);
@@ -219,12 +265,26 @@ class ResidentX86Machine {
         new Uint8Array(
           E.memory.buffer, E.vm_step_buffer(this.session), record.length,
         ).set(record);
-        if (E.vm_x86_load_block(this.session, record.length) !== 2) {
+        const loaded = E.vm_x86_load_block(this.session, record.length);
+        if (loaded === X86_STATUS.codeMismatch) {
+          this.blockCandidate.set(key, candidate + 1);
+          continue;
+        }
+        if (loaded === X86_STATUS.needPhysical
+            || loaded === X86_STATUS.dirtyPhysical) {
+          status = loaded;
+        } else if (loaded !== 2) {
           throw new Error(
             `vm.wasm rejected x86 block 0x${rip.toString(16)} (${E.vm_x86_error(this.session)})`,
           );
+        } else {
+          this.blockCandidate.delete(key);
+          continue;
         }
-        this.blockLoaded = true;
+      }
+      if (status === X86_STATUS.codeMismatch) {
+        const rip = BigInt.asUintN(64, E.vm_x86_rip(this.session));
+        this.blockCandidate.set(rip.toString(), 0);
         continue;
       }
       if (status === X86_STATUS.needPhysical
@@ -267,10 +327,17 @@ class ResidentX86Machine {
       if (status === X86_STATUS.consoleWrite) {
         const lease = E.vm_x86_console_lease(this.session);
         if (!lease) throw new Error('vm.wasm published an invalid console lease');
-        const byte = E.vm_x86_console_value(this.session, lease);
+        const count = E.vm_x86_console_output_count(this.session, lease);
+        if (!Number.isSafeInteger(count) || count <= 0 || count > 256) {
+          throw new Error('vm.wasm published an invalid console batch');
+        }
+        const bytes = Uint8Array.from(
+          { length: count }, (_unused, index) =>
+            E.vm_x86_console_output_peek(this.session, lease, index),
+        );
         this.hostBarriers.consoleWrite += 1;
         if (typeof this.devices.consoleWrite === 'function') {
-          await this.devices.consoleWrite(Uint8Array.of(byte));
+          await this.devices.consoleWrite(bytes);
         }
         if (!E.vm_x86_ack_console(this.session, lease)) {
           throw new Error('vm.wasm rejected the console acknowledgement');
@@ -296,12 +363,30 @@ class ResidentX86Machine {
         )) throw new Error('vm.wasm rejected the clock acknowledgement');
         continue;
       }
+      if (status === X86_STATUS.entropy) {
+        const lease = E.vm_x86_entropy_lease(this.session);
+        if (!lease) throw new Error('vm.wasm published an invalid entropy lease');
+        this.hostBarriers.entropy += 1;
+        let value;
+        if (typeof this.devices.entropy === 'function') {
+          value = await this.devices.entropy({
+            retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
+            rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
+          });
+        } else {
+          const words = new Uint32Array(2);
+          globalThis.crypto.getRandomValues(words);
+          value = (BigInt(words[1]) << 32n) | BigInt(words[0]);
+        }
+        if (!E.vm_x86_supply_entropy(
+          this.session, lease, BigInt.asUintN(64, BigInt(value)),
+        )) throw new Error('vm.wasm rejected the entropy acknowledgement');
+        continue;
+      }
       if (status === X86_STATUS.yielded || status === X86_STATUS.halted) {
-        this.blockLoaded = false;
-        return this.status(status);
+        return finish(status);
       }
       if (status === X86_STATUS.internal) {
-        this.blockLoaded = false;
         continue;
       }
       throw new Error(
@@ -310,7 +395,7 @@ class ResidentX86Machine {
         + `step=${E.vm_step_error(this.session)})`,
       );
     }
-    return this.status(X86_STATUS.yielded);
+    return finish(X86_STATUS.yielded);
   }
 
   status(status = null) {
@@ -327,6 +412,43 @@ class ResidentX86Machine {
     };
   }
 
+  async flush() {
+    this.assertOpen();
+    const E = this.exports;
+    for (;;) {
+      const page = BigInt.asUintN(
+        64, E.vm_x86_first_dirty_physical_page(this.session),
+      );
+      if (page === 0xffffffffffffffffn) {
+        if (E.vm_x86_error(this.session)) {
+          throw new Error('vm.wasm failed to publish x86 dirty state');
+        }
+        break;
+      }
+      const lease = E.vm_x86_physical_lease(this.session);
+      const published = BigInt.asUintN(
+        64, E.vm_x86_physical_coordinate(this.session, lease),
+      );
+      const offset = Number(page * BigInt(X86_PHYSICAL_PAGE_BYTES));
+      if (!lease || published !== page || !Number.isSafeInteger(offset)
+          || offset < 0
+          || offset + X86_PHYSICAL_PAGE_BYTES > this.memory.length) {
+        throw new Error('vm.wasm published an invalid x86 flush page');
+      }
+      const bytes = new Uint8Array(
+        E.memory.buffer,
+        E.vm_x86_physical_buffer(this.session, lease),
+        X86_PHYSICAL_PAGE_BYTES,
+      ).slice();
+      await this.memory.write(offset, bytes);
+      this.hostBarriers.physicalWrite += 1;
+      if (!E.vm_x86_ack_physical(this.session, lease, page)) {
+        throw new Error(`vm.wasm rejected flushed physical page ${page}`);
+      }
+    }
+    return this.status();
+  }
+
   snapshot() {
     this.assertOpen();
     const E = this.exports;
@@ -338,8 +460,35 @@ class ResidentX86Machine {
     const count = E.vm_x86_msr_extent(this.session);
     const keys = words(E.vm_x86_msr_keys(this.session), count);
     const values = words(E.vm_x86_msr_values(this.session), count);
+    const ioPorts = [];
+    const coordinates = [
+      0x21, 0xa1,
+      0x3f8, 0x3f9, 0x3fa, 0x3fb, 0x3fc, 0x3fd, 0x3fe, 0x3ff,
+      0x10042, 0x10043, 0x10044, 0x10045, 0x10046, 0x10047,
+    ];
+    for (const coordinate of coordinates) {
+      if (E.vm_x86_io_valid(this.session, coordinate)) {
+        ioPorts.push([
+          coordinate,
+          BigInt.asUintN(64, E.vm_x86_io_value(this.session, coordinate)),
+        ]);
+      }
+    }
+    const consoleCount = E.vm_x86_console_count(this.session);
+    const consoleInput = Uint8Array.from(
+      { length: consoleCount }, (_unused, index) =>
+        E.vm_x86_console_peek(this.session, index),
+    );
+    const consoleOutputCount = E.vm_x86_pending_console_output_count(
+      this.session,
+    );
+    const consoleOutput = Uint8Array.from(
+      { length: consoleOutputCount }, (_unused, index) =>
+        E.vm_x86_pending_console_output_peek(this.session, index),
+    );
     return {
       registers: words(E.vm_x86_registers(this.session), 16),
+      xmm: words(E.vm_x86_xmm(this.session), 32),
       rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
       rflags: BigInt.asUintN(64, E.vm_x86_rflags(this.session)),
       cr0: BigInt.asUintN(64, E.vm_x86_cr0(this.session)),
@@ -348,6 +497,9 @@ class ResidentX86Machine {
       efer: BigInt.asUintN(64, E.vm_x86_efer(this.session)),
       system: words(E.vm_x86_system(this.session), 22),
       msrs: keys.map((key, index) => [key, values[index]]),
+      ioPorts,
+      consoleInput,
+      consoleOutput,
     };
   }
 

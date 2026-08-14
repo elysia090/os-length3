@@ -51,7 +51,7 @@ class TestWholeWordKernelsLand(unittest.TestCase):
         # comparison is not there: the difference's own sign bit is it.
         ('is_less_or_equal_i32', 'split',
          ['SHL', 'SAR', 'SAR', 'SUBR', 'AND', 'XOR',
-          'SAR', 'XORR', 'ANDNR', 'XORR']),
+          'SAR', 'ANDNR']),
         # Both halves are read with a mask and a shift: a deposit into the low
         # thirty-two bits is a mask, and normalization says so.
         ('min_i32', 'split',
@@ -99,7 +99,7 @@ class TestResidualStateQueriesLand(unittest.TestCase):
         self.assertEqual(result['program']['ops'][0]['class'],
                          'FIELD_COMPARE')
         self.assertEqual(primary['instructions'],
-                         ['AND', 'SHR', 'AND', 'GT_U'])
+                         ['AND', 'SHR', 'GT_U'])
         self.assertNotIn('LUT', primary['instructions'])
         self.assertTrue(primary['verification']['exhaustive'])
 

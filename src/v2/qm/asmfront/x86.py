@@ -95,6 +95,8 @@ def parse(text, requested=None):
         if label:
             candidate = label.group(1)
             if candidate.startswith('.L'):
+                if candidate.startswith('.Lfunc_end') and collecting:
+                    break
                 raise UnsupportedC(
                     'the listing branches (%s); this reader is straight-line'
                     % candidate,
@@ -115,9 +117,19 @@ def parse(text, requested=None):
         if not collecting:
             continue
 
-        parts = stripped.split(None, 1)
+        parts = stripped.split(None, 2)
         mnemonic = parts[0].lower()
-        operands = _split_operands(parts[1]) if len(parts) > 1 else []
+        operand_text = ' '.join(parts[1:])
+        # Clang writes the TZCNT encoding as `rep bsf` when it wants assembly
+        # accepted by older assemblers.  It is one instruction and the
+        # frontend candidate is still verified on the declared domain.
+        if mnemonic in ('rep', 'repz') and len(parts) > 1:
+            mnemonic = parts[1].lower()
+            operand_text = parts[2] if len(parts) > 2 else ''
+            base, width = _strip_suffix(mnemonic)
+            if base == 'bsf':
+                mnemonic = 'tzcnt' + ({8: 'b', 16: 'w', 32: 'l', 64: 'q'}[width])
+        operands = _split_operands(operand_text) if operand_text else []
         if mnemonic in ('ret', 'retq'):
             break
         instructions.append((mnemonic, operands))
@@ -342,6 +354,152 @@ def evaluate(function, argument):
     return compile_function(function)(argument)
 
 
+def physical_sequence(function):
+    """Recover a register-only integer body as the shared SSA form.
+
+    Unknown ABI bookkeeping may remain dead.  If it reaches ``%rax`` the
+    candidate is rejected; otherwise the main pipeline still verifies the
+    recovered function against executed semantics before it can be selected.
+    """
+    from ..isa import Seq, normalize_physical
+
+    seq = Seq()
+    registers = {ARG_REGISTER: 0}
+
+    def is_const(value):
+        return isinstance(value, tuple) and value[0] == 'const'
+
+    def constant(value):
+        return int(value[1]) & M64
+
+    def read(token):
+        if token.startswith('$'):
+            return 'const', _immediate(token)
+        if token.startswith('%'):
+            return registers.get(_canonical(token))
+        return None
+
+    def write(token, value):
+        registers[_canonical(token)] = value
+
+    def materialize(value):
+        if value is None or not is_const(value):
+            return value
+        result = seq.emit('AND', [0], const=0)
+        if constant(value):
+            result = seq.emit('OR', [result], const=constant(value))
+        return result
+
+    def narrow(value, width):
+        if value is None or width >= 64:
+            return value
+        if is_const(value):
+            return 'const', constant(value) & mask_of(width)
+        return seq.emit('AND', [value], const=mask_of(width))
+
+    def binary(name, left, right):
+        if left is None or right is None:
+            return None
+        if is_const(left) and is_const(right):
+            a, b = constant(left), constant(right)
+            functions = {
+                'add': lambda: a + b, 'sub': lambda: a - b,
+                'imul': lambda: a * b, 'and': lambda: a & b,
+                'or': lambda: a | b, 'xor': lambda: a ^ b,
+            }
+            return 'const', functions[name]() & M64
+        if is_const(left) and name in {'add', 'imul', 'and', 'or', 'xor'}:
+            left, right = right, left
+        immediate = {'add': 'ADD', 'sub': 'SUB', 'imul': 'IMUL',
+                     'and': 'AND', 'or': 'OR', 'xor': 'XOR'}
+        if is_const(right):
+            return seq.emit(immediate[name], [materialize(left)],
+                            const=constant(right))
+        register = {'add': 'ADDR', 'sub': 'SUBR', 'and': 'ANDR',
+                    'or': 'ORR', 'xor': 'XORR'}.get(name)
+        if register:
+            return seq.emit(register, [materialize(left), materialize(right)])
+        return None
+
+    try:
+        for mnemonic, operands in function.instructions:
+            base, width = _strip_suffix(mnemonic)
+            if base in ('nop', 'endbr64', 'hlt'):
+                continue
+            if base in ('push', 'pop', 'leave'):
+                if base == 'pop' and operands:
+                    write(operands[-1], None)
+                continue
+            if base in ('mov', 'movabs', 'movzx', 'movz'):
+                write(operands[1], narrow(read(operands[0]), width))
+                continue
+            if base in _ALU:
+                left = narrow(read(operands[1]), width)
+                right = narrow(read(operands[0]), width)
+                write(operands[1], narrow(binary(base, left, right), width))
+                continue
+            if base == 'imul':
+                if len(operands) == 3:
+                    left, right, target = (read(operands[1]),
+                                           read(operands[0]), operands[2])
+                else:
+                    left, right, target = (read(operands[1]),
+                                           read(operands[0]), operands[1])
+                write(target, narrow(binary(
+                    'imul', narrow(left, width), narrow(right, width)), width))
+                continue
+            if base in ('not', 'neg'):
+                value = narrow(read(operands[0]), width)
+                if value is None:
+                    result = None
+                elif is_const(value):
+                    result = ('const', ((~constant(value)) if base == 'not'
+                                        else -constant(value)) & mask_of(width))
+                else:
+                    result = seq.emit('NOT' if base == 'not' else 'NEG',
+                                      [value])
+                write(operands[0], narrow(result, width))
+                continue
+            if base in ('shl', 'sal', 'shr', 'sar'):
+                if len(operands) != 2 or not operands[0].startswith('$'):
+                    return None
+                value = narrow(read(operands[1]), width)
+                result = (None if value is None else seq.emit(
+                    {'shl': 'SHL', 'sal': 'SHL', 'shr': 'SHR',
+                     'sar': 'SAR'}[base], [materialize(value)],
+                    shift=_immediate(operands[0]) % width))
+                write(operands[1], narrow(result, width))
+                continue
+            if base in ('popcnt', 'lzcnt', 'tzcnt'):
+                value = narrow(read(operands[0]), width)
+                result = (None if value is None else seq.emit(
+                    {'popcnt': 'POPCNT', 'lzcnt': 'CLZ',
+                     'tzcnt': 'CTZ'}[base], [materialize(value)]))
+                write(operands[1], result)
+                continue
+            if base in ('pdep', 'pext'):
+                mask, value = read(operands[0]), read(operands[1])
+                if value is None or not is_const(mask):
+                    return None
+                write(operands[2], seq.emit(base.upper(),
+                                            [materialize(value)],
+                                            const=constant(mask)))
+                continue
+            if base == 'bswap':
+                value = read(operands[0])
+                write(operands[0], None if value is None else
+                      seq.emit('BSWAP', [materialize(value)]))
+                continue
+            return None
+        result = registers.get(RESULT_REGISTER)
+        if result is None:
+            return None
+        seq.result = materialize(result)
+        return normalize_physical(seq)
+    except (IndexError, KeyError, TypeError, ValueError):
+        return None
+
+
 def _strip_suffix(mnemonic):
     """Split `andq` into ('and', 64); default to 64 bits."""
     split = _SUFFIXES.get(mnemonic)
@@ -357,6 +515,7 @@ def _split_suffix(mnemonic):
         stem = mnemonic[:-1]
         if stem in ('mov', 'movabs', 'and', 'or', 'xor', 'add', 'sub', 'imul',
                     'not', 'neg', 'shl', 'sal', 'shr', 'sar', 'bswap',
-                    'popcnt', 'lzcnt', 'tzcnt', 'movz', 'movzx', 'ret'):
+                    'popcnt', 'lzcnt', 'tzcnt', 'bsf', 'movz', 'movzx', 'push',
+                    'pop', 'leave', 'ret'):
             return stem, _SIZES[mnemonic[-1]]
     return mnemonic, 64

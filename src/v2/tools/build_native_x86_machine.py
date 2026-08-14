@@ -190,7 +190,7 @@ def publish(artifact_root, name, payload, report):
     catalog = json.loads(path.read_text(encoding='utf-8'))
     catalog['artifacts'][name] = {
         'bytes': len(payload),
-        'format': 'x86-native-machine-v1',
+        'format': 'x86-native-machine-v5',
         'identity': written['identity']['digest'],
         'path': '%s/index.json' % name,
         'source_identity': report['source_identity'],

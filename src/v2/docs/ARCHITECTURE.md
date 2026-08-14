@@ -62,6 +62,57 @@ use the same principle at a 4 KiB page size. Immutable backing pages and dirty
 COW pages occupy separate direct arrays: backing can be released when a Worker
 is terminated, while canonical `(page, bytes)` dirty records remain restorable.
 
+The native x86 machine artifact has three independently aligned regions:
+physical-memory backing, compact block/residual descriptors, and executable
+projections. Block identity is the product
+
+```text
+(RIP, exact executable-byte proof,
+ normalized SSA-template rank, typed parameter rank,
+ RIP-relative continuation rank)
+```
+
+rather than a serialized STEP blob. Constants remain full-width parameters;
+stack/local inputs and changed-local outputs are bounded two-byte frame
+coordinates. Wave boundaries, opcodes, node coordinates and terminal
+projections remain in the shared template because they are the operator graph
+itself. Static successor addresses and the diagnostic boundary coordinate are
+stored relative to RIP; register/local control descriptors stay exact. Thus
+blocks loaded at different coordinates share the same continuation residual
+without weakening exact reconstruction. The four continuation words are not
+fixed-width rows: a three-bit field tag denotes zero, equality with an earlier
+field, or the shortest signed 8/16/32/64-bit residual. One prefix-offset CSR
+names these canonical variable rows, so common branches carry only a tag and
+a small displacement. A block instance is only
+`(RIP, STEP rank, continuation rank, proof rank)`; repeated magic, STEP extent,
+absolute successor words, repeated continuation fields and unused control
+fields are not materialized per block. Ranks use first sorted RIP occurrence,
+preserving delivery locality
+without a hash lookup or duplicate scalar object graph. The browser maps these
+extents and reconstructs the ordinary fixed X86B admission record on a
+block-cache miss. It keeps the sorted 20-byte rows mapped instead of expanding
+one JavaScript object per block. A 256-bucket tail-byte CSR over row ranks is
+the only derived lookup state; a miss searches its small sorted bucket and
+then follows STEP, continuation and proof ranks directly in the mapped bytes.
+`vm.wasm` applies the typed projection directly into its STEP workspace, runs
+the ordinary STEP validator, and caches the resulting guarded record. Hot hits
+therefore remain entirely inside `vm.wasm`, while a malformed template,
+continuation or parameter extent cannot create a second execution path.
+
+Block closure also quotients across decoded control boundaries before those
+records enter this artifact. Call/return joins retain only the exact executed
+code extents; address gaps between a caller and callee are neither read nor
+stored as proof bytes. A contiguous multiword copy backedge is represented by
+one `memory.copy` transaction, one projected final source row and its closed
+counter/flag update. The iteration count is a physical local used by the
+resident recurrence control to preserve source-instruction retirement without
+replaying the loop. These residual entries are published even when execution
+reaches them directly from a predecessor and therefore never profiles their
+RIP as a separate scalar block. During closure, a stronger record replaces an
+older record only at the same `(RIP, exact executable proof)` coordinate; this
+prevents a newly minimized block from silently falling back to an earlier
+scalar artifact path.
+
 ## Browser execution path
 
 The product path has one direction and one target at the codec boundary:

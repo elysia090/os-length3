@@ -205,6 +205,16 @@ def _slice_sequence(plan, root):
                     instruction.const, instruction.shift)
         compact.result = remap[after.result]
         after = isa.dead_code(compact)
+        if after.result == 0:
+            # An i32 island may be algebraically identical in its low word
+            # while still representing an architectural 32-bit publication.
+            # Keep that residual projection: x86 ``xor eax,k; xor eax,k`` is
+            # not an identity on the full RAX coordinate because it clears
+            # bits 63:32 even though the two XORs cancel modulo 2^32.
+            projected = isa.Seq()
+            projected.result = projected.emit(
+                'AND', [0], const=mask)
+            after = projected
     return after, bits, input_operand, root
 
 
@@ -486,6 +496,262 @@ def _reopen_pre_store_chains(nodes, stack, locals_):
     return tuple(rewritten), tuple(stack), tuple(locals_)
 
 
+def _rebase_overwritten_flags(nodes, stack, locals_):
+    """Read preserved flag bits from the oldest equivalent SSA version.
+
+    Most arithmetic instructions replace CF/PF/ZF/SF/OF and merely copy the
+    remaining architectural bits.  Threading their complete flag word through
+    every preceding arithmetic instruction creates a false serial chain.  A
+    full overwrite can instead take those preserved bits from the chain root;
+    conditions that observe an intermediate result keep their own producer.
+    """
+    from .wasmwave import WaveNode
+
+    producers = {
+        'lane64.X86_FLAGS', 'lane64.X86_ALU',
+        'lane64.X86_AFFINE_ALU', 'lane64.X86_COMPARE',
+        'lane64.X86_TEST', 'lane64.X86_SHIFT_FLAGS',
+        'lane64.X86_MUL_FLAGS', 'lane64.X86_BIT_FLAGS',
+    }
+    by_value = {node.value: node for node in nodes}
+
+    def root(operand):
+        seen = set()
+        while operand.kind == 'node' and operand.value not in seen:
+            seen.add(operand.value)
+            source = by_value.get(operand.value)
+            if (source is None or source.op not in producers
+                    or not source.arguments):
+                break
+            operand = source.arguments[0]
+        return operand
+
+    def fully_overwrites(node):
+        if node.op in ('lane64.X86_COMPARE', 'lane64.X86_TEST'):
+            return True
+        if (node.op == 'lane64.X86_SHIFT_FLAGS'
+                and len(node.arguments) == 5
+                and node.arguments[3].kind == 'const'
+                and node.arguments[4].kind == 'const'):
+            amount = int(node.arguments[3].value)
+            descriptor = int(node.arguments[4].value)
+            width = descriptor & 0x7f
+            group = (descriptor >> 8) & 7
+            return (width in (8, 16, 32, 64)
+                    and amount & (width - 1) != 0
+                    and group in (4, 5, 6, 7))
+        descriptor_at = {
+            'lane64.X86_FLAGS': 4,
+            'lane64.X86_ALU': 3,
+            'lane64.X86_AFFINE_ALU': 4,
+        }.get(node.op)
+        if (descriptor_at is None or len(node.arguments) <= descriptor_at
+                or node.arguments[descriptor_at].kind != 'const'):
+            return False
+        descriptor = int(node.arguments[descriptor_at].value)
+        return ((descriptor >> 8) & 7) not in (2, 4) \
+            and not descriptor & (1 << 11)
+
+    rewritten = []
+    for node in nodes:
+        arguments = node.arguments
+        if arguments and fully_overwrites(node):
+            arguments = (root(arguments[0]),) + arguments[1:]
+        rewritten.append(WaveNode(node.value, node.op, tuple(arguments)))
+    return tuple(rewritten), tuple(stack), tuple(locals_)
+
+
+def _forward_memory_versions(nodes, stack, locals_):
+    """Substitute an exact stored byte version into a later ordinary load.
+
+    Frontend slices already perform this substitution while decoding one
+    function body.  State-step composition must repeat the same operation:
+    separately normalized blocks otherwise materialize a store and then load
+    the same coordinate again.  Unknown or possibly aliasing stores invalidate
+    retained versions, while intervening reads do not.
+
+    The removed load's ordering coordinate is kept separately from its value.
+    A later memory operation therefore waits for the defining store even though
+    ordinary value consumers read the stored SSA operand directly.
+    """
+    from .steppage import (decode_memory_shape,
+                           decode_projection_coordinate,
+                           projection_coordinate)
+    from .wasmwave import Operand, WaveNode
+
+    projected_sources = {
+        decode_projection_coordinate(operand.value)[0]
+        for operand in tuple(stack) + tuple(locals_)
+        + tuple(argument for node in nodes for argument in node.arguments)
+        if operand.kind == 'projection'
+    }
+    remap = {}
+    order = {}
+    rewritten = []
+    versions = {}
+
+    def resolve(operand):
+        if operand.kind == 'node':
+            return remap[operand.value]
+        if operand.kind != 'projection':
+            return operand
+        source, selector = decode_projection_coordinate(operand.value)
+        mapped = remap[source]
+        if mapped.kind != 'node':
+            # Loads are never forwarded when they own a projection.  Other
+            # multi-result primitives therefore retain a concrete node here.
+            return mapped
+        return Operand('projection', projection_coordinate(
+            mapped.value, selector))
+
+    def dependencies(operands):
+        resolved = []
+        for operand in operands:
+            values = order.get(operand.value) \
+                if operand.kind == 'node' else None
+            if values is None:
+                values = (resolve(operand),)
+            for value in values:
+                if value not in resolved:
+                    resolved.append(value)
+        return tuple(resolved)
+
+    def emit(operation, arguments):
+        value = len(rewritten) + 1
+        rewritten.append(WaveNode(value, operation, tuple(arguments)))
+        return Operand('node', value)
+
+    def ordinary_access(operation, arguments):
+        parts = operation.split('.', 2)
+        if len(parts) != 3 or parts[0] != 'memory' \
+                or parts[1] not in ('i32', 'i64'):
+            return None
+        lane_bits = int(parts[1][1:])
+        name = parts[2]
+        store = name.startswith('store') and '.' not in name
+        load = name.startswith('load') and '.' not in name
+        if not store and not load:
+            return None
+        fixed = 4 if store else 3
+        if len(arguments) < fixed:
+            return None
+        offset_at = 2 if store else 1
+        offset, shape = arguments[offset_at:offset_at + 2]
+        if offset.kind != 'const' or shape.kind != 'const':
+            return None
+        try:
+            width, scale, virtual64 = decode_memory_shape(shape.value)
+        except ValueError:
+            return None
+        return (store, lane_bits, name, arguments[0],
+                arguments[1] if store else None,
+                offset, shape, width, scale, virtual64, fixed)
+
+    def interval(access):
+        address, offset = access[3], access[5]
+        width, scale, virtual64 = access[7:10]
+        if address.kind != 'const':
+            return None
+        bits = 64 if virtual64 else 32
+        limit = 1 << bits
+        first = (int(address.value) << int(scale)) + int(offset.value)
+        if first < 0 or first + int(width) > limit:
+            return None
+        return first, first + int(width)
+
+    def may_alias(left, right):
+        return (left is None or right is None
+                or left[0] < right[1] and right[0] < left[1])
+
+    def known_unsigned_bits(operand):
+        if operand.kind == 'const':
+            return max(1, int(operand.value).bit_length()) \
+                if int(operand.value) >= 0 else None
+        if operand.kind != 'node':
+            return None
+        source = rewritten[operand.value - 1]
+        if source.op.startswith('lane32.'):
+            return 32
+        if (source.op == 'lane64.AND' and len(source.arguments) == 2
+                and source.arguments[1].kind == 'const'):
+            return max(1, int(source.arguments[1].value).bit_length())
+        if source.op.startswith('memory.i64.load'):
+            suffix = source.op[len('memory.i64.load'):]
+            if suffix in ('8_u', '16_u', '32_u'):
+                return int(suffix.split('_', 1)[0])
+        return None
+
+    def load_value(value, access):
+        lane_bits, name, width = access[1], access[2], access[7]
+        stored_bits = int(width) * 8
+        if stored_bits >= lane_bits:
+            return value
+        signed = name.endswith('_s')
+        if signed:
+            if lane_bits == 64 and stored_bits == 32:
+                return emit('lane64.EXTEND_I32_S', (value,))
+            shift = lane_bits - stored_bits
+            shifted = emit('lane%d.SHL' % lane_bits, (
+                value, Operand('const', shift)))
+            return emit('lane%d.SAR' % lane_bits, (
+                shifted, Operand('const', shift)))
+        if (known_unsigned_bits(value) or lane_bits + 1) <= stored_bits:
+            return value
+        return emit('lane%d.AND' % lane_bits, (
+            value, Operand('const', mask_of(stored_bits))))
+
+    for node in nodes:
+        access = ordinary_access(node.op, node.arguments)
+        if access is None:
+            arguments = tuple(map(resolve, node.arguments))
+            if node.op.startswith('memory.'):
+                # A composite transaction may read or write arbitrary bytes.
+                # Retain every current store as an ordering input, then discard
+                # exact byte-version knowledge across that transaction.
+                active = tuple(entry[2] for entry in versions.values())
+                arguments += tuple(value for value in active
+                                   if value not in arguments)
+                versions.clear()
+            result = emit(node.op, arguments)
+            remap[node.value] = result
+            if node.op.startswith('memory.'):
+                order[node.value] = (result,)
+            continue
+
+        store, lane_bits, _name, _address, _stored, _offset, _shape, \
+            _width, _scale, _virtual64, fixed = access
+        head = tuple(map(resolve, node.arguments[:fixed]))
+        tail = dependencies(node.arguments[fixed:])
+        arguments = head + tuple(value for value in tail
+                                 if value not in head)
+        resolved_access = ordinary_access(node.op, arguments)
+        key = (resolved_access[3], resolved_access[5], resolved_access[6])
+
+        if not store and node.value not in projected_sources:
+            definition = versions.get(key)
+            if definition is not None and definition[1] == lane_bits:
+                remap[node.value] = load_value(definition[0], resolved_access)
+                order[node.value] = (definition[2],)
+                continue
+
+        result = emit(node.op, arguments)
+        remap[node.value] = result
+        order[node.value] = (result,)
+        if not store:
+            continue
+
+        written = interval(resolved_access)
+        versions = {
+            coordinate: definition
+            for coordinate, definition in versions.items()
+            if not may_alias(written, definition[3])
+        }
+        versions[key] = (resolved_access[4], lane_bits, result, written)
+
+    return (tuple(rewritten), tuple(map(resolve, stack)),
+            tuple(map(resolve, locals_)))
+
+
 def _fuse_live_x86_alu(nodes, stack, locals_):
     """Share one ALU lane after every live result observer is explicit.
 
@@ -757,7 +1023,14 @@ def _fuse_live_x86_alu(nodes, stack, locals_):
             elif operand.kind == 'projection':
                 dependencies.append(decode_projection_coordinate(
                     operand.value)[0])
-        if any(dependency >= result.value for dependency in dependencies):
+        # The affine prefix is removed when it is folded into the ALU lane.
+        # A second ALU input may itself name that prefix (for example
+        # ``(a+b) + (a+b)``); such a graph cannot use the four-input affine
+        # primitive without introducing a self-edge. Keep the ordinary two
+        # lanes so every dependency still has a dense predecessor.
+        if (removed_left is not None and removed_left in dependencies) \
+                or any(dependency >= result.value
+                       for dependency in dependencies):
             continue
         candidate = (result, flags, alu_operation, alu_arguments,
                      removed_left)
@@ -832,6 +1105,7 @@ def _rewrite_physical(nodes, stack, locals_):
     a second plan.  Every replacement is one exact lane primitive and the
     following liveness pass proves the resulting work/span objective.
     """
+    from .laneops import evaluate as evaluate_lane
     from .wasmwave import Operand, WaveNode
     from .steppage import (decode_projection_coordinate,
                            projection_coordinate)
@@ -843,11 +1117,19 @@ def _rewrite_physical(nodes, stack, locals_):
         tuple(nodes), tuple(stack), tuple(locals_))
     original = _reopen_load_regions(*original)
     original = _reopen_consumed_x86_alu(*original)
+    original = _rebase_overwritten_flags(*original)
+    original = _forward_memory_versions(*original)
     folded = _rewrite_relative_exchange(*original)
     nodes, stack, locals_ = folded
 
     outputs = {operand.value for operand in stack + locals_
                if operand.kind == 'node'}
+    projection_sources = {
+        decode_projection_coordinate(operand.value)[0]
+        for operand in tuple(stack) + tuple(locals_)
+        + tuple(argument for node in nodes for argument in node.arguments)
+        if operand.kind == 'projection'
+    }
     consumers = {node.value: [] for node in nodes}
     equivalent_nodes = {}
     for node in nodes:
@@ -1057,6 +1339,20 @@ def _rewrite_physical(nodes, stack, locals_):
     for node in nodes:
         operation = node.op
         arguments = tuple(map(resolve, node.arguments))
+        if (operation.startswith(('lane32.', 'lane64.'))
+                and node.value not in projection_sources
+                and arguments
+                and all(argument.kind == 'const'
+                        for argument in arguments)):
+            try:
+                folded = evaluate_lane(
+                    operation, tuple(argument.value
+                                     for argument in arguments))
+            except (ArithmeticError, IndexError, TypeError, ValueError):
+                pass
+            else:
+                remap[node.value] = Operand('const', int(folded))
+                continue
         if operation in ('memory.i64.repeat', 'memory.i64.copy',
                          'memory.i64.find2',
                          'memory.i64.copy_until',
@@ -1077,23 +1373,34 @@ def _rewrite_physical(nodes, stack, locals_):
             offset, shape = arguments[data_count:data_count + 2]
             dependencies = arguments[data_count + 2:]
             if not store:
-                def prior_write(operand):
-                    source = form(operand)
+                def prior_write(operand, root=True, seen=None):
+                    """Return memory effects in an operand's backward slice."""
+                    if seen is None:
+                        seen = set()
+                    source_operand = operand
+                    if operand.kind == 'projection':
+                        source_value, _selector = \
+                            decode_projection_coordinate(operand.value)
+                        source_operand = Operand('node', source_value)
+                    if source_operand.kind != 'node':
+                        return (operand,) if root else ()
+                    if source_operand.value in seen:
+                        return ()
+                    seen.add(source_operand.value)
+                    source = form(source_operand)
                     if source is None:
-                        return (operand,)
+                        return (operand,) if root else ()
                     prior_operation, prior_arguments = source
-                    if prior_operation == 'memory.i64.relative_address':
-                        prior_dependencies = prior_arguments[5:]
-                    elif prior_operation == 'memory.i64.load_region':
-                        prior_dependencies = prior_arguments[4:]
-                    elif (prior_operation.startswith('memory.')
-                          and '.load' in prior_operation):
-                        prior_dependencies = prior_arguments[3:]
-                    else:
-                        return (operand,)
+                    read = (prior_operation == 'memory.i64.relative_address'
+                            or prior_operation == 'memory.i64.load_region'
+                            or (prior_operation.startswith('memory.')
+                                and '.load' in prior_operation))
+                    if prior_operation.startswith('memory.') and not read:
+                        return (source_operand,)
                     flattened = []
-                    for dependency in prior_dependencies:
-                        for resolved in prior_write(dependency):
+                    for dependency in prior_arguments:
+                        for resolved in prior_write(
+                                dependency, False, seen):
                             if resolved not in flattened:
                                 flattened.append(resolved)
                     return tuple(flattened)
@@ -1158,7 +1465,8 @@ def _rewrite_physical(nodes, stack, locals_):
             if bits == 64 or operand.kind == 'const':
                 return True
             source = form(operand)
-            return source is not None and source[0].startswith(width + '.')
+            return (source is not None and source[0].startswith(width + '.')
+                    or (unsigned_bits(operand) or bits + 1) <= bits)
 
         # Keep affine constant motion in one modular spelling.  This makes
         # address updates such as rsp - 8 and rsp + (-8) the same SSA value.
@@ -1409,6 +1717,49 @@ def _rewrite_physical(nodes, stack, locals_):
               and already_projected(arguments[0])):
             replacement = arguments[0]
 
+        elif name == 'ADDR' and width == 'lane64' and len(arguments) == 2:
+            for base, indexed in (arguments, arguments[::-1]):
+                shifted = form(indexed)
+                if (shifted is None or shifted[0] != 'lane64.SHL'
+                        or len(shifted[1]) != 2
+                        or constant(shifted[1][1]) is None):
+                    continue
+                quotient = form(shifted[1][0])
+                if (quotient is None
+                        or quotient[0] not in ('lane32.SAR', 'lane64.SAR')
+                        or len(quotient[1]) != 2
+                        or constant(quotient[1][1]) is None):
+                    continue
+                byte_shift = constant(shifted[1][1])
+                word_shift = constant(quotient[1][1])
+                word_bits = 1 << word_shift
+                if (byte_shift + 3 != word_shift
+                        or word_bits not in (16, 32, 64)):
+                    continue
+                index_bits = 32 if quotient[0].startswith('lane32.') else 64
+                operation = 'lane64.BIT_ADDRESS'
+                arguments = (base, quotient[1][0], Operand(
+                    'const', word_bits | (index_bits << 8)))
+                break
+
+        elif name in ('SHLR', 'SARR', 'ROTL', 'ROTR') \
+                and len(arguments) == 2:
+            bounded = form(arguments[1])
+            if (bounded is not None and bounded[0] == width + '.AND'
+                    and len(bounded[1]) == 2
+                    and constant(bounded[1][1]) == bits - 1):
+                arguments = (arguments[0], bounded[1][0])
+
+        elif name == 'X86_BIT_FLAGS' and len(arguments) == 4:
+            descriptor = constant(arguments[3])
+            bounded = form(arguments[2])
+            if (descriptor in (16, 32, 64)
+                    and bounded is not None
+                    and bounded[0] == 'lane64.AND'
+                    and len(bounded[1]) == 2
+                    and constant(bounded[1][1]) == descriptor - 1):
+                arguments = arguments[:2] + (bounded[1][0], arguments[3])
+
         elif name == 'ADD' and len(arguments) == 2:
             source = form(arguments[0])
             addend = constant(arguments[1])
@@ -1558,7 +1909,12 @@ def _rewrite_physical(nodes, stack, locals_):
                     and constant(condition[1][1]) is not None):
                 code = constant(condition[1][1])
                 inverse = predicates.get((condition[1][0], code ^ 1))
-                if inverse is not None and inverse != arguments[2]:
+                # Predicate complements are equally expressive.  Always
+                # select the lower condition code as their canonical form;
+                # swapping on both directions makes cmov/setcc/cmov graphs
+                # alternate forever between code and code^1.
+                if (inverse is not None and inverse != arguments[2]
+                        and (code ^ 1) < code):
                     arguments = (arguments[1], arguments[0], inverse)
                     condition = form(inverse)
             if (left_form is not None and right_form is not None

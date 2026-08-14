@@ -376,3 +376,112 @@ def compile_function(function):
 def evaluate(function, args):
     """Run the function as a stack machine over 32/64-bit integers."""
     return compile_function(function)(args[0])
+
+
+def physical_sequence(function):
+    """Recover the flat integer listing as the shared SSA instruction form.
+
+    This is deliberately narrower than evaluation: it is an optional compact
+    candidate, never the semantics oracle.  The caller still verifies it on
+    the complete declared domain before it can outrank synthesized forms.
+    """
+    from ..isa import Seq, normalize_physical
+
+    seq = Seq()
+    locals_ = [0] + [('const', 0)] * function.local_count
+    stack = []
+
+    def is_const(value):
+        return isinstance(value, tuple) and value[0] == 'const'
+
+    def constant(value):
+        return int(value[1]) & M64
+
+    def materialize(value):
+        if not is_const(value):
+            return value
+        result = seq.emit('AND', [0], const=0)
+        if constant(value):
+            result = seq.emit('OR', [result], const=constant(value))
+        return result
+
+    def binary(opcode, left, right):
+        if is_const(left) and is_const(right):
+            a, b = constant(left), constant(right)
+            operations = {
+                'i64.add': lambda: a + b,
+                'i64.sub': lambda: a - b,
+                'i64.mul': lambda: a * b,
+                'i64.and': lambda: a & b,
+                'i64.or': lambda: a | b,
+                'i64.xor': lambda: a ^ b,
+                'i64.shl': lambda: a << (b & 63),
+                'i64.shr_u': lambda: a >> (b & 63),
+                'i64.shr_s': lambda: _to_signed(a, 64) >> (b & 63),
+            }
+            if opcode not in operations:
+                raise ValueError(opcode)
+            return 'const', operations[opcode]() & M64
+
+        immediate = {
+            'i64.add': 'ADD', 'i64.sub': 'SUB', 'i64.mul': 'IMUL',
+            'i64.and': 'AND', 'i64.or': 'OR', 'i64.xor': 'XOR',
+        }
+        commutative = {'i64.add', 'i64.mul', 'i64.and', 'i64.or', 'i64.xor'}
+        if is_const(left) and opcode in commutative:
+            left, right = right, left
+        if (opcode == 'i64.sub' and is_const(left)
+                and constant(left) == 0 and not is_const(right)):
+            return seq.emit('NEG', [right])
+        if is_const(right) and opcode in immediate:
+            return seq.emit(immediate[opcode], [materialize(left)],
+                            const=constant(right))
+        if is_const(right) and opcode in ('i64.shl', 'i64.shr_u',
+                                           'i64.shr_s'):
+            name = {'i64.shl': 'SHL', 'i64.shr_u': 'SHR',
+                    'i64.shr_s': 'SAR'}[opcode]
+            return seq.emit(name, [materialize(left)],
+                            shift=constant(right) & 63)
+        registers = {'i64.add': 'ADDR', 'i64.sub': 'SUBR',
+                     'i64.and': 'ANDR', 'i64.or': 'ORR',
+                     'i64.xor': 'XORR', 'i64.shr_u': 'SHRR'}
+        if opcode in registers and not is_const(left) and not is_const(right):
+            return seq.emit(registers[opcode], [left, right])
+        raise ValueError(opcode)
+
+    try:
+        for opcode, immediate in function.instructions:
+            if opcode == 'local.get':
+                stack.append(locals_[immediate])
+            elif opcode == 'local.set':
+                locals_[immediate] = stack.pop()
+            elif opcode == 'local.tee':
+                locals_[immediate] = stack[-1]
+            elif opcode in ('i32.const', 'i64.const'):
+                width = 32 if opcode.startswith('i32.') else 64
+                stack.append(('const', immediate & mask_of(width)))
+            elif opcode == 'drop':
+                stack.pop()
+            elif opcode in ('i64.add', 'i64.sub', 'i64.mul', 'i64.and',
+                            'i64.or', 'i64.xor', 'i64.shl', 'i64.shr_u',
+                            'i64.shr_s'):
+                right, left = stack.pop(), stack.pop()
+                stack.append(binary(opcode, left, right))
+            elif opcode in ('i64.popcnt', 'i64.clz', 'i64.ctz'):
+                value = materialize(stack.pop())
+                stack.append(seq.emit(
+                    {'i64.popcnt': 'POPCNT', 'i64.clz': 'CLZ',
+                     'i64.ctz': 'CTZ'}[opcode], [value]))
+            elif opcode in ('i64.extend_i32_u', 'i32.wrap_i64'):
+                value = stack.pop()
+                stack.append(('const', constant(value) & I32)
+                             if is_const(value) else
+                             seq.emit('AND', [value], const=I32))
+            else:
+                return None
+        if not stack:
+            return None
+        seq.result = materialize(stack[-1])
+        return normalize_physical(seq)
+    except (IndexError, KeyError, TypeError, ValueError):
+        return None

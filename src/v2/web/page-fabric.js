@@ -82,6 +82,15 @@ async function sourceRange(source, offset, length) {
     if (end > source.full.length) throw new Error('page bundle range is truncated');
     return source.full.subarray(offset, end);
   }
+  if (source.reader) {
+    const bytes = await source.reader(offset, length);
+    if (!(bytes instanceof Uint8Array) || bytes.length !== length) {
+      throw new Error('page bundle reader returned the wrong extent');
+    }
+    source.requests += 1;
+    source.transferredBytes += bytes.length;
+    return bytes;
+  }
   if (!source.url) throw new Error('page bundle needs a Blob or URL');
   const response = await fetch(source.url, {
     headers: { Range: `bytes=${offset}-${offset + length - 1}` },
@@ -460,6 +469,7 @@ export async function openPageBundle(options = {}) {
   const source = {
     blob: options.blob || null,
     url: options.url || null,
+    reader: typeof options.reader === 'function' ? options.reader : null,
     full: null,
     requests: 0,
     transferredBytes: 0,

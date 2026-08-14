@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import unittest
 
+from qm import isa
 from qm.clang import NATIVE, prepare_source
 from tests.support import (example, example_names, example_path,
                            solved as solve, target)
@@ -255,19 +256,20 @@ class TestEmittedCodeCompilesAsPasted(unittest.TestCase):
     @unittest.skipUnless(NATIVE.available(), 'no native Clang')
     def test_clang_reads_it_back_to_the_same_answer(self):
         """Compiling is not enough — the shims have to mean the same thing."""
+        probes = (0, 1, 2, 7, 0x7f, 0x80, 0xff,
+                  0x0123456789abcdef, 0xffffffffffffffff)
         for name in self.CASES:
             first, source = self.emitted(name)
             with self.subTest(example=name):
                 again = solve(source, frontend='clang')
                 self.assertTrue(again['ok'],
                                 (again.get('error') or {}).get('text'))
-                self.assertEqual(
-                    (tuple(first['program']['classes']),
-                     tuple(target(first)['instructions']),
-                     tuple(constants(target(first)))),
-                    (tuple(again['program']['classes']),
-                     tuple(target(again)['instructions']),
-                     tuple(constants(target(again)))))
+                left = isa.compile_seq(target(first)['seq'])
+                right = isa.compile_seq(target(again)['seq'])
+                self.assertEqual([left(value) for value in probes],
+                                 [right(value) for value in probes])
+                self.assertTrue(target(again)['verification']['pass'])
+                self.assertNotIn('LUT', target(again)['instructions'])
 
 
 class TestIntrinsics(unittest.TestCase):

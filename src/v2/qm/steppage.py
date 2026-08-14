@@ -27,6 +27,8 @@ from .laneops import OPS as LANE_OPS
 
 MAGIC = b'STEP'
 VERSION = 3
+TEMPLATE_MAGIC = b'STQT'
+TEMPLATE_VERSION = 1
 I64 = (1 << 64) - 1
 
 # Access shape is shared by every frontend.  The low byte is the physical
@@ -82,6 +84,7 @@ STATE_OPS = (
     'memory.i64.copy',
     'lane64.MUL_HIGH',
     'lane64.X86_MUL_FLAGS',
+    'lane64.BIT_ADDRESS',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
@@ -176,6 +179,26 @@ class StatePageError(CFrontError):
 
 def _align(value, alignment=8):
     return (value + alignment - 1) & -alignment
+
+
+def _pack_values(header, values):
+    """Encode already-normalized physical columns in canonical STEP layout."""
+    directory = []
+    cursor = HEADER_BYTES
+    for name, width in _COLUMNS:
+        cursor = _align(cursor)
+        directory.append((cursor, len(values[name])))
+        cursor += len(values[name]) * width
+
+    blob = bytearray(cursor)
+    _HEADER.pack_into(blob, 0, MAGIC, VERSION, HEADER_BYTES, *header)
+    at = _HEADER.size
+    for entry in directory:
+        _DIRECTORY_ENTRY.pack_into(blob, at, *entry)
+        at += _DIRECTORY_ENTRY.size
+    for (name, width), (offset, _count) in zip(_COLUMNS, directory):
+        _write_column(blob, offset, width, values[name])
+    return blob
 
 
 HEADER_BYTES = _align(_HEADER.size + len(_COLUMNS) * _DIRECTORY_ENTRY.size)
@@ -656,27 +679,11 @@ def pack(plan):
         'local_values': local_values,
     }
 
-    directory = []
-    cursor = HEADER_BYTES
-    for name, width in _COLUMNS:
-        cursor = _align(cursor)
-        directory.append((cursor, len(values[name])))
-        cursor += len(values[name]) * width
-
-    blob = bytearray(cursor)
-    _HEADER.pack_into(
-        blob, 0, MAGIC, VERSION, HEADER_BYTES,
+    return _pack_values((
         int(plan.function), int(plan.start), int(plan.end),
         int(plan.instructions), int(plan.waves.span), work, len(operands),
         stack_inputs, len(plan.stack), len(plan.locals), len(local_updates),
-    )
-    at = _HEADER.size
-    for entry in directory:
-        _DIRECTORY_ENTRY.pack_into(blob, at, *entry)
-        at += _DIRECTORY_ENTRY.size
-    for (name, width), (offset, _count) in zip(_COLUMNS, directory):
-        _write_column(blob, offset, width, values[name])
-    return blob
+    ), values)
 
 
 @dataclass(frozen=True)
@@ -821,6 +828,133 @@ def unpack(blob):
     mapped = MappedStatePage(data, tuple(header), columns)
     _validate(mapped)
     return mapped
+
+
+def project_step_template(blob):
+    """Split one STEP into an operator template and typed state parameters.
+
+    Constants remain tagged constants, but their 64-bit words move into the
+    parameter projection.  Stack/local input coordinates and changed-local
+    output coordinates are bounded frame indices and therefore use two bytes.
+    Node and projection coordinates stay in the template because they are the
+    normalized SSA graph itself.
+    """
+    mapped = unpack(blob)
+    parameters = bytearray()
+    template = bytearray(_HEADER.pack(
+        TEMPLATE_MAGIC, TEMPLATE_VERSION, _HEADER.size,
+        mapped.function, mapped.start, mapped.end, mapped.instructions,
+        mapped.span, mapped.work, mapped.operands, mapped.stack_inputs,
+        mapped.stack_count, mapped.local_extent, mapped.local_updates))
+
+    for name in ('wave_offsets', 'lane_values'):
+        for value in mapped.values(name):
+            template.extend(struct.pack('<I', value))
+    template.extend(mapped.column('opcodes'))
+    for value in mapped.values('argument_offsets'):
+        template.extend(struct.pack('<I', value))
+
+    for tags_name, values_name in (
+            ('operand_tags', 'operand_values'),
+            ('stack_tags', 'stack_values'),
+            ('local_tags', 'local_values')):
+        tags = mapped.values(tags_name)
+        values = mapped.values(values_name)
+        template.extend(bytes(tags))
+        for index, tag in enumerate(tags):
+            kind = OPERAND_KINDS[tag]
+            value = values[index]
+            if kind == 'const':
+                parameters.extend(struct.pack('<Q', value))
+            elif kind in ('stack', 'local'):
+                if value > 0xffff:
+                    raise ValueError(
+                        'state-step frame coordinate exceeds two bytes')
+                parameters.extend(struct.pack('<H', value))
+            else:
+                template.extend(struct.pack('<Q', value))
+
+    for value in mapped.values('local_indices'):
+        if value > 0xffff:
+            raise ValueError(
+                'state-step output coordinate exceeds two bytes')
+        parameters.extend(struct.pack('<H', value))
+    return bytes(template), bytes(parameters)
+
+
+def instantiate_step_template(template, parameters):
+    """Apply a typed parameter projection and return one validated STEP."""
+    data = template if isinstance(template, memoryview) else memoryview(template)
+    if len(data) < _HEADER.size:
+        raise StatePageError('state-step template header is truncated')
+    magic, version, header_bytes, *header = _HEADER.unpack_from(data, 0)
+    if (magic != TEMPLATE_MAGIC or version != TEMPLATE_VERSION
+            or header_bytes != _HEADER.size):
+        raise StatePageError('state-step template has an unknown format')
+    (_function, _start, _end, _instructions, span, work, operands,
+     _stack_inputs, stack_count, _local_extent, local_updates) = header
+    cursor = _HEADER.size
+
+    def structural(width, count):
+        nonlocal cursor
+        end = cursor + width * count
+        if end > len(data):
+            raise StatePageError('state-step template is truncated')
+        raw = data[cursor:end]
+        cursor = end
+        if width == 1:
+            return tuple(raw)
+        code = '<I' if width == 4 else '<Q'
+        return tuple(item[0] for item in struct.iter_unpack(code, raw))
+
+    values = {
+        'wave_offsets': structural(4, span + 1),
+        'lane_values': structural(4, work),
+        'opcodes': structural(1, work),
+        'argument_offsets': structural(4, work + 1),
+    }
+    parameters = memoryview(parameters)
+    parameter_cursor = 0
+
+    def take(width):
+        nonlocal parameter_cursor
+        end = parameter_cursor + width
+        if end > len(parameters):
+            raise StatePageError('state-step parameter projection is truncated')
+        value = int.from_bytes(parameters[parameter_cursor:end], 'little')
+        parameter_cursor = end
+        return value
+
+    for tags_name, values_name, count in (
+            ('operand_tags', 'operand_values', operands),
+            ('stack_tags', 'stack_values', stack_count),
+            ('local_tags', 'local_values', local_updates)):
+        tags = structural(1, count)
+        projected = []
+        for tag in tags:
+            if tag >= len(OPERAND_KINDS):
+                raise StatePageError(
+                    'state-step template has an unknown operand kind')
+            kind = OPERAND_KINDS[tag]
+            if kind == 'const':
+                value = take(8)
+            elif kind in ('stack', 'local'):
+                value = take(2)
+            else:
+                raw = structural(8, 1)
+                value = raw[0]
+            projected.append(value)
+        values[tags_name] = tags
+        values[values_name] = tuple(projected)
+
+    values['local_indices'] = tuple(take(2) for _ in range(local_updates))
+    if cursor != len(data):
+        raise StatePageError('state-step template has trailing bytes')
+    if parameter_cursor != len(parameters):
+        raise StatePageError('state-step parameter projection has trailing bytes')
+    output = _pack_values(tuple(header), values)
+    unpack(output)
+    return bytes(output)
 
 
 def _validate(mapped):

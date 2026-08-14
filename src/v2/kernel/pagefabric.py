@@ -501,24 +501,33 @@ def _multiplier(coefficient):
 
 
 def _combine(coefficients, shards, size):
-    output = bytearray(size)
+    """Combine one GF(256) row without a Python loop over every byte."""
+    size = int(size)
+    if size < 0:
+        raise ValueError('negative byte extent')
+    value = 0
     for coefficient, shard in zip(coefficients, shards):
         if not coefficient:
             continue
-        if coefficient == 1:
-            for index, value in enumerate(shard):
-                output[index] ^= value
-        else:
-            table = _multiplier(coefficient)
-            for index, value in enumerate(shard):
-                output[index] ^= table[value]
-    return bytes(output)
+        shard = bytes(shard)
+        if len(shard) > size:
+            raise IndexError('shard exceeds the output extent')
+        product = shard if coefficient == 1 \
+            else shard.translate(_multiplier(coefficient))
+        # Translation and arbitrary-width XOR both execute in native code.
+        # Bytes are independent GF(256) lanes, so this is exactly the scalar
+        # byte loop with its materialized per-byte accumulator removed.
+        value ^= int.from_bytes(product, 'little')
+    return value.to_bytes(size, 'little')
 
 
-def _encode_payload(raw):
+def _encode_payload(raw, compression_level=6):
     # The zlib wrapper is intentional: browsers can decode the exact wire
     # payload with DecompressionStream('deflate') without a second codec.
-    stream = zlib.compressobj(9, zlib.DEFLATED)
+    # Level 6 is the delivery knee for the 64 KiB physical pages: level 9
+    # spends several times longer searching while changing neither canonical
+    # identity nor the codec, and only marginally shrinks the disposable wire.
+    stream = zlib.compressobj(int(compression_level), zlib.DEFLATED)
     compressed = stream.compress(raw) + stream.flush()
     if len(compressed) < len(raw):
         return b'\x01' + compressed
@@ -1206,7 +1215,10 @@ def load_bundle(blob):
 
 
 def _finish_projection(object_digest, length, page_size, ranks, unique,
-                       data_shards, parity_shards, generation):
+                       data_shards, parity_shards, generation,
+                       stored_shards='all'):
+    if stored_shards not in ('all', 'data', 'parity'):
+        raise ValueError('stored shards must be all, data, or parity')
     generator = _generator(int(data_shards), int(parity_shards))
     zero = bytes(page_size)
     pending = []
@@ -1215,7 +1227,8 @@ def _finish_projection(object_digest, length, page_size, ranks, unique,
         data = unique[start:start + data_shards]
         data += [zero] * (data_shards - len(data))
         for slot, raw in enumerate(data):
-            if start + slot < len(unique):
+            if (start + slot < len(unique)
+                    and stored_shards in ('all', 'data')):
                 pending.append(((object_digest, int(generation), group, slot),
                                 _encode_payload(raw)))
             else:
@@ -1224,8 +1237,10 @@ def _finish_projection(object_digest, length, page_size, ranks, unique,
         for parity, coefficients in enumerate(generator[data_shards:]):
             raw = _combine(coefficients, data, page_size)
             slot = data_shards + parity
-            pending.append(((object_digest, int(generation), group, slot),
-                            _encode_payload(raw)))
+            pending.append(
+                ((object_digest, int(generation), group, slot),
+                 _encode_payload(raw))
+                if stored_shards in ('all', 'parity') else None)
             raw_shards.append(raw)
 
     root, proofs = _merkle_records(raw_shards)
@@ -1243,7 +1258,7 @@ def _finish_projection(object_digest, length, page_size, ranks, unique,
 
 
 def project(payload, page_size=4096, data_shards=8, parity_shards=2,
-            generation=0):
+            generation=0, stored_shards='all'):
     """Build a quotient directory and systematic erasure-shard store.
 
     The input remains the canonical object.  The returned structures are a
@@ -1276,7 +1291,7 @@ def project(payload, page_size=4096, data_shards=8, parity_shards=2,
         ranks.append(rank)
     return _finish_projection(
         _sha256(payload), len(payload), page_size, ranks, unique,
-        data_shards, parity_shards, generation)
+        data_shards, parity_shards, generation, stored_shards)
 
 
 def project_sparse(length, page_size, records, data_shards=8,
@@ -1584,7 +1599,7 @@ def artifact_delivery_bytes(
     manifest, store = project(
         payload, page_size=int(page_bytes),
         data_shards=int(data_shards),
-        parity_shards=int(parity_shards))
+        parity_shards=int(parity_shards), stored_shards=included_shards)
     wire = dump_bundle(manifest, store, included_shards)
     prefix_bytes = bundle_prefix_size(wire)
     metadata = {

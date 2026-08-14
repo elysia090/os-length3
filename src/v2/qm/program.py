@@ -14,7 +14,7 @@ from .bits import (M64, bswap64, clmul, clz, ctz, lane_masks, lane_values,
 # Semantic classes, plus TABLE for the always-available finite-domain
 # representative and SPLIT for the piecewise one.
 CLASSES = ('POINT', 'LIN_CONST', 'CONV', 'PERM_DYN', 'BIT_QUERY',
-           'FIELD_COMPARE', 'FORK', 'SPLIT', 'TABLE', 'IDENTITY')
+           'FIELD_COMPARE', 'FORK', 'SPLIT', 'TABLE', 'IDENTITY', 'SSA')
 
 
 class Key(object):
@@ -134,6 +134,15 @@ class Op(object):
                 detail[key] = ['0x%X' % v for v in value[:8]]
                 if len(value) > 8:
                     detail[key].append('... %d entries' % len(value))
+            elif key == 'sequence':
+                detail[key] = {
+                    'result': value.result,
+                    'instructions': [
+                        {'op': ins.op, 'args': list(ins.args),
+                         'const': ins.const, 'shift': ins.shift}
+                        for ins in value.ins
+                    ],
+                }
             elif isinstance(value, int) and key.endswith(('mask', 'const', 'M', 'D')):
                 detail[key] = '0x%016X' % value
             else:
@@ -256,6 +265,11 @@ def table(values, input_bits, output_bits):
 
 def identity():
     return Op('IDENTITY', {}, label='IDENTITY')
+
+
+def ssa(sequence):
+    """A verified straight-line SSA candidate recovered by a frontend."""
+    return Op('SSA', {'sequence': sequence}, label='SSA')
 
 
 def computes_the_identity(op):
@@ -412,6 +426,8 @@ def _eval_point(steps, value):
             v = (v + const) & M64
         elif mnemonic == 'SUB':
             v = (v - const) & M64
+        elif mnemonic == 'IMUL':
+            v = (v * const) & M64
         elif mnemonic == 'NOT':
             v = (~v) & M64
         elif mnemonic == 'SHL':
@@ -548,6 +564,11 @@ def _op_expression(op, index, data):
         name = 'table%d' % index
         data[name] = op.detail['table']
         return '%s[%s & %d]' % (name, source, mask_of(op.detail['input_bits']))
+    if kind == 'SSA':
+        from .isa import compile_seq
+        name = 'ssa%d' % index
+        data[name] = compile_seq(op.detail['sequence'])
+        return '%s(%s)' % (name, source)
     raise ValueError('cannot evaluate %r' % kind)
 
 
