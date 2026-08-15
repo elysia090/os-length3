@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 import hashlib
+from heapq import merge
 import json
 import struct
 
@@ -113,7 +114,7 @@ def _encode_native_x86_continuation(continuation):
     the common branch row is only a tag plus one small displacement.
     """
     control, boundary, first, second, third = map(int, continuation)
-    if not 0 <= control <= 36:
+    if not 0 <= control <= 42:
         raise ValueError('native x86 continuation control is invalid')
     values = tuple(value & MASK64 for value in (
         boundary, first, second, third))
@@ -141,7 +142,7 @@ def _decode_native_x86_continuation(payload):
         raise ValueError('native x86 continuation is truncated')
     control = payload[0]
     tags = payload[1] | payload[2] << 8
-    if control > 36 or tags >> 12:
+    if control > 42 or tags >> 12:
         raise ValueError('native x86 continuation tag is invalid')
     cursor = 3
     values = []
@@ -301,23 +302,18 @@ def _boot_cache_memory_bytes(payload):
     return bytes(payload[start:end])
 
 
-def canonical_native_x86_records(blocks):
-    """Choose the one strongest portable record at every native coordinate."""
+def canonical_native_x86_packed_records(packed_blocks):
+    """Canonicalize blocks that were already projected to portable records."""
     variants = {}
     internal_variants = set()
-    for block in blocks:
-        try:
-            packed_records = pack_native_x86_records(block)
-        except (StatePageError, TypeError, ValueError) as error:
-            raise ValueError(
-                'native x86 cut %#x cannot be packed: %s'
-                % (int(block.rip) & MASK64, error)) from error
+    for primary_rip, packed_records in packed_blocks:
+        primary_rip = int(primary_rip) & MASK64
         for rip, record in packed_records:
             _fields, guard, _step = split_native_x86_record(record)
             key = int(rip) & MASK64, guard
             prior = variants.get(key)
             if prior is not None and prior != record:
-                internal = rip != int(block.rip) & MASK64
+                internal = rip != primary_rip
                 prior_internal = key in internal_variants
                 # A faultable terminal is deliberately split from its pure
                 # prefix.  If normal control also reached that instruction,
@@ -335,10 +331,25 @@ def canonical_native_x86_records(blocks):
                     'native x86 coordinate %#x has distinct %s records'
                     % (rip, 'internal' if internal else 'primary'))
             variants[key] = record
-            if rip != int(block.rip) & MASK64:
+            if rip != primary_rip:
                 internal_variants.add(key)
     return tuple((rip, record)
                  for (rip, _guard), record in sorted(variants.items()))
+
+
+def canonical_native_x86_records(blocks):
+    """Choose the one strongest portable record at every native coordinate."""
+    def packed():
+        for block in blocks:
+            try:
+                records = pack_native_x86_records(block)
+            except (StatePageError, TypeError, ValueError) as error:
+                raise ValueError(
+                    'native x86 cut %#x cannot be packed: %s'
+                    % (int(block.rip) & MASK64, error)) from error
+            yield int(block.rip) & MASK64, records
+
+    return canonical_native_x86_packed_records(packed())
 
 
 def dump_native_x86_machine(boot_cache, state, blocks):
@@ -413,7 +424,8 @@ def physical_native_x86_record(record, coordinate):
         _project_native_x86_continuation(fields))
 
 
-def _encode_native_x86_physical(header, memory, variants):
+def _encode_native_x86_physical(
+        header, memory, variants, sorted_prefix=0):
     """Encode canonical rank directories from already projected STEP rows."""
     memory = bytes(memory)
 
@@ -424,7 +436,25 @@ def _encode_native_x86_physical(header, memory, variants):
     guards = {}
     continuations = {}
     record_fields = {}
-    ordered_keys = sorted(variants)
+    # Admission is first-match.  A closed recurrence has an explicit entry
+    # contract and therefore outranks its scalar prefixes; ordinary composed
+    # cuts keep lexical order until their residual-state proof is encoded.
+    order_key = lambda key: _native_variant_order(key, variants[key])
+    keys = tuple(variants)
+    sorted_prefix = int(sorted_prefix)
+    if (sorted_prefix > 0
+            and header.get('candidate_order') == 'closed-recurrence-first'
+            and sorted_prefix <= len(keys)):
+        # A loaded schema-5 directory is already canonical. Extension keeps
+        # that insertion order and appends only newly proved identities, so
+        # sort the small suffix and merge the two runs instead of sorting the
+        # complete resident kernel graph after every checkpoint.
+        ordered_keys = tuple(merge(
+            keys[:sorted_prefix],
+            sorted(keys[sorted_prefix:], key=order_key),
+            key=order_key))
+    else:
+        ordered_keys = tuple(sorted(keys, key=order_key))
     for key in ordered_keys:
         guard, step, continuation = variants[key]
         steps.setdefault(step, None)
@@ -502,6 +532,7 @@ def _encode_native_x86_physical(header, memory, variants):
     encoded_header = dict(header)
     encoded_header.update({
         'schema': 5,
+        'candidate_order': 'closed-recurrence-first',
         'block_count': len(block_directory),
         'step_count': len(step_directory),
         'template_count': len(template_directory),
@@ -804,15 +835,21 @@ def load_native_x86_machine(payload, scrub_invalid=False):
                         + index * NATIVE_CONTROL_TEMPLATE.size)
                     control, reserved, boundary, first, second, third = fields
                     continuation = control, boundary, first, second, third
-                    if (reserved or control > 36
+                    if (reserved or control > 42
                             or continuation in identities):
                         raise X86Error(
                             'native x86 continuation rank is not minimal')
                     identities.add(continuation)
                     continuations.append(continuation)
 
+            candidate_order = header.get(
+                'candidate_order', 'guard-lexicographic')
+            if candidate_order not in (
+                    'guard-lexicographic', 'proved-bytes-descending',
+                    'closed-recurrence-first'):
+                raise X86Error('native x86 candidate order is invalid')
             prior_rip = -1
-            prior_guard = None
+            prior_candidate = None
             for index in range(block_count):
                 fields = NATIVE_BLOCK_INSTANCE.unpack_from(
                     payload, descriptor_offset
@@ -824,9 +861,14 @@ def load_native_x86_machine(payload, scrub_invalid=False):
                 continuation = (
                     continuations[continuation_rank - 1]
                     if 0 < continuation_rank <= len(continuations) else None)
+                candidate = (_native_variant_order(
+                    (rip, guard), continuation=continuation,
+                    order=candidate_order)
+                    if guard is not None else None)
                 if (rip < prior_rip or guard is None or continuation is None
                         or rank <= 0 or rank > len(steps)
-                        or (rip == prior_rip and guard <= prior_guard)):
+                        or (prior_candidate is not None
+                            and candidate <= prior_candidate)):
                     raise X86Error(
                         'native x86 block instance %d at %#x is invalid'
                         % (index, rip))
@@ -845,7 +887,7 @@ def load_native_x86_machine(payload, scrub_invalid=False):
                     raise X86Error('native x86 block record is invalid')
                 records.append((rip, record))
                 prior_rip = rip
-                prior_guard = guard
+                prior_candidate = candidate
         elif schema == 3:
             block_count = int(header['block_count'])
             step_count = int(header['step_count'])
@@ -1155,6 +1197,68 @@ def repack_native_x86_machine(payload):
     return _encode_native_x86_machine(base, memory, records)
 
 
+def rebase_native_x86_physical_machine(payload, boot_cache, state):
+    """Retain proved physical blocks while replacing boot RAM and CPU state.
+
+    The executable directory is already guarded by the exact source bytes it
+    proves, so unchanged kernel blocks remain valid across an initramfs-only
+    rebuild.  Blocks whose bytes moved or changed fail that guard and are
+    admitted again by the ordinary runtime closure path.  Keeping the rank
+    directory physical avoids expanding shared STEP templates into scalar
+    records merely to attach a new boot image.
+    """
+    _old_header, _old_memory, variants = \
+        load_native_x86_physical_machine(payload)
+    empty = dump_native_x86_machine(boot_cache, state, ())
+    header, memory, _empty_variants = \
+        load_native_x86_physical_machine(empty)
+    return _encode_native_x86_physical(header, memory, variants)
+
+
+def merge_native_x86_physical_machines(base_payload, *overlay_payloads,
+                                       replace_conflicts=True):
+    """Union proved physical block quotients without expanding STEP rows.
+
+    The base owns the cold-boot CPU state and RAM image.  Every overlay must
+    come from that exact boot object; only its guarded block directory is
+    admitted.  Later overlays replace an older lowering for the same
+    ``(rip, code-proof)`` coordinate, which lets a stronger QM result win
+    without creating a second execution path.
+    """
+    header, memory, merged = load_native_x86_physical_machine(base_payload)
+    merged = dict(merged)
+    added = 0
+    replaced = 0
+    retained = 0
+    overlay_blocks = 0
+    for payload in overlay_payloads:
+        overlay_header, overlay_memory, overlay = \
+            load_native_x86_physical_machine(payload)
+        overlay_blocks += int(overlay_header['block_count'])
+        if overlay_memory != memory:
+            raise X86Error('native x86 machine overlays name different RAM')
+        if overlay_header.get('state') != header.get('state'):
+            raise X86Error('native x86 machine overlays name different CPU state')
+        for coordinate, physical in overlay.items():
+            prior = merged.get(coordinate)
+            if prior is None:
+                added += 1
+            elif prior != physical:
+                if not replace_conflicts:
+                    retained += 1
+                    continue
+                replaced += 1
+            merged[coordinate] = physical
+    return _encode_native_x86_physical(header, memory, merged), {
+        'base_blocks': int(header['block_count']),
+        'overlay_blocks': overlay_blocks,
+        'added_blocks': added,
+        'replaced_blocks': replaced,
+        'retained_conflicts': retained,
+        'blocks': len(merged),
+    }
+
+
 def load_native_x86_physical_machine(payload):
     """Load schema 5 rank identities without materializing scalar STEP rows."""
     payload = payload if isinstance(payload, memoryview) else memoryview(payload)
@@ -1309,9 +1413,14 @@ def load_native_x86_physical_machine(payload):
             identities.add(continuation)
             continuations.append(continuation)
 
+        candidate_order = header.get(
+            'candidate_order', 'guard-lexicographic')
+        if candidate_order not in (
+                'guard-lexicographic', 'proved-bytes-descending',
+                'closed-recurrence-first'):
+            raise X86Error('native x86 candidate order is invalid')
         variants = {}
-        prior_rip = -1
-        prior_guard = b''
+        prior_candidate = None
         for index in range(block_count):
             rip, step_rank, continuation_rank, guard_rank = map(
                 int, NATIVE_BLOCK_INSTANCE.unpack_from(
@@ -1323,14 +1432,19 @@ def load_native_x86_physical_machine(payload):
             continuation = (
                 continuations[continuation_rank - 1]
                 if 0 < continuation_rank <= len(continuations) else None)
-            if (rip < prior_rip or guard is None or continuation is None
+            candidate = (_native_variant_order(
+                (rip, guard), continuation=continuation,
+                order=candidate_order)
+                if guard is not None else None)
+            if (guard is None or continuation is None
                     or not 0 < step_rank <= len(steps)
-                    or (rip == prior_rip and guard <= prior_guard)):
+                    or (prior_candidate is not None
+                        and candidate <= prior_candidate)):
                 raise X86Error(
                     'native x86 block instance %d at %#x is invalid'
                     % (index, rip))
             variants[rip, guard] = (guard, steps[step_rank - 1], continuation)
-            prior_rip, prior_guard = rip, guard
+            prior_candidate = candidate
     except (KeyError, TypeError, ValueError, struct.error) as error:
         if isinstance(error, X86Error):
             raise
@@ -1373,6 +1487,8 @@ def extend_loaded_native_x86_physical_machine(
             continue
         retained[rip, guard] = physical
     variants = retained
+    sorted_prefix = len(variants)
+    reordered_existing = False
     for rip, guard, physical in incoming:
         key = rip, guard
         prior = variants.get(key)
@@ -1383,8 +1499,11 @@ def extend_loaded_native_x86_physical_machine(
                     % rip)
             if not replace_proved:
                 continue
+            reordered_existing = True
         variants[key] = physical
-    return _encode_native_x86_physical(header, memory, variants)
+    return _encode_native_x86_physical(
+        header, memory, variants,
+        sorted_prefix=0 if reordered_existing else sorted_prefix)
 
 
 def extend_native_x86_machine(payload, records, reject_conflicts=True,
@@ -1581,6 +1700,38 @@ def _native_code_guard_extents(guard):
     return tuple(extents) if cursor == len(guard) else ()
 
 
+def _native_variant_order(key, physical=None, continuation=None,
+                          order='closed-recurrence-first'):
+    """Return the canonical first-match order for one block candidate.
+
+    An ordinary composed cut can still carry an entry residual learned from a
+    concrete state; exact code bytes alone do not prove that residual.  Only
+    the recurrence control has an explicit closed-form entry contract in the
+    shared VM grammar, so it may safely outrank scalar prefixes today.  Other
+    controls retain lexical proof order until their residual cut is encoded.
+    """
+    rip, guard = key
+    if order == 'guard-lexicographic':
+        return int(rip) & MASK64, bytes(guard)
+    extents = _native_code_guard_extents(guard)
+    if order == 'proved-bytes-descending':
+        return (int(rip) & MASK64,
+                -sum(len(payload) for _address, payload in extents),
+                -len(extents), bytes(guard))
+    if order != 'closed-recurrence-first':
+        raise ValueError('native x86 candidate order is invalid')
+    if continuation is None and physical is not None:
+        continuation = physical[2]
+    control = None if continuation is None else int(continuation[0])
+    recurrence = control == 24
+    return (int(rip) & MASK64,
+            0 if recurrence else 1,
+            -sum(len(payload) for _address, payload in extents)
+            if recurrence else 0,
+            -len(extents) if recurrence else 0,
+            bytes(guard))
+
+
 def pack_native_x86_block(block):
     """Pack one complete register/flags cut for the resident native VM."""
     if not isinstance(block, DecodedBlock):
@@ -1594,12 +1745,20 @@ def pack_native_x86_block(block):
             raise ValueError('native x86 block cannot publish flags')
     operation = block.boundary.operation
     detail = block.boundary.detail
-    # The integer machine has no additional resident x87/SSE register file.
-    # These complete architectural effects are ordinary next-RIP quotients,
-    # not host fallbacks.
-    if operation == 'restore_fpu':
-        operation = 'branch'
-        detail = detail[0]
+    if operation in ('save_fpu', 'restore_fpu'):
+        first_local = len(plan.locals)
+        lowered = X86DBT._fpu_state_plan(block.boundary, first_local)
+        if lowered is None:
+            raise ValueError('native x86 FPU state is not normalized')
+        fpu_plan, following, first_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals) + tuple(
+                Operand('local', first_local + lane)
+                for lane in range(32)))
+        plan = compose_plans(plan, fpu_plan)
+        operation = ('native_fpu_save' if operation == 'save_fpu'
+                     else 'native_fpu_restore')
+        detail = following, first_local
     elif operation == 'fpu_init':
         operation = 'branch'
     elif operation == 'memory_fence':
@@ -1633,6 +1792,160 @@ def pack_native_x86_block(block):
         plan = compose_plans(plan, simd_plan)
         operation = 'native_simd_load'
         detail = following, vector, low_local, high_local
+    elif (operation == 'simd_move_to'
+          and isinstance(detail[2], MemoryOperand)):
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_load_low_plan(
+            block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD low load is not normalized')
+        simd_plan, following, vector, value_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_move_to'
+        detail = following, vector, value_local
+    elif operation == 'simd_load_lane':
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_load_lane_plan(
+            block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD lane load is not normalized')
+        simd_plan, following, vector, lane, value_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_load_lane'
+        detail = following, vector, lane, value_local
+    elif operation == 'simd_load32':
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_load32_plan(block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD dword load is not normalized')
+        simd_plan, following, vector, value_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_load32'
+        detail = following, vector, value_local
+    elif operation == 'simd_store32':
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_store32_plan(block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD dword store is not normalized')
+        simd_plan, following, vector, value_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_store32'
+        detail = following, vector, value_local
+    elif (operation == 'simd_compare_scalar'
+          and isinstance(detail[2], MemoryOperand)):
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_compare_plan(block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD compare is not normalized')
+        simd_plan, following, vector, value_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_compare_scalar'
+        detail = following, vector, value_local
+    elif (operation == 'simd_convert_integer'
+          and isinstance(detail[2], MemoryOperand)):
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_convert_integer_plan(
+            block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD conversion is not normalized')
+        (simd_plan, following, vector,
+         value_local, bits) = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_convert_integer'
+        detail = following, vector, value_local, bits
+    elif (operation == 'simd_scalar_binary'
+          and isinstance(detail[3], MemoryOperand)):
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_scalar_binary_plan(
+            block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD scalar ALU is not normalized')
+        (simd_plan, following, scalar_operation,
+         vector, value_local) = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_scalar_binary'
+        detail = following, scalar_operation, vector, value_local
+    elif (operation == 'simd_convert_truncate'
+          and isinstance(detail[2], MemoryOperand)):
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_convert_truncate_plan(
+            block.boundary, value_local)
+        if lowered is None:
+            raise ValueError(
+                'native x86 SIMD truncate conversion is not normalized')
+        (simd_plan, following, register,
+         value_local, bits) = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_convert_truncate'
+        detail = following, register, value_local, bits
+    elif operation in ('simd_packed_equal', 'simd_unpack_dwords'):
+        low_local = len(plan.locals)
+        lowered = X86DBT._simd_packed_equal_plan(
+            block.boundary, low_local, low_local + 1)
+        if lowered is None:
+            raise ValueError('native x86 packed compare is not normalized')
+        (simd_plan, following, vector,
+         low_local, high_local) = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', low_local), Operand('local', high_local)))
+        plan = compose_plans(plan, simd_plan)
+        packed_operation = 11 if operation == 'simd_packed_equal' else 12
+        operation = 'native_simd_register'
+        detail = following, packed_operation, vector, low_local, 1 << 8
+    elif operation == 'simd_shuffle_dwords':
+        following, vector, operand, immediate = detail
+        low_local = len(plan.locals)
+        lowered = X86DBT._simd_load_plan(
+            X86Boundary('simd_load', (following, vector, operand)),
+            low_local, low_local + 1)
+        if lowered is None:
+            raise ValueError('native x86 packed shuffle is not normalized')
+        simd_plan, following, vector, low_local, high_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', low_local), Operand('local', high_local)))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_register'
+        detail = (following, 13, vector, low_local,
+                  int(immediate) | (1 << 8))
+    elif operation == 'simd_store_lane':
+        value_local = len(plan.locals)
+        lowered = X86DBT._simd_store_low_plan(
+            block.boundary, value_local)
+        if lowered is None:
+            raise ValueError('native x86 SIMD qword store is not normalized')
+        simd_plan, following, vector, value_local = lowered
+        plan = replace(
+            plan, locals=tuple(plan.locals)
+            + (Operand('local', value_local),))
+        plan = compose_plans(plan, simd_plan)
+        operation = 'native_simd_store_lane'
+        detail = following, vector, value_local
     if not operation.startswith('native_'):
         segment_local = len(plan.locals)
         segment_lowered = X86DBT._segment_memory_plan(
@@ -1924,15 +2237,19 @@ def pack_native_x86_block(block):
     elif operation == 'sysret':
         control = 30
         arguments = [int(detail) & MASK64, 0, 0]
-    elif operation == 'simd_move_to':
+    elif operation in ('simd_move_to', 'native_simd_move_to'):
         following, vector, source = detail
+        memory = operation == 'native_simd_move_to'
         if (not 0 <= int(vector) < 16
                 or not isinstance(source, int)
-                or not 0 <= source < 16):
+                or not 0 <= source < 256
+                or (memory and source < 17)
+                or (not memory and source >= 16)):
             raise ValueError('native x86 SIMD move shape is invalid')
         control = 31
         arguments = [int(following) & MASK64,
-                     int(vector) | (int(source) << 8), 0]
+                     int(vector) | (int(source) << 8)
+                     | (int(memory) << 16), 0]
     elif operation == 'simd_unpack_low':
         following, vector, source = detail
         if (not 0 <= int(vector) < 16
@@ -1952,6 +2269,22 @@ def pack_native_x86_block(block):
         control = 33
         arguments = [int(following) & MASK64, int(vector),
                      int(low_local) | (int(high_local) << 8)]
+    elif operation == 'native_simd_store32':
+        following, vector, value_local = detail
+        if (not 0 <= int(vector) < 16
+                or not 17 <= int(value_local) < 256):
+            raise ValueError('native x86 SIMD dword store shape is invalid')
+        control = 33
+        arguments = [int(following) & MASK64, int(vector),
+                     int(value_local) | (1 << 16)]
+    elif operation == 'native_simd_store_lane':
+        following, vector, value_local = detail
+        if (not 0 <= int(vector) < 16
+                or not 17 <= int(value_local) < 256):
+            raise ValueError('native x86 SIMD qword store shape is invalid')
+        control = 33
+        arguments = [int(following) & MASK64, int(vector),
+                     int(value_local) | (1 << 16)]
     elif operation == 'native_segment_memory':
         following, segment, segment_local = detail
         if (int(segment) not in (0, 1)
@@ -1979,6 +2312,118 @@ def pack_native_x86_block(block):
         control = 36
         arguments = [int(following) & MASK64, int(vector),
                      int(low_local) | (int(high_local) << 8)]
+    elif operation == 'native_simd_load_lane':
+        following, vector, lane, value_local = detail
+        if (not 0 <= int(vector) < 16 or int(lane) not in (0, 1)
+                or not 17 <= int(value_local) < 256):
+            raise ValueError('native x86 SIMD lane load shape is invalid')
+        control = 36
+        arguments = [int(following) & MASK64,
+                     int(vector) | (int(lane) << 8),
+                     int(value_local) | (1 << 16)]
+    elif operation == 'native_simd_load32':
+        following, vector, value_local = detail
+        if (not 0 <= int(vector) < 16
+                or not 17 <= int(value_local) < 256):
+            raise ValueError('native x86 SIMD dword load shape is invalid')
+        control = 36
+        arguments = [int(following) & MASK64, int(vector),
+                     int(value_local) | (1 << 16) | (1 << 17)]
+    elif operation in ('simd_register', 'native_simd_register'):
+        following, opcode, target, source, immediate = detail
+        memory = operation == 'native_simd_register'
+        if (not 0 <= int(opcode) <= 13
+                or not 0 <= int(target) < 16
+                or not 0 <= int(source) < 256
+                or (memory and (int(opcode) not in (11, 12, 13)
+                                or int(source) < 17
+                                or int(source) + 1 >= 256
+                                or (int(opcode) in (11, 12)
+                                    and int(immediate) != 1 << 8)
+                                or (int(opcode) == 13
+                                    and not 1 << 8 <= int(immediate) < 1 << 9)))
+                or (not memory and int(source) >= 16)
+                or (not memory and int(opcode) in (1, 5, 10, 13)
+                    and not 0 <= int(immediate) < 256)
+                or (not memory and int(opcode) in (11, 12)
+                    and int(immediate) not in (0, 1 << 8))
+                or (not memory and int(opcode)
+                    not in (1, 5, 10, 11, 12, 13)
+                    and int(immediate))):
+            raise ValueError('native x86 SIMD register shape is invalid')
+        control = 37
+        arguments = [int(following) & MASK64,
+                     int(opcode) | (int(target) << 8)
+                     | (int(source) << 16), int(immediate)]
+    elif operation in ('simd_compare_scalar',
+                       'native_simd_compare_scalar'):
+        following, vector, source = detail
+        memory = operation == 'native_simd_compare_scalar'
+        if (not 0 <= int(vector) < 16
+                or not isinstance(source, int)
+                or not 0 <= int(source) < 256
+                or (memory and int(source) < 17)
+                or (not memory and int(source) >= 16)):
+            raise ValueError('native x86 SIMD compare shape is invalid')
+        control = 38
+        arguments = [int(following) & MASK64,
+                     int(vector) | (int(source) << 8)
+                     | (int(memory) << 16), 0]
+    elif operation in ('simd_convert_integer',
+                       'native_simd_convert_integer'):
+        following, vector, source, bits = detail
+        memory = operation == 'native_simd_convert_integer'
+        if (not 0 <= int(vector) < 16
+                or not isinstance(source, int)
+                or not 0 <= int(source) < 256
+                or int(bits) not in (32, 64)
+                or (memory and int(source) < 17)
+                or (not memory and int(source) >= 16)):
+            raise ValueError('native x86 SIMD conversion shape is invalid')
+        control = 39
+        arguments = [int(following) & MASK64,
+                     int(vector) | (int(source) << 8)
+                     | (int(memory) << 16)
+                     | (int(bits == 64) << 17), 0]
+    elif operation in ('simd_convert_truncate',
+                       'native_simd_convert_truncate'):
+        following, register, source, bits = detail
+        memory = operation == 'native_simd_convert_truncate'
+        if (not 0 <= int(register) < 16
+                or not isinstance(source, int)
+                or not 0 <= int(source) < 256
+                or int(bits) not in (32, 64)
+                or (memory and int(source) < 17)
+                or (not memory and int(source) >= 16)):
+            raise ValueError(
+                'native x86 SIMD truncate conversion shape is invalid')
+        control = 39
+        arguments = [int(following) & MASK64,
+                     int(register) | (int(source) << 8)
+                     | (int(memory) << 16)
+                     | (int(bits == 64) << 17) | (1 << 18), 0]
+    elif operation in ('simd_scalar_binary',
+                       'native_simd_scalar_binary'):
+        following, scalar_operation, vector, source = detail
+        memory = operation == 'native_simd_scalar_binary'
+        if (not 0 <= int(scalar_operation) <= 3
+                or not 0 <= int(vector) < 16
+                or not isinstance(source, int)
+                or not 0 <= int(source) < 256
+                or (memory and int(source) < 17)
+                or (not memory and int(source) >= 16)):
+            raise ValueError('native x86 SIMD scalar ALU shape is invalid')
+        control = 40
+        arguments = [int(following) & MASK64,
+                     int(scalar_operation) | (int(vector) << 8)
+                     | (int(source) << 16) | (int(memory) << 24), 0]
+    elif operation in ('native_fpu_save', 'native_fpu_restore'):
+        following, first_local = detail
+        if (not 17 <= int(first_local) < 256
+                or int(first_local) + 32 > 256):
+            raise ValueError('native x86 FPU state shape is invalid')
+        control = 41 if operation == 'native_fpu_save' else 42
+        arguments = [int(following) & MASK64, int(first_local), 0]
     else:
         raise ValueError(
             'native x86 control is not normalized: %s %r'
@@ -2019,7 +2464,7 @@ def native_x86_static_successors(record):
     if (magic != NATIVE_BLOCK_MAGIC or version not in (1, 2)
             or header_bytes != NATIVE_BLOCK_HEADER.size
             or page_bytes <= 0 or page_bytes > len(record) - header_bytes
-            or control > 36):
+            or control > 42):
         raise ValueError('native x86 record header is invalid')
     if control == 2:
         return tuple(dict.fromkeys((first & MASK64, second & MASK64)))
@@ -2039,7 +2484,7 @@ def validate_native_x86_record(record, coordinate=None):
     if (magic != NATIVE_BLOCK_MAGIC or version not in (1, 2)
             or header_bytes != NATIVE_BLOCK_HEADER.size
             or page_bytes != len(step)
-            or control > 36
+            or control > 42
             or (coordinate is not None
                 and rip != int(coordinate) & MASK64)):
         raise ValueError('native x86 record header is invalid')
@@ -2073,6 +2518,26 @@ def _lowered_boundary_memory(boundary):
         lowered = X86DBT._simd_store_plan(boundary, 17, 18)
         if lowered is None:
             lowered = X86DBT._simd_load_plan(boundary, 17, 18)
+        if lowered is None:
+            lowered = X86DBT._simd_load_low_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_load_lane_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_load32_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_store32_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_compare_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_convert_integer_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_scalar_binary_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_convert_truncate_plan(boundary, 17)
+        if lowered is None:
+            lowered = X86DBT._simd_packed_equal_plan(boundary, 17, 18)
+        if lowered is None:
+            lowered = X86DBT._simd_store_low_plan(boundary, 17)
         plan = None if lowered is None else lowered[0]
     if plan is None:
         identity = X86DBT._carry_flags_plan(_identity_register_plan())
@@ -2127,14 +2592,21 @@ def pack_native_x86_records(block):
 
 
 def native_x86_cut_coordinates(dbt):
-    """Return every reached entry whose strongest physical cut is resident.
+    """Return every decoded entry whose strongest physical cut is resident.
 
     A residual can execute directly from a predecessor's conditional control,
     so its own entry need not appear in the ordinary block execution profile.
-    Artifact closure must nevertheless publish that stronger quotient.
+    Likewise, threaded physical execution can compose several decoded basic
+    blocks into one larger cut.  Which interior coordinate is exposed later
+    depends on the resident artifact's grouping and page/barrier boundary, so
+    publishing only sampled physical boundaries creates an avoidable N+1
+    admission loop.  Every already-decoded basic block is part of the same
+    proved control-flow closure and is cheap after STEP/template deduplication.
     """
-    coordinates = set(() if dbt._physical_profile is None
-                      else dbt._physical_profile)
+    coordinates = set(int(rip) & MASK64 for rip in dbt.blocks)
+    if dbt._physical_profile is not None:
+        coordinates.update(int(rip) & MASK64
+                           for rip in dbt._physical_profile)
     for _branch, entry in dbt._recurrence_cuts.values():
         if entry is not None:
             coordinates.add(int(entry[0].rip) & MASK64)

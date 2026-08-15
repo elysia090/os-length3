@@ -28,21 +28,36 @@ class TestCompilerDistribution(unittest.TestCase):
                 item = tarfile.TarInfo(name)
                 item.size = len(contents)
                 archive.addfile(item, io.BytesIO(contents))
+            alias = tarfile.TarInfo('include/types.h')
+            alias.type = tarfile.LNKTYPE
+            alias.linkname = './include/stdint.h'
+            archive.addfile(alias)
         raw = payload.getvalue()
         index = resource_index(raw)
         self.assertEqual(index['format'], 'tar-cut-v1')
         self.assertEqual(index['mount'], '/usr')
+        self.assertEqual(resource_index(raw, mount='/')['mount'], '/')
 
         previous = ''
         observed = {}
-        for shared, suffix, kind, offset, size in index['entries']:
+        hardlinks = {}
+        for entry in index['entries']:
+            shared, suffix, kind = entry[:3]
             name = previous[:shared] + suffix
-            self.assertEqual(kind, 'f')
-            observed[name] = raw[offset:offset + size]
+            if kind == 'f':
+                offset, size = entry[3:]
+                observed[name] = raw[offset:offset + size]
+            elif kind == 'h':
+                hardlinks[name] = entry[3]
+            else:
+                self.fail('unexpected resource entry %r' % (entry,))
             previous = name
         self.assertEqual(observed, {
             'include/stddef.h': b'typedef unsigned usize;\n',
             'include/stdint.h': b'typedef unsigned u32;\n',
+        })
+        self.assertEqual(hardlinks, {
+            'include/types.h': 'include/stdint.h',
         })
 
     def test_distribution_has_no_runtime_package_layout(self):

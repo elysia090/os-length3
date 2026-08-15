@@ -15,7 +15,8 @@ from qm.steppage import (decode_plan, execute_mapped, pack, unpack,
                          _relative_exchange,
                          StatePageError)
 from qm.memorycut import MemoryCut
-from qm.stepnormalize import compose_plans, normalize_plan, physical_work
+from qm.stepnormalize import (compose_plans, compose_plans_raw,
+                              normalize_plan, physical_work)
 from qm.wasmphysical import DependencyWaves
 from qm.wasmwave import (Operand, PureSlice, WaveExecutor, WaveNode,
                          execute_slice, is_barrier)
@@ -881,6 +882,44 @@ class TestWaveExecutor(unittest.TestCase):
         mapped = unpack(bytes(pack(plan)))
         self.assertEqual(mapped.work, 1)
 
+    def test_terminal_projection_rebases_later_projection_dependencies(self):
+        from qm.stepnormalize import _rewrite_terminal_projections
+        from qm.steppage import (decode_projection_coordinate,
+                                 projection_coordinate)
+
+        nodes = (
+             WaveNode(1, 'lane64.X86_TEST', (
+                Operand('local', 0), Operand('local', 1),
+                Operand('local', 1), Operand('const', 64))),
+             WaveNode(2, 'lane64.X86_CONDITION', (
+                 Operand('node', 1), Operand('const', 5))),
+             WaveNode(3, 'lane64.X86_ALU', (
+                 Operand('local', 1), Operand('local', 0),
+                 Operand('const', 1),
+                 Operand('const', 64 | (1 << 8) | (1 << 11)))),
+             WaveNode(4, 'memory.i64.store', (
+                 Operand('local', 2), Operand(
+                     'projection', projection_coordinate(3, 16)),
+                 Operand('const', 0), Operand(
+                     'const', memory_shape(8, virtual64=True)))))
+
+        nodes, stack, locals_ = _rewrite_terminal_projections(
+            nodes, (Operand('node', 2),),
+            (Operand('local', 0), Operand('local', 1),
+             Operand('local', 2)))
+
+        store = next(node for node in nodes
+                     if node.op == 'memory.i64.store')
+        source, selector = decode_projection_coordinate(
+            store.arguments[1].value)
+        self.assertEqual(selector, 16)
+        self.assertLess(source, store.value)
+        self.assertEqual(nodes[source - 1].op,
+                         'lane64.X86_ALU')
+        self.assertEqual(stack[0].kind, 'projection')
+        self.assertEqual(locals_, (
+            Operand('local', 0), Operand('local', 1), Operand('local', 2)))
+
     def test_u32_inputs_and_publications_keep_the_hot_cut_at_four_lanes(self):
         raw = PureSlice(
             0, 0, 6, 6, 0,
@@ -953,6 +992,9 @@ class TestWaveExecutor(unittest.TestCase):
         self.assertEqual(outputs, (12,))
         self.assertEqual(stack, ())
         self.assertEqual(composed.instructions, 2)
+
+        batched = normalize_plan(compose_plans_raw(first, second))
+        self.assertEqual(pack(batched), pack(composed))
 
     def test_independent_integer_lanes_execute_in_the_same_wave(self):
         # (x & 255) + (x ^ 85): AND and XOR are independent, ADD joins them.

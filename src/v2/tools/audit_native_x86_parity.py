@@ -135,11 +135,15 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
                 oracle_state, event = runtime.machine_step(
                     oracle_state, response, budget=1,
                     max_internal=1, clock_step=1)
-            expected_samples.append((_expected(oracle_state), event))
+            expected = _expected(oracle_state)
+            expected['timer_source'] = int(
+                dict(oracle_state.io_ports).get(0x10046, 0))
+            expected_samples.append((expected, event,
+                                     expected['timer_source']))
 
     def actual_state(observed):
         return {name: observed[name]
-                for name in ('rip', 'rflags', 'registers')}
+                for name in ('rip', 'rflags', 'registers', 'timer_source')}
 
     actual_index = 0
     expected_index = 0
@@ -152,6 +156,8 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
     # a resumed cut).  It is an extra physical cut, not an architectural
     # mismatch, when the complete state is still the saved initial state.
     initial = _expected(oracle_state)
+    initial['timer_source'] = int(
+        dict(oracle_state.io_ports).get(0x10046, 0))
     while (actual_index < len(samples)
            and actual_state(samples[actual_index]) == initial):
         actual_index += 1
@@ -162,7 +168,7 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
         # the lookahead bounded at each comparison without bounding total skew.
         ensure_expected(expected_index + window + 1)
         actual = actual_state(samples[actual_index])
-        expected, event = expected_samples[expected_index]
+        expected, event, expected_timer = expected_samples[expected_index]
         if actual != expected:
             expected_ahead = next((offset for offset in range(1, window + 1)
                 if expected_index + offset < len(expected_samples)
@@ -177,7 +183,8 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
                 expected_index += expected_ahead
                 oracle_extra_cuts += expected_ahead
                 alignment_points += 1
-                expected, event = expected_samples[expected_index]
+                expected, event, expected_timer = \
+                    expected_samples[expected_index]
             elif actual_ahead is not None:
                 actual_index += actual_ahead
                 actual_extra_cuts += actual_ahead
@@ -209,6 +216,9 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
                     'predecessor_owner': control_owners.get(predecessor_rip),
                     'expected': expected,
                     'actual': actual,
+                    'expected_timer_source': expected_timer,
+                    'actual_timer_source': int(
+                        samples[actual_index].get('timer_source', 0)),
                     'register_differences': register_differences,
                     'alignment_window': window,
                     'actual_extra_cuts': actual_extra_cuts,

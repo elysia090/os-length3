@@ -4,3 +4,6 @@ dist/
 node_modules/
 .wrangler/
 src/v2/data/out/
+/data/out/
+/data/upstream/
+/data/toolchain/build/

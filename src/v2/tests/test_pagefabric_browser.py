@@ -40,6 +40,79 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(shutil.which('node'), 'node is required')
 class TestBrowserPageFabric(unittest.TestCase):
+    def test_native_x86_fxsave_fxrstor_round_trip_resident_xmm_lanes(self):
+        physical = bytearray(4096)
+        physical[0x100:0x104] = bytes.fromhex('0f ae 03 f4')
+        physical[0x200:0x204] = bytes.fromhex('0f ae 0b f4')
+        memory = PagedMemory(bytes(physical), len(physical))
+        xmm = tuple(0x1100000000000000 + lane for lane in range(32))
+        registers = {'rbx': 0x400}
+        save = pack_native_x86_records(X86DBT().block(initial_state(
+            memory, 0x100, registers, xmm=xmm)))[0][1]
+        restore = pack_native_x86_records(X86DBT().block(initial_state(
+            memory, 0x200, registers)))[0][1]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            memory_path = root / 'x86-fpu-memory.bin'
+            save_path = root / 'x86-fpu-save.bin'
+            restore_path = root / 'x86-fpu-restore.bin'
+            memory_path.write_bytes(physical)
+            save_path.write_bytes(save)
+            restore_path.write_bytes(restore)
+            driver = root / 'x86-fpu-round-trip.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            vm_module = (ROOT / 'web' / 'vm.js').as_uri()
+            driver.write_text(f'''\
+import {{ readFileSync }} from 'node:fs';
+const VM = await import({json.dumps(vm_module)});
+await VM.load(await WebAssembly.compile(readFileSync(process.argv[2])));
+const memoryBytes = new Uint8Array(readFileSync(process.argv[3]));
+const save = new Uint8Array(readFileSync(process.argv[4]));
+const restore = new Uint8Array(readFileSync(process.argv[5]));
+const memory = {{
+  length: memoryBytes.length,
+  async read(offset, length) {{
+    return memoryBytes.slice(offset, offset + length);
+  }},
+  async write(offset, bytes) {{ memoryBytes.set(bytes, offset); }},
+}};
+const registers = Array(16).fill(0n);
+registers[{REGISTER_INDEX['rbx']}] = 0x400n;
+const expected = Array.from({{ length: 32 }},
+  (_unused, lane) => 0x1100000000000000n + BigInt(lane));
+const first = await VM.openX86Machine({{
+  state: {{ registers, xmm: expected, rip: 0x100n, rflags: 2n }},
+  blocks: {{ async read(rip) {{ return rip === 0x100n ? save : null; }} }},
+  memory,
+}});
+await first.advance(1);
+await first.flush();
+first.release();
+const second = await VM.openX86Machine({{
+  state: {{ registers, xmm: Array(32).fill(0n), rip: 0x200n, rflags: 2n }},
+  blocks: {{ async read(rip) {{ return rip === 0x200n ? restore : null; }} }},
+  memory,
+}});
+await second.advance(1);
+const observed = second.snapshot().xmm;
+second.release();
+VM.release();
+process.stdout.write(JSON.stringify({{
+  observed: observed.map((value) => value.toString(16)),
+  saved: new DataView(memoryBytes.buffer).getBigUint64(0x4a0, true)
+    .toString(16),
+}}));
+''', encoding='utf-8')
+            run = subprocess.run([
+                'node', str(driver), wasm, str(memory_path),
+                str(save_path), str(restore_path),
+            ], check=False, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+        result = json.loads(run.stdout)
+        self.assertEqual(result['observed'], ['%x' % value for value in xmm])
+        self.assertEqual(result['saved'], '%x' % xmm[0])
+
     def test_native_x86_rep_movsq_survives_direct_cache_slot_alias(self):
         source_at = 0x3f58
         target_at = 0x7f58
@@ -2415,7 +2488,11 @@ let pageDrops = 0;
 let backingDrops = 0;
 const catalog = new LazyResourceCatalog({{
   format: 'tar-cut-v1', mount: '/usr',
-  entries: [[0, 'include', 'd'], [7, '/stdint.h', 'f', 10, 11]],
+  entries: [
+    [0, 'include', 'd'],
+    [7, '/stdint.h', 'f', 10, 11],
+    [0, 'lib/stdint.h', 'h', 'include/stdint.h'],
+  ],
 }}, async (offset, length) => source.slice(offset, offset + length),
 () => {{ pageDrops += 1; }}, () => {{ backingDrops += 1; }});
 const fs = new MemoryFileSystem(catalog);
@@ -2426,12 +2503,13 @@ try {{ fs.readFile('/usr/include/stdint.h'); }} catch (error) {{
 }}
 await fs.materialize(fault);
 const value = new TextDecoder().decode(fs.readFile(fault));
+const alias = new TextDecoder().decode(fs.readFile('/usr/lib/stdint.h'));
 const admitted = catalog.layout();
 fs.releaseResources();
 const cold = catalog.layout();
 catalog.release();
 console.log(JSON.stringify({{
-  fault, value, admitted, cold, pageDrops, backingDrops,
+  fault, value, alias, admitted, cold, pageDrops, backingDrops,
 }}));
 ''', encoding='utf-8')
             run = subprocess.run(
@@ -2440,6 +2518,7 @@ console.log(JSON.stringify({{
         result = json.loads(run.stdout)
         self.assertEqual(result['fault'], '/usr/include/stdint.h')
         self.assertEqual(result['value'], 'header-data')
+        self.assertEqual(result['alias'], 'header-data')
         self.assertEqual(result['admitted']['residentBytes'], 11)
         self.assertEqual(result['cold']['residentBytes'], 0)
         self.assertEqual(result['cold']['peakResidentBytes'], 11)

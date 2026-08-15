@@ -19,7 +19,8 @@ from kernel.x86 import (BOOT_PARAMS_ADDRESS, COMMAND_LINE_ADDRESS,
                         IA32_KERNEL_GS_BASE,
                         IA32_STAR, IA32_LSTAR, IA32_FMASK,
                         IA32_TIME_STAMP_COUNTER,
-                        PRESENT, RFLAGS_CARRY, RFLAGS_INTERRUPT, WRITABLE,
+                        PRESENT, RFLAGS_CARRY, RFLAGS_INTERRUPT,
+                        RFLAGS_PARITY, RFLAGS_ZERO, WRITABLE,
                         _ALTERNATIVE_BUG_ADDRESS,
                         _ALTERNATIVE_CAPABILITY_PROBE,
                         _ALTERNATIVE_DEBUG_TEST,
@@ -4637,6 +4638,238 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(boundary.operation, 'halt')
         self.assertEqual(state.xmm[:2], (0, 0))
 
+    def test_packed_dword_equality_is_one_resident_vector_operation(self):
+        left = (1 | 2 << 32, 3 | 4 << 32)
+        right = struct.pack('<IIII', 1, 9, 3, 8)
+        code = bytes.fromhex(
+            '66 0f 76 c0 '
+            '66 0f 76 0a '
+            'f4')
+        state = initial_state(
+            memory_with((0x100, code), (0x400, right)),
+            0x100, {'rdx': 0x400}, xmm=left + left + (0,) * 28)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2], (MASK64, MASK64))
+        self.assertEqual(state.xmm[2:4],
+                         (MASK32, MASK32))
+
+    def test_packed_dword_unpack_and_low_store_share_resident_lanes(self):
+        code = bytes.fromhex(
+            '66 0f 62 c1 '
+            '66 0f d6 42 10 '
+            'f4')
+        left = (1 | 2 << 32, 9 | 10 << 32)
+        right = (3 | 4 << 32, 11 | 12 << 32)
+        state = initial_state(
+            memory_with((0x100, code)), 0x100, {'rdx': 0x400},
+            xmm=left + right + (0,) * 28)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2],
+                         (1 | 3 << 32, 2 | 4 << 32))
+        self.assertEqual(state.memory.read(0x410, 8),
+                         struct.pack('<Q', 1 | 3 << 32))
+
+    def test_packed_dword_unpack_memory_reads_the_full_vector_operand(self):
+        code = bytes.fromhex('66 0f 62 02 f4')
+        payload = struct.pack('<IIII', 3, 4, 11, 12)
+        state = initial_state(
+            memory_with((0x100, code), (0x400, payload)),
+            0x100, {'rdx': 0x400},
+            xmm=(1 | 2 << 32, 9 | 10 << 32) + (0,) * 30)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2],
+                         (1 | 3 << 32, 2 | 4 << 32))
+
+    def test_musl_calloc_vector_reduction_is_one_resident_sequence(self):
+        code = bytes.fromhex(
+            '66 0f 6f c8 66 0f 73 d9 08 66 0f eb c1 '
+            '66 48 0f 7e c0 f4')
+        state = initial_state(
+            memory_with((0x100, code)), 0x100,
+            xmm=(0x1122, 0x3344000000000000) + (0,) * 30)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 0x3344000000001122)
+        self.assertEqual(state.xmm[2:4], (0x3344000000000000, 0))
+
+    def test_scalar_vector_load_zeroes_the_high_lane(self):
+        state = initial_state(
+            memory_with((0x100, bytes.fromhex('f3 0f 7e 02 f4')),
+                        (0x400, struct.pack('<Q', 0x1122334455667788))),
+            0x100, {'rdx': 0x400}, xmm=(0xaa, 0xbb) + (0,) * 30)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2], (0x1122334455667788, 0))
+
+    def test_high_vector_lane_load_preserves_the_low_lane(self):
+        state = initial_state(
+            memory_with((0x100, bytes.fromhex('0f 16 02 f4')),
+                        (0x400, struct.pack('<Q', 0x1122334455667788))),
+            0x100, {'rdx': 0x400}, xmm=(0xaa, 0xbb) + (0,) * 30)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2], (0xaa, 0x1122334455667788))
+
+    def test_movd_and_low_word_shuffle_use_one_simd_control_family(self):
+        code = bytes.fromhex(
+            '66 0f 6e db f2 0f 70 c3 00 66 0f 7e c0 f4')
+        state = initial_state(
+            memory_with((0x100, code)), 0x100,
+            {'rbx': 0xffff000000001234})
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rax'), 0x12341234)
+
+    def test_packed_dword_shuffle_broadcasts_all_four_lanes(self):
+        code = bytes.fromhex('66 0f 6e c8 66 0f 70 c1 00 f4')
+        state = initial_state(
+            memory_with((0x100, code)), 0x100, {'rax': 0x12345678})
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2],
+                         (0x1234567812345678, 0x1234567812345678))
+
+    def test_packed_dword_shuffle_loads_one_memory_vector(self):
+        code = bytes.fromhex('66 0f 70 00 1b f4')
+        words = (0x11111111, 0x22222222, 0x33333333, 0x44444444)
+        state = initial_state(
+            memory_with((0x100, code),
+                        (0x400, struct.pack('<4I', *words))),
+            0x100, {'rax': 0x400})
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2],
+                         (0x3333333344444444, 0x1111111122222222))
+
+    def test_packed_word_alu_and_extract_are_resident(self):
+        def packed(*words):
+            value = sum((word & 0xffff) << (index * 16)
+                        for index, word in enumerate(words))
+            return value & MASK64, value >> 64
+
+        code = bytes.fromhex(
+            '66 0f 6f d1 66 0f f9 d0 66 0f fd c1 '
+            '66 0f 61 c2 66 0f c5 f2 01 f4')
+        first = packed(10, 20, 30, 40, 50, 60, 70, 80)
+        second = packed(1, 2, 3, 4, 5, 6, 7, 8)
+        state = initial_state(
+            memory_with((0x100, code)), 0x100,
+            xmm=first + second + (0,) * 28)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.register('rsi'), (2 - 20) & 0xffff)
+        words = tuple((state.xmm[0] | state.xmm[1] << 64)
+                      >> (index * 16) & 0xffff for index in range(8))
+        self.assertEqual(words[:4], (11, (1 - 10) & 0xffff,
+                                     22, (2 - 20) & 0xffff))
+
+    def test_movd_memory_uses_exact_dword_accesses(self):
+        code = bytes.fromhex('66 0f 6e 02 66 0f 7e 43 04 f4')
+        state = initial_state(
+            memory_with((0x100, code),
+                        (0x400, bytes.fromhex('78 56 34 12'))),
+            0x100, {'rdx': 0x400, 'rbx': 0x500},
+            xmm=(0xaa, 0xbb) + (0,) * 30)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2], (0x12345678, 0))
+        self.assertEqual(state.memory.read(0x504, 4),
+                         bytes.fromhex('78 56 34 12'))
+
+    def test_scalar_double_compare_uses_bit_lanes_and_publishes_flags(self):
+        for opcode in (0x2e, 0x2f):
+            with self.subTest(opcode=opcode):
+                value = struct.pack('<d', 1.5)
+                code = bytes.fromhex(
+                    'f2 0f 10 00 66 0f %02x 06 f4' % opcode)
+                state = initial_state(
+                    memory_with((0x100, code),
+                                (0x400, value), (0x500, value)),
+                    0x100, {'rax': 0x400, 'rsi': 0x500},
+                    xmm=(0xaa, 0xbb) + (0,) * 30)
+
+                state, boundary, _cost = X86DBT().run(state)
+
+                self.assertEqual(boundary.operation, 'halt')
+                self.assertEqual(state.xmm[:2],
+                                 (int.from_bytes(value, 'little'), 0))
+                self.assertTrue(state.rflags & RFLAGS_ZERO)
+                self.assertFalse(
+                    state.rflags & (RFLAGS_CARRY | RFLAGS_PARITY))
+
+    def test_scalar_double_integer_conversion_and_alu_are_resident(self):
+        divisor = struct.pack('<d', 3.0)
+        code = bytes.fromhex(
+            'f2 0f 2a c1 '
+            'f2 0f 10 0a '
+            'f2 0f 5e c1 '
+            'f4')
+        state = initial_state(
+            memory_with((0x100, code), (0x400, divisor)),
+            0x100, {'rcx': MASK64 - 8, 'rdx': 0x400},
+            xmm=(0, 0x1122) + (0,) * 30)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(
+            state.xmm[:2],
+            (int.from_bytes(struct.pack('<d', -3.0), 'little'), 0x1122))
+
+    def test_scalar_double_wide_conversion_uses_signed_gpr(self):
+        code = bytes.fromhex('f2 48 0f 2a c8 f4')
+        state = initial_state(
+            memory_with((0x100, code)), 0x100,
+            {'rax': MASK64 - 1},
+            xmm=(0, 0, 0, 0x3344) + (0,) * 28)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(
+            state.xmm[2:4],
+            (int.from_bytes(struct.pack('<d', -2.0), 'little'), 0x3344))
+
+    def test_scalar_double_truncate_conversion_is_resident(self):
+        value = int.from_bytes(struct.pack('<d', -3.75), 'little')
+        for code, expected in (
+                ('f2 0f 2c d0 f4', (1 << 32) - 3),
+                ('f2 48 0f 2c d0 f4', MASK64 - 2)):
+            with self.subTest(code=code):
+                state = initial_state(
+                    memory_with((0x100, bytes.fromhex(code))), 0x100,
+                    xmm=(value, 0) + (0,) * 30)
+
+                state, boundary, _cost = X86DBT().run(state)
+
+                self.assertEqual(boundary.operation, 'halt')
+                self.assertEqual(state.register('rdx'), expected)
+
     def test_single_movsb_is_one_general_memory_step(self):
         state = initial_state(
             memory_with((0x100, bytes.fromhex('a4 f4')),
@@ -5995,7 +6228,9 @@ class TestX86StateStep(unittest.TestCase):
     def test_fxsave_writes_the_architectural_reset_control_fields(self):
         # fxsave 0x110(%rip); hlt
         code = bytes.fromhex('0f ae 05 09 00 00 00 f4')
-        state = initial_state(memory_with((0x100, code)), 0x100)
+        xmm = tuple(0x1100000000000000 + lane for lane in range(32))
+        state = initial_state(
+            memory_with((0x100, code)), 0x100, xmm=xmm)
 
         state, boundary, _cost = X86DBT().run(state)
 
@@ -6003,20 +6238,26 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(load_virtual(state, 0x110, 2), 0x037f)
         self.assertEqual(load_virtual(state, 0x128, 4), 0x1f80)
         self.assertEqual(load_virtual(state, 0x12c, 4), 0x0000ffff)
+        self.assertEqual(tuple(
+            load_virtual(state, 0x110 + 160 + lane * 8, 8)
+            for lane in range(32)), xmm)
 
-    def test_fxrstor_is_an_explicit_integer_state_transition(self):
-        # fxrstor64 0x40(%rdi); hlt.  The integer-resident VM does not expose
-        # a live x87/SSE file, so restore stays on the common state-step path
-        # and advances without a host-side fallback.
+    def test_fxrstor_restores_the_resident_xmm_lanes(self):
+        # fxrstor64 0x40(%rdi); hlt
         code = bytes.fromhex('48 0f ae 4f 40 f4')
+        image = bytearray(512)
+        xmm = tuple(0x2200000000000000 + lane for lane in range(32))
+        for lane, value in enumerate(xmm):
+            struct.pack_into('<Q', image, 160 + lane * 8, value)
         state = initial_state(
-            memory_with((0x100, code), (0x440, bytes(512))),
+            memory_with((0x100, code), (0x440, bytes(image))),
             0x100, {'rdi': 0x400})
 
         state, boundary, _cost = X86DBT().run(state)
 
         self.assertEqual(boundary.operation, 'halt')
         self.assertEqual(state.rip, 0x106)
+        self.assertEqual(state.xmm, xmm)
 
     def test_memory_fence_starts_a_new_pure_slice(self):
         # lfence; mov eax,42; hlt
@@ -6700,9 +6941,11 @@ class TestX86StateStep(unittest.TestCase):
         gate[5] = 0x8e
         memory = memory.write(0x5000 + 0x30 * 16, gate)
         runtime = X86Machine()
-        state = runtime.start(initial_state(
-            memory, 0x100, {'rsp': 0x8000},
-            idtr=(0x5000, 0x1000 - 1), cs=0x10))
+        state = X86MachineState(
+            initial_state(
+                memory, 0x100, {'rsp': 0x8000},
+                idtr=(0x5000, 0x1000 - 1), cs=0x10),
+            io_ports=((0x10046, 4095),))
 
         state, request = runtime.machine_step(state, budget=16)
 
@@ -6713,9 +6956,10 @@ class TestX86StateStep(unittest.TestCase):
         state, following = runtime.machine_step(
             state, MachineEvent('interrupt', request.coordinate), budget=16)
 
-        self.assertEqual(following.operation, 'interrupt')
+        self.assertIsNone(following)
         self.assertEqual(state.cpu.register('rax'), 42)
         self.assertEqual(state.cpu.register('rsp'), 0x8000)
+        self.assertLess(dict(state.io_ports)[0x10046], 4096)
         self.assertEqual(runtime.dbt.layout()['delivered_interrupts'], 1)
 
     def test_cmos_clock_is_valid_and_never_reports_update_in_progress(self):

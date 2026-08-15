@@ -78,9 +78,11 @@ export class ResourceFault extends Error {
  */
 export class LazyResourceCatalog {
   constructor(index, read, releaseResident = null, release = null) {
-    if (index?.format !== 'tar-cut-v1' || !Array.isArray(index.entries)) {
+    if (!['tar-cut-v1', 'tar-cut-v2'].includes(index?.format)
+        || !Array.isArray(index.entries)) {
       throw new Error('compiler resource index is invalid');
     }
+    const hasMode = index.format === 'tar-cut-v2';
     if (typeof read !== 'function') throw new Error('resource reader is missing');
     this.nodes = new Map();
     this.nextIno = 2;
@@ -100,6 +102,7 @@ export class LazyResourceCatalog {
       this.nodes.set(mount, { type: 'dir', ino: this.nodes.nextIno++ });
     }
 
+    const hardlinks = [];
     let previous = '';
     for (const entry of index.entries) {
       if (!Array.isArray(entry) || entry.length < 3) {
@@ -117,8 +120,17 @@ export class LazyResourceCatalog {
       const path = normalizePath(`${mount}/${relative}`);
       addParents(this.nodes, path);
       const kind = entry[2];
+      const modeAt = kind === 'f' ? 5 : kind === 'd' ? 3 : 4;
+      const mode = hasMode ? Number(entry[modeAt]) : undefined;
+      if (hasMode && (!Number.isSafeInteger(mode) || mode < 0
+          || mode > 0o7777)) {
+        throw new Error('compiler resource mode is invalid');
+      }
       if (kind === 'd') {
-        this.nodes.set(path, { type: 'dir', ino: this.nodes.nextIno++ });
+        this.nodes.set(path, {
+          type: 'dir', mode,
+          ino: this.nodes.nextIno++,
+        });
       } else if (kind === 'f') {
         const offset = Number(entry[3]);
         const size = Number(entry[4]);
@@ -128,17 +140,42 @@ export class LazyResourceCatalog {
         }
         this.nodes.set(path, {
           type: 'file', data: null, size, offset, readonly: true,
+          mode,
           resource: true, ino: this.nodes.nextIno++,
         });
       } else if (kind === 'l') {
         this.nodes.set(path, {
           type: 'symlink', target: String(entry[3] || ''),
+          mode,
           ino: this.nodes.nextIno++,
         });
+      } else if (kind === 'h') {
+        const target = String(entry[3] || '');
+        if (!target || target.startsWith('/')
+            || target.split('/').some((part) => !part || part === '..')) {
+          throw new Error('compiler resource hardlink is invalid');
+        }
+        hardlinks.push([path, normalizePath(`${mount}/${target}`)]);
       } else {
         throw new Error('compiler resource type is invalid');
       }
       previous = relative;
+    }
+    let unresolved = hardlinks;
+    while (unresolved.length) {
+      const pending = [];
+      let admitted = 0;
+      for (const [path, target] of unresolved) {
+        const node = this.nodes.get(target);
+        if (!node) {
+          pending.push([path, target]);
+          continue;
+        }
+        this.nodes.set(path, node);
+        admitted += 1;
+      }
+      if (!admitted) throw new Error('compiler resource hardlink target is missing');
+      unresolved = pending;
     }
     this.nextIno = this.nodes.nextIno;
   }

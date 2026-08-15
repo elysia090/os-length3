@@ -1143,6 +1143,11 @@ def _rewrite_physical(nodes, stack, locals_):
     rebuilt = []
     forms = {}
     predicates = {}
+    # ``rebuilt`` is append-only in this pass.  Looking for an existing lane
+    # by rescanning it for every source node made block composition quadratic;
+    # large kernel cuts paid that cost again on every fixed-point pass.  Keep
+    # the same first-match identity in a direct index instead.
+    common_rebuilt = {}
 
     def resolve(operand):
         if operand.kind != 'node':
@@ -1313,8 +1318,11 @@ def _rewrite_physical(nodes, stack, locals_):
     def emit(operation, arguments):
         value = len(rebuilt) + 1
         operand = Operand('node', value)
-        rebuilt.append(WaveNode(value, operation, tuple(arguments)))
-        forms[value] = (operation, tuple(arguments))
+        arguments = tuple(arguments)
+        rebuilt.append(WaveNode(value, operation, arguments))
+        forms[value] = (operation, arguments)
+        if operation.startswith(('lane32.', 'lane64.')):
+            common_rebuilt.setdefault((operation, arguments), value)
         if (operation == 'lane64.X86_CONDITION'
                 and len(arguments) == 2
                 and arguments[1].kind == 'const'
@@ -1960,12 +1968,10 @@ def _rewrite_physical(nodes, stack, locals_):
                     'projection', projection_coordinate(operand.value, 16))
             remap[node.value] = operand
             continue
-        prior = next((candidate for candidate in rebuilt
-                      if operation.startswith(('lane32.', 'lane64.'))
-                      and candidate.op == operation
-                      and candidate.arguments == arguments), None)
+        prior = (common_rebuilt.get((operation, arguments))
+                 if operation.startswith(('lane32.', 'lane64.')) else None)
         if prior is not None:
-            remap[node.value] = Operand('node', prior.value)
+            remap[node.value] = Operand('node', prior)
             continue
         operand = emit(operation, arguments)
         remap[node.value] = operand
@@ -2036,10 +2042,17 @@ def _rewrite_terminal_projections(nodes, stack, locals_):
             continue
         value = len(rewritten) + 1
         dense[node.value] = value
-        rewritten.append(WaveNode(value, node.op, tuple(
-            Operand('node', dense[operand.value])
-            if operand.kind == 'node' else operand
-            for operand in node.arguments)))
+        arguments = []
+        for operand in node.arguments:
+            if operand.kind == 'node':
+                operand = Operand('node', dense[operand.value])
+            elif operand.kind == 'projection':
+                source, selector = decode_projection_coordinate(
+                    operand.value)
+                operand = Operand('projection', projection_coordinate(
+                    dense[source], selector))
+            arguments.append(operand)
+        rewritten.append(WaveNode(value, node.op, tuple(arguments)))
 
     def publish(operand):
         if operand.kind == 'node':
@@ -2358,6 +2371,8 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
     and coordinate both substitute to their inputs.  Memory dependencies are
     bypassed, but later memory still depends on the last intervening effect.
     """
+    from bisect import bisect_left, bisect_right
+
     from .steppage import (decode_memory_shape, RELATIVE_SAVE_CAP,
                            decode_projection_coordinate,
                            projection_coordinate)
@@ -2404,8 +2419,45 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
                 int(offset.value), width, scale, virtual64,
                 node.arguments[fixed:])
 
+    # This pass used to rescan the complete SSA graph for every candidate
+    # store.  Large kernel blocks can contain thousands of memory nodes, which
+    # made normalization quadratic before it could publish even one cut.
+    # Index immutable SSA uses and ordinary memory coordinates once; the
+    # rewrite below still selects the same first matching load/add/effect.
+    access_by_value = {}
+    consumers = {}
+    argument_users = {}
+    loads_by_coordinate = {}
+    memory_effects = []
+    restored_pointers = {}
+    for node in nodes:
+        details = ordinary_access(node)
+        access_by_value[node.value] = details
+        if details is not None and not details[0]:
+            key = (details[1],) + details[3:7]
+            loads_by_coordinate.setdefault(key, []).append(node)
+        if (node.op.startswith('memory.')
+                and node.op != 'memory.i64.relative_result'):
+            memory_effects.append(node)
+        if node.op == 'lane64.ADD' and len(node.arguments) == 2:
+            restored_pointers.setdefault(node.arguments, node)
+        for operand in node.arguments:
+            argument_users.setdefault(operand, []).append(node.value)
+            if operand.kind == 'node':
+                consumers.setdefault(operand.value, []).append(node.value)
+    load_values = {
+        key: tuple(node.value for node in candidates)
+        for key, candidates in loads_by_coordinate.items()
+    }
+    memory_effect_values = tuple(node.value for node in memory_effects)
+    output_values = {
+        operand.value for operand in tuple(stack) + tuple(locals_)
+        if operand.kind == 'node'
+    }
+    max_value = max((node.value for node in nodes), default=0)
+
     for store in nodes:
-        stored = ordinary_access(store)
+        stored = access_by_value[store.value]
         if stored is None or not stored[0]:
             continue
         address = stored[1]
@@ -2439,41 +2491,33 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
             address_node = None
         if pointer is None or width != 8:
             continue
-        load = next((node for node in nodes[store.value:]
-                     if (lambda access: access is not None
-                         and not access[0]
-                         and access[1] == address
-                         and access[3:7] == stored[3:7])(
-                             ordinary_access(node))), None)
+        load_key = (address,) + stored[3:7]
+        candidates = loads_by_coordinate.get(load_key, ())
+        candidate_values = load_values.get(load_key, ())
+        load_at = bisect_right(candidate_values, store.value)
+        load = (candidates[load_at]
+                if load_at < len(candidates) else None)
         if load is None:
             continue
-        if (not any(operand == Operand('node', load.value)
-                           for operand in tuple(stack) + tuple(locals_))
-                and not any(Operand('node', load.value) in node.arguments
-                            for node in nodes[load.value:])):
+        if (load.value not in output_values
+                and not consumers.get(load.value)):
             continue
-        restored_pointer = next((
-            node for node in nodes[store.value:]
-            if node.op == 'lane64.ADD'
-            and node.arguments == (
-                Operand('node', store.value), Operand('const', width))), None)
+        restored_pointer = restored_pointers.get((
+            Operand('node', store.value), Operand('const', width)))
         pointer_already_published = (
             pointer.kind == 'local' and pointer.value < len(locals_)
             and locals_[pointer.value] == pointer)
         if restored_pointer is None and not pointer_already_published:
             continue
-        address_users = [node.value for node in nodes
-                         if any(argument == address
-                                for argument in node.arguments)]
+        address_users = argument_users.get(address, ())
         if (not pre_store and address_node is not None
                 and any(value not in (store.value, load.value)
                         for value in address_users)):
             continue
 
-        intervening = tuple(
-            node for node in nodes[store.value:load.value - 1]
-            if node.op.startswith('memory.')
-            and node.op != 'memory.i64.relative_result')
+        effect_start = bisect_right(memory_effect_values, store.value)
+        effect_end = bisect_left(memory_effect_values, load.value)
+        intervening = tuple(memory_effects[effect_start:effect_end])
         transaction = (intervening[0]
                        if len(intervening) == 1
                        and intervening[0].op
@@ -2492,7 +2536,7 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
                 removed.add(address_node.value)
         if restored_pointer is not None:
             removed.add(restored_pointer.value)
-        restore_value = max(node.value for node in nodes) + 1
+        restore_value = max_value + 1
         value_substitution = {
             load.value: (Operand('node', restore_value)
                          if transaction is not None else saved),
@@ -2501,7 +2545,7 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
             value_substitution[restored_pointer.value] = pointer
         dependency_substitution = {
             load.value: (
-                tuple(ordinary_access(load)[-1])
+                tuple(access_by_value[load.value][-1])
                 if transaction is not None
                 else (Operand('node', store.value),)),
         }
@@ -2514,7 +2558,7 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
                         if len(node.arguments) > 6 else None)
                 return (7 + 3 * mode.value
                         if mode is not None and mode.kind == 'const' else 7)
-            access = ordinary_access(node)
+            access = access_by_value[node.value]
             if access is not None:
                 return 4 if access[0] else 3
             return len(node.arguments)
@@ -2554,7 +2598,7 @@ def _rewrite_balanced_stack(nodes, stack, locals_):
                         source_arguments[:1]
                         + (Operand('const', selector - 1),)
                         + source_arguments[2:])
-            access = ordinary_access(node)
+            access = access_by_value[node.value]
             if (transaction is not None and pre_store
                     and access is not None and source_arguments
                     and source_arguments[0]
@@ -2983,6 +3027,11 @@ def _compact_once(nodes, stack, locals_):
             elif operand.kind == 'projection':
                 source, selector = decode_projection_coordinate(
                     operand.value)
+                if source not in remap:
+                    raise ValueError(
+                        'physical projection is not topologically ordered: '
+                        'node %d (%s) reads source %d selector %d' % (
+                            node.value, node.op, source, selector))
                 operand = Operand('projection', projection_coordinate(
                     remap[source], selector))
             arguments.append(operand)
@@ -3206,13 +3255,14 @@ def physical_work(plan):
     return work
 
 
-def compose_plans(first, second):
-    """Substitute one physical state-step page into its deterministic next.
+def compose_plans_raw(first, second):
+    """Substitute one physical state-step without normalizing the result.
 
     The second page's local and stack inputs are coordinates published by the
     first page, not a materialized intermediate frame. Memory nodes retain
-    their ordering dependencies and the combined graph goes through the same
-    liveness, quotient and wave normalization as every frontend slice.
+    their ordering dependencies.  Callers that join a whole straight-line
+    region can use this form repeatedly and run the fixed-point quotient once
+    at the final observable cut.
     """
     from .wasmwave import Operand, PureSlice, WaveNode
     from .steppage import (FLAG_PROJECTION_OPS, REGION_PROJECTION_OPS,
@@ -3291,4 +3341,9 @@ def compose_plans(first, second):
         first.function, first.start, first.start + instructions,
         instructions,
         first.stack_inputs, tuple(nodes), first.waves, stack, locals_)
-    return normalize_plan(combined)
+    return combined
+
+
+def compose_plans(first, second):
+    """Substitute and canonicalize one deterministic state-step pair."""
+    return normalize_plan(compose_plans_raw(first, second))

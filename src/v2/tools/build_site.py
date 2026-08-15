@@ -111,6 +111,10 @@ def build(dist=DIST):
              .replace('src="app.js"', 'src="web/app.js"'))
     with open(os.path.join(dist, 'index.html'), 'w', encoding='utf-8') as handle:
         handle.write(shell)
+    # Keep the progressive workspace entry at a stable top-level URL.  Its
+    # relative redirect deliberately lands on the root shell above.
+    shutil.copy(os.path.join(ROOT, 'web', 'mcp.html'),
+                os.path.join(dist, 'mcp.html'))
 
     shutil.copy(os.path.join(ROOT, 'web', '_headers'),
                 os.path.join(dist, '_headers'))

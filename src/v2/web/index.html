@@ -25,14 +25,49 @@
     </div>
   </div>
 
+  <nav class="surface-switcher" id="surface-switcher" hidden
+       aria-label="Workspace view">
+    <button id="surface-tab-source" type="button"
+            aria-controls="card-write" data-surface="source">Editor</button>
+    <button id="surface-tab-run" type="button"
+            aria-controls="card-run" data-surface="run">Run</button>
+    <button id="surface-tab-files" type="button"
+            aria-controls="card-system" data-surface="files">Files</button>
+    <button id="surface-tab-terminal" type="button"
+            aria-controls="card-terminal" data-surface="terminal">Terminal</button>
+  </nav>
+
 </header>
 
 <main class="board">
+  <section class="card focus-home" id="surface-home" hidden>
+    <div class="focus-home-copy">
+      <p class="eyebrow">Workspace</p>
+      <h2>Choose a surface</h2>
+      <p>Open only the context needed for the next action.</p>
+    </div>
+    <div class="surface-catalog" aria-label="Workspace surfaces">
+      <button type="button" data-open-surface="source">
+        <span>Editor</span><small>Edit C, x86-64, or wasm32 source</small>
+      </button>
+      <button type="button" data-open-surface="run">
+        <span>Run</span><small>Use stdin and inspect program output</small>
+      </button>
+      <button type="button" data-open-surface="files">
+        <span>Files</span><small>Open a workspace file or inspect runtime pages</small>
+      </button>
+      <button type="button" data-open-surface="terminal">
+        <span>Terminal</span><small>Boot and operate the Linux shell</small>
+      </button>
+    </div>
+  </section>
+
   <!-- ================= Source ================= -->
   <section class="card" id="card-write">
     <div class="card-head">
       <h2><span class="step">1.</span> Source</h2>
-      <button class="link run" id="btn-run" type="button" disabled>
+      <button class="link run" id="btn-run" type="button"
+              aria-label="Run current file" disabled>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>
         <span id="run-label">Run</span>
       </button>
@@ -150,7 +185,7 @@
 <aside class="utility-card" id="card-system" aria-label="Workspace files">
   <div class="card-head utility-head">
     <h2>Files</h2>
-    <span class="session-state"><i aria-hidden="true"></i> local</span>
+    <span class="session-state"><i aria-hidden="true"></i> memory</span>
   </div>
   <div class="dock-view vfs" id="dock-files">
     <div class="vfs-section">
@@ -181,7 +216,8 @@
 <dialog id="dlg" class="dlg">
   <div class="dlg-head">
     <h3 id="dlg-title">Details</h3>
-    <button class="dlg-title-action" id="dlg-title-action" type="button" hidden>New tab</button>
+    <button class="dlg-title-action" id="dlg-title-action" type="button"
+            aria-label="New file" hidden>New tab</button>
     <button class="icon-btn" id="dlg-close" aria-label="Close">
       <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
