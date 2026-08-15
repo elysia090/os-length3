@@ -444,6 +444,8 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn("editor.addEventListener('input'", app)
         with open(os.path.join(ROOT, 'web', 'index.html')) as handle:
             html = handle.read()
+        with open(os.path.join(ROOT, 'web', 'mcp.html')) as handle:
+            mcp = handle.read()
         self.assertNotIn('id="btn-optimize"', html)
         self.assertNotIn('id="run-input"', html)
         self.assertIn('id="term-in"', html)
@@ -451,9 +453,11 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         # the New tab heading and the + before the examples create a tab.
         self.assertIn('id="btn-run"', html)
         self.assertIn('id="run-label"', html)
-        self.assertIn('id="btn-run" type="button" disabled', html)
+        self.assertIn('aria-label="Run current file" disabled', html)
         self.assertNotIn('id="btn-examples"', html)
         self.assertIn('aria-label="New tab or example"', html)
+        self.assertIn('aria-label="New file" hidden', html)
+        self.assertIn('aria-label="Create blank file"', app)
         self.assertNotIn('Empty tab', html)
         self.assertNotIn('id="btn-settings"', html)
         self.assertNotIn('id="settings"', html)
@@ -472,6 +476,27 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn('id="card-terminal"', html)
         self.assertIn('id="card-run"', html)
         self.assertIn('id="shell-terminal"', html)
+        self.assertIn('id="surface-switcher" hidden', html)
+        self.assertIn('aria-label="Workspace view"', html)
+        self.assertNotIn('data-surface="workspace"', html)
+        self.assertIn('id="surface-home" hidden', html)
+        self.assertIn('data-open-surface="terminal"', html)
+        self.assertIn('aria-controls="card-terminal" data-surface="terminal"',
+                      html)
+        self.assertIn('function setupFocusSurface', app)
+        self.assertIn("url.searchParams.set('focus', surface)", app)
+        self.assertIn("event.key === 'ArrowRight'", app)
+        self.assertIn("panel.setAttribute('role', 'region')", app)
+        self.assertIn('function startCompileRuntime', app)
+        self.assertIn('function startLinuxRuntime', app)
+        self.assertIn("surface === 'source' || surface === 'run'", app)
+        self.assertIn("if (!focused)", app)
+        self.assertNotIn('location.replace(', mcp)
+        self.assertNotIn('app.js', mcp)
+        self.assertIn('aria-label="Workspace surfaces"', mcp)
+        for surface in ('source', 'run', 'files', 'terminal'):
+            self.assertIn('href="index.html?focus=%s"' % surface, mcp)
+        self.assertIn('Open the human workbench', mcp)
         self.assertIn('id="boot-transfer"', html)
         self.assertIn('role="progressbar"', html)
         self.assertIn('aria-valuemin="0" aria-valuemax="100"', html)
@@ -495,6 +520,17 @@ class TestRunTheMinimizedProgram(unittest.TestCase):
         self.assertIn('user-select: none', styles)
         self.assertIn('.boot-transfer.is-indeterminate', styles)
         self.assertIn('@media (prefers-reduced-motion: reduce)', styles)
+        self.assertIn(
+            'body:not(.mcp-entry-page) .workbench-shell:not(.is-focus-mode)',
+            styles)
+        self.assertIn('flex-direction: column', styles)
+        self.assertIn(
+            '@media (min-width: 821px) and (max-width: 1060px)', styles)
+        self.assertIn(
+            '--primary-height: max(360px, calc(100dvh - 158px))', styles)
+        self.assertIn(
+            'grid-template-columns: minmax(0, 1.618fr) minmax(260px, 1fr)',
+            styles)
 
         with open(os.path.join(ROOT, 'web', 'linux-terminal.js')) as handle:
             linux_terminal = handle.read()
@@ -949,7 +985,7 @@ class TestManifest(unittest.TestCase):
                         'web/linux-terminal.js',
                         'web/page-fabric.js', 'web/function-regions.js',
                         'web/physical-pages.js', 'web/paged-wasm.js',
-                        'web/examples.json', 'index.html'):
+                        'web/examples.json', 'index.html', 'mcp.html'):
                 self.assertTrue(os.path.exists(os.path.join(out, rel)), rel)
             for rel in ('web/vm.wasm', 'web/vm.pages',
                         'web/vm-regions.pages', 'web/vm-steps.pages',

@@ -19,7 +19,10 @@ from kernel.x86snapshot import (dump_native_x86_machine,
                                 load_x86_machine_state, load_x86_state,
                                 pack_native_x86_block,
                                 pack_native_x86_records, MAGIC,
+                                native_x86_cut_coordinates,
                                 native_x86_static_successors,
+                                merge_native_x86_physical_machines,
+                                rebase_native_x86_physical_machine,
                                 repack_native_x86_machine,
                                 select_physical_cut,
                                 split_native_x86_record,
@@ -54,6 +57,36 @@ class TestX86Snapshot(unittest.TestCase):
         image[0x258:0x260] = (0x200000).to_bytes(8, 'little')
         image[0x260:0x264] = (0x400000).to_bytes(4, 'little')
         return image
+
+    def test_cut_coordinates_include_threaded_interior_basic_blocks(self):
+        memory = PagedMemory(b'', 4096) \
+            .write(0x100, bytes.fromhex('90 eb 0d')) \
+            .write(0x110, bytes.fromhex('f4'))
+        state = initial_state(memory, 0x100)
+        dbt = X86DBT(profile_controls=True)
+
+        dbt.block(state)
+        dbt.block(replace(state, rip=0x110))
+
+        self.assertEqual(
+            native_x86_cut_coordinates(dbt), (0x100, 0x110))
+
+    def test_decoded_block_cursor_returns_only_new_entries(self):
+        memory = PagedMemory(b'', 4096) \
+            .write(0x100, bytes.fromhex('90 eb 0d')) \
+            .write(0x110, bytes.fromhex('f4'))
+        state = initial_state(memory, 0x100)
+        dbt = X86DBT(profile_controls=True)
+        revision = dbt.decoded_block_revision()
+
+        dbt.block(state)
+        first = dbt.decoded_block_revision()
+        dbt.block(replace(state, rip=0x110))
+
+        self.assertEqual(dbt.decoded_block_coordinates_since(revision),
+                         (0x100, 0x110))
+        self.assertEqual(dbt.decoded_block_coordinates_since(first),
+                         (0x110,))
 
     def test_round_trip_retains_cpu_and_sparse_memory(self):
         memory = PagedMemory(b'base', 1 << 20)
@@ -285,6 +318,59 @@ class TestX86Snapshot(unittest.TestCase):
         self.assertEqual(
             extend_native_x86_machine(extended, extra), extended)
 
+    def test_native_machine_rebase_retains_physical_blocks_on_new_boot(self):
+        memory = PagedMemory(b'', 4096).write(
+            0x100, bytes.fromhex('eb 0e') + bytes(14) + bytes.fromhex('f4'))
+        state = initial_state(memory, 0x100)
+        header = BzImageHeader(
+            setup_sectors=1, protocol=0x20c, load_flags=1,
+            code32_start=0, initrd_address_max=0,
+            kernel_alignment=0x200000, relocatable=True, xload_flags=1,
+            command_line_bytes=2048, preferred_address=0,
+            init_bytes=4096)
+        wire = dump_x86_boot_cache(BzImageBoot(state, header, 0, 0, 0))
+        machine = dump_native_x86_machine(
+            wire, state, (X86DBT().block(state),))
+        new_state = replace(state, registers=(7,) + state.registers[1:])
+        new_wire = dump_x86_boot_cache(BzImageBoot(
+            new_state, header, 0, 0, 0))
+
+        rebased = rebase_native_x86_physical_machine(
+            machine, new_wire, new_state)
+        metadata, rebased_memory, records = load_native_x86_machine(rebased)
+
+        self.assertEqual(metadata['state']['registers'][0],
+                         '0000000000000007')
+        self.assertEqual(rebased_memory, load_native_x86_machine(machine)[1])
+        self.assertEqual(records, load_native_x86_machine(machine)[2])
+
+    def test_native_machine_overlay_unions_physical_ranks_only(self):
+        memory = PagedMemory(b'', 4096).write(
+            0x100, bytes.fromhex('eb 0e') + bytes(14) + bytes.fromhex('f4'))
+        state = initial_state(memory, 0x100)
+        header = BzImageHeader(
+            setup_sectors=1, protocol=0x20c, load_flags=1,
+            code32_start=0, initrd_address_max=0,
+            kernel_alignment=0x200000, relocatable=True, xload_flags=1,
+            command_line_bytes=2048, preferred_address=0,
+            init_bytes=4096)
+        wire = dump_x86_boot_cache(BzImageBoot(state, header, 0, 0, 0))
+        base = dump_native_x86_machine(
+            wire, state, (X86DBT().block(state),))
+        overlay = dump_native_x86_machine(
+            wire, state, (X86DBT().block(replace(state, rip=0x110)),))
+
+        merged, report = merge_native_x86_physical_machines(base, overlay)
+        metadata, merged_memory, records = load_native_x86_machine(merged)
+
+        self.assertEqual(metadata['block_count'], 2)
+        self.assertEqual(merged_memory, load_native_x86_machine(base)[1])
+        self.assertEqual([rip for rip, _record in records], [0x100, 0x110])
+        self.assertEqual(report['base_blocks'], 1)
+        self.assertEqual(report['overlay_blocks'], 1)
+        self.assertEqual(report['added_blocks'], 1)
+        self.assertEqual(report['replaced_blocks'], 0)
+
     def test_optimizer_extension_replaces_same_proved_coordinate(self):
         memory = PagedMemory(b'', 4096).write(
             0x100, bytes.fromhex('eb 0e') + bytes(14) + bytes.fromhex('f4'))
@@ -308,6 +394,91 @@ class TestX86Snapshot(unittest.TestCase):
         _metadata, _memory, records = load_native_x86_machine(extended)
 
         self.assertEqual(records, replacement)
+
+    def test_cold_machine_merge_can_retain_a_proved_base_lowering(self):
+        memory = PagedMemory(b'', 4096).write(
+            0x100, bytes.fromhex('eb 0e') + bytes(14) + bytes.fromhex('f4'))
+        state = initial_state(memory, 0x100)
+        header = BzImageHeader(
+            setup_sectors=1, protocol=0x20c, load_flags=1,
+            code32_start=0, initrd_address_max=0,
+            kernel_alignment=0x200000, relocatable=True, xload_flags=1,
+            command_line_bytes=2048, preferred_address=0,
+            init_bytes=4096)
+        wire = dump_x86_boot_cache(BzImageBoot(state, header, 0, 0, 0))
+        original = X86DBT().block(state)
+        base = dump_native_x86_machine(wire, state, (original,))
+        alternate = replace(
+            original, boundary=X86Boundary('branch', 0x120))
+        overlay = dump_native_x86_machine(wire, state, (alternate,))
+
+        merged, report = merge_native_x86_physical_machines(
+            base, overlay, replace_conflicts=False)
+        _metadata, _memory, records = load_native_x86_machine(merged)
+
+        self.assertEqual(records, pack_native_x86_records(original))
+        self.assertEqual(report['replaced_blocks'], 0)
+        self.assertEqual(report['retained_conflicts'], 1)
+
+    def test_native_candidates_try_a_closed_recurrence_before_its_prefix(self):
+        code = bytes.fromhex('eb 02 90 90 f4')
+        memory = PagedMemory(b'', 4096).write(0x100, code)
+        state = initial_state(memory, 0x100)
+        header = BzImageHeader(
+            setup_sectors=1, protocol=0x20c, load_flags=1,
+            code32_start=0, initrd_address_max=0,
+            kernel_alignment=0x200000, relocatable=True, xload_flags=1,
+            command_line_bytes=2048, preferred_address=0,
+            init_bytes=4096)
+        wire = dump_x86_boot_cache(BzImageBoot(state, header, 0, 0, 0))
+        scalar = pack_native_x86_block(X86DBT().block(state))
+        fields, _guard, step = split_native_x86_record(scalar)
+        fields = list(fields)
+        fields[6:10] = (24, 0x104, 0, 2)
+        stronger_guard = struct.pack('<HQH', 1, 0x100, 4) + code[:4]
+        stronger = NATIVE_BLOCK_HEADER.pack(*fields) + stronger_guard + step
+        machine = dump_native_x86_machine(
+            wire, state, (X86DBT().block(state),))
+
+        extended = extend_native_x86_machine(
+            machine, ((0x100, stronger),), reject_conflicts=False)
+        _metadata, _memory, records = load_native_x86_machine(extended)
+        guards = [split_native_x86_record(record)[1]
+                  for _rip, record in records]
+
+        self.assertEqual(len(guards), 2)
+        self.assertEqual(struct.unpack_from('<H', guards[0], 10)[0], 4)
+        self.assertEqual(struct.unpack_from('<H', guards[1], 10)[0], 2)
+
+    def test_native_candidates_do_not_promote_an_ordinary_composed_cut(self):
+        code = bytes.fromhex('eb 02 90 90 f4')
+        memory = PagedMemory(b'', 4096).write(0x100, code)
+        state = initial_state(memory, 0x100)
+        header = BzImageHeader(
+            setup_sectors=1, protocol=0x20c, load_flags=1,
+            code32_start=0, initrd_address_max=0,
+            kernel_alignment=0x200000, relocatable=True, xload_flags=1,
+            command_line_bytes=2048, preferred_address=0,
+            init_bytes=4096)
+        wire = dump_x86_boot_cache(BzImageBoot(state, header, 0, 0, 0))
+        scalar = pack_native_x86_block(X86DBT().block(state))
+        fields, _guard, step = split_native_x86_record(scalar)
+        fields = list(fields)
+        fields[6:10] = (1, 0x104, 0, 0)
+        longer_guard = struct.pack('<HQH', 1, 0x100, 4) + code[:4]
+        composed = NATIVE_BLOCK_HEADER.pack(*fields) + longer_guard + step
+        machine = dump_native_x86_machine(
+            wire, state, (X86DBT().block(state),))
+
+        extended = extend_native_x86_machine(
+            machine, ((0x100, composed),), reject_conflicts=False)
+        _metadata, _memory, records = load_native_x86_machine(extended)
+        guards = [split_native_x86_record(record)[1]
+                  for _rip, record in records]
+
+        self.assertEqual(len(guards), 2)
+        self.assertEqual(struct.unpack_from('<H', guards[0], 10)[0], 2)
+        self.assertEqual(struct.unpack_from('<H', guards[1], 10)[0], 4)
 
     def test_general_dynamic_record_removes_state_specialized_variant(self):
         caller = bytes.fromhex('ff d0 f4')
@@ -422,9 +593,11 @@ class TestX86Snapshot(unittest.TestCase):
         self.assertEqual(native_x86_static_successors(record), (0x103,))
 
     def test_native_fxsave_is_one_sparse_general_memory_projection(self):
+        xmm = tuple(0x1100000000000000 + lane for lane in range(32))
         state = initial_state(
             PagedMemory(b'', 4096).write(
-                0x100, bytes.fromhex('0f ae 05 09 00 00 00 f4')), 0x100)
+                0x100, bytes.fromhex('0f ae 05 09 00 00 00 f4')), 0x100,
+            xmm=xmm)
 
         record = pack_native_x86_block(X86DBT().block(state))
         fields = NATIVE_BLOCK_HEADER.unpack_from(record)
@@ -432,27 +605,40 @@ class TestX86Snapshot(unittest.TestCase):
         plan = decode_plan(mapped)
         memory = MemoryCut(state.memory)
         compile_mapped_executor(mapped)(
-            state.registers + (state.rflags,), (), memory)
+            state.registers + (state.rflags,) + state.xmm, (), memory)
 
-        self.assertEqual((fields[6], fields[7]), (1, 0x107))
+        self.assertEqual((fields[6], fields[7], fields[8]),
+                         (41, 0x107, 17))
         self.assertEqual(
             tuple(node.op for node in plan.nodes).count(
                 'memory.i64.repeat'), 1)
         self.assertEqual(memory.load(0x110, 2), 0x037f)
         self.assertEqual(memory.load(0x128, 4), 0x1f80)
         self.assertEqual(memory.load(0x12c, 4), 0x0000ffff)
-        self.assertEqual(memory.read(0x110, 512)[32:], bytes(480))
+        self.assertEqual(tuple(
+            memory.load(0x110 + 160 + lane * 8, 8)
+            for lane in range(32)), xmm)
 
-    def test_native_fxrstor_stays_on_the_ordinary_next_rip_quotient(self):
+    def test_native_fxrstor_projects_xmm_lanes_from_guest_memory(self):
         memory = PagedMemory(b'', 4096).write(
             0x100, bytes.fromhex('48 0f ae 4f 40 f4'))
+        xmm = tuple(0x2200000000000000 + lane for lane in range(32))
+        image = bytearray(512)
+        for lane, value in enumerate(xmm):
+            struct.pack_into('<Q', image, 160 + lane * 8, value)
         state = initial_state(
-            memory.write(0x440, bytes(512)), 0x100, {'rdi': 0x400})
+            memory.write(0x440, bytes(image)), 0x100, {'rdi': 0x400})
 
         record = pack_native_x86_block(X86DBT().block(state))
         fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+        mapped = unpack_step(native_step(record))
+        locals_, _stack = compile_mapped_executor(mapped)(
+            state.registers + (state.rflags,) + (0,) * 32, (),
+            MemoryCut(state.memory))
 
-        self.assertEqual((fields[6], fields[7]), (1, 0x105))
+        self.assertEqual((fields[6], fields[7], fields[8]),
+                         (42, 0x105, 17))
+        self.assertEqual(tuple(locals_[17:49]), xmm)
         self.assertEqual(native_x86_static_successors(record), (0x105,))
 
     def test_native_memory_push_uses_the_predecrement_source_coordinate(self):
@@ -849,6 +1035,18 @@ class TestX86Snapshot(unittest.TestCase):
             ('66 48 0f 6e c3 f4', 31, 0x105),
             ('66 0f 6c c0 f4', 32, 0x104),
             ('66 0f ef c0 f4', 35, 0x104),
+            ('66 0f 6f c8 f4', 37, 0x104),
+            ('66 0f 73 d9 08 f4', 37, 0x105),
+            ('66 0f eb c1 f4', 37, 0x104),
+            ('66 48 0f 7e c0 f4', 37, 0x105),
+            ('66 0f 6e db f4', 37, 0x104),
+            ('f2 0f 70 c3 00 f4', 37, 0x105),
+            ('66 0f f9 d0 f4', 37, 0x104),
+            ('66 0f fd c1 f4', 37, 0x104),
+            ('66 0f 61 c2 f4', 37, 0x104),
+            ('66 0f c5 f2 01 f4', 37, 0x105),
+            ('66 0f 76 c0 f4', 37, 0x104),
+            ('66 0f 62 c1 f4', 37, 0x104),
         )
         for code, expected_control, following in cases:
             with self.subTest(code=code):
@@ -900,6 +1098,54 @@ class TestX86Snapshot(unittest.TestCase):
             tuple(node.op for node in decode_plan(mapped).nodes),
             ('memory.i64.load_region',))
 
+    def test_native_packed_equality_memory_uses_two_general_lanes(self):
+        state = initial_state(
+            PagedMemory(b'', 4096).write(
+                0x100, bytes.fromhex('66 0f 76 02 f4')),
+            0x100, {'rdx': 0x400})
+
+        record = pack_native_x86_block(X86DBT().block(state))
+        fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+        mapped = unpack_step(native_step(record))
+
+        self.assertEqual((fields[6], fields[7]), (37, 0x104))
+        self.assertEqual(fields[9], 1 << 8)
+        self.assertEqual(
+            tuple(node.op for node in decode_plan(mapped).nodes),
+            ('memory.i64.load_region',))
+
+    def test_native_packed_dword_unpack_memory_uses_two_general_lanes(self):
+        state = initial_state(
+            PagedMemory(b'', 4096).write(
+                0x100, bytes.fromhex('66 0f 62 02 f4')),
+            0x100, {'rdx': 0x400})
+
+        record = pack_native_x86_block(X86DBT().block(state))
+        fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+        mapped = unpack_step(native_step(record))
+
+        self.assertEqual((fields[6], fields[7]), (37, 0x104))
+        self.assertEqual(fields[9], 1 << 8)
+        self.assertEqual(
+            tuple(node.op for node in decode_plan(mapped).nodes),
+            ('memory.i64.load_region',))
+
+    def test_native_low_qword_store_uses_one_general_memory_lane(self):
+        state = initial_state(
+            PagedMemory(b'', 4096).write(
+                0x100, bytes.fromhex('66 0f d6 42 10 f4')),
+            0x100, {'rdx': 0x400})
+
+        record = pack_native_x86_block(X86DBT().block(state))
+        fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+        mapped = unpack_step(native_step(record))
+
+        self.assertEqual((fields[6], fields[7]), (33, 0x105))
+        self.assertEqual(fields[9] >> 16, 1)
+        self.assertEqual(
+            tuple(node.op for node in decode_plan(mapped).nodes),
+            ('memory.i64.store',))
+
     def test_native_unaligned_vector_load_uses_the_same_two_lanes(self):
         memory = PagedMemory(b'', 4096).write(
             0x100, bytes.fromhex('f3 0f 6f 02 f4'))
@@ -916,6 +1162,127 @@ class TestX86Snapshot(unittest.TestCase):
 
         self.assertEqual((fields[6], fields[7]), (36, 0x104))
         self.assertEqual(locals_[-2:], (0x1122, 0x3344))
+
+    def test_native_scalar_vector_load_is_one_general_memory_lane(self):
+        memory = PagedMemory(b'', 4096).write(
+            0x100, bytes.fromhex('f3 0f 7e 02 f4'))
+        state = initial_state(
+            memory.write(0x403, struct.pack('<Q', 0x1122334455667788)),
+            0x100, {'rdx': 0x403})
+
+        record = pack_native_x86_block(X86DBT().block(state))
+        fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+        mapped = unpack_step(native_step(record))
+        locals_, _stack = compile_mapped_executor(mapped)(
+            state.registers + (state.rflags, 0), (),
+            MemoryCut(state.memory))
+
+        self.assertEqual((fields[6], fields[7]), (31, 0x104))
+        self.assertEqual(fields[8] >> 16, 1)
+        self.assertEqual(locals_[-1], 0x1122334455667788)
+
+    def test_native_high_vector_load_reuses_single_lane_control(self):
+        memory = PagedMemory(b'', 4096).write(
+            0x100, bytes.fromhex('0f 16 02 f4'))
+        state = initial_state(
+            memory.write(0x403, struct.pack('<Q', 0x1122334455667788)),
+            0x100, {'rdx': 0x403})
+
+        record = pack_native_x86_block(X86DBT().block(state))
+        fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+        mapped = unpack_step(native_step(record))
+        locals_, _stack = compile_mapped_executor(mapped)(
+            state.registers + (state.rflags, 0), (),
+            MemoryCut(state.memory))
+
+        self.assertEqual((fields[6], fields[7]), (36, 0x103))
+        self.assertEqual(fields[8], 0x100)
+        self.assertEqual(fields[9] >> 16, 1)
+        self.assertEqual(locals_[-1], 0x1122334455667788)
+
+    def test_native_movd_memory_uses_exact_single_dword_lane(self):
+        cases = (
+            ('66 0f 6e 02 f4', 36, 'memory.i64.load32_u'),
+            ('66 0f 7e 02 f4', 33, 'memory.i64.store32'),
+        )
+        for code, control, operation in cases:
+            with self.subTest(code=code):
+                state = initial_state(
+                    PagedMemory(b'', 4096).write(
+                        0x100, bytes.fromhex(code)),
+                    0x100, {'rdx': 0x400},
+                    xmm=(0x12345678, 0) + (0,) * 30)
+                record = pack_native_x86_block(X86DBT().block(state))
+                fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+                mapped = unpack_step(native_step(record))
+
+                self.assertEqual(fields[6], control)
+                self.assertTrue(fields[9] & (1 << 16))
+                self.assertIn(
+                    operation,
+                    tuple(node.op for node in decode_plan(mapped).nodes))
+
+    def test_native_scalar_double_compare_is_one_loaded_bit_lane(self):
+        for opcode in (0x2e, 0x2f):
+            with self.subTest(opcode=opcode):
+                state = initial_state(
+                    PagedMemory(b'', 4096).write(
+                        0x100,
+                        bytes.fromhex('66 0f %02x 06 f4' % opcode)),
+                    0x100, {'rsi': 0x400},
+                    xmm=(0x3ff8000000000000, 0) + (0,) * 30)
+
+                record = pack_native_x86_block(X86DBT().block(state))
+                fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+                mapped = unpack_step(native_step(record))
+
+                self.assertEqual((fields[6], fields[7]), (38, 0x104))
+                self.assertTrue(fields[8] & (1 << 16))
+                self.assertIn(
+                    'memory.i64.load',
+                    tuple(node.op for node in decode_plan(mapped).nodes))
+
+    def test_native_scalar_double_controls_reuse_general_memory_lanes(self):
+        cases = (
+            ('f2 0f 2a 02 f4', 39, 'memory.i64.load32_u'),
+            ('f2 48 0f 2a 02 f4', 39, 'memory.i64.load'),
+            ('f2 48 0f 2c 02 f4', 39, 'memory.i64.load'),
+            ('f2 0f 5e 02 f4', 40, 'memory.i64.load'),
+        )
+        for code, control, operation in cases:
+            with self.subTest(code=code):
+                state = initial_state(
+                    PagedMemory(b'', 4096).write(
+                        0x100, bytes.fromhex(code)),
+                    0x100, {'rdx': 0x400})
+                record = pack_native_x86_block(X86DBT().block(state))
+                fields = NATIVE_BLOCK_HEADER.unpack_from(record)
+                mapped = unpack_step(native_step(record))
+
+                self.assertEqual(fields[6], control)
+                self.assertIn(
+                    operation,
+                    tuple(node.op for node in decode_plan(mapped).nodes))
+
+    def test_native_scalar_double_register_controls_are_closed(self):
+        for code, control, following in (
+                ('f2 0f 2a c1 f4', 39, 0x104),
+                ('f2 48 0f 2a c8 f4', 39, 0x105),
+                ('f2 0f 2c d0 f4', 39, 0x104),
+                ('f2 48 0f 2c d0 f4', 39, 0x105),
+                ('f2 0f 58 c1 f4', 40, 0x104),
+                ('f2 0f 59 c1 f4', 40, 0x104),
+                ('f2 0f 5c c1 f4', 40, 0x104),
+                ('f2 0f 5e c1 f4', 40, 0x104)):
+            with self.subTest(code=code):
+                state = initial_state(
+                    PagedMemory(b'', 4096).write(
+                        0x100, bytes.fromhex(code)), 0x100)
+                fields = NATIVE_BLOCK_HEADER.unpack_from(
+                    pack_native_x86_block(X86DBT().block(state)))
+
+                self.assertEqual((fields[6], fields[7]),
+                                 (control, following))
 
     def test_native_fs_load_admits_one_segment_base_coordinate(self):
         code = bytes.fromhex('64 48 8b 04 25 00 00 00 00 f4')
@@ -1218,6 +1585,32 @@ class TestX86Snapshot(unittest.TestCase):
         self.assertEqual(descriptor, 17 | (64 << 8))
         self.assertEqual(source_instructions, 2)
         self.assertEqual((page.instructions, page.local_extent), (0, 18))
+
+    def test_runtime_closure_promotes_its_requested_countdown_cut(self):
+        from tools.close_native_x86_runtime import (realized_seed_cut,
+                                                    realized_seed_cuts,
+                                                    seed_cut_variants)
+
+        memory = PagedMemory(b'', 4096).write(
+            0x100, bytes.fromhex('48 ff c8 75 fb 48 ff c8 f4'))
+        state = initial_state(memory, 0x100, {'rax': 5})
+        dbt = X86DBT(enable_function_oracles=False)
+        eager = dbt.physical_block(state)
+
+        dbt.run(state)
+        realized = realized_seed_cut(dbt, eager)
+
+        self.assertNotEqual(eager.boundary.operation, 'native_recurrence')
+        self.assertEqual(realized.boundary.operation, 'native_recurrence')
+        self.assertEqual(realized.rip, eager.rip)
+        self.assertEqual(realized_seed_cuts(dbt, eager), (realized,))
+
+        changed = initial_state(
+            memory.write(0x100, bytes.fromhex('48 ff c0 f4')), 0x100,
+            {'rax': 5})
+        changed_cut = X86DBT(enable_function_oracles=False).block(changed)
+        self.assertEqual(
+            seed_cut_variants(eager, changed_cut), (eager, changed_cut))
 
     def test_native_zero_scan_is_one_recurrence_record(self):
         code = bytes.fromhex('48 83 c0 01 80 38 00 75 f7 f4')

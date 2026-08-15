@@ -56,6 +56,119 @@ const state = {
 const TABS_KEY = 'qm.tabs';
 const ACTIVE_KEY = 'qm.activeTab';
 const VFS_WIDTH_KEY = 'qm.vfsWidth';
+let selectFocusSurface = null;
+
+const FOCUS_SURFACES = [
+  ['source', 'card-write'],
+  ['run', 'card-run'],
+  ['files', 'card-system'],
+  ['terminal', 'card-terminal'],
+];
+
+function requestedFocusSurface(search = location.search) {
+  const value = new URLSearchParams(search).get('focus');
+  if (value === 'editor') return 'source';
+  if (value === 'workspace') return 'workspace';
+  return FOCUS_SURFACES.some(([name]) => name === value) ? value : null;
+}
+
+/** Expose one work surface when a narrow client asks for progressive detail. */
+function setupFocusSurface(search = location.search, onSelect = () => {}) {
+  const initial = requestedFocusSurface(search);
+  if (!initial) return false;
+
+  const shell = document.querySelector('.workbench-shell');
+  const board = document.querySelector('.board');
+  const switcher = $('surface-switcher');
+  const footer = document.querySelector('.pagefoot');
+  const buttons = Array.from(switcher.querySelectorAll('[data-surface]'));
+  const panels = new Map([
+    ['workspace', $('surface-home')],
+    ...FOCUS_SURFACES.map(([name, id]) => [name, $(id)]),
+  ]);
+
+  shell.classList.add('is-focus-mode');
+  switcher.hidden = false;
+  footer.hidden = true;
+  for (const [name, panel] of panels) {
+    panel.setAttribute('role', 'region');
+    if (name === 'workspace') panel.setAttribute('aria-label', 'Workspace entry');
+    else panel.setAttribute('aria-labelledby', `surface-tab-${name}`);
+    panel.tabIndex = -1;
+  }
+
+  const select = (surface, updateUrl = false) => {
+    for (const [name, panel] of panels) panel.hidden = name !== surface;
+    board.hidden = surface === 'files';
+    for (const button of buttons) {
+      const selected = button.dataset.surface === surface;
+      if (selected) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    }
+    if (updateUrl) {
+      const url = new URL(location.href);
+      url.searchParams.set('focus', surface);
+      history.replaceState(null, '', url);
+    }
+    onSelect(surface);
+  };
+  selectFocusSurface = select;
+
+  for (const button of buttons) {
+    button.addEventListener('click', () => select(button.dataset.surface, true));
+    button.addEventListener('keydown', (event) => {
+      const current = buttons.indexOf(button);
+      let next = null;
+      if (event.key === 'ArrowRight') next = (current + 1) % buttons.length;
+      if (event.key === 'ArrowLeft') next = (current - 1 + buttons.length) % buttons.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = buttons.length - 1;
+      if (next == null) return;
+      event.preventDefault();
+      buttons[next].focus();
+      select(buttons[next].dataset.surface, true);
+    });
+  }
+  document.querySelectorAll('[data-open-surface]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const surface = button.dataset.openSurface;
+      select(surface, true);
+      buttons.find((item) => item.dataset.surface === surface)?.focus();
+    });
+  });
+  select(initial);
+  return true;
+}
+
+function startCompileRuntime(search = location.search) {
+  if (state.worker) return;
+  state.worker = new Worker(new URL('worker.js', import.meta.url),
+                            { type: 'module' });
+  state.worker.addEventListener('message', onMessage);
+  state.worker.postMessage({
+    type: 'boot',
+    search,
+    config: readConfig(search),
+  });
+  status('starting the engine…');
+}
+
+function startLinuxRuntime(search = location.search) {
+  if (state.linux) return;
+  state.linux = mountLinuxTerminal(search);
+}
+
+function activateRuntimeSurface(surface, search = location.search) {
+  if (surface === 'source' || surface === 'run') startCompileRuntime(search);
+  if (surface === 'terminal') startLinuxRuntime(search);
+}
+
+function openFocusSurface(surface) {
+  if (!selectFocusSurface) return false;
+  selectFocusSurface(surface, true);
+  document.querySelector(`[data-surface="${surface}"]`)?.focus();
+  return true;
+}
 
 function activeTab() {
   return state.tabs.find((t) => t.id === state.activeId) || state.tabs[0];
@@ -241,6 +354,8 @@ function newTab(name, source) {
     runReady: false,
     ranWith: null,
     dirty: false,
+    scrollTop: 0,
+    scrollLeft: 0,
   };
 }
 
@@ -391,10 +506,14 @@ function renderVfs() {
       <small>${fileKind(tab.name)}</small>
     </button>`).join('');
   files.querySelectorAll('.vfs-file').forEach((file) => {
-    file.addEventListener('click', () => selectTab(file.dataset.file));
+    file.addEventListener('click', () => {
+      selectTab(file.dataset.file);
+      openFocusSurface('source');
+    });
     file.addEventListener('dblclick', () => {
       const id = file.dataset.file;
       selectTab(id);
+      openFocusSurface('source');
       requestAnimationFrame(() => {
         const tab = document.querySelector(`.tab[data-id="${id}"]`);
         if (tab) beginTabRename(id, tab);
@@ -410,6 +529,7 @@ function selectTab(id) {
   state.activeId = id;
   $('source').value = tab.source;
   syncSource({ keepDirty: true });
+  restoreEditorScroll(tab);
   renderTabs();
   restoreCards();
   persistTabs();
@@ -422,6 +542,7 @@ function addTab(name, source) {
   state.activeId = tab.id;
   $('source').value = tab.source;
   syncSource({ keepDirty: true });
+  restoreEditorScroll(tab);
   renderTabs();
   restoreCards();
   persistTabs();
@@ -439,6 +560,7 @@ function closeTab(id) {
     state.activeId = replacement.id;
     $('source').value = '';
     syncSource({ keepDirty: true });
+    restoreEditorScroll(replacement);
     renderTabs();
     restoreCards();
     persistTabs();
@@ -452,6 +574,7 @@ function closeTab(id) {
     state.activeId = next.id;
     $('source').value = next.source;
     syncSource({ keepDirty: true });
+    restoreEditorScroll(next);
     restoreCards();
     if (!next.result || next.dirty) scheduleCompile();
   }
@@ -537,6 +660,24 @@ function syncSource(options) {
     }
     persistTabs();
   }
+}
+
+function syncEditorScroll(editor = $('source')) {
+  $('highlight').scrollTop = editor.scrollTop;
+  $('highlight').scrollLeft = editor.scrollLeft;
+  $('gutter').scrollTop = editor.scrollTop;
+  const tab = activeTab();
+  if (tab) {
+    tab.scrollTop = editor.scrollTop;
+    tab.scrollLeft = editor.scrollLeft;
+  }
+}
+
+function restoreEditorScroll(tab = activeTab()) {
+  const editor = $('source');
+  editor.scrollTop = tab?.scrollTop || 0;
+  editor.scrollLeft = tab?.scrollLeft || 0;
+  syncEditorScroll(editor);
 }
 
 function setSource(code, name) {
@@ -850,6 +991,7 @@ function runProgram() {
   $('term-in').value = '';
   state.busy = true;
   renderRunControls();
+  openFocusSurface('run');
   termWrite(stdin ? `> ${stdin}\n` : '> ', 'term-echo');
   status('running main through the minimized artifact…');
   state.worker.postMessage({ type: 'exec', source: tab.source, stdin });
@@ -924,7 +1066,7 @@ function openDialog(title, html) {
 function examplesMarkup() {
   return '<div class="examples">'
     + '<button class="btn ex new-tab" data-new-tab="1" '
-    + 'aria-label="New tab">+</button>'
+    + 'aria-label="Create blank file">+</button>'
     + EXAMPLES.map((ex, i) =>
         `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
         .join('')
@@ -1198,11 +1340,7 @@ function init() {
 
   const editor = $('source');
   editor.addEventListener('input', () => { syncSource(); scheduleCompile(); });
-  editor.addEventListener('scroll', () => {
-    $('highlight').scrollTop = editor.scrollTop;
-    $('highlight').scrollLeft = editor.scrollLeft;
-    $('gutter').scrollTop = editor.scrollTop;
-  });
+  editor.addEventListener('scroll', () => syncEditorScroll(editor));
   editor.addEventListener('keydown', (event) => {
     if (event.key === 'Tab') {
       event.preventDefault();
@@ -1310,17 +1448,20 @@ function init() {
     renderTakeaway();
   });
 
-  state.worker = new Worker(new URL('worker.js', import.meta.url),
-                            { type: 'module' });
-  state.worker.addEventListener('message', onMessage);
-  state.worker.postMessage({
-    type: 'boot',
-    search: location.search,
-    config: readConfig(location.search),
-  });
-  state.linux = mountLinuxTerminal(location.search);
+  const focused = setupFocusSurface(
+    location.search,
+    (surface) => activateRuntimeSurface(surface, location.search),
+  );
+  if (!focused) {
+    startCompileRuntime(location.search);
+    startLinuxRuntime(location.search);
+  } else if (requestedFocusSurface(location.search) === 'workspace') {
+    // Paint the four-way MCP entry first, then prewarm Editor/Run without
+    // touching the VFS or Linux session.  Choosing either work surface is
+    // therefore normally an immediate transition.
+    requestAnimationFrame(() => startCompileRuntime(location.search));
+  }
   addEventListener('pagehide', () => state.linux?.release(), { once: true });
-  status('starting the engine…');
 }
 
 init();

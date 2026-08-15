@@ -16,6 +16,10 @@ const profiles = new Map();
 let nextHandle = 1;
 let queue = Promise.resolve();
 
+const DEFAULT_BLOCK_QUANTUM = 1024;
+const DEFAULT_MAX_QUANTA = 16384;
+const PROGRESS_QUANTA = 4;
+
 function consoleState() {
   return {
     decoder: new TextDecoder(),
@@ -99,12 +103,19 @@ async function drive(id, handle, options = {}) {
   handle = sessionHandle(handle);
   const session = sessions.get(handle);
   const quantum = positiveInteger(
-    options.quantum ?? options.maxBlocks, 65536, 'x86 block quantum',
+    options.quantum ?? options.maxBlocks,
+    DEFAULT_BLOCK_QUANTUM,
+    'x86 block quantum',
   );
-  const maxQuanta = positiveInteger(options.maxQuanta, 256, 'x86 quanta');
+  const maxQuanta = positiveInteger(
+    options.maxQuanta, DEFAULT_MAX_QUANTA, 'x86 quanta',
+  );
+  const started = performance.now();
+  let completedBlocks = 0;
   let raw = session.machine.status();
   for (let count = 0; count < maxQuanta; count += 1) {
     raw = await session.machine.advance(quantum);
+    completedBlocks += raw.completedBlocks || 0;
     if (raw.missingBlock != null) {
       const rip = raw.missingBlock.toString(16).padStart(16, '0');
       throw new Error(
@@ -112,12 +123,24 @@ async function drive(id, handle, options = {}) {
       );
     }
     if (raw.halted || session.console.ready) break;
-    if ((count & 15) === 15) {
+    if ((count + 1) % PROGRESS_QUANTA === 0) {
+      const elapsedMilliseconds = performance.now() - started;
       send('progress', {
         id,
         phase: 'execute',
         label: 'Running Linux in vm.wasm',
-        detail: `${raw.retired.toString()} source instructions`,
+        detail: `${raw.retired.toString()} source instructions · `
+          + `${completedBlocks} blocks · ${Math.round(elapsedMilliseconds)} ms`,
+        profile: {
+          elapsedMilliseconds,
+          quanta: count + 1,
+          completedBlocks,
+          retired: raw.retired.toString(),
+          work: raw.work.toString(),
+          span: raw.span.toString(),
+          hostBarriers: raw.hostBarriers,
+          layout: session.artifact.layout(),
+        },
       });
       // A scheduling yield is not an execution fallback or guest barrier.
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -149,14 +172,23 @@ async function boot(message) {
     // passed below to openNativeX86Artifact.
     wavePages: message.x86?.deliveryWavePages
       ?? message.x86?.wavePages ?? 4,
-    cachePages: message.x86?.deliveryCachePages ?? 16,
+    // This object is already the worker's disposable resident set. Retaining
+    // each touched immutable page is cheaper than decoding the same execution
+    // page again after a direct-mapped block-cache collision.
+    cachePages: message.x86?.deliveryCachePages ?? 256,
   });
   profileMark(message.id, 'artifact_mapped');
   let artifact;
   let machine;
   const console = consoleState();
   try {
-    artifact = await openNativeX86Artifact(opened.fabric, message.x86 || {});
+    const x86Options = message.x86 || {};
+    artifact = await openNativeX86Artifact(opened.fabric, {
+      ...x86Options,
+      // The RAM bundle has only the canonical unique pages. Keep touched
+      // pages resident until this disposable worker is released.
+      cachePages: x86Options.memoryCachePages ?? x86Options.cachePages ?? 96,
+    });
     profileMark(message.id, 'physical_pages_opened');
     machine = await openX86Machine({
       ...artifact,
@@ -169,6 +201,15 @@ async function boot(message) {
               data_base64: base64(bytes),
             },
           });
+        },
+        entropy({ rip }) {
+          // Boot closure and browser replay share one deterministic entropy
+          // barrier. A deployment may record a host-provided seed once, but
+          // must not choose a different control-flow path on every resume.
+          return BigInt.asUintN(
+            64,
+            rip * 0x9e3779b97f4a7c15n + 0xd1b54a32d192ed03n,
+          );
         },
       },
     });

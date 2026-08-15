@@ -8,8 +8,8 @@ repo=$(cd -- "$here/.." && pwd)
 upstream="$here/upstream"
 # WSL's /mnt/c metadata path is much slower for kernel trees. Keep the source
 # lock under data/, but allow disposable expansion on the native Linux volume.
-build=${QM_BUILD_ROOT:-$here/build}
-out="$here/out"
+build=${QM_BUILD_ROOT:-${TMPDIR:-/tmp}/libqm-linux-build}
+out=${QM_OUTPUT_ROOT:-${TMPDIR:-/tmp}/libqm-linux-output}
 mkdir -p "$upstream" "$build" "$out"
 
 fetch() {
@@ -84,16 +84,22 @@ verify_config_lock() {
 
 linux_tar="$upstream/linux-$LINUX_VERSION.tar.xz"
 busybox_tar="$upstream/busybox-$BUSYBOX_VERSION.tar.bz2"
+make_tar="$upstream/make-$MAKE_VERSION.tar.gz"
 fetch "$LINUX_URL" "$linux_tar" "$LINUX_SHA256"
 fetch "$BUSYBOX_URL" "$busybox_tar" "$BUSYBOX_SHA256"
+fetch "$MAKE_URL" "$make_tar" "$MAKE_SHA256"
 
 linux_src="$build/linux-$LINUX_VERSION"
 busybox_src="$build/busybox-$BUSYBOX_VERSION"
+make_src="$build/make-$MAKE_VERSION"
 if [[ ! -d "$linux_src" ]]; then
   tar -C "$build" -xf "$linux_tar"
 fi
 if [[ ! -d "$busybox_src" ]]; then
   tar -C "$build" -xf "$busybox_tar"
+fi
+if [[ ! -d "$make_src" ]]; then
+  tar -C "$build" -xf "$make_tar"
 fi
 
 busybox_o="$busybox_src"
@@ -103,7 +109,7 @@ busybox_stamp="$busybox_src/.qm-build"
 busybox_key=$(
   {
     sha256sum "$here/config/busybox.fragment"
-    "$busybox_cc" --version | head -n 1
+    "$busybox_cc" --version | sed -n '1p'
   } | sha256sum | cut -d' ' -f1
 )
 if [[ ! -x $busybox_root/bin/busybox ]] || \
@@ -121,6 +127,40 @@ fi
 verify_config_lock "$busybox_src/.config" \
   "$here/config/busybox-$BUSYBOX_VERSION.config"
 install -D -m 0755 "$here/initramfs/init" "$busybox_root/init"
+install -d -m 0755 "$busybox_root/dev" "$busybox_root/proc" \
+  "$busybox_root/sys"
+install -d -m 1777 "$busybox_root/tmp"
+
+# GNU make is the first deliberately non-BusyBox guest tool.  Build it from a
+# pinned upstream tarball with the same static musl compiler as BusyBox so the
+# initramfs never depends on a Nix store path or a guest dynamic loader.
+make_root="$build/make-root"
+make_bin="$make_root/bin/make"
+make_stamp="$make_src/.qm-build"
+make_key=$(
+  {
+    printf '%s\n' "$MAKE_SHA256"
+    printf '%s\n' 'gnu17-static-v1'
+    "$busybox_cc" --version | sed -n '1p'
+  } | sha256sum | cut -d' ' -f1
+)
+if [[ ! -x $make_bin ]] || [[ ! -f $make_stamp ]] || \
+   [[ $(<"$make_stamp") != "$make_key" ]]; then
+  if [[ -f $make_src/Makefile ]]; then
+    make -C "$make_src" distclean
+  fi
+  (
+    cd "$make_src"
+    CC="$busybox_cc" CFLAGS='-O2 -static -std=gnu17' LDFLAGS='-static' \
+      ./configure --prefix="$make_root" --disable-nls
+    make -j"$(nproc)"
+    make install
+  )
+  printf '%s\n' "$make_key" > "$make_stamp"
+fi
+install -D -m 0755 "$make_bin" "$busybox_root/bin/make"
+install -D -m 0644 "$here/bootstrap/Makefile" \
+  "$busybox_root/opt/qm/Makefile"
 
 linux_o="$build/linux-out"
 mkdir -p "$linux_o"

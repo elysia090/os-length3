@@ -17,9 +17,11 @@ reproducer.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 from pathlib import Path
 import random
+import subprocess
 import sys
 
 
@@ -69,6 +71,16 @@ _STRAIGHT = (
     bytes.fromhex('89 53 18'),              # mov [rbx+24], edx
     bytes.fromhex('83 43 20 01'),           # add dword [rbx+32], 1
     bytes.fromhex('31 43 28'),              # xor [rbx+40], eax
+    bytes.fromhex('49 8b 02'),              # mov rax, [r10]
+    bytes.fromhex('49 89 42 08'),           # mov [r10+8], rax
+    bytes.fromhex('49 87 42 10'),           # xchg [r10+16], rax
+    bytes.fromhex('f0 49 01 42 18'),        # lock add [r10+24], rax
+    bytes.fromhex('f0 49 0f b1 4a 20'),     # lock cmpxchg [r10+32], rcx
+    bytes.fromhex('66 0f ef c0'),           # pxor xmm0, xmm0
+    bytes.fromhex('66 0f ef c9'),           # pxor xmm1, xmm1
+    bytes.fromhex('41 0f 10 02'),           # movups xmm0, [r10]
+    bytes.fromhex('41 0f 11 42 30'),        # movups [r10+48], xmm0
+    bytes.fromhex('66 0f 6f c8'),           # movdqa xmm1, xmm0
     bytes.fromhex('50 58'),                 # push rax; pop rax
     bytes.fromhex('51 5a'),                 # push rcx; pop rdx
     bytes.fromhex('fc'),                    # cld
@@ -85,6 +97,20 @@ _FIXED = (
     # Enabling IF followed by the architecturally shadowed instruction.  The
     # quotient may join them, but their state must equal two scalar steps.
     bytes.fromhex('fb e9 00 00 00 00 83 c0 01 f4'),
+    # musl malloc's unlink shape: repeated same-coordinate loads separated by
+    # stores.  It catches memory-token rewrites which look equivalent only
+    # after incorrectly materializing the first loaded pointer.
+    bytes.fromhex(
+        '49 8b 12 48 89 42 08 49 8b 12 48 89 10 4d 39 d2 f4'),
+    # Vector clear/store used by nontrivial_free.  XMM state is part of the
+    # architectural signature; omitting it lets a bad scalar fallback hide.
+    bytes.fromhex('66 0f ef c0 41 0f 11 42 30 41 0f 10 4a 30 f4'),
+    # Atomic allocator update.  The quotient must preserve both the old RAX
+    # value and the exact memory/flags publication of CMPXCHG.
+    bytes.fromhex('f0 49 0f b1 4a 20 0f 94 c2 f4'),
+    # Linux context switches exercise these as ordinary resident state steps.
+    bytes.fromhex('0f ae 03 f4'),            # fxsave [rbx]
+    bytes.fromhex('0f ae 0b f4'),            # fxrstor [rbx]
 )
 
 
@@ -145,6 +171,8 @@ def _state_signature(state):
         'rflags': '%016x' % (int(state.rflags) & MASK64),
         'registers': ['%016x' % (int(value) & MASK64)
                       for value in state.registers],
+        'xmm': ['%016x' % (int(value) & MASK64)
+                for value in state.xmm],
         'halted': bool(state.halted),
         'control': [
             '%016x' % (int(state.cr0) & MASK64),
@@ -165,11 +193,18 @@ def _boundary_signature(boundary):
     return boundary.operation, repr(boundary.detail)
 
 
-def check_case(code: bytes, registers: dict[str, int], rflags: int):
+def _word(value):
+    return '%016x' % (int(value) & MASK64)
+
+
+def check_case(code: bytes, registers: dict[str, int], rflags: int,
+               include_vm_fixture=False):
     """Compare one optimized cut with its exact scalar retirement prefix."""
     rng_data = bytes(registers.pop('_data'))
+    xmm = tuple(registers.pop('_xmm'))
+    initial_memory = _memory(code, rng_data)
     initial = initial_state(
-        _memory(code, rng_data), CODE, registers, rflags=int(rflags))
+        initial_memory, CODE, registers, rflags=int(rflags), xmm=xmm)
     optimized = X86DBT(enable_function_oracles=False)
     physical = optimized.physical_block(initial)
     records = pack_native_x86_records(physical)
@@ -241,7 +276,7 @@ def check_case(code: bytes, registers: dict[str, int], rflags: int):
             'expected': expected,
             'actual': actual,
         }, indent=2)[:16000])
-    return {
+    result = {
         'retired': scalar_retired,
         'recorded_retirement': recorded_retirement,
         'retirement_delta': recorded_retirement - scalar_retired,
@@ -249,9 +284,36 @@ def check_case(code: bytes, registers: dict[str, int], rflags: int):
         'span': physical.plan.waves.span,
         'records': len(records),
     }
+    if include_vm_fixture:
+        encoded = lambda payload: base64.b64encode(bytes(payload)).decode()
+        ranges = ((CODE, max(0x100, len(code))),
+                  (DATA, 0x300), (STACK - 0x100, 0x200))
+        result['vm_fixture'] = {
+            'records': [[_word(coordinate), encoded(record)]
+                        for coordinate, record in records],
+            'state': {
+                'registers': [_word(value) for value in initial.registers],
+                'xmm': [_word(value) for value in initial.xmm],
+                'rip': _word(initial.rip),
+                'rflags': _word(initial.rflags),
+            },
+            'memory': [[offset, encoded(initial_memory.read(offset, length))]
+                       for offset, length in ranges],
+            'expected': {
+                'registers': [_word(value) for value in fast.registers],
+                'xmm': [_word(value) for value in fast.xmm],
+                'rip': _word(fast.rip),
+                'rflags': _word(fast.rflags),
+                'halted': bool(fast.halted),
+                'memory': [[offset, encoded(fast.memory.read(offset, length))]
+                           for offset, length in ranges],
+            },
+        }
+    return result
 
 
-def fuzz(cases: int, seed: int, max_ops: int = 24):
+def fuzz(cases: int, seed: int, max_ops: int = 24, vm_wasm=None,
+         node='node'):
     rng = random.Random(int(seed))
     total_retired = 0
     total_work = 0
@@ -260,12 +322,15 @@ def fuzz(cases: int, seed: int, max_ops: int = 24):
     retirement_mismatches = 0
     retirement_delta = 0
     completed = 0
+    vm_fixtures = []
     programs = list(_FIXED)
     programs.extend(generated_program(rng, max_ops)
                     for _unused in range(max(0, int(cases) - len(programs))) )
     for case, code in enumerate(programs[:int(cases)]):
+        data = bytearray(rng.getrandbits(8) for _ in range(0x100))
+        data[0x30:0x38] = int(DATA + 0x90).to_bytes(8, 'little')
         registers = {
-            'rax': rng.getrandbits(64),
+            'rax': DATA + 0xa0,
             'rcx': rng.getrandbits(64),
             'rdx': rng.getrandbits(64),
             'rbx': DATA,
@@ -273,20 +338,32 @@ def fuzz(cases: int, seed: int, max_ops: int = 24):
             'rdi': DATA + 0x80,
             'rsp': STACK,
             'rbp': DATA + 0xc0,
-            'r8': rng.getrandbits(64),
-            'r9': rng.getrandbits(64),
-            '_data': bytes(rng.getrandbits(8) for _ in range(0x100)),
+            'r8': DATA + 0x10,
+            'r9': DATA + 0x20,
+            'r10': DATA + 0x30,
+            'r11': DATA + 0x40,
+            'r12': DATA + 0x50,
+            'r13': DATA + 0x60,
+            'r14': DATA + 0x70,
+            'r15': DATA + 0x80,
+            '_xmm': tuple(rng.getrandbits(64) for _ in range(32)),
+            '_data': bytes(data),
         }
         rflags = (rng.getrandbits(12) | 2) & ~(1 << 10)
         reproduction = {
             'seed': int(seed), 'case': case, 'code': code.hex(),
-            'registers': {name: ('%016x' % value
-                                 if isinstance(value, int) else value.hex())
-                          for name, value in registers.items()},
+            'registers': {
+                name: ('%016x' % value if isinstance(value, int)
+                       else value.hex() if isinstance(value, bytes)
+                       else ['%016x' % item for item in value])
+                for name, value in registers.items()
+            },
             'rflags': '%016x' % rflags,
         }
         try:
-            result = check_case(code, dict(registers), rflags)
+            result = check_case(
+                code, dict(registers), rflags,
+                include_vm_fixture=vm_wasm is not None)
         except Exception as error:
             print(json.dumps(reproduction, indent=2))
             raise AssertionError(
@@ -298,6 +375,26 @@ def fuzz(cases: int, seed: int, max_ops: int = 24):
         max_retired = max(max_retired, result['retired'])
         retirement_mismatches += int(bool(result['retirement_delta']))
         retirement_delta += result['retirement_delta']
+        if vm_wasm is not None:
+            fixture = result['vm_fixture']
+            fixture['case'] = case
+            vm_fixtures.append(fixture)
+    vm_result = None
+    if vm_wasm is not None:
+        runner = Path(__file__).with_name('fuzz_x86_vm.mjs')
+        run = subprocess.run(
+            [str(node), str(runner), str(Path(vm_wasm).resolve())],
+            input=json.dumps({'memory_bytes': MEMORY_BYTES,
+                              'cases': vm_fixtures}),
+            check=False, capture_output=True, text=True,
+            encoding='utf-8', errors='replace')
+        if run.returncode:
+            raise AssertionError(
+                'vm.wasm x86 quotient fuzz failed: %s'
+                % (run.stderr.strip() or run.stdout.strip()))
+        vm_result = json.loads(run.stdout)
+        if vm_result.get('mismatch') is not None:
+            raise AssertionError(json.dumps(vm_result, indent=2)[:16000])
     return {
         'cases': completed,
         'seed': int(seed),
@@ -309,6 +406,7 @@ def fuzz(cases: int, seed: int, max_ops: int = 24):
         'max_block_instructions': max_retired,
         'retirement_mismatches': retirement_mismatches,
         'retirement_delta': retirement_delta,
+        'vm_cases': None if vm_result is None else vm_result['cases'],
     }
 
 
@@ -317,11 +415,16 @@ def main(argv=None):
     parser.add_argument('--cases', type=int, default=1000)
     parser.add_argument('--seed', type=int, default=0xB10C)
     parser.add_argument('--max-ops', type=int, default=24)
+    parser.add_argument('--vm-wasm', type=Path,
+                        help='also compare every cut with this resident VM')
+    parser.add_argument('--node', default='node',
+                        help='Node.js executable used by --vm-wasm')
     arguments = parser.parse_args(argv)
     if arguments.cases < 1 or arguments.max_ops < 1:
         parser.error('cases and max-ops must be positive')
     print(json.dumps(fuzz(
-        arguments.cases, arguments.seed, arguments.max_ops),
+        arguments.cases, arguments.seed, arguments.max_ops,
+        arguments.vm_wasm, arguments.node),
         indent=2, sort_keys=True))
     return 0
 

@@ -36,7 +36,7 @@ DELIVERY_DATA_SHARDS = 8
 DELIVERY_PARITY_SHARDS = 2
 
 
-def resource_index(payload):
+def resource_index(payload, mount='/usr', include_mode=False):
     """Return the canonical file cut for a tar without retaining the tar.
 
     The browser only needs names, types and exact payload coordinates while
@@ -47,7 +47,11 @@ def resource_index(payload):
     try:
         archive = tarfile.open(fileobj=BytesIO(payload), mode='r:*')
     except tarfile.TarError:
-        return {'format': 'tar-cut-v1', 'mount': '/usr', 'entries': []}
+        return {
+            'format': 'tar-cut-v2' if include_mode else 'tar-cut-v1',
+            'mount': mount,
+            'entries': [],
+        }
 
     records = []
     with archive:
@@ -58,12 +62,26 @@ def resource_index(payload):
                 continue
             name = '/'.join(parts)
             if member.isfile():
-                records.append((name, 'f', int(member.offset_data),
-                                int(member.size)))
+                record = (name, 'f', int(member.offset_data),
+                          int(member.size))
             elif member.isdir():
-                records.append((name, 'd'))
+                record = (name, 'd')
             elif member.issym():
-                records.append((name, 'l', member.linkname))
+                record = (name, 'l', member.linkname)
+            elif member.islnk():
+                target = member.linkname.replace('\\', '/').strip('/')
+                target_parts = [part for part in target.split('/')
+                                if part not in ('', '.')]
+                if target_parts and not any(part == '..'
+                                            for part in target_parts):
+                    record = (name, 'h', '/'.join(target_parts))
+                else:
+                    continue
+            else:
+                continue
+            if include_mode:
+                record = (*record, int(member.mode) & 0o7777)
+            records.append(record)
     records.sort(key=lambda item: item[0])
 
     entries = []
@@ -77,7 +95,11 @@ def resource_index(payload):
                 shared += 1
         entries.append([shared, name[shared:], *record[1:]])
         previous = name
-    return {'format': 'tar-cut-v1', 'mount': '/usr', 'entries': entries}
+    return {
+        'format': 'tar-cut-v2' if include_mode else 'tar-cut-v1',
+        'mount': mount,
+        'entries': entries,
+    }
 
 
 def delivery(payload, output, page_bytes=DELIVERY_PAGE_BYTES):

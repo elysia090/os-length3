@@ -17,7 +17,8 @@ if str(ROOT) not in sys.path:
 from kernel.pagefabric import PageFabric, open_artifact
 from kernel.x86snapshot import (load_native_x86_machine,
                                 NATIVE_BLOCK_HEADER,
-                                split_native_x86_record)
+                                split_native_x86_record,
+                                _native_code_guard_extents)
 from qm.steppage import (OPERAND_KINDS, project_step_template,
                          unpack as unpack_step)
 
@@ -36,6 +37,10 @@ CONTROL_NAMES = (
     'port_read', 'port_write', 'invalidate_page', 'clock',
     'debug_register', 'exception', 'wide_divide', 'recurrence', 'entropy',
     'store_descriptor', 'system_segment',
+    'swap_gs', 'syscall', 'sysret', 'simd_move', 'simd_unpack',
+    'simd_store', 'segment_memory', 'simd_xor', 'simd_load',
+    'simd_register', 'simd_compare', 'simd_convert', 'simd_scalar',
+    'fpu_save', 'fpu_restore',
 )
 
 
@@ -186,6 +191,7 @@ def profile(artifact_root, name='linux-x86-64-machine', output=None,
     continuation_shapes = Counter()
     exact_block_templates = set()
     structural_block_templates = set()
+    coordinate_variants = {}
     records = 0
     record_bytes = 0
     cacheable = 0
@@ -202,6 +208,12 @@ def profile(artifact_root, name='linux-x86-64-machine', output=None,
         controls[name_key] += 1
         slots[_direct_cache_slot(rip)] += 1
         fields, guard, page = split_native_x86_record(record)
+        mapped_page = unpack_step(page)
+        proved_bytes = sum(len(payload) for _address, payload
+                           in _native_code_guard_extents(guard))
+        coordinate_variants.setdefault(rip, []).append((
+            proved_bytes, mapped_page.instructions,
+            mapped_page.work, mapped_page.span, control))
         identity = hashlib.sha256(page).hexdigest()
         if identity not in step_pages:
             step_pages[identity] = len(page)
@@ -239,6 +251,14 @@ def profile(artifact_root, name='linux-x86-64-machine', output=None,
         + (len(state_shapes) + len(guards)) * EXTENT_BYTES
         + compact_continuation_directory_bytes
         + compact_continuation_bytes)
+    multiple_variants = {
+        rip: variants for rip, variants in coordinate_variants.items()
+        if len(variants) > 1
+    }
+    shadowed = {
+        rip: variants for rip, variants in multiple_variants.items()
+        if variants[0][0] < max(variant[0] for variant in variants)
+    }
     return {
         'artifact': name,
         'records': records,
@@ -309,6 +329,19 @@ def profile(artifact_root, name='linux-x86-64-machine', output=None,
                     in continuation_shapes.most_common()
                 },
             },
+        },
+        'state_step_admission': {
+            'order': header.get(
+                'candidate_order', 'guard-lexicographic'),
+            'multi_variant_coordinates': len(multiple_variants),
+            'variant_records': sum(len(variants)
+                                   for variants in multiple_variants.values()),
+            'strongest_first_coordinates': (
+                len(multiple_variants) - len(shadowed)),
+            'shadowed_stronger_coordinates': len(shadowed),
+            'shadowed_proved_bytes': sum(
+                max(variant[0] for variant in variants) - variants[0][0]
+                for variants in shadowed.values()),
         },
         'controls': dict(controls.most_common()),
         'direct_cache': {

@@ -64,7 +64,7 @@ function readCompactContinuation(physical, rank) {
   const control = view.getUint8(cursor);
   const tags = view.getUint16(cursor + 1, true);
   cursor += 3;
-  if (control > 36 || tags >>> 12) {
+  if (control > 42 || tags >>> 12) {
     throw new Error('native x86 continuation tag is invalid');
   }
   const values = [];
@@ -407,7 +407,7 @@ export async function openNativeX86Artifact(bytes, options = {}) {
         for (let index = 0; index < continuationCount; index += 1) {
           const at = continuationBase + index * controlTemplateBytes;
           if (view.getUint32(at + 4, true)
-              || view.getUint32(at, true) > 36) {
+              || view.getUint32(at, true) > 42) {
             memoryFabric.release();
             throw new Error('native x86 continuation is invalid');
           }
@@ -742,12 +742,21 @@ export async function openNativeX86Artifact(bytes, options = {}) {
       dirty.set(offset / PHYSICAL_PAGE_BYTES, payload.slice());
     },
   };
+  const blockRecordCache = new Map();
+  let blockRecordCacheBytes = 0;
+  let blockRecordCacheHits = 0;
   const blocks = {
     length: blockBytes,
     async read(rip, candidate = 0) {
       if (physicalBlocks) {
         if (!Number.isSafeInteger(candidate) || candidate < 0) return null;
         rip = BigInt.asUintN(64, rip);
+        const cacheKey = `${rip.toString()}:${candidate}`;
+        const cached = blockRecordCache.get(cacheKey);
+        if (cached) {
+          blockRecordCacheHits += 1;
+          return cached;
+        }
         const physical = physicalBlocks;
         const rowRip = (index) => physical.view.getBigUint64(
           index * physical.blockInstanceBytes, true,
@@ -835,6 +844,8 @@ export async function openNativeX86Artifact(bytes, options = {}) {
         record.set(parameters, cursor);
         cursor += parameters.length;
         record.set(template, cursor);
+        blockRecordCache.set(cacheKey, record);
+        blockRecordCacheBytes += record.length;
         return record;
       }
       const variants = directory.get(BigInt.asUintN(64, rip).toString());
@@ -910,6 +921,9 @@ export async function openNativeX86Artifact(bytes, options = {}) {
       const resident = memoryFabric.release();
       dirty.clear();
       directory.clear();
+      blockRecordCache.clear();
+      blockRecordCacheBytes = 0;
+      blockRecordCacheHits = 0;
       physicalBlocks = null;
       return resident;
     },
@@ -930,6 +944,11 @@ export async function openNativeX86Artifact(bytes, options = {}) {
           buckets: 256,
           bytes: 4 * (257 + blockCount),
         } : null,
+        recordCache: {
+          records: blockRecordCache.size,
+          bytes: blockRecordCacheBytes,
+          hits: blockRecordCacheHits,
+        },
         descriptorBytes,
         executionBytes: v5 || v4 || v3 || v2 ? executionBytes : blockBytes
           - directory.size * NATIVE_HEADER_BYTES,

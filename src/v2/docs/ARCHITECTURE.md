@@ -55,6 +55,14 @@ host. Event-backed block reads stop on exactly one `(device, page)` coordinate
 and resume only after that page is supplied, so the host never needs a second
 pathname table or filename hash.
 
+Networking follows the same boundary rule. Linux sees a standard virtual NIC
+and retains the complete Ethernet/IP/socket stack. A bounded `network_poll`
+event carries complete Ethernet frames to a WebTransport datagram adapter; a
+reliable control stream carries only link generation, MTU, address, route, DNS,
+and backpressure records. The browser does not implement sockets, TCP, DNS, or
+TLS. See [NETWORK.md](NETWORK.md) for the exact restart, replay, and gateway
+contract.
+
 The 128 MiB allocator pool and 128 MiB stack area used by the reference runner
 are logical address ranges. `PagedMemory.grow()` extends only its direct span
 directory; a 256-byte page becomes resident after it is written. Block images

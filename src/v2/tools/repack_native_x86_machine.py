@@ -32,7 +32,8 @@ def _open(artifact_root, name, entry):
     return fabric.read(0, fabric.length)
 
 
-def repack(artifact_root, name, output=None, publish=False, source_path=None):
+def repack(artifact_root, name, output=None, publish=False, source_path=None,
+           source_name='linux-x86-64'):
     artifact_root = Path(artifact_root)
     catalog, entry = _catalog(artifact_root, name)
     source = (Path(source_path).read_bytes() if source_path is not None
@@ -70,6 +71,10 @@ def repack(artifact_root, name, output=None, publish=False, source_path=None):
     if len(before_records) != len(after_records):
         raise RuntimeError('native x86 repack changed the record directory')
     if publish:
+        source_entry = catalog['artifacts'].get(source_name)
+        if not isinstance(source_entry, dict) \
+                or not isinstance(source_entry.get('identity'), str):
+            raise ValueError('native x86 source artifact is not published')
         written = write_artifact(
             payload, artifact_root, name, page_bytes=1 << 16,
             included_shards='data', replace=True)
@@ -78,6 +83,7 @@ def repack(artifact_root, name, output=None, publish=False, source_path=None):
             'bytes': len(payload),
             'format': 'x86-native-machine-v5',
             'identity': written['identity']['digest'],
+            'source_identity': source_entry['identity'],
         }
         catalog['artifacts'] = dict(sorted(catalog['artifacts'].items()))
         (artifact_root / 'index.json').write_text(
@@ -96,11 +102,14 @@ def main(argv=None):
     parser.add_argument('--output', type=Path)
     parser.add_argument('--input', type=Path,
                         help='repack these canonical machine bytes')
+    parser.add_argument('--source', default='linux-x86-64',
+                        help='boot artifact named by the machine memory')
     parser.add_argument('--publish', action='store_true')
     arguments = parser.parse_args(argv)
     print(json.dumps(repack(
         arguments.artifact_root, arguments.name,
-        arguments.output, arguments.publish, arguments.input),
+        arguments.output, arguments.publish, arguments.input,
+        arguments.source),
         indent=2, sort_keys=True))
     return 0
 

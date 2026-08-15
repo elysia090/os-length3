@@ -8,25 +8,33 @@
       "path": "compiler/module/index.json"
     },
     "linux-x86-64": {
-      "bytes": 2097021,
+      "bytes": 3343500,
       "format": "x86-boot-cache-v1",
-      "identity": "2dc3fab08b457bd03df8a609eadbbfe954d4404698db0e36fac229076a78cb51",
-      "initrd_bytes": 200704,
+      "identity": "65e295bf130206e695905b617fe985e659e07436cc34e02af3bfc72375f715ab",
+      "initrd_bytes": 704000,
       "memory_bytes": 134217728,
       "path": "linux-x86-64/index.json"
     },
     "linux-x86-64-machine": {
-      "bytes": 15344707,
+      "bytes": 32811421,
       "format": "x86-native-machine-v5",
-      "identity": "8aa1f9ff1f0825765423fdc96dbd15c0ca9fb49a53a0ddcf5111c78fff69d25b",
+      "identity": "078ea906acc5df53d250b69e8d670f727cbb456cea9cf9f69e3bbc39fb196cc0",
       "path": "linux-x86-64-machine/index.json",
-      "source_identity": "2dc3fab08b457bd03df8a609eadbbfe954d4404698db0e36fac229076a78cb51"
+      "source_identity": "65e295bf130206e695905b617fe985e659e07436cc34e02af3bfc72375f715ab"
+    },
+    "toolchain": {
+      "bytes": 324997120,
+      "format": "linux-x86-64-system-v1",
+      "identity": "58edc80e0a8c352407400e61895d54cb364c584a82d146193be655b5bdfac6ad",
+      "path": "toolchain/index.json",
+      "version": "2026.08.15",
+      "vfs_entries": 2229
     },
     "vm": {
-      "bytes": 93272,
+      "bytes": 100235,
       "components": "vm/index.json",
       "format": "webassembly-runtime-v1",
-      "identity": "ce28902751df6262e486e861fe6d13d357ce20843fb6d2d8cf49d1e712d96049",
+      "identity": "ea0f2aafc6de49a4c2e914e257e79d5db549d465750d636ecec72972b611287e",
       "path": "vm/module/index.json"
     }
   },

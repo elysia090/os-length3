@@ -126,6 +126,9 @@ export class LinuxTerminal {
     this.progress.classList.toggle('is-error', state === 'error');
     this.progress.setAttribute('aria-busy', String(state === 'active'));
     this.phase.textContent = update.label || update.message || 'Opening the machine';
+    if (update.profile) {
+      this.progress.dataset.liveProfile = JSON.stringify(update.profile);
+    }
 
     if (determinate) {
       this.progress.style.setProperty('--boot-progress', `${percent}%`);

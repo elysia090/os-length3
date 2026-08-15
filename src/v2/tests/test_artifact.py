@@ -186,7 +186,8 @@ class TestArtifactDelivery(unittest.TestCase):
             child.is_dir() and len(child.name) == 64
             for child in catalog_path.parent.iterdir()))
         self.assertEqual(
-            {'compiler', 'linux-x86-64', 'linux-x86-64-machine', 'vm'},
+            {'compiler', 'linux-x86-64', 'linux-x86-64-machine',
+             'toolchain', 'vm'},
             set(catalog['artifacts']))
 
     def test_published_vm_is_the_shipped_x86_runtime(self):
