@@ -30,7 +30,8 @@ typedef signed long long   pl_i64;
 #define PL_MACHINE_MAGIC_V3 "x86-native-machine-v3\n"
 #define PL_MACHINE_MAGIC_V4 "x86-native-machine-v4\n"
 #define PL_MACHINE_MAGIC_V5 "x86-native-machine-v5\n"
-#define PL_MACHINE_MAGIC    PL_MACHINE_MAGIC_V5
+#define PL_MACHINE_MAGIC_V6 "x86-native-machine-v6\n"
+#define PL_MACHINE_MAGIC    PL_MACHINE_MAGIC_V6
 
 #define PL_BOOT_CACHE_MAGIC "x86-boot-cache-v1\n"
 

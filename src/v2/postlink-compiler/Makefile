@@ -31,23 +31,28 @@ all: $(patsubst %,$(BUILD)/%,$(TOOLS)) $(BUILD)/selftest
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/%.o: src/%.c | $(BUILD)
+# Every object depends on every header.  The headers are few and small, and a
+# stale object compiled against an older struct layout reads the wrong offsets
+# without any diagnostic -- which is exactly what happened once.
+HEADERS = $(wildcard include/postlink/*.h)
+
+$(BUILD)/%.o: src/%.c $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) -ffreestanding -c $< -o $@
 
-$(BUILD)/postlink-inspect: tools/inspect.c $(LIB_OBJECTS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $^ -o $@
+$(BUILD)/postlink-inspect: tools/inspect.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
-$(BUILD)/postlink-admit: tools/admit.c $(LIB_OBJECTS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $^ -o $@
+$(BUILD)/postlink-admit: tools/admit.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
-$(BUILD)/postlink-chain: tools/chain.c $(LIB_OBJECTS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $^ -o $@
+$(BUILD)/postlink-chain: tools/chain.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
-$(BUILD)/postlink-repack: tools/repack.c $(LIB_OBJECTS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $^ -o $@
+$(BUILD)/postlink-repack: tools/repack.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
-$(BUILD)/selftest: check/selftest.c $(LIB_OBJECTS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $^ -o $@
+$(BUILD)/selftest: check/selftest.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
 check: $(BUILD)/selftest
 	$(BUILD)/selftest

@@ -135,6 +135,7 @@ int main(int argc, char **argv)
             return 1;
         }
     counts.execution_bytes = (pl_u32)machine.execution.length;
+    counts.schema = machine.schema;
 
     pl_directory directory;
     if (pl_directory_open(payload + machine.descriptors.offset,

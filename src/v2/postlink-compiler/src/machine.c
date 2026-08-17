@@ -7,6 +7,7 @@
 
 #include <postlink/machine.h>
 
+static const char MAGIC_V6[] = PL_MACHINE_MAGIC_V6;
 static const char MAGIC_V5[] = PL_MACHINE_MAGIC_V5;
 static const char MAGIC_V4[] = PL_MACHINE_MAGIC_V4;
 static const char MAGIC_V3[] = PL_MACHINE_MAGIC_V3;
@@ -131,6 +132,15 @@ int pl_machine_header_u64(const pl_u8 *header, pl_u32 bytes,
     return read_u64_at(header, bytes, cursor, value);
 }
 
+int pl_machine_header_locate(const pl_u8 *header, pl_u32 bytes,
+                            const char *path, pl_u32 *offset)
+{
+    pl_u32 cursor = find_path(header, bytes, 0, path);
+    if (!cursor) return PL_ERROR_CONTAINER;
+    *offset = cursor;
+    return 0;
+}
+
 /* Read a [offset, length] pair from the region directory. */
 static int read_region(const pl_u8 *header, pl_u32 bytes, const char *path,
                        pl_region *region)
@@ -152,7 +162,8 @@ int pl_machine_parse(const pl_u8 *payload, pl_u64 bytes, pl_machine *out)
 {
     pl_u32 prefix = 0;
     pl_u32 schema;
-    if (has_prefix(payload, bytes, MAGIC_V5, &prefix)) schema = 5;
+    if (has_prefix(payload, bytes, MAGIC_V6, &prefix)) schema = 6;
+    else if (has_prefix(payload, bytes, MAGIC_V5, &prefix)) schema = 5;
     else if (has_prefix(payload, bytes, MAGIC_V4, &prefix)) schema = 4;
     else if (has_prefix(payload, bytes, MAGIC_V3, &prefix)) schema = 3;
     else if (has_prefix(payload, bytes, MAGIC_V2, &prefix)) schema = 2;

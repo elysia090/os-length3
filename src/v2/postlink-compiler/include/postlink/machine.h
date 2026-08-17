@@ -50,4 +50,10 @@ int pl_machine_parse(const pl_u8 *payload, pl_u64 bytes, pl_machine *out);
 int pl_machine_header_u64(const pl_u8 *header, pl_u32 bytes,
                           const char *path, pl_u64 *value);
 
+/* Offset of a field's value inside the header, for a writer that rewrites the
+ * digits in place rather than regenerating the document.  Returns 0 on success
+ * and PL_ERROR_CONTAINER when the path is absent. */
+int pl_machine_header_locate(const pl_u8 *header, pl_u32 bytes,
+                            const char *path, pl_u32 *offset);
+
 #endif /* POSTLINK_MACHINE_H */
