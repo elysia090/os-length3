@@ -158,7 +158,7 @@ def _block_quotient(page, state_coordinates=False):
     return tuple(shape), len(page) - removed, parameter_bytes
 
 
-def profile(artifact_root, name='linux-x86-64-machine', output=None,
+def profile(artifact_root, name='linux-x86-64-postlink', output=None,
             input_path=None):
     artifact_root = Path(artifact_root)
     if input_path is None:
@@ -359,7 +359,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact-root', type=Path,
                         default=REPOSITORY / 'artifact')
-    parser.add_argument('--name', default='linux-x86-64-machine')
+    parser.add_argument('--name', default='linux-x86-64-postlink')
     parser.add_argument('--output', type=Path,
                         help='optionally materialize the verified raw machine')
     parser.add_argument('--input', type=Path,

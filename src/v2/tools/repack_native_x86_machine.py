@@ -98,7 +98,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--artifact-root', type=Path,
                         default=REPOSITORY / 'artifact')
-    parser.add_argument('--name', default='linux-x86-64-machine')
+    parser.add_argument('--name', default='linux-x86-64-postlink')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--input', type=Path,
                         help='repack these canonical machine bytes')

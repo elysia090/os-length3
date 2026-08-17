@@ -8,18 +8,18 @@
       "path": "compiler/module/index.json"
     },
     "linux-x86-64": {
-      "bytes": 3343500,
+      "bytes": 117954710,
       "format": "x86-boot-cache-v1",
-      "identity": "65e295bf130206e695905b617fe985e659e07436cc34e02af3bfc72375f715ab",
-      "initrd_bytes": 704000,
-      "memory_bytes": 134217728,
+      "identity": "b179f164b0a48a15c43b9e714595cbe3f5b03ccb7669099719b0deb0c216e58d",
+      "initrd_bytes": 705024,
+      "memory_bytes": 536870912,
       "path": "linux-x86-64/index.json"
     },
-    "linux-x86-64-machine": {
+    "linux-x86-64-postlink": {
       "bytes": 32811421,
       "format": "x86-native-machine-v5",
       "identity": "078ea906acc5df53d250b69e8d670f727cbb456cea9cf9f69e3bbc39fb196cc0",
-      "path": "linux-x86-64-machine/index.json",
+      "path": "linux-x86-64-postlink/index.json",
       "source_identity": "65e295bf130206e695905b617fe985e659e07436cc34e02af3bfc72375f715ab"
     },
     "toolchain": {

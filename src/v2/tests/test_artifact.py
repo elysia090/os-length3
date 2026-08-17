@@ -186,7 +186,7 @@ class TestArtifactDelivery(unittest.TestCase):
             child.is_dir() and len(child.name) == 64
             for child in catalog_path.parent.iterdir()))
         self.assertEqual(
-            {'compiler', 'linux-x86-64', 'linux-x86-64-machine',
+            {'compiler', 'linux-x86-64', 'linux-x86-64-postlink',
              'toolchain', 'vm'},
             set(catalog['artifacts']))
 

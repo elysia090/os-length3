@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Exercise the browser Linux worker protocol without replacing its runtime.
 
-const [artifactRoot, machineArtifact = 'linux-x86-64-machine'] =
+const [artifactRoot, machineArtifact = 'linux-x86-64-postlink'] =
   process.argv.slice(2);
 if (!artifactRoot) {
   throw new Error(
