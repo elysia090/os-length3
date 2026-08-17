@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <postlink/template.h>
 #include <postlink/trace.h>
 
 static int header_u32(const pl_u8 *header, pl_u32 bytes, const char *path,
@@ -133,6 +134,54 @@ int main(int argc, char **argv)
                       : length >= 3u ? 6u : length;
         histogram[bucket] += 1;
     }
+
+    /* Is composition well posed for the edges that may fuse?  Parse both
+     * templates and look at the interface: the successor consumes stack_inputs
+     * words, and only the predecessor can supply them.  Where it cannot, the
+     * pair is fusible in control but not composable as one graph, and the
+     * composer would have to keep a boundary the trace says is absent. */
+    const pl_u8 *execution = payload + machine.execution.offset;
+    unsigned long long pairs = 0, unparsed = 0, interface_ok = 0;
+    unsigned long long starved = 0, wider_node_space = 0;
+    unsigned long long work_before = 0, span_before = 0, operands_before = 0;
+    unsigned long long bytes_before = 0;
+    for (pl_u32 index = 0; index < count; ++index) {
+        if (!pl_trace_fusible(successor, predecessor, index)) continue;
+        pl_admission head, tail;
+        if (pl_directory_admit(&directory, index, &head)
+                || pl_directory_admit(&directory, successor[index], &tail))
+            continue;
+        pl_template a, b;
+        if (pl_template_parse(execution + head.tmpl.offset,
+                              (pl_u32)head.tmpl.length, &a)
+                || pl_template_parse(execution + tail.tmpl.offset,
+                                     (pl_u32)tail.tmpl.length, &b)) {
+            unparsed += 1;
+            continue;
+        }
+        pairs += 1;
+        /* The composed graph's node numbering is the sum, so the one-byte node
+         * width established over single templates has to be re-checked for the
+         * pair. */
+        if ((pl_u64)a.work + b.work > 255u) wider_node_space += 1;
+        if (b.stack_inputs > a.stack_count) starved += 1; else interface_ok += 1;
+        work_before += (pl_u64)a.work + b.work;
+        span_before += (pl_u64)a.span + b.span;
+        operands_before += (pl_u64)a.operands + b.operands;
+        bytes_before += head.tmpl.length + tail.tmpl.length;
+    }
+
+    printf("composability of fusible edges\n");
+    printf("  pairs with both parsed   %12llu\n", pairs);
+    printf("  a template would not parse %10llu\n", unparsed);
+    printf("  successor inputs supplied %11llu\n", interface_ok);
+    printf("  successor wants more stack %10llu\n", starved);
+    printf("  composed work > 255 nodes %11llu\n", wider_node_space);
+    printf("  work of the two graphs   %12llu\n", work_before);
+    printf("  span of the two graphs   %12llu\n", span_before);
+    printf("  operands of the two      %12llu\n", operands_before);
+    printf("  template bytes of the two %11llu\n", bytes_before);
+    printf("\n");
 
     printf("blocks                     %12u\n", count);
     printf("  one resolvable successor %12llu\n", single_successor);
