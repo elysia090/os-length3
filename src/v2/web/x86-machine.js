@@ -141,10 +141,25 @@ function decodeState(raw) {
 
 export async function openNativeX86Artifact(bytes, options = {}) {
   const openStarted = performance.now();
-  const direct = bytes instanceof Uint8Array;
-  const backing = direct ? null : bytes;
+  let direct = bytes instanceof Uint8Array;
+  let backing = direct ? null : bytes;
   if (!direct && (!backing || typeof backing.read !== 'function')) {
     throw new Error('native x86 machine header is invalid');
+  }
+  // Boot admits tens of thousands of blocks, and each one names three
+  // extents -- proof, parameter row, template.  Resolving those through the
+  // page fabric is one read per extent, so a boot pays ~3 reads per block
+  // while ending up with essentially the whole object resident anyway: the
+  // measured fetch is 33.5 MB of a 32.8 MB artifact.  Demand paging buys
+  // nothing here and costs a read per extent, so take the object in one
+  // fetch and let every range resolve as a subarray.
+  if (!direct && options.bulk !== false) {
+    const whole = await backing.read(0, backing.length);
+    if (whole instanceof Uint8Array && whole.length === backing.length) {
+      bytes = whole;
+      direct = true;
+      backing = null;
+    }
   }
   const artifactLength = safeInteger(
     direct ? bytes.length : backing.length, 'native x86 artifact bytes',

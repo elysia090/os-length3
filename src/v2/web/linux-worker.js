@@ -96,7 +96,9 @@ function machineArtifact(message) {
   const explicit = message.machineArtifact || message.x86?.machineArtifact;
   if (explicit) return String(explicit);
   const source = String(message.kernelArtifact || 'linux-x86-64');
-  return source.endsWith('-machine') ? source : `${source}-machine`;
+  // The post-link artifact is a function of the boot image, so its name is
+  // the boot image's with the producer's suffix.
+  return source.endsWith('-postlink') ? source : `${source}-postlink`;
 }
 
 async function drive(id, handle, options = {}) {
@@ -143,7 +145,11 @@ async function drive(id, handle, options = {}) {
         },
       });
       // A scheduling yield is not an execution fallback or guest barrier.
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Keep it off the timer queue: nested setTimeout(0) is clamped to 4 ms
+      // by the HTML specification, and a boot runs thousands of quanta.  The
+      // contribution has not been isolated on its own, unlike the bulk fetch
+      // in x86-machine.js; this is the cheaper primitive regardless.
+      await yieldToEventLoop();
     }
   }
   return {
@@ -151,6 +157,25 @@ async function drive(id, handle, options = {}) {
     ready: session.console.ready,
     layout: session.artifact.layout(),
   };
+}
+
+// Hand the event loop one turn so queued messages are delivered, without
+// entering the timer queue.  A MessageChannel port delivers a macrotask at
+// once; setImmediate is the Node equivalent when no channel exists.
+const yieldChannel = typeof MessageChannel === 'function'
+  ? new MessageChannel() : null;
+if (yieldChannel) yieldChannel.port2.start?.();
+function yieldToEventLoop() {
+  if (yieldChannel) {
+    return new Promise((resolve) => {
+      yieldChannel.port2.onmessage = () => resolve();
+      yieldChannel.port1.postMessage(0);
+    });
+  }
+  if (typeof setImmediate === 'function') {
+    return new Promise((resolve) => setImmediate(resolve));
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 async function boot(message) {
