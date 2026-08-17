@@ -85,9 +85,12 @@ are only sharing an arena, and separate cleanly.
 | `src/format.c` | record parse and validation |
 | `src/continuation.c` | canonical continuation encode/decode and RIP projection |
 | `src/machine.c` | container framing, with a targeted reader for the header's integer fields |
+| `include/postlink/directory.h`, `src/directory.c` | block admission by rank, resolving a RIP to coordinates without copying a byte |
 | `tools/inspect.c` | `postlink-inspect`, the first driver that reads a real artifact with no Python and no JavaScript in the path |
+| `tools/admit.c` | `postlink-admit`, admits all 222,079 blocks and reports what record assembly costs |
 | `check/selftest.c` | codec assertions and 13,932 continuation round-trips |
 | `check/format_parity.py` | proves those round-trips against `kernel/x86snapshot.py` |
+| `check/admit_parity.py` | proves 30,000 admissions field for field against the Python reader |
 
 `postlink-inspect` on the shipped artifact:
 
@@ -100,6 +103,28 @@ are only sharing an arena, and separate cleanly.
   descriptors  offset      3473408  length      8791436  ( 26.8%)
   execution    offset     12320768  length     20490653  ( 62.4%)
 ```
+
+## Measured baseline
+
+A real boot, `node tools/run_linux_worker.mjs http://127.0.0.1:8000/artifact/
+linux-x86-64-postlink`, reaching the BusyBox prompt and running one command:
+
+| | |
+| --- | --- |
+| boot | 43,306 ms |
+| source instructions retired | 35,129,185 |
+| throughput | 811k instructions/second |
+| artifact open | 294.7 ms, of which 257.1 ms is the descriptor fetch |
+| records assembled during boot | 41,419, totalling 12,276,755 bytes |
+
+Loading is not the problem: 295 ms of a 43 s boot. Record assembly is a
+footprint cost, not the 43 s. Where the 43 s goes is not yet profiled, and
+guessing at it from static structure has already produced two wrong answers —
+it needs its own measurement before anything is changed for it.
+
+Note that `run_native_x86_machine.mjs` runs a resident machine for a fixed
+block budget. It is not a boot, and its throughput figure is roughly 4.7x
+optimistic against the number above.
 
 ## What is not here yet
 
