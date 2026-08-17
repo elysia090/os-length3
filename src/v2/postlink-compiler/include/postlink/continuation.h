@@ -37,4 +37,26 @@ int pl_continuation_encode(const pl_continuation *relative,
 int pl_continuation_decode(const pl_u8 *payload, pl_u32 bytes,
                            pl_continuation *relative);
 
+/* ------------------------------------------------- schema 6: chained rows */
+
+/* Schema 6 carries the resolved rank of the primary static successor, so a
+ * dispatch whose target was fixed at compile time is followed rather than
+ * looked up.  The rank is a delta from the block's own row, because the
+ * artifact ranks by first sorted RIP and blocks adjacent in control are
+ * therefore adjacent in rank.
+ *
+ * `chainable` is 0 when the dispatch is irreducible -- the successor is a
+ * runtime value, or the coordinate carries several proof variants that only the
+ * runtime can select between.  The delta is then absent, costing no bytes.
+ */
+#define PL_CONTINUATION_CHAINED_MAX_BYTES     (PL_CONTINUATION_HEADER_BYTES + PL_CONTINUATION_FIELDS_CHAINED * 8u)
+
+int pl_continuation_encode_chained(
+    const pl_continuation *relative, int chainable, pl_i64 chain_delta,
+    pl_u8 *target, pl_u32 capacity, pl_u32 *written);
+
+int pl_continuation_decode_chained(
+    const pl_u8 *payload, pl_u32 bytes, pl_continuation *relative,
+    int *chainable, pl_i64 *chain_delta);
+
 #endif /* POSTLINK_CONTINUATION_H */

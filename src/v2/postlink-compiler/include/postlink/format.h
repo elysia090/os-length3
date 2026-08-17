@@ -169,7 +169,26 @@ enum pl_control {
 #define PL_TAG_SIGNED_16 4u  /* signed 2-byte residual */
 #define PL_TAG_SIGNED_32 5u  /* signed 4-byte residual */
 #define PL_TAG_SIGNED_64 6u  /* signed 8-byte residual */
-#define PL_TAG_MAX       PL_TAG_SIGNED_64
+#define PL_TAG_NEXT      7u  /* the successor is the following block row */
+#define PL_TAG_MAX       PL_TAG_NEXT
+
+/* Schema 6 adds one field to the continuation: the rank of the primary static
+ * successor, stored as a delta from the block's own row.  A dispatch is a RIP
+ * lookup, and 94.1% of blocks in the shipped artifact have a successor that was
+ * fixed at compile time, so for those the lookup is a constant and belongs in
+ * the block.
+ *
+ * The field costs nothing in the common case.  41.4% of static edges target the
+ * immediately following row, which PL_TAG_NEXT spells with no payload at all;
+ * of the rest, measured over 279,371 edges, 240,253 fit one signed byte, 23,913
+ * two, 14,397 four, and none need eight.  Five three-bit tags still fit the
+ * same u16, so the row shape does not change.
+ *
+ * PL_TAG_ZERO in this field means the dispatch is not foldable -- the successor
+ * is a runtime value, or the coordinate carries several proof variants and the
+ * runtime must select among them. */
+#define PL_CONTINUATION_FIELDS_CHAINED 5u
+#define PL_FIELD_CHAIN 4u
 
 /* Residual width in bytes for a signed tag, 0 for the non-scalar tags. */
 #define PL_TAG_WIDTH(tag)                                       \

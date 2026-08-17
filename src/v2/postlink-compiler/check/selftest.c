@@ -253,6 +253,92 @@ static void check_block_records(void)
           pl_block_parse(record, bytes, &header), PL_ERROR_EXTENT);
 }
 
+
+/* Schema 6: the chain field, and that it cannot be spelled two ways. */
+static void check_chained_roundtrip(void)
+{
+    static const pl_i64 DELTAS[] = {
+        1, 0, -1, 2, 127, 128, -128, -129, 32767, -32768, 32768, -32769,
+        2147483647, -2147483648LL, 222078, -222078,
+    };
+    pl_u8 buffer[PL_CONTINUATION_CHAINED_MAX_BYTES];
+    for (pl_u32 control = 0; control <= (pl_u32)PL_CONTROL_MAX; ++control) {
+        for (unsigned a = 0; a < INTERESTING_COUNT; ++a) {
+            for (unsigned d = 0;
+                 d < sizeof DELTAS / sizeof DELTAS[0]; ++d) {
+                for (int chainable = 0; chainable < 2; ++chainable) {
+                    pl_continuation row = {
+                        control,
+                        { INTERESTING[a], INTERESTING[(a + 3) % INTERESTING_COUNT],
+                          INTERESTING[(a + 5) % INTERESTING_COUNT],
+                          INTERESTING[(a + 7) % INTERESTING_COUNT] },
+                    };
+                    pl_u32 written = 0;
+                    int status = pl_continuation_encode_chained(
+                        &row, chainable, DELTAS[d], buffer, sizeof buffer,
+                        &written);
+                    CHECK("chained encode", status, 0);
+                    if (status) continue;
+
+                    pl_continuation decoded;
+                    int back_chainable = -1;
+                    pl_i64 back_delta = 0;
+                    status = pl_continuation_decode_chained(
+                        buffer, written, &decoded, &back_chainable,
+                        &back_delta);
+                    CHECK("chained decode", status, 0);
+                    if (status) continue;
+                    CHECK("chained control", decoded.control, row.control);
+                    for (pl_u32 i = 0; i < PL_CONTINUATION_FIELDS; ++i)
+                        CHECK("chained field", decoded.field[i], row.field[i]);
+                    /* A zero delta is a self-loop -- a block branching to
+                     * its own coordinate -- and must stay distinguishable
+                     * from an unfoldable dispatch. */
+                    CHECK("chainability survives", back_chainable, chainable);
+                    CHECK("delta survives", back_delta,
+                          chainable ? DELTAS[d] : 0);
+                }
+            }
+        }
+    }
+
+    /* Fall-through costs no payload: three bytes total for a bare row. */
+    pl_continuation bare = { PL_CONTROL_BRANCH, { 0, 0, 0, 0 } };
+    pl_u32 written = 0;
+    CHECK("fall-through encodes",
+          pl_continuation_encode_chained(&bare, 1, 1, buffer, sizeof buffer,
+                                         &written), 0);
+    CHECK("fall-through is free", written, PL_CONTINUATION_HEADER_BYTES);
+
+    /* Delta one written longhand must be rejected. */
+    pl_u8 longhand[] = { PL_CONTROL_BRANCH, 0, 0, 0x01 };
+    pl_u32 tags = PL_TAG_SIGNED_8 << (PL_FIELD_CHAIN * 3);
+    longhand[1] = (pl_u8)tags;
+    longhand[2] = (pl_u8)(tags >> 8);
+    pl_continuation decoded;
+    CHECK("longhand fall-through is rejected",
+          pl_continuation_decode_chained(longhand, sizeof longhand, &decoded,
+                                         0, 0),
+          PL_ERROR_CANONICAL);
+
+    /* The chain field cannot name an earlier field. */
+    pl_u8 aliased[] = { PL_CONTROL_BRANCH, 0, 0 };
+    tags = PL_TAG_FIELD_0 << (PL_FIELD_CHAIN * 3);
+    aliased[1] = (pl_u8)tags;
+    aliased[2] = (pl_u8)(tags >> 8);
+    CHECK("aliased chain tag is rejected",
+          pl_continuation_decode_chained(aliased, sizeof aliased, &decoded,
+                                         0, 0),
+          PL_ERROR_CONTINUATION);
+
+    /* The sixteenth tag bit is reserved. */
+    pl_u8 reserved[] = { PL_CONTROL_BRANCH, 0, 0x80 };
+    CHECK("reserved chained tag bit is rejected",
+          pl_continuation_decode_chained(reserved, sizeof reserved, &decoded,
+                                         0, 0),
+          PL_ERROR_CONTINUATION);
+}
+
 int main(int argc, char **argv)
 {
     int emit_vectors = argc > 1 && !strcmp(argv[1], "--vectors");
@@ -260,6 +346,7 @@ int main(int argc, char **argv)
     check_continuation_canonicality();
     check_continuation_projection();
     check_block_records();
+    check_chained_roundtrip();
     if (failures) {
         fprintf(stderr, "%d assertion(s) failed\n", failures);
         return 1;
