@@ -742,9 +742,68 @@ export async function openNativeX86Artifact(bytes, options = {}) {
       dirty.set(offset / PHYSICAL_PAGE_BYTES, payload.slice());
     },
   };
-  const blockRecordCache = new Map();
-  let blockRecordCacheBytes = 0;
+  // Admission keeps the quotient: a shared SSA template is retained once, by
+  // rank, however many blocks project through it.  Caching the assembled X86B
+  // record instead would hold one copy of the template per block and undo the
+  // collapse -- measured at 4.30x on a boot's admitted working set.
+  //
+  // The consumer copies the returned bytes straight into vm_step_buffer and
+  // does not retain them, so the assembly buffer is reused rather than kept.
+  const blockPartsCache = new Map();
+  const templateCache = new Map();
+  const guardCache = new Map();
+  const parameterCache = new Map();
   let blockRecordCacheHits = 0;
+  let retainedBytes = 0;
+  let assemblyBuffer = new Uint8Array(0);
+  const retain = (cache, key, bytes) => {
+    const held = cache.get(key);
+    if (held) return held;
+    cache.set(key, bytes);
+    retainedBytes += bytes.length;
+    return bytes;
+  };
+  // Transient: the caller copies these bytes into vm_step_buffer and drops
+  // them, so one buffer serves every admission.  Nothing per-block is kept.
+  const assemble = (parts) => {
+    const { guard, parameters, template, rip } = parts;
+    const length = NATIVE_HEADER_BYTES
+      + guard.length + parameters.length + template.length;
+    if (assemblyBuffer.length < length) {
+      assemblyBuffer = new Uint8Array(length);
+    }
+    const record = assemblyBuffer.subarray(0, length);
+    record.fill(0, 0, NATIVE_HEADER_BYTES);
+    record.set(BLOCK_MAGIC);
+    const view = new DataView(
+      record.buffer, record.byteOffset, record.byteLength,
+    );
+    view.setUint16(4, 3, true);
+    view.setUint16(6, NATIVE_HEADER_BYTES, true);
+    view.setBigUint64(8, rip, true);
+    const addRip = (value) => BigInt.asUintN(64, rip + value);
+    view.setBigUint64(16, addRip(parts.boundary), true);
+    view.setUint32(24, parts.stepLength, true);
+    view.setUint32(28, parts.control, true);
+    const relativeFirst = parts.control === 2
+      || ![0, 3, 4, 5, 12, 14, 22].includes(parts.control);
+    view.setBigUint64(
+      32, relativeFirst ? addRip(parts.first) : parts.first, true,
+    );
+    view.setBigUint64(
+      40, parts.control === 2 ? addRip(parts.second) : parts.second, true,
+    );
+    view.setBigUint64(48, parts.third, true);
+    view.setUint32(56, parameters.length, true);
+    view.setUint32(60, template.length, true);
+    let cursor = NATIVE_HEADER_BYTES;
+    record.set(guard, cursor);
+    cursor += guard.length;
+    record.set(parameters, cursor);
+    cursor += parameters.length;
+    record.set(template, cursor);
+    return record;
+  };
   const blocks = {
     length: blockBytes,
     async read(rip, candidate = 0) {
@@ -752,10 +811,10 @@ export async function openNativeX86Artifact(bytes, options = {}) {
         if (!Number.isSafeInteger(candidate) || candidate < 0) return null;
         rip = BigInt.asUintN(64, rip);
         const cacheKey = `${rip.toString()}:${candidate}`;
-        const cached = blockRecordCache.get(cacheKey);
-        if (cached) {
+        const cachedParts = blockPartsCache.get(cacheKey);
+        if (cachedParts) {
           blockRecordCacheHits += 1;
-          return cached;
+          return assemble(cachedParts);
         }
         const physical = physicalBlocks;
         const rowRip = (index) => physical.view.getBigUint64(
@@ -816,37 +875,20 @@ export async function openNativeX86Artifact(bytes, options = {}) {
           range(executionStart + parameterOffset, parameterLength),
           range(executionStart + templateOffset, templateLength),
         ]);
-        const record = new Uint8Array(
-          NATIVE_HEADER_BYTES + guard.length
-            + parameters.length + template.length,
-        );
-        record.set(BLOCK_MAGIC);
-        const view = new DataView(record.buffer);
-        view.setUint16(4, 3, true);
-        view.setUint16(6, NATIVE_HEADER_BYTES, true);
-        view.setBigUint64(8, rip, true);
-        const addRip = (value) => BigInt.asUintN(64, rip + value);
-        view.setBigUint64(16, addRip(boundary), true);
-        view.setUint32(24, stepLength, true);
-        view.setUint32(28, control, true);
-        const relativeFirst = control === 2
-          || ![0, 3, 4, 5, 12, 14, 22].includes(control);
-        view.setBigUint64(32, relativeFirst ? addRip(first) : first, true);
-        view.setBigUint64(
-          40, control === 2 ? addRip(second) : second, true,
-        );
-        view.setBigUint64(48, third, true);
-        view.setUint32(56, parameters.length, true);
-        view.setUint32(60, template.length, true);
-        let cursor = NATIVE_HEADER_BYTES;
-        record.set(guard, cursor);
-        cursor += guard.length;
-        record.set(parameters, cursor);
-        cursor += parameters.length;
-        record.set(template, cursor);
-        blockRecordCache.set(cacheKey, record);
-        blockRecordCacheBytes += record.length;
-        return record;
+        const parts = {
+          rip,
+          guard: retain(guardCache, guardRank, guard),
+          parameters: retain(parameterCache, stepRank, parameters),
+          template: retain(templateCache, templateRank, template),
+          stepLength,
+          control,
+          boundary,
+          first,
+          second,
+          third,
+        };
+        blockPartsCache.set(cacheKey, parts);
+        return assemble(parts);
       }
       const variants = directory.get(BigInt.asUintN(64, rip).toString());
       const resident = variants?.[candidate];
@@ -921,9 +963,13 @@ export async function openNativeX86Artifact(bytes, options = {}) {
       const resident = memoryFabric.release();
       dirty.clear();
       directory.clear();
-      blockRecordCache.clear();
-      blockRecordCacheBytes = 0;
+      blockPartsCache.clear();
+      templateCache.clear();
+      guardCache.clear();
+      parameterCache.clear();
       blockRecordCacheHits = 0;
+      retainedBytes = 0;
+      assemblyBuffer = new Uint8Array(0);
       physicalBlocks = null;
       return resident;
     },
@@ -945,9 +991,13 @@ export async function openNativeX86Artifact(bytes, options = {}) {
           bytes: 4 * (257 + blockCount),
         } : null,
         recordCache: {
-          records: blockRecordCache.size,
-          bytes: blockRecordCacheBytes,
+          records: blockPartsCache.size,
+          bytes: retainedBytes,
           hits: blockRecordCacheHits,
+          admittedTemplates: templateCache.size,
+          admittedTemplateBytes: [...templateCache.values()].reduce(
+            (total, bytes) => total + bytes.length, 0,
+          ),
         },
         descriptorBytes,
         executionBytes: v5 || v4 || v3 || v2 ? executionBytes : blockBytes
