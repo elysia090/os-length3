@@ -15,6 +15,68 @@
 
 #include <postlink/chain.h>
 
+
+/* Distinct encoded rows, by exact bytes.  Open addressing over a hash of the
+ * row, with the rows kept in an arena so a collision is settled by comparison
+ * rather than trusted to the hash. */
+#define ROW_TABLE_BITS 19u
+#define ROW_TABLE_SLOTS (1u << ROW_TABLE_BITS)
+
+typedef struct {
+    pl_u32 *slot_offset;     /* arena offset + 1, zero when empty */
+    pl_u8 *arena;
+    pl_u32 arena_used;
+    pl_u32 arena_size;
+    unsigned long long distinct;
+    unsigned long long total_bytes;
+} row_set;
+
+static int row_set_open(row_set *set, pl_u32 arena_size)
+{
+    set->slot_offset = calloc(ROW_TABLE_SLOTS, sizeof *set->slot_offset);
+    set->arena = malloc(arena_size);
+    set->arena_used = 0;
+    set->arena_size = arena_size;
+    set->distinct = 0;
+    set->total_bytes = 0;
+    return set->slot_offset && set->arena;
+}
+
+static void row_set_close(row_set *set)
+{
+    free(set->slot_offset);
+    free(set->arena);
+}
+
+/* Returns 1 when the row is new. */
+static int row_set_add(row_set *set, const pl_u8 *row, pl_u32 bytes)
+{
+    pl_u64 hash = 0xcbf29ce484222325ull;
+    for (pl_u32 i = 0; i < bytes; ++i) {
+        hash ^= row[i];
+        hash *= 0x100000001b3ull;
+    }
+    pl_u32 slot = (pl_u32)(hash >> (64u - ROW_TABLE_BITS));
+    for (pl_u32 probe = 0; probe < ROW_TABLE_SLOTS; ++probe) {
+        pl_u32 at = (slot + probe) & (ROW_TABLE_SLOTS - 1u);
+        pl_u32 stored = set->slot_offset[at];
+        if (!stored) {
+            if (set->arena_size - set->arena_used < bytes + 1u) return -1;
+            set->arena[set->arena_used] = (pl_u8)bytes;
+            memcpy(set->arena + set->arena_used + 1u, row, bytes);
+            set->slot_offset[at] = set->arena_used + 1u;
+            set->arena_used += bytes + 1u;
+            set->distinct += 1;
+            set->total_bytes += bytes;
+            return 1;
+        }
+        const pl_u8 *held = set->arena + (stored - 1u);
+        if (held[0] == (pl_u8)bytes && !memcmp(held + 1u, row, bytes))
+            return 0;
+    }
+    return -1;
+}
+
 static int header_u32(const pl_u8 *header, pl_u32 bytes, const char *path,
                       pl_u32 *value)
 {
@@ -95,6 +157,13 @@ int main(int argc, char **argv)
     unsigned long long width[4] = { 0, 0, 0, 0 };
     unsigned long long fallthrough = 0;      /* successor is the next row */
 
+    row_set v5_rows, v6_rows;
+    if (!row_set_open(&v5_rows, 1u << 22) || !row_set_open(&v6_rows, 1u << 22)) {
+        fprintf(stderr, "cannot allocate the row tables\n");
+        return 1;
+    }
+    unsigned long long overflow = 0;
+
     for (pl_u32 index = 0; index < counts.block_count; ++index) {
         pl_admission admission;
         if (pl_directory_admit(&directory, index, &admission)) continue;
@@ -122,6 +191,32 @@ int main(int argc, char **argv)
             pl_u32 tag = pl_signed_tag(delta);
             width[tag - PL_TAG_SIGNED_8] += 1;
         }
+
+        /* Both spellings of this block's continuation, to see whether the
+         * chain field costs sharing.  The delta is relative to the block's own
+         * row, so two blocks that both fall through keep the same row. */
+        pl_continuation relative;
+        pl_continuation_project(admission.rip, &admission.continuation,
+                                &relative);
+        pl_u8 row[PL_CONTINUATION_CHAINED_MAX_BYTES];
+        pl_u32 written = 0;
+        if (!pl_continuation_encode(&relative, row, sizeof row, &written))
+            if (row_set_add(&v5_rows, row, written) < 0) overflow += 1;
+
+        int chainable = 0;
+        pl_i64 chain_delta = 0;
+        if (successors.count) {
+            pl_chain_target target;
+            if (!pl_chain_resolve(&directory, successors.rip[0], &target)
+                    && target.variants == 1u) {
+                chainable = 1;
+                chain_delta = (pl_i64)target.index - (pl_i64)index;
+            }
+        }
+        written = 0;
+        if (!pl_continuation_encode_chained(&relative, chainable, chain_delta,
+                                            row, sizeof row, &written))
+            if (row_set_add(&v6_rows, row, written) < 0) overflow += 1;
     }
 
     printf("blocks                     %12u\n", counts.block_count);
@@ -148,6 +243,21 @@ int main(int argc, char **argv)
     }
     printf("  encoded                  %12llu bytes\n", bytes);
 
+    printf("\ncontinuation table\n");
+    printf("  schema 5 distinct rows   %12llu  %10llu bytes\n",
+           v5_rows.distinct, v5_rows.total_bytes);
+    printf("  schema 6 distinct rows   %12llu  %10llu bytes\n",
+           v6_rows.distinct, v6_rows.total_bytes);
+    if (v5_rows.distinct)
+        printf("  rows                     %12.2fx\n",
+               (double)v6_rows.distinct / (double)v5_rows.distinct);
+    if (v5_rows.total_bytes)
+        printf("  bytes                    %12.2fx\n",
+               (double)v6_rows.total_bytes / (double)v5_rows.total_bytes);
+    if (overflow) printf("  table overflow           %12llu\n", overflow);
+
+    row_set_close(&v5_rows);
+    row_set_close(&v6_rows);
     free(payload);
     return 0;
 }
