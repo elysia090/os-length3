@@ -3,6 +3,8 @@
 
 import argparse
 import base64
+from bisect import bisect_right
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,7 +20,14 @@ if str(ROOT) not in sys.path:
 
 from tools.close_native_x86_runtime import (close, load_runtime_cut,
                                             load_seed_catalog,
-                                            load_seed_coordinates)
+                                            load_seed_coordinates,
+                                            linear_seed_coordinates,
+                                            reachable_seed_coordinates)
+from kernel.x86 import initial_state, PageFault, read_virtual
+from qm.wasmstate import PagedMemory
+from tools.build_native_x86_seed_addresses import (executable_segments,
+                                                   executable_symbols)
+from tools.index_native_x86_elf import executable_pages
 
 
 def _run(node, runner, machine, wasm, blocks, snapshot, resume=None,
@@ -64,6 +73,47 @@ def close_until(arguments):
     console_input_base64 = initial_console_input_base64
     seed_coordinates = load_seed_coordinates(arguments.seed_addresses)
     seed_catalog = load_seed_catalog(arguments.seed_catalog)
+    dense_objects = []
+    for path in arguments.dense_seed_elf:
+        dense_payload = path.read_bytes()
+        dense_segments = executable_segments(dense_payload)
+        dense_objects.append({
+            'path': str(path),
+            'symbols': executable_symbols(dense_payload),
+            'segments': dense_segments,
+            'ranges': tuple(
+                (address, address + len(payload))
+                for address, payload in dense_segments),
+            'pages': {
+                address: hashlib.sha256(payload).digest()
+                for address, payload in executable_pages(
+                    dense_payload).items()
+            },
+            'cpu': None,
+        })
+
+    def dense_object_at(cpu, coordinate):
+        """Select one ELF by the current executable page, never RIP alone."""
+        if not dense_objects:
+            return None
+        page = int(coordinate) & -4096
+        try:
+            identity = hashlib.sha256(
+                read_virtual(cpu, page, 4096, 'execute')).digest()
+        except PageFault:
+            return None
+        matched = [item for item in dense_objects
+                   if item['pages'].get(page) == identity]
+        if len(matched) != 1:
+            return None
+        item = matched[0]
+        if item['cpu'] is None:
+            memory = PagedMemory(
+                b'', max(end for _start, end in item['ranges']))
+            for address, payload in item['segments']:
+                memory = memory.write(address, payload)
+            item['cpu'] = initial_state(memory)
+        return item
 
     def checkpoint():
         if arguments.report:
@@ -110,10 +160,86 @@ def close_until(arguments):
 
         state, source_identity, dirty_pages = load_runtime_cut(
             arguments.artifact_root, arguments.source, snapshot)
+        close_budget = arguments.budget
+        round_seed_coordinates = seed_coordinates
+        dense_span = None
+        dense_coordinates = ()
+        dense_decode_stops = []
+        reachable_coordinates = ()
+        reachable_decode_stops = ()
+        reachable_truncated = False
+        missing = int(observed['missing_block'], 16)
+        dense_object = dense_object_at(state.cpu, missing)
+        if dense_object is not None:
+            dense_symbols = dense_object['symbols']
+            dense_seed_cpu = dense_object['cpu']
+            index = bisect_right(dense_symbols, missing) - 1
+            if 0 <= index + 1 < len(dense_symbols):
+                start, end = dense_symbols[index:index + 2]
+                if (start <= missing < end
+                        and end - start <= arguments.dense_seed_max_bytes):
+                    if (end - start
+                            <= arguments.dense_seed_neighbor_max_bytes):
+                        neighbor = index + 1
+                        while (end - start
+                               < arguments.dense_seed_min_batch_bytes
+                               and neighbor + 1 < len(dense_symbols)):
+                            following = dense_symbols[neighbor + 1]
+                            if (following - end
+                                    > arguments.dense_seed_neighbor_max_bytes
+                                    or following - start
+                                    > arguments.dense_seed_max_bytes):
+                                break
+                            end = following
+                            neighbor += 1
+                    dense_span = (start, end)
+                    # The first coordinate is known from vm.wasm's exact
+                    # missing-block cut.  Following symbol boundaries are
+                    # trusted ELF entries.  Walk forward by decoded source
+                    # extents inside each segment; decoding every byte used
+                    # to materialize overlapping, unreachable SSA graphs.
+                    segment_entries = [missing]
+                    segment_entries.extend(
+                        coordinate for coordinate in dense_symbols[index + 1:]
+                        if coordinate < end)
+                    decoded = set()
+                    for segment_index, entry in enumerate(segment_entries):
+                        segment_end = (segment_entries[segment_index + 1]
+                                       if segment_index + 1
+                                       < len(segment_entries) else end)
+                        coordinates, stopped = linear_seed_coordinates(
+                            dense_seed_cpu, entry, segment_end)
+                        decoded.update(coordinates)
+                        if stopped is not None:
+                            dense_decode_stops.append(stopped)
+                    # The runtime cut is mandatory even if a cold unsupported
+                    # instruction stopped a later speculative segment.
+                    decoded.add(missing)
+                    (reachable_coordinates, reachable_decode_stops,
+                     reachable_truncated) = reachable_seed_coordinates(
+                        dense_seed_cpu, (missing,), dense_object['ranges'],
+                        arguments.dense_seed_reachable_limit)
+                    decoded.update(reachable_coordinates)
+                    dense_coordinates = tuple(sorted(decoded))
+                    round_seed_coordinates = tuple(sorted(
+                        set(seed_coordinates).union(dense_coordinates)))
+                    # Dense admission closes direct control edges, but return
+                    # and indirect targets are runtime state.  Keep tracing
+                    # the bounded oracle slice after admitting the dense
+                    # graph so one canonical rewrite observes many such
+                    # targets.  Restricting this to one instruction made the
+                    # driver rewrite a kernel-sized directory once per
+                    # indirect edge (an avoidable N+1 build-time path).
+                    close_budget = arguments.budget
         extended, report = close(
             machine.read_bytes(), state,
-            arguments.budget, arguments.max_internal, seed_coordinates,
-            seed_catalog)
+            close_budget, arguments.max_internal, round_seed_coordinates,
+            seed_catalog,
+            seed_cpu=(None if dense_object is None
+                      else dense_object['cpu']),
+            seed_cpu_ranges=(() if dense_object is None
+                             else dense_object['ranges']),
+            seed_catalog_page_limit=arguments.seed_catalog_page_limit)
         if report['grammar_misses']['count']:
             raise RuntimeError(json.dumps(report['grammar_misses'], indent=2))
         next_machine = work / ('round-%02d.machine.bin' % iteration)
@@ -130,8 +256,22 @@ def close_until(arguments):
             'bytes': len(extended),
             'added_bytes': int(report['added_bytes']),
             'consumed_instructions': int(report['consumed_instructions']),
+            'seed_source': report.get('seed_source', 'runtime'),
+            'dense_seed_span': (None if dense_span is None else {
+                'object': dense_object['path'],
+                'start': '%016x' % dense_span[0],
+                'end': '%016x' % dense_span[1],
+                'bytes': dense_span[1] - dense_span[0],
+                'coordinates': len(dense_coordinates),
+                'decode_stops': dense_decode_stops[:8],
+                'reachable_coordinates': len(reachable_coordinates),
+                'reachable_decode_stops': list(reachable_decode_stops),
+                'reachable_truncated': reachable_truncated,
+            }),
             'terminal_rip': report['terminal_rip'],
             'terminal_event': report['terminal_event'],
+            'halted': bool(report.get('halted')),
+            'stalled': report.get('stalled'),
             'timing_ms': report.get('timing_ms', {}),
         }
         print(json.dumps({'close': close_report}, sort_keys=True), flush=True)
@@ -181,6 +321,30 @@ def main(argv=None):
         '--seed-catalog', type=Path,
         help=('content-addressed executable-page catalog used to admit all '
               'resident instruction entries after the first cut in an ELF'))
+    parser.add_argument(
+        '--seed-catalog-page-limit', type=int, default=16,
+        help=('nearest resident executable pages admitted from one content '
+              'catalog cut; zero selects every resident page'))
+    parser.add_argument(
+        '--dense-seed-elf', type=Path, action='append', default=[],
+        help=('when a missing coordinate lies between adjacent executable '
+              'symbols in this fixed-address ELF, admit that complete '
+              'guarded byte span instead of tracing a long oracle slice; '
+              'repeat for executables sharing virtual coordinates'))
+    parser.add_argument(
+        '--dense-seed-max-bytes', type=int, default=1 << 20,
+        help='maximum adjacent-symbol span admitted by --dense-seed-elf')
+    parser.add_argument(
+        '--dense-seed-min-batch-bytes', type=int, default=4096,
+        help=('coalesce consecutive small symbol spans until this guarded '
+              'batch size is reached'))
+    parser.add_argument(
+        '--dense-seed-neighbor-max-bytes', type=int, default=256,
+        help='largest neighboring symbol span eligible for coalescing')
+    parser.add_argument(
+        '--dense-seed-reachable-limit', type=int, default=4096,
+        help=('maximum direct call/branch entries admitted from the current '
+              'content-matched ELF cut'))
     parser.add_argument('--target', default='BusyBox')
     parser.add_argument('--console-input-base64',
                         help=('base64 console bytes injected once before the '

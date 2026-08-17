@@ -3357,6 +3357,26 @@ class X86DBT(object):
                         boundary = X86Boundary(
                             'simd_register',
                             (start + reader.at, 11, vector, operand, 0))
+                elif second == 0xd4 and operand_override:
+                    vector, operand, _group = self._modrm(reader, rex)
+                    if isinstance(operand, MemoryOperand):
+                        boundary = X86Boundary(
+                            'simd_packed_add_qwords',
+                            (start + reader.at, vector, operand))
+                    else:
+                        boundary = X86Boundary(
+                            'simd_register',
+                            (start + reader.at, 14, vector, operand, 0))
+                elif second == 0xdb and operand_override:
+                    vector, operand, _group = self._modrm(reader, rex)
+                    if isinstance(operand, MemoryOperand):
+                        boundary = X86Boundary(
+                            'simd_packed_and',
+                            (start + reader.at, vector, operand))
+                    else:
+                        boundary = X86Boundary(
+                            'simd_register',
+                            (start + reader.at, 15, vector, operand, 0))
                 elif second == 0x62 and operand_override:
                     vector, operand, _group = self._modrm(reader, rex)
                     if isinstance(operand, MemoryOperand):
@@ -5419,7 +5439,9 @@ class X86DBT(object):
     def _simd_packed_equal_plan(boundary, low_local, high_local):
         """Admit one packed memory source as the existing two-lane load."""
         if boundary.operation not in ('simd_packed_equal',
-                                      'simd_unpack_dwords'):
+                                      'simd_unpack_dwords',
+                                      'simd_packed_add_qwords',
+                                      'simd_packed_and'):
             return None
         following, vector, operand = boundary.detail
         return X86DBT._simd_load_plan(
@@ -20510,6 +20532,15 @@ class X86DBT(object):
                         << (lane * 32)
                 values[target * 2] = result & MASK64
                 values[target * 2 + 1] = (result >> 64) & MASK64
+            elif opcode == 14:
+                values[target * 2] = (
+                    values[target * 2] + values[source * 2]) & MASK64
+                values[target * 2 + 1] = (
+                    values[target * 2 + 1]
+                    + values[source * 2 + 1]) & MASK64
+            elif opcode == 15:
+                values[target * 2] &= values[source * 2]
+                values[target * 2 + 1] &= values[source * 2 + 1]
             else:
                 raise X86Error('SIMD register operation is invalid')
             return replace(state, rip=following, xmm=tuple(values)), None
@@ -20541,6 +20572,26 @@ class X86DBT(object):
             values = list(state.xmm)
             values[vector * 2] = result & MASK64
             values[vector * 2 + 1] = (result >> 64) & MASK64
+            return replace(state, rip=following, xmm=tuple(values)), None
+        if operation == 'simd_packed_add_qwords':
+            following, vector, operand = detail
+            right_low, right_high = struct.unpack(
+                '<QQ', read_virtual(
+                    state, operand.address(state, following), 16))
+            values = list(state.xmm)
+            values[vector * 2] = (
+                values[vector * 2] + right_low) & MASK64
+            values[vector * 2 + 1] = (
+                values[vector * 2 + 1] + right_high) & MASK64
+            return replace(state, rip=following, xmm=tuple(values)), None
+        if operation == 'simd_packed_and':
+            following, vector, operand = detail
+            right_low, right_high = struct.unpack(
+                '<QQ', read_virtual(
+                    state, operand.address(state, following), 16))
+            values = list(state.xmm)
+            values[vector * 2] &= right_low
+            values[vector * 2 + 1] &= right_high
             return replace(state, rip=following, xmm=tuple(values)), None
         if operation == 'simd_store_lane':
             following, vector, operand = detail

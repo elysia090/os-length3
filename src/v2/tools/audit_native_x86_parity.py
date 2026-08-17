@@ -145,6 +145,10 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
         return {name: observed[name]
                 for name in ('rip', 'rflags', 'registers', 'timer_source')}
 
+    def state_key(value):
+        return (value['rip'], value['rflags'],
+                tuple(value['registers']), int(value['timer_source']))
+
     actual_index = 0
     expected_index = 0
     actual_extra_cuts = 0
@@ -170,26 +174,41 @@ def audit(node, runner, native, wasm, artifact_root, source, blocks,
         actual = actual_state(samples[actual_index])
         expected, event, expected_timer = expected_samples[expected_index]
         if actual != expected:
-            expected_ahead = next((offset for offset in range(1, window + 1)
-                if expected_index + offset < len(expected_samples)
-                and expected_samples[expected_index + offset][0] == actual),
-                None)
-            actual_ahead = next((offset for offset in range(1, window + 1)
-                if actual_index + offset < len(samples)
-                and actual_state(samples[actual_index + offset]) == expected),
-                None)
-            if expected_ahead is not None and (actual_ahead is None
-                    or expected_ahead <= actual_ahead):
+            # Both implementations may expose different interior cuts around
+            # one page fault, interrupt delivery, or composed direct call.
+            # Align the two bounded neighborhoods together; looking ahead on
+            # only one side incorrectly reports a mismatch when neither
+            # current endpoint is observable in the other directory.
+            expected_offsets = {}
+            for offset in range(window + 1):
+                index = expected_index + offset
+                if index >= len(expected_samples):
+                    break
+                expected_offsets.setdefault(
+                    state_key(expected_samples[index][0]), offset)
+            candidates = []
+            for offset in range(window + 1):
+                index = actual_index + offset
+                if index >= len(samples):
+                    break
+                expected_offset = expected_offsets.get(
+                    state_key(actual_state(samples[index])))
+                if expected_offset is not None and (offset or expected_offset):
+                    candidates.append((
+                        offset + expected_offset,
+                        max(offset, expected_offset),
+                        offset, expected_offset))
+            if candidates:
+                _distance, _width, actual_ahead, expected_ahead = min(
+                    candidates)
+                actual_index += actual_ahead
                 expected_index += expected_ahead
+                actual_extra_cuts += actual_ahead
                 oracle_extra_cuts += expected_ahead
                 alignment_points += 1
+                actual = actual_state(samples[actual_index])
                 expected, event, expected_timer = \
                     expected_samples[expected_index]
-            elif actual_ahead is not None:
-                actual_index += actual_ahead
-                actual_extra_cuts += actual_ahead
-                alignment_points += 1
-                actual = actual_state(samples[actual_index])
             else:
                 index = actual_index + 1
                 predecessor = (samples[actual_index - 1]

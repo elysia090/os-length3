@@ -11,8 +11,10 @@ import base64
 from collections import Counter
 from dataclasses import replace
 import hashlib
+import heapq
 import json
 from pathlib import Path
+import struct
 import sys
 from time import perf_counter
 
@@ -36,6 +38,28 @@ from kernel.x86snapshot import (canonical_native_x86_packed_records,
                                 select_physical_cut)
 from qm.steppage import StatePageError
 from tools.build_native_x86_machine import _open_boot
+from tools.index_native_x86_elf import (CATALOG_HEADER, CATALOG_MAGIC,
+                                        CATALOG_OBJECT, CATALOG_OFFSET,
+                                        CATALOG_PAGE)
+
+
+class CompactSeedOffsets:
+    """Lazy u16 instruction offsets backed by one compact catalog payload."""
+    __slots__ = ('payload', 'start', 'count')
+
+    def __init__(self, payload, start, count):
+        self.payload = payload
+        self.start = int(start)
+        self.count = int(count)
+
+    def __len__(self):
+        return self.count
+
+    def __iter__(self):
+        for index in range(self.count):
+            yield CATALOG_OFFSET.unpack_from(
+                self.payload,
+                self.start + index * CATALOG_OFFSET.size)[0]
 
 
 def _word(value):
@@ -127,6 +151,137 @@ def load_runtime_cut(artifact_root, source, snapshot_path):
     return machine, source_identity, len(raw.get('dirty_pages', ()))
 
 
+def linear_seed_coordinates(cpu, start, end):
+    """Decode only real sequential instruction entries in one ELF span.
+
+    A byte-complete proof guard does not require attempting a decode at every
+    byte offset.  Starting at a known runtime or symbol entry, each decoded
+    block names the next sequential x86 coordinate through its exact source
+    extent.  Keeping those entries preserves call-return continuations while
+    avoiding overlapping mid-instruction SSA graphs and their artifact cost.
+    """
+    start = int(start) & ((1 << 64) - 1)
+    end = int(end) & ((1 << 64) - 1)
+    if end <= start:
+        return (), None
+    dbt = X86DBT()
+    coordinates = []
+    pending = [start]
+    queued = {start}
+    stopped = None
+    while pending:
+        cursor = heapq.heappop(pending)
+        try:
+            block = dbt.block(replace(cpu, rip=cursor))
+        except (PageFault, StatePageError, TypeError, ValueError,
+                X86Error) as error:
+            if stopped is None:
+                stopped = {
+                    'rip': '%016x' % cursor,
+                    'reason': str(error),
+                }
+            continue
+        extent = len(block.source)
+        if extent <= 0 or cursor + extent <= cursor:
+            if stopped is None:
+                stopped = {
+                    'rip': '%016x' % cursor,
+                    'reason': 'decoded block has no forward source extent',
+                }
+            continue
+        coordinates.append(cursor)
+        following = cursor + extent
+        successors = [following]
+        operation = block.boundary.operation
+        detail = block.boundary.detail
+        if operation == 'branch':
+            successors.append(int(detail))
+        elif operation in ('conditional_branch', 'call'):
+            successors.extend(map(int, detail[:2]))
+        for successor in successors:
+            successor &= (1 << 64) - 1
+            if start <= successor < end and successor not in queued:
+                queued.add(successor)
+                heapq.heappush(pending, successor)
+    return tuple(sorted(coordinates)), stopped
+
+
+def reachable_seed_coordinates(cpu, entries, executable_ranges,
+                               max_coordinates=4096):
+    """Decode a bounded direct-control graph from trusted ELF entries.
+
+    Runtime page identity selects the ELF before this walk.  Source-byte
+    guards still protect every emitted record, while following direct calls
+    here avoids rediscovering one callee per persistent cut.  Returns and
+    indirect control remain barriers because their targets depend on runtime
+    state.
+    """
+    limit = int(max_coordinates)
+    if limit <= 0:
+        return (), (), False
+    ranges = tuple(sorted(
+        (int(start), int(end)) for start, end in executable_ranges
+        if int(end) > int(start)))
+
+    def executable(coordinate):
+        return any(start <= coordinate < end for start, end in ranges)
+
+    pending = []
+    queued = set()
+    for entry in entries:
+        coordinate = int(entry) & ((1 << 64) - 1)
+        if executable(coordinate) and coordinate not in queued:
+            queued.add(coordinate)
+            heapq.heappush(pending, coordinate)
+    coordinates = []
+    stopped = []
+    dbt = X86DBT()
+    generation = 0
+    while pending and len(coordinates) < limit:
+        cursor = heapq.heappop(pending)
+        if generation >= 256:
+            dbt = X86DBT()
+            generation = 0
+        try:
+            block = dbt.block(replace(cpu, rip=cursor))
+        except (PageFault, StatePageError, TypeError, ValueError,
+                X86Error) as error:
+            if len(stopped) < 8:
+                stopped.append({
+                    'rip': '%016x' % cursor,
+                    'reason': str(error),
+                })
+            continue
+        generation += 1
+        extent = len(block.source)
+        if extent <= 0 or cursor + extent <= cursor:
+            if len(stopped) < 8:
+                stopped.append({
+                    'rip': '%016x' % cursor,
+                    'reason': 'decoded block has no forward source extent',
+                })
+            continue
+        coordinates.append(cursor)
+        following = (cursor + extent) & ((1 << 64) - 1)
+        operation = block.boundary.operation
+        detail = block.boundary.detail
+        if operation == 'branch':
+            successors = (int(detail),)
+        elif operation in ('conditional_branch', 'call'):
+            successors = tuple(map(int, detail[:2]))
+        elif operation in ('return', 'dynamic_branch', 'far_return',
+                           'interrupt_return', 'halt'):
+            successors = ()
+        else:
+            successors = (following,)
+        for successor in successors:
+            successor &= (1 << 64) - 1
+            if (executable(successor) and successor not in queued):
+                queued.add(successor)
+                heapq.heappush(pending, successor)
+    return (tuple(sorted(coordinates)), tuple(stopped), bool(pending))
+
+
 def load_seed_coordinates(path):
     """Load explicit coordinates or executable symbols from ``System.map``."""
     if path is None:
@@ -169,7 +324,38 @@ def load_seed_catalog(path):
     """Load content-addressed instruction entries for executable ELF pages."""
     if path is None:
         return ()
-    raw = json.loads(Path(path).read_text(encoding='utf-8'))
+    payload = Path(path).read_bytes()
+    if payload.startswith(CATALOG_MAGIC):
+        try:
+            magic, object_count = CATALOG_HEADER.unpack_from(payload)
+            if magic != CATALOG_MAGIC:
+                raise ValueError('compact catalog magic is invalid')
+            cursor = CATALOG_HEADER.size
+            objects = []
+            for _object_index in range(object_count):
+                identity, page_count = CATALOG_OBJECT.unpack_from(
+                    payload, cursor)
+                cursor += CATALOG_OBJECT.size
+                pages = []
+                for _page_index in range(page_count):
+                    coordinate, digest, entry_count = \
+                        CATALOG_PAGE.unpack_from(payload, cursor)
+                    cursor += CATALOG_PAGE.size
+                    entry_bytes = entry_count * CATALOG_OFFSET.size
+                    if cursor + entry_bytes > len(payload):
+                        raise ValueError('compact catalog entries are truncated')
+                    pages.append((
+                        coordinate, digest,
+                        CompactSeedOffsets(payload, cursor, entry_count)))
+                    cursor += entry_bytes
+                objects.append((identity, tuple(pages)))
+            if cursor != len(payload):
+                raise ValueError('compact catalog has trailing bytes')
+            return tuple(objects)
+        except (ValueError, struct.error) as error:
+            raise ValueError('invalid compact native x86 ELF catalog') \
+                from error
+    raw = json.loads(payload.decode('utf-8'))
     if raw.get('schema') != 'native-x86-elf-page-catalog-v1':
         raise ValueError('native x86 ELF page catalog schema is unsupported')
     objects = []
@@ -201,7 +387,7 @@ def load_seed_catalog(path):
     return tuple(objects)
 
 
-def match_seed_catalog(cpu, seed_rip, catalog):
+def match_seed_catalog(cpu, seed_rip, catalog, page_limit=0):
     """Select every resident page of the ELF containing one exact cut.
 
     Executables routinely reuse the same virtual addresses.  Matching the
@@ -217,17 +403,15 @@ def match_seed_catalog(cpu, seed_rip, catalog):
         return (), {
             'objects': 0,
             'pages': 0,
+            'resident_pages': 0,
             'coordinates': 0,
         }
     seed_digest = hashlib.sha256(seed_payload).digest()
-    coordinates = set()
-    identities = set()
-    verified_pages = set()
+    verified_pages = {}
     for identity, pages in catalog:
         anchors = tuple(page for page in pages if page[1] == seed_digest)
         for anchor_page, _digest, _entries in anchors:
             delta = seed_page - anchor_page
-            matched = False
             for source_page, digest, entries in pages:
                 target_page = source_page + delta
                 if not 0 <= target_page < (1 << 64) or target_page & 4095:
@@ -239,14 +423,24 @@ def match_seed_catalog(cpu, seed_rip, catalog):
                     continue
                 if hashlib.sha256(payload).digest() != digest:
                     continue
-                matched = True
-                verified_pages.add((identity, target_page))
-                coordinates.update(target_page + offset for offset in entries)
-            if matched:
-                identities.add(identity)
+                verified_pages[identity, target_page] = entries
+    ordered_pages = sorted(
+        verified_pages.items(),
+        key=lambda item: (
+            abs(item[0][1] - seed_page), item[0][1], item[0][0]))
+    resident_pages = len(ordered_pages)
+    page_limit = int(page_limit)
+    if page_limit > 0:
+        ordered_pages = ordered_pages[:page_limit]
+    coordinates = set()
+    identities = set()
+    for (identity, target_page), entries in ordered_pages:
+        identities.add(identity)
+        coordinates.update(target_page + offset for offset in entries)
     return tuple(sorted(coordinates)), {
         'objects': len(identities),
-        'pages': len(verified_pages),
+        'pages': len(ordered_pages),
+        'resident_pages': resident_pages,
         'coordinates': len(coordinates),
         'identity_sample': [identity.hex()
                             for identity in sorted(identities)[:8]],
@@ -254,7 +448,8 @@ def match_seed_catalog(cpu, seed_rip, catalog):
 
 
 def close(machine_payload, state, budget, max_internal,
-          seed_coordinates=(), seed_catalog=()):
+          seed_coordinates=(), seed_catalog=(), seed_cpu=None,
+          seed_cpu_ranges=(), seed_catalog_page_limit=16):
     started = perf_counter()
     dbt = X86DBT(profile_controls=True)
     runtime = X86Machine(dbt)
@@ -265,13 +460,28 @@ def close(machine_payload, state, budget, max_internal,
     # profiling starts only after a transition completes, so seed that exact
     # coordinate before advancing. Otherwise a long oracle run can discover
     # thousands of neighboring cuts yet omit the one record the VM requested.
+    seed_source = 'runtime'
     try:
         seed_cut = dbt.physical_block(terminal.cpu)
     except PageFault:
         # Composition may inspect an as-yet-unmapped call target.  The exact
         # current block is still a valid closure seed; the guest page-fault
         # path will make the stronger successor available in a later round.
-        seed_cut = dbt.block(terminal.cpu)
+        try:
+            seed_cut = dbt.block(terminal.cpu)
+        except PageFault:
+            rip = int(terminal.cpu.rip)
+            trusted = (seed_cpu is not None and any(
+                int(start) <= rip < int(end)
+                for start, end in seed_cpu_ranges))
+            if not trusted:
+                raise
+            # The runtime page selected this ELF by exact content identity.
+            # Decode across a cold page boundary from the immutable image;
+            # the packed record still carries its ordinary source-byte guard
+            # and therefore cannot execute until the guest mapping agrees.
+            seed_cut = dbt.physical_block(replace(seed_cpu, rip=rip))
+            seed_source = 'content_matched_elf'
     response = None
     event = None
     remaining = max(1, int(budget))
@@ -383,7 +593,7 @@ def close(machine_payload, state, budget, max_internal,
         load_native_x86_physical_machine(machine_payload)
     load_finished = perf_counter()
     matched_coordinates, catalog_report = match_seed_catalog(
-        state.cpu, seed_rip, seed_catalog)
+        state.cpu, seed_rip, seed_catalog, seed_catalog_page_limit)
     seed_coordinates = tuple(sorted(
         set(seed_coordinates).union(matched_coordinates)))
 
@@ -393,12 +603,21 @@ def close(machine_payload, state, budget, max_internal,
     # Seeding happens after the realized trace so it cannot perturb oracle
     # block grouping or timer retirement.  Unsupported speculative entries
     # remain visible in seed_catalog, but do not make required closure fail.
-    seed_cpu = state.cpu
+    runtime_seed_cpu = state.cpu
+    seed_cpu_ranges = tuple((int(start), int(end))
+                            for start, end in seed_cpu_ranges)
+
+    def coordinate_cpu(rip):
+        if seed_cpu is not None and any(
+                start <= rip < end for start, end in seed_cpu_ranges):
+            return seed_cpu
+        return runtime_seed_cpu
+
     executable_pages = {}
     seeded_coordinates = set()
     seed_variants = {}
-    seed_dbt = X86DBT()
     seed_batch_blocks = 0
+    seed_dbt = X86DBT()
     seed_rejected = []
     seed_rejected_count = 0
     seed_required_rips_skipped = 0
@@ -407,11 +626,12 @@ def close(machine_payload, state, budget, max_internal,
         if rip in required_rips:
             seed_required_rips_skipped += 1
             continue
-        page = int(rip) >> 12
+        selected_cpu = coordinate_cpu(rip)
+        page = id(selected_cpu), int(rip) >> 12
         executable = executable_pages.get(page)
         if executable is None:
             try:
-                read_virtual(seed_cpu, page << 12, 1, 'execute')
+                read_virtual(selected_cpu, int(rip), 1, 'execute')
                 executable = True
             except PageFault:
                 executable = False
@@ -419,7 +639,11 @@ def close(machine_payload, state, budget, max_internal,
         if not executable:
             continue
         try:
-            cut = seed_dbt.block(replace(seed_cpu, rip=rip))
+            # Reuse one bounded decoder batch.  A fresh DBT per coordinate
+            # repeats prefix/branch decoding, while one DBT for the complete
+            # catalog retains O(n) SSA graphs.  The 256-entry generation is
+            # the physical lifetime boundary between those two extremes.
+            cut = seed_dbt.block(replace(selected_cpu, rip=rip))
             packed_records = pack_native_x86_records(cut)
         except (PageFault, StatePageError, TypeError, ValueError,
                 X86Error) as error:
@@ -485,6 +709,8 @@ def close(machine_payload, state, budget, max_internal,
             if prior != candidate_physical:
                 optimized_replacements.append((
                     candidate_rip, int(fields[6])))
+                retained_records.append((
+                    candidate_rip, candidate_record))
             continue
         retained_records.append((candidate_rip, candidate_record))
     records = retained_records
@@ -583,11 +809,12 @@ def close(machine_payload, state, budget, max_internal,
     extended = extend_loaded_native_x86_physical_machine(
         metadata, memory, resident_by_proof, records,
         reject_conflicts=False,
-        replace_proved=False)
+        replace_proved=True)
     encode_finished = perf_counter()
     return extended, {
         'budget': int(budget),
         'consumed_instructions': int(budget) - remaining,
+        'seed_source': seed_source,
         'handled_events': dict(sorted(handled.items())),
         'console_bytes': len(console),
         'console_tail': bytes(console[-4096:]).decode(

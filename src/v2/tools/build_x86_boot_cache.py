@@ -2,7 +2,9 @@
 """Build a disposable directly mapped x86 Linux boot cache from a bzImage."""
 
 import argparse
+from contextlib import ExitStack
 import json
+import mmap
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -48,6 +50,11 @@ def main(argv=None):
     parser.add_argument('--memory-mib', type=int, default=128)
     parser.add_argument('--command-line')
     parser.add_argument('--initrd', type=Path)
+    parser.add_argument(
+        '--physical-image', action='append', nargs=2, default=[],
+        metavar=('ADDRESS', 'PATH'),
+        help=('map an immutable image at a span-aligned physical address; '
+              'may be repeated'))
     parser.add_argument('--shards', choices=('data', 'all'), default='data',
                         help='ship primary data only, or data plus parity')
     parser.add_argument('--artifact-root', type=Path,
@@ -66,9 +73,20 @@ def main(argv=None):
         image, memory_bytes=arguments.memory_mib << 20,
         command_line=arguments.command_line, initrd=initrd)
     expanded_seconds = perf_counter() - started
-    started = perf_counter()
-    payload = dump_x86_boot_cache(boot, shards=arguments.shards)
-    encoded_seconds = perf_counter() - started
+    with ExitStack() as stack:
+        physical_images = []
+        for raw_address, raw_path in arguments.physical_image:
+            address = int(raw_address, 0)
+            path = Path(raw_path)
+            opened = stack.enter_context(path.open('rb'))
+            mapped = stack.enter_context(mmap.mmap(
+                opened.fileno(), 0, access=mmap.ACCESS_READ))
+            physical_images.append((address, mapped))
+        started = perf_counter()
+        payload = dump_x86_boot_cache(
+            boot, shards=arguments.shards,
+            physical_images=physical_images)
+        encoded_seconds = perf_counter() - started
     arguments.output.write_bytes(payload)
     started = perf_counter()
     restored = load_x86_boot_cache(payload)
@@ -82,6 +100,9 @@ def main(argv=None):
         raise RuntimeError('x86 boot cache changed the prepared CPU state')
     print('bzimage_bytes=%d' % len(image))
     print('initrd_bytes=%d' % (0 if initrd is None else len(initrd)))
+    print('physical_image_bytes=%d' % sum(
+        Path(path).stat().st_size
+        for _address, path in arguments.physical_image))
     print('cache_bytes=%d' % len(payload))
     print('resident_pages=%d' % len(boot.state.memory.pages))
     print('expand_seconds=%.6f' % expanded_seconds)
