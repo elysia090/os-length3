@@ -142,7 +142,7 @@ int main(int argc, char **argv)
      * composer would have to keep a boundary the trace says is absent. */
     const pl_u8 *execution = payload + machine.execution.offset;
     unsigned long long pairs = 0, unparsed = 0, interface_ok = 0;
-    unsigned long long starved = 0, wider_node_space = 0;
+    unsigned long long starved = 0, wider_node_space = 0, crossing = 0;
     unsigned long long work_before = 0, span_before = 0, operands_before = 0;
     unsigned long long bytes_before = 0;
     for (pl_u32 index = 0; index < count; ++index) {
@@ -165,6 +165,9 @@ int main(int argc, char **argv)
          * pair. */
         if ((pl_u64)a.work + b.work > 255u) wider_node_space += 1;
         if (b.stack_inputs > a.stack_count) starved += 1; else interface_ok += 1;
+        /* compose_plans_raw refuses a pair whose plans belong to different
+         * functions, so a fusible edge that crosses one is not composable. */
+        if (a.function != b.function) crossing += 1;
         work_before += (pl_u64)a.work + b.work;
         span_before += (pl_u64)a.span + b.span;
         operands_before += (pl_u64)a.operands + b.operands;
@@ -177,6 +180,7 @@ int main(int argc, char **argv)
     printf("  successor inputs supplied %11llu\n", interface_ok);
     printf("  successor wants more stack %10llu\n", starved);
     printf("  composed work > 255 nodes %11llu\n", wider_node_space);
+    printf("  pair crosses a function  %12llu\n", crossing);
     printf("  work of the two graphs   %12llu\n", work_before);
     printf("  span of the two graphs   %12llu\n", span_before);
     printf("  operands of the two      %12llu\n", operands_before);
