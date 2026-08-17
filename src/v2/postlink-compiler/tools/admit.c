@@ -80,6 +80,7 @@ int main(int argc, char **argv)
         }
     }
     counts.execution_bytes = (pl_u32)machine.execution.length;
+    counts.schema = machine.schema;
 
     pl_directory directory;
     status = pl_directory_open(payload + machine.descriptors.offset,

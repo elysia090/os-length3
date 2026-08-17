@@ -27,6 +27,7 @@
 
 /* Counts, taken from the container header. */
 typedef struct {
+    pl_u32 schema;          /* 5 or 6; 6 continuations carry a chain */
     pl_u32 block_count;
     pl_u32 step_count;
     pl_u32 template_count;
@@ -66,6 +67,8 @@ typedef struct {
     pl_region tmpl;         /* shared normalized SSA template */
     pl_u32 step_bytes;      /* extent of the STEP once projected */
     pl_u32 template_rank;   /* the quotient class this block belongs to */
+    int chainable;          /* schema 6: the dispatch is folded */
+    pl_u32 chain_index;     /* schema 6: the successor block row */
     pl_continuation continuation;   /* absolute, RIP already applied */
 } pl_admission;
 

@@ -95,6 +95,137 @@ static pl_u32 table_intern(row_table *table, const pl_u8 *row, pl_u32 bytes)
     return 0;
 }
 
+
+/* ------------------------------------------------------- container writer */
+
+/* Digit-splice edits into the header, applied left to right so one pass
+ * rebuilds the document.  Regenerating the JSON is deliberately avoided: the
+ * header carries a state object of hex words that must survive byte for byte,
+ * and only integers change. */
+#define MAX_EDITS 16u
+
+typedef struct {
+    pl_u32 offset;      /* into the original header */
+    pl_u32 old_bytes;   /* digits being replaced */
+    char text[24];
+} header_edit;
+
+static pl_u32 digits_at(const pl_u8 *header, pl_u32 bytes, pl_u32 offset)
+{
+    pl_u32 length = 0;
+    while (offset + length < bytes
+            && header[offset + length] >= '0'
+            && header[offset + length] <= '9')
+        length += 1;
+    return length;
+}
+
+static void print_u64(char *target, pl_u64 value)
+{
+    char reversed[24];
+    pl_u32 length = 0;
+    do {
+        reversed[length++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    } while (value);
+    for (pl_u32 i = 0; i < length; ++i) target[i] = reversed[length - 1u - i];
+    target[length] = 0;
+}
+
+static pl_u32 text_length(const char *text)
+{
+    pl_u32 length = 0;
+    while (text[length]) length += 1;
+    return length;
+}
+
+/* Queue a replacement for the integer named by `path`. */
+static int edit_field(const pl_u8 *header, pl_u32 bytes, header_edit *edits,
+                      pl_u32 *count, const char *path, pl_u64 value)
+{
+    if (*count >= MAX_EDITS) return -1;
+    pl_u32 offset;
+    if (pl_machine_header_locate(header, bytes, path, &offset)) return -1;
+    pl_u32 old = digits_at(header, bytes, offset);
+    if (!old) return -1;
+    edits[*count].offset = offset;
+    edits[*count].old_bytes = old;
+    print_u64(edits[*count].text, value);
+    *count += 1u;
+    return 0;
+}
+
+/* A region is a two-element array, so both members are spliced. */
+static int edit_region(const pl_u8 *header, pl_u32 bytes, header_edit *edits,
+                       pl_u32 *count, const char *path, pl_u64 offset_value,
+                       pl_u64 length_value)
+{
+    pl_u32 at;
+    if (pl_machine_header_locate(header, bytes, path, &at)) return -1;
+    if (at >= bytes || header[at] != '[') return -1;
+    pl_u32 first = at + 1u;
+    pl_u32 first_digits = digits_at(header, bytes, first);
+    pl_u32 comma = first + first_digits;
+    if (!first_digits || comma >= bytes || header[comma] != ',') return -1;
+    pl_u32 second = comma + 1u;
+    pl_u32 second_digits = digits_at(header, bytes, second);
+    if (!second_digits) return -1;
+    if (*count + 2u > MAX_EDITS) return -1;
+
+    edits[*count].offset = first;
+    edits[*count].old_bytes = first_digits;
+    print_u64(edits[*count].text, offset_value);
+    *count += 1u;
+    edits[*count].offset = second;
+    edits[*count].old_bytes = second_digits;
+    print_u64(edits[*count].text, length_value);
+    *count += 1u;
+    return 0;
+}
+
+/* Apply the queued edits, which must be in ascending offset order. */
+static pl_u32 apply_edits(const pl_u8 *header, pl_u32 bytes,
+                          const header_edit *edits, pl_u32 count,
+                          pl_u8 *target, pl_u32 capacity)
+{
+    pl_u32 read = 0;
+    pl_u32 written = 0;
+    for (pl_u32 index = 0; index < count; ++index) {
+        pl_u32 at = edits[index].offset;
+        if (at < read) return 0;                       /* edits overlap */
+        pl_u32 run = at - read;
+        pl_u32 text = text_length(edits[index].text);
+        if (capacity - written < run + text) return 0;
+        memcpy(target + written, header + read, run);
+        written += run;
+        memcpy(target + written, edits[index].text, text);
+        written += text;
+        read = at + edits[index].old_bytes;
+    }
+    if (capacity - written < bytes - read) return 0;
+    memcpy(target + written, header + read, bytes - read);
+    return written + (bytes - read);
+}
+
+static pl_u64 align_region(pl_u64 value, pl_u64 page)
+{
+    return (value + page - 1u) / page * page;
+}
+
+static int sort_edits(header_edit *edits, pl_u32 count)
+{
+    for (pl_u32 i = 1; i < count; ++i)
+        for (pl_u32 j = i; j && edits[j - 1u].offset > edits[j].offset; --j) {
+            header_edit swap = edits[j - 1u];
+            edits[j - 1u] = edits[j];
+            edits[j] = swap;
+        }
+    for (pl_u32 i = 1; i < count; ++i)
+        if (edits[i].offset < edits[i - 1u].offset + edits[i - 1u].old_bytes)
+            return -1;
+    return 0;
+}
+
 static int header_u32(const pl_u8 *header, pl_u32 bytes, const char *path,
                       pl_u32 *value)
 {
@@ -108,8 +239,10 @@ static int header_u32(const pl_u8 *header, pl_u32 bytes, const char *path,
 
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        fprintf(stderr, "usage: postlink-repack MACHINE\n");
+    const char *output = 0;
+    if (argc == 4 && !strcmp(argv[2], "--out")) output = argv[3];
+    else if (argc != 2) {
+        fprintf(stderr, "usage: postlink-repack MACHINE [--out FILE]\n");
         return 2;
     }
     FILE *handle = fopen(argv[1], "rb");
@@ -153,6 +286,7 @@ int main(int argc, char **argv)
             return 1;
         }
     counts.execution_bytes = (pl_u32)machine.execution.length;
+    counts.schema = machine.schema;
 
     pl_directory directory;
     if (pl_directory_open(payload + machine.descriptors.offset,
@@ -289,8 +423,127 @@ int main(int argc, char **argv)
     printf("  execution region         %12llu bytes\n",
            (unsigned long long)machine.execution.length);
 
+    if (!output || failures) {
+        table_close(&table);
+        free(block_rank);
+        free(payload);
+        return failures ? 1 : 0;
+    }
+
+    /* Build the descriptor region.  Only the continuation section changes; the
+     * block instances keep every field but their continuation rank, and the
+     * three directories in between are copied byte for byte. */
+    pl_u32 payload_bytes = table.arena_used - table.count;
+    pl_u32 new_continuation = (table.count + 1u) * 4u + payload_bytes;
+    pl_u64 new_descriptor_bytes = (pl_u64)directory.continuation_offset_base
+                                + new_continuation;
+    pl_u8 *descriptors = malloc(new_descriptor_bytes);
+    if (!descriptors) {
+        fprintf(stderr, "cannot allocate the descriptor region\n");
+        return 1;
+    }
+    const pl_u8 *source = payload + machine.descriptors.offset;
+    memcpy(descriptors, source, directory.continuation_offset_base);
+    for (pl_u32 index = 0; index < counts.block_count; ++index)
+        pl_write_u32(descriptors + (pl_u64)index * PL_BLOCK_INSTANCE_BYTES
+                     + 12u, block_rank[index]);
+    pl_u8 *offsets = descriptors + directory.continuation_offset_base;
+    pl_u8 *rows = offsets + (table.count + 1u) * 4u;
+    pl_u32 cursor = 0;
+    for (pl_u32 rank = 1; rank <= table.count; ++rank) {
+        pl_write_u32(offsets + (pl_u64)(rank - 1u) * 4u, cursor);
+        pl_u32 length = row_length(&table, rank);
+        memcpy(rows + cursor, row_bytes(&table, rank), length);
+        cursor += length;
+    }
+    pl_write_u32(offsets + (pl_u64)table.count * 4u, cursor);
+    if (cursor != payload_bytes) {
+        fprintf(stderr, "continuation payload did not tile\n");
+        return 1;
+    }
+
+    /* Region offsets depend on the header length, and the header carries those
+     * offsets, so iterate to a fixed point exactly as the Python writer does. */
+    pl_u32 magic_bytes = (pl_u32)sizeof PL_MACHINE_MAGIC_V6 - 1u;
+    pl_u64 page = machine.page_bytes;
+    pl_u64 memory_at = machine.memory.offset;
+    pl_u64 descriptors_at = machine.descriptors.offset;
+    pl_u64 execution_at = machine.execution.offset;
+    pl_u32 header_capacity = machine.header_bytes + 256u;
+    pl_u8 *new_header = malloc(header_capacity);
+    pl_u32 new_header_bytes = 0;
+    if (!new_header) { fprintf(stderr, "cannot allocate the header\n"); return 1; }
+
+    for (unsigned round = 0; round < 8u; ++round) {
+        header_edit edits[MAX_EDITS];
+        pl_u32 count = 0;
+        if (edit_field(header, machine.header_bytes, edits, &count,
+                       "continuation_bytes", payload_bytes)
+                || edit_field(header, machine.header_bytes, edits, &count,
+                              "continuation_count", table.count)
+                || edit_field(header, machine.header_bytes, edits, &count,
+                              "descriptor_bytes", new_descriptor_bytes)
+                || edit_region(header, machine.header_bytes, edits, &count,
+                               "regions.memory", memory_at,
+                               machine.memory.length)
+                || edit_region(header, machine.header_bytes, edits, &count,
+                               "regions.descriptors", descriptors_at,
+                               new_descriptor_bytes)
+                || edit_region(header, machine.header_bytes, edits, &count,
+                               "regions.execution", execution_at,
+                               machine.execution.length)
+                || sort_edits(edits, count)) {
+            fprintf(stderr, "cannot splice the header\n");
+            return 1;
+        }
+        new_header_bytes = apply_edits(header, machine.header_bytes, edits,
+                                       count, new_header, header_capacity);
+        if (!new_header_bytes) {
+            fprintf(stderr, "header splice overflowed\n");
+            return 1;
+        }
+        pl_u64 next_memory = align_region(magic_bytes + 4u + new_header_bytes,
+                                          page);
+        pl_u64 next_descriptors = align_region(
+            next_memory + machine.memory.length, page);
+        pl_u64 next_execution = align_region(
+            next_descriptors + new_descriptor_bytes, page);
+        if (next_memory == memory_at && next_descriptors == descriptors_at
+                && next_execution == execution_at)
+            break;
+        memory_at = next_memory;
+        descriptors_at = next_descriptors;
+        execution_at = next_execution;
+    }
+
+    pl_u64 total = execution_at + machine.execution.length;
+    pl_u8 *out = calloc(1, total);
+    if (!out) { fprintf(stderr, "cannot allocate the output\n"); return 1; }
+    memcpy(out, PL_MACHINE_MAGIC_V6, magic_bytes);
+    pl_write_u32(out + magic_bytes, new_header_bytes);
+    memcpy(out + magic_bytes + 4u, new_header, new_header_bytes);
+    memcpy(out + memory_at, payload + machine.memory.offset,
+           machine.memory.length);
+    memcpy(out + descriptors_at, descriptors, new_descriptor_bytes);
+    memcpy(out + execution_at, payload + machine.execution.offset,
+           machine.execution.length);
+
+    FILE *sink = fopen(output, "wb");
+    if (!sink || fwrite(out, 1, total, sink) != total) {
+        fprintf(stderr, "cannot write %s\n", output);
+        if (sink) fclose(sink);
+        return 1;
+    }
+    fclose(sink);
+    printf("\nwrote %s\n", output);
+    printf("  schema 6 payload         %12llu bytes  (was %ld)\n",
+           (unsigned long long)total, size);
+
+    free(out);
+    free(new_header);
+    free(descriptors);
     table_close(&table);
     free(block_rank);
     free(payload);
-    return failures ? 1 : 0;
+    return 0;
 }

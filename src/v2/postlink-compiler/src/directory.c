@@ -180,10 +180,24 @@ int pl_directory_admit(const pl_directory *directory, pl_u32 index,
         return PL_ERROR_RANK;
 
     pl_continuation relative;
-    status = pl_continuation_decode(
-        directory->descriptors + directory->continuation_payload_base + start,
-        end - start, &relative);
+    int chainable = 0;
+    pl_i64 chain_delta = 0;
+    const pl_u8 *row = directory->descriptors
+                     + directory->continuation_payload_base + start;
+    status = counts->schema >= 6u
+           ? pl_continuation_decode_chained(row, end - start, &relative,
+                                            &chainable, &chain_delta)
+           : pl_continuation_decode(row, end - start, &relative);
     if (status) return status;
+    if (chainable) {
+        pl_i64 target = (pl_i64)index + chain_delta;
+        if (target < 0 || (pl_u64)target >= counts->block_count)
+            return PL_ERROR_RANK;
+        out->chain_index = (pl_u32)target;
+    } else {
+        out->chain_index = 0;
+    }
+    out->chainable = chainable;
 
     out->rip = instance.rip;
     out->parameters.offset = parameter_offset;
