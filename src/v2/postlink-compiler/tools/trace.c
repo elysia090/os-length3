@@ -166,6 +166,10 @@ int main(int argc, char **argv)
          * width established over single templates has to be re-checked for the
          * pair. */
         if ((pl_u64)a.work + b.work > 255u) wider_node_space += 1;
+        /* An upper bound, not a decision.  A plan may reach for a stack
+         * operand it never declared as an input, and the operand value lives in
+         * the parameter row rather than the template, so the deciding test
+         * needs both and belongs with the composer. */
         if (b.stack_inputs > a.stack_count) starved += 1; else interface_ok += 1;
         /* compose_plans_raw refuses a pair whose plans belong to different
          * functions, so a fusible edge that crosses one is not composable. */
@@ -182,7 +186,7 @@ int main(int argc, char **argv)
     printf("composability of fusible edges\n");
     printf("  pairs with both parsed   %12llu\n", pairs);
     printf("  a template would not parse %10llu\n", unparsed);
-    printf("  successor inputs supplied %11llu\n", interface_ok);
+    printf("  inputs not ruled out     %12llu\n", interface_ok);
     printf("  successor wants more stack %10llu\n", starved);
     printf("  composed work > 255 nodes %11llu\n", wider_node_space);
     printf("  pair crosses a function  %12llu\n", crossing);

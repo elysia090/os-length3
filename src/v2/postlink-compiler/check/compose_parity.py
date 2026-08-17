@@ -76,6 +76,7 @@ def main():
     composed_bytes = 0
     pairs = 0
     refused = Counter()
+    stacks = Counter()
 
     for line in sys.stdin:
         parts = line.split()
@@ -96,6 +97,14 @@ def main():
             raw = compose_plans_raw(first, second)
         except Exception as error:                    # noqa: BLE001
             refused['compose: %s' % error] += 1
+            # The C precondition reads stack_count out of the template header;
+            # Python compares len(first.stack) with second.stack_inputs.  Print
+            # both so the disagreement is a fact rather than a hypothesis.
+            print('REFUSED %d -> %d: first stack=%d inputs=%d, '
+                  'second stack=%d inputs=%d'
+                  % (head, tail, len(first.stack), first.stack_inputs,
+                     len(second.stack), second.stack_inputs),
+                  file=sys.stderr)
             continue
 
         pairs += 1
@@ -121,6 +130,7 @@ def main():
         composed_work += c['work']
         summed_work += a['work'] + b['work']
         composed_bytes += len(raw.nodes)
+        stacks[(len(first.stack), second.stack_inputs)] += 1
 
     if not pairs:
         raise SystemExit('no pairs composed; refusals: %r' % dict(refused))
@@ -141,6 +151,10 @@ def main():
           % (summed_work, composed_work,
              composed_work / max(summed_work, 1)))
     print('nodes before normalization  %10d' % composed_bytes)
+    print()
+    print('(len(first.stack), second.stack_inputs) seen:')
+    for pair, n in stacks.most_common(6):
+        print('  %-16s %10d' % (pair, n))
     return 0
 
 
