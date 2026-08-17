@@ -28,8 +28,10 @@ static int header_u32(const pl_u8 *header, pl_u32 bytes, const char *path,
 
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        fprintf(stderr, "usage: postlink-trace MACHINE\n");
+    long emit_pairs = 0;
+    if (argc == 4 && !strcmp(argv[2], "--pairs")) emit_pairs = atol(argv[3]);
+    else if (argc != 2) {
+        fprintf(stderr, "usage: postlink-trace MACHINE [--pairs N]\n");
         return 2;
     }
     FILE *handle = fopen(argv[1], "rb");
@@ -168,12 +170,15 @@ int main(int argc, char **argv)
         /* compose_plans_raw refuses a pair whose plans belong to different
          * functions, so a fusible edge that crosses one is not composable. */
         if (a.function != b.function) crossing += 1;
+        if (emit_pairs > 0 && (long)pairs <= emit_pairs)
+            printf("%u %u\n", index, successor[index]);
         work_before += (pl_u64)a.work + b.work;
         span_before += (pl_u64)a.span + b.span;
         operands_before += (pl_u64)a.operands + b.operands;
         bytes_before += head.tmpl.length + tail.tmpl.length;
     }
 
+    if (emit_pairs > 0) { free(payload); return 0; }
     printf("composability of fusible edges\n");
     printf("  pairs with both parsed   %12llu\n", pairs);
     printf("  a template would not parse %10llu\n", unparsed);
