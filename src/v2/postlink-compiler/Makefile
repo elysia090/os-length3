@@ -1,0 +1,63 @@
+# The post-link compiler builds with gcc and nothing else.
+#
+#   make            the native driver and the self-test
+#   make check      run the self-test
+#   make parity     additionally prove the C codec against the Python writer
+#   make guest      a static binary for the x86 guest's own toolchain
+#
+# The library sources are freestanding: no libc, no builtins, no target
+# assumptions beyond two's complement.  Only the drivers under tools/ and
+# check/ use libc, so `make wasm` reuses the same objects unchanged.
+
+# `?=` would not override make's built-in default of `cc`, so name gcc only
+# when the value is still that default.
+ifeq ($(origin CC),default)
+CC = gcc
+endif
+CFLAGS  ?= -O2 -g
+WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -std=c11
+INCLUDE  = -Iinclude
+BUILD   ?= build
+
+LIB_SOURCES = src/format.c src/continuation.c src/machine.c
+LIB_OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(LIB_SOURCES))
+
+.PHONY: all check parity guest wasm clean
+
+all: $(BUILD)/postlink-inspect $(BUILD)/selftest
+
+$(BUILD):
+	mkdir -p $(BUILD)
+
+$(BUILD)/%.o: src/%.c | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) -ffreestanding -c $< -o $@
+
+$(BUILD)/postlink-inspect: tools/inspect.c $(LIB_OBJECTS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $^ -o $@
+
+$(BUILD)/selftest: check/selftest.c $(LIB_OBJECTS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $^ -o $@
+
+check: $(BUILD)/selftest
+	$(BUILD)/selftest
+
+# Proves the C codec against kernel/x86snapshot.py while both still exist.
+# This is a repository check, not part of the distributable.
+parity: $(BUILD)/selftest
+	$(BUILD)/selftest --vectors | python3 check/format_parity.py
+
+# The guest links statically: the read-only /usr layer has no dynamic loader
+# on the principal tools, and a post-link compiler that needs one could not
+# run inside the machine it compiles for.
+guest: CFLAGS += -static
+guest: all
+
+# The browser runtime compiles the same objects for wasm32.  It needs no
+# separate source tree, which is the point of keeping the library
+# freestanding.
+wasm: CC = clang
+wasm: CFLAGS += --target=wasm32 -nostdlib
+wasm: $(LIB_OBJECTS)
+
+clean:
+	rm -rf $(BUILD)
