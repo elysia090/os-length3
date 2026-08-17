@@ -4656,6 +4656,38 @@ class TestX86StateStep(unittest.TestCase):
         self.assertEqual(state.xmm[2:4],
                          (MASK32, MASK32))
 
+    def test_packed_qword_add_wraps_each_lane_independently(self):
+        right = struct.pack('<QQ', 3, MASK64)
+        code = bytes.fromhex(
+            '66 0f d4 c1 '
+            '66 0f d4 02 '
+            'f4')
+        state = initial_state(
+            memory_with((0x100, code), (0x400, right)),
+            0x100, {'rdx': 0x400},
+            xmm=(MASK64, 2, 2, MASK64) + (0,) * 28)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2], (4, 0))
+
+    def test_packed_and_accepts_register_and_memory_sources(self):
+        payload = struct.pack('<QQ', 0x0ff0, 0xf00f)
+        code = bytes.fromhex(
+            '66 0f db c1 '
+            '66 0f db 02 '
+            'f4')
+        state = initial_state(
+            memory_with((0x100, code), (0x400, payload)),
+            0x100, {'rdx': 0x400},
+            xmm=(0xffff, 0xffff, 0xf0f0, 0x0f0f) + (0,) * 28)
+
+        state, boundary, _cost = X86DBT().run(state)
+
+        self.assertEqual(boundary.operation, 'halt')
+        self.assertEqual(state.xmm[:2], (0x00f0, 0x000f))
+
     def test_packed_dword_unpack_and_low_store_share_resident_lanes(self):
         code = bytes.fromhex(
             '66 0f 62 c1 '

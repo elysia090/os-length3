@@ -84,24 +84,17 @@ verify_config_lock() {
 
 linux_tar="$upstream/linux-$LINUX_VERSION.tar.xz"
 busybox_tar="$upstream/busybox-$BUSYBOX_VERSION.tar.bz2"
-make_tar="$upstream/make-$MAKE_VERSION.tar.gz"
 fetch "$LINUX_URL" "$linux_tar" "$LINUX_SHA256"
 fetch "$BUSYBOX_URL" "$busybox_tar" "$BUSYBOX_SHA256"
-fetch "$MAKE_URL" "$make_tar" "$MAKE_SHA256"
 
 linux_src="$build/linux-$LINUX_VERSION"
 busybox_src="$build/busybox-$BUSYBOX_VERSION"
-make_src="$build/make-$MAKE_VERSION"
 if [[ ! -d "$linux_src" ]]; then
   tar -C "$build" -xf "$linux_tar"
 fi
 if [[ ! -d "$busybox_src" ]]; then
   tar -C "$build" -xf "$busybox_tar"
 fi
-if [[ ! -d "$make_src" ]]; then
-  tar -C "$build" -xf "$make_tar"
-fi
-
 busybox_o="$busybox_src"
 busybox_root="$build/busybox-root"
 busybox_cc=$(resolve_busybox_cc)
@@ -128,37 +121,10 @@ verify_config_lock "$busybox_src/.config" \
   "$here/config/busybox-$BUSYBOX_VERSION.config"
 install -D -m 0755 "$here/initramfs/init" "$busybox_root/init"
 install -d -m 0755 "$busybox_root/dev" "$busybox_root/proc" \
-  "$busybox_root/sys"
+  "$busybox_root/sys" "$busybox_root/system" "$busybox_root/usr" \
+  "$busybox_root/etc" "$busybox_root/etc/ssl"
 install -d -m 1777 "$busybox_root/tmp"
 
-# GNU make is the first deliberately non-BusyBox guest tool.  Build it from a
-# pinned upstream tarball with the same static musl compiler as BusyBox so the
-# initramfs never depends on a Nix store path or a guest dynamic loader.
-make_root="$build/make-root"
-make_bin="$make_root/bin/make"
-make_stamp="$make_src/.qm-build"
-make_key=$(
-  {
-    printf '%s\n' "$MAKE_SHA256"
-    printf '%s\n' 'gnu17-static-v1'
-    "$busybox_cc" --version | sed -n '1p'
-  } | sha256sum | cut -d' ' -f1
-)
-if [[ ! -x $make_bin ]] || [[ ! -f $make_stamp ]] || \
-   [[ $(<"$make_stamp") != "$make_key" ]]; then
-  if [[ -f $make_src/Makefile ]]; then
-    make -C "$make_src" distclean
-  fi
-  (
-    cd "$make_src"
-    CC="$busybox_cc" CFLAGS='-O2 -static -std=gnu17' LDFLAGS='-static' \
-      ./configure --prefix="$make_root" --disable-nls
-    make -j"$(nproc)"
-    make install
-  )
-  printf '%s\n' "$make_key" > "$make_stamp"
-fi
-install -D -m 0755 "$make_bin" "$busybox_root/bin/make"
 install -D -m 0644 "$here/bootstrap/Makefile" \
   "$busybox_root/opt/qm/Makefile"
 
@@ -190,12 +156,38 @@ initramfs="$out/busybox-$BUSYBOX_VERSION.cpio"
     --owner=0:0 --reproducible > "$initramfs"
 )
 
-command_line='console=ttyS0 earlycon=uart,io,0x3f8,115200n8 nokaslr rdinit=/init panic=-1 noapic nolapic acpi=off nosmp tsc=reliable'
+if [[ -z ${QM_TOOLCHAIN_TAR:-} ]] || [[ ! -f $QM_TOOLCHAIN_TAR ]]; then
+  printf 'QM_TOOLCHAIN_TAR must name the verified static system tar\n' >&2
+  exit 1
+fi
+if ! command -v mksquashfs >/dev/null 2>&1; then
+  printf 'mksquashfs is required to build the read-only system image\n' >&2
+  exit 1
+fi
+toolchain_digest=$(sha256sum "$QM_TOOLCHAIN_TAR" | cut -d' ' -f1)
+toolchain_fs="$out/toolchain-$toolchain_digest.squashfs"
+if [[ ! -f $toolchain_fs ]]; then
+  mksquashfs - "$toolchain_fs.tmp" -tar -noappend -no-exports \
+    -no-xattrs -comp zstd -b 65536 -repro-time 0 -numeric-owner \
+    -default-uid 0 -default-gid 0 -processors "$(nproc)" -no-progress \
+    < "$QM_TOOLCHAIN_TAR"
+  mv "$toolchain_fs.tmp" "$toolchain_fs"
+fi
+toolchain_bytes=$(stat -c %s "$toolchain_fs")
+toolchain_extent=$((
+  (toolchain_bytes + 65535) / 65536 * 65536
+))
+toolchain_address=$((256 * 1024 * 1024))
+printf -v toolchain_extent_hex '0x%x' "$toolchain_extent"
+printf -v toolchain_address_hex '0x%x' "$toolchain_address"
+
+command_line="console=ttyS0 earlycon=uart,io,0x3f8,115200n8 nokaslr rdinit=/init panic=-1 noapic nolapic tsc=reliable memmap=${toolchain_extent_hex}\$${toolchain_address_hex} phram.phram=toolchain,${toolchain_address_hex},${toolchain_bytes}"
 cd "$repo/src/v2"
 PYTHONPATH=. python3 tools/build_x86_boot_cache.py \
   "$linux_o/arch/x86/boot/bzImage" \
   "$out/linux-x86-64.boot" \
-  --memory-mib 128 --command-line "$command_line" \
+  --memory-mib 512 --command-line "$command_line" \
   --initrd "$initramfs" \
+  --physical-image "$toolchain_address" "$toolchain_fs" \
   --artifact-root "$repo/artifact" \
   --artifact-name linux-x86-64 --replace-artifact

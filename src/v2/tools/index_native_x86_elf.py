@@ -2,6 +2,7 @@
 """Build a content-addressed x86 instruction catalog from ELF files."""
 
 import argparse
+from collections import deque
 import hashlib
 import json
 from pathlib import Path
@@ -16,6 +17,11 @@ PAGE_BYTES = 4096
 PT_LOAD = 1
 PF_X = 1
 INSTRUCTION = re.compile(r'^\s*([0-9a-fA-F]+):\s+\S')
+CATALOG_MAGIC = b'X86CAT1\0'
+CATALOG_HEADER = struct.Struct('<8sI')
+CATALOG_OBJECT = struct.Struct('<32sI')
+CATALOG_PAGE = struct.Struct('<Q32sI')
+CATALOG_OFFSET = struct.Struct('<H')
 
 
 def _align_up(value, alignment=PAGE_BYTES):
@@ -69,18 +75,23 @@ def executable_pages(payload):
 
 
 def disassembled_entries(path, objdump):
-    completed = subprocess.run(
+    process = subprocess.Popen(
         (str(objdump), '-d', '--no-show-raw-insn', str(path)),
-        capture_output=True, text=True, encoding='utf-8', errors='replace',
-        check=False)
-    if completed.returncode:
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        encoding='utf-8', errors='replace')
+    entries = set()
+    tail = deque(maxlen=16)
+    for line in process.stdout:
+        tail.append(line.rstrip())
+        match = INSTRUCTION.match(line)
+        if match is not None:
+            entries.add(int(match.group(1), 16))
+    returncode = process.wait()
+    if returncode:
         raise RuntimeError(
             'objdump failed for %s: %s'
-            % (path, completed.stderr.strip()[-1000:]))
-    return tuple(sorted(set(
-        int(match.group(1), 16)
-        for line in completed.stdout.splitlines()
-        if (match := INSTRUCTION.match(line)) is not None)))
+            % (path, '\n'.join(tail)[-1000:]))
+    return tuple(sorted(entries))
 
 
 def index_elf(path, objdump):
@@ -110,6 +121,25 @@ def index_elf(path, objdump):
     }
 
 
+def compact_catalog(objects):
+    """Pack page-local entries without materializing JSON integer objects."""
+    output = bytearray(CATALOG_HEADER.pack(CATALOG_MAGIC, len(objects)))
+    for item in objects:
+        output.extend(CATALOG_OBJECT.pack(
+            bytes.fromhex(item['identity']), len(item['pages'])))
+        for page in item['pages']:
+            entries = tuple(page['entries'])
+            if any(not 0 <= int(offset) < PAGE_BYTES
+                   for offset in entries):
+                raise ValueError('instruction offset is outside page')
+            output.extend(CATALOG_PAGE.pack(
+                int(page['virtual_page'], 0),
+                bytes.fromhex(page['sha256']), len(entries)))
+            for offset in entries:
+                output.extend(CATALOG_OFFSET.pack(int(offset)))
+    return bytes(output)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('elf', type=Path, nargs='+')
@@ -120,14 +150,18 @@ def main(argv=None):
     for path in arguments.elf:
         record = index_elf(path, arguments.objdump)
         objects.setdefault(record['identity'], record)
+    object_records = [objects[key] for key in sorted(objects)]
     catalog = {
         'schema': 'native-x86-elf-page-catalog-v1',
-        'objects': [objects[key] for key in sorted(objects)],
+        'objects': object_records,
     }
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    arguments.output.write_text(
-        json.dumps(catalog, indent=2, sort_keys=True) + '\n',
-        encoding='utf-8', newline='\n')
+    if arguments.output.suffix == '.bin':
+        arguments.output.write_bytes(compact_catalog(object_records))
+    else:
+        arguments.output.write_text(
+            json.dumps(catalog, indent=2, sort_keys=True) + '\n',
+            encoding='utf-8', newline='\n')
     print(json.dumps({
         'objects': len(objects),
         'pages': sum(len(item['pages']) for item in objects.values()),

@@ -3,8 +3,9 @@
     "forwarded_memory_loads": 0,
     "grammar_misses": {
       "body-over-limit": 3,
-      "call-barrier": 43,
-      "control-barrier": 61
+      "call-barrier": 44,
+      "control-barrier": 61,
+      "state-barrier": 1
     },
     "pure_bodies": 8,
     "replaced": 0,
@@ -12,9 +13,9 @@
   },
   "schema": 1,
   "vm": {
-    "bytes": 100235,
+    "bytes": 100161,
     "delivery": {
-      "bytes": 37117,
+      "bytes": 37209,
       "data_shards": 8,
       "file": "vm.pages",
       "included_shards": "data",
@@ -22,941 +23,941 @@
       "page_bytes": 65536,
       "parity_shards": 2,
       "prefix_bytes": 220,
-      "prefix_sha256": "89c23dde28f7e5ebb50a4a4e3760f9d3682188e3d8a3ae4b1d980c7c5c281040",
-      "sha256": "4c5124cff69cac95c52b3b614f452c6db266d55652d6e476d8608055de1ab6a4",
+      "prefix_sha256": "15bf3f9a30bf1227e6543acd5404c334e938125f50a380b9a6f392cbc4414495",
+      "sha256": "eccadb99f1563ceba60983810bd8fe71427981a81062bb2460d024e7357aea39",
       "unique_pages": 2
     },
     "exports": {
       "vm_buffer": {
-        "body_end": 3215,
-        "body_ordinal": 0,
-        "body_start": 3207,
-        "function_index": 0,
-        "type_index": 0
-      },
-      "vm_cells": {
-        "body_end": 3224,
-        "body_ordinal": 1,
-        "body_start": 3216,
-        "function_index": 1,
-        "type_index": 0
-      },
-      "vm_dead": {
-        "body_end": 95936,
-        "body_ordinal": 183,
-        "body_start": 95919,
-        "function_index": 183,
-        "type_index": 0
-      },
-      "vm_direct_byte_state": {
-        "body_end": 3236,
+        "body_end": 3626,
         "body_ordinal": 2,
-        "body_start": 3225,
+        "body_start": 3618,
         "function_index": 2,
-        "type_index": 0
-      },
-      "vm_eval_batch_capacity": {
-        "body_end": 95474,
-        "body_ordinal": 171,
-        "body_start": 95468,
-        "function_index": 171,
-        "type_index": 0
-      },
-      "vm_eval_byte_combine": {
-        "body_end": 95788,
-        "body_ordinal": 172,
-        "body_start": 95476,
-        "function_index": 172,
-        "type_index": 7
-      },
-      "vm_eval_calls": {
-        "body_end": 95800,
-        "body_ordinal": 173,
-        "body_start": 95789,
-        "function_index": 173,
-        "type_index": 0
-      },
-      "vm_eval_i32_i32": {
-        "body_end": 94280,
-        "body_ordinal": 164,
-        "body_start": 94268,
-        "function_index": 164,
-        "type_index": 1
-      },
-      "vm_eval_i32_i64": {
-        "body_end": 95426,
-        "body_ordinal": 166,
-        "body_start": 95415,
-        "function_index": 166,
-        "type_index": 4
-      },
-      "vm_eval_i64_i32": {
-        "body_end": 95438,
-        "body_ordinal": 167,
-        "body_start": 95427,
-        "function_index": 167,
-        "type_index": 9
-      },
-      "vm_eval_i64_i64": {
-        "body_end": 95449,
-        "body_ordinal": 168,
-        "body_start": 95439,
-        "function_index": 168,
-        "type_index": 10
-      },
-      "vm_eval_misses": {
-        "body_end": 95812,
-        "body_ordinal": 174,
-        "body_start": 95801,
-        "function_index": 174,
-        "type_index": 0
-      },
-      "vm_eval_ok": {
-        "body_end": 95824,
-        "body_ordinal": 175,
-        "body_start": 95813,
-        "function_index": 175,
-        "type_index": 0
-      },
-      "vm_eval_source": {
-        "body_end": 95458,
-        "body_ordinal": 169,
-        "body_start": 95450,
-        "function_index": 169,
-        "type_index": 0
-      },
-      "vm_eval_target": {
-        "body_end": 95467,
-        "body_ordinal": 170,
-        "body_start": 95459,
-        "function_index": 170,
-        "type_index": 0
-      },
-      "vm_exhausted": {
-        "body_end": 95918,
-        "body_ordinal": 182,
-        "body_start": 95907,
-        "function_index": 182,
-        "type_index": 0
-      },
-      "vm_feed": {
-        "body_end": 12605,
-        "body_ordinal": 16,
-        "body_start": 11623,
-        "function_index": 16,
-        "type_index": 1
-      },
-      "vm_guest_begin": {
-        "body_end": 13278,
-        "body_ordinal": 25,
-        "body_start": 12984,
-        "function_index": 25,
-        "type_index": 1
-      },
-      "vm_guest_error": {
-        "body_end": 12729,
-        "body_ordinal": 22,
-        "body_start": 12718,
-        "function_index": 22,
-        "type_index": 0
-      },
-      "vm_guest_local": {
-        "body_end": 12705,
-        "body_ordinal": 20,
-        "body_start": 12664,
-        "function_index": 20,
-        "type_index": 4
-      },
-      "vm_guest_local_count": {
-        "body_end": 12663,
-        "body_ordinal": 19,
-        "body_start": 12652,
-        "function_index": 19,
-        "type_index": 0
-      },
-      "vm_guest_open": {
-        "body_end": 12982,
-        "body_ordinal": 24,
-        "body_start": 12743,
-        "function_index": 24,
-        "type_index": 7
-      },
-      "vm_guest_page_buffer": {
-        "body_end": 12642,
-        "body_ordinal": 17,
-        "body_start": 12606,
-        "function_index": 17,
-        "type_index": 0
-      },
-      "vm_guest_requested_page": {
-        "body_end": 12717,
-        "body_ordinal": 21,
-        "body_start": 12706,
-        "function_index": 21,
-        "type_index": 0
-      },
-      "vm_guest_result": {
-        "body_end": 12741,
-        "body_ordinal": 23,
-        "body_start": 12730,
-        "function_index": 23,
-        "type_index": 5
-      },
-      "vm_guest_step": {
-        "body_end": 18073,
-        "body_ordinal": 27,
-        "body_start": 13402,
-        "function_index": 27,
-        "type_index": 1
-      },
-      "vm_guest_supply_code": {
-        "body_end": 13400,
-        "body_ordinal": 26,
-        "body_start": 13279,
-        "function_index": 26,
         "type_index": 2
       },
-      "vm_guest_values": {
-        "body_end": 12651,
+      "vm_cells": {
+        "body_end": 3635,
+        "body_ordinal": 3,
+        "body_start": 3627,
+        "function_index": 3,
+        "type_index": 2
+      },
+      "vm_dead": {
+        "body_end": 95733,
+        "body_ordinal": 185,
+        "body_start": 95716,
+        "function_index": 185,
+        "type_index": 2
+      },
+      "vm_direct_byte_state": {
+        "body_end": 3647,
+        "body_ordinal": 4,
+        "body_start": 3636,
+        "function_index": 4,
+        "type_index": 2
+      },
+      "vm_eval_batch_capacity": {
+        "body_end": 95271,
+        "body_ordinal": 173,
+        "body_start": 95265,
+        "function_index": 173,
+        "type_index": 2
+      },
+      "vm_eval_byte_combine": {
+        "body_end": 95585,
+        "body_ordinal": 174,
+        "body_start": 95273,
+        "function_index": 174,
+        "type_index": 9
+      },
+      "vm_eval_calls": {
+        "body_end": 95597,
+        "body_ordinal": 175,
+        "body_start": 95586,
+        "function_index": 175,
+        "type_index": 2
+      },
+      "vm_eval_i32_i32": {
+        "body_end": 94112,
+        "body_ordinal": 166,
+        "body_start": 94100,
+        "function_index": 166,
+        "type_index": 3
+      },
+      "vm_eval_i32_i64": {
+        "body_end": 95223,
+        "body_ordinal": 168,
+        "body_start": 95212,
+        "function_index": 168,
+        "type_index": 6
+      },
+      "vm_eval_i64_i32": {
+        "body_end": 95235,
+        "body_ordinal": 169,
+        "body_start": 95224,
+        "function_index": 169,
+        "type_index": 11
+      },
+      "vm_eval_i64_i64": {
+        "body_end": 95246,
+        "body_ordinal": 170,
+        "body_start": 95236,
+        "function_index": 170,
+        "type_index": 12
+      },
+      "vm_eval_misses": {
+        "body_end": 95609,
+        "body_ordinal": 176,
+        "body_start": 95598,
+        "function_index": 176,
+        "type_index": 2
+      },
+      "vm_eval_ok": {
+        "body_end": 95621,
+        "body_ordinal": 177,
+        "body_start": 95610,
+        "function_index": 177,
+        "type_index": 2
+      },
+      "vm_eval_source": {
+        "body_end": 95255,
+        "body_ordinal": 171,
+        "body_start": 95247,
+        "function_index": 171,
+        "type_index": 2
+      },
+      "vm_eval_target": {
+        "body_end": 95264,
+        "body_ordinal": 172,
+        "body_start": 95256,
+        "function_index": 172,
+        "type_index": 2
+      },
+      "vm_exhausted": {
+        "body_end": 95715,
+        "body_ordinal": 184,
+        "body_start": 95704,
+        "function_index": 184,
+        "type_index": 2
+      },
+      "vm_feed": {
+        "body_end": 13001,
         "body_ordinal": 18,
-        "body_start": 12643,
+        "body_start": 12019,
         "function_index": 18,
-        "type_index": 0
+        "type_index": 3
+      },
+      "vm_guest_begin": {
+        "body_end": 13674,
+        "body_ordinal": 27,
+        "body_start": 13380,
+        "function_index": 27,
+        "type_index": 3
+      },
+      "vm_guest_error": {
+        "body_end": 13125,
+        "body_ordinal": 24,
+        "body_start": 13114,
+        "function_index": 24,
+        "type_index": 2
+      },
+      "vm_guest_local": {
+        "body_end": 13101,
+        "body_ordinal": 22,
+        "body_start": 13060,
+        "function_index": 22,
+        "type_index": 6
+      },
+      "vm_guest_local_count": {
+        "body_end": 13059,
+        "body_ordinal": 21,
+        "body_start": 13048,
+        "function_index": 21,
+        "type_index": 2
+      },
+      "vm_guest_open": {
+        "body_end": 13378,
+        "body_ordinal": 26,
+        "body_start": 13139,
+        "function_index": 26,
+        "type_index": 9
+      },
+      "vm_guest_page_buffer": {
+        "body_end": 13038,
+        "body_ordinal": 19,
+        "body_start": 13002,
+        "function_index": 19,
+        "type_index": 2
+      },
+      "vm_guest_requested_page": {
+        "body_end": 13113,
+        "body_ordinal": 23,
+        "body_start": 13102,
+        "function_index": 23,
+        "type_index": 2
+      },
+      "vm_guest_result": {
+        "body_end": 13137,
+        "body_ordinal": 25,
+        "body_start": 13126,
+        "function_index": 25,
+        "type_index": 7
+      },
+      "vm_guest_step": {
+        "body_end": 18443,
+        "body_ordinal": 29,
+        "body_start": 13798,
+        "function_index": 29,
+        "type_index": 3
+      },
+      "vm_guest_supply_code": {
+        "body_end": 13796,
+        "body_ordinal": 28,
+        "body_start": 13675,
+        "function_index": 28,
+        "type_index": 4
+      },
+      "vm_guest_values": {
+        "body_end": 13047,
+        "body_ordinal": 20,
+        "body_start": 13039,
+        "function_index": 20,
+        "type_index": 2
       },
       "vm_load": {
-        "body_end": 7989,
-        "body_ordinal": 11,
-        "body_start": 6145,
-        "function_index": 11,
-        "type_index": 1
+        "body_end": 8391,
+        "body_ordinal": 13,
+        "body_start": 6547,
+        "function_index": 13,
+        "type_index": 3
       },
       "vm_load_error": {
-        "body_end": 95906,
-        "body_ordinal": 181,
-        "body_start": 95895,
-        "function_index": 181,
-        "type_index": 0
+        "body_end": 95703,
+        "body_ordinal": 183,
+        "body_start": 95692,
+        "function_index": 183,
+        "type_index": 2
       },
       "vm_overflowed": {
-        "body_end": 95882,
-        "body_ordinal": 179,
-        "body_start": 95871,
-        "function_index": 179,
-        "type_index": 0
+        "body_end": 95679,
+        "body_ordinal": 181,
+        "body_start": 95668,
+        "function_index": 181,
+        "type_index": 2
       },
       "vm_prepare_eval": {
-        "body_end": 94267,
-        "body_ordinal": 163,
-        "body_start": 93985,
-        "function_index": 163,
-        "type_index": 8
+        "body_end": 94099,
+        "body_ordinal": 165,
+        "body_start": 93817,
+        "function_index": 165,
+        "type_index": 10
       },
       "vm_program_apply_barrier": {
-        "body_end": 57585,
-        "body_ordinal": 85,
-        "body_start": 55522,
-        "function_index": 85,
-        "type_index": 6
+        "body_end": 57662,
+        "body_ordinal": 88,
+        "body_start": 55539,
+        "function_index": 88,
+        "type_index": 8
       },
       "vm_program_apply_step": {
-        "body_end": 55520,
-        "body_ordinal": 84,
-        "body_start": 54082,
-        "function_index": 84,
-        "type_index": 6
+        "body_end": 55537,
+        "body_ordinal": 87,
+        "body_start": 54107,
+        "function_index": 87,
+        "type_index": 8
       },
       "vm_program_error": {
-        "body_end": 54033,
-        "body_ordinal": 82,
-        "body_start": 53986,
-        "function_index": 82,
-        "type_index": 9
+        "body_end": 54058,
+        "body_ordinal": 85,
+        "body_start": 54011,
+        "function_index": 85,
+        "type_index": 11
       },
       "vm_program_function": {
-        "body_end": 53865,
-        "body_ordinal": 79,
-        "body_start": 53806,
-        "function_index": 79,
-        "type_index": 9
+        "body_end": 53890,
+        "body_ordinal": 82,
+        "body_start": 53831,
+        "function_index": 82,
+        "type_index": 11
       },
       "vm_program_globals": {
-        "body_end": 53675,
-        "body_ordinal": 76,
-        "body_start": 53631,
-        "function_index": 76,
-        "type_index": 9
+        "body_end": 53700,
+        "body_ordinal": 79,
+        "body_start": 53656,
+        "function_index": 79,
+        "type_index": 11
       },
       "vm_program_halted": {
-        "body_end": 54080,
-        "body_ordinal": 83,
-        "body_start": 54034,
-        "function_index": 83,
-        "type_index": 9
+        "body_end": 54105,
+        "body_ordinal": 86,
+        "body_start": 54059,
+        "function_index": 86,
+        "type_index": 11
       },
       "vm_program_locals": {
-        "body_end": 53630,
-        "body_ordinal": 75,
-        "body_start": 53586,
-        "function_index": 75,
-        "type_index": 9
+        "body_end": 53655,
+        "body_ordinal": 78,
+        "body_start": 53611,
+        "function_index": 78,
+        "type_index": 11
       },
       "vm_program_open": {
-        "body_end": 53585,
-        "body_ordinal": 74,
-        "body_start": 53162,
-        "function_index": 74,
-        "type_index": 22
+        "body_end": 53610,
+        "body_ordinal": 77,
+        "body_start": 53187,
+        "function_index": 77,
+        "type_index": 24
       },
       "vm_program_pc": {
-        "body_end": 53925,
-        "body_ordinal": 80,
-        "body_start": 53866,
-        "function_index": 80,
-        "type_index": 9
+        "body_end": 53950,
+        "body_ordinal": 83,
+        "body_start": 53891,
+        "function_index": 83,
+        "type_index": 11
       },
       "vm_program_result_count": {
-        "body_end": 53805,
-        "body_ordinal": 78,
-        "body_start": 53746,
-        "function_index": 78,
-        "type_index": 9
+        "body_end": 53830,
+        "body_ordinal": 81,
+        "body_start": 53771,
+        "function_index": 81,
+        "type_index": 11
       },
       "vm_program_results": {
-        "body_end": 53745,
-        "body_ordinal": 77,
-        "body_start": 53676,
-        "function_index": 77,
-        "type_index": 9
+        "body_end": 53770,
+        "body_ordinal": 80,
+        "body_start": 53701,
+        "function_index": 80,
+        "type_index": 11
       },
       "vm_program_stack_size": {
-        "body_end": 53985,
-        "body_ordinal": 81,
-        "body_start": 53926,
-        "function_index": 81,
-        "type_index": 9
+        "body_end": 54010,
+        "body_ordinal": 84,
+        "body_start": 53951,
+        "function_index": 84,
+        "type_index": 11
       },
       "vm_read": {
-        "body_end": 11017,
-        "body_ordinal": 14,
-        "body_start": 10418,
-        "function_index": 14,
-        "type_index": 0
+        "body_end": 11413,
+        "body_ordinal": 16,
+        "body_start": 10814,
+        "function_index": 16,
+        "type_index": 2
       },
       "vm_set_budget": {
-        "body_end": 95846,
-        "body_ordinal": 176,
-        "body_start": 95825,
-        "function_index": 176,
-        "type_index": 32
+        "body_end": 95643,
+        "body_ordinal": 178,
+        "body_start": 95622,
+        "function_index": 178,
+        "type_index": 33
       },
       "vm_set_sponge_tail_size": {
-        "body_end": 3303,
-        "body_ordinal": 6,
-        "body_start": 3267,
-        "function_index": 6,
-        "type_index": 1
+        "body_end": 3714,
+        "body_ordinal": 8,
+        "body_start": 3678,
+        "function_index": 8,
+        "type_index": 3
       },
       "vm_sponge_lanes": {
-        "body_end": 3245,
-        "body_ordinal": 3,
-        "body_start": 3237,
-        "function_index": 3,
-        "type_index": 0
+        "body_end": 3656,
+        "body_ordinal": 5,
+        "body_start": 3648,
+        "function_index": 5,
+        "type_index": 2
       },
       "vm_sponge_records": {
-        "body_end": 4262,
+        "body_end": 4664,
+        "body_ordinal": 9,
+        "body_start": 3716,
+        "function_index": 9,
+        "type_index": 4
+      },
+      "vm_sponge_tail": {
+        "body_end": 3665,
+        "body_ordinal": 6,
+        "body_start": 3657,
+        "function_index": 6,
+        "type_index": 2
+      },
+      "vm_sponge_tail_size": {
+        "body_end": 3677,
         "body_ordinal": 7,
-        "body_start": 3305,
+        "body_start": 3666,
         "function_index": 7,
         "type_index": 2
       },
-      "vm_sponge_tail": {
-        "body_end": 3254,
-        "body_ordinal": 4,
-        "body_start": 3246,
-        "function_index": 4,
-        "type_index": 0
-      },
-      "vm_sponge_tail_size": {
-        "body_end": 3266,
-        "body_ordinal": 5,
-        "body_start": 3255,
-        "function_index": 5,
-        "type_index": 0
-      },
       "vm_step_ack_memory_coordinate": {
-        "body_end": 23919,
+        "body_end": 24289,
+        "body_ordinal": 58,
+        "body_start": 24275,
+        "function_index": 58,
+        "type_index": 17
+      },
+      "vm_step_ack_memory_page": {
+        "body_end": 23910,
         "body_ordinal": 56,
-        "body_start": 23905,
+        "body_start": 23895,
         "function_index": 56,
         "type_index": 16
       },
-      "vm_step_ack_memory_page": {
-        "body_end": 23540,
-        "body_ordinal": 54,
-        "body_start": 23525,
-        "function_index": 54,
-        "type_index": 15
-      },
       "vm_step_acquire": {
-        "body_end": 19737,
-        "body_ordinal": 30,
-        "body_start": 19185,
-        "function_index": 30,
-        "type_index": 5
+        "body_end": 20107,
+        "body_ordinal": 32,
+        "body_start": 19555,
+        "function_index": 32,
+        "type_index": 7
       },
       "vm_step_buffer": {
-        "body_end": 20473,
-        "body_ordinal": 32,
-        "body_start": 20429,
-        "function_index": 32,
-        "type_index": 9
+        "body_end": 20843,
+        "body_ordinal": 34,
+        "body_start": 20799,
+        "function_index": 34,
+        "type_index": 11
       },
       "vm_step_error": {
-        "body_end": 20947,
-        "body_ordinal": 42,
-        "body_start": 20900,
-        "function_index": 42,
-        "type_index": 9
+        "body_end": 21317,
+        "body_ordinal": 44,
+        "body_start": 21270,
+        "function_index": 44,
+        "type_index": 11
       },
       "vm_step_execute": {
-        "body_end": 48299,
-        "body_ordinal": 62,
-        "body_start": 27748,
-        "function_index": 62,
-        "type_index": 18
+        "body_end": 48050,
+        "body_ordinal": 64,
+        "body_start": 28110,
+        "function_index": 64,
+        "type_index": 19
       },
       "vm_step_first_dirty_memory_coordinate": {
-        "body_end": 24633,
-        "body_ordinal": 59,
-        "body_start": 24474,
-        "function_index": 59,
-        "type_index": 10
+        "body_end": 25003,
+        "body_ordinal": 61,
+        "body_start": 24844,
+        "function_index": 61,
+        "type_index": 12
       },
       "vm_step_first_dirty_memory_page": {
-        "body_end": 24099,
-        "body_ordinal": 57,
-        "body_start": 23921,
-        "function_index": 57,
-        "type_index": 9
+        "body_end": 24469,
+        "body_ordinal": 59,
+        "body_start": 24291,
+        "function_index": 59,
+        "type_index": 11
       },
       "vm_step_function": {
-        "body_end": 20755,
-        "body_ordinal": 38,
-        "body_start": 20708,
-        "function_index": 38,
-        "type_index": 9
+        "body_end": 21125,
+        "body_ordinal": 40,
+        "body_start": 21078,
+        "function_index": 40,
+        "type_index": 11
       },
       "vm_step_input_stack_size": {
-        "body_end": 20611,
-        "body_ordinal": 35,
-        "body_start": 20564,
-        "function_index": 35,
-        "type_index": 9
+        "body_end": 20981,
+        "body_ordinal": 37,
+        "body_start": 20934,
+        "function_index": 37,
+        "type_index": 11
       },
       "vm_step_local_size": {
-        "body_end": 20707,
-        "body_ordinal": 37,
-        "body_start": 20660,
-        "function_index": 37,
-        "type_index": 9
+        "body_end": 21077,
+        "body_ordinal": 39,
+        "body_start": 21030,
+        "function_index": 39,
+        "type_index": 11
       },
       "vm_step_locals": {
-        "body_end": 20518,
-        "body_ordinal": 33,
-        "body_start": 20474,
-        "function_index": 33,
-        "type_index": 9
+        "body_end": 20888,
+        "body_ordinal": 35,
+        "body_start": 20844,
+        "function_index": 35,
+        "type_index": 11
       },
       "vm_step_memory_coordinate": {
-        "body_end": 22426,
+        "body_end": 22796,
+        "body_ordinal": 50,
+        "body_start": 22684,
+        "function_index": 50,
+        "type_index": 1
+      },
+      "vm_step_memory_generation": {
+        "body_end": 22492,
+        "body_ordinal": 47,
+        "body_start": 22445,
+        "function_index": 47,
+        "type_index": 12
+      },
+      "vm_step_memory_lease": {
+        "body_end": 22552,
         "body_ordinal": 48,
-        "body_start": 22314,
+        "body_start": 22493,
         "function_index": 48,
         "type_index": 12
       },
-      "vm_step_memory_generation": {
-        "body_end": 22122,
-        "body_ordinal": 45,
-        "body_start": 22075,
-        "function_index": 45,
-        "type_index": 10
-      },
-      "vm_step_memory_lease": {
-        "body_end": 22182,
-        "body_ordinal": 46,
-        "body_start": 22123,
-        "function_index": 46,
-        "type_index": 10
-      },
       "vm_step_memory_open": {
-        "body_end": 21503,
-        "body_ordinal": 43,
-        "body_start": 20949,
-        "function_index": 43,
-        "type_index": 6
+        "body_end": 21873,
+        "body_ordinal": 45,
+        "body_start": 21319,
+        "function_index": 45,
+        "type_index": 8
       },
       "vm_step_memory_open_virtual": {
-        "body_end": 22074,
-        "body_ordinal": 44,
-        "body_start": 21505,
-        "function_index": 44,
-        "type_index": 6
+        "body_end": 22444,
+        "body_ordinal": 46,
+        "body_start": 21875,
+        "function_index": 46,
+        "type_index": 8
       },
       "vm_step_memory_page": {
-        "body_end": 22313,
-        "body_ordinal": 47,
-        "body_start": 22184,
-        "function_index": 47,
-        "type_index": 11
+        "body_end": 22683,
+        "body_ordinal": 49,
+        "body_start": 22554,
+        "function_index": 49,
+        "type_index": 13
       },
       "vm_step_memory_page_buffer": {
-        "body_end": 22553,
-        "body_ordinal": 49,
-        "body_start": 22427,
-        "function_index": 49,
-        "type_index": 11
-      },
-      "vm_step_memory_page_size": {
-        "body_end": 22793,
-        "body_ordinal": 50,
-        "body_start": 22555,
-        "function_index": 50,
-        "type_index": 11
-      },
-      "vm_step_next_pc": {
-        "body_end": 20803,
-        "body_ordinal": 39,
-        "body_start": 20756,
-        "function_index": 39,
-        "type_index": 9
-      },
-      "vm_step_open": {
-        "body_end": 27260,
-        "body_ordinal": 60,
-        "body_start": 24635,
-        "function_index": 60,
-        "type_index": 6
-      },
-      "vm_step_release": {
-        "body_end": 20428,
-        "body_ordinal": 31,
-        "body_start": 19739,
-        "function_index": 31,
-        "type_index": 9
-      },
-      "vm_step_span": {
-        "body_end": 20899,
-        "body_ordinal": 41,
-        "body_start": 20852,
-        "function_index": 41,
-        "type_index": 9
-      },
-      "vm_step_stack": {
-        "body_end": 20563,
-        "body_ordinal": 34,
-        "body_start": 20519,
-        "function_index": 34,
-        "type_index": 9
-      },
-      "vm_step_stack_size": {
-        "body_end": 20659,
-        "body_ordinal": 36,
-        "body_start": 20612,
-        "function_index": 36,
-        "type_index": 9
-      },
-      "vm_step_supply_memory_coordinate": {
-        "body_end": 23524,
-        "body_ordinal": 53,
-        "body_start": 23508,
-        "function_index": 53,
-        "type_index": 14
-      },
-      "vm_step_supply_memory_page": {
-        "body_end": 22811,
+        "body_end": 22923,
         "body_ordinal": 51,
-        "body_start": 22794,
+        "body_start": 22797,
         "function_index": 51,
         "type_index": 13
       },
-      "vm_step_work": {
-        "body_end": 20851,
-        "body_ordinal": 40,
-        "body_start": 20804,
-        "function_index": 40,
-        "type_index": 9
+      "vm_step_memory_page_size": {
+        "body_end": 23163,
+        "body_ordinal": 52,
+        "body_start": 22925,
+        "function_index": 52,
+        "type_index": 13
       },
-      "vm_steps_high": {
-        "body_end": 95870,
-        "body_ordinal": 178,
-        "body_start": 95859,
-        "function_index": 178,
-        "type_index": 0
-      },
-      "vm_steps_low": {
-        "body_end": 95858,
-        "body_ordinal": 177,
-        "body_start": 95847,
-        "function_index": 177,
-        "type_index": 0
-      },
-      "vm_table_full": {
-        "body_end": 95894,
-        "body_ordinal": 180,
-        "body_start": 95883,
-        "function_index": 180,
-        "type_index": 0
-      },
-      "vm_x86_ack_console": {
-        "body_end": 65877,
-        "body_ordinal": 102,
-        "body_start": 65757,
-        "function_index": 102,
+      "vm_step_next_pc": {
+        "body_end": 21173,
+        "body_ordinal": 41,
+        "body_start": 21126,
+        "function_index": 41,
         "type_index": 11
       },
-      "vm_x86_ack_physical": {
-        "body_end": 65396,
-        "body_ordinal": 97,
-        "body_start": 64977,
-        "function_index": 97,
-        "type_index": 16
+      "vm_step_open": {
+        "body_end": 27626,
+        "body_ordinal": 62,
+        "body_start": 25005,
+        "function_index": 62,
+        "type_index": 8
       },
-      "vm_x86_clock_lease": {
-        "body_end": 67221,
-        "body_ordinal": 112,
-        "body_start": 67162,
-        "function_index": 112,
-        "type_index": 10
-      },
-      "vm_x86_console_count": {
-        "body_end": 67075,
-        "body_ordinal": 110,
-        "body_start": 67016,
-        "function_index": 110,
-        "type_index": 9
-      },
-      "vm_x86_console_feed": {
-        "body_end": 66345,
-        "body_ordinal": 106,
-        "body_start": 66200,
-        "function_index": 106,
-        "type_index": 6
-      },
-      "vm_x86_console_lease": {
-        "body_end": 65456,
-        "body_ordinal": 98,
-        "body_start": 65397,
-        "function_index": 98,
-        "type_index": 10
-      },
-      "vm_x86_console_output_count": {
-        "body_end": 65647,
-        "body_ordinal": 100,
-        "body_start": 65552,
-        "function_index": 100,
+      "vm_step_release": {
+        "body_end": 20798,
+        "body_ordinal": 33,
+        "body_start": 20109,
+        "function_index": 33,
         "type_index": 11
       },
-      "vm_x86_console_output_peek": {
-        "body_end": 65756,
-        "body_ordinal": 101,
-        "body_start": 65648,
-        "function_index": 101,
+      "vm_step_span": {
+        "body_end": 21269,
+        "body_ordinal": 43,
+        "body_start": 21222,
+        "function_index": 43,
+        "type_index": 11
+      },
+      "vm_step_stack": {
+        "body_end": 20933,
+        "body_ordinal": 36,
+        "body_start": 20889,
+        "function_index": 36,
+        "type_index": 11
+      },
+      "vm_step_stack_size": {
+        "body_end": 21029,
+        "body_ordinal": 38,
+        "body_start": 20982,
+        "function_index": 38,
+        "type_index": 11
+      },
+      "vm_step_supply_memory_coordinate": {
+        "body_end": 23894,
+        "body_ordinal": 55,
+        "body_start": 23878,
+        "function_index": 55,
         "type_index": 15
       },
-      "vm_x86_console_peek": {
-        "body_end": 67161,
-        "body_ordinal": 111,
-        "body_start": 67076,
-        "function_index": 111,
-        "type_index": 6
-      },
-      "vm_x86_console_value": {
-        "body_end": 65551,
-        "body_ordinal": 99,
-        "body_start": 65457,
-        "function_index": 99,
-        "type_index": 11
-      },
-      "vm_x86_cr0": {
-        "body_end": 68556,
-        "body_ordinal": 125,
-        "body_start": 68497,
-        "function_index": 125,
-        "type_index": 10
-      },
-      "vm_x86_cr3": {
-        "body_end": 68616,
-        "body_ordinal": 126,
-        "body_start": 68557,
-        "function_index": 126,
-        "type_index": 10
-      },
-      "vm_x86_cr4": {
-        "body_end": 68676,
-        "body_ordinal": 127,
-        "body_start": 68617,
-        "function_index": 127,
-        "type_index": 10
-      },
-      "vm_x86_efer": {
-        "body_end": 68736,
-        "body_ordinal": 128,
-        "body_start": 68677,
-        "function_index": 128,
-        "type_index": 10
-      },
-      "vm_x86_entropy_lease": {
-        "body_end": 67744,
-        "body_ordinal": 115,
-        "body_start": 67685,
-        "function_index": 115,
-        "type_index": 10
-      },
-      "vm_x86_error": {
-        "body_end": 68988,
-        "body_ordinal": 133,
-        "body_start": 68941,
-        "function_index": 133,
-        "type_index": 9
-      },
-      "vm_x86_execute": {
-        "body_end": 87016,
-        "body_ordinal": 147,
-        "body_start": 78160,
-        "function_index": 147,
-        "type_index": 9
-      },
-      "vm_x86_execute_quantum": {
-        "body_end": 93887,
-        "body_ordinal": 160,
-        "body_start": 92927,
-        "function_index": 160,
-        "type_index": 6
-      },
-      "vm_x86_first_dirty_physical_page": {
-        "body_end": 60161,
-        "body_ordinal": 88,
-        "body_start": 59535,
-        "function_index": 88,
-        "type_index": 10
-      },
-      "vm_x86_halted": {
-        "body_end": 69035,
-        "body_ordinal": 134,
-        "body_start": 68989,
-        "function_index": 134,
-        "type_index": 9
-      },
-      "vm_x86_io_valid": {
-        "body_end": 66461,
-        "body_ordinal": 107,
-        "body_start": 66346,
-        "function_index": 107,
-        "type_index": 6
-      },
-      "vm_x86_io_value": {
-        "body_end": 66693,
-        "body_ordinal": 108,
-        "body_start": 66463,
-        "function_index": 108,
-        "type_index": 25
-      },
-      "vm_x86_load_block": {
-        "body_end": 69056,
-        "body_ordinal": 135,
-        "body_start": 69036,
-        "function_index": 135,
-        "type_index": 6
-      },
-      "vm_x86_load_cached_block": {
-        "body_end": 78158,
-        "body_ordinal": 146,
-        "body_start": 77446,
-        "function_index": 146,
-        "type_index": 9
-      },
-      "vm_x86_msr_count": {
-        "body_end": 68376,
-        "body_ordinal": 122,
-        "body_start": 68292,
-        "function_index": 122,
-        "type_index": 6
-      },
-      "vm_x86_msr_extent": {
-        "body_end": 68796,
-        "body_ordinal": 129,
-        "body_start": 68737,
-        "function_index": 129,
-        "type_index": 9
-      },
-      "vm_x86_msr_keys": {
-        "body_end": 68234,
-        "body_ordinal": 120,
-        "body_start": 68178,
-        "function_index": 120,
-        "type_index": 9
-      },
-      "vm_x86_msr_values": {
-        "body_end": 68291,
-        "body_ordinal": 121,
-        "body_start": 68235,
-        "function_index": 121,
-        "type_index": 9
-      },
-      "vm_x86_open": {
-        "body_end": 59473,
-        "body_ordinal": 86,
-        "body_start": 57587,
-        "function_index": 86,
-        "type_index": 23
-      },
-      "vm_x86_pending_console_output_count": {
-        "body_end": 66114,
-        "body_ordinal": 104,
-        "body_start": 66055,
-        "function_index": 104,
-        "type_index": 9
-      },
-      "vm_x86_pending_console_output_peek": {
-        "body_end": 66198,
-        "body_ordinal": 105,
-        "body_start": 66115,
-        "function_index": 105,
-        "type_index": 6
-      },
-      "vm_x86_physical_buffer": {
-        "body_end": 64313,
-        "body_ordinal": 95,
-        "body_start": 64221,
-        "function_index": 95,
-        "type_index": 11
-      },
-      "vm_x86_physical_coordinate": {
-        "body_end": 64220,
-        "body_ordinal": 94,
-        "body_start": 64136,
-        "function_index": 94,
-        "type_index": 12
-      },
-      "vm_x86_physical_lease": {
-        "body_end": 59533,
-        "body_ordinal": 87,
-        "body_start": 59474,
-        "function_index": 87,
-        "type_index": 10
-      },
-      "vm_x86_quantum_blocks": {
-        "body_end": 93935,
-        "body_ordinal": 161,
-        "body_start": 93888,
-        "function_index": 161,
-        "type_index": 9
-      },
-      "vm_x86_quantum_cache_hits": {
-        "body_end": 93983,
-        "body_ordinal": 162,
-        "body_start": 93936,
-        "function_index": 162,
-        "type_index": 9
-      },
-      "vm_x86_registers": {
-        "body_end": 68063,
-        "body_ordinal": 117,
-        "body_start": 68004,
-        "function_index": 117,
-        "type_index": 9
-      },
-      "vm_x86_restore_console_output": {
-        "body_end": 66054,
-        "body_ordinal": 103,
-        "body_start": 65879,
-        "function_index": 103,
-        "type_index": 6
-      },
-      "vm_x86_restore_io": {
-        "body_end": 67015,
-        "body_ordinal": 109,
-        "body_start": 66695,
-        "function_index": 109,
-        "type_index": 26
-      },
-      "vm_x86_retired": {
-        "body_end": 68844,
-        "body_ordinal": 130,
-        "body_start": 68797,
-        "function_index": 130,
-        "type_index": 10
-      },
-      "vm_x86_rflags": {
-        "body_end": 68496,
-        "body_ordinal": 124,
-        "body_start": 68437,
-        "function_index": 124,
-        "type_index": 10
-      },
-      "vm_x86_rip": {
-        "body_end": 68436,
-        "body_ordinal": 123,
-        "body_start": 68377,
-        "function_index": 123,
-        "type_index": 10
-      },
-      "vm_x86_span": {
-        "body_end": 68940,
-        "body_ordinal": 132,
-        "body_start": 68893,
-        "function_index": 132,
-        "type_index": 10
-      },
-      "vm_x86_supply_clock": {
-        "body_end": 67512,
-        "body_ordinal": 113,
-        "body_start": 67223,
-        "function_index": 113,
-        "type_index": 16
-      },
-      "vm_x86_supply_entropy": {
-        "body_end": 68003,
-        "body_ordinal": 116,
-        "body_start": 67746,
-        "function_index": 116,
-        "type_index": 16
-      },
-      "vm_x86_supply_physical": {
-        "body_end": 64975,
-        "body_ordinal": 96,
-        "body_start": 64315,
-        "function_index": 96,
+      "vm_step_supply_memory_page": {
+        "body_end": 23181,
+        "body_ordinal": 53,
+        "body_start": 23164,
+        "function_index": 53,
         "type_index": 14
       },
-      "vm_x86_system": {
-        "body_end": 68177,
+      "vm_step_work": {
+        "body_end": 21221,
+        "body_ordinal": 42,
+        "body_start": 21174,
+        "function_index": 42,
+        "type_index": 11
+      },
+      "vm_steps_high": {
+        "body_end": 95667,
+        "body_ordinal": 180,
+        "body_start": 95656,
+        "function_index": 180,
+        "type_index": 2
+      },
+      "vm_steps_low": {
+        "body_end": 95655,
+        "body_ordinal": 179,
+        "body_start": 95644,
+        "function_index": 179,
+        "type_index": 2
+      },
+      "vm_table_full": {
+        "body_end": 95691,
+        "body_ordinal": 182,
+        "body_start": 95680,
+        "function_index": 182,
+        "type_index": 2
+      },
+      "vm_x86_ack_console": {
+        "body_end": 65945,
+        "body_ordinal": 105,
+        "body_start": 65825,
+        "function_index": 105,
+        "type_index": 13
+      },
+      "vm_x86_ack_physical": {
+        "body_end": 65464,
+        "body_ordinal": 100,
+        "body_start": 65045,
+        "function_index": 100,
+        "type_index": 17
+      },
+      "vm_x86_clock_lease": {
+        "body_end": 67289,
+        "body_ordinal": 115,
+        "body_start": 67230,
+        "function_index": 115,
+        "type_index": 12
+      },
+      "vm_x86_console_count": {
+        "body_end": 67143,
+        "body_ordinal": 113,
+        "body_start": 67084,
+        "function_index": 113,
+        "type_index": 11
+      },
+      "vm_x86_console_feed": {
+        "body_end": 66413,
+        "body_ordinal": 109,
+        "body_start": 66268,
+        "function_index": 109,
+        "type_index": 8
+      },
+      "vm_x86_console_lease": {
+        "body_end": 65524,
+        "body_ordinal": 101,
+        "body_start": 65465,
+        "function_index": 101,
+        "type_index": 12
+      },
+      "vm_x86_console_output_count": {
+        "body_end": 65715,
+        "body_ordinal": 103,
+        "body_start": 65620,
+        "function_index": 103,
+        "type_index": 13
+      },
+      "vm_x86_console_output_peek": {
+        "body_end": 65824,
+        "body_ordinal": 104,
+        "body_start": 65716,
+        "function_index": 104,
+        "type_index": 16
+      },
+      "vm_x86_console_peek": {
+        "body_end": 67229,
+        "body_ordinal": 114,
+        "body_start": 67144,
+        "function_index": 114,
+        "type_index": 8
+      },
+      "vm_x86_console_value": {
+        "body_end": 65619,
+        "body_ordinal": 102,
+        "body_start": 65525,
+        "function_index": 102,
+        "type_index": 13
+      },
+      "vm_x86_cr0": {
+        "body_end": 68624,
+        "body_ordinal": 128,
+        "body_start": 68565,
+        "function_index": 128,
+        "type_index": 12
+      },
+      "vm_x86_cr3": {
+        "body_end": 68684,
+        "body_ordinal": 129,
+        "body_start": 68625,
+        "function_index": 129,
+        "type_index": 12
+      },
+      "vm_x86_cr4": {
+        "body_end": 68744,
+        "body_ordinal": 130,
+        "body_start": 68685,
+        "function_index": 130,
+        "type_index": 12
+      },
+      "vm_x86_efer": {
+        "body_end": 68804,
+        "body_ordinal": 131,
+        "body_start": 68745,
+        "function_index": 131,
+        "type_index": 12
+      },
+      "vm_x86_entropy_lease": {
+        "body_end": 67812,
+        "body_ordinal": 118,
+        "body_start": 67753,
+        "function_index": 118,
+        "type_index": 12
+      },
+      "vm_x86_error": {
+        "body_end": 69056,
+        "body_ordinal": 136,
+        "body_start": 69009,
+        "function_index": 136,
+        "type_index": 11
+      },
+      "vm_x86_execute": {
+        "body_end": 87136,
+        "body_ordinal": 150,
+        "body_start": 78207,
+        "function_index": 150,
+        "type_index": 11
+      },
+      "vm_x86_execute_quantum": {
+        "body_end": 93719,
+        "body_ordinal": 162,
+        "body_start": 92759,
+        "function_index": 162,
+        "type_index": 8
+      },
+      "vm_x86_first_dirty_physical_page": {
+        "body_end": 60238,
+        "body_ordinal": 91,
+        "body_start": 59612,
+        "function_index": 91,
+        "type_index": 12
+      },
+      "vm_x86_halted": {
+        "body_end": 69103,
+        "body_ordinal": 137,
+        "body_start": 69057,
+        "function_index": 137,
+        "type_index": 11
+      },
+      "vm_x86_io_valid": {
+        "body_end": 66529,
+        "body_ordinal": 110,
+        "body_start": 66414,
+        "function_index": 110,
+        "type_index": 8
+      },
+      "vm_x86_io_value": {
+        "body_end": 66761,
+        "body_ordinal": 111,
+        "body_start": 66531,
+        "function_index": 111,
+        "type_index": 27
+      },
+      "vm_x86_load_block": {
+        "body_end": 69124,
+        "body_ordinal": 138,
+        "body_start": 69104,
+        "function_index": 138,
+        "type_index": 8
+      },
+      "vm_x86_load_cached_block": {
+        "body_end": 78205,
+        "body_ordinal": 149,
+        "body_start": 77493,
+        "function_index": 149,
+        "type_index": 11
+      },
+      "vm_x86_msr_count": {
+        "body_end": 68444,
+        "body_ordinal": 125,
+        "body_start": 68360,
+        "function_index": 125,
+        "type_index": 8
+      },
+      "vm_x86_msr_extent": {
+        "body_end": 68864,
+        "body_ordinal": 132,
+        "body_start": 68805,
+        "function_index": 132,
+        "type_index": 11
+      },
+      "vm_x86_msr_keys": {
+        "body_end": 68302,
+        "body_ordinal": 123,
+        "body_start": 68246,
+        "function_index": 123,
+        "type_index": 11
+      },
+      "vm_x86_msr_values": {
+        "body_end": 68359,
+        "body_ordinal": 124,
+        "body_start": 68303,
+        "function_index": 124,
+        "type_index": 11
+      },
+      "vm_x86_open": {
+        "body_end": 59550,
+        "body_ordinal": 89,
+        "body_start": 57664,
+        "function_index": 89,
+        "type_index": 25
+      },
+      "vm_x86_pending_console_output_count": {
+        "body_end": 66182,
+        "body_ordinal": 107,
+        "body_start": 66123,
+        "function_index": 107,
+        "type_index": 11
+      },
+      "vm_x86_pending_console_output_peek": {
+        "body_end": 66266,
+        "body_ordinal": 108,
+        "body_start": 66183,
+        "function_index": 108,
+        "type_index": 8
+      },
+      "vm_x86_physical_buffer": {
+        "body_end": 64381,
+        "body_ordinal": 98,
+        "body_start": 64289,
+        "function_index": 98,
+        "type_index": 13
+      },
+      "vm_x86_physical_coordinate": {
+        "body_end": 64288,
+        "body_ordinal": 97,
+        "body_start": 64204,
+        "function_index": 97,
+        "type_index": 1
+      },
+      "vm_x86_physical_lease": {
+        "body_end": 59610,
+        "body_ordinal": 90,
+        "body_start": 59551,
+        "function_index": 90,
+        "type_index": 12
+      },
+      "vm_x86_quantum_blocks": {
+        "body_end": 93767,
+        "body_ordinal": 163,
+        "body_start": 93720,
+        "function_index": 163,
+        "type_index": 11
+      },
+      "vm_x86_quantum_cache_hits": {
+        "body_end": 93815,
+        "body_ordinal": 164,
+        "body_start": 93768,
+        "function_index": 164,
+        "type_index": 11
+      },
+      "vm_x86_registers": {
+        "body_end": 68131,
+        "body_ordinal": 120,
+        "body_start": 68072,
+        "function_index": 120,
+        "type_index": 11
+      },
+      "vm_x86_restore_console_output": {
+        "body_end": 66122,
+        "body_ordinal": 106,
+        "body_start": 65947,
+        "function_index": 106,
+        "type_index": 8
+      },
+      "vm_x86_restore_io": {
+        "body_end": 67083,
+        "body_ordinal": 112,
+        "body_start": 66763,
+        "function_index": 112,
+        "type_index": 28
+      },
+      "vm_x86_retired": {
+        "body_end": 68912,
+        "body_ordinal": 133,
+        "body_start": 68865,
+        "function_index": 133,
+        "type_index": 12
+      },
+      "vm_x86_rflags": {
+        "body_end": 68564,
+        "body_ordinal": 127,
+        "body_start": 68505,
+        "function_index": 127,
+        "type_index": 12
+      },
+      "vm_x86_rip": {
+        "body_end": 68504,
+        "body_ordinal": 126,
+        "body_start": 68445,
+        "function_index": 126,
+        "type_index": 12
+      },
+      "vm_x86_span": {
+        "body_end": 69008,
+        "body_ordinal": 135,
+        "body_start": 68961,
+        "function_index": 135,
+        "type_index": 12
+      },
+      "vm_x86_supply_clock": {
+        "body_end": 67580,
+        "body_ordinal": 116,
+        "body_start": 67291,
+        "function_index": 116,
+        "type_index": 17
+      },
+      "vm_x86_supply_entropy": {
+        "body_end": 68071,
         "body_ordinal": 119,
-        "body_start": 68121,
+        "body_start": 67814,
         "function_index": 119,
-        "type_index": 9
+        "type_index": 17
+      },
+      "vm_x86_supply_physical": {
+        "body_end": 65043,
+        "body_ordinal": 99,
+        "body_start": 64383,
+        "function_index": 99,
+        "type_index": 15
+      },
+      "vm_x86_system": {
+        "body_end": 68245,
+        "body_ordinal": 122,
+        "body_start": 68189,
+        "function_index": 122,
+        "type_index": 11
       },
       "vm_x86_work": {
-        "body_end": 68892,
-        "body_ordinal": 131,
-        "body_start": 68845,
-        "function_index": 131,
-        "type_index": 10
+        "body_end": 68960,
+        "body_ordinal": 134,
+        "body_start": 68913,
+        "function_index": 134,
+        "type_index": 12
       },
       "vm_x86_xmm": {
-        "body_end": 68120,
-        "body_ordinal": 118,
-        "body_start": 68064,
-        "function_index": 118,
-        "type_index": 9
+        "body_end": 68188,
+        "body_ordinal": 121,
+        "body_start": 68132,
+        "function_index": 121,
+        "type_index": 11
       }
     },
     "file": "vm.wasm",
     "regions": {
-      "bytes": 2272,
+      "bytes": 2296,
       "delivery": {
-        "bytes": 1311,
+        "bytes": 1318,
         "data_shards": 8,
         "file": "vm-regions.pages",
         "included_shards": "data",
@@ -964,17 +965,17 @@
         "page_bytes": 4096,
         "parity_shards": 2,
         "prefix_bytes": 172,
-        "prefix_sha256": "0f3aced4cd873571730795c3874e34a5dace875bd667f4938a9c9f4dd8f81e59",
-        "sha256": "f7f6fc334673aa2a1bba9dcae91314e2f0e3f00b69dbc37899d4b3da0889efb2",
+        "prefix_sha256": "d66c2b74ef4e77139f0a26baf880f29288969e75d38b08acc1ad16c19088d238",
+        "sha256": "1a3d90321d0e9aafc9562fe8ceb8419335608df6220ff407db316762416aa336",
         "unique_pages": 1
       },
-      "sha256": "e6b9724322efd9df7fe12ec510b1241fb0ca268a71d5cde14ca40df6ad50bf69"
+      "sha256": "2d007f51e2f155aa420daa4b1505301c0d81fcca48ac9933f622a69bff287b98"
     },
-    "sha256": "ea0f2aafc6de49a4c2e914e257e79d5db549d465750d636ecec72972b611287e",
+    "sha256": "48168c8d273f725cf79a2eaf6d9eaf7cbe71efe5c4f5f0b6743bb682b055a182",
     "steps": {
       "bytes": 53272,
       "delivery": {
-        "bytes": 7212,
+        "bytes": 7204,
         "data_shards": 8,
         "file": "vm-steps.pages",
         "included_shards": "data",
@@ -982,13 +983,13 @@
         "page_bytes": 4096,
         "parity_shards": 2,
         "prefix_bytes": 796,
-        "prefix_sha256": "02246d46a1bd8b2022fcf267cd6b03724f7ad69f6a7da4103897ec110b9b4230",
-        "sha256": "0fa680831ebd7340e1b30e1611e89d68447b04a94bee7e9772ffcfd31c2c504a",
+        "prefix_sha256": "83cf0671e7fa94bf5d9d24ff7afad5932c160a0a0e99d1cec9686aeccfdfbad1",
+        "sha256": "e919d63e493e4e276a223b134a3d57f10d3a9e1742d899a9a548a57ced87c276",
         "unique_pages": 14
       },
       "directory_bytes": 3104,
       "pages": 77,
-      "sha256": "1975782b133894d793b3550b207d1c117bedc9468c94789da03b8b9b1854511a"
+      "sha256": "8057c719b0c546be4e507e141759ba4bcfc59d96318f2aad81f125b002168055"
     }
   }
 }

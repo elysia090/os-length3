@@ -71,6 +71,8 @@ const stopConsole = process.env.QM_X86_STOP_CONSOLE || null;
 const consoleQuantum = Number(process.env.QM_X86_CONSOLE_QUANTUM || 1024);
 const stopRip = process.env.QM_X86_STOP_RIP == null
   ? null : BigInt(`0x${process.env.QM_X86_STOP_RIP.replace(/^0x/, '')}`);
+const decomposeRip = process.env.QM_X86_DECOMPOSE_RIP == null
+  ? null : BigInt(`0x${process.env.QM_X86_DECOMPOSE_RIP.replace(/^0x/, '')}`);
 const stopRipHit = Number(process.env.QM_X86_STOP_RIP_HIT || 1);
 const collectStopRipSamples = Boolean(process.env.QM_X86_STOP_RIP_SAMPLES);
 const stopZeroRegister = process.env.QM_X86_STOP_ZERO_REGISTER == null
@@ -100,6 +102,46 @@ if (!Number.isSafeInteger(stopRipHit) || stopRipHit < 1) {
 const trace = (message) => {
   if (traceCompleted >= traceFrom) process.stderr.write(message);
 };
+let decomposedRecords = 0;
+if (decomposeRip != null) {
+  const readBlock = artifact.blocks.read.bind(artifact.blocks);
+  artifact.blocks.read = async (rip, candidate = 0) => {
+    const record = await readBlock(rip, candidate);
+    if (record == null || rip === decomposeRip || record.length < 64) {
+      return record;
+    }
+    const view = new DataView(
+      record.buffer, record.byteOffset, record.byteLength,
+    );
+    const headerBytes = view.getUint16(6, true);
+    const stepBytes = view.getUint32(24, true);
+    const guardEnd = record.length - stepBytes;
+    if (headerBytes !== 64 || guardEnd < headerBytes + 2) return record;
+    let cursor = headerBytes;
+    const count = view.getUint16(cursor, true);
+    cursor += 2;
+    for (let index = 0; index < count; index += 1) {
+      if (cursor + 10 > guardEnd) return record;
+      const address = view.getBigUint64(cursor, true);
+      const length = view.getUint16(cursor + 8, true);
+      cursor += 10;
+      if (cursor + length > guardEnd) return record;
+      if (address <= decomposeRip
+          && decomposeRip < address + BigInt(length)) {
+        // Reject only this wider candidate by changing its proof byte.  The
+        // next, narrower guarded candidate remains available, which exposes
+        // the selected instruction as an observable block boundary without
+        // changing guest memory or the persisted artifact.
+        const changed = Uint8Array.from(record);
+        changed[cursor + Number(decomposeRip - address)] ^= 0xff;
+        decomposedRecords += 1;
+        return changed;
+      }
+      cursor += length;
+    }
+    return record;
+  };
+}
 if (profileBlockMisses) {
   const readBlock = artifact.blocks.read.bind(artifact.blocks);
   artifact.blocks.read = async (rip, candidate = 0) => {
@@ -435,6 +477,7 @@ try {
     stop_predecessor: stopPredecessor?.toString(16) || null,
     stop_rip_hits: stopRipSeen,
     stop_rip_samples: stopRipSamples,
+    decomposed_records: decomposedRecords,
     state_step_profile: profileStateSteps ? {
       steps: profiledStateSteps,
       unique_rips: stateStepRips.size,

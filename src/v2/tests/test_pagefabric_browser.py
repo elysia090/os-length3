@@ -474,7 +474,8 @@ process.stdout.write(JSON.stringify({{
 ''', encoding='utf-8')
             run = subprocess.run(
                 ['node', str(driver), wasm, str(record_path)],
-                check=False, capture_output=True, text=True)
+                check=False, capture_output=True, text=True,
+                encoding='utf-8', errors='replace')
             self.assertEqual(run.returncode, 0, run.stderr)
         result = json.loads(run.stdout)
         self.assertEqual(result['rip'], str(0x101))
@@ -707,6 +708,62 @@ process.stdout.write(JSON.stringify(result));
             'rax': str(0x1122334455667788),
             'rip': str(0x200),
             'error': 0,
+        })
+
+    def test_native_x86_page_fault_charges_the_faulting_instruction(self):
+        plan = PureSlice(
+            0, 0, 1, 1, 0,
+            (WaveNode(1, 'memory.i64.load', (
+                Operand('const', 0x4000), Operand('const', 0),
+                Operand('const', memory_shape(8, virtual64=True)))),),
+            DependencyWaves((0, 1), (1,), (0, 1)), (),
+            (Operand('node', 1),)
+            + tuple(Operand('local', index) for index in range(1, 17)))
+        page = bytes(pack_step(plan))
+        record = struct.pack(
+            '<4sHHQQIIQQQ8x', b'X86B', 1, 64,
+            0x100, 0x200, len(page), 1,
+            0x200, 0, 0) + page
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record_path = root / 'x86-page-fault.bin'
+            record_path.write_bytes(record)
+            driver = root / 'x86-page-fault.mjs'
+            wasm = (ROOT / 'web' / 'vm.wasm').as_posix()
+            driver.write_text('''\
+import { readFileSync } from 'node:fs';
+const { instance } = await WebAssembly.instantiate(
+  readFileSync(process.argv[2]), {});
+const E = instance.exports;
+const record = new Uint8Array(readFileSync(process.argv[3]));
+const session = E.vm_step_acquire();
+if (!E.vm_x86_open(
+  session, 0x100n, 2n, 0n, 0n, 0n, 0n, 4096n,
+)) throw new Error('native x86 state did not open');
+new Uint8Array(E.memory.buffer, E.vm_step_buffer(session), record.length)
+  .set(record);
+if (E.vm_x86_load_block(session, record.length) !== 2) {
+  throw new Error(`block:${E.vm_x86_error(session)}`);
+}
+const status = E.vm_x86_execute(session);
+const result = {
+  status,
+  retired: E.vm_x86_retired(session).toString(),
+  error: E.vm_x86_error(session),
+};
+if (!E.vm_step_release(session)) throw new Error('release failed');
+process.stdout.write(JSON.stringify(result));
+''', encoding='utf-8')
+            run = subprocess.run(
+                ['node', str(driver), wasm, str(record_path)],
+                check=False, capture_output=True, text=True,
+                encoding='utf-8', errors='replace')
+            self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), {
+            'status': -1,
+            'retired': '1',
+            'error': 31,
         })
 
     def test_native_x86_continuation_keeps_control_and_state_in_vm(self):

@@ -1,8 +1,8 @@
 # Reproducible native Linux system layer
 
-`build.sh` produces one deterministic, static x86-64 musl archive.  It is the
-read-only `/` system layer visible as soon as Linux reaches its shell; its
-physical pages remain non-resident until a process opens them.
+`build.sh` produces one deterministic, static x86-64 musl archive. The Linux
+boot build converts it to a read-only SquashFS physical image; its pages remain
+non-resident until Linux opens the corresponding filesystem blocks.
 
 The layer contains:
 
@@ -55,3 +55,15 @@ uv run --no-project python ../../src/v2/tools/build_toolchain_distribution.py \
   /tmp/libqm-toolchain-system-output/x86_64-linux-musl-system-<identity>.tar \
   --out ../../artifact --name toolchain --version 2026.08.13
 ```
+
+The standalone `artifact/toolchain` publication retains the canonical archive
+identity and is useful for inspecting or replacing delivery projections. The
+boot build accepts the same tar through `QM_TOOLCHAIN_TAR`, creates a 64 KiB
+zstd SquashFS projection, and maps it into the machine artifact without first
+creating scalar memory-page objects.
+
+`audit-guest.sh` is the runtime acceptance test. Feed it to the serial shell
+after the system image is mounted; it requires every command to resolve below
+the read-only `/usr`, compiles and runs a static C program, exercises parallel
+GNU make, creates a Git commit, checks the TLS/CA/pkg-config surface, and
+round-trips a compressed archive.

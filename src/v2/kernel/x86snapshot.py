@@ -18,11 +18,12 @@ from .machine import MachineEvent
 from .pagefabric import (PageFabric, SubpageBacking, bundle_prefix_size,
                          dump_bundle, load_bundle, project_sparse)
 from .x86 import (BzImageBoot, BzImageHeader, DecodedBlock,
-                  HighByteRegister, MASK64, MemoryOperand, X86DBT, X86Error,
+                  HighByteRegister, MASK64, MemoryOperand, PageFault,
+                  X86DBT, X86Error,
                   X86Boundary, X86MachineState, X86State,
                   _block_code_extents, _block_source_instructions,
                   _execution_proof,
-                  read_virtual)
+                  initial_state, read_virtual)
 from qm.steppage import (decode_plan, instantiate_step_template,
                          pack as pack_step, project_step_template,
                          StatePageError, unpack as unpack_step)
@@ -76,9 +77,10 @@ def _project_native_x86_continuation(fields):
     boundary = (int(fields[4]) - rip) & MASK64
     control = int(fields[6])
     first, second, third = (int(value) & MASK64 for value in fields[7:10])
-    if control == 2:
+    if control in (1, 2):
         first = (first - rip) & MASK64
-        second = (second - rip) & MASK64
+        if second:
+            second = (second - rip) & MASK64
     elif control not in (0, 3, 4, 5, 12, 14, 22):
         first = (first - rip) & MASK64
     return control, boundary, first, second, third
@@ -88,9 +90,10 @@ def _instantiate_native_x86_continuation(rip, continuation):
     control, boundary, first, second, third = continuation
     rip = int(rip) & MASK64
     boundary = (rip + int(boundary)) & MASK64
-    if control == 2:
+    if control in (1, 2):
         first = (rip + int(first)) & MASK64
-        second = (rip + int(second)) & MASK64
+        if second:
+            second = (rip + int(second)) & MASK64
     elif control not in (0, 3, 4, 5, 12, 14, 22):
         first = (rip + int(first)) & MASK64
     return boundary, int(control), int(first), int(second), int(third)
@@ -173,7 +176,55 @@ def _decode_native_x86_continuation(payload):
     return continuation
 
 
-def _dump_boot_memory(memory, shards):
+def _physical_boot_records(memory_bytes, physical_images, occupied):
+    """Yield immutable physical images as coordinate-ordered boot spans.
+
+    A physical image is already in the guest's canonical address space.  It
+    therefore joins the boot memory projection directly instead of first
+    becoming hundreds of thousands of scalar ``PagedMemory`` records.  This
+    keeps large read-only filesystems on the same direct PageFabric path as
+    the kernel while retaining an exact overlap proof.
+    """
+    images = []
+    for address, payload in physical_images:
+        address = int(address)
+        try:
+            payload = memoryview(payload)
+        except TypeError as error:
+            raise TypeError('physical boot image must be bytes-like') \
+                from error
+        if address < 0 or address % BOOT_SPAN_BYTES:
+            raise ValueError(
+                'physical boot image address must be span aligned')
+        if not payload.nbytes:
+            raise ValueError('physical boot image must not be empty')
+        extent = ((payload.nbytes + BOOT_SPAN_BYTES - 1)
+                  // BOOT_SPAN_BYTES) * BOOT_SPAN_BYTES
+        end = address + extent
+        if end > int(memory_bytes):
+            raise ValueError('physical boot image exceeds guest memory')
+        images.append((address, end, payload))
+    images.sort(key=lambda image: image[0])
+
+    previous_end = 0
+    for address, end, payload in images:
+        if address < previous_end:
+            raise ValueError('physical boot images overlap')
+        first = address // BOOT_SPAN_BYTES
+        limit = end // BOOT_SPAN_BYTES
+        if any(coordinate in occupied
+               for coordinate in range(first, limit)):
+            raise ValueError('physical boot image overlaps prepared memory')
+        previous_end = end
+        for coordinate in range(first, limit):
+            offset = (coordinate - first) * BOOT_SPAN_BYTES
+            raw = bytes(payload[offset:offset + BOOT_SPAN_BYTES])
+            raw += bytes(BOOT_SPAN_BYTES - len(raw))
+            if any(raw):
+                yield coordinate, raw
+
+
+def _dump_boot_memory(memory, shards, physical_images=()):
     if not isinstance(memory, PagedMemory) or memory.base \
             or memory._backing is not None:
         raise TypeError('x86 boot cache needs an opened implicit-zero memory')
@@ -185,10 +236,12 @@ def _dump_boot_memory(memory, shards):
             raw = spans[span] = bytearray(BOOT_SPAN_BYTES)
         offset = slot * MEMORY_PAGE
         raw[offset:offset + MEMORY_PAGE] = payload
-    records = tuple((span, bytes(raw)) for span, raw in sorted(spans.items())
-                    if any(raw))
+    records = ((span, bytes(raw)) for span, raw in sorted(spans.items())
+               if any(raw))
+    physical = _physical_boot_records(
+        len(memory), tuple(physical_images), frozenset(spans))
     manifest, store = project_sparse(
-        len(memory), BOOT_SPAN_BYTES, records,
+        len(memory), BOOT_SPAN_BYTES, merge(records, physical),
         data_shards=8, parity_shards=2)
     return dump_bundle(manifest, store, shards)
 
@@ -200,13 +253,14 @@ def _load_boot_memory(payload):
     return PagedMemory(b'', manifest.length, _backing=backing)
 
 
-def dump_x86_boot_cache(boot, shards='data'):
+def dump_x86_boot_cache(boot, shards='data', physical_images=()):
     """Encode a disposable expanded boot cache without retaining its bzImage."""
     if not isinstance(boot, BzImageBoot):
         raise TypeError('x86 boot cache needs a BzImageBoot')
     empty = PagedMemory(b'', len(boot.state.memory))
     cpu = dump_x86_state(replace(boot.state, memory=empty))
-    memory = _dump_boot_memory(boot.state.memory, shards)
+    memory = _dump_boot_memory(
+        boot.state.memory, shards, physical_images=physical_images)
     header = json.dumps({
         'cpu_bytes': len(cpu),
         'memory_bytes': len(memory),
@@ -1743,6 +1797,12 @@ def pack_native_x86_block(block):
         plan = X86DBT._carry_flags_plan(plan)
         if plan is None:
             raise ValueError('native x86 block cannot publish flags')
+    call_return = 0
+    for candidate in (block, block.control_block):
+        if (candidate is not None
+                and candidate.boundary.operation == 'call'):
+            call_return = int(candidate.boundary.detail[0]) & MASK64
+            break
     operation = block.boundary.operation
     detail = block.boundary.detail
     if operation in ('save_fpu', 'restore_fpu'):
@@ -1902,7 +1962,8 @@ def pack_native_x86_block(block):
         plan = compose_plans(plan, simd_plan)
         operation = 'native_simd_convert_truncate'
         detail = following, register, value_local, bits
-    elif operation in ('simd_packed_equal', 'simd_unpack_dwords'):
+    elif operation in ('simd_packed_equal', 'simd_unpack_dwords',
+                       'simd_packed_add_qwords', 'simd_packed_and'):
         low_local = len(plan.locals)
         lowered = X86DBT._simd_packed_equal_plan(
             block.boundary, low_local, low_local + 1)
@@ -1914,7 +1975,12 @@ def pack_native_x86_block(block):
             plan, locals=tuple(plan.locals)
             + (Operand('local', low_local), Operand('local', high_local)))
         plan = compose_plans(plan, simd_plan)
-        packed_operation = 11 if operation == 'simd_packed_equal' else 12
+        packed_operation = {
+            'simd_packed_equal': 11,
+            'simd_unpack_dwords': 12,
+            'simd_packed_add_qwords': 14,
+            'simd_packed_and': 15,
+        }[operation]
         operation = 'native_simd_register'
         detail = following, packed_operation, vector, low_local, 1 << 8
     elif operation == 'simd_shuffle_dwords':
@@ -2059,6 +2125,7 @@ def pack_native_x86_block(block):
     if operation == 'branch':
         control = 1
         arguments[0] = int(detail) & MASK64
+        arguments[1] = call_return
     elif operation == 'conditional_branch':
         control = 2
         following, target, condition = detail
@@ -2332,13 +2399,13 @@ def pack_native_x86_block(block):
     elif operation in ('simd_register', 'native_simd_register'):
         following, opcode, target, source, immediate = detail
         memory = operation == 'native_simd_register'
-        if (not 0 <= int(opcode) <= 13
+        if (not 0 <= int(opcode) <= 15
                 or not 0 <= int(target) < 16
                 or not 0 <= int(source) < 256
-                or (memory and (int(opcode) not in (11, 12, 13)
+                or (memory and (int(opcode) not in (11, 12, 13, 14, 15)
                                 or int(source) < 17
                                 or int(source) + 1 >= 256
-                                or (int(opcode) in (11, 12)
+                                or (int(opcode) in (11, 12, 14, 15)
                                     and int(immediate) != 1 << 8)
                                 or (int(opcode) == 13
                                     and not 1 << 8 <= int(immediate) < 1 << 9)))
@@ -2468,6 +2535,10 @@ def native_x86_static_successors(record):
         raise ValueError('native x86 record header is invalid')
     if control == 2:
         return tuple(dict.fromkeys((first & MASK64, second & MASK64)))
+    if control == 1:
+        return tuple(dict.fromkeys(
+            coordinate & MASK64 for coordinate in (first, second)
+            if coordinate))
     if control in (3, 4, 12, 14, 22, 29, 30):
         return ()
     if control in (0, 5):
@@ -2502,49 +2573,23 @@ def _identity_register_plan():
         tuple(Operand('local', index) for index in range(16)))
 
 
-def _lowered_boundary_memory(boundary):
-    """Return whether a boundary's physical lowering can architecturally fault."""
-    lowered = X86DBT._stack_plan(boundary)
-    plan = None if lowered is None else lowered[0]
-    if plan is None:
-        lowered = X86DBT._memory_plan(boundary)
-        plan = None if lowered is None else lowered[0]
-    if plan is None:
-        lowered = X86DBT._descriptor_plan(boundary)
-        plan = None if lowered is None else lowered[0]
-    if plan is None:
-        plan = X86DBT._indirect_control_plan(boundary)
-    if plan is None:
-        lowered = X86DBT._simd_store_plan(boundary, 17, 18)
-        if lowered is None:
-            lowered = X86DBT._simd_load_plan(boundary, 17, 18)
-        if lowered is None:
-            lowered = X86DBT._simd_load_low_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_load_lane_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_load32_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_store32_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_compare_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_convert_integer_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_scalar_binary_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_convert_truncate_plan(boundary, 17)
-        if lowered is None:
-            lowered = X86DBT._simd_packed_equal_plan(boundary, 17, 18)
-        if lowered is None:
-            lowered = X86DBT._simd_store_low_plan(boundary, 17)
-        plan = None if lowered is None else lowered[0]
-    if plan is None:
-        identity = X86DBT._carry_flags_plan(_identity_register_plan())
-        lowered = X86DBT._lower_flag_boundary(identity, boundary)
-        plan = None if lowered is None else lowered[0]
-    return bool(plan is not None and any(
-        node.op.startswith('memory.') for node in plan.nodes))
+def _boundary_native_block(block, code_extents=()):
+    """Return the boundary instruction as an independent physical cut."""
+    return replace(
+        block, rip=int(block.boundary_rip) & MASK64,
+        source=b'', instructions=0, plan=_identity_register_plan(),
+        scratch_count=0, flag_cut=None, control_block=None, cut_inputs=(),
+        state_flags=False, virtual_memory=False, indirect_register=None,
+        tail_return=None, inlined_call_target=None,
+        code_extents=tuple(code_extents), source_instructions=1)
+
+
+def _native_record_memory(record):
+    """Use the emitted physical plan as the single faultability authority."""
+    _fields, _guard, step = split_native_x86_record(record)
+    mapped = unpack_step(step)
+    plan = decode_plan(mapped)
+    return any(node.op.startswith('memory.') for node in plan.nodes)
 
 
 def pack_native_x86_records(block):
@@ -2555,8 +2600,28 @@ def pack_native_x86_records(block):
     the second record immediately and only then publishes one completed x86
     block to its caller.
     """
-    if (block.boundary_rip == block.rip
-            or not _lowered_boundary_memory(block.boundary)):
+    if block.boundary_rip == block.rip:
+        record = pack_native_x86_block(block)
+        return ((int(block.rip) & MASK64, record),)
+    terminal_coordinate = int(block.boundary_rip) & MASK64
+    terminal_extent = next((
+        (terminal_coordinate,
+         payload[terminal_coordinate - address:])
+        for address, payload in _block_code_extents(block)
+        if address <= terminal_coordinate < address + len(payload)
+    ), None)
+    if terminal_extent is None:
+        raise ValueError('faultable terminal has no executable proof')
+    terminal = _boundary_native_block(block, (terminal_extent,))
+    try:
+        terminal_record = pack_native_x86_block(terminal)
+    except ValueError:
+        # Some pure flag boundaries consume values produced inside the
+        # composed prefix and are deliberately not independent cuts.  They
+        # cannot fault and remain in the already-normalized complete block.
+        record = pack_native_x86_block(block)
+        return ((int(block.rip) & MASK64, record),)
+    if not _native_record_memory(terminal_record):
         record = pack_native_x86_block(block)
         return ((int(block.rip) & MASK64, record),)
     source_instructions = _block_source_instructions(block)
@@ -2568,27 +2633,207 @@ def pack_native_x86_records(block):
         boundary=X86Boundary(
             'native_internal_branch', int(block.boundary_rip) & MASK64),
         source_instructions=source_instructions - 1)
-    terminal_coordinate = int(block.boundary_rip) & MASK64
-    terminal_extent = next((
-        (terminal_coordinate,
-         payload[terminal_coordinate - address:])
-        for address, payload in _block_code_extents(block)
-        if address <= terminal_coordinate < address + len(payload)
-    ), None)
-    if terminal_extent is None:
-        raise ValueError('faultable terminal has no executable proof')
-    terminal = replace(
-        block, rip=terminal_coordinate,
-        source=b'', instructions=0,
-        plan=_identity_register_plan(), scratch_count=0,
-        flag_cut=None, control_block=None, cut_inputs=(), state_flags=False,
-        virtual_memory=False, indirect_register=None, tail_return=None,
-        inlined_call_target=None,
-        code_extents=(terminal_extent,), source_instructions=1)
     return (
         (int(prefix.rip) & MASK64, pack_native_x86_block(prefix)),
-        (int(terminal.rip) & MASK64, pack_native_x86_block(terminal)),
+        (int(terminal.rip) & MASK64, terminal_record),
     )
+
+
+def repair_native_x86_fault_boundaries(payload):
+    """Migrate composed faultable terminals to architectural retry cuts.
+
+    Older native machines classified faultability through a second list of
+    x86 lowerers.  Any memory lowering missing from that list retained the
+    pure prefix and faulting instruction in one record, so a page fault named
+    the block entry rather than the architectural instruction.  Inspect the
+    resident physical STEP itself, reconstruct only affected guarded blocks,
+    and replace their proved coordinates with the ordinary split records.
+    """
+    header, physical_memory, variants = \
+        load_native_x86_physical_machine(payload)
+    retained = dict(variants)
+    repairs = []
+    repaired = []
+    rejected = []
+    for (rip, guard), (_guard, physical_step, continuation) in variants.items():
+        boundary_rip, control, _first, _second, _third = \
+            _instantiate_native_x86_continuation(rip, continuation)
+        # Schema-v5 machines produced before terminal faultability became a
+        # property of the emitted STEP can only contain this malformed shape
+        # for FXSAVE/FXRSTOR: the other memory lowerers were in the legacy
+        # classifier.  Restrict migration to those controls; a full STEP may
+        # also contain earlier, already-retired memory nodes and must not be
+        # mistaken for a faultable terminal.
+        if boundary_rip == rip or control not in (41, 42):
+            continue
+        template, parameters, _step_bytes = physical_step
+        mapped = unpack_step(instantiate_step_template(template, parameters))
+        plan = decode_plan(mapped)
+        if not any(node.op.startswith('memory.') for node in plan.nodes):
+            continue
+        extents = _native_code_guard_extents(guard)
+        if not extents:
+            rejected.append((rip, 'missing executable proof'))
+            continue
+        pages = {0x1000: bytearray(4096)}
+        mapped = {}
+        next_physical = 0x2000
+
+        def allocate():
+            nonlocal next_physical
+            address = next_physical
+            next_physical += 4096
+            pages[address] = bytearray(4096)
+            return address
+
+        def map_page(virtual_page):
+            table = 0x1000
+            for shift in (39, 30, 21):
+                slot = (virtual_page >> shift) & 0x1ff
+                entry = struct.unpack_from('<Q', pages[table], slot * 8)[0]
+                if not entry:
+                    child = allocate()
+                    struct.pack_into('<Q', pages[table], slot * 8,
+                                     child | 3)
+                else:
+                    child = entry & ~0xfff
+                table = child
+            slot = (virtual_page >> 12) & 0x1ff
+            entry = struct.unpack_from('<Q', pages[table], slot * 8)[0]
+            if entry:
+                return entry & ~0xfff
+            physical = allocate()
+            struct.pack_into('<Q', pages[table], slot * 8, physical | 3)
+            return physical
+
+        for address, source in extents:
+            at = 0
+            while at < len(source):
+                virtual = (int(address) + at) & MASK64
+                virtual_page = virtual & ~0xfff
+                physical = mapped.get(virtual_page)
+                if physical is None:
+                    physical = mapped[virtual_page] = map_page(virtual_page)
+                offset = virtual & 0xfff
+                count = min(len(source) - at, 4096 - offset)
+                pages[physical][offset:offset + count] = source[at:at + count]
+                at += count
+        code = PagedMemory(b'', next_physical)
+        for address, source in sorted(pages.items()):
+            code = code.write(address, source)
+        try:
+            block = X86DBT().block(initial_state(
+                code, rip, cr0=1 << 31, cr3=0x1000))
+            records = pack_native_x86_records(block)
+            if (block.boundary_rip != boundary_rip
+                    or len(records) < 2
+                    or split_native_x86_record(records[0][1])[1] != guard):
+                raise ValueError('guard did not reproduce the resident cut')
+        except (IndexError, StatePageError, TypeError, ValueError,
+                X86Error) as error:
+            rejected.append((rip, str(error)))
+            retained.pop((rip, guard), None)
+            continue
+        repairs.extend(records)
+        repaired.append((rip, boundary_rip))
+    migrated = extend_loaded_native_x86_physical_machine(
+        header, physical_memory, retained, repairs,
+        reject_conflicts=False, replace_proved=True)
+    return migrated, {
+        'scanned_records': len(variants),
+        'repaired_records': len(repaired),
+        'dropped_records': len(rejected),
+        'added_records': len(repairs),
+        'coordinates': [
+            {'entry': '%016x' % entry, 'terminal': '%016x' % terminal}
+            for entry, terminal in repaired
+        ],
+        'dropped_coordinates': [
+            {'entry': '%016x' % entry, 'reason': reason}
+            for entry, reason in rejected
+        ],
+    }
+
+
+def repair_native_x86_call_continuations(payload):
+    """Project direct-call return RIPs into the physical descriptor graph."""
+    header, physical_memory, variants = \
+        load_native_x86_physical_machine(payload)
+    repaired = dict(variants)
+    coordinates = []
+    for (rip, guard), (resident_guard, physical_step,
+                       continuation) in variants.items():
+        boundary, control, target, return_rip, third = \
+            _instantiate_native_x86_continuation(rip, continuation)
+        if control != 1 or return_rip:
+            continue
+        instruction = next((
+            source[boundary - address:boundary - address + 5]
+            for address, source in _native_code_guard_extents(guard)
+            if address <= boundary and boundary + 5 <= address + len(source)
+        ), None)
+        if instruction is None or len(instruction) != 5 \
+                or instruction[0] != 0xe8:
+            continue
+        relative = int.from_bytes(instruction[1:], 'little', signed=True)
+        following = (boundary + 5) & MASK64
+        if (following + relative) & MASK64 != target:
+            continue
+        projected = (
+            control,
+            (boundary - rip) & MASK64,
+            (target - rip) & MASK64,
+            (following - rip) & MASK64,
+            third,
+        )
+        repaired[rip, guard] = (
+            resident_guard, physical_step, projected)
+        coordinates.append((rip, following))
+    migrated = _encode_native_x86_physical(
+        header, physical_memory, repaired, sorted_prefix=0)
+    return migrated, {
+        'scanned_records': len(variants),
+        'repaired_records': len(coordinates),
+        'return_coordinates': sorted(set(
+            following for _entry, following in coordinates)),
+        'coordinates': [
+            {'entry': '%016x' % entry, 'return': '%016x' % following}
+            for entry, following in coordinates[:64]
+        ],
+    }
+
+
+def prune_native_x86_machine_to_state(payload, state):
+    """Keep only source proofs executable in one realized machine state."""
+    if not isinstance(state, X86State):
+        raise TypeError('native x86 runtime pruning needs an X86State')
+    header, physical_memory, variants = \
+        load_native_x86_physical_machine(payload)
+    guard_matches = {}
+    retained = {}
+    for key, physical in variants.items():
+        _rip, guard = key
+        matched = guard_matches.get(guard)
+        if matched is None:
+            extents = _native_code_guard_extents(guard)
+            try:
+                matched = bool(extents) and all(
+                    read_virtual(state, address, len(source), 'execute')
+                    == source for address, source in extents)
+            except PageFault:
+                matched = False
+            guard_matches[guard] = matched
+        if matched:
+            retained[key] = physical
+    pruned = _encode_native_x86_physical(
+        header, physical_memory, retained, sorted_prefix=0)
+    return pruned, {
+        'records_before': len(variants),
+        'records_after': len(retained),
+        'guards': len(guard_matches),
+        'bytes_before': len(payload),
+        'bytes_after': len(pruned),
+    }
 
 
 def native_x86_cut_coordinates(dbt):

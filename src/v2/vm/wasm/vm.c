@@ -25,6 +25,45 @@ typedef unsigned long long u64;
 typedef signed int         i32;
 typedef long long          i64;
 
+/* Some freestanding Clang releases form an i128 multiply while optimizing
+ * the 64-bit arithmetic below.  There is no compiler-rt in this module, so
+ * provide the standard modulo-2^128 operation using native wasm i64
+ * multiplies. */
+typedef __int128 i128;
+typedef unsigned __int128 u128;
+typedef union {
+    u128 value;
+    struct { u64 low, high; } words;
+} U128Words;
+
+__attribute__((noinline, optnone))
+static u64 multiply_high_u64(u64 left, u64 right)
+{
+    u64 left_low = (u32)left;
+    u64 left_high = left >> 32u;
+    u64 right_low = (u32)right;
+    u64 right_high = right >> 32u;
+    u64 low = left_low * right_low;
+    u64 middle = left_high * right_low + (low >> 32u);
+    u64 carry = middle >> 32u;
+    middle = (u32)middle + left_low * right_high;
+    return left_high * right_high + carry + (middle >> 32u);
+}
+
+__attribute__((noinline, optnone))
+i128 __multi3(i128 left, i128 right)
+{
+    U128Words first = { .value = (u128)left };
+    U128Words second = { .value = (u128)right };
+    U128Words product;
+    product.words.low = first.words.low * second.words.low;
+    product.words.high = multiply_high_u64(
+        first.words.low, second.words.low)
+        + first.words.high * second.words.low
+        + first.words.low * second.words.high;
+    return (i128)product.value;
+}
+
 #define EXPORT __attribute__((visibility("default")))
 
 #ifndef VM_DIRECT_BYTE_STATE
@@ -5144,6 +5183,11 @@ static int x86_raise_page_fault(u64 address, int write, int execute,
     X86Workspace *x86 = x86_machine();
     x86_cancel_step_execution();
     if (!step_machine()->memory_generation) return x86_fail(20u);
+    /* The oracle charges the faulting source instruction even though its
+     * state transaction is rolled back.  Keep the resident retirement/PIT
+     * coordinate identical; otherwise every user fault advances the timer
+     * one instruction less and eventually changes interrupt placement. */
+    x86->retired += 1u;
     x86->system[X86_SYS_CR2] = address;
     x86->exception_error = present ? 1u : 0u;
     if (write) x86->exception_error |= 2u;
@@ -6535,12 +6579,14 @@ EXPORT int vm_x86_execute(u64 session)
         u32 source = (descriptor >> 16u) & 0xffu;
         u32 immediate = (u32)x86->control_argument[2];
         u32 memory = (immediate >> 8u) & 1u;
-        if (target >= 16u || source >= step->local_extent || opcode > 13u
+        if (target >= 16u || source >= step->local_extent || opcode > 15u
                 || (memory
-                    && ((opcode != 11u && opcode != 12u && opcode != 13u)
+                    && ((opcode != 11u && opcode != 12u && opcode != 13u
+                         && opcode != 14u && opcode != 15u)
                         || source < X86_REGISTER_COUNT + 1u
                         || source + 1u >= step->local_extent
-                        || ((opcode == 11u || opcode == 12u)
+                        || ((opcode == 11u || opcode == 12u || opcode == 14u
+                             || opcode == 15u)
                             && immediate != 256u)
                         || (opcode == 13u
                             && (immediate < 256u || immediate >= 512u))))
@@ -6657,7 +6703,7 @@ EXPORT int vm_x86_execute(u64 session)
                 | ((right & 0xffffffffull) << 32u);
             x86->xmm[target * 2u + 1u] = ((left >> 32u) & 0xffffffffull)
                 | (((right >> 32u) & 0xffffffffull) << 32u);
-        } else {
+        } else if (opcode == 13u) {
             u64 input[2] = {
                 memory ? step->locals[source] : x86->xmm[source * 2u],
                 memory ? step->locals[source + 1u]
@@ -6673,6 +6719,22 @@ EXPORT int vm_x86_execute(u64 session)
             }
             x86->xmm[target * 2u] = result[0];
             x86->xmm[target * 2u + 1u] = result[1];
+        } else if (opcode == 14u) {
+            u64 right_low = memory
+                ? step->locals[source] : x86->xmm[source * 2u];
+            u64 right_high = memory
+                ? step->locals[source + 1u]
+                : x86->xmm[source * 2u + 1u];
+            x86->xmm[target * 2u] += right_low;
+            x86->xmm[target * 2u + 1u] += right_high;
+        } else {
+            u64 right_low = memory
+                ? step->locals[source] : x86->xmm[source * 2u];
+            u64 right_high = memory
+                ? step->locals[source + 1u]
+                : x86->xmm[source * 2u + 1u];
+            x86->xmm[target * 2u] &= right_low;
+            x86->xmm[target * 2u + 1u] &= right_high;
         }
     } else if (x86->control == X86_CONTROL_SIMD_COMPARE) {
         u32 descriptor = (u32)x86->control_argument[1];

@@ -10,18 +10,16 @@ The current source roles are:
 - BusyBox 1.37.0, the versioned upstream release used by the current boot
   artifact.  BusyBox labels this series unstable; the source and checksum are
   nevertheless fixed here rather than following a snapshot.
-- GNU make 4.4.1, built as a static musl guest binary from its pinned upstream
-  source. `bootstrap/Makefile` is a deterministic parallel-process smoke test.
-  The initramfs provides a mode-1777 `/tmp`, which GNU make's FIFO jobserver
-  requires for parallel execution.
-- musl 1.2.6, GNU Binutils 2.46 and GCC 16.2.0, plus the pinned POSIX build,
+- musl 1.2.6, GNU make 4.4.1, GNU Binutils 2.46 and GCC 16.2.0, plus the pinned POSIX build,
   archive, HTTPS, Git and OpenSSH-client sources consumed by
   `toolchain/build.sh`. They form a separate read-only system layer and are
-  not inflated into the boot image.
+  not inflated into the initramfs. `bootstrap/Makefile` is a deterministic
+  parallel-process smoke test, and the initramfs provides a mode-1777 `/tmp`
+  for GNU make's FIFO jobserver.
 
-`build.sh` downloads three HTTPS tarballs, verifies their pinned SHA-256 values,
+`build.sh` downloads two HTTPS tarballs, verifies their pinned SHA-256 values,
 builds a deliberately small legacy-PIC x86-64 kernel with the standard
-IPv4/IPv6 and virtio-net/MMIO path enabled, builds static BusyBox and GNU make,
+IPv4/IPv6 and virtio-net/MMIO path enabled, builds static BusyBox,
 creates a deterministic `newc` initramfs, and publishes a new canonical boot
 object plus its page delivery. No browser-side socket or TCP implementation is
 part of this input.
@@ -36,8 +34,10 @@ nix shell \
   nixpkgs#gnumake nixpkgs#gcc15 nixpkgs#binutils \
   nixpkgs#flex nixpkgs#bison nixpkgs#bc \
   nixpkgs#cpio nixpkgs#xz nixpkgs#perl nixpkgs#rsync nixpkgs#pkg-config \
-  nixpkgs#openssl nixpkgs#elfutils nixpkgs#pahole \
-  -c env QM_BUILD_ROOT=/tmp/libqm-linux-build ./build.sh
+  nixpkgs#openssl nixpkgs#elfutils nixpkgs#pahole nixpkgs#squashfsTools \
+  -c env QM_BUILD_ROOT=/tmp/libqm-linux-build \
+    QM_TOOLCHAIN_TAR=/tmp/libqm-toolchain-system-output/x86_64-linux-musl-system-<identity>.tar \
+    ./build.sh
 ```
 
 `QM_BUILD_ROOT` deliberately keeps the disposable expansion on WSL's native
@@ -67,10 +67,11 @@ Update policy:
 
 `toolchain/build.sh` independently builds the pinned musl sysroot, matching
 Linux UAPI headers, native C toolchain, archive utilities, pkgconf, file,
-OpenSSL/CA/curl/Git and OpenSSH clients into a deterministic archive.
-`build_toolchain_distribution.py` publishes it below `artifact/toolchain` as a
-boot-visible, root-mounted tar cut backed by physical pages. Keeping it separate
-from the kernel/initramfs preserves demand paging: the commands exist in the
-initial namespace while compiler code, headers, static libraries and trust
-anchors remain cold until opened. The current `artifact/compiler` remains the
-smaller WebAssembly-only frontend and is not replaced by guest-native GCC.
+OpenSSL/CA/curl/Git and OpenSSH clients into a deterministic archive. The boot
+build projects that archive into a 64 KiB-block read-only SquashFS image at a
+reserved physical address. Upstream Linux exposes the range through `phram`,
+mounts `/dev/mtdblock0`, and binds its `/usr` and `/etc/ssl` into the initial
+namespace. Keeping it separate from the initramfs preserves demand paging:
+compiler code, headers, static libraries and trust anchors remain cold until
+Linux opens them. The current `artifact/compiler` remains the smaller
+WebAssembly-only frontend and is not replaced by guest-native GCC.
