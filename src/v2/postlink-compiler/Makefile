@@ -19,12 +19,12 @@ WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -std=c11
 INCLUDE  = -Iinclude
 BUILD   ?= build
 
-LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/directory.c src/chain.c
+LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/directory.c src/chain.c src/trace.c
 LIB_OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(LIB_SOURCES))
 
 .PHONY: all check parity guest wasm clean
 
-TOOLS = postlink-inspect postlink-admit postlink-chain postlink-repack
+TOOLS = postlink-inspect postlink-admit postlink-chain postlink-repack postlink-trace
 
 all: $(patsubst %,$(BUILD)/%,$(TOOLS)) $(BUILD)/selftest
 
@@ -49,6 +49,9 @@ $(BUILD)/postlink-chain: tools/chain.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
 $(BUILD)/postlink-repack: tools/repack.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
+
+$(BUILD)/postlink-trace: tools/trace.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
 $(BUILD)/selftest: check/selftest.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
