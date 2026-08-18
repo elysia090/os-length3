@@ -30,7 +30,8 @@ if str(ROOT) not in sys.path:
 
 from kernel.x86snapshot import load_native_x86_machine, NATIVE_BLOCK_HEADER
 from qm.steppage import OPS, OPERAND_KINDS, decode_plan, unpack as unpack_step
-from qm.stepnormalize import compose_plans_raw
+from qm.stepnormalize import (_compact_once, _rewrite_physical,
+                              compose_plans_raw)
 
 KIND_CODE = {name: code for code, name in enumerate(OPERAND_KINDS)}
 OP_CODE = {name: code for code, name in enumerate(OPS)}
@@ -93,22 +94,40 @@ def read_vectors(stream):
 
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit('usage: compose_parity.py MACHINE < vectors')
+    if len(sys.argv) < 2:
+        raise SystemExit('usage: compose_parity.py MACHINE [--compact] < vectors')
+    compacted = '--compact' in sys.argv
     _metadata, _memory, records = load_native_x86_machine(
         Path(sys.argv[1]).read_bytes())
     records = list(records)
 
     checked = 0
+    skipped = [0]
     disagreements = Counter()
     for vector in read_vectors(sys.stdin):
         head, tail = vector['head'], vector['tail']
         first, second = plan_of(records[head][1]), plan_of(records[tail][1])
         try:
-            expected = reference(compose_plans_raw(first, second))
+            raw = compose_plans_raw(first, second)
         except Exception as error:                    # noqa: BLE001
             disagreements['python refused where C composed: %s' % error] += 1
             continue
+        if compacted:
+            # C has no rewriter yet, so compare only where the reference
+            # rewriter is the identity; anywhere else the two are being asked
+            # different questions.
+            rewritten = _rewrite_physical(raw.nodes, raw.stack, raw.locals)
+            if (tuple(rewritten[0]) != tuple(raw.nodes)
+                    or tuple(rewritten[1]) != tuple(raw.stack)
+                    or tuple(rewritten[2]) != tuple(raw.locals)):
+                skipped[0] += 1
+                continue
+            nodes, waves, stack, locals_ = _compact_once(
+                raw.nodes, raw.stack, raw.locals)
+            raw = raw.__class__(raw.function, raw.start, raw.end,
+                                raw.instructions, raw.stack_inputs,
+                                nodes, waves, stack, locals_)
+        expected = reference(raw)
 
         if expected['header'] != vector['header']:
             disagreements['header'] += 1
@@ -136,11 +155,13 @@ def main():
     if not checked:
         raise SystemExit('no vectors on stdin')
     print('composed pairs compared     %10d' % checked)
+    if skipped[0]:
+        print('  skipped, rewriter fired   %10d' % skipped[0])
     if disagreements:
         for reason, count in disagreements.most_common(8):
             print('  %-40s %8d' % (reason[:40], count))
         return 1
-    print('every composed graph agrees with compose_plans_raw')
+    print('every graph agrees with the reference')
     return 0
 
 

@@ -26,6 +26,14 @@ static const pl_u64 PL_OPCODE_MEMORY[] = {
     0x0000000000006101ull,
 };
 
+/* the divides whose trap is observable -- 8 opcodes */
+static const pl_u64 PL_OPCODE_TRAPPING[] = {
+    0x0f00000000000000ull,
+    0xc000000000000000ull,
+    0x0000000000000003ull,
+    0x0000000000000000ull,
+};
+
 /* FLAG_PROJECTION_OPS | REGION_PROJECTION_OPS -- 9 opcodes */
 static const pl_u64 PL_OPCODE_PUBLISHED_PROJECTION[] = {
     0x0000000000000000ull,
@@ -41,6 +49,7 @@ static inline int pl_opcode_in(const pl_u64 *set, pl_u32 opcode)
 }
 
 #define pl_opcode_is_memory(op) pl_opcode_in(PL_OPCODE_MEMORY, (op))
+#define pl_opcode_traps(op) pl_opcode_in(PL_OPCODE_TRAPPING, (op))
 #define pl_opcode_publishes_projection(op) pl_opcode_in(PL_OPCODE_PUBLISHED_PROJECTION, (op))
 
 #endif /* POSTLINK_OPCODES_H */

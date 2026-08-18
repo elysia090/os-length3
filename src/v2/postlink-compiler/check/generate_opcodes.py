@@ -36,6 +36,11 @@ def bitmap(indices, count):
 def render():
     count = len(OPS)
     memory = [i for i, name in enumerate(OPS) if name.startswith('memory.')]
+    # _compact_once keeps these alive whatever reads them, because the trap is
+    # observable in itself.  The reference tests the name after the first dot.
+    traps = frozenset(('DIV_S', 'DIV_U', 'REM_S', 'REM_U'))
+    trapping = [i for i, name in enumerate(OPS)
+                if name.split('.', 1)[-1] in traps]
     flags = sorted(OPS.index(name) for name in FLAG_PROJECTION_OPS)
     region = sorted(OPS.index(name) for name in REGION_PROJECTION_OPS)
     published = sorted(set(flags) | set(region))
@@ -75,6 +80,8 @@ def render():
 
     emit('PL_OPCODE_MEMORY', memory,
          'op.startswith("memory.") -- %d opcodes' % len(memory))
+    emit('PL_OPCODE_TRAPPING', trapping,
+         'the divides whose trap is observable -- %d opcodes' % len(trapping))
     emit('PL_OPCODE_PUBLISHED_PROJECTION', published,
          'FLAG_PROJECTION_OPS | REGION_PROJECTION_OPS -- %d opcodes'
          % len(published))
@@ -87,6 +94,7 @@ def render():
         '}',
         '',
         '#define pl_opcode_is_memory(op) pl_opcode_in(PL_OPCODE_MEMORY, (op))',
+        '#define pl_opcode_traps(op) pl_opcode_in(PL_OPCODE_TRAPPING, (op))',
         '#define pl_opcode_publishes_projection(op) '
         'pl_opcode_in(PL_OPCODE_PUBLISHED_PROJECTION, (op))',
         '',
