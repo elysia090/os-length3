@@ -41,6 +41,12 @@ typedef struct {
     pl_u32 stack_count;
     pl_operand *locals;      /* indexed by frame slot, local_extent wide */
     pl_u32 local_count;
+    /* Dependency waves, as the template stores them: span + 1 offsets into a
+     * run of node values ordered by depth.  Only a compacted plan carries
+     * them; decoding leaves them null because the template already holds the
+     * originals and composition does not recompute them. */
+    pl_u32 *wave_offsets;
+    pl_u32 *wave_values;
 } pl_plan;
 
 /* A bump allocator, so the library allocates nothing itself. */
@@ -68,5 +74,25 @@ pl_u32 pl_compose_arena_bytes(const pl_plan *first, const pl_plan *second);
  * which are the two refusals compose_plans_raw makes. */
 int pl_compose_raw(const pl_plan *first, const pl_plan *second,
                    pl_arena *arena, pl_plan *out);
+
+/* One compaction pass: drop what nothing observes, renumber densely, share
+ * repeated pure nodes, and rebuild the waves.  This is _compact_once in
+ * qm/stepnormalize.py minus its algebraic rewriter, which is a separate ~900
+ * lines and fires on about a quarter of composed pairs.
+ *
+ * Liveness is seeded by the nodes whose effects are observable whatever reads
+ * them -- memory nodes and the trapping divides -- together with everything the
+ * stack and locals name, then closed backward through arguments. */
+int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out);
+
+/* Compact a rewrite-stable plan.  One sweep: the reference alternates rewriting
+ * with compaction until nothing moves, but that alternation exists only because
+ * it runs the rewriter at the head of every pass.  Measured over 299 composed
+ * pairs, a plan at the rewriter fixed point never lets compaction enable more
+ * rewriting, and never needs a second compaction sweep.
+ *
+ * A second sweep runs anyway and must change nothing, so a broken premise fails
+ * loudly instead of emitting an under-compacted graph. */
+int pl_compact(const pl_plan *in, pl_arena *arena, pl_plan *out);
 
 #endif /* POSTLINK_PLAN_H */

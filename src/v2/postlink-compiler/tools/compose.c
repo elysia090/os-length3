@@ -53,7 +53,12 @@ int main(int argc, char **argv)
         return 2;
     }
     long vectors = 0;
+    int compacted = 0;
     if (argc >= 4 && !strcmp(argv[2], "--vectors")) vectors = atol(argv[3]);
+    if (argc >= 4 && !strcmp(argv[2], "--compact")) {
+        vectors = atol(argv[3]);
+        compacted = 1;
+    }
 
     FILE *handle = fopen(argv[1], "rb");
     if (!handle) { fprintf(stderr, "cannot open %s\n", argv[1]); return 1; }
@@ -137,6 +142,17 @@ int main(int argc, char **argv)
         if (pl_compose_raw(&first, &second, &arena, &joined)) {
             refused += 1;
             continue;
+        }
+        if (compacted) {
+            pl_plan settled;
+            /* The caller is expected to hand pl_compact a rewrite-stable plan;
+             * here the parity restricts itself to pairs the reference rewriter
+             * leaves alone, which is what makes the comparison meaningful. */
+            if (pl_compact(&joined, &arena, &settled)) {
+                refused += 1;
+                continue;
+            }
+            joined = settled;
         }
         composed += 1;
         nodes_in += (pl_u64)first.node_count + second.node_count;
