@@ -18,12 +18,27 @@
 #define PL_OPCODE_COUNT 210u
 #define PL_OPCODE_RELATIVE_RESULT 189u
 
+#define PL_OPCODE_X86_FLAGS 183u
+#define PL_OPCODE_X86_ALU 203u
+#define PL_OPCODE_X86_AFFINE_ALU 204u
+#define PL_OPCODE_X86_COMPARE 191u
+#define PL_OPCODE_X86_TEST 195u
+#define PL_OPCODE_X86_SHIFT_FLAGS 193u
+
 /* op.startswith("memory.") -- 53 opcodes */
 static const pl_u64 PL_OPCODE_MEMORY[] = {
     0x0000000000000000ull,
     0x0000000000000000ull,
     0x777ffffffffff000ull,
     0x0000000000006101ull,
+};
+
+/* the flag chain _rebase_overwritten_flags walks -- 8 opcodes */
+static const pl_u64 PL_OPCODE_FLAG_PRODUCER[] = {
+    0x0000000000000000ull,
+    0x0000000000000000ull,
+    0x8080000000000000ull,
+    0x000000000001182aull,
 };
 
 /* the divides whose trap is observable -- 8 opcodes */
@@ -50,6 +65,7 @@ static inline int pl_opcode_in(const pl_u64 *set, pl_u32 opcode)
 
 #define pl_opcode_is_memory(op) pl_opcode_in(PL_OPCODE_MEMORY, (op))
 #define pl_opcode_traps(op) pl_opcode_in(PL_OPCODE_TRAPPING, (op))
+#define pl_opcode_produces_flags(op) pl_opcode_in(PL_OPCODE_FLAG_PRODUCER, (op))
 #define pl_opcode_publishes_projection(op) pl_opcode_in(PL_OPCODE_PUBLISHED_PROJECTION, (op))
 
 #endif /* POSTLINK_OPCODES_H */

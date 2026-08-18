@@ -59,6 +59,11 @@ int main(int argc, char **argv)
         vectors = atol(argv[3]);
         compacted = 1;
     }
+    int rebased = 0;
+    if (argc >= 4 && !strcmp(argv[2], "--rebase")) {
+        vectors = atol(argv[3]);
+        rebased = 1;
+    }
 
     FILE *handle = fopen(argv[1], "rb");
     if (!handle) { fprintf(stderr, "cannot open %s\n", argv[1]); return 1; }
@@ -142,6 +147,14 @@ int main(int argc, char **argv)
         if (pl_compose_raw(&first, &second, &arena, &joined)) {
             refused += 1;
             continue;
+        }
+        if (rebased) {
+            pl_plan flagged;
+            if (pl_rebase_overwritten_flags(&joined, &arena, &flagged)) {
+                refused += 1;
+                continue;
+            }
+            joined = flagged;
         }
         if (compacted) {
             pl_plan settled;
