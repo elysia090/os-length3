@@ -19,12 +19,12 @@ WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -std=c11
 INCLUDE  = -Iinclude
 BUILD   ?= build
 
-LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/directory.c src/chain.c src/trace.c src/template.c
+LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/directory.c src/chain.c src/trace.c src/template.c src/plan.c src/compose.c
 LIB_OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(LIB_SOURCES))
 
 .PHONY: all check parity opcodes guest wasm clean
 
-TOOLS = postlink-inspect postlink-admit postlink-chain postlink-repack postlink-trace postlink-template
+TOOLS = postlink-inspect postlink-admit postlink-chain postlink-repack postlink-trace postlink-template postlink-compose
 
 all: $(patsubst %,$(BUILD)/%,$(TOOLS)) $(BUILD)/selftest
 
@@ -55,6 +55,9 @@ $(BUILD)/postlink-trace: tools/trace.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
 $(BUILD)/postlink-template: tools/template.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
+
+$(BUILD)/postlink-compose: tools/compose.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.o,$^) -o $@
 
 $(BUILD)/selftest: check/selftest.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
