@@ -19,7 +19,7 @@ WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -std=c11
 INCLUDE  = -Iinclude
 BUILD   ?= build
 
-LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/directory.c src/chain.c src/trace.c src/template.c src/plan.c src/compose.c src/compact.c src/rewrite.c src/sweep.c
+LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/directory.c src/chain.c src/trace.c src/template.c src/plan.c src/compose.c src/compact.c src/rewrite.c src/sweep.c src/region.c
 LIB_OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(LIB_SOURCES))
 
 .PHONY: all check parity opcodes guest wasm clean

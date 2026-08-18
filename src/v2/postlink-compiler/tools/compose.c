@@ -64,6 +64,16 @@ int main(int argc, char **argv)
         vectors = atol(argv[3]);
         rebased = 1;
     }
+    int prestore = 0;
+    if (argc >= 4 && !strcmp(argv[2], "--prestore")) {
+        vectors = atol(argv[3]);
+        prestore = 1;
+    }
+    int regions = 0;
+    if (argc >= 4 && !strcmp(argv[2], "--regions")) {
+        vectors = atol(argv[3]);
+        regions = 1;
+    }
 
     FILE *handle = fopen(argv[1], "rb");
     if (!handle) { fprintf(stderr, "cannot open %s\n", argv[1]); return 1; }
@@ -147,6 +157,22 @@ int main(int argc, char **argv)
         if (pl_compose_raw(&first, &second, &arena, &joined)) {
             refused += 1;
             continue;
+        }
+        if (regions) {
+            pl_plan opened;
+            if (pl_reopen_load_regions(&joined, &arena, &opened)) {
+                refused += 1;
+                continue;
+            }
+            joined = opened;
+        }
+        if (prestore) {
+            pl_plan chained;
+            if (pl_reopen_pre_store_chains(&joined, &arena, &chained)) {
+                refused += 1;
+                continue;
+            }
+            joined = chained;
         }
         if (rebased) {
             pl_plan flagged;
