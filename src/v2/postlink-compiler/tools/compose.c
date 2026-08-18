@@ -74,6 +74,11 @@ int main(int argc, char **argv)
         vectors = atol(argv[3]);
         regions = 1;
     }
+    int alu = 0;
+    if (argc >= 4 && !strcmp(argv[2], "--alu")) {
+        vectors = atol(argv[3]);
+        alu = 1;
+    }
 
     FILE *handle = fopen(argv[1], "rb");
     if (!handle) { fprintf(stderr, "cannot open %s\n", argv[1]); return 1; }
@@ -157,6 +162,14 @@ int main(int argc, char **argv)
         if (pl_compose_raw(&first, &second, &arena, &joined)) {
             refused += 1;
             continue;
+        }
+        if (alu) {
+            pl_plan opened;
+            if (pl_reopen_consumed_x86_alu(&joined, &arena, &opened)) {
+                refused += 1;
+                continue;
+            }
+            joined = opened;
         }
         if (regions) {
             pl_plan opened;

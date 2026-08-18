@@ -31,6 +31,7 @@ if str(ROOT) not in sys.path:
 from kernel.x86snapshot import load_native_x86_machine, NATIVE_BLOCK_HEADER
 from qm.steppage import OPS, OPERAND_KINDS, decode_plan, unpack as unpack_step
 from qm.stepnormalize import (_compact_once, _rebase_overwritten_flags,
+                              _reopen_consumed_x86_alu,
                               _reopen_load_regions,
                               _reopen_pre_store_chains,
                               _rewrite_physical, compose_plans_raw)
@@ -102,6 +103,7 @@ def main():
     rebased = '--rebase' in sys.argv
     prestore = '--prestore' in sys.argv
     regions = '--regions' in sys.argv
+    alu = '--alu' in sys.argv
     _metadata, _memory, records = load_native_x86_machine(
         Path(sys.argv[1]).read_bytes())
     records = list(records)
@@ -117,6 +119,12 @@ def main():
         except Exception as error:                    # noqa: BLE001
             disagreements['python refused where C composed: %s' % error] += 1
             continue
+        if alu:
+            nodes, stack, locals_ = _reopen_consumed_x86_alu(
+                raw.nodes, raw.stack, raw.locals)
+            raw = raw.__class__(raw.function, raw.start, raw.end,
+                                raw.instructions, raw.stack_inputs,
+                                nodes, raw.waves, stack, locals_)
         if regions:
             nodes, stack, locals_ = _reopen_load_regions(
                 raw.nodes, raw.stack, raw.locals)

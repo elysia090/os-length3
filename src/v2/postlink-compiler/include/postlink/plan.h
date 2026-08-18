@@ -101,6 +101,12 @@ int pl_reopen_pre_store_chains(const pl_plan *in, pl_arena *arena,
  * pointer past its end.  The main sweep closes it again if it still holds. */
 int pl_reopen_load_regions(const pl_plan *in, pl_arena *arena, pl_plan *out);
 
+/* Restore the ordinary SSA spelling of an ALU whose value result something
+ * else consumes: the arithmetic as its own node, the flags as their own.  The
+ * one rule needing a fact about the future, so it scans backward first. */
+int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
+                               pl_plan *out);
+
 /* Compact a rewrite-stable plan.  One sweep: the reference alternates rewriting
  * with compaction until nothing moves, but that alternation exists only because
  * it runs the rewriter at the head of every pass.  Measured over 299 composed
