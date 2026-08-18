@@ -82,6 +82,7 @@ int main(int argc, char **argv)
     const pl_u8 *extents = directory.descriptors + directory.template_base;
 
     unsigned long long parsed = 0, rejected = 0, template_bytes = 0;
+    unsigned long long rows = 0, row_mismatch = 0, row_bytes = 0;
     unsigned long long graph_words = 0, structural = 0;
     unsigned long long width[9];
     memset(width, 0, sizeof width);
@@ -130,6 +131,33 @@ int main(int argc, char **argv)
             }
         }
     }
+
+    /* The parameter row's extent follows from the template's tags, so every
+     * block is a check: a row whose declared length disagrees with what its
+     * template implies is not the row that template was written with. */
+    for (pl_u32 index = 0; index < counts.block_count; ++index) {
+        pl_admission admission;
+        if (pl_directory_admit(&directory, index, &admission)) continue;
+        pl_template shape_of;
+        if (pl_template_parse(execution + admission.tmpl.offset,
+                              (pl_u32)admission.tmpl.length, &shape_of))
+            continue;
+        pl_parameters shape;
+        pl_parameters_shape(execution + admission.tmpl.offset, &shape_of,
+                            &shape);
+        rows += 1;
+        row_bytes += shape.bytes;
+        if (shape.bytes != admission.parameters.length) row_mismatch += 1;
+    }
+
+    printf("parameter rows checked     %12llu\n", rows);
+    printf("  extent disagrees         %12llu\n", row_mismatch);
+    printf("  implied per block        %12llu\n", row_bytes);
+    /* Not the same quantity: rows are shared by STEP instance, so the stored
+     * total counts each row once while the sum above counts it per block. */
+    printf("  stored, rows shared      %12u\n",
+           counts.parameter_execution_bytes);
+    printf("\n");
 
     printf("templates                  %12u\n", counts.template_count);
     printf("  parsed                   %12llu\n", parsed);
