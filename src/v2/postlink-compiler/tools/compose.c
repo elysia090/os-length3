@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <postlink/affine.h>
 #include <postlink/plan.h>
 #include <postlink/trace.h>
 
@@ -79,6 +80,8 @@ int main(int argc, char **argv)
         vectors = atol(argv[3]);
         alu = 1;
     }
+    int affine = argc >= 3 && !strcmp(argv[2], "--affine");
+    int loops = argc >= 3 && !strcmp(argv[2], "--loops");
 
     FILE *handle = fopen(argv[1], "rb");
     if (!handle) { fprintf(stderr, "cannot open %s\n", argv[1]); return 1; }
@@ -140,9 +143,72 @@ int main(int argc, char **argv)
     pl_u8 *arena_bytes_base = malloc(arena_bytes);
     if (!arena_bytes_base) { fprintf(stderr, "no arena\n"); return 1; }
 
+    unsigned long long verdicts[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
     unsigned long long composed = 0, refused = 0, undecodable = 0;
     unsigned long long nodes_in = 0, nodes_out = 0;
     unsigned long long args_in = 0, args_out = 0, materialized = 0;
+
+    /* A loop body is a fusible run whose last block returns to its head.  That
+     * is the population the recurrence closure cares about; every other fusible
+     * pair is straight-line and has no iteration to collapse. */
+    if (loops) {
+        pl_u8 *visited = calloc(count, 1);
+        if (!visited) { fprintf(stderr, "no visited set\n"); return 1; }
+        unsigned long long bodies = 0, single = 0;
+        unsigned long long lengths = 0;
+        for (pl_u32 index = 0; index < count; ++index) {
+            if (visited[index]) continue;
+            pl_u32 last = index;
+            pl_u32 length = pl_trace_run(successor, predecessor, count,
+                                         index, visited, &last);
+            if (successor[last] != index) continue;
+            bodies += 1;
+            lengths += length;
+            if (length == 1u) single += 1;
+
+            pl_arena arena = { arena_bytes_base, arena_bytes, 0 };
+            pl_plan body;
+            pl_template shape;
+            pl_admission head;
+            if (pl_directory_admit(&directory, index, &head)
+                    || decode(execution, &head, &arena, &body, &shape))
+                continue;
+            pl_u32 cursor = index;
+            int ok = 1;
+            for (pl_u32 step = 1; step < length && ok; ++step) {
+                cursor = successor[cursor];
+                pl_admission next;
+                pl_plan tail, merged;
+                pl_template tail_shape;
+                if (pl_directory_admit(&directory, cursor, &next)
+                        || decode(execution, &next, &arena, &tail,
+                                  &tail_shape)
+                        || pl_compose_raw(&body, &tail, &arena, &merged))
+                    ok = 0;
+                else
+                    body = merged;
+            }
+            if (!ok) { verdicts[PL_AFFINE_UNSUPPORTED] += 1; continue; }
+            pl_affine report;
+            if (!pl_affine_analyse(&body, &arena, &report))
+                verdicts[report.verdict] += 1;
+            else
+                verdicts[PL_AFFINE_UNSUPPORTED] += 1;
+        }
+        printf("loop bodies found          %12llu\n", bodies);
+        printf("  single-block bodies      %12llu\n", single);
+        if (bodies)
+            printf("  mean blocks per body     %12.2f\n",
+                   (double)lengths / (double)bodies);
+        printf("\n");
+        for (unsigned index = 0; index < 6u; ++index)
+            printf("  %-38s %10llu\n",
+                   pl_affine_reason((pl_affine_verdict)index),
+                   verdicts[index]);
+        free(visited);
+        free(payload);
+        return 0;
+    }
 
     for (pl_u32 index = 0; index < count; ++index) {
         if (!pl_trace_fusible(successor, predecessor, index)) continue;
@@ -206,6 +272,13 @@ int main(int argc, char **argv)
             }
             joined = settled;
         }
+        if (affine) {
+            pl_affine report;
+            if (!pl_affine_analyse(&joined, &arena, &report))
+                verdicts[report.verdict] += 1;
+            else
+                verdicts[PL_AFFINE_UNSUPPORTED] += 1;
+        }
         composed += 1;
         nodes_in += (pl_u64)first.node_count + second.node_count;
         nodes_out += joined.node_count;
@@ -237,6 +310,16 @@ int main(int argc, char **argv)
                 printf("\n");
             }
         }
+    }
+
+    if (affine) {
+        printf("bodies analysed            %12llu\n", composed);
+        for (unsigned index = 0; index < 6u; ++index)
+            printf("  %-38s %10llu\n",
+                   pl_affine_reason((pl_affine_verdict)index),
+                   verdicts[index]);
+        free(payload);
+        return 0;
     }
 
     if (!vectors) {
