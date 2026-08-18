@@ -85,6 +85,13 @@ int pl_compose_raw(const pl_plan *first, const pl_plan *second,
  * stack and locals name, then closed backward through arguments. */
 int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out);
 
+/* Read a full flag overwrite's preserved bits from the root of the chain
+ * rather than from its immediate predecessor.  The dominant pre-pass of
+ * _rewrite_physical: it changes 63 of the 78 composed pairs the rewriter
+ * touches at all. */
+int pl_rebase_overwritten_flags(const pl_plan *in, pl_arena *arena,
+                                pl_plan *out);
+
 /* Compact a rewrite-stable plan.  One sweep: the reference alternates rewriting
  * with compaction until nothing moves, but that alternation exists only because
  * it runs the rewriter at the head of every pass.  Measured over 299 composed

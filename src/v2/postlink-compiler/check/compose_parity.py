@@ -30,8 +30,8 @@ if str(ROOT) not in sys.path:
 
 from kernel.x86snapshot import load_native_x86_machine, NATIVE_BLOCK_HEADER
 from qm.steppage import OPS, OPERAND_KINDS, decode_plan, unpack as unpack_step
-from qm.stepnormalize import (_compact_once, _rewrite_physical,
-                              compose_plans_raw)
+from qm.stepnormalize import (_compact_once, _rebase_overwritten_flags,
+                              _rewrite_physical, compose_plans_raw)
 
 KIND_CODE = {name: code for code, name in enumerate(OPERAND_KINDS)}
 OP_CODE = {name: code for code, name in enumerate(OPS)}
@@ -97,6 +97,7 @@ def main():
     if len(sys.argv) < 2:
         raise SystemExit('usage: compose_parity.py MACHINE [--compact] < vectors')
     compacted = '--compact' in sys.argv
+    rebased = '--rebase' in sys.argv
     _metadata, _memory, records = load_native_x86_machine(
         Path(sys.argv[1]).read_bytes())
     records = list(records)
@@ -112,6 +113,12 @@ def main():
         except Exception as error:                    # noqa: BLE001
             disagreements['python refused where C composed: %s' % error] += 1
             continue
+        if rebased:
+            nodes, stack, locals_ = _rebase_overwritten_flags(
+                raw.nodes, raw.stack, raw.locals)
+            raw = raw.__class__(raw.function, raw.start, raw.end,
+                                raw.instructions, raw.stack_inputs,
+                                nodes, raw.waves, stack, locals_)
         if compacted:
             # C has no rewriter yet, so compare only where the reference
             # rewriter is the identity; anywhere else the two are being asked
