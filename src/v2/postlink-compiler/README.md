@@ -126,6 +126,53 @@ Note that `run_native_x86_machine.mjs` runs a resident machine for a fixed
 block budget. It is not a boot, and its throughput figure is roughly 4.7x
 optimistic against the number above.
 
+
+## Normalization is a direct construction
+
+`normalize_plan` alternates rewriting with compaction until nothing moves. That
+alternation is an artifact of running the rewriter at the head of every pass, so
+a rewriter that has not converged shows up as a compaction that needs another
+sweep. Measured over 299 composed pairs, with the rewriter driven to its own
+fixed point first so the two stages are not confounded:
+
+| | |
+| --- | --- |
+| compaction enabled more rewriting | 0 of 299 |
+| one compaction sweep suffices | 299 of 299 |
+| `compact_once(rewrite_to_fixpoint(p))` equals `normalize_plan(p)` | 299 of 299 |
+
+So the C side runs one compaction sweep and asserts a second would change
+nothing, rather than looping.
+
+The rewriter's own iteration is also removable, and by reordering rather than
+rewriting. As written it runs `reopen_consumed_x86_alu` before
+`rebase_overwritten_flags`, but the rebase is what creates the selector-16
+projections the reopen looks for, so the reopen misses them and only finds them
+on a later evaluation. Ordering the pre-passes
+
+    reopen_pre_store_chains
+    reopen_load_regions
+    rebase_overwritten_flags        <- before
+    reopen_consumed_x86_alu         <- after
+    forward_memory_versions
+    rewrite_relative_exchange
+
+gives:
+
+| evaluations to a fixed point | as written | reordered |
+| --- | --- | --- |
+| 1 | 221 | 271 |
+| 2 | 65 | 28 |
+| 3 | 13 | 0 |
+
+reaching the identical fixed point on all 299 pairs. Two evaluations is the
+floor for any fixed-point detection -- one productive sweep and one that
+confirms -- so the reordered form is single-sweep.
+
+`qm/stepnormalize.py` is deliberately left alone: it is the parity reference,
+and changing the artifact producer is a separate decision. The ordering above is
+the specification for the C rewriter.
+
 ## What is not here yet
 
 The decoder, the block former and the closure driver are still `X86DBT` in
