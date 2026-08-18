@@ -92,6 +92,15 @@ int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out);
 int pl_rebase_overwritten_flags(const pl_plan *in, pl_arena *arena,
                                 pl_plan *out);
 
+/* Let a later store in a pre_store chain take the earlier one as its base and
+ * carry only the difference, restoring pointer flow across a composition. */
+int pl_reopen_pre_store_chains(const pl_plan *in, pl_arena *arena,
+                               pl_plan *out);
+
+/* Expose a cached read region as the run of loads it stands for, plus the
+ * pointer past its end.  The main sweep closes it again if it still holds. */
+int pl_reopen_load_regions(const pl_plan *in, pl_arena *arena, pl_plan *out);
+
 /* Compact a rewrite-stable plan.  One sweep: the reference alternates rewriting
  * with compaction until nothing moves, but that alternation exists only because
  * it runs the rewriter at the head of every pass.  Measured over 299 composed

@@ -16,6 +16,12 @@
 #include <postlink/format.h>
 
 #define PL_OPCODE_COUNT 210u
+/* The memory access shape, as decode_memory_shape reads it. */
+#define PL_MEMORY_SHAPE_SCALE_SHIFT 8u
+#define PL_MEMORY_SHAPE_SCALE_MASK 0x1fu
+#define PL_MEMORY_SHAPE_VIRTUAL64 0x10000u
+#define PL_MEMORY_SHAPE_MASK 0x11fffu
+
 #define PL_OPCODE_RELATIVE_RESULT 189u
 
 #define PL_OPCODE_X86_FLAGS 183u
@@ -24,6 +30,10 @@
 #define PL_OPCODE_X86_COMPARE 191u
 #define PL_OPCODE_X86_TEST 195u
 #define PL_OPCODE_X86_SHIFT_FLAGS 193u
+#define PL_OPCODE_MEMORY_PRE_STORE 192u
+#define PL_OPCODE_MEMORY_LOAD 145u
+#define PL_OPCODE_MEMORY_LOAD_REGION 205u
+#define PL_OPCODE_ADD 79u
 
 /* op.startswith("memory.") -- 53 opcodes */
 static const pl_u64 PL_OPCODE_MEMORY[] = {
@@ -31,6 +41,33 @@ static const pl_u64 PL_OPCODE_MEMORY[] = {
     0x0000000000000000ull,
     0x777ffffffffff000ull,
     0x0000000000006101ull,
+};
+
+/* memory.i{bits}.load{suffix} by (bits, width, signed);
+ * 255 where the reference would name no such load. */
+static const pl_u8 PL_OPCODE_REGION_LOAD[2][9][2] = {
+    { /* i32 */
+        { 255u, 255u },
+        { 142u, 141u },
+        { 144u, 143u },
+        { 255u, 255u },
+        { 140u, 140u },
+        { 255u, 255u },
+        { 255u, 255u },
+        { 255u, 255u },
+        { 255u, 255u },
+    },
+    { /* i64 */
+        { 255u, 255u },
+        { 147u, 146u },
+        { 149u, 148u },
+        { 255u, 255u },
+        { 151u, 150u },
+        { 255u, 255u },
+        { 255u, 255u },
+        { 255u, 255u },
+        { 145u, 145u },
+    },
 };
 
 /* the flag chain _rebase_overwritten_flags walks -- 8 opcodes */
