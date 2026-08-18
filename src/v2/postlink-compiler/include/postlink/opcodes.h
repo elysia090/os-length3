@@ -34,6 +34,7 @@
 #define PL_OPCODE_MEMORY_LOAD 145u
 #define PL_OPCODE_MEMORY_LOAD_REGION 205u
 #define PL_OPCODE_ADD 79u
+#define PL_OPCODE_X86_CONDITION 194u
 
 /* op.startswith("memory.") -- 53 opcodes */
 static const pl_u64 PL_OPCODE_MEMORY[] = {
@@ -69,6 +70,20 @@ static const pl_u8 PL_OPCODE_REGION_LOAD[2][9][2] = {
         { 145u, 145u },
     },
 };
+
+/* laneops.select, arithmetic only: [i32?][and add sub or xor] */
+static const pl_u8 PL_OPCODE_ALU_IMMEDIATE[2][5] = {
+    { 6u, 9u, 10u, 7u, 8u },
+    { 76u, 79u, 80u, 77u, 78u },
+};
+
+static const pl_u8 PL_OPCODE_ALU_REGISTER[2][5] = {
+    { 17u, 19u, 26u, 18u, 16u },
+    { 87u, 89u, 96u, 88u, 86u },
+};
+
+/* Carry-in add, by lane width; 255 where none exists. */
+static const pl_u8 PL_OPCODE_ADD3[2] = { 64u, 134u };
 
 /* the flag chain _rebase_overwritten_flags walks -- 8 opcodes */
 static const pl_u64 PL_OPCODE_FLAG_PRODUCER[] = {
