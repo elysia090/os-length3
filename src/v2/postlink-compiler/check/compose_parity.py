@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Observe what composing two state steps actually produces.
+"""Hold the C composer to qm.stepnormalize.compose_plans_raw.
 
-A C composer has to agree with `qm.stepnormalize.compose_plans` on the header of
-the composed step, and the header is not the sum of its parts: composition is
-substitution, so the second plan's local and stack inputs become the operands
-the first plan publishes and no intermediate frame is materialized.
+`postlink-compose MACHINE --vectors N` prints the composed graph of the first N
+fusible pairs:
 
-This runs the real composition over the fusible pairs `postlink-trace --pairs`
-names and reports, for each header field, how the composed value relates to the
-two inputs.  The point is to replace a guess with a measurement before the C
-side is written.
+    PAIR head tail function start end instructions stack_inputs nodes args
+    N value opcode kind:value ...
+    S slot kind:value
+    L slot kind:value
+
+Every one is recomposed here through the reference and compared node for node,
+argument for argument.  Composition is substitution, and its three mechanisms --
+operand replacement, the memory ordering edge, and materializing a projection
+whose source does not publish it -- are all things a plausible-looking C
+implementation can get subtly wrong, so nothing is taken on inspection.
 
 Usage:
-    postlink-trace MACHINE --pairs 200 | compose_parity.py MACHINE
+    postlink-compose MACHINE --vectors 400 | compose_parity.py MACHINE
 """
 
 import struct
@@ -25,12 +29,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from kernel.x86snapshot import load_native_x86_machine, NATIVE_BLOCK_HEADER
-from qm.steppage import decode_plan, unpack as unpack_step
-from qm.stepnormalize import compose_plans, compose_plans_raw
+from qm.steppage import OPS, OPERAND_KINDS, decode_plan, unpack as unpack_step
+from qm.stepnormalize import compose_plans_raw
 
-FIELDS = ('function', 'start', 'end', 'instructions', 'span', 'work',
-          'operands', 'stack_inputs', 'stack_count', 'local_extent',
-          'local_updates')
+KIND_CODE = {name: code for code, name in enumerate(OPERAND_KINDS)}
+OP_CODE = {name: code for code, name in enumerate(OPS)}
 
 
 def plan_of(record):
@@ -42,119 +45,102 @@ def plan_of(record):
     else:
         parameter_bytes, template_bytes = 0, step_bytes
     guard = len(record) - 64 - parameter_bytes - template_bytes
-    step = record[64 + guard + parameter_bytes:]
-    return decode_plan(unpack_step(step))
+    return decode_plan(unpack_step(record[64 + guard + parameter_bytes:]))
 
 
-def shape(plan):
-    """The eleven header numbers a template stores, read off a plan."""
+def operand_pairs(operands):
+    return [(KIND_CODE[item.kind], int(item.value)) for item in operands]
+
+
+def reference(plan):
+    """The same shape the C tool prints, so the two compare directly."""
     return {
-        'function': plan.function,
-        'start': plan.start,
-        'end': plan.end,
-        'instructions': plan.end - plan.start,
-        'span': plan.waves.span,
-        'work': len(plan.nodes),
-        'operands': sum(len(node.arguments) for node in plan.nodes),
-        'stack_inputs': plan.stack_inputs,
-        'stack_count': len(plan.stack),
-        'local_extent': len(plan.locals),
-        'local_updates': len(plan.locals),
+        'header': (plan.function, plan.start, plan.end, plan.instructions,
+                   plan.stack_inputs, len(plan.nodes),
+                   sum(len(node.arguments) for node in plan.nodes)),
+        'nodes': [(OP_CODE[node.op], operand_pairs(node.arguments))
+                  for node in plan.nodes],
+        'stack': operand_pairs(plan.stack),
+        'locals': operand_pairs(plan.locals),
     }
+
+
+def read_vectors(stream):
+    current = None
+    for line in stream:
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == 'PAIR':
+            if current is not None:
+                yield current
+            values = [int(value) for value in parts[1:]]
+            current = {
+                'head': values[0], 'tail': values[1],
+                'header': tuple(values[2:9]),
+                'nodes': [], 'stack': [], 'locals': [],
+            }
+        elif parts[0] == 'N':
+            arguments = [tuple(int(half) for half in item.split(':'))
+                         for item in parts[3:]]
+            current['nodes'].append((int(parts[2]), arguments))
+        elif parts[0] in ('S', 'L'):
+            kind, value = (int(half) for half in parts[2].split(':'))
+            current['stack' if parts[0] == 'S' else 'locals'].append(
+                (kind, value))
+    if current is not None:
+        yield current
 
 
 def main():
     if len(sys.argv) != 2:
-        raise SystemExit('usage: compose_parity.py MACHINE < pairs')
+        raise SystemExit('usage: compose_parity.py MACHINE < vectors')
     _metadata, _memory, records = load_native_x86_machine(
         Path(sys.argv[1]).read_bytes())
     records = list(records)
 
-    relations = {name: Counter() for name in FIELDS}
-    composed_work = 0
-    summed_work = 0
-    composed_bytes = 0
-    pairs = 0
-    refused = Counter()
-    stacks = Counter()
+    checked = 0
+    disagreements = Counter()
+    for vector in read_vectors(sys.stdin):
+        head, tail = vector['head'], vector['tail']
+        first, second = plan_of(records[head][1]), plan_of(records[tail][1])
+        try:
+            expected = reference(compose_plans_raw(first, second))
+        except Exception as error:                    # noqa: BLE001
+            disagreements['python refused where C composed: %s' % error] += 1
+            continue
 
-    for line in sys.stdin:
-        parts = line.split()
-        if len(parts) != 2:
-            continue
-        head, tail = (int(value) for value in parts)
-        if head >= len(records) or tail >= len(records):
-            refused['index out of range'] += 1
-            continue
-        try:
-            first = plan_of(records[head][1])
-            second = plan_of(records[tail][1])
-        except Exception as error:                    # noqa: BLE001
-            refused['decode: %s' % type(error).__name__] += 1
-            continue
-        try:
-            joined = compose_plans(first, second)
-            raw = compose_plans_raw(first, second)
-        except Exception as error:                    # noqa: BLE001
-            refused['compose: %s' % error] += 1
-            # The C precondition reads stack_count out of the template header;
-            # Python compares len(first.stack) with second.stack_inputs.  Print
-            # both so the disagreement is a fact rather than a hypothesis.
-            print('REFUSED %d -> %d: first stack=%d inputs=%d, '
-                  'second stack=%d inputs=%d'
-                  % (head, tail, len(first.stack), first.stack_inputs,
-                     len(second.stack), second.stack_inputs),
+        if expected['header'] != vector['header']:
+            disagreements['header'] += 1
+            print('HEADER %d -> %d: python %r, C %r'
+                  % (head, tail, expected['header'], vector['header']),
                   file=sys.stderr)
-            continue
+        elif expected['nodes'] != vector['nodes']:
+            disagreements['nodes'] += 1
+            for index, (want, got) in enumerate(
+                    zip(expected['nodes'], vector['nodes'])):
+                if want != got:
+                    print('NODE %d -> %d at %d: python %r, C %r'
+                          % (head, tail, index + 1, want, got),
+                          file=sys.stderr)
+                    break
+        elif expected['stack'] != vector['stack']:
+            disagreements['stack'] += 1
+        elif expected['locals'] != vector['locals']:
+            disagreements['locals'] += 1
+            print('LOCALS %d -> %d: python %r, C %r'
+                  % (head, tail, expected['locals'][:6],
+                     vector['locals'][:6]), file=sys.stderr)
+        checked += 1
 
-        pairs += 1
-        a, b, c = shape(first), shape(second), shape(joined)
-        for name in FIELDS:
-            # Test equality before sum: when both inputs are zero every
-            # relation is true at once, and reporting that as a sum would be
-            # a claim the data does not support.
-            if a[name] == b[name] == c[name]:
-                relations[name]['equal'] += 1
-            elif c[name] == a[name]:
-                relations[name]['first'] += 1
-            elif c[name] == b[name]:
-                relations[name]['second'] += 1
-            elif c[name] == a[name] + b[name]:
-                relations[name]['sum'] += 1
-            elif c[name] == max(a[name], b[name]):
-                relations[name]['max'] += 1
-            elif c[name] < a[name] + b[name]:
-                relations[name]['below sum'] += 1
-            else:
-                relations[name]['above sum'] += 1
-        composed_work += c['work']
-        summed_work += a['work'] + b['work']
-        composed_bytes += len(raw.nodes)
-        stacks[(len(first.stack), second.stack_inputs)] += 1
-
-    if not pairs:
-        raise SystemExit('no pairs composed; refusals: %r' % dict(refused))
-
-    print('pairs composed              %10d' % pairs)
-    if refused:
-        for reason, count in refused.most_common(6):
-            print('  refused: %-24s %8d' % (reason[:24], count))
-    print()
-    print('composed header, against the two inputs:')
-    for name in FIELDS:
-        summary = '  '.join(
-            '%s=%d' % (key, value)
-            for key, value in relations[name].most_common())
-        print('  %-14s %s' % (name, summary))
-    print()
-    print('work: summed %d, composed %d (%.2fx)'
-          % (summed_work, composed_work,
-             composed_work / max(summed_work, 1)))
-    print('nodes before normalization  %10d' % composed_bytes)
-    print()
-    print('(len(first.stack), second.stack_inputs) seen:')
-    for pair, n in stacks.most_common(6):
-        print('  %-16s %10d' % (pair, n))
+    if not checked:
+        raise SystemExit('no vectors on stdin')
+    print('composed pairs compared     %10d' % checked)
+    if disagreements:
+        for reason, count in disagreements.most_common(8):
+            print('  %-40s %8d' % (reason[:40], count))
+        return 1
+    print('every composed graph agrees with compose_plans_raw')
     return 0
 
 
