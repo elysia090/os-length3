@@ -22,7 +22,7 @@ BUILD   ?= build
 LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/directory.c src/chain.c src/trace.c src/template.c
 LIB_OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(LIB_SOURCES))
 
-.PHONY: all check parity guest wasm clean
+.PHONY: all check parity opcodes guest wasm clean
 
 TOOLS = postlink-inspect postlink-admit postlink-chain postlink-repack postlink-trace postlink-template
 
@@ -63,9 +63,14 @@ $(BUILD)/selftest: check/selftest.c $(LIB_OBJECTS) $(HEADERS) | $(BUILD)
 check: $(BUILD)/selftest
 	$(BUILD)/selftest
 
+# The opcode predicates are generated from qm.steppage rather than transcribed,
+# because neither of them is a contiguous range.  Fails if the header drifts.
+opcodes:
+	python3 check/generate_opcodes.py --check
+
 # Proves the C codec against kernel/x86snapshot.py while both still exist.
 # This is a repository check, not part of the distributable.
-parity: $(BUILD)/selftest
+parity: opcodes $(BUILD)/selftest
 	$(BUILD)/selftest --vectors | python3 check/format_parity.py
 
 # The guest links statically: the read-only /usr layer has no dynamic loader
