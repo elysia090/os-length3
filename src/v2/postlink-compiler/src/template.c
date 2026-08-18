@@ -79,3 +79,95 @@ int pl_template_parse(const pl_u8 *bytes, pl_u32 length, pl_template *out)
     out->bytes = length;
     return 0;
 }
+
+/* ------------------------------------------------------- the parameter row */
+
+/* Walk the tag groups in the order project_step_template wrote them and total
+ * what each tag lifted out.  The consts come first in the row only in the sense
+ * that they interleave with the coordinates exactly as the tags do, so the
+ * accessors below re-walk the tags rather than indexing a packed run. */
+int pl_parameters_shape(const pl_u8 *tmpl, const pl_template *parsed,
+                        pl_parameters *out)
+{
+    const pl_tag_group *groups[3] = {
+        &parsed->operand, &parsed->stack, &parsed->local };
+    pl_u32 consts = 0;
+    pl_u32 coordinates = 0;
+    for (unsigned g = 0; g < 3u; ++g) {
+        const pl_tag_group *group = groups[g];
+        for (pl_u32 index = 0; index < group->count; ++index) {
+            pl_u32 tag = tmpl[group->tags + index];
+            if (tag == PL_OPERAND_CONST) consts += 1u;
+            else if (tag == PL_OPERAND_STACK || tag == PL_OPERAND_LOCAL)
+                coordinates += 1u;
+        }
+    }
+    out->consts = consts;
+    out->coordinates = coordinates;
+    out->indices = parsed->local_updates;
+    out->bytes = consts * 8u + coordinates * 2u + parsed->local_updates * 2u;
+    return 0;
+}
+
+/* The row interleaves: project_step_template walks the tags in order and emits
+ * eight bytes for a const and two for a frame coordinate as it meets them, so a
+ * const at tag position five can sit behind two coordinates.  Reaching a slot
+ * therefore means walking the tags and accumulating widths, not indexing a
+ * packed run. */
+static int walk_to(const pl_u8 *tmpl, const pl_template *parsed,
+                   pl_u32 want_kind, pl_u32 want_slot, pl_u32 *offset)
+{
+    const pl_tag_group *groups[3] = {
+        &parsed->operand, &parsed->stack, &parsed->local };
+    pl_u32 cursor = 0;
+    pl_u32 seen = 0;
+    for (unsigned g = 0; g < 3u; ++g) {
+        const pl_tag_group *group = groups[g];
+        for (pl_u32 index = 0; index < group->count; ++index) {
+            pl_u32 tag = tmpl[group->tags + index];
+            pl_u32 width = tag == PL_OPERAND_CONST ? 8u
+                         : (tag == PL_OPERAND_STACK || tag == PL_OPERAND_LOCAL)
+                           ? 2u : 0u;
+            if (!width) continue;
+            int matches = want_kind == PL_OPERAND_CONST
+                        ? tag == PL_OPERAND_CONST
+                        : tag != PL_OPERAND_CONST;
+            if (matches) {
+                if (seen == want_slot) { *offset = cursor; return 0; }
+                seen += 1u;
+            }
+            cursor += width;
+        }
+    }
+    return PL_ERROR_PARAMETERS;
+}
+
+int pl_parameters_const(const pl_u8 *tmpl, const pl_template *parsed,
+                        const pl_u8 *row, pl_u32 slot, pl_u64 *value)
+{
+    pl_u32 offset;
+    int status = walk_to(tmpl, parsed, PL_OPERAND_CONST, slot, &offset);
+    if (status) return status;
+    *value = pl_read_u64(row + offset);
+    return 0;
+}
+
+int pl_parameters_coordinate(const pl_u8 *tmpl, const pl_template *parsed,
+                             const pl_u8 *row, pl_u32 slot, pl_u32 *value)
+{
+    pl_u32 offset;
+    int status = walk_to(tmpl, parsed, PL_OPERAND_STACK, slot, &offset);
+    if (status) return status;
+    *value = pl_read_u16(row + offset);
+    return 0;
+}
+
+/* The local_indices tail follows every interleaved word. */
+int pl_parameters_index(const pl_u8 *row, const pl_parameters *shape,
+                        pl_u32 slot, pl_u32 *value)
+{
+    if (slot >= shape->indices) return PL_ERROR_PARAMETERS;
+    pl_u32 tail = shape->consts * 8u + shape->coordinates * 2u;
+    *value = pl_read_u16(row + tail + slot * 2u);
+    return 0;
+}

@@ -80,4 +80,38 @@ static inline pl_u32 pl_unsigned_width(pl_u64 value)
     return 8u;
 }
 
+
+/* ------------------------------------------------------- the parameter row */
+
+/* What project_step_template lifted out of the template, in the order the tags
+ * appear: a const contributes eight bytes, a stack or local coordinate two, and
+ * the local_indices tail contributes two per local update.  The extent is
+ * therefore a function of the template alone, which is what makes it checkable:
+ * a row whose length disagrees with its template is not the row that template
+ * was written with.
+ */
+typedef struct {
+    pl_u32 consts;        /* 8-byte words */
+    pl_u32 coordinates;   /* 2-byte frame coordinates */
+    pl_u32 indices;       /* the local_indices tail, 2 bytes each */
+    pl_u32 bytes;         /* the extent all of that implies */
+} pl_parameters;
+
+/* Derive the row shape from a parsed template. */
+int pl_parameters_shape(const pl_u8 *tmpl, const pl_template *parsed,
+                        pl_parameters *out);
+
+/* The row interleaves consts and coordinates in tag order, so these walk the
+ * tags rather than indexing a packed run, and need the template to do it. */
+int pl_parameters_const(const pl_u8 *tmpl, const pl_template *parsed,
+                        const pl_u8 *row, pl_u32 slot, pl_u64 *value);
+int pl_parameters_coordinate(const pl_u8 *tmpl, const pl_template *parsed,
+                             const pl_u8 *row, pl_u32 slot, pl_u32 *value);
+
+/* The local_indices tail sits after every interleaved word. */
+int pl_parameters_index(const pl_u8 *row, const pl_parameters *shape,
+                        pl_u32 slot, pl_u32 *value);
+
+#define PL_ERROR_PARAMETERS (-16)
+
 #endif /* POSTLINK_TEMPLATE_H */
