@@ -1,15 +1,23 @@
 # postlink-compiler
 
-The post-link compiler turns a linked x86-64 program image into the block
-artifact the QM runtime executes. It is the *producer* side of
-`x86-native-machine-v5`; `vm.c` is the consumer.
+The compiler and VM acceptance contract is in [CONTRACT.md](CONTRACT.md).  In
+particular, a boot trace is test input rather than compiler input, and STEP is
+an internal proof rather than the output instruction set.
+
+The post-link compiler turns a linked x86-64 program image into directly
+callable Wasm block functions bound to that image's executable pages.  It is
+the producer; `vm.wasm` is the fixed target machine.  The VM does not decode
+x86, interpret STEP, reconstruct records, or compile missing blocks.
 
 ```
-artifact/linux-x86-64          artifact/linux-x86-64-postlink
-(512 MiB physical RAM image)   (compiled blocks + physical backing)
-        |                                   ^              |
-        |  decode, close, normalize         |              |  execute
-        +---------- postlink-compiler ------+              +--> vm.c
+source -> compiler -> linker -> linked x86 ELF
+                                  |
+                                  | postlink-compiler
+                                  v
+                    direct Wasm modules + page bindings
+                                  |
+                                  v
+                               vm.wasm
 ```
 
 It builds with `gcc` and nothing else, and it is meant to run **on x86** —
@@ -22,7 +30,11 @@ rather than kept as fallbacks.
 
 ```sh
 make            # the native driver and the self-test
+make library    # libpostlink.a; needs Makefile + include/ + src/ + pinned Zydis
 make check      # run the self-test
+make isa-completeness-check
+make mmu-completeness-check
+make linked-completeness-check X86_IMAGE=/path/to/vmlinux
 make parity     # additionally prove the C codec against the Python writer
 make guest      # a static binary for the guest's own toolchain
 make wasm       # the library objects for the browser runtime
@@ -36,10 +48,34 @@ on a host that ships only dynamic glibc. `make wasm` needs clang. Neither has
 been run on the current development host, so both are declared rather than
 tested.
 
+The standalone distribution is `Makefile`, `include/`, `src/`, and the pinned
+decoder-only `third_party/zydis` tree.  Only five Zydis translation units are
+linked; its formatter and encoder are disabled, and no decoder code enters
+`vm.wasm`.  `make library` in a copy containing only those paths produces
+`build/libpostlink.a`; it does not inspect `check/`, import the Python oracle,
+load JavaScript, or require an artifact.  Consumers may include the individual
+headers or the aggregate `<postlink/postlink.h>`.
+
+The three completeness targets are publication gates, not ordinary regression
+tests.  They are expected to be red while work remains: the first fixes a
+small boot-critical ISA/machine-operation witness set, the second compares a
+direct MMU fault at the canonical exception cut, and the third requires every
+valid coordinate in the selected linked image to have direct semantics.
+`--require-semantics` and `--alias-require-semantics` make the ELF scanner exit
+nonzero on an unsupported operation, anonymous machine barrier, grammar miss
+or bounded-arena failure.  A valid decode alone is never green.
+
+The first boot-frontier machine operation, `WRMSR`, is closed end to end: the
+decoder names a typed `WRITE_MSR` action, the physical plan retains the exact
+cut, emitted Wasm calls a dedicated VM import, and `vm.wasm` updates its
+canonical MSR bank.  The integration fixture executes that block and checks
+the EDX:EAX value.  A `WRMSR; ret` linked ELF publishes with zero barrier or
+Wasm failures and passes `postlink-verify`; `LRETQ` remains the next red cut.
+
 The library sources under `src/` are freestanding: no libc, no builtins, no
-target assumptions beyond two's complement. Only the drivers under `tools/`
-and `check/` use libc, so the browser runtime reuses the same objects without
-a second source tree.
+target assumptions beyond two's complement. Only the repository drivers under
+`tools/` and `check/` use libc, so the browser runtime reuses the same objects
+without a second source tree.
 
 ## Why this directory exists
 
@@ -85,8 +121,13 @@ are only sharing an arena, and separate cleanly.
 | `src/format.c` | record parse and validation |
 | `src/continuation.c` | canonical continuation encode/decode and RIP projection |
 | `src/machine.c` | container framing, with a targeted reader for the header's integer fields |
-| `include/postlink/directory.h`, `src/directory.c` | block admission by rank, resolving a RIP to coordinates without copying a byte |
+| `include/postlink/elf.h`, `src/elf.c` | bounded ELF64/x86-64 program-header reader: the first ordinary linked-program input boundary |
+| `include/postlink/executable.h`, `src/executable.c` | direct block ABI plus canonical executable root for external Wasm modules, immutable memory objects and page-generation bindings |
+| `include/postlink/entrymap.h`, `src/entrymap.c` | two-load page-offset to function-rank physical array, quotient-sharing equal 256-entry tail rows |
+| `include/postlink/directory.h`, `src/directory.c` | migration-only STEP block admission by rank, resolving a RIP to coordinates without copying a byte |
+| `include/postlink/dispatch.h`, `src/dispatch.c` | exact-hash residual partition refinement over normalized transfers and successor classes |
 | `tools/inspect.c` | `postlink-inspect`, the first driver that reads a real artifact with no Python and no JavaScript in the path |
+| `tools/elf.c` | `postlink-elf`, verifies and lists executable mappings from a normal ET_EXEC/ET_DYN input |
 | `tools/admit.c` | `postlink-admit`, admits all 222,079 blocks and reports what record assembly costs |
 | `check/selftest.c` | codec assertions and 13,932 continuation round-trips |
 | `check/format_parity.py` | proves those round-trips against `kernel/x86snapshot.py` |
@@ -106,25 +147,35 @@ are only sharing an arena, and separate cleanly.
 
 ## Measured baseline
 
-A real boot, `node tools/run_linux_worker.mjs http://127.0.0.1:8000/artifact/
-linux-x86-64-postlink`, reaching the BusyBox prompt and running one command:
+A current real boot, `node tools/run_linux_worker.mjs
+http://127.0.0.1:8000/artifact/ linux-x86-64-postlink`, reaches the BusyBox
+prompt and runs one command in about five seconds.  Three warm-artifact runs of
+the profiled VM had a 5,118 ms median; specializing projection tags once at
+admission reduced that to 5,013 ms.
 
-| | |
-| --- | --- |
-| boot | 43,306 ms |
-| source instructions retired | 35,129,185 |
-| throughput | 811k instructions/second |
-| artifact open | 294.7 ms, of which 257.1 ms is the descriptor fetch |
-| records assembled during boot | 41,419, totalling 12,276,755 bytes |
+| quantity | boot value |
+| --- | ---: |
+| source x86 instructions retired | 35,128,920 |
+| STEP work / nodes executed | 29,504,163 / 29,504,224 |
+| block shape opens | 56,577 |
+| cached block shape restores | 11,245,330 |
+| STEP executor entries | 15,264,102 |
+| projection graph queries after specialization | 64,436 |
+| artifact mapped | roughly 100–140 ms |
+| VM ready | roughly 365–420 ms |
 
-Loading is not the problem: 295 ms of a 43 s boot. Record assembly is a
-footprint cost, not the 43 s. Where the 43 s goes is not yet profiled, and
-guessing at it from static structure has already produced two wrong answers —
-it needs its own measurement before anything is changed for it.
+The machine therefore retires only about 3.11 source instructions per loaded
+block.  The 3,962,195 executor entries beyond block opens plus restores are
+memory-page resumptions inside an already resident VM, not network fetches.
+Artifact delivery is no longer the dominant term: block boundary restore,
+STEP dispatch and memory resumption are.
 
-Note that `run_native_x86_machine.mjs` runs a resident machine for a fixed
-block budget. It is not a boot, and its throughput figure is roughly 4.7x
-optimistic against the number above.
+Expanding the generic four-slot STEP memory window to 64 x86 tag slots proved
+the distinction.  It removed 83.3% of the resumptions but regressed the boot
+median from 4,966 ms to 5,421 ms because the broader metadata working set and
+invalidation scans cost more than the removed entries.  That experiment was
+rejected; the next memory form must use a small set-associative tag with lazy
+generation invalidation rather than wider direct-mapped materialization.
 
 
 ## Normalization is a direct construction
@@ -175,22 +226,42 @@ the specification for the C rewriter.
 
 ## What is not here yet
 
-The decoder, the block former and the closure driver are still `X86DBT` in
-Python. They are the bulk of the port and the reason this directory starts
-with the format rather than with the compiler: every stage that moves to C has
-to keep producing the same bytes, and that is only checkable once the bytes
-have one definition.
+Instruction framing is no longer in Python.  `x86.c` accepts linked ELF or
+caller-owned raw executable maps, decodes every byte coordinate in C, preserves
+the exact source cut and totalizes invalid, overlong and truncated fetches as
+architectural faults.  `closure.c` expands every executable page to a total
+function/fault projection.  Physical and virtual aliases are then interned by
+`transfer.c` with collision-checked full equality; the complete decoded
+instruction is transient rather than retained once per coordinate.
+
+On the current Linux 7.1.8 `vmlinux`, `postlink-elf --alias-transfers` catalogs
+19,186,970 physical-plus-virtual byte coordinates.  Exact alias/source transfer
+sharing plus canonical terminal faults leaves 799,118 conservative classes;
+18,387,852 coordinates share an existing rank.  The growable build workspace
+settles at 1,048,576 identity rows and 2,097,152 hash slots, 25,165,824 bytes,
+instead of reserving the 220,605,824-byte all-distinct upper bound.  The scan
+finds 654 standard x86 mnemonic kinds, which is why semantics cannot be another
+hand-maintained list of boot-observed opcodes.
+
+What remains in Python is the semantic block former and its mature family
+lowerings.  C must turn the normalized operands into SSA/QM, preserve every
+fault and barrier ordering, and form successor closure.  A decoder hit is not
+yet an executable function and is never reported as one.
 
 The order the remaining stages move in:
 
-1. **container writer** — C emits the v5 payload the Python writer emits today,
-   proven byte-identical on the shipped artifact.
-2. **executor** — `vm_x86_*` and `vm_step_*` move out of `vm.c` into `src/`,
-   built for both wasm32 and native x86-64. The Python execution path in
-   `kernel/x86.py` and the JavaScript reader in `web/x86-machine.js` are
-   deleted rather than kept, so there is one execution route.
-3. **decoder and closure** — the remaining ~20,000 lines of `X86DBT`. This is
-   the stage that lets the compiler run inside the guest.
+1. **semantic lowering** — lower every decoded x86 family to normalized SSA,
+   preserving precise faults, barriers, generations and both control arms.
+2. **direct lowering** — lower normalized plans to
+   `(i32 machine, i32 executable_context)->i64` Wasm block
+   functions and total page-dispatch functions.
+3. **compiler-side closure** — close all direct edges and indirect dispatch
+   domains and reject publication if any coordinate lacks executable semantics.
+4. **direct VM executor** — instantiate the emitted modules in a shared
+   function table, then delete `vm_step_*`, X86B assembly, the JavaScript
+   reader and every Python execution path.
+5. **ordinary link integration** — run postlink-compiler after `ld` and publish
+   the linked ELF plus its projection atomically.
 
 ## Artifact taxonomy
 

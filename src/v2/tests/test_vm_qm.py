@@ -159,18 +159,17 @@ class TestTheThreeEntryArrowsAgree(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which('node'), 'needs node')
-class TestTheShippedModuleRunsTheSameArtifacts(unittest.TestCase):
-    """`web/vm.wasm` is what the page runs, so it is what gets checked.
+class TestTheDeliveredModuleRunsTheSameArtifacts(unittest.TestCase):
+    """The source fixture and the sole artifact delivery must be identical.
 
-    The reference in `vm/machine.py` and the compiled machine are run on the same
-    artifacts and required to agree. A committed binary that had drifted from
-    `vm.c` would pass every Python test in the suite and be wrong in the only
-    place it is used.
+    `web/vm.wasm` is retained only as a readable native-test fixture and is
+    excluded from deployment.  The browser opens `artifact/vm`; this test
+    prevents either representation from drifting from `vm.c`.
     """
 
     def setUp(self):
         self.assertTrue(os.path.exists(SHIPPED_WASM),
-                        'run vm/wasm/build.py --out web/vm.wasm')
+                        'rebuild the VM fixture and artifact delivery')
 
     def test_the_shipped_module_is_the_current_source(self):
         if not shutil.which('clang'):
@@ -194,7 +193,7 @@ class TestTheShippedModuleRunsTheSameArtifacts(unittest.TestCase):
         with open(SHIPPED_WASM, 'rb') as handle:
             shipped = handle.read()
         self.assertEqual(shipped, rebuilt,
-                         'web/vm.wasm is stale; rebuild it from vm.c')
+                         'the VM source fixture is stale')
         artifact_root = os.path.join(
             os.path.dirname(os.path.dirname(ROOT)), 'artifact', 'vm')
         with open(os.path.join(artifact_root, 'index.json')) as handle:

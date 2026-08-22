@@ -19,8 +19,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # and the VM package compiles it into the executable artifact.
 PACKAGES = ('qm', 'vm')
 KERNEL_PACKAGES = ('qm', 'kernel')
-# The C and its build script are not importable and are not shipped; the
-# compiled module travels as `web/vm.wasm` instead.
+# The C and its build script are not importable and are not shipped.  The
+# compiled module is opened only through the repository artifact catalog.
 SKIP_DIRS = ('__pycache__', 'wasm', 'guest')
 MANIFEST = os.path.join(ROOT, 'web', 'qm-manifest.json')
 KERNEL_MANIFEST = os.path.join(ROOT, 'web', 'kernel-manifest.json')

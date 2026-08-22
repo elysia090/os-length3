@@ -6,11 +6,18 @@
  * page-freeing loop it would mark pages freed that never were.  So the
  * collapse needs an argument, not a pattern match, and this is that argument.
  *
- * A body qualifies when, for every local slot, its value after one iteration is
- * either unchanged or `slot + k` for a constant k -- and when every address the
- * body touches is itself affine in one of those slots.  Anything else is
- * reported as the reason it is not, so a refusal is legible rather than a bare
- * no.
+ * Full architectural state need not be materialized at every internal
+ * backedge.  The residual cut is the least fixed point containing memory and
+ * trap effects, the terminal predicate, and the next-iteration outputs of
+ * every input those observations need.  Locals outside that cut are computed
+ * once by the final ordinary iteration.  This is strictly smaller than asking
+ * every architectural local to have a closed recurrence, without weakening
+ * the observable result.
+ *
+ * A cut qualifies for this first affine class when each carried slot is
+ * unchanged or `slot + k` for a constant k, and every address touched is
+ * affine.  Anything else is reported as the reason it is not, so a refusal is
+ * legible rather than a bare no.
  *
  * This is deliberately a checker and not an inference.  It answers whether a
  * given fused body may be collapsed; choosing which bodies to offer it is the
@@ -55,10 +62,19 @@ typedef struct {
     pl_u32 slot_count;
     pl_u32 memory_nodes;         /* how many the body performs */
     pl_u32 affine_addresses;     /* how many of those are affine */
+    pl_u8 *cut_slots;            /* inputs carried across internal backedges */
+    pl_u8 *cut_nodes;            /* hot backward slice, one byte per node */
+    pl_u32 cut_slot_count;
+    pl_u32 cut_node_count;
 } pl_affine;
 
 /* Analyse one composed loop body. */
 int pl_affine_analyse(const pl_plan *body, pl_arena *arena, pl_affine *out);
+
+/* Analyse only the residual needed between iterations.  `predicate_local` is
+ * the post-body local consumed by the terminal branch (RFLAGS for x86). */
+int pl_affine_analyse_cut(const pl_plan *body, pl_u32 predicate_local,
+                          pl_arena *arena, pl_affine *out);
 
 const char *pl_affine_reason(pl_affine_verdict verdict);
 

@@ -54,6 +54,13 @@ typedef struct {
     int failed;
 } compose_state;
 
+static int plan_traps(const pl_plan *plan)
+{
+    for (pl_u32 index = 0u; index < plan->node_count; ++index)
+        if (pl_opcode_traps(plan->nodes[index].opcode)) return 1;
+    return 0;
+}
+
 static pl_operand substitute_output(compose_state *state, pl_operand operand)
 {
     const pl_plan *first = state->first;
@@ -151,6 +158,14 @@ int pl_compose_raw(const pl_plan *first, const pl_plan *second,
 {
     if (first->function != second->function) return PL_ERROR_PLAN;
     if (first->stack_count < second->stack_inputs) return PL_ERROR_PLAN;
+    /* A trapping source instruction is an architectural publication cut.
+     * Folding an earlier or later instruction into it loses the exact state
+     * an exception observes.  Zero-instruction normalization fragments may
+     * still join the same source instruction, but two source instructions may
+     * never cross this boundary. */
+    if ((pl_u64)first->instructions + second->instructions > 1u
+            && (plan_traps(first) || plan_traps(second)))
+        return PL_ERROR_PLAN;
 
     pl_u64 node_cap = (pl_u64)first->node_count + second->node_count
                     + second->argument_count;

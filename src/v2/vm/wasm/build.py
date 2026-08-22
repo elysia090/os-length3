@@ -3,9 +3,11 @@
 
     python3 vm/wasm/build.py [--out path] [--check]
 
-The module is built, not committed: a checked-in binary is a claim nobody can
-read, and the C is 300 lines that any clang can turn into the same thing. The
-test suite builds it into a temporary directory for the same reason.
+An ordinary build writes canonical Wasm plus its replaceable page deliveries.
+The browser does not fetch that output path directly; publication places the
+verified result below `artifact/vm` and updates the repository catalog.  The
+test suite also rebuilds it in a temporary directory and requires the source
+fixture and published delivery to match byte for byte.
 
 `--check` only verifies that it compiles warning-free, which is what a CI step
 wants.
@@ -23,7 +25,18 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.join(HERE, 'vm.c')
+TRIG_SOURCE = os.path.join(HERE, 'trig.c')
 ROOT = os.path.dirname(os.path.dirname(HERE))
+POSTLINK_RUNTIME_SOURCES = [
+    os.path.join(ROOT, 'postlink-compiler', 'src', 'format.c'),
+    os.path.join(ROOT, 'postlink-compiler', 'src', 'sha256.c'),
+    os.path.join(ROOT, 'postlink-compiler', 'src', 'index.c'),
+    os.path.join(ROOT, 'postlink-compiler', 'src', 'executable.c'),
+    os.path.join(ROOT, 'postlink-compiler', 'src', 'residual.c'),
+    os.path.join(ROOT, 'postlink-compiler', 'src', 'instantiation.c'),
+]
+EMITTER_CHECK = os.path.join(
+    ROOT, 'postlink-compiler', 'check', 'emitter_vm.mjs')
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -33,7 +46,9 @@ if ROOT not in sys.path:
 # the artifact buffer with room to spare.
 FLAGS = [
     '--target=wasm32', '-O2', '-ffreestanding', '-nostdlib',
-    '-Wl,--no-entry', '-Wl,--export-dynamic',
+    '-I' + os.path.join(ROOT, 'postlink-compiler', 'include'),
+    '-Wl,--no-entry', '-Wl,--export-dynamic', '-Wl,--export-table',
+    '-Wl,--growable-table',
     '-Wl,--initial-memory=33554432',
     '-Wall', '-Wextra',
 ]
@@ -43,7 +58,7 @@ DELIVERY_DATA_SHARDS = 8
 DELIVERY_PARITY_SHARDS = 2
 
 
-def build(out_path, binary='clang'):
+def compile_source(source, out_path, flags, binary='clang'):
     compiler = binary
     probe = subprocess.run([binary, '-print-prog-name=clang'],
                            capture_output=True, text=True)
@@ -53,7 +68,7 @@ def build(out_path, binary='clang'):
         # explicitly targeting wasm32.  Clang names its unwrapped executable
         # through this standard query, so use that compiler for cross-targets.
         compiler = resolved
-    flags = list(FLAGS)
+    flags = list(flags)
     linker = shutil.which('wasm-ld')
     if compiler != binary and linker is None:
         candidates = glob.glob('/nix/store/*-lld-*/bin/wasm-ld')
@@ -66,13 +81,19 @@ def build(out_path, binary='clang'):
         linker = sorted(candidates)[-1] if candidates else None
     if compiler != binary and linker:
         flags.append('-fuse-ld=' + linker)
-    result = subprocess.run([compiler] + flags + [SOURCE, '-o', out_path],
+    sources = list(source) if isinstance(source, (list, tuple)) else [source]
+    result = subprocess.run([compiler] + flags + sources + ['-o', out_path],
                             capture_output=True, text=True)
     return result
 
 
+def build(out_path, binary='clang'):
+    return compile_source([SOURCE, TRIG_SOURCE] + POSTLINK_RUNTIME_SOURCES,
+                          out_path, FLAGS, binary)
+
+
 def normalize(out_path):
-    """Put the compiled VM through the same safe wasm-body QM as drivers."""
+    """Apply the proof-preserving Wasm-body normalization used by drivers."""
     from qm.wasmbinary import optimize_module
 
     with open(out_path, 'rb') as handle:
@@ -167,7 +188,47 @@ def main():
     parser.add_argument('--out', default=os.path.join(HERE, 'vm.wasm'))
     parser.add_argument('--check', action='store_true',
                         help='compile to a scratch file and discard it')
+    parser.add_argument('--direct-check', action='store_true',
+                        help='also run the compiler-to-shared-table VM check')
+    parser.add_argument('--completeness-check', action='store_true',
+                        help='require precise direct-MMU fault observation')
+    parser.add_argument('--emitted-module',
+                        help='C-emitted block module checked with --direct-check')
+    parser.add_argument('--emitted-cold-module',
+                        help='cold C-emitted block module checked with --direct-check')
+    parser.add_argument('--executable-root',
+                        help='C-emitted executable root checked with --direct-check')
+    parser.add_argument('--residual-root',
+                        help='successor-free residual root checked with --direct-check')
+    parser.add_argument('--executable-node', action='append', default=[],
+                        help='content-addressed index node checked with --direct-check')
+    parser.add_argument('--executable-resource', action='append', default=[],
+                        help='content-addressed resource checked with --direct-check')
     args = parser.parse_args()
+
+    if args.completeness_check:
+        args.direct_check = True
+
+    if (args.emitted_module or args.emitted_cold_module
+            or args.executable_root or args.residual_root
+            or args.executable_node
+            or args.executable_resource) \
+            and not args.direct_check:
+        parser.error('emitted executable inputs require --direct-check')
+    if bool(args.emitted_module) != bool(args.executable_root):
+        parser.error('--emitted-module and --executable-root must be supplied together')
+    if args.emitted_module and not args.residual_root:
+        parser.error('the fixture requires --residual-root')
+    if args.emitted_module and not args.emitted_cold_module:
+        parser.error('the fixture requires --emitted-cold-module')
+    if args.emitted_module and len(args.executable_node) != 3:
+        parser.error('the fixture requires three --executable-node inputs')
+    if args.executable_node and not args.emitted_module:
+        parser.error('--executable-node requires --emitted-module')
+    if args.emitted_module and len(args.executable_resource) != 7:
+        parser.error('the fixture requires seven --executable-resource inputs')
+    if args.executable_resource and not args.emitted_module:
+        parser.error('--executable-resource requires --emitted-module')
 
     binary = shutil.which('clang')
     if not binary:
@@ -175,7 +236,7 @@ def main():
         return 2
 
     out = args.out
-    if args.check:
+    if args.check or args.direct_check:
         out = os.path.join(HERE, '.check.wasm')
 
     result = build(out, binary)
@@ -190,7 +251,28 @@ def main():
     report = normalize(out)
 
     size = os.path.getsize(out)
-    if args.check:
+    if args.direct_check:
+        node = shutil.which('node')
+        if not node:
+            print('no node on PATH', file=sys.stderr)
+            os.unlink(out)
+            return 2
+        if args.emitted_module:
+            checked = subprocess.run(
+                [node, EMITTER_CHECK, out, args.emitted_module,
+                 args.emitted_cold_module,
+                 args.executable_root, args.residual_root]
+                + args.executable_node
+                + args.executable_resource
+                + (['--require-completeness']
+                   if args.completeness_check else []),
+                capture_output=True, text=True)
+            if checked.returncode != 0:
+                sys.stderr.write(checked.stderr)
+                os.unlink(out)
+                return 1
+            sys.stdout.write(checked.stdout)
+    if args.check or args.direct_check:
         os.unlink(out)
         print('vm.c compiles clean (%d bytes)' % size)
     else:
@@ -208,7 +290,8 @@ def main():
               % (os.path.splitext(out)[0] + '-steps.pages',
                  distribution['vm']['steps']['delivery']['bytes'],
                  distribution['vm']['steps']['delivery']['prefix_bytes']))
-    print('QM checked %d pure and %d state wasm bodies; %d replaced, '
+    print('post-link normalization checked %d pure and %d state Wasm bodies; '
+          '%d replaced, '
           '%d memory loads substituted'
           % (report['decoded_pure_integer_expressions'],
              report['decoded_state_integer_expressions'],

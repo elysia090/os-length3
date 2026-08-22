@@ -161,11 +161,14 @@ function parseManifest(prefix, start, length) {
     throw new Error('page manifest geometry is invalid');
   }
   const pageCount = Math.ceil(byteLength / pageBytes);
-  const ranks = new Uint32Array(pageCount);
+  // Preserve the codec's sparse normal form after opening.  Expanding this
+  // into `pageCount` slots makes a large zero address space consume linear
+  // browser memory even when only a few coordinates exist.
+  const coordinates = new Float64Array(nonzero);
+  const ranks = new Uint32Array(nonzero);
   const state = { at: start + MANIFEST_HEADER_BYTES, end };
   let previous = -1;
   let nextRank = 1;
-  const seen = new Set();
   for (let index = 0; index < nonzero; index += 1) {
     const gap = readUleb(prefix, state);
     const rank = readUleb(prefix, state);
@@ -173,15 +176,16 @@ function parseManifest(prefix, start, length) {
     if (page >= pageCount || !rank || rank > uniquePages) {
       throw new Error('page manifest coordinate is invalid');
     }
-    if (!seen.has(rank)) {
-      if (rank !== nextRank) throw new Error('unique pages are not first-coordinate ranked');
-      seen.add(rank);
+    if (rank === nextRank) {
       nextRank += 1;
+    } else if (rank > nextRank) {
+      throw new Error('unique pages are not first-coordinate ranked');
     }
-    ranks[page] = rank;
+    coordinates[index] = page;
+    ranks[index] = rank;
     previous = page;
   }
-  if (state.at !== end || seen.size !== uniquePages) {
+  if (state.at !== end || nextRank - 1 !== uniquePages) {
     throw new Error('page manifest directory is not canonical');
   }
   return {
@@ -190,12 +194,25 @@ function parseManifest(prefix, start, length) {
     length: byteLength,
     pageBytes,
     pageCount,
+    coordinates,
     ranks,
     uniquePages,
     dataShards,
     parityShards,
     shardRoot,
   };
+}
+
+function rankAt(manifest, page) {
+  let low = 0;
+  let high = manifest.coordinates.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (manifest.coordinates[middle] < page) low = middle + 1;
+    else high = middle;
+  }
+  return low < manifest.coordinates.length
+      && manifest.coordinates[low] === page ? manifest.ranks[low] : 0;
 }
 
 function parseBundle(prefix) {
@@ -219,7 +236,7 @@ function parseBundle(prefix) {
   let previousPayloadEnd = 0;
   const width = manifest.dataShards + manifest.parityShards;
   const groups = Math.ceil(manifest.uniquePages / manifest.dataShards);
-  const records = new Array(groups * width).fill(null);
+  const records = new Map();
   for (let index = 0; index < recordCount; index += 1) {
     const group = view.getUint32(at, true);
     const slot = view.getUint16(at + 4, true);
@@ -231,7 +248,7 @@ function parseBundle(prefix) {
         || !bytes || offset !== previousPayloadEnd) {
       throw new Error('page bundle record is not canonical');
     }
-    records[position] = { offset, bytes, digest };
+    records.set(position, { offset, bytes, digest });
     previousPosition = position;
     previousPayloadEnd = offset + bytes;
     at += BUNDLE_RECORD_BYTES;
@@ -248,10 +265,10 @@ export class PageBundle {
     this.records = records;
     this.wavePages = wavePages;
     this.cachePages = cachePages;
-    this.cache = new Array(manifest.uniquePages + 1).fill(null);
-    this.cacheState = new Uint8Array(manifest.uniquePages + 1);
-    this.hot = new Uint8Array(manifest.uniquePages + 1);
-    this.clock = 1;
+    // Only pending and resident ranks have host objects.  Cache metadata is
+    // bounded by the configured residency plus in-flight waves, rather than
+    // by every cold unique page in the artifact.
+    this.cache = new Map();
     this.resident = 0;
     this.verifiedShards = 0;
   }
@@ -264,24 +281,22 @@ export class PageBundle {
     const zeroBased = rank - 1;
     const group = Math.floor(zeroBased / this.manifest.dataShards);
     const slot = zeroBased % this.manifest.dataShards;
-    return this.records[
+    return this.records.get(
       group * (this.manifest.dataShards + this.manifest.parityShards) + slot
-    ];
+    );
   }
 
   evictCold() {
-    const ranks = this.manifest.uniquePages;
-    while (this.resident > this.cachePages && ranks) {
-      if (this.clock > ranks) this.clock = 1;
-      const rank = this.clock++;
-      if (this.cacheState[rank] !== 2) continue;
-      if (this.hot[rank]) {
-        this.hot[rank] = 0;
-        continue;
+    while (this.resident > this.cachePages) {
+      let evicted = false;
+      for (const [rank, entry] of this.cache) {
+        if (entry.state !== 2) continue;
+        this.cache.delete(rank);
+        this.resident -= 1;
+        evicted = true;
+        break;
       }
-      this.cache[rank] = null;
-      this.cacheState[rank] = 0;
-      this.resident -= 1;
+      if (!evicted) break;
     }
   }
 
@@ -299,10 +314,13 @@ export class PageBundle {
 
   async physicalPage(rank) {
     if (!rank) return null;
-    let pending = this.cache[rank];
-    if (pending) {
-      this.hot[rank] = 1;
-      return pending;
+    let entry = this.cache.get(rank);
+    if (entry) {
+      // Map insertion order is the LRU order.  Refresh without allocating a
+      // second per-rank state structure.
+      this.cache.delete(rank);
+      this.cache.set(rank, entry);
+      return entry.pending;
     }
     const selected = [];
     let firstOffset = null;
@@ -311,7 +329,7 @@ export class PageBundle {
       current <= this.manifest.uniquePages
         && current < rank + this.wavePages;
       current += 1) {
-      if (this.cache[current]) continue;
+      if (this.cache.has(current)) continue;
       const record = this.record(current);
       if (!record) throw new Error(`physical page rank ${current} is not in this bundle`);
       firstOffset = firstOffset == null ? record.offset
@@ -333,27 +351,27 @@ export class PageBundle {
       return decoded;
     })();
     for (const item of selected) {
-      this.cacheState[item.rank] = 1;
-      this.hot[item.rank] = 1;
-      this.cache[item.rank] = wave.then((decoded) => {
+      const newEntry = { state: 1, pending: null };
+      newEntry.pending = wave.then((decoded) => {
         const raw = decoded[item.index];
-        if (this.cacheState[item.rank] === 1) {
-          this.cacheState[item.rank] = 2;
+        if (this.cache.get(item.rank) === newEntry && newEntry.state === 1) {
+          newEntry.state = 2;
           this.resident += 1;
           this.evictCold();
         }
         return raw;
       });
+      this.cache.set(item.rank, newEntry);
     }
-    pending = this.cache[rank];
+    const pending = this.cache.get(rank)?.pending;
     try {
       return await pending;
     } catch (error) {
       for (const item of selected) {
-        if (this.cacheState[item.rank] === 2) this.resident -= 1;
-        this.cache[item.rank] = null;
-        this.cacheState[item.rank] = 0;
-        this.hot[item.rank] = 0;
+        const failed = this.cache.get(item.rank);
+        if (!failed) continue;
+        if (failed.state === 2) this.resident -= 1;
+        this.cache.delete(item.rank);
       }
       throw error;
     }
@@ -370,7 +388,7 @@ export class PageBundle {
       const page = Math.floor(coordinate / this.pageBytes);
       const within = coordinate % this.pageBytes;
       const count = Math.min(length - written, this.pageBytes - within);
-      const rank = this.manifest.ranks[page];
+      const rank = rankAt(this.manifest, page);
       const raw = await this.physicalPage(rank);
       if (raw) output.set(raw.subarray(within, within + count), written);
       written += count;
@@ -391,9 +409,10 @@ export class PageBundle {
     const coordinates = Array.from(
       { length: this.manifest.uniquePages + 1 }, () => [],
     );
-    for (let page = 0; page < this.manifest.pageCount; page += 1) {
-      const rank = this.manifest.ranks[page];
-      if (rank) coordinates[rank].push(page);
+    for (let index = 0; index < this.manifest.coordinates.length; index += 1) {
+      coordinates[this.manifest.ranks[index]].push(
+        this.manifest.coordinates[index],
+      );
     }
     const work = [];
     let payloadBytes = 0;
@@ -433,11 +452,8 @@ export class PageBundle {
 
   releaseResident() {
     const pages = this.resident;
-    this.cache.fill(null);
-    this.cacheState.fill(0);
-    this.hot.fill(0);
+    this.cache.clear();
     this.resident = 0;
-    this.clock = 1;
     return pages;
   }
 
@@ -452,9 +468,11 @@ export class PageBundle {
       length: this.length,
       pageBytes: this.pageBytes,
       logicalPages: this.manifest.pageCount,
+      mappedPages: this.manifest.coordinates.length,
       uniquePages: this.manifest.uniquePages,
       wavePages: this.wavePages,
       cachePages: this.cachePages,
+      cacheEntries: this.cache.size,
       residentPages: this.resident,
       rangeRequests: this.source.requests,
       fetchedBytes: this.source.transferredBytes,

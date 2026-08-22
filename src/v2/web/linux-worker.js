@@ -88,6 +88,9 @@ function status(machine, raw = machine.status()) {
     retired: raw.retired.toString(),
     work: raw.work.toString(),
     span: raw.span.toString(),
+    engine: Object.fromEntries(Object.entries(raw.engine || {}).map(
+      ([name, value]) => [name, value.toString()],
+    )),
     stopped: raw.halted,
   };
 }
@@ -124,6 +127,7 @@ async function drive(id, handle, options = {}) {
         `native QM artifact has no x86 block at RIP 0x${rip}`,
       );
     }
+    if (raw.halted && session.machine.interrupt?.({ timer: true })) continue;
     if (raw.halted || session.console.ready) break;
     if ((count + 1) % PROGRESS_QUANTA === 0) {
       const elapsedMilliseconds = performance.now() - started;

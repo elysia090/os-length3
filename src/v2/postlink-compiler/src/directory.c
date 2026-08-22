@@ -2,6 +2,48 @@
 
 #include <postlink/directory.h>
 
+static int header_count(const pl_u8 *header, pl_u32 bytes,
+                        const char *path, pl_u32 *out)
+{
+    pl_u64 value = 0u;
+    int status = pl_machine_header_u64(header, bytes, path, &value);
+    if (status || value > 0xffffffffull) return PL_ERROR_DIRECTORY;
+    *out = (pl_u32)value;
+    return 0;
+}
+
+int pl_directory_counts_from_machine(const pl_u8 *payload,
+                                     const pl_machine *machine,
+                                     pl_directory_counts *out)
+{
+    if (!payload || !machine || !out
+            || machine->execution.length > 0xffffffffull)
+        return PL_ERROR_DIRECTORY;
+    const pl_u8 *header = payload + machine->header_offset;
+    pl_directory_counts counts = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+    struct count_field { const char *name; pl_u32 *value; } fields[] = {
+        { "block_count", &counts.block_count },
+        { "step_count", &counts.step_count },
+        { "template_count", &counts.template_count },
+        { "guard_count", &counts.guard_count },
+        { "continuation_count", &counts.continuation_count },
+        { "continuation_bytes", &counts.continuation_bytes },
+        { "template_execution_bytes", &counts.template_execution_bytes },
+        { "parameter_execution_bytes", &counts.parameter_execution_bytes },
+    };
+    for (pl_u32 index = 0u;
+            index < (pl_u32)(sizeof fields / sizeof fields[0]); ++index) {
+        int status = header_count(
+            header, machine->header_bytes,
+            fields[index].name, fields[index].value);
+        if (status) return status;
+    }
+    counts.execution_bytes = (pl_u32)machine->execution.length;
+    counts.schema = machine->schema;
+    *out = counts;
+    return 0;
+}
+
 /* The descriptor region is six contiguous sections whose extents follow from
  * the header counts alone:
  *

@@ -451,7 +451,8 @@ generic Wasm numeric dispatcher. The ECHO `vm_load` measurement is about 0.089
 seconds for the first construction of 127 pages and about 0.0076 seconds for a
 new executor after those coordinates have been reached.
 
-The distinction is observable in generated artifacts. `web/vm.wasm` has 13
+The distinction is observable in generated artifacts. The canonical VM opened
+through `artifact/vm` has 13
 state operations in physical form but needs 15 when encoded back to typed
 Wasm; the compiler core has the 8,253 / 8,305 split above. The Linux reductions
 reported here are mapped state-step pages, not rewritten `.wasm` bytes. The

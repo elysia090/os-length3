@@ -59,6 +59,57 @@ int pl_trace_edges(const pl_directory *directory,
     return 0;
 }
 
+int pl_trace_backedges(const pl_directory *directory,
+                       const pl_u32 *successor, const pl_u8 *predecessor,
+                       pl_u32 *head, pl_u32 *backedge)
+{
+    if (!directory || !successor || !predecessor || !head || !backedge)
+        return PL_ERROR_DIRECTORY;
+    pl_u32 count = directory->counts.block_count;
+    for (pl_u32 index = 0u; index < count; ++index) {
+        head[index] = PL_NO_BLOCK;
+        backedge[index] = PL_NO_BLOCK;
+    }
+
+    /* Joins, conditional targets and entry roots begin runs.  Pure cycles
+     * have no such coordinate and are assigned in the second pass. */
+    for (pl_u32 pass = 0u; pass < 2u; ++pass) {
+        for (pl_u32 index = 0u; index < count; ++index) {
+            if (head[index] != PL_NO_BLOCK
+                    || (!pass && predecessor[index] == PL_PRED_ONE))
+                continue;
+            pl_u32 cursor = index;
+            while (cursor < count && head[cursor] == PL_NO_BLOCK) {
+                head[cursor] = index;
+                if (!pl_trace_fusible(successor, predecessor, cursor)) break;
+                cursor = successor[cursor];
+            }
+        }
+    }
+
+    for (pl_u32 index = 0u; index < count; ++index) {
+        pl_admission admission;
+        int status = pl_directory_admit(directory, index, &admission);
+        if (status) return status;
+        if (admission.continuation.control != PL_CONTROL_CONDITIONAL)
+            continue;
+        pl_successors arms;
+        pl_static_successors(&admission, &arms);
+        if (arms.count != 2u) continue;
+        for (pl_u32 slot = 0u; slot < arms.count; ++slot) {
+            pl_chain_target target;
+            if (pl_chain_resolve(directory, arms.rip[slot], &target)
+                    || target.variants != 1u)
+                continue;
+            if (target.index == head[index]) {
+                backedge[index] = target.index;
+                break;
+            }
+        }
+    }
+    return 0;
+}
+
 pl_u32 pl_trace_run(const pl_u32 *successor, const pl_u8 *predecessor,
                     pl_u32 block_count, pl_u32 index, pl_u8 *visited,
                     pl_u32 *last)

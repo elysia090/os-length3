@@ -13,6 +13,9 @@ const HEX_WORD = /^[0-9a-f]{16}$/;
 const BLOCK_MAGIC = [0x58, 0x38, 0x36, 0x42];
 const DESCRIPTOR_MAGIC = [0x58, 0x38, 0x36, 0x44];
 const NATIVE_HEADER_BYTES = 64;
+// Runtime record v4 retains the shared semantic-template rank.  The artifact
+// descriptor remains 64 bytes; this is the transient admission ABI only.
+const RESIDENT_HEADER_BYTES = 68;
 const NATIVE_REGION_BYTES = 65536;
 const PHYSICAL_PAGE_BYTES = 4096;
 
@@ -536,6 +539,7 @@ export async function openNativeX86Artifact(bytes, options = {}) {
         throw new Error('native STEP instance directory is invalid');
       }
       steps.push({
+        templateRank,
         template,
         parameters: { offset: parameterOffset, length: parameterLength },
         length,
@@ -601,6 +605,7 @@ export async function openNativeX86Artifact(bytes, options = {}) {
       const variants = directory.get(key) || [];
       variants.push({
         descriptor,
+        templateRank: step.templateRank,
         template: step.template,
         parameters: step.parameters,
         guard,
@@ -781,20 +786,22 @@ export async function openNativeX86Artifact(bytes, options = {}) {
   // Transient: the caller copies these bytes into vm_step_buffer and drops
   // them, so one buffer serves every admission.  Nothing per-block is kept.
   const assemble = (parts) => {
-    const { guard, parameters, template, rip } = parts;
-    const length = NATIVE_HEADER_BYTES
+    const { guard, parameters, template, templateRank, rip } = parts;
+    const classAbi = Boolean(globalThis.QM_X86_CLASS_ABI);
+    const headerBytes = classAbi ? RESIDENT_HEADER_BYTES : NATIVE_HEADER_BYTES;
+    const length = headerBytes
       + guard.length + parameters.length + template.length;
     if (assemblyBuffer.length < length) {
       assemblyBuffer = new Uint8Array(length);
     }
     const record = assemblyBuffer.subarray(0, length);
-    record.fill(0, 0, NATIVE_HEADER_BYTES);
+    record.fill(0, 0, headerBytes);
     record.set(BLOCK_MAGIC);
     const view = new DataView(
       record.buffer, record.byteOffset, record.byteLength,
     );
-    view.setUint16(4, 3, true);
-    view.setUint16(6, NATIVE_HEADER_BYTES, true);
+    view.setUint16(4, classAbi ? 4 : 3, true);
+    view.setUint16(6, headerBytes, true);
     view.setBigUint64(8, rip, true);
     const addRip = (value) => BigInt.asUintN(64, rip + value);
     view.setBigUint64(16, addRip(parts.boundary), true);
@@ -811,7 +818,8 @@ export async function openNativeX86Artifact(bytes, options = {}) {
     view.setBigUint64(48, parts.third, true);
     view.setUint32(56, parameters.length, true);
     view.setUint32(60, template.length, true);
-    let cursor = NATIVE_HEADER_BYTES;
+    if (classAbi) view.setUint32(64, templateRank, true);
+    let cursor = headerBytes;
     record.set(guard, cursor);
     cursor += guard.length;
     record.set(parameters, cursor);
@@ -895,6 +903,7 @@ export async function openNativeX86Artifact(bytes, options = {}) {
           guard: retain(guardCache, guardRank, guard),
           parameters: retain(parameterCache, stepRank, parameters),
           template: retain(templateCache, templateRank, template),
+          templateRank,
           stepLength,
           control,
           boundary,
@@ -926,17 +935,23 @@ export async function openNativeX86Artifact(bytes, options = {}) {
             resident.template.length,
           ),
         ]);
+        const classAbi = Boolean(globalThis.QM_X86_CLASS_ABI);
+        const headerBytes = classAbi
+          ? RESIDENT_HEADER_BYTES : NATIVE_HEADER_BYTES;
         const record = new Uint8Array(
-          NATIVE_HEADER_BYTES + guard.length
+          headerBytes + guard.length
             + parameters.length + template.length,
         );
         record.set(resident.descriptor.subarray(0, 56));
         record[3] = BLOCK_MAGIC[3];
-        record.fill(0, 56, NATIVE_HEADER_BYTES);
+        record.fill(0, 56, headerBytes);
         const recordView = new DataView(record.buffer);
+        recordView.setUint16(4, classAbi ? 4 : 3, true);
+        recordView.setUint16(6, headerBytes, true);
         recordView.setUint32(56, parameters.length, true);
         recordView.setUint32(60, template.length, true);
-        let cursor = NATIVE_HEADER_BYTES;
+        if (classAbi) recordView.setUint32(64, resident.templateRank, true);
+        let cursor = headerBytes;
         record.set(guard, cursor);
         cursor += guard.length;
         record.set(parameters, cursor);

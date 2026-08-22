@@ -13,7 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <postlink/chain.h>
+#include <postlink/dispatch.h>
+#include <postlink/entrymap.h>
+#include <postlink/template.h>
 
 
 /* Distinct encoded rows, by exact bytes.  Open addressing over a hash of the
@@ -256,6 +258,195 @@ int main(int argc, char **argv)
         printf("  bytes                    %12.2fx\n",
                (double)v6_rows.total_bytes / (double)v5_rows.total_bytes);
     if (overflow) printf("  table overflow           %12llu\n", overflow);
+
+    pl_u32 table_slots = 1u;
+    while (table_slots / 2u < counts.block_count
+            && table_slots <= 0x7fffffffu)
+        table_slots <<= 1u;
+    pl_u32 *prior_class = calloc(counts.block_count, sizeof *prior_class);
+    pl_u32 *next_class = malloc(
+        (size_t)counts.block_count * sizeof *next_class);
+    pl_dispatch_signature *signature = malloc(
+        (size_t)counts.block_count * sizeof *signature);
+    pl_u32 *dispatch_table = malloc(
+        (size_t)table_slots * sizeof *dispatch_table);
+    if (!prior_class || !next_class || !signature || !dispatch_table) {
+        fprintf(stderr, "cannot allocate the dispatch partition\n");
+        return 1;
+    }
+    pl_dispatch_report dispatch = { 0, 0, 0, 0, 0, 0, 0 };
+    pl_u32 rounds = 0;
+    int changed = 1;
+    while (changed && rounds < counts.block_count) {
+        if (pl_dispatch_refine(
+                &directory, prior_class, next_class, signature,
+                dispatch_table, table_slots, &dispatch)) {
+            fprintf(stderr, "cannot refine the dispatch partition\n");
+            return 1;
+        }
+        changed = memcmp(prior_class, next_class,
+                         (size_t)counts.block_count * sizeof *prior_class) != 0;
+        pl_u32 *temporary = prior_class;
+        prior_class = next_class;
+        next_class = temporary;
+        rounds += 1u;
+    }
+    if (changed) {
+        fprintf(stderr, "dispatch partition did not converge\n");
+        return 1;
+    }
+    printf("\ndispatch residual quotient\n");
+    printf("  refinement rounds        %12u\n", rounds);
+    printf("  residual classes         %12u\n", dispatch.classes);
+    printf("  shared block rows        %12u  (%5.1f%%)\n",
+           counts.block_count - dispatch.classes,
+           100.0 * (double)(counts.block_count - dispatch.classes)
+               / (double)counts.block_count);
+    printf("  conditionals             %12u\n", dispatch.conditionals);
+    printf("  equal-arm eliminated     %12u\n",
+           dispatch.collapsed_conditionals);
+    printf("  complement canonicalized %12u\n",
+           dispatch.complemented_conditionals);
+    printf("  absent target rows       %12u\n", dispatch.absent_targets);
+    printf("  variant target rows      %12u\n", dispatch.variant_targets);
+    printf("  maximum exact-hash probe %12u\n", dispatch.maximum_probe);
+
+    /* Price the direct dynamic-transfer map over the coordinates present in
+     * this migration artifact.  Unlisted page offsets map to one architectural
+     * fault rank.  Proof variants map to a separate resolver rank because the
+     * old artifact has not split them into executable page generations yet.
+     * Consequently this is a lower-bound shape measurement, not a claim that
+     * the boot-observed block set is a complete linked image. */
+    pl_u32 page_count = 0;
+    pl_u64 prior_page = ~(pl_u64)0;
+    for (pl_u32 index = 0; index < counts.block_count; ++index) {
+        pl_block_instance instance;
+        if (pl_directory_block(&directory, index, &instance)) continue;
+        pl_u64 page = instance.rip & ~((pl_u64)PL_ENTRY_PAGE_VALUES - 1u);
+        if (!page_count || page != prior_page) {
+            page_count += 1u;
+            prior_page = page;
+        }
+    }
+    pl_u32 tail_capacity = page_count <= 0xffffffffu / PL_ENTRY_PAGE_ROWS
+                         ? page_count * PL_ENTRY_PAGE_ROWS : 0u;
+    /* Every non-fault distinct tail row contains at least one catalogued block
+     * coordinate, so the block count plus the all-fault row is also an exact
+     * upper bound and avoids reserving rows for empty page regions. */
+    if (tail_capacity > counts.block_count + 1u)
+        tail_capacity = counts.block_count + 1u;
+    pl_u32 hash_slots = 1u;
+    while (hash_slots <= tail_capacity && hash_slots <= 0x7fffffffu)
+        hash_slots <<= 1u;
+    pl_u32 *entry_page_rows = tail_capacity
+        ? malloc((size_t)tail_capacity * sizeof *entry_page_rows) : 0;
+    pl_u32 *entry_tail_rows = tail_capacity
+        ? malloc((size_t)tail_capacity * PL_ENTRY_TAIL_VALUES
+                 * sizeof *entry_tail_rows) : 0;
+    pl_u32 *entry_hash = hash_slots
+        ? malloc((size_t)hash_slots * sizeof *entry_hash) : 0;
+    pl_u32 *page_functions = malloc(
+        PL_ENTRY_PAGE_VALUES * sizeof *page_functions);
+    if (!tail_capacity || !hash_slots || !entry_page_rows || !entry_tail_rows
+            || !entry_hash || !page_functions) {
+        fprintf(stderr, "cannot allocate the direct entry map\n");
+        return 1;
+    }
+    pl_entry_map_builder entry_builder;
+    if (pl_entry_map_builder_open(
+            &entry_builder, entry_page_rows, page_count, entry_tail_rows,
+            tail_capacity, entry_hash, hash_slots, dispatch.classes + 2u)) {
+        fprintf(stderr, "cannot initialize the direct entry map\n");
+        return 1;
+    }
+    for (pl_u32 offset = 0; offset < PL_ENTRY_PAGE_VALUES; ++offset)
+        page_functions[offset] = 0u;
+    prior_page = ~(pl_u64)0;
+    pl_u32 admitted_pages = 0;
+    pl_u32 mapped_coordinates = 0;
+    pl_u32 variant_coordinates = 0;
+    for (pl_u32 index = 0; index < counts.block_count; ++index) {
+        pl_block_instance instance;
+        if (pl_directory_block(&directory, index, &instance)) continue;
+        pl_u64 page = instance.rip & ~((pl_u64)PL_ENTRY_PAGE_VALUES - 1u);
+        if (prior_page != ~(pl_u64)0 && page != prior_page) {
+            pl_u32 page_rank;
+            if (pl_entry_map_add_page(
+                    &entry_builder, page_functions, &page_rank)) {
+                fprintf(stderr, "cannot build the direct entry map\n");
+                return 1;
+            }
+            admitted_pages += 1u;
+            for (pl_u32 offset = 0; offset < PL_ENTRY_PAGE_VALUES; ++offset)
+                page_functions[offset] = 0u;
+        }
+        prior_page = page;
+        pl_u32 offset = (pl_u32)(instance.rip
+                               & (PL_ENTRY_PAGE_VALUES - 1u));
+        pl_u32 function = prior_class[index];
+        if (!page_functions[offset]) {
+            page_functions[offset] = function;
+            mapped_coordinates += 1u;
+        } else if (page_functions[offset] != function
+                && page_functions[offset] != dispatch.classes + 1u) {
+            page_functions[offset] = dispatch.classes + 1u;
+            variant_coordinates += 1u;
+        }
+    }
+    if (prior_page != ~(pl_u64)0) {
+        pl_u32 page_rank;
+        if (pl_entry_map_add_page(
+                &entry_builder, page_functions, &page_rank)) {
+            fprintf(stderr, "cannot finish the direct entry map\n");
+            return 1;
+        }
+        admitted_pages += 1u;
+    }
+    pl_entry_map entry_map;
+    pl_entry_map_finish(&entry_builder, &entry_map);
+    pl_u32 page_rank_width = pl_unsigned_width(
+        entry_map.tail_row_count ? entry_map.tail_row_count - 1u : 0u);
+    pl_u32 function_rank_width = pl_unsigned_width(
+        entry_map.function_count ? entry_map.function_count - 1u : 0u);
+    unsigned long long dense_entry_bytes =
+        (unsigned long long)admitted_pages * PL_ENTRY_PAGE_VALUES
+        * function_rank_width;
+    unsigned long long direct_entry_bytes =
+        (unsigned long long)admitted_pages * PL_ENTRY_PAGE_ROWS
+        * page_rank_width
+        + (unsigned long long)entry_map.tail_row_count * PL_ENTRY_TAIL_VALUES
+        * function_rank_width;
+    printf("\ndirect executable entry map\n");
+    printf("  executable pages         %12u\n", admitted_pages);
+    printf("  page coordinates present %12u\n", mapped_coordinates);
+    printf("  unresolved variants      %12u\n", variant_coordinates);
+    printf("  256-entry row uses       %12u\n",
+           admitted_pages * PL_ENTRY_PAGE_ROWS);
+    printf("  distinct tail rows       %12u  (%5.1f%% shared)\n",
+           entry_map.tail_row_count,
+           admitted_pages
+               ? 100.0 * (double)(admitted_pages * PL_ENTRY_PAGE_ROWS
+                                  - entry_map.tail_row_count)
+                   / (double)(admitted_pages * PL_ENTRY_PAGE_ROWS)
+               : 0.0);
+    printf("  page/tail rank widths    %9u / %u bytes\n",
+           page_rank_width, function_rank_width);
+    printf("  dense function map       %12llu bytes\n", dense_entry_bytes);
+    printf("  quotient physical map    %12llu bytes\n", direct_entry_bytes);
+    if (dense_entry_bytes)
+        printf("  physical ratio           %11.3fx\n",
+               (double)direct_entry_bytes / (double)dense_entry_bytes);
+    printf("  dynamic hot path         two dependent indexed loads\n");
+
+    free(entry_page_rows);
+    free(entry_tail_rows);
+    free(entry_hash);
+    free(page_functions);
+
+    free(prior_class);
+    free(next_class);
+    free(signature);
+    free(dispatch_table);
 
     row_set_close(&v5_rows);
     row_set_close(&v6_rows);

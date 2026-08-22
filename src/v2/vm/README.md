@@ -386,12 +386,13 @@ python3 tools/measure_multiply.py    # re-derives the table above
 ## Building
 
 ```sh
-python3 vm/wasm/build.py            # writes vm/wasm/vm.wasm
+python3 vm/wasm/build.py --out /tmp/vm/vm.wasm
 python3 vm/wasm/build.py --check    # compile warning-free, keep nothing
 ```
 
-The module is built, not committed. The test suite compiles it into a
-temporary directory, so a stale binary cannot pass for a current one.
+The browser has one runtime route through `artifact/vm`; it never fetches the
+build output directly. The test suite compiles into a temporary directory and
+requires the published delivery to reconstruct those exact canonical bytes.
 
 ## Both directions
 

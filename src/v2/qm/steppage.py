@@ -85,6 +85,14 @@ STATE_OPS = (
     'lane64.MUL_HIGH',
     'lane64.X86_MUL_FLAGS',
     'lane64.BIT_ADDRESS',
+    'lane64.X86_DIVIDE',
+    'lane64.X86_ROTATE_CARRY',
+    'memory.i64.store_if',
+    'memory.i64.frame',
+    'lane64.X86_BIT_SUMMARY',
+    'lane64.X86_DOUBLE_SHIFT',
+    'lane64.X86_CRC32',
+    'lane64.X86_BZHI',
 )
 OPS = LANE_OPS + MEMORY_OPS + STATE_OPS
 OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
@@ -95,8 +103,16 @@ OP_TO_CODE = dict((name, code) for code, name in enumerate(OPS))
 # architectural state share one physical computation.
 ALU_PROJECTION_OPS = frozenset((
     'lane64.X86_ALU', 'lane64.X86_AFFINE_ALU',
+    'lane64.X86_ROTATE_CARRY',
+    'lane64.X86_BIT_SUMMARY',
+    'lane64.X86_DOUBLE_SHIFT',
+    'lane64.X86_BZHI',
+))
+ROTATE_PROJECTION_OPS = frozenset((
+    'lane64.X86_ROTATE_CARRY', 'lane64.X86_DOUBLE_SHIFT',
 ))
 REGION_PROJECTION_OPS = frozenset(('memory.i64.load_region',))
+DIVIDE_PROJECTION_OPS = frozenset(('lane64.X86_DIVIDE',))
 FLAG_PROJECTION_OPS = frozenset((
     'lane64.X86_FLAGS', 'lane64.X86_FLAGS_SELECT',
     'lane64.X86_COMPARE', 'lane64.X86_SHIFT_FLAGS',
@@ -306,6 +322,26 @@ def _copy(memory, source, target, size, shape):
         payload = memory.read(source + at, count)
         memory.write(target + at, payload)
         moved += count
+
+
+def _frame(memory, frame, base, level, shape):
+    """Build one nested stack frame without expanding its implicit pushes."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    frame, base, level = map(int, (frame, base, level))
+    if width not in (2, 4, 8) or scale or not virtual64 or not 0 <= level <= 31:
+        raise ValueError('memory frame geometry is invalid')
+    count = level + 1 if level else 1
+    mask = mask_of(width * 8)
+    for index in range(count):
+        if index == 0:
+            value = base
+        elif index < level:
+            value = memory.load((base - width * index) & I64, width)
+        else:
+            value = frame
+        memory.write(
+            (frame - width * index) & I64,
+            int(value & mask).to_bytes(width, 'little'))
 
 
 def _find2(memory, address, first, second, shape):
@@ -528,6 +564,16 @@ def _pre_store(memory, pointer, value, decrement, shape):
     return address
 
 
+def _store_if(memory, address, value, predicate, offset, shape):
+    """Publish one memory version only when its normalized predicate is set."""
+    width, scale, virtual64 = decode_memory_shape(shape)
+    if scale or not virtual64 or width not in (1, 2, 4, 8):
+        raise ValueError('conditional store shape is invalid')
+    if predicate:
+        _store(memory, address, value, offset, width, 0, True)
+    return 0
+
+
 def _load_region(memory, base, offset, descriptor, shape):
     """Read one contiguous physical extent and publish its end coordinate."""
     count, bits, signed = decode_load_region_descriptor(descriptor)
@@ -566,6 +612,8 @@ def _x86_alu(prior, left, right, descriptor):
         result = left | right
     elif mode == 6:
         result = left ^ right
+    elif mode == 7:
+        result = ~left & right
     else:
         raise ValueError('x86 ALU lane has an invalid mode')
     result &= mask_of(width)
@@ -1032,6 +1080,8 @@ def _validate(mapped):
                         and selector == 16
                         or source_operation in FLAG_PROJECTION_OPS
                         and selector < 16
+                        or source_operation in DIVIDE_PROJECTION_OPS
+                        and selector < 2
                         or region_projection):
                     raise StatePageError(
                         'an internal projection has no scalar value')
@@ -1211,6 +1261,23 @@ def _validate(mapped):
                     or signed and width * 8 >= bits):
                 raise StatePageError('memory load region shape is invalid')
             continue
+        if operation == 'memory.i64.store_if':
+            if (end - begin < 5
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] != 'const'
+                           for at in (begin + 3, begin + 4))
+                    or any(OPERAND_KINDS[
+                        mapped.value('operand_tags', at)] not in (
+                            'node', 'projection')
+                           for at in range(begin + 5, end))):
+                raise StatePageError(
+                    'memory.i64.store_if has the wrong operands')
+            width, scale, virtual64 = decode_memory_shape(
+                mapped.value('operand_values', begin + 4))
+            if width not in (1, 2, 4, 8) or scale or not virtual64:
+                raise StatePageError(
+                    'memory.i64.store_if has an invalid shape')
+            continue
         if operation.startswith('memory.'):
             name = operation.split('.', 1)[1]
             source_name, _observer = _memory_name(name)
@@ -1314,8 +1381,14 @@ def _validate(mapped):
                 raise StatePageError(
                     'memory region projection is outside its extent')
             return
+        if operation in DIVIDE_PROJECTION_OPS:
+            if selector >= 2:
+                raise StatePageError(
+                    'x86 divide projection has an invalid result')
+            return
         if operation in FLAG_PROJECTION_OPS:
-            limit = 17 if operation in ALU_PROJECTION_OPS else 16
+            limit = (18 if operation in ROTATE_PROJECTION_OPS
+                     else 17 if operation in ALU_PROJECTION_OPS else 16)
             if selector >= limit:
                 raise StatePageError(
                     'x86 flag projection has an invalid condition')
@@ -1420,6 +1493,7 @@ def execute_mapped(mapped, state):
     relative_results = {}
     alu_results = {}
     region_results = {}
+    divide_results = {}
 
     def resolve(tag, value):
         kind = OPERAND_KINDS[tag]
@@ -1434,8 +1508,12 @@ def execute_mapped(mapped, state):
             operation = OPS[mapped.value('opcodes', source - 1)]
             if operation in ALU_PROJECTION_OPS and selector == 16:
                 return alu_results[source][1]
+            if operation in ROTATE_PROJECTION_OPS and selector == 17:
+                return alu_results[source][2]
             if operation in REGION_PROJECTION_OPS:
                 return region_results[source][selector]
+            if operation in DIVIDE_PROJECTION_OPS:
+                return divide_results[source][selector]
             if operation in FLAG_PROJECTION_OPS:
                 return evaluate('lane64.X86_CONDITION', (
                     values[source], selector))
@@ -1486,6 +1564,11 @@ def execute_mapped(mapped, state):
             elif operation == 'memory.i64.relative_address':
                 produced.append((node, _relative_address(
                     memory, *arguments[:5])))
+            elif operation == 'lane64.X86_DIVIDE':
+                from .laneops import x86_divide_results
+                error, quotient, remainder = x86_divide_results(arguments)
+                divide_results[node] = (quotient, remainder)
+                produced.append((node, error))
             elif operation == 'memory.i64.pre_store':
                 produced.append((node, _pre_store(
                     memory, *arguments[:4])))
@@ -1499,6 +1582,24 @@ def execute_mapped(mapped, state):
             elif operation == 'lane64.X86_AFFINE_ALU':
                 alu_results[node] = _x86_affine_alu(*arguments)
                 produced.append((node, alu_results[node][0]))
+            elif operation == 'lane64.X86_ROTATE_CARRY':
+                from .laneops import x86_rotate_carry_results
+                alu_results[node] = x86_rotate_carry_results(arguments)
+                produced.append((node, alu_results[node][0]))
+            elif operation == 'lane64.X86_BIT_SUMMARY':
+                from .laneops import x86_bit_summary_results
+                alu_results[node] = x86_bit_summary_results(arguments)
+                produced.append((node, alu_results[node][0]))
+            elif operation == 'lane64.X86_DOUBLE_SHIFT':
+                from .laneops import x86_double_shift_results
+                alu_results[node] = x86_double_shift_results(arguments)
+                produced.append((node, alu_results[node][0]))
+            elif operation == 'lane64.X86_BZHI':
+                from .laneops import x86_bzhi_results
+                alu_results[node] = x86_bzhi_results(arguments)
+                produced.append((node, alu_results[node][0]))
+            elif operation == 'memory.i64.store_if':
+                produced.append((node, _store_if(memory, *arguments[:5])))
             elif operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
                 source_name, observer = _memory_name(name)
@@ -1582,6 +1683,7 @@ def compile_mapped_executor(mapped):
     lines = ['def execute(locals_, stack, memory):']
     namespace = {'memory_load': _load, 'memory_store': _store,
                  'memory_repeat': _repeat, 'memory_copy': _copy,
+                 'memory_frame': _frame,
                  'memory_find2': _find2,
                  'memory_copy_until': _copy_until,
                  'memory_prefix_end': _prefix_end,
@@ -1589,9 +1691,18 @@ def compile_mapped_executor(mapped):
                  'memory_relative_select': _relative_select,
                  'memory_relative_address': _relative_address,
                  'memory_pre_store': _pre_store,
+                 'memory_store_if': _store_if,
                  'memory_load_region': _load_region,
                  'x86_alu': _x86_alu,
                  'x86_affine_alu': _x86_affine_alu}
+    from .laneops import x86_rotate_carry_results
+    namespace['x86_rotate_carry'] = x86_rotate_carry_results
+    from .laneops import x86_bit_summary_results
+    namespace['x86_bit_summary'] = x86_bit_summary_results
+    from .laneops import x86_double_shift_results
+    namespace['x86_double_shift'] = x86_double_shift_results
+    from .laneops import x86_bzhi_results
+    namespace['x86_bzhi'] = x86_bzhi_results
     namespace['x86_condition'] = bind('lane64.X86_CONDITION')
     lines.append('    relative_results = {}')
     lines.append('    alu_results = {}')
@@ -1612,6 +1723,8 @@ def compile_mapped_executor(mapped):
             operation = OPS[mapped.value('opcodes', source - 1)]
             if operation in ALU_PROJECTION_OPS and selector == 16:
                 return 'alu_results[%d][1]' % source
+            if operation in ROTATE_PROJECTION_OPS and selector == 17:
+                return 'alu_results[%d][2]' % source
             if operation in REGION_PROJECTION_OPS:
                 return 'region_results[%d][%d]' % (source, selector)
             if operation in FLAG_PROJECTION_OPS:
@@ -1650,6 +1763,14 @@ def compile_mapped_executor(mapped):
                     for index in range(first, first + 4))
                 lines.append(
                     '    memory_copy(memory, %s)' % call_arguments)
+                lines.append('    value_%d = 0' % node)
+                continue
+            if operation == 'memory.i64.frame':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 4))
+                lines.append(
+                    '    memory_frame(memory, %s)' % call_arguments)
                 lines.append('    value_%d = 0' % node)
                 continue
             if operation == 'memory.i64.find2':
@@ -1739,6 +1860,42 @@ def compile_mapped_executor(mapped):
                     (node, arguments))
                 lines.append('    value_%d = alu_results[%d][0]' %
                              (node, node))
+                continue
+            if operation == 'lane64.X86_ROTATE_CARRY':
+                lines.append(
+                    '    alu_results[%d] = x86_rotate_carry((%s))' %
+                    (node, arguments))
+                lines.append('    value_%d = alu_results[%d][0]' %
+                             (node, node))
+                continue
+            if operation == 'lane64.X86_BIT_SUMMARY':
+                lines.append(
+                    '    alu_results[%d] = x86_bit_summary((%s))' %
+                    (node, arguments))
+                lines.append('    value_%d = alu_results[%d][0]' %
+                             (node, node))
+                continue
+            if operation == 'lane64.X86_DOUBLE_SHIFT':
+                lines.append(
+                    '    alu_results[%d] = x86_double_shift((%s))' %
+                    (node, arguments))
+                lines.append('    value_%d = alu_results[%d][0]' %
+                             (node, node))
+                continue
+            if operation == 'lane64.X86_BZHI':
+                lines.append(
+                    '    alu_results[%d] = x86_bzhi((%s))' %
+                    (node, arguments))
+                lines.append('    value_%d = alu_results[%d][0]' %
+                             (node, node))
+                continue
+            if operation == 'memory.i64.store_if':
+                call_arguments = ', '.join(
+                    expression('operand_tags', 'operand_values', index)
+                    for index in range(first, first + 5))
+                lines.append(
+                    '    value_%d = memory_store_if(memory, %s)' %
+                    (node, call_arguments))
                 continue
             if operation.startswith('memory.'):
                 name = operation.split('.', 1)[1]
