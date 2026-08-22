@@ -42,6 +42,13 @@
 int pl_trace_edges(const pl_directory *directory,
                    pl_u32 *successor, pl_u8 *predecessor);
 
+/* Name each maximal run's head and retain a conditional edge only when one
+ * arm returns from the run's last block to that head.  The other arm remains
+ * the loop exit; it is never reclassified as a fusible successor. */
+int pl_trace_backedges(const pl_directory *directory,
+                       const pl_u32 *successor, const pl_u8 *predecessor,
+                       pl_u32 *head, pl_u32 *backedge);
+
 /* True when `index` and its successor always run together, so the boundary
  * between them can be composed away. */
 static inline int pl_trace_fusible(const pl_u32 *successor,

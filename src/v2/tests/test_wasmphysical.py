@@ -3,7 +3,12 @@
 import unittest
 
 from qm import isa
-from qm.laneops import bind, evaluate
+from qm.laneops import (bind, evaluate, x86_bit_summary_results,
+                        x86_bzhi_results,
+                        x86_divide_results,
+                        x86_double_shift_results,
+                        x86_crc32_value,
+                        x86_rotate_carry_results)
 from qm.wasmphysical import (frame_coordinate, lower_module,
                              memory_coordinate, schedule_sequence,
                              summarize_binary)
@@ -98,6 +103,136 @@ class TestPhysicalWasmLayout(unittest.TestCase):
 
 
 class TestBoundPhysicalLanes(unittest.TestCase):
+    def test_x86_bzhi_is_one_flags_and_result_observation(self):
+        prior = 0xad7
+        cases = (
+            ((prior, 0xf0, 4, 64), (0x256, 0)),
+            ((prior, 0x81, 8, 32), (0x216, 0x81)),
+            ((prior, 0x80000000, 31, 32), (0x256, 0)),
+            ((prior, 0x80000001, 32, 32), (0x293, 0x80000001)),
+            ((prior, 0x8000000000000001, 0x140, 64),
+             (0x293, 0x8000000000000001)),
+        )
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(x86_bzhi_results(arguments), expected)
+                self.assertEqual(
+                    evaluate('lane64.X86_BZHI', arguments), expected[0])
+
+    def test_x86_crc32_lane_matches_the_crc32c_check_vector(self):
+        crc = 0xffffffff
+        for value in b'123456789':
+            crc = x86_crc32_value((crc, value, 8))
+        self.assertEqual(crc ^ 0xffffffff, 0xe3069283)
+        first = int.from_bytes(b'12345678', 'little')
+        wide = x86_crc32_value((0xffffffff, first, 64))
+        sequential = 0xffffffff
+        for value in b'12345678':
+            sequential = x86_crc32_value((sequential, value, 8))
+        self.assertEqual(wide, sequential)
+        self.assertEqual(
+            evaluate('lane64.X86_CRC32', (0xffffffff, first, 64)), wide)
+
+    def test_x86_double_shift_is_one_restartable_flags_result_lane(self):
+        prior = 0x246
+        cases = (
+            ((prior, 0x8000000000000001, 3, 1, 64),
+             (0xa03, 2, 1)),
+            ((prior, 1, 1, 1, 64 | (1 << 8)),
+             (0xa87, 0x8000000000000000, 1)),
+            ((prior, 0x1234, 0xabcd, 0, 16), (prior, 0x1234, 0)),
+            ((prior, 0x1234, 0xabcd, 16, 16),
+             (0x282, 0xabcd, 1)),
+        )
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(x86_double_shift_results(arguments), expected)
+                self.assertEqual(
+                    evaluate('lane64.X86_DOUBLE_SHIFT', arguments), expected[0])
+
+    def test_x86_bit_summary_is_one_flags_and_result_observation(self):
+        prior = 0xad7
+        cases = (
+            ((prior, 0x10, 64 | (0 << 8)), (prior & ~(1 << 6) | 2, 4)),
+            ((prior, 0x10, 64 | (1 << 8)), (prior & ~(1 << 6) | 2, 4)),
+            ((prior, 0, 32 | (2 << 8)),
+             (((prior & ~0x41) | 1 | 2), 32)),
+            ((prior, 1, 16 | (3 << 8)),
+             (((prior & ~0x41) | 2), 15)),
+            ((prior, 0xf0f0, 16 | (4 << 8)),
+             (((prior & ~0x8d5) | 2), 8)),
+            ((prior, 0, 64 | (4 << 8)),
+             (((prior & ~0x8d5) | (1 << 6) | 2), 0)),
+        )
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(x86_bit_summary_results(arguments), expected)
+                self.assertEqual(
+                    evaluate('lane64.X86_BIT_SUMMARY', arguments), expected[0])
+
+    def test_x86_divide_is_one_atomic_double_width_result(self):
+        cases = (
+            ((0, 85, 4, 64), (0, 21, 1)),
+            ((0, 1, 0, 64), (1, 0, 0)),
+            ((1, 0, 1, 8), (1, 0, 0)),
+            ((0, 0x55, 4, 8), (0, 21, 1)),
+            (((1 << 64) - 1, (1 << 64) - 85, (1 << 64) - 4,
+              64 | (1 << 8)), (0, 21, (1 << 64) - 1)),
+        )
+        for arguments, expected in cases:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(x86_divide_results(arguments), expected)
+                self.assertEqual(
+                    evaluate('lane64.X86_DIVIDE', arguments), expected[0])
+
+    def test_x86_rotate_carry_closed_form_matches_the_width_plus_carry_ring(self):
+        for width in (8, 16, 32, 64):
+            lane_mask = (1 << width) - 1
+            ring_mask = (1 << (width + 1)) - 1
+            for right in (0, 1):
+                for prior in (2, 3, 0x802, 0x8d7):
+                    for source in (0, 1, lane_mask, 1 << (width - 1),
+                                   0x9d & lane_mask):
+                        for raw_amount in range(71):
+                            amount = raw_amount & (63 if width == 64 else 31)
+                            if width < 32:
+                                amount %= width + 1
+                            ring = (source & lane_mask) | ((prior & 1) << width)
+                            if amount:
+                                if right:
+                                    ring = ((ring >> amount)
+                                            | (ring << (width + 1 - amount)))
+                                else:
+                                    ring = ((ring << amount)
+                                            | (ring >> (width + 1 - amount)))
+                                ring &= ring_mask
+                            value = ring & lane_mask
+                            if not amount:
+                                flags = prior
+                            else:
+                                carry = (ring >> width) & 1
+                                if right:
+                                    overflow = ((value >> (width - 1))
+                                                ^ (value >> (width - 2))) & 1
+                                else:
+                                    overflow = ((value >> (width - 1))
+                                                ^ carry) & 1
+                                if amount != 1:
+                                    overflow = 0
+                                flags = ((prior & ~((1 << 11) | 1)) | carry
+                                         | (overflow << 11) | 2)
+                            arguments = (
+                                prior, source, raw_amount,
+                                width | (right << 8),
+                            )
+                            with self.subTest(arguments=arguments):
+                                self.assertEqual(
+                                    x86_rotate_carry_results(arguments),
+                                    (flags, value, int(bool(amount))))
+                                self.assertEqual(
+                                    evaluate('lane64.X86_ROTATE_CARRY',
+                                             arguments), flags)
+
     def test_bound_hot_lanes_match_the_reference_interpreter(self):
         cases = {
             'lane32.ADD': (0xffffffff, 2),

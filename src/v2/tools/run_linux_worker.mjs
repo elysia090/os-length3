@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Exercise the browser Linux worker protocol without replacing its runtime.
 
+import { readFile } from 'node:fs/promises';
+
 const [artifactRoot, machineArtifact = 'linux-x86-64-postlink'] =
   process.argv.slice(2);
 if (!artifactRoot) {
@@ -10,6 +12,11 @@ if (!artifactRoot) {
 }
 
 globalThis.QM_ARTIFACT_ROOT = new URL(artifactRoot).href;
+if (process.env.QM_TEST_VM_WASM) {
+  globalThis.QM_TEST_VM_MODULE = await WebAssembly.compile(
+    await readFile(process.env.QM_TEST_VM_WASM),
+  );
+}
 
 let nextId = 0;
 const pending = new Map();
@@ -85,3 +92,7 @@ process.stdout.write(`${JSON.stringify({
   progressMessages: progress.length,
   consoleTail: consoleText.slice(-1024),
 }, null, 2)}\n`);
+// Node's fetch pool may retain an idle keep-alive socket after the disposable
+// worker has been released.  This command is a finite regression runner, so do
+// not make benchmark callers kill an otherwise completed process.
+process.exit(0);

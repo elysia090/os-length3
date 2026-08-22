@@ -76,6 +76,13 @@ typedef struct {
 #define PL_ERROR_RANK      (-13)
 #define PL_ERROR_ABSENT    (-14)
 
+/* Read the one authoritative count set from a parsed machine header.  Tools
+ * and loaders must not carry private copies of these field names or narrowing
+ * rules. */
+int pl_directory_counts_from_machine(const pl_u8 *payload,
+                                     const pl_machine *machine,
+                                     pl_directory_counts *out);
+
 /* Validate the descriptor region against the header counts and derive the
  * section bases. The extents of every section are fully determined by the
  * counts, so a descriptor region that does not tile exactly is rejected. */

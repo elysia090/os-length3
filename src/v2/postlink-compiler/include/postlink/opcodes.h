@@ -15,7 +15,7 @@
 
 #include <postlink/format.h>
 
-#define PL_OPCODE_COUNT 210u
+#define PL_OPCODE_COUNT 218u
 /* The memory access shape, as decode_memory_shape reads it. */
 #define PL_MEMORY_SHAPE_SCALE_SHIFT 8u
 #define PL_MEMORY_SHAPE_SCALE_MASK 0x1fu
@@ -30,18 +30,68 @@
 #define PL_OPCODE_X86_COMPARE 191u
 #define PL_OPCODE_X86_TEST 195u
 #define PL_OPCODE_X86_SHIFT_FLAGS 193u
+#define PL_OPCODE_MEMORY_REPEAT 184u
 #define PL_OPCODE_MEMORY_PRE_STORE 192u
 #define PL_OPCODE_MEMORY_LOAD 145u
 #define PL_OPCODE_MEMORY_LOAD_REGION 205u
 #define PL_OPCODE_ADD 79u
 #define PL_OPCODE_X86_CONDITION 194u
+#define PL_OPCODE_X86_BIT_FLAGS 197u
+#define PL_OPCODE_X86_TEST_CONDITION 199u
+#define PL_OPCODE_LANE64_INSERT 198u
+#define PL_OPCODE_LANE32_INSERT 201u
+#define PL_OPCODE_SELECT_U32 202u
+#define PL_OPCODE_MUL_HIGH 207u
+#define PL_OPCODE_X86_MUL_FLAGS 208u
+#define PL_OPCODE_BIT_ADDRESS 209u
+#define PL_OPCODE_LANE32_BSWAP 14u
+#define PL_OPCODE_LANE64_BSWAP 84u
+#define PL_OPCODE_X86_DIVIDE 210u
+#define PL_OPCODE_X86_ROTATE_CARRY 211u
+#define PL_OPCODE_X86_BIT_SUMMARY 214u
+#define PL_OPCODE_X86_DOUBLE_SHIFT 215u
+#define PL_OPCODE_X86_CRC32 216u
+#define PL_OPCODE_X86_BZHI 217u
+#define PL_OPCODE_MEMORY_STORE_IF 212u
+#define PL_OPCODE_MEMORY_FRAME 213u
+#define PL_OPCODE_MULR 120u
+#define PL_OPCODE_MEMORY_COPY 206u
+#define PL_OPCODE_MEMORY_FIND2 185u
+#define PL_OPCODE_LANE32_SHL 12u
+#define PL_OPCODE_LANE64_SHL 82u
+#define PL_OPCODE_LANE32_SHR 13u
+#define PL_OPCODE_LANE64_SHR 83u
+#define PL_OPCODE_LANE32_SAR 24u
+#define PL_OPCODE_LANE64_SAR 94u
+#define PL_OPCODE_LANE32_SHLR 51u
+#define PL_OPCODE_LANE64_SHLR 121u
+#define PL_OPCODE_LANE32_SHRR 53u
+#define PL_OPCODE_LANE64_SHRR 123u
+#define PL_OPCODE_LANE32_SARR 52u
+#define PL_OPCODE_LANE64_SARR 122u
+#define PL_OPCODE_LANE32_ROTL 54u
+#define PL_OPCODE_LANE64_ROTL 124u
+#define PL_OPCODE_LANE32_ROTR 55u
+#define PL_OPCODE_LANE64_ROTR 125u
+#define PL_OPCODE_LANE32_SELECT 32u
+#define PL_OPCODE_LANE64_SELECT 102u
+#define PL_OPCODE_BIT 130u
+#define PL_OPCODE_LANE32_EXTEND8_S 36u
+#define PL_OPCODE_LANE32_EXTEND16_S 37u
+#define PL_OPCODE_LANE64_EXTEND8_S 106u
+#define PL_OPCODE_LANE64_EXTEND16_S 107u
+#define PL_OPCODE_EXTEND32_S 108u
+#define PL_OPCODE_MEMORY_STORE 155u
+#define PL_OPCODE_MEMORY_STORE8 156u
+#define PL_OPCODE_MEMORY_STORE16 157u
+#define PL_OPCODE_MEMORY_STORE32 158u
 
-/* op.startswith("memory.") -- 53 opcodes */
+/* op.startswith("memory.") -- 55 opcodes */
 static const pl_u64 PL_OPCODE_MEMORY[] = {
     0x0000000000000000ull,
     0x0000000000000000ull,
     0x777ffffffffff000ull,
-    0x0000000000006101ull,
+    0x0000000000306101ull,
 };
 
 /* memory.i{bits}.load{suffix} by (bits, width, signed);
@@ -85,12 +135,12 @@ static const pl_u8 PL_OPCODE_ALU_REGISTER[2][5] = {
 /* Carry-in add, by lane width; 255 where none exists. */
 static const pl_u8 PL_OPCODE_ADD3[2] = { 64u, 134u };
 
-/* the flag chain _rebase_overwritten_flags walks -- 8 opcodes */
+/* the flag chain _rebase_overwritten_flags walks -- 12 opcodes */
 static const pl_u64 PL_OPCODE_FLAG_PRODUCER[] = {
     0x0000000000000000ull,
     0x0000000000000000ull,
     0x8080000000000000ull,
-    0x000000000001182aull,
+    0x0000000002c9182aull,
 };
 
 /* the divides whose trap is observable -- 8 opcodes */
@@ -101,12 +151,12 @@ static const pl_u64 PL_OPCODE_TRAPPING[] = {
     0x0000000000000000ull,
 };
 
-/* FLAG_PROJECTION_OPS | REGION_PROJECTION_OPS -- 9 opcodes */
+/* FLAG_PROJECTION_OPS | REGION_PROJECTION_OPS -- 14 opcodes */
 static const pl_u64 PL_OPCODE_PUBLISHED_PROJECTION[] = {
     0x0000000000000000ull,
     0x0000000000000000ull,
     0x8880000000000000ull,
-    0x000000000000382aull,
+    0x0000000002cc382aull,
 };
 
 static inline int pl_opcode_in(const pl_u64 *set, pl_u32 opcode)

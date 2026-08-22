@@ -98,6 +98,18 @@ def shape(operation):
         return 3, 0, False
     if name == 'X86_MUL_FLAGS':
         return 4, 0, False
+    if name == 'X86_DIVIDE':
+        return 4, 0, False
+    if name == 'X86_ROTATE_CARRY':
+        return 4, 0, False
+    if name == 'X86_BIT_SUMMARY':
+        return 3, 0, False
+    if name == 'X86_DOUBLE_SHIFT':
+        return 5, 0, False
+    if name == 'X86_CRC32':
+        return 3, 0, False
+    if name == 'X86_BZHI':
+        return 4, 0, False
     if name == 'INSERT':
         return 3, 0, False
     if name == 'X86_FLAGS_SELECT':
@@ -217,7 +229,7 @@ def evaluate(operation, arguments):
         word_bits = descriptor & 0x7f
         index_bits = (descriptor >> 8) & 0x7f
         if (word_bits not in (16, 32, 64)
-                or index_bits not in (32, 64)
+                or index_bits not in (16, 32, 64)
                 or descriptor != word_bits | (index_bits << 8)):
             raise ValueError('bit address lane has an invalid descriptor')
         word_shift = word_bits.bit_length() - 1
@@ -244,6 +256,8 @@ def evaluate(operation, arguments):
             result = left | right
         elif mode == 6:
             result = left ^ right
+        elif mode == 7:
+            result = ~left & right
         else:
             raise ValueError('x86 ALU lane has an invalid mode')
         result &= mask_of(width)
@@ -299,7 +313,9 @@ def evaluate(operation, arguments):
         group = (descriptor >> 8) & 7
         if group not in (0, 1, 4, 5, 6, 7):
             raise ValueError('x86 shift flag lane has an invalid group')
-        amount &= width - 1
+        amount &= 63 if width == 64 else 31
+        if group in (0, 1) and width < 32:
+            amount &= width - 1
         if not amount:
             return prior & mask_of(bits)
         lane_mask = mask_of(width)
@@ -310,9 +326,11 @@ def evaluate(operation, arguments):
         elif group == 1:
             carry = (result >> (width - 1)) & 1
         elif group == 4:
-            carry = (source >> (width - amount)) & 1
+            carry = ((source >> (width - amount)) & 1
+                     if amount <= width else 0)
         else:
-            carry = (source >> (amount - 1)) & 1
+            carry = ((source >> (amount - 1)) & 1
+                     if amount <= width else 0)
         flags = (prior if group in (0, 1) else
                  evaluate('lane64.X86_FLAGS', (
                      prior, result, 0, result, width)))
@@ -369,6 +387,14 @@ def evaluate(operation, arguments):
             raise ValueError('x86 bit flag lane has an invalid width')
         carry = ((value & mask_of(width)) >> (index & (width - 1))) & 1
         return ((prior & ~1) | carry | 2) & mask_of(bits)
+    if name == 'X86_BIT_SUMMARY':
+        return x86_bit_summary_results(arguments)[0]
+    if name == 'X86_DOUBLE_SHIFT':
+        return x86_double_shift_results(arguments)[0]
+    if name == 'X86_CRC32':
+        return x86_crc32_value(arguments)
+    if name == 'X86_BZHI':
+        return x86_bzhi_results(arguments)[0]
     if name == 'MUL_HIGH':
         left, right, descriptor = map(int, arguments)
         width = descriptor & 0x7f
@@ -397,6 +423,10 @@ def evaluate(operation, arguments):
         overflow = high != expected
         flags = prior & ~((1 << 11) | 1)
         return flags | 2 | (int(overflow) * ((1 << 11) | 1))
+    if name == 'X86_DIVIDE':
+        return x86_divide_results(arguments)[0]
+    if name == 'X86_ROTATE_CARRY':
+        return x86_rotate_carry_results(arguments)[0]
     if name == 'X86_FLAGS':
         prior, left, right, result, descriptor = arguments
         width = int(descriptor) & 0x7f
@@ -610,7 +640,203 @@ def bind(operation):
                                      to_signed(values[1], bits)) & mask
     if name in ('X86_FLAGS', 'X86_FLAGS_SELECT', 'X86_COMPARE',
                 'X86_SHIFT_FLAGS', 'X86_CONDITION', 'X86_TEST',
-                'X86_BIT_FLAGS', 'X86_ALU'):
+                'X86_BIT_FLAGS', 'X86_ALU', 'X86_ROTATE_CARRY'):
         return lambda values: evaluate(operation, values)
 
     return lambda values: evaluate(operation, values)
+
+
+def x86_divide_results(arguments):
+    """Return ``(error, quotient, remainder)`` for one x86 DIV/IDIV cut.
+
+    The dividend is the exact double-width ``high:low`` pair.  Keeping the
+    three results behind one physical node is what lets the direct emitter
+    test #DE before publishing either architectural destination.
+    """
+    if len(arguments) != 4:
+        raise ValueError('x86 divide lane has the wrong operand count')
+    high, low, divisor, descriptor = map(int, arguments)
+    width = descriptor & 0x7f
+    signed = bool(descriptor & 0x100)
+    if (width not in (8, 16, 32, 64)
+            or descriptor != width | (int(signed) << 8)):
+        raise ValueError('x86 divide lane has an invalid descriptor')
+    mask = mask_of(width)
+    high &= mask
+    low &= mask
+    divisor &= mask
+    if not divisor:
+        return 1, 0, 0
+    dividend = (high << width) | low
+    if signed:
+        if high & (1 << (width - 1)):
+            dividend -= 1 << (width * 2)
+        signed_divisor = to_signed(divisor, width)
+        quotient = abs(dividend) // abs(signed_divisor)
+        if (dividend < 0) != (signed_divisor < 0):
+            quotient = -quotient
+        lower = -(1 << (width - 1))
+        upper = (1 << (width - 1)) - 1
+        if quotient < lower or quotient > upper:
+            return 1, 0, 0
+        remainder = dividend - quotient * signed_divisor
+    else:
+        quotient, remainder = divmod(dividend, divisor)
+        if quotient > mask:
+            return 1, 0, 0
+    return 0, quotient & mask, remainder & mask
+
+
+def x86_rotate_carry_results(arguments):
+    """Return ``(flags, value)`` for one exact RCL/RCR physical lane.
+
+    The closed form never materializes a 65-bit scalar for the 64-bit case.
+    The two consecutive shifts in the wrap term spell the otherwise-invalid
+    shift-by-64 boundary as zero, so the same equations cover every width.
+    """
+    if len(arguments) != 4:
+        raise ValueError('x86 rotate-carry lane has the wrong operand count')
+    prior, source, amount, descriptor = map(int, arguments)
+    width = descriptor & 0x7f
+    right = (descriptor >> 8) & 1
+    if (width not in (8, 16, 32, 64)
+            or descriptor != width | (right << 8)):
+        raise ValueError('x86 rotate-carry lane has an invalid descriptor')
+    lane_mask = mask_of(width)
+    source &= lane_mask
+    amount &= 63 if width == 64 else 31
+    if width < 32:
+        amount %= width + 1
+    if not amount:
+        return prior & mask_of(64), source, 0
+    carry_in = prior & 1
+    distance = width - amount
+    if right:
+        value = ((source >> amount)
+                 | (carry_in << distance)
+                 | ((source << distance) << 1)) & lane_mask
+        carry = (source >> (amount - 1)) & 1
+        overflow = ((value >> (width - 1))
+                    ^ (value >> (width - 2))) & 1
+    else:
+        value = ((source << amount)
+                 | (carry_in << (amount - 1))
+                 | ((source >> distance) >> 1)) & lane_mask
+        carry = (source >> distance) & 1
+        overflow = ((value >> (width - 1)) ^ carry) & 1
+    if amount != 1:
+        overflow = 0
+    flags = (prior & ~((1 << 11) | 1)) | carry | (overflow << 11) | 2
+    return flags & mask_of(64), value, 1
+
+
+def x86_bit_summary_results(arguments):
+    """Return ``(flags, value)`` for the bit-scan/count instruction quotient.
+
+    BSR/BSF leave the destination and all arithmetic flags except ZF
+    undefined on the relevant inputs.  Preserving prior undefined flag bits
+    and choosing the natural count result is one deterministic refinement;
+    TZCNT/LZCNT and POPCNT then only tighten the masks they architecturally
+    define.  The result is therefore one physical observation, not a scalar
+    count followed by a separately materialized flag path.
+    """
+    if len(arguments) != 3:
+        raise ValueError('x86 bit summary lane has the wrong operand count')
+    prior, source, descriptor = map(int, arguments)
+    width = descriptor & 0x7f
+    mode = (descriptor >> 8) & 7
+    if (width not in (16, 32, 64)
+            or mode > 4 or descriptor != width | (mode << 8)):
+        raise ValueError('x86 bit summary lane has an invalid descriptor')
+    source &= mask_of(width)
+    if mode == 0:                       # BSR
+        value = width - 1 - clz(source, width)
+    elif mode in (1, 2):                # BSF / TZCNT
+        value = ctz(source, width)
+    elif mode == 3:                     # LZCNT
+        value = clz(source, width)
+    else:                               # POPCNT
+        value = popcnt(source)
+    value &= mask_of(width)
+    if mode < 2:
+        flags = (prior & ~(1 << 6)) | (int(source == 0) << 6)
+    elif mode < 4:
+        flags = ((prior & ~0x41) | int(source == 0)
+                 | (int(value == 0) << 6))
+    else:
+        flags = (prior & ~0x8d5) | (int(value == 0) << 6)
+    return (flags | 2) & mask_of(64), value
+
+
+def x86_double_shift_results(arguments):
+    """Return ``(flags, value, active)`` for SHLD/SHRD as one lane."""
+    if len(arguments) != 5:
+        raise ValueError('x86 double shift lane has the wrong operand count')
+    prior, destination, source, raw_amount, descriptor = map(int, arguments)
+    width = descriptor & 0x7f
+    right = (descriptor >> 8) & 1
+    if (width not in (16, 32, 64)
+            or descriptor != width | (right << 8)):
+        raise ValueError('x86 double shift lane has an invalid descriptor')
+    lane_mask = mask_of(width)
+    destination &= lane_mask
+    source &= lane_mask
+    amount = raw_amount & (63 if width == 64 else 31)
+    if not amount:
+        return prior & mask_of(64), destination, 0
+    # Counts greater than a 16-bit operand are architecturally undefined.  A
+    # deterministic representative keeps the physical function total without
+    # introducing a second fallback path.
+    effective = (amount - 1) % width + 1
+    if right:
+        value = ((destination >> effective)
+                 | (source << (width - effective))) & lane_mask
+        carry = (destination >> (effective - 1)) & 1
+    else:
+        value = ((destination << effective)
+                 | (source >> (width - effective))) & lane_mask
+        carry = (destination >> (width - effective)) & 1
+    flags = evaluate('lane64.X86_FLAGS', (
+        prior, value, 0, value, width))
+    flags = (flags & ~((1 << 11) | 1)) | carry
+    if amount == 1:
+        overflow = ((destination ^ value) >> (width - 1)) & 1
+        flags |= overflow << 11
+    return (flags | 2) & mask_of(64), value, 1
+
+
+def x86_crc32_value(arguments):
+    """CRC32C update used by the x86 CRC32 instruction family."""
+    if len(arguments) != 3:
+        raise ValueError('x86 crc32 lane has the wrong operand count')
+    accumulator, source, descriptor = map(int, arguments)
+    width = descriptor & 0x7f
+    if width not in (8, 16, 32, 64) or descriptor != width:
+        raise ValueError('x86 crc32 lane has an invalid descriptor')
+    crc = accumulator & 0xffffffff
+    source &= mask_of(width)
+    for byte in range(width // 8):
+        crc ^= (source >> (byte * 8)) & 0xff
+        for _ in range(8):
+            crc = (crc >> 1) ^ (0x82f63b78 if crc & 1 else 0)
+    return crc & 0xffffffff
+
+
+def x86_bzhi_results(arguments):
+    """Return ``(flags, value)`` for BZHI as one physical observation."""
+    if len(arguments) != 4:
+        raise ValueError('x86 bzhi lane has the wrong operand count')
+    prior, source, raw_index, descriptor = map(int, arguments)
+    width = descriptor & 0x7f
+    if width not in (32, 64) or descriptor != width:
+        raise ValueError('x86 bzhi lane has an invalid descriptor')
+    lane_mask = mask_of(width)
+    source &= lane_mask
+    index = raw_index & 0xff
+    value = source if index >= width else source & ((1 << index) - 1)
+    # BZHI defines CF/ZF/SF and clears OF.  PF and AF are architecturally
+    # undefined; the ordinary logic-flags representative keeps this quotient
+    # total without creating a second flag path.
+    flags = evaluate('lane64.X86_FLAGS', (prior, value, 0, value, width))
+    flags = (flags & ~1) | int(index >= width)
+    return (flags | 2) & mask_of(64), value

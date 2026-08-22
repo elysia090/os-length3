@@ -70,8 +70,10 @@ int pl_plan_decode(const pl_u8 *tmpl, const pl_template *parsed,
 pl_u32 pl_compose_arena_bytes(const pl_plan *first, const pl_plan *second);
 
 /* Substitute `second` through `first`.  Refuses a pair that crosses a function
- * boundary, or whose second plan reads a stack slot the first never published,
- * which are the two refusals compose_plans_raw makes. */
+ * boundary, whose second plan reads a stack slot the first never published, or
+ * that would place more than one source instruction on either side of a
+ * trapping node.  The last refusal preserves the architectural exception cut
+ * that the older artifact composer erased around DIV/REM. */
 int pl_compose_raw(const pl_plan *first, const pl_plan *second,
                    pl_arena *arena, pl_plan *out);
 
@@ -91,6 +93,12 @@ int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out);
  * touches at all. */
 int pl_rebase_overwritten_flags(const pl_plan *in, pl_arena *arena,
                                 pl_plan *out);
+
+/* Substitute local lane identities in dependency order.  This is the common
+ * forward part of the physical rewriter: constants are evaluated, affine
+ * add/mask chains are closed, and address constants move into the memory
+ * access offset.  It never introduces a scalar instruction representation. */
+int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out);
 
 /* Let a later store in a pre_store chain take the earlier one as its base and
  * carry only the difference, restoring pointer flow across a composition. */

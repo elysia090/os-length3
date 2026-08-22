@@ -20,6 +20,13 @@ let compiled = null;
 let stepMemorySource = null;
 let stepQueue = Promise.resolve();
 
+function publishRuntimeAbi(module) {
+  globalThis.QM_X86_CLASS_ABI = WebAssembly.Module.exports(module).some(
+    ({ name }) => name === 'vm_x86_resident_abi',
+  );
+  return module;
+}
+
 const runtimeIncarnation = (() => {
   const words = new Uint32Array(4);
   globalThis.crypto.getRandomValues(words);
@@ -36,9 +43,17 @@ export class MachineUnavailable extends Error {}
 
 export async function compile() {
   if (compiled) return compiled;
+  // Native regression runners may inject an already compiled candidate.  The
+  // browser never defines this hook and still has one content-addressed
+  // artifact route; keeping the hook at the module boundary lets a candidate
+  // VM be measured without publishing it as the new canonical artifact first.
+  if (globalThis.QM_TEST_VM_MODULE instanceof WebAssembly.Module) {
+    compiled = publishRuntimeAbi(globalThis.QM_TEST_VM_MODULE);
+    return compiled;
+  }
   try {
     const opened = await readArtifact('vm');
-    compiled = await WebAssembly.compile(opened.bytes);
+    compiled = publishRuntimeAbi(await WebAssembly.compile(opened.bytes));
     opened.fabric.release();
     return compiled;
   } catch (err) {
@@ -66,6 +81,962 @@ const X86_STATUS = Object.freeze({
   codeMismatch: 13,
 });
 const X86_PHYSICAL_PAGE_BYTES = 4096;
+const X86_EXECUTABLE_INDEX = 1;
+const X86_EXECUTABLE_MODULE = 2;
+const X86_EXECUTABLE_INSTALL = 3;
+const X86_EXECUTABLE_READY = 4;
+const X86_EXECUTABLE_RESOURCE = 5;
+const X86_EXECUTABLE_PAGE_READY = 6;
+const X86_EXECUTABLE_CODE_READY = 7;
+const X86_EXECUTABLE_MAP_READY = 8;
+const X86_EXECUTABLE_RESIDUAL_READY = 9;
+const X86_EXECUTABLE_KERNEL_READY = 10;
+const X86_EXECUTABLE_INSTANTIATION_READY = 11;
+
+function directObjectSource(source) {
+  if (!source || typeof source.read !== 'function') {
+    throw new TypeError('direct executable needs a digest-coordinate source');
+  }
+  return source;
+}
+
+function directRequestDigest(E, session) {
+  const at = E.vm_x86_executable_request_digest(session);
+  if (!at) throw new Error('vm.wasm omitted the requested object digest');
+  return Array.from(
+    new Uint8Array(E.memory.buffer, at, 32),
+    value => value.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+function directSafeNumber(value, label) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new Error(`${label} is outside the browser integer range`);
+  }
+  return number;
+}
+
+async function instantiateDirectModule(E, table, base, bytes) {
+  await WebAssembly.instantiate(bytes, {
+    env: {
+      memory: E.memory,
+      table,
+      table_base: new WebAssembly.Global(
+        { value: 'i32', mutable: false }, base,
+      ),
+      direct_memory: E.vm_x86_direct_memory,
+      direct_memory_result: E.vm_x86_direct_memory_result,
+      direct_memory_region: E.vm_x86_direct_memory_region,
+      direct_memory_region_value: E.vm_x86_direct_memory_region_value,
+      direct_memory_repeat: E.vm_x86_direct_memory_repeat,
+      direct_memory_copy: E.vm_x86_direct_memory_copy,
+      direct_memory_find2: E.vm_x86_direct_memory_find2,
+      direct_memory_commit: E.vm_x86_direct_memory_commit,
+      direct_x86_divide: E.vm_x86_direct_divide,
+      direct_x86_divide_result: E.vm_x86_direct_divide_result,
+      direct_x86_segment_base: E.vm_x86_direct_segment_base,
+      direct_x86_rotate_carry: E.vm_x86_direct_rotate_carry,
+      direct_x86_rotate_carry_result: E.vm_x86_direct_rotate_carry_result,
+      direct_memory_store_if: E.vm_x86_direct_memory_store_if,
+      direct_memory_frame: E.vm_x86_direct_memory_frame,
+      direct_x86_crc32: E.vm_x86_direct_crc32,
+      direct_x86_write_msr: E.vm_x86_direct_write_msr,
+      direct_x86_far_return: E.vm_x86_direct_far_return,
+      direct_x86_write_control: E.vm_x86_direct_write_control,
+      direct_x86_read_control: E.vm_x86_direct_read_control,
+      direct_x86_write_segment: E.vm_x86_direct_write_segment,
+      direct_x86_descriptor_table: E.vm_x86_direct_descriptor_table,
+      direct_x86_pop_flags: E.vm_x86_direct_pop_flags,
+      direct_x86_read_msr: E.vm_x86_direct_read_msr,
+      direct_x86_cpuid: E.vm_x86_direct_cpuid,
+      direct_x86_interrupt_flag: E.vm_x86_direct_interrupt_flag,
+      direct_x86_port_io: E.vm_x86_direct_port_io,
+      direct_x86_swap_gs: E.vm_x86_direct_swap_gs,
+      direct_x86_invalidate_page: E.vm_x86_direct_invalidate_page,
+      direct_x86_system_transfer: E.vm_x86_direct_system_transfer,
+      direct_x86_interrupt_return: E.vm_x86_direct_interrupt_return,
+      direct_x86_atomic: E.vm_x86_direct_atomic,
+      direct_x86_vector: E.vm_x86_direct_vector,
+      direct_x86_read_selector: E.vm_x86_direct_read_selector,
+      direct_x86_software_interrupt: E.vm_x86_direct_software_interrupt,
+      direct_x86_far_transfer: E.vm_x86_direct_far_transfer,
+      direct_x86_x87: E.vm_x86_direct_x87,
+      direct_x86_time: E.vm_x86_direct_time,
+      direct_x86_validate_selector: E.vm_x86_direct_validate_selector,
+      direct_x86_string: E.vm_x86_direct_string,
+      direct_x86_memory_order: E.vm_x86_direct_memory_order,
+      direct_x86_debug_register: E.vm_x86_direct_debug_register,
+      direct_x86_system_selector: E.vm_x86_direct_system_selector,
+      direct_x86_cr0_status: E.vm_x86_direct_cr0_status,
+      direct_x86_segment_stack: E.vm_x86_direct_segment_stack,
+      direct_x86_entropy: E.vm_x86_direct_entropy,
+    },
+  });
+}
+
+/**
+ * Admit one compiler-produced executable through vm.wasm's C state machine.
+ *
+ * JavaScript sees only `(digest, total bytes, offset, length)` requests.  C
+ * authenticates index structure and row semantics, hashes the module stream,
+ * and publishes table geometry.  The verified bounded module installs its own
+ * functions through an element segment; no export enumeration or block record
+ * reconstruction exists in this path.
+ */
+export async function admitX86Executable(E, session, root, source) {
+  if (!(root instanceof Uint8Array)) {
+    throw new TypeError('direct executable root must be bytes');
+  }
+  source = directObjectSource(source);
+  const table = E.__indirect_function_table;
+  if (!(table instanceof WebAssembly.Table)
+      || !(E.memory instanceof WebAssembly.Memory)) {
+    throw new Error('vm.wasm omitted its shared executable ABI');
+  }
+  const rootAt = E.vm_x86_executable_buffer(session);
+  const rootBytes = E.vm_x86_executable_buffer_bytes();
+  if (!rootAt || root.length !== rootBytes) {
+    throw new Error('vm.wasm rejected the fixed executable root extent');
+  }
+  new Uint8Array(E.memory.buffer, rootAt, rootBytes).set(root);
+  const tableBase = table.length;
+  if (!E.vm_x86_executable_begin(session, BigInt(rootBytes), tableBase)) {
+    throw new Error('vm.wasm rejected the executable root');
+  }
+
+  let moduleBytes = null;
+  let moduleDigest = null;
+  try {
+    for (;;) {
+      const kind = E.vm_x86_executable_request_kind(session);
+      if (kind === X86_EXECUTABLE_READY) break;
+      if (kind === X86_EXECUTABLE_INDEX
+          || kind === X86_EXECUTABLE_MODULE) {
+        const digest = directRequestDigest(E, session);
+        const total = directSafeNumber(
+          E.vm_x86_executable_request_bytes(session),
+          'direct executable object extent',
+        );
+        const offset = directSafeNumber(
+          E.vm_x86_executable_request_offset(session),
+          'direct executable object offset',
+        );
+        const count = E.vm_x86_executable_request_buffer_bytes(session);
+        const bufferAt = E.vm_x86_executable_request_buffer(session);
+        if (!count || !bufferAt || offset + count > total) {
+          throw new Error('vm.wasm requested an invalid object range');
+        }
+        const bytes = await source.read(digest, offset, count, total);
+        if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+          throw new Error(`object ${digest} returned the wrong range`);
+        }
+        new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
+        if (kind === X86_EXECUTABLE_MODULE) {
+          if (moduleDigest !== digest) {
+            moduleDigest = digest;
+            moduleBytes = new Uint8Array(total);
+          }
+          moduleBytes.set(bytes, offset);
+        }
+        if (!E.vm_x86_executable_supply(session, count)) {
+          throw new Error(`vm.wasm rejected object ${digest}`);
+        }
+        continue;
+      }
+      if (kind === X86_EXECUTABLE_INSTALL) {
+        const digest = directRequestDigest(E, session);
+        const base = E.vm_x86_executable_module_table_base(session);
+        const functions = E.vm_x86_executable_module_function_count(session);
+        if (!moduleBytes || moduleDigest !== digest || !base || !functions
+            || base + functions < base) {
+          throw new Error('vm.wasm published invalid module geometry');
+        }
+        if (base + functions > table.length) {
+          table.grow(base + functions - table.length);
+        }
+        await instantiateDirectModule(E, table, base, moduleBytes);
+        moduleBytes = null;
+        moduleDigest = null;
+        if (!E.vm_x86_executable_module_installed(session)) {
+          throw new Error('vm.wasm rejected module installation');
+        }
+        continue;
+      }
+      throw new Error(`vm.wasm entered executable admission state ${kind}`);
+    }
+    if (!E.vm_x86_executable_commit(session)) {
+      throw new Error('vm.wasm rejected executable publication');
+    }
+    return { tableBase };
+  } catch (error) {
+    E.vm_x86_executable_abort(session);
+    throw error;
+  }
+}
+
+/** Resolve one compiled RIP to its authenticated page-dispatch function. */
+export async function supplyX86ExecutableCode(E, session, source) {
+  source = directObjectSource(source);
+  const table = E.__indirect_function_table;
+  const started = E.vm_x86_executable_resolve_begin(session);
+  if (started === 2) return;
+  if (started !== 1 || !(table instanceof WebAssembly.Table)) {
+    throw new Error('vm.wasm rejected the direct code-page request');
+  }
+  let moduleBytes = null;
+  let moduleDigest = null;
+  try {
+    for (;;) {
+      const kind = E.vm_x86_executable_request_kind(session);
+      if (kind === X86_EXECUTABLE_CODE_READY) break;
+      if (kind === X86_EXECUTABLE_INDEX
+          || kind === X86_EXECUTABLE_MODULE) {
+        const digest = directRequestDigest(E, session);
+        const total = directSafeNumber(
+          E.vm_x86_executable_request_bytes(session),
+          'direct code object extent',
+        );
+        const offset = directSafeNumber(
+          E.vm_x86_executable_request_offset(session),
+          'direct code object offset',
+        );
+        const count = E.vm_x86_executable_request_buffer_bytes(session);
+        const bufferAt = E.vm_x86_executable_request_buffer(session);
+        if (!count || !bufferAt || offset + count > total) {
+          throw new Error('vm.wasm requested an invalid code object range');
+        }
+        const bytes = await source.read(digest, offset, count, total);
+        if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+          throw new Error(`code object ${digest} returned the wrong range`);
+        }
+        new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
+        if (kind === X86_EXECUTABLE_MODULE) {
+          if (moduleDigest !== digest) {
+            moduleDigest = digest;
+            moduleBytes = new Uint8Array(total);
+          }
+          moduleBytes.set(bytes, offset);
+        }
+        if (!E.vm_x86_executable_supply(session, count)) {
+          throw new Error(`vm.wasm rejected code object ${digest}`);
+        }
+        continue;
+      }
+      if (kind === X86_EXECUTABLE_INSTALL) {
+        const digest = directRequestDigest(E, session);
+        const base = E.vm_x86_executable_module_table_base(session);
+        const functions = E.vm_x86_executable_module_function_count(session);
+        if (!moduleBytes || moduleDigest !== digest || !base || !functions
+            || base + functions < base) {
+          throw new Error('vm.wasm published invalid cold-module geometry');
+        }
+        if (base + functions > table.length) {
+          table.grow(base + functions - table.length);
+        }
+        await instantiateDirectModule(E, table, base, moduleBytes);
+        moduleBytes = null;
+        moduleDigest = null;
+        if (!E.vm_x86_executable_module_installed(session)) {
+          throw new Error('vm.wasm rejected cold-module installation');
+        }
+        continue;
+      }
+      throw new Error(`vm.wasm entered code admission state ${kind}`);
+    }
+    if (!E.vm_x86_executable_resolve_commit(session)) {
+      throw new Error('vm.wasm rejected page-dispatch publication');
+    }
+  } catch (error) {
+    E.vm_x86_executable_resolve_abort(session);
+    throw error;
+  }
+}
+
+/**
+ * Satisfy the VM's current cold physical-page cut from a direct executable.
+ *
+ * C owns the resource-index walk, row validation, complete page digest and
+ * zero-tail publication. JavaScript forwards only the opaque object request
+ * that C exposes; it cannot select an extent or manufacture a sparse page.
+ */
+export async function supplyX86ExecutablePhysical(E, session, source) {
+  source = directObjectSource(source);
+  if (!E.vm_x86_executable_physical_begin(session)) {
+    throw new Error('vm.wasm rejected the direct physical-page request');
+  }
+  try {
+    for (;;) {
+      const kind = E.vm_x86_executable_request_kind(session);
+      if (kind === X86_EXECUTABLE_PAGE_READY) break;
+      if (kind !== X86_EXECUTABLE_INDEX
+          && kind !== X86_EXECUTABLE_RESOURCE) {
+        throw new Error(`vm.wasm entered physical admission state ${kind}`);
+      }
+      const digest = directRequestDigest(E, session);
+      const total = directSafeNumber(
+        E.vm_x86_executable_request_bytes(session),
+        'direct physical object extent',
+      );
+      const offset = directSafeNumber(
+        E.vm_x86_executable_request_offset(session),
+        'direct physical object offset',
+      );
+      const count = E.vm_x86_executable_request_buffer_bytes(session);
+      const bufferAt = E.vm_x86_executable_request_buffer(session);
+      if (!count || !bufferAt || offset + count > total) {
+        throw new Error('vm.wasm requested an invalid physical object range');
+      }
+      const bytes = await source.read(digest, offset, count, total);
+      if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+        throw new Error(`physical object ${digest} returned the wrong range`);
+      }
+      new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
+      if (!E.vm_x86_executable_supply(session, count)) {
+        throw new Error(`vm.wasm rejected physical object ${digest}`);
+      }
+    }
+    if (!E.vm_x86_executable_physical_commit(session)) {
+      throw new Error('vm.wasm rejected direct physical-page publication');
+    }
+  } catch (error) {
+    E.vm_x86_executable_physical_abort(session);
+    throw error;
+  }
+}
+
+/** Admit one cold physical entry-map row selected by a dispatcher token. */
+export async function supplyX86ExecutableMap(E, session, source, result) {
+  source = directObjectSource(source);
+  const started = E.vm_x86_executable_map_begin(session, result);
+  if (started === 2) return;
+  if (started !== 1) {
+    throw new Error('vm.wasm rejected the direct entry-map request');
+  }
+  try {
+    for (;;) {
+      const kind = E.vm_x86_executable_request_kind(session);
+      if (kind === X86_EXECUTABLE_MAP_READY) break;
+      if (kind !== X86_EXECUTABLE_INDEX
+          && kind !== X86_EXECUTABLE_RESOURCE) {
+        throw new Error(`vm.wasm entered entry-map admission state ${kind}`);
+      }
+      const digest = directRequestDigest(E, session);
+      const total = directSafeNumber(
+        E.vm_x86_executable_request_bytes(session),
+        'direct entry-map object extent',
+      );
+      const offset = directSafeNumber(
+        E.vm_x86_executable_request_offset(session),
+        'direct entry-map object offset',
+      );
+      const count = E.vm_x86_executable_request_buffer_bytes(session);
+      const bufferAt = E.vm_x86_executable_request_buffer(session);
+      if (!count || !bufferAt || offset + count > total) {
+        throw new Error('vm.wasm requested an invalid entry-map object range');
+      }
+      const bytes = await source.read(digest, offset, count, total);
+      if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+        throw new Error(`entry-map object ${digest} returned the wrong range`);
+      }
+      new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
+      if (!E.vm_x86_executable_supply(session, count)) {
+        throw new Error(`vm.wasm rejected entry-map object ${digest}`);
+      }
+    }
+    if (!E.vm_x86_executable_map_commit(session)) {
+      throw new Error('vm.wasm rejected direct entry-map publication');
+    }
+  } catch (error) {
+    E.vm_x86_executable_map_abort(session);
+    throw error;
+  }
+}
+
+/** Admit one successor-free kernel/edge descriptor page selected by C. */
+export async function supplyX86ExecutableResidual(E, session, source, result) {
+  source = directObjectSource(source);
+  const started = E.vm_x86_executable_residual_begin(session, result);
+  if (started === 2) return;
+  if (started !== 1) {
+    throw new Error('vm.wasm rejected the residual descriptor request');
+  }
+  try {
+    for (;;) {
+      const kind = E.vm_x86_executable_request_kind(session);
+      if (kind === X86_EXECUTABLE_RESIDUAL_READY) break;
+      if (kind !== X86_EXECUTABLE_INDEX
+          && kind !== X86_EXECUTABLE_RESOURCE) {
+        throw new Error(`vm.wasm entered residual admission state ${kind}`);
+      }
+      const digest = directRequestDigest(E, session);
+      const total = directSafeNumber(
+        E.vm_x86_executable_request_bytes(session),
+        'residual descriptor object extent',
+      );
+      const offset = directSafeNumber(
+        E.vm_x86_executable_request_offset(session),
+        'residual descriptor object offset',
+      );
+      const count = E.vm_x86_executable_request_buffer_bytes(session);
+      const bufferAt = E.vm_x86_executable_request_buffer(session);
+      if (!count || !bufferAt || offset + count > total) {
+        throw new Error('vm.wasm requested an invalid residual object range');
+      }
+      const bytes = await source.read(digest, offset, count, total);
+      if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+        throw new Error(`residual object ${digest} returned the wrong range`);
+      }
+      new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
+      if (!E.vm_x86_executable_supply(session, count)) {
+        throw new Error(`vm.wasm rejected residual object ${digest}`);
+      }
+    }
+    if (!E.vm_x86_executable_residual_commit(session)) {
+      throw new Error('vm.wasm rejected residual descriptor publication');
+    }
+  } catch (error) {
+    E.vm_x86_executable_residual_abort(session);
+    throw error;
+  }
+}
+
+/** Admit one exact-identity or parameter page selected by C. */
+export async function supplyX86ExecutableInstantiation(
+  E, session, source, result,
+) {
+  source = directObjectSource(source);
+  const started = E.vm_x86_executable_instantiation_begin(session, result);
+  if (started === 2) return;
+  if (started !== 1) {
+    throw new Error('vm.wasm rejected the instantiation page request');
+  }
+  try {
+    for (;;) {
+      const kind = E.vm_x86_executable_request_kind(session);
+      if (kind === X86_EXECUTABLE_INSTANTIATION_READY) break;
+      if (kind !== X86_EXECUTABLE_INDEX
+          && kind !== X86_EXECUTABLE_RESOURCE) {
+        throw new Error(
+          `vm.wasm entered instantiation admission state ${kind}`,
+        );
+      }
+      const digest = directRequestDigest(E, session);
+      const total = directSafeNumber(
+        E.vm_x86_executable_request_bytes(session),
+        'instantiation page object extent',
+      );
+      const offset = directSafeNumber(
+        E.vm_x86_executable_request_offset(session),
+        'instantiation page object offset',
+      );
+      const count = E.vm_x86_executable_request_buffer_bytes(session);
+      const bufferAt = E.vm_x86_executable_request_buffer(session);
+      if (!count || !bufferAt || offset + count > total) {
+        throw new Error('vm.wasm requested an invalid instantiation object');
+      }
+      const bytes = await source.read(digest, offset, count, total);
+      if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+        throw new Error(`instantiation object ${digest} has wrong range`);
+      }
+      new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
+      if (!E.vm_x86_executable_supply(session, count)) {
+        throw new Error(`vm.wasm rejected instantiation object ${digest}`);
+      }
+    }
+    if (!E.vm_x86_executable_instantiation_commit(session)) {
+      throw new Error('vm.wasm rejected instantiation page publication');
+    }
+  } catch (error) {
+    E.vm_x86_executable_instantiation_abort(session);
+    throw error;
+  }
+}
+
+/** Admit one bounded cold module selected by a residual kernel rank. */
+export async function supplyX86ExecutableKernel(E, session, source, result) {
+  source = directObjectSource(source);
+  const table = E.__indirect_function_table;
+  const started = E.vm_x86_executable_kernel_begin(session, result);
+  if (started === 2) return;
+  if (started !== 1 || !(table instanceof WebAssembly.Table)) {
+    throw new Error('vm.wasm rejected the residual kernel request');
+  }
+  let moduleBytes = null;
+  let moduleDigest = null;
+  try {
+    for (;;) {
+      const kind = E.vm_x86_executable_request_kind(session);
+      if (kind === X86_EXECUTABLE_KERNEL_READY) break;
+      if (kind === X86_EXECUTABLE_INDEX
+          || kind === X86_EXECUTABLE_MODULE) {
+        const digest = directRequestDigest(E, session);
+        const total = directSafeNumber(
+          E.vm_x86_executable_request_bytes(session),
+          'residual kernel object extent',
+        );
+        const offset = directSafeNumber(
+          E.vm_x86_executable_request_offset(session),
+          'residual kernel object offset',
+        );
+        const count = E.vm_x86_executable_request_buffer_bytes(session);
+        const bufferAt = E.vm_x86_executable_request_buffer(session);
+        if (!count || !bufferAt || offset + count > total) {
+          throw new Error('vm.wasm requested an invalid kernel object range');
+        }
+        const bytes = await source.read(digest, offset, count, total);
+        if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+          throw new Error(`kernel object ${digest} returned the wrong range`);
+        }
+        new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
+        if (kind === X86_EXECUTABLE_MODULE) {
+          if (moduleDigest !== digest) {
+            moduleDigest = digest;
+            moduleBytes = new Uint8Array(total);
+          }
+          moduleBytes.set(bytes, offset);
+        }
+        if (!E.vm_x86_executable_supply(session, count)) {
+          throw new Error(`vm.wasm rejected kernel object ${digest}`);
+        }
+        continue;
+      }
+      if (kind === X86_EXECUTABLE_INSTALL) {
+        const digest = directRequestDigest(E, session);
+        const base = E.vm_x86_executable_module_table_base(session);
+        const functions = E.vm_x86_executable_module_function_count(session);
+        if (!moduleBytes || moduleDigest !== digest || !base || !functions
+            || base + functions < base) {
+          throw new Error('vm.wasm published invalid kernel module geometry');
+        }
+        if (base + functions > table.length) {
+          table.grow(base + functions - table.length);
+        }
+        await instantiateDirectModule(E, table, base, moduleBytes);
+        moduleBytes = null;
+        moduleDigest = null;
+        if (!E.vm_x86_executable_module_installed(session)) {
+          throw new Error('vm.wasm rejected kernel module installation');
+        }
+        continue;
+      }
+      throw new Error(`vm.wasm entered kernel admission state ${kind}`);
+    }
+    if (!E.vm_x86_executable_kernel_commit(session)) {
+      throw new Error('vm.wasm rejected kernel module publication');
+    }
+  } catch (error) {
+    E.vm_x86_executable_kernel_abort(session);
+    throw error;
+  }
+}
+
+/** Open a compiler-produced machine without decoding host-side state or rows. */
+export async function openDirectX86Machine({
+  root, source, devices = {},
+}) {
+  if (!(root instanceof Uint8Array)) {
+    throw new TypeError('direct x86 machine needs fixed root bytes');
+  }
+  source = directObjectSource(source);
+  const loaded = await load();
+  const E = loaded.exports;
+  const session = E.vm_step_acquire();
+  if (session === 0n) throw new Error('vm.wasm has no free x86 lease');
+  try {
+    await admitX86Executable(E, session, root, source);
+    const entry = E.vm_x86_executable_entry_function(session);
+    if (!Number.isSafeInteger(entry) || entry < 0 || entry === 0xffffffff) {
+      throw new Error('vm.wasm omitted the direct executable entry');
+    }
+    const residual = E.vm_x86_executable_entry_residual(session);
+    const residualEntry = Number.isSafeInteger(residual)
+      && residual >= 0 && residual !== 0xffffffff ? residual : null;
+    return new DirectX86Machine(
+      E, session, entry, residualEntry, source, devices,
+    );
+  } catch (error) {
+    E.vm_step_release(session);
+    throw error;
+  }
+}
+
+class DirectX86Machine {
+  constructor(exports, session, entry, residual, source, devices) {
+    this.exports = exports;
+    this.session = session;
+    this.functionRank = entry;
+    this.residualRank = residual;
+    this.source = source;
+    this.devices = devices;
+    this.dirtyPages = new Map();
+    this.virtualClock = 0n;
+    this.hostBarriers = {
+      entryMapRead: 0,
+      physicalRead: 0,
+      physicalWrite: 0,
+      consoleWrite: 0,
+      clock: 0,
+      entropy: 0,
+      residualRead: 0,
+      instantiationRead: 0,
+      parameterRead: 0,
+      kernelRead: 0,
+    };
+    this.closed = false;
+  }
+
+  assertOpen() {
+    if (this.closed) throw new Error('direct x86 machine is released');
+  }
+
+  async publishDirtyPage() {
+    const E = this.exports;
+    const page = BigInt.asUintN(
+      64, E.vm_x86_first_dirty_physical_page(this.session),
+    );
+    if (page === 0xffffffffffffffffn) return false;
+    const lease = E.vm_x86_physical_lease(this.session);
+    const coordinate = BigInt.asUintN(
+      64, E.vm_x86_physical_coordinate(this.session, lease),
+    );
+    const at = E.vm_x86_physical_buffer(this.session, lease);
+    if (!lease || coordinate !== page || !at) {
+      throw new Error('vm.wasm published an invalid direct COW page');
+    }
+    const bytes = new Uint8Array(
+      E.memory.buffer, at, X86_PHYSICAL_PAGE_BYTES,
+    ).slice();
+    this.dirtyPages.set(page.toString(), bytes);
+    if (typeof this.devices.physicalWrite === 'function') {
+      await this.devices.physicalWrite(page, bytes);
+    }
+    this.hostBarriers.physicalWrite += 1;
+    if (!E.vm_x86_ack_physical(this.session, lease, page)) {
+      throw new Error(`vm.wasm rejected direct COW page ${page}`);
+    }
+    return true;
+  }
+
+  async satisfyPhysical() {
+    const E = this.exports;
+    const lease = E.vm_x86_physical_lease(this.session);
+    const page = BigInt.asUintN(
+      64, E.vm_x86_physical_coordinate(this.session, lease),
+    );
+    const dirty = this.dirtyPages.get(page.toString());
+    if (dirty) {
+      const at = E.vm_x86_physical_buffer(this.session, lease);
+      if (!lease || !at) throw new Error('vm.wasm omitted the COW page buffer');
+      new Uint8Array(E.memory.buffer, at, X86_PHYSICAL_PAGE_BYTES).set(dirty);
+      if (!E.vm_x86_supply_physical(
+        this.session, lease, page, X86_PHYSICAL_PAGE_BYTES,
+      )) throw new Error(`vm.wasm rejected resident COW page ${page}`);
+    } else {
+      await supplyX86ExecutablePhysical(E, this.session, this.source);
+    }
+    this.hostBarriers.physicalRead += 1;
+  }
+
+  async satisfyConsole() {
+    const E = this.exports;
+    const lease = E.vm_x86_console_lease(this.session);
+    const count = E.vm_x86_console_output_count(this.session, lease);
+    if (!lease || !Number.isSafeInteger(count) || count <= 0 || count > 256) {
+      throw new Error('vm.wasm published an invalid direct console cut');
+    }
+    const bytes = Uint8Array.from(
+      { length: count }, (_unused, index) =>
+        E.vm_x86_console_output_peek(this.session, lease, index),
+    );
+    if (typeof this.devices.consoleWrite === 'function') {
+      await this.devices.consoleWrite(bytes);
+    }
+    this.hostBarriers.consoleWrite += 1;
+    if (!E.vm_x86_ack_console(this.session, lease)) {
+      throw new Error('vm.wasm rejected the direct console acknowledgement');
+    }
+  }
+
+  async satisfyClock() {
+    const E = this.exports;
+    const lease = E.vm_x86_clock_lease(this.session);
+    if (!lease) throw new Error('vm.wasm published an invalid direct clock cut');
+    const value = typeof this.devices.clock === 'function'
+      ? await this.devices.clock({
+        retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
+        prior: this.virtualClock,
+      }) : this.virtualClock + 1n;
+    this.virtualClock = BigInt.asUintN(64, BigInt(value));
+    this.hostBarriers.clock += 1;
+    if (!E.vm_x86_supply_clock(this.session, lease, this.virtualClock)) {
+      throw new Error('vm.wasm rejected the direct clock acknowledgement');
+    }
+  }
+
+  async satisfyEntropy() {
+    const E = this.exports;
+    const lease = E.vm_x86_entropy_lease(this.session);
+    if (!lease) throw new Error('vm.wasm published an invalid direct entropy cut');
+    let value;
+    if (typeof this.devices.entropy === 'function') {
+      value = await this.devices.entropy({
+        retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
+        rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
+      });
+    } else {
+      const words = new Uint32Array(2);
+      globalThis.crypto.getRandomValues(words);
+      value = (BigInt(words[1]) << 32n) | BigInt(words[0]);
+    }
+    this.hostBarriers.entropy += 1;
+    if (!E.vm_x86_supply_entropy(
+      this.session, lease, BigInt.asUintN(64, BigInt(value)),
+    )) throw new Error('vm.wasm rejected the direct entropy acknowledgement');
+  }
+
+  async projectResidual() {
+    const E = this.exports;
+    for (;;) {
+      const result = E.vm_x86_executable_project_residual(this.session);
+      const kind = Number(result & 7n);
+      const payload = result >> 3n;
+      if (kind === 0) {
+        const residual = Number(payload);
+        if (!Number.isSafeInteger(residual) || residual < 0) {
+          throw new Error('vm.wasm published an invalid residual projection');
+        }
+        this.residualRank = residual;
+        return;
+      }
+      if (kind === 1) {
+        await supplyX86ExecutableCode(E, this.session, this.source);
+        continue;
+      }
+      if (kind === 6) {
+        await supplyX86ExecutableMap(E, this.session, this.source, result);
+        this.hostBarriers.entryMapRead += 1;
+        continue;
+      }
+      if (kind === 3) {
+        throw new Error(`residual projection fault ${payload}`);
+      }
+      if (kind === 5) {
+        throw new Error('residual projection generation became stale');
+      }
+      throw new Error(`vm.wasm returned invalid residual projection ${kind}`);
+    }
+  }
+
+  async advance(maxBlocks = 1 << 16) {
+    this.assertOpen();
+    if (!Number.isSafeInteger(maxBlocks) || maxBlocks <= 0) {
+      throw new RangeError('direct x86 block quantum must be positive');
+    }
+    const E = this.exports;
+    let completed = 0;
+    const finish = (status) => ({
+      ...this.status(status), completedBlocks: completed,
+    });
+    while (completed < maxBlocks) {
+      const requested = Math.min(maxBlocks - completed, 0xffffffff);
+      const residualMode = this.residualRank !== null;
+      const result = residualMode
+        ? E.vm_x86_execute_residual(
+          this.session, this.residualRank, requested,
+        )
+        : E.vm_x86_execute_direct(
+          this.session, this.functionRank, requested,
+        );
+      const batch = E.vm_x86_direct_blocks(this.session);
+      if (!Number.isSafeInteger(batch) || batch < 0 || batch > requested) {
+        throw new Error('vm.wasm published invalid direct block accounting');
+      }
+      const kind = Number(result & 7n);
+      const payload = result >> 3n;
+      if (residualMode) {
+        const residentResidual = E.vm_x86_direct_residual(this.session);
+        if (!Number.isSafeInteger(residentResidual) || residentResidual < 0
+            || residentResidual === 0xffffffff) {
+          throw new Error('vm.wasm lost the residual continuation rank');
+        }
+        this.residualRank = residentResidual;
+      } else {
+        const residentFunction = E.vm_x86_direct_function(this.session);
+        if (!Number.isSafeInteger(residentFunction) || residentFunction < 0
+            || residentFunction === 0xffffffff) {
+          throw new Error('vm.wasm lost the direct continuation rank');
+        }
+        this.functionRank = residentFunction;
+      }
+      /* The last invocation did not publish its architectural cut when it
+       * returned a retryable barrier. Earlier functions in the same quantum
+       * did complete and must not be replayed. */
+      /* Physical/entry-map cuts precede the final instruction commit.  UART
+       * output is deliberately published after OUT and its continuation are
+       * committed, so it must count as completed and must not be replayed. */
+      completed += batch - ((kind === 2
+        && Number(payload) !== X86_STATUS.consoleWrite) || kind === 6 ? 1 : 0);
+      if (kind === 0) {
+        const next = Number(payload);
+        if (!Number.isSafeInteger(next) || next < 0) {
+          throw new Error('vm.wasm published an invalid direct continuation');
+        }
+        if (residualMode) this.residualRank = next;
+        else this.functionRank = next;
+        continue;
+      }
+      if (kind === 2) {
+        const barrier = Number(payload);
+        if (barrier === X86_STATUS.needPhysical) {
+          await this.satisfyPhysical();
+        } else if (barrier === X86_STATUS.dirtyPhysical) {
+          await this.publishDirtyPage();
+        } else if (barrier === X86_STATUS.consoleWrite) {
+          await this.satisfyConsole();
+        } else if (barrier === X86_STATUS.clock) {
+          await this.satisfyClock();
+        } else if (barrier === X86_STATUS.entropy) {
+          await this.satisfyEntropy();
+        } else {
+          throw new Error(`vm.wasm published unknown direct barrier ${barrier}`);
+        }
+        continue;
+      }
+      if (kind === 4) return finish(X86_STATUS.halted);
+      if (kind === 1) {
+        await supplyX86ExecutableCode(E, this.session, this.source);
+        if (residualMode) {
+          await this.projectResidual();
+          continue;
+        }
+        const resolved = E.vm_x86_direct_function(this.session);
+        if (!Number.isSafeInteger(resolved) || resolved < 0
+            || resolved === 0xffffffff) {
+          throw new Error('vm.wasm lost the resolved page-dispatch rank');
+        }
+        this.functionRank = resolved;
+        continue;
+      }
+      if (kind === 3) {
+        throw new Error(`direct x86 fault vector ${payload}`);
+      }
+      if (kind === 5) throw new Error('direct executable generation became stale');
+      if (kind === 6) {
+        await supplyX86ExecutableMap(E, this.session, this.source, result);
+        this.hostBarriers.entryMapRead += 1;
+        continue;
+      }
+      if (kind === 7 && residualMode) {
+        const column = Number(payload & 7n);
+        if (column === 2) {
+          await supplyX86ExecutableKernel(
+            E, this.session, this.source, result,
+          );
+          this.hostBarriers.kernelRead += 1;
+        } else if (column <= 1) {
+          await supplyX86ExecutableResidual(
+            E, this.session, this.source, result,
+          );
+          this.hostBarriers.residualRead += 1;
+        } else if (column === 3 || column === 4) {
+          await supplyX86ExecutableInstantiation(
+            E, this.session, this.source, result,
+          );
+          if (column === 3) this.hostBarriers.instantiationRead += 1;
+          else this.hostBarriers.parameterRead += 1;
+        } else {
+          throw new Error(`vm.wasm returned unknown residual column ${column}`);
+        }
+        continue;
+      }
+      throw new Error(`vm.wasm returned invalid direct result ${kind}`);
+    }
+    return finish(X86_STATUS.yielded);
+  }
+
+  status(status = null) {
+    this.assertOpen();
+    const E = this.exports;
+    return {
+      status,
+      halted: Boolean(E.vm_x86_halted(this.session)),
+      rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
+      retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
+      work: BigInt.asUintN(64, E.vm_x86_work(this.session)),
+      span: BigInt.asUintN(64, E.vm_x86_span(this.session)),
+      engine: {
+        directBlocks: BigInt(E.vm_x86_direct_blocks(this.session)),
+        indexStarts: BigInt(
+          E.vm_x86_executable_index_starts(this.session),
+        ),
+        indexNodes: BigInt(E.vm_x86_executable_index_nodes(this.session)),
+        indexCacheHits: BigInt(
+          E.vm_x86_executable_index_cache_hits(this.session),
+        ),
+        indexCacheMisses: BigInt(
+          E.vm_x86_executable_index_cache_misses(this.session),
+        ),
+        resourcePayloads: BigInt(
+          E.vm_x86_executable_resource_payloads(this.session),
+        ),
+        moduleChunks: BigInt(
+          E.vm_x86_executable_module_chunks(this.session),
+        ),
+        parameterMaterializations: BigInt(
+          E.vm_x86_executable_parameter_materializations(this.session),
+        ),
+        parameterWords: BigInt(
+          E.vm_x86_executable_parameter_words(this.session),
+        ),
+        physicalLookupProbes: BigInt(
+          E.vm_x86_physical_lookup_probes(this.session),
+        ),
+        physicalVictimProbes: BigInt(
+          E.vm_x86_physical_victim_probes(this.session),
+        ),
+      },
+      hostBarriers: { ...this.hostBarriers },
+    };
+  }
+
+  async flush() {
+    this.assertOpen();
+    while (await this.publishDirtyPage()) { /* bounded resident dirty set */ }
+    return this.status();
+  }
+
+  feedConsole(bytes) {
+    this.assertOpen();
+    if (typeof bytes === 'string') bytes = new TextEncoder().encode(bytes);
+    if (!(bytes instanceof Uint8Array)) {
+      throw new TypeError('x86 console input must be bytes or text');
+    }
+    for (const byte of bytes) {
+      if (!this.exports.vm_x86_console_feed(this.session, byte)) {
+        throw new Error('vm.wasm console input queue is full');
+      }
+    }
+    this.exports.vm_x86_interrupt_event(this.session, 0);
+    return bytes.length;
+  }
+
+  interrupt({ timer = false } = {}) {
+    this.assertOpen();
+    return Boolean(this.exports.vm_x86_interrupt_event(
+      this.session, timer ? 1 : 0,
+    ));
+  }
+
+  release() {
+    if (this.closed) return;
+    if (!this.exports.vm_step_release(this.session)) {
+      throw new Error('vm.wasm rejected the direct x86 lease release');
+    }
+    this.dirtyPages.clear();
+    this.closed = true;
+  }
+}
 
 function x86Source(source, name, writable = false) {
   if (!source || !Number.isSafeInteger(source.length) || source.length <= 0
@@ -408,6 +1379,23 @@ class ResidentX86Machine {
       retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
       work: BigInt.asUintN(64, E.vm_x86_work(this.session)),
       span: BigInt.asUintN(64, E.vm_x86_span(this.session)),
+      engine: {
+        stepOpens: BigInt.asUintN(
+          64, E.vm_step_profile_opens(this.session),
+        ),
+        stepRestores: BigInt.asUintN(
+          64, E.vm_step_profile_restores(this.session),
+        ),
+        executeCalls: BigInt.asUintN(
+          64, E.vm_step_profile_execute_calls(this.session),
+        ),
+        nodesExecuted: BigInt.asUintN(
+          64, E.vm_step_profile_nodes(this.session),
+        ),
+        projectionQueries: BigInt.asUintN(
+          64, E.vm_step_profile_projection_queries(this.session),
+        ),
+      },
       hostBarriers: { ...this.hostBarriers },
     };
   }

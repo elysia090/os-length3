@@ -2627,6 +2627,8 @@ console.log(JSON.stringify({{
         self.assertEqual(result['last'], 'B' * 3)
         self.assertEqual(result['layout']['verifiedShards'], 2)
         self.assertEqual(result['layout']['residentPages'], 2)
+        self.assertEqual(result['layout']['mappedPages'], 3)
+        self.assertEqual(result['layout']['cacheEntries'], 2)
         self.assertEqual(result['layout']['rangeRequests'], 3)
 
     def test_page_bundle_can_use_a_verified_parent_range_reader(self):
@@ -2743,6 +2745,7 @@ console.log(JSON.stringify({{ observed, layout: fabric.layout() }}));
         self.assertEqual(result['layout']['rangeRequests'], 3)
         self.assertEqual(result['layout']['verifiedShards'], 5)
         self.assertLessEqual(result['layout']['residentPages'], 4)
+        self.assertLessEqual(result['layout']['cacheEntries'], 4)
 
     def test_vm_loader_has_no_direct_wasm_fetch_route(self):
         with tempfile.TemporaryDirectory() as directory:

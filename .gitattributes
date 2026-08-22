@@ -1,0 +1,1 @@
+artifact/linux-x86-64/delivery/*.pages filter=lfs diff=lfs merge=lfs -text

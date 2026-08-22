@@ -7,7 +7,7 @@ The page needs four trees next to each other, because workers install the
 Python engine by fetching the files named in `web/qm-manifest.json`:
 
     dist/index.html      the shell, so the bare domain lands on the tool
-    dist/web/            app.js, worker.js, clang.js, vm.js, vm.wasm, styles
+    dist/web/            app.js, worker.js, clang.js, vm.js, styles
     dist/qm/             the minimizer, fetched at runtime by workers
     dist/vm/             the machine it normalizes onto
     dist/kernel/         Linux state machine, fetched only by linux-worker
@@ -41,8 +41,8 @@ TREES = ('qm', 'vm', 'kernel', 'web')
 
 
 def _ignore(directory, names):
-    # `vm/wasm` is the C and its build script.  The compiled module ships as
-    # `web/vm.wasm`; the source it came from is not something the page fetches.
+    # `vm/wasm` is the C and its build script.  The compiled module has one
+    # deployed route through artifact/vm; source build outputs are not copied.
     skip = {'__pycache__'}
     if os.path.basename(directory) == 'vm':
         skip.add('wasm')

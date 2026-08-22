@@ -55,6 +55,10 @@ Kernel selftests are verification inputs, never boot-artifact contents. The
 upstream source cache), execute against a disposable runtime overlay, and do
 not change the identity of the minimal kernel + BusyBox artifact.
 
+The pinned development-only x86 semantic references live under
+[`oracle/`](oracle/README.md). They certify the post-link compiler but are not
+Linux, toolchain or browser artifact inputs.
+
 Update policy:
 
 1. Read `https://www.kernel.org/releases.json` and select `latest_stable`.

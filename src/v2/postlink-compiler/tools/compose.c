@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include <postlink/affine.h>
+#include <postlink/executable.h>
 #include <postlink/plan.h>
 #include <postlink/trace.h>
 
@@ -82,6 +83,7 @@ int main(int argc, char **argv)
     }
     int affine = argc >= 3 && !strcmp(argv[2], "--affine");
     int loops = argc >= 3 && !strcmp(argv[2], "--loops");
+    long loop_vectors = loops && argc >= 4 ? atol(argv[3]) : 0;
 
     FILE *handle = fopen(argv[1], "rb");
     if (!handle) { fprintf(stderr, "cannot open %s\n", argv[1]); return 1; }
@@ -153,15 +155,22 @@ int main(int argc, char **argv)
      * pair is straight-line and has no iteration to collapse. */
     if (loops) {
         pl_u8 *visited = calloc(count, 1);
-        if (!visited) { fprintf(stderr, "no visited set\n"); return 1; }
+        pl_u32 *heads = malloc((size_t)count * sizeof *heads);
+        pl_u32 *backedge = malloc((size_t)count * sizeof *backedge);
+        if (!visited || !heads || !backedge
+                || pl_trace_backedges(
+                    &directory, successor, predecessor, heads, backedge)) {
+            fprintf(stderr, "cannot close conditional backedges\n");
+            return 1;
+        }
         unsigned long long bodies = 0, single = 0;
         unsigned long long lengths = 0;
         for (pl_u32 index = 0; index < count; ++index) {
-            if (visited[index]) continue;
+            if (visited[index] || heads[index] != index) continue;
             pl_u32 last = index;
             pl_u32 length = pl_trace_run(successor, predecessor, count,
                                          index, visited, &last);
-            if (successor[last] != index) continue;
+            if (successor[last] != index && backedge[last] != index) continue;
             bodies += 1;
             lengths += length;
             if (length == 1u) single += 1;
@@ -190,9 +199,46 @@ int main(int argc, char **argv)
             }
             if (!ok) { verdicts[PL_AFFINE_UNSUPPORTED] += 1; continue; }
             pl_affine report;
-            if (!pl_affine_analyse(&body, &arena, &report))
+            if (!pl_affine_analyse_cut(
+                    &body, PL_VM_X86_REGISTER_COUNT, &arena, &report)) {
                 verdicts[report.verdict] += 1;
-            else
+                if (loop_vectors > 0 && (long)bodies <= loop_vectors) {
+                    printf("LOOP %u %u %u %u %u %u\n", index, last,
+                           length, body.node_count, body.local_count,
+                           (unsigned)report.verdict);
+                    pl_admission terminal;
+                    if (!pl_directory_admit(&directory, last, &terminal))
+                        printf("K %u %llu %llu %llu\n",
+                               terminal.continuation.control,
+                               (unsigned long long)
+                                   terminal.continuation.field[1],
+                               (unsigned long long)
+                                   terminal.continuation.field[2],
+                               (unsigned long long)
+                                   terminal.continuation.field[3]);
+                    for (pl_u32 value = 0; value < body.node_count; ++value) {
+                        const pl_node *node = &body.nodes[value];
+                        printf("N %u %u", value + 1u, node->opcode);
+                        for (pl_u32 slot = 0; slot < node->argument_count;
+                             ++slot)
+                            print_operand(body.arguments[
+                                node->argument_at + slot]);
+                        printf("\n");
+                    }
+                    for (pl_u32 slot = 0; slot < body.local_count; ++slot) {
+                        if (body.locals[slot].kind == PL_OPERAND_LOCAL
+                                && body.locals[slot].value == slot)
+                            continue;
+                        printf("L %u", slot);
+                        print_operand(body.locals[slot]);
+                        printf(" A %u %lld\n", report.slots[slot].kind,
+                               (long long)report.slots[slot].step);
+                    }
+                    printf("M %u %u O %u C %u %u\n", report.memory_nodes,
+                           report.affine_addresses, report.opaque_slot,
+                           report.cut_slot_count, report.cut_node_count);
+                }
+            } else
                 verdicts[PL_AFFINE_UNSUPPORTED] += 1;
         }
         printf("loop bodies found          %12llu\n", bodies);
@@ -205,6 +251,8 @@ int main(int argc, char **argv)
             printf("  %-38s %10llu\n",
                    pl_affine_reason((pl_affine_verdict)index),
                    verdicts[index]);
+        free(backedge);
+        free(heads);
         free(visited);
         free(payload);
         return 0;

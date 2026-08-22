@@ -18,6 +18,7 @@ typedef unsigned char      pl_u8;
 typedef unsigned short     pl_u16;
 typedef unsigned int       pl_u32;
 typedef unsigned long long pl_u64;
+typedef signed int         pl_i32;
 typedef signed long long   pl_i64;
 
 /* ---------------------------------------------------------------- artifact */
