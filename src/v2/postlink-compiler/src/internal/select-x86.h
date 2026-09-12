@@ -83,7 +83,6 @@ typedef struct {
     pl_u8 direct_common_frame;
     pl_u8 direct_shift_frame;
     pl_u8 direct_branch_frame;
-    pl_u8 direct_immediate_branch_frame;
     pl_u8 direct_entry_branch_frame;
     pl_u8 direct_arx_frame;
     pl_u8 direct_mutable_xor_frame;

@@ -2653,10 +2653,50 @@ static void add_flag_chain_dependencies(
     }
 }
 
+typedef struct {
+    pl_operand left, right;
+    pl_u32 bits, condition;
+} test_boolean;
+
+static int test_boolean_details(const pl_plan *plan, pl_operand value, test_boolean *out)
+{
+    if (!plan || value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count) return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if (node->opcode != PL_OPCODE_X86_TEST_CONDITION || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at) return 0;
+    const pl_operand *argument = plan->arguments + node->argument_at;
+    if (argument[2].kind != PL_OPERAND_CONST) return 0;
+    pl_u64 descriptor = argument[2].value;
+    out->bits = (pl_u32)(descriptor & 0xffu);
+    out->condition = (pl_u32)(descriptor >> 8u);
+    if ((out->bits != 8u && out->bits != 16u && out->bits != 32u && out->bits != 64u)
+            || descriptor >> 12u) return 0;
+    out->left = argument[0]; out->right = argument[1];
+    return 1;
+}
+
+static int test_boolean_publishes_flags(const pl_plan *plan, pl_operand value, pl_u32 flags)
+{
+    test_boolean shape;
+    if (!plan || !flags || flags > plan->node_count
+            || !test_boolean_details(plan, value, &shape)) return 0;
+    const pl_node *node = &plan->nodes[flags - 1u];
+    if (node->opcode != PL_OPCODE_X86_TEST || node->argument_count != 4u
+            || node->argument_at > plan->argument_count
+            || 4u > plan->argument_count - node->argument_at) return 0;
+    const pl_operand *argument = plan->arguments + node->argument_at;
+    return argument[3].kind == PL_OPERAND_CONST && argument[3].value == shape.bits
+        && argument[1].kind == shape.left.kind && argument[1].value == shape.left.value
+        && argument[2].kind == shape.right.kind && argument[2].value == shape.right.value;
+}
+
 static int publication_is_flag_result(const pl_plan *plan,
                                       pl_operand publication,
                                       pl_u32 flag_node)
 {
+    if (test_boolean_publishes_flags(plan, publication, flag_node)) return 1;
     pl_operand result, prior;
     if (!flag_result_operand(plan, flag_node, &result, &prior)) return 0;
     for (pl_u32 remaining = plan->node_count + 1u; remaining; --remaining) {
@@ -3098,6 +3138,8 @@ static pl_u32 operand_expression_bits(const pl_plan *plan,
 {
     if (value.kind == PL_OPERAND_NODE && value.value && value.value <= plan->node_count) {
         pl_u32 opcode = plan->nodes[value.value - 1u].opcode;
+        if (opcode == PL_OPCODE_X86_TEST_CONDITION || opcode == PL_OPCODE_X86_CONDITION)
+            return 64u;
         if (opcode == PL_OPCODE_ADD3[0]) return 32u;
         if (opcode == PL_OPCODE_ADD3[1]) return 64u;
     }
@@ -4832,6 +4874,58 @@ static int final_flags_are_shift(const pl_plan *plan)
         && plan->nodes[node - 1u].opcode == PL_OPCODE_X86_SHIFT_FLAGS;
 }
 
+static int emit_boolean_zero(pl_u32 destination, int preserve_flags,
+                              pl_u8 *output, pl_u32 *written)
+{
+    if (!preserve_flags) return emit_zero_register(destination, output, written);
+    if (!written || destination >= PL_X86_GPR_COUNT) return 0;
+    pl_u32 at = 0u;
+    if (destination >= 8u) {
+        if (output) output[at] = 0x41u;
+        ++at;
+    }
+    if (output) output[at] = (pl_u8)(0xb8u + (destination & 7u));
+    ++at;
+    for (pl_u32 byte = 0u; byte < 4u; ++byte) {
+        if (output) output[at] = 0u;
+        ++at;
+    }
+    *written = at;
+    return 1;
+}
+
+/* TEST and its Boolean observation share one flags production. The zero
+ * seed goes before TEST unless it would destroy a comparison input; in that
+ * case a flag-preserving MOV follows TEST before SETcc. */
+static int emit_test_boolean(const pl_plan *plan, pl_operand value, pl_u32 destination,
+                             pl_u8 *output, pl_u32 *written)
+{
+    test_boolean shape;
+    if (!test_boolean_details(plan, value, &shape)) return 0;
+    physicalize_published_operand(plan, destination, &shape.left);
+    physicalize_published_operand(plan, destination, &shape.right);
+    if (shape.left.kind != PL_OPERAND_LOCAL || shape.left.value >= PL_X86_GPR_COUNT)
+        return 0;
+    pl_u32 aliases = shape.left.value == destination
+        || (shape.right.kind == PL_OPERAND_LOCAL && shape.right.value == destination);
+    pl_u32 at = 0u, encoded = 0u;
+    if (!aliases) {
+        if (!emit_zero_register(destination, output, &encoded)) return 0;
+        at += encoded;
+    }
+    if (!emit_test_operand((pl_u32)shape.left.value, shape.right, shape.bits,
+                            output ? output + at : 0, &encoded)) return 0;
+    at += encoded;
+    if (aliases) {
+        if (!emit_boolean_zero(destination, 1, output ? output + at : 0, &encoded)) return 0;
+        at += encoded;
+    }
+    if (!emit_set_condition(destination, shape.condition, output ? output + at : 0, &encoded))
+        return 0;
+    *written = at + encoded;
+    return 1;
+}
+
 static int measure_alu_seed(const pl_x86_frontend *frontend,
                             const pl_x86_block *block,
                             pl_x86_native_selection *selection,
@@ -4845,6 +4939,10 @@ static int measure_alu_seed(const pl_x86_frontend *frontend,
         return 0;
     *bytes = 0u;
     *instructions = 0u;
+    if (emit_test_boolean(&block->plan, value, destination, 0, bytes)) {
+        *instructions = 3u;
+        return 1;
+    }
     if (value.kind == PL_OPERAND_LOCAL) {
         if (value.value >= PL_X86_GPR_COUNT) return 0;
         if (value.value == destination) return 1;
@@ -4871,6 +4969,18 @@ static int measure_alu_seed(const pl_x86_frontend *frontend,
         } else {
             *bytes = constant_move_bytes(destination, value.value);
         }
+        *instructions = 1u;
+        return 1;
+    }
+    /* Zero extension has the same one-instruction spelling inside an
+     * expression as at a frame root. Its high zero fill is not a value to
+     * materialize before the consuming arithmetic instruction. */
+    pl_u32 extension_source = 0u, extension_bits = 0u;
+    if (value.kind == PL_OPERAND_NODE
+            && zero_extend_node(&block->plan, (pl_u32)value.value,
+                                 &extension_source, &extension_bits)) {
+        if (!emit_zero_extend_move(destination, extension_source, extension_bits,
+                                    0, bytes)) return 0;
         *instructions = 1u;
         return 1;
     }
@@ -9500,6 +9610,29 @@ static int compare_branch_operand_shape(
             out->right.value = local;
     }
     out->condition = (pl_u32)(block->predicate.value & 0xffu);
+    /* A constant already published in a GPR is also an exact operand.
+     * Select its shorter encoding here, inside the one comparison grammar;
+     * zero in RAX, for example, can beat a sign-extended CMP immediate. */
+    if (out->left < PL_X86_GPR_COUNT && out->right.kind == PL_OPERAND_CONST) {
+        pl_u32 shortest = U32_MAX_VALUE, encoded = 0u;
+        if (out->test
+                ? emit_test_operand(out->left, out->right, out->bits, 0, &encoded)
+                : emit_compare_operand(out->left, out->right, out->bits, 0, &encoded))
+            shortest = encoded;
+        for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+            pl_operand publication = block->plan.locals[local];
+            if (publication.kind != arguments[2].kind
+                    || publication.value != arguments[2].value) continue;
+            pl_operand candidate = { PL_OPERAND_LOCAL, local };
+            int emitted = out->test
+                ? emit_test_operand(out->left, candidate, out->bits, 0, &encoded)
+                : emit_compare_operand(out->left, candidate, out->bits, 0, &encoded);
+            if (emitted && encoded < shortest) {
+                out->right = candidate;
+                shortest = encoded;
+            }
+        }
+    }
     return out->left < PL_X86_GPR_COUNT
         && (out->right.kind == PL_OPERAND_CONST
             || (out->right.kind == PL_OPERAND_LOCAL
@@ -9511,81 +9644,17 @@ static int compare_branch_shape(const pl_x86_block *block, pl_u32 *changed,
                                 pl_u32 *bits, pl_u32 *condition,
                                 pl_u32 *test)
 {
-    if (!block || !changed || !left || !right || !bits || !condition || !test
-            || block->flow != PL_X86_FLOW_CONDITIONAL
-            || !block->has_predicate || block->dynamic_target
-            || block->has_fault_predicate
-            || block->machine_operation != PL_X86_MACHINE_NONE
-            || block->successor_count != 2u
-            || block->plan.stack_count
-            || block->plan.local_count != PL_X86_LOCAL_COUNT)
-        return 0;
-    pl_operand flags = block->plan.locals[PL_X86_RFLAGS_LOCAL];
-    if (flags.kind != PL_OPERAND_NODE || !flags.value
-            || flags.value > block->plan.node_count
-            || block->predicate.kind != PL_OPERAND_PROJECTION
-            || (block->predicate.value >> 8u) != flags.value
-            || (block->predicate.value & 0xffu) > 15u)
-        return 0;
-    const pl_node *compare = &block->plan.nodes[flags.value - 1u];
-    if ((compare->opcode != PL_OPCODE_X86_COMPARE
-            && compare->opcode != PL_OPCODE_X86_TEST)
-            || compare->argument_count != 4u
-            || compare->argument_at > block->plan.argument_count
-            || compare->argument_count
-               > block->plan.argument_count - compare->argument_at)
-        return 0;
-    const pl_operand *arguments =
-        block->plan.arguments + compare->argument_at;
-    if (arguments[3].kind != PL_OPERAND_CONST) return 0;
-    pl_u64 descriptor = arguments[3].value;
-    *bits = (pl_u32)(descriptor & 0x7fu);
-    *test = compare->opcode == PL_OPCODE_X86_TEST;
-    if ((*bits != 8u && *bits != 16u && *bits != 32u && *bits != 64u)
-            || (!*test && ((descriptor >> 8u) & 7u) != 3u)
-            || (descriptor >> 11u))
-        return 0;
-    *left = *right = PL_X86_GPR_COUNT;
-    if (arguments[1].kind == PL_OPERAND_LOCAL
-            && arguments[1].value < PL_X86_GPR_COUNT) {
-        pl_u32 identity = (pl_u32)arguments[1].value;
-        pl_operand publication = block->plan.locals[identity];
-        if (publication.kind == PL_OPERAND_LOCAL
-                && publication.value == identity)
-            *left = identity;
-    }
-    if (arguments[2].kind == PL_OPERAND_LOCAL
-            && arguments[2].value < PL_X86_GPR_COUNT) {
-        pl_u32 identity = (pl_u32)arguments[2].value;
-        pl_operand publication = block->plan.locals[identity];
-        if (publication.kind == PL_OPERAND_LOCAL
-                && publication.value == identity)
-            *right = identity;
-    }
-    *changed = 0u;
-    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
-        pl_operand publication = block->plan.locals[local];
-        if (!(publication.kind == PL_OPERAND_LOCAL
-                && publication.value == local)) {
-            if (publication.kind != PL_OPERAND_CONST
-                    && publication.kind != PL_OPERAND_NODE
-                    && publication.kind != PL_OPERAND_PROJECTION
-                    && (publication.kind != PL_OPERAND_LOCAL
-                        || publication.value >= PL_X86_GPR_COUNT))
-                return 0;
-            *changed |= 1u << local;
-        }
-        if (*left == PL_X86_GPR_COUNT
-                && publication.kind == arguments[1].kind
-                && publication.value == arguments[1].value)
-            *left = local;
-        if (*right == PL_X86_GPR_COUNT
-                && publication.kind == arguments[2].kind
-                && publication.value == arguments[2].value)
-            *right = local;
-    }
-    *condition = (pl_u32)(block->predicate.value & 0xffu);
-    return *left < PL_X86_GPR_COUNT && *right < PL_X86_GPR_COUNT;
+    compare_branch_operands shape;
+    if (!changed || !left || !right || !bits || !condition || !test
+            || !compare_branch_operand_shape(block, &shape)
+            || shape.right.kind != PL_OPERAND_LOCAL) return 0;
+    *changed = shape.changed;
+    *left = shape.left;
+    *right = (pl_u32)shape.right.value;
+    *bits = shape.bits;
+    *condition = shape.condition;
+    *test = shape.test;
+    return 1;
 }
 
 static int compare_flag_prefix(const pl_plan *plan, pl_u8 *byte)
@@ -9801,9 +9870,10 @@ static int subtract_handoff_shape(const pl_plan *plan, pl_u32 changed,
     return 0;
 }
 
-static int next_compare_branch_assignment(const pl_plan *plan,
+static int next_compare_branch_assignment_excluding(const pl_plan *plan,
                                           pl_u32 pending,
                                           pl_u32 preferred,
+                                          pl_u32 deferred,
                                           pl_u32 *selected)
 {
     if (!plan || !pending || !selected) return 0;
@@ -9815,6 +9885,7 @@ static int next_compare_branch_assignment(const pl_plan *plan,
     for (pl_u32 pass = 0u; pass < 2u; ++pass)
       for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
         if (!(pending & (1u << local))) continue;
+        if (deferred & (1u << local)) continue;
         int is_preferred = !!(preferred & (1u << local));
         if ((!pass && !is_preferred) || (pass && is_preferred)) continue;
         pl_u32 effective_dependencies = frame_dependencies[local];
@@ -9852,6 +9923,12 @@ typedef struct {
     conditional_select select;
     pl_operand consumer_right;
 } transient_owner_frame;
+
+static int next_compare_branch_assignment(const pl_plan *plan, pl_u32 pending,
+                                          pl_u32 preferred, pl_u32 *selected)
+{
+    return next_compare_branch_assignment_excluding(plan, pending, preferred, 0u, selected);
+}
 
 static int next_transient_plain_assignment(const pl_plan *plan,
                                            pl_u32 pending,
@@ -11041,39 +11118,6 @@ static int measure_direct_compare_handoff_frame(
     return 1;
 }
 
-/* Immediate predicates have no register owner for their right operand.  The
- * older register-only compare production consequently rejected an otherwise
- * ordinary frame such as `mov dst, imm; cmp src, imm; jcc`, leaving the exact
- * source spelling as the sole candidate.  Leaf publications form an acyclic
- * parallel-copy problem; schedule them first, then emit the one CMP/TEST and
- * the one control cut. */
-static int immediate_compare_branch_shape(
-    const pl_x86_block *block, compare_branch_operands *out,
-    pl_u8 *flag_prefix)
-{
-    if (!block || !out || !flag_prefix
-            || !compare_branch_operand_shape(block, out)
-            || out->right.kind != PL_OPERAND_CONST
-            || (out->changed & (1u << out->left))
-            || !compare_flag_prefix(&block->plan, flag_prefix))
-        return 0;
-    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
-        if (!(out->changed & (1u << local))) continue;
-        pl_operand value = block->plan.locals[local];
-        if (value.kind != PL_OPERAND_CONST
-                && (value.kind != PL_OPERAND_LOCAL
-                    || value.value >= PL_X86_GPR_COUNT))
-            return 0;
-    }
-    for (pl_u32 local = PL_X86_GPR_COUNT;
-            local < block->plan.local_count; ++local) {
-        if (local == PL_X86_RFLAGS_LOCAL) continue;
-        pl_operand value = block->plan.locals[local];
-        if (value.kind != PL_OPERAND_LOCAL || value.value != local)
-            return 0;
-    }
-    return 1;
-}
 
 static int entry_flag_branch_shape(const pl_x86_block *block,
                                    pl_u32 *changed, pl_u32 *condition)
@@ -11168,77 +11212,130 @@ static int measure_direct_entry_flag_branch(
     return 1;
 }
 
-static int measure_direct_immediate_compare_branch(
-    const pl_x86_frontend *frontend, const pl_x86_block *block,
-    pl_x86_native_selection *selection)
-{
-    if (!frontend || !block || !selection
-            || block->kind != PL_X86_BLOCK_DIRECT)
-        return 0;
-    compare_branch_operands shape;
-    pl_u8 flag_prefix = 0u;
-    if (!immediate_compare_branch_shape(block, &shape, &flag_prefix))
-        return 0;
 
-    pl_u32 pending = shape.changed;
-    pl_u32 bytes = 0u, instructions = 0u, span = 0u;
-    while (pending) {
-        pl_u32 local = 0u, encoded = 0u;
-        if (!next_compare_branch_assignment(
-                &block->plan, pending, 1u << shape.left, &local))
-            return 0;
-        int measured = measure_frame_value(
-            frontend, block, selection, local, block->plan.locals[local],
-            bytes, &encoded);
-        if (measured <= 0 || bytes > U32_MAX_VALUE - encoded
-                || instructions == U32_MAX_VALUE)
-            return measured < 0 ? measured : 0;
-        bytes += encoded;
-        ++instructions;
-        span = 1u;
-        pending &= ~(1u << local);
+typedef struct {
+    pl_u32 narrow, wide;
+    pl_operand word;
+} signed_word_handoff;
+
+typedef struct {
+    pl_u32 owner, booleans, zero_before, members, bits, mode;
+    pl_operand left, right;
+} flag_result_group;
+
+/* One arithmetic instruction publishes both its word and its conditions.
+ * Keep those observations adjacent while allocating their actual GPRs.
+ * Other pending readers of an overwritten entry must run before the group;
+ * pending consumers of its new outputs keep their producer dependencies. */
+static int flag_result_group_shape(const pl_plan *plan, pl_u32 pending,
+                                   flag_result_group *out, pl_u32 *deferred)
+{
+    *deferred = 0u;
+    pl_u32 sources[PL_X86_GPR_COUNT], dependencies[PL_X86_GPR_COUNT];
+    if (!alu_frame_source_laws(plan, sources, dependencies)) return 0;
+    for (pl_u32 node = 1u; node <= plan->node_count; ++node) {
+        pl_operand result = { PL_OPERAND_PROJECTION, ((pl_u64)node << 8u) | 16u };
+        pl_u32 owner = publication_owner(plan, result), booleans = 0u;
+        if (owner >= PL_X86_GPR_COUNT || !(pending & (1u << owner))) continue;
+        for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+            pl_operand value = plan->locals[local];
+            if ((pending & (1u << local)) && value.kind == PL_OPERAND_PROJECTION
+                    && (value.value >> 8u) == node && (value.value & 0xffu) < 16u)
+                booleans |= 1u << local;
+        }
+        if (!booleans) continue;
+        flag_result_group shape = { .owner = owner, .booleans = booleans };
+        pl_u32 preserves = 0u;
+        if (!alu_node_semantics(plan, node, &shape.left, &shape.right,
+                &shape.bits, &shape.mode, &preserves) || preserves
+                || shape.mode == 2u || shape.mode == 4u) continue;
+        shape.members = booleans | (1u << owner);
+        *deferred |= shape.members;
+        if (dependencies[owner] & pending & ~shape.members) continue;
+        pl_u32 blocked = 0u;
+        for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+            if ((pending & (1u << local)) && !(shape.members & (1u << local))
+                    && (sources[local] & shape.members)) blocked = 1u;
+        if (blocked) continue;
+        shape.zero_before = booleans & ~(sources[owner] | dependencies[owner]);
+        *out = shape;
+        return 1;
     }
-    int aliases = alias_source_address_fields(frontend, block, selection);
-    if (aliases <= 0) return aliases;
-    if (flag_prefix) {
-        if (bytes == U32_MAX_VALUE || instructions == U32_MAX_VALUE)
-            return PL_ERROR_X86_SELECT;
-        ++bytes;
-        ++instructions;
-        if (!span) span = 1u;
+    return 0;
+}
+
+static int emit_group_booleans(const pl_plan *plan, const flag_result_group *shape,
+                               int before, pl_u8 *output, pl_u32 *written, pl_u32 *work)
+{
+    pl_u32 at = 0u, count = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        pl_u32 bit = 1u << local, part = 0u;
+        if (!(shape->booleans & bit)) continue;
+        if (before ? !!(shape->zero_before & bit) : !(shape->zero_before & bit)) {
+            if (!emit_boolean_zero(local, !before, output ? output + at : 0, &part)) return 0;
+            at += part;
+            ++count;
+        }
+        if (!before) {
+            if (!emit_set_condition(local, (pl_u32)(plan->locals[local].value & 0xffu),
+                    output ? output + at : 0, &part)) return 0;
+            at += part;
+            ++count;
+        }
     }
-    pl_u32 encoded = 0u;
-    int compared = shape.test
-        ? emit_test_operand(
-            shape.left, shape.right, shape.bits, 0, &encoded)
-        : emit_compare_operand(
-            shape.left, shape.right, shape.bits, 0, &encoded);
-    if (!compared || bytes > U32_MAX_VALUE - encoded
-            || instructions == U32_MAX_VALUE)
-        return 0;
-    bytes += encoded;
-    ++instructions;
-    ++span;
-    pl_u32 branch_bytes = block->relax_short_control ? 6u : 2u;
-    if (bytes > U32_MAX_VALUE - branch_bytes
-            || instructions == U32_MAX_VALUE)
-        return PL_ERROR_X86_SELECT;
-    int status = append_control_fixup(
-        frontend, block, selection,
-        (pl_u8)(block->relax_short_control ? 4u : 1u),
-        bytes + (block->relax_short_control ? 2u : 1u),
-        bytes + branch_bytes, block->successor[0]);
-    if (status) return status;
-    bytes += branch_bytes;
-    ++instructions;
-    ++span;
-    selection->output_bytes = bytes;
-    selection->output_instructions = instructions;
-    selection->supported = 1u;
-    selection->direct_frame = 1u;
-    selection->direct_immediate_branch_frame = 1u;
-    selection->frame_anchor = (pl_u8)shape.condition;
-    selection->reason = PL_X86_NATIVE_SELECT_READY;
+    *written = at; *work = count;
+    return 1;
+}
+
+/* Two publications observe one word: zext32(q) and sext32(q). When q uses
+ * the wide destination's entry value, it can own q destructively, publish
+ * the narrow alias, then sign-extend in place. This removes both a rebuild
+ * of q and the entry copy's extra wave; q's expression grammar is unchanged. */
+static int signed_word_handoff_shape(const pl_plan *plan, pl_u32 pending,
+                                     signed_word_handoff *out)
+{
+    pl_u32 entries[PL_X86_GPR_COUNT], dependencies[PL_X86_GPR_COUNT];
+    if (!alu_frame_source_laws(plan, entries, dependencies)) return 0;
+    for (pl_u32 wide = 0u; wide < PL_X86_GPR_COUNT; ++wide) {
+        if (!(pending & (1u << wide))) continue;
+        pl_operand value = plan->locals[wide], word;
+        pl_u32 bits = 0u;
+        if (value.kind != PL_OPERAND_NODE
+                || !sign_extend_value(plan, (pl_u32)value.value, &word, &bits)
+                || bits != 32u || word.kind != PL_OPERAND_NODE
+                || operand_expression_bits(plan, word, 0u) != 32u) continue;
+        pl_u32 narrow = publication_owner(plan, word);
+        if (narrow >= PL_X86_GPR_COUNT || narrow == wide
+                || !(pending & (1u << narrow))) continue;
+        pl_u32 sources = 0u;
+        if (!operand_entry_gpr_sources(plan, word, plan->node_count + 1u,
+                plan->node_count + 1u, &sources)
+                || !(sources & (1u << wide)) || (sources & (1u << narrow))) continue;
+        pl_u32 pair = (1u << wide) | (1u << narrow), blocked = 0u;
+        if (dependencies[narrow] & pending & ~pair) continue;
+        for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+            if (!(pending & (1u << local)) || (pair & (1u << local))) continue;
+            if (!operand_entry_gpr_sources(plan, plan->locals[local], plan->node_count + 1u,
+                    plan->node_count + 1u, &sources) || (sources & pair)) {
+                blocked = 1u;
+                break;
+            }
+        }
+        if (blocked) continue;
+        *out = (signed_word_handoff){ narrow, wide, word };
+        return 1;
+    }
+    return 0;
+}
+
+static int emit_signed_word_publications(const signed_word_handoff *shape,
+                                         pl_u8 *output, pl_u32 *written)
+{
+    pl_u32 copy = 0u, extension = 0u;
+    if (!emit_gpr_move(shape->narrow, shape->wide, 32u, output, &copy)
+            || !emit_sign_extend_move(shape->wide, shape->wide, 32u,
+                output ? output + copy : 0, &extension)) return 0;
+    *written = copy + extension;
     return 1;
 }
 
@@ -11249,14 +11346,21 @@ static int measure_direct_compare_branch(
     if (!frontend || !block || !selection
             || block->kind != PL_X86_BLOCK_DIRECT)
         return 0;
-    pl_u32 changed, left, right, bits, condition, test;
+    compare_branch_operands shape;
+    pl_u32 changed, left, bits, condition, test;
     pl_u8 flag_prefix = 0u;
-    if (!compare_branch_shape(
-            block, &changed, &left, &right, &bits, &condition, &test)
+    if (!compare_branch_operand_shape(block, &shape)
             || !compare_flag_prefix(&block->plan, &flag_prefix))
         return 0;
     selection->direct_branch_frame = 1u;
     selection->blocking_work = 0xf100u;
+    changed = shape.changed;
+    left = shape.left;
+    bits = shape.bits;
+    condition = shape.condition;
+    test = shape.test;
+    const pl_u32 compare_reads = (1u << left)
+        | (shape.right.kind == PL_OPERAND_LOCAL ? 1u << shape.right.value : 0u);
     subtract_handoff handoff = { 0 };
     int has_handoff = subtract_handoff_shape(
         &block->plan, changed, &handoff);
@@ -11272,10 +11376,47 @@ static int measure_direct_compare_branch(
     for (pl_u32 stage = 0u; stage < stage_count; ++stage) {
       pl_u32 pending = stage_pending[stage];
       while (pending) {
+        flag_result_group group;
+        pl_u32 deferred = 0u;
+        if (!has_handoff && flag_result_group_shape(&block->plan, pending, &group, &deferred)) {
+            pl_u32 pre = 0u, pre_work = 0u, operation = 0u, work = 0u, post = 0u, post_work = 0u;
+            if (!emit_group_booleans(&block->plan, &group, 1, 0, &pre, &pre_work)
+                    || bytes > U32_MAX_VALUE - pre) return 0;
+            int measured = measure_alu_pair(frontend, block, selection, group.owner,
+                group.left, group.right, group.bits, group.mode, 0u, bytes + pre,
+                block->plan.node_count + 1u, 0u, &operation, &work);
+            if (measured <= 0 || !emit_group_booleans(&block->plan, &group, 0, 0, &post, &post_work)
+                    || operation > U32_MAX_VALUE - pre || post > U32_MAX_VALUE - pre - operation
+                    || bytes > U32_MAX_VALUE - pre - operation - post
+                    || work > U32_MAX_VALUE - pre_work - post_work
+                    || instructions > U32_MAX_VALUE - pre_work - work - post_work)
+                return measured < 0 ? measured : 0;
+            bytes += pre + operation + post;
+            instructions += pre_work + work + post_work;
+            pending &= ~group.members;
+            continue;
+        }
+        signed_word_handoff word;
+        if (!has_handoff && signed_word_handoff_shape(&block->plan, pending, &word)) {
+            pl_u32 prefix = 0u, work = 0u, publication = 0u;
+            int measured = measure_alu_tree(frontend, block, selection,
+                word.wide, word.word, 32u, bytes, block->plan.node_count + 1u,
+                0u, &prefix, &work);
+            if (measured <= 0 || !emit_signed_word_publications(&word, 0, &publication)
+                    || prefix > U32_MAX_VALUE - publication
+                    || bytes > U32_MAX_VALUE - prefix - publication
+                    || work > U32_MAX_VALUE - 2u
+                    || instructions > U32_MAX_VALUE - work - 2u)
+                return measured < 0 ? measured : 0;
+            bytes += prefix + publication;
+            instructions += work + 2u;
+            pending &= ~((1u << word.narrow) | (1u << word.wide));
+            continue;
+        }
         pl_u32 local = 0u, encoded = 0u, work = 1u;
-        if (!next_compare_branch_assignment(
+        if (!next_compare_branch_assignment_excluding(
                 &block->plan, pending,
-                (1u << left) | (1u << right), &local)) {
+                compare_reads, deferred, &local)) {
             selection->blocking_work = 0x700u;
             selection->blocking_opcode = pending;
             return 0;
@@ -11468,8 +11609,8 @@ static int measure_direct_compare_branch(
     }
     pl_u32 encoded = 0u;
     int flags_emitted = test
-        ? emit_test_registers(left, right, bits, 0, &encoded)
-        : emit_compare_registers(left, right, bits, 0, &encoded);
+        ? emit_test_operand(left, shape.right, bits, 0, &encoded)
+        : emit_compare_operand(left, shape.right, bits, 0, &encoded);
     if (!flags_emitted
             || bytes > U32_MAX_VALUE - encoded)
         return 0;
@@ -11859,6 +12000,7 @@ static int write_alu_seed(const pl_x86_block *block,
     if (!block || !selection || !output || !written || !remaining
             || destination >= PL_X86_GPR_COUNT)
         return 0;
+    if (emit_test_boolean(&block->plan, value, destination, output, written)) return 1;
     if (value.kind == PL_OPERAND_LOCAL) {
         if (value.value >= PL_X86_GPR_COUNT) return 0;
         if (value.value == destination) {
@@ -11871,6 +12013,12 @@ static int write_alu_seed(const pl_x86_block *block,
     if (value.kind == PL_OPERAND_CONST)
         return write_frame_value(
             selection, output_at, destination, value, output, written);
+    pl_u32 extension_source = 0u, extension_bits = 0u;
+    if (value.kind == PL_OPERAND_NODE
+            && zero_extend_node(&block->plan, (pl_u32)value.value,
+                                 &extension_source, &extension_bits))
+        return emit_zero_extend_move(destination, extension_source, extension_bits,
+                                     output, written);
     pl_operand negation_source;
     pl_u32 negation_bits = 0u;
     if (negation_node_details(
@@ -13971,62 +14119,6 @@ static int write_direct_shared_owner_frame(
     return at == selection->output_bytes ? 0 : PL_ERROR_X86_SELECT;
 }
 
-static int write_direct_immediate_compare_branch(
-    const pl_x86_block *block,
-    const pl_x86_native_selection *selection, pl_u8 *output)
-{
-    if (!block || !selection
-            || !selection->direct_immediate_branch_frame || !output)
-        return PL_ERROR_X86_SELECT;
-    compare_branch_operands shape;
-    pl_u8 flag_prefix = 0u;
-    if (!immediate_compare_branch_shape(block, &shape, &flag_prefix)
-            || shape.condition != selection->frame_anchor)
-        return PL_ERROR_X86_SELECT;
-    pl_u32 pending = shape.changed;
-    pl_u32 at = 0u;
-    while (pending) {
-        pl_u32 local = 0u, written = 0u;
-        if (!next_compare_branch_assignment(
-                &block->plan, pending, 1u << shape.left, &local)
-                || !write_frame_value(
-                    selection, at, local, block->plan.locals[local],
-                    output + at, &written)
-                || at > selection->output_bytes
-                || written > selection->output_bytes - at)
-            return PL_ERROR_X86_SELECT;
-        at += written;
-        pending &= ~(1u << local);
-    }
-    if (flag_prefix) {
-        if (at >= selection->output_bytes)
-            return PL_ERROR_X86_SELECT;
-        output[at++] = flag_prefix;
-    }
-    pl_u32 written = 0u;
-    int compared = shape.test
-        ? emit_test_operand(
-            shape.left, shape.right, shape.bits, output + at, &written)
-        : emit_compare_operand(
-            shape.left, shape.right, shape.bits, output + at, &written);
-    if (!compared || at > selection->output_bytes
-            || written > selection->output_bytes - at)
-        return PL_ERROR_X86_SELECT;
-    at += written;
-    if (block->relax_short_control) {
-        if (selection->output_bytes - at != 6u)
-            return PL_ERROR_X86_SELECT;
-        output[at++] = 0x0fu;
-        output[at++] = (pl_u8)(0x80u + shape.condition);
-        for (pl_u32 byte = 0u; byte < 4u; ++byte) output[at++] = 0u;
-    } else {
-        if (selection->output_bytes - at != 2u)
-            return PL_ERROR_X86_SELECT;
-        output[at++] = (pl_u8)(0x70u + shape.condition);
-        output[at++] = 0u;
-    }
-    return at == selection->output_bytes ? 0 : PL_ERROR_X86_SELECT;
-}
 
 static int write_direct_entry_flag_branch(
     const pl_x86_block *block,
@@ -14075,13 +14167,20 @@ static int write_direct_compare_branch(
 {
     if (!block || !selection || !selection->direct_branch_frame || !output)
         return PL_ERROR_X86_SELECT;
-    pl_u32 changed, left, right, bits, condition, test;
+    compare_branch_operands shape;
+    pl_u32 changed, left, bits, condition, test;
     pl_u8 flag_prefix = 0u;
-    if (!compare_branch_shape(
-            block, &changed, &left, &right, &bits, &condition, &test)
-            || condition != selection->frame_anchor
+    if (!compare_branch_operand_shape(block, &shape)
+            || shape.condition != selection->frame_anchor
             || !compare_flag_prefix(&block->plan, &flag_prefix))
         return PL_ERROR_X86_SELECT;
+    changed = shape.changed;
+    left = shape.left;
+    bits = shape.bits;
+    condition = shape.condition;
+    test = shape.test;
+    const pl_u32 compare_reads = (1u << left)
+        | (shape.right.kind == PL_OPERAND_LOCAL ? 1u << shape.right.value : 0u);
     subtract_handoff handoff = { 0 };
     int has_handoff = subtract_handoff_shape(
         &block->plan, changed, &handoff);
@@ -14097,10 +14196,42 @@ static int write_direct_compare_branch(
     for (pl_u32 stage = 0u; stage < stage_count; ++stage) {
       pl_u32 pending = stage_pending[stage];
       while (pending) {
+        flag_result_group group;
+        pl_u32 deferred = 0u;
+        if (!has_handoff && flag_result_group_shape(&block->plan, pending, &group, &deferred)) {
+            pl_u32 pre = 0u, operation = 0u, post = 0u, work = 0u;
+            if (!emit_group_booleans(&block->plan, &group, 1, output + at, &pre, &work)
+                    || at > selection->output_bytes || pre > selection->output_bytes - at)
+                return PL_ERROR_X86_SELECT;
+            at += pre;
+            if (!write_alu_pair(block, selection, group.owner, group.left, group.right,
+                    group.bits, group.mode, 0u, at, block->plan.node_count + 1u,
+                    0u, output + at, &operation)
+                    || operation > selection->output_bytes - at) return PL_ERROR_X86_SELECT;
+            at += operation;
+            if (!emit_group_booleans(&block->plan, &group, 0, output + at, &post, &work)
+                    || post > selection->output_bytes - at) return PL_ERROR_X86_SELECT;
+            at += post;
+            pending &= ~group.members;
+            continue;
+        }
+        signed_word_handoff word;
+        if (!has_handoff && signed_word_handoff_shape(&block->plan, pending, &word)) {
+            pl_u32 prefix = 0u, publication = 0u;
+            if (!write_alu_tree(block, selection, word.wide, word.word, 32u,
+                    at, block->plan.node_count + 1u, 0u, output + at, &prefix)
+                    || at > selection->output_bytes || prefix > selection->output_bytes - at
+                    || !emit_signed_word_publications(&word, output + at + prefix, &publication)
+                    || publication > selection->output_bytes - at - prefix)
+                return PL_ERROR_X86_SELECT;
+            at += prefix + publication;
+            pending &= ~((1u << word.narrow) | (1u << word.wide));
+            continue;
+        }
         pl_u32 local = 0u, written = 0u;
-        if (!next_compare_branch_assignment(
+        if (!next_compare_branch_assignment_excluding(
                 &block->plan, pending,
-                (1u << left) | (1u << right), &local))
+                compare_reads, deferred, &local))
             return PL_ERROR_X86_SELECT;
         pl_operand value = block->plan.locals[local];
         int emitted;
@@ -14264,8 +14395,8 @@ static int write_direct_compare_branch(
     }
     pl_u32 written = 0u;
     int flags_emitted = test
-        ? emit_test_registers(left, right, bits, output + at, &written)
-        : emit_compare_registers(left, right, bits, output + at, &written);
+        ? emit_test_operand(left, shape.right, bits, output + at, &written)
+        : emit_compare_operand(left, shape.right, bits, output + at, &written);
     if (!flags_emitted)
         return PL_ERROR_X86_SELECT;
     at += written;
@@ -15577,7 +15708,6 @@ int pl_x86_select_candidates(const pl_x86_frontend *frontend,
             measure_direct_value_predicate_frame,
             measure_direct_compare_handoff_frame,
             measure_direct_entry_flag_branch,
-            measure_direct_immediate_compare_branch,
             measure_direct_compare_branch,
             measure_direct_affine_frame,
             measure_direct_live_frame,
@@ -15997,9 +16127,6 @@ int pl_x86_select_write_measured(
                     block, selection, output)
                : selection->direct_entry_branch_frame
                ? write_direct_entry_flag_branch(block, selection, output)
-               : selection->direct_immediate_branch_frame
-               ? write_direct_immediate_compare_branch(
-                    block, selection, output)
                : selection->direct_branch_frame
                ? write_direct_compare_branch(block, selection, output)
                : selection->direct_common_frame

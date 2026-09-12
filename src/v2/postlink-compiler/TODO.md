@@ -16,34 +16,63 @@ NixOS or WSL inputs are used.
 
 Fresh Windows checks pass: `select-x86-check`, `condition-code-check`
 (573,440 source/generated/reference comparisons), `arithmetic-cut-check`
-(12,288 comparisons), `shift-width-check` (86,295 comparisons),
-`compare-cut-check` (1,048,576 comparisons) and `carry-cut-check` (131,072
-comparisons). The
+(24,576 comparisons), `shift-width-check` (86,295 comparisons),
+`compare-cut-check` (3,145,728 comparisons), `carry-cut-check` (1,441,792
+comparisons) and `extension-cut-check` (122,880 comparisons). The
 conditional-move check includes 32-bit false-arm zero extension, every
 condition code, and entry versus published register generations. The root
 measurement regression also passes in the Linux build guest; its C xattr
 extent reader measures names and lengths without materializing values.
 
 The fixed GNU make input selects all 42,184 blocks. Normalization escapes
-have decreased from 164 to 121, with no remaining Pareto violation in that
+have decreased from 164 through 121 to 81, with no remaining Pareto violation in that
 input. Publication still fails, as required; this is not a successful
 optimized GNU make build. The first remaining witness is
-`0xeadf..0xeaec`. Compare/borrow now lowers through the shared expression
+`0x12ca2..0x12ccd`. Compare/borrow now lowers through the shared expression
 generator: `a+k +/- CF` consumes the carry flag directly, ADD3's zero identity
 is removed before selection, and immediate literals do not depend on equal
 future register publications. The existing multiplication/carry production
 consumes this same binary sum normal form; it does not retain the old ADD3
 zero spelling.
 
+Immediate and register CMP/TEST now use the same expression/publication
+generator; the leaf-only immediate branch path and its selection flag were
+deleted. An already published constant may supply a shorter register operand
+within that same grammar. Zero extension uses MOVZX/MOV inside expressions
+as well as at frame roots. TEST's scalar Boolean and observed flags share one
+TEST production, including when SETcc overwrites a comparison input.
+Shared ALU value and condition publications likewise emit one ALU operation:
+safe Boolean destinations are zeroed before it, while aliased inputs use a
+flag-preserving zero after it. Publication dependencies defer the whole group
+until its inputs are available. The expanded carry check executes 32/64-bit
+ADD/SUB/AND/OR/XOR with all 16 conditions, aliased Boolean destinations and an
+independent final TEST/Jcc, against both the source and a C reference.
+
+The expanded comparison check executes all widths and condition codes with
+immediate/register operands, pure AND/shift publications and Jcc/SETcc outputs.
+The extension check executes zero-extended 8/16/32-bit seeds followed by
+32/64-bit ADD/SUB/AND/OR/XOR, preserving the final flags and a rebased pointer.
+The arithmetic check also covers shared signed/unsigned word publications.
+For example, one shifted word can be computed in the incoming accumulator,
+copied to its unsigned output and sign-extended in place. This closes the
+kernel witness at `0xffffffff8148695d` at 5 work / 3 span, instead of keeping
+the incomparable 5/4 and 6/3 candidates. These are measured instruction-graph
+costs, not hardware elapsed-time speedups or an unbounded ISA minimum proof.
+
 The full Linux `make check` passes, including `call-cut-check` and dynamic
 unwinding. The latter exposed a real PIE fault: a linked pointer below 4 GiB
 was copied through a 32-bit GPR after rebasing. Copies now respect the emitted
 RIP-relative binding's full width. The executable unwind fixture uses libgcc's
 unwind interface on musl and checks the three expected function regions as
-well as stack depth. A fresh whole-kernel pass selects all 788,279 blocks,
-with zero Pareto violations and 2,178 normalization escapes (down from 2,191
-before the carry-expression recovery). Its first remaining witness is
-`0xffffffff81202d60..0xffffffff81202d73`; publication correctly fails.
+well as stack depth. The latest expanded carry check passes on Windows; the
+Linux full-check result predates that test expansion. The last whole-kernel
+pass, before shared ALU/condition publication was added, selects all 788,279 blocks,
+with zero Pareto violations and 1,485 normalization escapes (down from 2,178
+at the previous checkpoint). Its first remaining witness is
+`0xffffffff81202e00..0xffffffff81202e13`: ADD's value/carry publications before
+an independent byte TEST/Jcc. This witness now passes its focused selection
+regression, but whole-kernel counts have not been remeasured after the fix.
+The last whole-kernel publication correctly fails.
 Selection coverage is not normalized closure and does not constitute a
 successful optimized kernel build. Recover remaining real-input escapes through general
 productions and executable regressions, not source retention or weakened

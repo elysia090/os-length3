@@ -42,16 +42,23 @@ static int check_case(pl_u32 family, pl_u64 *comparisons)
     if (!family) {
         memcpy(source, accumulation, sizeof accumulation);
         length = sizeof accumulation;
-    } else {
+    } else if (family < 3u) {
         if (family == 2u) source[length++] = 0x48u;
         source[length++] = 0x0fu;
         source[length++] = 0xafu;
         source[length++] = 0xc6u; /* imul eax,esi or imul rax,rsi */
+    } else {
+        source[length++] = 0x89u; source[length++] = 0xc2u; /* mov edx,eax */
+        source[length++] = 0xd3u;
+        source[length++] = family == 3u ? 0xe2u : family == 4u ? 0xeau : 0xfau;
+        source[length++] = 0x48u; source[length++] = 0x63u; source[length++] = 0xc2u;
     }
     const pl_u8 compare_branch[] = { 0x48u, 0x39u, 0xf0u, 0x72u, 0x08u };
-    memcpy(source + length, compare_branch, sizeof compare_branch);
-    length += sizeof compare_branch;
-    static const pl_u8 observe[] = {
+    const pl_u8 independent_compare[] = { 0x48u, 0x83u, 0xfeu, 2u, 0x72u, 8u };
+    pl_u32 compare_size = family < 3u ? sizeof compare_branch : sizeof independent_compare;
+    memcpy(source + length, family < 3u ? compare_branch : independent_compare, compare_size);
+    length += compare_size;
+    pl_u8 observe[] = {
         0x41u, 0xb9u, 0u, 0u, 0u, 0u, /* mov r9d,0 */
         0xebu, 0x06u,
         0x41u, 0xb9u, 1u, 0u, 0u, 0u, /* mov r9d,1 */
@@ -62,6 +69,7 @@ static int check_case(pl_u32 family, pl_u64 *comparisons)
         0x4cu, 0x89u, 0x4fu, 0x18u,
         0xc3u,
     };
+    if (family >= 3u) observe[19] = 0x57u; /* Observe RDX's unsigned word, not RCX. */
     pl_u8 *memory = test_code_allocate(4096u);
     if (!memory) return 0;
     pl_u64 address = (pl_u64)(uintptr_t)(memory + sizeof prefix);
@@ -85,9 +93,15 @@ static int check_case(pl_u32 family, pl_u64 *comparisons)
         status = pl_x86_select_candidates(&frontend, &selection_workspace, &block, &candidates);
     }
     const pl_x86_native_selection *selected = NULL;
+    pl_x86_native_selection joint;
+    pl_u32 span = 0u, work = 0u;
+    if (!status && family >= 3u) status = pl_x86_candidates_select_joint_minimum(
+        &candidates, 0u, 0u, &joint, &span, &work);
     if (!status)
         for (pl_u32 i = 0u; i < candidates.count; ++i)
-            if (candidates.candidate[i].supported && !candidates.candidate[i].copied_source) {
+            if (candidates.candidate[i].supported && !candidates.candidate[i].copied_source
+                    && (family < 3u || (candidates.candidate[i].output_span == span
+                        && candidates.candidate[i].output_work == work))) {
                 selected = &candidates.candidate[i];
                 break;
             }
@@ -95,10 +109,12 @@ static int check_case(pl_u32 family, pl_u64 *comparisons)
     pl_u32 written = 0u;
     if (selected) status = pl_x86_select_write_measured(
         &frontend, &block, selected, output, 256u, &written);
-    if (status || !selected || written != selected->output_bytes) goto failed;
+    if (status || !selected || written != selected->output_bytes
+            || (family >= 3u && (work > 5u || span > 3u))) goto failed;
     for (pl_u32 i = 0u; i < selected->fixup_count; ++i)
         if (pl_x86_select_bind_fixup(output, written, selected, i,
-                (pl_u64)(uintptr_t)output, selected->fixups[i].target)) goto failed;
+                (pl_u64)(uintptr_t)output,
+                (pl_u64)(uintptr_t)(output + written + 8u))) goto failed;
     memcpy(memory, prefix, sizeof prefix);
     memcpy(memory + sizeof prefix, source, length);
     memcpy(memory + sizeof prefix + length, observe, sizeof observe);
@@ -123,13 +139,25 @@ static int check_case(pl_u32 family, pl_u64 *comparisons)
         if (family == 1u) expected &= UINT32_MAX;
         pl_u64 product = family ? previous : previous * radix;
         pl_u64 flags = compare_flags(expected, radix);
+        pl_u64 taken = expected < radix;
+        if (family >= 3u) {
+            pl_u64 word = input & UINT32_MAX, count = previous & 31u;
+            word = family == 3u ? (word << count) & UINT32_MAX
+                 : family == 4u ? word >> count
+                 : (word >> count) | ((0ull - (word >> 31u))
+                    & (UINT32_MAX ^ ((pl_u64)UINT32_MAX >> count)));
+            product = word;
+            expected = word | ((0ull - (word >> 31u)) & ~((pl_u64)UINT32_MAX));
+            flags = compare_flags(radix, 2u);
+            taken = radix < 2u;
+        }
         observation before = { 0 }, after = { 0 };
         original.function(&before, input, radix, previous);
         optimized.function(&after, input, radix, previous);
         if (before.value != expected || after.value != expected
                 || before.product != product || after.product != product
                 || (before.flags & 0x8d5u) != flags || (after.flags & 0x8d5u) != flags
-                || before.taken != (expected < radix) || after.taken != (expected < radix)) {
+                || before.taken != taken || after.taken != taken) {
             fprintf(stderr, "arithmetic cut mismatch family=%u input=%llx radix=%llx\n",
                     family, (unsigned long long)input, (unsigned long long)radix);
             goto failed;
@@ -147,10 +175,10 @@ failed:
 int main(void)
 {
     pl_u64 comparisons = 0u;
-    for (pl_u32 family = 0u; family < 3u; ++family)
+    for (pl_u32 family = 0u; family < 6u; ++family)
         if (!check_case(family, &comparisons)) return 1;
     printf("arithmetic cut: green (%llu source/generated/reference comparisons; "
-           "multiply, signed widening, final flags and both branch outcomes)\n",
+           "multiply, shared signed/unsigned word shifts, final flags and both branch outcomes)\n",
            (unsigned long long)comparisons);
     return 0;
 }
