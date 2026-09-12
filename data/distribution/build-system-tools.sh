@@ -10,16 +10,7 @@ here=$(cd -- "$(dirname -- "$0")" && pwd)
 data=$(cd -- "$here/.." && pwd)
 repo=$(cd -- "$data/.." && pwd)
 
-if [[ ${QM_BOOTSTRAP_ACTIVE:-0} != 1 ]]; then
-  if ! command -v nix >/dev/null 2>&1; then
-    printf 'the system-tools build requires Nix for its pinned bootstrap\n' >&2
-    exit 2
-  fi
-  scratch_root=${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}
-  exec nix develop --no-write-lock-file "path:$data/bootstrap" -c \
-    env QM_BOOTSTRAP_ACTIVE=1 QM_SCRATCH_ROOT="$scratch_root" \
-      bash "$here/build-system-tools.sh" "$@"
-fi
+. "$data/bootstrap/environment.sh"
 . "$data/sources.env"
 . "$here/profile.env"
 
@@ -80,39 +71,11 @@ extract_tzdata_once() {
 }
 
 resolve_cc() {
-  if [[ -n ${QM_SYSTEM_CC:-} ]]; then
-    printf '%s\n' "$QM_SYSTEM_CC"
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    local candidate
-    while IFS= read -r candidate; do
-      if [[ -x $candidate/bin/gcc ]]; then
-        printf '%s\n' "$candidate/bin/gcc"
-        return
-      fi
-    done < <(nix build --no-link --print-out-paths --no-write-lock-file \
-      "path:$data/bootstrap#musl-gcc")
-  fi
-  command -v musl-gcc
+  bootstrap_cc "${QM_SYSTEM_CC:-}"
 }
 
 resolve_build_tool() {
-  local command_name=$1 attribute=$2 candidate
-  if command -v "$command_name" >/dev/null 2>&1; then
-    command -v "$command_name"
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    while IFS= read -r candidate; do
-      if [[ -x $candidate/bin/$command_name ]]; then
-        printf '%s\n' "$candidate/bin/$command_name"
-        return
-      fi
-    done < <(nix build --no-link --print-out-paths "$attribute")
-  fi
-  printf 'required build tool is unavailable: %s\n' "$command_name" >&2
-  return 1
+  command -v "$1"
 }
 
 cc=$(resolve_cc)
@@ -127,9 +90,9 @@ case $target in
 esac
 ar=$(command -v ar)
 ranlib=$(command -v ranlib)
-pkgconf=$(resolve_build_tool pkgconf "path:$data/bootstrap#pkgconf")
-meson=$(resolve_build_tool meson "path:$data/bootstrap#meson")
-ninja=$(resolve_build_tool ninja "path:$data/bootstrap#ninja")
+pkgconf=$(resolve_build_tool pkgconf)
+meson=$(resolve_build_tool meson)
+ninja=$(resolve_build_tool ninja)
 
 toolchain_digest=$(sha256sum "$QM_TOOLCHAIN_PACKAGE_SET" | cut -d' ' -f1)
 if [[ -n ${QM_TOOLCHAIN_ROOT:-} ]]; then
@@ -217,7 +180,7 @@ recipe_key=$(
     for specification in "${archives[@]}"; do
       printf '%s\n' "${specification##*|}"
     done
-    printf '%s\n' "$toolchain_digest" "$compiler_id" \
+    printf '%s\n' "$toolchain_digest" "$compiler_id" "$QM_BOOTSTRAP_ID" \
       'standard-system-providers-all-static-v2'
   } | sha256sum | cut -d' ' -f1
 )

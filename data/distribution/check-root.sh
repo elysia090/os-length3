@@ -83,15 +83,15 @@ if [[ -f $embedded_sources ]] && ! cmp -s "$here/../sources.env" "$embedded_sour
   printf 'embedded distribution source lock differs from the build contract\n' >&2
   missing=1
 fi
-embedded_bootstrap_flake=$root/usr/share/qm/bootstrap-flake.nix
-embedded_bootstrap_lock=$root/usr/share/qm/bootstrap-flake.lock
-if [[ -f $embedded_bootstrap_flake ]] && \
-   ! cmp -s "$here/../bootstrap/flake.nix" "$embedded_bootstrap_flake"; then
-  printf 'embedded bootstrap flake differs from the build contract\n' >&2
+embedded_bootstrap_packages=$root/usr/share/qm/bootstrap-packages.sha256
+embedded_bootstrap_lock=$root/usr/share/qm/bootstrap-installed.lock
+if [[ -f $embedded_bootstrap_packages ]] && \
+   ! cmp -s "$here/../bootstrap/packages.sha256" "$embedded_bootstrap_packages"; then
+  printf 'embedded bootstrap package digests differs from the build contract\n' >&2
   missing=1
 fi
 if [[ -f $embedded_bootstrap_lock ]] && \
-   ! cmp -s "$here/../bootstrap/flake.lock" "$embedded_bootstrap_lock"; then
+   ! cmp -s "$here/../bootstrap/installed.lock" "$embedded_bootstrap_lock"; then
   printf 'embedded bootstrap lock differs from the build contract\n' >&2
   missing=1
 fi

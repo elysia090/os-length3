@@ -3,16 +3,7 @@ set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 
-if [[ ${QM_BOOTSTRAP_ACTIVE:-0} != 1 ]]; then
-  if ! command -v nix >/dev/null 2>&1; then
-    printf 'the linked-kernel build requires Nix for its pinned bootstrap\n' >&2
-    exit 2
-  fi
-  scratch_root=${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}
-  exec nix develop --no-write-lock-file "path:$here/bootstrap" -c \
-    env QM_BOOTSTRAP_ACTIVE=1 QM_SCRATCH_ROOT="$scratch_root" \
-      bash "$here/build-linked-kernel.sh" "$@"
-fi
+. "$here/bootstrap/environment.sh"
 . "$here/sources.env"
 
 upstream="$here/upstream"
@@ -21,7 +12,7 @@ root=${QM_LINKED_KERNEL_ROOT:-${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/libqm-linked-k
 source_root="$root/source"
 source_stage="$root/source.extracting"
 source_stamp="$root/source-$LINUX_SHA256.complete"
-output_root="$root/output"
+output_root="$root/output/$QM_BOOTSTRAP_ID"
 config_lock="$here/config/linux-$LINUX_VERSION.config"
 
 if [[ ! -f $archive ]]; then
@@ -37,11 +28,6 @@ for command in make gcc ld flex bison bc perl pkg-config pahole; do
     exit 2
   fi
 done
-if ! pkg-config --exists libelf && command -v nix >/dev/null 2>&1; then
-  elfutils_dev=$(nix build --no-link --print-out-paths \
-    --no-write-lock-file "path:$here/bootstrap#elfutils-dev")
-  export PKG_CONFIG_PATH="$elfutils_dev/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-fi
 if ! pkg-config --exists libelf; then
   printf 'missing linked-kernel build dependency: libelf.pc\n' >&2
   exit 2
@@ -67,18 +53,7 @@ if [[ ! -f $source_stamp ]]; then
   # and publish a digest-bound marker only after late build inputs exist.
   rm -rf -- "$source_stage" "$source_root"
   mkdir -p "$source_stage"
-  if [[ $source_stage == /mnt/?/* ]] \
-      && command -v tar.exe >/dev/null 2>&1 \
-      && command -v wslpath >/dev/null 2>&1 \
-      && tar.exe --version >/dev/null 2>&1; then
-    # Native bsdtar writes an NTFS staging tree without one 9P round trip per
-    # Linux source file.  The archive, destination and completion checks stay
-    # identical; non-WSL builds retain the portable tar path below.
-    tar.exe -C "$(wslpath -w "$source_stage")" --strip-components=1 \
-      -xf "$(wslpath -w "$archive")"
-  else
-    tar -C "$source_stage" --no-same-owner --strip-components=1 -xf "$archive"
-  fi
+  tar -C "$source_stage" --no-same-owner --strip-components=1 -xf "$archive"
   test -f "$source_stage/Makefile"
   test -f "$source_stage/scripts/Kbuild.include"
   test -f "$source_stage/arch/x86/include/uapi/asm/bitsperlong.h"

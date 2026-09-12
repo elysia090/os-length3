@@ -5,16 +5,7 @@ here=$(cd -- "$(dirname -- "$0")" && pwd)
 data=$(cd -- "$here/.." && pwd)
 repo=$(cd -- "$data/.." && pwd)
 
-if [[ ${QM_BOOTSTRAP_ACTIVE:-0} != 1 ]]; then
-  if ! command -v nix >/dev/null 2>&1; then
-    printf 'the toolchain build requires Nix for its pinned bootstrap\n' >&2
-    exit 2
-  fi
-  scratch_root=${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}
-  exec nix develop --no-write-lock-file "path:$data/bootstrap" -c \
-    env QM_BOOTSTRAP_ACTIVE=1 QM_SCRATCH_ROOT="$scratch_root" \
-      bash "$here/build.sh" "$@"
-fi
+. "$data/bootstrap/environment.sh"
 . "$data/sources.env"
 . "$data/distribution/profile.env"
 
@@ -56,21 +47,7 @@ fetch_sha512() {
 }
 
 resolve_cc() {
-  if [[ -n ${QM_TOOLCHAIN_CC:-} ]]; then
-    printf '%s\n' "$QM_TOOLCHAIN_CC"
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    local candidate
-    while IFS= read -r candidate; do
-      if [[ -x $candidate/bin/gcc ]]; then
-        printf '%s\n' "$candidate/bin/gcc"
-        return
-      fi
-    done < <(nix build --no-link --print-out-paths --no-write-lock-file \
-      "path:$data/bootstrap#musl-gcc")
-  fi
-  command -v musl-gcc
+  bootstrap_cc "${QM_TOOLCHAIN_CC:-}"
 }
 
 extract_once() {
@@ -247,25 +224,25 @@ ln -sfn "../gettext-$GETTEXT_VERSION" "$gcc_src/gettext"
 
 compiler_id=$($cc --version | sed -n '1p')
 base_key=$(printf '%s\n' "$MAKE_SHA256" "$MUSL_SHA256" \
-  "$BINUTILS_SHA256" "$compiler_id" \
+  "$BINUTILS_SHA256" "$compiler_id" "$QM_BOOTSTRAP_ID" \
   "$DISTRIBUTION_POSTLINK_INPUT_DRIVER_FLAG" \
   'static-x86_64-musl-v2-gnu17' | \
   sha256sum | cut -d' ' -f1)
 gcc_key=$(printf '%s\n' "$GCC_SHA256" "$GMP_SHA512" "$MPFR_SHA512" \
-  "$MPC_SHA512" "$GETTEXT_SHA512" "$compiler_id" \
+  "$MPC_SHA512" "$GETTEXT_SHA512" "$compiler_id" "$QM_BOOTSTRAP_ID" \
   "$DISTRIBUTION_POSTLINK_INPUT_DRIVER_FLAG" \
   'native-static-c-no-lto-v2' | sha256sum | cut -d' ' -f1)
 system_key=$(printf '%s\n' "$LINUX_SHA256" "$ZLIB_SHA256" \
   "$OPENSSL_SHA256" "$CURL_SHA256" "$GIT_SHA256" "$TAR_SHA256" \
   "$GZIP_SHA256" "$XZ_SHA256" "$BZIP2_SHA256" "$PATCH_SHA256" \
   "$FILE_SHA256" "$PKGCONF_SHA256" "$OPENSSH_SHA256" \
-  "$CA_CERTIFICATES_SHA256" "$compiler_id" \
+  "$CA_CERTIFICATES_SHA256" "$compiler_id" "$QM_BOOTSTRAP_ID" \
   "$DISTRIBUTION_POSTLINK_INPUT_DRIVER_FLAG" \
   'posix-system-v2-gnu17' | \
   sha256sum | cut -d' ' -f1)
 profile_key=$(sha256sum "$data/distribution/profile.env" \
   "$data/distribution/runtime-closure.tsv.in" \
-  "$data/bootstrap/flake.nix" "$data/bootstrap/flake.lock" | \
+  "$data/bootstrap/packages.sha256" "$data/bootstrap/installed.lock" | \
   sha256sum | cut -d' ' -f1)
 distribution_key=$(printf '%s\n' "$base_key" "$gcc_key" "$system_key" \
   "$profile_key" 'component-linked-toolchain-package-set-v3' | \
@@ -707,10 +684,10 @@ if [[ ! -f $assembled ]]; then
     "$metadata_root/usr/share/qm/sources.env"
   install -D -m 0644 "$data/distribution/profile.env" \
     "$metadata_root/usr/share/qm/distribution-profile.env"
-  install -D -m 0644 "$data/bootstrap/flake.nix" \
-    "$metadata_root/usr/share/qm/bootstrap-flake.nix"
-  install -D -m 0644 "$data/bootstrap/flake.lock" \
-    "$metadata_root/usr/share/qm/bootstrap-flake.lock"
+  install -D -m 0644 "$data/bootstrap/packages.sha256" \
+    "$metadata_root/usr/share/qm/bootstrap-packages.sha256"
+  install -D -m 0644 "$data/bootstrap/installed.lock" \
+    "$metadata_root/usr/share/qm/bootstrap-installed.lock"
   mkdir -p "$metadata_root/usr/share/qm"
   sed -e "s|@TARGET@|$target|g" \
       -e "s|@GCC_VERSION@|$GCC_VERSION|g" \

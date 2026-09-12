@@ -40,14 +40,15 @@ Selftests, LTP and libc tests are disposable inputs and are deliberately not in
 this system layer.
 
 Every upstream URL and cryptographic digest is fixed in `../sources.env`.
-The host bootstrap is independently fixed by `../bootstrap/flake.nix` and
-`../bootstrap/flake.lock`; `build.sh` automatically enters that environment before it
-resolves any compiler or build tool.
+The independent Linux build host is fixed by `../bootstrap/windows.json`,
+`../bootstrap/installed.lock` and `../bootstrap/packages.sha256`. Every build
+entry validates that exact package population before resolving a compiler or
+build tool. See `../bootstrap/README.md`; NixOS and WSL are not used.
 GCC's GMP, MPFR, MPC and gettext inputs use the exact SHA-512 values published
 inside the pinned GCC source; the recipe never invokes GCC's networked
 `download_prerequisites` helper. Downloaded official archives are cached in
 `../upstream`. Expanded sources and compiler objects default to
-`$TMPDIR/libqm-toolchain-work` on WSL's native filesystem because they are
+`$TMPDIR/libqm-toolchain-work` inside the Windows-backed build-host disk because they are
 reconstructible and have a metadata-heavy lifetime. Completed package roots,
 post-link publications and package-set manifests default to the repository's ignored
 `temp/toolchain-build` and `temp/toolchain-output` directories, so an

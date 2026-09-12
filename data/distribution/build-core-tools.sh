@@ -10,62 +10,25 @@ here=$(cd -- "$(dirname -- "$0")" && pwd)
 data=$(cd -- "$here/.." && pwd)
 repo=$(cd -- "$data/.." && pwd)
 
-if [[ ${QM_BOOTSTRAP_ACTIVE:-0} != 1 ]]; then
-  if ! command -v nix >/dev/null 2>&1; then
-    printf 'the core-tools build requires Nix for its pinned bootstrap\n' >&2
-    exit 2
-  fi
-  scratch_root=${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}
-  exec nix develop --no-write-lock-file "path:$data/bootstrap" -c \
-    env QM_BOOTSTRAP_ACTIVE=1 QM_SCRATCH_ROOT="$scratch_root" \
-      bash "$here/build-core-tools.sh" "$@"
-fi
+. "$data/bootstrap/environment.sh"
 . "$data/sources.env"
 . "$here/profile.env"
 
 upstream=$data/upstream
 # Package compilation is an expensive, reproducible checkpoint.  Keep it in
-# the repository's ignored Windows-side temp tree by default so a new WSL
-# process does not silently select a second /tmp build route.
+# the repository's ignored temp tree so a new process does not silently select
+# a second temporary build route. The build-host disk itself lives on Windows.
 build=${QM_CORE_BUILD_ROOT:-${QM_SYSTEM_BUILD_ROOT:-$repo/temp/core-tools-build}}
 out=${QM_OUTPUT_ROOT:-$repo/temp/core-tools-output}
 jobs=${QM_JOBS:-$(nproc)}
 mkdir -p "$upstream" "$build" "$out"
 
 resolve_cc() {
-  if [[ -n ${QM_SYSTEM_CC:-} ]]; then
-    printf '%s\n' "$QM_SYSTEM_CC"
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    local candidate
-    while IFS= read -r candidate; do
-      if [[ -x $candidate/bin/gcc ]]; then
-        printf '%s\n' "$candidate/bin/gcc"
-        return
-      fi
-    done < <(nix build --no-link --print-out-paths --no-write-lock-file \
-      "path:$data/bootstrap#musl-gcc")
-  fi
-  command -v musl-gcc
+  bootstrap_cc "${QM_SYSTEM_CC:-}"
 }
 
 resolve_build_tool() {
-  local command_name=$1 attribute=$2 candidate
-  if command -v "$command_name" >/dev/null 2>&1; then
-    command -v "$command_name"
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    while IFS= read -r candidate; do
-      if [[ -x $candidate/bin/$command_name ]]; then
-        printf '%s\n' "$candidate/bin/$command_name"
-        return
-      fi
-    done < <(nix build --no-link --print-out-paths "$attribute")
-  fi
-  printf 'required build tool is unavailable: %s\n' "$command_name" >&2
-  return 1
+  command -v "$1"
 }
 
 fetch() {
@@ -96,10 +59,10 @@ case $target in
     ;;
 esac
 compiler_id=$($cc --version | sed -n '1p')
-flex=$(resolve_build_tool flex "path:$data/bootstrap#flex")
-bison=$(resolve_build_tool bison "path:$data/bootstrap#bison")
-meson=$(resolve_build_tool meson "path:$data/bootstrap#meson")
-ninja=$(resolve_build_tool ninja "path:$data/bootstrap#ninja")
+flex=$(resolve_build_tool flex)
+bison=$(resolve_build_tool bison)
+meson=$(resolve_build_tool meson)
+ninja=$(resolve_build_tool ninja)
 flex_id=$($flex --version | sed -n '1p')
 bison_id=$($bison --version | sed -n '1p')
 meson_id=$($meson --version)
@@ -120,13 +83,13 @@ extract_once "$util_tar" "$util_source"
 extract_once "$kmod_tar" "$kmod_pristine"
 extract_once "$iproute_tar" "$iproute_pristine"
 
-util_key=$(printf '%s\n' "$UTIL_LINUX_SHA256" "$compiler_id" \
+util_key=$(printf '%s\n' "$UTIL_LINUX_SHA256" "$compiler_id" "$QM_BOOTSTRAP_ID" \
   'util-linux-selected-all-static-v2' | sha256sum | cut -d' ' -f1)
-kmod_key=$(printf '%s\n' "$KMOD_SHA256" "$compiler_id" \
+kmod_key=$(printf '%s\n' "$KMOD_SHA256" "$compiler_id" "$QM_BOOTSTRAP_ID" \
   "$meson_id" "$ninja_id" \
   'kmod-tools-meson-internal-static-relocations-v4' | \
   sha256sum | cut -d' ' -f1)
-iproute_key=$(printf '%s\n' "$IPROUTE2_SHA256" "$compiler_id" \
+iproute_key=$(printf '%s\n' "$IPROUTE2_SHA256" "$compiler_id" "$QM_BOOTSTRAP_ID" \
   "$flex_id" "$bison_id" 'iproute2-selected-static-v4' | \
   sha256sum | cut -d' ' -f1)
 util_object=$build/packages/$util_key/object

@@ -10,16 +10,7 @@ here=$(cd -- "$(dirname -- "$0")" && pwd)
 data=$(cd -- "$here/.." && pwd)
 repo=$(cd -- "$data/.." && pwd)
 
-if [[ ${QM_BOOTSTRAP_ACTIVE:-0} != 1 ]]; then
-  if ! command -v nix >/dev/null 2>&1; then
-    printf 'the init build requires Nix for its pinned bootstrap\n' >&2
-    exit 2
-  fi
-  scratch_root=${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}
-  exec nix develop --no-write-lock-file "path:$data/bootstrap" -c \
-    env QM_BOOTSTRAP_ACTIVE=1 QM_SCRATCH_ROOT="$scratch_root" \
-      bash "$here/build-init.sh" "$@"
-fi
+. "$data/bootstrap/environment.sh"
 . "$data/sources.env"
 . "$here/profile.env"
 
@@ -30,21 +21,7 @@ jobs=${QM_JOBS:-$(nproc)}
 mkdir -p "$upstream" "$build" "$out"
 
 resolve_cc() {
-  if [[ -n ${QM_INIT_CC:-} ]]; then
-    printf '%s\n' "$QM_INIT_CC"
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    local candidate
-    while IFS= read -r candidate; do
-      if [[ -x $candidate/bin/gcc ]]; then
-        printf '%s\n' "$candidate/bin/gcc"
-        return
-      fi
-    done < <(nix build --no-link --print-out-paths --no-write-lock-file \
-      "path:$data/bootstrap#musl-gcc")
-  fi
-  command -v musl-gcc
+  bootstrap_cc "${QM_INIT_CC:-}"
 }
 
 fetch_sha512() {
@@ -116,7 +93,7 @@ extract_once "$mdevd_tar" "$mdevd_source"
 
 recipe_key=$(printf '%s\n' "$SKALIBS_SHA512" "$EXECLINE_SHA512" \
   "$S6_SHA512" "$S6_RC_SHA512" "$MDEVD_SHA512" \
-  "$($cc --version | sed -n '1p')" 'static-init-closure-v2' | \
+  "$($cc --version | sed -n '1p')" "$QM_BOOTSTRAP_ID" 'static-init-closure-v2' | \
   sha256sum | cut -d' ' -f1)
 service_source=$here/services
 service_key=$(

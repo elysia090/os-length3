@@ -26,11 +26,17 @@ all: $(BUILD)/libartifact.a $(BUILD)/artifact-measure-root \
 $(BUILD):
 	mkdir -p $@
 
+.PHONY: support-dependency
+support-dependency:
+	$(MAKE) -C ../support all
+
+../support/build/libsupport.a: | support-dependency
+
 $(BUILD)/%.o: src/%.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(DEPFLAGS) $(INCLUDES) \
 		-ffreestanding -c $< -o $@
 
-$(BUILD)/libartifact.a: $(OBJECTS)
+$(BUILD)/libartifact.a: $(OBJECTS) | ../support/build/libsupport.a
 	$(AR) rcs $@ $^
 
 $(BUILD)/artifact-measure-root: cli/measure-root.c $(BUILD)/libartifact.a ../support/build/libsupport.a | $(BUILD)
