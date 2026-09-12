@@ -4841,13 +4841,47 @@ int main(void)
         0x89u, 0xd1u, 0xbau, 0u, 0u, 0u, 0x80u, 0x31u, 0xc0u,
         0x48u, 0x01u, 0xf2u, 0x0fu, 0x92u, 0xc0u, 0x84u, 0xc9u, 0x74u, 0x33u,
     };
+    /* Shared conditional address and borrow-derived arithmetic must retain
+     * their entry-register generations until both publications are ready. */
+    static const pl_u8 conditional_borrow_fanout[] = {
+        0x48u, 0x85u, 0xffu, 0x48u, 0x8du, 0x05u, 0xcfu, 0x5au, 3u, 0u,
+        0x48u, 0x0fu, 0x45u, 0xc7u, 0x48u, 0x83u, 0xfeu, 3u,
+        0x48u, 0x89u, 0xe7u, 0x48u, 0x19u, 0xdbu,
+        0x81u, 0xe3u, 1u, 0x36u, 0x65u, 4u, 0x49u, 0x89u, 0xc4u,
+        0x48u, 0x81u, 0xebu, 0xfeu, 0x35u, 0x65u, 4u, 0x48u, 0x89u, 0xdeu,
+    };
+    static const pl_u8 signed_overlay[] = {
+        0x41u, 0x83u, 0xe0u, 0x0fu, 0x41u, 0xc1u, 0xe0u, 0x10u,
+        0xc1u, 0xe0u, 0x10u, 0x41u, 0x09u, 0xd0u, 0x89u, 0xdau,
+        0x09u, 0xf0u, 0x48u, 0x89u, 0xeeu, 0x48u, 0x98u, 0x48u, 0x09u, 0xc1u,
+    };
+    static const pl_u8 saved_entry_subtract_branch[] = {
+        0x48u, 0x89u, 0xc2u, 0x29u, 0xc8u, 0x75u, 0x19u,
+    };
+    static const pl_u8 high_word_test_branch[] = {
+        0x48u, 0x89u, 0xdeu, 0x66u, 0xf7u, 0xc2u, 1u, 0x80u, 0x75u, 0x71u,
+    };
+    static const pl_u8 high_mask_select[] = {
+        0xf7u, 0xc3u, 0u, 0u, 0u, 0x80u,
+        0x48u, 0xc7u, 0xc2u, 0xd8u, 0xf5u, 0x8cu, 0x81u,
+        0x48u, 0xc7u, 0xc0u, 0xeeu, 0xf5u, 0x8cu, 0x81u,
+        0x48u, 0x0fu, 0x45u, 0xd0u,
+    };
+    static const pl_u8 compare_before_constants[] = {
+        0x83u, 0xfeu, 0xecu, 0x48u, 0xc7u, 0xc0u, 0x98u, 0xfeu, 0x8cu, 0x81u,
+        0x48u, 0xc7u, 0xc6u, 0xe0u, 0x3du, 0x8du, 0x81u,
+    };
     const pl_u8 *cut_source[] = {
-        masked_shift_compare, address_subtract_flags, word_test_boolean, add_carry_branch };
+        masked_shift_compare, address_subtract_flags, word_test_boolean, add_carry_branch,
+        conditional_borrow_fanout, signed_overlay, saved_entry_subtract_branch,
+        high_word_test_branch, high_mask_select, compare_before_constants };
     const pl_u32 cut_length[] = {
         sizeof masked_shift_compare, sizeof address_subtract_flags,
-        sizeof word_test_boolean, sizeof add_carry_branch };
-    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u };
-    for (pl_u32 cut = 0u; cut < 4u; ++cut) {
+        sizeof word_test_boolean, sizeof add_carry_branch, sizeof conditional_borrow_fanout,
+        sizeof signed_overlay, sizeof saved_entry_subtract_branch,
+        sizeof high_word_test_branch, sizeof high_mask_select, sizeof compare_before_constants };
+    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u };
+    for (pl_u32 cut = 0u; cut < sizeof cut_work / sizeof cut_work[0]; ++cut) {
         status = select_projected(cut_source[cut], cut_length[cut],
             (1u << PL_X86_LOCAL_COUNT) - 1u,
             &selected, output, &written, &projected);
@@ -4892,6 +4926,31 @@ int main(void)
         return 226;
     }
     pl_x86_native_candidates aligned_candidates = { 0 };
+    static const pl_u8 signed_clamp[] = {
+        0xbau, 0xffu, 0xffu, 0xffu, 0x7fu, 0x48u, 0x39u, 0xd0u,
+        0x48u, 0x0fu, 0x4fu, 0xc2u, 0x48u, 0x98u,
+    };
+    pl_x86_native_candidates clamp_candidates = { 0 };
+    status = candidates_projected(signed_clamp, sizeof signed_clamp,
+        (1u << PL_X86_LOCAL_COUNT) - 1u, &clamp_candidates);
+    pl_u32 clamp_span = 0u, clamp_work = 0u;
+    if (!status) status = pl_x86_candidates_select_joint_minimum(
+        &clamp_candidates, 0u, 0u, &selected, &clamp_span, &clamp_work);
+    if (status || !selected.normalized_family_present || clamp_work > 4u || clamp_span > 3u) {
+        fprintf(stderr, "native x86 selection: RED (signed clamp status=%d span/work=%u/%u)\n",
+            status, clamp_span, clamp_work);
+        for (pl_u32 i = 0u; i < clamp_candidates.count; ++i) {
+            const pl_x86_native_selection *candidate = &clamp_candidates.candidate[i];
+            pl_u32 size = 0u;
+            fprintf(stderr, " candidate source=%u span/work/bytes=%u/%u/%u:", candidate->copied_source,
+                candidate->output_span, candidate->output_work, candidate->output_bytes);
+            if (!write_candidate(signed_clamp, sizeof signed_clamp, 0x1000u,
+                    candidate, output, sizeof output, &size))
+                for (pl_u32 j = 0u; j < size; ++j) fprintf(stderr, " %02x", output[j]);
+            fputc('\n', stderr);
+        }
+        return 227;
+    }
     status = candidates_projected(
         aligned_stack_fanout_source, sizeof aligned_stack_fanout_source,
         (1u << PL_X86_LOCAL_COUNT) - 1u, &aligned_candidates);

@@ -960,8 +960,14 @@ static int canonical_bit_overlay(pl_builder *builder, const pl_plan *plan,
         return 0;
     pl_u64 word = bits == 64u ? ~0ull : 0xffffffffull;
     normalize_bit_overlay(&form, word);
+    /* A full 32-bit mask is not an identity on an arbitrary 64-bit base.
+     * An emitted 32-bit OR already zero-extends; without one, retain the
+     * narrowing operation unless the base's upper word is proven zero. */
+    int needs_mask = form.variable_mask != word
+        || (bits == 32u && form.has_base && !form.constant
+            && !operand_is_u32(plan, form.base, plan->node_count + 1u));
     pl_u32 cost = !form.has_base ? 0u
-                : (form.variable_mask != word ? 1u : 0u)
+                : (needs_mask ? 1u : 0u)
                   + (form.constant != 0u ? 1u : 0u);
     if (form.operations <= cost) return 0;
     if (!form.has_base) {
@@ -970,7 +976,7 @@ static int canonical_bit_overlay(pl_builder *builder, const pl_plan *plan,
     }
 
     *replacement = form.base;
-    if (form.variable_mask != word) {
+    if (needs_mask) {
         pl_operand operands[2] = {
             *replacement, { PL_OPERAND_CONST, form.variable_mask },
         };
@@ -1222,6 +1228,21 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
 
         pl_u32 opcode = node->opcode;
         pl_u32 argument_count = node->argument_count;
+        /* Sign-extended and unsigned literals with the same low word are
+         * one operand class at a narrow comparison boundary. Preserve
+         * the descriptor and prior flags, but erase the unobserved high bits
+         * before instruction selection and sharing see those operands. */
+        if ((opcode == PL_OPCODE_X86_TEST || opcode == PL_OPCODE_X86_COMPARE)
+                && argument_count == 4u) {
+            pl_operand descriptor = staged[argument_count - 1u];
+            pl_u32 bits = (pl_u32)(descriptor.value & 0x7fu);
+            if (descriptor.kind == PL_OPERAND_CONST
+                    && (bits == 8u || bits == 16u || bits == 32u)) {
+                pl_u64 word = (1ull << bits) - 1u;
+                for (pl_u32 slot = 1u; slot <= 2u; ++slot)
+                    if (staged[slot].kind == PL_OPERAND_CONST) staged[slot].value &= word;
+            }
+        }
         pl_operand replacement = { PL_OPERAND_CONST, 0u };
         int replace = 0;
         pl_u32 lane = 0u, semantic = 0u;

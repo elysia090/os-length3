@@ -53,7 +53,10 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
     pl_u8 source[32] = { 0x48u, 0x89u, 0xc8u }; /* mov rax,rcx */
     pl_u32 length = 3u;
     if (expression == 2u) { source[0] = 0x31u; source[1] = 0xc0u; length = 2u; }
-    const pl_u64 compare_value = expression ? 64u : 4u;
+    pl_u64 compare_value = expression ? 64u : 4u;
+    if (immediate == 2u) compare_value = bits == 64u ? 0xffffffff80000000ull
+        : (1ull << (bits - 1u)) | (bits == 16u ? 1u : 0u);
+    if (immediate == 3u) compare_value = UINT64_MAX >> (64u - bits);
     if (expression == 1u) {
         static const pl_u8 pure[] = {
             0x41u, 0x83u, 0xe2u, 0x42u, /* and r10d,0x42 */
@@ -61,6 +64,10 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
         };
         memcpy(source + length, pure, sizeof pure);
         length += sizeof pure;
+    }
+    if (expression >= 4u && expression < 7u) {
+        static const pl_u8 pure[] = { 0x83u, 0xe0u, 0x42u, 0x48u, 0xc1u, 0xe0u, 12u };
+        memcpy(source + length, pure, sizeof pure); length += sizeof pure;
     }
     if (bits == 16u) source[length++] = 0x66u;
     source[length++] = bits == 64u ? 0x49u : 0x41u;
@@ -70,7 +77,7 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
         source[length++] = test ? 0xc2u : 0xfau;
         pl_u32 bytes = bits == 8u ? 1u : bits == 16u ? 2u : 4u;
         for (pl_u32 i = 0u; i < bytes; ++i)
-            source[length++] = i ? 0u : (pl_u8)compare_value;
+            source[length++] = (pl_u8)(compare_value >> (i * 8u));
     } else {
         source[length++] = test ? (bits == 8u ? 0x84u : 0x85u)
                                 : (bits == 8u ? 0x38u : 0x39u);
@@ -79,7 +86,7 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
     if (expression < 2u) {
         source[length++] = (pl_u8)(0x70u | code);
         source[length++] = 8u;
-    } else {
+    } else if (expression < 4u) {
         if (expression == 3u) {
             source[length++] = 0x41u; source[length++] = 0xbau;
             for (pl_u32 i = 0u; i < 4u; ++i) source[length++] = 0u;
@@ -88,6 +95,22 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
         source[length++] = 0x0fu;
         source[length++] = (pl_u8)(0x90u | code);
         source[length++] = expression == 3u ? 0xc2u : 0xc0u;
+    } else if (expression < 7u) {
+        source[length++] = 0x4cu; source[length++] = 0x0fu;
+        source[length++] = (pl_u8)(0x40u | code); source[length++] = 0xd2u;
+        source[length++] = 0x4du;
+        if (expression == 6u) source[length++] = 0x63u;
+        else {
+            source[length++] = 0x0fu;
+            source[length++] = expression == 4u ? 0xbeu : 0xbfu;
+        }
+        source[length++] = 0xd2u; /* sign-extend selected r10b/r10w/r10d */
+    } else {
+        source[length++] = 0xb8u;
+        for (pl_u32 i = 0u; i < 4u; ++i) source[length++] = 0u;
+        source[length++] = 0x41u; source[length++] = 0xbau;
+        source[length++] = 1u; source[length++] = 0u;
+        source[length++] = 0u; source[length++] = 0x80u;
     }
     static const pl_u8 observe[] = {
         0x41u, 0xb9u, 0u, 0u, 0u, 0u, 0xebu, 0x06u,
@@ -137,8 +160,8 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
     pl_u8 *output = memory + 512u + sizeof prefix;
     pl_u32 written = 0u;
     if (status || !selected.normalized_family_present || selected.copied_source
-            || work > (expression == 1u ? 5u : expression == 3u ? 4u : 3u)
-            || span > (expression == 1u ? 3u : 2u)) goto failed;
+            || work > (expression == 7u ? 3u : expression >= 4u ? 6u : expression == 1u ? 5u : expression == 3u ? 4u : 3u)
+            || span > (expression == 7u ? 2u : expression >= 4u ? 3u : expression == 1u ? 3u : 2u)) goto failed;
     status = pl_x86_select_write_measured(
         &frontend, &block, &selected, output, 256u, &written);
     if (status || written != selected.output_bytes) goto failed;
@@ -172,6 +195,15 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
         pl_u64 flags = flags_for(expected_input, immediate ? compare_value : right, bits, test);
         if (expression == 2u) expected_copy = condition(code, flags);
         if (expression == 3u) expected_input = condition(code, flags);
+        if (expression >= 4u && expression < 7u) {
+            pl_u32 width = 8u << (expression - 4u);
+            pl_u64 sign = 1ull << (width - 1u);
+            expected_copy = (random & 0x42u) << 12u;
+            expected_input = condition(code, flags) ? right : left;
+            expected_input &= (1ull << width) - 1u;
+            expected_input = (expected_input ^ sign) - sign;
+        }
+        if (expression == 7u) { expected_copy = 0u; expected_input = 0x80000001u; }
         pl_u64 mask = test ? 0x8c5u : 0x8d5u; /* TEST leaves AF undefined. */
         observation before = { 0 }, after = { 0 };
         original.function(&before, left, right, random);
@@ -202,13 +234,14 @@ int main(void)
     pl_u64 comparisons = 0u;
     for (pl_u32 bits = 8u; bits <= 64u; bits *= 2u)
         for (pl_u32 test = 0u; test < 2u; ++test)
-            for (pl_u32 immediate = 0u; immediate < 2u; ++immediate)
+            for (pl_u32 immediate = 0u; immediate < 4u; ++immediate)
                 for (pl_u32 code = 0u; code < 16u; ++code)
-                    for (pl_u32 expression = 0u; expression < (test ? 4u : 2u); ++expression)
-                        if (!check_case(bits, test, immediate, code, expression,
+                    for (pl_u32 expression = 0u; expression < 8u; ++expression)
+                        if ((test || expression < 2u || expression >= 4u)
+                                && !check_case(bits, test, immediate, code, expression,
                                          &comparisons)) return 1;
     printf("compare cut: green (%llu source/generated/reference comparisons; "
-           "8/16/32/64-bit CMP/TEST, immediate/register, all Jcc/SETcc, pure/aliased publications)\n",
+           "8/16/32/64-bit CMP/TEST, signed immediates/registers, all Jcc/SETcc/CMOV, signed and aliased publications)\n",
            (unsigned long long)comparisons);
     return 0;
 }
