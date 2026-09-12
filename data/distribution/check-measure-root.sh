@@ -15,7 +15,9 @@ printf abc >"$root/usr/bin/tool"
 ln "$root/usr/bin/tool" "$root/usr/bin/tool-hard"
 cp "$root/usr/bin/tool" "$root/usr/bin/tool-copy"
 ln -s usr/bin/tool "$root/tool-link"
-setfattr -n user.contract -v 0x0102 "$root/usr/bin/tool"
+"${CC:-cc}" -std=c11 -O2 -Wall -Wextra -Werror \
+  "$here/check-measure-root.c" -o "$temporary/set-xattr"
+"$temporary/set-xattr" "$root/usr/bin/tool"
 
 report=$temporary/population
 bash "$here/measure-root.sh" "$root" "$report"

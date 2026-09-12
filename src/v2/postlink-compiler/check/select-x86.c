@@ -830,7 +830,7 @@ int main(void)
         0x8du, 0x0cu, 0xc5u, 0xb8u, 0x94u, 0xabu, 0x81u,
         0xb8u, 0x20u, 0x00u, 0x00u, 0x00u,
         0x83u, 0xfau, 0x20u,
-        0x48u, 0x0fu, 0x47u, 0xd0u,
+        0x0fu, 0x47u, 0xd0u,
         0xbeu, 0x20u, 0x28u, 0x00u, 0x00u,
     };
     /* The old RDX value is copied to RSI while RDX publishes XOR(x,x).
@@ -1397,8 +1397,8 @@ int main(void)
     static const pl_u8 zero_flag_entry_copy_result[] = {
         0x89u, 0xf1u,
         0x89u, 0xfau,
-        0x48u, 0xc7u, 0xc7u, 0x18u, 0x4bu, 0x8bu, 0x81u,
         0x31u, 0xf6u,
+        0x48u, 0xc7u, 0xc7u, 0x18u, 0x4bu, 0x8bu, 0x81u,
         0xebu, 0x00u,
     };
     /* Required Byte* coordinate 0xffffffff81202179 in Linux 7.1.8.  EDX is
@@ -1464,6 +1464,26 @@ int main(void)
         0x48u, 0x8du, 0x05u, 0x26u, 0xe7u, 0x04u, 0x00u,
         0x48u, 0x0fu, 0x44u, 0xc2u,
         0xbau, 0x04u, 0x00u, 0x00u, 0x00u,
+    };
+    /* Decimal accumulation with a low-word subtraction, signed widening and
+     * a shared multiply publication, followed by unsigned overflow control.
+     * mov rcx,rdx; sub eax,48; imul rcx,rsi; cdqe;
+     * add rax,rcx; cmp rax,rsi; jb +65 */
+    static const pl_u8 signed_digit_accumulation_source[] = {
+        0x48u, 0x89u, 0xd1u, 0x83u, 0xe8u, 0x30u,
+        0x48u, 0x0fu, 0xafu, 0xceu, 0x48u, 0x98u,
+        0x48u, 0x01u, 0xc8u, 0x48u, 0x39u, 0xf0u, 0x72u, 0x41u,
+    };
+    /* A shared aligned stack pointer must be copied, not recomputed. Both
+     * affine leaves can consume the old RAX before its next generation:
+     * rbx=rdx+rax; rax=(rdx+rax+26)&-16; rsp-=rax;
+     * r10=(rsp+15)&-16; r12=r10; cmp r10,rcx; jae target. */
+    static const pl_u8 aligned_stack_fanout_source[] = {
+        0x48u, 0x8du, 0x1cu, 0x02u, 0x48u, 0x8du, 0x43u, 0x1au,
+        0x48u, 0x83u, 0xe0u, 0xf0u, 0x48u, 0x29u, 0xc4u,
+        0x4cu, 0x8du, 0x54u, 0x24u, 0x0fu, 0x49u, 0x83u, 0xe2u, 0xf0u,
+        0x49u, 0x39u, 0xcau, 0x4du, 0x89u, 0xd4u,
+        0x0fu, 0x83u, 0xd9u, 0x04u, 0x00u, 0x00u,
     };
     static const pl_u8 wide_shift_narrow_flags_source[] = {
         0x4cu, 0x89u, 0xf9u,
@@ -4399,7 +4419,7 @@ int main(void)
         &selected, output, &written);
     if (status || !selected.supported || selected.copied_source
             || !selected.normalized_family_present
-            || !selected.direct_zero_flag_frame
+            || !selected.direct_alu_frame
             || selected.output_work != 5u || selected.output_span != 2u
             || selected.output_bytes
                != sizeof zero_flag_entry_copy_result
@@ -4718,6 +4738,42 @@ int main(void)
                 failure_status, failed.count, failed.diagnostic_stage,
                 failed.diagnostic.blocking_work);
         return 219;
+    }
+    status = select_projected(
+        signed_digit_accumulation_source, sizeof signed_digit_accumulation_source,
+        (1u << PL_X86_LOCAL_COUNT) - 1u,
+        &selected, output, &written, &projected);
+    if (status || !selected.supported || !selected.normalized_family_present
+            || selected.output_work > 7u) {
+        pl_x86_native_candidates failed = { 0 };
+        (void)candidates_projected(
+            signed_digit_accumulation_source, sizeof signed_digit_accumulation_source,
+            (1u << PL_X86_LOCAL_COUNT) - 1u, &failed);
+        fprintf(stderr, "native x86 selection: RED (signed digit accumulation "
+                "status=%d work/span=%u/%u rejection=%x/%x)\n",
+                status, selected.output_work, selected.output_span,
+                failed.diagnostic.blocking_work, failed.diagnostic.blocking_opcode);
+        print_block_shape(&projected);
+        return 220;
+    }
+    pl_x86_native_candidates aligned_candidates = { 0 };
+    status = candidates_projected(
+        aligned_stack_fanout_source, sizeof aligned_stack_fanout_source,
+        (1u << PL_X86_LOCAL_COUNT) - 1u, &aligned_candidates);
+    pl_u32 aligned_span = 0u, aligned_work = 0u;
+    if (!status) status = pl_x86_candidates_select_joint_minimum(
+        &aligned_candidates, 0u, 0u, &selected, &aligned_span, &aligned_work);
+    if (status || !selected.normalized_family_present
+            || aligned_work > 9u || aligned_span > 7u) {
+        fprintf(stderr, "native x86 selection: RED (aligned stack fanout "
+                "status=%d independent span/work=%u/%u)\n",
+                status, aligned_span, aligned_work);
+        for (pl_u32 i = 0u; i < aligned_candidates.count; ++i)
+            fprintf(stderr, "  candidate span/work/bytes=%u/%u/%u\n",
+                    aligned_candidates.candidate[i].output_span,
+                    aligned_candidates.candidate[i].output_work,
+                    aligned_candidates.candidate[i].output_bytes);
+        return 221;
     }
     status = select_projected(
         wide_shift_narrow_flags_source, sizeof wide_shift_narrow_flags_source,

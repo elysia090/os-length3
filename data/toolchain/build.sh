@@ -520,7 +520,9 @@ git_flags=(
 )
 git_recipe=$(
   {
-    printf '%s\n' 'static-no-runtime-languages-v2'
+    printf '%s\n' 'static-no-runtime-languages-v3-build-only-rust'
+    sha256sum "$data/bootstrap/rust.sh" "$data/bootstrap/rust.world" \
+      "$data/bootstrap/rust.sha256" "$data/bootstrap/rust-installed.lock"
     sha256sum "$curl_root/usr/lib/libcurl.a" \
       "$openssl_root/usr/lib/libssl.a" \
       "$openssl_root/usr/lib/libcrypto.a" "$zlib_root/usr/lib/libz.a"
@@ -528,19 +530,23 @@ git_recipe=$(
 )
 if [[ ! -f $git_root/.complete ]] || \
    [[ $(<"$git_root/.complete") != "$git_recipe" ]]; then
+  bash "$data/bootstrap/rust.sh" install >&2
   mkdir -p "$git_o" "$git_root"
   if [[ ! -f $git_o/Makefile ]]; then
     cp -a "$git_src"/. "$git_o"/
   else
     make -C "$git_o" "${git_flags[@]}" clean
   fi
-  make -C "$git_o" -j"$jobs" "${git_flags[@]}" all
-  make -C "$git_o" DESTDIR="$git_root" prefix=/usr \
+  bash "$data/bootstrap/rust.sh" run make -C "$git_o" -j"$jobs" "${git_flags[@]}" all
+  bash "$data/bootstrap/rust.sh" run make -C "$git_o" DESTDIR="$git_root" prefix=/usr \
     "${git_flags[@]}" install
   printf '%s\n' "$git_recipe" > "$git_root/.complete"
 fi
 
-configure_make_install "$tar_src" "$tar_o" "$tar_root" --disable-nls
+# This process is confined to the disposable build guest. GNU tar otherwise
+# refuses to run its mknod configure probe as uid 0; permit that probe here,
+# without changing the product's runtime policy or disabling release checks.
+FORCE_UNSAFE_CONFIGURE=1 configure_make_install "$tar_src" "$tar_o" "$tar_root" --disable-nls
 configure_make_install "$gzip_src" "$gzip_o" "$gzip_root" --disable-nls
 xz_recipe='libtool-all-static-v1'
 if [[ ! -f $xz_root/.complete ]] || \

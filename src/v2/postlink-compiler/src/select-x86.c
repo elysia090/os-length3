@@ -217,17 +217,20 @@ static int emit_gpr_move(pl_u32 destination, pl_u32 source, pl_u32 bits,
     return 1;
 }
 
-static int emit_imul_register(pl_u32 destination, pl_u32 source,
+static int emit_imul_register(pl_u32 destination, pl_u32 source, pl_u32 bits,
                               pl_u8 *output, pl_u32 *written)
 {
     if (!written || destination >= PL_X86_GPR_COUNT
-            || source >= PL_X86_GPR_COUNT)
+            || source >= PL_X86_GPR_COUNT || (bits != 32u && bits != 64u))
         return 0;
     pl_u32 at = 0u;
-    pl_u8 rex = (pl_u8)(0x48u | (destination >= 8u ? 4u : 0u)
+    pl_u8 rex = (pl_u8)((bits == 64u ? 0x48u : 0x40u)
+                              | (destination >= 8u ? 4u : 0u)
                               | (source >= 8u ? 1u : 0u));
-    if (output) output[at] = rex;
-    ++at;
+    if (rex != 0x40u) {
+        if (output) output[at] = rex;
+        ++at;
+    }
     if (output) output[at] = 0x0fu;
     ++at;
     if (output) output[at] = 0xafu;
@@ -328,6 +331,11 @@ static int emit_sign_extend_move(pl_u32 destination, pl_u32 source,
             || source >= PL_X86_GPR_COUNT
             || (bits != 8u && bits != 16u && bits != 32u))
         return 0;
+    if (bits == 32u && !destination && !source) {
+        if (output) { output[0] = 0x48u; output[1] = 0x98u; }
+        *written = 2u; /* cdqe */
+        return 1;
+    }
     pl_u32 at = 0u;
     pl_u8 rex = (pl_u8)(0x48u | (destination >= 8u ? 4u : 0u)
                               | (source >= 8u ? 1u : 0u));
@@ -2023,8 +2031,8 @@ static int zero_extend_node(const pl_plan *plan, pl_u32 node_number,
     return 1;
 }
 
-static int sign_extend_node(const pl_plan *plan, pl_u32 node_number,
-                            pl_u32 *source, pl_u32 *bits)
+static int sign_extend_value(const pl_plan *plan, pl_u32 node_number,
+                             pl_operand *source, pl_u32 *bits)
 {
     if (!plan || !source || !bits || !node_number
             || node_number > plan->node_count)
@@ -2036,7 +2044,16 @@ static int sign_extend_node(const pl_plan *plan, pl_u32 node_number,
     if (!*bits || node->argument_count != 1u
             || node->argument_at >= plan->argument_count)
         return 0;
-    pl_operand argument = plan->arguments[node->argument_at];
+    *source = plan->arguments[node->argument_at];
+    return 1;
+}
+
+static int sign_extend_node(const pl_plan *plan, pl_u32 node_number,
+                            pl_u32 *source, pl_u32 *bits)
+{
+    pl_operand argument;
+    if (!source || !sign_extend_value(plan, node_number, &argument, bits))
+        return 0;
     if (argument.kind != PL_OPERAND_LOCAL
             || argument.value >= PL_X86_GPR_COUNT)
         return 0;
@@ -2454,6 +2471,41 @@ static int operand_source_law(const pl_plan *plan, pl_operand operand,
     return 1;
 }
 
+/* Widths, condition codes and operation descriptors are instruction literals,
+ * not runtime values. Equal bits in a published register cannot turn such a
+ * literal into a producer edge (CMOVE's condition 4 is not the value RDX=4).
+ * Value operands still use the canonical publication owner. */
+static int native_argument_uses_publication(
+    const pl_plan *plan, const pl_node *node, pl_u32 argument)
+{
+    pl_u32 descriptor;
+    switch (node->opcode) {
+    case PL_OPCODE_LANE32_INSERT:
+    case PL_OPCODE_LANE64_INSERT:
+        /* The zero fill in a zero extension is not read from a GPR. */
+        if (!argument) {
+            pl_operand base = plan->arguments[node->argument_at];
+            if (base.kind == PL_OPERAND_CONST && !base.value) return 0;
+        }
+        descriptor = 2u; break;
+    case PL_OPCODE_X86_CONDITION: descriptor = 1u; break;
+    case PL_OPCODE_X86_TEST_CONDITION:
+    case PL_OPCODE_MUL_HIGH:
+    case PL_OPCODE_BIT_ADDRESS: descriptor = 2u; break;
+    case PL_OPCODE_X86_ALU:
+    case PL_OPCODE_X86_COMPARE:
+    case PL_OPCODE_X86_TEST:
+    case PL_OPCODE_X86_BIT_FLAGS:
+    case PL_OPCODE_X86_MUL_FLAGS: descriptor = 3u; break;
+    case PL_OPCODE_X86_FLAGS:
+    case PL_OPCODE_X86_AFFINE_ALU:
+    case PL_OPCODE_X86_SHIFT_FLAGS:
+    case PL_OPCODE_X86_DOUBLE_SHIFT: descriptor = 4u; break;
+    default: return 1;
+    }
+    return argument != descriptor;
+}
+
 static int alu_frame_source_laws(const pl_plan *plan,
                                  pl_u32 sources[PL_X86_GPR_COUNT],
                                  pl_u32 dependencies[PL_X86_GPR_COUNT])
@@ -2473,7 +2525,8 @@ static int alu_frame_source_laws(const pl_plan *plan,
             pl_u32 part = 0u;
             if (!operand_source_law(
                     plan, plan->arguments[node->argument_at + argument],
-                    node_law, node_number - 1u, 1, &part))
+                    node_law, node_number - 1u,
+                    native_argument_uses_publication(plan, node, argument), &part))
                 return 0;
             law |= part;
         }
@@ -2517,7 +2570,8 @@ static int operand_frame_source_law(const pl_plan *plan,
             pl_u32 part = 0u;
             if (!operand_source_law(
                     plan, plan->arguments[node->argument_at + argument],
-                    node_law, node_number - 1u, 1, &part))
+                    node_law, node_number - 1u,
+                    native_argument_uses_publication(plan, node, argument), &part))
                 return 0;
             law |= part;
         }
@@ -3729,6 +3783,26 @@ static int boolean_select_details(const pl_plan *plan, pl_operand value,
     return 1;
 }
 
+/* A 32-bit CMOV reads the low word directly and zeroes the destination high
+ * word even when the condition is false. Its source's explicit zero extension
+ * therefore needs neither an instruction nor a published temporary. */
+static int conditional_entry_local(const pl_plan *plan, pl_operand value,
+                                    pl_u32 bits, pl_u32 *local)
+{
+    if (value.kind == PL_OPERAND_NODE && bits == 32u) {
+        pl_u32 source = 0u, width = 0u;
+        if (zero_extend_node(plan, (pl_u32)value.value, &source, &width)
+                && width == 32u) {
+            const pl_node *node = &plan->nodes[value.value - 1u];
+            value = plan->arguments[node->argument_at + 1u];
+        }
+    }
+    if (value.kind != PL_OPERAND_LOCAL || value.value >= PL_X86_GPR_COUNT)
+        return 0;
+    *local = (pl_u32)value.value;
+    return 1;
+}
+
 static int conditional_select_details(const pl_plan *plan, pl_operand value,
                                       pl_u32 destination,
                                       conditional_select *out)
@@ -3763,32 +3837,33 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
         return 0;
     pl_u32 candidate_local = 0u;
     pl_u32 inverted = 0u;
-    int first_physical = argument[0].kind == PL_OPERAND_LOCAL
-                      && argument[0].value < PL_X86_GPR_COUNT;
-    if (first_physical) candidate_local = (pl_u32)argument[0].value;
-    else first_physical = published_operand_local(
+    out->value_bits = select->opcode == PL_OPCODE_LANE32_SELECT
+                   || (operand_fits_u32(
+                           plan, argument[0], plan->node_count + 1u)
+                       && operand_fits_u32(
+                           plan, argument[1], plan->node_count + 1u))
+                    ? 32u : 64u;
+    int first_entry = conditional_entry_local(
+        plan, argument[0], out->value_bits, &candidate_local);
+    int first_physical = first_entry;
+    if (!first_physical) first_physical = published_operand_local(
         plan, argument[0], &candidate_local);
-    int second_physical = argument[1].kind == PL_OPERAND_LOCAL
-                       && argument[1].value < PL_X86_GPR_COUNT;
-    pl_u32 second_local = second_physical
-                        ? (pl_u32)argument[1].value : 0u;
+    pl_u32 second_local = 0u;
+    int second_entry = conditional_entry_local(
+        plan, argument[1], out->value_bits, &second_local);
+    int second_physical = second_entry;
     if (!second_physical)
         second_physical = published_operand_local(
             plan, argument[1], &second_local);
-    int first_is_entry_destination =
-        argument[0].kind == PL_OPERAND_LOCAL
-        && argument[0].value == destination;
-    int second_is_entry_source =
-        argument[1].kind == PL_OPERAND_LOCAL
-        && argument[1].value < PL_X86_GPR_COUNT
-        && argument[1].value != destination;
+    int first_is_entry_destination = first_entry && candidate_local == destination;
+    int second_is_entry_source = second_entry && second_local != destination;
     if (first_is_entry_destination && second_is_entry_source) {
         /* SELECT(dst,src,cc) already has its true arm in the destructive
          * destination.  Selecting the false arm with the complementary
          * condition is one CMOV and preserves both entry values until that
          * instruction: `cmov(!cc) dst,src`. */
         out->current = argument[0];
-        candidate_local = (pl_u32)argument[1].value;
+        candidate_local = second_local;
         inverted = 1u;
     } else if (first_physical) {
         out->current = argument[1];
@@ -3804,15 +3879,10 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
         return 0;
     }
     out->candidate_local = candidate_local;
-    const pl_operand candidate = argument[inverted ? 1u : 0u];
-    out->candidate_is_entry = candidate.kind == PL_OPERAND_LOCAL
-                          && candidate.value == candidate_local;
-    out->value_bits = select->opcode == PL_OPCODE_LANE32_SELECT
-                   || (operand_fits_u32(
-                           plan, argument[0], plan->node_count + 1u)
-                       && operand_fits_u32(
-                           plan, argument[1], plan->node_count + 1u))
-                    ? 32u : 64u;
+    out->candidate_is_entry = (pl_u32)(inverted ? second_entry : first_entry);
+    pl_u32 current_entry = 0u;
+    if (conditional_entry_local(plan, out->current, out->value_bits, &current_entry))
+        out->current = (pl_operand){ PL_OPERAND_LOCAL, current_entry };
     out->condition = (pl_u32)condition_argument[1].value ^ inverted;
     out->has_compare = 0u;
     out->compare_test = 0u;
@@ -5698,6 +5768,33 @@ static int write_entry_bit_overlay(
     pl_u32 remaining, pl_u32 scratch_mask,
     pl_u8 *output, pl_u32 *written);
 
+/* Signed and unsigned multiplication have the same low word modulo 2^w.
+ * This production only consumes that pure word; live multiply flags/high
+ * words retain their distinct architectural producers. */
+static int multiply_word_operands(
+    const pl_plan *plan, const pl_x86_native_selection *selection,
+    pl_operand value, pl_u32 destination, pl_operand *left,
+    pl_operand *right, pl_u32 *bits)
+{
+    if (!plan || value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count) return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    *bits = node->opcode == PL_OPCODE_MULR ? 64u
+          : node->opcode == PL_OPCODE_LANE32_MULR ? 32u : 0u;
+    if (!*bits || node->argument_count != 2u
+            || node->argument_at > plan->argument_count
+            || 2u > plan->argument_count - node->argument_at) return 0;
+    *left = plan->arguments[node->argument_at];
+    *right = plan->arguments[node->argument_at + 1u];
+    physicalize_selected_operand(plan, selection, destination, left);
+    physicalize_selected_operand(plan, selection, destination, right);
+    if ((right->kind == PL_OPERAND_LOCAL && right->value == destination)
+            || (right->kind != PL_OPERAND_LOCAL && left->kind == PL_OPERAND_LOCAL)) {
+        pl_operand swap = *left; *left = *right; *right = swap;
+    }
+    return right->kind == PL_OPERAND_LOCAL && right->value < PL_X86_GPR_COUNT;
+}
+
 static int measure_alu_tree(const pl_x86_frontend *frontend,
                             const pl_x86_block *block,
                             pl_x86_native_selection *selection,
@@ -5727,6 +5824,49 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
     if (remaining <= 1u) {
         record_tree_rejection(selection, value, 1u);
         return 0;
+    }
+
+    pl_operand signed_source;
+    pl_u32 signed_bits = 0u;
+    if (bits == 64u && value.kind == PL_OPERAND_NODE
+            && sign_extend_value(&block->plan, (pl_u32)value.value,
+                                 &signed_source, &signed_bits)) {
+        /* Widen the normalized value, not only an entry register. The low
+         * subtree is evaluated once in its destination before MOVSX/CDQE. */
+        pl_u32 prefix = 0u, work = 0u, operation = 0u;
+        int measured = measure_alu_tree(
+            frontend, block, selection, destination, signed_source, 32u,
+            output_at, remaining - 1u, scratch_mask, &prefix, &work);
+        if (measured <= 0 || !emit_sign_extend_move(
+                destination, destination, signed_bits, (pl_u8 *)0, &operation)
+                || prefix > U32_MAX_VALUE - operation || work == U32_MAX_VALUE)
+            return measured < 0 ? measured : 0;
+        *bytes = prefix + operation;
+        *instructions = work + 1u;
+        selection->direct_nested_frame = 1u;
+        return 1;
+    }
+
+    pl_operand multiply_left, multiply_right;
+    pl_u32 multiply_bits = 0u;
+    if (multiply_word_operands(&block->plan, selection, value, destination,
+                              &multiply_left, &multiply_right, &multiply_bits)) {
+        pl_u32 prefix = 0u, work = 0u, operation = 0u;
+        if (multiply_right.value == destination
+                && !(multiply_left.kind == PL_OPERAND_LOCAL
+                     && multiply_left.value == destination)) return 0;
+        int measured = measure_alu_tree(
+            frontend, block, selection, destination, multiply_left, multiply_bits,
+            output_at, remaining - 1u, scratch_mask, &prefix, &work);
+        if (measured <= 0 || !emit_imul_register(
+                destination, (pl_u32)multiply_right.value, multiply_bits,
+                (pl_u8 *)0, &operation)
+                || prefix > U32_MAX_VALUE - operation || work == U32_MAX_VALUE)
+            return measured < 0 ? measured : 0;
+        *bytes = prefix + operation;
+        *instructions = work + 1u;
+        selection->direct_nested_frame = 1u;
+        return 1;
     }
 
     quotient_boundary_select boundary;
@@ -6438,6 +6578,28 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
             selection->fixup_count = fixup_checkpoint;
             if (status < 0) return status;
         }
+    }
+    /* A published left subtree may be the right register of a commutative
+     * instruction. Finish the entry-dependent right subtree in place before
+     * the join; copying the published left over it would destroy that entry. */
+    physicalize_selected_operand(&block->plan, selection, destination, &physical_left);
+    if (associative_mode(mode) && physical_left.kind == PL_OPERAND_LOCAL
+            && physical_left.value != destination) {
+        pl_u32 prefix = 0u, work = 0u, operation = 0u;
+        int measured = measure_alu_tree(
+            frontend, block, selection, destination, original_right, bits,
+            output_at, remaining - 1u, scratch_mask & ~(1u << physical_left.value),
+            &prefix, &work);
+        if (measured > 0 && emit_alu_instruction(
+                destination, physical_left, bits, mode, 0u, 0, &operation)
+                && prefix <= U32_MAX_VALUE - operation && work != U32_MAX_VALUE) {
+            *bytes = prefix + operation;
+            *instructions = work + 1u;
+            selection->direct_nested_frame = 1u;
+            return 1;
+        }
+        selection->fixup_count = fixup_checkpoint;
+        if (measured < 0) return measured;
     }
     record_tree_rejection(selection, value, 3u);
     return 0;
@@ -7864,7 +8026,7 @@ static int emit_mul_add_carry_frame(const mul_add_carry_frame *shape,
         APPEND_MUL_ADD(emit_gpr_move(
             0u, shape->inverse, 64u, output ? output + at : 0, &part));
     APPEND_MUL_ADD(emit_imul_register(
-        0u, shape->low, output ? output + at : 0, &part));
+        0u, shape->low, 64u, output ? output + at : 0, &part));
     APPEND_MUL_ADD(emit_unsigned_multiply(
         shape->modulus, output ? output + at : 0, &part));
     APPEND_MUL_ADD(emit_gpr_move(
@@ -10974,6 +11136,8 @@ static int measure_direct_compare_branch(
             block, &changed, &left, &right, &bits, &condition, &test)
             || !compare_flag_prefix(&block->plan, &flag_prefix))
         return 0;
+    selection->direct_branch_frame = 1u;
+    selection->blocking_work = 0xf100u;
     subtract_handoff handoff = { 0 };
     int has_handoff = subtract_handoff_shape(
         &block->plan, changed, &handoff);
@@ -10992,11 +11156,21 @@ static int measure_direct_compare_branch(
         pl_u32 local = 0u, encoded = 0u, work = 1u;
         if (!next_compare_branch_assignment(
                 &block->plan, pending,
-                (1u << left) | (1u << right), &local))
+                (1u << left) | (1u << right), &local)) {
+            selection->blocking_work = 0x700u;
+            selection->blocking_opcode = pending;
             return 0;
+        }
         pl_operand value = block->plan.locals[local];
         int measured;
-        if (value.kind == PL_OPERAND_PROJECTION) {
+        pl_u32 owner = publication_owner(&block->plan, value);
+        if (value.kind == PL_OPERAND_NODE && owner < PL_X86_GPR_COUNT && owner != local) {
+            /* The scheduler has already published the exact shared root.
+             * Its other outputs read that owner rather than rebuilding it. */
+            pl_u32 value_bits = operand_fits_u32(
+                &block->plan, value, block->plan.node_count + 1u) ? 32u : 64u;
+            measured = emit_gpr_move(local, owner, value_bits, 0, &encoded);
+        } else if (value.kind == PL_OPERAND_PROJECTION) {
             pl_u32 destination, node_bits, mode, preserves_carry;
             pl_operand source, right_operand;
             if (!alu_node_details(
@@ -11106,14 +11280,11 @@ static int measure_direct_compare_branch(
                 encoded = seed_bytes + shift_bytes;
                 work = seed_work + 1u;
             } else {
-                pl_operand a, b;
-                pl_u32 node_bits = 0u, mode = 0u;
-                if (!arithmetic_node_details(
-                        &block->plan, value, &a, &b, &node_bits, &mode))
-                    return 0;
-                measured = measure_alu_seed(
+                pl_u32 node_bits = operand_fits_u32(
+                    &block->plan, value, block->plan.node_count + 1u) ? 32u : 64u;
+                measured = measure_alu_tree(
                     frontend, block, selection, local, value, node_bits,
-                    bytes, block->plan.node_count + 1u, &encoded, &work);
+                    bytes, block->plan.node_count + 1u, 0u, &encoded, &work);
             }
         } else {
             measured = value.kind == PL_OPERAND_CONST && !value.value
@@ -11125,8 +11296,10 @@ static int measure_direct_compare_branch(
                     bytes, &encoded);
         }
         if (measured <= 0 || bytes > U32_MAX_VALUE - encoded
-                || instructions > U32_MAX_VALUE - work)
+                || instructions > U32_MAX_VALUE - work) {
+            selection->blocking_work = 0x800u | local;
             return measured < 0 ? measured : 0;
+        }
         bytes += encoded;
         instructions += work;
         if (work > span) span = work;
@@ -11731,6 +11904,41 @@ static int write_alu_tree(const pl_x86_block *block,
         return 1;
     if (remaining <= 1u) return 0;
 
+    pl_operand signed_source;
+    pl_u32 signed_bits = 0u;
+    if (bits == 64u && value.kind == PL_OPERAND_NODE
+            && sign_extend_value(&block->plan, (pl_u32)value.value,
+                                 &signed_source, &signed_bits)) {
+        pl_u32 prefix = 0u, operation = 0u;
+        if (!write_alu_tree(
+                block, selection, destination, signed_source, 32u, output_at,
+                remaining - 1u, scratch_mask, output, &prefix)
+                || !emit_sign_extend_move(destination, destination, signed_bits,
+                                          output + prefix, &operation)
+                || prefix > U32_MAX_VALUE - operation)
+            return 0;
+        *written = prefix + operation;
+        return 1;
+    }
+
+    pl_operand multiply_left, multiply_right;
+    pl_u32 multiply_bits = 0u;
+    if (multiply_word_operands(&block->plan, selection, value, destination,
+                              &multiply_left, &multiply_right, &multiply_bits)) {
+        pl_u32 prefix = 0u, operation = 0u;
+        if (multiply_right.value == destination
+                && !(multiply_left.kind == PL_OPERAND_LOCAL
+                     && multiply_left.value == destination)) return 0;
+        if (!write_alu_tree(
+                block, selection, destination, multiply_left, multiply_bits,
+                output_at, remaining - 1u, scratch_mask, output, &prefix)
+                || !emit_imul_register(destination, (pl_u32)multiply_right.value,
+                                       multiply_bits, output + prefix, &operation)
+                || prefix > U32_MAX_VALUE - operation) return 0;
+        *written = prefix + operation;
+        return 1;
+    }
+
     quotient_boundary_select boundary;
     if (quotient_boundary_select_details(
             &block->plan, value, destination, &boundary))
@@ -12292,6 +12500,21 @@ static int write_alu_tree(const pl_x86_block *block,
                 *written = left_bytes + right_bytes + operation;
                 return 1;
             }
+        }
+    }
+    physicalize_selected_operand(&block->plan, selection, destination, &physical_left);
+    if (associative_mode(mode) && physical_left.kind == PL_OPERAND_LOCAL
+            && physical_left.value != destination) {
+        pl_u32 prefix = 0u, operation = 0u;
+        if (write_alu_tree(
+                block, selection, destination, original_right, bits, output_at,
+                remaining - 1u, scratch_mask & ~(1u << physical_left.value),
+                output, &prefix)
+                && emit_alu_instruction(destination, physical_left, bits, mode, 0u,
+                                         output + prefix, &operation)
+                && prefix <= U32_MAX_VALUE - operation) {
+            *written = prefix + operation;
+            return 1;
         }
     }
     return 0;
@@ -13759,7 +13982,12 @@ static int write_direct_compare_branch(
             return PL_ERROR_X86_SELECT;
         pl_operand value = block->plan.locals[local];
         int emitted;
-        if (value.kind == PL_OPERAND_PROJECTION) {
+        pl_u32 owner = publication_owner(&block->plan, value);
+        if (value.kind == PL_OPERAND_NODE && owner < PL_X86_GPR_COUNT && owner != local) {
+            pl_u32 value_bits = operand_fits_u32(
+                &block->plan, value, block->plan.node_count + 1u) ? 32u : 64u;
+            emitted = emit_gpr_move(local, owner, value_bits, output + at, &written);
+        } else if (value.kind == PL_OPERAND_PROJECTION) {
             pl_u32 destination, node_bits, mode, preserves_carry;
             pl_operand source, right_operand;
             if (!alu_node_details(
@@ -13860,14 +14088,11 @@ static int write_direct_compare_branch(
                     local, shift_amount, shift_bits, shift_group,
                     output + at, &written);
             } else {
-                pl_operand a, b;
-                pl_u32 node_bits = 0u, mode = 0u;
-                if (!arithmetic_node_details(
-                        &block->plan, value, &a, &b, &node_bits, &mode))
-                    return PL_ERROR_X86_SELECT;
-                emitted = write_alu_seed(
+                pl_u32 node_bits = operand_fits_u32(
+                    &block->plan, value, block->plan.node_count + 1u) ? 32u : 64u;
+                emitted = write_alu_tree(
                     block, selection, local, value, node_bits, at,
-                    block->plan.node_count + 1u, output + at, &written);
+                    block->plan.node_count + 1u, 0u, output + at, &written);
             }
         } else {
             emitted = value.kind == PL_OPERAND_CONST && !value.value
@@ -14943,7 +15168,7 @@ static int append_normalized_candidate(
     if (!selected) {
         if (selection.blocking_work
                 && (!candidates->diagnostic.blocking_work
-                    || selection.direct_alu_frame))
+                    || selection.direct_alu_frame || selection.direct_branch_frame))
             candidates->diagnostic = selection;
         return 0;
     }
