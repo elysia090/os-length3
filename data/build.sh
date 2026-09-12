@@ -76,7 +76,7 @@ artifact_audit_digest=$(sha256sum "$artifact_audit" | cut -d' ' -f1)
 # relocation-bearing linked roots; only the complete release owns post-link
 # compilation, so equivalent blocks may share across component boundaries.
 init_package_set=$(QM_OUTPUT_ROOT="$out" \
-  QM_INIT_BUILD_ROOT="$distribution_build/init" \
+  QM_INIT_BUILD_ROOT="${QM_INIT_BUILD_ROOT:-$distribution_build/init}" \
   "$here/distribution/build-init.sh")
 if [[ ! -f $init_package_set ]]; then
   printf 'verified init/service package set was not produced: %s\n' \
@@ -93,7 +93,7 @@ bash "$here/distribution/assemble-package-set.sh" \
 # Their linked x86 programs join the same release-wide publication boundary as
 # every other standard-profile executable.
 core_tools_package_set=$(QM_OUTPUT_ROOT="$out" \
-  QM_CORE_BUILD_ROOT="$distribution_build/core-tools" \
+  QM_CORE_BUILD_ROOT="${QM_CORE_BUILD_ROOT:-$distribution_build/core-tools}" \
   "$here/distribution/build-core-tools.sh")
 if [[ ! -f $core_tools_package_set ]]; then
   printf 'verified core-tools package set was not produced: %s\n' \
@@ -121,7 +121,7 @@ bash "$here/distribution/assemble-package-set.sh" \
 # exact providers against the verified linked-toolchain checkpoint. No
 # component is permitted to erase relocation evidence before release closure.
 system_tools_package_set=$(QM_OUTPUT_ROOT="$out" \
-  QM_SYSTEM_BUILD_ROOT="$distribution_build/system-tools" \
+  QM_SYSTEM_BUILD_ROOT="${QM_SYSTEM_BUILD_ROOT:-$distribution_build/system-tools}" \
   QM_TOOLCHAIN_PACKAGE_SET="$QM_TOOLCHAIN_PACKAGE_SET" \
   QM_TOOLCHAIN_ROOT="$toolchain_root" \
   "$here/distribution/build-system-tools.sh")
@@ -199,10 +199,6 @@ resolve_busybox_cc() {
   bootstrap_cc "${QM_BUSYBOX_CC:-}"
 }
 
-ensure_libelf_pkg_config() {
-  pkg-config --exists libelf
-}
-
 verify_config_lock() {
   local generated=$1 locked=$2
   if [[ ! -f $locked ]]; then
@@ -221,9 +217,7 @@ busybox_tar="$upstream/busybox-$BUSYBOX_VERSION.tar.bz2"
 fetch "$LINUX_URL" "$linux_tar" "$LINUX_SHA256"
 fetch "$BUSYBOX_URL" "$busybox_tar" "$BUSYBOX_SHA256"
 
-linux_src="$work/linux-$LINUX_VERSION"
 busybox_src="$work/busybox-$BUSYBOX_VERSION"
-extract_source_once "$linux_tar" "$linux_src"
 extract_source_once "$busybox_tar" "$busybox_src"
 busybox_o="$busybox_src"
 busybox_cc=$(resolve_busybox_cc)
@@ -244,7 +238,7 @@ if [[ ! -x $busybox_root/bin/busybox ]] || \
   KCONFIG_NOTIMESTAMP=1 make -C "$busybox_src" allnoconfig
   apply_config_fragment "$busybox_src/.config" "$here/config/busybox.fragment"
   KCONFIG_NOTIMESTAMP=1 make -C "$busybox_src" oldconfig </dev/null
-  make -C "$busybox_src" CC="$busybox_cc" -j"$(nproc)"
+  make -C "$busybox_src" CC="$busybox_cc" -j"${QM_JOBS:-$(nproc)}"
   make -C "$busybox_src" CC="$busybox_cc" \
     CONFIG_PREFIX="$busybox_root" install
   # BusyBox's install target selects its pre-stripped convenience image.
@@ -268,27 +262,10 @@ install -D -m 0644 "$here/bootstrap/Makefile" \
 boot_root=$busybox_root
 "$boot_root/bin/busybox" true
 
-linux_o="$work/linux-out/$QM_BOOTSTRAP_ID"
-mkdir -p "$linux_o"
-ensure_libelf_pkg_config
-make -C "$linux_src" O="$linux_o" ARCH=x86_64 allnoconfig
-while IFS= read -r option; do
-  key=${option%%=*}
-  symbol=${key#CONFIG_}
-  case $option in
-    CONFIG_*=y)
-      "$linux_src/scripts/config" --file "$linux_o/.config" \
-        --enable "$symbol" ;;
-    CONFIG_*=n)
-      "$linux_src/scripts/config" --file "$linux_o/.config" \
-        --disable "$symbol" ;;
-  esac
-done < "$here/config/linux.fragment"
-make -C "$linux_src" O="$linux_o" ARCH=x86_64 olddefconfig
-verify_config_lock "$linux_o/.config" \
-  "$here/config/linux-$LINUX_VERSION.config"
-make -C "$linux_src" O="$linux_o" ARCH=x86_64 -j"$(nproc)" \
-  CONFIG_ARCH_VMLINUX_NEEDS_RELOCS=y bzImage
+linked_kernel_root=${QM_LINKED_KERNEL_ROOT:-$build/linked-kernel}
+QM_LINKED_KERNEL_ROOT="$linked_kernel_root" \
+  bash "$here/build-linked-kernel.sh" bzImage
+linux_o="$linked_kernel_root/output/$QM_BOOTSTRAP_ID"
 
 # The distribution never publishes Kbuild's unoptimized linked payload.  The
 # ordinary relocation-bearing x86 ELF is the sole compiler input; its proved

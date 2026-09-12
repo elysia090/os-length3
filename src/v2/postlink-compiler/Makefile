@@ -648,6 +648,28 @@ arithmetic-cut-check: $(BUILD)/arithmetic-cut
 
 check: arithmetic-cut-check
 
+.PHONY: compare-cut-check
+$(BUILD)/compare-cut: check/compare-cut.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/compare-cut.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+compare-cut-check: $(BUILD)/compare-cut
+	$(BUILD)/compare-cut
+
+check: compare-cut-check
+
+.PHONY: carry-cut-check
+$(BUILD)/carry-cut: check/carry-cut.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/carry-cut.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+carry-cut-check: $(BUILD)/carry-cut
+	$(BUILD)/carry-cut
+
+check: carry-cut-check
+
 $(BUILD)/native-layout: check/native-layout.c $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/native-layout.c $(LIBRARY) \
 		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \

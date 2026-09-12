@@ -1576,8 +1576,24 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
 
         if (!replace && argument_count == 3u
                 && (opcode == PL_OPCODE_ADD3[0]
-                    || opcode == PL_OPCODE_ADD3[1]))
+                    || opcode == PL_OPCODE_ADD3[1])) {
             canonical_commutative(staged, 3u);
+            /* The carry expansion can directly create ADD3(a,CF,0).
+             * Its identity leaf must disappear in the shared normal form,
+             * before a backend needs to recognize the surviving binary sum. */
+            if (!projected[index + 1u])
+                for (pl_u32 slot = 0u; slot < 3u; ++slot)
+                    if (staged[slot].kind == PL_OPERAND_CONST && !staged[slot].value) {
+                        pl_u32 add_lane = opcode == PL_OPCODE_ADD3[1];
+                        for (pl_u32 next = slot + 1u; next < 3u; ++next)
+                            staged[next - 1u] = staged[next];
+                        opcode = staged[1].kind == PL_OPERAND_CONST
+                            ? PL_OPCODE_ALU_IMMEDIATE[add_lane][1]
+                            : PL_OPCODE_ALU_REGISTER[add_lane][1];
+                        argument_count = 2u;
+                        break;
+                    }
+        }
         if (!replace && argument_count == 2u
                 && (opcode == PL_OPCODE_MULR
                     || opcode == PL_OPCODE_LANE32_MULR))

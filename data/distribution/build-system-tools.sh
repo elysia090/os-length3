@@ -303,7 +303,7 @@ fi
 rm -f "$libnftnl_root/usr/lib/libnftnl.la"
 
 nftables_recipe_key=$(
-  printf '%s\n' 'nftables-static-archives-v2' |
+  printf '%s\n' 'nftables-static-archives-v3-bash-config-status' |
     sha256sum | cut -d' ' -f1
 )
 nftables_root=$prefix/nftables-$nftables_recipe_key-root
@@ -312,6 +312,9 @@ if [[ ! -f $nftables_root/.complete ]]; then
   mkdir -p "$nftables_o" "$nftables_root"
   (
     cd "$nftables_o"
+    # Upstream's generated nftversion.h action uses an arithmetic for loop.
+    # Keep its configure and config.status on Bash, not the host's POSIX sh.
+    export CONFIG_SHELL=/bin/bash
     CC="$cc" CFLAGS='-O2 -std=gnu17' \
       CPPFLAGS="$base_cpp -I$libmnl_root/usr/include -I$libnftnl_root/usr/include" \
       LDFLAGS="-static $base_ld" \
@@ -322,7 +325,7 @@ if [[ ! -f $nftables_root/.complete ]]; then
       LIBS="-Wl,--start-group $libnftnl_root/usr/lib/libnftnl.a $libmnl_root/usr/lib/libmnl.a -Wl,--end-group" \
       PKG_CONFIG="$pkgconf" \
       PKG_CONFIG_LIBDIR="$libnftnl_root/usr/lib/pkgconfig:$libmnl_root/usr/lib/pkgconfig:$base_pc" \
-      "$nftables_src/configure" --prefix=/usr --bindir=/usr/bin \
+      bash "$nftables_src/configure" --prefix=/usr --bindir=/usr/bin \
         --sbindir=/usr/bin --libdir=/usr/lib --disable-shared \
         --enable-static --disable-debug --disable-man-doc --with-mini-gmp \
         --without-cli --without-xtables --without-json
@@ -510,13 +513,25 @@ if [[ ! -f $nano_root/.complete ]]; then
   touch "$nano_root/.complete"
 fi
 
-tzdata_root=$(root_for tzdata)
+. "$data/bootstrap/tzcode.env"
+[[ $TZCODE_VERSION == "$TZDATA_VERSION" ]]
+tzcode_archive=$upstream/tzcode$TZCODE_VERSION.tar.gz
+fetch "$TZCODE_URL" "$tzcode_archive" "$TZCODE_SHA256"
+tzcode_src=$source_root/tzcode-$TZCODE_VERSION
+extract_tzdata_once "$tzcode_archive" "$tzcode_src"
+tzdata_recipe_key=$(printf '%s\n' "$TZCODE_SHA256" "$TZDATA_SHA256" \
+  "$compiler_id" "$QM_BOOTSTRAP_ID" 'zic-source-paired-v1' | sha256sum | cut -d' ' -f1)
+tzdata_root=$prefix/tzdata-$tzdata_recipe_key-root
 if [[ ! -f $tzdata_root/.complete ]]; then
+  # Build the exact data compiler instead of depending on an untracked host
+  # zic. This tool remains in the build tree and is not a release executable.
+  make -C "$tzcode_src" CC="$cc" CFLAGS='-O2' \
+    VERSION="$TZCODE_VERSION" VERSION_DEPS= zic
   zoneinfo=$tzdata_root/usr/share/zoneinfo
   mkdir -p "$zoneinfo"
   make -C "$tzdata_src" VERSION="$TZDATA_VERSION" VERSION_DEPS= \
     PACKRATDATA=backzone PACKRATLIST=zone.tab tzdata.zi
-  zic -d "$zoneinfo" "$tzdata_src/tzdata.zi"
+  "$tzcode_src/zic" -d "$zoneinfo" "$tzdata_src/tzdata.zi"
   install -m 644 "$tzdata_src/iso3166.tab" "$tzdata_src/zone.tab" \
     "$tzdata_src/zone1970.tab" "$zoneinfo"
   touch "$tzdata_root/.complete"
