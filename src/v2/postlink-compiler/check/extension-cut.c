@@ -32,22 +32,39 @@ static pl_u64 arithmetic(pl_u64 left, pl_u64 right, pl_u32 bits,
     return value;
 }
 
-static int check_case(pl_u32 width, pl_u32 bits, pl_u32 mode, pl_u64 *comparisons)
+static int check_case(pl_u32 width, pl_u32 bits, pl_u32 mode,
+                      pl_u32 signed_expression, pl_u64 *comparisons)
 {
     /* SysV inputs stay in RSI/RDX. The zero and RIP-relative address are
      * independent publications, while ADD/SUB/logic owns the final flags. */
     pl_u8 source[32];
     pl_u32 length = 0u;
-    if (width == 8u) source[length++] = 0x40u;
-    if (width < 32u) source[length++] = 0x0fu;
-    source[length++] = width == 8u ? 0xb6u : width == 16u ? 0xb7u : 0x89u;
-    source[length++] = width == 32u ? 0xf0u : 0xc6u; /* mov[zx] eax, esi/si/sil */
+    if (signed_expression) {
+        static const pl_u8 seed[] = {
+            0x89u, 0xf0u, 0x05u, 0x81u, 0x80u, 0x21u, 0x84u,
+        }; /* add a word constant before the signed projection */
+        memcpy(source, seed, sizeof seed); length = sizeof seed;
+        source[length++] = 0x48u;
+        if (width == 32u) source[length++] = 0x98u;
+        else {
+            source[length++] = 0x0fu;
+            source[length++] = width == 8u ? 0xbeu : 0xbfu;
+            source[length++] = 0xc0u;
+        }
+        source[length++] = 0x49u; source[length++] = 0x89u; source[length++] = 0xc0u;
+    } else {
+        if (width == 8u) source[length++] = 0x40u;
+        if (width < 32u) source[length++] = 0x0fu;
+        source[length++] = width == 8u ? 0xb6u : width == 16u ? 0xb7u : 0x89u;
+        source[length++] = width == 32u ? 0xf0u : 0xc6u;
+    }
     static const pl_u8 independent[] = {
         0x45u, 0x31u, 0xc0u,                         /* xor r8d,r8d */
         0x4cu, 0x8du, 0x0du, 0u, 1u, 0u, 0u,       /* lea r9,[rip+256] */
     };
-    memcpy(source + length, independent, sizeof independent);
-    length += sizeof independent;
+    pl_u32 independent_at = signed_expression ? 3u : 0u;
+    memcpy(source + length, independent + independent_at, sizeof independent - independent_at);
+    length += (pl_u32)sizeof independent - independent_at;
     pl_u32 target_offset = length + 256u;
     static const pl_u8 operation[] = { 0x01u, 0x29u, 0x21u, 0x09u, 0x31u };
     if (bits == 64u) source[length++] = 0x48u;
@@ -93,7 +110,8 @@ static int check_case(pl_u32 width, pl_u32 bits, pl_u32 mode, pl_u64 *comparison
             }
         }
     if (status || !selected.normalized_family_present || selected.copied_source
-            || work > 4u || span > 2u) goto failed;
+            || work > (signed_expression ? 7u : 4u)
+            || span > (signed_expression ? 4u : 2u)) goto failed;
     pl_u8 *output = memory + 512u;
     status = pl_x86_select_write_measured(&frontend, &block, &selected, output, 256u, &written);
     if (status || selected.fixup_count != 1u || selected.fixups[0].target != target
@@ -114,12 +132,18 @@ static int check_case(pl_u32 width, pl_u32 bits, pl_u32 mode, pl_u64 *comparison
         pl_u64 left = i < 256u ? boundary[i % 16u] : random;
         pl_u64 right = i < 256u ? boundary[i / 16u] : random * 17u;
         pl_u64 flags = 0u, mask = mode < 2u ? 0x8d5u : 0x8c5u;
-        pl_u64 expected = arithmetic(left & (UINT64_MAX >> (64u - width)),
-                                     right, bits, mode, &flags);
+        pl_u64 seed = (signed_expression ? (pl_u32)(left + 0x84218081u) : left)
+                    & (UINT64_MAX >> (64u - width));
+        if (signed_expression) {
+            pl_u64 sign = 1ull << (width - 1u);
+            seed = (seed ^ sign) - sign;
+        }
+        pl_u64 expected = arithmetic(seed, right, bits, mode, &flags);
         observation before = { 0 }, after = { 0 };
         original.function(&before, left, right);
         optimized.function(&after, left, right);
-        if (before.value != expected || after.value != expected || before.zero || after.zero
+        if (before.value != expected || after.value != expected
+                || before.zero != (signed_expression ? seed : 0u) || after.zero != before.zero
                 || before.address != target || after.address != target
                 || (before.flags & mask) != flags || (after.flags & mask) != flags) {
             fprintf(stderr, " input=%llx/%llx value=%llx/%llx expected=%llx flags=%llx/%llx expected=%llx address=%llx/%llx target=%llx\n",
@@ -142,8 +166,8 @@ failed:
         selected.output_bytes, selected.fixup_count,
         (unsigned long long)(selected.fixup_count ? selected.fixups[0].target : 0u),
         (unsigned long long)target);
-    fprintf(stderr, "extension cut: RED width=%u bits=%u mode=%u status=%d work/span=%u/%u comparisons=%llu\n",
-            width, bits, mode, status, work, span, (unsigned long long)*comparisons);
+    fprintf(stderr, "extension cut: RED width=%u bits=%u mode=%u signed=%u status=%d work/span=%u/%u comparisons=%llu\n",
+            width, bits, mode, signed_expression, status, work, span, (unsigned long long)*comparisons);
     test_code_release(memory, 4096u);
     return 0;
 }
@@ -154,9 +178,10 @@ int main(void)
     for (pl_u32 width = 8u; width <= 32u; width *= 2u)
         for (pl_u32 bits = 32u; bits <= 64u; bits *= 2u)
             for (pl_u32 mode = 0u; mode < 5u; ++mode)
-                if (!check_case(width, bits, mode, &comparisons)) return 1;
+                for (pl_u32 sign = 0u; sign < 2u; ++sign)
+                    if (!check_case(width, bits, mode, sign, &comparisons)) return 1;
     printf("extension cut: green (%llu source/generated/reference comparisons; "
-           "8/16/32-bit zero extension, 32/64-bit arithmetic, exact flags and rebased address)\n",
+           "8/16/32-bit zero/signed extension, shared expressions, 32/64-bit arithmetic, exact flags and rebased address)\n",
            (unsigned long long)comparisons);
     return 0;
 }

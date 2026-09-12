@@ -1,6 +1,42 @@
 # Remaining work
 
-## Checkpoint: 2026-09-13
+## Current checkpoint: 2026-09-13 (tests red)
+
+The current working changes extend the shared native expression/publication
+path: carry masks use SBB instead of a materialized Boolean; arithmetic-result
+branches reuse the ordinary ALU frame; signed extensions preserve narrower
+producer widths; CMP/TEST constants normalize at their observed width; and
+comparison flags can be shared through CMOV followed by sign extension or NOT.
+A 32-bit full-mask rewrite also now preserves the required zero extension.
+Executable carry, comparison, extension and selection regressions accompany
+these changes. The signed clamp witness reaches 4 work / 3 span; this is an
+instruction-graph cost, not a native elapsed-time measurement.
+
+Before the latest address-field alias validation change, the fixed kernel
+scan selected 788,279 / 788,279 blocks with zero Pareto violations and 862
+normalization escapes, down from 1,485. Its first remaining witness was
+`0xffffffff812045ea..0xffffffff81204604`. GNU make selected 42,184 / 42,184
+blocks with zero Pareto violations and 52 escapes, down from 81; its first
+witness was `0x186bb..0x186f5`. Both publication gates still fail. These counts
+predate the latest change and are not successful optimized release results.
+
+The latest Linux `make check` is RED. Allowing frames with constant/copy GPR
+outputs and live comparison flags exposed missing source-address relocation
+bindings in `modular-address-check`. Adding source-address alias validation
+makes that check pass, but now `condition-code-check` rejects its RIP-relative
+32-bit CMOV fixture (`cc=0`, `bits=32`, `published=0`, `relative=1`) because no
+bounded generated body is accepted. Resolve full-address relocation ownership
+versus low-32-bit value projection without weakening either check. Then rerun
+the full check and the fixed kernel/GNU make scans before claiming new closure
+counts. The expanded comparison, carry and extension checks previously passed
+14,680,064, 3,080,192 and 245,760 comparisons respectively; those passes do not
+override the current full-suite failure.
+
+This is a work-in-progress checkpoint, not a green release. All baseline build
+checkpoints below remain reusable; do not rebuild the distribution from scratch
+to fix this selector regression.
+
+## Previous checkpoint: 2026-09-13 (965a337)
 
 The Windows-hosted QEMU build guest has built the fixed Linux 7.1.8 kernel
 and bzImage, BusyBox, the toolchain package set (including Git 2.55.0),

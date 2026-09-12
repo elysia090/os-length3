@@ -15,6 +15,8 @@ static int append_control_fixup(
     pl_x86_native_selection *selection, pl_u8 bytes,
     pl_u32 at, pl_u32 next_ip_at, pl_u64 target);
 static pl_u32 publication_owner(const pl_plan *plan, pl_operand operand);
+static int publication_emits_selected_flag(const pl_plan *plan,
+    pl_operand value, pl_u32 destination, pl_u32 flag_node);
 static int published_operand_local(const pl_plan *plan, pl_operand value,
                                    pl_u32 *local);
 static int zero_result_operand(const pl_plan *plan, pl_operand value);
@@ -2143,7 +2145,10 @@ static int alu_frame_shape(const pl_plan *plan, pl_u32 *changed,
             return 0;
     }
     (void)alu_nodes;
-    return *changed && derived_publications;
+    /* A standalone comparison remains observable even when every GPR
+     * publication is a constant or copy. Its protected entry operands still
+     * use the same scheduling law before those coordinates are overwritten. */
+    return *changed && (derived_publications || *final_flag_node);
 }
 
 typedef struct {
@@ -2727,10 +2732,13 @@ static int frame_publication_clobbers_flags(const pl_plan *plan,
     pl_u32 complement_bits = 0u;
     if (complement_node_details(
             plan, publication, &complement_source, &complement_bits)) {
-        (void)complement_source;
         (void)complement_bits;
-        return 0;
+        return frame_publication_clobbers_flags(plan, complement_source);
     }
+    pl_operand extended;
+    pl_u32 extend_bits = 0u;
+    if (sign_extend_value(plan, (pl_u32)publication.value, &extended, &extend_bits))
+        return frame_publication_clobbers_flags(plan, extended);
     pl_u32 opcode = plan->nodes[publication.value - 1u].opcode;
     if (opcode == PL_OPCODE_LANE32_INSERT
             || opcode == PL_OPCODE_LANE64_INSERT
@@ -2792,8 +2800,8 @@ static int next_alu_frame_assignment(const pl_plan *plan, pl_u32 pending,
         /* The final flags producer must be textually last.  Other dense
          * publications may consume an earlier flags version (CMOV/SETcc)
          * even when they are not themselves ALU projections. */
-        if (publication_is_flag_result(
-                plan, published, final_flag_node)
+        if ((publication_is_flag_result(plan, published, final_flag_node)
+                || publication_emits_selected_flag(plan, published, local, final_flag_node))
                 && publication_owner(plan, published) == local) {
             pl_u32 blockers = pending & ~(1u << local);
             for (pl_u32 fanout = 0u;
@@ -3120,7 +3128,8 @@ static int zero_extend_high8_node(const pl_plan *plan, pl_u32 node_number,
 }
 
 /* Modular arithmetic and bitwise operations can compute the consumer's low
- * bits directly.  Shifts and rotates cannot: high bits and the count mask
+ * bits directly, but a narrow producer must wrap before zero extension into
+ * a wider consumer. Shifts and rotates cannot truncate early: high bits and the count mask
  * depend on the producer's width before the consumer truncates its input. */
 static pl_u32 alu_input_expression_bits(const pl_plan *plan,
                                         pl_operand value,
@@ -3128,8 +3137,10 @@ static pl_u32 alu_input_expression_bits(const pl_plan *plan,
 {
     pl_operand source, amount;
     pl_u32 bits = 0u, group = 0u;
-    return shift_node_details(plan, value, &source, &amount, &bits, &group)
-        ? bits : consumer_bits;
+    if (shift_node_details(plan, value, &source, &amount, &bits, &group)) return bits;
+    if (arithmetic_tree_details(plan, value, &source, &amount, &bits, &group)
+            && bits < consumer_bits) return bits;
+    return consumer_bits;
 }
 
 static pl_u32 operand_expression_bits(const pl_plan *plan,
@@ -3138,7 +3149,9 @@ static pl_u32 operand_expression_bits(const pl_plan *plan,
 {
     if (value.kind == PL_OPERAND_NODE && value.value && value.value <= plan->node_count) {
         pl_u32 opcode = plan->nodes[value.value - 1u].opcode;
-        if (opcode == PL_OPCODE_X86_TEST_CONDITION || opcode == PL_OPCODE_X86_CONDITION)
+        if (opcode == PL_OPCODE_X86_TEST_CONDITION || opcode == PL_OPCODE_X86_CONDITION
+                || opcode == PL_OPCODE_LANE64_EXTEND8_S
+                || opcode == PL_OPCODE_LANE64_EXTEND16_S || opcode == PL_OPCODE_EXTEND32_S)
             return 64u;
         if (opcode == PL_OPCODE_ADD3[0]) return 32u;
         if (opcode == PL_OPCODE_ADD3[1]) return 64u;
@@ -3829,16 +3842,22 @@ static int emit_standalone_flag_publication(
 
 typedef struct {
     standalone_flag_publication compare;
-    pl_u32 source, bits, mode;
+    pl_u32 source, bits, mode, zero_mask;
     pl_operand immediate;
 } carry_adjustment;
 
 static int carry_adjustment_details(const pl_plan *plan, pl_operand value,
-                                     pl_u32 destination, carry_adjustment *out)
+                                     pl_u32 destination, pl_u32 bits, carry_adjustment *out)
 {
     pl_operand current, predicate;
     pl_u32 mode = 0u;
     pl_u64 offset = 0u;
+    pl_operand complement, negated;
+    pl_u32 complement_bits = 0u, negated_bits = 0u;
+    int complemented_mask = complement_node_details(plan, value, &complement, &complement_bits)
+        && negation_node_details(plan, complement, &negated, &negated_bits)
+        && complement_bits == negated_bits;
+    if (complemented_mask) value = complement;
     if (!arithmetic_tree_details(plan, value, &current, &predicate, &out->bits, &mode)) {
         if (value.kind != PL_OPERAND_NODE || !value.value || value.value > plan->node_count)
             return 0;
@@ -3862,6 +3881,12 @@ static int carry_adjustment_details(const pl_plan *plan, pl_operand value,
         if (mode != 1u || !condition_value_details(plan, current, &condition)) return 0;
         current = predicate;
     }
+    if (complemented_mask) {
+        if (current.kind != PL_OPERAND_CONST || current.value || offset || mode != 3u)
+            return 0;
+        /* ~(0-p) = 0-(1-p) for a Boolean p. */
+        condition.condition ^= 1u;
+    }
     if ((condition.condition != 2u && condition.condition != 3u)
             || condition.flags.kind != PL_OPERAND_NODE
             || !standalone_flag_publication_details(
@@ -3876,9 +3901,12 @@ static int carry_adjustment_details(const pl_plan *plan, pl_operand value,
         current = base;
     }
     physicalize_published_operand(plan, destination, &current);
-    if (current.kind != PL_OPERAND_LOCAL || current.value >= PL_X86_GPR_COUNT)
+    out->zero_mask = current.kind == PL_OPERAND_CONST && !current.value
+        && !offset && mode == 3u;
+    if (!out->zero_mask
+            && (current.kind != PL_OPERAND_LOCAL || current.value >= PL_X86_GPR_COUNT))
         return 0;
-    out->source = (pl_u32)current.value;
+    out->source = out->zero_mask ? destination : (pl_u32)current.value;
     /* a+k + CF = ADC(a,k); a+k - CF = SBB(a,-k).
      * Substituting !CF = 1-CF changes the sign and adds +/-1 to k.
      * Keep the Boolean in the carry flag instead of materializing SETcc. */
@@ -3886,6 +3914,11 @@ static int carry_adjustment_details(const pl_plan *plan, pl_operand value,
     if (condition.condition == 3u) offset += mode == 1u ? 1u : U64_MAX_VALUE;
     out->immediate.kind = PL_OPERAND_CONST;
     out->immediate.value = out->mode == 2u ? offset : 0ull - offset;
+    /* Only the arithmetic word is truncated. The condition still observes
+     * the original comparison width, so low32(a +/- CF) commutes with this
+     * projection even when CF came from a 64-bit comparison. */
+    if (bits != out->bits && !(bits == 32u && out->bits == 64u)) return 0;
+    out->bits = bits;
     if (out->bits == 32u) out->immediate.value &= U32_MAX_VALUE;
     return 1;
 }
@@ -3896,6 +3929,23 @@ static int emit_carry_adjustment(const carry_adjustment *shape, pl_u32 destinati
     pl_u32 at = 0u, encoded = 0u;
     if (!emit_standalone_flag_publication(&shape->compare, output, &at)) return 0;
     *work = 1u;
+    if (shape->zero_mask) {
+        /* 0-CF = SBB(r,r), independently of r's old bits. Complementing
+         * that word gives 0-!CF; no scalar Boolean or zero seed is needed. */
+        pl_operand self = { PL_OPERAND_LOCAL, destination };
+        if (!emit_alu_instruction(destination, self, shape->bits, 4u, 0u,
+                                  output ? output + at : 0, &encoded)) return 0;
+        at += encoded;
+        ++*work;
+        if (shape->mode == 2u) {
+            if (!emit_not_register(destination, shape->bits,
+                                   output ? output + at : 0, &encoded)) return 0;
+            at += encoded;
+            ++*work;
+        }
+        *written = at;
+        return 1;
+    }
     /* CMP precedes the seed so even a comparison reading the old destination
      * is valid. MOV preserves CF; it can share the comparison's dependency wave. */
     if (destination != shape->source) {
@@ -4240,6 +4290,29 @@ static int write_quotient_boundary_select(
     pl_u32 remaining, pl_u32 scratch_mask,
     pl_u8 *output, pl_u32 *written);
 
+static int publication_emits_selected_flag(const pl_plan *plan,
+    pl_operand value, pl_u32 destination, pl_u32 flag_node)
+{
+    if (!plan || !flag_node) return 0;
+    /* MOVSX/CDQE and NOT preserve the comparison produced inside a selected
+     * value. Their enclosing publication owns that same flag result; no
+     * second standalone CMP is needed, and the scheduler must keep it last. */
+    for (pl_u32 remaining = plan->node_count + 1u; remaining; --remaining) {
+        conditional_select select;
+        if (conditional_select_details(plan, value, destination, &select))
+            return select.has_compare && select.compare_node == flag_node;
+        pl_operand source;
+        pl_u32 bits = 0u;
+        if (value.kind == PL_OPERAND_NODE
+                && sign_extend_value(plan, (pl_u32)value.value, &source, &bits))
+            value = source;
+        else if (complement_node_details(plan, value, &source, &bits))
+            value = source;
+        else return 0;
+    }
+    return 0;
+}
+
 static int publication_emits_flag_node(const pl_plan *plan,
                                        pl_u32 changed,
                                        pl_u32 flag_node)
@@ -4247,11 +4320,7 @@ static int publication_emits_flag_node(const pl_plan *plan,
     if (!plan || !flag_node) return 0;
     for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
         if (!(changed & (1u << local))) continue;
-        conditional_select select;
-        if (conditional_select_details(
-                plan, plan->locals[local], local, &select)
-                && select.has_compare
-                && select.compare_node == flag_node)
+        if (publication_emits_selected_flag(plan, plan->locals[local], local, flag_node))
             return 1;
     }
     return 0;
@@ -6053,8 +6122,7 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
     }
 
     carry_adjustment adjustment;
-    if (carry_adjustment_details(&block->plan, value, destination, &adjustment)
-            && adjustment.bits == bits
+    if (carry_adjustment_details(&block->plan, value, destination, bits, &adjustment)
             && emit_carry_adjustment(&adjustment, destination, 0, bytes, instructions)) {
         selection->direct_nested_frame = 1u;
         return 1;
@@ -8727,11 +8795,59 @@ static int measure_shared_parent_frame(
     return 1;
 }
 
+/* A branch observing the published flag word adds one control edge, not a
+ * different value grammar. Compile the same complete frame, then attach Jcc.
+ * The source extent remains intact for address-field relocation. */
+static int conditional_alu_body(const pl_x86_block *block,
+                                 pl_x86_block *body, pl_u32 *condition)
+{
+    if (!block || !body || !condition || block->flow != PL_X86_FLOW_CONDITIONAL
+            || !block->has_predicate || block->successor_count != 2u
+            || block->plan.local_count != PL_X86_LOCAL_COUNT
+            || block->predicate.kind != PL_OPERAND_PROJECTION
+            || (block->predicate.value & 0xffu) >= 16u) return 0;
+    pl_operand flags = block->plan.locals[PL_X86_RFLAGS_LOCAL];
+    if (flags.kind != PL_OPERAND_NODE || !flags.value
+            || flags.value > block->plan.node_count
+            || (block->predicate.value >> 8u) != flags.value) return 0;
+    pl_u32 opcode = block->plan.nodes[flags.value - 1u].opcode;
+    /* Standalone CMP/TEST already has its shared value/publication scheduler.
+     * This joins arithmetic-result exits to the ordinary ALU frame. */
+    if (opcode == PL_OPCODE_X86_COMPARE || opcode == PL_OPCODE_X86_TEST) return 0;
+    *condition = (pl_u32)block->predicate.value & 0xffu;
+    *body = *block;
+    body->flow = PL_X86_FLOW_NEXT;
+    body->has_predicate = 0u;
+    body->predicate = (pl_operand){ PL_OPERAND_CONST, 0u };
+    body->successor_count = 1u;
+    body->successor[0] = block->successor[1];
+    return 1;
+}
+
 static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                                     const pl_x86_block *block,
                                     pl_x86_native_selection *selection)
 {
     if (!frontend || !block || !selection) return 0;
+    if (block->flow == PL_X86_FLOW_CONDITIONAL) {
+        pl_x86_block body;
+        pl_u32 condition = 0u;
+        if (!conditional_alu_body(block, &body, &condition)) return 0;
+        int measured = measure_direct_alu_frame(frontend, &body, selection);
+        if (measured <= 0) return measured;
+        pl_u32 bytes = selection->output_bytes;
+        pl_u32 tail = block->relax_short_control ? 6u : 2u;
+        if (bytes > U32_MAX_VALUE - tail || selection->output_instructions == U32_MAX_VALUE)
+            return PL_ERROR_X86_SELECT;
+        int status = append_control_fixup(frontend, block, selection,
+            (pl_u8)(block->relax_short_control ? 4u : 1u),
+            bytes + (block->relax_short_control ? 2u : 1u),
+            bytes + tail, block->successor[0]);
+        if (status) return status;
+        selection->output_bytes += tail;
+        ++selection->output_instructions;
+        return 1;
+    }
     if (block->kind != PL_X86_BLOCK_DIRECT
             || (block->flow != PL_X86_FLOW_NEXT
                 && block->flow != PL_X86_FLOW_JUMP)
@@ -9495,6 +9611,8 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
         if (publication_span > span) span = publication_span;
         pending &= ~(1u << local);
     }
+    int aliases = alias_source_address_fields(frontend, block, selection);
+    if (aliases <= 0) return aliases;
     if (block->flow == PL_X86_FLOW_JUMP) {
         pl_u32 branch_bytes = block->relax_short_control ? 5u : 2u;
         if (bytes > U32_MAX_VALUE - branch_bytes)
@@ -12173,8 +12291,7 @@ static int write_alu_tree(const pl_x86_block *block,
 
     carry_adjustment adjustment;
     pl_u32 adjustment_work = 0u;
-    if (carry_adjustment_details(&block->plan, value, destination, &adjustment)
-            && adjustment.bits == bits
+    if (carry_adjustment_details(&block->plan, value, destination, bits, &adjustment)
             && emit_carry_adjustment(&adjustment, destination, output, written,
                                      &adjustment_work)) return 1;
     pl_operand signed_source;
@@ -13266,6 +13383,21 @@ static int write_direct_alu_frame(const pl_x86_block *block,
 {
     if (!block || !selection || !selection->direct_alu_frame || !output)
         return PL_ERROR_X86_SELECT;
+    if (block->flow == PL_X86_FLOW_CONDITIONAL) {
+        pl_x86_block body;
+        pl_u32 condition = 0u, tail = block->relax_short_control ? 6u : 2u;
+        if (!conditional_alu_body(block, &body, &condition)
+                || selection->output_bytes < tail) return PL_ERROR_X86_SELECT;
+        pl_x86_native_selection body_selection = *selection;
+        body_selection.output_bytes -= tail;
+        int status = write_direct_alu_frame(&body, &body_selection, output);
+        if (status) return status;
+        pl_u32 at = body_selection.output_bytes;
+        if (block->relax_short_control) output[at++] = 0x0fu;
+        output[at++] = (pl_u8)((block->relax_short_control ? 0x80u : 0x70u) | condition);
+        while (at < selection->output_bytes) output[at++] = 0u;
+        return 0;
+    }
     pl_u32 changed, final_flag_node;
     if (!alu_frame_shape(&block->plan, &changed, &final_flag_node))
         return PL_ERROR_X86_SELECT;
