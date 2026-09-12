@@ -1,5 +1,22 @@
 # Architecture
 
+The responsibility-level contracts are:
+
+* [POST-COMPILE.md](POST-COMPILE.md): why linked x86 receives a second,
+  whole-machine compilation step and what direct executable it must produce;
+* [ARTIFACT.md](ARTIFACT.md): observable equivalence, canonical identity, and
+  the derivation of the minimum released program;
+* [STORAGE.md](STORAGE.md): untrusted-tier delivery, encryption, erasure,
+  persistent roots, leases, and recovery;
+* [PACKAGE.md](PACKAGE.md): package metadata, dependency closure, filesystem
+  ownership, transaction effects, signing, installation, and audit;
+* [NETWORK.md](NETWORK.md): the virtual NIC, WebTransport, gateway, and replay
+  boundary.
+
+`ARCHITECTURE.md` is the dependency map and measured implementation narrative.
+The responsibility documents above are normative when an older implementation
+description conflicts with them.
+
 ## Layers
 
 Each module imports only from lower layers, so the dependency graph is a DAG and

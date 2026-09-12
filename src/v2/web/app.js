@@ -6,8 +6,11 @@
 // its title, and the Derivation link in the footer opens everything else for
 // anyone who wants it.
 
-import { readConfig } from './clang.js';
 import { mountLinuxTerminal } from './linux-terminal.js';
+
+function readConfig() {
+  return {};
+}
 
 const $ = (id) => document.getElementById(id);
 

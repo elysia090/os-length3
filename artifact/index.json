@@ -7,34 +7,17 @@
       "identity": "24fbed474c7b5b4968fd73fc4827440b93fb351c1b6264516130300eff3e7bf5",
       "path": "compiler/module/index.json"
     },
-    "linux-x86-64": {
-      "bytes": 117954710,
-      "format": "x86-boot-cache-v1",
-      "identity": "b179f164b0a48a15c43b9e714595cbe3f5b03ccb7669099719b0deb0c216e58d",
-      "initrd_bytes": 705024,
-      "memory_bytes": 536870912,
-      "path": "linux-x86-64/index.json"
-    },
-    "linux-x86-64-postlink": {
-      "bytes": 32811421,
-      "format": "x86-native-machine-v5",
-      "identity": "078ea906acc5df53d250b69e8d670f727cbb456cea9cf9f69e3bbc39fb196cc0",
-      "path": "linux-x86-64-postlink/index.json",
-      "source_identity": "65e295bf130206e695905b617fe985e659e07436cc34e02af3bfc72375f715ab"
-    },
-    "toolchain": {
-      "bytes": 324997120,
-      "format": "linux-x86-64-system-v1",
-      "identity": "58edc80e0a8c352407400e61895d54cb364c584a82d146193be655b5bdfac6ad",
-      "path": "toolchain/index.json",
-      "version": "2026.08.15",
-      "vfs_entries": 2229
+    "postlink-compiler": {
+      "bytes": 602574,
+      "format": "postlink-page-compiler-v1",
+      "identity": "eb66dc4a91badd9e559e020934b0b557482f14324d1ada6e097eaa88c5b7d485",
+      "path": "postlink-compiler/index.json"
     },
     "vm": {
-      "bytes": 161161,
+      "bytes": 484398,
       "components": "vm/index.json",
       "format": "webassembly-runtime-v1",
-      "identity": "90a36c32b1c5c5a7e04214443551c371b2ad5ebf4d904bae666d95bdaa9aeadc",
+      "identity": "cbb919e956ef8b22c45da6727651b48fcdca6d737cee793b6792d7282ecaa158",
       "path": "vm/module/index.json"
     }
   },

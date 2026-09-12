@@ -8,3 +8,7 @@ src/v2/data/out/
 /data/upstream/
 /data/toolchain/build/
 /temp/
+/.tmp/
+/.pytest_cache/
+/.uv-cache/
+/*.obj

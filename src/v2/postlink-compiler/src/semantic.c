@@ -1,6 +1,6 @@
 /* x86 source instructions lowered directly to the physical SSA vocabulary. */
 
-#include <postlink/semantic.h>
+#include "internal/semantic.h"
 
 #define SEMANTIC_NODE_CAPACITY      16u
 #define SEMANTIC_ARGUMENT_CAPACITY 80u
@@ -2665,6 +2665,11 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
     out->trap_vector = instruction->trap_vector;
     out->machine_operation = instruction->machine_operation;
     out->machine_argument = instruction->machine_argument;
+    /* HLT is a machine barrier, not a permanent control terminator.  After
+     * an accepted interrupt the architectural RIP is the following
+     * instruction, so the barrier result must carry that exact continuation.
+     * Losing it made native output fall into whichever block happened to be
+     * laid out next and left the Wasm machine ABI unable to resume exactly. */
     if (out->machine_operation == PL_X86_MACHINE_FAR_RETURN) {
         out->target = operand(PL_OPERAND_CONST, 0u);
         out->successor_count = 0u;
@@ -2686,8 +2691,11 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
             || (out->machine_operation == PL_X86_MACHINE_SYSTEM_SELECTOR
                 && ((out->machine_argument >> 8u) & 1u))
             || (out->machine_operation == PL_X86_MACHINE_CR0_STATUS
-                && !(out->machine_argument & 0xffu)
-                && ((out->machine_argument >> 8u) & 1u))
+                && ((out->machine_argument & 0xffu)
+                    == PL_X86_CR0_WRITE_MACHINE_STATUS
+                    || (out->machine_argument & 0xffu)
+                       == PL_X86_CR0_READ_MACHINE_STATUS)
+                && (out->machine_argument & PL_X86_CR0_STATUS_MEMORY))
             || (out->machine_operation == PL_X86_MACHINE_VALIDATE_SELECTOR
                 && ((out->machine_argument >> 1u) & 1u))
             || (out->machine_operation == PL_X86_MACHINE_VECTOR
@@ -2735,9 +2743,15 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                         && ((out->machine_argument >> 8u) & 0xffu))
                     || ((out->machine_argument & 0xffu) == 39u
                         && ((out->machine_argument >> 8u) & 0xffu))
-                     || ((out->machine_argument & 0xffu) == 40u
+                    || ((out->machine_argument & 0xffu) == 40u
+                        && ((out->machine_argument >> 8u) & 0xffu))
+                     || (out->machine_argument & 0xffu) == 51u
+                     || ((out->machine_argument & 0xffu)
+                         == PL_X86_X87_BYTE_SHUFFLE
                          && ((out->machine_argument >> 8u) & 0xffu))
-                     || (out->machine_argument & 0xffu) == 51u))) {
+                     || ((out->machine_argument & 0xffu)
+                         == PL_X86_X87_ALIGN_RIGHT
+                         && ((out->machine_argument >> 8u) & 0xffu))))) {
         pl_u32 atomic_kind = (pl_u32)out->machine_argument & 0xffu;
         pl_u32 expected = out->machine_operation == PL_X86_MACHINE_ATOMIC
                         && atomic_kind != 3u
@@ -2748,23 +2762,47 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                            == PL_X86_MACHINE_VALIDATE_SELECTOR ? 1u
                         : out->machine_operation == PL_X86_MACHINE_VECTOR
                         ? ((out->machine_argument & 0xffu) == 28u ? 1u
+                         : ((out->machine_argument & 0xffu)
+                            == PL_X86_VECTOR_EXTRACT_LANE ? 3u
+                         : ((out->machine_argument & 0xffu)
+                            == PL_X86_VECTOR_SCALAR_FLOAT
+                            && ((out->machine_argument
+                                 >> PL_X86_SCALAR_FLOAT_OPERATION_SHIFT)
+                                & 0xffu)
+                               == PL_X86_SCALAR_FLOAT_PREDICATE ? 3u
                          : (((out->machine_argument & 0xffu) == 7u
                              || (out->machine_argument & 0xffu) == 8u
-                             || (out->machine_argument & 0xffu) == 19u)
-                            ? 3u : 2u))
+                             || (out->machine_argument & 0xffu) == 15u
+                             || (out->machine_argument & 0xffu)
+                                == PL_X86_VECTOR_INSERT_LANE
+                             || (out->machine_argument & 0xffu) == 19u
+                             || (out->machine_argument & 0xffu) == 27u
+                             || (out->machine_argument & 0xffu)
+                                == PL_X86_VECTOR_MOVE_LANE
+                             || (out->machine_argument & 0xffu) == 40u
+                             || (out->machine_argument & 0xffu) == 44u
+                             || (out->machine_argument & 0xffu)
+                                == PL_X86_VECTOR_SHUFFLE_LOW_WORDS)
+                            ? 3u : 2u))))
                         : out->machine_operation
                            == PL_X86_MACHINE_READ_SELECTOR
                         ? ((out->machine_argument & 0xffu) < 6u ? 2u : 1u)
-                        : out->machine_operation == PL_X86_MACHINE_X87
-                          && (((out->machine_argument & 0xffu) >= 17u
-                               && (out->machine_argument & 0xffu) <= 18u)
-                              || ((out->machine_argument & 0xffu) >= 23u
-                                  && (out->machine_argument & 0xffu) <= 26u)
-                              || (out->machine_argument & 0xffu) == 37u
-                              || (out->machine_argument & 0xffu) == 38u
-                              || (out->machine_argument & 0xffu) == 39u
-                              || (out->machine_argument & 0xffu) == 40u)
-                        ? ((out->machine_argument & 0xffu) == 38u ? 3u : 2u)
+                        : (out->machine_operation == PL_X86_MACHINE_X87
+                           && (((out->machine_argument & 0xffu) >= 17u
+                                && (out->machine_argument & 0xffu) <= 18u)
+                               || ((out->machine_argument & 0xffu) >= 23u
+                                   && (out->machine_argument & 0xffu) <= 26u)
+                               || (out->machine_argument & 0xffu) == 37u
+                               || (out->machine_argument & 0xffu) == 38u
+                               || (out->machine_argument & 0xffu) == 39u
+                               || (out->machine_argument & 0xffu) == 40u
+                               || (out->machine_argument & 0xffu)
+                                  == PL_X86_X87_BYTE_SHUFFLE
+                               || (out->machine_argument & 0xffu)
+                                  == PL_X86_X87_ALIGN_RIGHT))
+                        ? ((out->machine_argument & 0xffu) == 38u
+                           || (out->machine_argument & 0xffu)
+                              == PL_X86_X87_ALIGN_RIGHT ? 3u : 2u)
                         : out->machine_operation
                            == PL_X86_MACHINE_WRITE_SEGMENT ? 2u : 1u;
         if (out->machine_operation == PL_X86_MACHINE_SYSTEM_SELECTOR)
@@ -2784,7 +2822,11 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                     || (out->machine_argument & 0xffu) == 37u
                     || (out->machine_argument & 0xffu) == 38u
                     || (out->machine_argument & 0xffu) == 39u
-                    || (out->machine_argument & 0xffu) == 40u)) {
+                    || (out->machine_argument & 0xffu) == 40u
+                    || (out->machine_argument & 0xffu)
+                       == PL_X86_X87_BYTE_SHUFFLE
+                    || (out->machine_argument & 0xffu)
+                       == PL_X86_X87_ALIGN_RIGHT)) {
             memory_operand = ((out->machine_argument & 0xffu) == 17u
                               || (out->machine_argument & 0xffu) == 40u)
                            && ((out->machine_argument >> 40u) & 1u)

@@ -17,6 +17,7 @@ const DEAD = 0;
 
 let instance = null;
 let compiled = null;
+let postlinkCompiled = null;
 let stepMemorySource = null;
 let stepQueue = Promise.resolve();
 
@@ -68,6 +69,21 @@ export async function load(precompiled = null) {
   return instance;
 }
 
+async function compilePostlinkPageWorker() {
+  if (postlinkCompiled) return postlinkCompiled;
+  if (globalThis.QM_TEST_POSTLINK_MODULE instanceof WebAssembly.Module) {
+    postlinkCompiled = globalThis.QM_TEST_POSTLINK_MODULE;
+    return postlinkCompiled;
+  }
+  const opened = await readArtifact('postlink-compiler');
+  try {
+    postlinkCompiled = await WebAssembly.compile(opened.bytes);
+    return postlinkCompiled;
+  } finally {
+    opened.fabric.release();
+  }
+}
+
 const X86_STATUS = Object.freeze({
   needBlock: 4,
   yielded: 5,
@@ -92,10 +108,11 @@ const X86_EXECUTABLE_MAP_READY = 8;
 const X86_EXECUTABLE_RESIDUAL_READY = 9;
 const X86_EXECUTABLE_KERNEL_READY = 10;
 const X86_EXECUTABLE_INSTANTIATION_READY = 11;
+const X86_EXECUTABLE_COMPILE = 13;
 
 function directObjectSource(source) {
-  if (!source || typeof source.read !== 'function') {
-    throw new TypeError('direct executable needs a digest-coordinate source');
+  if (!source || typeof source.readRange !== 'function') {
+    throw new TypeError('direct executable needs a pack-coordinate source');
   }
   return source;
 }
@@ -117,8 +134,67 @@ function directSafeNumber(value, label) {
   return number;
 }
 
-async function instantiateDirectModule(E, table, base, bytes) {
-  await WebAssembly.instantiate(bytes, {
+async function readDirectRequest(
+  E, session, source, digest, offset, count, total,
+) {
+  if (typeof source.readObjectRange === 'function') {
+    const resident = await source.readObjectRange(
+      digest, offset, count, total,
+    );
+    if (resident != null) {
+      if (!(resident instanceof Uint8Array) || resident.length !== count) {
+        throw new Error(`resident object ${digest} returned the wrong range`);
+      }
+      return resident;
+    }
+  }
+  /* Published execution resolves the authenticated delivery directory in C
+   * and exposes one pack range; JavaScript never receives locator rows. */
+  let state = E.vm_x86_delivery_resolve_begin(session);
+  while (state === 1) {
+    const packBytes = directSafeNumber(
+      E.vm_x86_delivery_pack_bytes(session), 'delivery pack extent',
+    );
+    const nodeOffset = directSafeNumber(
+      E.vm_x86_delivery_request_offset(session), 'delivery node offset',
+    );
+    const nodeBytes = E.vm_x86_delivery_request_bytes(session);
+    const bufferAt = E.vm_x86_delivery_buffer(session);
+    if (!nodeBytes || !bufferAt || nodeOffset + nodeBytes > packBytes) {
+      throw new Error('vm.wasm requested an invalid delivery node range');
+    }
+    const node = await source.readRange(nodeOffset, nodeBytes, packBytes);
+    if (!(node instanceof Uint8Array) || node.length !== nodeBytes) {
+      throw new Error('delivery returned the wrong node range');
+    }
+    new Uint8Array(E.memory.buffer, bufferAt, nodeBytes).set(node);
+    state = E.vm_x86_delivery_supply(session, nodeBytes);
+  }
+  if (state !== 2) {
+    throw new Error(`vm.wasm rejected executable delivery identity ${digest}`);
+  }
+  const objectOffset = directSafeNumber(
+    E.vm_x86_delivery_object_offset(session), 'delivery object offset',
+  );
+  const objectBytes = E.vm_x86_delivery_object_bytes(session);
+  const packBytes = directSafeNumber(
+    E.vm_x86_delivery_pack_bytes(session), 'delivery pack extent',
+  );
+  if (objectBytes !== total || offset + count > objectBytes
+      || objectOffset + objectBytes > packBytes) {
+    throw new Error(`vm.wasm published an invalid object extent ${digest}`);
+  }
+  const bytes = await source.readRange(
+    objectOffset + offset, count, packBytes,
+  );
+  if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
+    throw new Error(`delivery returned the wrong object range ${digest}`);
+  }
+  return bytes;
+}
+
+function directModuleImports(E, table, base) {
+  return {
     env: {
       memory: E.memory,
       table,
@@ -172,7 +248,30 @@ async function instantiateDirectModule(E, table, base, bytes) {
       direct_x86_segment_stack: E.vm_x86_direct_segment_stack,
       direct_x86_entropy: E.vm_x86_direct_entropy,
     },
-  });
+  };
+}
+
+async function instantiateDirectModule(E, table, base, bytes) {
+  await WebAssembly.instantiate(
+    bytes, directModuleImports(E, table, base),
+  );
+}
+
+function instantiateDirectModuleSync(E, table, base, bytes) {
+  const module = new WebAssembly.Module(bytes);
+  return new WebAssembly.Instance(
+    module, directModuleImports(E, table, base),
+  );
+}
+
+function compiledDirectModule(E, session) {
+  if (!E.vm_x86_executable_module_is_compiled(session)) return null;
+  const bytes = E.vm_x86_compiler_module_bytes(session);
+  const at = E.vm_x86_compiler_buffer(session);
+  if (!at || !bytes || bytes > E.vm_x86_compiler_buffer_bytes()) {
+    throw new Error('vm.wasm published an invalid C-compiled module');
+  }
+  return new Uint8Array(E.memory.buffer, at, bytes).slice();
 }
 
 /**
@@ -184,7 +283,9 @@ async function instantiateDirectModule(E, table, base, bytes) {
  * functions through an element segment; no export enumeration or block record
  * reconstruction exists in this path.
  */
-export async function admitX86Executable(E, session, root, source) {
+export async function admitX86Executable(
+  E, session, root, deliveryRoot, source,
+) {
   if (!(root instanceof Uint8Array)) {
     throw new TypeError('direct executable root must be bytes');
   }
@@ -194,6 +295,10 @@ export async function admitX86Executable(E, session, root, source) {
       || !(E.memory instanceof WebAssembly.Memory)) {
     throw new Error('vm.wasm omitted its shared executable ABI');
   }
+  // Table slot zero remains the uncallable sentinel required by the C ABI.
+  // A cold published VM has no installed functions yet, whereas direct-check
+  // already grew the table while installing its fixture modules.
+  if (table.length === 0) table.grow(1);
   const rootAt = E.vm_x86_executable_buffer(session);
   const rootBytes = E.vm_x86_executable_buffer_bytes();
   if (!rootAt || root.length !== rootBytes) {
@@ -205,6 +310,23 @@ export async function admitX86Executable(E, session, root, source) {
     throw new Error('vm.wasm rejected the executable root');
   }
 
+  if (typeof source.readRange === 'function') {
+    if (!(deliveryRoot instanceof Uint8Array)) {
+      throw new TypeError('direct executable needs fixed delivery-root bytes');
+    }
+    const deliveryAt = E.vm_x86_delivery_buffer(session);
+    const deliveryCapacity = E.vm_x86_delivery_buffer_bytes();
+    if (!deliveryAt || deliveryRoot.length > deliveryCapacity) {
+      throw new Error('vm.wasm rejected the delivery-root extent');
+    }
+    new Uint8Array(
+      E.memory.buffer, deliveryAt, deliveryRoot.length,
+    ).set(deliveryRoot);
+    if (!E.vm_x86_delivery_open(session, deliveryRoot.length)) {
+      throw new Error('vm.wasm rejected the delivery root');
+    }
+  }
+
   let moduleBytes = null;
   let moduleDigest = null;
   try {
@@ -212,7 +334,8 @@ export async function admitX86Executable(E, session, root, source) {
       const kind = E.vm_x86_executable_request_kind(session);
       if (kind === X86_EXECUTABLE_READY) break;
       if (kind === X86_EXECUTABLE_INDEX
-          || kind === X86_EXECUTABLE_MODULE) {
+          || kind === X86_EXECUTABLE_MODULE
+          || kind === X86_EXECUTABLE_RESOURCE) {
         const digest = directRequestDigest(E, session);
         const total = directSafeNumber(
           E.vm_x86_executable_request_bytes(session),
@@ -227,12 +350,15 @@ export async function admitX86Executable(E, session, root, source) {
         if (!count || !bufferAt || offset + count > total) {
           throw new Error('vm.wasm requested an invalid object range');
         }
-        const bytes = await source.read(digest, offset, count, total);
+        const bytes = await readDirectRequest(
+          E, session, source, digest, offset, count, total,
+        );
         if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
           throw new Error(`object ${digest} returned the wrong range`);
         }
         new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
-        if (kind === X86_EXECUTABLE_MODULE) {
+        if (kind === X86_EXECUTABLE_MODULE
+            && !E.vm_x86_executable_module_is_compiled(session)) {
           if (moduleDigest !== digest) {
             moduleDigest = digest;
             moduleBytes = new Uint8Array(total);
@@ -240,12 +366,30 @@ export async function admitX86Executable(E, session, root, source) {
           moduleBytes.set(bytes, offset);
         }
         if (!E.vm_x86_executable_supply(session, count)) {
-          throw new Error(`vm.wasm rejected object ${digest}`);
+          const stageHeader = Array.from(
+            new Uint8Array(E.memory.buffer, bufferAt, Math.min(count, 24)),
+            (value) => value.toString(16).padStart(2, '0'),
+          ).join('');
+          throw new Error(
+            `vm.wasm rejected request ${kind} object ${digest} `
+            + `at ${offset}+${count}/${total} `
+            + `(admission ${E.vm_x86_executable_admission_error(session)}, `
+            + `compiler ${E.vm_x86_compiler_error(session)}, `
+            + `frame@${E.vm_x86_executable_admission_frame(session)} `
+            + `workspace@${E.vm_workspace_begin()}-${E.vm_workspace_end()} `
+            + `stage@${bufferAt}/${E.memory.buffer.byteLength} `
+            + `${stageHeader})`,
+          );
         }
         continue;
       }
       if (kind === X86_EXECUTABLE_INSTALL) {
         const digest = directRequestDigest(E, session);
+        const generated = compiledDirectModule(E, session);
+        if (generated) {
+          moduleBytes = generated;
+          moduleDigest = digest;
+        }
         const base = E.vm_x86_executable_module_table_base(session);
         const functions = E.vm_x86_executable_module_function_count(session);
         if (!moduleBytes || moduleDigest !== digest || !base || !functions
@@ -279,8 +423,13 @@ export async function admitX86Executable(E, session, root, source) {
 export async function supplyX86ExecutableCode(E, session, source) {
   source = directObjectSource(source);
   const table = E.__indirect_function_table;
-  const started = E.vm_x86_executable_resolve_begin(session);
-  if (started === 2) return;
+  let started;
+  for (;;) {
+    started = E.vm_x86_executable_resolve_begin(session);
+    if (started !== 3) break;
+    await supplyX86ExecutablePhysical(E, session, source);
+  }
+  if (started === 2) return false;
   if (started !== 1 || !(table instanceof WebAssembly.Table)) {
     throw new Error('vm.wasm rejected the direct code-page request');
   }
@@ -290,8 +439,15 @@ export async function supplyX86ExecutableCode(E, session, source) {
     for (;;) {
       const kind = E.vm_x86_executable_request_kind(session);
       if (kind === X86_EXECUTABLE_CODE_READY) break;
+      if (kind === X86_EXECUTABLE_COMPILE) {
+        if (!E.vm_x86_executable_resolve_compile(session)) {
+          throw new Error('vm.wasm rejected the page-compiler cut');
+        }
+        return true;
+      }
       if (kind === X86_EXECUTABLE_INDEX
-          || kind === X86_EXECUTABLE_MODULE) {
+          || kind === X86_EXECUTABLE_MODULE
+          || kind === X86_EXECUTABLE_RESOURCE) {
         const digest = directRequestDigest(E, session);
         const total = directSafeNumber(
           E.vm_x86_executable_request_bytes(session),
@@ -306,12 +462,15 @@ export async function supplyX86ExecutableCode(E, session, source) {
         if (!count || !bufferAt || offset + count > total) {
           throw new Error('vm.wasm requested an invalid code object range');
         }
-        const bytes = await source.read(digest, offset, count, total);
+        const bytes = await readDirectRequest(
+          E, session, source, digest, offset, count, total,
+        );
         if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
           throw new Error(`code object ${digest} returned the wrong range`);
         }
         new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
-        if (kind === X86_EXECUTABLE_MODULE) {
+        if (kind === X86_EXECUTABLE_MODULE
+            && !E.vm_x86_executable_module_is_compiled(session)) {
           if (moduleDigest !== digest) {
             moduleDigest = digest;
             moduleBytes = new Uint8Array(total);
@@ -325,6 +484,11 @@ export async function supplyX86ExecutableCode(E, session, source) {
       }
       if (kind === X86_EXECUTABLE_INSTALL) {
         const digest = directRequestDigest(E, session);
+        const generated = compiledDirectModule(E, session);
+        if (generated) {
+          moduleBytes = generated;
+          moduleDigest = digest;
+        }
         const base = E.vm_x86_executable_module_table_base(session);
         const functions = E.vm_x86_executable_module_function_count(session);
         if (!moduleBytes || moduleDigest !== digest || !base || !functions
@@ -347,6 +511,7 @@ export async function supplyX86ExecutableCode(E, session, source) {
     if (!E.vm_x86_executable_resolve_commit(session)) {
       throw new Error('vm.wasm rejected page-dispatch publication');
     }
+    return false;
   } catch (error) {
     E.vm_x86_executable_resolve_abort(session);
     throw error;
@@ -387,7 +552,27 @@ export async function supplyX86ExecutablePhysical(E, session, source) {
       if (!count || !bufferAt || offset + count > total) {
         throw new Error('vm.wasm requested an invalid physical object range');
       }
-      const bytes = await source.read(digest, offset, count, total);
+      const sourceRank = kind === X86_EXECUTABLE_RESOURCE
+        ? E.vm_x86_executable_request_source_rank(session) : 0;
+      let bytes;
+      if (sourceRank) {
+        if (typeof source.readBackingRange !== 'function') {
+          throw new Error(
+            `physical backing ${sourceRank} is not available`,
+          );
+        }
+        const address = directSafeNumber(
+          E.vm_x86_executable_request_physical_address(session),
+          'direct physical backing address',
+        );
+        bytes = await source.readBackingRange(
+          sourceRank, address, offset, count, total,
+        );
+      } else {
+        bytes = await readDirectRequest(
+          E, session, source, digest, offset, count, total,
+        );
+      }
       if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
         throw new Error(`physical object ${digest} returned the wrong range`);
       }
@@ -435,7 +620,9 @@ export async function supplyX86ExecutableMap(E, session, source, result) {
       if (!count || !bufferAt || offset + count > total) {
         throw new Error('vm.wasm requested an invalid entry-map object range');
       }
-      const bytes = await source.read(digest, offset, count, total);
+      const bytes = await readDirectRequest(
+        E, session, source, digest, offset, count, total,
+      );
       if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
         throw new Error(`entry-map object ${digest} returned the wrong range`);
       }
@@ -483,7 +670,9 @@ export async function supplyX86ExecutableResidual(E, session, source, result) {
       if (!count || !bufferAt || offset + count > total) {
         throw new Error('vm.wasm requested an invalid residual object range');
       }
-      const bytes = await source.read(digest, offset, count, total);
+      const bytes = await readDirectRequest(
+        E, session, source, digest, offset, count, total,
+      );
       if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
         throw new Error(`residual object ${digest} returned the wrong range`);
       }
@@ -535,13 +724,18 @@ export async function supplyX86ExecutableInstantiation(
       if (!count || !bufferAt || offset + count > total) {
         throw new Error('vm.wasm requested an invalid instantiation object');
       }
-      const bytes = await source.read(digest, offset, count, total);
+      const bytes = await readDirectRequest(
+        E, session, source, digest, offset, count, total,
+      );
       if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
         throw new Error(`instantiation object ${digest} has wrong range`);
       }
       new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
       if (!E.vm_x86_executable_supply(session, count)) {
-        throw new Error(`vm.wasm rejected instantiation object ${digest}`);
+        throw new Error(
+          `vm.wasm rejected instantiation request ${kind} object ${digest} `
+          + `at ${offset}+${count}/${total}`,
+        );
       }
     }
     if (!E.vm_x86_executable_instantiation_commit(session)) {
@@ -569,7 +763,8 @@ export async function supplyX86ExecutableKernel(E, session, source, result) {
       const kind = E.vm_x86_executable_request_kind(session);
       if (kind === X86_EXECUTABLE_KERNEL_READY) break;
       if (kind === X86_EXECUTABLE_INDEX
-          || kind === X86_EXECUTABLE_MODULE) {
+          || kind === X86_EXECUTABLE_MODULE
+          || kind === X86_EXECUTABLE_RESOURCE) {
         const digest = directRequestDigest(E, session);
         const total = directSafeNumber(
           E.vm_x86_executable_request_bytes(session),
@@ -584,12 +779,15 @@ export async function supplyX86ExecutableKernel(E, session, source, result) {
         if (!count || !bufferAt || offset + count > total) {
           throw new Error('vm.wasm requested an invalid kernel object range');
         }
-        const bytes = await source.read(digest, offset, count, total);
+        const bytes = await readDirectRequest(
+          E, session, source, digest, offset, count, total,
+        );
         if (!(bytes instanceof Uint8Array) || bytes.length !== count) {
           throw new Error(`kernel object ${digest} returned the wrong range`);
         }
         new Uint8Array(E.memory.buffer, bufferAt, count).set(bytes);
-        if (kind === X86_EXECUTABLE_MODULE) {
+        if (kind === X86_EXECUTABLE_MODULE
+            && !E.vm_x86_executable_module_is_compiled(session)) {
           if (moduleDigest !== digest) {
             moduleDigest = digest;
             moduleBytes = new Uint8Array(total);
@@ -597,12 +795,20 @@ export async function supplyX86ExecutableKernel(E, session, source, result) {
           moduleBytes.set(bytes, offset);
         }
         if (!E.vm_x86_executable_supply(session, count)) {
-          throw new Error(`vm.wasm rejected kernel object ${digest}`);
+          throw new Error(
+            `vm.wasm rejected kernel request ${kind} object ${digest} `
+            + `at ${offset}+${count}/${total}`,
+          );
         }
         continue;
       }
       if (kind === X86_EXECUTABLE_INSTALL) {
         const digest = directRequestDigest(E, session);
+        const generated = compiledDirectModule(E, session);
+        if (generated) {
+          moduleBytes = generated;
+          moduleDigest = digest;
+        }
         const base = E.vm_x86_executable_module_table_base(session);
         const functions = E.vm_x86_executable_module_function_count(session);
         if (!moduleBytes || moduleDigest !== digest || !base || !functions
@@ -633,7 +839,7 @@ export async function supplyX86ExecutableKernel(E, session, source, result) {
 
 /** Open a compiler-produced machine without decoding host-side state or rows. */
 export async function openDirectX86Machine({
-  root, source, devices = {},
+  root, deliveryRoot = null, source, devices = {},
 }) {
   if (!(root instanceof Uint8Array)) {
     throw new TypeError('direct x86 machine needs fixed root bytes');
@@ -644,7 +850,7 @@ export async function openDirectX86Machine({
   const session = E.vm_step_acquire();
   if (session === 0n) throw new Error('vm.wasm has no free x86 lease');
   try {
-    await admitX86Executable(E, session, root, source);
+    await admitX86Executable(E, session, root, deliveryRoot, source);
     const entry = E.vm_x86_executable_entry_function(session);
     if (!Number.isSafeInteger(entry) || entry < 0 || entry === 0xffffffff) {
       throw new Error('vm.wasm omitted the direct executable entry');
@@ -667,7 +873,20 @@ class DirectX86Machine {
     this.session = session;
     this.functionRank = entry;
     this.residualRank = residual;
-    this.source = source;
+    this.dynamicObjects = new Map();
+    this.source = {
+      readRange: (...args) => source.readRange(...args),
+      readBackingRange: typeof source.readBackingRange === 'function'
+        ? (...args) => source.readBackingRange(...args) : undefined,
+      readObjectRange: async (digest, offset, count, total) => {
+        const object = this.dynamicObjects.get(digest);
+        if (object == null) return null;
+        if (object.length !== total || offset + count > total) {
+          throw new Error(`resident object ${digest} has the wrong extent`);
+        }
+        return object.slice(offset, offset + count);
+      },
+    };
     this.devices = devices;
     this.dirtyPages = new Map();
     this.virtualClock = 0n;
@@ -682,6 +901,10 @@ class DirectX86Machine {
       instantiationRead: 0,
       parameterRead: 0,
       kernelRead: 0,
+      pageCompiles: 0,
+      topologyHits: 0,
+      topologyInstalls: 0,
+      publishedObjects: 0,
     };
     this.closed = false;
   }
@@ -795,6 +1018,275 @@ class DirectX86Machine {
     )) throw new Error('vm.wasm rejected the direct entropy acknowledgement');
   }
 
+  async compileCurrentPage() {
+    this.assertOpen();
+    const E = this.exports;
+    const table = E.__indirect_function_table;
+    if (!(table instanceof WebAssembly.Table)
+        || !E.vm_x86_executable_source_current(this.session)) {
+      throw new Error('vm.wasm omitted the captured page-compiler cut');
+    }
+    const module = await compilePostlinkPageWorker();
+    if (!E.vm_x86_executable_source_current(this.session)) {
+      E.vm_x86_executable_resolve_abort(this.session);
+      throw new Error('page-compiler source became stale while loading');
+    }
+
+    let C = null;
+    let bridgeFailure = null;
+    const pendingObjects = new Map();
+    const sameBytes = (left, right) => {
+      if (left.length !== right.length) return false;
+      for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) return false;
+      }
+      return true;
+    };
+    const digestHex = bytes => Array.from(
+      bytes, value => value.toString(16).padStart(2, '0'),
+    ).join('');
+    const imports = {
+      env: {
+        admit_topology: (bodyAt, bodyBytes) => {
+          try {
+            if (!C || !Number.isSafeInteger(bodyAt)
+                || !Number.isSafeInteger(bodyBytes) || bodyBytes <= 0) {
+              bridgeFailure = 'invalid compiler topology range';
+              return -1;
+            }
+            const targetAt = E.vm_x86_executable_topology_buffer(this.session);
+            const capacity = E.vm_x86_executable_topology_buffer_bytes(
+              this.session,
+            );
+            if (!targetAt || bodyBytes > capacity
+                || bodyAt + bodyBytes > C.memory.buffer.byteLength) {
+              bridgeFailure = `VM topology stage rejected ${bodyBytes}/${capacity}`;
+              return -1;
+            }
+            new Uint8Array(E.memory.buffer, targetAt, bodyBytes).set(
+              new Uint8Array(C.memory.buffer, bodyAt, bodyBytes),
+            );
+            const state = E.vm_x86_executable_topology_begin(
+              this.session, bodyBytes,
+            );
+            const rank = E.vm_x86_executable_topology_rank(this.session);
+            if (!Number.isSafeInteger(rank) || rank < 0
+                || rank > 0x7fffffff || (state !== 1 && state !== 2)) {
+              bridgeFailure = `VM topology begin returned ${state}, rank ${rank}`;
+              E.vm_x86_executable_topology_abort(this.session);
+              return -1;
+            }
+            if (state === 2) {
+              this.hostBarriers.topologyHits += 1;
+              return rank;
+            }
+            const moduleAt = E.vm_x86_executable_topology_module_buffer(
+              this.session,
+            );
+            const moduleBytes = E.vm_x86_executable_topology_module_bytes(
+              this.session,
+            );
+            const base = E.vm_x86_executable_topology_table_base(this.session);
+            if (!moduleAt || !moduleBytes || !base
+                || moduleAt + moduleBytes > E.memory.buffer.byteLength) {
+              bridgeFailure = 'VM topology module geometry is invalid';
+              E.vm_x86_executable_topology_abort(this.session);
+              return -1;
+            }
+            if (base + 1 > table.length) table.grow(base + 1 - table.length);
+            instantiateDirectModuleSync(
+              E, table, base,
+              new Uint8Array(E.memory.buffer, moduleAt, moduleBytes),
+            );
+            if (!E.vm_x86_executable_topology_installed(this.session)) {
+              bridgeFailure = 'VM rejected installed topology publication';
+              E.vm_x86_executable_topology_abort(this.session);
+              return -1;
+            }
+            this.hostBarriers.topologyInstalls += 1;
+            return rank;
+          } catch (error) {
+            bridgeFailure = error?.message || String(error);
+            E.vm_x86_executable_topology_abort(this.session);
+            return -1;
+          }
+        },
+        publish_object: (digestAt, bytesAt, length) => {
+          try {
+            if (!C || length <= 0
+                || digestAt + 32 > C.memory.buffer.byteLength
+                || bytesAt + length > C.memory.buffer.byteLength) {
+              bridgeFailure = 'invalid compiler object range';
+              return -1;
+            }
+            const digest = digestHex(
+              new Uint8Array(C.memory.buffer, digestAt, 32),
+            );
+            const bytes = new Uint8Array(
+              C.memory.buffer, bytesAt, length,
+            ).slice();
+            const prior = pendingObjects.get(digest)
+              || this.dynamicObjects.get(digest);
+            if (prior && !sameBytes(prior, bytes)) {
+              bridgeFailure = `object digest collision ${digest}`;
+              return -1;
+            }
+            if (!prior) pendingObjects.set(digest, bytes);
+            return 0;
+          } catch (error) {
+            bridgeFailure = error?.message || String(error);
+            return -1;
+          }
+        },
+      },
+    };
+
+    try {
+      C = new WebAssembly.Instance(module, imports).exports;
+      if (!(C.memory instanceof WebAssembly.Memory)) {
+        throw new Error('C page compiler omitted its freestanding memory');
+      }
+      const sourceAt = E.vm_x86_executable_source_buffer(this.session);
+      const sourceBytes = E.vm_x86_executable_source_bytes(this.session);
+      const mappedMask = E.vm_x86_executable_source_mapped_mask(this.session);
+      const compilerAt = C.postlink_page_source_buffer();
+      const compilerBytes = C.postlink_page_source_bytes();
+      if (!sourceAt || !sourceBytes || sourceBytes !== compilerBytes
+          || !compilerAt
+          || compilerAt + compilerBytes > C.memory.buffer.byteLength) {
+        throw new Error('page compiler source ABI does not match vm.wasm');
+      }
+      new Uint8Array(C.memory.buffer, compilerAt, compilerBytes).set(
+        new Uint8Array(E.memory.buffer, sourceAt, sourceBytes),
+      );
+      const virtualPage = BigInt.asUintN(
+        64, E.vm_x86_rip(this.session),
+      ) & ~BigInt(X86_PHYSICAL_PAGE_BYTES - 1);
+      const sourceGenerations = [0, 1, 2].map(dependency =>
+        BigInt.asUintN(
+          64,
+          E.vm_x86_executable_source_generation(this.session, dependency),
+        ));
+      const status = C.postlink_page_compile(
+        virtualPage, mappedMask,
+        sourceGenerations[0], sourceGenerations[1], sourceGenerations[2],
+      );
+      if (status !== 0) {
+        const failure = C.postlink_page_failure_status();
+        const rip = BigInt.asUintN(64, C.postlink_page_failure_rip());
+        const stage = C.postlink_page_failure_stage();
+        const sample = Array.from(
+          new Uint8Array(E.memory.buffer, sourceAt, Math.min(16, sourceBytes)),
+          value => value.toString(16).padStart(2, '0'),
+        ).join('');
+        throw new Error(
+          `C postlink compiler failed ${failure} at 0x${rip.toString(16)} stage=${stage} `
+            + `(mapped=0x${mappedMask.toString(16)}, source=${sample}, `
+            + `installed=${this.hostBarriers.topologyInstalls}, `
+            + `shared=${this.hostBarriers.topologyHits}, `
+            + `arena=${C.postlink_page_compiler_used_bytes()}, `
+            + `objects=${C.postlink_page_published_resources()}, `
+            + `bridge=${bridgeFailure || 'none'})`,
+        );
+      }
+      const productAt = C.postlink_page_product_buffer();
+      const productBytes = C.postlink_page_product_bytes();
+      if (!productAt || productBytes <= 0
+          || productAt + productBytes > C.memory.buffer.byteLength) {
+        throw new Error('C postlink compiler omitted its page product');
+      }
+      const product = new Uint8Array(
+        C.memory.buffer, productAt, productBytes,
+      ).slice();
+      for (const [digest, bytes] of pendingObjects) {
+        this.dynamicObjects.set(digest, bytes);
+      }
+      this.hostBarriers.publishedObjects += pendingObjects.size;
+      this.hostBarriers.pageCompiles += 1;
+      await this.commitCapturedPageProduct(product);
+    } catch (error) {
+      E.vm_x86_executable_topology_abort(this.session);
+      if (!E.vm_x86_executable_resolve_abort(this.session)) {
+        E.vm_x86_executable_source_abort(this.session);
+      }
+      throw error;
+    } finally {
+      C = null;
+    }
+  }
+
+  async compilePage() {
+    this.assertOpen();
+    const E = this.exports;
+    const page = BigInt.asUintN(
+      64, E.vm_x86_rip(this.session),
+    ) & ~BigInt(X86_PHYSICAL_PAGE_BYTES - 1);
+    for (;;) {
+      const state = E.vm_x86_executable_source_begin(this.session, page);
+      if (state === 1) break;
+      if (state !== 2) {
+        throw new Error('vm.wasm rejected the explicit page-compiler cut');
+      }
+      await this.satisfyPhysical();
+    }
+    await this.compileCurrentPage();
+    return this.status();
+  }
+
+  async commitCapturedPageProduct(product) {
+    const E = this.exports;
+    if (!(product instanceof Uint8Array)
+        || !E.vm_x86_executable_source_current(this.session)) {
+      throw new TypeError('page compiler output needs its captured source cut');
+    }
+    const at = E.vm_x86_executable_page_product_buffer(this.session);
+    const bytes = E.vm_x86_executable_page_product_buffer_bytes(this.session);
+    if (!at || bytes !== product.length) {
+      throw new Error('vm.wasm rejected the page compiler product extent');
+    }
+    new Uint8Array(E.memory.buffer, at, bytes).set(product);
+    let begun = false;
+    try {
+      begun = Boolean(E.vm_x86_executable_page_product_begin(
+        this.session, bytes,
+      ));
+      if (!begun || !E.vm_x86_executable_page_product_commit(this.session)) {
+        throw new Error('vm.wasm rejected the authenticated page product');
+      }
+    } catch (error) {
+      if (begun) E.vm_x86_executable_page_product_abort(this.session);
+      else if (!E.vm_x86_executable_resolve_abort(this.session)) {
+        E.vm_x86_executable_source_abort(this.session);
+      }
+      throw error;
+    }
+    this.residualRank = null;
+    await this.projectResidual();
+  }
+
+  /* Admit one opaque output of the C postlink compiler.  JavaScript neither
+   * decodes the source page nor reconstructs projection rows; it only moves
+   * the fixed authenticated root across the worker boundary. */
+  async admitPageProduct(product) {
+    this.assertOpen();
+    if (!(product instanceof Uint8Array)) {
+      throw new TypeError('page compiler output must be fixed root bytes');
+    }
+    const E = this.exports;
+    const page = BigInt.asUintN(
+      64, E.vm_x86_rip(this.session),
+    ) & ~BigInt(X86_PHYSICAL_PAGE_BYTES - 1);
+    for (;;) {
+      const state = E.vm_x86_executable_source_begin(this.session, page);
+      if (state === 1) break;
+      if (state !== 2) {
+        throw new Error('vm.wasm rejected the page compiler source cut');
+      }
+      await this.satisfyPhysical();
+    }
+    await this.commitCapturedPageProduct(product);
+  }
+
   async projectResidual() {
     const E = this.exports;
     for (;;) {
@@ -810,7 +1302,13 @@ class DirectX86Machine {
         return;
       }
       if (kind === 1) {
-        await supplyX86ExecutableCode(E, this.session, this.source);
+        const compilePage = await supplyX86ExecutableCode(
+          E, this.session, this.source,
+        );
+        if (compilePage) {
+          await this.compileCurrentPage();
+          return;
+        }
         continue;
       }
       if (kind === 6) {
@@ -905,7 +1403,13 @@ class DirectX86Machine {
       }
       if (kind === 4) return finish(X86_STATUS.halted);
       if (kind === 1) {
-        await supplyX86ExecutableCode(E, this.session, this.source);
+        const compilePage = await supplyX86ExecutableCode(
+          E, this.session, this.source,
+        );
+        if (compilePage) {
+          await this.compileCurrentPage();
+          continue;
+        }
         if (residualMode) {
           await this.projectResidual();
           continue;
@@ -989,6 +1493,11 @@ class DirectX86Machine {
         parameterWords: BigInt(
           E.vm_x86_executable_parameter_words(this.session),
         ),
+        deliveryResolves: BigInt(E.vm_x86_delivery_resolves(this.session)),
+        deliveryNodes: BigInt(E.vm_x86_delivery_nodes(this.session)),
+        deliveryCacheHits: BigInt(
+          E.vm_x86_delivery_cache_hits(this.session),
+        ),
         physicalLookupProbes: BigInt(
           E.vm_x86_physical_lookup_probes(this.session),
         ),
@@ -1034,487 +1543,11 @@ class DirectX86Machine {
       throw new Error('vm.wasm rejected the direct x86 lease release');
     }
     this.dirtyPages.clear();
+    this.dynamicObjects.clear();
     this.closed = true;
   }
 }
 
-function x86Source(source, name, writable = false) {
-  if (!source || !Number.isSafeInteger(source.length) || source.length <= 0
-      || typeof source.read !== 'function'
-      || (writable && typeof source.write !== 'function')) {
-    throw new TypeError(`${name} needs a finite direct-coordinate source`);
-  }
-  return source;
-}
-
-/**
- * Open one x86 machine whose persistent state and MMU remain in vm.wasm.
- *
- * `blocks.read(rip)` supplies immutable X86B+STEP records. `memory` sees only
- * 4 KiB physical coordinates; virtual addresses, registers, flags and control
- * transitions never cross this host API. Python may have produced either
- * artifact ahead of time, but no Python interpreter participates here.
- */
-export async function openX86Machine({ state, memory, blocks, devices = {} }) {
-  if (!state || !Array.isArray(state.registers)
-      || state.registers.length !== 16) {
-    throw new TypeError('x86 state needs sixteen registers');
-  }
-  x86Source(memory, 'x86 physical memory', true);
-  if (!blocks || typeof blocks.read !== 'function') {
-    throw new TypeError('x86 machine needs a RIP-coordinate block source');
-  }
-  const loaded = await load();
-  const E = loaded.exports;
-  const session = E.vm_step_acquire();
-  if (session === 0n) throw new Error('vm.wasm has no free x86 lease');
-  const word = (name, fallback = 0n) => BigInt.asUintN(
-    64, BigInt(state[name] ?? fallback),
-  );
-  let opened = false;
-  try {
-    opened = Boolean(E.vm_x86_open(
-      session, word('rip'), word('rflags', 2n), word('cr0'), word('cr3'),
-      word('cr4'), word('efer'), BigInt(memory.length),
-    ));
-    if (!opened) throw new Error('vm.wasm rejected the x86 state');
-    const view = new DataView(E.memory.buffer);
-    const registersAt = E.vm_x86_registers(session);
-    state.registers.forEach((value, index) => view.setBigUint64(
-      registersAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
-    ));
-    if (state.xmm !== undefined) {
-      if (!Array.isArray(state.xmm) || state.xmm.length !== 32) {
-        throw new TypeError('x86 vector state needs thirty-two words');
-      }
-      const xmmAt = E.vm_x86_xmm(session);
-      state.xmm.forEach((value, index) => view.setBigUint64(
-        xmmAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
-      ));
-    }
-    if (state.system !== undefined) {
-      if (!Array.isArray(state.system) || state.system.length !== 22) {
-        throw new TypeError('x86 system state needs twenty-two words');
-      }
-      const systemAt = E.vm_x86_system(session);
-      state.system.forEach((value, index) => view.setBigUint64(
-        systemAt + index * 8, BigInt.asUintN(64, BigInt(value)), true,
-      ));
-    }
-    if (state.msrs !== undefined) {
-      if (!Array.isArray(state.msrs) || state.msrs.length > 32) {
-        throw new TypeError('x86 MSR state is outside the resident bank');
-      }
-      const keysAt = E.vm_x86_msr_keys(session);
-      const valuesAt = E.vm_x86_msr_values(session);
-      state.msrs.forEach((pair, index) => {
-        if (!Array.isArray(pair) || pair.length !== 2) {
-          throw new TypeError(`x86 MSR ${index} is not a key/value pair`);
-        }
-        view.setBigUint64(
-          keysAt + index * 8, BigInt.asUintN(64, BigInt(pair[0])), true,
-        );
-        view.setBigUint64(
-          valuesAt + index * 8, BigInt.asUintN(64, BigInt(pair[1])), true,
-        );
-      });
-      if (!E.vm_x86_msr_count(session, state.msrs.length)) {
-        throw new Error('vm.wasm rejected the x86 MSR bank');
-      }
-    }
-    if (state.ioPorts !== undefined) {
-      if (!Array.isArray(state.ioPorts)) {
-        throw new TypeError('x86 I/O state must be coordinate/value pairs');
-      }
-      for (const pair of state.ioPorts) {
-        if (!Array.isArray(pair) || pair.length !== 2
-            || !Number.isSafeInteger(pair[0]) || pair[0] < 0
-            || pair[0] > 0xffffffff
-            || !E.vm_x86_restore_io(session, pair[0], BigInt(pair[1]))) {
-          throw new TypeError('x86 I/O state has an invalid coordinate');
-        }
-      }
-    }
-    if (state.consoleInput !== undefined) {
-      const input = state.consoleInput instanceof Uint8Array
-        ? state.consoleInput : Uint8Array.from(state.consoleInput);
-      for (const byte of input) {
-        if (!E.vm_x86_console_feed(session, byte)) {
-          throw new TypeError('x86 console state exceeds the resident queue');
-        }
-      }
-    }
-    if (state.consoleOutput !== undefined) {
-      const output = state.consoleOutput instanceof Uint8Array
-        ? state.consoleOutput : Uint8Array.from(state.consoleOutput);
-      for (const byte of output) {
-        if (!E.vm_x86_restore_console_output(session, byte)) {
-          throw new TypeError(
-            'x86 console output state exceeds the resident buffer',
-          );
-        }
-      }
-    }
-    const resident = new ResidentX86Machine(
-      E, session, memory, blocks, devices,
-    );
-    const tsc = state.msrs?.find(
-      ([key]) => BigInt.asUintN(32, BigInt(key)) === 0x10n,
-    );
-    resident.virtualClock = tsc
-      ? BigInt.asUintN(64, BigInt(tsc[1])) : 0n;
-    return resident;
-  } catch (error) {
-    E.vm_step_release(session);
-    throw error;
-  }
-}
-
-class ResidentX86Machine {
-  constructor(exports, session, memory, blocks, devices) {
-    this.exports = exports;
-    this.session = session;
-    this.memory = memory;
-    this.blocks = blocks;
-    this.devices = devices;
-    this.hostBarriers = {
-      blockRead: 0,
-      blockCacheHit: 0,
-      blockCacheMiss: 0,
-      physicalRead: 0,
-      physicalWrite: 0,
-      consoleWrite: 0,
-      clock: 0,
-      entropy: 0,
-    };
-    this.virtualClock = 0n;
-    this.blockCandidate = new Map();
-    this.closed = false;
-  }
-
-  assertOpen() {
-    if (this.closed) throw new Error('x86 machine is released');
-  }
-
-  async advance(maxBlocks = 1 << 16) {
-    this.assertOpen();
-    if (!Number.isSafeInteger(maxBlocks) || maxBlocks <= 0) {
-      throw new RangeError('x86 block quantum must be positive');
-    }
-    const E = this.exports;
-    let completed = 0;
-    const finish = (status) => ({
-      ...this.status(status), completedBlocks: completed,
-    });
-    while (completed < maxBlocks) {
-      const requested = Math.min(maxBlocks - completed, 0xffffffff);
-      let status = E.vm_x86_execute_quantum(
-        this.session, requested,
-      );
-      const batch = E.vm_x86_quantum_blocks(this.session);
-      const cacheHits = E.vm_x86_quantum_cache_hits(this.session);
-      if (!Number.isSafeInteger(batch) || batch < 0
-          || batch > requested
-          || !Number.isSafeInteger(cacheHits) || cacheHits < 0) {
-        throw new Error('vm.wasm published an invalid x86 quantum');
-      }
-      completed += batch;
-      this.hostBarriers.blockCacheHit += cacheHits;
-      if (status === X86_STATUS.needBlock) {
-        this.hostBarriers.blockCacheMiss += 1;
-        const rip = BigInt.asUintN(64, E.vm_x86_rip(this.session));
-        this.hostBarriers.blockRead += 1;
-        const key = rip.toString();
-        const candidate = this.blockCandidate.get(key) || 0;
-        const record = await this.blocks.read(rip, candidate);
-        if (record == null) {
-          return { ...finish(X86_STATUS.needBlock), missingBlock: rip };
-        }
-        if (!(record instanceof Uint8Array) || !record.length) {
-          throw new Error(`x86 block 0x${rip.toString(16)} is malformed`);
-        }
-        new Uint8Array(
-          E.memory.buffer, E.vm_step_buffer(this.session), record.length,
-        ).set(record);
-        const loaded = E.vm_x86_load_block(this.session, record.length);
-        if (loaded === X86_STATUS.codeMismatch) {
-          this.blockCandidate.set(key, candidate + 1);
-          continue;
-        }
-        if (loaded === X86_STATUS.needPhysical
-            || loaded === X86_STATUS.dirtyPhysical) {
-          status = loaded;
-        } else if (loaded !== 2) {
-          throw new Error(
-            `vm.wasm rejected x86 block 0x${rip.toString(16)} (${E.vm_x86_error(this.session)})`,
-          );
-        } else {
-          this.blockCandidate.delete(key);
-          continue;
-        }
-      }
-      if (status === X86_STATUS.codeMismatch) {
-        const rip = BigInt.asUintN(64, E.vm_x86_rip(this.session));
-        this.blockCandidate.set(rip.toString(), 0);
-        continue;
-      }
-      if (status === X86_STATUS.needPhysical
-          || status === X86_STATUS.dirtyPhysical) {
-        const lease = E.vm_x86_physical_lease(this.session);
-        const page = BigInt.asUintN(
-          64, E.vm_x86_physical_coordinate(this.session, lease),
-        );
-        const offset = Number(page * BigInt(X86_PHYSICAL_PAGE_BYTES));
-        if (!Number.isSafeInteger(offset)
-            || offset < 0 || offset + X86_PHYSICAL_PAGE_BYTES > this.memory.length) {
-          throw new Error(`x86 physical page ${page} is outside RAM`);
-        }
-        const bufferAt = E.vm_x86_physical_buffer(this.session, lease);
-        if (status === X86_STATUS.needPhysical) {
-          this.hostBarriers.physicalRead += 1;
-          const bytes = await this.memory.read(offset, X86_PHYSICAL_PAGE_BYTES);
-          if (!(bytes instanceof Uint8Array)
-              || bytes.length !== X86_PHYSICAL_PAGE_BYTES) {
-            throw new Error(`x86 physical page ${page} has the wrong extent`);
-          }
-          new Uint8Array(
-            E.memory.buffer, bufferAt, X86_PHYSICAL_PAGE_BYTES,
-          ).set(bytes);
-          if (!E.vm_x86_supply_physical(
-            this.session, lease, page, X86_PHYSICAL_PAGE_BYTES,
-          )) throw new Error(`vm.wasm rejected physical page ${page}`);
-        } else {
-          this.hostBarriers.physicalWrite += 1;
-          const bytes = new Uint8Array(
-            E.memory.buffer, bufferAt, X86_PHYSICAL_PAGE_BYTES,
-          ).slice();
-          await this.memory.write(offset, bytes);
-          if (!E.vm_x86_ack_physical(this.session, lease, page)) {
-            throw new Error(`vm.wasm rejected dirty physical page ${page}`);
-          }
-        }
-        continue;
-      }
-      if (status === X86_STATUS.consoleWrite) {
-        const lease = E.vm_x86_console_lease(this.session);
-        if (!lease) throw new Error('vm.wasm published an invalid console lease');
-        const count = E.vm_x86_console_output_count(this.session, lease);
-        if (!Number.isSafeInteger(count) || count <= 0 || count > 256) {
-          throw new Error('vm.wasm published an invalid console batch');
-        }
-        const bytes = Uint8Array.from(
-          { length: count }, (_unused, index) =>
-            E.vm_x86_console_output_peek(this.session, lease, index),
-        );
-        this.hostBarriers.consoleWrite += 1;
-        if (typeof this.devices.consoleWrite === 'function') {
-          await this.devices.consoleWrite(bytes);
-        }
-        if (!E.vm_x86_ack_console(this.session, lease)) {
-          throw new Error('vm.wasm rejected the console acknowledgement');
-        }
-        continue;
-      }
-      if (status === X86_STATUS.clock) {
-        const lease = E.vm_x86_clock_lease(this.session);
-        if (!lease) throw new Error('vm.wasm published an invalid clock lease');
-        this.hostBarriers.clock += 1;
-        let value;
-        if (typeof this.devices.clock === 'function') {
-          value = await this.devices.clock({
-            retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
-            prior: this.virtualClock,
-          });
-        } else {
-          value = this.virtualClock + 1n;
-        }
-        this.virtualClock = BigInt.asUintN(64, BigInt(value));
-        if (!E.vm_x86_supply_clock(
-          this.session, lease, this.virtualClock,
-        )) throw new Error('vm.wasm rejected the clock acknowledgement');
-        continue;
-      }
-      if (status === X86_STATUS.entropy) {
-        const lease = E.vm_x86_entropy_lease(this.session);
-        if (!lease) throw new Error('vm.wasm published an invalid entropy lease');
-        this.hostBarriers.entropy += 1;
-        let value;
-        if (typeof this.devices.entropy === 'function') {
-          value = await this.devices.entropy({
-            retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
-            rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
-          });
-        } else {
-          const words = new Uint32Array(2);
-          globalThis.crypto.getRandomValues(words);
-          value = (BigInt(words[1]) << 32n) | BigInt(words[0]);
-        }
-        if (!E.vm_x86_supply_entropy(
-          this.session, lease, BigInt.asUintN(64, BigInt(value)),
-        )) throw new Error('vm.wasm rejected the entropy acknowledgement');
-        continue;
-      }
-      if (status === X86_STATUS.yielded || status === X86_STATUS.halted) {
-        return finish(status);
-      }
-      if (status === X86_STATUS.internal) {
-        continue;
-      }
-      throw new Error(
-        `x86 machine trapped in vm.wasm (`
-        + `x86=${E.vm_x86_error(this.session)}, `
-        + `step=${E.vm_step_error(this.session)})`,
-      );
-    }
-    return finish(X86_STATUS.yielded);
-  }
-
-  status(status = null) {
-    this.assertOpen();
-    const E = this.exports;
-    return {
-      status,
-      halted: Boolean(E.vm_x86_halted(this.session)),
-      rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
-      retired: BigInt.asUintN(64, E.vm_x86_retired(this.session)),
-      work: BigInt.asUintN(64, E.vm_x86_work(this.session)),
-      span: BigInt.asUintN(64, E.vm_x86_span(this.session)),
-      engine: {
-        stepOpens: BigInt.asUintN(
-          64, E.vm_step_profile_opens(this.session),
-        ),
-        stepRestores: BigInt.asUintN(
-          64, E.vm_step_profile_restores(this.session),
-        ),
-        executeCalls: BigInt.asUintN(
-          64, E.vm_step_profile_execute_calls(this.session),
-        ),
-        nodesExecuted: BigInt.asUintN(
-          64, E.vm_step_profile_nodes(this.session),
-        ),
-        projectionQueries: BigInt.asUintN(
-          64, E.vm_step_profile_projection_queries(this.session),
-        ),
-      },
-      hostBarriers: { ...this.hostBarriers },
-    };
-  }
-
-  async flush() {
-    this.assertOpen();
-    const E = this.exports;
-    for (;;) {
-      const page = BigInt.asUintN(
-        64, E.vm_x86_first_dirty_physical_page(this.session),
-      );
-      if (page === 0xffffffffffffffffn) {
-        if (E.vm_x86_error(this.session)) {
-          throw new Error('vm.wasm failed to publish x86 dirty state');
-        }
-        break;
-      }
-      const lease = E.vm_x86_physical_lease(this.session);
-      const published = BigInt.asUintN(
-        64, E.vm_x86_physical_coordinate(this.session, lease),
-      );
-      const offset = Number(page * BigInt(X86_PHYSICAL_PAGE_BYTES));
-      if (!lease || published !== page || !Number.isSafeInteger(offset)
-          || offset < 0
-          || offset + X86_PHYSICAL_PAGE_BYTES > this.memory.length) {
-        throw new Error('vm.wasm published an invalid x86 flush page');
-      }
-      const bytes = new Uint8Array(
-        E.memory.buffer,
-        E.vm_x86_physical_buffer(this.session, lease),
-        X86_PHYSICAL_PAGE_BYTES,
-      ).slice();
-      await this.memory.write(offset, bytes);
-      this.hostBarriers.physicalWrite += 1;
-      if (!E.vm_x86_ack_physical(this.session, lease, page)) {
-        throw new Error(`vm.wasm rejected flushed physical page ${page}`);
-      }
-    }
-    return this.status();
-  }
-
-  snapshot() {
-    this.assertOpen();
-    const E = this.exports;
-    const view = new DataView(E.memory.buffer);
-    const words = (address, count) => Array.from(
-      { length: count }, (_unused, index) =>
-        view.getBigUint64(address + index * 8, true),
-    );
-    const count = E.vm_x86_msr_extent(this.session);
-    const keys = words(E.vm_x86_msr_keys(this.session), count);
-    const values = words(E.vm_x86_msr_values(this.session), count);
-    const ioPorts = [];
-    const coordinates = [
-      0x21, 0xa1,
-      0x3f8, 0x3f9, 0x3fa, 0x3fb, 0x3fc, 0x3fd, 0x3fe, 0x3ff,
-      0x10042, 0x10043, 0x10044, 0x10045, 0x10046, 0x10047,
-    ];
-    for (const coordinate of coordinates) {
-      if (E.vm_x86_io_valid(this.session, coordinate)) {
-        ioPorts.push([
-          coordinate,
-          BigInt.asUintN(64, E.vm_x86_io_value(this.session, coordinate)),
-        ]);
-      }
-    }
-    const consoleCount = E.vm_x86_console_count(this.session);
-    const consoleInput = Uint8Array.from(
-      { length: consoleCount }, (_unused, index) =>
-        E.vm_x86_console_peek(this.session, index),
-    );
-    const consoleOutputCount = E.vm_x86_pending_console_output_count(
-      this.session,
-    );
-    const consoleOutput = Uint8Array.from(
-      { length: consoleOutputCount }, (_unused, index) =>
-        E.vm_x86_pending_console_output_peek(this.session, index),
-    );
-    return {
-      registers: words(E.vm_x86_registers(this.session), 16),
-      xmm: words(E.vm_x86_xmm(this.session), 32),
-      rip: BigInt.asUintN(64, E.vm_x86_rip(this.session)),
-      rflags: BigInt.asUintN(64, E.vm_x86_rflags(this.session)),
-      cr0: BigInt.asUintN(64, E.vm_x86_cr0(this.session)),
-      cr3: BigInt.asUintN(64, E.vm_x86_cr3(this.session)),
-      cr4: BigInt.asUintN(64, E.vm_x86_cr4(this.session)),
-      efer: BigInt.asUintN(64, E.vm_x86_efer(this.session)),
-      system: words(E.vm_x86_system(this.session), 22),
-      msrs: keys.map((key, index) => [key, values[index]]),
-      ioPorts,
-      consoleInput,
-      consoleOutput,
-    };
-  }
-
-  feedConsole(bytes) {
-    this.assertOpen();
-    if (typeof bytes === 'string') bytes = new TextEncoder().encode(bytes);
-    if (!(bytes instanceof Uint8Array)) {
-      throw new TypeError('x86 console input must be bytes or text');
-    }
-    for (const byte of bytes) {
-      if (!this.exports.vm_x86_console_feed(this.session, byte)) {
-        throw new Error('vm.wasm console input queue is full');
-      }
-    }
-    return bytes.length;
-  }
-
-  release() {
-    if (this.closed) return;
-    if (!this.exports.vm_step_release(this.session)) {
-      throw new Error('vm.wasm rejected the x86 lease release');
-    }
-    this.closed = true;
-  }
-}
-
-/** Release this worker's linear memory while retaining compiled code. */
 export function release() {
   instance = null;
   stepMemorySource = null;

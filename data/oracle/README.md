@@ -6,7 +6,7 @@ compiler. They never become a runtime fallback, a delivery object or part of
 the Linux machine identity.
 
 Run `./fetch.sh` to place the verified source archives in `data/upstream/`.
-The archives are ignored because `sources.env`, not an expanded checkout, is
+The archives are ignored because `oracle/sources.env`, not an expanded checkout, is
 the reproducible source lock.
 
 `build-qemu.sh` incrementally builds only `qemu-system-x86_64` with TCG in a
@@ -25,6 +25,7 @@ No one implementation is allowed to certify itself.
 | QEMU 11.1.0, x86 TCG system frontend | primary behavioural oracle for privilege checks, precise exceptions, control/descriptor/MSR state, page walks and interrupt entry; its typed TCG stream is also the structural comparison for block effects | product execution, product decoding, artifact publication |
 | Remill 6.0.1 commit `0e324aee...` | independent Apache-2.0 instruction semantics lowered to LLVM IR, especially integer, x87, SSE, AVX and AVX-512 families | complete system-machine behaviour; many privileged effects intentionally become hypercalls |
 | Intel XED 2026.07.15 | independent decode, operand, implicit-register, flag-action, ISA-set and CPUID boundary | instruction execution semantics |
+| Berkeley SoftFloat 3e commit `a0c6494c...` | IEEE binary32/binary64 arithmetic, conversions, rounding and exception-flag oracle before applying x86 MXCSR DAZ/FTZ/mask rules | x86 NaN operand-selection, DAZ/FTZ, exception delivery or product execution |
 | KVM on a pinned host CPU, when available | hardware differential samples for user and guest-ring tests | reproducibility across CPU models or the only exception oracle |
 
 QEMU is GPL-2.0. Its source may be executed as an external test oracle, but no
@@ -32,8 +33,10 @@ QEMU object or copied implementation is linked into `libpostlink.a` or
 `vm.wasm`. Remill is the reusable structural semantics source: its LLVM output
 may be normalized by a build-side importer into the post-link compiler's
 stable semantic grammar. The checked-in result must retain its Apache-2.0
-notices. LLVM and Remill are not required when the C compiler is distributed
-or run.
+notices. SoftFloat is a BSD-licensed external test oracle; product code does
+not link it, so its global rounding and exception variables cannot become
+hidden runtime state. LLVM, Remill and SoftFloat are not required when the C
+compiler is distributed or run.
 
 ## One comparison boundary
 

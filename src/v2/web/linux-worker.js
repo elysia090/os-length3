@@ -4,10 +4,9 @@
 // exceptions, control flow, and QM state-step execution remain in vm.wasm.
 // Missing native coverage is an error: there is no interpreter fallback.
 
-import { openArtifact } from './artifact.js';
-import { openNativeX86Artifact } from './x86-machine.js';
+import { openDirectArtifact } from './artifact.js';
 import {
-  openX86Machine,
+  openDirectX86Machine,
   release as releaseVM,
 } from './vm.js';
 
@@ -99,9 +98,7 @@ function machineArtifact(message) {
   const explicit = message.machineArtifact || message.x86?.machineArtifact;
   if (explicit) return String(explicit);
   const source = String(message.kernelArtifact || 'linux-x86-64');
-  // The post-link artifact is a function of the boot image, so its name is
-  // the boot image's with the producer's suffix.
-  return source.endsWith('-postlink') ? source : `${source}-postlink`;
+  return source.endsWith('-machine') ? source : `${source}-machine`;
 }
 
 async function drive(id, handle, options = {}) {
@@ -151,8 +148,8 @@ async function drive(id, handle, options = {}) {
       // A scheduling yield is not an execution fallback or guest barrier.
       // Keep it off the timer queue: nested setTimeout(0) is clamped to 4 ms
       // by the HTML specification, and a boot runs thousands of quanta.  The
-      // contribution has not been isolated on its own, unlike the bulk fetch
-      // in x86-machine.js; this is the cheaper primitive regardless.
+      // contribution has not been isolated on its own; this is the cheaper
+      // primitive regardless.
       await yieldToEventLoop();
     }
   }
@@ -194,33 +191,17 @@ async function boot(message) {
     label: 'Opening the native Linux machine',
     asset: name,
   });
-  const opened = await openArtifact(name, {
+  const artifact = await openDirectArtifact(name, {
     root: message.artifactRoot || null,
-    // The outer machine descriptor is one known sequential extent.  Give it
-    // a wider transfer wave without changing the small on-demand RAM wave
-    // passed below to openNativeX86Artifact.
-    wavePages: message.x86?.deliveryWavePages
-      ?? message.x86?.wavePages ?? 4,
-    // This object is already the worker's disposable resident set. Retaining
-    // each touched immutable page is cheaper than decoding the same execution
-    // page again after a direct-mapped block-cache collision.
-    cachePages: message.x86?.deliveryCachePages ?? 256,
   });
   profileMark(message.id, 'artifact_mapped');
-  let artifact;
   let machine;
   const console = consoleState();
   try {
-    const x86Options = message.x86 || {};
-    artifact = await openNativeX86Artifact(opened.fabric, {
-      ...x86Options,
-      // The RAM bundle has only the canonical unique pages. Keep touched
-      // pages resident until this disposable worker is released.
-      cachePages: x86Options.memoryCachePages ?? x86Options.cachePages ?? 96,
-    });
-    profileMark(message.id, 'physical_pages_opened');
-    machine = await openX86Machine({
-      ...artifact,
+    machine = await openDirectX86Machine({
+      root: artifact.root,
+      deliveryRoot: artifact.deliveryRoot,
+      source: artifact.source,
       devices: {
         consoleWrite(bytes) {
           observeConsole(console, bytes);
@@ -242,14 +223,14 @@ async function boot(message) {
         },
       },
     });
+    profileMark(message.id, 'physical_pages_opened');
     profileMark(message.id, 'vm_opened');
   } catch (error) {
-    artifact?.release();
-    opened.fabric.release();
+    artifact.release();
     throw error;
   }
   const handle = nextHandle++;
-  sessions.set(handle, { artifact, machine, opened, console });
+  sessions.set(handle, { artifact, machine, console });
   send('booted', { id: message.id, handle, architecture: 'x86-64' });
   try {
     const result = await drive(
@@ -273,7 +254,6 @@ function releaseSession(handle) {
   const session = sessions.get(handle);
   session.machine.release();
   session.artifact.release();
-  session.opened.fabric.release();
   sessions.delete(handle);
   if (!sessions.size) releaseVM();
   return handle;

@@ -3,25 +3,38 @@
 This is the acceptance contract and dependency order for the post-link
 compiler.  A boot trace is test input; it is not the program being compiled.
 The compiler's input is a linked x86 image plus its executable mappings.  Its
-output is a directly callable VM executable bound to that unchanged source
-identity.  STEP is internal build-side SSA evidence and must not become the
-runtime instruction set.
+primary output is independently runnable optimized x86.  A VM executable is a
+secondary verified projection of that accepted native output.  STEP is
+internal build-side SSA evidence and must not become the runtime instruction
+set.
 
 ## Acceptance contract
 
 The command-line model is deliberately ordinary:
 
 ```text
-cc source.c -o program
-postlink-compiler program
-vm program
+cc -static source.c -o program
+postlink-compiler program -o program.opt
+postlink-verify program program.opt
+program.opt
+postlink-lower-wasm program.opt -o program.modules
 ```
 
-The compiler attaches an authenticated executable projection without changing
-the linked ELF bytes Linux maps, debugs and exposes through its VFS.  The Linux
-product applies the same operation to the loaded kernel image and to each
-executable ELF before it is published executable.  The browser does not own a
-second executable loader, decoder, VFS, or interpreter.
+A self-contained static `ET_EXEC` is accepted directly: decoded control and
+address fields plus allocated ELF metadata are its finite construction
+evidence. A dynamic `ET_EXEC`/`ET_DYN` must additionally retain static linker
+relocations with `--emit-relocs`, because runtime relocations alone do not name
+every already-resolved reference that may move. Present construction rows are
+closed exhaustively and then discarded from `program.opt`; no sidecar or build
+tree is needed to execute, verify, or lower the result. An input missing the
+evidence required by its linkage model is rejected rather than sent down a
+weaker path.
+
+The compiler emits another normal linked x86 image plus its authenticated
+machine contract.  The Linux product applies the same operation to the loaded
+kernel image and to each executable ELF before it is published executable.
+The browser does not own a second executable loader, decoder, VFS, optimizer,
+or interpreter.
 
 Completion requires all of the following:
 
@@ -39,8 +52,18 @@ Completion requires all of the following:
   and never invokes a decoder;
 - compilation fails before publication if any executable coordinate or direct
   edge is not represented; execution never reports `missingBlock`;
-- the artifact contains ordinary Wasm block modules, page-generation bindings
-  and function ranks, not a boot-observed list of scalar STEP programs;
+- the primary artifact contains native x86 transfer functions,
+  page-generation bindings and function ranks, not a boot-observed list of
+  scalar STEP programs;
+- acceptance minimizes the complete emitted ordinary ELF, not each block in
+  isolation. `sigma=max cut span` and `tau=max cut work` are independently
+  minimized; publication requires one candidate to attain both minima. Only
+  inside that exact physical fiber do final file bytes and canonical ELF byte
+  rank select the representation. If the two minima have no joint witness,
+  the Pareto frontier remains unresolved and publication fails;
+- a universal codec, rSUBLEQ evaluator, candidate generator, and all-program
+  frontier are permitted only as build-side search/proof machinery and are
+  absent from the output ELF and its runtime dependency closure;
 - static successors return a direct function rank; only a true machine
   barrier, fault, halt, or stale page generation leaves the direct chain;
 - differential fuzzing and real Linux tests prove the optimized image against
@@ -145,11 +168,17 @@ the finite partition with
 
 ```text
 signature[n + 1](q) =
-    (T(q), B(q), normalize(predicate(q), signature[n](S(q))))
+    (T(q), B(q),
+     residual_work(q), live_dependency_frontier(q),
+     normalize(predicate(q), signature[n](S(q))))
 ```
 
-until ranks stop changing.  This is the deterministic residual behaviour of
-the block graph.
+until ranks stop changing. `live_dependency_frontier` is the ordered vector of
+SSA output heights, not only its maximum. Constants, addresses, source node
+ids, and wave ids leave the topology before ranking. An actual common graph
+prefix may move to an incoming edge with its code and cost; numeric work may
+not be subtracted merely to enable a merge. This is the deterministic weighted
+residual behaviour of the block graph.
 
 - A conditional whose two successor ranks are equal becomes unconditional.
 - Complementing a predicate and swapping its arms produces the same row.
@@ -165,26 +194,74 @@ Gate: stable partition ranks are deterministic, every merge has identical
 barrier traces and persistent cuts under fuzzing, and the number of runtime RIP
 lookups is measured rather than inferred.
 
-### 6. Emit a direct VM executable
+### 6. Emit and verify optimized x86
 
-- Lower each normalized transfer class to an ordinary Wasm function with the
-  fixed `(i32 machine, i32 executable_context) -> i64 result` ABI.
+- Lower each normalized transfer class to ordinary x86 with the fixed native
+  machine ABI.
 - Emit a total page-dispatch projection for each executable page.  Its domain
   is the page-offset region and its storage is the quotient function-rank
   region.  Pages parameterize shared dispatch functions by access-map rank;
   no fixed block record is materialized per coordinate.
-- Keep the linked x86 bytes as source identity.  Bind page digest and generation
-  to artifact-local function ranks and Wasm module digests.
+- Keep the linked input x86 and optimized output x86 as separate identities.
+  Bind page digest and generation to artifact-local native function ranks.
 - Emit static successors as direct ranks and dynamic successors through the
   page dispatcher, without assembling an X86B/STEP record.
-- Gate: direct VM execution and native execution agree with the original
-  linked program over differential tests.
+- Compose every local alternative into a complete canonical `ET_EXEC` or
+  `ET_DYN` candidate before charging size.  Body sharing, veneers, dispatch,
+  retained immutable bytes, program headers, alignment and proof-note bytes
+  are one objective; a sum of local encoded lengths is not sufficient.
+- Before that composition, reject only componentwise dominated physical
+  candidates. A span/work tradeoff remains on the Pareto frontier. A locally
+  larger body is legal: it may remove global control/layout bytes. The exact
+  length/rank gate runs only after the complete ELF or its exact canonical
+  Artifact spelling attains both independent physical minima.
+- Search the unbounded construction space through one complete prefix code and
+  a universal build-side evaluator when useful. Quotient candidates by their
+  emitted ELF and complete future. Reject release until every unresolved cell
+  has a proved lower bound no better than the incumbent; then delete the
+  evaluator image, frontier, closure rows and candidate programs.
+- The minimum certificate separately proves the irreducible global span lower
+  bound and the independent global work lower bound, then proves that one
+  candidate attains both. Only in that joint fiber does it exclude every
+  shorter canonical ELF and every equal-length earlier ELF rank. These are the
+  exact acceptance obligations, not sampled search coverage.
+- A proved fixed native family may encode its selected complete-future rank with
+  the canonical bounded-rank branch of the one global Kraft code. For `N`
+  admitted futures its maximum parameter width is exactly `ceil(log2 N)` bits:
+  the information lower bound and truncated-binary constructive upper bound
+  coincide. Final ordinary ELF length reports the exact family constant, packed
+  rank bits and standard-ELF framing separately. The family contains native x86,
+  not an `N`-row table or an rSUBLEQ runtime. A class count without exact family
+  membership supplies no upper bound and must not be advertised as compression.
+- The same family certificate reports `max span` and `max work` over every
+  admitted rank, complete-future cut and machine event. These are constructive
+  worst-case bounds. A boot trace, benchmark sample or timeout cannot supply
+  either coordinate.
+- The global grammar has a literal branch for every finite ordinary x86 ELF,
+  so synthesis rules cannot hide a better x86 spelling by omission. Every
+  unresolved grammar cell carries sound independent span/work lower bounds;
+  once a cell can still attain both global minima it also carries a sound
+  representation bound. Equality between both semantic lower bounds and one
+  emitted candidate proves global worst-case span/work optimality on the
+  admitted machine ABI.
+- Every grammar rule carries a checked physical upper bound. Serial
+  composition adds span and work; a parallel wave takes maximum span and adds
+  work; a choice adds control cost to the worse executed arm while charging
+  both stored arm bodies to ELF length. An unbounded recurrence without a
+  closed bound or barrier is not publishable. These bounds must meet the
+  independently proved dependency/operation-cut lower bounds before length or
+  construction rank can decide publication; profiling is not that proof.
+- Gate: the optimized output is independently executable, agrees with the
+  original linked program over differential tests, and improves the declared
+  native physical objective. It contains no section, symbol dependency, or
+  interpreter entry for the build-side universal machine.
 
-### 7. One direct VM runtime path
+### 7. Lower accepted x86 to one VM runtime path
 
-- Instantiate compiler-emitted Wasm modules against the VM's shared memory and
-  function table.  JavaScript may orchestrate module instantiation but never
-  executes, decodes or reconstructs guest instructions.
+- Lower only the accepted optimized x86 transfer program into bounded Wasm
+  modules, then instantiate them against the VM's shared memory and function
+  table.  JavaScript may orchestrate module instantiation but never executes,
+  optimizes, decodes or reconstructs guest instructions.
 - Partition emitted modules at physical hot/cold and barrier cuts.  A module is
   an independently authenticated delivery extent; loading one cold module must
   not reconstruct or compile every other module.  The VM checks function-rank
@@ -211,8 +288,8 @@ information term.  The implementation must therefore distinguish unavoidable
 unique content from avoidable materialization.
 
 - The machine root names the linked image, compiled modules and immutable
-  filesystem extents by digest/generation.  It does not embed the canonical
-  toolchain tar and the same SquashFS bytes again inside boot RAM.
+  filesystem extents by digest/generation.  It does not embed a merged
+  toolchain root and the same filesystem bytes again inside boot RAM.
 - A sparse address-space length is never a request for a dense buffer.  Wire
   directories gap-code nonzero coordinates; opened directories may use bounded
   rank/select pages, and resident storage contains only touched unique pages,
@@ -298,24 +375,26 @@ they must not introduce a second execution path.
 - Target cold BusyBox shell in at most three seconds, with `missingBlock == 0`
   and no Python/JavaScript execution route.
 
-## Current measured gaps
+## Current measured boundary
 
-The shipped closure has 222,079 blocks.  Of 279,371 static control edges,
-278,563 resolve, 808 have no block at the target coordinate, and 34,775 resolve
-to a coordinate with several proof variants.  There are 13,066 blocks with a
-dynamic dispatch.  `pl_trace_edges` additionally keeps only a block with one
-static successor, so its composition population omits real conditional loops.
+The old trace graph and STEP executor measurements are not product inputs and
+have been removed from this contract. The current C product has two distinct
+populations:
 
-Exact residual partition refinement over the current graph stabilizes after 18
-rounds at 205,287 classes: 16,792 block rows (7.6%) share a complete future
-residual.  Of 70,359 conditionals, only 15 currently have equal successor
-classes and disappear directly; 17,916 admit the complement-and-arm-swap
-canonical spelling.  This bounds plain dispatch deduplication and shows that
-the larger win must come from closing variants and composing static runs, not
-from hashing RIPs differently.
+- the complete executable-coordinate semantic catalog, used only to reject an
+  unclosed x86 meaning; and
+- the finite native entry/successor closure, used to select emitted blocks.
 
-A BusyBox boot retires about 35.1 million source x86 instructions but loads
-about 11.3 million blocks: only 3.11 source instructions per block.  It enters
-the STEP executor about 15.3 million times and executes 29.5 million STEP
-nodes.  The immediate runtime cost is therefore block dispatch, state-shape
-restore and memory retry; artifact fetch is not the dominant term.
+The latter is derived from ordinary ELF `e_entry`, executable symbols and
+static code relocations. It retains only two one-bit coordinate sets and a u32
+work queue while compiling, orders boundaries with one linear bitset walk, and
+discards each normalized block plan after charging its aggregate cost. None of
+those structures is an output format. On the checked real-ELF fixture this is
+47 boundaries over 72 source instructions, reducing static physical work
+98 -> 71 and span 86 -> 50. All 47 blocks are selected into one compact native
+extent; identity removal reduces emitted instructions 72 -> 67 and selected
+bytes 252 -> 232. Standard static/dynamic ELF fixtures pass proof and execute
+directly. Distribution publication remains red until preserved stateful source
+x86 is replaced by selected physical-SSA bodies, every unsupported metadata
+encoding and indirect target population is closed, and the complete fixed root passes
+differential and paired native benchmarks.

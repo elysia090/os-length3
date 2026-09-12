@@ -1,20 +1,13 @@
 /* Plan decoding and raw composition.  See include/postlink/plan.h. */
 
-#include <postlink/plan.h>
-
-void *pl_arena_take(pl_arena *arena, pl_u32 bytes)
-{
-    pl_u32 at = (arena->used + 7u) & ~7u;      /* eight-byte alignment */
-    if (at > arena->size || bytes > arena->size - at) return 0;
-    arena->used = at + bytes;
-    return arena->base + at;
-}
+#include "internal/plan.h"
 
 /* Values interleave: a tag group's stayed words sit in the template while its
  * consts and coordinates sit in the parameter row, and both advance in tag
  * order.  One cursor over both keeps the two in step. */
 typedef struct {
     const pl_u8 *tmpl;
+    const pl_template *parsed;
     const pl_u8 *row;
     pl_u32 word_at;      /* into the template's stayed words */
     pl_u32 row_at;       /* into the parameter row */
@@ -24,7 +17,8 @@ static pl_operand next_value(value_cursor *cursor, const pl_tag_group *group,
                              pl_u32 index)
 {
     pl_operand operand;
-    pl_u32 tag = cursor->tmpl[group->tags + index];
+    pl_u32 tag = pl_template_tag(
+        cursor->tmpl, cursor->parsed, group, index);
     operand.kind = (pl_u8)tag;
     if (tag == PL_OPERAND_CONST) {
         operand.value = pl_read_u64(cursor->row + cursor->row_at);
@@ -33,8 +27,8 @@ static pl_operand next_value(value_cursor *cursor, const pl_tag_group *group,
         operand.value = pl_read_u16(cursor->row + cursor->row_at);
         cursor->row_at += 2u;
     } else {
-        operand.value = pl_read_u64(cursor->tmpl + group->words
-                                    + (pl_u64)cursor->word_at * 8u);
+        operand.value = pl_template_word(
+            cursor->tmpl, cursor->parsed, group, cursor->word_at);
         cursor->word_at += 1u;
     }
     return operand;
@@ -62,27 +56,42 @@ int pl_plan_decode(const pl_u8 *tmpl, const pl_template *parsed,
         arena, parsed->stack_count * (pl_u32)sizeof *out->stack);
     out->locals = pl_arena_take(
         arena, parsed->local_extent * (pl_u32)sizeof *out->locals);
+    out->wave_offsets = pl_arena_take(
+        arena, (parsed->span + 1u) * (pl_u32)sizeof *out->wave_offsets);
+    out->wave_values = parsed->work ? pl_arena_take(
+        arena, parsed->work * (pl_u32)sizeof *out->wave_values) : 0;
     if ((parsed->work && !out->nodes) || (parsed->operands && !out->arguments)
             || (parsed->stack_count && !out->stack)
             || (parsed->local_extent && !out->locals))
         return PL_ERROR_ARENA;
+    if (!out->wave_offsets || (parsed->work && !out->wave_values))
+        return PL_ERROR_ARENA;
+
+    pl_u32 wave_offset = 0u;
+    for (pl_u32 wave = 0u; wave <= parsed->span; ++wave) {
+        out->wave_offsets[wave] = wave_offset;
+        if (wave < parsed->span)
+            wave_offset += pl_template_wave_size(tmpl, parsed, wave);
+    }
+    for (pl_u32 value = 0u; value < parsed->work; ++value)
+        out->wave_values[value] = pl_template_lane_value(
+            tmpl, parsed, value);
 
     /* The parameter row is one run across all three groups, so row_at carries
      * over; the stayed words are a separate run per group, so word_at resets
      * with each group. */
-    value_cursor cursor = { tmpl, row, 0, 0 };
+    value_cursor cursor = { tmpl, parsed, row, 0, 0 };
     for (pl_u32 index = 0; index < parsed->operands; ++index)
         out->arguments[index] = next_value(&cursor, &parsed->operand, index);
     cursor.word_at = 0;
 
-    const pl_u8 *offsets = tmpl + parsed->argument_offsets;
+    pl_u32 argument_at = 0u;
     for (pl_u32 value = 0; value < parsed->work; ++value) {
-        pl_u32 begin = pl_read_u32(offsets + (pl_u64)value * 4u);
-        pl_u32 end = pl_read_u32(offsets + (pl_u64)(value + 1u) * 4u);
-        if (begin > end || end > parsed->operands) return PL_ERROR_PLAN;
+        pl_u32 arity = pl_template_argument_arity(tmpl, parsed, value);
         out->nodes[value].opcode = tmpl[parsed->opcodes + value];
-        out->nodes[value].argument_at = begin;
-        out->nodes[value].argument_count = end - begin;
+        out->nodes[value].argument_at = argument_at;
+        out->nodes[value].argument_count = arity;
+        argument_at += arity;
     }
 
     for (pl_u32 index = 0; index < parsed->stack_count; ++index)

@@ -13,7 +13,7 @@
  * Freestanding: no libc, no allocation.
  */
 
-#include <postlink/sweep.h>
+#include "internal/sweep.h"
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 #define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)

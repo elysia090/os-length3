@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 
-#include <postlink/semantic.h>
+#include "../src/internal/semantic.h"
 
 typedef struct {
     const char *domain;
@@ -30,6 +30,18 @@ static const pl_u8 movdqu_store[]  = { 0xf3u, 0x0fu, 0x7fu, 0x00u };
 static const pl_u8 andps_load[]    = { 0x0fu, 0x54u, 0x00u };
 static const pl_u8 andnps_xmm[]    = { 0x0fu, 0x55u, 0xc1u };
 static const pl_u8 andnps_load[]   = { 0x0fu, 0x55u, 0x00u };
+static const pl_u8 pblendvb_xmm[]  = {
+    0x66u, 0x0fu, 0x38u, 0x10u, 0xcau,
+};
+static const pl_u8 pblendvb_mem[]  = {
+    0x66u, 0x0fu, 0x38u, 0x10u, 0x08u,
+};
+static const pl_u8 pmovzxdq_xmm[]  = {
+    0x66u, 0x0fu, 0x38u, 0x35u, 0xcau,
+};
+static const pl_u8 pmovzxdq_mem[]  = {
+    0x66u, 0x0fu, 0x38u, 0x35u, 0x08u,
+};
 static const pl_u8 cmpxchg16b[]    = { 0x48u, 0x0fu, 0xc7u, 0x08u };
 static const pl_u8 lock_xadd[]     = { 0xf0u, 0x0fu, 0xc1u, 0x18u };
 static const pl_u8 lock_add[]      = { 0xf0u, 0x01u, 0x00u };
@@ -90,6 +102,7 @@ static const pl_u8 sysenter[]      = { 0x0fu, 0x34u };
 static const pl_u8 sysexit[]       = { 0x0fu, 0x35u };
 static const pl_u8 sysexit64[]     = { 0x48u, 0x0fu, 0x35u };
 static const pl_u8 swapgs[]        = { 0x0fu, 0x01u, 0xf8u };
+static const pl_u8 lkgs_di[]       = { 0xf2u, 0x0fu, 0x00u, 0xf7u };
 static const pl_u8 int_80[]         = { 0xcdu, 0x80u };
 static const pl_u8 sldt_rax[]       = { 0x0fu, 0x00u, 0xc0u };
 static const pl_u8 str_rax[]        = { 0x0fu, 0x00u, 0xc8u };
@@ -132,6 +145,14 @@ static const pl_u8 subps_reg[]      = { 0x0fu, 0x5cu, 0xc1u };
 static const pl_u8 subps_mem[]      = { 0x0fu, 0x5cu, 0x00u };
 static const pl_u8 divps_reg[]      = { 0x0fu, 0x5eu, 0xc1u };
 static const pl_u8 divps_mem[]      = { 0x0fu, 0x5eu, 0x00u };
+static const pl_u8 addpd_reg[]      = { 0x66u, 0x0fu, 0x58u, 0xc1u };
+static const pl_u8 addpd_mem[]      = { 0x66u, 0x0fu, 0x58u, 0x00u };
+static const pl_u8 mulpd_reg[]      = { 0x66u, 0x0fu, 0x59u, 0xc1u };
+static const pl_u8 mulpd_mem[]      = { 0x66u, 0x0fu, 0x59u, 0x00u };
+static const pl_u8 subpd_reg[]      = { 0x66u, 0x0fu, 0x5cu, 0xc1u };
+static const pl_u8 subpd_mem[]      = { 0x66u, 0x0fu, 0x5cu, 0x00u };
+static const pl_u8 divpd_reg[]      = { 0x66u, 0x0fu, 0x5eu, 0xc1u };
+static const pl_u8 divpd_mem[]      = { 0x66u, 0x0fu, 0x5eu, 0x00u };
 static const pl_u8 fprem[]          = { 0xd9u, 0xf8u };
 static const pl_u8 fprem1[]         = { 0xd9u, 0xf5u };
 static const pl_u8 fchs[]           = { 0xd9u, 0xe0u };
@@ -143,6 +164,8 @@ static const pl_u8 addps[]          = { 0x0fu, 0x58u, 0xc3u };
 static const pl_u8 addps_mem[]      = { 0x0fu, 0x58u, 0x18u };
 static const pl_u8 maxps_mem[]      = { 0x0fu, 0x5fu, 0x00u };
 static const pl_u8 minps_mem[]      = { 0x0fu, 0x5du, 0x00u };
+static const pl_u8 maxpd_mem[]      = { 0x66u, 0x0fu, 0x5fu, 0x00u };
+static const pl_u8 movupd_mem[]     = { 0x66u, 0x0fu, 0x11u, 0x00u };
 static const pl_u8 ucomiss[]         = { 0x0fu, 0x2eu, 0xc1u };
 static const pl_u8 ucomiss_mem[]     = { 0x0fu, 0x2eu, 0x00u };
 static const pl_u8 comiss[]          = { 0x0fu, 0x2fu, 0xc1u };
@@ -204,11 +227,39 @@ static const pl_u8 movq_mmx_load[]  = { 0x0fu, 0x6fu, 0x00u };
 static const pl_u8 movq_mmx_store[] = { 0x0fu, 0x7fu, 0x00u };
 static const pl_u8 paddd_mmx[]      = { 0x0fu, 0xfeu, 0xc1u };
 static const pl_u8 paddd_xmm[]      = { 0x66u, 0x0fu, 0xfeu, 0xc1u };
+static const pl_u8 phaddd_mmx_mem[] = { 0x0fu, 0x38u, 0x02u, 0x00u };
+static const pl_u8 phaddd_xmm[] = {
+    0x66u, 0x0fu, 0x38u, 0x02u, 0xc1u,
+};
+static const pl_u8 pmulhrsw_mmx_mem[] = {
+    0x0fu, 0x38u, 0x0bu, 0x00u,
+};
+static const pl_u8 pmulhrsw_xmm[] = {
+    0x66u, 0x0fu, 0x38u, 0x0bu, 0xc1u,
+};
+static const pl_u8 phsubd_mmx_mem[] = {
+    0x0fu, 0x38u, 0x06u, 0x00u,
+};
+static const pl_u8 phsubd_xmm[] = {
+    0x66u, 0x0fu, 0x38u, 0x06u, 0xc1u,
+};
+static const pl_u8 psignb_mmx_mem[] = {
+    0x0fu, 0x38u, 0x08u, 0x00u,
+};
+static const pl_u8 psignb_xmm[] = {
+    0x66u, 0x0fu, 0x38u, 0x08u, 0xc1u,
+};
 static const pl_u8 psrld_xmm_imm[]  = {
     0x66u, 0x0fu, 0x72u, 0xd1u, 0x0cu,
 };
 static const pl_u8 pslld_xmm_imm[]  = {
     0x66u, 0x0fu, 0x72u, 0xf0u, 0x14u,
+};
+static const pl_u8 pslld_xmm_reg[]  = {
+    0x66u, 0x0fu, 0xf2u, 0xc1u,
+};
+static const pl_u8 pslld_xmm_mem[]  = {
+    0x66u, 0x0fu, 0xf2u, 0x00u,
 };
 static const pl_u8 pxor_mmx[]       = { 0x0fu, 0xefu, 0xc1u };
 static const pl_u8 pcmpeqb_mmx[]    = { 0x0fu, 0x74u, 0x00u };
@@ -225,6 +276,15 @@ static const pl_u8 pmullw_xmm[]     = { 0x66u, 0x0fu, 0xd5u, 0xebu };
 static const pl_u8 pcmpeqb_xmm[]    = { 0x66u, 0x0fu, 0x74u, 0xfcu };
 static const pl_u8 pshufhw_xmm[]    = {
     0xf3u, 0x0fu, 0x70u, 0xd0u, 0x50u,
+};
+static const pl_u8 pshufhw_xmm_mem[] = {
+    0xf3u, 0x0fu, 0x70u, 0x00u, 0x50u,
+};
+static const pl_u8 pshuflw_xmm[]    = {
+    0xf2u, 0x0fu, 0x70u, 0xc0u, 0x1bu,
+};
+static const pl_u8 pshuflw_xmm_mem[] = {
+    0xf2u, 0x0fu, 0x70u, 0x00u, 0x1bu,
 };
 static const pl_u8 psubsw_mmx[]     = { 0x0fu, 0xe9u, 0x00u };
 static const pl_u8 psubsb_mmx[]     = { 0x0fu, 0xe8u, 0x00u };
@@ -275,6 +335,7 @@ static const pl_u8 mov_rbp_dr3[]    = { 0x0fu, 0x21u, 0xddu };
 static const pl_u8 mov_dr3_rbp[]    = { 0x0fu, 0x23u, 0xddu };
 static const pl_u8 lar_ecx_ecx[]    = { 0x0fu, 0x02u, 0xc9u };
 static const pl_u8 lar_ecx_mem[]    = { 0x0fu, 0x02u, 0x08u };
+static const pl_u8 lar_ax_mem[]     = { 0x66u, 0x0fu, 0x02u, 0x00u };
 static const pl_u8 lsl_eax_mem[]    = { 0x0fu, 0x03u, 0x00u };
 static const pl_u8 lldt_mem[]       = { 0x0fu, 0x00u, 0x10u };
 static const pl_u8 lldt_ax[]        = { 0x0fu, 0x00u, 0xd0u };
@@ -304,6 +365,10 @@ static const pl_u8 punpckhbw_mmx[]  = { 0x0fu, 0x68u, 0xc1u };
 static const pl_u8 punpckhbw_mem[]  = { 0x0fu, 0x68u, 0x00u };
 static const pl_u8 punpckhbw_xmm_mem[] = { 0x66u, 0x0fu, 0x68u, 0x00u };
 static const pl_u8 pmaddwd_mmx[]    = { 0x0fu, 0xf5u, 0xc1u };
+static const pl_u8 pmaddubsw_mmx_mem[] = { 0x0fu, 0x38u, 0x04u, 0x00u };
+static const pl_u8 pmaddubsw_xmm_mem[] = {
+    0x66u, 0x0fu, 0x38u, 0x04u, 0x00u
+};
 static const pl_u8 paddq_mmx[]      = { 0x0fu, 0xd4u, 0xc1u };
 static const pl_u8 pmulhuw_mmx[]    = { 0x0fu, 0xe4u, 0xc1u };
 static const pl_u8 pminsw_mmx[]     = { 0x0fu, 0xeau, 0xc1u };
@@ -322,8 +387,34 @@ static const pl_u8 movq_mmx_gpr[]   = { 0x48u, 0x0fu, 0x6eu, 0xcfu };
 static const pl_u8 movlps_store[]   = { 0x0fu, 0x13u, 0x00u };
 static const pl_u8 movhps_load[]    = { 0x0fu, 0x16u, 0x00u };
 static const pl_u8 pinsrw_mmx[]     = { 0x0fu, 0xc4u, 0xc7u, 0x03u };
+static const pl_u8 pinsrd_reg[]      = {
+    0x66u, 0x0fu, 0x3au, 0x22u, 0xc8u, 0x02u,
+};
+static const pl_u8 pinsrd_mem[]      = {
+    0x66u, 0x0fu, 0x3au, 0x22u, 0x72u, 0x10u, 0x03u,
+};
+static const pl_u8 pinsrq_reg[]      = {
+    0x66u, 0x48u, 0x0fu, 0x3au, 0x22u, 0xc8u, 0x01u,
+};
+static const pl_u8 palignr_mmx_mem[] = {
+    0x0fu, 0x3au, 0x0fu, 0x00u, 0x48u,
+};
+static const pl_u8 palignr_xmm[] = {
+    0x66u, 0x0fu, 0x3au, 0x0fu, 0xc1u, 0x08u,
+};
 static const pl_u8 pextrw_mmx[]     = { 0x0fu, 0xc5u, 0xe3u, 0xffu };
 static const pl_u8 pextrw_xmm[]     = { 0x66u, 0x0fu, 0xc5u, 0xe3u, 0x07u };
+static const pl_u8 blsic_tbm[]       = {
+    0x8fu, 0x29u, 0x00u, 0x01u, 0xf6u,
+};
+static const pl_u8 pmovmskb_xmm[]    = { 0x66u, 0x0fu, 0xd7u, 0xf0u };
+static const pl_u8 lock_not_mem[]    = { 0xf0u, 0xf7u, 0x53u, 0x00u };
+static const pl_u8 rdsspq_no_cet[]   = {
+    0xf3u, 0x48u, 0x0fu, 0x1eu, 0xc8u,
+};
+static const pl_u8 incsspq_no_cet[]  = {
+    0xf3u, 0x48u, 0x0fu, 0xaeu, 0xe8u,
+};
 static const pl_u8 pslldq_xmm[]     = { 0x66u, 0x0fu, 0x73u, 0xf9u, 0x0cu };
 static const pl_u8 psrldq_xmm[]     = { 0x66u, 0x0fu, 0x73u, 0xd8u, 0x08u };
 static const pl_u8 pmuludq_mmx[]    = { 0x0fu, 0xf4u, 0xc1u };
@@ -346,6 +437,12 @@ static const pl_u8 pavgb_xmm[]      = { 0x66u, 0x0fu, 0xe0u, 0xc1u };
 static const pl_u8 pavgw_xmm[]      = { 0x66u, 0x0fu, 0xe3u, 0xc1u };
 static const pl_u8 pmaxub_xmm[]     = { 0x66u, 0x0fu, 0xdeu, 0xc1u };
 static const pl_u8 psrad_xmm[]      = { 0x66u, 0x0fu, 0xe2u, 0xc1u };
+static const pl_u8 psrad_xmm_imm[]  = {
+    0x66u, 0x0fu, 0x72u, 0xe0u, 0x1fu
+};
+static const pl_u8 psrad_mmx_imm[]  = {
+    0x0fu, 0x72u, 0xe1u, 0x1fu
+};
 static const pl_u8 movntps_mem[]    = { 0x0fu, 0x2bu, 0x00u };
 static const pl_u8 unpckhps_xmm[]  = { 0x0fu, 0x15u, 0xc1u };
 static const pl_u8 punpckhdq_mmx[] = { 0x0fu, 0x6au, 0xc1u };
@@ -355,6 +452,13 @@ static const pl_u8 paddsb_mmx[]     = { 0x0fu, 0xecu, 0xc1u };
 static const pl_u8 paddusw_mmx[]    = { 0x0fu, 0xddu, 0xc1u };
 static const pl_u8 pminub_mmx[]     = { 0x0fu, 0xdau, 0xc1u };
 static const pl_u8 psraw_mmx[]      = { 0x0fu, 0xe1u, 0xc1u };
+static const pl_u8 psraw_xmm_imm[]  = {
+    0x66u, 0x0fu, 0x71u, 0xe0u, 0x0fu
+};
+static const pl_u8 psraw_mmx_imm[]  = {
+    0x0fu, 0x71u, 0xe1u, 0x0fu
+};
+static const pl_u8 movlpd_load[]    = { 0x66u, 0x0fu, 0x12u, 0x00u };
 static const pl_u8 psrlw_mmx[]      = { 0x0fu, 0xd1u, 0xc1u };
 static const pl_u8 packsswb_mmx[]   = { 0x0fu, 0x63u, 0xc1u };
 static const pl_u8 psubusw_mmx[]    = { 0x0fu, 0xd9u, 0xc1u };
@@ -375,12 +479,22 @@ static const pl_u8 fxsave64[]       = { 0x48u, 0x0fu, 0xaeu, 0x00u };
 static const pl_u8 fxrstor[]        = { 0x0fu, 0xaeu, 0x08u };
 static const pl_u8 fxrstor64[]      = { 0x48u, 0x0fu, 0xaeu, 0x08u };
 static const pl_u8 cvtdq2ps[]       = { 0x0fu, 0x5bu, 0xc3u };
+static const pl_u8 cvtdq2pd_reg[]   = { 0xf3u, 0x0fu, 0xe6u, 0xc1u };
+static const pl_u8 cvtdq2pd_mem[]   = { 0xf3u, 0x0fu, 0xe6u, 0x00u };
+static const pl_u8 cvttpd2dq_reg[]  = { 0x66u, 0x0fu, 0xe6u, 0xc1u };
+static const pl_u8 cvttpd2dq_mem[]  = { 0x66u, 0x0fu, 0xe6u, 0x00u };
 static const pl_u8 jknzd_knc[]      = {
     0xc5u, 0x48u, 0x85u, 0xc0u, 0x75u, 0x13u, 0x49u,
 };
 static const pl_u8 vpxor_avx[]      = { 0xc5u, 0xe9u, 0xefu, 0xfcu };
 static const pl_u8 pshufb_ssse3[]   = {
     0x66u, 0x0fu, 0x38u, 0x00u, 0xcbu,
+};
+static const pl_u8 pshufb_ssse3_mem[] = {
+    0x66u, 0x0fu, 0x38u, 0x00u, 0x00u,
+};
+static const pl_u8 pshufb_ssse3_mmx_mem[] = {
+    0x0fu, 0x38u, 0x00u, 0x00u,
 };
 static const pl_u8 clac_smap[]      = { 0x0fu, 0x01u, 0xcau };
 static const pl_u8 xbegin_rtm[]     = {
@@ -402,6 +516,12 @@ static const pl_u8 rsm_no_smm[]     = { 0x0fu, 0xaau };
 static const pl_u8 pextrd_sse4[]    = {
     0x66u, 0x0fu, 0x3au, 0x16u, 0xc0u, 0x02u,
 };
+static const pl_u8 pextrd_sse4_mem[] = {
+    0x66u, 0x0fu, 0x3au, 0x16u, 0x00u, 0x02u,
+};
+static const pl_u8 pextrq_sse4[] = {
+    0x66u, 0x48u, 0x0fu, 0x3au, 0x16u, 0xc8u, 0x01u,
+};
 static const pl_u8 invpcid_no_feature[] = {
     0x66u, 0x0fu, 0x38u, 0x82u, 0x04u, 0x24u,
 };
@@ -419,11 +539,68 @@ static const pl_u8 xsha256_padlock[] = { 0xf3u, 0x0fu, 0xa6u, 0xd0u };
 static const pl_u8 unpcklpd_xmm[] = { 0x66u, 0x0fu, 0x14u, 0xecu };
 static const pl_u8 pmovmskb_mmx[] = { 0x0fu, 0xd7u, 0xffu };
 static const pl_u8 movhlps_xmm[] = { 0x0fu, 0x12u, 0xf5u };
+static const pl_u8 movlhps_xmm[] = { 0x0fu, 0x16u, 0xf5u };
+static const pl_u8 punpcklwd_xmm_mem[] = { 0x66u, 0x0fu, 0x61u, 0x08u };
+static const pl_u8 movq_xmm_xmm[] = { 0xf3u, 0x0fu, 0x7eu, 0xf8u };
+static const pl_u8 cvtsd2ss_xmm[] = { 0xf2u, 0x0fu, 0x5au, 0xd0u };
+static const pl_u8 maskmovdqu_xmm[] = { 0x66u, 0x0fu, 0xf7u, 0xffu };
+static const pl_u8 phaddw_mmx_mem[] = { 0x0fu, 0x38u, 0x01u, 0x08u };
+static const pl_u8 psignd_mmx_mem[] = { 0x0fu, 0x38u, 0x0au, 0x00u };
+static const pl_u8 rcpss_xmm[] = { 0xf3u, 0x0fu, 0x53u, 0xffu };
+static const pl_u8 clzero_no_feature[] = { 0x0fu, 0x01u, 0xfcu };
+static const pl_u8 wrmsrns_no_feature[] = { 0x0fu, 0x01u, 0xc6u };
+static const pl_u8 aesenc_no_feature[] = {
+    0x66u, 0x0fu, 0x38u, 0xdcu, 0xd1u,
+};
+static const pl_u8 lock_neg_mem[] = { 0xf0u, 0xf7u, 0x1bu };
+static const pl_u8 movshdup_xmm[] = {
+    0xf3u, 0x41u, 0x0fu, 0x16u, 0xd3u,
+};
+static const pl_u8 pabsb_mmx_mem[] = { 0x0fu, 0x38u, 0x1cu, 0x00u };
+static const pl_u8 pabsw_mmx_mem[] = { 0x0fu, 0x38u, 0x1du, 0x00u };
+static const pl_u8 pabsd_mmx_mem[] = { 0x0fu, 0x38u, 0x1eu, 0x00u };
+static const pl_u8 pabsw_xmm_mem[] = {
+    0x66u, 0x0fu, 0x38u, 0x1du, 0x00u
+};
+static const pl_u8 phsubw_mmx_mem[] = { 0x0fu, 0x38u, 0x05u, 0x00u };
+static const pl_u8 movsldup_xmm_mem[] = { 0xf3u, 0x0fu, 0x12u, 0x00u };
+static const pl_u8 unpckhpd_xmm_mem[] = { 0x66u, 0x0fu, 0x15u, 0x00u };
+static const pl_u8 sqrtss_xmm_mem[] = { 0xf3u, 0x0fu, 0x51u, 0x00u };
+static const pl_u8 movq2dq_xmm[] = { 0xf3u, 0x0fu, 0xd6u, 0xffu };
+static const pl_u8 movntsd_no_feature[] = { 0xf2u, 0x0fu, 0x2bu, 0x00u };
+static const pl_u8 rdpru_no_feature[] = { 0x0fu, 0x01u, 0xfdu };
 static const pl_u8 ldmxcsr_mem[] = { 0x0fu, 0xaeu, 0x54u, 0x24u, 0x0cu };
 static const pl_u8 stmxcsr_mem[] = {
     0x0fu, 0xaeu, 0x9eu, 0xffu, 0x03u, 0x00u, 0x00u,
 };
 static const pl_u8 movntq_mem[] = { 0x0fu, 0xe7u, 0x00u };
+static const pl_u8 addsd_reg[] = { 0xf2u, 0x0fu, 0x58u, 0xc1u };
+static const pl_u8 addss_mem[] = {
+    0xf3u, 0x0fu, 0x58u, 0x0du, 0xc6u, 0x25u, 0x02u, 0x00u,
+};
+static const pl_u8 mulsd_reg[] = { 0xf2u, 0x0fu, 0x59u, 0xc1u };
+static const pl_u8 mulss_reg[] = { 0xf3u, 0x0fu, 0x59u, 0xc4u };
+static const pl_u8 subsd_reg[] = { 0xf2u, 0x0fu, 0x5cu, 0xd9u };
+static const pl_u8 subss_mem[] = {
+    0x49u, 0xf3u, 0x0fu, 0x5cu, 0x05u, 0x3du, 0x1cu, 0x02u, 0x00u,
+};
+static const pl_u8 divsd_reg[] = { 0xf2u, 0x0fu, 0x5eu, 0xc1u };
+static const pl_u8 divss_reg[] = { 0xf3u, 0x0fu, 0x5eu, 0xc1u };
+static const pl_u8 maxsd_reg[] = { 0xf2u, 0x0fu, 0x5fu, 0xcau };
+static const pl_u8 comisd_mem[] = {
+    0x66u, 0x0fu, 0x2fu, 0x0du, 0x91u, 0xcfu, 0x10u, 0x00u,
+};
+static const pl_u8 ucomisd_reg[] = { 0x66u, 0x0fu, 0x2eu, 0xc1u };
+static const pl_u8 cvtsi2sd_r64[] = { 0xf2u, 0x48u, 0x0fu, 0x2au, 0xc2u };
+static const pl_u8 cvtsi2ss_r64[] = { 0xf3u, 0x49u, 0x0fu, 0x2au, 0xc4u };
+static const pl_u8 cvttsd2si_r64[] = { 0xf2u, 0x48u, 0x0fu, 0x2cu, 0xc1u };
+static const pl_u8 cvttss2si_r64[] = { 0xf3u, 0x4cu, 0x0fu, 0x2cu, 0xe0u };
+static const pl_u8 cvtss2sd_reg[] = { 0xf3u, 0x0fu, 0x5au, 0xf0u };
+static const pl_u8 cmpsd_reg[] = { 0xf2u, 0x0fu, 0xc2u, 0xeau, 0x01u };
+static const pl_u8 cmpss_reg[] = { 0xf3u, 0x0fu, 0xc2u, 0xe2u, 0x01u };
+static const pl_u8 smsw_mem[] = {
+    0x0fu, 0x01u, 0x25u, 0x0fu, 0x85u, 0x79u, 0x08u,
+};
 
 static const closure_case cases[] = {
     CASE("ISA", "DIV r/m64 with precise #DE", div_rbx),
@@ -498,6 +675,7 @@ static const closure_case cases[] = {
     CASE("machine ABI", "SLDT [RAX]", sldt_mem),
     CASE("machine ABI", "STR [RAX]", str_mem),
     CASE("machine ABI", "VERW AX", verw_ax),
+    CASE("machine ABI", "LKGS DI", lkgs_di),
     CASE("machine ABI", "VERW [RAX]", verw_mem),
     CASE("machine ABI", "CALL FAR [RAX]", far_call_mem),
     CASE("machine ABI", "CALL FAR m16:16 [RAX]", far_call_mem16),
@@ -567,8 +745,18 @@ static const closure_case cases[] = {
     CASE("machine ABI", "MOVQ [RAX],MM0", movq_mmx_store),
     CASE("machine ABI", "PADDD MM0,MM1", paddd_mmx),
     CASE("machine ABI", "PADDD XMM0,XMM1", paddd_xmm),
+    CASE("machine ABI", "PHADDD MM0,[RAX]", phaddd_mmx_mem),
+    CASE("machine ABI", "PHADDD XMM0,XMM1", phaddd_xmm),
+    CASE("machine ABI", "PMULHRSW MM0,[RAX]", pmulhrsw_mmx_mem),
+    CASE("machine ABI", "PMULHRSW XMM0,XMM1", pmulhrsw_xmm),
+    CASE("machine ABI", "PHSUBD MM0,[RAX]", phsubd_mmx_mem),
+    CASE("machine ABI", "PHSUBD XMM0,XMM1", phsubd_xmm),
+    CASE("machine ABI", "PSIGNB MM0,[RAX]", psignb_mmx_mem),
+    CASE("machine ABI", "PSIGNB XMM0,XMM1", psignb_xmm),
     CASE("machine ABI", "PSRLD XMM1,12", psrld_xmm_imm),
     CASE("machine ABI", "PSLLD XMM0,20", pslld_xmm_imm),
+    CASE("machine ABI", "PSLLD XMM0,XMM1", pslld_xmm_reg),
+    CASE("machine ABI", "PSLLD XMM0,[RAX]", pslld_xmm_mem),
     CASE("machine ABI", "PXOR MM0,MM1", pxor_mmx),
     CASE("machine ABI", "PCMPEQB MM0,[RAX]", pcmpeqb_mmx),
     CASE("machine ABI", "PCMPGTD MM0,MM1", pcmpgtd_mmx),
@@ -583,9 +771,40 @@ static const closure_case cases[] = {
     CASE("machine ABI", "PMULLW XMM5,XMM3", pmullw_xmm),
     CASE("machine ABI", "PCMPEQB XMM7,XMM4", pcmpeqb_xmm),
     CASE("machine ABI", "PSHUFHW XMM2,XMM0,0x50", pshufhw_xmm),
+    CASE("machine ABI", "PSHUFHW XMM0,[RAX],0x50", pshufhw_xmm_mem),
+    CASE("machine ABI", "PSHUFLW XMM0,XMM0,0x1b", pshuflw_xmm),
+    CASE("machine ABI", "PSHUFLW XMM0,[RAX],0x1b", pshuflw_xmm_mem),
     CASE("machine ABI", "UNPCKLPD XMM5,XMM4", unpcklpd_xmm),
     CASE("machine ABI", "PMOVMSKB EDI,MM7", pmovmskb_mmx),
     CASE("machine ABI", "MOVHLPS XMM6,XMM5", movhlps_xmm),
+    CASE("machine ABI", "MOVLHPS XMM6,XMM5", movlhps_xmm),
+    CASE("machine ABI", "PUNPCKLWD XMM1,[RAX]", punpcklwd_xmm_mem),
+    CASE("machine ABI", "PBLENDVB XMM1,XMM2", pblendvb_xmm),
+    CASE("machine ABI", "PBLENDVB XMM1,[RAX]", pblendvb_mem),
+    CASE("machine ABI", "PMOVZXDQ XMM1,XMM2", pmovzxdq_xmm),
+    CASE("machine ABI", "PMOVZXDQ XMM1,[RAX]", pmovzxdq_mem),
+    CASE("machine ABI", "MOVQ XMM7,XMM0", movq_xmm_xmm),
+    CASE("machine ABI", "CVTSD2SS XMM2,XMM0", cvtsd2ss_xmm),
+    CASE("machine ABI", "MASKMOVDQU XMM7,XMM7", maskmovdqu_xmm),
+    CASE("machine ABI", "PHADDW MM1,[RAX]", phaddw_mmx_mem),
+    CASE("machine ABI", "PSIGND MM0,[RAX]", psignd_mmx_mem),
+    CASE("machine ABI", "RCPSS XMM7,XMM7", rcpss_xmm),
+    CASE("extension", "CLZERO retained for native x86", clzero_no_feature),
+    CASE("extension", "WRMSRNS retained for native x86", wrmsrns_no_feature),
+    CASE("extension", "AESENC retained for native x86", aesenc_no_feature),
+    CASE("machine ABI", "LOCK NEG [RBX]", lock_neg_mem),
+    CASE("machine ABI", "MOVSHDUP XMM2,XMM11", movshdup_xmm),
+    CASE("machine ABI", "PABSB MM0,[RAX]", pabsb_mmx_mem),
+    CASE("machine ABI", "PABSW MM0,[RAX]", pabsw_mmx_mem),
+    CASE("machine ABI", "PABSD MM0,[RAX]", pabsd_mmx_mem),
+    CASE("machine ABI", "PABSW XMM0,[RAX]", pabsw_xmm_mem),
+    CASE("machine ABI", "PHSUBW MM0,[RAX]", phsubw_mmx_mem),
+    CASE("machine ABI", "MOVSLDUP XMM0,[RAX]", movsldup_xmm_mem),
+    CASE("machine ABI", "UNPCKHPD XMM0,[RAX]", unpckhpd_xmm_mem),
+    CASE("machine ABI", "SQRTSS XMM0,[RAX]", sqrtss_xmm_mem),
+    CASE("machine ABI", "MOVQ2DQ XMM7,MM7", movq2dq_xmm),
+    CASE("extension", "MOVNTSD retained for native x86", movntsd_no_feature),
+    CASE("extension", "RDPRU retained for native x86", rdpru_no_feature),
     CASE("machine ABI", "LDMXCSR [RSP+12]", ldmxcsr_mem),
     CASE("machine ABI", "STMXCSR [RSI+1023]", stmxcsr_mem),
     CASE("machine ABI", "MOVNTQ [RAX],MM0", movntq_mem),
@@ -607,7 +826,7 @@ static const closure_case cases[] = {
     CASE("machine ABI", "MOVD MM0,[RAX]", movd_mmx_load),
     CASE("machine ABI", "MOVD [RAX],MM0", movd_mmx_store),
     CASE("machine ABI", "EMMS", emms),
-    CASE("#UD", "FEMMS rejected without 3DNow!", femms),
+    CASE("extension", "FEMMS retained for native x86", femms),
     CASE("machine ABI", "PADDW MM0,MM1", paddw_mmx),
     CASE("machine ABI", "PSUBQ MM0,MM1", psubq_mmx),
     CASE("machine ABI", "LFENCE", lfence),
@@ -634,6 +853,7 @@ static const closure_case cases[] = {
     CASE("machine ABI", "MOV DR3,RBP", mov_dr3_rbp),
     CASE("machine ABI", "LAR ECX,ECX", lar_ecx_ecx),
     CASE("machine ABI", "LAR ECX,[RAX]", lar_ecx_mem),
+    CASE("machine ABI", "LAR AX,[RAX]", lar_ax_mem),
     CASE("machine ABI", "LSL EAX,[RAX]", lsl_eax_mem),
     CASE("machine ABI", "LLDT [RAX]", lldt_mem),
     CASE("machine ABI", "LLDT AX", lldt_ax),
@@ -663,6 +883,8 @@ static const closure_case cases[] = {
     CASE("machine ABI", "PUNPCKHBW MM0,[RAX]", punpckhbw_mem),
     CASE("machine ABI", "PUNPCKHBW XMM0,[RAX]", punpckhbw_xmm_mem),
     CASE("machine ABI", "PMADDWD MM0,MM1", pmaddwd_mmx),
+    CASE("machine ABI", "PMADDUBSW MM0,[RAX]", pmaddubsw_mmx_mem),
+    CASE("machine ABI", "PMADDUBSW XMM0,[RAX]", pmaddubsw_xmm_mem),
     CASE("machine ABI", "PADDQ MM0,MM1", paddq_mmx),
     CASE("machine ABI", "PMULHUW MM0,MM1", pmulhuw_mmx),
     CASE("machine ABI", "PMINSW MM0,MM1", pminsw_mmx),
@@ -678,6 +900,13 @@ static const closure_case cases[] = {
     CASE("machine ABI", "MOVLPS [RAX],XMM0", movlps_store),
     CASE("machine ABI", "MOVHPS XMM0,[RAX]", movhps_load),
     CASE("machine ABI", "PINSRW MM0,EDI,3", pinsrw_mmx),
+    CASE("machine ABI", "PINSRD XMM1,EAX,2", pinsrd_reg),
+    CASE("machine ABI", "PINSRD XMM6,[RDX+16],3", pinsrd_mem),
+    CASE("machine ABI", "PINSRQ XMM1,RAX,1", pinsrq_reg),
+    CASE("machine ABI", "PMOVMSKB ESI,XMM0", pmovmskb_xmm),
+    CASE("machine ABI", "LOCK NOT dword [RBX]", lock_not_mem),
+    CASE("machine ABI", "PALIGNR MM0,[RAX],72", palignr_mmx_mem),
+    CASE("machine ABI", "PALIGNR XMM0,XMM1,8", palignr_xmm),
     CASE("machine ABI", "PEXTRW ESP,MM3,255", pextrw_mmx),
     CASE("machine ABI", "PEXTRW ESP,XMM3,7", pextrw_xmm),
     CASE("machine ABI", "PSLLDQ XMM1,12", pslldq_xmm),
@@ -702,6 +931,8 @@ static const closure_case cases[] = {
     CASE("machine ABI", "PAVGW XMM0,XMM1", pavgw_xmm),
     CASE("machine ABI", "PMAXUB XMM0,XMM1", pmaxub_xmm),
     CASE("machine ABI", "PSRAD XMM0,XMM1", psrad_xmm),
+    CASE("machine ABI", "PSRAD XMM0,31", psrad_xmm_imm),
+    CASE("machine ABI", "PSRAD MM1,31", psrad_mmx_imm),
     CASE("machine ABI", "MOVNTPS [RAX],XMM0", movntps_mem),
     CASE("machine ABI", "UNPCKHPS XMM0,XMM1", unpckhps_xmm),
     CASE("machine ABI", "PUNPCKHDQ MM0,MM1", punpckhdq_mmx),
@@ -711,6 +942,9 @@ static const closure_case cases[] = {
     CASE("machine ABI", "PADDUSW MM0,MM1", paddusw_mmx),
     CASE("machine ABI", "PMINUB MM0,MM1", pminub_mmx),
     CASE("machine ABI", "PSRAW MM0,MM1", psraw_mmx),
+    CASE("machine ABI", "PSRAW XMM0,15", psraw_xmm_imm),
+    CASE("machine ABI", "PSRAW MM1,15", psraw_mmx_imm),
+    CASE("machine ABI", "MOVLPD XMM0,[RAX]", movlpd_load),
     CASE("machine ABI", "PSRLW MM0,MM1", psrlw_mmx),
     CASE("machine ABI", "PACKSSWB MM0,MM1", packsswb_mmx),
     CASE("machine ABI", "PSUBUSW MM0,MM1", psubusw_mmx),
@@ -731,6 +965,10 @@ static const closure_case cases[] = {
     CASE("machine ABI", "FXRSTOR [RAX]", fxrstor),
     CASE("machine ABI", "FXRSTOR64 [RAX]", fxrstor64),
     CASE("machine ABI", "CVTDQ2PS XMM0,XMM3", cvtdq2ps),
+    CASE("machine ABI", "CVTDQ2PD XMM0,XMM1", cvtdq2pd_reg),
+    CASE("machine ABI", "CVTDQ2PD XMM0,[RAX]", cvtdq2pd_mem),
+    CASE("machine ABI", "CVTTPD2DQ XMM0,XMM1", cvttpd2dq_reg),
+    CASE("machine ABI", "CVTTPD2DQ XMM0,[RAX]", cvttpd2dq_mem),
     CASE("machine ABI", "CVTTPS2PI MM0,XMM3", cvttps2pi),
     CASE("machine ABI", "CVTPS2PI MM0,XMM3", cvtps2pi),
     CASE("machine ABI", "CVTPS2PI MM3,[RAX]", cvtps2pi_mem),
@@ -752,6 +990,14 @@ static const closure_case cases[] = {
     CASE("machine ABI", "SUBPS XMM0,[RAX]", subps_mem),
     CASE("machine ABI", "DIVPS XMM0,XMM1", divps_reg),
     CASE("machine ABI", "DIVPS XMM0,[RAX]", divps_mem),
+    CASE("machine ABI", "ADDPD XMM0,XMM1", addpd_reg),
+    CASE("machine ABI", "ADDPD XMM0,[RAX]", addpd_mem),
+    CASE("machine ABI", "MULPD XMM0,XMM1", mulpd_reg),
+    CASE("machine ABI", "MULPD XMM0,[RAX]", mulpd_mem),
+    CASE("machine ABI", "SUBPD XMM0,XMM1", subpd_reg),
+    CASE("machine ABI", "SUBPD XMM0,[RAX]", subpd_mem),
+    CASE("machine ABI", "DIVPD XMM0,XMM1", divpd_reg),
+    CASE("machine ABI", "DIVPD XMM0,[RAX]", divpd_mem),
     CASE("machine ABI", "FPREM", fprem),
     CASE("machine ABI", "FPREM1", fprem1),
     CASE("machine ABI", "FCHS", fchs),
@@ -763,38 +1009,66 @@ static const closure_case cases[] = {
     CASE("machine ABI", "ADDPS XMM3,[RAX]", addps_mem),
     CASE("machine ABI", "MAXPS XMM0,[RAX]", maxps_mem),
     CASE("machine ABI", "MINPS XMM0,[RAX]", minps_mem),
+    CASE("machine ABI", "MAXPD XMM0,[RAX]", maxpd_mem),
+    CASE("machine ABI", "MOVUPD [RAX],XMM0", movupd_mem),
     CASE("machine ABI", "UCOMISS XMM0,XMM1", ucomiss),
     CASE("machine ABI", "UCOMISS XMM0,[RAX]", ucomiss_mem),
     CASE("machine ABI", "COMISS XMM0,XMM1", comiss),
+    CASE("scalar SSE", "ADDSD XMM0,XMM1", addsd_reg),
+    CASE("scalar SSE", "ADDSS XMM1,[RIP+disp32]", addss_mem),
+    CASE("scalar SSE", "MULSD XMM0,XMM1", mulsd_reg),
+    CASE("scalar SSE", "MULSS XMM0,XMM4", mulss_reg),
+    CASE("scalar SSE", "SUBSD XMM3,XMM1", subsd_reg),
+    CASE("scalar SSE", "SUBSS XMM0,[RIP+disp32]", subss_mem),
+    CASE("scalar SSE", "DIVSD XMM0,XMM1", divsd_reg),
+    CASE("scalar SSE", "DIVSS XMM0,XMM1", divss_reg),
+    CASE("scalar SSE", "MAXSD XMM1,XMM2", maxsd_reg),
+    CASE("scalar SSE", "COMISD XMM1,[RIP+disp32]", comisd_mem),
+    CASE("scalar SSE", "UCOMISD XMM0,XMM1", ucomisd_reg),
+    CASE("scalar SSE", "CVTSI2SD XMM0,RDX", cvtsi2sd_r64),
+    CASE("scalar SSE", "CVTSI2SS XMM0,R12", cvtsi2ss_r64),
+    CASE("scalar SSE", "CVTTSD2SI RAX,XMM1", cvttsd2si_r64),
+    CASE("scalar SSE", "CVTTSS2SI R12,XMM0", cvttss2si_r64),
+    CASE("scalar SSE", "CVTSS2SD XMM6,XMM0", cvtss2sd_reg),
+    CASE("scalar SSE", "CMPSD XMM5,XMM2,LT", cmpsd_reg),
+    CASE("scalar SSE", "CMPSS XMM4,XMM2,LT", cmpss_reg),
+    CASE("machine ABI", "SMSW [RIP+disp32]", smsw_mem),
     CASE("machine ABI", "RDRAND RDX", rdrand_rdx),
     CASE("machine ABI", "RDSEED RAX", rdseed_rax),
     CASE("#UD", "JKNZD rejected by the fixed non-KNC CPU", jknzd_knc),
-    CASE("#UD", "VPXOR rejected without AVX/OSXSAVE", vpxor_avx),
-    CASE("#UD", "PSHUFB rejected without SSSE3", pshufb_ssse3),
-    CASE("#UD", "CLAC rejected without SMAP", clac_smap),
+    CASE("extension", "VPXOR retained for native x86", vpxor_avx),
+    CASE("machine ABI", "PSHUFB XMM1,XMM3", pshufb_ssse3),
+    CASE("machine ABI", "PSHUFB XMM0,[RAX]", pshufb_ssse3_mem),
+    CASE("machine ABI", "PSHUFB MM0,[RAX]", pshufb_ssse3_mmx_mem),
+    CASE("extension", "CLAC retained for native x86", clac_smap),
     CASE("#UD", "XBEGIN rejected without RTM", xbegin_rtm),
-    CASE("#UD", "SHA256RNDS2 rejected without SHA", sha256rnds2),
-    CASE("#UD", "PCLMULQDQ rejected without PCLMUL", pclmulqdq),
-    CASE("#UD", "CLFLUSHOPT rejected without CLFLUSHOPT", clflushopt_rax),
-    CASE("#UD", "INVLPGB rejected by the fixed Intel CPU", invlpgb),
-    CASE("#UD", "GETSEC rejected without SMX", getsec_smx),
-    CASE("#UD", "MWAIT rejected without MONITOR", mwait_monitor),
-    CASE("#UD", "VMREAD rejected without VMX", vmread_vtx),
-    CASE("#UD", "BNDLDX rejected without MPX", bndldx_mpx),
-    CASE("#UD", "XRSTOR rejected without XSAVE", xrstor_xsave),
-    CASE("#UD", "XSAVEOPT rejected without XSAVE", xsaveopt),
+    CASE("extension", "SHA256RNDS2 retained for native x86", sha256rnds2),
+    CASE("extension", "PCLMULQDQ retained for native x86", pclmulqdq),
+    CASE("extension", "CLFLUSHOPT retained for native x86", clflushopt_rax),
+    CASE("extension", "INVLPGB retained for native x86", invlpgb),
+    CASE("extension", "GETSEC retained for native x86", getsec_smx),
+    CASE("extension", "MWAIT retained for native x86", mwait_monitor),
+    CASE("extension", "VMREAD retained for native x86", vmread_vtx),
+    CASE("extension", "BNDLDX retained for native x86", bndldx_mpx),
+    CASE("extension", "XRSTOR retained for native x86", xrstor_xsave),
+    CASE("extension", "XSAVEOPT retained for native x86", xsaveopt),
     CASE("#UD", "RSM rejected outside SMM", rsm_no_smm),
-    CASE("#UD", "PEXTRD rejected without SSE4.1", pextrd_sse4),
-    CASE("#UD", "INVPCID rejected without INVPCID", invpcid_no_feature),
-    CASE("#UD", "CLDEMOTE rejected without CLDEMOTE", cldemote_no_feature),
-    CASE("#UD", "PAVGUSB rejected without 3DNow!", pavgusb_3dnow),
-    CASE("#UD", "PBNDKB rejected by the fixed CPU", pbndkb_no_feature),
-    CASE("#UD", "RDPID rejected without RDPID", rdpid_no_feature),
-    CASE("#UD", "TILERELEASE rejected without AMX-TILE",
+    CASE("machine ABI", "PEXTRD EAX,XMM0,2", pextrd_sse4),
+    CASE("machine ABI", "PEXTRD [RAX],XMM0,2", pextrd_sse4_mem),
+    CASE("machine ABI", "PEXTRQ RAX,XMM1,1", pextrq_sse4),
+    CASE("extension", "INVPCID retained for native x86", invpcid_no_feature),
+    CASE("extension", "CLDEMOTE retained for native x86", cldemote_no_feature),
+    CASE("extension", "PAVGUSB retained for native x86", pavgusb_3dnow),
+    CASE("extension", "PBNDKB retained for native x86", pbndkb_no_feature),
+    CASE("extension", "RDPID retained for native x86", rdpid_no_feature),
+    CASE("extension", "TILERELEASE retained for native x86",
          tilerelease_no_feature),
-    CASE("#UD", "TPAUSE rejected without WAITPKG", tpause_no_feature),
-    CASE("#UD", "XSHA256 rejected on the fixed Intel CPU",
+    CASE("extension", "TPAUSE retained for native x86", tpause_no_feature),
+    CASE("extension", "XSHA256 retained for native x86",
          xsha256_padlock),
+    CASE("extension", "BLSIC retained for native x86", blsic_tbm),
+    CASE("extension", "RDSSPQ retained for native x86", rdsspq_no_cet),
+    CASE("extension", "INCSSPQ retained for native x86", incsspq_no_cet),
 };
 
 int main(void)
@@ -832,6 +1106,14 @@ int main(void)
             status = PL_ERROR_X86_SEMANTIC;
         if (!status && test->domain[0] == 'm'
                 && instruction.machine_operation == PL_X86_MACHINE_NONE)
+            status = PL_ERROR_X86_SEMANTIC;
+        if (!status && test->domain[0] == 'e'
+                && instruction.machine_operation != PL_X86_MACHINE_EXTENSION)
+            status = PL_ERROR_X86_SEMANTIC;
+        if (!status && test->domain[0] == 's'
+                && (instruction.machine_operation != PL_X86_MACHINE_VECTOR
+                    || (instruction.machine_argument & 0xffu)
+                       != PL_X86_VECTOR_SCALAR_FLOAT))
             status = PL_ERROR_X86_SEMANTIC;
         if (!status && test->domain[0] == '#'
                 && (instruction.operation != PL_X86_OPERATION_FAULT

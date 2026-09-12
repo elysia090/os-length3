@@ -1,194 +1,651 @@
-# The post-link compiler builds with gcc and nothing else.
-#
-#   make            the C library, native drivers and the self-test
-#   make library    only libpostlink.a (include/ + src/ + this Makefile)
-#   make check      run the self-test
-#   make parity     additionally prove the C codec against the Python writer
-#   make guest      a static binary for the x86 guest's own toolchain
-#
-# The library sources are freestanding: no libc, no builtins, no target
-# assumptions beyond two's complement.  Only the drivers under tools/ and
-# check/ use libc, so `make wasm` reuses the same objects unchanged.
+# linked x86-64 ELF -> independently runnable optimized x86-64 ELF
 
-# `?=` would not override make's built-in default of `cc`, so name gcc only
-# when the value is still that default.
-ifeq ($(origin CC),default)
-CC = gcc
-endif
-CFLAGS  ?= -O2 -g
-WARN     = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -std=c11
-INCLUDE  = -Iinclude
-BUILD   ?= build
-AR      ?= ar
-
-ZYDIS = third_party/zydis
-ZYDIS_INCLUDE = -I$(ZYDIS)/include -I$(ZYDIS)/dependencies/zycore/include -I$(ZYDIS)/src
-ZYDIS_DEFINES = -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER \
-	-DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC
-ZYDIS_SOURCES = Register SharedData DecoderData Decoder Mnemonic
-ZYDIS_OBJECTS = $(patsubst %,$(BUILD)/zydis/%.o,$(ZYDIS_SOURCES))
-
-LIB_SOURCES = src/format.c src/continuation.c src/machine.c src/physical.c src/boot.c src/deflate.c src/elf.c src/x86.c src/semantic.c src/block.c src/transfer.c src/executable.c src/projection.c src/entrymap.c src/closure.c src/residual.c src/instantiation.c src/wasm.c src/sha256.c src/index.c src/delivery.c src/directory.c src/chain.c src/dispatch.c src/trace.c src/template.c src/plan.c src/compose.c src/compact.c src/rewrite.c src/sweep.c src/region.c src/alu.c src/affine.c
-LIB_OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(LIB_SOURCES))
+CC ?= cc
+AR ?= ar
+CFLAGS ?= -O2
+WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+BARE_FIXTURE_FLAGS = -nostdlib -static -Wl,-no-pie,--emit-relocs
+BUILD ?= build
+INCLUDES = -Iinclude -Isrc -I../support/include -I../x86/include \
+	-I../optimized-x86/include
+ZYDIS_INCLUDES = -I../x86/third_party/zydis/include \
+	-I../x86/third_party/zydis/dependencies/zycore/include \
+	-I../x86/third_party/zydis/src
+SOURCES = src/compiler.c src/emit-x86.c src/layout-elf.c src/metadata.c src/relocate-elf.c src/entry.c src/table.c src/native.c src/select-x86.c src/minimum.c src/format.c src/semantic.c src/block.c src/closure.c \
+	src/transfer.c src/template.c src/project.c src/plan.c src/compose.c \
+	src/compact.c src/rewrite.c src/sweep.c src/region.c src/alu.c \
+	src/affine.c src/quotient.c src/scalar.c
+OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
+DEPENDENCIES = $(OBJECTS:.o=.d)
 LIBRARY = $(BUILD)/libpostlink.a
+PROGRAM = $(BUILD)/postlink-compiler
 
-.PHONY: all library tools check direct-check isa-completeness-check \
-	linked-completeness-check mmu-completeness-check parity opcodes guest \
-	wasm clean
-
-TOOLS = postlink-inspect postlink-elf postlink-admit postlink-chain postlink-repack postlink-trace postlink-template postlink-compose postlink-coverage postlink-boundaries postlink-blocks postlink-compiler postlink-verify
-
-all: library tools $(BUILD)/selftest
-
-# This is the standalone product boundary.  It deliberately has no dependency
-# on tools/, check/, Python, JavaScript, an artifact, or the repository around
-# this directory.  Repository drivers link the same archive below instead of
-# acquiring a second compilation route.
+.PHONY: all library check elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check local-code-address-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check instruction-law-check catalog block-catalog native-benchmark distribution-population-check production-benchmark-fixture-check production-benchmark-check linked-completeness-check \
+	clean dependencies
+all: $(PROGRAM)
 library: $(LIBRARY)
 
-$(LIBRARY): $(LIB_OBJECTS) $(ZYDIS_OBJECTS) | $(BUILD)
-	$(AR) rcs $@ $^
-
-tools: $(patsubst %,$(BUILD)/%,$(TOOLS))
+dependencies:
+	$(MAKE) -C ../support all
+	$(MAKE) -C ../x86 all
+	$(MAKE) -C ../optimized-x86 all
 
 $(BUILD):
-	mkdir -p $(BUILD)
+	mkdir -p $@
 
-$(BUILD)/zydis:
-	mkdir -p $(BUILD)/zydis
+$(BUILD)/%.o: src/%.c | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -ffreestanding -MMD -MP -c $< -o $@
 
-# Every object depends on every header.  The headers are few and small, and a
-# stale object compiled against an older struct layout reads the wrong offsets
-# without any diagnostic -- which is exactly what happened once.
-HEADERS = $(wildcard include/postlink/*.h)
+-include $(DEPENDENCIES)
 
-$(BUILD)/%.o: src/%.c $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(ZYDIS_INCLUDE) $(ZYDIS_DEFINES) -ffreestanding -c $< -o $@
+$(LIBRARY): $(OBJECTS)
+	$(AR) rcs $@ $^
 
-$(BUILD)/zydis/%.o: $(ZYDIS)/src/%.c | $(BUILD)/zydis
-	$(CC) $(CFLAGS) $(ZYDIS_INCLUDE) $(ZYDIS_DEFINES) -ffreestanding \
-		-ffunction-sections -fdata-sections -c $< -o $@
+$(PROGRAM): cli/main.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/main.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-inspect: tools/inspect.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/completeness: check/completeness.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/completeness.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-elf: tools/elf.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(ZYDIS_INCLUDE) $(ZYDIS_DEFINES) \
-		$(filter %.c %.a,$^) -o $@
+$(BUILD)/elf-proof: check/elf-proof.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/elf-proof.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-admit: tools/admit.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/observed-compile: check/observed-compile.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/observed-compile.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-chain: tools/chain.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+observed-compile-check: $(BUILD)/observed-compile
+	@temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O0 -g -Wl,--emit-relocs check/elf-proof-fixture.c \
+		-o "$$temporary/input"; \
+	$(BUILD)/observed-compile "$$temporary/input"
 
-$(BUILD)/postlink-repack: tools/repack.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/catalog: check/catalog.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(ZYDIS_INCLUDES) check/catalog.c \
+		$(LIBRARY) ../x86/build/libx86.a \
+		../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-trace: tools/trace.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/scalar: check/scalar.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/scalar.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-template: tools/template.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+scalar-check: $(BUILD)/scalar
+	$(BUILD)/scalar
 
-$(BUILD)/postlink-compose: tools/compose.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/physical: check/physical.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/physical.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-coverage: tools/coverage.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+physical-check: $(BUILD)/physical
+	$(BUILD)/physical
 
-$(BUILD)/postlink-boundaries: tools/boundaries.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(ZYDIS_INCLUDE) $(ZYDIS_DEFINES) \
-		$(filter %.c %.a,$^) -o $@
+$(BUILD)/quotient: check/quotient.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/quotient.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-blocks: tools/blocks.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+quotient-check: $(BUILD)/quotient
+	$(BUILD)/quotient
 
-$(BUILD)/postlink-compiler: tools/blocks.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/normal-form: check/normal-form.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/normal-form.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/postlink-verify: tools/verify.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+normal-form-check: $(BUILD)/normal-form
+	$(BUILD)/normal-form
 
-$(BUILD)/selftest: check/selftest.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/global-minimum: check/global-minimum.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/global-minimum.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-$(BUILD)/completeness: check/completeness.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+global-minimum-check: $(BUILD)/global-minimum
+	$(BUILD)/global-minimum
 
-$(BUILD)/emitter-fixture: check/emit_fixture.c $(LIBRARY) $(HEADERS) | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDE) $(filter %.c %.a,$^) -o $@
+$(BUILD)/block-observation: check/block-observation.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/block-observation.c \
+		$(LIBRARY) ../x86/build/libx86.a \
+		../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-check: $(BUILD)/selftest
-	$(BUILD)/selftest
+block-observation-check: $(BUILD)/block-observation
+	$(BUILD)/block-observation
 
-# Repository integration gate: two ordinary compiler-output Wasm functions
-# chain through vm.wasm's shared table without an X86B/STEP record or a host
-# callback.  The standalone C library above still needs only gcc and ar.
-direct-check: check $(BUILD)/emitter-fixture
-	$(BUILD)/emitter-fixture $(BUILD)/emitted-blocks.wasm \
-		$(BUILD)/emitted-executable.root \
-		$(BUILD)/emitted-binding.node $(BUILD)/emitted-module.node \
-		$(BUILD)/emitted-resource.node $(BUILD)/emitted-resource.page \
-		$(BUILD)/emitted-entry-page.rows $(BUILD)/emitted-entry-tail.row \
-		$(BUILD)/emitted-residual.root \
-		$(BUILD)/emitted-residual-state.page \
-		$(BUILD)/emitted-residual-edge.page \
-		$(BUILD)/emitted-instantiation.page \
-		$(BUILD)/emitted-parameter.page \
-		$(BUILD)/emitted-cold.wasm
-	PYTHONPATH=.. python3 ../vm/wasm/build.py --direct-check \
-		--emitted-module $(abspath $(BUILD)/emitted-blocks.wasm) \
-		--emitted-cold-module $(abspath $(BUILD)/emitted-cold.wasm) \
-		--executable-root $(abspath $(BUILD)/emitted-executable.root) \
-		--residual-root $(abspath $(BUILD)/emitted-residual.root) \
-		--executable-node $(abspath $(BUILD)/emitted-binding.node) \
-		--executable-node $(abspath $(BUILD)/emitted-module.node) \
-		--executable-node $(abspath $(BUILD)/emitted-resource.node) \
-		--executable-resource $(abspath $(BUILD)/emitted-resource.page) \
-		--executable-resource $(abspath $(BUILD)/emitted-entry-page.rows) \
-		--executable-resource $(abspath $(BUILD)/emitted-entry-tail.row) \
-		--executable-resource $(abspath $(BUILD)/emitted-residual-state.page) \
-		--executable-resource $(abspath $(BUILD)/emitted-residual-edge.page) \
-		--executable-resource $(abspath $(BUILD)/emitted-instantiation.page) \
-		--executable-resource $(abspath $(BUILD)/emitted-parameter.page) \
-		$(COMPLETENESS_FLAG)
+$(BUILD)/slice-observation: check/slice-observation.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/slice-observation.c \
+		$(LIBRARY) ../x86/build/libx86.a \
+		../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
 
-# These are intentionally separate from `check`: while closure is incomplete
-# they must be red.  They prevent a valid decode, an anonymous machine barrier
-# or a terminal #PF token from being mistaken for executable semantics.
-isa-completeness-check: $(BUILD)/completeness
+slice-observation-check: $(BUILD)/slice-observation
+	$(BUILD)/slice-observation
+
+$(BUILD)/instruction-law: check/instruction-law.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/instruction-law.c \
+		$(LIBRARY) ../x86/build/libx86.a \
+		../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+instruction-law-check: $(BUILD)/instruction-law
+	$(BUILD)/instruction-law
+
+$(BUILD)/direct-control: check/direct-control.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/direct-control.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+direct-control-check: $(BUILD)/direct-control
+	$(BUILD)/direct-control
+
+$(BUILD)/block-catalog: check/block-catalog.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/block-catalog.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+block-catalog: $(BUILD)/block-catalog
+
+$(BUILD)/native-benchmark: check/native-benchmark.c dependencies
+	$(CC) $(CFLAGS) $(WARN) -I../support/include check/native-benchmark.c \
+		../support/build/libsupport.a -o $@
+
+native-benchmark: $(BUILD)/native-benchmark
+
+distribution-population-check:
+	bash ../../../data/distribution/check-measure-root.sh
+
+production-benchmark-fixture-check: $(BUILD)/native-benchmark
+	bash check/production-benchmark.sh $(BUILD)/native-benchmark
+
+# The production comparison always consumes the repository-owned workload
+# manifest. Callers select identities by supplying two complete release roots;
+# they cannot weaken the sample count or replace the workload population.
+production-benchmark-check: $(BUILD)/native-benchmark
+	@test -n "$(SOURCE_ROOT)" || \
+		{ echo "SOURCE_ROOT=/path/to/source-root is required" >&2; exit 2; }
+	@test -n "$(OPTIMIZED_ROOT)" || \
+		{ echo "OPTIMIZED_ROOT=/path/to/optimized-root is required" >&2; exit 2; }
+	@test -n "$(BENCHMARK_REPORT)" || \
+		{ echo "BENCHMARK_REPORT=/path/to/report is required" >&2; exit 2; }
+	bash ../../../data/distribution/benchmark-postlink.sh \
+		"$(SOURCE_ROOT)" "$(OPTIMIZED_ROOT)" \
+		$(BUILD)/native-benchmark "$(BENCHMARK_REPORT)"
+
+catalog: $(BUILD)/catalog
+
+# Publication gate for the exact linked image selected by the caller.  It is
+# intentionally not folded into the fast witness suite: no repository fixture
+# can prove closure of a different Linux/toolchain generation.
+linked-completeness-check: $(BUILD)/catalog
+	@test -n "$(X86_IMAGE)" || \
+		{ echo "X86_IMAGE=/path/to/linked.elf is required" >&2; exit 2; }
+	$(BUILD)/catalog "$(X86_IMAGE)" --require-semantics
+
+elf-proof-check: $(BUILD)/elf-proof
+	@temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O0 -g check/elf-proof-fixture.c -o "$$temporary/input"; \
+	$(BUILD)/elf-proof "$$temporary/input" "$$temporary/output"; \
+	test $$(stat -c %s "$$temporary/output") \
+		-lt $$(stat -c %s "$$temporary/input"); \
+	chmod +x "$$temporary/output"; \
+	"$$temporary/input"; \
+	"$$temporary/output"; \
+	$(CC) -O0 -g -fPIC -shared check/elf-proof-fixture.c \
+		-o "$$temporary/input.so"; \
+	$(BUILD)/elf-proof "$$temporary/input.so" "$$temporary/output.so"; \
+	test $$(stat -c %s "$$temporary/output.so") \
+		-lt $$(stat -c %s "$$temporary/input.so")
+
+# A self-contained static ET_EXEC may have zero construction relocations and
+# still emits one independently executable, proved ordinary ELF.
+relocation-free-product-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -static -Wl,-no-pie,--build-id=none \
+		check/relocation-free-fixture.S \
+		-o "$$temporary/input-without-relocations"; \
+	$(PROGRAM) "$$temporary/input-without-relocations" \
+		-o "$$temporary/output-without-relocations"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input-without-relocations" \
+		"$$temporary/output-without-relocations"; \
+	test $$(stat -c %s "$$temporary/output-without-relocations") \
+		-lt $$(stat -c %s "$$temporary/input-without-relocations"); \
+	"$$temporary/input-without-relocations"; \
+	"$$temporary/output-without-relocations"
+
+# A dynamically linked input still needs retained static construction rows.
+# With them, the product emits a smaller proved ELF with no post-link runtime.
+product-gate-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O0 -g check/elf-proof-fixture.c \
+		-o "$$temporary/dynamic-without-relocations"; \
+	! $(PROGRAM) "$$temporary/dynamic-without-relocations" \
+		-o "$$temporary/rejected" 2>"$$temporary/relocation-error"; \
+	grep -q 'dynamic linked ELF lacks static construction relocations' \
+		"$$temporary/relocation-error"; \
+	$(CC) -O0 -g -Wl,--emit-relocs check/elf-proof-fixture.c \
+		-o "$$temporary/input"; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	test $$(stat -c %s "$$temporary/output") \
+		-lt $$(stat -c %s "$$temporary/input"); \
+	"$$temporary/input"; "$$temporary/output"
+
+# ET_DYN with e_entry == 0 is a first-class linked product.  Exported symbols
+# and loader metadata close its roots; no invented process entry or DSO bypass
+# is allowed.
+shared-product-gate-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O0 -g -fPIC -shared -Wl,--emit-relocs \
+		check/shared-object-fixture.c -o "$$temporary/input.so"; \
+	$(CC) -O2 check/shared-object-consumer.c -ldl \
+		-o "$$temporary/consumer"; \
+	"$$temporary/consumer" "$$temporary/input.so"; \
+	$(PROGRAM) "$$temporary/input.so" -o "$$temporary/output.so"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input.so" "$$temporary/output.so"; \
+	test $$(stat -c %s "$$temporary/output.so") \
+		-lt $$(stat -c %s "$$temporary/input.so"); \
+	"$$temporary/consumer" "$$temporary/output.so"
+
+$(BUILD)/runtime-elf-stage: check/runtime-elf-stage.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/runtime-elf-stage.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+$(BUILD)/metadata-closure: check/metadata-closure.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/metadata-closure.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+runtime-elf-check: $(BUILD)/runtime-elf-stage
+	@temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/runtime-elf-fixture.S \
+		-o "$$temporary/input"; \
+	$(BUILD)/runtime-elf-stage "$$temporary/input" "$$temporary/output"; \
+	chmod +x "$$temporary/output"; \
+	set +e; "$$temporary/input"; source_status=$$?; \
+	"$$temporary/output"; output_status=$$?; set -e; \
+	test $$source_status -eq 42; test $$output_status -eq 42
+
+# ELF64 relocation arithmetic is modulo 2^64.  A code symbol plus a large
+# addend may deliberately leave the executable interval; the compiler must
+# move the symbol and preserve the addend rather than reject unsigned wrap.
+modular-address-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/modular-address-fixture.S \
+		-o "$$temporary/input"; \
+	"$$temporary/input"; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	"$$temporary/output"
+
+$(BUILD)/physical-entry: check/physical-entry.c dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/physical-entry.c \
+		../x86/build/libx86.a ../support/build/libsupport.a -o $@
+
+# Bare-metal ELF may spell e_entry through p_paddr while its instruction
+# coordinates use p_vaddr.  The optimized ELF must preserve that public alias.
+physical-entry-check: $(PROGRAM) $(BUILD)/physical-entry
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -c check/modular-address-fixture.S -o "$$temporary/input.o"; \
+	$(LD) --emit-relocs -T check/physical-entry-fixture.ld \
+		"$$temporary/input.o" -o "$$temporary/input"; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	$(BUILD)/physical-entry "$$temporary/input" "$$temporary/output"
+
+# A non-function executable symbol with an explicit extent may publish a
+# bounded fixed-stride entry grid.  Moving only its base changes base+i*stride
+# into a different instruction, even though ordinary direct-control closure
+# and the ELF proof both appear complete.
+code-grid-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/code-grid-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+relative-code-pointer-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/relative-code-pointer-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+local-code-address-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/local-code-address-fixture.S \
+		-o "$$temporary/input"; \
+	! readelf -rW "$$temporary/input" \
+		| grep -q 'local_initializer'; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+observed-code-span-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/observed-code-span-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+mutable-code-site-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/mutable-code-site-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+trap-continuation-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/trap-continuation-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+alternative-record-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/alternative-record-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+$(BUILD)/swap-relative-fields: check/swap-relative-fields.c | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) check/swap-relative-fields.c -o $@
+
+linked-field-authority-check: $(PROGRAM) $(BUILD)/swap-relative-fields
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/linked-field-authority-fixture.S \
+		-o "$$temporary/input"; \
+	$(BUILD)/swap-relative-fields "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+patch-trampoline-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/patch-trampoline-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+mixed-load-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -c check/mixed-load-fixture.S -o "$$temporary/input.o"; \
+	$(LD) --emit-relocs -T check/mixed-load-fixture.ld \
+		"$$temporary/input.o" -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+nonimage-control-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/nonimage-control-fixture.S \
+		-o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --nonimage; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/input"; source_status=$$?; \
+	"$$temporary/output"; output_status=$$?; set -e; \
+	test $$source_status -eq 42; test $$output_status -eq 42
+
+dynamic-runtime-check: $(BUILD)/runtime-elf-stage
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O0 -g -U_FORTIFY_SOURCE -Wl,--emit-relocs \
+		check/unwind-runtime-fixture.c \
+		-o "$$temporary/input"; \
+	$(BUILD)/runtime-elf-stage "$$temporary/input" "$$temporary/output" \
+		--dynamic; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	chmod +x "$$temporary/output"; \
+	"$$temporary/input"; "$$temporary/output"
+
+metadata-closure-check: $(BUILD)/metadata-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O0 -g -U_FORTIFY_SOURCE -Wl,--emit-relocs \
+		check/unwind-runtime-fixture.c \
+		-o "$$temporary/input"; \
+	$(BUILD)/metadata-closure "$$temporary/input"
+
+$(BUILD)/entry: check/entry.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/entry.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+entry-check: $(BUILD)/entry
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/relocation-source-fixture.S \
+		-o "$$temporary/relocation-source"; \
+	$(BUILD)/entry "$$temporary/relocation-source" \
+		| grep -q '1 candidates -> 1 primary + 0 metadata entries; 0 observable addresses'; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/entry-role-fixture.S \
+		-o "$$temporary/roles"; \
+	$(BUILD)/entry "$$temporary/roles" \
+		| grep -q '3 candidates -> 1 primary + 2 metadata entries; 2 observable addresses'; \
+	$(CC) -O2 -Wl,--emit-relocs check/elf-proof-fixture.c \
+		-o "$$temporary/input"; \
+	$(BUILD)/entry "$$temporary/input"; \
+	$(CC) -O2 -fPIC -shared -Wl,--emit-relocs \
+		check/elf-proof-fixture.c -o "$$temporary/input.so"; \
+	$(BUILD)/entry "$$temporary/input.so"
+
+table-side-exit-check: $(BUILD)/entry
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/table-side-exit-fixture.S \
+		-o "$$temporary/input"; \
+	$(BUILD)/entry "$$temporary/input" 0 0xffffffffffffffff \
+		| grep -q 'recognized table projection: 11 bases'; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42
+
+# A direct call observes the complete architectural register state at its
+# target.  In particular, a switch arm's RIP-relative load into an argument
+# register cannot be erased as a prefix merely because every arm joins at the
+# same direct call coordinate.
+call-cut-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O2 -fPIE -pie -nostdlib \
+		-Wl,--emit-relocs,--build-id=none check/call-cut-c-fixture.c \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+dispatch-alias-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/dispatch-alias-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+profile-extension-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/profile-extension-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+overlapping-control-check: $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/overlapping-control-fixture.S \
+		-o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(BUILD)/native-closure "$$temporary/input"
+
+$(BUILD)/native-closure: check/native-closure.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/native-closure.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+native-closure-check: $(BUILD)/native-closure
+	@temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -O2 -Wl,--emit-relocs check/elf-proof-fixture.c \
+		-o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input"
+
+$(BUILD)/select-x86: check/select-x86.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/select-x86.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+select-x86-check: $(BUILD)/select-x86
+	$(BUILD)/select-x86
+
+.PHONY: shift-width-check
+$(BUILD)/shift-width: check/shift-width.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/shift-width.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+shift-width-check: $(BUILD)/shift-width
+	$(BUILD)/shift-width
+
+check: shift-width-check
+
+$(BUILD)/native-layout: check/native-layout.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/native-layout.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+native-layout-check: $(BUILD)/native-layout
+	$(BUILD)/native-layout
+
+$(BUILD)/population: check/population.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/population.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+population-check: $(BUILD)/population
+	$(BUILD)/population
+
+check: $(PROGRAM) $(BUILD)/completeness elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check local-code-address-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check block-observation-check slice-observation-check instruction-law-check distribution-population-check production-benchmark-fixture-check
+	@! grep -REn 'PL_VM_|pl_vm_|wasm-compiler|machine-artifact|delivery|worker' \
+		include src cli
 	$(BUILD)/completeness
-
-linked-completeness-check: $(BUILD)/postlink-elf
-	test -n "$(X86_IMAGE)"
-	$(BUILD)/postlink-elf $(X86_IMAGE) --alias-require-semantics
-
-mmu-completeness-check: COMPLETENESS_FLAG = --completeness-check
-mmu-completeness-check: direct-check
-
-# The opcode predicates are generated from qm.steppage rather than transcribed,
-# because neither of them is a contiguous range.  Fails if the header drifts.
-opcodes:
-	python3 check/generate_opcodes.py --check
-
-# Proves the C codec against kernel/x86snapshot.py while both still exist.
-# This is a repository check, not part of the distributable.
-parity: opcodes check
-	$(BUILD)/selftest --vectors | python3 check/format_parity.py
-
-# The guest links statically: the read-only /usr layer has no dynamic loader
-# on the principal tools, and a post-link compiler that needs one could not
-# run inside the machine it compiles for.
-guest: CFLAGS += -static
-guest: all
-
-# The browser runtime compiles the same objects for wasm32.  It needs no
-# separate source tree, which is the point of keeping the library
-# freestanding.
-wasm: CC = clang
-wasm: CFLAGS += --target=wasm32 -nostdlib
-wasm: $(LIB_OBJECTS)
 
 clean:
 	rm -rf $(BUILD)

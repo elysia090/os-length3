@@ -3,7 +3,7 @@ set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 data=$(cd -- "$here/.." && pwd)
-. "$data/sources.env"
+. "$here/sources.env"
 
 # Nix shells replace TMPDIR with a per-shell directory. Keep the checkpoint
 # outside that lifetime unless the caller deliberately selects another root.
@@ -15,7 +15,7 @@ archive="$data/upstream/qemu-$QEMU_ORACLE_VERSION.tar.xz"
 "$here/fetch.sh"
 mkdir -p "$root"
 if [[ ! -d $source ]]; then
-  tar -C "$root" -xf "$archive"
+  tar -C "$root" --no-same-owner -xf "$archive"
 fi
 if [[ ! -f $build/build.ninja ]]; then
   mkdir -p "$build"
