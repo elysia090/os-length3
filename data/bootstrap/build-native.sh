@@ -7,5 +7,6 @@ repo=$(cd -- "$here/../.." && pwd)
 printf 'bootstrap-id=%s\n' "$QM_BOOTSTRAP_ID"
 make -s -C "$repo/src/v2" -j"${QM_JOBS:-4}" all
 make -s -C "$repo/src/v2/postlink-compiler" -j"${QM_JOBS:-4}" \
-  select-x86-check shift-width-check normal-form-check physical-check \
+  select-x86-check shift-width-check condition-code-check arithmetic-cut-check \
+  normal-form-check physical-check \
   quotient-check instruction-law-check

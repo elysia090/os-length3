@@ -1,5 +1,39 @@
 # Remaining work
 
+## Checkpoint: 2026-09-13
+
+The Windows-hosted QEMU build guest has built the fixed Linux 7.1.8 kernel,
+the toolchain package set (including Git 2.55.0), init/service packages and
+core tools. These are baseline build checkpoints, not a complete optimized
+distribution, a product boot result, or a native performance measurement.
+The build guest and all its checkpoints reside on the Windows host; no
+NixOS or WSL inputs are used.
+
+Fresh Windows checks pass: `select-x86-check`, `condition-code-check`
+(573,440 source/generated/reference comparisons), `arithmetic-cut-check`
+(12,288 comparisons), and `shift-width-check` (86,295 comparisons). The
+conditional-move check includes 32-bit false-arm zero extension, every
+condition code, and entry versus published register generations. The root
+measurement regression also passes in the Linux build guest; its C xattr
+extent reader measures names and lengths without materializing values.
+
+The fixed GNU make input selects all 42,184 blocks. Normalization escapes
+have decreased from 164 to 142, with no remaining Pareto violation in that
+input. Publication still fails, as required; this is not a successful
+optimized GNU make build. The first remaining witness is
+`0xe119..0xe12d` (compare/borrow and register publication). The full Linux
+`make check` is also red at `call-cut-check`, with one normalization escape
+at `0x1045..0x1052`. Recover these through general productions and executable
+regressions, not source retention or weakened publication gates.
+
+Before release assembly, bind the top-level toolchain population and its
+`.assembled` checkpoint to the Git build-only Rust closure and all component
+recipe identities. The Git component already has this binding; the aggregate
+assembly identity does not yet include it. Then finish the remaining fixed
+package closure, postlink every ELF, and validate the actual product boot and
+paired workloads. Artifact publication and the complete native distribution
+remain unfinished.
+
 ## Objective and execution environment
 
 Complete the fixed `development-standard-v1` distribution through ordinary

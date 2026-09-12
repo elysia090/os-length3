@@ -626,6 +626,28 @@ shift-width-check: $(BUILD)/shift-width
 
 check: shift-width-check
 
+.PHONY: condition-code-check
+$(BUILD)/condition-code: check/condition-code.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/condition-code.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+condition-code-check: $(BUILD)/condition-code
+	$(BUILD)/condition-code
+
+check: condition-code-check
+
+.PHONY: arithmetic-cut-check
+$(BUILD)/arithmetic-cut: check/arithmetic-cut.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/arithmetic-cut.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+arithmetic-cut-check: $(BUILD)/arithmetic-cut
+	$(BUILD)/arithmetic-cut
+
+check: arithmetic-cut-check
+
 $(BUILD)/native-layout: check/native-layout.c $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/native-layout.c $(LIBRARY) \
 		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \

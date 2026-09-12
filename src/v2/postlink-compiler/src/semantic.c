@@ -2099,6 +2099,12 @@ static int lower_conditional_move(const pl_x86_instruction *instruction,
     if (status) return status;
     pl_operand current = operand(PL_OPERAND_LOCAL, index);
     pl_operand candidate = source;
+    if (bits == 32u) {
+        /* CMOV r32 clears the high destination word on both outcomes,
+         * including a false condition; only the low word is conditional. */
+        status = zero_extend(builder, current, 32u, &current);
+        if (status) return status;
+    }
     if (bits == 32u && !constant && !narrow) {
         status = zero_extend(builder, source, 32u, &candidate);
         if (status) return status;

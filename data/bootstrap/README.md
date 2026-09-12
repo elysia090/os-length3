@@ -53,6 +53,17 @@ locks before updating this recipe. Every distribution build entry sources
 Bootstrap packages are never copied into the product root. Booting this host
 alone does not prove the fixed distribution builds, postlinks, boots, or improves runtime.
 
+Git 2.55 also builds a Rust static library. Its build-only tools have a separate
+35-package closure in `rust.world`, `rust.sha256` and `rust-installed.lock`.
+`rust.sh install` verifies the retained signed inputs under
+`data/upstream/bootstrap/rust-packages/` and installs them without scripts into
+`temp/bootstrap-rust/roots/<identity>`, not the host's package database.
+`rust.sh run ...` exposes this private tool prefix only to the child command,
+with Cargo networking disabled. The Git checkpoint includes this closure's
+identity; the already-built kernel, C compiler and other packages keep their
+unchanged bootstrap inputs. Nothing from the Rust SDK is a release package.
+Only the explicit `rust.sh resolve` maintenance command proposes new lock files.
+
 The resolved Linux 7.1.8 configuration was regenerated for GCC 15.2.0,
 binutils 2.45.1 and pahole 1.30 from this host, without changing its kernel
 feature choices. The prior Nix compiler capability/version fields are not

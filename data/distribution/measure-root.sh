@@ -106,59 +106,36 @@ while IFS= read -r -d '' kind \
   esac
 done < <(find "$root" -printf '%y\0%s\0%D:%i\0%p\0%l\0')
 
-# `-e hex` makes value extent mechanical.  The recursive dump is one bounded
-# pass, and the first canonical path for an inode owns its xattr rows.  A later
-# hard-link spelling is ignored, so one inode is neither hidden nor charged
-# twice.  An unknown path or representation is a hard error.
-if ! command -v getfattr >/dev/null; then
-  printf 'canonical release measurement requires getfattr\n' >&2
-  exit 1
+# Query xattr extents directly. No hex expansion or value buffer is necessary
+# to measure canonical bytes, and attribute CLI packages are not build inputs.
+here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+tool_root=$here/../../temp/distribution-tools
+tool_key=$(sha256sum "$here/measure-xattrs.c" | cut -d' ' -f1)
+xattr_tool=$tool_root/measure-xattrs-$tool_key
+if [[ ! -x $xattr_tool ]]; then
+  mkdir -p "$tool_root"
+  "${CC:-cc}" -std=c11 -O2 -Wall -Wextra -Werror \
+    "$here/measure-xattrs.c" -o "$xattr_tool.partial.$$"
+  mv -- "$xattr_tool.partial.$$" "$xattr_tool"
 fi
 declare -A seen_xattr_inode=()
-current_xattr_inode=
-accept_xattr=0
-while IFS= read -r attribute; do
-  case $attribute in
-    '# file: '*)
-      xattr_path=${attribute#'# file: '}
-      current_xattr_inode=${path_inode[$xattr_path]-}
-      if [[ -z $current_xattr_inode ]]; then
-        printf 'xattr walk returned an unknown release path: %q\n' \
-          "$xattr_path" >&2
-        exit 1
-      fi
-      if [[ -n ${seen_xattr_inode[$current_xattr_inode]+present} ]]; then
-        accept_xattr=0
-      else
-        seen_xattr_inode[$current_xattr_inode]=1
-        accept_xattr=1
-      fi
-      continue
-      ;;
-    '')
-      current_xattr_inode=
-      accept_xattr=0
-      continue
-      ;;
-  esac
-  [[ $attribute == *=* ]] || continue
-  if [[ -z $current_xattr_inode ]]; then
-    printf 'xattr row has no owning release path: %s\n' "$attribute" >&2
+exec {xattr_fd}< <("$xattr_tool" "$root")
+xattr_pid=$!
+while IFS= read -r -d '' xattr_path \
+    && IFS= read -r -d '' records \
+    && IFS= read -r -d '' bytes; do
+  current_xattr_inode=${path_inode[$xattr_path]-}
+  if [[ -z $current_xattr_inode || ! $records =~ ^[0-9]+$ || ! $bytes =~ ^[0-9]+$ ]]; then
+    printf 'invalid xattr extent row for release path: %q\n' "$xattr_path" >&2
     exit 1
   fi
-  (( accept_xattr != 0 )) || continue
-  xattr_name=${attribute%%=*}
-  encoded=${attribute#*=}
-  if [[ $encoded != 0x* || ${#encoded} -lt 2 \
-      || $(((${#encoded} - 2) % 2)) -ne 0 ]]; then
-    printf 'noncanonical xattr representation: %s\n' "$attribute" >&2
-    exit 1
-  fi
-  value_bytes=$(((${#encoded} - 2) / 2))
-  xattr_records=$((xattr_records + 1))
-  canonical_xattr_bytes=$((canonical_xattr_bytes + 4 + 4 \
-    + ${#xattr_name} + 8 + value_bytes))
-done < <(getfattr -R -h --absolute-names -d -m - -e hex -- "$root" 2>/dev/null)
+  [[ -z ${seen_xattr_inode[$current_xattr_inode]+present} ]] || continue
+  seen_xattr_inode[$current_xattr_inode]=1
+  xattr_records=$((xattr_records + records))
+  canonical_xattr_bytes=$((canonical_xattr_bytes + bytes))
+done <&"$xattr_fd"
+exec {xattr_fd}<&-
+wait "$xattr_pid"
 
 canonical_filesystem_bytes=$((32 + canonical_payload_bytes \
   + canonical_object_metadata_bytes + canonical_inode_bytes \
