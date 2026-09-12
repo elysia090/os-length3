@@ -1457,6 +1457,14 @@ int main(void)
      * Independent constants and copies do not require another flag owner.
      * Linux block 0xffffffff81202909..0xffffffff8120292e remains 8 work /
      * 3 span / 37 bytes, now covered by the normalized native production. */
+    /* Select an address or the entry RDX, then publish a new RDX. The CMOV
+     * must consume the entry value before MOV EDX replaces that coordinate.
+     * lea rax,[rip+0x4e726]; cmove rax,rdx; mov edx,4 */
+    static const pl_u8 conditional_address_handoff_source[] = {
+        0x48u, 0x8du, 0x05u, 0x26u, 0xe7u, 0x04u, 0x00u,
+        0x48u, 0x0fu, 0x44u, 0xc2u,
+        0xbau, 0x04u, 0x00u, 0x00u, 0x00u,
+    };
     static const pl_u8 wide_shift_narrow_flags_source[] = {
         0x4cu, 0x89u, 0xf9u,
         0x48u, 0xc7u, 0xc2u, 0xa6u, 0xeeu, 0x8cu, 0x81u,
@@ -4687,6 +4695,29 @@ int main(void)
                 selected.output_work, selected.output_span,
                 selected.output_bytes, written);
         return 216;
+    }
+    status = select_projected(
+        conditional_address_handoff_source, sizeof conditional_address_handoff_source,
+        (1u << PL_X86_LOCAL_COUNT) - 1u,
+        &selected, output, &written, &projected);
+    if (status || !selected.supported || !selected.normalized_family_present
+            || selected.output_work > 3u || selected.output_span > 2u) {
+        fprintf(stderr,
+                "native x86 selection: RED (conditional address handoff "
+                "status=%d source/normalized=%u/%u work/span/bytes=%u/%u/%u)\n",
+                status, (unsigned)selected.copied_source,
+                (unsigned)selected.normalized_family_present,
+                selected.output_work, selected.output_span,
+                selected.output_bytes);
+        print_block_shape(&projected);
+        pl_x86_native_candidates failed = { 0 };
+        int failure_status = candidates_projected(
+            conditional_address_handoff_source, sizeof conditional_address_handoff_source,
+            (1u << PL_X86_LOCAL_COUNT) - 1u, &failed);
+        fprintf(stderr, "conditional candidates: status=%d count=%u stage=%u blocking=%x\n",
+                failure_status, failed.count, failed.diagnostic_stage,
+                failed.diagnostic.blocking_work);
+        return 219;
     }
     status = select_projected(
         wide_shift_narrow_flags_source, sizeof wide_shift_narrow_flags_source,

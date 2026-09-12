@@ -13,8 +13,9 @@ the reproducible source lock.
 stable `/tmp/libqm-x86-oracle` checkpoint (override with
 `QM_ORACLE_BUILD_ROOT`). `boot-qemu.sh BZIMAGE INITRAMFS` then supplies the
 independent expected boot/terminal behaviour. Neither command writes an
-artifact. `nix-shell -p gcc ninja python3 pkg-config glib pixman zlib` is a
-sufficient build environment.
+artifact. Windows-side validation uses the pinned portable QEMU documented in
+`../bootstrap/README.md`, without NixOS or WSL. Building this separate TCG oracle
+from source additionally requires glib and pixman development headers.
 
 ## Roles
 

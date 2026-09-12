@@ -1,0 +1,17 @@
+{
+  "format": "linux-build-host-v1",
+  "qemu": {
+    "url": "https://qemu.weilnetz.de/w64/qemu-w64-setup-20260811.exe",
+    "file": "qemu-w64-setup-20260811.exe",
+    "sha512": "5bcf9eed634e8575a37b74f445af41a2fe4106da512d0c30c368301d4c105037fdfab40a5287367a28a957624cddebbc8c07e16c88ab6634f554cdf3d16bf543"
+  },
+  "image": {
+    "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/generic_alpine-3.24.1-x86_64-bios-cloudinit-r0.qcow2",
+    "file": "generic_alpine-3.24.1-x86_64-bios-cloudinit-r0.qcow2",
+    "sha256": "6e2e6fe0572b6632527f268d3659e8fccebda4e1ee470fafe2c4d7b85b6a4df6",
+    "signature": "generic_alpine-3.24.1-x86_64-bios-cloudinit-r0.qcow2.asc",
+    "key_url": "https://www.alpinelinux.org/keys/tomalok.asc",
+    "key_file": "tomalok.asc",
+    "key_fingerprint": "F26ADFADBAE702EF7AF637459DA7EF23BFFCDF22"
+  }
+}

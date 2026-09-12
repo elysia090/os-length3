@@ -11,6 +11,12 @@ INCLUDES = -Iartifact/include -Ipostlink-compiler/include \
 	clean $(PRODUCTS)
 all: $(PRODUCTS) $(BUILD)/artifact-executable-stage
 
+# Recursive makes do not share a dependency graph. Finish each provider before
+# starting its consumers, including on an empty tree under `make -j`.
+x86 optimized-x86 machine-abi artifact storage: support
+postlink-compiler: x86 optimized-x86
+wasm-compiler: optimized-x86 machine-abi
+
 $(PRODUCTS):
 	$(MAKE) -C $@ all
 

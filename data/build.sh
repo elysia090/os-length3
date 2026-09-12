@@ -7,21 +7,12 @@ repo=$(cd -- "$here/.." && pwd)
 # The release recipe always enters through the checked-in bootstrap lock.  A
 # caller may choose scratch/output coordinates, but cannot silently substitute
 # a different host compiler or build-tool population through PATH.
-if [[ ${QM_BOOTSTRAP_ACTIVE:-0} != 1 ]]; then
-  if ! command -v nix >/dev/null 2>&1; then
-    printf 'the release build requires Nix for its pinned bootstrap\n' >&2
-    exit 2
-  fi
-  scratch_root=${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}
-  exec nix develop --no-write-lock-file "path:$here/bootstrap" -c \
-    env QM_BOOTSTRAP_ACTIVE=1 QM_SCRATCH_ROOT="$scratch_root" \
-      bash "$here/build.sh" "$@"
-fi
+. "$here/bootstrap/environment.sh"
 # All canonical package metadata and the later Artifact traversal must observe
 # root ownership directly, including from the static apk binary.  Mapping the
-# current WSL uid/gid to namespace root avoids both payload copies and a
+# current unprivileged uid/gid to namespace root avoids both payload copies and a
 # separate fakeroot/LD_PRELOAD route.
-if [[ ${QM_RELEASE_USERNS:-0} != 1 ]]; then
+if [[ $(id -u) != 0 && ${QM_RELEASE_USERNS:-0} != 1 ]]; then
   exec unshare --user --map-root-user \
     env QM_RELEASE_USERNS=1 QM_PACKAGE_USERNS=1 \
       bash "$here/build.sh" "$@"
@@ -31,8 +22,8 @@ fi
 
 bootstrap_lock_digest=$(
   {
-    sha256sum "$here/bootstrap/flake.nix" | cut -d' ' -f1
-    sha256sum "$here/bootstrap/flake.lock" | cut -d' ' -f1
+    sha256sum "$here/bootstrap/packages.sha256" | cut -d' ' -f1
+    sha256sum "$here/bootstrap/installed.lock" | cut -d' ' -f1
   } | sha256sum | cut -d' ' -f1
 )
 sources_digest=$(sha256sum "$here/sources.env" | cut -d' ' -f1)
@@ -205,33 +196,10 @@ apply_config_fragment() {
 }
 
 resolve_busybox_cc() {
-  if [[ -n ${QM_BUSYBOX_CC:-} ]]; then
-    printf '%s\n' "$QM_BUSYBOX_CC"
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    local candidate
-    while IFS= read -r candidate; do
-      if [[ -x $candidate/bin/gcc ]]; then
-        printf '%s\n' "$candidate/bin/gcc"
-        return
-      fi
-    done < <(nix build --no-link --print-out-paths --no-write-lock-file \
-      "path:$here/bootstrap#musl-gcc")
-  fi
-  command -v gcc
+  bootstrap_cc "${QM_BUSYBOX_CC:-}"
 }
 
 ensure_libelf_pkg_config() {
-  if pkg-config --exists libelf; then
-    return
-  fi
-  if command -v nix >/dev/null 2>&1; then
-    local elfutils_dev
-    elfutils_dev=$(nix build --no-link --print-out-paths \
-      --no-write-lock-file "path:$here/bootstrap#elfutils-dev")
-    export PKG_CONFIG_PATH="$elfutils_dev/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-  fi
   pkg-config --exists libelf
 }
 
@@ -264,6 +232,7 @@ busybox_key=$(
   {
     sha256sum "$here/config/busybox.fragment"
     "$busybox_cc" --version | sed -n '1p'
+    printf '%s\n' "$QM_BOOTSTRAP_ID"
     printf '%s\n' 'linked-busybox-postlink-v2'
   } | sha256sum | cut -d' ' -f1
 )
@@ -299,7 +268,7 @@ install -D -m 0644 "$here/bootstrap/Makefile" \
 boot_root=$busybox_root
 "$boot_root/bin/busybox" true
 
-linux_o="$work/linux-out"
+linux_o="$work/linux-out/$QM_BOOTSTRAP_ID"
 mkdir -p "$linux_o"
 ensure_libelf_pkg_config
 make -C "$linux_src" O="$linux_o" ARCH=x86_64 allnoconfig
@@ -430,8 +399,8 @@ release_metadata_digest=$(
     sha256sum "$here/sources.env"
     sha256sum "$here/distribution/profile.env"
     sha256sum "$here/distribution/runtime-closure.tsv.in"
-    sha256sum "$here/bootstrap/flake.nix"
-    sha256sum "$here/bootstrap/flake.lock"
+    sha256sum "$here/bootstrap/packages.sha256"
+    sha256sum "$here/bootstrap/installed.lock"
     printf 'target=%s\n' "$toolchain_target"
     printf 'gcc=%s\n' "$GCC_VERSION"
     printf 'release-metadata-owner-v1\n'
@@ -450,10 +419,10 @@ if [[ ! -f $release_metadata_prefix/.complete ]]; then
     "$release_metadata_root/usr/share/qm/sources.env"
   install -m 0644 "$here/distribution/profile.env" \
     "$release_metadata_root/usr/share/qm/distribution-profile.env"
-  install -m 0644 "$here/bootstrap/flake.nix" \
-    "$release_metadata_root/usr/share/qm/bootstrap-flake.nix"
-  install -m 0644 "$here/bootstrap/flake.lock" \
-    "$release_metadata_root/usr/share/qm/bootstrap-flake.lock"
+  install -m 0644 "$here/bootstrap/packages.sha256" \
+    "$release_metadata_root/usr/share/qm/bootstrap-packages.sha256"
+  install -m 0644 "$here/bootstrap/installed.lock" \
+    "$release_metadata_root/usr/share/qm/bootstrap-installed.lock"
   sed -e "s|@TARGET@|$toolchain_target|g" \
       -e "s|@GCC_VERSION@|$GCC_VERSION|g" \
       "$here/distribution/runtime-closure.tsv.in" \

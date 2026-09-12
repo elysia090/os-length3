@@ -3500,6 +3500,7 @@ typedef struct {
     pl_operand current;
     pl_operand compare_right;
     pl_u32 candidate_local;
+    pl_u32 candidate_is_entry;
     pl_u32 compare_left_local;
     pl_u32 value_bits;
     pl_u32 compare_bits;
@@ -3803,6 +3804,9 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
         return 0;
     }
     out->candidate_local = candidate_local;
+    const pl_operand candidate = argument[inverted ? 1u : 0u];
+    out->candidate_is_entry = candidate.kind == PL_OPERAND_LOCAL
+                          && candidate.value == candidate_local;
     out->value_bits = select->opcode == PL_OPCODE_LANE32_SELECT
                    || (operand_fits_u32(
                            plan, argument[0], plan->node_count + 1u)
@@ -4188,6 +4192,8 @@ static int conditional_select_gpr_sources(
             plan, select.current, plan->node_count + 1u,
             plan->node_count + 1u, sources))
         return 0;
+    if (select.candidate_is_entry)
+        *sources |= 1u << select.candidate_local;
     return 1;
 }
 
@@ -4200,7 +4206,11 @@ static int conditional_select_publication_dependencies(
             || !conditional_select_details(
                 plan, value, destination, &select))
         return 0;
-    *dependencies = 1u << select.candidate_local;
+    /* Entry operands must be consumed before their coordinate is replaced;
+     * published operands must be produced before this consumer. These are
+     * opposite edges even when both generations use the same register. */
+    *dependencies = select.candidate_is_entry
+                  ? 0u : 1u << select.candidate_local;
     if (select.has_compare
             && select.compare_left_local != destination)
         *dependencies |= 1u << select.compare_left_local;

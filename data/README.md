@@ -1,8 +1,7 @@
 # Reproducible x86 Linux input
 
 `artifact/linux-x86-64` is generated only from the upstream inputs locked in
-`sources.env`. Local WSL kernels and `qm-linux-spike` are diagnostic references,
-not artifact inputs.
+`sources.env`. NixOS, WSL kernels and their temporary build trees are not used.
 
 The current source roles are:
 
@@ -81,22 +80,22 @@ complete-future quotient instead of one fixed-width tuple per class. The
 standalone number remains useful only as an upper bound; it is not published
 as a second sidecar.
 
-Run it in NixOS/WSL. `build.sh` re-enters the checked-in
-`bootstrap/flake.lock`
-automatically, so the host compiler and build-tool population cannot follow an
-ambient `nixpkgs` registry or `PATH`. The static BusyBox compiler and host-only
-libelf headers are resolved from that same lock; neither becomes a runtime
-payload, but the bootstrap lock digest is part of release provenance:
+Run inside the independent Linux build host described in `bootstrap/README.md`.
+Its differential disk lives in Windows `temp/bootstrap/`, with no NixOS or WSL
+dependency. Each build entry checks the exact `bootstrap/installed.lock`
+population and uses the fixed compiler/tool paths. The signed package inputs
+are retained under `upstream/bootstrap/packages/`; their digests and installed
+population are part of release provenance, not runtime binary payloads:
 
 ```sh
 cd data
 QM_BUILD_ROOT=/tmp/libqm-linux-build \
-QM_TOOLCHAIN_PACKAGE_SET=/mnt/c/.../temp/toolchain-output/x86_64-linux-musl-toolchain-<identity>.packages \
+QM_TOOLCHAIN_PACKAGE_SET=/build/source/temp/toolchain-output/x86_64-linux-musl-toolchain-<identity>.packages \
   ./build.sh
 ```
 
-`QM_BUILD_ROOT` deliberately keeps the disposable expansion on WSL's native
-filesystem instead of importing any WSL kernel. Its default is
+`QM_BUILD_ROOT` keeps the disposable expansion on the build-host filesystem,
+whose backing disk is under Windows `temp/`. Its default is
 `$TMPDIR/libqm-linux-build`; `QM_OUTPUT_ROOT` likewise defaults to
 `$TMPDIR/libqm-linux-output`. Checked-in `data/` contains only the upstream
 source lock, configuration fragments, resolved exact `.config` locks, `/init`,
