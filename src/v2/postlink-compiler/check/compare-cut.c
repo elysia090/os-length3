@@ -47,11 +47,21 @@ static pl_u32 condition(pl_u32 code, pl_u64 flags)
 }
 
 static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
-                      pl_u32 code, pl_u64 *comparisons)
+                      pl_u32 code, pl_u32 expression, pl_u64 *comparisons)
 {
     static const pl_u8 prefix[] = { 0x49u, 0x89u, 0xf2u }; /* mov r10,rsi */
     pl_u8 source[32] = { 0x48u, 0x89u, 0xc8u }; /* mov rax,rcx */
     pl_u32 length = 3u;
+    if (expression == 2u) { source[0] = 0x31u; source[1] = 0xc0u; length = 2u; }
+    const pl_u64 compare_value = expression ? 64u : 4u;
+    if (expression == 1u) {
+        static const pl_u8 pure[] = {
+            0x41u, 0x83u, 0xe2u, 0x42u, /* and r10d,0x42 */
+            0x48u, 0xc1u, 0xe0u, 0x0cu, /* shl rax,12 */
+        };
+        memcpy(source + length, pure, sizeof pure);
+        length += sizeof pure;
+    }
     if (bits == 16u) source[length++] = 0x66u;
     source[length++] = bits == 64u ? 0x49u : 0x41u;
     if (immediate) {
@@ -59,14 +69,26 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
                                 : (bits == 8u ? 0x80u : 0x81u);
         source[length++] = test ? 0xc2u : 0xfau;
         pl_u32 bytes = bits == 8u ? 1u : bits == 16u ? 2u : 4u;
-        for (pl_u32 i = 0u; i < bytes; ++i) source[length++] = i ? 0u : 4u;
+        for (pl_u32 i = 0u; i < bytes; ++i)
+            source[length++] = i ? 0u : (pl_u8)compare_value;
     } else {
         source[length++] = test ? (bits == 8u ? 0x84u : 0x85u)
                                 : (bits == 8u ? 0x38u : 0x39u);
         source[length++] = 0xd2u; /* r10 low word and rdx low word */
     }
-    source[length++] = (pl_u8)(0x70u | code);
-    source[length++] = 8u;
+    if (expression < 2u) {
+        source[length++] = (pl_u8)(0x70u | code);
+        source[length++] = 8u;
+    } else {
+        if (expression == 3u) {
+            source[length++] = 0x41u; source[length++] = 0xbau;
+            for (pl_u32 i = 0u; i < 4u; ++i) source[length++] = 0u;
+            source[length++] = 0x41u;
+        }
+        source[length++] = 0x0fu;
+        source[length++] = (pl_u8)(0x90u | code);
+        source[length++] = expression == 3u ? 0xc2u : 0xc0u;
+    }
     static const pl_u8 observe[] = {
         0x41u, 0xb9u, 0u, 0u, 0u, 0u, 0xebu, 0x06u,
         0x41u, 0xb9u, 1u, 0u, 0u, 0u,
@@ -103,10 +125,20 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
     pl_u32 span = 0u, work = 0u;
     if (!status) status = pl_x86_candidates_select_joint_minimum(
         &candidates, 0u, 0u, &selected, &span, &work);
+    if (!status && selected.copied_source)
+        for (pl_u32 i = 0u; i < candidates.count; ++i) {
+            const pl_x86_native_selection *candidate = &candidates.candidate[i];
+            if (candidate->supported && !candidate->copied_source
+                    && candidate->output_work == work && candidate->output_span == span) {
+                selected = *candidate;
+                break;
+            }
+        }
     pl_u8 *output = memory + 512u + sizeof prefix;
     pl_u32 written = 0u;
     if (status || !selected.normalized_family_present || selected.copied_source
-            || work > 3u || span > 2u) goto failed;
+            || work > (expression == 1u ? 5u : expression == 3u ? 4u : 3u)
+            || span > (expression == 1u ? 3u : 2u)) goto failed;
     status = pl_x86_select_write_measured(
         &frontend, &block, &selected, output, 256u, &written);
     if (status || written != selected.output_bytes) goto failed;
@@ -135,16 +167,20 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
         random ^= random << 13u; random ^= random >> 7u; random ^= random << 17u;
         pl_u64 left = i < count * count ? boundary[i % count] : random;
         pl_u64 right = i < count * count ? boundary[i / count] : ~random;
-        pl_u64 flags = flags_for(left, immediate ? 4u : right, bits, test);
+        pl_u64 expected_input = expression == 1u ? left & 0x42u : left;
+        pl_u64 expected_copy = expression == 1u ? random << 12u : random;
+        pl_u64 flags = flags_for(expected_input, immediate ? compare_value : right, bits, test);
+        if (expression == 2u) expected_copy = condition(code, flags);
+        if (expression == 3u) expected_input = condition(code, flags);
         pl_u64 mask = test ? 0x8c5u : 0x8d5u; /* TEST leaves AF undefined. */
         observation before = { 0 }, after = { 0 };
         original.function(&before, left, right, random);
         optimized.function(&after, left, right, random);
-        if (before.copy != random || after.copy != random
-                || before.input != left || after.input != left
+        if (before.copy != expected_copy || after.copy != expected_copy
+                || before.input != expected_input || after.input != expected_input
                 || (before.flags & mask) != flags || (after.flags & mask) != flags
-                || before.taken != condition(code, flags)
-                || after.taken != condition(code, flags)) {
+                || before.taken != (expression < 2u ? condition(code, flags) : 0u)
+                || after.taken != (expression < 2u ? condition(code, flags) : 0u)) {
             fprintf(stderr, "compare cut mismatch input=%llx/%llx\n",
                     (unsigned long long)left, (unsigned long long)right);
             goto failed;
@@ -154,8 +190,9 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
     test_code_release(memory, 4096u);
     return 1;
 failed:
-    fprintf(stderr, "compare cut: RED bits=%u test=%u immediate=%u cc=%u "
-            "status=%d work/span=%u/%u\n", bits, test, immediate, code, status, work, span);
+    fprintf(stderr, "compare cut: RED bits=%u test=%u immediate=%u cc=%u expression=%u "
+            "status=%d work/span=%u/%u\n", bits, test, immediate, code, expression,
+            status, work, span);
     test_code_release(memory, 4096u);
     return 0;
 }
@@ -167,9 +204,11 @@ int main(void)
         for (pl_u32 test = 0u; test < 2u; ++test)
             for (pl_u32 immediate = 0u; immediate < 2u; ++immediate)
                 for (pl_u32 code = 0u; code < 16u; ++code)
-                    if (!check_case(bits, test, immediate, code, &comparisons)) return 1;
+                    for (pl_u32 expression = 0u; expression < (test ? 4u : 2u); ++expression)
+                        if (!check_case(bits, test, immediate, code, expression,
+                                         &comparisons)) return 1;
     printf("compare cut: green (%llu source/generated/reference comparisons; "
-           "8/16/32/64-bit CMP/TEST, immediate/register, every condition)\n",
+           "8/16/32/64-bit CMP/TEST, immediate/register, all Jcc/SETcc, pure/aliased publications)\n",
            (unsigned long long)comparisons);
     return 0;
 }

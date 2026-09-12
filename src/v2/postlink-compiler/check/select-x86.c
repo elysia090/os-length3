@@ -4335,7 +4335,7 @@ int main(void)
         &selected, output, &written);
     if (status || !selected.supported || selected.copied_source
             || !selected.normalized_family_present
-            || !selected.direct_immediate_branch_frame
+            || !selected.direct_branch_frame
             || selected.output_work != 3u || selected.output_span != 2u
             || selected.output_bytes
                != sizeof immediate_compare_branch_result
@@ -4348,7 +4348,7 @@ int main(void)
                 "work/span/bytes=%u/%u/%u written=%u)\n",
                 status, (unsigned)selected.copied_source,
                 (unsigned)selected.normalized_family_present,
-                (unsigned)selected.direct_immediate_branch_frame,
+                (unsigned)selected.direct_branch_frame,
                 selected.output_work, selected.output_span,
                 selected.output_bytes, written);
         return 200;
@@ -4822,6 +4822,74 @@ int main(void)
                 failed.diagnostic.blocking_work, failed.diagnostic.blocking_opcode);
         print_block_shape(&projected);
         return 224;
+    }
+    /* Both cut exits consume the same normalized value grammar: a comparison
+     * with an immediate must not lose the shifted/bitwise publication path. */
+    static const pl_u8 masked_shift_compare[] = {
+        0x48u, 0x89u, 0xf2u, 0x48u, 0x89u, 0xf8u, 0x83u, 0xe2u, 0x42u,
+        0x48u, 0xc1u, 0xe0u, 0x0cu, 0x48u, 0x83u, 0xfau, 0x40u, 0x75u, 4u,
+    };
+    static const pl_u8 address_subtract_flags[] = {
+        0x89u, 0xdau, 0x31u, 0xc0u, 0x48u, 0x8du, 0x3du,
+        0xdau, 0x95u, 3u, 0u, 0x29u, 0xcau,
+    };
+    static const pl_u8 word_test_boolean[] = {
+        0x45u, 0x31u, 0xedu, 0x4cu, 0x89u, 0xe6u, 0x48u, 0x89u, 0xefu,
+        0x85u, 0xc0u, 0x41u, 0x0fu, 0x94u, 0xc5u,
+    };
+    static const pl_u8 add_carry_branch[] = {
+        0x89u, 0xd1u, 0xbau, 0u, 0u, 0u, 0x80u, 0x31u, 0xc0u,
+        0x48u, 0x01u, 0xf2u, 0x0fu, 0x92u, 0xc0u, 0x84u, 0xc9u, 0x74u, 0x33u,
+    };
+    const pl_u8 *cut_source[] = {
+        masked_shift_compare, address_subtract_flags, word_test_boolean, add_carry_branch };
+    const pl_u32 cut_length[] = {
+        sizeof masked_shift_compare, sizeof address_subtract_flags,
+        sizeof word_test_boolean, sizeof add_carry_branch };
+    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u };
+    for (pl_u32 cut = 0u; cut < 4u; ++cut) {
+        status = select_projected(cut_source[cut], cut_length[cut],
+            (1u << PL_X86_LOCAL_COUNT) - 1u,
+            &selected, output, &written, &projected);
+        if (status || !selected.normalized_family_present
+                || selected.output_work > cut_work[cut]) {
+            pl_x86_native_candidates failed = { 0 };
+            (void)candidates_projected(cut_source[cut], cut_length[cut],
+                (1u << PL_X86_LOCAL_COUNT) - 1u, &failed);
+            fprintf(stderr, "native x86 selection: RED (expression cut %u "
+                "status=%d work/span=%u/%u rejection=%x/%x)\n", cut,
+                status, selected.output_work, selected.output_span,
+                failed.diagnostic.blocking_work, failed.diagnostic.blocking_opcode);
+            print_block_shape(&projected);
+            return 225;
+        }
+    }
+    static const pl_u8 shared_signed_shift[] = {
+        0x89u, 0xc2u, 0xd3u, 0xfau, 0x48u, 0x63u, 0xc2u,
+        0x83u, 0xfeu, 2u, 0x0fu, 0x85u, 0x8au, 0xfdu, 0xffu, 0xffu,
+    };
+    pl_x86_native_candidates shared_shift_candidates = { 0 };
+    status = candidates_projected(shared_signed_shift, sizeof shared_signed_shift,
+        (1u << PL_X86_LOCAL_COUNT) - 1u, &shared_shift_candidates);
+    pl_u32 shift_min_span = 0u, shift_min_work = 0u;
+    if (!status) status = pl_x86_candidates_select_joint_minimum(
+        &shared_shift_candidates, 0u, 0u, &selected, &shift_min_span, &shift_min_work);
+    if (status || !selected.normalized_family_present
+            || shift_min_work > 5u || shift_min_span > 3u) {
+        fprintf(stderr, "native x86 selection: RED (shared signed shift "
+            "status=%d independent span/work=%u/%u)\n", status, shift_min_span, shift_min_work);
+        for (pl_u32 i = 0u; i < shared_shift_candidates.count; ++i) {
+            pl_u32 size = 0u;
+            const pl_x86_native_selection *candidate = &shared_shift_candidates.candidate[i];
+            fprintf(stderr, " candidate source=%u span/work/bytes=%u/%u/%u:",
+                candidate->copied_source, candidate->output_span, candidate->output_work,
+                candidate->output_bytes);
+            if (!write_candidate(shared_signed_shift, sizeof shared_signed_shift,
+                    0x1000u, candidate, output, sizeof output, &size))
+                for (pl_u32 j = 0u; j < size; ++j) fprintf(stderr, " %02x", output[j]);
+            fputc('\n', stderr);
+        }
+        return 226;
     }
     pl_x86_native_candidates aligned_candidates = { 0 };
     status = candidates_projected(

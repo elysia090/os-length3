@@ -128,6 +128,161 @@ failed:
     return 0;
 }
 
+static pl_u64 word_operation(pl_u64 left, pl_u64 right, pl_u32 bits,
+                              pl_u32 mode, pl_u64 *flags)
+{
+    pl_u64 mask = UINT64_MAX >> (64u - bits), sign = 1ull << (bits - 1u);
+    left &= mask; right &= mask;
+    pl_u64 value = mode == 0u ? left + right : mode == 1u ? left - right
+                 : mode == 2u ? left & right : mode == 3u ? left | right : left ^ right;
+    value &= mask;
+    pl_u32 parity = 0u;
+    for (pl_u32 i = 0u; i < 8u; ++i) parity ^= (pl_u32)(value >> i) & 1u;
+    *flags = (!parity ? 4u : 0u) | (!value ? 64u : 0u) | (value & sign ? 128u : 0u);
+    if (mode < 2u) {
+        *flags |= (left ^ right ^ value) & 16u;
+        *flags |= (mode ? left < right : value < left) ? 1u : 0u;
+        *flags |= ((mode ? left ^ right : ~(left ^ right))
+                    & (left ^ value) & sign) ? 2048u : 0u;
+    }
+    return value;
+}
+
+static pl_u32 observed_condition(pl_u32 code, pl_u64 flags)
+{
+    pl_u32 c = !!(flags & 1u), p = !!(flags & 4u), z = !!(flags & 64u);
+    pl_u32 s = !!(flags & 128u), o = !!(flags & 2048u), positive;
+    switch (code >> 1u) {
+    case 0u: positive = o; break;
+    case 1u: positive = c; break;
+    case 2u: positive = z; break;
+    case 3u: positive = c || z; break;
+    case 4u: positive = s; break;
+    case 5u: positive = p; break;
+    case 6u: positive = s != o; break;
+    default: positive = z || (s != o); break;
+    }
+    return positive ^ (code & 1u);
+}
+
+typedef struct { pl_u64 value, condition, flags, taken; } group_observation;
+typedef void (__attribute__((sysv_abi)) *group_function)(
+    group_observation *, pl_u64, pl_u64, pl_u64);
+
+static int check_group(pl_u32 bits, pl_u32 mode, pl_u32 code, pl_u32 aliases,
+                       pl_u64 *comparisons)
+{
+    /* The Boolean either has its own GPR or replaces the old left input.
+     * Its zero initialization must not destroy that input before the ALU. */
+    pl_u8 source[32] = { 0x48u, 0x89u, 0xf0u }; /* mov rax,rsi */
+    pl_u32 length = 3u;
+    if (!aliases) source[length++] = 0x45u;
+    source[length++] = 0x31u; source[length++] = aliases ? 0xf6u : 0xc0u;
+    static const pl_u8 operation[] = { 0x01u, 0x29u, 0x21u, 0x09u, 0x31u };
+    if (bits == 64u) source[length++] = 0x48u;
+    source[length++] = operation[mode]; source[length++] = 0xd0u;
+    source[length++] = aliases ? 0x40u : 0x41u;
+    source[length++] = 0x0fu; source[length++] = (pl_u8)(0x90u | code);
+    source[length++] = aliases ? 0xc6u : 0xc0u;
+    source[length++] = 0x84u; source[length++] = 0xc9u; /* test cl,cl */
+    source[length++] = 0x74u; source[length++] = 8u;
+    pl_u8 observe[] = {
+        0x41u, 0xbbu, 0u, 0u, 0u, 0u, 0xebu, 6u,
+        0x41u, 0xbbu, 1u, 0u, 0u, 0u,
+        0x48u, 0x89u, 0x07u,
+        0x4cu, 0x89u, 0x47u, 8u,
+        0x9cu, 0x41u, 0x5au, 0x4cu, 0x89u, 0x57u, 16u,
+        0x4cu, 0x89u, 0x5fu, 24u, 0xc3u,
+    };
+    if (aliases) { observe[17] = 0x48u; observe[19] = 0x77u; }
+    pl_u8 *memory = test_code_allocate(4096u);
+    if (!memory) return 0;
+    pl_u64 address = (pl_u64)(uintptr_t)memory;
+    pl_x86_map map = { source, address, length, length,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u };
+    pl_x86_image image = { &map, 1u, 0u, address };
+    pl_x86_frontend frontend;
+    static pl_u8 first[1024u * 1024u], second[1024u * 1024u];
+    static pl_u8 select_first[1024u * 1024u], select_second[1024u * 1024u];
+    pl_x86_block_workspace workspace = { first, second, sizeof first, 64u };
+    pl_x86_block_workspace select_workspace = {
+        select_first, select_second, sizeof select_first, 64u };
+    pl_x86_block block;
+    pl_x86_native_candidates candidates;
+    pl_x86_native_selection selected = { 0 };
+    pl_u32 span = 0u, work = 0u, written = 0u;
+    int status = pl_x86_frontend_open(&image, &frontend);
+    if (!status) status = pl_x86_block_lower_projected_until(
+        &frontend, address, address + length,
+        (1u << PL_X86_LOCAL_COUNT) - 1u, &workspace, &block);
+    if (!status) {
+        block.relax_short_control = 1u;
+        status = pl_x86_select_candidates(&frontend, &select_workspace, &block, &candidates);
+    }
+    if (!status) status = pl_x86_candidates_select_joint_minimum(
+        &candidates, 0u, 0u, &selected, &span, &work);
+    if (!status && selected.copied_source)
+        for (pl_u32 i = 0u; i < candidates.count; ++i) {
+            const pl_x86_native_selection *candidate = &candidates.candidate[i];
+            if (candidate->supported && !candidate->copied_source
+                    && candidate->output_work == work && candidate->output_span == span) {
+                selected = *candidate;
+                break;
+            }
+        }
+    if (status || !selected.normalized_family_present || selected.copied_source
+            || work > 6u || span > 4u) goto failed;
+    status = pl_x86_select_write_measured(&frontend, &block, &selected,
+        memory + 512u, 256u, &written);
+    if (status || written != selected.output_bytes || selected.fixup_count != 1u
+            || selected.fixups[0].target != address + length + 8u
+            || pl_x86_select_bind_fixup(memory + 512u, written, &selected, 0u,
+                address + 512u, address + 512u + written + 8u)) goto failed;
+    memcpy(memory, source, length);
+    memcpy(memory + length, observe, sizeof observe);
+    memcpy(memory + 512u + written, observe, sizeof observe);
+    if (!test_code_publish(memory, 4096u)) goto failed;
+    union { void *object; group_function function; } original, optimized;
+    original.object = memory; optimized.object = memory + 512u;
+    static const pl_u64 boundary[] = {
+        0u, 1u, 127u, 128u, 255u, 256u, 32767u, 32768u, 65535u,
+        65536u, 0x7fffffffu, 0x80000000u, UINT32_MAX, 1ull << 32u, 1ull << 63u, UINT64_MAX };
+    pl_u64 random = 0x6a09e667f3bcc909ull;
+    for (pl_u32 i = 0u; i < 4096u; ++i) {
+        random ^= random << 13u; random ^= random >> 7u; random ^= random << 17u;
+        pl_u64 left = i < 256u ? boundary[i % 16u] : random;
+        pl_u64 right = i < 256u ? boundary[i / 16u] : random * 17u;
+        pl_u64 flags = 0u, final = 0u, toggle = i;
+        pl_u64 expected = word_operation(left, right, bits, mode, &flags);
+        (void)word_operation(toggle, toggle, 8u, 2u, &final);
+        group_observation before = { 0 }, after = { 0 };
+        original.function(&before, left, right, toggle);
+        optimized.function(&after, left, right, toggle);
+        if (before.value != expected || after.value != expected
+                || before.condition != observed_condition(code, flags)
+                || after.condition != observed_condition(code, flags)
+                || (before.flags & 0x8c5u) != final || (after.flags & 0x8c5u) != final
+                || before.taken != !(toggle & 255u) || after.taken != !(toggle & 255u)) {
+            fprintf(stderr, " group input=%llx/%llx value=%llx/%llx expected=%llx condition=%llu/%llu expected=%u\n",
+                (unsigned long long)left, (unsigned long long)right,
+                (unsigned long long)before.value, (unsigned long long)after.value,
+                (unsigned long long)expected,
+                (unsigned long long)before.condition, (unsigned long long)after.condition,
+                observed_condition(code, flags));
+            goto failed;
+        }
+        ++*comparisons;
+    }
+    test_code_release(memory, 4096u);
+    return 1;
+failed:
+    fprintf(stderr, "flag result group: RED bits=%u mode=%u condition=%u alias=%u status=%d work/span=%u/%u source/normalized=%u/%u comparisons=%llu\n",
+        bits, mode, code, aliases, status, work, span, selected.copied_source,
+        selected.normalized_family_present, (unsigned long long)*comparisons);
+    test_code_release(memory, 4096u);
+    return 0;
+}
+
 int main(void)
 {
     pl_u64 comparisons = 0u;
@@ -136,8 +291,13 @@ int main(void)
             for (pl_u32 subtract = 0u; subtract < 2u; ++subtract)
                 for (pl_u32 inverse = 0u; inverse < 2u; ++inverse)
                     if (!check_case(bits, compare, subtract, inverse, &comparisons)) return 1;
+    for (pl_u32 bits = 32u; bits <= 64u; bits *= 2u)
+        for (pl_u32 mode = 0u; mode < 5u; ++mode)
+            for (pl_u32 code = 0u; code < 16u; ++code)
+                for (pl_u32 alias = 0u; alias < 2u; ++alias)
+                    if (!check_group(bits, mode, code, alias, &comparisons)) return 1;
     printf("carry cut: green (%llu source/generated/reference comparisons; "
-           "add/subtract CF and !CF, mixed widths, independent final flags)\n",
+           "CF/!CF arithmetic, shared ALU/SETcc, aliased inputs, independent final flags/branch)\n",
            (unsigned long long)comparisons);
     return 0;
 }

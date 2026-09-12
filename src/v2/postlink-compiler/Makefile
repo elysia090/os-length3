@@ -670,6 +670,17 @@ carry-cut-check: $(BUILD)/carry-cut
 
 check: carry-cut-check
 
+.PHONY: extension-cut-check
+$(BUILD)/extension-cut: check/extension-cut.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/extension-cut.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+extension-cut-check: $(BUILD)/extension-cut
+	$(BUILD)/extension-cut
+
+check: extension-cut-check
+
 $(BUILD)/native-layout: check/native-layout.c $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/native-layout.c $(LIBRARY) \
 		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
