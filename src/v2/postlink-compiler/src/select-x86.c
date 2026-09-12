@@ -1057,10 +1057,13 @@ static int source_address_binding(const pl_x86_frontend *frontend,
 static int source_address_definition(const pl_x86_frontend *frontend,
                                      const pl_x86_block *block,
                                      pl_u32 local, pl_u64 value,
+                                     pl_u32 bits, pl_u64 *address,
                                      pl_u32 *source_at)
 {
-    if (!frontend || !block || !source_at || local >= PL_X86_GPR_COUNT)
+    if (!frontend || !block || !address || !source_at
+            || (bits != 32u && bits != 64u) || local >= PL_X86_GPR_COUNT)
         return PL_ERROR_X86_SELECT;
+    pl_u64 mask = bits == 32u ? U32_MAX_VALUE : U64_MAX_VALUE;
     int found = 0;
     pl_u64 rip = block->start;
     for (pl_u32 index = 0u; index < block->instruction_count; ++index) {
@@ -1085,8 +1088,9 @@ static int source_address_definition(const pl_x86_frontend *frontend,
                    <= U32_MAX_VALUE - instruction.displacement_offset) {
             pl_u64 target = instruction.fallthrough
                 + (pl_u64)instruction.operands[1].value.memory.displacement;
-            if (target == value) {
+            if ((target & mask) == (value & mask)) {
                 if (found) return 0;
+                *address = target;
                 *source_at = (pl_u32)(rip - block->start)
                            + instruction.displacement_offset;
                 found = 1;
@@ -3646,6 +3650,7 @@ typedef struct {
     pl_u32 compare_bits;
     pl_u32 condition;
     pl_u32 has_compare;
+    pl_u32 current_flag_node;
     pl_u32 compare_test;
     pl_u32 compare_node;
     pl_u32 compare_left_is_current;
@@ -4011,6 +4016,22 @@ static int conditional_entry_local(const pl_plan *plan, pl_operand value,
     return 1;
 }
 
+static int conditional_published_local(const pl_plan *plan, pl_operand value,
+    pl_u32 bits, pl_u32 *local)
+{
+    if (published_operand_local(plan, value, local)) return 1;
+    /* CMOV r32 reads the candidate's low word without changing that register.
+     * A full-width constant publication can own this projected arm too. */
+    if (bits != 32u || value.kind != PL_OPERAND_CONST) return 0;
+    for (pl_u32 candidate = 0u; candidate < PL_X86_GPR_COUNT; ++candidate)
+        if (plan->locals[candidate].kind == PL_OPERAND_CONST
+                && (pl_u32)plan->locals[candidate].value == (pl_u32)value.value) {
+            *local = candidate;
+            return 1;
+        }
+    return 0;
+}
+
 static int conditional_select_details(const pl_plan *plan, pl_operand value,
                                       pl_u32 destination,
                                       conditional_select *out)
@@ -4054,15 +4075,15 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
     int first_entry = conditional_entry_local(
         plan, argument[0], out->value_bits, &candidate_local);
     int first_physical = first_entry;
-    if (!first_physical) first_physical = published_operand_local(
-        plan, argument[0], &candidate_local);
+    if (!first_physical) first_physical = conditional_published_local(
+        plan, argument[0], out->value_bits, &candidate_local);
     pl_u32 second_local = 0u;
     int second_entry = conditional_entry_local(
         plan, argument[1], out->value_bits, &second_local);
     int second_physical = second_entry;
     if (!second_physical)
-        second_physical = published_operand_local(
-            plan, argument[1], &second_local);
+        second_physical = conditional_published_local(
+            plan, argument[1], out->value_bits, &second_local);
     int first_is_entry_destination = first_entry && candidate_local == destination;
     int second_is_entry_source = second_entry && second_local != destination;
     if (first_is_entry_destination && second_is_entry_source) {
@@ -4093,6 +4114,7 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
         out->current = (pl_operand){ PL_OPERAND_LOCAL, current_entry };
     out->condition = (pl_u32)condition_argument[1].value ^ inverted;
     out->has_compare = 0u;
+    out->current_flag_node = 0u;
     out->compare_test = 0u;
     out->compare_node = 0u;
     out->compare_left_is_current = 0u;
@@ -4107,6 +4129,18 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
             || !condition_argument[0].value
             || condition_argument[0].value > plan->node_count)
         return 0;
+    pl_operand flag_left, flag_right;
+    pl_u32 flag_bits = 0u, flag_mode = 0u, carry = 0u;
+    if (flag_value_operation_details(plan, (pl_u32)condition_argument[0].value,
+            out->current, &flag_left, &flag_right, &flag_bits, &flag_mode, &carry)
+            && !carry && flag_bits == out->value_bits) {
+        /* The current arm is the exact result that also produces the tested
+         * flags. Its destructive ALU instruction serves both observations;
+         * CMOV preserves those flags without a second CMP/TEST. */
+        out->current_flag_node = (pl_u32)condition_argument[0].value;
+        out->compare_node = out->current_flag_node;
+        return 1;
+    }
     const pl_node *compare =
         &plan->nodes[condition_argument[0].value - 1u];
     if ((compare->opcode != PL_OPCODE_X86_COMPARE
@@ -4185,6 +4219,32 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
     out->compare_test = (pl_u32)compare_test;
     out->compare_node = (pl_u32)condition_argument[0].value;
     return 1;
+}
+
+static int measure_selected_flag_value(const pl_x86_frontend *frontend,
+    const pl_x86_block *block, pl_x86_native_selection *selection, pl_u32 destination,
+    const conditional_select *shape, pl_u32 output_at, pl_u32 remaining,
+    pl_u32 scratch_mask, pl_u32 *bytes, pl_u32 *work)
+{
+    pl_operand left, right;
+    pl_u32 bits = 0u, mode = 0u, carry = 0u;
+    if (!flag_value_operation_details(&block->plan, shape->current_flag_node,
+            shape->current, &left, &right, &bits, &mode, &carry)) return 0;
+    return measure_alu_pair(frontend, block, selection, destination, left, right,
+        bits, mode, carry, output_at, remaining, scratch_mask, bytes, work);
+}
+
+static int write_selected_flag_value(const pl_x86_block *block,
+    const pl_x86_native_selection *selection, pl_u32 destination,
+    const conditional_select *shape, pl_u32 output_at, pl_u32 remaining,
+    pl_u32 scratch_mask, pl_u8 *output, pl_u32 *written)
+{
+    pl_operand left, right;
+    pl_u32 bits = 0u, mode = 0u, carry = 0u;
+    if (!flag_value_operation_details(&block->plan, shape->current_flag_node,
+            shape->current, &left, &right, &bits, &mode, &carry)) return 0;
+    return write_alu_pair(block, selection, destination, left, right,
+        bits, mode, carry, output_at, remaining, scratch_mask, output, written);
 }
 
 typedef struct {
@@ -4300,7 +4360,8 @@ static int publication_emits_selected_flag(const pl_plan *plan,
     for (pl_u32 remaining = plan->node_count + 1u; remaining; --remaining) {
         conditional_select select;
         if (conditional_select_details(plan, value, destination, &select))
-            return select.has_compare && select.compare_node == flag_node;
+            return (select.has_compare || select.current_flag_node)
+                && select.compare_node == flag_node;
         pl_operand source;
         pl_u32 bits = 0u;
         if (value.kind == PL_OPERAND_NODE
@@ -4399,7 +4460,7 @@ static int entry_select_bit_test_frame_shape(
         conditional_select select;
         if (!conditional_select_details(
                 plan, plan->locals[destination], destination, &select)
-                || select.has_compare
+                || select.has_compare || select.current_flag_node
                 || select.current.kind != PL_OPERAND_LOCAL
                 || select.current.value != destination
                 || shifted_source.kind != plan->locals[destination].kind
@@ -5023,18 +5084,23 @@ static int measure_alu_seed(const pl_x86_frontend *frontend,
     }
     if (value.kind == PL_OPERAND_CONST) {
         pl_u32 source_at = 0u;
-        int address = bits == 64u ? source_address_definition(
-            frontend, block, destination, value.value, &source_at) : 0;
+        pl_u64 target = 0u;
+        int address = source_address_definition(
+            frontend, block, destination, value.value, bits, &target, &source_at);
         if (address < 0) return address;
         if (address) {
+            /* Relocation acts on the full address before the lane projection.
+             * LEA r32,[RIP+d32] performs that projection without an absolute
+             * low-word literal or a second zero-extension instruction. */
+            pl_u32 prefix = bits == 64u || destination >= 8u ? 1u : 0u;
             int status = append_fixup(
                 selection, PL_X86_NATIVE_FIXUP_RIP_DISPLACEMENT, 4u,
-                output_at + 3u, output_at + 7u, value.value);
+                output_at + prefix + 2u, output_at + prefix + 6u, target);
             if (status) return status;
             selection->fixups[selection->fixup_count - 1u].source_at =
                 source_at;
             selection->fixups[selection->fixup_count - 1u].source_bytes = 4u;
-            *bytes = 7u;
+            *bytes = prefix + 6u;
         } else {
             *bytes = constant_move_bytes(destination, value.value);
         }
@@ -6180,7 +6246,7 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
     conditional_select select;
     if (conditional_select_details(
             &block->plan, value, destination, &select)
-            && (select.has_compare
+            && (select.has_compare || select.current_flag_node
                 || (!output_at
                     && select.current.kind == PL_OPERAND_LOCAL
                     && select.current.value == destination))
@@ -6188,7 +6254,10 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
             && conditional_compare_survives_current(
                 &select, destination)) {
         pl_u32 seed_bytes = 0u, seed_work = 0u;
-        int status = measure_alu_tree(
+        int status = select.current_flag_node
+            ? measure_selected_flag_value(frontend, block, selection, destination, &select,
+                output_at, remaining - 1u, scratch_mask, &seed_bytes, &seed_work)
+            : measure_alu_tree(
             frontend, block, selection, destination, select.current,
             select.value_bits, output_at, remaining - 1u, scratch_mask,
             &seed_bytes, &seed_work);
@@ -8464,7 +8533,7 @@ static int generation_join_handoff_shape(
                     if ((pending & (1u << other))
                             && conditional_select_details(
                                 plan, plan->locals[other], other, &select)
-                            && !select.has_compare) {
+                            && !select.has_compare && !select.current_flag_node) {
                         entry_flags_escape = 1;
                         break;
                     }
@@ -8795,6 +8864,112 @@ static int measure_shared_parent_frame(
     return 1;
 }
 
+typedef struct {
+    conditional_select select;
+    standalone_flag_publication compare;
+    pl_u32 destination, members, first;
+} select_generation_group;
+
+/* Old GPR -> flags and new GPR -> CMOV are distinct edges. When a comparison
+ * reads a coordinate later occupied by a selected arm, emit the comparison
+ * first, then flag-preserving arm publications, then CMOV. No old GPR copy or
+ * Boolean materialization is needed. Both arms must have an acyclic copy
+ * order, and every other old-generation reader must already have run. */
+static int select_generation_group_shape(const pl_plan *plan, pl_u32 pending,
+    pl_u32 protected_sources, select_generation_group *out)
+{
+    if (!plan || !out) return 0;
+    for (pl_u32 destination = 0u; destination < PL_X86_GPR_COUNT; ++destination) {
+        if (!(pending & (1u << destination))) continue;
+        conditional_select select;
+        standalone_flag_publication compare;
+        if (!conditional_select_details(plan, plan->locals[destination], destination, &select)
+                || !select.has_compare || select.candidate_is_entry
+                || select.candidate_local == destination
+                || !(pending & (1u << select.candidate_local))
+                || !standalone_flag_publication_details(plan, select.compare_node, &compare)
+                || (compare.owner_dependencies & pending)) continue;
+        pl_u32 candidate = select.candidate_local;
+        pl_u32 members = (1u << destination) | (1u << candidate);
+        if (!(compare.entry_sources & members) || (protected_sources & members)) continue;
+        pl_operand current = select.current, value = plan->locals[candidate];
+        if ((current.kind != PL_OPERAND_CONST && current.kind != PL_OPERAND_LOCAL)
+                || (value.kind != PL_OPERAND_CONST && value.kind != PL_OPERAND_LOCAL)) continue;
+        if ((current.kind == PL_OPERAND_LOCAL && current.value >= PL_X86_GPR_COUNT)
+                || (value.kind == PL_OPERAND_LOCAL && value.value >= PL_X86_GPR_COUNT)) continue;
+        pl_u32 current_sources = current.kind == PL_OPERAND_LOCAL ? 1u << current.value : 0u;
+        pl_u32 candidate_sources = value.kind == PL_OPERAND_LOCAL ? 1u << value.value : 0u;
+        int first_candidate = !(current_sources & (1u << candidate));
+        if (!first_candidate && (candidate_sources & (1u << destination))) continue;
+        int blocked = 0;
+        for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+            if (!(pending & (1u << local)) || (members & (1u << local))) continue;
+            pl_operand other = plan->locals[local];
+            /* A pending non-leaf may observe entry flags or either old GPR.
+             * Let its ordinary scheduler discharge those obligations first. */
+            if (other.kind != PL_OPERAND_CONST
+                    && (other.kind != PL_OPERAND_LOCAL || (members & (1u << other.value))))
+                blocked = 1;
+        }
+        if (blocked) continue;
+        *out = (select_generation_group){ select, compare, destination, members,
+            first_candidate ? candidate : destination };
+        return 1;
+    }
+    return 0;
+}
+
+/* Measurement and emission replay the same three phases. Fixup ownership
+ * stays in the ordinary seed generator, including projected RIP addresses. */
+static int measure_select_generation_group(const pl_x86_frontend *frontend,
+    const pl_x86_block *block, pl_x86_native_selection *selection,
+    const select_generation_group *shape, pl_u32 output_at, pl_u32 *bytes, pl_u32 *work)
+{
+    pl_u32 at = 0u, count = 1u, part = 0u;
+    if (!emit_standalone_flag_publication(&shape->compare, 0, &at)) return 0;
+    for (pl_u32 index = 0u; index < 2u; ++index) {
+        pl_u32 local = index ? (shape->first == shape->destination
+            ? shape->select.candidate_local : shape->destination) : shape->first;
+        pl_operand value = local == shape->destination
+            ? shape->select.current : block->plan.locals[local];
+        pl_u32 instructions = 0u;
+        pl_u32 bits = local == shape->destination ? shape->select.value_bits : 64u;
+        if (output_at > U32_MAX_VALUE - at) return PL_ERROR_X86_SELECT;
+        int status = measure_alu_seed(frontend, block, selection, local, value, bits,
+            output_at + at, block->plan.node_count + 1u, &part, &instructions);
+        if (status <= 0 || at > U32_MAX_VALUE - part || count > U32_MAX_VALUE - instructions)
+            return status < 0 ? status : 0;
+        at += part; count += instructions;
+    }
+    if (!emit_conditional_move(shape->destination, shape->select.candidate_local,
+            shape->select.value_bits, shape->select.condition, 0, &part)
+            || at > U32_MAX_VALUE - part || count == U32_MAX_VALUE) return 0;
+    *bytes = at + part; *work = count + 1u;
+    return 1;
+}
+
+static int write_select_generation_group(const pl_x86_block *block,
+    const pl_x86_native_selection *selection, const select_generation_group *shape,
+    pl_u32 output_at, pl_u8 *output, pl_u32 *written)
+{
+    pl_u32 at = 0u, part = 0u;
+    if (!emit_standalone_flag_publication(&shape->compare, output, &at)) return 0;
+    for (pl_u32 index = 0u; index < 2u; ++index) {
+        pl_u32 local = index ? (shape->first == shape->destination
+            ? shape->select.candidate_local : shape->destination) : shape->first;
+        pl_operand value = local == shape->destination
+            ? shape->select.current : block->plan.locals[local];
+        pl_u32 bits = local == shape->destination ? shape->select.value_bits : 64u;
+        if (!write_alu_seed(block, selection, local, value, bits, output_at + at,
+                block->plan.node_count + 1u, output + at, &part)) return 0;
+        at += part;
+    }
+    if (!emit_conditional_move(shape->destination, shape->select.candidate_local,
+            shape->select.value_bits, shape->select.condition, output + at, &part)) return 0;
+    *written = at + part;
+    return 1;
+}
+
 /* A branch observing the published flag word adds one control edge, not a
  * different value grammar. Compile the same complete frame, then attach Jcc.
  * The source extent remains intact for address-field relocation. */
@@ -9038,6 +9213,20 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
         selection->direct_nested_frame = 1u;
     }
     while (pending || standalone_flags_pending) {
+        select_generation_group select_group;
+        if (select_generation_group_shape(&block->plan, pending,
+                standalone_flags_pending ? standalone_flags.entry_sources : 0u, &select_group)
+                && (standalone_flags_pending || select_group.select.compare_node == final_flag_node)) {
+            pl_u32 part = 0u, work = 0u;
+            int measured = measure_select_generation_group(frontend, block, selection,
+                &select_group, bytes, &part, &work);
+            if (measured <= 0 || bytes > U32_MAX_VALUE - part
+                    || instructions > U32_MAX_VALUE - work) return measured < 0 ? measured : 0;
+            bytes += part; instructions += work;
+            pending &= ~select_group.members;
+            selection->direct_nested_frame = 1u;
+            continue;
+        }
         if (standalone_flags_pending) {
             pl_u32 clobberers = 0u;
             for (pl_u32 local = 0u;
@@ -9432,7 +9621,10 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     current.value = current_local;
                 }
                 pl_u32 seed_bytes = 0u, seed_work = 0u;
-                int measured = measure_alu_tree(
+                int measured = select.current_flag_node
+                    ? measure_selected_flag_value(frontend, block, selection, local, &select,
+                        bytes, block->plan.node_count + 1u, scratch_mask, &seed_bytes, &seed_work)
+                    : measure_alu_tree(
                     frontend, block, selection, local, current,
                     select.value_bits, bytes,
                     block->plan.node_count + 1u, scratch_mask,
@@ -11494,6 +11686,17 @@ static int measure_direct_compare_branch(
     for (pl_u32 stage = 0u; stage < stage_count; ++stage) {
       pl_u32 pending = stage_pending[stage];
       while (pending) {
+        select_generation_group select_group;
+        if (!has_handoff && select_generation_group_shape(&block->plan, pending, 0u, &select_group)) {
+            pl_u32 part = 0u, work = 0u;
+            int measured = measure_select_generation_group(frontend, block, selection,
+                &select_group, bytes, &part, &work);
+            if (measured <= 0 || bytes > U32_MAX_VALUE - part
+                    || instructions > U32_MAX_VALUE - work) return measured < 0 ? measured : 0;
+            bytes += part; instructions += work;
+            pending &= ~select_group.members;
+            continue;
+        }
         flag_result_group group;
         pl_u32 deferred = 0u;
         if (!has_handoff && flag_result_group_shape(&block->plan, pending, &group, &deferred)) {
@@ -11588,7 +11791,10 @@ static int measure_direct_compare_branch(
                     current.value = current_local;
                 }
                 pl_u32 seed_bytes = 0u, seed_work = 0u;
-                measured = measure_alu_seed(
+                measured = select.current_flag_node
+                    ? measure_selected_flag_value(frontend, block, selection, local, &select,
+                        bytes, block->plan.node_count + 1u, 0u, &seed_bytes, &seed_work)
+                    : measure_alu_seed(
                     frontend, block, selection, local, current,
                     select.value_bits, bytes,
                     block->plan.node_count + 1u,
@@ -12028,15 +12234,18 @@ static void write_u64(pl_u8 *output, pl_u32 at, pl_u64 value)
 }
 
 static int address_fixup_at(const pl_x86_native_selection *selection,
-                            pl_u32 output_at, pl_u64 target)
+                            pl_u32 output_at, pl_u64 target,
+                            pl_u32 bits, pl_u32 destination)
 {
     if (!selection || output_at > U32_MAX_VALUE - 7u) return 0;
+    pl_u32 prefix = bits == 64u || destination >= 8u ? 1u : 0u;
+    pl_u64 mask = bits == 32u ? U32_MAX_VALUE : U64_MAX_VALUE;
     for (pl_u32 index = 0u; index < selection->fixup_count; ++index) {
         const pl_x86_native_fixup *fixup = &selection->fixups[index];
         if (fixup->kind == PL_X86_NATIVE_FIXUP_RIP_DISPLACEMENT
-                && fixup->bytes == 4u && fixup->at == output_at + 3u
-                && fixup->next_ip_at == output_at + 7u
-                && fixup->target == target)
+                && fixup->bytes == 4u && fixup->at == output_at + prefix + 2u
+                && fixup->next_ip_at == output_at + prefix + 6u
+                && (fixup->target & mask) == (target & mask))
             return 1;
     }
     return 0;
@@ -12081,7 +12290,7 @@ static int write_frame_value(const pl_x86_native_selection *selection,
         output[at++] = (pl_u8)(0xb8u + (local & 7u));
         write_u64(output, at, 0u);
         at += 8u;
-    } else if (address_fixup_at(selection, output_at, value.value)) {
+    } else if (address_fixup_at(selection, output_at, value.value, 64u, local)) {
         output[at++] = (pl_u8)(0x48u | (local >= 8u ? 4u : 0u));
         output[at++] = 0x8du;
         output[at++] = (pl_u8)(0x05u | ((local & 7u) << 3u));
@@ -12127,6 +12336,16 @@ static int write_alu_seed(const pl_x86_block *block,
         }
         return emit_gpr_move(destination, (pl_u32)value.value, bits,
                              output, written);
+    }
+    if (value.kind == PL_OPERAND_CONST && bits == 32u
+            && address_fixup_at(selection, output_at, value.value, bits, destination)) {
+        pl_u32 at = 0u;
+        if (destination >= 8u) output[at++] = 0x44u;
+        output[at++] = 0x8du;
+        output[at++] = (pl_u8)(0x05u | ((destination & 7u) << 3u));
+        write_u32(output, at, 0u);
+        *written = at + 4u;
+        return 1;
     }
     if (value.kind == PL_OPERAND_CONST)
         return write_frame_value(
@@ -12339,7 +12558,7 @@ static int write_alu_tree(const pl_x86_block *block,
     conditional_select select;
     if (conditional_select_details(
             &block->plan, value, destination, &select)
-            && (select.has_compare
+            && (select.has_compare || select.current_flag_node
                 || (!output_at
                     && select.current.kind == PL_OPERAND_LOCAL
                     && select.current.value == destination))
@@ -12347,7 +12566,10 @@ static int write_alu_tree(const pl_x86_block *block,
             && conditional_compare_survives_current(
                 &select, destination)) {
         pl_u32 at = 0u, encoded = 0u;
-        if (write_alu_tree(
+        if (select.current_flag_node
+                ? write_selected_flag_value(block, selection, destination, &select,
+                    output_at, remaining - 1u, scratch_mask, output, &encoded)
+                : write_alu_tree(
                 block, selection, destination, select.current,
                 select.value_bits, output_at, remaining - 1u,
                 scratch_mask, output, &encoded)) {
@@ -13565,6 +13787,18 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                    | (1u << flag_select.flag_owner));
     }
     while (pending || standalone_flags_pending) {
+        select_generation_group select_group;
+        if (select_generation_group_shape(&block->plan, pending,
+                standalone_flags_pending ? standalone_flags.entry_sources : 0u, &select_group)
+                && (standalone_flags_pending || select_group.select.compare_node == final_flag_node)) {
+            pl_u32 part = 0u;
+            if (!write_select_generation_group(block, selection, &select_group,
+                    at, output + at, &part) || at > selection->output_bytes
+                    || part > selection->output_bytes - at) return PL_ERROR_X86_SELECT;
+            at += part;
+            pending &= ~select_group.members;
+            continue;
+        }
         if (standalone_flags_pending) {
             pl_u32 clobberers = 0u;
             for (pl_u32 local = 0u;
@@ -13876,12 +14110,15 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     current.kind = PL_OPERAND_LOCAL;
                     current.value = current_local;
                 }
-                if (!write_alu_tree(
+                if (!(select.current_flag_node
+                        ? write_selected_flag_value(block, selection, local, &select,
+                            at, block->plan.node_count + 1u, scratch_mask, output + at, &written)
+                        : write_alu_tree(
                         block, selection, local, current,
                         select.value_bits, at,
                         block->plan.node_count + 1u,
                         scratch_mask,
-                        output + at, &written))
+                        output + at, &written)))
                     return PL_ERROR_X86_SELECT;
                 at += written;
                 if (select.has_compare
@@ -14328,6 +14565,16 @@ static int write_direct_compare_branch(
     for (pl_u32 stage = 0u; stage < stage_count; ++stage) {
       pl_u32 pending = stage_pending[stage];
       while (pending) {
+        select_generation_group select_group;
+        if (!has_handoff && select_generation_group_shape(&block->plan, pending, 0u, &select_group)) {
+            pl_u32 part = 0u;
+            if (!write_select_generation_group(block, selection, &select_group,
+                    at, output + at, &part) || at > selection->output_bytes
+                    || part > selection->output_bytes - at) return PL_ERROR_X86_SELECT;
+            at += part;
+            pending &= ~select_group.members;
+            continue;
+        }
         flag_result_group group;
         pl_u32 deferred = 0u;
         if (!has_handoff && flag_result_group_shape(&block->plan, pending, &group, &deferred)) {
@@ -14411,11 +14658,14 @@ static int write_direct_compare_branch(
                     current.kind = PL_OPERAND_LOCAL;
                     current.value = current_local;
                 }
-                if (!write_alu_seed(
+                if (!(select.current_flag_node
+                        ? write_selected_flag_value(block, selection, local, &select,
+                            at, block->plan.node_count + 1u, 0u, output + at, &written)
+                        : write_alu_seed(
                         block, selection, local, current,
                         select.value_bits, at,
                         block->plan.node_count + 1u,
-                        output + at, &written))
+                        output + at, &written)))
                     return PL_ERROR_X86_SELECT;
                 at += written;
                 if (select.has_compare) {

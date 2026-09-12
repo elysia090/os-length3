@@ -4,7 +4,7 @@
 
 static pl_u8 program_bit(const pl_u8 *bytes, pl_u64 bit)
 {
-    return (pl_u8)((bytes[bit >> 3u] >> (7u - (bit & 7u))) & 1u);
+    return (pl_u8)(((pl_u32)bytes[bit >> 3u] >> (7u - (bit & 7u))) & 1u);
 }
 
 static int canonical_program(const pl_x86_minimum_key *key)

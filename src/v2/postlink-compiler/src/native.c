@@ -212,7 +212,7 @@ static int coordinate_address(const pl_x86_image *image, pl_u32 coordinate,
 
 static int bit_get(const pl_u8 *bits, pl_u32 coordinate)
 {
-    return (bits[coordinate >> 3u] >> (coordinate & 7u)) & 1u;
+    return (int)(((pl_u32)bits[coordinate >> 3u] >> (coordinate & 7u)) & 1u);
 }
 
 static void bit_set(pl_u8 *bits, pl_u32 coordinate)
@@ -367,8 +367,7 @@ static int bit_previous(const pl_u8 *bits, pl_u32 coordinates,
     pl_u32 byte = coordinate >> 3u;
     pl_u32 remainder = coordinate & 7u;
     pl_u8 word = bits[byte];
-    word &= remainder == 7u
-        ? 0xffu : (pl_u8)((1u << (remainder + 1u)) - 1u);
+    word &= (pl_u8)((1u << (remainder + 1u)) - 1u);
     for (;;) {
         if (word) {
             pl_u32 bit = 8u;

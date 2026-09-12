@@ -1,6 +1,65 @@
 # Remaining work
 
-## Current checkpoint: 2026-09-13 (tests red)
+## Checkpoint work: 2026-09-13 (after b08e073; selection test red)
+
+The relocation regression is fixed without disabling source-field ownership.
+RIP-relative addresses retain their full target binding when a consumer uses
+only the low 32 bits; LEA r32 performs the projection after rebinding. The
+condition-code check independently moves the target and generated body, and
+passes 860,160 source/generated/reference comparisons.
+
+Conditional publication now distinguishes old-GPR -> comparison flags from
+new-GPR -> CMOV. An acyclic pair of flag-preserving arm publications can run
+between that comparison and CMOV, without copying the old GPR or materializing
+a Boolean. This uses the ordinary ALU and comparison-branch generators, not a
+kernel-specific spelling. A full-width constant publication can also own a
+CMOV r32 arm without losing its own high bits. The comparison suite executes
+39,845,888 cases: all comparison widths and conditions, entry versus published
+generations, both arm-copy orders, final shared versus independent flags,
+and branch versus non-branch exits. The kernel witnesses at
+`0xffffffff812045ea` and `0xffffffff81204f83` now use the general production.
+
+ALU results and their flags now share a producer when a subsequent CMOV
+observes those flags. ADD/SUB/AND/OR/XOR/NEG use the ordinary expression
+generator, including 32/64-bit values, all 16 conditions, and branch versus
+non-branch exits. The expanded carry check passes 4,653,056 executable
+source/generated/reference comparisons.
+
+The Linux `make check` passed in the Windows-hosted build guest before the
+latest shared bit-fill selection fixture was added. The comparison suite
+also passed with the postlink C sources instrumented by
+UBSan (`-fsanitize=undefined -fno-sanitize-recover=all`). The sanitizer build
+exposed three integer-promotion warnings in bit readers; those are corrected
+without widening stored words, and the bounded predecessor mask no longer
+needs a special full-byte branch. Fresh Windows condition-code, comparison
+and carry checks pass; the selection check is currently RED as described
+below. The earlier global-minimum check passed. `native-layout-check` requires
+Linux `sys/mman.h`; it is covered by the guest full check, not a Windows-host
+executable test.
+
+The real kernel scan selects 788,279 / 788,279 blocks with zero Pareto
+violations and 833 normalization escapes (862 before this work). The first
+remaining witness is `0xffffffff81205340..0xffffffff81205361`, an absolute-value
+selection followed by BSR and constant publications. GNU make still selects
+42,184 / 42,184 blocks, with zero Pareto violations and 54 normalization
+escapes; its first witness remains `0x186bb..0x186f5`, shared shift/OR bit-fill
+publications. The older count of 52 predates mandatory address-alias validation
+and is not the current closure result. Both real publication gates still fail;
+there is no complete optimized kernel, native release, product boot, or paired
+hardware benchmark yet. Reuse the baseline package checkpoints below.
+
+The new `shared_bit_fill` fixture reproduces GNU make's first witness in the
+general selection check: expression cut 12 reports work/span 17/11 and
+rejection 200/81. Repeated `q | (q >> k)` diamonds need shared parent generation
+and correct publication lifetimes, including the separately observed final
+shift and ADD flags. Do not replace the arbitrary entry values with an assumed
+single bit-fill input or retain the source body to silence this regression.
+The focused absolute-value fixture passes, but the full kernel witness above
+still fails; investigate its BSR/block construction and candidate context.
+This checkpoint preserves that red test. The current full suite is not green,
+and no optimized release is being published.
+
+## Checkpoint: 2026-09-13 (b08e073; tests red)
 
 The current working changes extend the shared native expression/publication
 path: carry masks use SBB instead of a materialized Boolean; arithmetic-result

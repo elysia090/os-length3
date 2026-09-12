@@ -185,14 +185,22 @@ static int check_group(pl_u32 bits, pl_u32 mode, pl_u32 code, pl_u32 aliases,
     }
     static const pl_u8 operation[] = { 0x01u, 0x29u, 0x21u, 0x09u, 0x31u };
     if (bits == 64u) source[length++] = 0x48u;
-    source[length++] = operation[mode]; source[length++] = 0xd0u;
+    source[length++] = mode == 5u ? 0xf7u : operation[mode];
+    source[length++] = mode == 5u ? 0xd8u : 0xd0u;
+    if (result_branch >= 3u) {
+        if (bits == 64u) source[length++] = 0x48u;
+        source[length++] = 0x0fu; source[length++] = (pl_u8)(0x40u | code);
+        source[length++] = 0xc2u; /* cmovcc rax,rdx, observing the ALU's flags */
+    }
     if (!result_branch) {
         source[length++] = aliases ? 0x40u : 0x41u;
         source[length++] = 0x0fu; source[length++] = (pl_u8)(0x90u | code);
         source[length++] = aliases ? 0xc6u : 0xc0u;
         source[length++] = 0x84u; source[length++] = 0xc9u; /* test cl,cl */
     }
-    source[length++] = (pl_u8)(0x70u | (result_branch ? code : 4u)); source[length++] = 8u;
+    if (result_branch != 4u) {
+        source[length++] = (pl_u8)(0x70u | (result_branch ? code : 4u)); source[length++] = 8u;
+    }
     pl_u8 observe[] = {
         0x41u, 0xbbu, 0u, 0u, 0u, 0u, 0xebu, 6u,
         0x41u, 0xbbu, 1u, 0u, 0u, 0u,
@@ -238,13 +246,14 @@ static int check_group(pl_u32 bits, pl_u32 mode, pl_u32 code, pl_u32 aliases,
             }
         }
     if (status || !selected.normalized_family_present || selected.copied_source
-            || work > (result_branch ? 4u : 6u) || span > 4u) goto failed;
+            || work > (result_branch >= 3u ? 5u : result_branch ? 4u : 6u) || span > 4u) goto failed;
     status = pl_x86_select_write_measured(&frontend, &block, &selected,
         memory + 512u, 256u, &written);
-    if (status || written != selected.output_bytes || selected.fixup_count != 1u
-            || selected.fixups[0].target != address + length + 8u
+    if (status || written != selected.output_bytes
+            || selected.fixup_count != (result_branch == 4u ? 0u : 1u)) goto failed;
+    if (selected.fixup_count && (selected.fixups[0].target != address + length + 8u
             || pl_x86_select_bind_fixup(memory + 512u, written, &selected, 0u,
-                address + 512u, address + 512u + written + 8u)) goto failed;
+                address + 512u, address + 512u + written + 8u))) goto failed;
     memcpy(memory, source, length);
     memcpy(memory + length, observe, sizeof observe);
     memcpy(memory + 512u + written, observe, sizeof observe);
@@ -260,11 +269,15 @@ static int check_group(pl_u32 bits, pl_u32 mode, pl_u32 code, pl_u32 aliases,
         pl_u64 left = i < 256u ? boundary[i % 16u] : random;
         pl_u64 right = i < 256u ? boundary[i / 16u] : random * 17u;
         pl_u64 flags = 0u, final = 0u, toggle = i;
-        pl_u64 expected = word_operation(left, right, bits, mode, &flags);
+        pl_u64 expected = mode == 5u ? word_operation(0u, left, bits, 1u, &flags)
+            : word_operation(left, right, bits, mode, &flags);
+        if (result_branch >= 3u && observed_condition(code, flags))
+            expected = right & (UINT64_MAX >> (64u - bits));
         (void)word_operation(toggle, toggle, 8u, 2u, &final);
         pl_u64 expected_condition = result_branch ? left : observed_condition(code, flags);
-        pl_u64 flags_mask = result_branch && mode < 2u ? 0x8d5u : 0x8c5u;
+        pl_u64 flags_mask = result_branch && (mode < 2u || mode == 5u) ? 0x8d5u : 0x8c5u;
         pl_u64 taken = result_branch ? observed_condition(code, flags) : !(toggle & 255u);
+        if (result_branch == 4u) taken = 0u;
         if (result_branch) final = flags;
         group_observation before = { 0 }, after = { 0 };
         original.function(&before, left, right, toggle);
@@ -445,6 +458,11 @@ int main(void)
                 for (pl_u32 branch = 1u; branch <= 2u; ++branch)
                     if (!check_group(bits, mode, code, 0u, branch, &comparisons)) return 1;
     static const pl_u32 masks[] = { 0x4653601u, 0x7fffffffu, 0x80000000u, 0xaaaaaaaau, UINT32_MAX };
+    for (pl_u32 bits = 32u; bits <= 64u; bits *= 2u)
+        for (pl_u32 mode = 0u; mode < 6u; ++mode)
+            for (pl_u32 code = 0u; code < 16u; ++code)
+                for (pl_u32 branch = 3u; branch <= 4u; ++branch)
+                    if (!check_group(bits, mode, code, 0u, branch, &comparisons)) return 1;
     for (pl_u32 bits = 32u; bits <= 64u; bits *= 2u)
         for (pl_u32 compare = 8u; compare <= 64u; compare *= 2u)
             for (pl_u32 inverse = 0u; inverse < 2u; ++inverse)
