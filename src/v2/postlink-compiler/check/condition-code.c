@@ -33,7 +33,7 @@ static int condition(pl_u32 code, pl_u64 flags)
 }
 
 static int check_case(pl_u32 code, pl_u32 bits, pl_u32 published,
-                      pl_u32 relative, pl_u64 *comparisons)
+                      pl_u32 relative, pl_u32 rebase, pl_u64 *comparisons)
 {
     /* First consume the entry flags in RSI; only the six arithmetic bits
      * vary. The generated body must preserve them all. RDI names the result
@@ -111,8 +111,8 @@ static int check_case(pl_u32 code, pl_u32 bits, pl_u32 published,
     if (status || !selected || written != selected->output_bytes
             || selected->output_work > 3u || selected->output_span > 2u) {
         fprintf(stderr, "condition code: missing bounded generated body "
-                "(status=%d cc=%u bits=%u published=%u relative=%u)\n",
-                status, code, bits, published, relative);
+                "(status=%d cc=%u bits=%u published=%u relative=%u rebase=%u)\n",
+                status, code, bits, published, relative, rebase);
         if (!status)
             fprintf(stderr, "candidates=%u rejection=%x/%x selected=%u/%u/%u\n",
                     candidates.count, candidates.diagnostic.blocking_work,
@@ -133,15 +133,26 @@ static int check_case(pl_u32 code, pl_u32 bits, pl_u32 published,
         test_code_release(memory, 4096u);
         return 0;
     }
+    /* Move the linked target independently of the emitted body. A truncated
+     * address is still a relocatable binding, not its old low-word literal. */
+    pl_u32 target_delta = rebase ? 0x10037u : 0u;
+    if (relative && !selected->fixup_count) {
+        test_code_release(memory, 4096u);
+        return 0;
+    }
     for (pl_u32 i = 0u; i < selected->fixup_count; ++i)
         if (pl_x86_select_bind_fixup(
                 output, written, selected, i, (pl_u64)(uintptr_t)output,
-                selected->fixups[i].target)) {
+                selected->fixups[i].target + target_delta)) {
             test_code_release(memory, 4096u);
             return 0;
         }
     memcpy(memory, prefix, sizeof prefix);
     memcpy(memory + sizeof prefix, source, length);
+    if (relative)
+        for (pl_u32 byte = 0u; byte < 4u; ++byte)
+            memory[sizeof prefix + address_end - 4u + byte] =
+                (pl_u8)((0x4e726u + target_delta) >> (8u * byte));
     memcpy(memory + sizeof prefix + length, observe, sizeof observe);
     memcpy(memory + 512u, prefix, sizeof prefix);
     memcpy(output + written, observe, sizeof observe);
@@ -167,7 +178,8 @@ static int check_case(pl_u32 code, pl_u32 bits, pl_u32 published,
             random ^= random << 17u;
             pl_u64 input = i < sizeof boundary / sizeof boundary[0]
                          ? boundary[i] : random;
-            pl_u64 seed = relative ? source_address + address_end + 0x4e726u : 77u;
+            pl_u64 seed = relative
+                ? source_address + address_end + 0x4e726u + target_delta : 77u;
             pl_u64 expected = condition(code, flags) ? (published ? code : input) : seed;
             if (bits == 32u) expected &= UINT32_MAX;
             observation before = { 0 }, after = { 0 };
@@ -198,8 +210,9 @@ int main(void)
         for (pl_u32 bits = 32u; bits <= 64u; bits += 32u)
             for (pl_u32 published = 0u; published < 2u; ++published)
                 for (pl_u32 relative = 0u; relative < 2u; ++relative)
-                    if (!check_case(code, bits, published, relative, &comparisons))
-                        return 1;
+                    for (pl_u32 rebase = 0u; rebase <= relative; ++rebase)
+                        if (!check_case(code, bits, published, relative, rebase, &comparisons))
+                            return 1;
     printf("condition code: green (%llu source/generated/reference comparisons; "
            "16 conditions, entry/published generations, values and flags)\n",
            (unsigned long long)comparisons);

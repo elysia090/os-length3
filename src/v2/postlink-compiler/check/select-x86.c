@@ -4871,16 +4871,38 @@ int main(void)
         0x83u, 0xfeu, 0xecu, 0x48u, 0xc7u, 0xc0u, 0x98u, 0xfeu, 0x8cu, 0x81u,
         0x48u, 0xc7u, 0xc6u, 0xe0u, 0x3du, 0x8du, 0x81u,
     };
+    static const pl_u8 byte_select_before_compare[] = {
+        0x48u, 0xc7u, 0xc6u, 0xe0u, 0x3du, 0x8du, 0x81u,
+        0x84u, 0xc0u, 0x48u, 0xc7u, 0xc0u, 0xbbu, 0x7du, 0x8du, 0x81u,
+        0x48u, 0x0fu, 0x45u, 0xf0u, 0x48u, 0x83u, 0xfau, 1u, 0x75u, 0x11u,
+    };
+    static const pl_u8 magnitude_before_scan[] = {
+        0xb9u, 0xffu, 0xffu, 0xffu, 0xffu,
+        0x48u, 0xc7u, 0xc6u, 0xfau, 6u, 0x8du, 0x81u,
+        0x48u, 0xc7u, 0xc7u, 0x1eu, 7u, 0x8du, 0x81u,
+        0x48u, 0x89u, 0xd0u, 0x48u, 0xf7u, 0xd8u, 0x48u, 0x0fu, 0x48u, 0xc2u,
+        0x48u, 0x0fu, 0xbdu, 0xc8u,
+    };
+    static const pl_u8 shared_bit_fill[] = {
+        0x4cu, 0x89u, 0xc3u, 0x48u, 0xc1u, 0xe8u, 2u, 0x48u, 0x09u, 0xc7u,
+        0x48u, 0x89u, 0xf8u, 0x48u, 0x83u, 0xecu, 8u,
+        0x48u, 0xc1u, 0xe8u, 4u, 0x48u, 0x09u, 0xc7u, 0x48u, 0x89u, 0xf8u,
+        0x48u, 0xc1u, 0xe8u, 8u, 0x48u, 0x09u, 0xc7u, 0x48u, 0x89u, 0xf8u,
+        0x48u, 0xc1u, 0xe8u, 16u, 0x48u, 0x09u, 0xc7u, 0x48u, 0x89u, 0xf8u,
+        0x48u, 0xc1u, 0xe8u, 32u, 0x48u, 0x09u, 0xc7u, 0x48u, 0x83u, 0xc7u, 1u,
+    };
     const pl_u8 *cut_source[] = {
         masked_shift_compare, address_subtract_flags, word_test_boolean, add_carry_branch,
         conditional_borrow_fanout, signed_overlay, saved_entry_subtract_branch,
-        high_word_test_branch, high_mask_select, compare_before_constants };
+        high_word_test_branch, high_mask_select, compare_before_constants,
+        byte_select_before_compare, magnitude_before_scan, shared_bit_fill };
     const pl_u32 cut_length[] = {
         sizeof masked_shift_compare, sizeof address_subtract_flags,
         sizeof word_test_boolean, sizeof add_carry_branch, sizeof conditional_borrow_fanout,
         sizeof signed_overlay, sizeof saved_entry_subtract_branch,
-        sizeof high_word_test_branch, sizeof high_mask_select, sizeof compare_before_constants };
-    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u };
+        sizeof high_word_test_branch, sizeof high_mask_select, sizeof compare_before_constants,
+        sizeof byte_select_before_compare, sizeof magnitude_before_scan, sizeof shared_bit_fill };
+    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u, 6u, 6u, 17u };
     for (pl_u32 cut = 0u; cut < sizeof cut_work / sizeof cut_work[0]; ++cut) {
         status = select_projected(cut_source[cut], cut_length[cut],
             (1u << PL_X86_LOCAL_COUNT) - 1u,

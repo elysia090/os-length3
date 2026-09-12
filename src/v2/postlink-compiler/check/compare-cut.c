@@ -47,11 +47,16 @@ static pl_u32 condition(pl_u32 code, pl_u64 flags)
 }
 
 static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
-                      pl_u32 code, pl_u32 expression, pl_u64 *comparisons)
+                      pl_u32 code, pl_u32 expression, pl_u32 branch, pl_u64 *comparisons)
 {
     static const pl_u8 prefix[] = { 0x49u, 0x89u, 0xf2u }; /* mov r10,rsi */
-    pl_u8 source[32] = { 0x48u, 0x89u, 0xc8u }; /* mov rax,rcx */
+    pl_u8 source[64] = { 0x48u, 0x89u, 0xc8u }; /* mov rax,rcx */
     pl_u32 length = 3u;
+    if (expression == 9u) {
+        const pl_u8 seed[] = { 0xb8u, 1u, 0u, 0u, 0x80u };
+        memcpy(source, seed, sizeof seed); length = sizeof seed;
+    }
+    if (expression == 10u) { source[0] = 0x4cu; source[2] = 0xd0u; } /* mov rax,r10 */
     if (expression == 2u) { source[0] = 0x31u; source[1] = 0xc0u; length = 2u; }
     pl_u64 compare_value = expression ? 64u : 4u;
     if (immediate == 2u) compare_value = bits == 64u ? 0xffffffff80000000ull
@@ -105,12 +110,26 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
             source[length++] = expression == 4u ? 0xbeu : 0xbfu;
         }
         source[length++] = 0xd2u; /* sign-extend selected r10b/r10w/r10d */
-    } else {
+    } else if (expression == 7u) {
         source[length++] = 0xb8u;
         for (pl_u32 i = 0u; i < 4u; ++i) source[length++] = 0u;
         source[length++] = 0x41u; source[length++] = 0xbau;
         source[length++] = 1u; source[length++] = 0u;
         source[length++] = 0u; source[length++] = 0x80u;
+    } else {
+        /* The comparison consumes old r10; CMOV consumes its new publication.
+         * Candidate r10 remains a full 64-bit output even for CMOV r32. */
+        const pl_u8 candidate[] = { 0x49u, 0xbau, 0xbbu, 0x7du, 0x8du, 0x81u,
+            0xffu, 0xffu, 0xffu, 0xffu };
+        memcpy(source + length, candidate, sizeof candidate); length += sizeof candidate;
+        source[length++] = expression == 11u ? 0x41u : 0x49u;
+        source[length++] = 0x0fu; source[length++] = (pl_u8)(0x40u | code);
+        source[length++] = 0xc2u; /* cmovcc rax,r10 */
+        const pl_u8 final_compare[] = { 0x48u, 0x83u, 0xfau, 1u };
+        if (branch < 2u) {
+            memcpy(source + length, final_compare, sizeof final_compare); length += sizeof final_compare;
+        }
+        if (branch == 1u) { source[length++] = (pl_u8)(0x70u | code); source[length++] = 8u; }
     }
     static const pl_u8 observe[] = {
         0x41u, 0xb9u, 0u, 0u, 0u, 0u, 0xebu, 0x06u,
@@ -160,8 +179,8 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
     pl_u8 *output = memory + 512u + sizeof prefix;
     pl_u32 written = 0u;
     if (status || !selected.normalized_family_present || selected.copied_source
-            || work > (expression == 7u ? 3u : expression >= 4u ? 6u : expression == 1u ? 5u : expression == 3u ? 4u : 3u)
-            || span > (expression == 7u ? 2u : expression >= 4u ? 3u : expression == 1u ? 3u : 2u)) goto failed;
+            || work > (branch == 2u ? 4u : expression == 7u ? 3u : expression >= 4u ? 6u : expression == 1u ? 5u : expression == 3u ? 4u : 3u)
+            || span > (expression >= 8u ? 3u : expression == 7u ? 2u : expression >= 4u ? 3u : expression == 1u ? 3u : 2u)) goto failed;
     status = pl_x86_select_write_measured(
         &frontend, &block, &selected, output, 256u, &written);
     if (status || written != selected.output_bytes) goto failed;
@@ -204,15 +223,23 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
             expected_input = (expected_input ^ sign) - sign;
         }
         if (expression == 7u) { expected_copy = 0u; expected_input = 0x80000001u; }
+        if (expression >= 8u) {
+            expected_input = 0xffffffff818d7dbbull;
+            pl_u64 seed = expression == 9u ? 0x80000001u : expression == 10u ? left : random;
+            expected_copy = condition(code, flags) ? expected_input : seed;
+            if (expression == 11u) expected_copy &= UINT32_MAX;
+            if (branch < 2u) flags = flags_for(right, 1u, 64u, 0u);
+        }
         pl_u64 mask = test ? 0x8c5u : 0x8d5u; /* TEST leaves AF undefined. */
+        if (expression >= 8u && branch < 2u) mask = 0x8d5u;
         observation before = { 0 }, after = { 0 };
         original.function(&before, left, right, random);
         optimized.function(&after, left, right, random);
         if (before.copy != expected_copy || after.copy != expected_copy
                 || before.input != expected_input || after.input != expected_input
                 || (before.flags & mask) != flags || (after.flags & mask) != flags
-                || before.taken != (expression < 2u ? condition(code, flags) : 0u)
-                || after.taken != (expression < 2u ? condition(code, flags) : 0u)) {
+                || before.taken != (expression < 2u || branch == 1u ? condition(code, flags) : 0u)
+                || after.taken != (expression < 2u || branch == 1u ? condition(code, flags) : 0u)) {
             fprintf(stderr, "compare cut mismatch input=%llx/%llx\n",
                     (unsigned long long)left, (unsigned long long)right);
             goto failed;
@@ -222,9 +249,9 @@ static int check_case(pl_u32 bits, pl_u32 test, pl_u32 immediate,
     test_code_release(memory, 4096u);
     return 1;
 failed:
-    fprintf(stderr, "compare cut: RED bits=%u test=%u immediate=%u cc=%u expression=%u "
+    fprintf(stderr, "compare cut: RED bits=%u test=%u immediate=%u cc=%u expression=%u branch=%u "
             "status=%d work/span=%u/%u\n", bits, test, immediate, code, expression,
-            status, work, span);
+            branch, status, work, span);
     test_code_release(memory, 4096u);
     return 0;
 }
@@ -236,10 +263,11 @@ int main(void)
         for (pl_u32 test = 0u; test < 2u; ++test)
             for (pl_u32 immediate = 0u; immediate < 4u; ++immediate)
                 for (pl_u32 code = 0u; code < 16u; ++code)
-                    for (pl_u32 expression = 0u; expression < 8u; ++expression)
-                        if ((test || expression < 2u || expression >= 4u)
-                                && !check_case(bits, test, immediate, code, expression,
-                                         &comparisons)) return 1;
+                    for (pl_u32 expression = 0u; expression < 12u; ++expression)
+                        for (pl_u32 branch = 0u; branch <= (expression >= 8u ? 2u : 0u); ++branch)
+                            if ((test || expression < 2u || expression >= 4u)
+                                    && !check_case(bits, test, immediate, code, expression,
+                                             branch, &comparisons)) return 1;
     printf("compare cut: green (%llu source/generated/reference comparisons; "
            "8/16/32/64-bit CMP/TEST, signed immediates/registers, all Jcc/SETcc/CMOV, signed and aliased publications)\n",
            (unsigned long long)comparisons);
