@@ -1,8 +1,14 @@
-#include <postlink/executable.h>
-#include <postlink/cpu.h>
-#include <postlink/entrymap.h>
+#include <wasm-compiler/executable.h>
+#include <wasm-compiler/compiled-block.h>
+#include <wasm-compiler/code.h>
+#include <x86/semantics.h>
+#include <storage/delivery.h>
+#include <storage/compression.h>
+#include <wasm-compiler/entrymap.h>
 #include <postlink/opcodes.h>
-#include <postlink/residual.h>
+#include <wasm-compiler/page.h>
+#include <wasm-compiler/residual.h>
+#include <wasm-compiler/emit.h>
 
 /* Pinf-R codec -> image -> vm, as one freestanding wasm32 module.
  *
@@ -112,6 +118,7 @@ i128 __ashlti3(i128 value, int shift)
 }
 
 #define EXPORT __attribute__((visibility("default")))
+#define INTERNAL __attribute__((visibility("hidden")))
 
 #ifndef VM_DIRECT_BYTE_STATE
 #define VM_DIRECT_BYTE_STATE 1
@@ -211,33 +218,65 @@ i128 __ashlti3(i128 value, int shift)
 #define X86_EXECUTABLE_REQUEST_RESIDUAL_READY 9u
 #define X86_EXECUTABLE_REQUEST_KERNEL_READY 10u
 #define X86_EXECUTABLE_REQUEST_INSTANTIATION_READY 11u
+#define X86_EXECUTABLE_REQUEST_COMPILE 13u
 #define X86_EXECUTABLE_INDEX_BINDING 1u
 #define X86_EXECUTABLE_INDEX_MODULE 2u
 #define X86_EXECUTABLE_INDEX_RESOURCE_BASE 3u
 #define X86_EXECUTABLE_INDEX_RESOURCE_PAGE 4u
 #define X86_EXECUTABLE_INDEX_CODE_BINDING 5u
 #define X86_EXECUTABLE_INDEX_CODE_MODULE 6u
-#define X86_EXECUTABLE_INDEX_ENTRY_PAGE_ROWS 7u
-#define X86_EXECUTABLE_INDEX_ENTRY_TAIL_ROW 8u
+#define X86_EXECUTABLE_INDEX_ENTRY_GENERATOR 7u
 #define X86_EXECUTABLE_INDEX_RESIDUAL_STATE 9u
 #define X86_EXECUTABLE_INDEX_RESIDUAL_EDGE 10u
 #define X86_EXECUTABLE_INDEX_KERNEL_MODULE 11u
 #define X86_EXECUTABLE_INDEX_INSTANTIATION 12u
 #define X86_EXECUTABLE_INDEX_PARAMETER 13u
+#define X86_EXECUTABLE_INDEX_TEMPLATE 14u
 #define X86_EXECUTABLE_PAGE_CACHE 64u
-#define X86_EXECUTABLE_MODULE_CACHE 32u
+#define X86_CODE_SOURCE_DEPENDENCIES PL_CODE_DEPENDENCIES
+#define X86_CODE_SOURCE_PREDECESSOR PL_CODE_PREDECESSOR
+#define X86_CODE_SOURCE_PAGE PL_CODE_PAGE
+#define X86_CODE_SOURCE_SUCCESSOR PL_CODE_SUCCESSOR
+#define X86_CODE_SOURCE_PREDECESSOR_BYTES PL_CODE_PREDECESSOR_BYTES
+#define X86_CODE_SOURCE_LOOKAHEAD_BYTES PL_CODE_LOOKAHEAD_BYTES
+#define X86_CODE_SOURCE_BYTES PL_CODE_SOURCE_BYTES
 #define X86_EXECUTABLE_BINDING_CACHE \
     PL_VM_EXECUTABLE_BINDING_CACHE_SLOTS
-#define X86_EXECUTABLE_ENTRY_PAGE_CACHE \
-    PL_VM_EXECUTABLE_PAGE_ROW_CACHE_SLOTS
-#define X86_EXECUTABLE_ENTRY_TAIL_CACHE \
-    PL_VM_EXECUTABLE_TAIL_ROW_CACHE_SLOTS
+#define X86_EXECUTABLE_ENTRY_GENERATOR_CACHE \
+    PL_VM_EXECUTABLE_ENTRY_GENERATOR_CACHE_SLOTS
 #define X86_EXECUTABLE_RESIDUAL_STATE_CACHE 32u
 #define X86_EXECUTABLE_RESIDUAL_EDGE_CACHE 64u
 #define X86_EXECUTABLE_INSTANTIATION_CACHE 32u
 #define X86_EXECUTABLE_PARAMETER_CACHE 32u
 #define X86_EXECUTABLE_PARAMETER_VALUES 255u
-#define X86_EXECUTABLE_MODULE_PAGE_CACHE 128u
+#define X86_DELIVERY_CACHE_SETS 64u
+#define X86_DELIVERY_CACHE_WAYS 4u
+#define X86_DELIVERY_CACHE_SLOTS \
+    (X86_DELIVERY_CACHE_SETS * X86_DELIVERY_CACHE_WAYS)
+#define X86_COMPILED_STAGE_BYTES 4096u
+#define X86_COMPILED_ARENA_BYTES (64u * 1024u)
+#define X86_TOPOLOGY_BODY_BYTES (64u * 1024u)
+#define X86_TOPOLOGY_MODULE_BYTES (128u * 1024u)
+#define X86_TOPOLOGY_STAGE_BYTES \
+    (X86_TOPOLOGY_BODY_BYTES + X86_TOPOLOGY_MODULE_BYTES)
+#define X86_TOPOLOGY_INITIAL_SLOTS 1024u
+#define X86_ADMISSION_INDEX_BRANCH 101
+#define X86_ADMISSION_INDEX_LEAF 102
+#define X86_ADMISSION_INDEX_ROW 103
+#define X86_ADMISSION_MODULE_READ 201
+#define X86_ADMISSION_MODULE_VALIDATE 202
+#define X86_ADMISSION_MODULE_PAYLOAD 203
+#define X86_ADMISSION_MODULE_FIRST 204
+#define X86_ADMISSION_MODULE_RANGE 205
+#define X86_ADMISSION_INDEX_OPEN 301
+#define X86_ADMISSION_SUPPLY_STATE 302
+#define X86_ADMISSION_MODULE_DIGEST 401
+#define X86_ADMISSION_COMPILED_EXTENT 402
+#define X86_ADMISSION_COMPILED_PAGE 403
+#define X86_ADMISSION_COMPILED_FIRST 404
+#define X86_ADMISSION_COMPILED_COUNT 405
+#define X86_ADMISSION_COMPILED_SELECT 406
+#define X86_ADMISSION_COMPILED_OPEN 407
 #define X86_EXECUTABLE_INDEX_CACHE_SETS 16u
 #define X86_EXECUTABLE_INDEX_CACHE_WAYS 4u
 #define X86_EXECUTABLE_INDEX_CACHE \
@@ -508,6 +547,7 @@ typedef struct {
     u32 direct_blocks;
     u32 direct_function;
     u32 direct_residual;
+    u32 direct_residual_valid;
     pl_vm_result direct_memory_result;
     /* A load_region is one translated, page-pinned physical operation.  Its
      * at-most-eight values and end coordinate stay in this fixed physical
@@ -563,6 +603,20 @@ typedef struct {
     u64 direct_frame_key_shape;
     u64 direct_frame_value;
     pl_executable executable_root;
+    pl_delivery_directory executable_delivery;
+    pl_delivery_ref executable_delivery_ref;
+    pl_delivery_locator executable_delivery_locator;
+    u32 executable_delivery_published;
+    u32 executable_delivery_loading;
+    u32 executable_delivery_locator_valid;
+    u64 executable_delivery_resolves;
+    u64 executable_delivery_nodes;
+    u64 executable_delivery_cache_hits;
+    pl_delivery_ref executable_delivery_cache_ref[X86_DELIVERY_CACHE_SLOTS];
+    u8 executable_delivery_cache_bytes[X86_DELIVERY_CACHE_SLOTS]
+                                      [PL_DELIVERY_NODE_BYTES];
+    u32 executable_delivery_cache_valid[X86_DELIVERY_CACHE_SLOTS];
+    u32 executable_delivery_cache_next[X86_DELIVERY_CACHE_SETS];
     u32 executable_root_loading;
     u32 executable_table_base;
     u32 executable_request;
@@ -578,7 +632,6 @@ typedef struct {
     u32 executable_page_loading;
     u32 executable_code_loading;
     u32 executable_map_loading;
-    u32 executable_map_tail;
     u32 executable_map_rank;
     u32 executable_residual_loading;
     u32 executable_residual_edge;
@@ -620,29 +673,68 @@ typedef struct {
     u32 executable_index_cache_valid[X86_EXECUTABLE_INDEX_CACHE];
     u64 executable_code_page[X86_EXECUTABLE_PAGE_CACHE];
     u64 executable_code_generation[X86_EXECUTABLE_PAGE_CACHE];
+    u64 executable_code_address_generation[X86_EXECUTABLE_PAGE_CACHE];
+    u64 executable_code_physical[X86_EXECUTABLE_PAGE_CACHE]
+                                [X86_CODE_SOURCE_DEPENDENCIES];
+    u64 executable_code_physical_generation[X86_EXECUTABLE_PAGE_CACHE]
+                                           [X86_CODE_SOURCE_DEPENDENCIES];
+    u32 executable_code_physical_slot[X86_EXECUTABLE_PAGE_CACHE]
+                                     [X86_CODE_SOURCE_DEPENDENCIES];
+    u32 executable_code_mapped_mask[X86_EXECUTABLE_PAGE_CACHE];
     u32 executable_code_function[X86_EXECUTABLE_PAGE_CACHE];
     u32 executable_code_argument[X86_EXECUTABLE_PAGE_CACHE];
+    /* A dynamically compiled page keeps its residual/entry ranks local.  The
+     * immutable product root selects those physical arrays, while topology
+     * ranks continue to name the shared executable function table. */
+    pl_page_product executable_code_product[X86_EXECUTABLE_PAGE_CACHE];
+    u64 executable_code_product_epoch[X86_EXECUTABLE_PAGE_CACHE];
     u32 executable_code_valid[X86_EXECUTABLE_PAGE_CACHE];
-    u32 executable_module_first[X86_EXECUTABLE_MODULE_CACHE];
-    u32 executable_module_count[X86_EXECUTABLE_MODULE_CACHE];
-    u32 executable_module_valid[X86_EXECUTABLE_MODULE_CACHE];
-    u32 executable_module_page_tag[X86_EXECUTABLE_MODULE_PAGE_CACHE];
-    u32 executable_module_page_first[X86_EXECUTABLE_MODULE_PAGE_CACHE];
-    u32 executable_module_page_count[X86_EXECUTABLE_MODULE_PAGE_CACHE];
+    /* Exact caller-owned input for one page-local postlink compilation.  The
+     * ready tag publishes last; generations and physical coordinates remain
+     * scalar proof metadata rather than a second instruction record. */
+    u8 executable_code_source[X86_CODE_SOURCE_BYTES];
+    u8 executable_code_source_digest[PL_SHA256_BYTES];
+    u64 executable_code_source_virtual_page;
+    u64 executable_code_source_address_generation;
+    u64 executable_code_source_physical[X86_CODE_SOURCE_DEPENDENCIES];
+    u64 executable_code_source_generation[X86_CODE_SOURCE_DEPENDENCIES];
+    u32 executable_code_source_physical_slot[X86_CODE_SOURCE_DEPENDENCIES];
+    u32 executable_code_source_mapped_mask;
+    u32 executable_code_source_ready;
+    pl_page_product executable_page_product_candidate;
+    u32 executable_page_product_loading;
+    u32 executable_active_product_slot;
+    u64 executable_active_product_epoch;
+    u32 executable_projection_product_slot;
+    u64 executable_projection_product_epoch;
+    u32 executable_residency_base;
+    u32 executable_residency_bytes;
+    u32 executable_function_limit;
+    u32 executable_topology_loading;
+    u32 executable_topology_rank;
+    u32 executable_topology_body_bytes;
+    u32 executable_topology_module_bytes;
+    u8 executable_topology_digest[PL_SHA256_BYTES];
     u32 executable_binding_tag[X86_EXECUTABLE_BINDING_CACHE];
     u32 executable_binding_generation[X86_EXECUTABLE_BINDING_CACHE];
     u32 executable_binding_argument[X86_EXECUTABLE_BINDING_CACHE];
-    u32 executable_entry_page_tag[X86_EXECUTABLE_ENTRY_PAGE_CACHE];
-    u32 executable_entry_page_rows[X86_EXECUTABLE_ENTRY_PAGE_CACHE]
-                                  [PL_ENTRY_PAGE_ROWS];
-    u32 executable_entry_tail_tag[X86_EXECUTABLE_ENTRY_TAIL_CACHE];
-    u32 executable_entry_tail_rows[X86_EXECUTABLE_ENTRY_TAIL_CACHE]
-                                  [PL_ENTRY_TAIL_VALUES];
+    u32 executable_entry_generator_tag[
+        X86_EXECUTABLE_ENTRY_GENERATOR_CACHE];
+    u32 executable_entry_generator_local_tag[
+        X86_EXECUTABLE_ENTRY_GENERATOR_CACHE];
+    u64 executable_entry_generator_local_epoch[
+        X86_EXECUTABLE_ENTRY_GENERATOR_CACHE];
+    u32 executable_entry_generator_values[
+        X86_EXECUTABLE_ENTRY_GENERATOR_CACHE][PL_ENTRY_GENERATOR_VALUES];
     /* Canonical delivery pages are expanded once at admission.  The hot
      * residual runner then touches only the selected physical columns: one
      * kernel rank, two degree bits, two local rank prefixes, and one edge.
      * Tags publish last, so eviction cannot expose a mixed generation. */
     u32 executable_residual_state_tag[
+        X86_EXECUTABLE_RESIDUAL_STATE_CACHE];
+    u32 executable_residual_state_local_tag[
+        X86_EXECUTABLE_RESIDUAL_STATE_CACHE];
+    u64 executable_residual_state_local_epoch[
         X86_EXECUTABLE_RESIDUAL_STATE_CACHE];
     u32 executable_residual_state_count[
         X86_EXECUTABLE_RESIDUAL_STATE_CACHE];
@@ -662,13 +754,21 @@ typedef struct {
         [PL_RESIDUAL_STATE_PAGE_WORDS + 1u];
     u32 executable_residual_edge_tag[
         X86_EXECUTABLE_RESIDUAL_EDGE_CACHE];
+    u32 executable_residual_edge_local_tag[
+        X86_EXECUTABLE_RESIDUAL_EDGE_CACHE];
+    u64 executable_residual_edge_local_epoch[
+        X86_EXECUTABLE_RESIDUAL_EDGE_CACHE];
     u32 executable_residual_edge_count[
         X86_EXECUTABLE_RESIDUAL_EDGE_CACHE];
-    u32 executable_residual_next[X86_EXECUTABLE_RESIDUAL_EDGE_CACHE]
-                                [PL_RESIDUAL_EDGE_PAGE_EDGES];
-    i32 executable_residual_delta[X86_EXECUTABLE_RESIDUAL_EDGE_CACHE]
-                                 [PL_RESIDUAL_EDGE_PAGE_EDGES];
+    u8 executable_residual_edge_page[X86_EXECUTABLE_RESIDUAL_EDGE_CACHE]
+                                    [PL_RESIDUAL_EDGE_PAGE_MAX_USED];
+    u32 executable_residual_edge_bytes[
+        X86_EXECUTABLE_RESIDUAL_EDGE_CACHE];
     u32 executable_instantiation_tag[X86_EXECUTABLE_INSTANTIATION_CACHE];
+    u32 executable_instantiation_local_tag[
+        X86_EXECUTABLE_INSTANTIATION_CACHE];
+    u64 executable_instantiation_local_epoch[
+        X86_EXECUTABLE_INSTANTIATION_CACHE];
     u32 executable_instantiation_count[X86_EXECUTABLE_INSTANTIATION_CACHE];
     u32 executable_instantiation_topology[X86_EXECUTABLE_INSTANTIATION_CACHE]
                                          [PL_INSTANTIATION_PAGE_ROWS];
@@ -677,6 +777,8 @@ typedef struct {
     u8 executable_instantiation_words[X86_EXECUTABLE_INSTANTIATION_CACHE]
                                      [PL_INSTANTIATION_PAGE_ROWS];
     u32 executable_parameter_tag[X86_EXECUTABLE_PARAMETER_CACHE];
+    u32 executable_parameter_local_tag[X86_EXECUTABLE_PARAMETER_CACHE];
+    u64 executable_parameter_local_epoch[X86_EXECUTABLE_PARAMETER_CACHE];
     u32 executable_parameter_count[X86_EXECUTABLE_PARAMETER_CACHE];
     u64 executable_parameter_page[X86_EXECUTABLE_PARAMETER_CACHE]
                                  [PL_PARAMETER_PAGE_WORDS];
@@ -684,6 +786,21 @@ typedef struct {
     /* Root and cold index/module chunks have disjoint phases, so one physical
      * page is their complete bounded materialization budget. */
     u8 executable_stage[PL_INDEX_NODE_BYTES];
+    pl_compiled_block executable_compiled;
+    u8 executable_compiled_parameters[X86_COMPILED_STAGE_BYTES];
+    u8 executable_compiled_body[X86_COMPILED_STAGE_BYTES];
+    u64 executable_compiled_values[X86_EXECUTABLE_PARAMETER_VALUES];
+    union {
+        u64 alignment;
+        u8 bytes[X86_COMPILED_ARENA_BYTES];
+    } executable_compiled_arena;
+    u32 executable_compiled_open;
+    u32 executable_compiled_module_bytes;
+    u32 executable_compiled_value_count;
+    u32 executable_compiled_function;
+    i32 executable_compiled_error;
+    i32 executable_admission_error;
+    u32 executable_admission_frame;
     u8 block_cache_small[X86_BLOCK_CACHE_SMALL_SLOTS]
                         [X86_BLOCK_CACHE_SMALL_BYTES];
     u8 block_cache_medium[X86_BLOCK_CACHE_MEDIUM_SLOTS]
@@ -706,6 +823,14 @@ typedef struct {
     u8 physical[X86_PHYSICAL_PAGES][X86_PHYSICAL_PAGE_BYTES];
     u8 physical_transfer[X86_PHYSICAL_PAGE_BYTES];
     u64 physical_page[X86_PHYSICAL_PAGES];
+    /* One non-repeating capability per resident byte generation.  A staged
+     * page compiler captures these tokens and publication compares them after
+     * all work completes, closing generation ABA without hashing on stores. */
+    u64 physical_generation[X86_PHYSICAL_PAGES];
+    /* One bit per compiled-page cache slot.  Writes and eviction consult the
+     * resident physical page directly, so alias invalidation is proportional
+     * to actual code owners rather than scanning every compiled page. */
+    u64 physical_code_owners[X86_PHYSICAL_PAGES];
     u32 physical_direct[X86_PHYSICAL_DIRECT_PAGES];
     u64 physical_lookup_page[X86_PHYSICAL_LOOKUP_SLOTS];
     u32 physical_lookup_slot[X86_PHYSICAL_LOOKUP_SLOTS];
@@ -788,6 +913,8 @@ _Static_assert(__builtin_offsetof(X86Workspace, control_argument)
 _Static_assert(sizeof(pl_vm_executable_context)
                == PL_VM_EXECUTABLE_CONTEXT_BYTES,
                "direct executable context ABI size");
+_Static_assert(X86_PHYSICAL_PAGE_BYTES == PL_CODE_PAGE_BYTES,
+               "VM and postlink compiler code pages must agree");
 #if defined(__wasm32__)
 _Static_assert(__builtin_offsetof(pl_vm_x86_state, registers)
                == PL_VM_X86_WASM32_OFF_REGISTERS,
@@ -825,6 +952,27 @@ typedef union {
 
 static MachineWorkspace workspace;
 static u32 workspace_mode;
+/* Compiled functions remain in the shared table for the lifetime of this
+ * module instance.  Grow one exact bit per artifact function outside the
+ * fixed workspace: a bounded tag cache can forget a live table entry and
+ * turn a revisit into another fetch and compilation. */
+static u32 executable_residency_storage;
+static u32 executable_residency_capacity;
+
+/* Incremental topologies are immutable table entries.  Their SHA identity and
+ * dense rank live in vm.wasm, while JavaScript only instantiates the complete
+ * module bytes emitted here.  Both regions are allocated on first use, so a
+ * machine whose linked image is already closed pays no compiler fixed cost. */
+typedef struct {
+    u8 digest[PL_SHA256_BYTES];
+    u32 body_bytes;
+    u32 rank_plus_one;
+} X86TopologyIdentity;
+
+static u32 executable_topology_stage_storage;
+static u32 executable_topology_registry_storage;
+static u32 executable_topology_registry_slots;
+static u32 executable_topology_registry_count;
 
 /* x86 STEP pages and the MMU share one physical byte array.  The STEP slot
  * retains a virtual tag/lease only; its data pointer is the translated
@@ -5069,34 +5217,128 @@ static int x86_swap_gs_bases(void)
 
 static int x86_invalidate_virtual(u64 address);
 
+static void x86_executable_unpublish_slot(X86Workspace *x86, u32 slot)
+{
+    if (slot >= X86_EXECUTABLE_PAGE_CACHE) return;
+    /* The validity tag disappears before reverse ownership or proof metadata.
+     * A compiled function is therefore never visible with a partially erased
+     * dependency set. */
+    x86->executable_code_valid[slot] = 0u;
+    x86->executable_code_product_epoch[slot] = 0u;
+    u64 owner = 1ull << slot;
+    u32 mapped = x86->executable_code_mapped_mask[slot];
+    for (u32 dependency = 0u;
+         dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency) {
+        if (!(mapped & (1u << dependency))) continue;
+        u32 physical_slot =
+            x86->executable_code_physical_slot[slot][dependency];
+        if (physical_slot < X86_PHYSICAL_PAGES)
+            x86->physical_code_owners[physical_slot] &= ~owner;
+        x86->executable_code_physical[slot][dependency] = X86_NO_PAGE;
+        x86->executable_code_physical_generation[slot][dependency] = 0u;
+        x86->executable_code_physical_slot[slot][dependency] =
+            X86_PHYSICAL_PAGES;
+    }
+    x86->executable_code_mapped_mask[slot] = 0u;
+    x86->executable_code_address_generation[slot] = 0u;
+    x86->executable_code_generation[slot] = 0u;
+    x86->executable_code_function[slot] = 0u;
+    x86->executable_code_argument[slot] = 0u;
+    x86->executable_code_page[slot] = 0u;
+}
+
+/* A page-local compiled product depends on its own 4 KiB source, the prior
+ * byte used to recognize an STI interrupt shadow, and the fourteen bytes in
+ * which the last x86 instruction may finish.  Tags publish compiled pages;
+ * clearing the exact direct-mapped owner is therefore the atomic unpublish. */
+static void x86_executable_unpublish_page(X86Workspace *x86, u64 page)
+{
+    u32 slot = (u32)(page >> 12u) & (X86_EXECUTABLE_PAGE_CACHE - 1u);
+    if (!x86->executable_code_valid[slot]
+            || x86->executable_code_page[slot] != page)
+        return;
+    x86_executable_unpublish_slot(x86, slot);
+}
+
+static void x86_executable_unpublish_physical_slot(
+    X86Workspace *x86, u32 physical_slot)
+{
+    if (physical_slot >= X86_PHYSICAL_PAGES) return;
+    u64 page = x86->physical_page[physical_slot];
+    if (x86->executable_code_source_ready) {
+        for (u32 dependency = 0u;
+             dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency)
+            if ((x86->executable_code_source_mapped_mask
+                 & (1u << dependency))
+                    && x86->executable_code_source_physical[dependency]
+                       == page) {
+                x86->executable_code_source_ready = 0u;
+                break;
+            }
+    }
+    u64 owners = x86->physical_code_owners[physical_slot];
+    x86->physical_code_owners[physical_slot] = 0u;
+    for (u32 slot = 0u; slot < X86_EXECUTABLE_PAGE_CACHE; ++slot)
+        if (owners & (1ull << slot))
+            x86_executable_unpublish_slot(x86, slot);
+}
+
+static void x86_executable_unpublish_neighborhood(
+    X86Workspace *x86, u64 address)
+{
+    u64 page = address & ~((u64)X86_PHYSICAL_PAGE_BYTES - 1u);
+    if (x86->executable_code_source_ready) {
+        u64 source = x86->executable_code_source_virtual_page;
+        int depends = page == source
+                   || (source >= X86_PHYSICAL_PAGE_BYTES
+                       && page == source - X86_PHYSICAL_PAGE_BYTES)
+                   || (source <= ~(u64)0u - X86_PHYSICAL_PAGE_BYTES
+                       && page == source + X86_PHYSICAL_PAGE_BYTES);
+        if (depends) x86->executable_code_source_ready = 0u;
+    }
+    x86_executable_unpublish_page(x86, page);
+    if (page >= X86_PHYSICAL_PAGE_BYTES)
+        x86_executable_unpublish_page(
+            x86, page - X86_PHYSICAL_PAGE_BYTES);
+    if (page <= ~(u64)0u - X86_PHYSICAL_PAGE_BYTES)
+        x86_executable_unpublish_page(
+            x86, page + X86_PHYSICAL_PAGE_BYTES);
+}
+
+static void x86_executable_unpublish_address_space(X86Workspace *x86)
+{
+    x86->executable_code_source_ready = 0u;
+    for (u32 slot = 0u; slot < X86_EXECUTABLE_PAGE_CACHE; ++slot)
+        x86_executable_unpublish_slot(x86, slot);
+}
+
+static int x86_physical_mutation_begin(
+    X86Workspace *x86, u32 slot, u64 virtual_address)
+{
+    if (slot >= X86_PHYSICAL_PAGES || !x86->physical_valid[slot])
+        return 0;
+    u64 generation = step_new_capability();
+    if (!generation) return 0;
+    /* Publish the new generation before any byte.  Compiled tags disappear
+     * first, so neither an asynchronous compiler nor direct execution can
+     * observe a new byte under an old proof. */
+    x86_executable_unpublish_neighborhood(x86, virtual_address);
+    x86_executable_unpublish_physical_slot(x86, slot);
+    x86->physical_generation[slot] = generation;
+    return 1;
+}
+
 /* One deterministic virtual CPU model is shared by legacy artifact migration
  * and compiler-emitted blocks.  Keeping the leaf projection here prevents a
  * second CPUID identity from growing beside the direct execution path. */
 static void x86_cpuid_model(u32 leaf, u32 subleaf,
                             u32 *eax, u32 *ebx, u32 *ecx, u32 *edx)
 {
-    *eax = 0u; *ebx = 0u; *ecx = 0u; *edx = 0u;
-    if (leaf == 0u) {
-        *eax = PL_X86_CPUID_MAX_BASIC;
-        *ebx = PL_X86_CPUID_VENDOR_EBX;
-        *ecx = PL_X86_CPUID_VENDOR_ECX;
-        *edx = PL_X86_CPUID_VENDOR_EDX;
-    } else if (leaf == 1u) {
-        *eax = PL_X86_CPUID_SIGNATURE;
-        *ecx = PL_X86_CPUID_1_ECX;
-        *edx = PL_X86_CPUID_1_EDX;
-    } else if (leaf == 7u && subleaf == 0u) {
-        *ebx = PL_X86_CPUID_7_0_EBX;
-        *ecx = PL_X86_CPUID_7_0_ECX;
-        *edx = PL_X86_CPUID_7_0_EDX;
-    } else if (leaf == 0x80000000u) {
-        *eax = PL_X86_CPUID_MAX_EXTENDED;
-    } else if (leaf == 0x80000001u) {
-        *ecx = PL_X86_CPUID_80000001_ECX;
-        *edx = PL_X86_CPUID_80000001_EDX;
-    } else if (leaf == 0x80000008u) {
-        *eax = PL_X86_CPUID_80000008_EAX;
-    }
+    pl_x86_cpuid_result result = pl_x86_profile_cpuid(leaf, subleaf);
+    *eax = result.eax;
+    *ebx = result.ebx;
+    *ecx = result.ecx;
+    *edx = result.edx;
 }
 
 static u64 x86_control_register_read(u32 coordinate)
@@ -5132,6 +5374,7 @@ static int x86_invalidate_address_space(void)
                 return 0;
         }
     }
+    x86_executable_unpublish_address_space(x86);
     for (u32 slot = 0; slot < STEP_MEMORY_PAGES; ++slot) {
         u32 kind = step_slot_kind(step_slot_load(step, slot));
         if (kind == STEP_SLOT_DIRTY) {
@@ -5761,6 +6004,192 @@ static int x86_translate_page(u64 virtual_page, int write, int execute,
     return 1;
 }
 
+static int x86_capture_code_dependency(
+    X86Workspace *x86, u32 dependency, u64 virtual_page,
+    u32 page_offset, u32 target_offset, u32 bytes, int required)
+{
+    u64 physical_page = X86_NO_PAGE;
+    int translated = x86_translate_page(
+        virtual_page >> 12u, 0, 1,
+        (x86->system[X86_SYS_CS] & 3u) != 0u, &physical_page);
+    if (!translated) return 0;
+    if (translated < 0) {
+        if (required) return -1;
+        for (u32 index = 0u; index < bytes; ++index)
+            x86->executable_code_source[target_offset + index] = 0u;
+        return 1;
+    }
+    if (!x86_physical_present(physical_page)) return 0;
+    u32 slot = x86_physical_slot(physical_page);
+    if (slot >= X86_PHYSICAL_PAGES || !x86->physical_generation[slot]
+            || page_offset > X86_PHYSICAL_PAGE_BYTES
+            || bytes > X86_PHYSICAL_PAGE_BYTES - page_offset)
+        return -1;
+    for (u32 index = 0u; index < bytes; ++index)
+        x86->executable_code_source[target_offset + index] =
+            x86->physical[slot][page_offset + index];
+    x86->executable_code_source_physical[dependency] = physical_page;
+    x86->executable_code_source_generation[dependency] =
+        x86->physical_generation[slot];
+    x86->executable_code_source_physical_slot[dependency] = slot;
+    x86->executable_code_source_mapped_mask |= 1u << dependency;
+    return 1;
+}
+
+static int x86_code_source_is_current(X86Workspace *x86)
+{
+    if (!x86->executable_code_source_ready
+            || x86->executable_code_source_address_generation
+               != step_machine()->memory_generation)
+        return 0;
+    for (u32 dependency = 0u;
+         dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency) {
+        if (!(x86->executable_code_source_mapped_mask
+              & (1u << dependency)))
+            continue;
+        u64 page = x86->executable_code_source_physical[dependency];
+        u32 slot =
+            x86->executable_code_source_physical_slot[dependency];
+        if (slot >= X86_PHYSICAL_PAGES || !x86->physical_valid[slot]
+                || x86->physical_page[slot] != page
+                || x86->physical_generation[slot]
+                   != x86->executable_code_source_generation[dependency])
+            return 0;
+    }
+    return 1;
+}
+
+/* Capture the exact three-span input of the page-local C compiler.  Return 1
+ * when ready, 2 when a page-table/code page is cold, and zero for a malformed
+ * request or a non-executable current page.  The host may service the ordinary
+ * physical-page barrier and retry; it never decodes these bytes. */
+EXPORT int vm_x86_executable_source_begin(u64 session, u64 virtual_page)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86->executable_published || x86->physical_status
+            || step_machine()->execution_active
+            || x86->direct_transaction_active
+            || x86->executable_topology_loading
+            || x86->executable_page_product_loading
+            || (virtual_page & (X86_PHYSICAL_PAGE_BYTES - 1u))
+            || virtual_page > ~(u64)0u - X86_PHYSICAL_PAGE_BYTES
+                                      - X86_CODE_SOURCE_LOOKAHEAD_BYTES)
+        return 0;
+    x86->executable_code_source_ready = 0u;
+    x86->executable_code_source_virtual_page = virtual_page;
+    x86->executable_code_source_address_generation =
+        step_machine()->memory_generation;
+    x86->executable_code_source_mapped_mask = 0u;
+    for (u32 dependency = 0u;
+         dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency) {
+        x86->executable_code_source_physical[dependency] = X86_NO_PAGE;
+        x86->executable_code_source_generation[dependency] = 0u;
+        x86->executable_code_source_physical_slot[dependency] =
+            X86_PHYSICAL_PAGES;
+    }
+
+    int status = x86_capture_code_dependency(
+        x86, X86_CODE_SOURCE_PAGE, virtual_page, 0u,
+        X86_CODE_SOURCE_PREDECESSOR_BYTES,
+        X86_PHYSICAL_PAGE_BYTES, 1);
+    if (!status) return 2;
+    if (status < 0) return 0;
+    if (virtual_page) {
+        status = x86_capture_code_dependency(
+            x86, X86_CODE_SOURCE_PREDECESSOR,
+            virtual_page - X86_PHYSICAL_PAGE_BYTES,
+            X86_PHYSICAL_PAGE_BYTES - 1u, 0u,
+            X86_CODE_SOURCE_PREDECESSOR_BYTES, 0);
+        if (!status) return 2;
+        if (status < 0) return 0;
+    } else {
+        x86->executable_code_source[0] = 0u;
+    }
+    status = x86_capture_code_dependency(
+        x86, X86_CODE_SOURCE_SUCCESSOR,
+        virtual_page + X86_PHYSICAL_PAGE_BYTES, 0u,
+        X86_CODE_SOURCE_PREDECESSOR_BYTES + X86_PHYSICAL_PAGE_BYTES,
+        X86_CODE_SOURCE_LOOKAHEAD_BYTES, 0);
+    if (!status) return 2;
+    if (status < 0) return 0;
+    if (pl_code_source_digest(
+            x86->executable_code_source, virtual_page,
+            x86->executable_code_source_mapped_mask,
+            x86->executable_code_source_digest))
+        return 0;
+    x86->executable_code_source_ready = 1u;
+    return 1;
+}
+
+EXPORT u32 vm_x86_executable_source_buffer(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86_code_source_is_current(x86)
+         ? (u32)(uptr)&x86->executable_code_source[0] : 0u;
+}
+
+EXPORT u32 vm_x86_executable_source_bytes(u64 session)
+{
+    return vm_x86_executable_source_buffer(session)
+         ? X86_CODE_SOURCE_BYTES : 0u;
+}
+
+EXPORT u32 vm_x86_executable_source_mapped_mask(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86_code_source_is_current(x86)
+         ? x86->executable_code_source_mapped_mask : 0u;
+}
+
+EXPORT u32 vm_x86_executable_source_digest(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86_code_source_is_current(x86)
+         ? (u32)(uptr)&x86->executable_code_source_digest[0] : 0u;
+}
+
+EXPORT u64 vm_x86_executable_source_address_generation(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86_code_source_is_current(x86)
+         ? x86->executable_code_source_address_generation : 0u;
+}
+
+EXPORT u64 vm_x86_executable_source_physical(
+    u64 session, u32 dependency)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && dependency < X86_CODE_SOURCE_DEPENDENCIES
+            && x86_code_source_is_current(x86)
+            && (x86->executable_code_source_mapped_mask & (1u << dependency))
+         ? x86->executable_code_source_physical[dependency] : X86_NO_PAGE;
+}
+
+EXPORT u64 vm_x86_executable_source_generation(
+    u64 session, u32 dependency)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && dependency < X86_CODE_SOURCE_DEPENDENCIES
+            && x86_code_source_is_current(x86)
+            && (x86->executable_code_source_mapped_mask & (1u << dependency))
+         ? x86->executable_code_source_generation[dependency] : 0u;
+}
+
+EXPORT int vm_x86_executable_source_current(u64 session)
+{
+    return step_session_is(session)
+        && x86_code_source_is_current(x86_machine());
+}
+
+EXPORT int vm_x86_executable_source_abort(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session)) return 0;
+    x86->executable_code_source_ready = 0u;
+    return 1;
+}
+
 static int x86_virtual_read_access(u64 address, u8 *target, u32 bytes,
                                    int user_access)
 {
@@ -5829,6 +6258,9 @@ static int x86_virtual_write(u64 address, const u8 *bytes, u32 count,
         u32 part = X86_PHYSICAL_PAGE_BYTES - offset;
         if (part > count - written) part = count - written;
         u32 slot = x86_physical_slot(physical_page);
+        /* This is the ordinary same-mapping path; physical aliases are
+         * tracked separately when a page proof is admitted. */
+        if (!x86_physical_mutation_begin(x86, slot, at)) return 0;
         for (u32 index = 0; index < part; ++index)
             x86->physical[slot][offset + index] = bytes[written + index];
         x86->physical_dirty[slot] = 1u;
@@ -6642,10 +7074,12 @@ EXPORT int vm_x86_direct_atomic(u32 machine, u64 address, u64 descriptor)
     u32 literal = (u32)(descriptor >> 32u);
     if (machine != (u32)(uptr)&x86->architectural
             || !x86->active || !x86->executable_published
-            || kind > 16u
+            || kind > 18u
             || (width != 1u && width != 2u && width != 4u
                 && width != 8u && width != 16u)
-            || (kind >= 14u
+            || ((kind == 17u || kind == 18u)
+                ? (width == 16u || reg || high8 || immediate || literal)
+              : kind >= 14u
                 ? ((width != 2u && width != 4u && width != 8u)
                    || reg >= X86_REGISTER_COUNT || high8 || immediate
                    || literal)
@@ -6669,7 +7103,7 @@ EXPORT int vm_x86_direct_atomic(u32 machine, u64 address, u64 descriptor)
     }
     x86->direct_memory_result = 0u;
     u32 bit = 0u;
-    if (kind >= 14u) {
+    if (kind >= 14u && kind <= 16u) {
         u32 bit_width = width * 8u;
         i64 index = width == 8u ? (i64)x86->registers[reg]
                   : width == 4u ? (i64)(i32)x86->registers[reg]
@@ -6774,6 +7208,16 @@ EXPORT int vm_x86_direct_atomic(u32 machine, u64 address, u64 descriptor)
             stored = old; /* failed CMPXCHG still owns write permission */
             x86_direct_set_gpr_lane(x86, X86_RAX, width, 0u, old);
         }
+    } else if (kind == 17u) {
+        stored = (~old) & mask;
+    } else if (kind == 18u) {
+        stored = (0u - old) & mask;
+        if (!step_x86_flags_value(
+                x86->rflags, 0u, old, stored,
+                width * 8u | (3u << 8u), &x86->rflags)) {
+            x86_direct_memory_abort(x86, 0xffu);
+            return 0;
+        }
     } else {
         u32 mode = 0u;
         u64 right = source;
@@ -6843,7 +7287,7 @@ static u64 x86_packed_interleave_words2(
     return result;
 }
 
-/* Operations 9..49 are one shared 64-bit packed-lane quotient.  MMX uses it
+/* Packed operations are one shared 64-bit lane quotient.  MMX uses it
  * once; XMM uses it independently for both physical u64 lanes except for the
  * unpack shapes that explicitly cross those two lanes. */
 static u64 x86_packed_extended64(u64 left, u64 right, u32 operation)
@@ -7186,6 +7630,189 @@ static u64 x86_packed_extended64(u64 left, u64 right, u32 operation)
         }
         return result;
     }
+    if (operation == 50u) return left - right;
+    if (operation == 51u) {
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < 4u; ++lane) {
+            u32 shift = lane * 16u;
+            if (((left >> shift) & 0xffffu)
+                    == ((right >> shift) & 0xffffu))
+                result |= 0xffffull << shift;
+        }
+        return result;
+    }
+    if (operation == 52u || operation == 53u || operation == 58u) {
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < 2u; ++lane) {
+            u32 shift = lane * 32u;
+            u32 left_lane = (u32)(left >> shift);
+            u32 right_lane = (u32)(right >> shift);
+            u32 value = operation == 52u
+                      ? (left_lane == right_lane ? 0xffffffffu : 0u)
+                      : operation == 53u
+                      ? left_lane - right_lane
+                      : ((i32)left_lane > (i32)right_lane
+                         ? 0xffffffffu : 0u);
+            result |= (u64)value << shift;
+        }
+        return result;
+    }
+    if (operation == 54u || operation == 57u) {
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < 4u; ++lane) {
+            u32 shift = lane * 16u;
+            u32 left_lane = (u32)(left >> shift) & 0xffffu;
+            u32 right_lane = (u32)(right >> shift) & 0xffffu;
+            u32 value;
+            if (operation == 57u) {
+                value = left_lane + right_lane;
+            } else {
+                i32 signed_left = left_lane & 0x8000u
+                                ? (i32)left_lane - 0x10000 : (i32)left_lane;
+                i32 signed_right = right_lane & 0x8000u
+                                 ? (i32)right_lane - 0x10000 : (i32)right_lane;
+                i32 difference = signed_left - signed_right;
+                value = difference < -0x8000 ? 0x8000u
+                      : difference > 0x7fff ? 0x7fffu
+                      : (u32)difference;
+            }
+            result |= (u64)(value & 0xffffu) << shift;
+        }
+        return result;
+    }
+    if (operation == 55u || operation == 56u) {
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < 8u; ++lane) {
+            u32 shift = lane * 8u;
+            u32 left_lane = (u32)(left >> shift) & 0xffu;
+            u32 right_lane = (u32)(right >> shift) & 0xffu;
+            u32 value;
+            if (operation == 56u) {
+                value = left_lane + right_lane;
+            } else {
+                i32 signed_left = left_lane & 0x80u
+                                ? (i32)left_lane - 0x100 : (i32)left_lane;
+                i32 signed_right = right_lane & 0x80u
+                                 ? (i32)right_lane - 0x100 : (i32)right_lane;
+                i32 difference = signed_left - signed_right;
+                value = difference < -0x80 ? 0x80u
+                      : difference > 0x7f ? 0x7fu
+                      : (u32)difference;
+            }
+            result |= (u64)(value & 0xffu) << shift;
+        }
+        return result;
+    }
+    if (operation == 59u) {
+        u32 left_sum = (u32)left + (u32)(left >> 32u);
+        u32 right_sum = (u32)right + (u32)(right >> 32u);
+        return (u64)left_sum | ((u64)right_sum << 32u);
+    }
+    if (operation == 60u) {
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < 4u; ++lane) {
+            u32 shift = lane * 16u;
+            i32 left_lane = (i32)((u32)(left >> shift) & 0xffffu);
+            i32 right_lane = (i32)((u32)(right >> shift) & 0xffffu);
+            if (left_lane & 0x8000) left_lane -= 0x10000;
+            if (right_lane & 0x8000) right_lane -= 0x10000;
+            i32 scaled = (left_lane * right_lane + 0x4000) >> 15u;
+            u32 saturated = scaled < -0x8000 ? 0x8000u
+                          : scaled > 0x7fff ? 0x7fffu
+                          : (u32)scaled & 0xffffu;
+            result |= (u64)saturated << shift;
+        }
+        return result;
+    }
+    if (operation == 61u) {
+        u32 left_difference = (u32)left - (u32)(left >> 32u);
+        u32 right_difference = (u32)right - (u32)(right >> 32u);
+        return (u64)left_difference | ((u64)right_difference << 32u);
+    }
+    if (operation == 62u) {
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < 8u; ++lane) {
+            u32 shift = lane * 8u;
+            u32 value = (u32)(left >> shift) & 0xffu;
+            u32 sign = (u32)(right >> shift) & 0xffu;
+            if (!sign) value = 0u;
+            else if (sign & 0x80u) value = (0u - value) & 0xffu;
+            result |= (u64)value << shift;
+        }
+        return result;
+    }
+    if (operation == 63u) {
+        u64 result = 0u;
+        for (u32 pair = 0u; pair < 2u; ++pair) {
+            u32 shift = pair * 32u;
+            u32 left_sum = ((u32)(left >> shift) & 0xffffu)
+                         + ((u32)(left >> (shift + 16u)) & 0xffffu);
+            u32 right_sum = ((u32)(right >> shift) & 0xffffu)
+                          + ((u32)(right >> (shift + 16u)) & 0xffffu);
+            result |= (u64)(left_sum & 0xffffu) << (pair * 16u);
+            result |= (u64)(right_sum & 0xffffu) << (pair * 16u + 32u);
+        }
+        return result;
+    }
+    if (operation == 64u) {
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < 2u; ++lane) {
+            u32 shift = lane * 32u;
+            u32 value = (u32)(left >> shift);
+            u32 sign = (u32)(right >> shift);
+            if (!sign) value = 0u;
+            else if (sign & 0x80000000u) value = 0u - value;
+            result |= (u64)value << shift;
+        }
+        return result;
+    }
+    if (operation >= 65u && operation <= 67u) {
+        u32 lane_bits = 8u << (operation - 65u);
+        u32 lanes = 64u / lane_bits;
+        u64 lane_mask = ((u64)1u << lane_bits) - 1u;
+        u64 sign_mask = (u64)1u << (lane_bits - 1u);
+        u64 result = 0u;
+        for (u32 lane = 0u; lane < lanes; ++lane) {
+            u32 shift = lane * lane_bits;
+            u64 value = (right >> shift) & lane_mask;
+            if (value & sign_mask) value = (0u - value) & lane_mask;
+            result |= value << shift;
+        }
+        return result;
+    }
+    if (operation == 68u) {
+        u64 result = 0u;
+        for (u32 pair = 0u; pair < 2u; ++pair) {
+            u32 shift = pair * 32u;
+            u32 left_difference =
+                ((u32)(left >> shift) - (u32)(left >> (shift + 16u)))
+                & 0xffffu;
+            u32 right_difference =
+                ((u32)(right >> shift) - (u32)(right >> (shift + 16u)))
+                & 0xffffu;
+            result |= (u64)left_difference << (pair * 16u);
+            result |= (u64)right_difference << (pair * 16u + 32u);
+        }
+        return result;
+    }
+    if (operation == PL_X86_PACKED_MULTIPLY_ADD_UNSIGNED_SIGNED_BYTE) {
+        u64 result = 0u;
+        for (u32 pair = 0u; pair < 4u; ++pair) {
+            i32 sum = 0;
+            for (u32 lane = 0u; lane < 2u; ++lane) {
+                u32 shift = (pair * 2u + lane) * 8u;
+                u32 unsigned_left = (u32)(left >> shift) & 0xffu;
+                i32 signed_right = (i32)((u32)(right >> shift) & 0xffu);
+                if (signed_right & 0x80) signed_right -= 0x100;
+                sum += (i32)unsigned_left * signed_right;
+            }
+            u32 saturated = sum < -0x8000 ? 0x8000u
+                          : sum > 0x7fff ? 0x7fffu
+                          : (u32)sum & 0xffffu;
+            result |= (u64)saturated << (pair * 16u);
+        }
+        return result;
+    }
     return (left & 0xffffffffull) | ((right & 0xffffffffull) << 32u);
 }
 
@@ -7469,6 +8096,35 @@ static u32 x86_float32_minmax(
         left, right, 1, mxcsr, exceptions);
     return maximum ? (relation == 0u ? left : right)
                    : (relation == 1u ? left : right);
+}
+
+static u64 x86_float64_minmax(
+        u64 left, u64 right, int maximum, u32 mxcsr, u32 *exceptions)
+{
+    u32 left_exponent = (u32)(left >> 52u) & 0x7ffu;
+    u64 left_fraction = left & 0xfffffffffffffull;
+    u32 right_exponent = (u32)(right >> 52u) & 0x7ffu;
+    u64 right_fraction = right & 0xfffffffffffffull;
+    int left_nan = left_exponent == 0x7ffu && left_fraction;
+    int right_nan = right_exponent == 0x7ffu && right_fraction;
+    if ((left_nan && !(left_fraction & 0x8000000000000ull))
+            || (right_nan && !(right_fraction & 0x8000000000000ull)))
+        *exceptions |= 1u;
+    if (left_nan || right_nan) return right;
+    if (!left_exponent && left_fraction) {
+        if (mxcsr & (1u << 6u)) left &= 1ull << 63u;
+        else *exceptions |= 1u << 1u;
+    }
+    if (!right_exponent && right_fraction) {
+        if (mxcsr & (1u << 6u)) right &= 1ull << 63u;
+        else *exceptions |= 1u << 1u;
+    }
+    if (!((left | right) << 1u) || left == right) return right;
+    u32 left_sign = (u32)(left >> 63u);
+    u32 right_sign = (u32)(right >> 63u);
+    int less = left_sign != right_sign ? left_sign != 0u
+             : left_sign ? left > right : left < right;
+    return maximum ? (less ? right : left) : (less ? left : right);
 }
 
 static u64 x86_shift_right_jam64(u64 value, u32 distance)
@@ -7875,11 +8531,11 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
     u32 aligned = (shape >> 2u) & 1u;
     if (machine != (u32)(uptr)&x86->architectural
             || !x86->active || !x86->executable_published
-            || kind > 38u
+            || kind > PL_X86_VECTOR_MMX_LANE_TRANSFER
             || (source_memory && target_memory)
             || (target_memory
                 ? ((kind && kind != 9u && kind != 13u && kind != 14u
-                    && kind != 28u)
+                    && kind != 28u && kind != 43u)
                    || target || source >= 16u)
                 : source_memory
                 ? (target >= 16u || source)
@@ -7899,7 +8555,9 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
                            || (source_memory && (immediate >> 1u))))))
             || (kind == 10u
                 && (target_memory || aligned != source_memory
-                    || immediate < 9u || immediate > 49u))
+                    || immediate < 9u
+                    || immediate
+                       > PL_X86_PACKED_ZERO_EXTEND_DWORD_TO_QWORD))
             || ((kind == 11u || kind == 12u)
                 && (shape || address || target != source))
             || (kind == 13u
@@ -7942,14 +8600,14 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
             || (kind == 25u
                 && (target_memory || aligned || immediate > 1u))
             || (kind == 26u
-                && (target_memory || aligned || immediate > 1u))
+                && (target_memory || aligned || immediate > 3u))
             || (kind == 27u
                 && (target_memory || aligned != source_memory))
             || (kind == 28u
                 && (source_memory == target_memory || aligned
                     || target || source || immediate))
-            || (kind == 29u
-                && (shape || address || immediate))
+            || (kind == PL_X86_VECTOR_MOVE_LANE
+                && (shape || address || immediate > 1u))
             || (kind == 30u
                 && (target_memory || aligned || immediate
                     || (!source_memory && source >= 8u)))
@@ -7958,15 +8616,60 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
             || (kind == 32u
                 && (target >= 8u || target_memory || aligned || immediate))
             || (kind == 33u
-                && (target >= 8u || source >= 8u || shape
-                    || (immediate & ~0x0fu) || (immediate & 7u) > 5u))
+                && (target >= ((immediate & 16u) ? 16u : 8u)
+                    || source >= ((immediate & 16u) ? 16u : 8u) || shape
+                    || (immediate & ~0x1fu) || (immediate & 7u) > 5u))
             || ((kind >= 34u && kind <= 36u)
                 && (target_memory || aligned || immediate))
+            || (kind == 39u
+                && (aligned || immediate > 3u
+                    || (source_memory
+                        ? (target >= 16u || source || target_memory)
+                        : target_memory
+                        ? (target || source >= 16u)
+                        : (target >= 16u || source >= 16u || address))))
+            || (kind == 40u
+                && (target >= 16u || target_memory
+                    || aligned != source_memory || immediate > 3u))
+            || (kind == 41u
+                && (target >= 16u || source >= 16u
+                    || shape || address || immediate > 1u))
+            || (kind == PL_X86_VECTOR_INSERT_LANE
+                && (target >= 16u || target_memory || aligned
+                    || immediate > 7u
+                    || ((immediate & 4u) && (immediate & 3u) > 1u)))
+            || (kind == PL_X86_VECTOR_EXTRACT_LANE
+                && (source >= 16u || source_memory || aligned
+                    || immediate > 7u
+                    || ((immediate & 4u) && (immediate & 3u) > 1u)))
+            || (kind == 44u
+                && (target >= 16u || source >= 16u || target_memory
+                    || aligned || (address && !source_memory)))
+            || (kind == 45u
+                && (target >= 16u || source >= 16u
+                    || shape || address || immediate))
+            || (kind == PL_X86_VECTOR_BYTE_BLEND
+                && (target_memory || aligned || immediate))
+            || (kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE
+                && (target >= 16u || target_memory
+                    || aligned != source_memory))
+            || (kind == PL_X86_VECTOR_MMX_LANE_TRANSFER
+                && (shape || address || immediate > 1u
+                    || (immediate ? (target >= 8u || source >= 16u)
+                                  : (target >= 16u || source >= 8u))))
             || (kind < 5u && immediate)
             || descriptor != (kind | ((u64)target << 8u)
                 | ((u64)source << 16u) | ((u64)shape << 24u)
                 | ((u64)immediate << 32u))) {
         x86_direct_memory_abort(x86, 0xffu);
+        return 0;
+    }
+    if ((x86->cr0 & (1u << 2u)) || !(x86->cr4 & (1u << 9u))) {
+        x86_direct_exception(x86, 6u, 0u, 0u);
+        return 0;
+    }
+    if (x86->cr0 & (1u << 3u)) {
+        x86_direct_exception(x86, 7u, 0u, 0u);
         return 0;
     }
     /* A 128-bit register is two independent physical u64 lanes.  Both source
@@ -7976,6 +8679,36 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
     if (aligned && (address & 15u)) {
         x86_direct_exception(x86, 13u, 1u, 0u);
         return 0;
+    }
+    if (kind == 39u) {
+        u32 width = immediate ? 8u : 4u;
+        int user = (x86->system[X86_SYS_CS] & 3u) != 0u;
+        if (target_memory) {
+            u8 bytes[8];
+            u64 value = x86->xmm[source * 2u];
+            if (width == 8u) store_u64(bytes, value);
+            else store_u32(bytes, (u32)value);
+            if (!x86_direct_access_ready(x86, address, width, 1, user))
+                return 0;
+            if (x86_virtual_write(address, bytes, width, user) != 1) {
+                x86_direct_memory_abort(x86, 0xffu);
+                return 0;
+            }
+        } else if (source_memory) {
+            u8 bytes[8];
+            if (!x86_direct_read(x86, address, bytes, width, user)) return 0;
+            x86->xmm[target * 2u] = width == 8u
+                                  ? load_u64(bytes) : read_u32(bytes);
+            x86->xmm[target * 2u + 1u] = 0u;
+        } else if (width == 8u) {
+            x86->xmm[target * 2u] = x86->xmm[source * 2u];
+            if (immediate & 2u) x86->xmm[target * 2u + 1u] = 0u;
+        } else {
+            x86->xmm[target * 2u] =
+                (x86->xmm[target * 2u] & 0xffffffff00000000ull)
+                | (u32)x86->xmm[source * 2u];
+        }
+        return 1;
     }
     if (kind == 9u || kind == 13u) {
         u32 direction = immediate & 1u;
@@ -8054,6 +8787,54 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
         x86->xmm[lane] = (x86->xmm[lane] & ~mask) | ((u64)value << shift);
         return 1;
     }
+    if (kind == PL_X86_VECTOR_INSERT_LANE) {
+        int wide = (immediate & 4u) != 0u;
+        u32 lane = immediate & 3u;
+        u64 value;
+        int user = (x86->system[X86_SYS_CS] & 3u) != 0u;
+        if (source_memory) {
+            u8 bytes[8];
+            u32 width = wide ? 8u : 4u;
+            if (!x86_direct_read(x86, address, bytes, width, user)) return 0;
+            value = wide ? read_u64(bytes) : read_u32(bytes);
+        } else {
+            value = wide ? x86->registers[source]
+                         : (u32)x86->registers[source];
+        }
+        if (wide) {
+            x86->xmm[target * 2u + lane] = value;
+        } else {
+            u32 physical_lane = target * 2u + lane / 2u;
+            u32 shift = (lane & 1u) * 32u;
+            u64 mask = 0xffffffffull << shift;
+            x86->xmm[physical_lane] = (x86->xmm[physical_lane] & ~mask)
+                                    | (value << shift);
+        }
+        return 1;
+    }
+    if (kind == PL_X86_VECTOR_EXTRACT_LANE) {
+        int wide = (immediate & 4u) != 0u;
+        u32 lane = immediate & 3u;
+        u64 value = wide ? x86->xmm[source * 2u + lane]
+                  : (u32)(x86->xmm[source * 2u + lane / 2u]
+                        >> ((lane & 1u) * 32u));
+        if (target_memory) {
+            u8 bytes[8];
+            u32 width = wide ? 8u : 4u;
+            int user = (x86->system[X86_SYS_CS] & 3u) != 0u;
+            if (wide) store_u64(bytes, value);
+            else store_u32(bytes, (u32)value);
+            if (!x86_direct_access_ready(x86, address, width, 1, user))
+                return 0;
+            if (x86_virtual_write(address, bytes, width, user) != 1) {
+                x86_direct_memory_abort(x86, 0xffu);
+                return 0;
+            }
+        } else {
+            x86->registers[target] = value;
+        }
+        return 1;
+    }
     if (kind == 22u) {
         u32 word = immediate & 7u;
         int mmx = (immediate & 8u) != 0u;
@@ -8123,8 +8904,23 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
         }
         return 1;
     }
-    if (kind == 29u) {
-        x86->xmm[target * 2u] = x86->xmm[source * 2u + 1u];
+    if (kind == PL_X86_VECTOR_MOVE_LANE) {
+        u32 target_lane = immediate;
+        u32 source_lane = immediate ^ 1u;
+        x86->xmm[target * 2u + target_lane] =
+            x86->xmm[source * 2u + source_lane];
+        return 1;
+    }
+    if (kind == PL_X86_VECTOR_MMX_LANE_TRANSFER) {
+        if (!immediate) {
+            x86->xmm[target * 2u] = x86->x87_significand[source];
+            x86->xmm[target * 2u + 1u] = 0u;
+        } else {
+            x86->x87_significand[target] = x86->xmm[source * 2u];
+            x86->x87_sign_exponent[target] = 0xffffu;
+        }
+        x86->x87_tag = 0u;
+        x86->x87_status &= ~(7u << 11u);
         return 1;
     }
     if (kind == 30u) {
@@ -8187,23 +8983,31 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
     if (kind == 33u) {
         u32 segment = immediate & 7u;
         u32 address_bits = immediate & 8u ? 64u : 32u;
+        u32 vector = (immediate >> 4u) & 1u;
         u64 segment_base = 0u;
         /* QEMU's fixed oracle enters MMX state before forming the implicit
          * address.  Preserve that ordering even when segment validation or a
          * selected byte store faults. */
-        x86->x87_tag = 0u;
-        x86->x87_status &= ~(7u << 11u);
+        if (!vector) {
+            x86->x87_tag = 0u;
+            x86->x87_status &= ~(7u << 11u);
+        }
         if (!x86_direct_string_segment_base(x86, segment, &segment_base))
             return 0;
         u64 pointer = address_bits == 32u ? (u32)address : address;
         u64 base = segment_base + pointer;
-        u64 data = x86->x87_significand[target];
-        u64 mask = x86->x87_significand[source];
         int user = (x86->system[X86_SYS_CS] & 3u) != 0u;
-        for (u32 byte = 0u; byte < 8u; ++byte) {
-            if (!((mask >> (byte * 8u)) & 0x80u)) continue;
+        u32 bytes = vector ? 16u : 8u;
+        for (u32 byte = 0u; byte < bytes; ++byte) {
+            u32 lane = byte >> 3u;
+            u32 shift = (byte & 7u) * 8u;
+            u64 data = vector ? x86->xmm[target * 2u + lane]
+                              : x86->x87_significand[target];
+            u64 mask = vector ? x86->xmm[source * 2u + lane]
+                              : x86->x87_significand[source];
+            if (!((mask >> shift) & 0x80u)) continue;
             u64 at = base + byte;
-            u8 value = (u8)(data >> (byte * 8u));
+            u8 value = (u8)(data >> shift);
             if (!x86_direct_access_ready(x86, at, 1u, 1, user)) return 0;
             int written = x86_virtual_write(at, &value, 1u, user);
             if (!written) {
@@ -8224,7 +9028,10 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
     if (source_memory) {
         u8 bytes[16] = {0};
         u32 source_bytes = kind == 25u ? 4u
-                         : (kind == 10u && immediate == 29u)
+                         : (kind == 10u
+                            && (immediate == 29u
+                                || immediate
+                                   == PL_X86_PACKED_ZERO_EXTEND_DWORD_TO_QWORD))
                         || kind == 17u || kind == 21u ? 8u : 16u;
         if (!x86_direct_read(x86, address, bytes, source_bytes, user))
             return 0;
@@ -8246,6 +9053,28 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
         }
         return 1;
     }
+    if (kind == 41u) {
+        u32 mask = immediate
+                 ? (u32)((low >> 63u) | ((high >> 62u) & 2u))
+                 : (u32)((low >> 31u) & 1u)
+                   | (u32)((low >> 62u) & 2u)
+                   | (u32)((high >> 29u) & 4u)
+                   | (u32)((high >> 60u) & 8u);
+        x86->registers[target] = mask;
+        return 1;
+    }
+    if (kind == 45u) {
+        u64 source_low = x86->xmm[source * 2u];
+        u64 source_high = x86->xmm[source * 2u + 1u];
+        u32 mask = 0u;
+        for (u32 lane = 0u; lane < 8u; ++lane) {
+            mask |= (u32)((source_low >> (lane * 8u + 7u)) & 1u) << lane;
+            mask |= (u32)((source_high >> (lane * 8u + 7u)) & 1u)
+                  << (lane + 8u);
+        }
+        x86->registers[target] = mask;
+        return 1;
+    }
     if (kind == 25u) {
         u32 exceptions = 0u;
         u32 relation = x86_float32_relation(
@@ -8262,7 +9091,16 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
         x86->rflags = (x86->rflags & ~0x8d5ull) | flags[relation];
         return 1;
     }
-    if (kind == 1u) {
+    if (kind == PL_X86_VECTOR_BYTE_BLEND) {
+        u64 target_low = x86->xmm[target * 2u];
+        u64 target_high = x86->xmm[target * 2u + 1u];
+        u64 mask_low = ((x86->xmm[0] >> 7u)
+                        & 0x0101010101010101ull) * 0xffu;
+        u64 mask_high = ((x86->xmm[1] >> 7u)
+                         & 0x0101010101010101ull) * 0xffu;
+        low = (low & mask_low) | (target_low & ~mask_low);
+        high = (high & mask_high) | (target_high & ~mask_high);
+    } else if (kind == 1u) {
         low ^= x86->xmm[target * 2u];
         high ^= x86->xmm[target * 2u + 1u];
     } else if (kind == 2u) {
@@ -8302,7 +9140,7 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
         }
         low = (u64)low0 | ((u64)low1 << 32u);
         high = (u64)high0 | ((u64)high1 << 32u);
-    } else if (kind == 7u) {
+    } else if (kind == 7u || kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE) {
         u64 result_low = 0u;
         u64 result_high = 0u;
         for (u32 lane = 0u; lane < 4u; ++lane) {
@@ -8393,9 +9231,62 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
                 low, high, immediate);
             low = result_low;
             high = result_high;
+        } else if (immediate
+                   == PL_X86_PACKED_ZERO_EXTEND_DWORD_TO_QWORD) {
+            high = (u32)(low >> 32u);
+            low = (u32)low;
+        } else if (immediate == 59u || immediate == 61u
+                || immediate == 63u || immediate == 68u) {
+            u64 result_low = x86_packed_extended64(
+                left_low, left_high, immediate);
+            u64 result_high = x86_packed_extended64(
+                low, high, immediate);
+            low = result_low;
+            high = result_high;
         } else {
             low = x86_packed_extended64(left_low, low, immediate);
             high = x86_packed_extended64(left_high, high, immediate);
+        }
+    } else if (kind == 40u) {
+        u64 target_low = x86->xmm[target * 2u];
+        u64 target_high = x86->xmm[target * 2u + 1u];
+        u64 source_low = low;
+        u64 source_high = high;
+        low = (immediate & 1u) ? target_high : target_low;
+        high = (immediate & 2u) ? source_high : source_low;
+    } else if (kind == 44u) {
+        u64 target_low = x86->xmm[target * 2u];
+        u64 target_high = x86->xmm[target * 2u + 1u];
+        u32 byte = immediate;
+        if (!byte) {
+            /* The low half of the concatenation is the source operand. */
+        } else if (byte < 8u) {
+            u32 shift = byte * 8u;
+            low = (low >> shift) | (high << (64u - shift));
+            high = (high >> shift) | (target_low << (64u - shift));
+        } else if (byte == 8u) {
+            low = high;
+            high = target_low;
+        } else if (byte < 16u) {
+            u32 shift = (byte - 8u) * 8u;
+            low = (high >> shift) | (target_low << (64u - shift));
+            high = (target_low >> shift) | (target_high << (64u - shift));
+        } else if (byte == 16u) {
+            low = target_low;
+            high = target_high;
+        } else if (byte < 24u) {
+            u32 shift = (byte - 16u) * 8u;
+            low = (target_low >> shift) | (target_high << (64u - shift));
+            high = target_high >> shift;
+        } else if (byte == 24u) {
+            low = target_high;
+            high = 0u;
+        } else if (byte < 32u) {
+            low = target_high >> ((byte - 24u) * 8u);
+            high = 0u;
+        } else {
+            low = 0u;
+            high = 0u;
         }
     } else if (kind == 27u) {
         u64 shuffled = 0u;
@@ -8593,18 +9484,28 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
         u64 left_low = x86->xmm[target * 2u];
         u64 left_high = x86->xmm[target * 2u + 1u];
         u32 exceptions = 0u;
-        u32 result0 = x86_float32_minmax(
-            (u32)left_low, (u32)low, immediate,
-            x86->mxcsr, &exceptions);
-        u32 result1 = x86_float32_minmax(
-            (u32)(left_low >> 32u), (u32)(low >> 32u), immediate,
-            x86->mxcsr, &exceptions);
-        u32 result2 = x86_float32_minmax(
-            (u32)left_high, (u32)high, immediate,
-            x86->mxcsr, &exceptions);
-        u32 result3 = x86_float32_minmax(
-            (u32)(left_high >> 32u), (u32)(high >> 32u), immediate,
-            x86->mxcsr, &exceptions);
+        if (immediate & 2u) {
+            low = x86_float64_minmax(
+                left_low, low, immediate & 1u, x86->mxcsr, &exceptions);
+            high = x86_float64_minmax(
+                left_high, high, immediate & 1u,
+                x86->mxcsr, &exceptions);
+        } else {
+            u32 result0 = x86_float32_minmax(
+                (u32)left_low, (u32)low, immediate,
+                x86->mxcsr, &exceptions);
+            u32 result1 = x86_float32_minmax(
+                (u32)(left_low >> 32u), (u32)(low >> 32u), immediate,
+                x86->mxcsr, &exceptions);
+            u32 result2 = x86_float32_minmax(
+                (u32)left_high, (u32)high, immediate,
+                x86->mxcsr, &exceptions);
+            u32 result3 = x86_float32_minmax(
+                (u32)(left_high >> 32u), (u32)(high >> 32u), immediate,
+                x86->mxcsr, &exceptions);
+            low = result0 | ((u64)result1 << 32u);
+            high = result2 | ((u64)result3 << 32u);
+        }
         x86->mxcsr |= exceptions;
         u32 unmasked = exceptions & ~(x86->mxcsr >> 7u) & 0x3fu;
         if (unmasked) {
@@ -8612,8 +9513,6 @@ EXPORT int vm_x86_direct_vector(u32 machine, u64 descriptor, u64 address)
                 x86, x86->cr4 & (1u << 10u) ? 19u : 6u, 0u, 0u);
             return 0;
         }
-        low = result0 | ((u64)result1 << 32u);
-        high = result2 | ((u64)result3 << 32u);
     }
     x86->xmm[target * 2u] = low;
     x86->xmm[target * 2u + 1u] = high;
@@ -10789,15 +11688,19 @@ EXPORT int vm_x86_direct_x87(u32 machine, u64 address, u64 descriptor)
     u32 target = (u32)(descriptor >> 36u) & 7u;
     u32 options = (u32)(descriptor >> 40u) & 3u;
     u32 variant = (u32)(descriptor >> 44u) & 15u;
+    u32 packed_operation = (u32)(descriptor >> 40u) & 0x7fu;
     u32 immediate = (u32)(descriptor >> 48u) & 0xffu;
     u64 canonical = kind | ((u64)width << 8u) | ((u64)fop << 16u)
                   | ((u64)source << 32u) | ((u64)target << 36u)
-                  | ((u64)options << 40u) | ((u64)variant << 44u)
+                  | (kind == 37u
+                     ? (u64)packed_operation << 40u
+                     : ((u64)options << 40u) | ((u64)variant << 44u))
                   | ((u64)immediate << 48u);
     if (machine != (u32)(uptr)&x86->architectural
             || !x86->active || !x86->executable_published
-            || kind > 58u || descriptor != canonical
-            || (kind != 38u && kind != 46u && immediate)
+            || kind > 61u || descriptor != canonical
+            || (kind != 38u && kind != 46u && kind != 59u
+                && kind != 61u && immediate)
             || (kind != 36u && kind != 37u
                 && kind != 39u && kind != 40u
                 && kind != 45u && kind != 46u
@@ -10807,6 +11710,7 @@ EXPORT int vm_x86_direct_x87(u32 machine, u64 address, u64 descriptor)
                 && kind != 54u
                 && kind != 55u
                 && kind != 58u
+                && kind != 59u
                 && kind != 11u
                 && !(kind == 26u && (options & 2u))
                 && variant)
@@ -10911,7 +11815,10 @@ EXPORT int vm_x86_direct_x87(u32 machine, u64 address, u64 descriptor)
                         && (options | (variant << 2u)) != 29u
                         && (options | (variant << 2u)) != 39u)
                     || (width && source)
-                    || (options | (variant << 2u)) > 47u))
+                    || packed_operation
+                       == PL_X86_PACKED_ZERO_EXTEND_DWORD_TO_QWORD
+                    || (options | (variant << 2u))
+                       > PL_X86_PACKED_MULTIPLY_ADD_UNSIGNED_SIGNED_BYTE))
             || (kind == 38u
                 && ((width != 0u && width != 8u)
                     || (width && source) || options || variant))
@@ -10979,7 +11886,21 @@ EXPORT int vm_x86_direct_x87(u32 machine, u64 address, u64 descriptor)
                     || variant || immediate))
             || (kind == 58u
                 && (address || width || source || target || options
-                    || variant > 3u || immediate))) {
+                    || variant > 3u || immediate))
+            || (kind == 59u
+                && (address || width || source
+                    || ((options | (variant << 2u)) != 28u
+                        && (options | (variant << 2u)) != 36u
+                        && (options | (variant << 2u)) != 44u
+                        && (options | (variant << 2u)) != 45u)))
+            || (kind == 60u
+                && ((width != 0u && width != 8u)
+                    || (width ? source : address)
+                    || options || variant || immediate))
+            || (kind == 61u
+                && ((width != 0u && width != 8u)
+                    || (width ? source : address)
+                    || options || variant))) {
         x86_direct_memory_abort(x86, 0xffu);
         return 0;
     }
@@ -10987,10 +11908,57 @@ EXPORT int vm_x86_direct_x87(u32 machine, u64 address, u64 descriptor)
                    || (kind >= 23u && kind <= 26u)
                    || (kind >= 37u && kind <= 41u)
                    || (kind >= 44u && kind <= 47u)
+                   || (kind >= 59u && kind <= 61u)
                    || kind == 29u || kind == 31u || kind == 32u
                    || kind == 34u || kind == 55u;
     if (!x86_x87_ready(x86, non_waiting ? -1 : kind == 0u)) return 0;
     if (!kind) return 1;
+    if (kind == 59u) {
+        u32 operation = options | (variant << 2u);
+        u64 value = x86->x87_significand[target];
+        x86->x87_significand[target] =
+            x86_packed_extended64(value, immediate, operation);
+        x86->x87_tag = 0u;
+        x86->x87_status &= ~(7u << 11u);
+        x86->x87_ip = x86->rip;
+        x86->x87_opcode = (pl_u16)fop;
+        return 1;
+    }
+    if (kind == 60u || kind == 61u) {
+        u64 right;
+        if (width) {
+            u8 bytes[8];
+            if (!x86_direct_read(x86, address, bytes, 8u,
+                    (x86->system[X86_SYS_CS] & 3u) != 0u)) return 0;
+            right = load_u64(bytes);
+        } else {
+            right = x86->x87_significand[source];
+        }
+        u64 left = x86->x87_significand[target];
+        u64 result = 0u;
+        if (kind == 60u) {
+            for (u32 lane = 0u; lane < 8u; ++lane) {
+                u32 control = (u32)(right >> (lane * 8u)) & 0xffu;
+                if (!(control & 0x80u))
+                    result |= ((left >> ((control & 7u) * 8u)) & 0xffu)
+                            << (lane * 8u);
+            }
+        } else if (!immediate) {
+            result = right;
+        } else if (immediate < 8u) {
+            u32 shift = immediate * 8u;
+            result = (right >> shift) | (left << (64u - shift));
+        } else if (immediate < 16u) {
+            result = left >> ((immediate - 8u) * 8u);
+        }
+        x86->x87_significand[target] = result;
+        x86->x87_tag = 0u;
+        x86->x87_status &= ~(7u << 11u);
+        x86->x87_ip = x86->rip;
+        x86->x87_dp = width ? address : 0u;
+        x86->x87_opcode = (pl_u16)fop;
+        return 1;
+    }
     if (kind == 44u) {
         x86_x87_reset(x86);
         return 1;
@@ -11766,7 +12734,7 @@ EXPORT int vm_x86_direct_x87(u32 machine, u64 address, u64 descriptor)
             right = x86->x87_significand[source];
         }
         u64 left = x86->x87_significand[target];
-        u32 operation = options | (variant << 2u);
+        u32 operation = packed_operation;
         u64 result = 0u;
         if (operation >= 9u) {
             result = x86_packed_extended64(left, right, operation);
@@ -12799,7 +13767,10 @@ EXPORT int vm_x86_direct_write_segment(
     u32 cpl = (u32)x86->system[X86_SYS_CS] & 3u;
     int stack = segment == 2u;
     if (!error) {
-        if (stack) {
+        /* In 64-bit mode ring zero may deliberately load a null SS.  Linux
+         * does this immediately after publishing its long-mode GDT.  Other
+         * modes and less-privileged rings retain the architectural #GP(0). */
+        if (stack && (!(x86->efer & (1u << 10u)) || cpl != 0u)) {
             x86_direct_exception(x86, 13u, 1u, 0u);
             return 0;
         }
@@ -13683,6 +14654,11 @@ EXPORT u64 vm_x86_direct_memory_repeat(
         u32 count = (u32)(x86->direct_repeat_remaining < available
                         ? x86->direct_repeat_remaining : available);
         u32 physical_slot = x86_physical_slot(physical_page);
+        if (!x86_physical_mutation_begin(
+                x86, physical_slot, virtual_address)) {
+            x86_direct_memory_abort(x86, 0xffu);
+            return 0u;
+        }
         for (u32 index = 0u; index < count; ++index) {
             u32 phase = x86->direct_repeat_phase;
             x86->physical[physical_slot][offset + index] =
@@ -13800,6 +14776,11 @@ EXPORT u64 vm_x86_direct_memory_copy(
                 if (count > X86_PHYSICAL_PAGE_BYTES - offset)
                     count = X86_PHYSICAL_PAGE_BYTES - offset;
                 u32 physical_slot = x86_physical_slot(physical_page);
+                if (!x86_physical_mutation_begin(
+                        x86, physical_slot, address)) {
+                    x86_direct_memory_abort(x86, 0xffu);
+                    return 0u;
+                }
                 for (u32 index = 0u; index < count; ++index)
                     x86->physical[physical_slot][offset + index]
                         = x86->direct_copy_buffer[
@@ -14467,6 +15448,7 @@ static int x86_invalidate_virtual(u64 address)
 {
     X86Workspace *x86 = x86_machine();
     StepWorkspace *step = step_machine();
+    x86_executable_unpublish_neighborhood(x86, address);
     u64 page = address >> 12u;
     u32 slot = (u32)page & (STEP_MEMORY_PAGES - 1u);
     u64 word = step_slot_load(step, slot);
@@ -14530,6 +15512,7 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
     x86->direct_blocks = 0;
     x86->direct_function = 0u;
     x86->direct_residual = 0u;
+    x86->direct_residual_valid = 0u;
     x86->direct_memory_result = 0u;
     x86->direct_transaction_active = 0u;
     x86->direct_repeat_active = 0u;
@@ -14537,10 +15520,15 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
     x86->direct_find_active = 0u;
     x86->direct_frame_active = 0u;
     x86->executable_root_loading = 0;
+    x86->executable_delivery_published = 0u;
+    x86->executable_delivery_loading = 0u;
+    x86->executable_delivery_locator_valid = 0u;
+    x86->executable_delivery_resolves = 0u;
+    x86->executable_delivery_nodes = 0u;
+    x86->executable_delivery_cache_hits = 0u;
     x86->executable_page_loading = 0;
     x86->executable_code_loading = 0;
     x86->executable_map_loading = 0;
-    x86->executable_map_tail = 0;
     x86->executable_map_rank = 0;
     x86->executable_residual_loading = 0u;
     x86->executable_residual_edge = 0u;
@@ -14550,6 +15538,13 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
     x86->executable_instantiation_loading = 0u;
     x86->executable_instantiation_parameter = 0u;
     x86->executable_instantiation_rank = 0u;
+    x86->executable_compiled_open = 0u;
+    x86->executable_compiled_module_bytes = 0u;
+    x86->executable_compiled_value_count = 0u;
+    x86->executable_compiled_function = 0u;
+    x86->executable_compiled_error = 0;
+    x86->executable_admission_error = 0;
+    x86->executable_admission_frame = 0u;
     x86->executable_index_starts = 0u;
     x86->executable_index_nodes = 0u;
     x86->executable_index_cache_hits = 0u;
@@ -14566,53 +15561,79 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
     for (u32 slot = 0u; slot < X86_EXECUTABLE_PAGE_CACHE; ++slot) {
         x86->executable_code_page[slot] = 0u;
         x86->executable_code_generation[slot] = 0u;
+        x86->executable_code_address_generation[slot] = 0u;
+        x86->executable_code_mapped_mask[slot] = 0u;
+        for (u32 dependency = 0u;
+             dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency) {
+            x86->executable_code_physical[slot][dependency] = X86_NO_PAGE;
+            x86->executable_code_physical_generation[slot][dependency] = 0u;
+            x86->executable_code_physical_slot[slot][dependency] =
+                X86_PHYSICAL_PAGES;
+        }
         x86->executable_code_function[slot] = 0u;
         x86->executable_code_argument[slot] = 0u;
         x86->executable_code_valid[slot] = 0u;
+        x86->executable_code_product_epoch[slot] = 0u;
     }
-    for (u32 slot = 0u; slot < X86_EXECUTABLE_MODULE_CACHE; ++slot) {
-        x86->executable_module_first[slot] = 0u;
-        x86->executable_module_count[slot] = 0u;
-        x86->executable_module_valid[slot] = 0u;
-    }
-    for (u32 slot = 0u; slot < X86_EXECUTABLE_MODULE_PAGE_CACHE; ++slot) {
-        x86->executable_module_page_tag[slot] = 0u;
-        x86->executable_module_page_first[slot] = 0u;
-        x86->executable_module_page_count[slot] = 0u;
-    }
+    x86->executable_code_source_ready = 0u;
+    x86->executable_page_product_loading = 0u;
+    x86->executable_active_product_slot = X86_EXECUTABLE_PAGE_CACHE;
+    x86->executable_active_product_epoch = 0u;
+    x86->executable_projection_product_slot = X86_EXECUTABLE_PAGE_CACHE;
+    x86->executable_projection_product_epoch = 0u;
+    x86->executable_code_source_virtual_page = 0u;
+    x86->executable_code_source_address_generation = 0u;
+    x86->executable_code_source_mapped_mask = 0u;
+    for (u32 dependency = 0u;
+         dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency)
+        x86->executable_code_source_physical_slot[dependency] =
+            X86_PHYSICAL_PAGES;
+    x86->executable_residency_base = 0u;
+    x86->executable_residency_bytes = 0u;
+    x86->executable_function_limit = 0u;
+    x86->executable_topology_loading = 0u;
+    x86->executable_topology_rank = 0xffffffffu;
+    x86->executable_topology_body_bytes = 0u;
+    x86->executable_topology_module_bytes = 0u;
     for (u32 slot = 0u; slot < X86_EXECUTABLE_BINDING_CACHE; ++slot) {
         x86->executable_binding_tag[slot] = 0u;
         x86->executable_binding_generation[slot] = 0u;
         x86->executable_binding_argument[slot] = 0u;
     }
-    for (u32 slot = 0u; slot < X86_EXECUTABLE_ENTRY_PAGE_CACHE; ++slot) {
-        x86->executable_entry_page_tag[slot] = 0u;
-        for (u32 row = 0u; row < PL_ENTRY_PAGE_ROWS; ++row)
-            x86->executable_entry_page_rows[slot][row] = 0u;
-    }
-    for (u32 slot = 0u; slot < X86_EXECUTABLE_ENTRY_TAIL_CACHE; ++slot) {
-        x86->executable_entry_tail_tag[slot] = 0u;
-        for (u32 value = 0u; value < PL_ENTRY_TAIL_VALUES; ++value)
-            x86->executable_entry_tail_rows[slot][value] = 0u;
+    for (u32 slot = 0u; slot < X86_EXECUTABLE_ENTRY_GENERATOR_CACHE;
+         ++slot) {
+        x86->executable_entry_generator_tag[slot] = 0u;
+        x86->executable_entry_generator_local_tag[slot] = 0u;
+        x86->executable_entry_generator_local_epoch[slot] = 0u;
+        for (u32 value = 0u; value < PL_ENTRY_GENERATOR_VALUES; ++value)
+            x86->executable_entry_generator_values[slot][value] = 0u;
     }
     for (u32 slot = 0u; slot < X86_EXECUTABLE_RESIDUAL_STATE_CACHE;
          ++slot) {
         x86->executable_residual_state_tag[slot] = 0u;
+        x86->executable_residual_state_local_tag[slot] = 0u;
+        x86->executable_residual_state_local_epoch[slot] = 0u;
         x86->executable_residual_state_count[slot] = 0u;
         x86->executable_residual_state_first_edge[slot] = 0u;
     }
     for (u32 slot = 0u; slot < X86_EXECUTABLE_RESIDUAL_EDGE_CACHE;
          ++slot) {
         x86->executable_residual_edge_tag[slot] = 0u;
+        x86->executable_residual_edge_local_tag[slot] = 0u;
+        x86->executable_residual_edge_local_epoch[slot] = 0u;
         x86->executable_residual_edge_count[slot] = 0u;
     }
     for (u32 slot = 0u; slot < X86_EXECUTABLE_INSTANTIATION_CACHE;
          ++slot) {
         x86->executable_instantiation_tag[slot] = 0u;
+        x86->executable_instantiation_local_tag[slot] = 0u;
+        x86->executable_instantiation_local_epoch[slot] = 0u;
         x86->executable_instantiation_count[slot] = 0u;
     }
     for (u32 slot = 0u; slot < X86_EXECUTABLE_PARAMETER_CACHE; ++slot) {
         x86->executable_parameter_tag[slot] = 0u;
+        x86->executable_parameter_local_tag[slot] = 0u;
+        x86->executable_parameter_local_epoch[slot] = 0u;
         x86->executable_parameter_count[slot] = 0u;
     }
     x86->executable_table_base = 0;
@@ -14689,6 +15710,8 @@ EXPORT int vm_x86_open(u64 session, u64 rip, u64 rflags,
         x86->physical_lookup_valid[locator] = 0u;
     for (u32 slot = 0; slot < X86_PHYSICAL_PAGES; ++slot) {
         x86->physical_page[slot] = X86_NO_PAGE;
+        x86->physical_generation[slot] = 0u;
+        x86->physical_code_owners[slot] = 0u;
         x86->physical_valid[slot] = 0;
         x86->physical_dirty[slot] = 0;
         x86->physical_referenced[slot] = 0u;
@@ -14714,12 +15737,17 @@ static int x86_supply_physical(u64 session, u64 lease,
                        / X86_PHYSICAL_PAGE_BYTES)
         return 0;
     u32 slot = x86_physical_slot(page);
+    u64 generation = step_new_capability();
+    if (!generation) return 0;
     u64 prior = x86->physical_page[slot];
-    if (x86->physical_valid[slot])
+    if (x86->physical_valid[slot]) {
+        x86_executable_unpublish_physical_slot(x86, slot);
         x86_physical_remove_lookup(x86, prior, slot);
+    }
     for (u32 index = 0; index < X86_PHYSICAL_PAGE_BYTES; ++index)
         x86->physical[slot][index] = x86->physical_transfer[index];
     x86->physical_page[slot] = page;
+    x86->physical_generation[slot] = generation;
     x86->physical_valid[slot] = 1u;
     x86->physical_dirty[slot] = 0;
     x86_physical_publish_lookup(x86, page, slot);
@@ -14749,54 +15777,130 @@ static int x86_executable_request_active(const X86Workspace *x86)
         || x86->executable_code_loading || x86->executable_map_loading
         || x86->executable_residual_loading
         || x86->executable_kernel_loading
-        || x86->executable_instantiation_loading;
+        || x86->executable_instantiation_loading
+        || x86->executable_page_product_loading
+        || x86->executable_topology_loading;
 }
 
-static u32 x86_executable_module_slot(u32 first, u32 count)
+static int x86_executable_residency_resize(
+    X86Workspace *x86, u32 function_count, int clear)
 {
-    return (first ^ (count * 0x9e3779b9u))
-         & (X86_EXECUTABLE_MODULE_CACHE - 1u);
+    if (!function_count) return 0;
+    u32 bytes = (function_count + 7u) >> 3u;
+    u32 old_base = x86->executable_residency_base;
+    u32 old_bytes = x86->executable_residency_bytes;
+    if (bytes > executable_residency_capacity) {
+        u32 pages = (bytes + GUEST_PAGE_BYTES - 1u) >> 16u;
+        u32 current = (u32)__builtin_wasm_memory_size(0);
+        u32 capacity_pages = executable_residency_capacity >> 16u;
+        u32 prior;
+        u32 next_storage = executable_residency_storage;
+        if (executable_residency_storage
+                && current
+                   == (executable_residency_storage
+                       + executable_residency_capacity) >> 16u) {
+            prior = (u32)__builtin_wasm_memory_grow(
+                0, pages - capacity_pages);
+        } else {
+            prior = (u32)__builtin_wasm_memory_grow(0, pages);
+            if (prior != 0xffffffffu)
+                next_storage = prior << 16u;
+        }
+        if (prior == 0xffffffffu) return 0;
+        if (!clear && old_base && old_bytes
+                && next_storage != old_base) {
+            u8 *target = (u8 *)(uptr)next_storage;
+            const u8 *source = (const u8 *)(uptr)old_base;
+            for (u32 index = 0u; index < old_bytes; ++index)
+                target[index] = source[index];
+        }
+        executable_residency_storage = next_storage;
+        executable_residency_capacity = pages << 16u;
+    }
+    x86->executable_residency_base = executable_residency_storage;
+    x86->executable_residency_bytes = bytes;
+    u8 *resident = (u8 *)(uptr)x86->executable_residency_base;
+    u32 first = clear ? 0u : old_bytes;
+    for (u32 index = first; index < bytes; ++index) resident[index] = 0u;
+    return 1;
+}
+
+static int x86_executable_residency_open(
+    X86Workspace *x86, u32 function_count)
+{
+    return x86_executable_residency_resize(x86, function_count, 1);
+}
+
+static int x86_executable_range_valid(
+    const X86Workspace *x86, u32 first, u32 count)
+{
+    return x86->executable_residency_base && count
+        && first < x86->executable_function_limit
+        && count <= x86->executable_function_limit - first;
+}
+
+static int x86_executable_range_resident(
+    const X86Workspace *x86, u32 first, u32 count)
+{
+    if (!x86_executable_range_valid(x86, first, count)) return 0;
+    const u8 *resident =
+        (const u8 *)(uptr)x86->executable_residency_base;
+    u32 final = first + count - 1u;
+    u32 first_byte = first >> 3u;
+    u32 final_byte = final >> 3u;
+    u32 first_mask = 0xffu << (first & 7u);
+    u32 final_mask = 0xffu >> (7u - (final & 7u));
+    if (first_byte == final_byte) {
+        u32 mask = first_mask & final_mask;
+        return (resident[first_byte] & mask) == mask;
+    }
+    if ((resident[first_byte] & first_mask) != first_mask
+            || (resident[final_byte] & final_mask) != final_mask)
+        return 0;
+    for (u32 byte = first_byte + 1u; byte < final_byte; ++byte)
+        if (resident[byte] != 0xffu) return 0;
+    return 1;
+}
+
+static int x86_executable_publish_range(
+    X86Workspace *x86, u32 first, u32 count)
+{
+    if (!x86_executable_range_valid(x86, first, count)) return 0;
+    u8 *resident = (u8 *)(uptr)x86->executable_residency_base;
+    u32 final = first + count - 1u;
+    u32 first_byte = first >> 3u;
+    u32 final_byte = final >> 3u;
+    u32 first_mask = 0xffu << (first & 7u);
+    u32 final_mask = 0xffu >> (7u - (final & 7u));
+    if (first_byte == final_byte) {
+        resident[first_byte] |= (u8)(first_mask & final_mask);
+        return 1;
+    }
+    resident[first_byte] |= (u8)first_mask;
+    for (u32 byte = first_byte + 1u; byte < final_byte; ++byte)
+        resident[byte] = 0xffu;
+    resident[final_byte] |= (u8)final_mask;
+    return 1;
 }
 
 static int x86_executable_module_resident(
     const X86Workspace *x86, const pl_executable_module *module)
 {
-    u32 first = (u32)module->first_function;
-    u32 slot = x86_executable_module_slot(first, module->function_count);
-    return x86->executable_module_valid[slot]
-        && x86->executable_module_first[slot] == first
-        && x86->executable_module_count[slot] == module->function_count;
+    return x86_executable_range_resident(
+        x86, (u32)module->first_function, module->function_count);
 }
 
-static void x86_executable_publish_module(
+static int x86_executable_publish_module(
     X86Workspace *x86, const pl_executable_module *module)
 {
-    u32 first = (u32)module->first_function;
-    u32 slot = x86_executable_module_slot(first, module->function_count);
-    x86->executable_module_first[slot] = first;
-    x86->executable_module_count[slot] = module->function_count;
-    x86->executable_module_valid[slot] = 1u;
-    u32 final = first + module->function_count - 1u;
-    for (u32 page = first >> 10u; page <= (final >> 10u); ++page) {
-        u32 page_slot = page & (X86_EXECUTABLE_MODULE_PAGE_CACHE - 1u);
-        x86->executable_module_page_tag[page_slot] = 0u;
-        x86->executable_module_page_first[page_slot] = first;
-        x86->executable_module_page_count[page_slot] =
-            module->function_count;
-        x86->executable_module_page_tag[page_slot] = page + 1u;
-    }
+    return x86_executable_publish_range(
+        x86, (u32)module->first_function, module->function_count);
 }
 
 static int x86_executable_kernel_resident(
     const X86Workspace *x86, u32 function)
 {
-    u32 page = function >> 10u;
-    u32 slot = page & (X86_EXECUTABLE_MODULE_PAGE_CACHE - 1u);
-    if (x86->executable_module_page_tag[slot] != page + 1u)
-        return 0;
-    u32 first = x86->executable_module_page_first[slot];
-    u32 count = x86->executable_module_page_count[slot];
-    return function >= first && function - first < count;
+    return x86_executable_range_resident(x86, function, 1u);
 }
 
 static u32 x86_executable_page_slot(u64 page)
@@ -14813,29 +15917,392 @@ static int x86_executable_page_resident(const X86Workspace *x86, u64 page,
             || x86->executable_code_page[slot] != page
             || x86->executable_code_generation[slot] != generation)
         return 0;
+    u32 mapped = x86->executable_code_mapped_mask[slot];
+    if (mapped) {
+        if (x86->executable_code_address_generation[slot]
+                != step_machine()->memory_generation)
+            return 0;
+        for (u32 dependency = 0u;
+             dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency) {
+            if (!(mapped & (1u << dependency))) continue;
+            u32 physical_slot =
+                x86->executable_code_physical_slot[slot][dependency];
+            if (physical_slot >= X86_PHYSICAL_PAGES
+                    || !x86->physical_valid[physical_slot]
+                    || x86->physical_page[physical_slot]
+                       != x86->executable_code_physical[slot][dependency]
+                    || x86->physical_generation[physical_slot]
+                       != x86->executable_code_physical_generation[slot]
+                          [dependency])
+                return 0;
+        }
+    }
     *function = x86->executable_code_function[slot];
     if (argument) *argument = x86->executable_code_argument[slot];
     return 1;
 }
 
-static void x86_executable_publish_page(
-    X86Workspace *x86, const pl_executable_binding *binding)
+static const pl_page_product *x86_executable_active_product(
+    const X86Workspace *x86)
 {
-    u32 slot = x86_executable_page_slot(binding->virtual_page);
-    x86->executable_code_page[slot] = binding->virtual_page;
-    x86->executable_code_generation[slot] = binding->generation;
-    x86->executable_code_function[slot] = binding->dispatch_function;
-    x86->executable_code_argument[slot] = binding->dispatch_argument;
-    x86->executable_code_valid[slot] = 1u;
-    u32 rank = binding->dispatch_argument;
-    if (rank < x86->executable_root.entry_page_count) {
-        u32 binding_slot = rank & (X86_EXECUTABLE_BINDING_CACHE - 1u);
-        x86->executable_binding_generation[binding_slot] =
-            (u32)binding->generation;
-        x86->executable_binding_argument[binding_slot] = rank;
-        /* Publish the tag after every value the generated dispatcher reads. */
-        x86->executable_binding_tag[binding_slot] = rank + 1u;
+    if (!x86->executable_active_product_epoch) return 0;
+    u32 slot = x86->executable_active_product_slot;
+    if (slot >= X86_EXECUTABLE_PAGE_CACHE
+            || !x86->executable_code_valid[slot]
+            || x86->executable_code_product_epoch[slot]
+               != x86->executable_active_product_epoch
+            || x86->executable_code_page[slot]
+               != (x86->rip & ~((u64)PL_EXECUTABLE_PAGE_BYTES - 1u)))
+        return 0;
+    u32 function = 0u;
+    if (!x86_executable_page_resident(
+            x86, x86->executable_code_page[slot],
+            x86->executable_root.entry_generation, &function, 0))
+        return 0;
+    return &x86->executable_code_product[slot];
+}
+
+static int x86_executable_projection_current(const X86Workspace *x86)
+{
+    if (x86->executable_projection_product_epoch
+            != x86->executable_active_product_epoch
+            || x86->executable_projection_product_slot
+               != x86->executable_active_product_slot)
+        return 0;
+    return !x86->executable_projection_product_epoch
+        || x86_executable_active_product(x86) != 0;
+}
+
+static void x86_executable_bind_projection(X86Workspace *x86)
+{
+    x86->executable_projection_product_slot =
+        x86->executable_active_product_slot;
+    x86->executable_projection_product_epoch =
+        x86->executable_active_product_epoch;
+}
+
+static u32 x86_executable_entry_page_count(const X86Workspace *x86)
+{
+    if (!x86->executable_active_product_epoch)
+        return x86->executable_root.entry_page_count;
+    return x86_executable_active_product(x86) ? 1u : 0u;
+}
+
+static u32 x86_executable_entry_generator_count(const X86Workspace *x86)
+{
+    const pl_page_product *product = x86_executable_active_product(x86);
+    return x86->executable_active_product_epoch
+         ? (product ? product->entry_generator_count : 0u)
+         : x86->executable_root.entry_generator_count;
+}
+
+static u32 x86_executable_residual_count(const X86Workspace *x86)
+{
+    const pl_page_product *product = x86_executable_active_product(x86);
+    return x86->executable_active_product_epoch
+         ? (product ? product->residual_count : 0u)
+         : x86->executable_root.residual_count;
+}
+
+static u32 x86_executable_residual_edge_count(const X86Workspace *x86)
+{
+    const pl_page_product *product = x86_executable_active_product(x86);
+    return x86->executable_active_product_epoch
+         ? (product ? product->residual_edge_count : 0u)
+         : x86->executable_root.residual_edge_count;
+}
+
+static u32 x86_executable_instantiation_count(const X86Workspace *x86)
+{
+    const pl_page_product *product = x86_executable_active_product(x86);
+    return x86->executable_active_product_epoch
+         ? (product ? product->instantiation_count : 0u)
+         : x86->executable_root.instantiation_count;
+}
+
+static u32 x86_executable_parameter_count(const X86Workspace *x86)
+{
+    const pl_page_product *product = x86_executable_active_product(x86);
+    return x86->executable_active_product_epoch
+         ? (product ? product->parameter_word_count : 0u)
+         : x86->executable_root.parameter_word_count;
+}
+
+static u32 x86_executable_function_limit(const X86Workspace *x86)
+{
+    const pl_page_product *product = x86_executable_active_product(x86);
+    return x86->executable_active_product_epoch
+         ? (product ? product->function_limit : 0u)
+         : x86->executable_root.function_count;
+}
+
+static const pl_index_ref *x86_executable_projection_resources(
+    const X86Workspace *x86)
+{
+    const pl_page_product *product = x86_executable_active_product(x86);
+    return x86->executable_active_product_epoch
+         ? (product ? &product->resources : 0)
+         : &x86->executable_root.resources;
+}
+
+static int x86_executable_projection_tag(
+    const X86Workspace *x86, u32 rank,
+    u32 static_tag, u32 local_tag, u64 local_epoch)
+{
+    return x86->executable_active_product_epoch
+         ? local_tag == rank + 1u
+            && local_epoch == x86->executable_active_product_epoch
+         : static_tag == rank + 1u;
+}
+
+static void x86_executable_projection_unpublish_tag(
+    u32 *static_tag, u32 *local_tag, u64 *local_epoch)
+{
+    *static_tag = 0u;
+    *local_tag = 0u;
+    *local_epoch = 0u;
+}
+
+static void x86_executable_projection_publish_tag(
+    const X86Workspace *x86, u32 rank,
+    u32 *static_tag, u32 *local_tag, u64 *local_epoch)
+{
+    if (x86->executable_active_product_epoch) {
+        *local_epoch = x86->executable_active_product_epoch;
+        *local_tag = rank + 1u;
+    } else {
+        *static_tag = rank + 1u;
     }
+}
+
+static int x86_executable_residual_graph(const X86Workspace *x86)
+{
+    return x86->executable_active_product_epoch
+         ? x86_executable_active_product(x86) != 0
+         : (x86->executable_root.residual_flags
+            & PL_EXECUTABLE_RESIDUAL_GRAPH) != 0u;
+}
+
+static u32 x86_executable_entry_class_count(const X86Workspace *x86)
+{
+    if (x86->executable_active_product_epoch)
+        return x86_executable_residual_count(x86);
+    return x86_executable_residual_graph(x86)
+         ? x86->executable_root.residual_count
+         : x86->executable_root.function_count;
+}
+
+static int x86_same_digest(const u8 *left, const u8 *right);
+
+/* Publish either a linked-image binding or one page-local compiler product.
+ * Both use exactly the same physical-generation proof and reverse-owner
+ * publication cut.  A product epoch is a non-repeating capability rather
+ * than a wrapping cache generation; zero is reserved for the static root. */
+static int x86_executable_source_publish(
+    X86Workspace *x86, u32 function, u32 argument,
+    const pl_page_product *product, u64 product_epoch)
+{
+    int local = product != (const pl_page_product *)0;
+    if (!x86_code_source_is_current(x86))
+        return 0;
+    if (local) {
+        if (!product_epoch
+                || pl_page_product_validate(product)
+                || product->virtual_page
+                   != x86->executable_code_source_virtual_page
+                || product->mapped_mask
+                   != x86->executable_code_source_mapped_mask
+                || product->predecessor_bytes
+                   != (product->virtual_page
+                       ? X86_CODE_SOURCE_PREDECESSOR_BYTES : 0u)
+                || product->lookahead_bytes
+                   != X86_CODE_SOURCE_LOOKAHEAD_BYTES
+                || product->function_limit
+                   > x86->executable_function_limit
+                || !x86_same_digest(
+                    product->code_digest,
+                    x86->executable_code_source_digest))
+            return 0;
+    } else if (function >= x86->executable_root.function_count
+            || argument >= x86->executable_root.entry_page_count
+            || !x86_executable_kernel_resident(x86, function)) {
+        return 0;
+    }
+
+    u32 physical_slot[X86_CODE_SOURCE_DEPENDENCIES];
+    for (u32 dependency = 0u;
+         dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency) {
+        physical_slot[dependency] = X86_PHYSICAL_PAGES;
+        if (!(x86->executable_code_source_mapped_mask
+              & (1u << dependency)))
+            continue;
+        u64 page = x86->executable_code_source_physical[dependency];
+        u32 slot =
+            x86->executable_code_source_physical_slot[dependency];
+        if (slot >= X86_PHYSICAL_PAGES || !x86->physical_valid[slot]
+                || x86->physical_page[slot] != page
+                || x86->physical_generation[slot]
+                   != x86->executable_code_source_generation[dependency])
+            return 0;
+        physical_slot[dependency] = slot;
+    }
+    /* Recheck after resolving every reverse coordinate; this is the atomic
+     * prepublication cut if the compiler ran asynchronously. */
+    if (!x86_code_source_is_current(x86)) return 0;
+
+    u64 page = x86->executable_code_source_virtual_page;
+    u32 code_slot = x86_executable_page_slot(page);
+    x86_executable_unpublish_slot(x86, code_slot);
+    x86->executable_code_page[code_slot] = page;
+    x86->executable_code_generation[code_slot] =
+        x86->executable_root.entry_generation;
+    x86->executable_code_address_generation[code_slot] =
+        x86->executable_code_source_address_generation;
+    x86->executable_code_mapped_mask[code_slot] =
+        x86->executable_code_source_mapped_mask;
+    x86->executable_code_function[code_slot] = local ? 0u : function;
+    x86->executable_code_argument[code_slot] = local ? 0u : argument;
+    for (u32 dependency = 0u;
+         dependency < X86_CODE_SOURCE_DEPENDENCIES; ++dependency) {
+        if (!(x86->executable_code_source_mapped_mask
+              & (1u << dependency)))
+            continue;
+        x86->executable_code_physical[code_slot][dependency] =
+            x86->executable_code_source_physical[dependency];
+        x86->executable_code_physical_generation[code_slot][dependency] =
+            x86->executable_code_source_generation[dependency];
+        x86->executable_code_physical_slot[code_slot][dependency] =
+            physical_slot[dependency];
+        x86->physical_code_owners[physical_slot[dependency]] |=
+            1ull << code_slot;
+    }
+    if (local) {
+        x86->executable_code_product[code_slot] = *product;
+        x86->executable_code_product_epoch[code_slot] = product_epoch;
+    } else {
+        u32 binding_slot =
+            argument & (X86_EXECUTABLE_BINDING_CACHE - 1u);
+        x86->executable_binding_generation[binding_slot] =
+            (u32)x86->executable_root.entry_generation;
+        x86->executable_binding_argument[binding_slot] = argument;
+        x86->executable_binding_tag[binding_slot] = argument + 1u;
+    }
+    /* This is the only publication store.  Product bytes, source proof and
+     * every reverse owner are complete before a resolver can observe it. */
+    x86->executable_code_valid[code_slot] = 1u;
+    x86->executable_code_source_ready = 0u;
+    return 1;
+}
+
+/* Publish a row from the linked-image root.  This remains the cold-artifact
+ * admission path; it is not a fallback for a page compiler failure. */
+EXPORT int vm_x86_executable_source_commit(
+    u64 session, u32 function, u32 argument)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->active && !x86->error
+        && x86->executable_published
+        && x86_executable_source_publish(
+            x86, function, argument,
+            (const pl_page_product *)0, 0u);
+}
+
+/* The host sees one opaque fixed root.  It does not decode x86, rebuild rows,
+ * or assign ranks; the C postlink compiler has already authenticated and
+ * published every component object named by this product. */
+EXPORT u32 vm_x86_executable_page_product_buffer(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->active && !x86->error
+        && x86->executable_published
+        && x86_code_source_is_current(x86)
+        && !x86->executable_page_product_loading
+        && !x86->executable_topology_loading
+        && !x86->executable_root_loading
+        && !x86->executable_page_loading
+        && !x86->executable_map_loading
+        && !x86->executable_residual_loading
+        && !x86->executable_kernel_loading
+        && !x86->executable_instantiation_loading
+        && x86->executable_request == X86_EXECUTABLE_REQUEST_NONE
+         ? (u32)(uptr)&x86->executable_stage[0] : 0u;
+}
+
+EXPORT u32 vm_x86_executable_page_product_buffer_bytes(u64 session)
+{
+    return vm_x86_executable_page_product_buffer(session)
+         ? PL_PAGE_PRODUCT_HEADER_BYTES : 0u;
+}
+
+EXPORT int vm_x86_executable_page_product_begin(u64 session, u32 bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    pl_page_product product;
+    if (!vm_x86_executable_page_product_buffer(session)
+            || bytes != PL_PAGE_PRODUCT_HEADER_BYTES
+            || pl_page_product_open(x86->executable_stage, bytes, &product)
+            || product.virtual_page
+               != x86->executable_code_source_virtual_page
+            || product.mapped_mask
+               != x86->executable_code_source_mapped_mask
+            || product.predecessor_bytes
+               != (product.virtual_page
+                   ? X86_CODE_SOURCE_PREDECESSOR_BYTES : 0u)
+            || product.lookahead_bytes != X86_CODE_SOURCE_LOOKAHEAD_BYTES
+            || product.function_limit
+               > x86->executable_function_limit
+            || !x86_same_digest(
+                product.code_digest,
+                x86->executable_code_source_digest))
+        return 0;
+    x86->executable_page_product_candidate = product;
+    x86->executable_page_product_loading = 1u;
+    return 1;
+}
+
+EXPORT int vm_x86_executable_page_product_commit(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86->executable_published
+            || !x86->executable_page_product_loading
+            || x86->executable_request != X86_EXECUTABLE_REQUEST_NONE
+            || !x86_code_source_is_current(x86))
+        return 0;
+    u64 epoch = step_new_capability();
+    if (!epoch || !x86_executable_source_publish(
+            x86, 0u, 0u,
+            &x86->executable_page_product_candidate, epoch))
+        return 0;
+    x86->executable_page_product_loading = 0u;
+    x86->executable_code_loading = 0u;
+    x86->executable_index_kind = 0u;
+    return 1;
+}
+
+EXPORT int vm_x86_executable_page_product_abort(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session)
+            || !x86->executable_page_product_loading)
+        return 0;
+    x86->executable_page_product_loading = 0u;
+    x86->executable_code_loading = 0u;
+    x86->executable_code_source_ready = 0u;
+    x86->executable_request = X86_EXECUTABLE_REQUEST_NONE;
+    x86->executable_index_kind = 0u;
+    return 1;
+}
+
+EXPORT int vm_x86_executable_page_current(u64 session, u64 page)
+{
+    X86Workspace *x86 = x86_machine();
+    u32 function = 0u;
+    return step_session_is(session) && x86->executable_published
+        && !(page & (X86_PHYSICAL_PAGE_BYTES - 1u))
+        && x86_executable_page_resident(
+            x86, page, x86->executable_root.entry_generation,
+            &function, 0);
 }
 
 static void x86_executable_index_start(X86Workspace *x86, u32 kind,
@@ -14855,6 +16322,243 @@ static int x86_same_digest(const u8 *left, const u8 *right)
     for (u32 index = 0u; index < PL_SHA256_BYTES; ++index)
         different |= (u32)(left[index] ^ right[index]);
     return different == 0u;
+}
+
+static u32 x86_topology_digest_slot(const u8 *digest, u32 slots)
+{
+    u32 low = pl_read_u32(digest);
+    u32 high = pl_read_u32(digest + PL_SHA256_BYTES - 4u);
+    return (low ^ high) & (slots - 1u);
+}
+
+static int x86_topology_stage_open(void)
+{
+    if (executable_topology_stage_storage) return 1;
+    u32 pages = (X86_TOPOLOGY_STAGE_BYTES + GUEST_PAGE_BYTES - 1u) >> 16u;
+    u32 prior = (u32)__builtin_wasm_memory_grow(0, pages);
+    if (prior == 0xffffffffu) return 0;
+    executable_topology_stage_storage = prior << 16u;
+    return executable_topology_stage_storage != 0u;
+}
+
+static int x86_topology_registry_resize(u32 slots)
+{
+    if (slots < X86_TOPOLOGY_INITIAL_SLOTS || (slots & (slots - 1u)))
+        return 0;
+    u64 wide_bytes = (u64)slots * sizeof(X86TopologyIdentity);
+    if (wide_bytes > 0xffffffffu) return 0;
+    u32 bytes = (u32)wide_bytes;
+    u32 pages = (bytes + GUEST_PAGE_BYTES - 1u) >> 16u;
+    u32 prior = (u32)__builtin_wasm_memory_grow(0, pages);
+    if (prior == 0xffffffffu) return 0;
+    u32 storage = prior << 16u;
+    X86TopologyIdentity *fresh =
+        (X86TopologyIdentity *)(uptr)storage;
+    for (u32 slot = 0u; slot < slots; ++slot)
+        fresh[slot].rank_plus_one = 0u;
+
+    const X86TopologyIdentity *old =
+        (const X86TopologyIdentity *)(uptr)
+            executable_topology_registry_storage;
+    for (u32 old_slot = 0u;
+         old_slot < executable_topology_registry_slots; ++old_slot) {
+        if (!old[old_slot].rank_plus_one) continue;
+        u32 slot = x86_topology_digest_slot(old[old_slot].digest, slots);
+        while (fresh[slot].rank_plus_one)
+            slot = (slot + 1u) & (slots - 1u);
+        fresh[slot] = old[old_slot];
+    }
+    executable_topology_registry_storage = storage;
+    executable_topology_registry_slots = slots;
+    return 1;
+}
+
+static void x86_topology_registry_reset(void)
+{
+    X86TopologyIdentity *rows =
+        (X86TopologyIdentity *)(uptr)executable_topology_registry_storage;
+    for (u32 slot = 0u;
+         slot < executable_topology_registry_slots; ++slot)
+        rows[slot].rank_plus_one = 0u;
+    executable_topology_registry_count = 0u;
+}
+
+static int x86_topology_registry_lookup(
+    const u8 *digest, u32 body_bytes, u32 *rank)
+{
+    if (!executable_topology_registry_slots) return 0;
+    const X86TopologyIdentity *rows =
+        (const X86TopologyIdentity *)(uptr)
+            executable_topology_registry_storage;
+    u32 slot = x86_topology_digest_slot(
+        digest, executable_topology_registry_slots);
+    for (u32 probe = 0u;
+         probe < executable_topology_registry_slots; ++probe) {
+        if (!rows[slot].rank_plus_one) return 0;
+        if (x86_same_digest(rows[slot].digest, digest)) {
+            if (rows[slot].body_bytes != body_bytes) return -1;
+            *rank = rows[slot].rank_plus_one - 1u;
+            return 1;
+        }
+        slot = (slot + 1u)
+             & (executable_topology_registry_slots - 1u);
+    }
+    return -1;
+}
+
+static int x86_topology_registry_publish(
+    const u8 *digest, u32 body_bytes, u32 rank)
+{
+    if (rank == 0xffffffffu) return 0;
+    u32 existing = 0u;
+    int found = x86_topology_registry_lookup(
+        digest, body_bytes, &existing);
+    if (found) return found > 0 && existing == rank;
+    if (!executable_topology_registry_slots
+            || executable_topology_registry_count + 1u
+               > executable_topology_registry_slots / 2u) {
+        u32 slots = executable_topology_registry_slots
+            ? executable_topology_registry_slots * 2u
+            : X86_TOPOLOGY_INITIAL_SLOTS;
+        if (slots < executable_topology_registry_slots
+                || !x86_topology_registry_resize(slots))
+            return 0;
+    }
+    X86TopologyIdentity *rows =
+        (X86TopologyIdentity *)(uptr)executable_topology_registry_storage;
+    u32 slot = x86_topology_digest_slot(
+        digest, executable_topology_registry_slots);
+    while (rows[slot].rank_plus_one)
+        slot = (slot + 1u)
+             & (executable_topology_registry_slots - 1u);
+    for (u32 index = 0u; index < PL_SHA256_BYTES; ++index)
+        rows[slot].digest[index] = digest[index];
+    rows[slot].body_bytes = body_bytes;
+    rows[slot].rank_plus_one = rank + 1u;
+    ++executable_topology_registry_count;
+    return 1;
+}
+
+/* Admit one successor-free parameterized body into the VM-owned global
+ * quotient.  A return of 2 is a resident identity hit; 1 asks the host to
+ * instantiate the complete module exposed below.  No rank is host-assigned. */
+EXPORT u32 vm_x86_executable_topology_buffer(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->active && !x86->error
+        && x86->executable_published && x86_code_source_is_current(x86)
+        && !x86->executable_topology_loading
+        && x86->executable_request == X86_EXECUTABLE_REQUEST_NONE
+        && x86_topology_stage_open()
+         ? executable_topology_stage_storage : 0u;
+}
+
+EXPORT u32 vm_x86_executable_topology_buffer_bytes(u64 session)
+{
+    return vm_x86_executable_topology_buffer(session)
+         ? X86_TOPOLOGY_BODY_BYTES : 0u;
+}
+
+EXPORT int vm_x86_executable_topology_begin(u64 session, u32 body_bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!body_bytes || body_bytes > X86_TOPOLOGY_BODY_BYTES
+            || !vm_x86_executable_topology_buffer(session))
+        return 0;
+    const u8 *body = (const u8 *)(uptr)executable_topology_stage_storage;
+    pl_sha256_digest(body, body_bytes, x86->executable_topology_digest);
+    u32 rank = 0u;
+    int found = x86_topology_registry_lookup(
+        x86->executable_topology_digest, body_bytes, &rank);
+    if (found < 0) return 0;
+    if (found) {
+        if (!x86_executable_kernel_resident(x86, rank)) return 0;
+        x86->executable_topology_rank = rank;
+        x86->executable_topology_body_bytes = body_bytes;
+        x86->executable_topology_module_bytes = 0u;
+        return 2;
+    }
+    rank = x86->executable_function_limit;
+    if (rank > 0x7fffffffu
+            || x86->executable_table_base > 0xffffffffu - rank
+            || !x86_executable_residency_resize(x86, rank + 1u, 0))
+        return 0;
+    pl_wasm_function_body spec = { body, body_bytes };
+    u32 measured = 0u;
+    int status = pl_wasm_body_module_measure(&spec, 1u, &measured);
+    if (status || !measured || measured > X86_TOPOLOGY_MODULE_BYTES)
+        return 0;
+    u8 *module = (u8 *)(uptr)(
+        executable_topology_stage_storage + X86_TOPOLOGY_BODY_BYTES);
+    u32 written = 0u;
+    status = pl_wasm_body_module_write(
+        &spec, 1u, module, X86_TOPOLOGY_MODULE_BYTES, &written);
+    if (status || written != measured) return 0;
+    x86->executable_topology_rank = rank;
+    x86->executable_topology_body_bytes = body_bytes;
+    x86->executable_topology_module_bytes = written;
+    x86->executable_topology_loading = 1u;
+    return 1;
+}
+
+EXPORT u32 vm_x86_executable_topology_rank(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+         ? x86->executable_topology_rank : 0xffffffffu;
+}
+
+EXPORT u32 vm_x86_executable_topology_module_buffer(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_topology_loading
+         ? executable_topology_stage_storage + X86_TOPOLOGY_BODY_BYTES : 0u;
+}
+
+EXPORT u32 vm_x86_executable_topology_module_bytes(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_topology_loading
+         ? x86->executable_topology_module_bytes : 0u;
+}
+
+EXPORT u32 vm_x86_executable_topology_table_base(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_topology_loading
+         ? x86->executable_table_base + x86->executable_topology_rank : 0u;
+}
+
+EXPORT int vm_x86_executable_topology_installed(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->executable_topology_loading
+            || !x86_code_source_is_current(x86)
+            || x86->executable_topology_rank
+               != x86->executable_function_limit
+            || !x86_topology_registry_publish(
+                x86->executable_topology_digest,
+                x86->executable_topology_body_bytes,
+                x86->executable_topology_rank))
+        return 0;
+    ++x86->executable_function_limit;
+    x86->executable.function_count = x86->executable_function_limit;
+    if (!x86_executable_publish_range(
+            x86, x86->executable_topology_rank, 1u))
+        return 0;
+    x86->executable_topology_loading = 0u;
+    x86->executable_topology_module_bytes = 0u;
+    return 1;
+}
+
+EXPORT int vm_x86_executable_topology_abort(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->executable_topology_loading)
+        return 0;
+    x86->executable_topology_loading = 0u;
+    x86->executable_topology_module_bytes = 0u;
+    return 1;
 }
 
 static u32 x86_executable_index_cache_set(const u8 *digest)
@@ -14939,12 +16643,19 @@ static int x86_executable_residual_state_resident(
     const X86Workspace *x86, u32 residual, u32 *kernel,
     u32 *degree, u32 *edge_base)
 {
-    if (residual >= x86->executable_root.residual_count)
+    u32 residual_count = x86_executable_residual_count(x86);
+    u32 edge_count = x86_executable_residual_edge_count(x86);
+    u32 instantiation_count = x86_executable_instantiation_count(x86);
+    if (residual >= residual_count)
         return 0;
     u32 page = residual / PL_RESIDUAL_STATE_PAGE_STATES;
     u32 local = residual % PL_RESIDUAL_STATE_PAGE_STATES;
     u32 slot = page & (X86_EXECUTABLE_RESIDUAL_STATE_CACHE - 1u);
-    if (x86->executable_residual_state_tag[slot] != page + 1u
+    if (!x86_executable_projection_tag(
+            x86, page,
+            x86->executable_residual_state_tag[slot],
+            x86->executable_residual_state_local_tag[slot],
+            x86->executable_residual_state_local_epoch[slot])
             || local >= x86->executable_residual_state_count[slot])
         return 0;
     u32 word = local >> 6u;
@@ -14963,32 +16674,36 @@ static int x86_executable_residual_state_resident(
     *degree = 1u + two - zero;
     *edge_base = x86->executable_residual_state_first_edge[slot]
                + local + two_rank - zero_rank;
-    return *kernel < x86->executable_root.instantiation_count
-        && *edge_base <= x86->executable_root.residual_edge_count
-        && *degree <= x86->executable_root.residual_edge_count - *edge_base;
+    return *kernel < instantiation_count
+        && *edge_base <= edge_count
+        && *degree <= edge_count - *edge_base;
 }
 
 static int x86_executable_residual_edge_page_resident(
     const X86Workspace *x86, u32 edge)
 {
-    if (edge >= x86->executable_root.residual_edge_count) return 0;
+    if (edge >= x86_executable_residual_edge_count(x86)) return 0;
     u32 page = edge / PL_RESIDUAL_EDGE_PAGE_EDGES;
     u32 local = edge % PL_RESIDUAL_EDGE_PAGE_EDGES;
     u32 slot = page & (X86_EXECUTABLE_RESIDUAL_EDGE_CACHE - 1u);
-    return x86->executable_residual_edge_tag[slot] == page + 1u
+    return x86_executable_projection_tag(
+            x86, page,
+            x86->executable_residual_edge_tag[slot],
+            x86->executable_residual_edge_local_tag[slot],
+            x86->executable_residual_edge_local_epoch[slot])
         && local < x86->executable_residual_edge_count[slot];
 }
 
 static int x86_executable_residual_edge_resident(
-    const X86Workspace *x86, u32 edge, u32 *next, i32 *delta)
+    const X86Workspace *x86, u32 edge, u32 state, i32 delta, u32 *next)
 {
     if (!x86_executable_residual_edge_page_resident(x86, edge)) return 0;
     u32 page = edge / PL_RESIDUAL_EDGE_PAGE_EDGES;
     u32 local = edge % PL_RESIDUAL_EDGE_PAGE_EDGES;
     u32 slot = page & (X86_EXECUTABLE_RESIDUAL_EDGE_CACHE - 1u);
-    *next = x86->executable_residual_next[slot][local];
-    *delta = x86->executable_residual_delta[slot][local];
-    return 1;
+    return !pl_residual_edge_page_get(
+        x86->executable_residual_edge_page[slot], local,
+        state, delta, x86_executable_residual_count(x86), next);
 }
 
 static int x86_executable_publish_residual_state(X86Workspace *x86)
@@ -14996,14 +16711,17 @@ static int x86_executable_publish_residual_state(X86Workspace *x86)
     u32 page = x86->executable_residual_rank;
     if (pl_residual_state_page_open(
             x86->executable_stage, page,
-            x86->executable_root.residual_count,
-            x86->executable_root.residual_edge_count,
-            x86->executable_root.instantiation_count))
+            x86_executable_residual_count(x86),
+            x86_executable_residual_edge_count(x86),
+            x86_executable_instantiation_count(x86)))
         return 0;
     u32 slot = page & (X86_EXECUTABLE_RESIDUAL_STATE_CACHE - 1u);
     u32 count = pl_read_u32(x86->executable_stage + 12u);
     u32 words = (count + 63u) >> 6u;
-    x86->executable_residual_state_tag[slot] = 0u;
+    x86_executable_projection_unpublish_tag(
+        &x86->executable_residual_state_tag[slot],
+        &x86->executable_residual_state_local_tag[slot],
+        &x86->executable_residual_state_local_epoch[slot]);
     x86->executable_residual_state_count[slot] = count;
     x86->executable_residual_state_first_edge[slot] =
         pl_read_u32(x86->executable_stage + 16u);
@@ -15015,12 +16733,10 @@ static int x86_executable_publish_residual_state(X86Workspace *x86)
     x86->executable_residual_zero_prefix[slot][0] = 0u;
     x86->executable_residual_two_prefix[slot][0] = 0u;
     for (u32 word = 0u; word < words; ++word) {
-        u64 zero = pl_read_u64(
-            x86->executable_stage
-            + PL_RESIDUAL_STATE_PAGE_ZERO_BITS + word * 8u);
-        u64 two = pl_read_u64(
-            x86->executable_stage
-            + PL_RESIDUAL_STATE_PAGE_TWO_BITS + word * 8u);
+        u64 zero = 0u, two = 0u;
+        if (pl_residual_state_page_degree_word(
+                x86->executable_stage, word, &zero, &two))
+            return 0;
         x86->executable_residual_zero[slot][word] = zero;
         x86->executable_residual_two[slot][word] = two;
         x86->executable_residual_zero_prefix[slot][word + 1u] =
@@ -15031,7 +16747,11 @@ static int x86_executable_publish_residual_state(X86Workspace *x86)
             + (u32)__builtin_popcountll(two);
     }
     /* Publish after every hot column and prefix has been materialized. */
-    x86->executable_residual_state_tag[slot] = page + 1u;
+    x86_executable_projection_publish_tag(
+        x86, page,
+        &x86->executable_residual_state_tag[slot],
+        &x86->executable_residual_state_local_tag[slot],
+        &x86->executable_residual_state_local_epoch[slot]);
     return 1;
 }
 
@@ -15040,20 +16760,29 @@ static int x86_executable_publish_residual_edge(X86Workspace *x86)
     u32 page = x86->executable_residual_rank;
     if (pl_residual_edge_page_open(
             x86->executable_stage, page,
-            x86->executable_root.residual_count,
-            x86->executable_root.residual_edge_count))
+            x86_executable_residual_count(x86),
+            x86_executable_residual_edge_count(x86)))
         return 0;
     u32 slot = page & (X86_EXECUTABLE_RESIDUAL_EDGE_CACHE - 1u);
     u32 count = pl_read_u32(x86->executable_stage + 12u);
-    x86->executable_residual_edge_tag[slot] = 0u;
+    u32 used = 0u;
+    if (pl_residual_edge_page_used(x86->executable_stage, &used)
+            || used != x86->executable_page_resource.object_bytes)
+        return 0;
+    x86_executable_projection_unpublish_tag(
+        &x86->executable_residual_edge_tag[slot],
+        &x86->executable_residual_edge_local_tag[slot],
+        &x86->executable_residual_edge_local_epoch[slot]);
     x86->executable_residual_edge_count[slot] = count;
-    for (u32 local = 0u; local < count; ++local)
-        if (pl_residual_edge_page_get(
-                x86->executable_stage, local,
-                &x86->executable_residual_next[slot][local],
-                &x86->executable_residual_delta[slot][local]))
-            return 0;
-    x86->executable_residual_edge_tag[slot] = page + 1u;
+    x86->executable_residual_edge_bytes[slot] = used;
+    for (u32 index = 0u; index < used; ++index)
+        x86->executable_residual_edge_page[slot][index] =
+            x86->executable_stage[index];
+    x86_executable_projection_publish_tag(
+        x86, page,
+        &x86->executable_residual_edge_tag[slot],
+        &x86->executable_residual_edge_local_tag[slot],
+        &x86->executable_residual_edge_local_epoch[slot]);
     return 1;
 }
 
@@ -15061,43 +16790,59 @@ static int x86_executable_instantiation_resident(
     const X86Workspace *x86, u32 instantiation, u32 *topology,
     u32 *first_parameter, u32 *parameter_count)
 {
-    if (instantiation >= x86->executable_root.instantiation_count)
+    u32 instantiation_count = x86_executable_instantiation_count(x86);
+    u32 function_limit = x86_executable_function_limit(x86);
+    u32 parameter_words = x86_executable_parameter_count(x86);
+    if (instantiation >= instantiation_count)
         return 0;
     u32 page = instantiation / PL_INSTANTIATION_PAGE_ROWS;
     u32 local = instantiation % PL_INSTANTIATION_PAGE_ROWS;
     u32 slot = page & (X86_EXECUTABLE_INSTANTIATION_CACHE - 1u);
-    if (x86->executable_instantiation_tag[slot] != page + 1u
+    if (!x86_executable_projection_tag(
+            x86, page,
+            x86->executable_instantiation_tag[slot],
+            x86->executable_instantiation_local_tag[slot],
+            x86->executable_instantiation_local_epoch[slot])
             || local >= x86->executable_instantiation_count[slot])
         return 0;
     *topology = x86->executable_instantiation_topology[slot][local];
     *first_parameter = x86->executable_instantiation_first[slot][local];
     *parameter_count = x86->executable_instantiation_words[slot][local];
-    return *topology < x86->executable_root.function_count
-        && *first_parameter <= x86->executable_root.parameter_word_count
+    return *topology < function_limit
+        && *first_parameter <= parameter_words
         && *parameter_count
-           <= x86->executable_root.parameter_word_count - *first_parameter;
+           <= parameter_words - *first_parameter;
 }
 
 static int x86_executable_parameter_page_resident(
     const X86Workspace *x86, u32 page)
 {
     u32 slot = page & (X86_EXECUTABLE_PARAMETER_CACHE - 1u);
-    return x86->executable_parameter_tag[slot] == page + 1u;
+    return x86_executable_projection_tag(
+        x86, page,
+        x86->executable_parameter_tag[slot],
+        x86->executable_parameter_local_tag[slot],
+        x86->executable_parameter_local_epoch[slot]);
 }
 
 static int x86_executable_materialize_parameters(
     X86Workspace *x86, u32 first, u32 count)
 {
+    u32 parameter_words = x86_executable_parameter_count(x86);
     if (count > X86_EXECUTABLE_PARAMETER_VALUES
-            || first > x86->executable_root.parameter_word_count
-            || count > x86->executable_root.parameter_word_count - first)
+            || first > parameter_words
+            || count > parameter_words - first)
         return 0;
     for (u32 index = 0u; index < count; ++index) {
         u32 rank = first + index;
         u32 page = rank / PL_PARAMETER_PAGE_WORDS;
         u32 local = rank % PL_PARAMETER_PAGE_WORDS;
         u32 slot = page & (X86_EXECUTABLE_PARAMETER_CACHE - 1u);
-        if (x86->executable_parameter_tag[slot] != page + 1u
+        if (!x86_executable_projection_tag(
+                x86, page,
+                x86->executable_parameter_tag[slot],
+                x86->executable_parameter_local_tag[slot],
+                x86->executable_parameter_local_epoch[slot])
                 || local >= x86->executable_parameter_count[slot])
             return 0;
         x86->executable_parameter_values[index] =
@@ -15115,13 +16860,16 @@ static int x86_executable_publish_instantiation(X86Workspace *x86)
     u32 expected_first = x86->executable_page_resource.projection_argument;
     if (pl_instantiation_page_open(
             x86->executable_stage, page,
-            x86->executable_root.instantiation_count,
-            x86->executable_root.function_count,
-            x86->executable_root.parameter_word_count, expected_first))
+            x86_executable_instantiation_count(x86),
+            x86_executable_function_limit(x86),
+            x86_executable_parameter_count(x86), expected_first))
         return 0;
     u32 slot = page & (X86_EXECUTABLE_INSTANTIATION_CACHE - 1u);
     u32 count = pl_read_u32(x86->executable_stage + 12u);
-    x86->executable_instantiation_tag[slot] = 0u;
+    x86_executable_projection_unpublish_tag(
+        &x86->executable_instantiation_tag[slot],
+        &x86->executable_instantiation_local_tag[slot],
+        &x86->executable_instantiation_local_epoch[slot]);
     x86->executable_instantiation_count[slot] = count;
     for (u32 local = 0u; local < count; ++local) {
         u32 topology = 0u, first = 0u, words = 0u;
@@ -15133,27 +16881,41 @@ static int x86_executable_publish_instantiation(X86Workspace *x86)
         x86->executable_instantiation_first[slot][local] = first;
         x86->executable_instantiation_words[slot][local] = (u8)words;
     }
-    x86->executable_instantiation_tag[slot] = page + 1u;
+    x86_executable_projection_publish_tag(
+        x86, page,
+        &x86->executable_instantiation_tag[slot],
+        &x86->executable_instantiation_local_tag[slot],
+        &x86->executable_instantiation_local_epoch[slot]);
     return 1;
 }
 
 static int x86_executable_publish_parameter(X86Workspace *x86)
 {
     u32 page = x86->executable_instantiation_rank;
+    u64 wide_bytes = x86->executable_page_resource.object_bytes;
+    if (wide_bytes > 0xffffffffu) return 0;
+    u32 bytes = (u32)wide_bytes;
     if (pl_parameter_page_open(
-            x86->executable_stage, page,
-            x86->executable_root.parameter_word_count))
+            x86->executable_stage, bytes, page,
+            x86_executable_parameter_count(x86)))
         return 0;
     u32 slot = page & (X86_EXECUTABLE_PARAMETER_CACHE - 1u);
-    u32 count = pl_read_u32(x86->executable_stage + 12u);
-    x86->executable_parameter_tag[slot] = 0u;
+    u32 count = 0u;
+    x86_executable_projection_unpublish_tag(
+        &x86->executable_parameter_tag[slot],
+        &x86->executable_parameter_local_tag[slot],
+        &x86->executable_parameter_local_epoch[slot]);
+    if (pl_parameter_page_decode(
+            x86->executable_stage, bytes,
+            x86->executable_parameter_page[slot],
+            PL_PARAMETER_PAGE_WORDS, &count))
+        return 0;
     x86->executable_parameter_count[slot] = count;
-    for (u32 local = 0u; local < count; ++local)
-        if (pl_parameter_page_get(
-                x86->executable_stage, local,
-                &x86->executable_parameter_page[slot][local]))
-            return 0;
-    x86->executable_parameter_tag[slot] = page + 1u;
+    x86_executable_projection_publish_tag(
+        x86, page,
+        &x86->executable_parameter_tag[slot],
+        &x86->executable_parameter_local_tag[slot],
+        &x86->executable_parameter_local_epoch[slot]);
     return 1;
 }
 
@@ -15164,13 +16926,27 @@ static int x86_executable_accept_index_row(X86Workspace *x86,
         pl_executable_binding binding;
         if (pl_executable_binding_read(row, &binding)
                 || pl_executable_binding_validate(
-                    &binding, x86->executable_root.source_bytes,
-                    x86->executable_root.function_count)
+                    &binding, x86->executable_root.function_count)
                 || binding.dispatch_argument
                    >= x86->executable_root.entry_page_count
                 || binding.virtual_page != x86->executable_index_key.major
-                || binding.generation != x86->executable_index_key.minor)
+                || binding.key_minor != x86->executable_index_key.minor
+                || !x86_code_source_is_current(x86))
             return 0;
+        if (binding.mapped_mask
+                != x86->executable_code_source_mapped_mask
+                || binding.predecessor_bytes
+                   != (binding.virtual_page
+                       ? X86_CODE_SOURCE_PREDECESSOR_BYTES : 0u)
+                || binding.lookahead_bytes
+                   != X86_CODE_SOURCE_LOOKAHEAD_BYTES
+                || !x86_same_digest(
+                    binding.digest,
+                    x86->executable_code_source_digest)) {
+            x86->executable_index_kind = 0u;
+            x86->executable_request = X86_EXECUTABLE_REQUEST_COMPILE;
+            return 1;
+        }
         x86->executable_entry_binding = binding;
         if (x86->executable_root.residual_flags
                 & PL_EXECUTABLE_RESIDUAL_GRAPH) {
@@ -15188,12 +16964,11 @@ static int x86_executable_accept_index_row(X86Workspace *x86,
         pl_executable_binding binding;
         if (pl_executable_binding_read(row, &binding)
                 || pl_executable_binding_validate(
-                    &binding, x86->executable_root.source_bytes,
-                    x86->executable_root.function_count)
+                    &binding, x86->executable_root.function_count)
                 || binding.dispatch_argument
                    >= x86->executable_root.entry_page_count
                 || binding.virtual_page != x86->executable_index_key.major
-                || binding.generation != x86->executable_index_key.minor)
+                || binding.key_minor != x86->executable_index_key.minor)
             return 0;
         x86->executable_entry_binding = binding;
         x86_executable_index_start(
@@ -15215,21 +16990,40 @@ static int x86_executable_accept_index_row(X86Workspace *x86,
         u64 entry = kernel ? x86->executable_kernel_rank
                   : code ? x86->executable_entry_binding.dispatch_function
                          : x86->executable_root.entry_function;
-        if (pl_executable_module_read(row, &module)
-                || pl_executable_module_validate(
-                    &module, x86->executable_root.function_count)
-                || module.first_function > entry
-                || entry - module.first_function >= module.function_count)
+        if (pl_executable_module_read(row, &module)) {
+            x86->executable_admission_error = X86_ADMISSION_MODULE_READ;
             return 0;
+        }
+        if (pl_executable_module_validate(
+                &module, x86->executable_root.function_count)) {
+            x86->executable_admission_error = X86_ADMISSION_MODULE_VALIDATE;
+            return 0;
+        }
+        if (module.flags == PL_EXECUTABLE_MODULE_COMPILED
+                && module.payload_bytes > X86_COMPILED_STAGE_BYTES) {
+            x86->executable_admission_error = X86_ADMISSION_MODULE_PAYLOAD;
+            return 0;
+        }
+        if (module.first_function > entry) {
+            x86->executable_admission_error = X86_ADMISSION_MODULE_FIRST;
+            return 0;
+        }
+        if (entry - module.first_function >= module.function_count) {
+            x86->executable_admission_error = X86_ADMISSION_MODULE_RANGE;
+            return 0;
+        }
         x86->executable_entry_module = module;
         x86->executable_index_kind = 0u;
-        if ((code || kernel)
-                && x86_executable_module_resident(x86, &module)) {
+        int resident = module.flags == PL_EXECUTABLE_MODULE_COMPILED
+            ? x86_executable_kernel_resident(x86, (u32)entry)
+            : x86_executable_module_resident(x86, &module);
+        if ((code || kernel) && resident) {
             x86->executable_request = kernel
                 ? X86_EXECUTABLE_REQUEST_KERNEL_READY
                 : X86_EXECUTABLE_REQUEST_CODE_READY;
             return 1;
         }
+        x86->executable_compiled_function = (u32)entry;
         x86->executable_module_offset = 0u;
         pl_sha256_open(&x86->executable_module_hash);
         x86->executable_request = X86_EXECUTABLE_REQUEST_MODULE;
@@ -15272,23 +17066,17 @@ static int x86_executable_accept_index_row(X86Workspace *x86,
         return 1;
     }
     if (x86->executable_index_kind
-            == X86_EXECUTABLE_INDEX_ENTRY_PAGE_ROWS
-            || x86->executable_index_kind
-               == X86_EXECUTABLE_INDEX_ENTRY_TAIL_ROW) {
-        int tail = x86->executable_index_kind
-                == X86_EXECUTABLE_INDEX_ENTRY_TAIL_ROW;
+            == X86_EXECUTABLE_INDEX_ENTRY_GENERATOR) {
+        if (!x86_executable_projection_current(x86)) return 0;
         pl_executable_resource resource;
-        u64 expected = tail
-            ? pl_executable_entry_tail_key(x86->executable_map_rank)
-            : pl_executable_entry_page_key(x86->executable_map_rank);
-        u32 expected_kind = tail
-            ? PL_EXECUTABLE_RESOURCE_ENTRY_TAIL_ROW
-            : PL_EXECUTABLE_RESOURCE_ENTRY_PAGE_ROWS;
+        u64 expected = pl_executable_entry_generator_key(
+            x86->executable_map_rank);
         if (pl_executable_resource_read(row, &resource)
                 || pl_executable_resource_validate(
                     &resource, x86->executable_root.memory_bytes)
                 || resource.physical_address != expected
-                || resource.kind != expected_kind)
+                || resource.kind
+                   != PL_EXECUTABLE_RESOURCE_ENTRY_GENERATOR)
             return 0;
         x86->executable_page_resource = resource;
         x86->executable_index_kind = 0u;
@@ -15299,6 +17087,7 @@ static int x86_executable_accept_index_row(X86Workspace *x86,
             == X86_EXECUTABLE_INDEX_RESIDUAL_STATE
             || x86->executable_index_kind
                == X86_EXECUTABLE_INDEX_RESIDUAL_EDGE) {
+        if (!x86_executable_projection_current(x86)) return 0;
         int edge = x86->executable_index_kind
                 == X86_EXECUTABLE_INDEX_RESIDUAL_EDGE;
         pl_executable_resource resource;
@@ -15325,6 +17114,7 @@ static int x86_executable_accept_index_row(X86Workspace *x86,
             == X86_EXECUTABLE_INDEX_INSTANTIATION
             || x86->executable_index_kind
                == X86_EXECUTABLE_INDEX_PARAMETER) {
+        if (!x86_executable_projection_current(x86)) return 0;
         int parameter = x86->executable_index_kind
                      == X86_EXECUTABLE_INDEX_PARAMETER;
         pl_executable_resource resource;
@@ -15347,6 +17137,24 @@ static int x86_executable_accept_index_row(X86Workspace *x86,
         x86->executable_request = X86_EXECUTABLE_REQUEST_RESOURCE;
         return 1;
     }
+    if (x86->executable_index_kind == X86_EXECUTABLE_INDEX_TEMPLATE) {
+        pl_executable_resource resource;
+        u64 expected = pl_executable_template_key(
+            x86->executable_compiled.template_rank);
+        if (pl_executable_resource_read(row, &resource)
+                || pl_executable_resource_validate(
+                    &resource, x86->executable_root.memory_bytes)
+                || resource.kind != PL_EXECUTABLE_RESOURCE_TEMPLATE_PAGE
+                || resource.physical_address > expected
+                || (resource.physical_address
+                    & ~PL_EXECUTABLE_RESOURCE_PROJECTION_RANK_MASK)
+                   != PL_EXECUTABLE_RESOURCE_TEMPLATE_BASE)
+            return 0;
+        x86->executable_page_resource = resource;
+        x86->executable_index_kind = 0u;
+        x86->executable_request = X86_EXECUTABLE_REQUEST_RESOURCE;
+        return 1;
+    }
     return 0;
 }
 
@@ -15360,7 +17168,9 @@ static int x86_executable_accept_index_node(
              || x86->executable_index_kind
                     == X86_EXECUTABLE_INDEX_KERNEL_MODULE
              || x86->executable_index_kind
-                    == X86_EXECUTABLE_INDEX_RESOURCE_PAGE;
+                    == X86_EXECUTABLE_INDEX_RESOURCE_PAGE
+             || x86->executable_index_kind
+                    == X86_EXECUTABLE_INDEX_TEMPLATE;
     if (node->level) {
         int status = floor
             ? pl_index_select_floor_child(
@@ -15369,15 +17179,46 @@ static int x86_executable_accept_index_node(
             : pl_index_select_child(
                 node, x86->executable_index_key,
                 &x86->executable_index_ref);
+        if (status == PL_ERROR_INDEX_ABSENT
+                && x86->executable_index_kind
+                   == X86_EXECUTABLE_INDEX_CODE_BINDING) {
+            x86->executable_index_kind = 0u;
+            x86->executable_request = X86_EXECUTABLE_REQUEST_COMPILE;
+            return 1;
+        }
+        if (status)
+            x86->executable_admission_error = X86_ADMISSION_INDEX_BRANCH;
         return status == 0;
     }
     const u8 *row = 0;
     int status = floor
         ? pl_index_find_floor(node, x86->executable_index_key, &row)
         : pl_index_find_row(node, x86->executable_index_key, &row);
-    return !status && x86_executable_accept_index_row(x86, row);
+    if (status == PL_ERROR_INDEX_ABSENT
+            && x86->executable_index_kind
+               == X86_EXECUTABLE_INDEX_CODE_BINDING) {
+        x86->executable_index_kind = 0u;
+        x86->executable_request = X86_EXECUTABLE_REQUEST_COMPILE;
+        return 1;
+    }
+    if (status) {
+        x86->executable_admission_error = X86_ADMISSION_INDEX_LEAF;
+        return 0;
+    }
+    if (!x86_executable_accept_index_row(x86, row)) {
+        if (!x86->executable_admission_error)
+            x86->executable_admission_error = X86_ADMISSION_INDEX_ROW;
+        return 0;
+    }
+    return 1;
 }
 
+static i32 x86_compiled_page_failure(const u8 *bytes, u32 length)
+{
+    (void)bytes;
+    (void)length;
+    return X86_ADMISSION_COMPILED_PAGE;
+}
 static int x86_executable_advance_cached_index(X86Workspace *x86)
 {
     while (x86->executable_request == X86_EXECUTABLE_REQUEST_INDEX) {
@@ -15466,6 +17307,9 @@ EXPORT int vm_x86_executable_begin(u64 session, u64 root_bytes,
     x86->x87_ip = root.state.x87_ip;
     x86->x87_dp = root.state.x87_dp;
     x86->executable_root = root;
+    if (!x86_executable_residency_open(x86, root.function_count)) return 0;
+    x86->executable_function_limit = root.function_count;
+    x86_topology_registry_reset();
     x86->executable_table_base = table_base;
     x86->executable_root_loading = 1u;
     x86_executable_index_start(
@@ -15474,7 +17318,7 @@ EXPORT int vm_x86_executable_begin(u64 session, u64 root_bytes,
         (pl_index_key){
             root.entry_rip
                 & ~((u64)PL_EXECUTABLE_PAGE_BYTES - 1u),
-            root.entry_generation,
+            0u,
         });
     return 1;
 }
@@ -15530,6 +17374,28 @@ EXPORT u64 vm_x86_executable_request_offset(u64 session)
          ? x86->executable_module_offset : 0u;
 }
 
+/* Zero selects the machine delivery directory.  A nonzero rank selects one
+ * immutable backing named by the authenticated resource row; JavaScript may
+ * choose its locator, but C still verifies the complete requested page
+ * digest before it can become resident. */
+EXPORT u32 vm_x86_executable_request_source_rank(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+        && x86->executable_request == X86_EXECUTABLE_REQUEST_RESOURCE
+        && (x86->executable_page_resource.flags
+            & PL_EXECUTABLE_RESOURCE_EXTERNAL)
+         ? x86->executable_page_resource.projection_argument : 0u;
+}
+
+EXPORT u64 vm_x86_executable_request_physical_address(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+        && x86->executable_request == X86_EXECUTABLE_REQUEST_RESOURCE
+         ? x86->executable_page_resource.physical_address : 0u;
+}
+
 EXPORT u8 *vm_x86_executable_request_buffer(u64 session)
 {
     X86Workspace *x86 = x86_machine();
@@ -15557,31 +17423,458 @@ EXPORT u32 vm_x86_executable_request_buffer_bytes(u64 session)
     return 0u;
 }
 
-EXPORT int vm_x86_executable_supply(u64 session, u32 bytes)
+/* Resolve the executable's authenticated object identity to one replaceable
+ * pack coordinate without exposing the locator directory to JavaScript.  The
+ * host supplies only byte ranges selected here; the executable loader still
+ * authenticates every index, module and resource payload before publication. */
+EXPORT u8 *vm_x86_delivery_buffer(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->active && !x86->error
+        && (x86->executable_root_loading || x86->executable_published)
+         ? x86->executable_stage : (u8 *)0;
+}
+
+EXPORT u32 vm_x86_delivery_buffer_bytes(void)
+{
+    return PL_DELIVERY_NODE_BYTES;
+}
+
+/* The post-link compiler and the executor share this authenticated one-page
+ * staging area.  A descriptor is opened first, its typed row is copied into
+ * the bounded compiler state, and its named template is then supplied into
+ * the same page.  Compilation overwrites the template with one complete Wasm
+ * module ready for installation in the shared table. */
+EXPORT u8 *vm_x86_compiler_buffer(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->active && !x86->error
+         ? x86->executable_stage : (u8 *)0;
+}
+
+EXPORT u32 vm_x86_compiler_buffer_bytes(void)
+{
+    return X86_COMPILED_STAGE_BYTES;
+}
+
+EXPORT int vm_x86_compiler_open(u64 session, u32 descriptor_bytes)
 {
     X86Workspace *x86 = x86_machine();
     if (!step_session_is(session) || !x86->active || x86->error
-            || !x86_executable_request_active(x86)
-            || bytes != vm_x86_executable_request_buffer_bytes(session))
+            || !descriptor_bytes
+            || descriptor_bytes > X86_COMPILED_STAGE_BYTES)
         return 0;
+    pl_compiled_block opened;
+    int status = pl_compiled_block_open(
+        x86->executable_stage, descriptor_bytes, &opened);
+    if (!status && opened.witness_bytes > X86_COMPILED_STAGE_BYTES)
+        status = PL_ERROR_COMPILED_BLOCK_RANGE;
+    if (status) {
+        x86->executable_compiled_open = 0u;
+        x86->executable_compiled_module_bytes = 0u;
+        x86->executable_compiled_value_count = 0u;
+        x86->executable_compiled_error = status;
+        return 0;
+    }
+    for (u32 index = 0u; index < opened.witness_bytes; ++index)
+        x86->executable_compiled_parameters[index] =
+            x86->executable_stage[opened.witness_at + index];
+    x86->executable_compiled = opened;
+    x86->executable_compiled.template_bytes = 0u;
+    x86->executable_compiled_open = 1u;
+    x86->executable_compiled_module_bytes = 0u;
+    x86->executable_compiled_value_count = 0u;
+    x86->executable_compiled_error = 0;
+    return 1;
+}
+
+EXPORT u32 vm_x86_compiler_template_bytes(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_compiled_open
+         ? x86->executable_compiled.template_bytes : 0u;
+}
+
+EXPORT int vm_x86_compiler_compile(u64 session, u32 template_bytes,
+                                   u32 block_coordinate)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86->executable_compiled_open
+            || (x86->executable_compiled.template_bytes
+                && template_bytes
+                   != x86->executable_compiled.template_bytes)
+            || !template_bytes
+            || template_bytes > X86_COMPILED_STAGE_BYTES)
+        return 0;
+    x86->executable_compiled.template_bytes = template_bytes;
+    pl_arena arena = {
+        x86->executable_compiled_arena.bytes,
+        X86_COMPILED_ARENA_BYTES, 0u,
+    };
+    pl_plan plan;
+    pl_wasm_block block;
+    int status = pl_compiled_block_lower(
+        &x86->executable_compiled,
+        x86->executable_compiled_parameters,
+        x86->executable_compiled.witness_bytes,
+        x86->executable_compiled.template_rank,
+        x86->executable_stage, template_bytes,
+        &arena, &plan, &block);
+    pl_u32 body_bytes = 0u;
+    pl_u32 value_count = 0u;
+    if (!status)
+        status = pl_wasm_block_parameterized_measure(
+            &block, block_coordinate, &body_bytes, &value_count);
+    if (!status && value_count > X86_EXECUTABLE_PARAMETER_VALUES)
+        status = PL_ERROR_COMPILED_BLOCK_RANGE;
+    if (!status && body_bytes > X86_COMPILED_STAGE_BYTES)
+        status = PL_ERROR_COMPILED_BLOCK_RANGE;
+    pl_u32 body_written = 0u;
+    pl_u32 values_written = 0u;
+    if (!status)
+        status = pl_wasm_block_parameterized_write(
+            &block, block_coordinate, x86->executable_compiled_body,
+            X86_COMPILED_STAGE_BYTES, &body_written,
+            x86->executable_compiled_values,
+            X86_EXECUTABLE_PARAMETER_VALUES, &values_written);
+    if (!status && (body_written != body_bytes
+            || values_written != value_count))
+        status = PL_ERROR_WASM;
+    pl_wasm_function_body body_spec = {
+        x86->executable_compiled_body, body_written,
+    };
+    pl_u32 module_bytes = 0u;
+    if (!status)
+        status = pl_wasm_body_module_measure(
+            &body_spec, 1u, &module_bytes);
+    if (!status && module_bytes > X86_COMPILED_STAGE_BYTES)
+        status = PL_ERROR_COMPILED_BLOCK_RANGE;
+    pl_u32 module_written = 0u;
+    if (!status)
+        status = pl_wasm_body_module_write(
+            &body_spec, 1u, x86->executable_stage,
+            X86_COMPILED_STAGE_BYTES, &module_written);
+    if (!status && module_written != module_bytes)
+        status = PL_ERROR_WASM;
+    if (status) {
+        x86->executable_compiled_module_bytes = 0u;
+        x86->executable_compiled_value_count = 0u;
+        x86->executable_compiled_error = status;
+        return 0;
+    }
+    x86->executable_compiled_module_bytes = module_written;
+    x86->executable_compiled_value_count = value_count;
+    x86->executable_compiled_error = 0;
+    return 1;
+}
+
+EXPORT u32 vm_x86_compiler_module_bytes(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+         ? x86->executable_compiled_module_bytes : 0u;
+}
+
+EXPORT u32 vm_x86_compiler_parameter_count(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+         ? x86->executable_compiled_value_count : 0u;
+}
+
+EXPORT u64 vm_x86_compiler_parameter_value(u64 session, u32 index)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+        && index < x86->executable_compiled_value_count
+         ? x86->executable_compiled_values[index] : 0u;
+}
+
+EXPORT i32 vm_x86_compiler_error(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session)
+         ? x86->executable_compiled_error : PL_ERROR_COMPILED_BLOCK;
+}
+
+static u32 x86_delivery_cache_set(const pl_delivery_ref *ref)
+{
+    u64 page = ref->offset / PL_DELIVERY_NODE_BYTES;
+    return (u32)(page ^ (page >> 32u))
+         & (X86_DELIVERY_CACHE_SETS - 1u);
+}
+
+static const u8 *x86_delivery_cache_open(
+    const X86Workspace *x86, const pl_delivery_ref *ref)
+{
+    u32 first = x86_delivery_cache_set(ref) * X86_DELIVERY_CACHE_WAYS;
+    for (u32 way = 0u; way < X86_DELIVERY_CACHE_WAYS; ++way) {
+        u32 slot = first + way;
+        const pl_delivery_ref *resident =
+            &x86->executable_delivery_cache_ref[slot];
+        if (x86->executable_delivery_cache_valid[slot]
+                && resident->offset == ref->offset
+                && resident->node_bytes == ref->node_bytes
+                && x86_same_digest(resident->digest, ref->digest))
+            return x86->executable_delivery_cache_bytes[slot];
+    }
+    return (const u8 *)0;
+}
+
+static void x86_delivery_cache_publish(
+    X86Workspace *x86, const pl_delivery_ref *ref, const u8 *bytes)
+{
+    u32 set = x86_delivery_cache_set(ref);
+    u32 first = set * X86_DELIVERY_CACHE_WAYS;
+    u32 selected = first + x86->executable_delivery_cache_next[set];
+    for (u32 way = 0u; way < X86_DELIVERY_CACHE_WAYS; ++way) {
+        u32 slot = first + way;
+        if (!x86->executable_delivery_cache_valid[slot]) {
+            selected = slot;
+            break;
+        }
+    }
+    x86->executable_delivery_cache_valid[selected] = 0u;
+    for (u32 index = 0u; index < ref->node_bytes; ++index)
+        x86->executable_delivery_cache_bytes[selected][index] = bytes[index];
+    x86->executable_delivery_cache_ref[selected] = *ref;
+    x86->executable_delivery_cache_next[set] =
+        ((selected - first) + 1u) & (X86_DELIVERY_CACHE_WAYS - 1u);
+    /* Publish the tag after the complete authenticated node and its geometry. */
+    x86->executable_delivery_cache_valid[selected] = 1u;
+}
+
+static u32 x86_delivery_accept_node(
+    X86Workspace *x86, const u8 *digest, const u8 *bytes, u32 count,
+    int publish)
+{
+    pl_delivery_ref expected = x86->executable_delivery_ref;
+    pl_delivery_node node;
+    if (pl_delivery_node_open(
+            &x86->executable_delivery, &expected, bytes, count, &node))
+        return 0u;
+    ++x86->executable_delivery_nodes;
+    if (publish) x86_delivery_cache_publish(x86, &expected, bytes);
+    if (node.level) {
+        pl_delivery_ref child;
+        if (pl_delivery_node_select(
+                &x86->executable_delivery, &node, digest, &child))
+            return 0u;
+        x86->executable_delivery_ref = child;
+        return 1u;
+    }
+    pl_delivery_locator locator;
+    u64 object_bytes;
+    if (x86->executable_request == X86_EXECUTABLE_REQUEST_INDEX)
+        object_bytes = x86->executable_index_ref.node_bytes;
+    else if (x86->executable_request == X86_EXECUTABLE_REQUEST_MODULE)
+        object_bytes = x86->executable_entry_module.payload_bytes;
+    else if (x86->executable_request == X86_EXECUTABLE_REQUEST_RESOURCE)
+        object_bytes = x86->executable_page_resource.object_bytes;
+    else
+        return 0u;
+    if (pl_delivery_node_find(
+            &x86->executable_delivery, &node, digest, &locator)
+            || object_bytes != locator.bytes
+            || !x86_same_digest(locator.digest, digest))
+        return 0u;
+    x86->executable_delivery_locator = locator;
+    x86->executable_delivery_locator_valid = 1u;
+    x86->executable_delivery_loading = 0u;
+    return 2u;
+}
+
+static u32 x86_delivery_advance_cached(X86Workspace *x86, const u8 *digest)
+{
+    while (x86->executable_delivery_loading) {
+        const u8 *bytes = x86_delivery_cache_open(
+            x86, &x86->executable_delivery_ref);
+        if (!bytes) return 1u;
+        ++x86->executable_delivery_cache_hits;
+        u32 state = x86_delivery_accept_node(
+            x86, digest, bytes,
+            x86->executable_delivery_ref.node_bytes, 0);
+        if (state != 1u) return state;
+    }
+    return x86->executable_delivery_locator_valid ? 2u : 0u;
+}
+
+EXPORT int vm_x86_delivery_open(u64 session, u32 bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    pl_delivery_directory delivery;
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86->executable_root_loading
+            || x86->executable_delivery_loading
+            || bytes != PL_DELIVERY_DIRECTORY_BYTES
+            || pl_delivery_directory_open(
+                x86->executable_stage, bytes, &delivery))
+        return 0;
+    x86->executable_delivery = delivery;
+    x86->executable_delivery_published = 1u;
+    x86->executable_delivery_locator_valid = 0u;
+    x86->executable_delivery_resolves = 0u;
+    x86->executable_delivery_nodes = 0u;
+    x86->executable_delivery_cache_hits = 0u;
+    for (u32 slot = 0u; slot < X86_DELIVERY_CACHE_SLOTS; ++slot)
+        x86->executable_delivery_cache_valid[slot] = 0u;
+    for (u32 set = 0u; set < X86_DELIVERY_CACHE_SETS; ++set)
+        x86->executable_delivery_cache_next[set] = 0u;
+    return 1;
+}
+
+/* 0 rejects the request, 1 asks for the current directory node and 2 means
+ * the locator is already resident.  Module chunks therefore descend once per
+ * object rather than once per 4 KiB chunk. */
+EXPORT u32 vm_x86_delivery_resolve_begin(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    const u8 *digest = vm_x86_executable_request_digest(session);
+    u64 bytes = vm_x86_executable_request_bytes(session);
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86->executable_delivery_published
+            || x86->executable_delivery_loading || !digest || !bytes
+            || bytes > 0xffffffffu)
+        return 0u;
+    if (x86->executable_delivery_locator_valid
+            && x86->executable_delivery_locator.bytes == (u32)bytes
+            && x86_same_digest(
+                x86->executable_delivery_locator.digest, digest)) {
+        ++x86->executable_delivery_cache_hits;
+        return 2u;
+    }
+    x86->executable_delivery_ref = x86->executable_delivery.root;
+    x86->executable_delivery_loading = 1u;
+    x86->executable_delivery_locator_valid = 0u;
+    ++x86->executable_delivery_resolves;
+    return x86_delivery_advance_cached(x86, digest);
+}
+
+EXPORT u64 vm_x86_delivery_request_offset(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_delivery_loading
+         ? x86->executable_delivery_ref.offset : 0u;
+}
+
+EXPORT u32 vm_x86_delivery_request_bytes(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_delivery_loading
+         ? x86->executable_delivery_ref.node_bytes : 0u;
+}
+
+EXPORT int vm_x86_delivery_supply(u64 session, u32 bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    const u8 *digest = vm_x86_executable_request_digest(session);
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86->executable_delivery_loading || !digest
+            || bytes != x86->executable_delivery_ref.node_bytes)
+        return 0;
+    u32 state = x86_delivery_accept_node(
+        x86, digest, x86->executable_stage, bytes, 1);
+    return state == 1u ? x86_delivery_advance_cached(x86, digest) : state;
+}
+
+EXPORT u64 vm_x86_delivery_pack_bytes(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_delivery_published
+         ? x86->executable_delivery.pack_bytes : 0u;
+}
+
+EXPORT u64 vm_x86_delivery_object_offset(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_delivery_locator_valid
+         ? x86->executable_delivery_locator.offset : 0u;
+}
+
+EXPORT u32 vm_x86_delivery_object_bytes(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86->executable_delivery_locator_valid
+         ? x86->executable_delivery_locator.bytes : 0u;
+}
+
+EXPORT u64 vm_x86_delivery_resolves(u64 session)
+{
+    return step_session_is(session)
+         ? x86_machine()->executable_delivery_resolves : 0u;
+}
+
+EXPORT u64 vm_x86_delivery_nodes(u64 session)
+{
+    return step_session_is(session)
+         ? x86_machine()->executable_delivery_nodes : 0u;
+}
+
+EXPORT u64 vm_x86_delivery_cache_hits(u64 session)
+{
+    return step_session_is(session)
+         ? x86_machine()->executable_delivery_cache_hits : 0u;
+}
+
+EXPORT int vm_x86_executable_supply(u64 session, u32 bytes)
+{
+    X86Workspace *x86 = x86_machine();
+    x86->executable_admission_error = 0;
+    x86->executable_admission_frame =
+        (u32)(uptr)__builtin_frame_address(0);
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86_executable_request_active(x86)
+            || bytes != vm_x86_executable_request_buffer_bytes(session)) {
+        x86->executable_admission_error = X86_ADMISSION_SUPPLY_STATE;
+        return 0;
+    }
     if (x86->executable_request == X86_EXECUTABLE_REQUEST_INDEX) {
         ++x86->executable_index_nodes;
         pl_index_node node;
         if (pl_index_node_open(&x86->executable_index_ref,
-                               x86->executable_stage, bytes, &node))
+                               x86->executable_stage, bytes, &node)) {
+            x86->executable_admission_error = X86_ADMISSION_INDEX_OPEN;
             return 0;
+        }
         x86_executable_index_cache_publish(
             x86, &x86->executable_index_ref, &node);
         return x86_executable_accept_index_node(x86, &node);
     }
     if (x86->executable_request == X86_EXECUTABLE_REQUEST_RESOURCE) {
+        if ((x86->executable_instantiation_loading
+                || x86->executable_residual_loading
+                || x86->executable_map_loading)
+                && !x86_executable_projection_current(x86))
+            return 0;
         ++x86->executable_resource_payloads;
         u8 digest[PL_SHA256_BYTES];
         pl_sha256_digest(x86->executable_stage, bytes, digest);
         if (!x86_same_digest(
                 digest, x86->executable_page_resource.digest))
             return 0;
-        if (x86->executable_instantiation_loading) {
+        if (x86->executable_page_resource.kind
+                == PL_EXECUTABLE_RESOURCE_TEMPLATE_PAGE) {
+            pl_template_page page;
+            const pl_u8 *tmpl = (const pl_u8 *)0;
+            pl_u32 template_bytes = 0u;
+            if (pl_template_page_open(x86->executable_stage, bytes, &page)
+                    || pl_template_page_get(
+                        x86->executable_stage, &page,
+                        x86->executable_compiled.template_rank,
+                        &tmpl, &template_bytes)
+                    || template_bytes > X86_COMPILED_STAGE_BYTES)
+                return 0;
+            for (u32 index = 0u; index < template_bytes; ++index)
+                x86->executable_stage[index] = tmpl[index];
+            x86->executable_compiled.template_bytes = template_bytes;
+            if (!vm_x86_compiler_compile(
+                    session, template_bytes,
+                    x86->executable_compiled_function))
+                return 0;
+            x86->executable_module_offset = template_bytes;
+            x86->executable_request = X86_EXECUTABLE_REQUEST_INSTALL;
+        } else if (x86->executable_instantiation_loading) {
             for (u32 index = bytes;
                  index < PL_INSTANTIATION_PAGE_BYTES; ++index)
                 x86->executable_stage[index] = 0u;
@@ -15601,33 +17894,43 @@ EXPORT int vm_x86_executable_supply(u64 session, u32 bytes)
             x86->executable_request =
                 X86_EXECUTABLE_REQUEST_RESIDUAL_READY;
         } else if (x86->executable_map_loading) {
-            if (x86->executable_map_tail) {
-                if (bytes != PL_EXECUTABLE_ENTRY_TAIL_ROW_BYTES)
+            pl_entry_generator generator;
+            if (pl_entry_generator_open(
+                    x86->executable_stage, bytes,
+                    x86->executable_map_rank,
+                    x86_executable_entry_class_count(x86), &generator))
+                return 0;
+            u32 slot = x86->executable_map_rank
+                     & (X86_EXECUTABLE_ENTRY_GENERATOR_CACHE - 1u);
+            x86_executable_projection_unpublish_tag(
+                &x86->executable_entry_generator_tag[slot],
+                &x86->executable_entry_generator_local_tag[slot],
+                &x86->executable_entry_generator_local_epoch[slot]);
+            for (u32 index = 0u; index < PL_ENTRY_GENERATOR_VALUES; ++index)
+                if (pl_entry_generator_lookup(
+                        &generator, index,
+                        &x86->executable_entry_generator_values[slot][index]))
                     return 0;
-                u32 slot = x86->executable_map_rank
-                         & (X86_EXECUTABLE_ENTRY_TAIL_CACHE - 1u);
-                for (u32 index = 0u; index < PL_ENTRY_TAIL_VALUES; ++index)
-                    x86->executable_entry_tail_rows[slot][index] =
-                        pl_read_u32(x86->executable_stage + index * 4u);
-                x86->executable_entry_tail_tag[slot] =
-                    x86->executable_map_rank + 1u;
-            } else {
-                if (bytes != PL_EXECUTABLE_ENTRY_PAGE_ROWS_BYTES)
-                    return 0;
-                u32 slot = x86->executable_map_rank
-                         & (X86_EXECUTABLE_ENTRY_PAGE_CACHE - 1u);
-                for (u32 index = 0u; index < PL_ENTRY_PAGE_ROWS; ++index)
-                    x86->executable_entry_page_rows[slot][index] =
-                        pl_read_u32(x86->executable_stage + index * 4u);
-                x86->executable_entry_page_tag[slot] =
-                    x86->executable_map_rank + 1u;
-            }
+            x86_executable_projection_publish_tag(
+                x86, x86->executable_map_rank,
+                &x86->executable_entry_generator_tag[slot],
+                &x86->executable_entry_generator_local_tag[slot],
+                &x86->executable_entry_generator_local_epoch[slot]);
             x86->executable_request = X86_EXECUTABLE_REQUEST_MAP_READY;
         } else {
             for (u32 index = 0u; index < X86_PHYSICAL_PAGE_BYTES; ++index)
                 x86->physical_transfer[index] = 0u;
-            for (u32 index = 0u; index < bytes; ++index)
-                x86->physical_transfer[index] = x86->executable_stage[index];
+            if (x86->executable_page_resource.flags
+                    & PL_EXECUTABLE_RESOURCE_DEFLATE) {
+                if (pl_deflate_zlib(
+                        (void *)0, x86->executable_stage, bytes,
+                        x86->physical_transfer, X86_PHYSICAL_PAGE_BYTES))
+                    return 0;
+            } else {
+                for (u32 index = 0u; index < bytes; ++index)
+                    x86->physical_transfer[index] =
+                        x86->executable_stage[index];
+            }
             x86->executable_request = X86_EXECUTABLE_REQUEST_PAGE_READY;
         }
         return 1;
@@ -15646,10 +17949,92 @@ EXPORT int vm_x86_executable_supply(u64 session, u32 bytes)
     if (!x86_same_digest(digest, x86->executable_entry_module.digest)) {
         x86->executable_module_offset = 0u;
         pl_sha256_open(&x86->executable_module_hash);
+        x86->executable_admission_error = X86_ADMISSION_MODULE_DIGEST;
         return 0;
+    }
+    if (x86->executable_entry_module.flags
+            == PL_EXECUTABLE_MODULE_COMPILED) {
+        pl_compiled_page page;
+        const pl_u8 *descriptor = (const pl_u8 *)0;
+        pl_u32 descriptor_bytes = 0u;
+        if (x86->executable_module_offset > PL_COMPILED_PAGE_BYTES) {
+            x86->executable_admission_error = X86_ADMISSION_COMPILED_EXTENT;
+            return 0;
+        }
+        if (pl_compiled_page_open(
+                x86->executable_stage,
+                (u32)x86->executable_module_offset, &page)) {
+            x86->executable_admission_error = x86_compiled_page_failure(
+                x86->executable_stage,
+                (u32)x86->executable_module_offset);
+            return 0;
+        }
+        if (page.first_function
+                != x86->executable_entry_module.first_function) {
+            x86->executable_admission_error = X86_ADMISSION_COMPILED_FIRST;
+            return 0;
+        }
+        if (page.function_count
+                != x86->executable_entry_module.function_count) {
+            x86->executable_admission_error = X86_ADMISSION_COMPILED_COUNT;
+            return 0;
+        }
+        if (pl_compiled_page_get(
+                x86->executable_stage, &page,
+                x86->executable_compiled_function,
+                &descriptor, &descriptor_bytes)) {
+            x86->executable_admission_error = X86_ADMISSION_COMPILED_SELECT;
+            return 0;
+        }
+        for (u32 index = 0u; index < descriptor_bytes; ++index)
+            x86->executable_stage[index] = descriptor[index];
+        if (!vm_x86_compiler_open(session, descriptor_bytes)) {
+            x86->executable_admission_error = X86_ADMISSION_COMPILED_OPEN;
+            return 0;
+        }
+        x86->executable_module_offset = 0u;
+        x86_executable_index_start(
+            x86, X86_EXECUTABLE_INDEX_TEMPLATE,
+            &x86->executable_root.resources,
+            (pl_index_key){
+                pl_executable_template_key(
+                    x86->executable_compiled.template_rank),
+                0u,
+            });
+        return 1;
     }
     x86->executable_request = X86_EXECUTABLE_REQUEST_INSTALL;
     return 1;
+}
+
+EXPORT i32 vm_x86_executable_admission_error(u64 session)
+{
+    return step_session_is(session)
+         ? x86_machine()->executable_admission_error : 0;
+}
+
+EXPORT u32 vm_x86_executable_admission_frame(u64 session)
+{
+    return step_session_is(session)
+         ? x86_machine()->executable_admission_frame : 0u;
+}
+
+EXPORT u32 vm_workspace_begin(void)
+{
+    return (u32)(uptr)&workspace;
+}
+
+EXPORT u32 vm_workspace_end(void)
+{
+    return (u32)(uptr)(&workspace + 1);
+}
+
+EXPORT int vm_x86_executable_module_is_compiled(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    return step_session_is(session) && x86_executable_request_active(x86)
+        && x86->executable_entry_module.flags
+           == PL_EXECUTABLE_MODULE_COMPILED;
 }
 
 EXPORT u32 vm_x86_executable_module_table_base(u64 session)
@@ -15659,7 +18044,10 @@ EXPORT u32 vm_x86_executable_module_table_base(u64 session)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_INSTALL)
         return 0u;
     return x86->executable_table_base
-         + (u32)x86->executable_entry_module.first_function;
+         + (x86->executable_entry_module.flags
+                == PL_EXECUTABLE_MODULE_COMPILED
+            ? x86->executable_compiled_function
+            : (u32)x86->executable_entry_module.first_function);
 }
 
 EXPORT u32 vm_x86_executable_module_function_count(u64 session)
@@ -15667,7 +18055,9 @@ EXPORT u32 vm_x86_executable_module_function_count(u64 session)
     X86Workspace *x86 = x86_machine();
     return step_session_is(session)
         && x86->executable_request == X86_EXECUTABLE_REQUEST_INSTALL
-         ? x86->executable_entry_module.function_count : 0u;
+         ? (x86->executable_entry_module.flags
+                == PL_EXECUTABLE_MODULE_COMPILED
+            ? 1u : x86->executable_entry_module.function_count) : 0u;
 }
 
 EXPORT int vm_x86_executable_module_installed(u64 session)
@@ -15679,7 +18069,12 @@ EXPORT int vm_x86_executable_module_installed(u64 session)
                 && !x86->executable_kernel_loading)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_INSTALL)
         return 0;
-    x86_executable_publish_module(x86, &x86->executable_entry_module);
+    pl_executable_module installed = x86->executable_entry_module;
+    if (installed.flags == PL_EXECUTABLE_MODULE_COMPILED) {
+        installed.first_function = x86->executable_compiled_function;
+        installed.function_count = 1u;
+    }
+    if (!x86_executable_publish_module(x86, &installed)) return 0;
     if (x86->executable_code_loading) {
         x86->executable_request = X86_EXECUTABLE_REQUEST_CODE_READY;
         return 1;
@@ -15702,16 +18097,23 @@ EXPORT int vm_x86_executable_commit(u64 session)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_READY
             || x86->executable_root.memory_bytes != x86->memory_bytes)
         return 0;
+    int entry_resident = x86->executable_entry_module.flags
+            == PL_EXECUTABLE_MODULE_COMPILED
+        ? x86_executable_kernel_resident(
+            x86, x86->executable_root.entry_function)
+        : x86_executable_module_resident(
+            x86, &x86->executable_entry_module);
+    if (!entry_resident) return 0;
     for (u32 index = 0; index < sizeof x86->executable / sizeof(u32); ++index)
         ((u32 *)&x86->executable)[index] = 0;
     x86->executable.abi_version = PL_VM_ABI_VERSION;
     x86->executable.bytes = PL_VM_EXECUTABLE_CONTEXT_BYTES;
     x86->executable.table_base = x86->executable_table_base;
-    x86->executable.function_count = x86->executable_root.function_count;
+    x86->executable.function_count = x86->executable_function_limit;
     x86->executable.entry_function = x86->executable_root.entry_function;
     x86->executable.page_count = x86->executable_root.entry_page_count;
-    x86->executable.tail_row_count =
-        x86->executable_root.entry_tail_row_count;
+    x86->executable.entry_generator_count =
+        x86->executable_root.entry_generator_count;
     x86->executable.binding_tags =
         (u32)(uptr)&x86->executable_binding_tag[0];
     x86->executable.binding_generations =
@@ -15719,22 +18121,21 @@ EXPORT int vm_x86_executable_commit(u64 session)
     x86->executable.binding_arguments =
         (u32)(uptr)&x86->executable_binding_argument[0];
     x86->executable.binding_slots = X86_EXECUTABLE_BINDING_CACHE;
-    x86->executable.page_row_tags =
-        (u32)(uptr)&x86->executable_entry_page_tag[0];
-    x86->executable.page_row_values =
-        (u32)(uptr)&x86->executable_entry_page_rows[0][0];
-    x86->executable.page_row_slots = X86_EXECUTABLE_ENTRY_PAGE_CACHE;
-    x86->executable.tail_row_tags =
-        (u32)(uptr)&x86->executable_entry_tail_tag[0];
-    x86->executable.tail_row_values =
-        (u32)(uptr)&x86->executable_entry_tail_rows[0][0];
-    x86->executable.tail_row_slots = X86_EXECUTABLE_ENTRY_TAIL_CACHE;
+    x86->executable.entry_generator_tags =
+        (u32)(uptr)&x86->executable_entry_generator_tag[0];
+    x86->executable.entry_generator_values =
+        (u32)(uptr)&x86->executable_entry_generator_values[0][0];
+    x86->executable.entry_generator_slots =
+        X86_EXECUTABLE_ENTRY_GENERATOR_CACHE;
     x86->executable.parameter_values =
         (u32)(uptr)&x86->executable_parameter_values[0];
     x86->executable.parameter_count = 0u;
     x86->direct_blocks = 0;
     x86->direct_function = x86->executable.entry_function;
     x86->direct_residual = x86->executable_root.entry_residual;
+    x86->direct_residual_valid =
+        (x86->executable_root.residual_flags
+         & PL_EXECUTABLE_RESIDUAL_GRAPH) != 0u;
     x86->direct_memory_result = 0u;
     x86->direct_transaction_active = 0u;
     x86->direct_repeat_active = 0u;
@@ -15744,8 +18145,6 @@ EXPORT int vm_x86_executable_commit(u64 session)
     x86->executable_root_loading = 0;
     x86->executable_published = 1u;
     x86->executable_request = X86_EXECUTABLE_REQUEST_NONE;
-    x86_executable_publish_module(x86, &x86->executable_entry_module);
-    x86_executable_publish_page(x86, &x86->executable_entry_binding);
     return 1;
 }
 
@@ -15769,11 +18168,14 @@ EXPORT int vm_x86_executable_resolve_begin(u64 session)
         x86->direct_function = function;
         return 2;
     }
+    int captured = vm_x86_executable_source_begin(session, page);
+    if (captured == 2) return 3;
+    if (captured != 1) return 0;
     x86->executable_code_loading = 1u;
     x86_executable_index_start(
         x86, X86_EXECUTABLE_INDEX_CODE_BINDING,
         &x86->executable_root.bindings,
-        (pl_index_key){ page, generation });
+        (pl_index_key){ page, 0u });
     return 1;
 }
 
@@ -15785,7 +18187,11 @@ EXPORT int vm_x86_executable_resolve_commit(u64 session)
             || x86->executable_request
                != X86_EXECUTABLE_REQUEST_CODE_READY)
         return 0;
-    x86_executable_publish_page(x86, &x86->executable_entry_binding);
+    if (!vm_x86_executable_source_commit(
+            session,
+            x86->executable_entry_binding.dispatch_function,
+            x86->executable_entry_binding.dispatch_argument))
+        return 0;
     x86->direct_function = x86->executable_entry_binding.dispatch_function;
     x86->executable_code_loading = 0u;
     x86->executable_request = X86_EXECUTABLE_REQUEST_NONE;
@@ -15793,17 +18199,31 @@ EXPORT int vm_x86_executable_resolve_commit(u64 session)
     return 1;
 }
 
+/* Convert an authenticated binding absence/source-identity mismatch into the
+ * one page-compiler cut.  The captured source and its physical generations
+ * stay live; page-product commit is the only operation that can publish it. */
+EXPORT int vm_x86_executable_resolve_compile(u64 session)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active || x86->error
+            || !x86->executable_published || !x86->executable_code_loading
+            || x86->executable_request != X86_EXECUTABLE_REQUEST_COMPILE
+            || !x86_code_source_is_current(x86))
+        return 0;
+    x86->executable_request = X86_EXECUTABLE_REQUEST_NONE;
+    x86->executable_index_kind = 0u;
+    return 1;
+}
+
 /* Project the current dynamic RIP into the canonical residual partition.
- * The authenticated binding supplies only the entry-page rank.  Page and
- * tail rows stay independently evictable; their miss tokens reuse the same
- * opaque admission ABI as legacy generated dispatchers. */
+ * The authenticated binding supplies only the entry-page rank.  Each
+ * 1024-coordinate generator stays independently evictable and its miss token
+ * reuses the same opaque admission ABI as emitted dispatchers. */
 EXPORT pl_vm_result vm_x86_executable_project_residual(u64 session)
 {
     X86Workspace *x86 = x86_machine();
     if (!step_session_is(session) || !x86->active || x86->error
-            || !x86->executable_published
-            || !(x86->executable_root.residual_flags
-                 & PL_EXECUTABLE_RESIDUAL_GRAPH))
+            || !x86->executable_published)
         return pl_vm_result_make(PL_VM_FAULT, 0xffu);
     u64 page = x86->rip & ~((u64)PL_EXECUTABLE_PAGE_BYTES - 1u);
     u32 function = 0u, page_rank = 0u;
@@ -15812,26 +18232,35 @@ EXPORT pl_vm_result vm_x86_executable_project_residual(u64 session)
             &function, &page_rank))
         return pl_vm_result_make(PL_VM_RESOLVE_RIP, 0u);
     (void)function;
-    if (page_rank >= x86->executable_root.entry_page_count)
+    u32 code_slot = x86_executable_page_slot(page);
+    x86->executable_active_product_slot = code_slot;
+    x86->executable_active_product_epoch =
+        x86->executable_code_product_epoch[code_slot];
+    if (!x86_executable_residual_graph(x86))
         return pl_vm_result_make(PL_VM_STALE_GENERATION, 0u);
-    u32 page_slot = page_rank & (X86_EXECUTABLE_ENTRY_PAGE_CACHE - 1u);
-    if (x86->executable_entry_page_tag[page_slot] != page_rank + 1u)
-        return pl_vm_result_make(
-            PL_VM_ENTRY_MAP, (u64)page_rank << 1u);
+    if (x86->executable_active_product_epoch) page_rank = 0u;
+    if (page_rank >= x86_executable_entry_page_count(x86))
+        return pl_vm_result_make(PL_VM_STALE_GENERATION, 0u);
     u32 offset = (u32)(x86->rip - page);
-    u32 tail_rank = x86->executable_entry_page_rows[page_slot]
-        [offset >> PL_ENTRY_TAIL_BITS];
-    if (tail_rank >= x86->executable_root.entry_tail_row_count)
+    u32 generator_rank = page_rank * 4u
+                       + offset / PL_ENTRY_GENERATOR_VALUES;
+    if (generator_rank >= x86_executable_entry_generator_count(x86))
         return pl_vm_result_make(PL_VM_STALE_GENERATION, 0u);
-    u32 tail_slot = tail_rank & (X86_EXECUTABLE_ENTRY_TAIL_CACHE - 1u);
-    if (x86->executable_entry_tail_tag[tail_slot] != tail_rank + 1u)
+    u32 generator_slot = generator_rank
+                       & (X86_EXECUTABLE_ENTRY_GENERATOR_CACHE - 1u);
+    if (!x86_executable_projection_tag(
+            x86, generator_rank,
+            x86->executable_entry_generator_tag[generator_slot],
+            x86->executable_entry_generator_local_tag[generator_slot],
+            x86->executable_entry_generator_local_epoch[generator_slot]))
         return pl_vm_result_make(
-            PL_VM_ENTRY_MAP, ((u64)tail_rank << 1u) | 1u);
-    u32 residual = x86->executable_entry_tail_rows[tail_slot]
-        [offset & (PL_ENTRY_TAIL_VALUES - 1u)];
-    if (residual >= x86->executable_root.residual_count)
+            PL_VM_ENTRY_MAP, generator_rank);
+    u32 residual = x86->executable_entry_generator_values[generator_slot]
+        [offset & (PL_ENTRY_GENERATOR_VALUES - 1u)];
+    if (residual >= x86_executable_residual_count(x86))
         return pl_vm_result_make(PL_VM_STALE_GENERATION, 0u);
     x86->direct_residual = residual;
+    x86->direct_residual_valid = 1u;
     return pl_vm_direct(residual);
 }
 
@@ -15844,47 +18273,46 @@ EXPORT int vm_x86_executable_resolve_abort(u64 session)
     x86->executable_request = X86_EXECUTABLE_REQUEST_NONE;
     x86->executable_index_kind = 0u;
     x86->executable_module_offset = 0u;
+    x86->executable_code_source_ready = 0u;
     return 1;
 }
 
-/* Admit one cold quotient row requested by a generated page dispatcher.  The
- * result token carries only (page-row/tail-row, rank); C derives the exact
+/* Admit one cold quotient generator requested by a page dispatcher.  The
+ * result token carries only its rank; C derives the exact
  * authenticated resource key and publishes a cache tag only after digest and
  * extent verification. */
 EXPORT int vm_x86_executable_map_begin(u64 session, pl_vm_result result)
 {
     X86Workspace *x86 = x86_machine();
+    const pl_index_ref *resources =
+        x86_executable_projection_resources(x86);
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published
+            || !resources
             || x86_executable_request_active(x86)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_NONE
             || pl_vm_result_kind(result) != PL_VM_ENTRY_MAP)
         return 0;
-    u64 coordinate = pl_vm_result_payload(result);
-    int tail = (int)(coordinate & 1u);
-    u64 wide_rank = coordinate >> 1u;
-    u32 limit = tail ? x86->executable_root.entry_tail_row_count
-                     : x86->executable_root.entry_page_count;
+    u64 wide_rank = pl_vm_result_payload(result);
+    u32 limit = x86_executable_entry_generator_count(x86);
     if (wide_rank >= limit) return 0;
     u32 rank = (u32)wide_rank;
-    if (tail) {
-        u32 slot = rank & (X86_EXECUTABLE_ENTRY_TAIL_CACHE - 1u);
-        if (x86->executable_entry_tail_tag[slot] == rank + 1u) return 2;
-    } else {
-        u32 slot = rank & (X86_EXECUTABLE_ENTRY_PAGE_CACHE - 1u);
-        if (x86->executable_entry_page_tag[slot] == rank + 1u) return 2;
-    }
+    u32 slot = rank & (X86_EXECUTABLE_ENTRY_GENERATOR_CACHE - 1u);
+    if (x86_executable_projection_tag(
+            x86, rank,
+            x86->executable_entry_generator_tag[slot],
+            x86->executable_entry_generator_local_tag[slot],
+            x86->executable_entry_generator_local_epoch[slot]))
+        return 2;
+    x86_executable_bind_projection(x86);
     x86->executable_map_loading = 1u;
-    x86->executable_map_tail = (u32)tail;
     x86->executable_map_rank = rank;
     x86_executable_index_start(
         x86,
-        tail ? X86_EXECUTABLE_INDEX_ENTRY_TAIL_ROW
-             : X86_EXECUTABLE_INDEX_ENTRY_PAGE_ROWS,
-        &x86->executable_root.resources,
+        X86_EXECUTABLE_INDEX_ENTRY_GENERATOR,
+        resources,
         (pl_index_key){
-            tail ? pl_executable_entry_tail_key(rank)
-                 : pl_executable_entry_page_key(rank),
+            pl_executable_entry_generator_key(rank),
             0u,
         });
     return 1;
@@ -15895,6 +18323,7 @@ EXPORT int vm_x86_executable_map_commit(u64 session)
     X86Workspace *x86 = x86_machine();
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published || !x86->executable_map_loading
+            || !x86_executable_projection_current(x86)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_MAP_READY)
         return 0;
     x86->executable_map_loading = 0u;
@@ -15920,10 +18349,12 @@ EXPORT int vm_x86_executable_residual_begin(
     u64 session, pl_vm_result result)
 {
     X86Workspace *x86 = x86_machine();
+    const pl_index_ref *resources =
+        x86_executable_projection_resources(x86);
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published
-            || !(x86->executable_root.residual_flags
-                 & PL_EXECUTABLE_RESIDUAL_GRAPH)
+            || !x86_executable_residual_graph(x86)
+            || !resources
             || x86_executable_request_active(x86)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_NONE
             || pl_vm_result_kind(result) != PL_VM_TRANSITION)
@@ -15933,8 +18364,8 @@ EXPORT int vm_x86_executable_residual_begin(
     if (column > 1u) return 0;
     int edge = column == 1u;
     u64 wide_page = coordinate >> 3u;
-    u32 items = edge ? x86->executable_root.residual_edge_count
-                     : x86->executable_root.residual_count;
+    u32 items = edge ? x86_executable_residual_edge_count(x86)
+                     : x86_executable_residual_count(x86);
     u32 per_page = edge ? PL_RESIDUAL_EDGE_PAGE_EDGES
                         : PL_RESIDUAL_STATE_PAGE_STATES;
     u32 pages = items / per_page + (items % per_page != 0u);
@@ -15942,13 +18373,22 @@ EXPORT int vm_x86_executable_residual_begin(
     u32 page = (u32)wide_page;
     if (edge) {
         u32 slot = page & (X86_EXECUTABLE_RESIDUAL_EDGE_CACHE - 1u);
-        if (x86->executable_residual_edge_tag[slot] == page + 1u)
+        if (x86_executable_projection_tag(
+                x86, page,
+                x86->executable_residual_edge_tag[slot],
+                x86->executable_residual_edge_local_tag[slot],
+                x86->executable_residual_edge_local_epoch[slot]))
             return 2;
     } else {
         u32 slot = page & (X86_EXECUTABLE_RESIDUAL_STATE_CACHE - 1u);
-        if (x86->executable_residual_state_tag[slot] == page + 1u)
+        if (x86_executable_projection_tag(
+                x86, page,
+                x86->executable_residual_state_tag[slot],
+                x86->executable_residual_state_local_tag[slot],
+                x86->executable_residual_state_local_epoch[slot]))
             return 2;
     }
+    x86_executable_bind_projection(x86);
     x86->executable_residual_loading = 1u;
     x86->executable_residual_edge = (u32)edge;
     x86->executable_residual_rank = page;
@@ -15956,7 +18396,7 @@ EXPORT int vm_x86_executable_residual_begin(
         x86,
         edge ? X86_EXECUTABLE_INDEX_RESIDUAL_EDGE
              : X86_EXECUTABLE_INDEX_RESIDUAL_STATE,
-        &x86->executable_root.resources,
+        resources,
         (pl_index_key){
             edge ? pl_executable_residual_edge_key(page)
                  : pl_executable_residual_state_key(page),
@@ -15971,6 +18411,7 @@ EXPORT int vm_x86_executable_residual_commit(u64 session)
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published
             || !x86->executable_residual_loading
+            || !x86_executable_projection_current(x86)
             || x86->executable_request
                != X86_EXECUTABLE_REQUEST_RESIDUAL_READY)
         return 0;
@@ -15998,10 +18439,12 @@ EXPORT int vm_x86_executable_instantiation_begin(
     u64 session, pl_vm_result result)
 {
     X86Workspace *x86 = x86_machine();
+    const pl_index_ref *resources =
+        x86_executable_projection_resources(x86);
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published
-            || !(x86->executable_root.residual_flags
-                 & PL_EXECUTABLE_RESIDUAL_GRAPH)
+            || !x86_executable_residual_graph(x86)
+            || !resources
             || x86_executable_request_active(x86)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_NONE
             || pl_vm_result_kind(result) != PL_VM_TRANSITION)
@@ -16011,8 +18454,8 @@ EXPORT int vm_x86_executable_instantiation_begin(
     if (column != 3u && column != 4u) return 0;
     int parameter = column == 4u;
     u64 wide_page = coordinate >> 3u;
-    u32 items = parameter ? x86->executable_root.parameter_word_count
-                          : x86->executable_root.instantiation_count;
+    u32 items = parameter ? x86_executable_parameter_count(x86)
+                          : x86_executable_instantiation_count(x86);
     u32 per_page = parameter ? PL_PARAMETER_PAGE_WORDS
                              : PL_INSTANTIATION_PAGE_ROWS;
     u32 pages = items / per_page + (items % per_page != 0u);
@@ -16022,9 +18465,14 @@ EXPORT int vm_x86_executable_instantiation_begin(
         if (x86_executable_parameter_page_resident(x86, page)) return 2;
     } else {
         u32 slot = page & (X86_EXECUTABLE_INSTANTIATION_CACHE - 1u);
-        if (x86->executable_instantiation_tag[slot] == page + 1u)
+        if (x86_executable_projection_tag(
+                x86, page,
+                x86->executable_instantiation_tag[slot],
+                x86->executable_instantiation_local_tag[slot],
+                x86->executable_instantiation_local_epoch[slot]))
             return 2;
     }
+    x86_executable_bind_projection(x86);
     x86->executable_instantiation_loading = 1u;
     x86->executable_instantiation_parameter = (u32)parameter;
     x86->executable_instantiation_rank = page;
@@ -16032,7 +18480,7 @@ EXPORT int vm_x86_executable_instantiation_begin(
         x86,
         parameter ? X86_EXECUTABLE_INDEX_PARAMETER
                   : X86_EXECUTABLE_INDEX_INSTANTIATION,
-        &x86->executable_root.resources,
+        resources,
         (pl_index_key){
             parameter ? pl_executable_parameter_key(page)
                       : pl_executable_instantiation_key(page),
@@ -16047,6 +18495,7 @@ EXPORT int vm_x86_executable_instantiation_commit(u64 session)
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published
             || !x86->executable_instantiation_loading
+            || !x86_executable_projection_current(x86)
             || x86->executable_request
                != X86_EXECUTABLE_REQUEST_INSTANTIATION_READY)
         return 0;
@@ -16077,8 +18526,7 @@ EXPORT int vm_x86_executable_kernel_begin(
     X86Workspace *x86 = x86_machine();
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published
-            || !(x86->executable_root.residual_flags
-                 & PL_EXECUTABLE_RESIDUAL_GRAPH)
+            || !x86_executable_residual_graph(x86)
             || x86_executable_request_active(x86)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_NONE
             || pl_vm_result_kind(result) != PL_VM_TRANSITION)
@@ -16086,9 +18534,10 @@ EXPORT int vm_x86_executable_kernel_begin(
     u64 coordinate = pl_vm_result_payload(result);
     if ((coordinate & 7u) != 2u) return 0;
     u64 wide_rank = coordinate >> 3u;
-    if (wide_rank >= x86->executable.function_count) return 0;
+    if (wide_rank >= x86_executable_function_limit(x86)) return 0;
     u32 rank = (u32)wide_rank;
     if (x86_executable_kernel_resident(x86, rank)) return 2;
+    x86_executable_bind_projection(x86);
     x86->executable_kernel_loading = 1u;
     x86->executable_kernel_rank = rank;
     x86_executable_index_start(
@@ -16104,6 +18553,7 @@ EXPORT int vm_x86_executable_kernel_commit(u64 session)
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published
             || !x86->executable_kernel_loading
+            || !x86_executable_projection_current(x86)
             || x86->executable_request != X86_EXECUTABLE_REQUEST_KERNEL_READY
             || !x86_executable_kernel_resident(
                 x86, x86->executable_kernel_rank))
@@ -16148,7 +18598,7 @@ EXPORT int vm_x86_executable_physical_begin(u64 session)
     x86_executable_index_start(
         x86, X86_EXECUTABLE_INDEX_RESOURCE_PAGE,
         &x86->executable_root.resources,
-        (pl_index_key){ address, 0u });
+        (pl_index_key){ address, ~(u64)0 });
     return 1;
 }
 
@@ -16202,6 +18652,7 @@ EXPORT int vm_x86_unpublish_executable(u64 session)
     x86->executable_published = 0;
     x86->direct_blocks = 0;
     x86->direct_residual = 0u;
+    x86->direct_residual_valid = 0u;
     x86->direct_transaction_active = 0u;
     x86->direct_repeat_active = 0u;
     x86->direct_copy_active = 0u;
@@ -16311,6 +18762,19 @@ EXPORT u64 vm_x86_physical_victim_probes(u64 session)
          ? x86->physical_victim_probes : 0u;
 }
 
+/* Compiler-side proof capture uses the resident physical coordinate and this
+ * non-repeating token as one immutable input.  Zero means the page is cold or
+ * the session is not current; it is never a publishable generation. */
+EXPORT u64 vm_x86_physical_generation(u64 session, u64 page)
+{
+    X86Workspace *x86 = x86_machine();
+    if (!step_session_is(session) || !x86->active) return 0u;
+    u32 slot = x86_physical_lookup(x86, page);
+    return slot < X86_PHYSICAL_PAGES && x86->physical_valid[slot]
+            && x86->physical_page[slot] == page
+         ? x86->physical_generation[slot] : 0u;
+}
+
 static pl_vm_result x86_residual_miss(u32 coordinate, u32 kind)
 {
     return pl_vm_result_make(
@@ -16367,16 +18831,21 @@ EXPORT pl_vm_result vm_x86_execute_residual(
     u64 session, u32 residual, u32 max_blocks)
 {
     X86Workspace *x86 = x86_machine();
+    if (step_session_is(session) && x86->active && !x86->error
+            && x86->executable_published
+            && x86->executable_active_product_epoch
+            && !x86_executable_active_product(x86))
+        return pl_vm_result_make(PL_VM_RESOLVE_RIP, 0u);
     if (!step_session_is(session) || !x86->active || x86->error
             || !x86->executable_published || !max_blocks
-            || !(x86->executable_root.residual_flags
-                 & PL_EXECUTABLE_RESIDUAL_GRAPH)
-            || residual >= x86->executable_root.residual_count) {
+            || !x86_executable_residual_graph(x86)
+            || residual >= x86_executable_residual_count(x86)) {
         x86_fail(48u);
         return pl_vm_result_make(PL_VM_FAULT, 0xffu);
     }
     x86->direct_blocks = 0u;
     x86->direct_residual = residual;
+    x86->direct_residual_valid = 1u;
     if (x86->exception_pending)
         return x86_direct_deliver_fault(
             x86, pl_vm_result_make(
@@ -16395,6 +18864,9 @@ EXPORT pl_vm_result vm_x86_execute_residual(
     const u32 context = (u32)(uptr)&x86->executable;
     x86->direct_memory_result = 0u;
     while (x86->direct_blocks < max_blocks) {
+        if (x86->executable_active_product_epoch
+                && !x86_executable_active_product(x86))
+            return pl_vm_result_make(PL_VM_RESOLVE_RIP, 0u);
         u32 instantiation = 0u, degree = 0u, edge_base = 0u;
         if (!x86_executable_residual_state_resident(
                 x86, residual, &instantiation, &degree, &edge_base))
@@ -16457,22 +18929,27 @@ EXPORT pl_vm_result vm_x86_execute_residual(
             return result;
         }
         x86_direct_complete_cut(x86, kind);
-        u64 wide_arm = pl_vm_result_payload(result);
-        if (wide_arm >= degree) {
+        u32 arm = 0u;
+        i32 delta = 0;
+        if (!pl_vm_transition_payload_open(
+                pl_vm_result_payload(result), &arm, &delta)
+                || arm >= degree) {
             x86_fail(50u);
             return pl_vm_result_make(PL_VM_FAULT, 0xffu);
         }
         u32 next = 0u;
-        i32 delta = 0;
         if (!x86_executable_residual_edge_resident(
-                x86, edge_base + (u32)wide_arm, &next, &delta)) {
+                x86, edge_base + arm, residual, delta, &next)) {
             x86_fail(51u);
             return pl_vm_result_make(PL_VM_FAULT, 0xffu);
         }
         x86->rip += (u64)(i64)delta;
         if (next == PL_RESIDUAL_RESOLVE)
             return pl_vm_result_make(PL_VM_RESOLVE_RIP, 0u);
-        if (next >= x86->executable_root.residual_count) {
+        if (x86->executable_active_product_epoch
+                && !x86_executable_active_product(x86))
+            return pl_vm_result_make(PL_VM_RESOLVE_RIP, 0u);
+        if (next >= x86_executable_residual_count(x86)) {
             x86_fail(52u);
             return pl_vm_result_make(PL_VM_FAULT, 0xffu);
         }
@@ -16501,6 +18978,7 @@ EXPORT pl_vm_result vm_x86_execute_direct(u64 session, u32 function_rank,
         x86_fail(45u);
         return pl_vm_result_make(PL_VM_FAULT, 0xffu);
     }
+    x86->direct_residual_valid = 0u;
     x86->direct_blocks = 0;
     x86->direct_function = function_rank;
     if (x86->exception_pending)
@@ -16568,8 +19046,7 @@ EXPORT u32 vm_x86_direct_residual(u64 session)
 {
     X86Workspace *x86 = x86_machine();
     return step_session_is(session) && x86->executable_published
-        && (x86->executable_root.residual_flags
-            & PL_EXECUTABLE_RESIDUAL_GRAPH)
+        && x86->direct_residual_valid
          ? x86->direct_residual : 0xffffffffu;
 }
 
@@ -16585,15 +19062,6 @@ EXPORT u64 vm_x86_first_dirty_physical_page(u64 session)
     if (!step_session_is(session) || x86->physical_status
             || step_machine()->execution_active)
         return X86_NO_PAGE;
-    /* A completed STEP may still own dirty virtual slots.  Their bytes live
-     * directly in the x86 physical cache, but ownership is not published to
-     * physical_dirty until the STEP flush is acknowledged.  Drain that first
-     * so a persistent cut has one canonical backing-store root. */
-    while (vm_step_first_dirty_memory_coordinate(session)
-            != STEP_NO_COORDINATE) {
-        int serviced = x86_service_step_memory(session, STEP_DIRTY_PAGE);
-        if (serviced != STEP_OK) return X86_NO_PAGE;
-    }
     for (u32 slot = 0; slot < X86_PHYSICAL_PAGES; ++slot) {
         if (!x86->physical_valid[slot] || !x86->physical_dirty[slot])
             continue;
@@ -17036,7 +19504,7 @@ EXPORT u64 vm_x86_span(u64 session)
     return step_session_is(session) ? x86_machine()->span : 0;
 }
 
-EXPORT u32 vm_x86_error(u64 session)
+INTERNAL u32 vm_x86_error(u64 session)
 {
     return step_session_is(session) ? x86_machine()->error : 1u;
 }
@@ -17390,7 +19858,7 @@ static int x86_load_block_record(
     return STEP_OK;
 }
 
-EXPORT int vm_x86_load_block(u64 session, u32 bytes)
+INTERNAL int vm_x86_load_block(u64 session, u32 bytes)
 {
     return x86_load_block_record(
         session, step_machine()->page, bytes, 0u);
@@ -17398,7 +19866,7 @@ EXPORT int vm_x86_load_block(u64 session, u32 bytes)
 
 /* Exact-tagged set-associative cache. The full RIP proves identity; a set
  * collision can only replace an old entry and never alias guest code. */
-EXPORT int vm_x86_load_cached_block(u64 session)
+INTERNAL int vm_x86_load_cached_block(u64 session)
 {
     if (!step_session_is(session)) return STEP_TRAP;
     X86Workspace *x86 = x86_machine();
@@ -17420,7 +19888,7 @@ EXPORT int vm_x86_load_cached_block(u64 session)
     return loaded;
 }
 
-EXPORT int vm_x86_execute(u64 session)
+INTERNAL int vm_x86_execute(u64 session)
 {
     if (!step_session_is(session)) return STEP_TRAP;
     X86Workspace *x86 = x86_machine();
@@ -18054,7 +20522,7 @@ EXPORT int vm_x86_execute(u64 session)
  * regains control only for an absent record, a physical/device barrier, or a
  * requested scheduling cut; the common cache-hit path never crosses the
  * WebAssembly boundary. */
-EXPORT int vm_x86_execute_quantum(u64 session, u32 max_blocks)
+INTERNAL int vm_x86_execute_quantum(u64 session, u32 max_blocks)
 {
     if (!step_session_is(session) || !max_blocks) return STEP_TRAP;
     X86Workspace *x86 = x86_machine();
@@ -18119,12 +20587,12 @@ EXPORT int vm_x86_execute_quantum(u64 session, u32 max_blocks)
     return X86_YIELDED;
 }
 
-EXPORT u32 vm_x86_quantum_blocks(u64 session)
+INTERNAL u32 vm_x86_quantum_blocks(u64 session)
 {
     return step_session_is(session) ? x86_machine()->quantum_blocks : 0;
 }
 
-EXPORT u32 vm_x86_quantum_cache_hits(u64 session)
+INTERNAL u32 vm_x86_quantum_cache_hits(u64 session)
 {
     return step_session_is(session) ? x86_machine()->quantum_cache_hits : 0;
 }

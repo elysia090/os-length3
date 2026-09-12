@@ -20,7 +20,7 @@
  * Freestanding: no libc, no allocation.
  */
 
-#include <postlink/sweep.h>
+#include "internal/sweep.h"
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 
@@ -42,7 +42,8 @@ static void mark(pl_u8 *live, pl_u32 *queue, pl_u32 *pending, pl_u32 count,
     queue[(*pending)++] = value;
 }
 
-int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out)
+static int compact_once(const pl_plan *in, const pl_u8 *live_local,
+                        pl_arena *arena, pl_plan *out)
 {
     pl_u32 count = in->node_count;
     pl_u8 *live = pl_arena_take(arena, count ? count : 1u);
@@ -59,7 +60,9 @@ int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out)
     for (pl_u32 index = 0; index < in->stack_count; ++index)
         mark(live, queue, &pending, count, dependency_of(in->stack[index]));
     for (pl_u32 index = 0; index < in->local_count; ++index)
-        mark(live, queue, &pending, count, dependency_of(in->locals[index]));
+        if (!live_local || live_local[index])
+            mark(live, queue, &pending, count,
+                 dependency_of(in->locals[index]));
     while (pending) {
         const pl_node *node = &in->nodes[queue[--pending] - 1u];
         for (pl_u32 slot = 0; slot < node->argument_count; ++slot)
@@ -92,8 +95,17 @@ int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out)
 
     for (pl_u32 index = 0; index < in->stack_count; ++index)
         out->stack[index] = pl_resolve(&remap, in->stack[index]);
-    for (pl_u32 index = 0; index < in->local_count; ++index)
-        out->locals[index] = pl_resolve(&remap, in->locals[index]);
+    for (pl_u32 index = 0; index < in->local_count; ++index) {
+        if (!live_local || live_local[index]) {
+            out->locals[index] = pl_resolve(&remap, in->locals[index]);
+        } else {
+            /* A dead publication is not a retained value or a side table. It
+             * is the identity coordinate required to keep the machine frame
+             * total while complete-future liveness removes its producer. */
+            out->locals[index].kind = PL_OPERAND_LOCAL;
+            out->locals[index].value = index;
+        }
+    }
 
     /* Depth is one past the deepest argument; the waves are those depths as
      * offsets into a run of node values. */
@@ -136,6 +148,19 @@ int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out)
     return 0;
 }
 
+int pl_compact_once(const pl_plan *in, pl_arena *arena, pl_plan *out)
+{
+    return compact_once(in, 0, arena, out);
+}
+
+int pl_compact_projected_once(const pl_plan *in,
+                              const pl_u8 *live_local,
+                              pl_arena *arena, pl_plan *out)
+{
+    if (!in || !live_local) return PL_ERROR_PLAN;
+    return compact_once(in, live_local, arena, out);
+}
+
 static int same_plan(const pl_plan *left, const pl_plan *right)
 {
     if (left->node_count != right->node_count
@@ -175,6 +200,22 @@ int pl_compact(const pl_plan *in, pl_arena *arena, pl_plan *out)
     pl_arena probe = *arena;
     pl_plan again;
     status = pl_compact_once(out, &probe, &again);
+    if (status) return status;
+    if (!same_plan(out, &again)) return PL_ERROR_PLAN;
+    return 0;
+}
+
+int pl_compact_projected(const pl_plan *in,
+                         const pl_u8 *live_local,
+                         pl_arena *arena, pl_plan *out)
+{
+    if (!in || !live_local || !arena || !out) return PL_ERROR_PLAN;
+    int status = pl_compact_projected_once(in, live_local, arena, out);
+    if (status) return status;
+
+    pl_arena probe = *arena;
+    pl_plan again;
+    status = pl_compact_projected_once(out, live_local, &probe, &again);
     if (status) return status;
     if (!same_plan(out, &again)) return PL_ERROR_PLAN;
     return 0;

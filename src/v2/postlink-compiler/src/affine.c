@@ -1,6 +1,6 @@
 /* The affinity argument.  See include/postlink/affine.h. */
 
-#include <postlink/affine.h>
+#include "internal/affine.h"
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 #define PL_PROJECTION_SELECTOR_MASK 0xffu

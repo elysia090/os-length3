@@ -1,0 +1,12 @@
+diff --git a/meson.build b/meson.build
+index 99c5fc0..a316026 100644
+--- a/meson.build
++++ b/meson.build
+@@ -469,6 +469,7 @@ kmod = executable(
+   kmod_sources,
+   link_with : [libshared, libkmod_internal],
+   gnu_symbol_visibility : 'hidden',
++  link_args : ['-static', '-Wl,--emit-relocs'],
+   build_by_default : get_option('tools'),
+   install : get_option('tools'),
+ )

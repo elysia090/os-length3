@@ -16,7 +16,7 @@
  * normalization's job, and normalization is a separate stage.
  */
 
-#include <postlink/plan.h>
+#include "internal/plan.h"
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 #define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)

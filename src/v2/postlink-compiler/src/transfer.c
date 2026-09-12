@@ -1,6 +1,6 @@
 /* Collision-safe conservative transfer interning. */
 
-#include <postlink/transfer.h>
+#include "internal/transfer.h"
 
 static int power_of_two(pl_u32 value)
 {

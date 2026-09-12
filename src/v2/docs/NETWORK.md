@@ -1,4 +1,13 @@
-# Browser network boundary
+# Network boundary
+
+## Execution profiles
+
+The Linux network stack is shared; only its device adapter differs. Native
+execution may attach the optimized kernel to a physical NIC or an ordinary
+TAP/virtio device and use the host's native scheduling and buffer management.
+Browser execution attaches the same machine ABI to a virtual NIC backed by
+WebTransport. DNS, sockets, TCP, UDP, congestion control, TLS, and certificate
+validation are never reimplemented by either delivery layer.
 
 ## Invariant
 

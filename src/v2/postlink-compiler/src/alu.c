@@ -15,7 +15,7 @@
  * Freestanding: no libc, no allocation.
  */
 
-#include <postlink/sweep.h>
+#include "internal/sweep.h"
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 #define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)
@@ -46,7 +46,10 @@ static int alu_descriptor(const pl_plan *plan, const pl_node *node,
 static pl_u32 select_arithmetic(pl_u32 width, unsigned semantic,
                                 pl_operand *left, pl_operand *right)
 {
-    pl_u32 lane = width == 32u ? 0u : 1u;
+    /* Narrow architectural lanes observe only their low bits.  The physical
+     * grammar therefore carries 8/16-bit arithmetic in the shared 32-bit
+     * lane; X86_FLAGS and the eventual insert/store apply the exact width. */
+    pl_u32 lane = width <= 32u ? 0u : 1u;
     if (right->kind == PL_OPERAND_CONST)
         return PL_OPCODE_ALU_IMMEDIATE[lane][semantic];
     if (semantic != 2u && left->kind == PL_OPERAND_CONST) {
@@ -71,20 +74,25 @@ static int semantic_of(pl_u64 mode, unsigned *semantic)
     }
 }
 
-int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
-                               pl_plan *out)
+static int reopen_consumed_x86_alu(const pl_plan *in,
+                                   const pl_u8 *live_local,
+                                   pl_arena *arena, pl_plan *out)
 {
     pl_u32 count = in->node_count;
     pl_u8 *consumed = pl_arena_take(arena, count ? count : 1u);
     pl_u8 *live_flags = pl_arena_take(arena, count ? count : 1u);
-    if (!consumed || !live_flags) return PL_ERROR_ARENA;
+    pl_u8 *output_value = pl_arena_take(arena, count ? count : 1u);
+    if (!consumed || !live_flags || !output_value) return PL_ERROR_ARENA;
     for (pl_u32 index = 0; index < count; ++index)
-        consumed[index] = live_flags[index] = 0;
+        consumed[index] = live_flags[index] = output_value[index] = 0;
 
     /* The backward scan.  An output naming the node keeps its flags alive; a
      * selector-16 projection consumes its value, any other selector keeps the
      * flags. */
     for (pl_u32 index = 0; index < in->stack_count + in->local_count; ++index) {
+        if (index >= in->stack_count && live_local
+                && !live_local[index - in->stack_count])
+            continue;
         pl_operand operand = index < in->stack_count
                            ? in->stack[index]
                            : in->locals[index - in->stack_count];
@@ -94,8 +102,12 @@ int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
         } else if (operand.kind == PL_OPERAND_PROJECTION) {
             pl_u64 source = operand.value >> PL_PROJECTION_SELECTOR_BITS;
             pl_u64 selector = operand.value & PL_PROJECTION_SELECTOR_MASK;
-            if (selector != PL_SELECTOR_VALUE && source && source <= count)
-                live_flags[source - 1u] = 1;
+            if (source && source <= count) {
+                if (selector == PL_SELECTOR_VALUE)
+                    output_value[source - 1u] = 1;
+                else
+                    live_flags[source - 1u] = 1;
+            }
         }
     }
     for (pl_u32 index = 0; index < count; ++index) {
@@ -124,6 +136,14 @@ int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
             else live_flags[source - 1u] = 1;
         }
     }
+
+    /* A final value projection does not need reopening while the same folded
+     * ALU flag word is live. Once complete-future projection removes those
+     * flags, the value becomes an ordinary SSA consumer and can compose with
+     * adjacent affine nodes. Internal consumers always requested reopening
+     * directly in the node-argument scan above. */
+    for (pl_u32 index = 0u; index < count; ++index)
+        if (output_value[index] && !live_flags[index]) consumed[index] = 1u;
 
     int any = 0;
     for (pl_u32 index = 0; index < count; ++index)
@@ -195,7 +215,13 @@ int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
 
         pl_operand prior = staged[0];
         pl_operand original = in->arguments[node->argument_at];
-        if (!(descriptor & (1ull << 11u))
+        /* ADD/SUB/logic replace the arithmetic flags, so only their
+         * architecturally preserved bits need the root of the prior chain.
+         * ADC/SBB are different: CF is an arithmetic input.  Peeling their
+         * first edge to the root changes the value (NEG; SBB was the first
+         * real-kernel witness), not merely the representation of RFLAGS. */
+        if (mode != 2u && mode != 4u
+                && !(descriptor & (1ull << 11u))
                 && original.kind == PL_OPERAND_NODE
                 && original.value <= count && has_root[original.value])
             prior = flag_roots[original.value];
@@ -234,10 +260,9 @@ int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
             carry_operand.value = carry;
 
             if (mode == 2u) {
-                if (width != 32u && width != 64u) return PL_ERROR_PLAN;
                 pl_operand three[3] = { inputs[0], inputs[1], carry_operand };
                 pl_u32 value = pl_emit(
-                    &builder, PL_OPCODE_ADD3[width == 32u ? 0u : 1u],
+                    &builder, PL_OPCODE_ADD3[width <= 32u ? 0u : 1u],
                     three, 3u);
                 if (!value) return PL_ERROR_ARENA;
                 result.kind = PL_OPERAND_NODE;
@@ -324,4 +349,31 @@ int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
     out->stack_inputs = in->stack_inputs;
     out->span = in->span;
     return 0;
+}
+
+int pl_reopen_consumed_x86_alu(const pl_plan *in, pl_arena *arena,
+                               pl_plan *out)
+{
+    return reopen_consumed_x86_alu(in, 0, arena, out);
+}
+
+int pl_reopen_consumed_x86_alu_projected(
+    const pl_plan *in, const pl_u8 *live_local,
+    pl_arena *arena, pl_plan *out)
+{
+    if (!in || !live_local || !arena || !out) return PL_ERROR_PLAN;
+    pl_plan projected = *in;
+    projected.locals = pl_arena_take(
+        arena, (in->local_count ? in->local_count : 1u)
+               * (pl_u32)sizeof *projected.locals);
+    if (!projected.locals) return PL_ERROR_ARENA;
+    for (pl_u32 local = 0u; local < in->local_count; ++local) {
+        if (live_local[local]) projected.locals[local] = in->locals[local];
+        else {
+            projected.locals[local].kind = PL_OPERAND_LOCAL;
+            projected.locals[local].value = local;
+        }
+    }
+    return reopen_consumed_x86_alu(
+        &projected, live_local, arena, out);
 }

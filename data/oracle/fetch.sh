@@ -3,7 +3,7 @@ set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 data=$(cd -- "$here/.." && pwd)
-. "$data/sources.env"
+. "$here/sources.env"
 
 upstream="$data/upstream"
 mkdir -p "$upstream"
@@ -28,6 +28,10 @@ fetch "$REMILL_ORACLE_URL" \
 fetch "$XED_ORACLE_URL" \
   "$upstream/xed-v$XED_ORACLE_VERSION.tar.gz" \
   "$XED_ORACLE_SHA256"
+fetch "$SOFTFLOAT_ORACLE_URL" \
+  "$upstream/berkeley-softfloat-$SOFTFLOAT_ORACLE_COMMIT.tar.gz" \
+  "$SOFTFLOAT_ORACLE_SHA256"
 
-printf 'verified QEMU %s, Remill %s and Intel XED %s\n' \
-  "$QEMU_ORACLE_VERSION" "$REMILL_ORACLE_COMMIT" "$XED_ORACLE_VERSION"
+printf 'verified QEMU %s, Remill %s, Intel XED %s and SoftFloat %s\n' \
+  "$QEMU_ORACLE_VERSION" "$REMILL_ORACLE_COMMIT" "$XED_ORACLE_VERSION" \
+  "$SOFTFLOAT_ORACLE_COMMIT"

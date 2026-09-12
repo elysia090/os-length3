@@ -3,8 +3,11 @@ node_modules/
 __pycache__/
 *.pyc
 .wrangler/
+build/
+build-*/
+gmon.out
 
-# Built, not committed: vm/wasm/build.py makes it from vm.c.  The copy under
+# Built, not committed: the native build produces these from vm.c. The copy under
 # web/ is the one the page loads and is committed on purpose.
 vm/wasm/*.wasm
 vm/wasm/vm.json

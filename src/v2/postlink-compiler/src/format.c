@@ -4,7 +4,7 @@
  * into a wasm32 runtime.
  */
 
-#include <postlink/format.h>
+#include "internal/format.h"
 
 int pl_block_parse(const pl_u8 *record, pl_u32 bytes, pl_block_header *out)
 {
