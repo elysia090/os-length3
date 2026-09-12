@@ -2478,6 +2478,13 @@ static int operand_source_law(const pl_plan *plan, pl_operand operand,
 static int native_argument_uses_publication(
     const pl_plan *plan, const pl_node *node, pl_u32 argument)
 {
+    /* An immediate field consumes its literal bits, not a future GPR whose
+     * value happens to match. In particular SUB32(x,0) must not wait for an
+     * unrelated final XOR-zero publication and form a false flag cycle. */
+    if (argument == 1u)
+        for (pl_u32 lane = 0u; lane < 2u; ++lane)
+            for (pl_u32 semantic = 0u; semantic < 5u; ++semantic)
+                if (node->opcode == PL_OPCODE_ALU_IMMEDIATE[lane][semantic]) return 0;
     pl_u32 descriptor;
     switch (node->opcode) {
     case PL_OPCODE_LANE32_INSERT:
@@ -2940,9 +2947,28 @@ static int operand_fits_u32(const pl_plan *plan, pl_operand value,
         return bits <= 32u;
     pl_operand left, right;
     pl_u32 mode = 0u;
-    return arithmetic_node_details(
+    return arithmetic_tree_details(
                plan, value, &left, &right, &bits, &mode)
         && bits == 32u;
+}
+
+static pl_u32 publication_copy_bits(const pl_plan *plan,
+                                    const pl_x86_native_selection *selection,
+                                    pl_operand value, pl_u32 output_at)
+{
+    /* A linked address below 4 GiB is not a runtime 32-bit range proof.
+     * Once its owner has been emitted as a RIP-relative definition, aliases
+     * must copy the full rebased pointer. The same bounded fixup record is
+     * available in measurement and emission; no address table is published. */
+    if (value.kind == PL_OPERAND_CONST)
+        for (pl_u32 i = 0u; i < selection->fixup_count; ++i) {
+            const pl_x86_native_fixup *fixup = &selection->fixups[i];
+            if (fixup->kind == PL_X86_NATIVE_FIXUP_RIP_DISPLACEMENT
+                    && fixup->target == value.value
+                    && fixup->next_ip_at <= output_at)
+                return 64u;
+        }
+    return operand_fits_u32(plan, value, plan->node_count + 1u) ? 32u : 64u;
 }
 
 static int shift_node_details(const pl_plan *plan, pl_operand value,
@@ -3070,6 +3096,11 @@ static pl_u32 operand_expression_bits(const pl_plan *plan,
                                       pl_operand value,
                                       pl_u32 fallback)
 {
+    if (value.kind == PL_OPERAND_NODE && value.value && value.value <= plan->node_count) {
+        pl_u32 opcode = plan->nodes[value.value - 1u].opcode;
+        if (opcode == PL_OPCODE_ADD3[0]) return 32u;
+        if (opcode == PL_OPCODE_ADD3[1]) return 64u;
+    }
     pl_operand left, right;
     pl_u32 bits = 0u, mode = 0u;
     if (arithmetic_tree_details(
@@ -3752,6 +3783,91 @@ static int emit_standalone_flag_publication(
         : emit_compare_operand(
             publication->left, publication->right,
             publication->bits, output, written);
+}
+
+typedef struct {
+    standalone_flag_publication compare;
+    pl_u32 source, bits, mode;
+    pl_operand immediate;
+} carry_adjustment;
+
+static int carry_adjustment_details(const pl_plan *plan, pl_operand value,
+                                     pl_u32 destination, carry_adjustment *out)
+{
+    pl_operand current, predicate;
+    pl_u32 mode = 0u;
+    pl_u64 offset = 0u;
+    if (!arithmetic_tree_details(plan, value, &current, &predicate, &out->bits, &mode)) {
+        if (value.kind != PL_OPERAND_NODE || !value.value || value.value > plan->node_count)
+            return 0;
+        const pl_node *sum = &plan->nodes[value.value - 1u];
+        if ((sum->opcode != PL_OPCODE_ADD3[0] && sum->opcode != PL_OPCODE_ADD3[1])
+                || sum->argument_count != 3u || sum->argument_at > plan->argument_count
+                || 3u > plan->argument_count - sum->argument_at) return 0;
+        const pl_operand *argument = plan->arguments + sum->argument_at;
+        pl_u32 constant = 0u;
+        while (constant < 3u && argument[constant].kind != PL_OPERAND_CONST) ++constant;
+        if (constant == 3u) return 0;
+        offset = argument[constant].value;
+        current = argument[(constant + 1u) % 3u];
+        predicate = argument[(constant + 2u) % 3u];
+        out->bits = sum->opcode == PL_OPCODE_ADD3[0] ? 32u : 64u;
+        mode = 1u;
+    }
+    if (mode != 1u && mode != 3u) return 0;
+    condition_value condition;
+    if (!condition_value_details(plan, predicate, &condition)) {
+        if (mode != 1u || !condition_value_details(plan, current, &condition)) return 0;
+        current = predicate;
+    }
+    if ((condition.condition != 2u && condition.condition != 3u)
+            || condition.flags.kind != PL_OPERAND_NODE
+            || !standalone_flag_publication_details(
+                plan, (pl_u32)condition.flags.value, &out->compare)
+            || out->compare.test) return 0;
+    pl_operand base, addend;
+    pl_u32 current_bits = 0u, current_mode = 0u;
+    if (arithmetic_tree_details(plan, current, &base, &addend, &current_bits, &current_mode)
+            && current_bits == out->bits && (current_mode == 1u || current_mode == 3u)
+            && addend.kind == PL_OPERAND_CONST) {
+        offset += current_mode == 1u ? addend.value : 0ull - addend.value;
+        current = base;
+    }
+    physicalize_published_operand(plan, destination, &current);
+    if (current.kind != PL_OPERAND_LOCAL || current.value >= PL_X86_GPR_COUNT)
+        return 0;
+    out->source = (pl_u32)current.value;
+    /* a+k + CF = ADC(a,k); a+k - CF = SBB(a,-k).
+     * Substituting !CF = 1-CF changes the sign and adds +/-1 to k.
+     * Keep the Boolean in the carry flag instead of materializing SETcc. */
+    out->mode = (mode == 1u) == (condition.condition == 2u) ? 2u : 4u;
+    if (condition.condition == 3u) offset += mode == 1u ? 1u : U64_MAX_VALUE;
+    out->immediate.kind = PL_OPERAND_CONST;
+    out->immediate.value = out->mode == 2u ? offset : 0ull - offset;
+    if (out->bits == 32u) out->immediate.value &= U32_MAX_VALUE;
+    return 1;
+}
+
+static int emit_carry_adjustment(const carry_adjustment *shape, pl_u32 destination,
+                                 pl_u8 *output, pl_u32 *written, pl_u32 *work)
+{
+    pl_u32 at = 0u, encoded = 0u;
+    if (!emit_standalone_flag_publication(&shape->compare, output, &at)) return 0;
+    *work = 1u;
+    /* CMP precedes the seed so even a comparison reading the old destination
+     * is valid. MOV preserves CF; it can share the comparison's dependency wave. */
+    if (destination != shape->source) {
+        if (!emit_gpr_move(destination, shape->source, shape->bits,
+                           output ? output + at : 0, &encoded)) return 0;
+        at += encoded;
+        ++*work;
+    }
+    if (!emit_alu_instruction(destination, shape->immediate, shape->bits,
+                              shape->mode, 0u, output ? output + at : 0, &encoded))
+        return 0;
+    *written = at + encoded;
+    ++*work;
+    return 1;
 }
 
 static int boolean_select_details(const pl_plan *plan, pl_operand value,
@@ -5826,6 +5942,13 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
         return 0;
     }
 
+    carry_adjustment adjustment;
+    if (carry_adjustment_details(&block->plan, value, destination, &adjustment)
+            && adjustment.bits == bits
+            && emit_carry_adjustment(&adjustment, destination, 0, bytes, instructions)) {
+        selection->direct_nested_frame = 1u;
+        return 1;
+    }
     pl_operand signed_source;
     pl_u32 signed_bits = 0u;
     if (bits == 64u && value.kind == PL_OPERAND_NODE
@@ -7932,8 +8055,8 @@ static int mul_add_carry_frame_shape(const pl_x86_block *block,
             || second_sum->argument_count != 4u
             || second_carry->opcode != PL_OPCODE_X86_CONDITION
             || second_carry->argument_count != 2u
-            || carry_sum->opcode != PL_OPCODE_ADD3[1]
-            || carry_sum->argument_count != 3u)
+            || carry_sum->opcode != PL_OPCODE_ALU_REGISTER[1][1]
+            || carry_sum->argument_count != 2u)
         return 0;
     const pl_operand *mul = plan->arguments + multiply->argument_at;
     const pl_operand *wide = plan->arguments + multiply_high->argument_at;
@@ -7990,7 +8113,6 @@ static int mul_add_carry_frame_shape(const pl_x86_block *block,
             || !same_value(carry2[1], PL_OPERAND_CONST, 2u)
             || !same_value(result_high[0], PL_OPERAND_NODE, 6u)
             || !same_value(result_high[1], PL_OPERAND_NODE, 8u)
-            || !same_value(result_high[2], PL_OPERAND_CONST, 0u)
             || !same_value(plan->locals[0], PL_OPERAND_PROJECTION,
                            (7u << 8u) | 16u)
             || !same_value(plan->locals[2], PL_OPERAND_NODE, 9u))
@@ -8943,9 +9065,8 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             publication_work = 1u;
         } else if (publication < PL_X86_GPR_COUNT
                 && publication != local) {
-            pl_u32 bits = operand_fits_u32(
-                &block->plan, value, block->plan.node_count + 1u)
-                ? 32u : 64u;
+            pl_u32 bits = publication_copy_bits(
+                &block->plan, selection, value, bytes);
             pl_u32 move_bytes = 0u;
             if (!emit_gpr_move(
                     local, publication, bits,
@@ -9174,11 +9295,8 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                         local, source, bits, (pl_u8 *)0, &encoded))
                     return 0;
             } else {
-                pl_operand left, right;
-                pl_u32 mode = 0u;
-                if (!arithmetic_tree_details(
-                        &block->plan, value, &left, &right, &bits, &mode))
-                {
+                bits = operand_expression_bits(&block->plan, value, 0u);
+                if (!bits) {
                     selection->blocking_work = 0x500u | local;
                     return 0;
                 }
@@ -9330,7 +9448,8 @@ static int compare_branch_operand_shape(
     pl_u64 descriptor = arguments[3].value;
     out->bits = (pl_u32)(descriptor & 0x7fu);
     out->test = compare->opcode == PL_OPCODE_X86_TEST;
-    if ((out->bits != 32u && out->bits != 64u)
+    if ((out->bits != 8u && out->bits != 16u
+            && out->bits != 32u && out->bits != 64u)
             || (!out->test && ((descriptor >> 8u) & 7u) != 3u)
             || (descriptor >> 11u))
         return 0;
@@ -9422,7 +9541,7 @@ static int compare_branch_shape(const pl_x86_block *block, pl_u32 *changed,
     pl_u64 descriptor = arguments[3].value;
     *bits = (pl_u32)(descriptor & 0x7fu);
     *test = compare->opcode == PL_OPCODE_X86_TEST;
-    if ((*bits != 32u && *bits != 64u)
+    if ((*bits != 8u && *bits != 16u && *bits != 32u && *bits != 64u)
             || (!*test && ((descriptor >> 8u) & 7u) != 3u)
             || (descriptor >> 11u))
         return 0;
@@ -11904,6 +12023,12 @@ static int write_alu_tree(const pl_x86_block *block,
         return 1;
     if (remaining <= 1u) return 0;
 
+    carry_adjustment adjustment;
+    pl_u32 adjustment_work = 0u;
+    if (carry_adjustment_details(&block->plan, value, destination, &adjustment)
+            && adjustment.bits == bits
+            && emit_carry_adjustment(&adjustment, destination, output, written,
+                                     &adjustment_work)) return 1;
     pl_operand signed_source;
     pl_u32 signed_bits = 0u;
     if (bits == 64u && value.kind == PL_OPERAND_NODE
@@ -13345,9 +13470,8 @@ static int write_direct_alu_frame(const pl_x86_block *block,
             at += written;
         } else if (publication < PL_X86_GPR_COUNT
                 && publication != local) {
-            pl_u32 bits = operand_fits_u32(
-                &block->plan, value, block->plan.node_count + 1u)
-                ? 32u : 64u;
+            pl_u32 bits = publication_copy_bits(
+                &block->plan, selection, value, at);
             pl_u32 written = 0u;
             pl_u32 move_bytes = 0u, zero_bytes = U32_MAX_VALUE;
             if (!emit_gpr_move(
@@ -13552,10 +13676,8 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                         local, source, bits, output + at, &written))
                     return PL_ERROR_X86_SELECT;
             } else {
-                pl_operand left, right;
-                pl_u32 mode = 0u;
-                if (!arithmetic_tree_details(
-                        &block->plan, value, &left, &right, &bits, &mode))
+                bits = operand_expression_bits(&block->plan, value, 0u);
+                if (!bits)
                     return PL_ERROR_X86_SELECT;
                 pl_u32 root_sources = 0u;
                 int direct_destination =

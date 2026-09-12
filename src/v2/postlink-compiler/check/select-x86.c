@@ -865,6 +865,13 @@ int main(void)
         0x31u, 0xceu,
         0x89u, 0xf2u,
     };
+    /* The unpublished RDX xor intermediate can be constructed directly in
+     * ECX. Width inference now keeps both nested word results at 32 bits. */
+    static const pl_u8 root_accumulator_result[] = {
+        0xc1u, 0xc1u, 0x10u, 0x31u, 0xf0u, 0x29u, 0xc8u,
+        0x89u, 0xc7u, 0xc1u, 0xc7u, 0x04u, 0x89u, 0xd1u,
+        0x31u, 0xc1u, 0x29u, 0xf9u, 0x31u, 0xceu, 0x89u, 0xf2u,
+    };
     /* Both CMOV arms derive from the old EBP coordinate while the condition's
      * AND result is also the final EDX and RFLAGS publication.  Materialize
      * the two affine arms in one wave, emit AND once, then let CMOV and its
@@ -2308,17 +2315,19 @@ int main(void)
     status = select_projected(
         root_accumulator_source, sizeof root_accumulator_source,
         0x1ffffu, &selected, output, &written, 0);
-    if (status || !selected.supported || !selected.copied_source
+    if (status || !selected.supported || !selected.normalized_family_present
             || selected.output_work != 10u || selected.output_span != 5u
-            || written != sizeof root_accumulator_source
-            || memcmp(output, root_accumulator_source,
-                      sizeof root_accumulator_source)) {
+            || written != sizeof root_accumulator_result
+            || memcmp(output, root_accumulator_result,
+                      sizeof root_accumulator_result)) {
         fprintf(stderr,
                 "native x86 selection: RED (root accumulator owner "
                 "status=%d source/alu/work/span/bytes=%u/%u/%u/%u/%u)\n",
                 status, (unsigned)selected.copied_source,
                 (unsigned)selected.direct_alu_frame,
                 selected.output_work, selected.output_span, written);
+        for (pl_u32 i = 0u; i < written; ++i) fprintf(stderr, "%02x ", output[i]);
+        fputc('\n', stderr);
         return 190;
     }
     status = select_projected(
@@ -4739,6 +4748,42 @@ int main(void)
                 failed.diagnostic.blocking_work);
         return 219;
     }
+    /* The low linked coordinate is rebased above 4 GiB by a PIE loader.
+     * Sharing this address must not narrow its alias to MOV EDI,EDX. */
+    static const pl_u8 address_copy_source[] = {
+        0x48u, 0x8du, 0x15u, 0u, 1u, 0u, 0u, 0x48u, 0x89u, 0xd7u,
+    };
+    status = select_projected(
+        address_copy_source, sizeof address_copy_source,
+        (1u << PL_X86_LOCAL_COUNT) - 1u,
+        &selected, output, &written, &projected);
+    for (pl_u32 i = 0u; !status && i < selected.fixup_count; ++i)
+        status = pl_x86_select_bind_fixup(
+            output, written, &selected, i, 0x1000u, selected.fixups[i].target);
+    if (status || !selected.normalized_family_present
+            || written != sizeof address_copy_source
+            || memcmp(output, address_copy_source, sizeof address_copy_source)) {
+        fprintf(stderr, "native x86 selection: RED (rebased pointer copy)\n");
+        return 223;
+    }
+    /* A byte predicate is still a register comparison, not a materialized
+     * low-byte extraction. Keep the unrelated entry copy in the same cut. */
+    static const pl_u8 byte_compare_copy_source[] = {
+        0x48u, 0x89u, 0xd7u, 0x41u, 0x80u, 0xfau, 0x04u,
+        0x0fu, 0x87u, 0xaeu, 0xffu, 0xffu, 0xffu,
+    };
+    status = select_projected(
+        byte_compare_copy_source, sizeof byte_compare_copy_source,
+        (1u << PL_X86_LOCAL_COUNT) - 1u,
+        &selected, output, &written, &projected);
+    if (status || !selected.supported || !selected.normalized_family_present
+            || selected.output_work > 3u || selected.output_span > 2u) {
+        fprintf(stderr, "native x86 selection: RED (byte compare copy "
+                "status=%d work/span=%u/%u)\n",
+                status, selected.output_work, selected.output_span);
+        print_block_shape(&projected);
+        return 222;
+    }
     status = select_projected(
         signed_digit_accumulation_source, sizeof signed_digit_accumulation_source,
         (1u << PL_X86_LOCAL_COUNT) - 1u,
@@ -4755,6 +4800,28 @@ int main(void)
                 failed.diagnostic.blocking_work, failed.diagnostic.blocking_opcode);
         print_block_shape(&projected);
         return 220;
+    }
+    /* Borrow is a dependency of the arithmetic result even when the final
+     * flags come from an independent zero publication. */
+    static const pl_u8 compare_borrow_source[] = {
+        0x48u, 0x8du, 0x3du, 0xf8u, 0xabu, 0x03u, 0u,
+        0x49u, 0x89u, 0xc6u, 0x48u, 0x39u, 0xc2u,
+        0x49u, 0x83u, 0xdeu, 0u, 0x45u, 0x31u, 0xc0u,
+    };
+    status = select_projected(
+        compare_borrow_source, sizeof compare_borrow_source,
+        (1u << PL_X86_LOCAL_COUNT) - 1u,
+        &selected, output, &written, &projected);
+    if (status || !selected.normalized_family_present || selected.output_work > 5u) {
+        pl_x86_native_candidates failed = { 0 };
+        (void)candidates_projected(compare_borrow_source, sizeof compare_borrow_source,
+            (1u << PL_X86_LOCAL_COUNT) - 1u, &failed);
+        fprintf(stderr, "native x86 selection: RED (compare borrow "
+                "status=%d work/span=%u/%u rejection=%x/%x)\n",
+                status, selected.output_work, selected.output_span,
+                failed.diagnostic.blocking_work, failed.diagnostic.blocking_opcode);
+        print_block_shape(&projected);
+        return 224;
     }
     pl_x86_native_candidates aligned_candidates = { 0 };
     status = candidates_projected(

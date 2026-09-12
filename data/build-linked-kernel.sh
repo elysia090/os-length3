@@ -2,6 +2,11 @@
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
+target=${1:-vmlinux}
+case $target in
+  vmlinux|bzImage) ;;
+  *) printf 'usage: %s [vmlinux|bzImage]\n' "$0" >&2; exit 2;;
+esac
 
 . "$here/bootstrap/environment.sh"
 . "$here/sources.env"
@@ -66,14 +71,18 @@ fi
 source_complete
 mkdir -p "$output_root"
 
-# The versioned resolved configuration is the sole measurement input.  The
-# full distribution recipe independently regenerates it from linux.fragment;
-# this smaller target only reconstructs the linked ELF consumed by the C
-# post-link compiler and cannot publish an Artifact.
-if [[ ! -f $output_root/.config ]] ||
-   ! cmp -s "$output_root/.config" "$config_lock"; then
-  cp "$config_lock" "$output_root/.config"
-fi
+# One builder owns both the linked ELF and its x86 boot wrapper. Regenerate
+# the fragment and compare the resolved lock before reusing Kbuild objects;
+# the distribution must not create a second kernel tree to reach bzImage.
+make -C "$source_root" O="$output_root" ARCH=x86_64 allnoconfig
+while IFS= read -r option; do
+  key=${option%%=*}
+  symbol=${key#CONFIG_}
+  case $option in
+    CONFIG_*=y) "$source_root/scripts/config" --file "$output_root/.config" --enable "$symbol";;
+    CONFIG_*=n) "$source_root/scripts/config" --file "$output_root/.config" --disable "$symbol";;
+  esac
+done < "$here/config/linux.fragment"
 make -C "$source_root" O="$output_root" ARCH=x86_64 olddefconfig
 if ! cmp -s "$output_root/.config" "$config_lock"; then
   printf 'resolved linked-kernel config differs from lock: %s\n' \
@@ -84,7 +93,7 @@ fi
 
 make -C "$source_root" O="$output_root" ARCH=x86_64 \
   -j"${QM_JOBS:-$(nproc)}" \
-  CONFIG_ARCH_VMLINUX_NEEDS_RELOCS=y vmlinux
+  CONFIG_ARCH_VMLINUX_NEEDS_RELOCS=y "$target"
 
 vmlinux="$output_root/vmlinux.unstripped"
 test -f "$vmlinux"
