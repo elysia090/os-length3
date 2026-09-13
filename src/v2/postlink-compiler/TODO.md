@@ -1,6 +1,83 @@
 # Remaining work
 
-## Checkpoint work: 2026-09-13 (after b08e073; selection test red)
+## Current work: 2026-09-13 (after f97ec8d)
+
+The shared shift/OR regression is green. A `q OP shift(q,k)` diamond now
+generates its parent once and reuses an entry register only after proving
+that no external consumer still needs that generation. The ordinary
+generation handoff can capture independent leaf publications before its
+seed, defer a shared join, and emit the exact final constant operation last.
+Transient ownership is also recognized at expression roots. No extra runtime
+representation, source-body retention, or publication-gate exception is added.
+When ADD3 substitution flattens a shared sum, the shift's existing definition
+recovers that same sum edge; no node search or rebuilt expression tree is used.
+
+The first kernel witness was not covered by the previous small fixture's
+live-source subsequence candidate. Its real construction-field ownership
+forbids that candidate. The regression now includes those fields and mapped
+read-only address targets, and verifies the entire formed interval. Native
+BSR/BSF, TZCNT/LZCNT and POPCNT publications now use the ordinary expression
+scheduler. `0 - x` uses NEG with its exact arithmetic flags. Zero-input
+BSR/BSF destinations remain architecturally undefined, not an assumed zero.
+
+The following kernel witness, `0xffffffff8120588f..0xffffffff812058a7`,
+normalizes `x == 0 ? 1 : x` to `x + (x < 1)`: CMP/ADC uses no constant-arm
+register. Narrow comparisons also consume an already projected entry word
+without materializing it again. The focused complete cut decreases from
+6 to at most 5 work; this is an instruction-graph measurement, not native
+elapsed-time speedup. Comparison flags that remain observable are not replaced
+by the carry spelling.
+
+Before the immediate-multiply changes below, Windows executable checks passed:
+shared-expression 1,081,344 comparisons,
+carry 4,653,056, comparison 39,845,888, and condition-code 860,160. Selection
+and global-minimum checks pass. The full Linux `make check` passed at that
+revision. Its shared-expression check and its separate UBSan build
+each pass 1,048,576 comparisons; this build guest explicitly skips TZCNT and
+LZCNT execution because its CPUID does not expose those features. Both were
+executed in the Windows check. The sanitizer build instruments the postlink
+C sources and uses `-Wall -Wextra -Wshadow -Wconversion -Werror` and
+`-fsanitize=undefined -fno-sanitize-recover=all`.
+
+The last fixed kernel pass before immediate-multiply support selects
+788,279 / 788,279 blocks, with zero
+Pareto violations and 818 normalization escapes (833 at f97ec8d). The first
+remaining witness is `0xffffffff81206586..0xffffffff8120659e`, with emitted
+work 7 and SSA work floor 4. GNU make selects 42,184 / 42,184 blocks with zero
+Pareto violations and 53 escapes (54 at f97ec8d); its first remaining witness
+is the jhash ARX loop at `0x18f31..0x18f9f`, with work 39 and SSA floor 31.
+Both publication gates still fail. These are not optimized release size or
+native hardware benchmark results. The baseline distribution checkpoints
+remain intact and reusable. No full distribution rebuild was needed.
+
+After the build-host process stopped, its existing Windows qcow2 checkpoint
+booted successfully and recovered its filesystem journal. The current source
+was synchronized and the full checks and both real scans were rerun; the old
+process handles were not treated as live jobs or reused as completion evidence.
+Continue from the two witnesses above, then the aggregate toolchain identity,
+package/root publication, actual product boot and paired workloads below.
+
+### Immediate-multiply checkpoint
+
+The kernel's shifted-product witness now has a complete-cut regression.
+The general expression generator accepts constant IMUL operands, preserves
+a 32-bit shift before a 64-bit product, and uses the three-operand immediate
+encoding when the multiplicand has a different register owner. It does not
+materialize an encodable constant or copy that input solely for IMUL.
+The executable matrix covers signed immediate boundaries, 32/64-bit shift
+and product widths, masked shift counts, retained input generations, and
+the final ADD's defined flags. A no-op shift requires at most two work when
+no separate width projection is needed; the other cases allow four.
+
+The current Windows shared-expression check passes 1,425,408 independent
+source/generated/reference comparisons. Selection, condition-code,
+carry-cut, compare-cut and global-minimum checks also pass on this revision.
+The full Linux suite,
+UBSan run, and real kernel/make scans above predate these multiply changes
+and must be rerun after synchronizing the checkpoint. No new release size,
+normalization-escape count, or native timing is inferred from these tests.
+
+## Checkpoint: 2026-09-13 (f97ec8d; selection test red)
 
 The relocation regression is fixed without disabling source-field ownership.
 RIP-relative addresses retain their full target binding when a consumer uses
