@@ -127,18 +127,12 @@ static int write_candidate(const pl_u8 *bytes, pl_u32 count, pl_u64 start,
     return status;
 }
 
-static int select_projected(const pl_u8 *bytes, pl_u32 count,
-                            pl_u32 live_output_mask,
-                            pl_x86_native_selection *selection,
-                            pl_u8 output[SELECT_OUTPUT_CAPACITY],
-                            pl_u32 *written,
-                            pl_x86_block *formed)
+static int select_image_projected(const pl_x86_image *image, pl_u32 count,
+                                  pl_u32 live_output_mask, int construction_fields,
+                                  pl_x86_native_selection *selection,
+                                  pl_u8 output[SELECT_OUTPUT_CAPACITY],
+                                  pl_u32 *written, pl_x86_block *formed)
 {
-    pl_x86_map map = {
-        bytes, 0x1000u, count, count,
-        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u,
-    };
-    pl_x86_image image = { &map, 1u, 0u, 0x1000u };
     pl_x86_frontend frontend;
     static pl_u8 first[1024u * 1024u];
     static pl_u8 second[1024u * 1024u];
@@ -151,17 +145,31 @@ static int select_projected(const pl_u8 *bytes, pl_u32 count,
         select_first, select_second, sizeof select_first, 64u,
     };
     pl_x86_block block;
-    int status = pl_x86_frontend_open(&image, &frontend);
+    int status = pl_x86_frontend_open(image, &frontend);
     if (!status)
         status = pl_x86_block_lower_projected_until(
-            &frontend, image.entry, image.entry + count,
+            &frontend, image->entry, image->entry + count,
             live_output_mask, &workspace, &block);
+    if (!status) block.construction_fields = construction_fields != 0;
     if (!status && formed) *formed = block;
     if (!status)
         status = pl_x86_select_write(
             &frontend, &selection_workspace, &block,
             output, SELECT_OUTPUT_CAPACITY, written, selection);
     return status;
+}
+
+static int select_projected(const pl_u8 *bytes, pl_u32 count,
+                            pl_u32 live_output_mask,
+                            pl_x86_native_selection *selection,
+                            pl_u8 output[SELECT_OUTPUT_CAPACITY],
+                            pl_u32 *written, pl_x86_block *formed)
+{
+    pl_x86_map map = { bytes, 0x1000u, count, count,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u };
+    pl_x86_image image = { &map, 1u, 0u, 0x1000u };
+    return select_image_projected(&image, count, live_output_mask, 0,
+        selection, output, written, formed);
 }
 
 static int candidates_projected(
@@ -4891,22 +4899,40 @@ int main(void)
         0x48u, 0xc1u, 0xe8u, 16u, 0x48u, 0x09u, 0xc7u, 0x48u, 0x89u, 0xf8u,
         0x48u, 0xc1u, 0xe8u, 32u, 0x48u, 0x09u, 0xc7u, 0x48u, 0x83u, 0xc7u, 1u,
     };
+    static const pl_u8 nonzero_before_divide[] = {
+        0xbau, 1u, 0u, 0u, 0u, 0xbeu, 0xe8u, 3u, 0u, 0u,
+        0x48u, 0xc7u, 0xc7u, 0x4fu, 9u, 0x8du, 0x81u,
+        0x85u, 0xc0u, 0x0fu, 0x44u, 0xc2u, 0x31u, 0xd2u,
+    };
+    static const pl_u8 shared_shifted_product[] = {
+        0x48u, 0xc7u, 0xc7u, 0u, 0xa7u, 0x8bu, 0x81u,
+        0x89u, 0xcau, 0x48u, 0x89u, 0xceu, 0xc1u, 0xeau, 5u,
+        0x48u, 0x6bu, 0xd2u, 0x70u, 0x48u, 0x01u, 0xd1u, 0xebu, 0x82u,
+    };
     const pl_u8 *cut_source[] = {
         masked_shift_compare, address_subtract_flags, word_test_boolean, add_carry_branch,
         conditional_borrow_fanout, signed_overlay, saved_entry_subtract_branch,
         high_word_test_branch, high_mask_select, compare_before_constants,
-        byte_select_before_compare, magnitude_before_scan, shared_bit_fill };
+        byte_select_before_compare, magnitude_before_scan, shared_bit_fill,
+        nonzero_before_divide, shared_shifted_product };
     const pl_u32 cut_length[] = {
         sizeof masked_shift_compare, sizeof address_subtract_flags,
         sizeof word_test_boolean, sizeof add_carry_branch, sizeof conditional_borrow_fanout,
         sizeof signed_overlay, sizeof saved_entry_subtract_branch,
         sizeof high_word_test_branch, sizeof high_mask_select, sizeof compare_before_constants,
-        sizeof byte_select_before_compare, sizeof magnitude_before_scan, sizeof shared_bit_fill };
-    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u, 6u, 6u, 17u };
+        sizeof byte_select_before_compare, sizeof magnitude_before_scan, sizeof shared_bit_fill,
+        sizeof nonzero_before_divide, sizeof shared_shifted_product };
+    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u, 6u, 6u, 17u, 5u, 7u };
     for (pl_u32 cut = 0u; cut < sizeof cut_work / sizeof cut_work[0]; ++cut) {
         status = select_projected(cut_source[cut], cut_length[cut],
             (1u << PL_X86_LOCAL_COUNT) - 1u,
             &selected, output, &written, &projected);
+        if (!status && projected.end != 0x1000u + cut_length[cut]) {
+            fprintf(stderr, "native x86 selection: RED (expression cut %u "
+                "formed %llu/%u source bytes)\n", cut,
+                (unsigned long long)(projected.end - projected.start), cut_length[cut]);
+            return 225;
+        }
         if (status || !selected.normalized_family_present
                 || selected.output_work > cut_work[cut]) {
             pl_x86_native_candidates failed = { 0 };
@@ -4916,9 +4942,32 @@ int main(void)
                 "status=%d work/span=%u/%u rejection=%x/%x)\n", cut,
                 status, selected.output_work, selected.output_span,
                 failed.diagnostic.blocking_work, failed.diagnostic.blocking_opcode);
+            for (pl_u32 i = 0u; i < failed.count; ++i)
+                fprintf(stderr, "  candidate %u work/span=%u/%u source=%u\n", i,
+                    failed.candidate[i].output_work, failed.candidate[i].output_span,
+                    failed.candidate[i].copied_source);
             print_block_shape(&projected);
             return 225;
         }
+    }
+    static const pl_u8 address_data[8192] = { 0 };
+    pl_x86_map magnitude_maps[] = {
+        { magnitude_before_scan, 0xffffffff81205340ull,
+          sizeof magnitude_before_scan, sizeof magnitude_before_scan,
+          PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u },
+        { address_data, 0xffffffff818d0000ull, sizeof address_data,
+          sizeof address_data, PL_ELF_FLAG_READ, 2u },
+    };
+    pl_x86_image magnitude_image = { magnitude_maps, 2u, 0u, magnitude_maps[0].address };
+    status = select_image_projected(&magnitude_image, sizeof magnitude_before_scan,
+        (1u << PL_X86_LOCAL_COUNT) - 1u, 1, &selected, output, &written, &projected);
+    if (status || !selected.normalized_family_present
+            || projected.end != magnitude_image.entry + sizeof magnitude_before_scan) {
+        fprintf(stderr, "native x86 selection: RED (address-bound magnitude "
+            "status=%d work/span=%u/%u normalized=%u)\n", status,
+            selected.output_work, selected.output_span, selected.normalized_family_present);
+        print_block_shape(&projected);
+        return 225;
     }
     static const pl_u8 shared_signed_shift[] = {
         0x89u, 0xc2u, 0xd3u, 0xfau, 0x48u, 0x63u, 0xc2u,

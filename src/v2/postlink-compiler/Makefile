@@ -670,6 +670,17 @@ carry-cut-check: $(BUILD)/carry-cut
 
 check: carry-cut-check
 
+.PHONY: shared-expression-check
+$(BUILD)/shared-expression: check/shared-expression.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/shared-expression.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+shared-expression-check: $(BUILD)/shared-expression
+	$(BUILD)/shared-expression
+
+check: shared-expression-check
+
 .PHONY: extension-cut-check
 $(BUILD)/extension-cut: check/extension-cut.c check/execute.h $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/extension-cut.c $(LIBRARY) \
