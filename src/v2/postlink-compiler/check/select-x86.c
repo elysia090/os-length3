@@ -1178,12 +1178,12 @@ int main(void)
     static const pl_u8 parallel_variable_shift_result[] = {
         0x48u, 0x8du, 0x45u, 0xffu,
         0x48u, 0xd3u, 0xe8u,
-        0x4cu, 0x89u, 0xefu,
-        0x48u, 0xd3u, 0xefu,
         0xbeu, 0x01u, 0x00u, 0x00u, 0x00u,
         0x48u, 0xd3u, 0xe6u,
-        0x4cu, 0x89u, 0xe1u,
+        0x4cu, 0x89u, 0xefu,
+        0x48u, 0xd3u, 0xefu,
         0x48u, 0x39u, 0xc7u,
+        0x4cu, 0x89u, 0xe1u,
         0x74u, 0x00u,
     };
     /* Required Byte* coordinate 0xffffffff81622cb8 in Linux 7.1.8.  The
@@ -1344,8 +1344,8 @@ int main(void)
         0x74u, 0x60u,
     };
     static const pl_u8 immediate_compare_branch_result[] = {
-        0x48u, 0xc7u, 0xc6u, 0x81u, 0xcdu, 0x8cu, 0x81u,
         0x49u, 0x83u, 0xfeu, 0xffu,
+        0x48u, 0xc7u, 0xc6u, 0x81u, 0xcdu, 0x8cu, 0x81u,
         0x74u, 0x00u,
     };
     /* Required Byte* coordinate 0xffffffff8120176d in Linux 7.1.8.  JNE
@@ -2520,7 +2520,7 @@ int main(void)
         sizeof preserved_flag_prefix_branch, 0x1ffffu,
         &selected, output, &written, &preserved_flag_block);
     if (status || !selected.supported
-            || selected.copied_source || !selected.direct_branch_frame
+            || selected.copied_source || !(selected.direct_branch_frame || selected.direct_alu_frame)
             || !selected.normalized_family_present
             || selected.output_work != 4u || selected.output_span != 2u
             || written != 9u) {
@@ -2606,7 +2606,7 @@ int main(void)
         overwritten_copy_branch, sizeof overwritten_copy_branch, 0x1ffffu,
         &selected, output, &written, &overwritten_copy_block);
     if (status || !selected.supported
-            || selected.copied_source || !selected.direct_branch_frame
+            || selected.copied_source || !(selected.direct_branch_frame || selected.direct_alu_frame)
             || selected.output_work != 5u || selected.output_span != 2u
             || selected.output_bytes != 15u
             || selected.omitted_prefix_bytes) {
@@ -4134,7 +4134,7 @@ int main(void)
         (1u << PL_X86_LOCAL_COUNT) - 1u,
         &selected, output, &written, &projected);
     if (status || !selected.supported || selected.copied_source
-            || !selected.direct_compare_handoff_frame
+            || !(selected.direct_compare_handoff_frame || selected.direct_alu_frame)
             || selected.output_work != 5u || selected.output_span != 3u) {
         fprintf(stderr,
                 "native x86 selection: RED (compare owner handoff "
@@ -4176,7 +4176,7 @@ int main(void)
         sizeof parallel_variable_shift_branch, 0x1000u,
         &selected, output, &written);
     if (status || !selected.supported || selected.copied_source
-            || !selected.direct_frame || !selected.direct_branch_frame
+            || !selected.direct_frame || !(selected.direct_branch_frame || selected.direct_alu_frame)
             || selected.output_work != 9u || selected.output_span != 4u
             || selected.output_bytes
                != sizeof parallel_variable_shift_result
@@ -4192,6 +4192,8 @@ int main(void)
                 (unsigned)selected.direct_branch_frame,
                 selected.output_work, selected.output_span,
                 selected.output_bytes, written);
+        for (pl_u32 i = 0u; i < written; ++i) fprintf(stderr, " %02x", output[i]);
+        fputc('\n', stderr);
         return 55;
     }
     status = select(
@@ -4343,7 +4345,7 @@ int main(void)
         &selected, output, &written);
     if (status || !selected.supported || selected.copied_source
             || !selected.normalized_family_present
-            || !selected.direct_branch_frame
+            || !(selected.direct_branch_frame || selected.direct_alu_frame)
             || selected.output_work != 3u || selected.output_span != 2u
             || selected.output_bytes
                != sizeof immediate_compare_branch_result
@@ -4366,7 +4368,7 @@ int main(void)
         0x1000u, &selected, output, &written);
     if (status || !selected.supported || selected.copied_source
             || !selected.normalized_family_present
-            || !selected.direct_entry_branch_frame
+            || !(selected.direct_entry_branch_frame || selected.direct_alu_frame)
             || selected.output_work != 3u || selected.output_span != 2u
             || selected.output_bytes != sizeof entry_flag_branch_result
             || written != sizeof entry_flag_branch_result
@@ -4909,20 +4911,53 @@ int main(void)
         0x89u, 0xcau, 0x48u, 0x89u, 0xceu, 0xc1u, 0xeau, 5u,
         0x48u, 0x6bu, 0xd2u, 0x70u, 0x48u, 0x01u, 0xd1u, 0xebu, 0x82u,
     };
+    /* Three-word ARX mixing retains the sum and rotated difference at each
+     * stage. Recomputing a tree per final register loses those shared edges. */
+    static const pl_u8 shared_arx_mix[] = {
+        0x44u, 0x01u, 0xeau, 0x41u, 0x83u, 0xe8u, 0x0cu,
+        0x48u, 0x83u, 0xc7u, 0x0cu, 0x29u, 0xc5u,
+        0x48u, 0x83u, 0xc6u, 0x0cu, 0x41u, 0x01u, 0xecu,
+        0x89u, 0xc5u, 0x01u, 0xd0u, 0xc1u, 0xc5u, 0x04u,
+        0x44u, 0x31u, 0xe5u, 0x29u, 0xeau, 0x41u, 0x89u, 0xd4u,
+        0x89u, 0xeau, 0x01u, 0xc5u, 0xc1u, 0xc2u, 0x06u,
+        0x44u, 0x31u, 0xe2u, 0x29u, 0xd0u, 0x41u, 0x89u, 0xc4u,
+        0x89u, 0xd0u, 0x01u, 0xeau, 0xc1u, 0xc0u, 0x08u,
+        0x44u, 0x31u, 0xe0u, 0x41u, 0x89u, 0xc4u, 0x29u, 0xc5u,
+        0x01u, 0xd0u, 0x41u, 0xc1u, 0xc4u, 0x10u, 0x41u, 0x31u, 0xecu,
+        0x44u, 0x89u, 0xe5u, 0x44u, 0x29u, 0xe2u, 0x41u, 0x01u, 0xc4u,
+        0xc1u, 0xcdu, 0x0du, 0x31u, 0xeau, 0x89u, 0xd5u, 0x29u, 0xd0u,
+        0x44u, 0x01u, 0xe2u, 0xc1u, 0xc5u, 0x04u, 0x31u, 0xe8u,
+        0x41u, 0x83u, 0xf8u, 0x0cu, 0x0fu, 0x8fu, 0x31u, 0xffu, 0xffu, 0xffu,
+    };
+    static const pl_u8 high_byte_select[] = {
+        0x48u, 0xc7u, 0xc2u, 0xe0u, 0x3du, 0x8du, 0x81u, 0xf6u, 0xc4u, 1u,
+        0x48u, 0xc7u, 0xc1u, 0xe0u, 0x3du, 0x8du, 0x81u,
+        0x48u, 0xc7u, 0xc0u, 0x1eu, 0x0fu, 0x8du, 0x81u,
+        0x48u, 0xc7u, 0xc7u, 0x70u, 0xabu, 0x8bu, 0x81u,
+        0x48u, 0x0fu, 0x45u, 0xc1u, 0x48u, 0x89u, 0xf1u, 0x48u, 0x89u, 0xc6u,
+    };
+    static const pl_u8 conditional_bit_projection[] = {
+        0x89u, 0xf0u, 0x25u, 0xc3u, 0xffu, 0x77u, 0u,
+        0x48u, 0x89u, 0xc2u, 0x80u, 0xceu, 0x10u,
+        0x81u, 0xe6u, 0u, 0u, 0x10u, 0u, 0x48u, 0x0fu, 0x45u, 0xc2u,
+        0x89u, 0xcau, 0x83u, 0xcau, 2u, 0xf6u, 0xc4u, 2u, 0x48u, 0x89u, 0xc6u,
+    };
     const pl_u8 *cut_source[] = {
         masked_shift_compare, address_subtract_flags, word_test_boolean, add_carry_branch,
         conditional_borrow_fanout, signed_overlay, saved_entry_subtract_branch,
         high_word_test_branch, high_mask_select, compare_before_constants,
         byte_select_before_compare, magnitude_before_scan, shared_bit_fill,
-        nonzero_before_divide, shared_shifted_product };
+        nonzero_before_divide, shared_shifted_product, high_byte_select,
+        conditional_bit_projection, shared_arx_mix };
     const pl_u32 cut_length[] = {
         sizeof masked_shift_compare, sizeof address_subtract_flags,
         sizeof word_test_boolean, sizeof add_carry_branch, sizeof conditional_borrow_fanout,
         sizeof signed_overlay, sizeof saved_entry_subtract_branch,
         sizeof high_word_test_branch, sizeof high_mask_select, sizeof compare_before_constants,
         sizeof byte_select_before_compare, sizeof magnitude_before_scan, sizeof shared_bit_fill,
-        sizeof nonzero_before_divide, sizeof shared_shifted_product };
-    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u, 6u, 6u, 17u, 5u, 7u };
+        sizeof nonzero_before_divide, sizeof shared_shifted_product,
+        sizeof high_byte_select, sizeof conditional_bit_projection, sizeof shared_arx_mix };
+    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u, 6u, 6u, 17u, 5u, 7u, 8u, 10u, 39u };
     for (pl_u32 cut = 0u; cut < sizeof cut_work / sizeof cut_work[0]; ++cut) {
         status = select_projected(cut_source[cut], cut_length[cut],
             (1u << PL_X86_LOCAL_COUNT) - 1u,
@@ -4934,7 +4969,8 @@ int main(void)
             return 225;
         }
         if (status || !selected.normalized_family_present
-                || selected.output_work > cut_work[cut]) {
+                || selected.output_work > cut_work[cut]
+                || (cut_source[cut] == conditional_bit_projection && selected.output_span > 4u)) {
             pl_x86_native_candidates failed = { 0 };
             (void)candidates_projected(cut_source[cut], cut_length[cut],
                 (1u << PL_X86_LOCAL_COUNT) - 1u, &failed);
@@ -4942,13 +4978,30 @@ int main(void)
                 "status=%d work/span=%u/%u rejection=%x/%x)\n", cut,
                 status, selected.output_work, selected.output_span,
                 failed.diagnostic.blocking_work, failed.diagnostic.blocking_opcode);
+            if (!status) {
+                fprintf(stderr, "  generated:");
+                for (pl_u32 i = 0u; i < written; ++i) fprintf(stderr, " %02x", output[i]);
+                fputc('\n', stderr);
+            }
             for (pl_u32 i = 0u; i < failed.count; ++i)
                 fprintf(stderr, "  candidate %u work/span=%u/%u source=%u\n", i,
                     failed.candidate[i].output_work, failed.candidate[i].output_span,
                     failed.candidate[i].copied_source);
+            pl_x86_alu_schedule_diagnostic schedule = { 0 };
+            int schedule_status = pl_x86_select_alu_schedule_diagnostic(&projected, &schedule);
+            fprintf(stderr, "  schedule status=%d changed=%x flags=%u protected=%x\n",
+                schedule_status, schedule.changed, schedule.final_flag_node,
+                schedule.standalone_flag_dependencies);
+            for (pl_u32 local = 0u; !schedule_status && local < PL_X86_GPR_COUNT; ++local)
+                if (schedule.changed & (1u << local))
+                    fprintf(stderr, "    local %u entries=%x publications=%x\n", local,
+                        schedule.sources[local], schedule.dependencies[local]);
             print_block_shape(&projected);
             return 225;
         }
+        if (cut_source[cut] == conditional_bit_projection)
+            printf("conditional bit projection: green (work/span/bytes=%u/%u/%u)\n",
+                selected.output_work, selected.output_span, selected.output_bytes);
     }
     static const pl_u8 address_data[8192] = { 0 };
     pl_x86_map magnitude_maps[] = {

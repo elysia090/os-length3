@@ -406,6 +406,190 @@ failed:
     return 0;
 }
 
+static int check_conditional_bit_join(pl_u64 *comparisons)
+{
+    static const pl_u8 source[] = {
+        0x89u, 0xf0u, 0x25u, 0xc3u, 0xffu, 0x77u, 0u,
+        0x48u, 0x89u, 0xc2u, 0x80u, 0xceu, 0x10u,
+        0x81u, 0xe6u, 0u, 0u, 0x10u, 0u, 0x48u, 0x0fu, 0x45u, 0xc2u,
+        0x89u, 0xcau, 0x83u, 0xcau, 2u, 0xf6u, 0xc4u, 2u, 0x48u, 0x89u, 0xc6u,
+    };
+    static const pl_u8 prefix[] = { 0x48u, 0x89u, 0xd1u };
+    static const pl_u8 observe[] = {
+        0x48u, 0x89u, 0x07u, 0x48u, 0x89u, 0x57u, 8u,
+        0x48u, 0x89u, 0x77u, 16u, 0x9cu, 0x59u,
+        0x48u, 0x89u, 0x4fu, 24u, 0xc3u,
+    };
+    pl_u8 *memory = test_code_allocate(4096u);
+    if (!memory) return 0;
+    pl_u64 address = (pl_u64)(uintptr_t)(memory + sizeof prefix);
+    pl_x86_map map = { source, address, sizeof source, sizeof source,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u };
+    pl_x86_image image = { &map, 1u, 0u, address };
+    pl_x86_frontend frontend;
+    static pl_u8 first[1024u * 1024u], second[1024u * 1024u];
+    static pl_u8 select_first[1024u * 1024u], select_second[1024u * 1024u];
+    pl_x86_block_workspace workspace = { first, second, sizeof first, 64u };
+    pl_x86_block_workspace selection_workspace = {
+        select_first, select_second, sizeof select_first, 64u };
+    pl_x86_block block;
+    pl_x86_native_candidates candidates;
+    pl_x86_native_selection selected = { 0 };
+    pl_u32 span = 0u, work = 0u, written = 0u;
+    int status = pl_x86_frontend_open(&image, &frontend);
+    if (!status) status = pl_x86_block_lower_projected_until(&frontend,
+        address, address + sizeof source, (1u << PL_X86_LOCAL_COUNT) - 1u, &workspace, &block);
+    if (!status && block.end != address + sizeof source) status = PL_ERROR_BLOCK;
+    if (!status) block.construction_fields = 1u;
+    if (!status) status = pl_x86_select_candidates(&frontend, &selection_workspace, &block, &candidates);
+    if (!status) status = pl_x86_candidates_select_joint_minimum(
+        &candidates, 0u, 0u, &selected, &span, &work);
+    if (status || selected.copied_source || !selected.normalized_family_present
+            || work > 9u || span > 4u) goto failed;
+    status = pl_x86_select_write_measured(&frontend, &block, &selected,
+        memory + 512u + sizeof prefix, 256u, &written);
+    if (status || selected.fixup_count || written != selected.output_bytes) goto failed;
+    memcpy(memory, prefix, sizeof prefix); memcpy(memory + sizeof prefix, source, sizeof source);
+    memcpy(memory + sizeof prefix + sizeof source, observe, sizeof observe);
+    memcpy(memory + 512u, prefix, sizeof prefix);
+    memcpy(memory + 512u + sizeof prefix + written, observe, sizeof observe);
+    if (!test_code_publish(memory, 4096u)) goto failed;
+    union { void *object; leaf_function function; } original, optimized;
+    original.object = memory; optimized.object = memory + 512u;
+    pl_u64 random = 0x243f6a8885a308d3ull;
+    for (pl_u32 i = 0u; i < 4096u; ++i) {
+        random ^= random << 13u; random ^= random >> 7u; random ^= random << 17u;
+        pl_u64 input = i < 128u ? (i < 64u ? 1ull << i : ~(1ull << (i - 64u))) : random;
+        pl_u64 side = random * 17u;
+        pl_u64 value = (input & 0x77ffc3u) | ((input & 0x100000u) ? 0x1000u : 0u);
+        pl_u64 flags = value & 0x200u ? 0u : 0x44u;
+        observation before = { 0 }, after = { 0 };
+        original.function(&before, input, side); optimized.function(&after, input, side);
+        if (before.value != value || after.value != value
+                || before.entry != value || after.entry != value
+                || before.shifted != ((side & UINT32_MAX) | 2u)
+                || after.shifted != ((side & UINT32_MAX) | 2u)
+                || (before.flags & 0x8c5u) != flags || (after.flags & 0x8c5u) != flags) goto failed;
+        ++*comparisons;
+    }
+    test_code_release(memory, 4096u);
+    return 1;
+failed:
+    fprintf(stderr, "conditional bit join: RED status=%d work/span=%u/%u comparisons=%llu\n",
+        status, work, span, (unsigned long long)*comparisons);
+    test_code_release(memory, 4096u);
+    return 0;
+}
+
+static int check_bit_projection(pl_u32 bits, pl_u32 from, pl_u32 to,
+                                  pl_u32 inverse, pl_u64 *comparisons, pl_u32 *frontiers)
+{
+    pl_u64 input_mask = 1ull << from, output_mask = 1ull << to;
+    pl_u8 source[32];
+    pl_u32 length = 0u;
+    source[length++] = 0x49u; source[length++] = 0xb9u; /* movabs r9,input bit */
+    for (pl_u32 i = 0u; i < 8u; ++i) source[length++] = (pl_u8)(input_mask >> (8u * i));
+    source[length++] = 0x31u; source[length++] = 0xc0u;
+    source[length++] = 0x49u; source[length++] = 0xb8u; /* movabs r8,output bit */
+    for (pl_u32 i = 0u; i < 8u; ++i) source[length++] = (pl_u8)(output_mask >> (8u * i));
+    if (bits == 16u) source[length++] = 0x66u;
+    source[length++] = bits == 64u ? 0x4cu : 0x44u;
+    source[length++] = bits == 8u ? 0x84u : 0x85u;
+    source[length++] = 0xceu; /* TEST reads the selected low lane. */
+    source[length++] = 0x49u; source[length++] = 0x0fu;
+    source[length++] = inverse ? 0x44u : 0x45u; source[length++] = 0xc0u;
+    source[length++] = 0x31u; source[length++] = 0xd2u; /* independent final flags */
+    static const pl_u8 observe[] = {
+        0x48u, 0x89u, 0x07u, 0x4cu, 0x89u, 0x47u, 8u,
+        0x4cu, 0x89u, 0x4fu, 16u, 0x9cu, 0x59u,
+        0x48u, 0x89u, 0x4fu, 24u, 0xc3u,
+    };
+    pl_u8 *memory = test_code_allocate(4096u);
+    if (!memory) return 0;
+    pl_u64 address = (pl_u64)(uintptr_t)memory;
+    pl_x86_map map = { source, address, length, length,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u };
+    pl_x86_image image = { &map, 1u, 0u, address };
+    pl_x86_frontend frontend;
+    static pl_u8 first[1024u * 1024u], second[1024u * 1024u];
+    static pl_u8 select_first[1024u * 1024u], select_second[1024u * 1024u];
+    pl_x86_block_workspace workspace = { first, second, sizeof first, 64u };
+    pl_x86_block_workspace selection_workspace = {
+        select_first, select_second, sizeof select_first, 64u };
+    pl_x86_block block;
+    pl_x86_native_candidates candidates;
+    pl_x86_native_selection selected = { 0 };
+    pl_u32 span = 0u, work = 0u, written = 0u;
+    int status = pl_x86_frontend_open(&image, &frontend);
+    if (!status) status = pl_x86_block_lower_projected_until(&frontend,
+        address, address + length, (1u << PL_X86_LOCAL_COUNT) - 1u, &workspace, &block);
+    if (!status && block.end != address + length) status = PL_ERROR_BLOCK;
+    if (!status) block.construction_fields = 1u;
+    for (pl_u32 n = 0u; !status && n < block.plan.node_count; ++n)
+        if (block.plan.nodes[n].opcode == PL_OPCODE_LANE32_SELECT
+                || block.plan.nodes[n].opcode == PL_OPCODE_LANE64_SELECT)
+            status = PL_ERROR_BLOCK;
+    if (!status) status = pl_x86_select_candidates(&frontend, &selection_workspace, &block, &candidates);
+    if (!status) status = pl_x86_candidates_select_joint_minimum(
+        &candidates, 0u, 0u, &selected, &span, &work);
+    if (status && status != PL_ERROR_X86_PARETO) goto failed;
+    /* Execute the normalized spelling even when the linked-source spelling
+     * wins. Keep that optimization gap red, but finish the whole semantic
+     * matrix so a cost failure cannot hide a later wrong-result case. */
+    pl_u32 generated = candidates.count;
+    for (pl_u32 i = 0u; i < candidates.count; ++i) {
+        const pl_x86_native_selection *candidate = &candidates.candidate[i];
+        if (candidate->copied_source || !candidate->normalized_family_present) continue;
+        if (generated == candidates.count
+                || candidate->output_work < candidates.candidate[generated].output_work
+                || (candidate->output_work == candidates.candidate[generated].output_work
+                    && candidate->output_span < candidates.candidate[generated].output_span)) generated = i;
+    }
+    if (generated == candidates.count) goto failed;
+    selected = candidates.candidate[generated];
+    if (status || selected.output_work > work || selected.output_span > span
+            || selected.output_work > 6u) {
+        if (!*frontiers) fprintf(stderr, "bit projection: first optimization RED "
+            "bits=%u from/to=%u/%u inverse=%u generated work/span=%u/%u minima=%u/%u\n",
+            bits, from, to, inverse, selected.output_work, selected.output_span, work, span);
+        ++*frontiers;
+    }
+    status = 0;
+    status = pl_x86_select_write_measured(&frontend, &block, &selected,
+        memory + 512u, 256u, &written);
+    if (status || selected.fixup_count || written != selected.output_bytes) goto failed;
+    memcpy(memory, source, length); memcpy(memory + length, observe, sizeof observe);
+    memcpy(memory + 512u + written, observe, sizeof observe);
+    if (!test_code_publish(memory, 4096u)) goto failed;
+    union { void *object; leaf_function function; } original, optimized;
+    original.object = memory; optimized.object = memory + 512u;
+    pl_u64 random = 0x243f6a8885a308d3ull;
+    for (pl_u32 i = 0u; i < 256u; ++i) {
+        random ^= random << 13u; random ^= random >> 7u; random ^= random << 17u;
+        pl_u64 input = i < 128u ? (i < 64u ? 1ull << i : ~(1ull << (i - 64u))) : random;
+        pl_u64 value = (!!(input & input_mask) != inverse) ? output_mask : 0u;
+        observation before = { 0 }, after = { 0 };
+        original.function(&before, input, 0u); optimized.function(&after, input, 0u);
+        if (before.value != value || after.value != value
+                || before.shifted != output_mask || after.shifted != output_mask
+                || before.entry != input_mask || after.entry != input_mask
+                || (before.flags & 0x8c5u) != 0x44u || (after.flags & 0x8c5u) != 0x44u) goto failed;
+        ++*comparisons;
+    }
+    test_code_release(memory, 4096u);
+    return 1;
+failed:
+    fprintf(stderr, "bit projection: RED bits=%u from/to=%u/%u inverse=%u status=%d "
+        "work/span=%u/%u source/normalized=%u/%u comparisons=%llu\n", bits, from, to, inverse, status,
+        work, span, selected.copied_source, selected.normalized_family_present, (unsigned long long)*comparisons);
+    for (pl_u32 i = 0u; !status && i < candidates.count; ++i)
+        fprintf(stderr, " candidate %u work/span/bytes=%u/%u/%u source=%u\n", i,
+            candidates.candidate[i].output_work, candidates.candidate[i].output_span,
+            candidates.candidate[i].output_bytes, candidates.candidate[i].copied_source);
+    test_code_release(memory, 4096u);
+    return 0;
+}
+
 int main(void)
 {
     static const pl_u32 mode[] = { 0u, 1u, 3u, 5u, 6u };
@@ -437,6 +621,21 @@ int main(void)
             for (pl_u32 i = 0u; i < sizeof factors / sizeof factors[0]; ++i)
                 for (pl_u32 j = 0u; j < sizeof counts / sizeof counts[0]; ++j)
                     if (!check_scaled(shift_bits, bits, counts[j], factors[i], &comparisons)) return 1;
+    static const pl_u32 positions[] = { 0u, 7u, 8u, 12u, 20u, 31u, 32u, 63u };
+    if (!check_conditional_bit_join(&comparisons)) return 1;
+    pl_u32 projection_frontiers = 0u;
+    for (pl_u32 bits = 8u; bits <= 64u; bits *= 2u)
+        for (pl_u32 from = 0u; from < sizeof positions / sizeof positions[0]; ++from)
+            for (pl_u32 to = 0u; positions[from] < bits && to < sizeof positions / sizeof positions[0]; ++to)
+                for (pl_u32 inverse = 0u; inverse < 2u; ++inverse)
+                    if (!check_bit_projection(bits, positions[from], positions[to], inverse,
+                            &comparisons, &projection_frontiers)) return 1;
+    if (projection_frontiers) {
+        fprintf(stderr, "shared expression: semantics green (%llu comparisons), "
+            "optimization RED (%u bit-projection frontiers)\n",
+            (unsigned long long)comparisons, projection_frontiers);
+        return 1;
+    }
     printf("shared expression: green (%llu source/generated/reference comparisons; "
         "32/64-bit shared shifts/products, bit summaries, nonzero guards, flags and entry lifetimes)\n",
         (unsigned long long)comparisons);

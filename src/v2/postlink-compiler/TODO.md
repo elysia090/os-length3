@@ -1,5 +1,80 @@
 # Remaining work
 
+## Current work: 2026-09-13 (after 7244589)
+
+The checkpoint's full Linux `make check` and shared-expression UBSan check
+passed before the new regressions below. Its immediate IMUL support reduced
+the fixed kernel's normalization escapes from 818 to 797; GNU make still had
+53. Both scans used the existing baseline inputs, not a distribution rebuild.
+
+High-byte TEST is now a physical coordinate in the ordinary flag and
+conditional-value generators. AH/CH/DH/BH retain byte SF/PF/ZF semantics;
+using a wider shifted mask would change parity. An existing low-register
+alias can supply that byte even when the preferred shared owner is RSI or
+another register without a high-byte encoding. Copy-outs of the same final
+value do not falsely count as old-generation consumers. A flag-only block
+also enters the ordinary ALU frame, and a CMP/TEST branch attaches its control
+edge to that same frame instead of rejecting its value grammar at the entry.
+Non-entry preserved flags still require their emitted prefix: the existing
+CLD regression caught an invalid candidate during this change, and DF/IF
+preservation remains enforced. Some byte-order fixtures now select the same
+cost through the common ALU production; their work/span bounds are unchanged.
+
+Windows condition-code execution passes 1,155,072 comparisons, including
+every high-byte value, six masks, all 16 conditions, retained/overwritten
+owners, and copy-outs. Carry and comparison checks still pass 4,653,056 and
+39,845,888 comparisons. No source-body candidate is executed as a substitute
+for these generated high-byte tests.
+
+The expanded grammar exposed a kernel Pareto frontier at
+`0xffffffff8133132c..0xffffffff8133134e`: span/work 4/11 versus 5/10.
+The common rewrite now substitutes
+`select(2^q,0,(x & 2^p)!=0)` with its exact bit projection, including zero-test
+polarity, without changing other observers of the original flags. For two
+bit-operation chains from the same entry register, copying only the shorter
+arm minimizes `max(a+1,b)` versus `max(a,b+1)` at the same work. The real
+cut now emits 9 work / 4 span / 31 bytes; 4,096 source/generated/reference
+executions verify its two value publications, independent output and flags.
+The regression explicitly keeps the previous span-4 bound so a rewrite
+cannot appear to resolve Pareto by dropping the faster spelling.
+
+Two broad regressions remain RED and must not be weakened:
+
+- The bit-projection matrix verifies 8/16/32/64-bit tests and both polarities.
+  All 1,511,424 Windows comparisons pass, but 77 coordinate/polarity cases
+  lack a generated spelling attaining the existing componentwise minima.
+  The first is input bit 0 -> output bit 31 under a zero test: generated
+  work/span 7/4 versus available 6/3. The check executes the entire semantic
+  matrix before returning failure for those optimization gaps.
+- GNU make's exact jhash interval `0x18f31..0x18f9f` is expression cut 17.
+  It retains 39 work / 14 span only as source, with 30 SSA nodes and an SSA
+  work floor of 31. Final-root scheduling leaves RAX/RDX/RBP/R12 pending
+  (`0x1025`); each still reads entry mask `0x3025`. One transient alias is
+  insufficient. Preserve shared intermediate generations through the whole
+  DAG, including ADD3's shared pair, rather than recursively rebuilding a
+  tree per final register or adding a symbol-specific recipe.
+
+The current production sources complete the GNU make scan with 42,184 /
+42,184 selected blocks, zero Pareto violations and 49 normalization escapes
+(1,489 -> 1,493 source/output escape bytes; 115 work delta). It still refuses
+publication. The final fixed kernel scan selects all 788,279 blocks, with zero
+Pareto violations and 743 normalization escapes (818 before this work;
+18,696 source/output escape bytes, 1,313 work delta). Its next first interval
+is `0xffffffff8120731a..0xffffffff81207333`, work 6 versus SSA floor 5:
+publish ECX from R15D, compute `(4096ull << CL) >> 20`, publish both RAX/RSI,
+retain the final shift flags, and bind the independent RDI address.
+
+Full Linux `make -k check` returns failure only at the shared-ARX selection
+fixture and bit-projection optimization matrix; other check targets pass.
+After extending that matrix to byte/word tests, the latest separate UBSan
+build completes all 1,478,656 Linux source/generated/reference comparisons
+without a sanitizer diagnostic. It returns failure for the same 77 cost
+gaps, not a passing overall check. TZCNT/LZCNT execution remains explicitly
+skipped on the build guest; Windows executes those cases. The postlink C
+sources were instrumented with `-fsanitize=undefined -fno-sanitize-recover=all`
+and warning errors enabled. There is still no optimized release, product
+boot or paired native benchmark; reuse the fixed baseline checkpoints.
+
 ## Current work: 2026-09-13 (after f97ec8d)
 
 The shared shift/OR regression is green. A `q OP shift(q,k)` diamond now
