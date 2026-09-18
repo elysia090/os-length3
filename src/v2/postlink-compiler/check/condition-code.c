@@ -203,6 +203,111 @@ static int check_case(pl_u32 code, pl_u32 bits, pl_u32 published,
     return equal;
 }
 
+static int check_high_byte(pl_u32 owner, pl_u32 code, pl_u32 lifetime,
+                            pl_u32 mask, pl_u64 *comparisons)
+{
+    /* The wrapper preserves RBX. The body alone is normalized; the observer
+     * reads the selected value, the byte owner's full register, and RFLAGS. */
+    pl_u8 prefix[] = { 0x53u, 0x48u, 0x89u, (pl_u8)(0xf0u | owner),
+        0x41u, 0xb8u, 77u, 0u, 0u, 0u };
+    pl_u8 source[32];
+    pl_u32 length = 0u;
+    source[length++] = 0xf6u;
+    source[length++] = (pl_u8)(0xc4u | owner);
+    source[length++] = (pl_u8)mask;
+    pl_u32 destination = lifetime == 2u ? owner : 8u;
+    if (lifetime) {
+        source[length++] = 0x41u; source[length++] = 0xb9u;
+        source[length++] = 99u;
+        for (pl_u32 i = 0u; i < 3u; ++i) source[length++] = 0u;
+        if (destination >= 8u) source[length++] = 0x41u;
+        source[length++] = (pl_u8)(0xb8u | (destination & 7u));
+        source[length++] = 77u;
+        for (pl_u32 i = 0u; i < 3u; ++i) source[length++] = 0u;
+        source[length++] = (pl_u8)(0x49u | (destination >= 8u ? 4u : 0u));
+        source[length++] = 0x0fu; source[length++] = (pl_u8)(0x40u | code);
+        source[length++] = (pl_u8)(0xc1u | ((destination & 7u) << 3u));
+        if (lifetime == 2u) {
+            source[length++] = 0x49u; source[length++] = 0x89u;
+            source[length++] = (pl_u8)(0xc0u | (owner << 3u));
+        }
+    }
+    pl_u8 observe[] = { 0x4cu, 0x89u, 0x07u, 0x48u, 0x89u,
+        (pl_u8)(0x47u | (owner << 3u)), 8u,
+        0x9cu, 0x41u, 0x5au, 0x4cu, 0x89u, 0x57u, 16u, 0x5bu, 0xc3u };
+    pl_u8 *memory = test_code_allocate(4096u);
+    if (!memory) return 0;
+    pl_u64 address = (pl_u64)(uintptr_t)(memory + sizeof prefix);
+    pl_x86_map map = { source, address, length, length,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u };
+    pl_x86_image image = { &map, 1u, 0u, address };
+    pl_x86_frontend frontend;
+    static pl_u8 first[1024u * 1024u], second[1024u * 1024u];
+    static pl_u8 select_first[1024u * 1024u], select_second[1024u * 1024u];
+    pl_x86_block_workspace workspace = { first, second, sizeof first, 64u };
+    pl_x86_block_workspace selection_workspace = {
+        select_first, select_second, sizeof select_first, 64u };
+    pl_x86_block block;
+    pl_x86_native_candidates candidates;
+    pl_x86_native_selection selected = { 0 };
+    pl_u32 span = 0u, work = 0u, written = 0u;
+    int status = pl_x86_frontend_open(&image, &frontend);
+    if (!status) status = pl_x86_block_lower_projected_until(&frontend,
+        address, address + length, (1u << PL_X86_LOCAL_COUNT) - 1u, &workspace, &block);
+    if (!status && block.end != address + length) status = PL_ERROR_BLOCK;
+    if (!status) block.construction_fields = 1u;
+    if (!status) status = pl_x86_select_candidates(&frontend, &selection_workspace,
+        &block, &candidates);
+    if (!status) status = pl_x86_candidates_select_joint_minimum(
+        &candidates, 0u, 0u, &selected, &span, &work);
+    if (status || selected.copied_source || !selected.normalized_family_present
+            || work > (lifetime ? 3u + lifetime : 1u)) goto failed;
+    if (!status) status = pl_x86_select_write_measured(&frontend, &block, &selected,
+        memory + 512u + sizeof prefix, 256u, &written);
+    if (status || selected.fixup_count || written != selected.output_bytes) goto failed;
+    memcpy(memory, prefix, sizeof prefix);
+    memcpy(memory + sizeof prefix, source, length);
+    memcpy(memory + sizeof prefix + length, observe, sizeof observe);
+    memcpy(memory + 512u, prefix, sizeof prefix);
+    memcpy(memory + 512u + sizeof prefix + written, observe, sizeof observe);
+    if (!test_code_publish(memory, 4096u)) goto failed;
+    union { void *object; leaf_function function; } original, optimized;
+    original.object = memory; optimized.object = memory + 512u;
+    for (pl_u32 byte = 0u; byte < 256u; ++byte) {
+        pl_u64 input = 0x9abc5678000000e7ull | ((pl_u64)byte << 8u);
+        pl_u32 result = byte & mask, parity = 0u;
+        for (pl_u32 bit = 0u; bit < 8u; ++bit) parity ^= (result >> bit) & 1u;
+        pl_u64 flags = (!result ? 64u : 0u) | (!parity ? 4u : 0u) | (result & 128u);
+        pl_u64 value = lifetime && condition(code, flags) ? 99u : 77u;
+        pl_u64 full_owner = lifetime == 2u ? value : input;
+        observation before = { 0 }, after = { 0 };
+        original.function(&before, input, 0u); optimized.function(&after, input, 0u);
+        if (before.value != value || after.value != value
+                || before.candidate != full_owner || after.candidate != full_owner
+                || (before.flags & 0x8c5u) != flags || (after.flags & 0x8c5u) != flags)
+            goto failed;
+        ++*comparisons;
+    }
+    test_code_release(memory, 4096u);
+    return 1;
+failed:
+    fprintf(stderr, "high-byte condition: RED owner=%u cc=%u lifetime=%u mask=%u "
+        "status=%d work/span=%u/%u normalized=%u comparisons=%llu\n",
+        owner, code, lifetime, mask, status, work, span, selected.normalized_family_present,
+        (unsigned long long)*comparisons);
+    for (pl_u32 n = 0u; !status && n < block.plan.node_count; ++n) {
+        const pl_node *node = &block.plan.nodes[n];
+        fprintf(stderr, " node %u opcode %u:", n + 1u, node->opcode);
+        for (pl_u32 a = 0u; a < node->argument_count; ++a) {
+            pl_operand value = block.plan.arguments[node->argument_at + a];
+            fprintf(stderr, " %u:%llu", value.kind, (unsigned long long)value.value);
+        }
+        fputc('\n', stderr);
+    }
+    test_code_release(memory, 4096u);
+    return 0;
+}
+
 int main(void)
 {
     pl_u64 comparisons = 0u;
@@ -213,8 +318,14 @@ int main(void)
                     for (pl_u32 rebase = 0u; rebase <= relative; ++rebase)
                         if (!check_case(code, bits, published, relative, rebase, &comparisons))
                             return 1;
+    static const pl_u32 masks[] = { 0u, 1u, 3u, 0x55u, 0x80u, 0xffu };
+    for (pl_u32 owner = 0u; owner < 4u; ++owner)
+        for (pl_u32 code = 0u; code < 16u; ++code)
+            for (pl_u32 lifetime = 0u; lifetime < 3u; ++lifetime)
+                for (pl_u32 m = 0u; m < sizeof masks / sizeof masks[0]; ++m)
+                    if (!check_high_byte(owner, code, lifetime, masks[m], &comparisons)) return 1;
     printf("condition code: green (%llu source/generated/reference comparisons; "
-           "16 conditions, entry/published generations, values and flags)\n",
+           "16 conditions, high bytes, entry/published generations, values and flags)\n",
            (unsigned long long)comparisons);
     return 0;
 }

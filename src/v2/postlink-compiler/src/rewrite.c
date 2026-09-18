@@ -1000,6 +1000,77 @@ static int canonical_bit_overlay(pl_builder *builder, const pl_plan *plan,
 /* Recognize the two ordinary x86 spellings of `base | constant`: a full-lane
  * OR, and a sub-register OR followed by insertion back into the full GPR.
  * The latter is what ORB/ORW on AH/AL/etc. becomes. */
+/* Selecting one output bit under a one-bit zero test is a bit coordinate
+ * projection, not a Boolean value followed by CMOV:
+ *   select(2^q, 0, (x & 2^p) != 0) = ((x >> p) & 1) << q.
+ * Keep the original flag node for any other observer. Only the value's
+ * future is substituted; zero-test polarity becomes XOR with the same bit. */
+static int selected_bit_projection(pl_builder *builder, const pl_plan *plan,
+    const pl_operand argument[3], pl_u32 bits, pl_operand *out)
+{
+    if (argument[0].kind != PL_OPERAND_CONST || argument[1].kind != PL_OPERAND_CONST)
+        return 0;
+    pl_u64 word = bits == 64u ? ~0ull : 0xffffffffull;
+    pl_u64 yes = argument[0].value & word, no = argument[1].value & word;
+    pl_u64 mask = yes | no;
+    if ((yes && no) || !mask || (mask & (mask - 1u))) return 0;
+    pl_operand flag = argument[2];
+    pl_u32 code = 0u;
+    if (flag.kind == PL_OPERAND_PROJECTION) {
+        code = (pl_u32)(flag.value & 255u);
+        flag = (pl_operand){ PL_OPERAND_NODE, flag.value >> 8u };
+    } else {
+        const pl_node *condition = physical_form(plan, flag);
+        if (!condition || condition->opcode != PL_OPCODE_X86_CONDITION
+                || condition->argument_count != 2u) return 0;
+        const pl_operand *condition_argument = physical_arguments(plan, condition);
+        if (condition_argument[1].kind != PL_OPERAND_CONST
+                || condition_argument[1].value > 15u) return 0;
+        code = (pl_u32)condition_argument[1].value;
+        flag = condition_argument[0];
+    }
+    if (code != 4u && code != 5u) return 0;
+    const pl_node *test = physical_form(plan, flag);
+    if (!test || (test->opcode != PL_OPCODE_X86_TEST && test->opcode != PL_OPCODE_X86_ALU)
+            || test->argument_count != 4u) return 0;
+    const pl_operand *tested = physical_arguments(plan, test);
+    if (tested[3].kind != PL_OPERAND_CONST) return 0;
+    pl_u64 descriptor = tested[3].value;
+    pl_u32 width = (pl_u32)descriptor;
+    if (descriptor != width
+            || (width != 8u && width != 16u && width != 32u && width != 64u)) return 0;
+    pl_operand source = tested[1], test_mask = tested[2];
+    if (test_mask.kind != PL_OPERAND_CONST) {
+        source = tested[2]; test_mask = tested[1];
+    }
+    if (test_mask.kind != PL_OPERAND_CONST) return 0;
+    pl_u64 input_bit = test_mask.value & (~0ull >> (64u - width));
+    if (!input_bit || (input_bit & (input_bit - 1u))) return 0;
+    pl_u32 p = 0u, q = 0u;
+    while ((input_bit >> p) != 1u) ++p;
+    while ((mask >> q) != 1u) ++q;
+    pl_operand value = source;
+    if (p != q) {
+        pl_operand shifted[2] = { value, { PL_OPERAND_CONST, p > q ? p - q : q - p } };
+        pl_u32 node = pl_emit_shared(builder,
+            p > q ? PL_OPCODE_LANE64_SHR : PL_OPCODE_LANE64_SHL, shifted, 2u);
+        if (!node) return -1;
+        value = (pl_operand){ PL_OPERAND_NODE, node };
+    }
+    pl_operand masked[2] = { value, { PL_OPERAND_CONST, mask } };
+    pl_u32 node = pl_emit_shared(builder, PL_OPCODE_ALU_IMMEDIATE[bits == 64u][0u], masked, 2u);
+    if (!node) return -1;
+    value = (pl_operand){ PL_OPERAND_NODE, node };
+    if ((code == 4u) != (no != 0u)) {
+        masked[0] = value;
+        node = pl_emit_shared(builder, PL_OPCODE_ALU_IMMEDIATE[bits == 64u][4u], masked, 2u);
+        if (!node) return -1;
+        value = (pl_operand){ PL_OPERAND_NODE, node };
+    }
+    *out = value;
+    return 1;
+}
+
 static int conditional_or_mask(const pl_plan *plan, pl_operand candidate,
                                pl_operand base, pl_u32 *lane, pl_u64 *mask)
 {
@@ -1388,6 +1459,14 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
                 staged[1] = unmasked;
         }
 
+        if (!replace && argument_count == 3u && !projected[index + 1u]
+                && (opcode == PL_OPCODE_LANE32_SELECT || opcode == PL_OPCODE_LANE64_SELECT)) {
+            int projected_bit = selected_bit_projection(&builder, out, staged,
+                opcode == PL_OPCODE_LANE32_SELECT ? 32u : 64u, &replacement);
+            if (projected_bit < 0) return PL_ERROR_ARENA;
+            replace = projected_bit;
+        }
+
         /* A CMOV-style conditional mask must not serialize every later mask
          * behind the accumulated value.  In the Boolean OR monoid,
          *
@@ -1409,13 +1488,18 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
                     { PL_OPERAND_CONST, 0u },
                     staged[2],
                 };
-                pl_u32 selected = pl_emit_shared(
-                    &builder, opcode, selected_arguments, 3u);
-                if (!selected) return PL_ERROR_ARENA;
+                pl_operand selected;
+                int projected_bit = selected_bit_projection(&builder, out, selected_arguments,
+                    opcode == PL_OPCODE_LANE32_SELECT ? 32u : 64u, &selected);
+                if (projected_bit < 0) return PL_ERROR_ARENA;
+                if (!projected_bit) {
+                    pl_u32 value = pl_emit_shared(&builder, opcode, selected_arguments, 3u);
+                    if (!value) return PL_ERROR_ARENA;
+                    selected = (pl_operand){ PL_OPERAND_NODE, value };
+                }
                 opcode = PL_OPCODE_ALU_REGISTER[masked_lane][3u];
                 staged[0] = staged[1];
-                staged[1].kind = PL_OPERAND_NODE;
-                staged[1].value = selected;
+                staged[1] = selected;
                 argument_count = 2u;
             }
         }

@@ -2181,10 +2181,9 @@ static int alu_frame_shape(const pl_plan *plan, pl_u32 *changed,
             return 0;
     }
     (void)alu_nodes;
-    /* A standalone comparison remains observable even when every GPR
-     * publication is a constant or copy. Its protected entry operands still
-     * use the same scheduling law before those coordinates are overwritten. */
-    return *changed && (derived_publications || *final_flag_node);
+    /* Flags are a publication even when no GPR changes. Their entry operands
+     * use the same scheduling law as a frame containing value publications. */
+    return (*changed && derived_publications) || *final_flag_node;
 }
 
 typedef struct {
@@ -3768,6 +3767,7 @@ typedef struct {
     pl_u32 has_compare;
     pl_u32 current_flag_node;
     pl_u32 compare_test;
+    pl_u32 compare_offset;
     pl_u32 compare_node;
     pl_u32 compare_left_is_current;
     pl_u32 compare_right_is_current;
@@ -3883,9 +3883,36 @@ typedef struct {
     pl_operand right;
     pl_u32 bits;
     pl_u32 test;
+    pl_u32 offset;
     pl_u32 entry_sources;
     pl_u32 owner_dependencies;
 } standalone_flag_publication;
+
+/* TEST observes one byte and its own byte-sized SF/PF/ZF. Replacing it with
+ * a wider shifted mask would change parity. Keep the observation width and
+ * substitute the byte's physical coordinate instead of computing a shift. */
+static pl_u32 test_byte_coordinate(const pl_plan *plan, pl_operand *left,
+                                   pl_operand right, pl_u32 bits, pl_u32 test)
+{
+    pl_operand source, amount;
+    pl_u32 width = 0u, group = 0u;
+    if (!test || bits != 8u || right.kind != PL_OPERAND_CONST || right.value > 255u
+            || !shift_node_details(plan, *left, &source, &amount, &width, &group)
+            || (width != 32u && width != 64u) || group != 5u
+            || amount.kind != PL_OPERAND_CONST || amount.value != 8u) return 0u;
+    *left = source;
+    return 8u;
+}
+
+static int emit_flag_coordinate(pl_u32 left, pl_operand right, pl_u32 bits,
+                                 pl_u32 test, pl_u32 offset,
+                                 pl_u8 *output, pl_u32 *written)
+{
+    if (offset) return offset == 8u && bits == 8u && test
+        && emit_high8_test(left, right, output, written);
+    return test ? emit_test_operand(left, right, bits, output, written)
+                : emit_compare_operand(left, right, bits, output, written);
+}
 
 /* TEST and CMP can be the sole final RFLAGS publication without publishing a
  * GPR result.  Keep that instruction explicit: all earlier flag-clobbering
@@ -3908,6 +3935,8 @@ static int standalone_flag_publication_details(
             plan, flags, &left, &right, &out->bits,
             &mode, &preserves_carry))
         return 0;
+    out->test = (pl_u32)(node->opcode == PL_OPCODE_X86_TEST);
+    out->offset = test_byte_coordinate(plan, &left, right, out->bits, out->test);
     pl_operand *input[2] = { &left, &right };
     for (pl_u32 i = 0u; i < 2u; ++i) {
         pl_operand value = *input[i];
@@ -3926,6 +3955,16 @@ static int standalone_flag_publication_details(
         plan, PL_X86_GPR_COUNT, &physical_left);
     physicalize_published_operand(
         plan, PL_X86_GPR_COUNT, &physical_right);
+    if (out->offset && (physical_left.kind != PL_OPERAND_LOCAL || physical_left.value >= 4u)) {
+        /* A shared value may have a preferred owner without a high-byte
+         * encoding, yet also be published in RAX..RBX. Read that exact alias
+         * after its copy-out instead of rebuilding the shifted byte. */
+        for (pl_u32 local = 0u; local < 4u; ++local)
+            if (plan->locals[local].kind == left.kind && plan->locals[local].value == left.value) {
+                physical_left = (pl_operand){ PL_OPERAND_LOCAL, local };
+                break;
+            }
+    }
     if (physical_left.kind != PL_OPERAND_LOCAL
             || physical_left.value >= PL_X86_GPR_COUNT
             || (physical_right.kind != PL_OPERAND_CONST
@@ -3933,8 +3972,8 @@ static int standalone_flag_publication_details(
                     || physical_right.value >= PL_X86_GPR_COUNT)))
         return 0;
     out->left = (pl_u32)physical_left.value;
+    if (out->offset && out->left >= 4u) return 0;
     out->right = physical_right;
-    out->test = (pl_u32)(node->opcode == PL_OPCODE_X86_TEST);
     out->entry_sources = 0u;
     out->owner_dependencies = 0u;
     /* The final instruction reads physical operands, not every entry value
@@ -3964,13 +4003,8 @@ static int emit_standalone_flag_publication(
     pl_u8 *output, pl_u32 *written)
 {
     if (!publication) return 0;
-    return publication->test
-        ? emit_test_operand(
-            publication->left, publication->right,
-            publication->bits, output, written)
-        : emit_compare_operand(
-            publication->left, publication->right,
-            publication->bits, output, written);
+    return emit_flag_coordinate(publication->left, publication->right,
+        publication->bits, publication->test, publication->offset, output, written);
 }
 
 typedef struct {
@@ -4287,6 +4321,7 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
     out->has_compare = 0u;
     out->current_flag_node = 0u;
     out->compare_test = 0u;
+    out->compare_offset = 0u;
     out->compare_node = 0u;
     out->compare_left_is_current = 0u;
     out->compare_right_is_current = 0u;
@@ -4339,9 +4374,12 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
             || (!compare_test && !compare_subtract)
             || (descriptor >> 11u))
         return 0;
+    pl_operand compare_input = compare_argument[1];
+    out->compare_offset = test_byte_coordinate(plan, &compare_input,
+        compare_argument[2], compare_bits, (pl_u32)compare_test);
     pl_u32 compare_left = 0u;
-    if (compare_argument[1].kind == out->current.kind
-            && compare_argument[1].value == out->current.value) {
+    if (compare_input.kind == out->current.kind
+            && compare_input.value == out->current.value) {
         out->compare_left_is_current = 1u;
         pl_u32 current_local = out->current.kind == PL_OPERAND_LOCAL
                              && out->current.value < PL_X86_GPR_COUNT
@@ -4351,13 +4389,14 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
                     && plan->locals[current_local].kind == PL_OPERAND_LOCAL
                     && plan->locals[current_local].value == current_local
                      ? current_local : destination;
-    } else if (compare_argument[1].kind == PL_OPERAND_LOCAL
-            && compare_argument[1].value < PL_X86_GPR_COUNT) {
-        compare_left = (pl_u32)compare_argument[1].value;
+    } else if (compare_input.kind == PL_OPERAND_LOCAL
+            && compare_input.value < PL_X86_GPR_COUNT) {
+        compare_left = (pl_u32)compare_input.value;
     } else if (!published_operand_local(
-                   plan, compare_argument[1], &compare_left)) {
+                   plan, compare_input, &compare_left)) {
         return 0;
     }
+    if (out->compare_offset && compare_left >= 4u) return 0;
     pl_operand compare_right = compare_argument[2];
     if (compare_right.kind == out->current.kind
             && compare_right.value == out->current.value) {
@@ -4390,6 +4429,13 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
     out->compare_test = (pl_u32)compare_test;
     out->compare_node = (pl_u32)condition_argument[0].value;
     return 1;
+}
+
+static int emit_select_compare(const conditional_select *select,
+                                pl_u8 *output, pl_u32 *written)
+{
+    return emit_flag_coordinate(select->compare_left_local, select->compare_right,
+        select->compare_bits, select->compare_test, select->compare_offset, output, written);
 }
 
 static int measure_selected_flag_value(const pl_x86_frontend *frontend,
@@ -6365,6 +6411,42 @@ static int multiply_immediate_source(const pl_plan *plan, pl_operand left,
         && width >= bits;
 }
 
+static pl_u32 entry_bit_chain_depth(const pl_plan *plan, pl_operand value, pl_u32 entry)
+{
+    pl_u32 depth = 0u;
+    for (pl_u32 remaining = plan->node_count + 1u; remaining; --remaining) {
+        if (value.kind == PL_OPERAND_LOCAL) return value.value == entry ? depth : 0u;
+        pl_operand source, right;
+        pl_u32 bits = 0u, mode = 0u, bytes = 0u;
+        if (arithmetic_tree_details(plan, value, &source, &right, &bits, &mode)
+                && (mode == 0u || mode == 5u || mode == 6u)
+                && right.kind == PL_OPERAND_CONST
+                && emit_alu_instruction(entry, right, bits, mode, 0u, 0, &bytes)) {
+            value = source;
+        } else if (shift_node_details(plan, value, &source, &right, &bits, &mode)
+                && right.kind == PL_OPERAND_CONST && (right.value & (bits - 1u))
+                && emit_shift_instruction(entry, right, bits, mode, 0, &bytes)) {
+            value = source;
+        } else return 0u;
+        ++depth;
+    }
+    return 0u;
+}
+
+/* Both bit chains start at the same entry coordinate. A clone adds one
+ * publication wave to exactly one arm: min(max(a+1,b),max(a,b+1)) clones
+ * the shorter arm. Keep the longer chain on the original owner, with no
+ * extra work. Measurement and emission use the same bounded chain walk. */
+static pl_u32 entry_bit_chain_orientation(const pl_plan *plan, pl_operand left,
+                                           pl_operand right, pl_u32 destination,
+                                           pl_u32 mode)
+{
+    if (mode != 0u && mode != 5u && mode != 6u) return 0u;
+    pl_u32 a = entry_bit_chain_depth(plan, left, destination);
+    pl_u32 b = entry_bit_chain_depth(plan, right, destination);
+    return a && b && a < b;
+}
+
 /* A diamond q OP shift(q,k) has one producer, not two expression trees.
  * After producing q, its entry operands are dead inside this expression.
  * The caller's scratch mask must separately prove their external lifetime. */
@@ -6546,14 +6628,7 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
             &seed_bytes, &seed_work);
         pl_u32 compare_bytes = 0u, move_bytes = 0u;
         int compared = !status ? 0 : !select.has_compare ? 1
-            : select.compare_test
-            ? emit_test_operand(
-                select.compare_left_local, select.compare_right,
-                select.compare_bits,
-                (pl_u8 *)0, &compare_bytes)
-            : emit_compare_operand(
-                select.compare_left_local, select.compare_right,
-                select.compare_bits, (pl_u8 *)0, &compare_bytes);
+            : emit_select_compare(&select, 0, &compare_bytes);
         if (status > 0 && compared
                 && emit_conditional_move(
                     destination, select.candidate_local,
@@ -7139,8 +7214,10 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
     }
 
     pl_u32 orientations = mode == 3u ? 1u : 2u;
-    for (pl_u32 orientation = 0u; orientation < orientations;
-            ++orientation) {
+    pl_u32 first_orientation = entry_bit_chain_orientation(
+        &block->plan, original_left, original_right, destination, mode);
+    for (pl_u32 attempt = 0u; attempt < orientations; ++attempt) {
+        pl_u32 orientation = attempt ^ first_orientation;
         pl_operand left = orientation ? original_right : original_left;
         pl_operand right = orientation ? original_left : original_right;
         pl_u32 left_sources = 0u;
@@ -9281,6 +9358,7 @@ static int select_generation_group_shape(const pl_plan *plan, pl_u32 pending,
         for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
             if (!(pending & (1u << local)) || (members & (1u << local))) continue;
             pl_operand other = plan->locals[local];
+            if (equal_operand(other, plan->locals[destination])) continue;
             /* A pending non-leaf may observe entry flags or either old GPR.
              * Let its ordinary scheduler discharge those obligations first. */
             if (other.kind != PL_OPERAND_CONST
@@ -9361,10 +9439,6 @@ static int conditional_alu_body(const pl_x86_block *block,
     if (flags.kind != PL_OPERAND_NODE || !flags.value
             || flags.value > block->plan.node_count
             || (block->predicate.value >> 8u) != flags.value) return 0;
-    pl_u32 opcode = block->plan.nodes[flags.value - 1u].opcode;
-    /* Standalone CMP/TEST already has its shared value/publication scheduler.
-     * This joins arithmetic-result exits to the ordinary ALU frame. */
-    if (opcode == PL_OPCODE_X86_COMPARE || opcode == PL_OPCODE_X86_TEST) return 0;
     *condition = (pl_u32)block->predicate.value & 0xffu;
     *body = *block;
     body->flow = PL_X86_FLOW_NEXT;
@@ -9414,6 +9488,18 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
     if (!alu_frame_shape(&block->plan, &changed, &final_flag_node)) {
         selection->blocking_work = 0xf002u;
         return 0;
+    }
+    if (final_flag_node) {
+        const pl_node *flags = &block->plan.nodes[final_flag_node - 1u];
+        if (flags->opcode == PL_OPCODE_X86_COMPARE || flags->opcode == PL_OPCODE_X86_TEST) {
+            /* CMP/TEST replaces arithmetic flags, not DF/IF. A non-entry
+             * preserved root needs its own emitted flag-prefix production. */
+            if (!flags->argument_count || flags->argument_at >= block->plan.argument_count)
+                return 0;
+            pl_operand prior = block->plan.arguments[flags->argument_at];
+            if (prior.kind != PL_OPERAND_LOCAL || prior.value != PL_X86_RFLAGS_LOCAL)
+                return 0;
+        }
     }
     /* Preserve the responsible grammar on a red candidate so a preceding
      * broad frame probe cannot hide the exact dense-ALU rejection. */
@@ -10035,16 +10121,7 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                         || !flag_node_has_value_publication(
                             &block->plan, changed, final_flag_node));
                 int compared = !emit_compare
-                    || (select.compare_test
-                        ? emit_test_operand(
-                            select.compare_left_local,
-                            select.compare_right,
-                            select.compare_bits,
-                            (pl_u8 *)0, &compare_bytes)
-                        : emit_compare_operand(
-                            select.compare_left_local,
-                            select.compare_right, select.compare_bits,
-                            (pl_u8 *)0, &compare_bytes));
+                    || emit_select_compare(&select, 0, &compare_bytes);
                 if (measured <= 0 || !compared
                         || !emit_conditional_move(
                             local, select.candidate_local,
@@ -12201,15 +12278,7 @@ static int measure_direct_compare_branch(
                     &seed_bytes, &seed_work);
                 pl_u32 compare_bytes = 0u, move_bytes = 0u;
                 int compared = !select.has_compare
-                    || (select.compare_test
-                        ? emit_test_operand(
-                            select.compare_left_local,
-                            select.compare_right,
-                            select.compare_bits, 0, &compare_bytes)
-                        : emit_compare_operand(
-                            select.compare_left_local,
-                            select.compare_right, select.compare_bits,
-                            0, &compare_bytes));
+                    || emit_select_compare(&select, 0, &compare_bytes);
                 if (measured <= 0 || !compared
                         || !emit_conditional_move(
                             local, select.candidate_local,
@@ -13002,14 +13071,8 @@ static int write_alu_tree(const pl_x86_block *block,
                 select.value_bits, output_at, remaining - 1u,
                 scratch_mask, output, &encoded)) {
             at += encoded;
-            int compared = !select.has_compare ? 1 : select.compare_test
-                ? emit_test_operand(
-                    select.compare_left_local,
-                    select.compare_right,
-                    select.compare_bits, output + at, &encoded)
-                : emit_compare_operand(
-                    select.compare_left_local, select.compare_right,
-                    select.compare_bits, output + at, &encoded);
+            int compared = !select.has_compare ? 1
+                : emit_select_compare(&select, output + at, &encoded);
             if (compared) {
                 if (select.has_compare)
                     at += encoded;
@@ -13466,8 +13529,10 @@ static int write_alu_tree(const pl_x86_block *block,
     }
 
     pl_u32 orientations = mode == 3u ? 1u : 2u;
-    for (pl_u32 orientation = 0u; orientation < orientations;
-            ++orientation) {
+    pl_u32 first_orientation = entry_bit_chain_orientation(
+        &block->plan, original_left, original_right, destination, mode);
+    for (pl_u32 attempt = 0u; attempt < orientations; ++attempt) {
+        pl_u32 orientation = attempt ^ first_orientation;
         pl_operand left = orientation ? original_right : original_left;
         pl_operand right = orientation ? original_left : original_right;
         pl_u32 left_sources = 0u;
@@ -14583,15 +14648,7 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                             || !flag_node_has_value_publication(
                                 &block->plan, changed,
                                 final_flag_node))) {
-                    int compared = select.compare_test
-                        ? emit_test_operand(
-                            select.compare_left_local,
-                            select.compare_right,
-                            select.compare_bits, output + at, &written)
-                        : emit_compare_operand(
-                            select.compare_left_local,
-                            select.compare_right, select.compare_bits,
-                            output + at, &written);
+                    int compared = emit_select_compare(&select, output + at, &written);
                     if (!compared)
                         return PL_ERROR_X86_SELECT;
                     at += written;
@@ -15126,15 +15183,7 @@ static int write_direct_compare_branch(
                     return PL_ERROR_X86_SELECT;
                 at += written;
                 if (select.has_compare) {
-                    int compared = select.compare_test
-                        ? emit_test_operand(
-                            select.compare_left_local,
-                            select.compare_right,
-                            select.compare_bits, output + at, &written)
-                        : emit_compare_operand(
-                            select.compare_left_local,
-                            select.compare_right, select.compare_bits,
-                            output + at, &written);
+                    int compared = emit_select_compare(&select, output + at, &written);
                     if (!compared) return PL_ERROR_X86_SELECT;
                     at += written;
                 }
