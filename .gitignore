@@ -12,3 +12,4 @@ src/v2/data/out/
 /.pytest_cache/
 /.uv-cache/
 /*.obj
+artifact/toolchain/delivery/*.pages
