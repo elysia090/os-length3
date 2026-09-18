@@ -1,0 +1,7 @@
+/build/
+/upstream/*.tar.*
+/upstream/*.sign
+/upstream/*.sha256
+/out/*.boot
+/out/*.cpio
+/out/*.native

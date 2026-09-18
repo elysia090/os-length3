@@ -13,11 +13,19 @@ if (!modulePath || !encoded) {
   throw new Error('usage: node bench.mjs vm.wasm BASE64_ARTIFACT [iterations]');
 }
 
-const { instance } = await WebAssembly.instantiate(readFileSync(modulePath), {});
+const bytes = readFileSync(modulePath);
+const compileStarted = performance.now();
+const module = await WebAssembly.compile(bytes);
+const compileMs = performance.now() - compileStarted;
+const instantiateStarted = performance.now();
+const instance = await WebAssembly.instantiate(module, {});
+const instantiateMs = performance.now() - instantiateStarted;
 const E = instance.exports;
 const artifact = Buffer.from(encoded, 'base64');
 new Uint8Array(E.memory.buffer).set(artifact, E.vm_buffer());
+const openStarted = performance.now();
 if (!E.vm_load(artifact.length)) throw new Error('vm_load rejected artifact');
+const openMs = performance.now() - openStarted;
 
 const iterations = Number(countText);
 let checksum = 0;
@@ -31,6 +39,11 @@ const elapsedMs = performance.now() - start;
 console.log(JSON.stringify({
   iterations,
   directByteState: E.vm_direct_byte_state ? E.vm_direct_byte_state() : 0,
+  moduleBytes: bytes.length,
+  memoryBytes: E.memory.buffer.byteLength,
+  compileMs,
+  instantiateMs,
+  openMs,
   elapsedMs,
   nanosecondsPerFeedRead: elapsedMs * 1e6 / iterations,
   checksum,

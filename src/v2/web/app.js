@@ -1,23 +1,23 @@
-// Two cards: paste a kernel, take the minimized program.
-//
-// There used to be a middle one showing what Clang made of the paste, with its
-// own target and optimization controls. It was a second compile whose only job
-// was display, and the minimized program is now the single thing this page is
-// about — the artifact, viewable as any of the machines it lowers to, or as
-// the codec itself.
+// Source and terminal are the two work surfaces. Files occupy the narrow right
+// rail, and a minimized function opens as an editor peek from its QM marker
+// instead of competing with the source as a permanent document.
 //
 // Nothing explains itself at you. Each card carries one line of numbers under
 // its title, and the Derivation link in the footer opens everything else for
 // anyone who wants it.
 
-import { readConfig } from './clang.js';
+import { mountLinuxTerminal } from './linux-terminal.js';
+
+function readConfig() {
+  return {};
+}
 
 const $ = (id) => document.getElementById(id);
 
 // Examples are not written here. They live in examples/*.c, and
 // tools/gen_examples.py puts the same text into web/examples.json — one home
-// for the source, and no claim about any result: the numbers appear when you
-// press Compile, which is the only place they can be true.
+// for the source, and no claim about any result: the numbers appear after the
+// source has been analysed, which is the only place they can be true.
 let EXAMPLES = [];
 
 // Filled in once the worker reports what this build is; the editor footer
@@ -38,6 +38,7 @@ async function loadExamples() {
 
 const state = {
   worker: null,
+  linux: null,
   ready: false,
   busy: false,
   capabilities: null,
@@ -57,6 +58,120 @@ const state = {
 
 const TABS_KEY = 'qm.tabs';
 const ACTIVE_KEY = 'qm.activeTab';
+const VFS_WIDTH_KEY = 'qm.vfsWidth';
+let selectFocusSurface = null;
+
+const FOCUS_SURFACES = [
+  ['source', 'card-write'],
+  ['run', 'card-run'],
+  ['files', 'card-system'],
+  ['terminal', 'card-terminal'],
+];
+
+function requestedFocusSurface(search = location.search) {
+  const value = new URLSearchParams(search).get('focus');
+  if (value === 'editor') return 'source';
+  if (value === 'workspace') return 'workspace';
+  return FOCUS_SURFACES.some(([name]) => name === value) ? value : null;
+}
+
+/** Expose one work surface when a narrow client asks for progressive detail. */
+function setupFocusSurface(search = location.search, onSelect = () => {}) {
+  const initial = requestedFocusSurface(search);
+  if (!initial) return false;
+
+  const shell = document.querySelector('.workbench-shell');
+  const board = document.querySelector('.board');
+  const switcher = $('surface-switcher');
+  const footer = document.querySelector('.pagefoot');
+  const buttons = Array.from(switcher.querySelectorAll('[data-surface]'));
+  const panels = new Map([
+    ['workspace', $('surface-home')],
+    ...FOCUS_SURFACES.map(([name, id]) => [name, $(id)]),
+  ]);
+
+  shell.classList.add('is-focus-mode');
+  switcher.hidden = false;
+  footer.hidden = true;
+  for (const [name, panel] of panels) {
+    panel.setAttribute('role', 'region');
+    if (name === 'workspace') panel.setAttribute('aria-label', 'Workspace entry');
+    else panel.setAttribute('aria-labelledby', `surface-tab-${name}`);
+    panel.tabIndex = -1;
+  }
+
+  const select = (surface, updateUrl = false) => {
+    for (const [name, panel] of panels) panel.hidden = name !== surface;
+    board.hidden = surface === 'files';
+    for (const button of buttons) {
+      const selected = button.dataset.surface === surface;
+      if (selected) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    }
+    if (updateUrl) {
+      const url = new URL(location.href);
+      url.searchParams.set('focus', surface);
+      history.replaceState(null, '', url);
+    }
+    onSelect(surface);
+  };
+  selectFocusSurface = select;
+
+  for (const button of buttons) {
+    button.addEventListener('click', () => select(button.dataset.surface, true));
+    button.addEventListener('keydown', (event) => {
+      const current = buttons.indexOf(button);
+      let next = null;
+      if (event.key === 'ArrowRight') next = (current + 1) % buttons.length;
+      if (event.key === 'ArrowLeft') next = (current - 1 + buttons.length) % buttons.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = buttons.length - 1;
+      if (next == null) return;
+      event.preventDefault();
+      buttons[next].focus();
+      select(buttons[next].dataset.surface, true);
+    });
+  }
+  document.querySelectorAll('[data-open-surface]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const surface = button.dataset.openSurface;
+      select(surface, true);
+      buttons.find((item) => item.dataset.surface === surface)?.focus();
+    });
+  });
+  select(initial);
+  return true;
+}
+
+function startCompileRuntime(search = location.search) {
+  if (state.worker) return;
+  state.worker = new Worker(new URL('worker.js', import.meta.url),
+                            { type: 'module' });
+  state.worker.addEventListener('message', onMessage);
+  state.worker.postMessage({
+    type: 'boot',
+    search,
+    config: readConfig(search),
+  });
+  status('starting the engine…');
+}
+
+function startLinuxRuntime(search = location.search) {
+  if (state.linux) return;
+  state.linux = mountLinuxTerminal(search);
+}
+
+function activateRuntimeSurface(surface, search = location.search) {
+  if (surface === 'source' || surface === 'run') startCompileRuntime(search);
+  if (surface === 'terminal') startLinuxRuntime(search);
+}
+
+function openFocusSurface(surface) {
+  if (!selectFocusSurface) return false;
+  selectFocusSurface(surface, true);
+  document.querySelector(`[data-surface="${surface}"]`)?.focus();
+  return true;
+}
 
 function activeTab() {
   return state.tabs.find((t) => t.id === state.activeId) || state.tabs[0];
@@ -85,6 +200,10 @@ const C_KEYWORDS = /\b(for|while|do|if|else|return|break|continue|switch|case|de
 
 function escapeHtml(text) {
   return text.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/"/g, '&quot;');
 }
 
 function highlightC(code) {
@@ -235,8 +354,11 @@ function newTab(name, source) {
     source: source || '',
     result: null,
     hasMain: false,
+    runReady: false,
     ranWith: null,
     dirty: false,
+    scrollTop: 0,
+    scrollLeft: 0,
   };
 }
 
@@ -290,25 +412,115 @@ function renderTabs() {
   const list = $('tablist');
   list.innerHTML = state.tabs.map((tab) => `
     <div class="tab${tab.id === state.activeId ? ' is-active' : ''}${
-      tab.dirty ? ' is-dirty' : ''}" data-id="${tab.id}" role="tab">
+      tab.dirty ? ' is-dirty' : ''}" data-id="${tab.id}" role="tab"
+         aria-selected="${tab.id === state.activeId}"
+         tabindex="${tab.id === state.activeId ? '0' : '-1'}">
       <span class="name">${escapeHtml(tab.name)}</span>
       <span class="dot" aria-hidden="true"></span>
-      ${state.tabs.length > 1
-        ? `<button class="close" data-close="${tab.id}" title="Close"
-                   aria-label="Close ${escapeHtml(tab.name)}">&times;</button>`
-        : ''}
+      <button class="close" data-close="${tab.id}" title="Close"
+              aria-label="Close ${escapeAttr(tab.name)}">&times;</button>
     </div>`).join('');
 
   list.querySelectorAll('.tab').forEach((el) => {
     el.addEventListener('click', (event) => {
-      if (event.target.dataset.close) return;
+      if (event.target.dataset.close || event.target.classList.contains('tab-rename')) return;
       selectTab(el.dataset.id);
+    });
+    el.addEventListener('dblclick', (event) => {
+      if (event.target.closest('.close')) return;
+      event.preventDefault();
+      beginTabRename(el.dataset.id, el);
+    });
+    el.addEventListener('keydown', (event) => {
+      const index = state.tabs.findIndex((tab) => tab.id === el.dataset.id);
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const step = event.key === 'ArrowRight' ? 1 : -1;
+        const next = (index + step + state.tabs.length) % state.tabs.length;
+        selectTab(state.tabs[next].id);
+        list.querySelector(`[data-id="${state.activeId}"]`)?.focus();
+      } else if (event.key === 'Delete') {
+        event.preventDefault();
+        closeTab(el.dataset.id);
+        list.querySelector(`[data-id="${state.activeId}"]`)?.focus();
+      }
     });
   });
   list.querySelectorAll('.close').forEach((el) => {
     el.addEventListener('click', (event) => {
       event.stopPropagation();
       closeTab(el.dataset.close);
+    });
+  });
+  renderVfs();
+}
+
+function cleanTabName(value) {
+  return value.trim().replace(/[\\/\0]/g, '-').slice(0, 80) || 'untitled';
+}
+
+function beginTabRename(id, element) {
+  const tab = state.tabs.find((candidate) => candidate.id === id);
+  if (!tab || element.querySelector('.tab-rename')) return;
+
+  const label = element.querySelector('.name');
+  const input = document.createElement('input');
+  input.className = 'tab-rename';
+  input.type = 'text';
+  input.value = tab.name;
+  input.setAttribute('aria-label', 'Rename file');
+  label.replaceWith(input);
+
+  let settled = false;
+  const finish = (commit) => {
+    if (settled) return;
+    settled = true;
+    if (commit) tab.name = cleanTabName(input.value);
+    persistTabs();
+    renderTabs();
+    document.querySelector(`.tab[data-id="${id}"]`)?.focus();
+  };
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('dblclick', (event) => event.stopPropagation());
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); finish(true); }
+    if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.focus();
+  const dot = tab.name.lastIndexOf('.');
+  input.setSelectionRange(0, dot > 0 ? dot : tab.name.length);
+}
+
+function fileKind(name) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.wat') || lower.endsWith('.wasm')) return 'Wasm';
+  if (lower.endsWith('.s') || lower.endsWith('.asm')) return 'x86';
+  return 'C';
+}
+
+function renderVfs() {
+  const files = $('vfs-files');
+  if (!files) return;
+  files.innerHTML = state.tabs.map((tab) => `
+    <button class="vfs-file${tab.id === state.activeId ? ' is-active' : ''}"
+            type="button" data-file="${tab.id}">
+      <span class="file">${escapeHtml(tab.name)}</span>
+      <small>${fileKind(tab.name)}</small>
+    </button>`).join('');
+  files.querySelectorAll('.vfs-file').forEach((file) => {
+    file.addEventListener('click', () => {
+      selectTab(file.dataset.file);
+      openFocusSurface('source');
+    });
+    file.addEventListener('dblclick', () => {
+      const id = file.dataset.file;
+      selectTab(id);
+      openFocusSurface('source');
+      requestAnimationFrame(() => {
+        const tab = document.querySelector(`.tab[data-id="${id}"]`);
+        if (tab) beginTabRename(id, tab);
+      });
     });
   });
 }
@@ -320,9 +532,11 @@ function selectTab(id) {
   state.activeId = id;
   $('source').value = tab.source;
   syncSource({ keepDirty: true });
+  restoreEditorScroll(tab);
   renderTabs();
   restoreCards();
   persistTabs();
+  if (!tab.result || tab.dirty) scheduleCompile();
 }
 
 function addTab(name, source) {
@@ -331,30 +545,47 @@ function addTab(name, source) {
   state.activeId = tab.id;
   $('source').value = tab.source;
   syncSource({ keepDirty: true });
+  restoreEditorScroll(tab);
   renderTabs();
   restoreCards();
   persistTabs();
   $('source').focus();
+  scheduleCompile();
   return tab;
 }
 
 function closeTab(id) {
-  if (state.tabs.length <= 1) return;
   const index = state.tabs.findIndex((t) => t.id === id);
   if (index < 0) return;
+  if (state.tabs.length === 1) {
+    const replacement = newTab('untitled', '');
+    state.tabs = [replacement];
+    state.activeId = replacement.id;
+    $('source').value = '';
+    syncSource({ keepDirty: true });
+    restoreEditorScroll(replacement);
+    renderTabs();
+    restoreCards();
+    persistTabs();
+    scheduleCompile();
+    $('source').focus();
+    return;
+  }
   state.tabs.splice(index, 1);
   if (state.activeId === id) {
     const next = state.tabs[Math.min(index, state.tabs.length - 1)];
     state.activeId = next.id;
     $('source').value = next.source;
     syncSource({ keepDirty: true });
+    restoreEditorScroll(next);
     restoreCards();
+    if (!next.result || next.dirty) scheduleCompile();
   }
   renderTabs();
   persistTabs();
 }
 
-/** Repaint cards 2 and 3 from whatever the active tab last produced. */
+/** Repaint the QM peek and Run state from the active tab's last result. */
 function restoreCards() {
   const result = state.result;
   if (!result || !result.ok) {
@@ -362,6 +593,7 @@ function restoreCards() {
       '<span class="hint">The minimized program appears here.</span>';
     $('qm-sub').textContent = '— instructions';
     $('sel-isa-view').innerHTML = '';
+    hideQmPill();
     renderRunControls();
     return;
   }
@@ -409,6 +641,8 @@ function syncSource(options) {
   const language = editorLanguage();
   const lines = code.split('\n');
   const shown = Math.max(lines.length, 14);
+  document.querySelector('.workbench-shell')
+    .style.setProperty('--source-lines', String(shown));
   $('highlight').innerHTML =
     (language === 'C' || !language ? highlightC(code) : highlightAsm(code))
     + '\n';
@@ -423,10 +657,30 @@ function syncSource(options) {
     if (changed && !(options && options.keepDirty)) {
       tab.dirty = true;
       tab.hasMain = false;
+      tab.runReady = false;
+      hideQmPill();
       renderTabs();
     }
     persistTabs();
   }
+}
+
+function syncEditorScroll(editor = $('source')) {
+  $('highlight').scrollTop = editor.scrollTop;
+  $('highlight').scrollLeft = editor.scrollLeft;
+  $('gutter').scrollTop = editor.scrollTop;
+  const tab = activeTab();
+  if (tab) {
+    tab.scrollTop = editor.scrollTop;
+    tab.scrollLeft = editor.scrollLeft;
+  }
+}
+
+function restoreEditorScroll(tab = activeTab()) {
+  const editor = $('source');
+  editor.scrollTop = tab?.scrollTop || 0;
+  editor.scrollLeft = tab?.scrollLeft || 0;
+  syncEditorScroll(editor);
 }
 
 function setSource(code, name) {
@@ -436,6 +690,7 @@ function setSource(code, name) {
   syncSource({ keepDirty: true });
   if (tab) tab.dirty = false;
   renderTabs();
+  scheduleCompile();
 }
 
 // ---------------------------------------------------------------------------
@@ -476,10 +731,35 @@ function optionsSignature() {
   return `${state.options.frontend}|${state.options.observer}`;
 }
 
+function hideQmPill() {
+  $('qm-pill').hidden = true;
+  $('qm-pill').setAttribute('aria-expanded', 'false');
+  $('qm-peek').hidden = true;
+}
+
+function renderQmPill(result, target) {
+  if (!result || !result.ok || result.standalone_main || !target || !target.ok) {
+    hideQmPill();
+    return;
+  }
+  const work = Number(target.work) || 0;
+  $('qm-pill-label').textContent = `${work} op${work === 1 ? '' : 's'}`;
+  $('qm-pill').title = `Peek ${result.frontend.function.name} after minimization`;
+  $('qm-pill').hidden = false;
+}
+
 function renderTakeaway() {
   const result = state.result;
   const target = currentTarget();
   const { text, kind } = takeawayText();
+  renderQmPill(result, target);
+
+  if (result && result.ok && result.standalone_main) {
+    $('qm-listing').innerHTML =
+      '<span class="hint">main is ready to Run</span>';
+    $('qm-sub').innerHTML = '<span>main</span> <span>wasm32</span>';
+    return;
+  }
 
   // The listing shows the function body, the way the compiled card does.
   // Copy still hands over the whole file, directives included, so that what
@@ -534,29 +814,24 @@ function currentOptions() {
   return { ...state.options };
 }
 
-function optimize(runRequest) {
+function optimize() {
   if (!state.ready || state.busy) return;
   const source = $('source').value;
   if (!source.trim()) return;
 
+  clearTimeout(autoTimer);
+  autoTimer = null;
   state.busy = true;
   state.pending = false;
   state.solve = {
     tabId: state.activeId,
     source,
     options: optionsSignature(),
-    // Run is a transaction: the worker first rebuilds the minimized kernel
-    // from this exact source, then the driver consumes that fresh artifact.
-    run: runRequest || null,
   };
-  $('foot-note').textContent = runRequest
-    ? 'recompiling the minimized program…' : 'compiling…';
+  renderRunControls();
+  $('foot-note').textContent = 'compiling…';
   state.worker.postMessage({
     type: 'solve', source, options: currentOptions(),
-    // Automatic solves keep `main` out of the scalar Minimized Program. Run
-    // additionally asks the worker to compile the complete unit to wasm and
-    // close its explicit imported-I/O state machine.
-    analyze_main: Boolean(runRequest),
   });
 }
 
@@ -572,15 +847,24 @@ let autoTimer = null;
 // re-enable a Compile button each and none of them knew about the queue.
 function finishBusy() {
   state.busy = false;
+  if (state.pending) { scheduleCompile(); return; }
   renderRunControls();
-  if (state.pending) { state.pending = false; scheduleCompile(); }
 }
 
 function scheduleCompile() {
   clearTimeout(autoTimer);
-  if (!$('source').value.trim()) return;
+  autoTimer = null;
+  if (!$('source').value.trim()) {
+    state.pending = false;
+    renderRunControls();
+    return;
+  }
+  state.pending = true;
+  renderRunControls();
   autoTimer = setTimeout(() => {
-    if (state.busy) { state.pending = true; return; }
+    autoTimer = null;
+    if (state.busy) return;
+    state.pending = false;
     optimize();
   }, AUTO_DELAY);
 }
@@ -610,6 +894,82 @@ function toast(message, isError) {
 // to show a program and not to try it.
 // --------------------------------------------------------------------------
 
+function restoreVfsWidth() {
+  let width = 0;
+  try {
+    width = Number(localStorage.getItem(VFS_WIDTH_KEY)) || width;
+  } catch {
+    /* a blocked store leaves the useful defaults in place */
+  }
+  if (width >= 180) setVfsWidth(width, false);
+}
+
+function setVfsWidth(value, persist = true) {
+  const width = Math.round(Math.min(360, Math.max(180, Number(value) || 228)));
+  document.querySelector('.workbench-shell').style.setProperty('--vfs-width', `${width}px`);
+  $('dock-resizer').setAttribute('aria-valuenow', String(width));
+  if (persist) {
+    try { localStorage.setItem(VFS_WIDTH_KEY, String(width)); } catch { /* optional */ }
+  }
+  return width;
+}
+
+function setupDockResize() {
+  const layout = document.querySelector('.workbench-shell');
+  const card = $('card-system');
+  const handle = $('dock-resizer');
+  let dragging = false;
+  let restoreWidth = null;
+
+  const move = (event) => {
+    if (!dragging) return;
+    setVfsWidth(card.getBoundingClientRect().right - event.clientX, false);
+  };
+  const stop = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    layout.classList.remove('is-resizing');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (event.pointerId !== undefined && handle.hasPointerCapture(event.pointerId)) {
+      handle.releasePointerCapture(event.pointerId);
+    }
+    setVfsWidth(card.getBoundingClientRect().width);
+  };
+
+  handle.addEventListener('pointerdown', (event) => {
+    if (!matchMedia('(min-width: 1061px)').matches) return;
+    dragging = true;
+    handle.setPointerCapture(event.pointerId);
+    layout.classList.add('is-resizing');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  handle.addEventListener('pointermove', move);
+  handle.addEventListener('pointerup', stop);
+  handle.addEventListener('pointercancel', stop);
+  handle.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const current = card.getBoundingClientRect().width;
+    setVfsWidth(current + (event.key === 'ArrowLeft' ? 12 : -12));
+  });
+  card.setAttribute('aria-expanded', 'false');
+  card.addEventListener('dblclick', (event) => {
+    if (!matchMedia('(min-width: 1061px)').matches
+        || event.target.closest('.vfs-file, button, input, .pane-resizer')) return;
+    if (restoreWidth === null) {
+      restoreWidth = card.getBoundingClientRect().width;
+      setVfsWidth(Math.max(260, Math.min(360, innerWidth * .236)), false);
+      card.setAttribute('aria-expanded', 'true');
+    } else {
+      setVfsWidth(restoreWidth, false);
+      restoreWidth = null;
+      card.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
 function termWrite(text, className) {
   const out = $('term-out');
   const line = document.createElement('span');
@@ -620,31 +980,41 @@ function termWrite(text, className) {
 }
 
 function runProgram() {
-  // With a known driver, Run deliberately solves again before executing it.
-  // Automatic compilation is only a preview; execution must use an artifact
-  // rebuilt from the exact source visible when Run was pressed. Without a
-  // known driver, the same control remains an explicit compile request.
+  // Automatic analysis prewarms an exact source snapshot: minimized artifact,
+  // import-only main driver and compiled VM code. The VM's large linear memory
+  // is still created only in the disposable execution Worker.
   const tab = activeTab();
-  if (!state.hasMain || (tab && tab.dirty)) {
-    optimize();
-    return;
-  }
-  if (state.busy) return;
+  if (state.busy || state.pending || !state.ready || !tab
+      || tab.dirty || !tab.hasMain || !tab.runReady) return;
+  $('card-run').scrollIntoView({
+    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    block: 'center',
+  });
   const stdin = $('term-in').value;
-  // With no typed input, keep stdout on the prompt line: an empty echo used
-  // to leave a visually stray `>` above "Hello, world!".
-  termWrite(stdin ? `> ${stdin}\n` : '> ', 'term-echo');
   $('term-in').value = '';
-  optimize({ stdin });
+  state.busy = true;
+  renderRunControls();
+  openFocusSurface('run');
+  termWrite(stdin ? `> ${stdin}\n` : '> ', 'term-echo');
+  status('running main through the minimized artifact…');
+  state.worker.postMessage({ type: 'exec', source: tab.source, stdin });
 }
 
 function renderRunControls() {
   const tab = activeTab();
-  const canRun = state.hasMain && tab && !tab.dirty;
-  $('term').hidden = !canRun;
-  $('run-label').textContent = canRun ? 'Run' : 'Compile';
+  const canRun = state.hasMain && tab && tab.runReady && !tab.dirty;
+  $('run-label').textContent = 'Run';
+  $('term-in').disabled = state.busy || state.pending || !state.ready || !canRun;
+  $('term-in').placeholder = canRun ? 'stdin' : 'Run a file with main';
   const hasSource = Boolean($('source').value.trim());
-  $('btn-run').disabled = state.busy || !state.ready || !hasSource;
+  $('btn-run').disabled = state.busy || state.pending || !state.ready
+    || !hasSource || !canRun;
+}
+
+function formatElapsed(value) {
+  const elapsed = Math.max(0, Number(value) || 0);
+  if (elapsed < 10) return elapsed.toFixed(2).replace(/\.?0+$/, '');
+  return String(Math.round(elapsed));
 }
 
 function showRunResult(result) {
@@ -654,7 +1024,7 @@ function showRunResult(result) {
     return;
   }
   if (result.stdout) termWrite(result.stdout);
-  const elapsed = Math.max(0, Math.round(Number(result.elapsed_ms) || 0));
+  const elapsed = formatElapsed(result.total_ms ?? result.elapsed_ms);
   // Keep the artifact fact, but make completion and elapsed wall time the
   // stable line instead of exposing a process-like exit record for success.
   const via = result.ran
@@ -699,7 +1069,7 @@ function openDialog(title, html) {
 function examplesMarkup() {
   return '<div class="examples">'
     + '<button class="btn ex new-tab" data-new-tab="1" '
-    + 'aria-label="New tab">+</button>'
+    + 'aria-label="Create blank file">+</button>'
     + EXAMPLES.map((ex, i) =>
         `<button class="btn ex" data-i="${i}">${escapeHtml(ex.file)}</button>`)
         .join('')
@@ -731,10 +1101,12 @@ function wireExamples() {
       }
       const example = EXAMPLES[Number(el.dataset.i)];
       const existing = state.tabs.find((t) => t.name === example.file);
+      const empty = state.tabs.find((t) => !t.source.trim());
       if (existing) {
         selectTab(existing.id);
         setSource(example.source, example.file);
-      } else if (activeTab() && !activeTab().source.trim()) {
+      } else if (empty) {
+        selectTab(empty.id);
         setSource(example.source, example.file);
       } else {
         addTab(example.file, example.source);
@@ -805,7 +1177,14 @@ function onMessage(event) {
 
   if (msg.type === 'progress') { status(msg.message); return; }
   if (msg.type === 'notice') { toast(msg.message, true); return; }
-  if (msg.type === 'ran') { finishBusy(); showRunResult(msg.result); return; }
+  if (msg.type === 'ran') {
+    const tab = activeTab();
+    if (msg.result.stale && tab) tab.runReady = false;
+    finishBusy();
+    showRunResult(msg.result);
+    if (msg.result.stale) scheduleCompile();
+    return;
+  }
 
   if (msg.type === 'ready') {
     state.ready = true;
@@ -839,6 +1218,7 @@ function onMessage(event) {
     }
 
     tab.hasMain = Boolean(msg.has_main);
+    tab.runReady = Boolean(msg.run_ready);
     tab.result = msg.result;
     tab.ranWith = request ? request.options : optionsSignature();
     tab.dirty = false;
@@ -852,12 +1232,24 @@ function onMessage(event) {
       return;
     }
 
+    if (!msg.result.ok && msg.result.idle) {
+      finishBusy();
+      $('qm-listing').innerHTML =
+        '<span class="hint">The minimized program appears here.</span>';
+      $('qm-sub').textContent = '— instructions';
+      hideQmPill();
+      renderRunControls();
+      status();
+      return;
+    }
+
     if (!msg.result.ok) {
       finishBusy();
       $('qm-listing').innerHTML =
         `<span class="tok-com">${escapeHtml(
           msg.result.error.text || msg.result.error.message)}</span>`;
       $('qm-sub').textContent = 'no result';
+      hideQmPill();
       // There is no program to run any more, and leaving Run live would offer
       // to evaluate the previous paste's answer under this one's heading.
       renderRunControls();
@@ -878,23 +1270,6 @@ function onMessage(event) {
     fillTargets(msg.result);
     renderTakeaway();
     renderRunControls();
-
-    // A Run request is continued only after a successful, non-stale solve.
-    // `solve` removed main before QM and replaced the worker's artifact, so
-    // `execMain` cannot accidentally execute an older minimized program.
-    if (request && request.run) {
-      if (!msg.has_main) {
-        finishBusy();
-        termWrite('the paste defines no main to run\n', 'term-err');
-        status();
-        return;
-      }
-      status('running main through the fresh artifact…');
-      state.worker.postMessage({
-        type: 'exec', source: request.source, stdin: request.run.stdin,
-      });
-      return;
-    }
 
     finishBusy();
     status();
@@ -955,6 +1330,8 @@ function init() {
   syncSource({ keepDirty: true });
   activeTab().dirty = false;
   renderTabs();
+  restoreVfsWidth();
+  setupDockResize();
 
   // The first example replaces the placeholder only if nothing was restored or
   // shared, so a returning visitor never loses what they had.
@@ -966,11 +1343,7 @@ function init() {
 
   const editor = $('source');
   editor.addEventListener('input', () => { syncSource(); scheduleCompile(); });
-  editor.addEventListener('scroll', () => {
-    $('highlight').scrollTop = editor.scrollTop;
-    $('highlight').scrollLeft = editor.scrollLeft;
-    $('gutter').scrollTop = editor.scrollTop;
-  });
+  editor.addEventListener('scroll', () => syncEditorScroll(editor));
   editor.addEventListener('keydown', (event) => {
     if (event.key === 'Tab') {
       event.preventDefault();
@@ -982,15 +1355,14 @@ function init() {
     }
   });
 
-  // A desktop double-click on panel chrome turns the two working columns into
-  // one wide reading surface; a second double-click restores the pair. Code,
-  // tabs and controls keep their native double-click behaviour (word
-  // selection, tab actions, and so on).
+  // A desktop double-click changes the two working columns' emphasis without
+  // removing the other surface. Code, tabs and controls retain their native
+  // double-click behaviour.
   const desktopPanels = matchMedia('(min-width: 1061px)');
   const board = document.querySelector('.board');
-  const cards = Array.from(board.querySelectorAll('.card'));
+  const cards = [$('card-write'), $('card-terminal')];
   const restorePanelPair = () => {
-    board.classList.remove('is-focused');
+    board.classList.remove('is-source-wide', 'is-terminal-wide');
     cards.forEach((card) => {
       card.classList.remove('is-expanded');
       card.setAttribute('aria-expanded', 'false');
@@ -1001,7 +1373,8 @@ function init() {
     const restore = card.classList.contains('is-expanded');
     restorePanelPair();
     if (!restore) {
-      board.classList.add('is-focused');
+      board.classList.add(card.id === 'card-write'
+        ? 'is-source-wide' : 'is-terminal-wide');
       card.classList.add('is-expanded');
       card.setAttribute('aria-expanded', 'true');
     }
@@ -1041,6 +1414,24 @@ function init() {
   $('btn-run').addEventListener('click', runProgram);
   $('btn-newtab').addEventListener('click', showExamples);
   $('btn-copy').addEventListener('click', copyOutput);
+  $('qm-pill').addEventListener('click', () => {
+    const open = $('qm-peek').hidden;
+    $('qm-peek').hidden = !open;
+    $('qm-pill').setAttribute('aria-expanded', String(open));
+  });
+  $('btn-peek-close').addEventListener('click', () => {
+    $('qm-peek').hidden = true;
+    $('qm-pill').setAttribute('aria-expanded', 'false');
+    $('qm-pill').focus();
+  });
+  $('btn-run-clear').addEventListener('click', () => {
+    $('term-out').replaceChildren();
+    $('term-in').focus();
+  });
+  $('btn-shell-clear').addEventListener('click', () => {
+    $('shell-out').replaceChildren();
+    $('shell-in').focus();
+  });
   $('term-in').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') { event.preventDefault(); runProgram(); }
   });
@@ -1060,15 +1451,20 @@ function init() {
     renderTakeaway();
   });
 
-  state.worker = new Worker(new URL('worker.js', import.meta.url),
-                            { type: 'module' });
-  state.worker.addEventListener('message', onMessage);
-  state.worker.postMessage({
-    type: 'boot',
-    search: location.search,
-    config: readConfig(location.search),
-  });
-  status('starting the engine…');
+  const focused = setupFocusSurface(
+    location.search,
+    (surface) => activateRuntimeSurface(surface, location.search),
+  );
+  if (!focused) {
+    startCompileRuntime(location.search);
+    startLinuxRuntime(location.search);
+  } else if (requestedFocusSurface(location.search) === 'workspace') {
+    // Paint the four-way MCP entry first, then prewarm Editor/Run without
+    // touching the VFS or Linux session.  Choosing either work surface is
+    // therefore normally an immediate transition.
+    requestAnimationFrame(() => startCompileRuntime(location.search));
+  }
+  addEventListener('pagehide', () => state.linux?.release(), { once: true });
 }
 
 init();

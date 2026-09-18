@@ -1,506 +1,271 @@
-# Quotient Minimizer — v2
+# v2 products
 
-> Paste a small C function and see how little machine computation its
-> observable meaning actually requires.
+The system has one compiler product and two execution/delivery products over
+one canonical Linux distribution identity:
 
-v2 is the interactive product from [`SPEC.md`](../v1/SPEC.md): open a URL, paste
-C, press **Compile**, copy the program. Compilation, solving and verification
-all happen on your machine — there is no account, no upload and no server
-component.
+1. `postlink-compiler`: a native CLI that accepts a linked x86-64 ELF and
+   emits a smaller, independently runnable optimized x86-64 ELF.
+2. native: the optimized kernel and user ELFs run directly. Its delivery
+   adapter may exploit native `mmap`, page faults, NUMA, asynchronous I/O,
+   process lifetime, and ordinary network devices.
+3. `vm` + `web`: the same optimized ELFs are lowered by a VM-internal backend
+   and run in the browser. Its delivery adapter uses authenticated page faults,
+   dirty COW, Worker lifetime, browser persistence, and a virtual NIC.
 
-Two cards: what you paste, and what QM made of it — ready to copy, ready to run.
-Tabs hold one kernel each, with their own source and their own last result. The
-language is read off the paste rather than picked from a menu.
+The Linux kernel, root filesystem, POSIX/C/git/HTTPS toolchain, object
+identities, and authenticated root form one canonical distribution. A release
+publishes native and browser delivery projections of that root; it does not
+build two semantically independent distributions. Wasm modules are derived
+browser execution objects, never the canonical program identity.
 
-The minimized program is viewable as any of the machines it lowers to, or as
-the codec: one canonical artifact, `pack(code(z))`, shown as the bytes it is —
-with the fields of the code named — and then the listing those bytes decode to.
-That artifact is what **Run** executes, and what `vm/` renders back out as C,
-x86-64 or wasm32.
+The native profile is a development sandbox, not a second conventional host
+distribution. It presents the same shell, files and workspace lifecycle as
+the browser profile, while executing accepted optimized ELFs directly on the
+host CPU under a compatible Linux syscall boundary. Native `mmap`, page faults,
+namespaces, cgroup v2, asynchronous I/O and ordinary devices manage the same
+authenticated objects. It has no CPU-virtualization or KVM dependency. Opening
+a workspace yields an immediately usable Linux environment; closing it retains
+only its immutable root and committed workspace/config objects. Backend and
+cache policy are implementation details, not different user environments.
 
-Intrinsics are read, not just emitted. `_pdep_u64`, `_pext_u64`, the BMI1 set,
-`_tzcnt`/`_lzcnt`/`_bzhi`, byte swaps and rotates, and the SSE carry-less
-multiply idiom — `__m128i`, `_mm_clmulepi64_si128` and the scalar moves around
-it — all evaluate, so a kernel already written the fast way analyses as readily
-as the obvious one. `qm/cfront/intrinsics.py` holds the table, shared by the
-reference interpreter and the compiler so the two cannot disagree.
+The release-size gate applies to that shared distribution after every linked
+ET_EXEC/ET_DYN has been replaced by its independently runnable optimized ELF.
+The current unoptimized SquashFS transfer baseline is 114,573,312 bytes.
+Publication targets at most 75 MB (75,000,000 bytes) of unique, logical,
+uncompressed canonical kernel/boot/root payload. Transfer bytes are a second
+metric; filesystem compression, a separate machine pack, or an unoptimized
+toolchain image cannot satisfy the primary gate on its behalf.
 
-Assembly goes in as well as out. Paste an x86-64 listing or a wasm32 function
-and QM evaluates it, minimizes it, and lowers again — so x86 → wasm and
-wasm → x86 are the ordinary pipeline with a different target selected at the
-end, and running a listing through it a second time gives the same listing
-back. `../../corpus/lanes/ranks8.s` and
-`../../corpus/bit-linear/prefix_xor64.wat` are there to press
-Optimize on.
+The historical machine-artifact normalization reduced the former
+405,847,385-byte materialized pack to a 115,430,431-byte program word.  That
+number must not be reported as the distribution's storage coefficient.  Its
+137,510,610-byte directory-bearing pack still opens a separate
+114,575,792-byte SquashFS delivery.  Including the 1,888 fixed root bytes, its
+actual binary cold-delivery closure is therefore 252,088,290 bytes.  The web
+loader now requires and checks that complete transitive extent instead of
+silently reporting only the first pack.  None of these four historical
+`linux-x86-64`, machine-pack, merged-toolchain, or SquashFS projections is named
+by the production artifact catalog; a current distribution cannot fall back
+to them while the fixed recipe is being rebuilt.
 
-```
-C ──Clang/WASM──┐
-                ├──> wasm32 / x86 input ──> QM ──> minimized wasm32
-x86 / wasm32 ───┘                                  │
-                                                   v
-                                                codec
-                                                   │
-                                                   v
-                                  fast VM in x86-64 or wasm32
-```
+This exposes the old double route rather than legitimizing it: the pack keeps
+115,430,431 bytes of module/parameter/state/edge/entry execution graph while
+the filesystem payload is delivered again as its backing.  The production
+route replaces every linked ELF in the fixed approximately 323.3 MB
+unoptimized unique-file population with the ordinary optimized ELF, then
+publishes the resulting canonical release exactly once.  Its storage
+coefficient is `optimized canonical release / source canonical release`; a
+machine pack, SquashFS extent, Wasm cache, or transfer compression cannot be
+used as either side of that ratio.  The target remains at most 75,000,000
+canonical bytes before a replaceable Storage projection.
 
-The browser uses C only as a frontend: Clang produces wasm32, and QM analyses
-that result. Human-authored wasm32 and x86-64 enter at the same QM boundary.
-The minimized wasm32 sequence is the only input to codec compilation; the VM
-then runs the resulting image in its x86-64 or wasm32 implementation.
+Storage and networking are adapter boundaries shared by both profiles. They
+authenticate, fetch, cache, evict, recover, and synchronize physical objects,
+but do not acquire CPU, MMU, VFS, or x86 semantics. The Linux kernel remains
+the sole owner of VFS, process, credential, signal, socket, and time semantics:
+the compatible host kernel in native execution and the release kernel in the
+browser machine. The browser has no POSIX/syscall fallback.
 
-On Run, the same linked wasm32 also goes through the whole-program state
-frontend. It makes the wasm PC, call stack, locals, globals and memory explicit,
-stops at imported input, and derives a pure `state, byte -> state` function.
-The scalar Minimized Program still excludes `main`; its state-machine proof is
-reported separately.
+The normative standard-profile, service, sandbox, and lifecycle contract is
+[DISTRIBUTION.md](docs/DISTRIBUTION.md). Package metadata, dependency,
+ownership, script/trigger, signing, installation, and audit policy is
+[PACKAGE.md](docs/PACKAGE.md). Together they define one 75 MB development
+distribution shared by native and browser execution.
 
----
+The one production path is:
 
-## Run it
-
-**In a browser** (the product):
-
-```sh
-python3 tools/serve.py        # serves this directory, opens the page
-```
-
-**On the command line** (the same pipeline):
-
-```sh
-python3 -m qm.cli ../../corpus/lanes/ranks8.c
-python3 -m qm.cli ../../corpus/lanes/select8.c --observer low:8 --json
-python3 -m qm.cli program.wasm --state-main --json
-python3 tools/qm_compiler_wasm.py llvm.core.wasm --out compiler.wasm
-python3 tools/physicalize_wasm.py compiler.wasm
-python3 tools/build_compiler_distribution.py llvm.core.wasm \
-  llvm-resources.tar --out compiler-dist --version 22.0.0-git20542-10
-```
-
-The last command is the large-module path used for YoWASP itself. A compiler
-invocation is not treated as a scalar kernel: arguments, clocks, randomness and
-the virtual filesystem remain host state. The tool scans internal code bodies
-without materializing the 75 MB module as an instruction object graph and sends
-only closed straight-line integer functions through whole-expression
-substitution, normalization, and QM. Multiple parameters remain independent
-SSA inputs; they are not packed into a sampled domain. On
-`@yowasp/clang@22.0.0-git20542-10`, the 75,532,134-byte core contains 133,398
-defined functions; 5,124 functions fit that safe grammar, and all 5,124 are
-already fixed points. The output is therefore intentionally byte-identical.
-The component adapters likewise contain only host wrappers and indirect-call
-trampolines in this grammar. A zero replacement count is a result, not licence
-to rewrite host state or claim sampled compiler equivalence.
-
-Byte-identical does not mean physically serial. After dead-value removal those
-5,124 slices contain 4,179 computation nodes with an aggregate dependency span
-of 3,860. There are 157 slices with more than one independent lane; the widest
-wave has 7 lanes and the longest slice has span 10. `qm.wasmphysical` schedules
-each live SSA node by dependency depth, so one wave writes distinct slots in
-parallel. Calls, memory effects, and control transfers remain barriers.
-
-The complete core has 24,856,928 decoded instructions in 103 opcode groups.
-Its segmented `(function, pc)` view derives 24,724,978 ordinary `rank + 1`
-coordinates and stores none of them. This sequential view preserves code
-location; it does not impose execution order inside a dependency wave.
-
-The browser does not load the package's generated JavaScript wrapper. On the
-first Compile it fetches the pinned `llvm.core.wasm` and
-`llvm-resources.tar` in parallel, verifies their SHA-256 hashes, and connects
-the core's 29 WASI Preview 1 imports to an in-memory filesystem. The core asks
-Clang for its cc1/link plan and the same core executes each step. The three
-component adapter modules are outside this path. A deployment can point
-`QM_CLANG.compilerCoreUrl` at a normalized `compiler.wasm`; its expected digest
-is supplied as `QM_CLANG.compilerCoreSha256`.
-
-The distribution command makes that deployment input explicitly. It produces
-only `compiler.wasm`, `compiler-resources.tar`, and deterministic
-`compiler.json`; the installed package and generated adapters are build inputs,
-not runtime dependencies. The manifest records both binary digests and the
-normalization/QM report.
-
-**Tests** (standard library only, no dependencies):
-
-```sh
-python3 tests/run.py          # every core
-python3 tests/run.py -j 1     # one process, plain unittest output
+```text
+linked x86 ELF
+    -> postlink-compiler
+    -> optimized x86 ELF + proof
+    |-> native execution + native delivery adapter
+    `-> wasm-compiler (VM-internal)
+         -> ordinary Wasm modules
+         -> vm.wasm + browser delivery adapter
+         -> browser execution
 ```
 
----
+The optimized program is still an ordinary x86 ELF. Its proof is carried by
+standard ELF mechanisms and is independently checkable. There is no private
+execution container, decoded-instruction stream, Python executor, JavaScript
+instruction reader, STEP fallback, or runtime decoder.
 
-## What it does with `ranks8`
+## Source tree
 
-```c
-uint64_t ranks8(uint8_t m)
-{
-    uint64_t r = 0;
-    for (unsigned i = 0; i < 8; ++i)
-        r |= (uint64_t)__builtin_popcount(m & ((1u << i) - 1)) << (8 * i);
-    return r;
-}
+```text
+src/v2/
+├─ support/
+│  ├─ include/support/
+│  │  ├─ types.h
+│  │  ├─ arena.h
+│  │  ├─ checked.h
+│  │  ├─ future.h
+│  │  └─ sha256.h
+│  └─ src/
+├─ x86/
+│  ├─ include/x86/
+│  │  ├─ elf.h
+│  │  ├─ decode.h
+│  │  ├─ semantics.h
+│  │  └─ fault.h
+│  └─ src/
+├─ optimized-x86/
+│  ├─ include/optimized-x86/
+│  │  ├─ format.h
+│  │  ├─ reader.h
+│  │  └─ proof.h
+│  ├─ src/
+│  └─ cli/main.c            postlink-verify
+├─ postlink-compiler/
+│  ├─ include/postlink/compiler.h
+│  ├─ src/
+│  ├─ cli/main.c
+│  └─ check/
+├─ machine-abi/
+│  ├─ include/machine/
+│  │  ├─ state.h
+│  │  ├─ event.h
+│  │  ├─ barrier.h
+│  │  └─ result.h
+│  └─ src/
+├─ wasm-compiler/
+│  ├─ include/wasm-compiler/compiler.h
+│  ├─ src/
+│  ├─ cli/main.c
+│  └─ check/
+├─ artifact/
+│  ├─ include/artifact/
+│  │  ├─ root.h
+│  │  ├─ object.h
+│  │  ├─ index.h
+│  │  ├─ future.h
+│  │  ├─ program.h
+│  │  ├─ share.h
+│  │  ├─ payload.h
+│  │  ├─ derive.h
+│  │  └─ resource.h
+│  ├─ src/
+│  ├─ cli/
+│  └─ check/
+├─ storage/
+│  ├─ include/storage/
+│  │  ├─ identity.h
+│  │  ├─ delivery.h
+│  │  ├─ compression.h
+│  │  ├─ crypto.h
+│  │  └─ erasure.h
+│  ├─ src/
+│  ├─ cli/
+│  └─ check/
+├─ vm/
+│  ├─ include/vm/
+│  │  ├─ machine.h
+│  │  ├─ memory.h
+│  │  ├─ mmu.h
+│  │  ├─ device.h
+│  │  └─ lifecycle.h
+│  ├─ core/
+│  ├─ wasm/
+│  └─ check/
+└─ web/
+   ├─ runtime/
+   ├─ worker/
+   └─ ui/
 ```
 
-```
-Quotient Minimizer        2 core operations       PDEP ; IMUL
-Residual freedom          502 solutions
-Verification              exact exhaustive, 256 / 256
-Artifact                  17,107 bytes            pack(code(z))
-```
+Directories are product or library boundaries, not historical phases. A
+source file belongs to the lowest layer whose public contract is sufficient to
+explain it. Repository-only generators and checks live with the product they
+exercise; there is no global catch-all `tools/` or `tests/` ownership boundary.
 
-The same semantic program lowers differently per target, which is the point of
-keeping semantic classes separate from mnemonics:
+## Allowed dependencies
 
-| target | ops | instructions |
-| --- | --- | --- |
-| x86-64 + BMI2 | 2 | `PDEP IMUL` |
-| x86-64 baseline | 5 | `IMUL AND BSWAP SHR IMUL` |
-| portable scalar | 5 | `IMUL AND BSWAP SHR IMUL` |
-| codec | 4,123 | `ROW` |
+```text
+support
+   ├──▶ x86
+   ├──▶ optimized-x86
+   ├──▶ machine-abi
+   ├──▶ artifact
+   └──▶ storage
 
-The last row is the artifact: one instruction, and the thing Run executes. It
-comes from the minimized wasm32 sequence, never directly from C, a pasted
-listing, or the solver's abstract program. `tests/test_vm_codec_view.py` checks
-that different spellings of one function produce the same bytes. `vm/emit.py`
-renders the VM image back out as C, x86-64 or wasm32.
+x86 + optimized-x86
+          │
+          ▼
+ postlink-compiler
 
-Its number is not a count of listing lines. The specification defines the cost
-of a transition on the physical form of the machine — a capture plus a wave
-over the rows that had the written cell cached — so `work` is transitions plus
-incidences and `span` is transitions. Carry-free lane-coordinate lowering now
-puts one feed and one read of `ranks8` at 225 transitions and 1,067 image cells,
-down from 1,624 and 6,728. See `vm/README.md` for the physical comparison.
+optimized-x86 + machine-abi
+          │
+          ▼
+    wasm-compiler
 
----
-
-## The curriculum kernels
-
-The categorized top-level `corpus/` carries the bit-manipulation exercises from CMU's CS:APP Data Lab,
-MIT 6.172 and Princeton's *Algorithms* 4/e, each stated the obvious way. They
-are there because they are the ones that used to fall through the grammar: a
-comparison between two words, a count, a case analysis on a float's exponent.
-
-The names and topics follow the primary course materials: the
-[CS:APP Data Lab handout](https://csapp.cs.cmu.edu/3e/datalab.pdf),
-[MIT 6.172 Lecture 3: Bit Hacks](https://ocw.mit.edu/courses/6-172-performance-engineering-of-software-systems-fall-2018/resources/lecture-3-bit-hacks/),
-and the *Algorithms, 4th Edition* sections on
-[key-indexed counting](https://algs4.cs.princeton.edu/51radix/),
-[KMP](https://algs4.cs.princeton.edu/53substring/KMP.java.html), and
-[Rabin-Karp](https://algs4.cs.princeton.edu/53substring/RabinKarp.java.html).
-Examples that narrow or pack the original inputs say “adapted from” in their
-comments; `max_u8x8` and `strict_sum4_f64` carry no university attribution.
-
-| kernel | QM | |
-| --- | --- | --- |
-| `logical_neg_i32` | 5 | `1 - popcount(x & -x)` |
-| `least_bit_mask_u64` | 2 | `x & -x` |
-| `popcount_u64` | 1 | `POPCNT` |
-| `rabin_karp_roll` | 4 | one reduction of the concatenated word |
-| `how_many_bits_i32` | 8 | sign fold, then leading zeros |
-| `is_less_or_equal_i32` | 10 | `SPLIT` on `b - a`, two constant pieces |
-| `min_i32` | 11 | `SPLIT` on `a - b`, a piece per half |
-| `mod_add_u32` | 9 | `SPLIT` on `a + b`: the conditional subtract |
-| `float_power2_bits` | 11 | `SPLIT` on the word read signed |
-| `float_scale2_bits` | 24 | `SPLIT` on the magnitude, four pieces |
-| `round_up_pow2_u64` | 14 | `smear(x - 1) + 1` |
-| `max_u8x8` | 43 | the halving tournament, branch-free |
-| `middle_bits_u16` | 1 | `PEXT` |
-
-Five more are in the corpus because they do **not** land, which is a result
-and not an omission. `counting_sort8_u2` and `kmp_scan8_fixed` come back as
-tables — the interesting number for the second one is its future quotient,
-three bits of state against eight bits of history. `float_to_int_bits` and
-`strict_sum4_f64` want a shift by a value, and `histogram4_u2x16` wants four
-answers in four fields of one output. Each says which of the two it is; none
-of them answers with something that merely fits the probes.
-
-The counts above are `work` on the primary target and are checked by
-`tests/test_wholeword.py`, so a change that quietly makes one of them longer
-fails the suite.
-
----
-
-## How the browser runs it
-
-Two things run in the page, and the split is deliberate.
-
-**Clang/WASM compiles and executes.** The paste is compiled once, to `wasm32`,
-which is instantiated and called over the whole input domain. That is the only
-thing the compiler is for. Executing compiled code is why a 16-bit kernel
-(65,536 inputs) is extracted in milliseconds rather than in a minute.
-
-There used to be a second compile producing an x86-64 listing for a pane to
-show, with a target and an optimization level to choose. The pane is gone and so
-are both controls: they changed what was displayed, never what the kernel
-computes, and the minimized program is what this page is about.
-
-**Python decides everything else.** Quotients, synthesis, lowering, ranking and
-verification run under Pyodide, because that is where the engine lives and where
-it is tested. The worker hands Python a table of outputs; Python never sees the
-compiler.
-
-The Clang bundle is fetched lazily, on the first run that needs it, so the page
-is usable immediately. If it cannot be fetched, the built-in C-subset frontend
-takes over and the page still answers.
-
-### Configuring the Clang bundle
-
-No clang-in-wasm build is bundled with this repository. Point the page at one:
-
-```js
-// before app.js loads, or via ?clang=<url>
-window.QM_CLANG = { driverUrl: 'https://example.com/clang-wasm/driver.mjs' };
+machine-abi + artifact + storage
+          │
+          ▼
+          vm
+          │
+          ▼
+         web
 ```
 
-The driver contract is one function, so any build can be adapted with a short
-shim:
+An arrow means “may include or link”. Reverse edges are build failures.
+Notably:
 
-```js
-export async function init(onProgress) {}          // optional
-export async function compile(args, files) {
-  // files: { '/in.c': '<source>' }
-  return { status: 0, stderr: '', files: { '/out.s': '…', '/out.wasm': Uint8Array } };
-}
+- `postlink-compiler` does not know Wasm, VM layout, browser delivery, or the
+  artifact store.
+- `wasm-compiler` reads only the accepted optimized ELF and the machine ABI; it
+  never re-decodes the linked input.
+- `vm` executes the machine ABI and faults immutable objects through
+  `artifact` and `storage`; it does not link either compiler.
+- `web` owns orchestration and presentation only. It does not implement x86,
+  MMU, VFS, or artifact semantics in JavaScript.
+
+## Product contracts
+
+The ordinary compiler produces a linked x86 ELF. The standalone post-link CLI
+accepts that ELF and emits another independently runnable x86 ELF. Publication
+requires a proof of total coordinate coverage, exact fault cuts, the fixed
+machine ABI, direct control, and improved cost. The proof is bound to the ELF
+build identity; absence or mismatch is a compile error.
+
+The standalone Wasm compiler accepts only a proved optimized x86 ELF and emits
+ordinary bounded Wasm modules. The VM imports those modules lazily into its
+function table and provides CPU state, RAM, MMU, events, devices, and lifecycle.
+Missing code is rejected before publication rather than interpreted at run
+time.
+
+The Playground is a thin invocation of the same products:
+
+```text
+source file
+    -> ordinary compiler and linker
+    -> linked x86 ELF
+    -> postlink-compiler
+    -> optimized x86 ELF + proof
+    -> VM
+    -> Run terminal
 ```
 
-`qm/clang.py` prepends a freestanding prelude and strips `#include <…>`, so the
-bundle needs **no sysroot** — that is the difference between a ~50 MB download
-and a ~300 MB one.
+There is no Playground-only language runtime. A source with `main` follows this
+path and executes; a source without `main` follows the same compile path and
+reports the accepted functions and proof without inventing an execution entry.
 
----
+Artifact identity and delivery are separate. `artifact` defines authenticated
+roots, objects, indexes, and resources. `storage` defines content identity,
+compression, encryption, erasure coding, and untrusted delivery locations.
+Neither subsystem gives storage tiers semantic authority.
 
-## Deploy
+The derivations and invariants are normative in:
 
-The site is static: no server code, no build toolchain beyond Python.
+- [POST-COMPILE.md](docs/POST-COMPILE.md)
+- [ARTIFACT.md](docs/ARTIFACT.md)
+- [STORAGE.md](docs/STORAGE.md)
+- [NETWORK.md](docs/NETWORK.md)
+- [DISTRIBUTION.md](docs/DISTRIBUTION.md)
 
-**Cloudflare Workers** — run from the **repository root**, where
-`wrangler.toml` lives:
+## Deletion rule
 
-```sh
-npx wrangler deploy    # [build] assembles dist/ first
-```
-
-The config is at the root, not here, for two reasons: Workers Builds runs its
-git integration from the repository root, and the `name` has to match the
-connected Worker script. The `[build] command` assembles `dist/` as part of
-`wrangler deploy`, so no build command has to be configured in the Cloudflare
-dashboard for the git integration to work. `npm run deploy` runs the suite
-first, so a red test cannot ship.
-
-**GitHub Pages** — `.github/workflows/pages.yml` runs the same
-`tools/build_site.py`, so the two deployments cannot drift apart.
-
-Either way the layout is the same, and it matters: `web/qm-manifest.json` names
-the engine modules the worker fetches at runtime, so `qm/`, `vm/` and `web/`
-must sit next to each other under the site root. The categorized source corpus
-is compiled into `web/examples.json`; it is not copied into the deployment.
-
----
-
-## Layout
-
-```
-vm/               the rSUBLEQ machine the minimized program normalizes onto
-  codec.py        one complete self-delimiting code, one rank
-  image.py        one canonical finite-support signed memory
-  machine.py      one transactional instruction  (3.1, what it means)
-  rows.py         the direct physical form        (3.2, what it is; 3.7 cost)
-  lower.py        minimized wasm32 Seq -> canonical image (bit-sliced)
-  emit.py         canonical image -> C, x86-64, wasm32
-  wasm/vm.c       the same machine, freestanding, ~6 KB of wasm32
-
-qm/
-  bits.py         PDEP/PEXT/CLMUL and the byte-lane constants
-  observer.py     §3   obs : Output -> Observable
-  semantics.py    §4   the finite domain, and its verification strength
-  quotient.py     §5   observation quotient, future quotient
-  program.py      §6   POINT / LIN_CONST / CONV / PERM_DYN / SPLIT / TABLE
-  guards.py       §7   guards derived from the multiply family
-  solvers.py      §8   specialized Stage-2 solvers
-  isa.py          §10  target profiles, §11 physical representatives, SSA DAG
-                       normalization, known bits, and the three emitters
-  recognize.py    §16  known primitives
-  corpus.py       §19  semantic keys, §20 opt-in contribution blobs
-  clang.py        §2   the Clang entry point (native driver)
-  cfront/         the offline fallback frontend
-  asmfront/       §2   x86-64 and wasm32 read back in
-  frontend.py     frontend registry: clang · precompiled · cfront · asm
-  pipeline.py     the whole product in one call
-  browser.py      route / plan / finish, the calls the worker makes
-  cli.py          §21  the local interactive product on a terminal
-  straightline.py compiles a straight-line integer program to a function
-
-web/              the page: index.html · app.js · worker.js · clang.js
-tools/            serve.py · gen_manifest.py · gen_examples.py · build_site.py
-tests/            run.py and the suite
-../../corpus/     categorized kernels, physical-array forms, and VM experiments
-```
-
-Each module states which SPEC section it implements and imports only from lower
-layers. `web/qm-manifest.json` lists the files the worker installs into Pyodide;
-`tests/test_browser.py` fails if it drifts from what is on disk.
-
----
-
-## Design notes
-
-**LIN_CONST is not another name for PDEP.** A `LIN_CONST` node carries the
-linear map itself — the images of the input basis — and `isa.py` searches PDEP,
-PEXT, constant CLMUL, constant IMUL, a masked shift into either multiply, a
-multiply/mask/BSWAP spread and a shift/XOR network, keeping whichever survives
-verification most cheaply. That is why the portable target gets a 5-op answer
-instead of "cannot lower", and why `(s >> 7) * 0xFF` comes out in three
-instructions rather than as a twenty-instruction XOR network.
-
-**Span and work are different numbers.** A lowered program is an SSA DAG, so
-span is the critical path and work is the instruction count. A balanced XOR tree
-has work 7 and span 3, and the report says so.
-
-**Don't-care bits come from the observer, never from the data.** A bit that is
-constant across the whole test domain is still part of the contract. The default
-observer is the identity on the declared return width; `low:8`, `high:8`,
-`mask:0x…`, `byte:K` and `nonzero` are explicit choices.
-
-**The lookup table is a fallback, not a minimum.** A finite domain always admits
-a table, and under a plain (span, work) comparison a 2 KB table would "win"
-every 8-bit kernel with one instruction. It is reported, and ranked last, so
-that "no solution" means "no compact solution" rather than "QM gave up".
-
-**Nothing decides per input what it can decide once.** Verifying a lowering
-sweeps the declared domain — 65,536 points for a 16-bit kernel, and a hundred
-solves do it — so the lowered sequence, the normalized program and both
-assembly readers are each written out as one Python function and the sweep
-calls that, rather than walking an instruction list and testing opcodes. Each
-has one implementation, not a fast path beside a reference one, and the suite
-checks that the single-input and swept forms agree.
-
-**Minimizing a minimal program returns it unchanged.** QM reads its own output
-in all three languages — the emitted C uses `_pdep_u64`, `_pext_u64` and
-`qm_clmul64`, and `asmfront` evaluates the emitted x86-64 and wasm32 — so
-idempotence is a property the suite can check, and does, for every example and
-in both directions between the two machines.
-
-**The examples are measured against hand-written optima.**
-`../../corpus/lanes/lanecode.h` is a header of kernels written by hand in their best known
-form; categorized corpus `.c` files state the same functions the obvious way; and
-`tests/test_lanecode.py` requires QM to get from one to the other, same
-representative and same constants, without being told either.
-
-**Verification strength is never overstated.** Domains up to 2^16 are exhaustive
-and reported as such. Wider domains get basis, boundary and deterministic
-differential probes, and every report of one says in as many words that it is
-not a proof of global equivalence.
-
-**A lowering is assembled, so it has to be normalized.** Each abstract op is
-lowered on its own, and each branch of a split is lowered on its own, so what
-comes out is correct and says several things twice: the same field extracted
-once per branch, a mask that cannot clear anything, a multiply by `0x800000`
-where a shift was meant. None of that is a fact about the kernel and all of it
-is counted by `work`, `span` and `L(z)` — so `isa.normalize` rewrites, folds,
-shares and prunes to a fixed point before anything is measured or verified. A
-multiply by a power of two becomes a shift, `x - (-125)` becomes `x + 125`, a
-deposit into the low bits becomes a mask, adjacent masks and shifts merge, and
-a value nothing reads is not computed. Every rewrite is an identity over 64-bit
-words, and the composed sequence is still verified over the declared domain
-afterwards, so a wrong one would be caught rather than shipped.
-
-**Which masks are redundant is a question about known bits.** `isa.known_bits`
-propagates, forwards and conservatively, which bits of each value can be set. A
-shift down by 32 leaves nothing above bit 31, so the mask after it is not
-clearing anything and goes. The same analysis decides where the listing may use
-the 32-bit forms: a 32-bit destination zero-extends, so `xorl` computes `xorq`
-exactly when neither operand nor result has an upper half. The input is assumed
-unknown even though the domain declares a width — a listing takes its argument
-in a 64-bit register, and a caller with something else in the top of it should
-still get the answer the C would.
-
-**The listing is written the way the instruction set allows.** A constant that
-fits a sign-extended 32-bit immediate is one, rather than a `movabsq` into a
-scratch register and a second instruction to use it; a value whose last reader
-is the current instruction is overwritten in place, which removes the `movq` in
-front of nearly every operation. `float_power2_bits` was twenty-nine lines of
-assembly and is now seventeen for the same eleven instructions. None of that
-changes the program, so the check is that the reader still evaluates it to the
-same function — and that a real assembler accepts it, which
-`tests/test_normalize.py` asks it to.
-
-**A comparison between words is a different class from one within a lane.**
-`lt_spread8` asks the same question about eight bytes at once and answers in
-eight bits; `isLessOrEqual` asks one question about two halves of a word and
-answers in one. The first is a `POINT` predicate and the second is a `SPLIT`:
-a whole-word key, thresholds on it read off the data, and one program per
-piece. Nothing branches — every piece is computed and blended under a mask
-that is one subtraction's sign bit — so a four-way case analysis still has a
-span and a work count rather than a mispredict. `float_scale2_bits` is four
-pieces and twenty-four instructions where it used to be a 64 KB table.
-
-**A split's pieces are fitted, not searched.** A piece runs as far as one
-affine map still explains it — over GF(2), over the integers in the word, or
-over the integers in the key the split already compared — and it is closed at
-the first key value none of the three can. That is what stops the class from
-becoming a lookup table written sideways: there are at most eight pieces, and
-each one is a map that two points determine and the rest of the piece checks.
-
-**A reduction is where the output stops having the input's shape.** Population
-count, leading and trailing zeros, the maximum over the lanes, a reduction
-modulo a constant: each answers with a number, and no deposit, convolution or
-lane predicate produces one. They are `POINT` steps because they are where the
-grammar stops being linear, which is what `POINT` has always meant. The
-modulus is read off the observed outputs the way a lane interval is read off
-the observed lanes — `Q` when the values are exactly `0 .. Q-1` — and it lowers
-to a reciprocal multiply, which is why `rabin_karp_roll` comes back as four
-instructions rather than as a 64 KB table.
-
-**The chain search counts instructions, not moves.** `smear`, the sign fold and
-the reductions are one move each and up to twelve instructions each, so a
-breadth-first search that returned its first hit would answer a logical
-negation with a cascade. Every chain that reaches the target at a given depth
-is collected and the cheapest is offered first: `!x` comes out as
-`1 - popcount(x & -x)`, five instructions, and `round_up_pow2` as
-`smear(x - 1) + 1`, which is fourteen because in this grammar there is nothing
-shorter.
-
-**Comparison is a semantic class, not three of them.** A per-lane `==`, `<` or
-pair of bounds arrives as one abstract step carrying the interval; the equality,
-one-sided and two-sided forms in `lanecode.h` are three physical
-representatives, chosen during lowering the way LIN_CONST chooses between PDEP
-and a shift-XOR chain. The interval and the lane width are both read off the
-observed data — every input carries eight independent observations of the same
-byte-local predicate, so a domain far too sparse to characterise a 64-bit
-function still sees all 256 lane values a few hundred times each.
-
----
-
-## Deliberately not done yet
-
-* **Cycle-level benchmarking** (SPEC §17). The browser sandbox cannot time
-  machine code; the Benchmark panel shows the static cost model and says
-  explicitly that measured cycles need native execution (SPEC §27). Nothing in
-  the UI presents an op count as a timing.
-* **Quotient-aware candidate generation** for non-identity observers (SPEC §5.1).
-  Generation uses exact values and acceptance uses the declared observer, so
-  results are sound but the search may miss solutions a quotient-aware generator
-  would find. The report states this rather than implying otherwise.
-* **A bundled Clang/WASM build.** The driver interface and the whole path around
-  it are implemented and tested against a native Clang; no wasm build of Clang is
-  vendored, and I could not reach a CDN from the environment this was written in
-  to verify a specific one.
-* **A shift by a value.** The grammar has shifts by constants, and a dynamic
-  gather, and nothing between them. `float_to_int_bits` needs one — the shift
-  is by the exponent — so its exponent field is thirty-three cases rather than
-  four and it comes back as the table. `strict_sum4_f64` needs one for the same
-  reason, in the normalizing step of every partial sum, and comes back as no
-  program at all. A dynamic shift is a data-dependent permutation and belongs
-  in `PERM_DYN`; it is not there yet.
-* **Several answers in one output.** An abstract program is a chain, so there
-  is no way to say "these four counts go in these four bytes".
-  `histogram4_u2x16` is four lane predicates and four population counts, each
-  of which the grammar has, and it still has no program because they have to
-  be combined. Solving an output field at a time — and joining the results —
-  is the next class, and it is the one that would also make
-  `counting_sort8_u2` something other than a table.
-* **Quotient-aware branch fitting inside a split.** A piece is fitted with an
-  affine map, and only an affine map; a piece whose answer is a deposit and a
-  convolution is not recognized as one, because the fit that finds the pieces
-  is the same fit that names them. Running the full solver set per piece would
-  reach further and cost a solve per piece.
-* **The paid surface** (SPEC §22-§32): API, CLI-over-API, CI, batch, private
-  cache, native oracle, team workspaces. v2 is the free interactive product only.
+Compatibility is not a product boundary. When an implementation is replaced,
+its reader, writer, runtime route, tests, generator, manifest entry, and
+documentation are removed together. New work must not reintroduce `qm/`, the
+Python kernel, Python VM modules, Pyodide, decoded-block execution, or a second
+artifact reader.

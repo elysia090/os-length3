@@ -1,0 +1,22 @@
+runtime-closure-v1
+/usr/bin/apk	config	/etc/apk/repositories
+/usr/bin/apk	config	/etc/apk/world
+/usr/bin/apk	resource	/etc/apk/keys
+/usr/bin/curl	resource	/etc/ssl/certs/ca-certificates.crt
+/usr/bin/gcc	helper	/usr/bin/as
+/usr/bin/gcc	helper	/usr/bin/ld
+/usr/bin/gcc	helper	/usr/libexec/gcc/@TARGET@/@GCC_VERSION@/cc1
+/usr/bin/gcc	helper	/usr/libexec/gcc/@TARGET@/@GCC_VERSION@/collect2
+/usr/bin/git	helper	/usr/libexec/git-core/git-remote-http
+/usr/bin/git	helper	/usr/libexec/git-core/git-remote-https
+/usr/bin/openssl	resource	/etc/ssl/certs/ca-certificates.crt
+/usr/bin/s6-rc	config	/etc/nftables.conf
+/usr/bin/s6-rc	resource	/etc/s6-rc/compiled/current/db
+/usr/bin/s6-rc	service	/bin/true
+/usr/bin/s6-rc	service	/usr/bin/chronyc
+/usr/bin/s6-rc	service	/usr/bin/chronyd
+/usr/bin/s6-rc	service	/usr/bin/dhcpcd
+/usr/bin/s6-rc	service	/usr/bin/mdevd
+/usr/bin/s6-rc	service	/usr/bin/mdevd-coldplug
+/usr/bin/s6-rc	service	/usr/bin/nft
+/usr/bin/ssh	config	/etc/ssh/ssh_config

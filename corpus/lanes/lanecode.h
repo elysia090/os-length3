@@ -147,7 +147,7 @@ lc_byte_mask8(uint8_t m)
 static inline uint64_t
 lc_ranks8(uint8_t m)
 {
-    return _pdep_u64((uint64_t)m, LC_ONES)
+    return _pdep_u64((uint64_t)m, 0x0001010101010101ull)
          * 0x0101010101010100ull;
 }
 
@@ -288,7 +288,8 @@ lc_prefix_parity_mask8(uint8_t m)
 static inline uint64_t
 lc_quote_state_before8(uint8_t q)
 {
-    const uint64_t a = _pdep_u64((uint64_t)q, LC_ONES);
+    const uint64_t a = _pdep_u64(
+        (uint64_t)q, 0x0001010101010101ull);
 
     return (uint64_t)_mm_cvtsi128_si64(
         _mm_clmulepi64_si128(
@@ -307,7 +308,7 @@ static inline uint64_t
 lc_ranks16_nibble(uint16_t m)
 {
     return _pdep_u64((uint64_t)m,
-                     0x1111111111111111ull)
+                     0x0111111111111111ull)
          * 0x1111111111111110ull;
 }
 

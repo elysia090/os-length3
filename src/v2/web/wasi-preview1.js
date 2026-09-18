@@ -62,6 +62,176 @@ function addParents(nodes, path) {
   }
 }
 
+export class ResourceFault extends Error {
+  constructor(path) {
+    super(`resource page is not resident: ${path}`);
+    this.path = path;
+  }
+}
+
+/**
+ * A read-only filesystem cut whose bytes stay in a physical-page reader.
+ *
+ * `entries` is the prefix-coded tar index emitted by the distribution builder.
+ * Metadata remains resident, while a file payload exists only between the
+ * read fault that asked for it and the end of that compiler command.
+ */
+export class LazyResourceCatalog {
+  constructor(index, read, releaseResident = null, release = null) {
+    if (!['tar-cut-v1', 'tar-cut-v2'].includes(index?.format)
+        || !Array.isArray(index.entries)) {
+      throw new Error('compiler resource index is invalid');
+    }
+    const hasMode = index.format === 'tar-cut-v2';
+    if (typeof read !== 'function') throw new Error('resource reader is missing');
+    this.nodes = new Map();
+    this.nextIno = 2;
+    this.read = read;
+    this.dropResidentPages = releaseResident;
+    this.dropBacking = release;
+    this.residentBytes = 0;
+    this.peakResidentBytes = 0;
+    this.materializedFiles = 0;
+    this.readFaults = 0;
+    this.pending = new Map();
+    this.nodes.nextIno = 2;
+    this.nodes.set('/', { type: 'dir', ino: 1 });
+    const mount = normalizePath(index.mount || '/usr');
+    addParents(this.nodes, mount);
+    if (!this.nodes.has(mount)) {
+      this.nodes.set(mount, { type: 'dir', ino: this.nodes.nextIno++ });
+    }
+
+    const hardlinks = [];
+    let previous = '';
+    for (const entry of index.entries) {
+      if (!Array.isArray(entry) || entry.length < 3) {
+        throw new Error('compiler resource index entry is invalid');
+      }
+      const shared = Number(entry[0]);
+      if (!Number.isSafeInteger(shared) || shared < 0 || shared > previous.length) {
+        throw new Error('compiler resource path cut is invalid');
+      }
+      const relative = previous.slice(0, shared) + String(entry[1]);
+      if (!relative || relative.startsWith('/')
+          || relative.split('/').some((part) => !part || part === '..')) {
+        throw new Error('compiler resource path is invalid');
+      }
+      const path = normalizePath(`${mount}/${relative}`);
+      addParents(this.nodes, path);
+      const kind = entry[2];
+      const modeAt = kind === 'f' ? 5 : kind === 'd' ? 3 : 4;
+      const mode = hasMode ? Number(entry[modeAt]) : undefined;
+      if (hasMode && (!Number.isSafeInteger(mode) || mode < 0
+          || mode > 0o7777)) {
+        throw new Error('compiler resource mode is invalid');
+      }
+      if (kind === 'd') {
+        this.nodes.set(path, {
+          type: 'dir', mode,
+          ino: this.nodes.nextIno++,
+        });
+      } else if (kind === 'f') {
+        const offset = Number(entry[3]);
+        const size = Number(entry[4]);
+        if (!Number.isSafeInteger(offset) || offset < 0
+            || !Number.isSafeInteger(size) || size < 0) {
+          throw new Error('compiler resource extent is invalid');
+        }
+        this.nodes.set(path, {
+          type: 'file', data: null, size, offset, readonly: true,
+          mode,
+          resource: true, ino: this.nodes.nextIno++,
+        });
+      } else if (kind === 'l') {
+        this.nodes.set(path, {
+          type: 'symlink', target: String(entry[3] || ''),
+          mode,
+          ino: this.nodes.nextIno++,
+        });
+      } else if (kind === 'h') {
+        const target = String(entry[3] || '');
+        if (!target || target.startsWith('/')
+            || target.split('/').some((part) => !part || part === '..')) {
+          throw new Error('compiler resource hardlink is invalid');
+        }
+        hardlinks.push([path, normalizePath(`${mount}/${target}`)]);
+      } else {
+        throw new Error('compiler resource type is invalid');
+      }
+      previous = relative;
+    }
+    let unresolved = hardlinks;
+    while (unresolved.length) {
+      const pending = [];
+      let admitted = 0;
+      for (const [path, target] of unresolved) {
+        const node = this.nodes.get(target);
+        if (!node) {
+          pending.push([path, target]);
+          continue;
+        }
+        this.nodes.set(path, node);
+        admitted += 1;
+      }
+      if (!admitted) throw new Error('compiler resource hardlink target is missing');
+      unresolved = pending;
+    }
+    this.nextIno = this.nodes.nextIno;
+  }
+
+  async materialize(path) {
+    const normalized = normalizePath(path);
+    const node = this.nodes.get(normalized);
+    if (!node || node.type !== 'file' || !node.resource) {
+      throw new Error(`resource fault is outside the immutable catalog: ${normalized}`);
+    }
+    if (node.data !== null) return node.data;
+    let pending = this.pending.get(normalized);
+    if (!pending) {
+      this.readFaults += 1;
+      pending = (async () => {
+        const data = await this.read(node.offset, node.size);
+        if (!(data instanceof Uint8Array) || data.length !== node.size) {
+          throw new Error(`resource payload has the wrong extent: ${normalized}`);
+        }
+        node.data = data;
+        this.residentBytes += data.length;
+        this.peakResidentBytes = Math.max(this.peakResidentBytes, this.residentBytes);
+        this.materializedFiles += 1;
+        return data;
+      })().finally(() => this.pending.delete(normalized));
+      this.pending.set(normalized, pending);
+    }
+    return pending;
+  }
+
+  releaseMaterialized() {
+    const bytes = this.residentBytes;
+    for (const node of this.nodes.values()) {
+      if (node.resource && node.data !== null) node.data = null;
+    }
+    this.residentBytes = 0;
+    if (this.dropResidentPages) this.dropResidentPages();
+    return bytes;
+  }
+
+  release() {
+    this.releaseMaterialized();
+    if (this.dropBacking) this.dropBacking();
+  }
+
+  layout() {
+    return {
+      indexedNodes: this.nodes.size,
+      residentBytes: this.residentBytes,
+      peakResidentBytes: this.peakResidentBytes,
+      materializedFiles: this.materializedFiles,
+      readFaults: this.readFaults,
+    };
+  }
+}
+
 /** Parse a ustar archive without copying file payloads. */
 export function parseTar(buffer, mount = '/usr') {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
@@ -88,6 +258,7 @@ export function parseTar(buffer, mount = '/usr') {
       nodes.set(path, {
         type: 'file',
         data: bytes.subarray(start, start + size),
+        size,
         readonly: true,
         ino: nodes.nextIno++,
       });
@@ -99,7 +270,9 @@ export function parseTar(buffer, mount = '/usr') {
 
 export class MemoryFileSystem {
   constructor(resourceNodes = null) {
-    this.nodes = resourceNodes ? new Map(resourceNodes) : new Map();
+    const base = resourceNodes?.nodes || resourceNodes;
+    this.nodes = base ? new Map(base) : new Map();
+    this.resources = resourceNodes?.materialize ? resourceNodes : null;
     this.nextIno = resourceNodes?.nextIno || 2;
     if (!this.nodes.has('/')) this.nodes.set('/', { type: 'dir', ino: 1 });
     this.mkdir('/work');
@@ -141,6 +314,7 @@ export class MemoryFileSystem {
   readFile(path) {
     const node = this.node(path);
     if (node.type !== 'file') throw Object.assign(new Error('path is not a file'), { errno: ERRNO.ISDIR });
+    if (node.data === null) throw new ResourceFault(path);
     return node.data;
   }
 
@@ -148,8 +322,11 @@ export class MemoryFileSystem {
     const normalized = normalizePath(path);
     const node = this.node(normalized);
     if (node.type !== 'file') throw Object.assign(new Error('path is not a file'), { errno: ERRNO.ISDIR });
+    if (node.data === null) throw new ResourceFault(normalized);
     if (!node.readonly) return node;
-    const copy = { ...node, data: node.data.slice(), readonly: false };
+    const copy = {
+      ...node, data: node.data.slice(), size: undefined, readonly: false,
+    };
     this.nodes.set(normalized, copy);
     return copy;
   }
@@ -164,6 +341,27 @@ export class MemoryFileSystem {
       if (!rest.includes('/')) found.push(child);
     }
     return found.sort();
+  }
+
+  fork() {
+    const copy = new MemoryFileSystem();
+    copy.nodes = new Map();
+    for (const [path, node] of this.nodes) {
+      copy.nodes.set(path, node.readonly || node.type !== 'file'
+        ? node : { ...node, data: node.data.slice() });
+    }
+    copy.nextIno = this.nextIno;
+    copy.resources = this.resources;
+    return copy;
+  }
+
+  async materialize(path) {
+    if (!this.resources) throw new ResourceFault(path);
+    return this.resources.materialize(path);
+  }
+
+  releaseResources() {
+    return this.resources ? this.resources.releaseMaterialized() : 0;
   }
 }
 
@@ -207,7 +405,7 @@ export class WasiPreview1 {
         try {
           return this[name](...values);
         } catch (error) {
-          if (error instanceof WasiExit) throw error;
+          if (error instanceof WasiExit || error instanceof ResourceFault) throw error;
           this.lastError = error;
           return error?.errno || ERRNO.IO;
         }
@@ -316,7 +514,7 @@ export class WasiPreview1 {
     view.setBigUint64(resultPtr + 8, BigInt(node.ino || 1), true);
     view.setUint8(resultPtr + 16, node.type === 'dir' ? FILETYPE.DIRECTORY : node.type === 'symlink' ? FILETYPE.SYMLINK : FILETYPE.REGULAR);
     view.setBigUint64(resultPtr + 24, 1n, true);
-    view.setBigUint64(resultPtr + 32, BigInt(node.data?.length || 0), true);
+    view.setBigUint64(resultPtr + 32, BigInt(node.size ?? node.data?.length ?? 0), true);
   }
 
   fd_filestat_get(fd, resultPtr) {
@@ -348,6 +546,7 @@ export class WasiPreview1 {
     const view = this.view();
     const node = descriptor.type === 'input' ? descriptor : this.fs.node(descriptor.path);
     if (node.type === 'dir') return ERRNO.ISDIR;
+    if (node.data === null) throw new ResourceFault(descriptor.path);
     let position = offset === null ? descriptor.pos : Number(offset);
     let total = 0;
     for (let index = 0; index < iovsLength; index += 1) {
@@ -419,7 +618,8 @@ export class WasiPreview1 {
     const descriptor = this.descriptor(fd);
     if (descriptor.type !== 'file' && descriptor.type !== 'input') return ERRNO.BADF;
     const node = descriptor.type === 'input' ? descriptor : this.fs.node(descriptor.path);
-    const base = whence === 0 ? 0 : whence === 1 ? descriptor.pos : node.data.length;
+    const base = whence === 0 ? 0 : whence === 1 ? descriptor.pos
+      : (node.size ?? node.data?.length ?? 0);
     const position = base + Number(offset);
     if (position < 0) return ERRNO.INVAL;
     descriptor.pos = position;

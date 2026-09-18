@@ -7,12 +7,16 @@ language they were first written in.
 | category | purpose |
 | --- | --- |
 | `physical-array/` | coordinate substitution, region cuts, grouped spans, endpoint moments |
+| `storage/` | run compression, erasure distribution, and cryptographic lane kernels |
+| `crypto/` | fixed-width field arithmetic and cryptographic inner kernels |
 | `vm/` | machine layouts and transition kernels built from those physical forms |
 | `bit-linear/` | fixed bit permutations and GF(2)-linear maps |
 | `whole-word/` | affine integer arithmetic, comparisons, and reductions |
 | `lanes/` | fixed-width field and lane kernels |
 | `text/` | bounded string and rolling-hash kernels |
 | `floating/` | explicitly observed floating-point bit kernels |
+| `residual-state/` | word, rank, and finite-predicate layouts for future queries |
+| `residual-state-pressure/` | multi-coordinate residual queries that intentionally exceed the scalar entrance |
 
 The browser's current examples remain in `src/v2/examples` as a compatibility
 surface. They are not moved while the UI is frozen. New VM and physical-array

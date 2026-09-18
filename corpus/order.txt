@@ -17,9 +17,12 @@ lanes/byte_mask_from_spread.c
 lanes/quote_state_before8.c
 lanes/prefix_parity_mask8.c
 bit-linear/prefix_xor64.c
+bit-linear/prefix_parity64.c
 bit-linear/changes64.c
 bit-linear/morton_dilate16.c
 bit-linear/morton_compact_even16.c
+bit-linear/morton32.c
+bit-linear/conditional_mask_projection.c
 lanes/ranks16_nibble.c
 lanes/block_offsets8.c
 
@@ -39,8 +42,13 @@ whole-word/logical_neg_i32.c
 whole-word/is_less_or_equal_i32.c
 whole-word/min_i32.c
 whole-word/mod_add_u32.c
+crypto/bn_mul_mont.c
 floating/float_power2_bits.c
 floating/float_scale2_bits.c
+floating/binary64_power2_bits.c
+floating/binary64_route.c
+floating/binary64_scale_cut.c
+floating/binary64_integer_translate_cut.c
 whole-word/popcount_u64.c
 whole-word/least_bit_mask_u64.c
 whole-word/round_up_pow2_u64.c
@@ -48,8 +56,29 @@ whole-word/how_many_bits_i32.c
 lanes/max_u8x8.c
 text/rabin_karp_roll.c
 
+# Persistent residual decoders: build once, then answer future queries locally.
+residual-state/rank_token_query8.c
+residual-state/predicate_bitset_query8.c
+residual-state/branch_delta_token.c
+physical-array/csr_last_byte_lookup.c
+
+# Physical delivery: compression boundaries, erasure arithmetic, encryption.
+storage/canonical_region_value1.c
+storage/canonical_region_changed1.c
+storage/canonical_region_domain1.c
+storage/canonical_region_dirty1.c
+storage/canonical_region_slots8.c
+storage/canonical_region_block_offsets4.c
+storage/ciphertext_row_class64.c
+storage/root_publish_ready5.c
+storage/rle_run_starts8.c
+storage/erasure_gf256_mul.c
+storage/erasure_gf256_mul8_const.c
+storage/arx_round64.c
+
 # Pressure cases that currently use a table or remain outside the compact
 # grammar. They stay in the corpus because a refusal is also a measured result.
+residual-state/predicted_successor.c
 lanes/counting_sort8_u2.c
 text/kmp_scan8_fixed.c
 floating/float_to_int_bits.c

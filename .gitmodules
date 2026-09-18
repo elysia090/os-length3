@@ -1,0 +1,3 @@
+[submodule "src/v2/postlink-compiler/third_party/zydis"]
+	path = src/v2/x86/third_party/zydis
+	url = https://github.com/zyantific/zydis.git
