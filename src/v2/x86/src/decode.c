@@ -5187,6 +5187,8 @@ int pl_x86_frontend_open(const pl_x86_image *image,
     int status = pl_x86_image_validate(image);
     if (status) return status;
     out->image = image;
+    for (pl_u32 slot = 0u; slot < PL_X86_FRONTEND_CACHE_ENTRIES; ++slot)
+        out->cache_valid[slot] = 0u;
     return 0;
 }
 
@@ -5201,7 +5203,17 @@ int pl_x86_frontend_decode(const pl_x86_frontend *frontend, pl_u64 rip,
                            pl_x86_instruction *out)
 {
     if (!frontend || !frontend->image || !out) return PL_ERROR_X86;
-    return decode_validated(frontend->image, rip, out);
+    pl_x86_frontend *cache = (pl_x86_frontend *)frontend;
+    pl_u32 slot = (pl_u32)(rip & (PL_X86_FRONTEND_CACHE_ENTRIES - 1u));
+    if (cache->cache_valid[slot] && cache->cache_rip[slot] == rip) {
+        *out = cache->cache_instruction[slot];
+        return 0;
+    }
+    int status = decode_validated(frontend->image, rip, out);
+    cache->cache_rip[slot] = rip;
+    cache->cache_instruction[slot] = *out;
+    cache->cache_valid[slot] = 1u;
+    return status;
 }
 
 static int same_register(const pl_x86_register *left,

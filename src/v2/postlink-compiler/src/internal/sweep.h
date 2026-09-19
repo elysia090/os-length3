@@ -42,8 +42,30 @@ int pl_remap_open(pl_remap *remap, pl_u32 values, pl_arena *arena);
 /* Substitute an operand through the remap.  A projection follows its source and
  * keeps its selector, unless the source resolved to something that is not a
  * node, in which case the rule that produced it owns the meaning and the
- * operand is returned untouched. */
-pl_operand pl_resolve(const pl_remap *remap, pl_operand operand);
+ * operand is returned untouched.  Defined here so the dense compaction and
+ * rewrite loops inline it instead of paying a cross-TU call per operand. */
+#define PL_PROJECTION_SELECTOR_BITS 8u
+#define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)
+
+static inline pl_operand pl_resolve(const pl_remap *remap, pl_operand operand)
+{
+    if (operand.kind == PL_OPERAND_NODE) {
+        if (!operand.value || operand.value > remap->count) return operand;
+        return remap->of[operand.value];
+    }
+    if (operand.kind != PL_OPERAND_PROJECTION) return operand;
+    pl_u64 source = operand.value >> PL_PROJECTION_SELECTOR_BITS;
+    pl_u64 selector = operand.value & PL_PROJECTION_SELECTOR_MASK;
+    if (!source || source > remap->count) return operand;
+    pl_operand mapped = remap->of[source];
+    /* A projection of something that is no longer a node is the producing
+     * rule's business, not this one's. */
+    if (mapped.kind != PL_OPERAND_NODE) return operand;
+    pl_operand result;
+    result.kind = PL_OPERAND_PROJECTION;
+    result.value = (mapped.value << PL_PROJECTION_SELECTOR_BITS) | selector;
+    return result;
+}
 
 /* Accumulates the plan a sweep is building. */
 typedef struct {

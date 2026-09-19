@@ -8,6 +8,16 @@ secondary verified projection of that accepted native output.  STEP is
 internal build-side SSA evidence and must not become the runtime instruction
 set.
 
+Its repository-level purpose is the distribution goal in
+[`../docs/DISTRIBUTION.md`](../docs/DISTRIBUTION.md): apply this same operation
+to the fixed profile's kernel image and to every linked `ET_EXEC`/`ET_DYN`
+before package signing, prove each optimized ELF equivalent to its ordinary
+linked input, assemble the optimized packages into one root, boot it, and
+measure canonical size and paired native execution against the same fixed
+source identities.  The obligations below are written so that the distribution
+is built once and published only when all of them hold together; a partial
+application is not a release.
+
 ## Acceptance contract
 
 The command-line model is deliberately ordinary:

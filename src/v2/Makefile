@@ -1,15 +1,27 @@
 PRODUCTS = support x86 optimized-x86 machine-abi artifact storage \
 	postlink-compiler wasm-compiler
 BUILD ?= build
+SITE ?= ../../dist
+ARTIFACT ?= ../../artifact
 CC ?= cc
 CFLAGS ?= -O2
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iartifact/include -Ipostlink-compiler/include \
 	-Ioptimized-x86/include -Ix86/include -Isupport/include
 
-.PHONY: all check release-sharing-check artifact-executable-stage-check \
+.PHONY: all check site release-sharing-check artifact-executable-stage-check \
 	clean $(PRODUCTS)
 all: $(PRODUCTS) $(BUILD)/artifact-executable-stage
+
+# Assemble the static browser shell and its sibling artifact root. The page is
+# plain files under web/; there is no JavaScript build step. The browser opens
+# objects from a sibling artifact/ directory, which is the generated tree at
+# the repository root and is copied only when it exists.
+site:
+	rm -rf "$(SITE)"
+	mkdir -p "$(SITE)"
+	cp -R web/. "$(SITE)"/
+	@if [ -d "$(ARTIFACT)" ]; then cp -R "$(ARTIFACT)" "$(SITE)"/artifact; fi
 
 # Recursive makes do not share a dependency graph. Finish each provider before
 # starting its consumers, including on an empty tree under `make -j`.

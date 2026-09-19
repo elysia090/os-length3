@@ -232,6 +232,18 @@ static int walk_lazy(const pl_elf_image *elf,
         if (section.type != PL_ELF_SECTION_RELA
                 || !(section.flags & PL_ELF_SECTION_ALLOC))
             continue;
+        /* Symbol-free RELA rows (static IRELATIVE `.rela.plt`) cannot publish
+         * a lazy-binding target and are not readable as symbol relocations. */
+        {
+            pl_elf_section symbols;
+            if (section.link >= elf->section_count)
+                continue;
+            status = pl_elf_section_read(elf, section.link, &symbols);
+            if (status) return PL_ERROR_X86_METADATA;
+            if (symbols.type != PL_ELF_SECTION_SYMTAB
+                    && symbols.type != PL_ELF_SECTION_DYNSYM)
+                continue;
+        }
         if (section.entry_bytes != PL_ELF_RELOCATION_BYTES
                 || section.file_bytes % section.entry_bytes)
             return PL_ERROR_X86_METADATA;

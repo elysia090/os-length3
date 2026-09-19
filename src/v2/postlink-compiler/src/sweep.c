@@ -2,9 +2,6 @@
 
 #include "internal/sweep.h"
 
-#define PL_PROJECTION_SELECTOR_BITS 8u
-#define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)
-
 int pl_remap_open(pl_remap *remap, pl_u32 values, pl_arena *arena)
 {
     remap->of = pl_arena_take(
@@ -18,27 +15,6 @@ int pl_remap_open(pl_remap *remap, pl_u32 values, pl_arena *arena)
         remap->of[index].value = 0;
     }
     return 0;
-}
-
-pl_operand pl_resolve(const pl_remap *remap, pl_operand operand)
-{
-    if (operand.kind == PL_OPERAND_NODE) {
-        if (!operand.value || operand.value > remap->count) return operand;
-        return remap->of[operand.value];
-    }
-    if (operand.kind != PL_OPERAND_PROJECTION) return operand;
-
-    pl_u64 source = operand.value >> PL_PROJECTION_SELECTOR_BITS;
-    pl_u64 selector = operand.value & PL_PROJECTION_SELECTOR_MASK;
-    if (!source || source > remap->count) return operand;
-    pl_operand mapped = remap->of[source];
-    /* A projection of something that is no longer a node is the producing
-     * rule's business, not this one's. */
-    if (mapped.kind != PL_OPERAND_NODE) return operand;
-    pl_operand result;
-    result.kind = PL_OPERAND_PROJECTION;
-    result.value = (mapped.value << PL_PROJECTION_SELECTOR_BITS) | selector;
-    return result;
 }
 
 int pl_builder_open(pl_builder *builder, pl_plan *plan, pl_arena *arena,

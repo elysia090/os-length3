@@ -8,6 +8,7 @@
 #define PL_ERROR_X86_SELECT (-49)
 #define PL_ERROR_X86_PARETO (-50)
 #define PL_X86_NATIVE_MAX_FIXUPS 64u
+#define PL_X86_VALUE_ALIAS_COUNT 160u
 /* Eighteen proved normalized grammar productions plus the exact linked-source
  * spelling.  The selector must expose every matching production: stopping at
  * the first match can hide an independently minimal work or span witness. */
@@ -97,11 +98,22 @@ typedef struct {
     pl_u8 direct_value_predicate_frame;
     pl_u8 direct_compare_handoff_frame;
     pl_u8 direct_live_frame;
+    pl_u8 direct_shared_dag_frame;
+    pl_u8 direct_consumed_flag_frame;
+    pl_u8 direct_transient_seed_frame;
     pl_u8 direct_nested_frame;
     pl_u8 frame_anchor;
     pl_u8 frame_alias_kind;
     pl_u8 frame_alias_local;
     pl_u8 frame_alias_present;
+    /* A shared-DAG schedule keeps an intermediate SSA node or a spilled entry
+     * generation in a chosen output register across the whole frame, so
+     * operand resolution must see that physical coordinate instead of a plan
+     * local.  Transient instruction-selection workspace. */
+    pl_u64 value_alias_value[PL_X86_VALUE_ALIAS_COUNT];
+    pl_u8 value_alias_kind[PL_X86_VALUE_ALIAS_COUNT];
+    pl_u8 value_alias_local[PL_X86_VALUE_ALIAS_COUNT];
+    pl_u8 value_alias_count;
     /* At least one exact normalized-x86 grammar production covers this
      * semantic block.  A copied source spelling may still win bytes after it
      * independently attains work* and span*; that is not a normalization

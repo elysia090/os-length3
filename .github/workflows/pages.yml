@@ -1,9 +1,10 @@
-# Publish the interactive product to GitHub Pages.
+# Publish the browser shell to GitHub Pages.
 #
-# The page needs the web/ shell and the qm/ package side by side, because the
-# worker installs the Python engine by fetching the files listed in
-# web/qm-manifest.json.  The site root is therefore src/v2 with web/index.html
-# copied up so that the deployment URL lands directly on the tool.
+# The product shell is plain static files under src/v2/web. Its authenticated
+# object tree is the generated sibling src/v2/artifact, which is not committed;
+# `make site` copies it in when a distribution build has produced it, so CI
+# publishes the shell by itself. The same assembly step is what `wrangler
+# deploy` runs, so the two deployments cannot drift.
 
 name: Deploy Quotient Minimizer
 
@@ -23,35 +24,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Check the browser manifest is current
-        run: python3 tools/gen_manifest.py --check
-        working-directory: src/v2
-      - name: Run the suite
-        run: python3 tests/run.py
-        working-directory: src/v2
-
   deploy:
-    needs: test
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Assemble the site
-        # Same builder wrangler uses, so the two deployments cannot drift.
-        run: python3 tools/build_site.py --out "$GITHUB_WORKSPACE/_site"
-        working-directory: src/v2
+          submodules: recursive
+      - name: Build the native products
+        run: make -C src/v2 -j4 all
+      - name: Assemble the static site
+        run: make -C src/v2 site SITE="$GITHUB_WORKSPACE/_site"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

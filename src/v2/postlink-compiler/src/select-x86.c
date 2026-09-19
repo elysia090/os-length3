@@ -583,6 +583,123 @@ static int emit_bit_set_immediate(pl_u32 destination, pl_u32 bit,
     return 1;
 }
 
+/* Narrow (8/16-bit) ALU register/immediate encodings.  The 32/64-bit path
+ * below keeps its own spelling; this shares the exact opcode/REX rules the
+ * compare and flag emitters already use, including the mandatory REX for the
+ * 8-bit registers SPL/BPL/SIL/DIL and the 0x66 operand-size prefix.  A partial
+ * width operation on a GPR writes only those low bits, which is exactly the
+ * physical lane publication the plan records. */
+static int emit_narrow_alu_instruction(pl_u32 destination, pl_operand right,
+                                       pl_u32 bits, pl_u32 mode,
+                                       pl_u8 *output, pl_u32 *written)
+{
+    static const pl_u8 register_opcode8[7] = {
+        0x20u, 0x00u, 0x10u, 0x28u, 0x18u, 0x08u, 0x30u,
+    };
+    static const pl_u8 register_opcode[7] = {
+        0x21u, 0x01u, 0x11u, 0x29u, 0x19u, 0x09u, 0x31u,
+    };
+    static const pl_u8 accumulator_opcode[7] = {
+        0x25u, 0x05u, 0x15u, 0x2du, 0x1du, 0x0du, 0x35u,
+    };
+    static const pl_u8 accumulator_opcode8[7] = {
+        0x24u, 0x04u, 0x14u, 0x2cu, 0x1cu, 0x0cu, 0x34u,
+    };
+    static const pl_u8 immediate_group[7] = {
+        4u, 0u, 2u, 5u, 3u, 1u, 6u,
+    };
+    if (!written || destination >= PL_X86_GPR_COUNT || mode > 6u
+            || (bits != 8u && bits != 16u))
+        return 0;
+    pl_u32 source = PL_X86_GPR_COUNT;
+    if (right.kind == PL_OPERAND_LOCAL) {
+        if (right.value >= PL_X86_GPR_COUNT) return 0;
+        source = (pl_u32)right.value;
+    } else if (right.kind != PL_OPERAND_CONST) {
+        return 0;
+    }
+    pl_u32 at = 0u;
+    if (bits == 16u) {
+        if (output) output[at] = 0x66u;
+        ++at;
+    }
+    pl_u8 rex = (pl_u8)(0x40u | (destination >= 8u ? 1u : 0u)
+        | (source < PL_X86_GPR_COUNT && source >= 8u ? 4u : 0u));
+    int force_rex = bits == 8u
+        && ((destination & 7u) >= 4u
+            || (source < PL_X86_GPR_COUNT && (source & 7u) >= 4u));
+    if (rex != 0x40u || force_rex) {
+        if (output) output[at] = rex;
+        ++at;
+    }
+    if (right.kind == PL_OPERAND_LOCAL) {
+        if (output) output[at] = (pl_u8)(bits == 8u
+            ? register_opcode8[mode] : register_opcode[mode]);
+        ++at;
+        if (output)
+            output[at] = (pl_u8)(0xc0u
+                | ((source & 7u) << 3u) | (destination & 7u));
+        ++at;
+        *written = at;
+        return 1;
+    }
+    pl_u64 value = right.value;
+    if (bits == 8u) {
+        if ((value & ~0xffull) != 0 && value < 0xffffffffffffff80ull) return 0;
+        if (!destination) {
+            if (output) output[at] = accumulator_opcode8[mode];
+            ++at;
+        } else {
+            if (output) output[at] = 0x80u;
+            ++at;
+            if (output)
+                output[at] = (pl_u8)(0xc0u
+                    | ((pl_u32)immediate_group[mode] << 3u)
+                    | (destination & 7u));
+            ++at;
+        }
+        if (output) output[at] = (pl_u8)value;
+        ++at;
+        *written = at;
+        return 1;
+    }
+    if ((value & ~0xffffull) != 0 && value < 0xffffffffffff8000ull) return 0;
+    int signed8 = (value & ~0xffull) == 0
+               || value >= 0xffffffffffffff80ull;
+    if (signed8) {
+        if (output) output[at] = 0x83u;
+        ++at;
+        if (output)
+            output[at] = (pl_u8)(0xc0u
+                | ((pl_u32)immediate_group[mode] << 3u)
+                | (destination & 7u));
+        ++at;
+        if (output) output[at] = (pl_u8)value;
+        ++at;
+    } else if (!destination) {
+        if (output) output[at] = accumulator_opcode[mode];
+        ++at;
+        if (output) output[at] = (pl_u8)value;
+        ++at;
+        if (output) output[at] = (pl_u8)(value >> 8u);
+        ++at;
+    } else {
+        if (output) output[at] = 0x81u;
+        ++at;
+        if (output)
+            output[at] = (pl_u8)(0xc0u
+                | ((pl_u32)immediate_group[mode] << 3u)
+                | (destination & 7u));
+        ++at;
+        if (output) output[at] = (pl_u8)value;
+        ++at;
+        if (output) output[at] = (pl_u8)(value >> 8u);
+        ++at;
+    }
+    *written = at;
+    return 1;
+}
+
 static int emit_alu_instruction(pl_u32 destination, pl_operand right,
                                 pl_u32 bits, pl_u32 mode,
                                 pl_u32 preserves_carry,
@@ -598,8 +715,14 @@ static int emit_alu_instruction(pl_u32 destination, pl_operand right,
         4u, 0u, 2u, 5u, 3u, 1u, 6u,
     };
     if (!written || destination >= PL_X86_GPR_COUNT
-            || (bits != 32u && bits != 64u) || mode > 6u)
+            || (bits != 8u && bits != 16u
+                && bits != 32u && bits != 64u) || mode > 6u)
         return 0;
+    if (bits == 8u || bits == 16u) {
+        if (preserves_carry) return 0;
+        return emit_narrow_alu_instruction(
+            destination, right, bits, mode, output, written);
+    }
     pl_u32 at = 0u;
     if (preserves_carry) {
         if ((mode != 1u && mode != 3u)
@@ -713,6 +836,27 @@ static int emit_alu_instruction(pl_u32 destination, pl_operand right,
                     (pl_u8)(right.value >> (byte * 8u));
         at += 4u;
     }
+    *written = at;
+    return 1;
+}
+
+static int emit_bswap_register(pl_u32 destination, pl_u32 bits,
+                               pl_u8 *output, pl_u32 *written)
+{
+    if (!written || destination >= PL_X86_GPR_COUNT
+            || (bits != 32u && bits != 64u))
+        return 0;
+    pl_u32 at = 0u;
+    pl_u8 rex = (pl_u8)(0x40u | (bits == 64u ? 8u : 0u)
+                              | (destination >= 8u ? 1u : 0u));
+    if (rex != 0x40u) {
+        if (output) output[at] = rex;
+        ++at;
+    }
+    if (output) output[at] = 0x0fu;
+    ++at;
+    if (output) output[at] = (pl_u8)(0xc8u | (destination & 7u));
+    ++at;
     *written = at;
     return 1;
 }
@@ -1086,17 +1230,26 @@ static int source_address_binding(const pl_x86_frontend *frontend,
  * the destination's final publication.  The relocation field is still the
  * unique authority for that constant; subsequent SSA nodes consume the
  * address value but do not turn it into an untyped integer literal. */
-static int source_address_definition(const pl_x86_frontend *frontend,
-                                     const pl_x86_block *block,
-                                     pl_u32 local, pl_u64 value,
-                                     pl_u32 bits, pl_u64 *address,
-                                     pl_u32 *source_at)
+static int source_address_definition_uncached(
+    const pl_x86_frontend *frontend,
+    const pl_x86_block *block,
+    pl_u32 local, pl_u64 value,
+    pl_u32 bits, pl_u64 *address,
+    pl_u32 *source_at)
 {
-    if (!frontend || !block || !address || !source_at
-            || (bits != 32u && bits != 64u) || local >= PL_X86_GPR_COUNT)
+    if (!frontend || !block || !address || !source_at)
         return PL_ERROR_X86_SELECT;
+    /* Address materialisation is a 32/64-bit projection.  A narrower probe is
+     * simply not an address definition, not a malformed request; returning the
+     * "not found" answer keeps the frame productions total instead of aborting
+     * the whole selection (e.g. a byte `sbb al,imm8` value tree). */
+    if ((bits != 32u && bits != 64u) || local >= PL_X86_GPR_COUNT)
+        return 0;
     pl_u64 mask = bits == 32u ? U32_MAX_VALUE : U64_MAX_VALUE;
     int found = 0;
+    int generic_found = 0;
+    pl_u64 generic_address = 0u;
+    pl_u32 generic_source_at = 0u;
     pl_u64 rip = block->start;
     for (pl_u32 index = 0u; index < block->instruction_count; ++index) {
         pl_x86_instruction instruction;
@@ -1108,7 +1261,6 @@ static int source_address_definition(const pl_x86_frontend *frontend,
                 && instruction.operands[0].bits == 64u
                 && instruction.operands[0].value.reg.class_id
                    == PL_X86_REGISTER_GPR
-                && instruction.operands[0].value.reg.index == local
                 && instruction.operands[1].kind == PL_X86_OPERAND_MEMORY
                 && instruction.operands[1].value.memory.base.class_id
                    == PL_X86_REGISTER_IP
@@ -1121,16 +1273,97 @@ static int source_address_definition(const pl_x86_frontend *frontend,
             pl_u64 target = instruction.fallthrough
                 + (pl_u64)instruction.operands[1].value.memory.displacement;
             if ((target & mask) == (value & mask)) {
-                if (found) return 0;
-                *address = target;
-                *source_at = (pl_u32)(rip - block->start)
-                           + instruction.displacement_offset;
-                found = 1;
+                pl_u32 at = (pl_u32)(rip - block->start)
+                          + instruction.displacement_offset;
+                if (instruction.operands[0].value.reg.index == local) {
+                    if (found) return 0;
+                    *address = target;
+                    *source_at = at;
+                    found = 1;
+                } else {
+                    /* The LEA destination may have been renamed by the
+                     * normalizer; a unique target still binds the field. */
+                    if (generic_found) return 0;
+                    generic_address = target;
+                    generic_source_at = at;
+                    generic_found = 1;
+                }
             }
         }
         rip = instruction.fallthrough;
     }
+    if (!found && generic_found) {
+        *address = generic_address;
+        *source_at = generic_source_at;
+        found = 1;
+    }
     return rip == block->end ? found : PL_ERROR_X86_SELECT;
+}
+
+/* Locating the LEA that defines an address constant re-decodes every
+ * instruction of the block.  Frame measurement tries a const materialisation
+ * at every level of the operand recursion, so the same (block, local, value)
+ * probe runs thousands of times per block.  Memoise it with a generation stamp
+ * bumped once per candidate enumeration, so no O(cache) reset is needed. */
+#define PL_SOURCE_ADDR_MEMO 4096u
+
+typedef struct {
+    pl_u32 generation;
+    pl_u64 start, end, value;
+    pl_u32 local, bits;
+    pl_u64 address;
+    pl_u32 source_at;
+    pl_u8 found;
+} source_addr_memo_entry;
+
+static source_addr_memo_entry source_addr_memo[PL_SOURCE_ADDR_MEMO];
+static pl_u32 source_addr_generation = 1u;
+
+static int source_address_definition(const pl_x86_frontend *frontend,
+                                     const pl_x86_block *block,
+                                     pl_u32 local, pl_u64 value,
+                                     pl_u32 bits, pl_u64 *address,
+                                     pl_u32 *source_at)
+{
+    if (!frontend || !block || !address || !source_at)
+        return PL_ERROR_X86_SELECT;
+    /* Address materialisation is a 32/64-bit projection.  A narrower probe is
+     * simply not an address definition, not a malformed request; returning the
+     * "not found" answer keeps the frame productions total instead of aborting
+     * the whole selection (e.g. a byte `sbb al,imm8` value tree). */
+    if ((bits != 32u && bits != 64u) || local >= PL_X86_GPR_COUNT)
+        return 0;
+    pl_u32 key = (pl_u32)(block->start * 2654435761u)
+               ^ (pl_u32)(block->end * 2246822519u)
+               ^ ((pl_u32)local * 3266489917u)
+               ^ (pl_u32)(value * 668265263u) ^ bits;
+    source_addr_memo_entry *memo =
+        &source_addr_memo[key & (PL_SOURCE_ADDR_MEMO - 1u)];
+    if (memo->generation == source_addr_generation
+            && memo->start == block->start && memo->end == block->end
+            && memo->local == local && memo->value == value
+            && memo->bits == bits) {
+        if (!memo->found) return 0;
+        *address = memo->address;
+        *source_at = memo->source_at;
+        return 1;
+    }
+    int status = source_address_definition_uncached(
+        frontend, block, local, value, bits, address, source_at);
+    if (status == 0 || status == 1) {
+        memo->generation = source_addr_generation;
+        memo->start = block->start;
+        memo->end = block->end;
+        memo->local = local;
+        memo->value = value;
+        memo->bits = bits;
+        memo->found = (pl_u8)status;
+        if (status == 1) {
+            memo->address = *address;
+            memo->source_at = *source_at;
+        }
+    }
+    return status;
 }
 
 /* Every removed source relocation field must retain one exact owner in the
@@ -2506,6 +2739,23 @@ static int operand_source_law(const pl_plan *plan, pl_operand operand,
             *law = bit << 16u;
             return 1;
         }
+        /* An X86_FLAGS node's flags are set by the single instruction that
+         * publishes its result.  A consumer of those flags therefore depends
+         * on the result's publication owner; it must not inherit the entry
+         * registers that the producing instruction itself reads (notably an
+         * in-place compare whose entry is the coordinate it overwrites). */
+        const pl_node *flags = &plan->nodes[node - 1u];
+        if (flags->opcode == PL_OPCODE_X86_FLAGS
+                && flags->argument_count == 5u
+                && flags->argument_at <= plan->argument_count
+                && 5u <= plan->argument_count - flags->argument_at) {
+            pl_operand result = plan->arguments[flags->argument_at + 3u];
+            pl_u32 result_owner = publication_owner(plan, result);
+            if (result_owner < PL_X86_GPR_COUNT) {
+                *law = (1u << result_owner) << 16u;
+                return 1;
+            }
+        }
     }
     *law = node_law[node - 1u];
     return 1;
@@ -2733,17 +2983,116 @@ static int test_boolean_publishes_flags(const pl_plan *plan, pl_operand value, p
         && argument[2].kind == shape.right.kind && argument[2].value == shape.right.value;
 }
 
+/* One IMUL publishes both its low result and its conditions.  The normalized
+ * plan keeps the low result and the X86_MUL_FLAGS node separate, so relate
+ * them through the shared multiplicands: the flags node names the 64-bit low
+ * product, and the value publication is a MULR/LANE32_MULR over the same
+ * operands (the narrow constant is the low 32 bits of the wide one). */
+static int mul_flags_value_publication(const pl_plan *plan,
+                                       pl_operand value, pl_u32 flag_node)
+{
+    if (!plan || value.kind != PL_OPERAND_NODE
+            || !value.value || value.value > plan->node_count
+            || !flag_node || flag_node > plan->node_count)
+        return 0;
+    const pl_node *flags = &plan->nodes[flag_node - 1u];
+    const pl_node *result = &plan->nodes[value.value - 1u];
+    if (flags->opcode != PL_OPCODE_X86_MUL_FLAGS
+            || flags->argument_count != 4u
+            || flags->argument_at > plan->argument_count
+            || 4u > plan->argument_count - flags->argument_at
+            || (result->opcode != PL_OPCODE_MULR
+                && result->opcode != PL_OPCODE_LANE32_MULR)
+            || result->argument_count != 2u
+            || result->argument_at > plan->argument_count
+            || 2u > plan->argument_count - result->argument_at)
+        return 0;
+    const pl_operand *flag_argument = plan->arguments + flags->argument_at;
+    if (flag_argument[1].kind != PL_OPERAND_NODE
+            || !flag_argument[1].value
+            || flag_argument[1].value > plan->node_count)
+        return 0;
+    const pl_node *low = &plan->nodes[flag_argument[1].value - 1u];
+    if (low->opcode != PL_OPCODE_MULR || low->argument_count != 2u
+            || low->argument_at > plan->argument_count
+            || 2u > plan->argument_count - low->argument_at)
+        return 0;
+    const pl_operand *wide = plan->arguments + low->argument_at;
+    const pl_operand *narrow = plan->arguments + result->argument_at;
+    for (pl_u32 orientation = 0u; orientation < 2u; ++orientation) {
+        pl_operand wide_left = wide[orientation];
+        pl_operand wide_right = wide[1u - orientation];
+        if (wide_left.kind != narrow[0].kind
+                || wide_left.value != narrow[0].value)
+            continue;
+        if (wide_right.kind == PL_OPERAND_CONST
+                && narrow[1].kind == PL_OPERAND_CONST
+                && (wide_right.value & 0xffffffffull)
+                   == (narrow[1].value & 0xffffffffull))
+            return 1;
+        if (wide_right.kind == narrow[1].kind
+                && wide_right.value == narrow[1].value)
+            return 1;
+    }
+    return 0;
+}
+
 static int publication_is_flag_result(const pl_plan *plan,
                                       pl_operand publication,
                                       pl_u32 flag_node)
 {
     if (test_boolean_publishes_flags(plan, publication, flag_node)) return 1;
+    if (mul_flags_value_publication(plan, publication, flag_node)) return 1;
+    /* An X86_ALU value is published as its projection, but compaction may
+     * name the producing node directly at the result coordinate. */
+    if (publication.kind == PL_OPERAND_NODE
+            && publication.value == flag_node
+            && flag_node && flag_node <= plan->node_count) {
+        pl_u32 opcode = plan->nodes[flag_node - 1u].opcode;
+        if (opcode == PL_OPCODE_X86_ALU
+                || opcode == PL_OPCODE_X86_AFFINE_ALU
+                || opcode == PL_OPCODE_X86_BIT_SUMMARY)
+            return 1;
+    }
     pl_operand result, prior;
     if (!flag_result_operand(plan, flag_node, &result, &prior)) return 0;
     for (pl_u32 remaining = plan->node_count + 1u; remaining; --remaining) {
         if (publication.kind == result.kind
                 && publication.value == result.value)
             return 1;
+        /* Measured physical vocabulary: lane32.and = 6, lane64.and = 76.  A
+         * low-lane AND of the flag result is the rewriter's value-widening
+         * artifact for a partial-width publication (`insert(base, value, w)`
+         * folded when the base's masked-out bits are known zero).  The AND has
+         * no flag effect in this plan (the block's RFLAGS names the original
+         * producer), so only the flag provenance passes through; the emitter
+         * still materializes the mask itself, which keeps the rule sound even
+         * when the AND is a genuine `and reg, mask`. */
+        if (publication.kind == PL_OPERAND_NODE && publication.value
+                && publication.value <= plan->node_count) {
+            const pl_node *mask = &plan->nodes[publication.value - 1u];
+            if ((mask->opcode == 6u || mask->opcode == 76u)
+                    && mask->argument_count == 2u
+                    && mask->argument_at <= plan->argument_count
+                    && 2u <= plan->argument_count - mask->argument_at
+                    && plan->arguments[mask->argument_at + 1u].kind
+                       == PL_OPERAND_CONST) {
+                publication = plan->arguments[mask->argument_at];
+                continue;
+            }
+            /* Physical lane insert (lane64.insert = 198, lane32.insert = 201)
+             * writes the low `width` bits of a base from its second operand and
+             * has no flag effect, so the block's final flags belong to the
+             * inserted value's producer.  Only the flag provenance passes
+             * through; the emitter materializes the base separately. */
+            if ((mask->opcode == 198u || mask->opcode == 201u)
+                    && mask->argument_count == 3u
+                    && mask->argument_at <= plan->argument_count
+                    && 3u <= plan->argument_count - mask->argument_at) {
+                publication = plan->arguments[mask->argument_at + 1u];
+                continue;
+            }
+        }
         pl_operand source;
         pl_u32 bits = 0u;
         if (!complement_node_details(plan, publication, &source, &bits))
@@ -2894,6 +3243,10 @@ static int next_alu_frame_assignment(const pl_plan *plan, pl_u32 pending,
  * merely needs a transient owner before x86's destructive two-address form
  * can consume it.  Keeping that distinction here prevents instruction
  * selection from confusing "not yet allocated" with "not representable". */
+static int shared_dag_add3_pair(const pl_plan *plan, pl_u32 node_number,
+                                pl_u32 *pair_node, pl_operand *remaining,
+                                pl_u32 *bits);
+
 static int arithmetic_tree_details(const pl_plan *plan, pl_operand value,
                                    pl_operand *left, pl_operand *right,
                                    pl_u32 *bits, pl_u32 *mode)
@@ -2932,6 +3285,73 @@ static int arithmetic_tree_details(const pl_plan *plan, pl_operand value,
                 *left = parent; *right = argument[i]; *bits = width; *mode = 1u;
                 return 1;
             }
+        }
+        /* Two word sums over the same two variables but different constants
+         * share their base sum.  Reuse the earlier ADD3 and add the constant
+         * delta instead of rebuilding a second three-term tree. */
+        for (pl_u32 candidate = 1u; candidate < value.value; ++candidate) {
+            const pl_node *earlier = &plan->nodes[candidate - 1u];
+            if (earlier->opcode != node->opcode
+                    || earlier->argument_count != 3u
+                    || earlier->argument_at > plan->argument_count
+                    || 3u > plan->argument_count - earlier->argument_at)
+                continue;
+            const pl_operand *other = plan->arguments + earlier->argument_at;
+            int used[3] = { 0, 0, 0 };
+            int pairs = 0, constants = 0, valid = 1;
+            pl_operand node_constant = { 0 }, base_constant = { 0 };
+            for (pl_u32 i = 0u; i < 3u && valid; ++i) {
+                int found = 0;
+                for (pl_u32 j = 0u; j < 3u; ++j) {
+                    if (used[j]) continue;
+                    if (argument[i].kind == other[j].kind
+                            && argument[i].value == other[j].value) {
+                        used[j] = 1;
+                        ++pairs;
+                        found = 1;
+                        break;
+                    }
+                }
+                if (found) continue;
+                if (argument[i].kind != PL_OPERAND_CONST
+                        || node_constant.kind == PL_OPERAND_CONST) {
+                    valid = 0;
+                    break;
+                }
+                pl_u32 unmatched = 3u;
+                for (pl_u32 j = 0u; j < 3u; ++j)
+                    if (!used[j]) { unmatched = j; break; }
+                if (unmatched == 3u
+                        || other[unmatched].kind != PL_OPERAND_CONST) {
+                    valid = 0;
+                    break;
+                }
+                used[unmatched] = 1;
+                node_constant = argument[i];
+                base_constant = other[unmatched];
+                ++constants;
+            }
+            if (!valid || pairs != 2u || constants != 1u) continue;
+            *left = (pl_operand){ PL_OPERAND_NODE, candidate };
+            *right = (pl_operand){ PL_OPERAND_CONST,
+                node_constant.value - base_constant.value };
+            *bits = width;
+            *mode = 1u;
+            return 1;
+        }
+        /* General re-association: an ADD3 whose two operands are already an
+         * earlier binary ADD (in either order) shares that sum, so it becomes
+         * ADD(remaining, earlier).  The shared-DAG allocator uses the same
+         * relation; exposing it here lets the ordinary frames emit it too. */
+        pl_u32 pair_node = 0u, pair_bits = 0u;
+        pl_operand pair_remaining;
+        if (shared_dag_add3_pair(plan, (pl_u32)value.value, &pair_node,
+                                 &pair_remaining, &pair_bits)) {
+            *left = pair_remaining;
+            *right = (pl_operand){ PL_OPERAND_NODE, pair_node };
+            *bits = pair_bits;
+            *mode = 1u;
+            return 1;
         }
         return 0;
     }
@@ -3158,10 +3578,123 @@ static int shift_node_details(const pl_plan *plan, pl_operand value,
         first = second;
         second = swap;
     }
-    if (first.kind != PL_OPERAND_LOCAL || first.value != 1u
-            || second.kind != PL_OPERAND_CONST || second.value != mask)
+    if (second.kind != PL_OPERAND_CONST || second.value != mask)
         return 0;
-    *amount = first;
+    /* x86 already masks a register count to 5/6 bits, so the explicit AND is
+     * redundant.  CL can carry the count whenever the unwrapped chain is the
+     * value published at RCX (the producer edge is already recorded by the
+     * source law) or a bare entry RCX. */
+    if (first.kind == PL_OPERAND_LOCAL && first.value == 1u) {
+        *amount = first;
+        return 1;
+    }
+    if (publication_owner(plan, first) == 1u) {
+        *amount = (pl_operand){ PL_OPERAND_LOCAL, 1u };
+        return 1;
+    }
+    return 0;
+}
+
+/* `lane{32,64}.insert(base, value, width)` with a node/projection base and
+ * width < 64 is a partial-width write into an independently computed value:
+ * materialize `base` into the destination, then apply `value` at `width`.
+ * Base zero (zero-extension) has its own seed production. */
+static int node_base_lane_insert(const pl_plan *plan, pl_operand value,
+                                 pl_operand *base, pl_operand *inner,
+                                 pl_u32 *width)
+{
+    if (!plan || !base || !inner || !width
+            || value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if ((node->opcode != 198u && node->opcode != 201u)
+            || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at)
+        return 0;
+    const pl_operand *arguments = plan->arguments + node->argument_at;
+    if ((arguments[0].kind != PL_OPERAND_NODE
+                && arguments[0].kind != PL_OPERAND_PROJECTION)
+            || arguments[2].kind != PL_OPERAND_CONST
+            || (arguments[2].value != 8u && arguments[2].value != 16u
+                && arguments[2].value != 32u))
+        return 0;
+    *base = arguments[0];
+    *inner = arguments[1];
+    *width = (pl_u32)arguments[2].value;
+    return 1;
+}
+
+/* A variable shift count the plan spells as `and(chain, hw_mask)` is exactly
+ * what x86's register shift already does in hardware (CL mod 32/64), so the
+ * mask is redundant even when `chain` is not a bare entry local.  This peels it
+ * off and leaves the chain to be emitted into CL. */
+static int masked_shift_count_details(const pl_plan *plan, pl_operand value,
+                                      pl_operand *source, pl_operand *count,
+                                      pl_u32 *bits, pl_u32 *group)
+{
+    if (!plan || !source || !count || !bits || !group
+            || value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    static const struct {
+        pl_u32 opcode;
+        pl_u8 bits;
+        pl_u8 group;
+    } spelling[] = {
+        { PL_OPCODE_LANE32_ROTL, 32u, 0u },
+        { PL_OPCODE_LANE64_ROTL, 64u, 0u },
+        { PL_OPCODE_LANE32_ROTR, 32u, 1u },
+        { PL_OPCODE_LANE64_ROTR, 64u, 1u },
+        { PL_OPCODE_LANE32_SHL,  32u, 4u },
+        { PL_OPCODE_LANE64_SHL,  64u, 4u },
+        { PL_OPCODE_LANE32_SHLR, 32u, 4u },
+        { PL_OPCODE_LANE64_SHLR, 64u, 4u },
+        { PL_OPCODE_LANE32_SHR,  32u, 5u },
+        { PL_OPCODE_LANE64_SHR,  64u, 5u },
+        { PL_OPCODE_LANE32_SHRR, 32u, 5u },
+        { PL_OPCODE_LANE64_SHRR, 64u, 5u },
+        { PL_OPCODE_LANE32_SAR,  32u, 7u },
+        { PL_OPCODE_LANE64_SAR,  64u, 7u },
+        { PL_OPCODE_LANE32_SARR, 32u, 7u },
+        { PL_OPCODE_LANE64_SARR, 64u, 7u },
+    };
+    pl_u32 form = 0u;
+    for (; form < sizeof spelling / sizeof spelling[0]; ++form)
+        if (node->opcode == spelling[form].opcode) break;
+    if (form == sizeof spelling / sizeof spelling[0]
+            || node->argument_count != 2u
+            || node->argument_at > plan->argument_count
+            || node->argument_count
+               > plan->argument_count - node->argument_at)
+        return 0;
+    pl_operand amount = plan->arguments[node->argument_at + 1u];
+    if (amount.kind != PL_OPERAND_NODE || !amount.value
+            || amount.value > plan->node_count)
+        return 0;
+    const pl_node *bound = &plan->nodes[amount.value - 1u];
+    if ((bound->opcode != 6u && bound->opcode != 76u)
+            || bound->argument_count != 2u
+            || bound->argument_at > plan->argument_count
+            || 2u > plan->argument_count - bound->argument_at)
+        return 0;
+    pl_operand first = plan->arguments[bound->argument_at];
+    pl_operand second = plan->arguments[bound->argument_at + 1u];
+    pl_u64 mask = spelling[form].bits == 64u ? 63u : 31u;
+    if (first.kind == PL_OPERAND_CONST && first.value == mask) {
+        pl_operand swap = first;
+        first = second;
+        second = swap;
+    }
+    if (second.kind != PL_OPERAND_CONST || second.value != mask)
+        return 0;
+    if (first.kind == PL_OPERAND_CONST) return 0;
+    *source = plan->arguments[node->argument_at];
+    *count = first;
+    *bits = spelling[form].bits;
+    *group = spelling[form].group;
     return 1;
 }
 
@@ -3267,6 +3800,8 @@ static pl_u32 operand_expression_bits(const pl_plan *plan,
             return 64u;
         if (opcode == PL_OPCODE_ADD3[0] || opcode == PL_OPCODE_LANE32_MULR) return 32u;
         if (opcode == PL_OPCODE_ADD3[1] || opcode == PL_OPCODE_MULR) return 64u;
+        if (opcode == PL_OPCODE_LANE32_BSWAP) return 32u;
+        if (opcode == PL_OPCODE_LANE64_BSWAP) return 64u;
     }
     pl_operand left, right;
     pl_u32 bits = 0u, mode = 0u;
@@ -3372,6 +3907,16 @@ static int physicalize_transient_operand(
     const pl_x86_native_selection *selection, pl_operand *value)
 {
     if (!value) return 0;
+    if (selection) {
+        for (pl_u32 alias = 0u; alias < selection->value_alias_count; ++alias)
+            if (selection->value_alias_kind[alias] == value->kind
+                    && selection->value_alias_value[alias] == value->value
+                    && selection->value_alias_local[alias] < PL_X86_GPR_COUNT) {
+                value->kind = PL_OPERAND_LOCAL;
+                value->value = selection->value_alias_local[alias];
+                return 1;
+            }
+    }
     if (selection && selection->frame_alias_present
             && value->kind == selection->frame_alias_kind
             && value->value == selection->frame_alias_value
@@ -3758,8 +4303,12 @@ static int independent_flag_overwrite_shape(
 typedef struct {
     pl_operand current;
     pl_operand compare_right;
+    pl_operand compare_left_value;
+    pl_operand compare_right_value;
+    pl_operand candidate_value;
     pl_u32 candidate_local;
     pl_u32 candidate_is_entry;
+    pl_u32 candidate_immediate;
     pl_u32 compare_left_local;
     pl_u32 value_bits;
     pl_u32 compare_bits;
@@ -3771,6 +4320,8 @@ typedef struct {
     pl_u32 compare_node;
     pl_u32 compare_left_is_current;
     pl_u32 compare_right_is_current;
+    pl_u32 compare_left_seed;
+    pl_u32 compare_right_seed;
 } conditional_select;
 
 typedef struct {
@@ -3835,9 +4386,6 @@ static int flag_operation_details(const pl_plan *plan, pl_operand flags,
     *preserves_carry = (pl_u32)((descriptor >> 11u) & 1u);
     if ((*bits != 8u && *bits != 16u
             && *bits != 32u && *bits != 64u)
-            || ((node->opcode == PL_OPCODE_X86_ALU
-                 || node->opcode == PL_OPCODE_X86_FLAGS)
-                && *bits < 32u)
             || descriptor != ((pl_u64)*bits | ((pl_u64)*mode << 8u)
                 | ((pl_u64)*preserves_carry << 11u))
             || (node->opcode == PL_OPCODE_X86_TEST && *mode != 0u)
@@ -3878,12 +4426,85 @@ static int flag_value_operation_details(
         plan, flags, left, right, bits, mode, preserves_carry);
 }
 
+/* An in-place lane insert `insert(base, value, width)` whose inserted value is
+ * the final flag result is a partial-width publication of that result: the
+ * emitted byte/word ALU writes only the low lane and reads the base tree.
+ * Rewriting the publication to the inserted value lets the ordinary flag
+ * branch emit it (base included), while `publication_is_flag_result` already
+ * carries the flag provenance.  Returns `value` unchanged otherwise. */
+static pl_operand publication_for_emission(const pl_plan *plan,
+                                           pl_operand value,
+                                           pl_u32 flag_node)
+{
+    if (!plan || !flag_node || value.kind != PL_OPERAND_NODE
+            || !value.value || value.value > plan->node_count)
+        return value;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if ((node->opcode != 198u && node->opcode != 201u)
+            || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at)
+        return value;
+    pl_operand inserted = plan->arguments[node->argument_at + 1u];
+    pl_operand left, right;
+    pl_u32 bits = 0u, mode = 0u, preserves_carry = 0u;
+    if (flag_value_operation_details(
+            plan, flag_node, inserted, &left, &right, &bits, &mode,
+            &preserves_carry))
+        return inserted;
+    return value;
+}
+
+/* A `lane{32,64}.insert(base, value, width)` whose base is the published local
+ * itself is an in-place low-lane write: it preserves the base's upper bits and
+ * replaces the low `width` bits from `value`.  The inserted node carries a
+ * full-width lane op, so the emitter must apply it at the insert's width, not
+ * the node's own expression width. */
+static int in_place_lane_insert(const pl_plan *plan, pl_operand value,
+                                pl_u32 local, pl_operand *inner,
+                                pl_u32 *width)
+{
+    if (!plan || !inner || !width || local >= PL_X86_GPR_COUNT
+            || value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if ((node->opcode != 198u && node->opcode != 201u)
+            || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at)
+        return 0;
+    const pl_operand *arguments = plan->arguments + node->argument_at;
+    if (arguments[0].kind != PL_OPERAND_LOCAL
+            || arguments[0].value != local
+            || arguments[2].kind != PL_OPERAND_CONST
+            || (arguments[2].value != 8u && arguments[2].value != 16u
+                && arguments[2].value != 32u))
+        return 0;
+    /* Measured physical vocabulary: lane {and,or,xor,add} are 6,7,8,9 and
+     * their lane64 forms 76,77,78,79.  Only a lane ALU op can be applied at an
+     * arbitrary width; any other inserted node needs its own production, and
+     * falling through keeps selection total instead of aborting it. */
+    if (arguments[1].kind != PL_OPERAND_NODE || !arguments[1].value
+            || arguments[1].value > plan->node_count)
+        return 0;
+    pl_u32 opcode = plan->nodes[arguments[1].value - 1u].opcode;
+    if (opcode != 6u && opcode != 7u && opcode != 8u && opcode != 9u
+            && opcode != 76u && opcode != 77u && opcode != 78u
+            && opcode != 79u)
+        return 0;
+    *inner = arguments[1];
+    *width = (pl_u32)arguments[2].value;
+    return 1;
+}
+
 typedef struct {
     pl_u32 left;
     pl_operand right;
     pl_u32 bits;
     pl_u32 test;
     pl_u32 offset;
+    pl_u32 bit_test;
     pl_u32 entry_sources;
     pl_u32 owner_dependencies;
 } standalone_flag_publication;
@@ -3925,9 +4546,49 @@ static int standalone_flag_publication_details(
     if (!plan || !out || !node_number || node_number > plan->node_count)
         return 0;
     const pl_node *node = &plan->nodes[node_number - 1u];
+    if (node->opcode == PL_OPCODE_X86_BIT_FLAGS) {
+        if (node->argument_count != 4u
+                || node->argument_at > plan->argument_count
+                || 4u > plan->argument_count - node->argument_at)
+            return 0;
+        const pl_operand *argument = plan->arguments + node->argument_at;
+        if (argument[3].kind != PL_OPERAND_CONST
+                || (argument[3].value != 32u && argument[3].value != 64u))
+            return 0;
+        pl_operand base = argument[2];
+        pl_operand offset = argument[1];
+        physicalize_published_operand(plan, PL_X86_GPR_COUNT, &base);
+        physicalize_published_operand(plan, PL_X86_GPR_COUNT, &offset);
+        if (base.kind != PL_OPERAND_LOCAL || base.value >= PL_X86_GPR_COUNT
+                || (offset.kind != PL_OPERAND_LOCAL
+                    && offset.kind != PL_OPERAND_CONST))
+            return 0;
+        out->bit_test = 1u;
+        out->test = 0u;
+        out->offset = 0u;
+        out->bits = (pl_u32)argument[3].value;
+        out->left = (pl_u32)base.value;
+        out->right = offset;
+        out->entry_sources = 0u;
+        out->owner_dependencies = 0u;
+        if (argument[2].kind == PL_OPERAND_LOCAL
+                && argument[2].value == base.value)
+            out->entry_sources |= 1u << out->left;
+        else
+            out->owner_dependencies |= 1u << out->left;
+        if (offset.kind == PL_OPERAND_LOCAL) {
+            if (argument[1].kind == PL_OPERAND_LOCAL
+                    && argument[1].value == offset.value)
+                out->entry_sources |= 1u << (pl_u32)offset.value;
+            else
+                out->owner_dependencies |= 1u << (pl_u32)offset.value;
+        }
+        return 1;
+    }
     if (node->opcode != PL_OPCODE_X86_TEST
             && node->opcode != PL_OPCODE_X86_COMPARE)
         return 0;
+    out->bit_test = 0u;
     pl_operand flags = { PL_OPERAND_NODE, node_number };
     pl_operand left, right;
     pl_u32 mode = 0u, preserves_carry = 0u;
@@ -3998,11 +4659,68 @@ static int standalone_flag_publication_details(
     return 1;
 }
 
+/* BT tests one bit of the base named by a register offset (`0F A3 /r`) or an
+ * imm8 offset (`0F BA /4 ib`).  The flag producer has no GPR result, so this
+ * is a standalone final-flag publication like TEST/CMP. */
+static int emit_bit_test_register(pl_u32 base, pl_operand offset, pl_u32 bits,
+                                  pl_u8 *output, pl_u32 *written)
+{
+    if (!written || base >= PL_X86_GPR_COUNT
+            || (bits != 32u && bits != 64u))
+        return 0;
+    if (offset.kind == PL_OPERAND_LOCAL) {
+        if (offset.value >= PL_X86_GPR_COUNT) return 0;
+        pl_u32 at = 0u;
+        pl_u8 rex = (pl_u8)(0x40u | (bits == 64u ? 8u : 0u)
+            | ((pl_u32)offset.value >= 8u ? 4u : 0u)
+            | (base >= 8u ? 1u : 0u));
+        if (rex != 0x40u) {
+            if (output) output[at] = rex;
+            ++at;
+        }
+        if (output) output[at] = 0x0fu;
+        ++at;
+        if (output) output[at] = 0xa3u;
+        ++at;
+        if (output)
+            output[at] = (pl_u8)(0xc0u
+                | (((pl_u32)offset.value & 7u) << 3u) | (base & 7u));
+        ++at;
+        *written = at;
+        return 1;
+    }
+    if (offset.kind == PL_OPERAND_CONST && offset.value <= 0xffu) {
+        pl_u32 at = 0u;
+        pl_u8 rex = (pl_u8)(0x40u | (bits == 64u ? 8u : 0u)
+            | (base >= 8u ? 1u : 0u));
+        if (rex != 0x40u) {
+            if (output) output[at] = rex;
+            ++at;
+        }
+        if (output) output[at] = 0x0fu;
+        ++at;
+        if (output) output[at] = 0xbau;
+        ++at;
+        if (output)
+            output[at] = (pl_u8)(0xc0u | (4u << 3u) | (base & 7u));
+        ++at;
+        if (output) output[at] = (pl_u8)offset.value;
+        ++at;
+        *written = at;
+        return 1;
+    }
+    return 0;
+}
+
 static int emit_standalone_flag_publication(
     const standalone_flag_publication *publication,
     pl_u8 *output, pl_u32 *written)
 {
     if (!publication) return 0;
+    if (publication->bit_test)
+        return emit_bit_test_register(
+            publication->left, publication->right,
+            publication->bits, output, written);
     return emit_flag_coordinate(publication->left, publication->right,
         publication->bits, publication->test, publication->offset, output, written);
 }
@@ -4237,14 +4955,20 @@ static int conditional_published_local(const pl_plan *plan, pl_operand value,
     return 0;
 }
 
-static int conditional_select_details(const pl_plan *plan, pl_operand value,
-                                      pl_u32 destination,
-                                      conditional_select *out)
+static int conditional_select_details_inner(const pl_plan *plan,
+                                       pl_operand value,
+                                       pl_u32 destination,
+                                       int allow_seed,
+                                       conditional_select *out)
 {
     if (!plan || !out || destination >= PL_X86_GPR_COUNT
             || value.kind != PL_OPERAND_NODE || !value.value
             || value.value > plan->node_count)
         return 0;
+    out->compare_left_seed = 0u;
+    out->compare_right_seed = 0u;
+    out->compare_left_value = (pl_operand){ 0 };
+    out->compare_right_value = (pl_operand){ 0 };
     const pl_node *select = &plan->nodes[value.value - 1u];
     if ((select->opcode != PL_OPCODE_LANE32_SELECT
             && select->opcode != PL_OPCODE_LANE64_SELECT)
@@ -4270,6 +4994,7 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
             || condition_argument[1].value > 15u)
         return 0;
     pl_u32 candidate_local = 0u;
+    pl_u32 candidate_immediate = 0u;
     pl_u32 inverted = 0u;
     out->value_bits = select->opcode == PL_OPCODE_LANE32_SELECT
                    || (operand_fits_u32(
@@ -4310,9 +5035,16 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
         candidate_local = second_local;
         inverted = 1u;
     } else {
-        return 0;
+        /* Neither arm names a physical owner (for example two address
+         * constants): the destructive `current` is materialised into the
+         * destination and the other arm into a scratch the frame chooses. */
+        out->current = argument[1];
+        out->candidate_value = argument[0];
+        candidate_immediate = 1u;
+        candidate_local = PL_X86_GPR_COUNT;
     }
     out->candidate_local = candidate_local;
+    out->candidate_immediate = candidate_immediate;
     out->candidate_is_entry = (pl_u32)(inverted ? second_entry : first_entry);
     pl_u32 current_entry = 0u;
     if (conditional_entry_local(plan, out->current, out->value_bits, &current_entry))
@@ -4349,25 +5081,32 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
     }
     const pl_node *compare =
         &plan->nodes[condition_argument[0].value - 1u];
+    pl_u32 compare_descriptor_at =
+        compare->opcode == PL_OPCODE_X86_FLAGS ? 4u : 3u;
+    pl_u32 compare_argument_count =
+        compare->opcode == PL_OPCODE_X86_FLAGS ? 5u : 4u;
     if ((compare->opcode != PL_OPCODE_X86_COMPARE
             && compare->opcode != PL_OPCODE_X86_TEST
-            && compare->opcode != PL_OPCODE_X86_ALU)
-            || compare->argument_count != 4u
+            && compare->opcode != PL_OPCODE_X86_ALU
+            && compare->opcode != PL_OPCODE_X86_FLAGS)
+            || compare->argument_count != compare_argument_count
             || compare->argument_at > plan->argument_count
             || compare->argument_count
                > plan->argument_count - compare->argument_at)
         return 0;
     const pl_operand *compare_argument =
         plan->arguments + compare->argument_at;
-    if (compare_argument[3].kind != PL_OPERAND_CONST)
+    if (compare_argument[compare_descriptor_at].kind != PL_OPERAND_CONST)
         return 0;
-    pl_u64 descriptor = compare_argument[3].value;
+    pl_u64 descriptor = compare_argument[compare_descriptor_at].value;
     pl_u32 compare_bits = (pl_u32)(descriptor & 0x7fu);
     int compare_test = compare->opcode == PL_OPCODE_X86_TEST
-                    || (compare->opcode == PL_OPCODE_X86_ALU
+                    || ((compare->opcode == PL_OPCODE_X86_ALU
+                            || compare->opcode == PL_OPCODE_X86_FLAGS)
                         && ((descriptor >> 8u) & 7u) == 0u);
     int compare_subtract = compare->opcode == PL_OPCODE_X86_COMPARE
-                        || (compare->opcode == PL_OPCODE_X86_ALU
+                        || ((compare->opcode == PL_OPCODE_X86_ALU
+                                || compare->opcode == PL_OPCODE_X86_FLAGS)
                             && ((descriptor >> 8u) & 7u) == 3u);
     if ((compare_bits != 8u && compare_bits != 16u
             && compare_bits != 32u && compare_bits != 64u)
@@ -4394,7 +5133,16 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
         compare_left = (pl_u32)compare_input.value;
     } else if (!published_operand_local(
                    plan, compare_input, &compare_left)) {
-        return 0;
+        if (allow_seed
+                && (compare_input.kind == PL_OPERAND_NODE
+                    || compare_input.kind == PL_OPERAND_PROJECTION)
+                && operand_expression_bits(plan, compare_input, 0u)) {
+            out->compare_left_value = compare_input;
+            out->compare_left_seed = 1u;
+            compare_left = PL_X86_GPR_COUNT;
+        } else {
+            return 0;
+        }
     }
     if (out->compare_offset && compare_left >= 4u) return 0;
     pl_operand compare_right = compare_argument[2];
@@ -4417,7 +5165,16 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
             right_local = (pl_u32)compare_right.value;
         } else if (!published_operand_local(
                        plan, compare_right, &right_local)) {
-            return 0;
+            if (allow_seed
+                    && (compare_right.kind == PL_OPERAND_NODE
+                        || compare_right.kind == PL_OPERAND_PROJECTION)
+                    && operand_expression_bits(plan, compare_right, 0u)) {
+                out->compare_right_value = compare_right;
+                out->compare_right_seed = 1u;
+                right_local = PL_X86_GPR_COUNT;
+            } else {
+                return 0;
+            }
         }
         compare_right.kind = PL_OPERAND_LOCAL;
         compare_right.value = right_local;
@@ -4429,6 +5186,14 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
     out->compare_test = (pl_u32)compare_test;
     out->compare_node = (pl_u32)condition_argument[0].value;
     return 1;
+}
+
+static int conditional_select_details(const pl_plan *plan, pl_operand value,
+                                       pl_u32 destination,
+                                       conditional_select *out)
+{
+    return conditional_select_details_inner(
+        plan, value, destination, 0, out);
 }
 
 static int emit_select_compare(const conditional_select *select,
@@ -6515,6 +7280,246 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
     if (remaining <= 1u) {
         record_tree_rejection(selection, value, 1u);
         return 0;
+    }
+
+    pl_operand insert_base, insert_inner;
+    pl_u32 insert_width = 0u;
+    if (node_base_lane_insert(&block->plan, value, &insert_base,
+                              &insert_inner, &insert_width)) {
+        pl_u32 base_bytes = 0u, base_work = 0u;
+        int status = measure_alu_tree(
+            frontend, block, selection, destination, insert_base, bits,
+            output_at, remaining - 1u, scratch_mask, &base_bytes, &base_work);
+        pl_u8 alias_present = selection->frame_alias_present;
+        pl_u64 alias_value = selection->frame_alias_value;
+        pl_u8 alias_kind = selection->frame_alias_kind;
+        pl_u8 alias_local = selection->frame_alias_local;
+        if (status > 0) {
+            selection->frame_alias_value = insert_base.value;
+            selection->frame_alias_kind = insert_base.kind;
+            selection->frame_alias_local = (pl_u8)destination;
+            selection->frame_alias_present = 1u;
+            pl_u32 inner_bytes = 0u, inner_work = 0u;
+            status = measure_alu_tree(
+                frontend, block, selection, destination, insert_inner,
+                insert_width, output_at + base_bytes, remaining - 1u,
+                scratch_mask, &inner_bytes, &inner_work);
+            if (status > 0 && base_bytes <= U32_MAX_VALUE - inner_bytes
+                    && base_work <= U32_MAX_VALUE - inner_work) {
+                *bytes = base_bytes + inner_bytes;
+                *instructions = base_work + inner_work;
+                selection->direct_nested_frame = 1u;
+                return 1;
+            }
+        }
+        selection->frame_alias_present = alias_present;
+        selection->frame_alias_value = alias_value;
+        selection->frame_alias_kind = alias_kind;
+        selection->frame_alias_local = alias_local;
+        selection->fixup_count = fixup_checkpoint;
+        return status < 0 ? status : 0;
+    }
+
+    if (value.kind == PL_OPERAND_NODE && value.value
+            && value.value <= block->plan.node_count
+            && (block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE32_BSWAP
+                || block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE64_BSWAP)) {
+        pl_u32 byte_swap_bits = block->plan.nodes[value.value - 1u].opcode
+                              == PL_OPCODE_LANE32_BSWAP ? 32u : 64u;
+        pl_operand byte_swap_source = block->plan.arguments[
+            block->plan.nodes[value.value - 1u].argument_at];
+        pl_u32 prefix = 0u, prefix_work = 0u, operation = 0u;
+        int status = measure_alu_tree(
+            frontend, block, selection, destination, byte_swap_source,
+            byte_swap_bits, output_at, remaining - 1u, scratch_mask,
+            &prefix, &prefix_work);
+        if (status > 0
+                && emit_bswap_register(
+                    destination, byte_swap_bits, (pl_u8 *)0, &operation)
+                && prefix <= U32_MAX_VALUE - operation
+                && prefix_work != U32_MAX_VALUE) {
+            *bytes = prefix + operation;
+            *instructions = prefix_work + 1u;
+            return 1;
+        }
+        selection->fixup_count = fixup_checkpoint;
+        return status < 0 ? status : 0;
+    }
+
+    pl_operand tree_shift_source, tree_shift_amount;
+    pl_u32 tree_shift_bits = 0u, tree_shift_group = 0u;
+    if (shift_node_details(&block->plan, value, &tree_shift_source,
+            &tree_shift_amount, &tree_shift_bits, &tree_shift_group)) {
+        pl_u32 shift_prefix = 0u, shift_prefix_work = 0u, shift_operation = 0u;
+        int shift_status = measure_alu_tree(
+            frontend, block, selection, destination, tree_shift_source,
+            tree_shift_bits, output_at, remaining - 1u, scratch_mask,
+            &shift_prefix, &shift_prefix_work);
+        if (shift_status > 0
+                && emit_shift_instruction(
+                    destination, tree_shift_amount, tree_shift_bits,
+                    tree_shift_group, (pl_u8 *)0, &shift_operation)
+                && shift_prefix <= U32_MAX_VALUE - shift_operation
+                && shift_prefix_work != U32_MAX_VALUE) {
+            *bytes = shift_prefix + shift_operation;
+            *instructions = shift_prefix_work + 1u;
+            return 1;
+        }
+        selection->fixup_count = fixup_checkpoint;
+        return shift_status < 0 ? shift_status : 0;
+    }
+
+    /* Nested conditional select over an incoming condition.  The plan's
+     * physical rewriter leaves the false arm exactly in the destructive
+     * destination (`SELECT(a, dst_entry, cc)`), so the one-instruction
+     * spelling is `cmovcc dst,a`; `a` is materialised first and must be a
+     * flag-preserving constant or an already-live register. */
+    boolean_select tree_boolean;
+    condition_value tree_condition;
+    if (value.kind == PL_OPERAND_NODE && value.value
+            && value.value <= block->plan.node_count
+            && (block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE32_SELECT
+                || block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE64_SELECT)
+            && boolean_select_details(&block->plan, value, &tree_boolean)
+            && condition_value_details(
+                &block->plan, tree_boolean.condition, &tree_condition)
+            && tree_condition.flags.kind == PL_OPERAND_LOCAL
+            && tree_condition.flags.value == PL_X86_RFLAGS_LOCAL) {
+        pl_u32 false_local = 0u;
+        int false_is_destination =
+            (tree_boolean.when_false.kind == PL_OPERAND_LOCAL
+                && tree_boolean.when_false.value == destination)
+            || ((tree_boolean.when_false.kind == PL_OPERAND_NODE
+                    || tree_boolean.when_false.kind == PL_OPERAND_PROJECTION)
+                && published_operand_local(
+                    &block->plan, tree_boolean.when_false, &false_local)
+                && false_local == destination);
+        if (false_is_destination) {
+            pl_u32 candidate_local = PL_X86_GPR_COUNT;
+            pl_u32 candidate_bytes = 0u, candidate_work = 0u;
+            int status = 1;
+            if (tree_boolean.when_true.kind == PL_OPERAND_CONST) {
+                for (pl_u32 scratch = 0u;
+                        scratch < PL_X86_GPR_COUNT; ++scratch)
+                    if (scratch != destination
+                            && (scratch_mask & (1u << scratch))) {
+                        candidate_local = scratch;
+                        break;
+                    }
+                status = candidate_local < PL_X86_GPR_COUNT
+                    ? measure_alu_tree(
+                        frontend, block, selection, candidate_local,
+                        tree_boolean.when_true, tree_boolean.value_bits,
+                        output_at, remaining - 1u,
+                        scratch_mask & ~(1u << candidate_local),
+                        &candidate_bytes, &candidate_work)
+                    : 0;
+            } else {
+                /* Only a constant true arm is materialised here.  A register
+                 * arm is left to the publication-level select handoff so the
+                 * entry-select-overlay canonical schedule is preserved. */
+                status = 0;
+            }
+            pl_u32 move_bytes = 0u;
+            if (status > 0
+                    && emit_conditional_move(
+                        destination, candidate_local,
+                        tree_boolean.value_bits, tree_condition.condition,
+                        (pl_u8 *)0, &move_bytes)
+                    && candidate_bytes <= U32_MAX_VALUE - move_bytes
+                    && candidate_work != U32_MAX_VALUE) {
+                *bytes = candidate_bytes + move_bytes;
+                *instructions = candidate_work + 1u;
+                selection->direct_nested_frame = 1u;
+                return 1;
+            }
+            selection->fixup_count = fixup_checkpoint;
+            return status < 0 ? status : 0;
+        }
+    }
+
+    condition_value flag_condition;
+    if (condition_value_details(&block->plan, value, &flag_condition)
+            && flag_condition.flags.kind == PL_OPERAND_NODE) {
+        pl_operand compare_left, compare_right;
+        pl_u32 compare_bits = 0u, compare_mode = 0u, compare_carry = 0u;
+        if (flag_operation_details(
+                &block->plan, flag_condition.flags, &compare_left,
+                &compare_right, &compare_bits, &compare_mode, &compare_carry)
+                && !compare_carry
+                && (compare_mode == 0u || compare_mode == 3u)) {
+            physicalize_published_operand(
+                &block->plan, destination, &compare_left);
+            physicalize_published_operand(
+                &block->plan, destination, &compare_right);
+            if (compare_left.kind == PL_OPERAND_LOCAL
+                    && compare_left.value < PL_X86_GPR_COUNT) {
+                pl_operand physical_right = compare_right;
+                pl_u32 operand_bytes = 0u, operand_work = 0u;
+                if (physical_right.kind == PL_OPERAND_CONST) {
+                    /* Materialise through the fixup-producing seed path.  The
+                     * source LEA writes one register, and source_address_definition
+                     * only binds the field when the destination matches it, so
+                     * prefer the CONDITION destination and fall back to a
+                     * scratch.  An address constant then becomes a RIP-relative
+                     * LEA that alias_source_address_fields can attach. */
+                    pl_u32 operand_local = destination;
+                    if (operand_local == (pl_u32)compare_left.value) {
+                        operand_local = PL_X86_GPR_COUNT;
+                        for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
+                                ++scratch)
+                            if (scratch != destination
+                                    && scratch != (pl_u32)compare_left.value
+                                    && (scratch_mask & (1u << scratch))) {
+                                operand_local = scratch;
+                                break;
+                            }
+                    }
+                    if (operand_local >= PL_X86_GPR_COUNT) {
+                        selection->fixup_count = fixup_checkpoint;
+                        return 0;
+                    }
+                    int operand_status = measure_alu_tree(
+                        frontend, block, selection, operand_local,
+                        compare_right, compare_bits, output_at,
+                        remaining - 1u,
+                        operand_local == destination
+                            ? scratch_mask
+                            : scratch_mask & ~(1u << operand_local),
+                        &operand_bytes, &operand_work);
+                    if (operand_status <= 0) {
+                        selection->fixup_count = fixup_checkpoint;
+                        return operand_status < 0 ? operand_status : 0;
+                    }
+                    physical_right = (pl_operand){ PL_OPERAND_LOCAL,
+                                                   operand_local };
+                } else if (!(physical_right.kind == PL_OPERAND_LOCAL
+                        && physical_right.value < PL_X86_GPR_COUNT)) {
+                    selection->fixup_count = fixup_checkpoint;
+                    return 0;
+                }
+                pl_u32 compare_bytes = 0u, set_bytes = 0u;
+                if (emit_flag_coordinate(
+                        (pl_u32)compare_left.value, physical_right,
+                        compare_bits, compare_mode == 0u, 0u,
+                        (pl_u8 *)0, &compare_bytes)
+                        && emit_set_condition(
+                            destination, flag_condition.condition,
+                            (pl_u8 *)0, &set_bytes)
+                        && operand_bytes <= U32_MAX_VALUE - compare_bytes
+                        && operand_bytes + compare_bytes
+                           <= U32_MAX_VALUE - set_bytes
+                        && operand_work <= U32_MAX_VALUE - 2u) {
+                    *bytes = operand_bytes + compare_bytes + set_bytes;
+                    *instructions = operand_work + 2u;
+                    return 1;
+                }
+            }
+        }
     }
 
     pl_operand shared_seed, shared_amount;
@@ -9449,11 +10454,135 @@ static int conditional_alu_body(const pl_x86_block *block,
     return 1;
 }
 
+/* A CMP/TEST replaces every arithmetic condition flag and preserves DF/IF and
+ * the other system lanes.  An intermediate flag word that only perturbs the
+ * overwritten arithmetic lanes may therefore be dropped without emitting it.
+ * This is exact only when the intermediate's own operation leaves every
+ * preserved lane alone, so the walk accepts lane AND/OR/XOR immediates whose
+ * mask cannot change a non-arithmetic bit and terminates at entry RFLAGS. */
+static int flags_root_only_arithmetic(const pl_plan *plan, pl_u32 node_number)
+{
+    if (!plan) return 0;
+    const pl_u64 arithmetic = (1ull << 0u) | (1ull << 2u) | (1ull << 4u)
+                            | (1ull << 6u) | (1ull << 7u) | (1ull << 11u);
+    for (pl_u32 step = 0u;
+            node_number && node_number <= plan->node_count
+                && step <= plan->node_count;
+            ++step) {
+        const pl_node *node = &plan->nodes[node_number - 1u];
+        if (node->argument_count != 2u
+                || node->argument_at > plan->argument_count
+                || 2u > plan->argument_count - node->argument_at)
+            return 0;
+        pl_u32 lane = 2u, semantic = 5u;
+        for (pl_u32 candidate = 0u; candidate < 2u; ++candidate)
+            for (pl_u32 meaning = 0u; meaning < 5u; ++meaning)
+                if (node->opcode == PL_OPCODE_ALU_IMMEDIATE[candidate][meaning]) {
+                    lane = candidate;
+                    semantic = meaning;
+                }
+        if (lane == 2u) return 0;
+        const pl_operand *argument = plan->arguments + node->argument_at;
+        if (argument[1].kind != PL_OPERAND_CONST) return 0;
+        const pl_u64 word = lane == 1u ? ~0ull : 0xffffffffull;
+        pl_u64 mask = argument[1].value & word;
+        pl_u64 harmed = 0u;
+        if (semantic == 0u)
+            harmed = (~mask) & ~arithmetic & word;
+        else if (semantic == 3u || semantic == 4u)
+            harmed = mask & ~arithmetic & word;
+        else
+            return 0;
+        if (harmed) return 0;
+        pl_operand left = argument[0];
+        if (left.kind == PL_OPERAND_LOCAL && left.value == PL_X86_RFLAGS_LOCAL)
+            return 1;
+        if (left.kind != PL_OPERAND_NODE || !left.value
+                || left.value >= node_number)
+            return 0;
+        node_number = (pl_u32)left.value;
+    }
+    return 0;
+}
+
+/* The final flag producer's value tree may read an entry register that another
+ * pending publication overwrites.  Its value must then be evaluated before
+ * that publication while the flag-setting instruction stays last.  This shape
+ * names the destination, the value tree, its scratch and the remaining
+ * operand dependency so the measure and write paths can preload the tree with
+ * the identical schedule.  Pure; the caller emits and updates the arrays. */
+typedef struct {
+    pl_u32 destination;
+    pl_operand tree;
+    pl_u32 tree_bits;
+    pl_u32 scratch;
+    pl_u32 other_source;
+} flag_value_preload;
+
+static int flag_value_preload_shape(
+    const pl_plan *plan, pl_u32 pending, pl_u32 final_flag_node,
+    const pl_u32 frame_sources[PL_X86_GPR_COUNT],
+    const pl_u32 frame_dependencies[PL_X86_GPR_COUNT],
+    flag_value_preload *out)
+{
+    if (!plan || !out || !final_flag_node) return 0;
+    pl_operand result, prior, left, right;
+    pl_u32 bits = 0u, mode = 0u, preserves_carry = 0u;
+    if (!flag_result_operand(plan, final_flag_node, &result, &prior)
+            || !flag_operation_details(
+                plan, (pl_operand){ PL_OPERAND_NODE, final_flag_node },
+                &left, &right, &bits, &mode, &preserves_carry))
+        return 0;
+    pl_u32 destination = publication_owner(plan, result);
+    pl_operand tree = left, other = right;
+    if (tree.kind == PL_OPERAND_LOCAL || tree.kind == PL_OPERAND_CONST) {
+        tree = right;
+        other = left;
+    }
+    if ((tree.kind != PL_OPERAND_NODE && tree.kind != PL_OPERAND_PROJECTION)
+            || destination >= PL_X86_GPR_COUNT
+            || !(pending & (1u << destination))
+            || (frame_dependencies[destination] & pending))
+        return 0;
+    pl_u32 others_read = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+        if (local != destination && (pending & (1u << local)))
+            others_read |= frame_sources[local];
+    if (others_read & (1u << destination)) return 0;
+    if (other.kind == PL_OPERAND_LOCAL
+            && frame_local_publication_clobbers_flags(
+                plan, (pl_u32)other.value))
+        return 0;
+    pl_u32 tree_sources = 0u;
+    if (!operand_entry_gpr_sources(plan, tree, plan->node_count + 1u,
+            plan->node_count + 1u, &tree_sources)
+            || !(tree_sources & pending))
+        return 0;
+    if (tree_sources & (other.kind == PL_OPERAND_LOCAL
+            ? (1u << (pl_u32)other.value) : 0u))
+        return 0;
+    pl_u32 tree_bits = operand_expression_bits(plan, tree, 64u);
+    if (!tree_bits) return 0;
+    pl_u32 scratch = alu_frame_scratch_mask(pending, destination, frame_sources);
+    if (other.kind == PL_OPERAND_LOCAL)
+        scratch &= ~(1u << (pl_u32)other.value);
+    *out = (flag_value_preload){
+        destination, tree, tree_bits, scratch,
+        other.kind == PL_OPERAND_LOCAL ? (1u << (pl_u32)other.value) : 0u,
+    };
+    return 1;
+}
+
 static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                                     const pl_x86_block *block,
                                     pl_x86_native_selection *selection)
 {
     if (!frontend || !block || !selection) return 0;
+    /* The dense ALU frame enumerates operand trees without a cost
+     * memo; a very large straight-line plan makes that search
+     * super-exponential.  Decline it so the polynomial live-range and
+     * shared-DAG frames, or an exact source projection, own the block. */
+    if (block->plan.node_count > 96u) return 0;
     if (block->flow == PL_X86_FLOW_CONDITIONAL) {
         pl_x86_block body;
         pl_u32 condition = 0u;
@@ -9497,8 +10626,16 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             if (!flags->argument_count || flags->argument_at >= block->plan.argument_count)
                 return 0;
             pl_operand prior = block->plan.arguments[flags->argument_at];
-            if (prior.kind != PL_OPERAND_LOCAL || prior.value != PL_X86_RFLAGS_LOCAL)
+            if (prior.kind == PL_OPERAND_LOCAL
+                    && prior.value == PL_X86_RFLAGS_LOCAL) {
+                /* Entry flags flow into CMP/TEST directly. */
+            } else if (prior.kind == PL_OPERAND_NODE
+                    && flags_root_only_arithmetic(
+                        &block->plan, (pl_u32)prior.value)) {
+                /* The intermediate only perturbs flags CMP/TEST overwrite. */
+            } else {
                 return 0;
+            }
         }
     }
     /* Preserve the responsible grammar on a red candidate so a preceding
@@ -9685,6 +10822,32 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                    | (1u << flag_select.candidate)
                    | (1u << flag_select.flag_owner));
         selection->direct_nested_frame = 1u;
+    }
+    if (!selection->frame_alias_present && !has_flag_select
+            && !has_generation_join) {
+        flag_value_preload preload;
+        if (flag_value_preload_shape(
+                &block->plan, pending, final_flag_node,
+                frame_sources, frame_dependencies, &preload)) {
+            pl_u32 part = 0u, work = 0u;
+            int measured = measure_alu_tree(
+                frontend, block, selection, preload.destination,
+                preload.tree, preload.tree_bits, bytes,
+                block->plan.node_count + 1u, preload.scratch,
+                &part, &work);
+            if (measured > 0 && bytes <= U32_MAX_VALUE - part
+                    && instructions <= U32_MAX_VALUE - work) {
+                bytes += part;
+                instructions += work;
+                selection->frame_alias_value = preload.tree.value;
+                selection->frame_alias_kind = preload.tree.kind;
+                selection->frame_alias_local = (pl_u8)preload.destination;
+                selection->frame_alias_present = 1u;
+                frame_sources[preload.destination] = preload.other_source;
+                frame_dependencies[preload.destination] = 0u;
+                selection->direct_nested_frame = 1u;
+            }
+        }
     }
     while (pending || standalone_flags_pending) {
         select_generation_group select_group;
@@ -10015,6 +11178,8 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 }
             }
         } else if (value.kind == PL_OPERAND_NODE) {
+            value = publication_for_emission(
+                &block->plan, value, final_flag_node);
             affine_lea form = { 0 };
             pl_u32 source = 0u, bits = 0u;
             pl_operand shift_source, shift_amount;
@@ -10025,8 +11190,25 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             pl_operand bit_source;
             pl_u32 bit = 0u;
             pl_operand flag_left, flag_right;
+            pl_operand lane_inner;
+            pl_u32 lane_width = 0u;
             pl_u32 flag_mode = 0u, preserves_carry = 0u;
-            if (final_flag_node && flag_value_operation_details(
+            if (final_flag_node && value.value == final_flag_node
+                    && alu_node_semantics(
+                        &block->plan, final_flag_node, &flag_left,
+                        &flag_right, &bits, &flag_mode,
+                        &preserves_carry)) {
+                int measured = measure_alu_pair(
+                    frontend, block, selection, local,
+                    flag_left, flag_right, bits, flag_mode,
+                    preserves_carry, bytes,
+                    block->plan.node_count + 1u, scratch_mask,
+                    &encoded, &publication_work);
+                if (measured <= 0) {
+                    selection->blocking_work = 0x260u | local;
+                    return measured;
+                }
+            } else if (final_flag_node && flag_value_operation_details(
                     &block->plan, final_flag_node, value,
                     &flag_left, &flag_right, &bits,
                     &flag_mode, &preserves_carry)) {
@@ -10091,8 +11273,8 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     selection->blocking_work = 0x2c0u | local;
                     return measured;
                 }
-            } else if (conditional_select_details(
-                    &block->plan, value, local, &select)) {
+            } else if (conditional_select_details_inner(
+                    &block->plan, value, local, 1, &select)) {
                 if (select.candidate_local == local
                         || !conditional_compare_survives_current(
                             &select, local))
@@ -10115,7 +11297,89 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     select.value_bits, bytes,
                     block->plan.node_count + 1u, scratch_mask,
                     &seed_bytes, &seed_work);
+                pl_u32 cand_local = select.candidate_local;
+                pl_u32 cand_bytes = 0u, cand_work = 0u;
+                if (measured > 0 && select.candidate_immediate) {
+                    cand_local = PL_X86_GPR_COUNT;
+                    for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
+                            ++scratch)
+                        if (scratch != local
+                                && (scratch_mask & (1u << scratch))) {
+                            cand_local = scratch;
+                            break;
+                        }
+                    if (cand_local >= PL_X86_GPR_COUNT) {
+                        selection->blocking_work = 0x300u | local;
+                        return 0;
+                    }
+                    measured = measure_alu_tree(
+                        frontend, block, selection, cand_local,
+                        select.candidate_value, select.value_bits,
+                        bytes + seed_bytes, block->plan.node_count + 1u,
+                        scratch_mask & ~(1u << cand_local),
+                        &cand_bytes, &cand_work);
+                }
                 pl_u32 compare_bytes = 0u, move_bytes = 0u;
+                pl_u32 compare_seed_bytes = 0u, compare_seed_work = 0u;
+                if (measured > 0
+                        && (select.compare_left_seed
+                            || select.compare_right_seed)) {
+                    pl_u32 used = scratch_mask;
+                    if (select.compare_left_seed) {
+                        pl_u32 scratch = PL_X86_GPR_COUNT;
+                        for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
+                            if (s != local && s != cand_local
+                                    && (used & (1u << s))) {
+                                scratch = s;
+                                break;
+                            }
+                        pl_u32 part = 0u, work = 0u;
+                        if (scratch >= PL_X86_GPR_COUNT
+                                || measure_alu_tree(
+                                    frontend, block, selection, scratch,
+                                    select.compare_left_value,
+                                    select.compare_bits,
+                                    bytes + seed_bytes + cand_bytes,
+                                    block->plan.node_count + 1u,
+                                    used & ~(1u << scratch),
+                                    &part, &work) <= 0)
+                            measured = 0;
+                        else {
+                            used &= ~(1u << scratch);
+                            select.compare_left_local = scratch;
+                            compare_seed_bytes += part;
+                            compare_seed_work += work;
+                        }
+                    }
+                    if (measured > 0 && select.compare_right_seed) {
+                        pl_u32 scratch = PL_X86_GPR_COUNT;
+                        for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
+                            if (s != local && s != cand_local
+                                    && (used & (1u << s))) {
+                                scratch = s;
+                                break;
+                            }
+                        pl_u32 part = 0u, work = 0u;
+                        if (scratch >= PL_X86_GPR_COUNT
+                                || measure_alu_tree(
+                                    frontend, block, selection, scratch,
+                                    select.compare_right_value,
+                                    select.compare_bits,
+                                    bytes + seed_bytes + cand_bytes
+                                        + compare_seed_bytes,
+                                    block->plan.node_count + 1u,
+                                    used & ~(1u << scratch),
+                                    &part, &work) <= 0)
+                            measured = 0;
+                        else {
+                            used &= ~(1u << scratch);
+                            select.compare_right.kind = PL_OPERAND_LOCAL;
+                            select.compare_right.value = scratch;
+                            compare_seed_bytes += part;
+                            compare_seed_work += work;
+                        }
+                    }
+                }
                 pl_u32 emit_compare = select.has_compare
                     && (select.compare_node != final_flag_node
                         || !flag_node_has_value_publication(
@@ -10124,22 +11388,62 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     || emit_select_compare(&select, 0, &compare_bytes);
                 if (measured <= 0 || !compared
                         || !emit_conditional_move(
-                            local, select.candidate_local,
+                            local, cand_local,
                             select.value_bits, select.condition,
                             (pl_u8 *)0, &move_bytes)
-                        || seed_bytes > U32_MAX_VALUE - compare_bytes
-                        || seed_bytes + compare_bytes
-                           > U32_MAX_VALUE - move_bytes) {
+                        || seed_bytes > U32_MAX_VALUE - cand_bytes
+                        || seed_bytes + cand_bytes
+                           > U32_MAX_VALUE - compare_seed_bytes
+                        || seed_bytes + cand_bytes + compare_seed_bytes
+                           > U32_MAX_VALUE - compare_bytes
+                        || seed_bytes + cand_bytes + compare_seed_bytes
+                           + compare_bytes > U32_MAX_VALUE - move_bytes
+                        || cand_work > U32_MAX_VALUE - seed_work
+                        || cand_work + seed_work
+                           > U32_MAX_VALUE - compare_seed_work) {
                     selection->blocking_work = 0x300u | local;
                     return measured < 0 ? measured : 0;
                 }
-                encoded = seed_bytes + compare_bytes + move_bytes;
-                publication_work = seed_work + 1u + emit_compare;
+                encoded = seed_bytes + cand_bytes + compare_seed_bytes
+                        + compare_bytes + move_bytes;
+                publication_work = seed_work + cand_work + compare_seed_work
+                                 + 1u + emit_compare;
             } else if (sign_high_node_details(
                     &block->plan, value, &source, &bits)) {
                 if (!emit_sign_high(
                         local, source, bits, (pl_u8 *)0, &encoded))
                     return 0;
+            } else if (masked_shift_count_details(
+                    &block->plan, value, &shift_source, &shift_amount,
+                    &bits, &shift_group) && local != 1u) {
+                pl_u32 seed_bytes = 0u, seed_work = 0u;
+                int measured = measure_alu_tree(
+                    frontend, block, selection, local, shift_source, bits,
+                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    &seed_bytes, &seed_work);
+                pl_u32 count_bytes = 0u, count_work = 0u;
+                if (measured > 0)
+                    measured = measure_alu_tree(
+                        frontend, block, selection, 1u, shift_amount, 32u,
+                        bytes + seed_bytes, block->plan.node_count + 1u,
+                        scratch_mask & ~(1u << 1u),
+                        &count_bytes, &count_work);
+                pl_u32 shift_bytes = 0u;
+                if (measured <= 0
+                        || !emit_shift_instruction(
+                            local, (pl_operand){ PL_OPERAND_LOCAL, 1u },
+                            bits, shift_group, (pl_u8 *)0, &shift_bytes)
+                        || bytes > U32_MAX_VALUE - seed_bytes
+                        || seed_bytes > U32_MAX_VALUE - count_bytes
+                        || seed_bytes + count_bytes
+                           > U32_MAX_VALUE - shift_bytes
+                        || seed_work > U32_MAX_VALUE - count_work
+                        || seed_work + count_work == U32_MAX_VALUE) {
+                    selection->blocking_work = 0x400u | local;
+                    return measured < 0 ? measured : 0;
+                }
+                encoded = seed_bytes + count_bytes + shift_bytes;
+                publication_work = seed_work + count_work + 1u;
             } else if (shift_node_details(
                     &block->plan, value, &shift_source, &shift_amount,
                     &bits, &shift_group)) {
@@ -10189,6 +11493,42 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 if (!emit_zero_extend_move(
                         local, source, bits, (pl_u8 *)0, &encoded))
                     return 0;
+            } else if (in_place_lane_insert(
+                    &block->plan, value, local, &lane_inner, &lane_width)) {
+                int measured = measure_alu_tree(
+                    frontend, block, selection, local, lane_inner, lane_width,
+                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    &encoded, &publication_work);
+                if (measured <= 0) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured;
+                }
+            } else if (value.kind == PL_OPERAND_NODE && value.value
+                    && value.value <= block->plan.node_count
+                    && (block->plan.nodes[value.value - 1u].opcode
+                            == PL_OPCODE_LANE32_BSWAP
+                        || block->plan.nodes[value.value - 1u].opcode
+                            == PL_OPCODE_LANE64_BSWAP)) {
+                pl_u32 bswap_bits = block->plan.nodes[value.value - 1u].opcode
+                                  == PL_OPCODE_LANE32_BSWAP ? 32u : 64u;
+                pl_operand source_operand = block->plan.arguments[
+                    block->plan.nodes[value.value - 1u].argument_at];
+                pl_u32 seed_bytes = 0u, seed_work = 0u, bswap_bytes = 0u;
+                int measured = measure_alu_tree(
+                    frontend, block, selection, local, source_operand,
+                    bswap_bits, bytes, block->plan.node_count + 1u,
+                    scratch_mask, &seed_bytes, &seed_work);
+                if (measured <= 0
+                        || !emit_bswap_register(
+                            local, bswap_bits, (pl_u8 *)0, &bswap_bytes)
+                        || bytes > U32_MAX_VALUE - seed_bytes
+                        || seed_bytes > U32_MAX_VALUE - bswap_bytes
+                        || seed_work == U32_MAX_VALUE) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured < 0 ? measured : 0;
+                }
+                encoded = seed_bytes + bswap_bytes;
+                publication_work = seed_work + 1u;
             } else {
                 bits = operand_expression_bits(&block->plan, value, 0u);
                 if (!bits) {
@@ -10898,6 +12238,20 @@ typedef struct {
     pl_u32 plain;
     pl_u32 anchor;
     pl_u32 flag_bits;
+    /* At most one value publication may be the normalized single-bit
+     * projection `((x >> p) & 1) << q` (optionally inverted).  It is emitted
+     * as a self-zero, a bit test and a conditional move so its dependency
+     * span is the two flag edges instead of the destructive shift tree's
+     * copy/shift/mask/xor chain.  PL_X86_GPR_COUNT means absent. */
+    pl_u32 projection;
+    pl_operand projection_source;
+    pl_u32 projection_from;
+    pl_u32 projection_to;
+    pl_u32 projection_inverse;
+    pl_u32 projection_bits;
+    pl_u32 projection_source_local;
+    pl_u32 projection_input_local;
+    pl_u32 projection_mask_local;
 } zero_flag_frame;
 
 static int zero_result_operand(const pl_plan *plan, pl_operand value)
@@ -11064,6 +12418,67 @@ static int next_zero_plain_assignment(const pl_plan *plan,
     return 0;
 }
 
+/* The normalized image of `select(1<<q, 0, (x & (1<<p)) != 0)` is
+ * `((x >> p) & 1) << q`, spelled as SHL/SHR by |p-q|, AND with the single-bit
+ * mask and, for the complemented zero test, XOR with the same mask.  Decode
+ * that exact chain so it can be emitted as a bit test plus a conditional move.
+ * The arithmetic spelling cannot reach the source span because a destructive
+ * shift needs an entry copy first. */
+static int bit_projection_value_details(
+    const pl_plan *plan, pl_operand value, pl_operand *source,
+    pl_u32 *from, pl_u32 *to, pl_u32 *inverse, pl_u32 *bits)
+{
+    if (!plan || !source || !from || !to || !inverse || !bits)
+        return 0;
+    pl_operand left, right, inner = value;
+    pl_u32 width = 0u, mode = 0u;
+    pl_u64 xor_mask = 0u;
+    *inverse = 0u;
+    if (!arithmetic_tree_details(
+            plan, value, &left, &right, &width, &mode))
+        return 0;
+    if (mode == 6u) {
+        if (right.kind != PL_OPERAND_CONST) return 0;
+        xor_mask = right.value;
+        inner = left;
+        *inverse = 1u;
+        if (!arithmetic_tree_details(
+                plan, inner, &left, &right, &width, &mode))
+            return 0;
+    }
+    if (mode != 0u || right.kind != PL_OPERAND_CONST) return 0;
+    pl_u64 word = width == 64u ? ~0ull : 0xffffffffull;
+    pl_u64 mask = right.value & word;
+    if (!mask || (mask & (mask - 1u))) return 0;
+    if (*inverse && (xor_mask & word) != mask) return 0;
+    pl_operand shift_source, amount;
+    pl_u32 shift_bits = 0u, group = 0u;
+    if (!shift_node_details(
+            plan, left, &shift_source, &amount, &shift_bits, &group)
+            || shift_bits != width
+            || amount.kind != PL_OPERAND_CONST
+            || (group != 4u && group != 5u))
+        return 0;
+    pl_u32 q = 0u;
+    while ((mask >> q) != 1u) ++q;
+    pl_u32 k = (pl_u32)amount.value
+             & (shift_bits == 64u ? 63u : 31u);
+    if (!k) return 0;
+    pl_u32 p = 0u;
+    if (group == 4u) {
+        if (q < k) return 0;
+        p = q - k;
+    } else {
+        p = q + k;
+        if (p >= shift_bits) return 0;
+    }
+    *source = shift_source;
+    *from = p;
+    *to = q;
+    *bits = shift_bits;
+    return 1;
+}
+
 /* XOR x,x has one observable flags result and the constant value zero.  Once
  * normalized, neither the source register nor the original destination is an
  * owner requirement.  Choose the shortest surviving zero publication as the
@@ -11095,6 +12510,7 @@ static int zero_flag_frame_shape(const pl_x86_block *block,
     if (!zero_flag_node_details(&block->plan, final_flag_node, &bits))
         return 0;
     pl_u32 zero = 0u, plain = 0u, anchor = PL_X86_GPR_COUNT;
+    out->projection = PL_X86_GPR_COUNT;
     for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
         pl_operand value = block->plan.locals[local];
         pl_u32 plain_source = 0u, plain_bits = 0u;
@@ -11115,7 +12531,19 @@ static int zero_flag_frame_shape(const pl_x86_block *block,
                 || zero_extend_plain) {
             plain |= 1u << local;
         } else {
-            return 0;
+            pl_operand source;
+            pl_u32 from = 0u, to = 0u, inverse = 0u, projection_width = 0u;
+            if (out->projection < PL_X86_GPR_COUNT
+                    || !bit_projection_value_details(
+                        plan, value, &source, &from, &to, &inverse,
+                        &projection_width))
+                return 0;
+            out->projection = local;
+            out->projection_source = source;
+            out->projection_from = from;
+            out->projection_to = to;
+            out->projection_inverse = inverse;
+            out->projection_bits = projection_width;
         }
     }
     for (pl_u32 local = PL_X86_GPR_COUNT;
@@ -11132,6 +12560,37 @@ static int zero_flag_frame_shape(const pl_x86_block *block,
         if (!next_zero_plain_assignment(&block->plan, pending, &local))
             return 0;
         pending &= ~(1u << local);
+    }
+    if (out->projection < PL_X86_GPR_COUNT) {
+        pl_operand mask_value = {
+            PL_OPERAND_CONST, 1ull << out->projection_to };
+        pl_operand input_value = {
+            PL_OPERAND_CONST, 1ull << out->projection_from };
+        if (!published_operand_local(
+                plan, mask_value, &out->projection_mask_local)
+                || !published_operand_local(
+                    plan, input_value, &out->projection_input_local)
+                || !(plain & (1u << out->projection_mask_local))
+                || !(plain & (1u << out->projection_input_local))
+                || out->projection_mask_local == out->projection
+                || out->projection_input_local == out->projection)
+            return 0;
+        if (out->projection_source.kind == PL_OPERAND_LOCAL
+                && out->projection_source.value < PL_X86_GPR_COUNT) {
+            out->projection_source_local =
+                (pl_u32)out->projection_source.value;
+        } else if (!published_operand_local(
+                       plan, out->projection_source,
+                       &out->projection_source_local)) {
+            return 0;
+        }
+        pl_u32 source = out->projection_source_local;
+        pl_operand publication = plan->locals[source];
+        int identity = publication.kind == PL_OPERAND_LOCAL
+                    && publication.value == source;
+        if (source == out->projection || (zero & (1u << source))
+                || (!identity && !(plain & (1u << source))))
+            return 0;
     }
     out->zero = zero;
     out->plain = plain;
@@ -11168,6 +12627,28 @@ static int measure_direct_zero_flag_frame(
         bytes += encoded;
         ++instructions;
         pending &= ~(1u << local);
+    }
+    if (shape.projection < PL_X86_GPR_COUNT) {
+        pl_u32 projection_encoded = 0u;
+        if (!emit_zero_register(shape.projection, 0, &projection_encoded)
+                || bytes > U32_MAX_VALUE - projection_encoded)
+            return 0;
+        bytes += projection_encoded;
+        ++instructions;
+        if (!emit_test_registers(
+                shape.projection_source_local, shape.projection_input_local,
+                shape.projection_bits, 0, &projection_encoded)
+                || bytes > U32_MAX_VALUE - projection_encoded)
+            return 0;
+        bytes += projection_encoded;
+        ++instructions;
+        if (!emit_conditional_move(
+                shape.projection, shape.projection_mask_local, 64u,
+                shape.projection_inverse ? 4u : 5u, 0, &projection_encoded)
+                || bytes > U32_MAX_VALUE - projection_encoded)
+            return 0;
+        bytes += projection_encoded;
+        ++instructions;
     }
     pl_u32 encoded = 0u;
     pl_operand self = { PL_OPERAND_LOCAL, shape.anchor };
@@ -12978,6 +14459,196 @@ static int write_alu_tree(const pl_x86_block *block,
         return 1;
     if (remaining <= 1u) return 0;
 
+    pl_operand insert_base, insert_inner;
+    pl_u32 insert_width = 0u;
+    if (node_base_lane_insert(&block->plan, value, &insert_base,
+                              &insert_inner, &insert_width)) {
+        pl_x86_native_selection cleared = *selection;
+        cleared.frame_alias_present = 0u;
+        pl_u32 base_written = 0u;
+        if (!write_alu_tree(block, &cleared, destination, insert_base, bits,
+                output_at, remaining - 1u, scratch_mask,
+                output, &base_written))
+            return 0;
+        pl_x86_native_selection aliased = *selection;
+        aliased.frame_alias_value = insert_base.value;
+        aliased.frame_alias_kind = insert_base.kind;
+        aliased.frame_alias_local = (pl_u8)destination;
+        aliased.frame_alias_present = 1u;
+        pl_u32 inner_written = 0u;
+        if (!write_alu_tree(block, &aliased, destination, insert_inner,
+                insert_width, output_at + base_written, remaining - 1u,
+                scratch_mask, output + base_written, &inner_written))
+            return 0;
+        *written = base_written + inner_written;
+        return 1;
+    }
+
+    if (value.kind == PL_OPERAND_NODE && value.value
+            && value.value <= block->plan.node_count
+            && (block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE32_BSWAP
+                || block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE64_BSWAP)) {
+        pl_u32 byte_swap_bits = block->plan.nodes[value.value - 1u].opcode
+                              == PL_OPCODE_LANE32_BSWAP ? 32u : 64u;
+        pl_operand byte_swap_source = block->plan.arguments[
+            block->plan.nodes[value.value - 1u].argument_at];
+        pl_u32 prefix = 0u;
+        if (!write_alu_tree(
+                block, selection, destination, byte_swap_source,
+                byte_swap_bits, output_at, remaining - 1u, scratch_mask,
+                output, &prefix)
+                || !emit_bswap_register(
+                    destination, byte_swap_bits, output + prefix, written))
+            return 0;
+        *written += prefix;
+        return 1;
+    }
+
+    pl_operand tree_shift_source, tree_shift_amount;
+    pl_u32 tree_shift_bits = 0u, tree_shift_group = 0u;
+    if (shift_node_details(&block->plan, value, &tree_shift_source,
+            &tree_shift_amount, &tree_shift_bits, &tree_shift_group)) {
+        pl_u32 shift_prefix = 0u, shift_operation = 0u;
+        if (!write_alu_tree(
+                block, selection, destination, tree_shift_source,
+                tree_shift_bits, output_at, remaining - 1u, scratch_mask,
+                output, &shift_prefix)
+                || !emit_shift_instruction(
+                    destination, tree_shift_amount, tree_shift_bits,
+                    tree_shift_group, output + shift_prefix, &shift_operation))
+            return 0;
+        *written = shift_prefix + shift_operation;
+        return 1;
+    }
+
+    /* Nested conditional select over an incoming condition; mirrors
+     * measure_alu_tree exactly so measured and written spellings match. */
+    boolean_select tree_boolean;
+    condition_value tree_condition;
+    if (value.kind == PL_OPERAND_NODE && value.value
+            && value.value <= block->plan.node_count
+            && (block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE32_SELECT
+                || block->plan.nodes[value.value - 1u].opcode
+                    == PL_OPCODE_LANE64_SELECT)
+            && boolean_select_details(&block->plan, value, &tree_boolean)
+            && condition_value_details(
+                &block->plan, tree_boolean.condition, &tree_condition)
+            && tree_condition.flags.kind == PL_OPERAND_LOCAL
+            && tree_condition.flags.value == PL_X86_RFLAGS_LOCAL) {
+        pl_u32 false_local = 0u;
+        int false_is_destination =
+            (tree_boolean.when_false.kind == PL_OPERAND_LOCAL
+                && tree_boolean.when_false.value == destination)
+            || ((tree_boolean.when_false.kind == PL_OPERAND_NODE
+                    || tree_boolean.when_false.kind == PL_OPERAND_PROJECTION)
+                && published_operand_local(
+                    &block->plan, tree_boolean.when_false, &false_local)
+                && false_local == destination);
+        if (false_is_destination) {
+            pl_u32 candidate_local = PL_X86_GPR_COUNT;
+            if (tree_boolean.when_true.kind == PL_OPERAND_CONST) {
+                for (pl_u32 scratch = 0u;
+                        scratch < PL_X86_GPR_COUNT; ++scratch)
+                    if (scratch != destination
+                            && (scratch_mask & (1u << scratch))) {
+                        candidate_local = scratch;
+                        break;
+                    }
+                if (candidate_local >= PL_X86_GPR_COUNT) return 0;
+                pl_u32 part = 0u;
+                if (!write_alu_tree(
+                        block, selection, candidate_local,
+                        tree_boolean.when_true, tree_boolean.value_bits,
+                        output_at, remaining - 1u,
+                        scratch_mask & ~(1u << candidate_local),
+                        output, &part))
+                    return 0;
+                pl_u32 move_bytes = 0u;
+                if (!emit_conditional_move(
+                        destination, candidate_local,
+                        tree_boolean.value_bits, tree_condition.condition,
+                        output + part, &move_bytes))
+                    return 0;
+                *written = part + move_bytes;
+                return 1;
+            }
+            if (tree_boolean.when_true.kind == PL_OPERAND_LOCAL
+                    && tree_boolean.when_true.value < PL_X86_GPR_COUNT
+                    && tree_boolean.when_true.value != destination) {
+                return 0;
+            }
+            return 0;
+        }
+    }
+
+    condition_value flag_condition;
+    if (condition_value_details(&block->plan, value, &flag_condition)
+            && flag_condition.flags.kind == PL_OPERAND_NODE) {
+        pl_operand compare_left, compare_right;
+        pl_u32 compare_bits = 0u, compare_mode = 0u, compare_carry = 0u;
+        if (flag_operation_details(
+                &block->plan, flag_condition.flags, &compare_left,
+                &compare_right, &compare_bits, &compare_mode, &compare_carry)
+                && !compare_carry
+                && (compare_mode == 0u || compare_mode == 3u)) {
+            physicalize_published_operand(
+                &block->plan, destination, &compare_left);
+            physicalize_published_operand(
+                &block->plan, destination, &compare_right);
+            if (compare_left.kind == PL_OPERAND_LOCAL
+                    && compare_left.value < PL_X86_GPR_COUNT) {
+                pl_operand physical_right = compare_right;
+                pl_u32 at = 0u, part = 0u;
+                if (physical_right.kind == PL_OPERAND_CONST) {
+                    pl_u32 operand_local = destination;
+                    if (operand_local == (pl_u32)compare_left.value) {
+                        operand_local = PL_X86_GPR_COUNT;
+                        for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
+                                ++scratch)
+                            if (scratch != destination
+                                    && scratch != (pl_u32)compare_left.value
+                                    && (scratch_mask & (1u << scratch))) {
+                                operand_local = scratch;
+                                break;
+                            }
+                    }
+                    if (operand_local >= PL_X86_GPR_COUNT)
+                        return 0;
+                    if (!write_alu_tree(
+                            block, selection, operand_local, compare_right,
+                            compare_bits, output_at, remaining - 1u,
+                            operand_local == destination
+                                ? scratch_mask
+                                : scratch_mask & ~(1u << operand_local),
+                            output, &part))
+                        return 0;
+                    at += part;
+                    physical_right = (pl_operand){ PL_OPERAND_LOCAL,
+                                                   operand_local };
+                } else if (!(physical_right.kind == PL_OPERAND_LOCAL
+                        && physical_right.value < PL_X86_GPR_COUNT)) {
+                    return 0;
+                }
+                if (!emit_flag_coordinate(
+                        (pl_u32)compare_left.value, physical_right,
+                        compare_bits, compare_mode == 0u, 0u,
+                        output + at, &part))
+                    return 0;
+                at += part;
+                if (!emit_set_condition(
+                        destination, flag_condition.condition,
+                        output + at, &part))
+                    return 0;
+                at += part;
+                *written = at;
+                return 1;
+            }
+        }
+    }
+
     pl_operand shared_seed, shared_amount;
     pl_u32 shared_group = 0u, shared_mode = 0u;
     if (shared_shift_join(&block->plan, value, bits, &shared_seed,
@@ -14298,6 +15969,25 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                    | (1u << flag_select.candidate)
                    | (1u << flag_select.flag_owner));
     }
+    if (!has_flag_select && !has_generation_join) {
+        flag_value_preload preload;
+        if (flag_value_preload_shape(
+                &block->plan, pending, final_flag_node,
+                frame_sources, frame_dependencies, &preload)) {
+            pl_x86_native_selection pre = *selection;
+            pre.frame_alias_present = 0u;
+            pl_u32 written = 0u;
+            if (write_alu_tree(
+                    block, &pre, preload.destination,
+                    preload.tree, preload.tree_bits, at,
+                    block->plan.node_count + 1u, preload.scratch,
+                    output + at, &written)) {
+                at += written;
+                frame_sources[preload.destination] = preload.other_source;
+                frame_dependencies[preload.destination] = 0u;
+            }
+        }
+    }
     while (pending || standalone_flags_pending) {
         select_generation_group select_group;
         if (select_generation_group_shape(&block->plan, pending,
@@ -14553,6 +16243,8 @@ static int write_direct_alu_frame(const pl_x86_block *block,
             }
             at += written;
         } else if (value.kind == PL_OPERAND_NODE) {
+            value = publication_for_emission(
+                &block->plan, value, final_flag_node);
             affine_lea form = { 0 };
             pl_u32 source = 0u, bits = 0u, written = 0u;
             pl_operand shift_source, shift_amount;
@@ -14563,8 +16255,22 @@ static int write_direct_alu_frame(const pl_x86_block *block,
             pl_operand bit_source;
             pl_u32 bit = 0u;
             pl_operand flag_left, flag_right;
+            pl_operand lane_inner;
+            pl_u32 lane_width = 0u;
             pl_u32 flag_mode = 0u, preserves_carry = 0u;
-            if (final_flag_node && flag_value_operation_details(
+            if (final_flag_node && value.value == final_flag_node
+                    && alu_node_semantics(
+                        &block->plan, final_flag_node, &flag_left,
+                        &flag_right, &bits, &flag_mode,
+                        &preserves_carry)) {
+                if (!write_alu_pair(
+                        block, selection, local,
+                        flag_left, flag_right, bits, flag_mode,
+                        preserves_carry, at,
+                        block->plan.node_count + 1u, scratch_mask,
+                        output + at, &written))
+                    return PL_ERROR_X86_SELECT;
+            } else if (final_flag_node && flag_value_operation_details(
                     &block->plan, final_flag_node, value,
                     &flag_left, &flag_right, &bits,
                     &flag_mode, &preserves_carry)) {
@@ -14617,8 +16323,8 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                         block->plan.node_count + 1u, scratch_mask,
                         output + at, &written))
                     return PL_ERROR_X86_SELECT;
-            } else if (conditional_select_details(
-                    &block->plan, value, local, &select)) {
+            } else if (conditional_select_details_inner(
+                    &block->plan, value, local, 1, &select)) {
                 if (select.candidate_local == local
                         || !conditional_compare_survives_current(
                             &select, local))
@@ -14643,6 +16349,74 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                         output + at, &written)))
                     return PL_ERROR_X86_SELECT;
                 at += written;
+                pl_u32 cand_local = select.candidate_local;
+                if (select.candidate_immediate) {
+                    cand_local = PL_X86_GPR_COUNT;
+                    for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
+                            ++scratch)
+                        if (scratch != local
+                                && (scratch_mask & (1u << scratch))) {
+                            cand_local = scratch;
+                            break;
+                        }
+                    if (cand_local >= PL_X86_GPR_COUNT)
+                        return PL_ERROR_X86_SELECT;
+                    if (!write_alu_tree(
+                            block, selection, cand_local,
+                            select.candidate_value, select.value_bits, at,
+                            block->plan.node_count + 1u,
+                            scratch_mask & ~(1u << cand_local),
+                            output + at, &written))
+                        return PL_ERROR_X86_SELECT;
+                    at += written;
+                }
+                if (select.compare_left_seed
+                        || select.compare_right_seed) {
+                    pl_u32 used = scratch_mask;
+                    if (select.compare_left_seed) {
+                        pl_u32 scratch = PL_X86_GPR_COUNT;
+                        for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
+                            if (s != local && s != cand_local
+                                    && (used & (1u << s))) {
+                                scratch = s;
+                                break;
+                            }
+                        if (scratch >= PL_X86_GPR_COUNT
+                                || !write_alu_tree(
+                                    block, selection, scratch,
+                                    select.compare_left_value,
+                                    select.compare_bits, at,
+                                    block->plan.node_count + 1u,
+                                    used & ~(1u << scratch),
+                                    output + at, &written))
+                            return PL_ERROR_X86_SELECT;
+                        used &= ~(1u << scratch);
+                        select.compare_left_local = scratch;
+                        at += written;
+                    }
+                    if (select.compare_right_seed) {
+                        pl_u32 scratch = PL_X86_GPR_COUNT;
+                        for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
+                            if (s != local && s != cand_local
+                                    && (used & (1u << s))) {
+                                scratch = s;
+                                break;
+                            }
+                        if (scratch >= PL_X86_GPR_COUNT
+                                || !write_alu_tree(
+                                    block, selection, scratch,
+                                    select.compare_right_value,
+                                    select.compare_bits, at,
+                                    block->plan.node_count + 1u,
+                                    used & ~(1u << scratch),
+                                    output + at, &written))
+                            return PL_ERROR_X86_SELECT;
+                        used &= ~(1u << scratch);
+                        select.compare_right.kind = PL_OPERAND_LOCAL;
+                        select.compare_right.value = scratch;
+                        at += written;
+                    }
+                }
                 if (select.has_compare
                         && (select.compare_node != final_flag_node
                             || !flag_node_has_value_publication(
@@ -14654,7 +16428,7 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     at += written;
                 }
                 if (!emit_conditional_move(
-                        local, select.candidate_local,
+                        local, cand_local,
                         select.value_bits, select.condition,
                         output + at, &written))
                     return PL_ERROR_X86_SELECT;
@@ -14662,6 +16436,26 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     &block->plan, value, &source, &bits)) {
                 if (!emit_sign_high(
                         local, source, bits, output + at, &written))
+                    return PL_ERROR_X86_SELECT;
+            } else if (masked_shift_count_details(
+                    &block->plan, value, &shift_source, &shift_amount,
+                    &bits, &shift_group) && local != 1u) {
+                if (!write_alu_tree(
+                        block, selection, local, shift_source, bits, at,
+                        block->plan.node_count + 1u, scratch_mask,
+                        output + at, &written))
+                    return PL_ERROR_X86_SELECT;
+                at += written;
+                if (!write_alu_tree(
+                        block, selection, 1u, shift_amount, 32u, at,
+                        block->plan.node_count + 1u,
+                        scratch_mask & ~(1u << 1u),
+                        output + at, &written))
+                    return PL_ERROR_X86_SELECT;
+                at += written;
+                if (!emit_shift_instruction(
+                        local, (pl_operand){ PL_OPERAND_LOCAL, 1u },
+                        bits, shift_group, output + at, &written))
                     return PL_ERROR_X86_SELECT;
             } else if (shift_node_details(
                     &block->plan, value, &shift_source, &shift_amount,
@@ -14706,6 +16500,35 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                 if (!emit_zero_extend_move(
                         local, source, bits, output + at, &written))
                     return PL_ERROR_X86_SELECT;
+            } else if (in_place_lane_insert(
+                    &block->plan, value, local, &lane_inner, &lane_width)) {
+                pl_u32 insert_bytes = 0u;
+                if (!write_alu_tree(
+                        block, selection, local, lane_inner, lane_width,
+                        at, block->plan.node_count + 1u, scratch_mask,
+                        output + at, &insert_bytes))
+                    return PL_ERROR_X86_SELECT;
+                written = insert_bytes;
+            } else if (value.kind == PL_OPERAND_NODE && value.value
+                    && value.value <= block->plan.node_count
+                    && (block->plan.nodes[value.value - 1u].opcode
+                            == PL_OPCODE_LANE32_BSWAP
+                        || block->plan.nodes[value.value - 1u].opcode
+                            == PL_OPCODE_LANE64_BSWAP)) {
+                pl_u32 bswap_bits = block->plan.nodes[value.value - 1u].opcode
+                                  == PL_OPCODE_LANE32_BSWAP ? 32u : 64u;
+                pl_operand source_operand = block->plan.arguments[
+                    block->plan.nodes[value.value - 1u].argument_at];
+                pl_u32 seed_bytes = 0u;
+                if (!write_alu_tree(
+                        block, selection, local, source_operand, bswap_bits,
+                        at, block->plan.node_count + 1u, scratch_mask,
+                        output + at, &seed_bytes)
+                        || !emit_bswap_register(
+                            local, bswap_bits, output + at + seed_bytes,
+                            &written))
+                    return PL_ERROR_X86_SELECT;
+                written += seed_bytes;
             } else {
                 bits = operand_expression_bits(&block->plan, value, 0u);
                 if (!bits)
@@ -14859,6 +16682,24 @@ static int write_direct_zero_flag_frame(
         if (!emitted) return PL_ERROR_X86_SELECT;
         at += written;
         pending &= ~(1u << local);
+    }
+    if (shape.projection < PL_X86_GPR_COUNT) {
+        pl_u32 projection_written = 0u;
+        if (!emit_zero_register(
+                shape.projection, output + at, &projection_written))
+            return PL_ERROR_X86_SELECT;
+        at += projection_written;
+        if (!emit_test_registers(
+                shape.projection_source_local, shape.projection_input_local,
+                shape.projection_bits, output + at, &projection_written))
+            return PL_ERROR_X86_SELECT;
+        at += projection_written;
+        if (!emit_conditional_move(
+                shape.projection, shape.projection_mask_local, 64u,
+                shape.projection_inverse ? 4u : 5u,
+                output + at, &projection_written))
+            return PL_ERROR_X86_SELECT;
+        at += projection_written;
     }
     pl_u32 written = 0u;
     pl_operand self = { PL_OPERAND_LOCAL, shape.anchor };
@@ -16512,6 +18353,1660 @@ static int measure_direct_live_frame(
     return 1;
 }
 
+/* ---- Shared-DAG frame ----
+ *
+ * A direct frame whose only GPR publications are node values may share every
+ * intermediate once.  The schedule is built in three steps:
+ *
+ * 1. Re-associate every ADD3 whose two operands are already named by an
+ *    earlier binary ADD, so a shared sum is read instead of recomputed:
+ *    ADD3(a,b,c) with d = ADD(x,y), {x,y} subset {a,b,c}, becomes
+ *    ADD(remaining,d).  This is transitive and drops each entry's last use to
+ *    the single node that first consumes it.
+ * 2. Allocate every node once into one of the overwritten output registers.
+ *    A node overwrites an operand register whose value dies here; otherwise a
+ *    free coordinate is used; otherwise the live value with the farthest next
+ *    use is copied aside.  Registers that stay identity publications are never
+ *    written, because the complete-future mask observes them.
+ * 3. Replay the same choices through measure_alu_tree / write_alu_tree with
+ *    transient value aliases, so an operand reads the register the schedule
+ *    actually produced.  The emitted bytes are ordinary x86; no row, table or
+ *    runtime descriptor survives. */
+
+#define PL_X86_SHARED_DAG_MAX_NODES 96u
+#define PL_X86_SHARED_DAG_MAX_ACTIONS 512u
+#define PL_X86_SHARED_DAG_NONE 0xffu
+
+#define PL_X86_SHARED_DAG_NODE_ACTION  0u
+#define PL_X86_SHARED_DAG_SPILL_ACTION 1u
+#define PL_X86_SHARED_DAG_FINAL_ACTION 2u
+#define PL_X86_SHARED_DAG_FLAG_ACTION  3u
+
+typedef struct {
+    pl_u32 kind;
+    pl_u32 node;
+    pl_u32 destination;
+    pl_u32 source;
+    pl_u32 bits;
+    pl_u32 pair_node;
+    pl_operand remaining;
+} shared_dag_action;
+
+typedef struct {
+    pl_u32 count;
+    shared_dag_action action[PL_X86_SHARED_DAG_MAX_ACTIONS];
+} shared_dag_list;
+
+typedef struct {
+    pl_u32 node_count;
+    pl_u32 flag_node;
+    pl_u32 out_mask;
+    pl_u32 final_of_node[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    pl_u32 node_last[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    pl_u32 entry_last[PL_X86_GPR_COUNT];
+    pl_u32 operand_count[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    pl_u32 bits[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    pl_u32 pair_node[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    pl_operand operand[PL_X86_SHARED_DAG_MAX_NODES + 1u][4u];
+} shared_dag_shape;
+
+/* The pair an ADD3 already has as an earlier binary sum, if any. */
+static int shared_dag_add3_pair(const pl_plan *plan, pl_u32 node_number,
+                                pl_u32 *pair_node, pl_operand *remaining,
+                                pl_u32 *bits)
+{
+    if (!plan || !pair_node || !remaining || !bits
+            || node_number < 2u || node_number > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[node_number - 1u];
+    pl_u32 lane = node->opcode == PL_OPCODE_ADD3[0] ? 0u
+                : node->opcode == PL_OPCODE_ADD3[1] ? 1u : 2u;
+    if (lane == 2u || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at)
+        return 0;
+    pl_u32 width = lane == 0u ? 32u : 64u;
+    const pl_operand *argument = plan->arguments + node->argument_at;
+    for (pl_u32 candidate = 1u; candidate < node_number; ++candidate) {
+        pl_operand left, right;
+        pl_u32 candidate_bits = 0u, candidate_mode = 0u;
+        if (!arithmetic_tree_details(
+                plan, (pl_operand){ PL_OPERAND_NODE, candidate },
+                &left, &right, &candidate_bits, &candidate_mode)
+                || candidate_mode != 1u || candidate_bits != width)
+            continue;
+        for (pl_u32 i = 0u; i < 3u; ++i)
+            for (pl_u32 j = i + 1u; j < 3u; ++j) {
+                int match = (equal_operand(argument[i], left)
+                             && equal_operand(argument[j], right))
+                         || (equal_operand(argument[i], right)
+                             && equal_operand(argument[j], left));
+                if (!match) continue;
+                *pair_node = candidate;
+                *remaining = argument[3u - i - j];
+                *bits = width;
+                return 1;
+            }
+    }
+    return 0;
+}
+
+static int shared_dag_shape_build(const pl_x86_block *block,
+                                  shared_dag_shape *shape)
+{
+    if (!block || !shape) return 0;
+    const pl_plan *plan = &block->plan;
+    pl_u32 count = plan->node_count;
+    if (!count || count > PL_X86_SHARED_DAG_MAX_NODES
+            || plan->stack_count || plan->local_count != PL_X86_LOCAL_COUNT)
+        return 0;
+    *shape = (shared_dag_shape){ 0 };
+    shape->node_count = count;
+    for (pl_u32 node = 0u; node <= count; ++node)
+        shape->final_of_node[node] = PL_X86_SHARED_DAG_NONE;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        pl_operand value = plan->locals[local];
+        if (value.kind == PL_OPERAND_LOCAL && value.value == local) continue;
+        if (value.kind != PL_OPERAND_NODE || !value.value || value.value > count)
+            return 0;
+        if (shape->final_of_node[value.value] != PL_X86_SHARED_DAG_NONE)
+            return 0;
+        shape->final_of_node[value.value] = local;
+        shape->out_mask |= 1u << local;
+    }
+    for (pl_u32 local = PL_X86_GPR_COUNT; local < plan->local_count; ++local) {
+        pl_operand value = plan->locals[local];
+        if (value.kind == PL_OPERAND_LOCAL && value.value == local) continue;
+        if (local != PL_X86_RFLAGS_LOCAL
+                || value.kind != PL_OPERAND_NODE || !value.value
+                || value.value > count)
+            return 0;
+        shape->flag_node = (pl_u32)value.value;
+    }
+    if (!shape->out_mask) return 0;
+    for (pl_u32 node = 1u; node <= count; ++node) {
+        shape->pair_node[node] = 0u;
+        if (node == shape->flag_node) {
+            const pl_node *value = &plan->nodes[node - 1u];
+            if (value->argument_at > plan->argument_count
+                    || value->argument_count
+                       > plan->argument_count - value->argument_at
+                    || value->argument_count > 4u)
+                return 0;
+            shape->operand_count[node] = value->argument_count;
+            for (pl_u32 at = 0u; at < value->argument_count; ++at)
+                shape->operand[node][at] =
+                    plan->arguments[value->argument_at + at];
+            continue;
+        }
+        pl_u32 pair = 0u, pair_bits = 0u;
+        pl_operand remaining = { 0 };
+        if (shared_dag_add3_pair(
+                plan, node, &pair, &remaining, &pair_bits)) {
+            shape->pair_node[node] = pair;
+            shape->operand_count[node] = 2u;
+            shape->operand[node][0] = remaining;
+            shape->operand[node][1] =
+                (pl_operand){ PL_OPERAND_NODE, pair };
+            shape->bits[node] = pair_bits;
+            continue;
+        }
+        const pl_node *value = &plan->nodes[node - 1u];
+        if (!value->argument_count
+                || value->argument_at > plan->argument_count
+                || value->argument_count
+                   > plan->argument_count - value->argument_at
+                || value->argument_count > 4u)
+            return 0;
+        shape->operand_count[node] = value->argument_count;
+        for (pl_u32 at = 0u; at < value->argument_count; ++at)
+            shape->operand[node][at] =
+                plan->arguments[value->argument_at + at];
+        pl_u32 node_bits = operand_expression_bits(
+            plan, (pl_operand){ PL_OPERAND_NODE, node }, 0u);
+        if (!node_bits) return 0;
+        shape->bits[node] = node_bits;
+    }
+    for (pl_u32 node = 1u; node <= count; ++node)
+        for (pl_u32 at = 0u; at < shape->operand_count[node]; ++at) {
+            pl_operand operand = shape->operand[node][at];
+            if (operand.kind == PL_OPERAND_NODE
+                    && operand.value && operand.value <= count) {
+                if (node > shape->node_last[operand.value])
+                    shape->node_last[operand.value] = node;
+            } else if (operand.kind == PL_OPERAND_LOCAL
+                    && operand.value < PL_X86_GPR_COUNT) {
+                if (node > shape->entry_last[operand.value])
+                    shape->entry_last[operand.value] = node;
+            }
+        }
+    for (pl_u32 node = 1u; node <= count; ++node)
+        if (shape->final_of_node[node] != PL_X86_SHARED_DAG_NONE)
+            shape->node_last[node] = 0x7fffffffu;
+    return 1;
+}
+
+static pl_u32 shared_dag_holder(pl_operand operand,
+                                const pl_u32 *entry_home,
+                                const pl_u32 *node_home)
+{
+    if (operand.kind == PL_OPERAND_LOCAL
+            && operand.value < PL_X86_GPR_COUNT)
+        return entry_home[operand.value];
+    if (operand.kind == PL_OPERAND_NODE
+            && operand.value <= PL_X86_SHARED_DAG_MAX_NODES)
+        return node_home[operand.value];
+    return PL_X86_SHARED_DAG_NONE;
+}
+
+static pl_u32 shared_dag_last(pl_operand operand, pl_u32 at,
+                              const shared_dag_shape *shape)
+{
+    if (operand.kind == PL_OPERAND_LOCAL
+            && operand.value < PL_X86_GPR_COUNT)
+        return shape->entry_last[operand.value];
+    if (operand.kind == PL_OPERAND_NODE
+            && operand.value <= PL_X86_SHARED_DAG_MAX_NODES)
+        return shape->node_last[operand.value];
+    return at;
+}
+
+static int shared_dag_available(pl_u32 local, pl_u32 at,
+                                const shared_dag_shape *shape,
+                                const pl_u32 *occ_kind,
+                                const pl_u32 *occ_value)
+{
+    if (local >= PL_X86_GPR_COUNT
+            || !(shape->out_mask & (1u << local)))
+        return 0;
+    if (occ_kind[local] == 0u) return 1;
+    if (occ_kind[local] == 2u)
+        return shape->node_last[occ_value[local]] <= at;
+    return shape->entry_last[occ_value[local]] <= at;
+}
+
+static pl_u32 shared_dag_pick_destination(
+    pl_u32 node, pl_u32 at, const shared_dag_shape *shape,
+    const pl_u32 *occ_kind, const pl_u32 *occ_value,
+    const pl_u32 *entry_home, const pl_u32 *node_home)
+{
+    pl_u32 final = shape->final_of_node[node];
+    if (final != PL_X86_SHARED_DAG_NONE
+            && shared_dag_available(final, at, shape, occ_kind, occ_value))
+        return final;
+    /* Prefer a destroying in-place operand that is not reserved for a later
+     * final publication, then one that is, then a free coordinate. */
+    for (pl_u32 pass = 0u; pass < 3u; ++pass)
+        for (pl_u32 at_arg = 0u; at_arg < shape->operand_count[node]; ++at_arg) {
+            pl_operand operand = shape->operand[node][at_arg];
+            pl_u32 holder = shared_dag_holder(operand, entry_home, node_home);
+            if (holder >= PL_X86_GPR_COUNT) continue;
+            if (shared_dag_last(operand, at, shape) > at) continue;
+            if (!shared_dag_available(holder, at, shape, occ_kind, occ_value))
+                continue;
+            pl_u32 reserved = 0u;
+            for (pl_u32 later = at + 1u; later <= shape->node_count; ++later)
+                if (shape->final_of_node[later] == holder
+                        && node_home[later] == PL_X86_SHARED_DAG_NONE) {
+                    reserved = 1u;
+                    break;
+                }
+            if (pass == 0u && reserved) continue;
+            if (pass == 1u && !reserved) continue;
+            return holder;
+        }
+    for (pl_u32 pass = 0u; pass < 2u; ++pass)
+        for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+            if (!shared_dag_available(local, at, shape, occ_kind, occ_value))
+                continue;
+            pl_u32 reserved = 0u;
+            for (pl_u32 later = at + 1u; later <= shape->node_count; ++later)
+                if (shape->final_of_node[later] == local
+                        && node_home[later] == PL_X86_SHARED_DAG_NONE) {
+                    reserved = 1u;
+                    break;
+                }
+            if (pass == 0u && reserved) continue;
+            if (pass == 1u && !reserved) continue;
+            return local;
+        }
+    return PL_X86_SHARED_DAG_NONE;
+}
+
+static int shared_dag_allocate_greedy(const shared_dag_shape *shape,
+                                      shared_dag_list *list, pl_u32 *stage)
+{
+    if (stage) *stage = 0u;
+    if (!shape || !list) return 0;
+    pl_u32 count = shape->node_count;
+    pl_u32 occ_kind[PL_X86_GPR_COUNT] = { 0u };
+    pl_u32 occ_value[PL_X86_GPR_COUNT] = { 0u };
+    pl_u32 entry_home[PL_X86_GPR_COUNT];
+    pl_u32 node_home[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        entry_home[local] = local;
+        occ_kind[local] = 1u;
+        occ_value[local] = local;
+    }
+    for (pl_u32 node = 0u; node <= count; ++node)
+        node_home[node] = PL_X86_SHARED_DAG_NONE;
+    list->count = 0u;
+#define SHD_PUSH(action_) do { \
+        if (list->count >= PL_X86_SHARED_DAG_MAX_ACTIONS) return 0; \
+        list->action[list->count++] = (action_); \
+    } while (0)
+    for (pl_u32 node = 1u; node <= count; ++node) {
+        if (node == shape->flag_node) continue;
+        pl_u32 at = node;
+        pl_u32 destination = shared_dag_pick_destination(
+            node, at, shape, occ_kind, occ_value, entry_home, node_home);
+        if (destination == PL_X86_SHARED_DAG_NONE) {
+            if (stage) *stage = 0x10u;
+            /* Copy the live value with the farthest next use aside, then use
+             * its coordinate.  This is the source-level register shuffle. */
+            pl_u32 victim = PL_X86_SHARED_DAG_NONE, victim_last = 0u;
+            for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+                if (!(shape->out_mask & (1u << local))
+                        || occ_kind[local] == 0u)
+                    continue;
+                pl_u32 last = occ_kind[local] == 2u
+                    ? shape->node_last[occ_value[local]]
+                    : shape->entry_last[occ_value[local]];
+                if (last <= at) continue;
+                if (victim == PL_X86_SHARED_DAG_NONE || last > victim_last) {
+                    victim = local;
+                    victim_last = last;
+                }
+            }
+            pl_u32 spare = PL_X86_SHARED_DAG_NONE;
+            for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+                if (local != victim
+                        && shared_dag_available(
+                            local, at, shape, occ_kind, occ_value)) {
+                    spare = local;
+                    break;
+                }
+            if (victim == PL_X86_SHARED_DAG_NONE) {
+                if (stage) *stage = 0x11u;
+                return 0;
+            }
+            if (spare == PL_X86_SHARED_DAG_NONE) {
+                if (stage) *stage = 0x12u;
+                return 0;
+            }
+            shared_dag_action spill = { 0 };
+            spill.kind = PL_X86_SHARED_DAG_SPILL_ACTION;
+            spill.source = victim;
+            spill.destination = spare;
+            SHD_PUSH(spill);
+            occ_kind[spare] = occ_kind[victim];
+            occ_value[spare] = occ_value[victim];
+            if (occ_kind[victim] == 2u)
+                node_home[occ_value[victim]] = spare;
+            else
+                entry_home[occ_value[victim]] = spare;
+            occ_kind[victim] = 0u;
+            destination = shared_dag_pick_destination(
+                node, at, shape, occ_kind, occ_value, entry_home, node_home);
+            if (destination == PL_X86_SHARED_DAG_NONE) {
+                if (stage) *stage = 0x13u;
+                return 0;
+            }
+        }
+        shared_dag_action action = { 0 };
+        action.kind = PL_X86_SHARED_DAG_NODE_ACTION;
+        action.node = node;
+        action.destination = destination;
+        action.bits = shape->bits[node];
+        action.pair_node = shape->pair_node[node];
+        if (action.pair_node)
+            action.remaining = shape->operand[node][0];
+        SHD_PUSH(action);
+        if (occ_kind[destination] == 2u)
+            node_home[occ_value[destination]] = PL_X86_SHARED_DAG_NONE;
+        else if (occ_kind[destination] == 1u)
+            entry_home[occ_value[destination]] = PL_X86_SHARED_DAG_NONE;
+        occ_kind[destination] = 2u;
+        occ_value[destination] = node;
+        node_home[node] = destination;
+    }
+    pl_u8 placed[PL_X86_SHARED_DAG_MAX_NODES + 1u] = { 0 };
+    int progress = 1;
+    while (progress) {
+        progress = 0;
+        for (pl_u32 node = 1u; node <= count; ++node) {
+            pl_u32 final = shape->final_of_node[node];
+            if (final == PL_X86_SHARED_DAG_NONE || placed[node]) continue;
+            pl_u32 home = node_home[node];
+            if (home == final) { placed[node] = 1u; progress = 1; continue; }
+            if (home == PL_X86_SHARED_DAG_NONE) {
+                if (stage) *stage = 0x2100u + node;
+                return 0;
+            }
+            if (!shared_dag_available(
+                    final, count + 1u, shape, occ_kind, occ_value))
+                continue;
+            shared_dag_action move = { 0 };
+            move.kind = PL_X86_SHARED_DAG_FINAL_ACTION;
+            move.node = node;
+            move.destination = final;
+            move.source = home;
+            move.bits = shape->bits[node];
+            SHD_PUSH(move);
+            if (occ_kind[home] == 2u)
+                node_home[occ_value[home]] = PL_X86_SHARED_DAG_NONE;
+            occ_kind[final] = 2u;
+            occ_value[final] = node;
+            node_home[node] = final;
+            if (home != final) occ_kind[home] = 0u;
+            placed[node] = 1u;
+            progress = 1;
+        }
+    }
+    for (pl_u32 node = 1u; node <= count; ++node)
+        if (shape->final_of_node[node] != PL_X86_SHARED_DAG_NONE
+                && !placed[node]) {
+            if (stage) *stage = 0x2300u + node;
+            return 0;
+        }
+    if (shape->flag_node) {
+        shared_dag_action flags = { 0 };
+        flags.kind = PL_X86_SHARED_DAG_FLAG_ACTION;
+        flags.node = shape->flag_node;
+        SHD_PUSH(flags);
+    }
+#undef SHD_PUSH
+    return 1;
+}
+
+static int shared_dag_place_finals(
+    const shared_dag_shape *shape,
+    pl_u32 occ_kind[PL_X86_GPR_COUNT], pl_u32 occ_value[PL_X86_GPR_COUNT],
+    pl_u32 node_home[PL_X86_SHARED_DAG_MAX_NODES + 1u],
+    shared_dag_list *list)
+{
+    pl_u32 count = shape->node_count;
+    /* Every generation that is not an observable final is dead at the
+     * complete-future cut, so its coordinate is a free temporary for placing
+     * the finals.  This is a lifetime fact, not a spill. */
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(shape->out_mask & (1u << local)) || occ_kind[local] == 0u)
+            continue;
+        if (occ_kind[local] == 2u
+                && shape->node_last[occ_value[local]] > count + 1u)
+            continue;
+        if (occ_kind[local] == 2u)
+            node_home[occ_value[local]] = PL_X86_SHARED_DAG_NONE;
+        occ_kind[local] = 0u;
+    }
+    pl_u8 placed[PL_X86_SHARED_DAG_MAX_NODES + 1u] = { 0 };
+    int progress = 1;
+    while (progress) {
+        progress = 0;
+        for (pl_u32 node = 1u; node <= count; ++node) {
+            pl_u32 final = shape->final_of_node[node];
+            if (final == PL_X86_SHARED_DAG_NONE || placed[node]) continue;
+            pl_u32 home = node_home[node];
+            if (home == final) { placed[node] = 1u; progress = 1; continue; }
+            if (home == PL_X86_SHARED_DAG_NONE) return 0;
+            if (!shared_dag_available(
+                    final, count + 1u, shape, occ_kind, occ_value))
+                continue;
+            if (list->count >= PL_X86_SHARED_DAG_MAX_ACTIONS) return 0;
+            shared_dag_action move = { 0 };
+            move.kind = PL_X86_SHARED_DAG_FINAL_ACTION;
+            move.node = node;
+            move.destination = final;
+            move.source = home;
+            move.bits = shape->bits[node];
+            list->action[list->count++] = move;
+            if (occ_kind[home] == 2u)
+                node_home[occ_value[home]] = PL_X86_SHARED_DAG_NONE;
+            occ_kind[final] = 2u;
+            occ_value[final] = node;
+            node_home[node] = final;
+            if (home != final) occ_kind[home] = 0u;
+            placed[node] = 1u;
+            progress = 1;
+        }
+    }
+    for (pl_u32 node = 1u; node <= count; ++node)
+        if (shape->final_of_node[node] != PL_X86_SHARED_DAG_NONE
+                && !placed[node])
+            return 0;
+    return 1;
+}
+
+static pl_u32 shared_dag_step_cost(const shared_dag_shape *shape, pl_u32 node,
+    pl_u32 destination, const pl_u32 *entry_home, const pl_u32 *node_home)
+{
+    if (shape->pair_node[node])
+        return destination == shared_dag_holder(
+            shape->operand[node][0], entry_home, node_home) ? 1u : 2u;
+    for (pl_u32 at = 0u; at < shape->operand_count[node]; ++at) {
+        pl_operand operand = shape->operand[node][at];
+        if (shared_dag_last(operand, node, shape) > node) continue;
+        if (shared_dag_holder(operand, entry_home, node_home) == destination)
+            return 1u;
+    }
+    return 2u;
+}
+
+static int shared_dag_dest_seen(const pl_u32 *out, pl_u32 count, pl_u32 value)
+{
+    for (pl_u32 at = 0u; at < count; ++at)
+        if (out[at] == value) return 1;
+    return 0;
+}
+
+static pl_u32 shared_dag_collect_dests(
+    const shared_dag_shape *shape, pl_u32 node,
+    const pl_u32 *occ_kind, const pl_u32 *occ_value,
+    const pl_u32 *entry_home, const pl_u32 *node_home,
+    pl_u32 *out, pl_u32 capacity)
+{
+    pl_u32 count = 0u;
+    pl_u32 final = shape->final_of_node[node];
+    if (final != PL_X86_SHARED_DAG_NONE
+            && shared_dag_available(final, node, shape, occ_kind, occ_value)
+            && count < capacity)
+        out[count++] = final;
+    for (pl_u32 at = 0u; at < shape->operand_count[node]; ++at) {
+        pl_operand operand = shape->operand[node][at];
+        if (shared_dag_last(operand, node, shape) > node) continue;
+        pl_u32 holder = shared_dag_holder(operand, entry_home, node_home);
+        if (holder >= PL_X86_GPR_COUNT
+                || shared_dag_dest_seen(out, count, holder)
+                || !shared_dag_available(holder, node, shape, occ_kind, occ_value)
+                || count >= capacity)
+            continue;
+        out[count++] = holder;
+    }
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (shared_dag_dest_seen(out, count, local)
+                || !shared_dag_available(local, node, shape, occ_kind, occ_value)
+                || count >= capacity)
+            continue;
+        out[count++] = local;
+    }
+    return count;
+}
+
+typedef struct {
+    const shared_dag_shape *shape;
+    shared_dag_list best;
+    shared_dag_list current;
+    pl_u32 best_cost;
+    pl_u64 expansions;
+    pl_u64 budget;
+    pl_u64 leaves;
+    pl_u64 finals_ok;
+} shared_dag_search;
+
+static void shared_dag_apply_node(
+    pl_u32 node, pl_u32 destination,
+    pl_u32 *occ_kind, pl_u32 *occ_value, pl_u32 *entry_home, pl_u32 *node_home)
+{
+    if (occ_kind[destination] == 2u)
+        node_home[occ_value[destination]] = PL_X86_SHARED_DAG_NONE;
+    else if (occ_kind[destination] == 1u)
+        entry_home[occ_value[destination]] = PL_X86_SHARED_DAG_NONE;
+    occ_kind[destination] = 2u;
+    occ_value[destination] = node;
+    node_home[node] = destination;
+}
+
+static void shared_dag_dfs(shared_dag_search *search,
+    pl_u32 *occ_kind, pl_u32 *occ_value,
+    pl_u32 *entry_home, pl_u32 *node_home,
+    pl_u32 node, pl_u32 cost)
+{
+    const shared_dag_shape *shape = search->shape;
+    pl_u32 count = shape->node_count;
+    if (++search->expansions > search->budget) return;
+    if (cost + (count - node + 1u) >= search->best_cost) return;
+    if (node > count) {
+        ++search->leaves;
+        pl_u32 final_kind[PL_X86_GPR_COUNT], final_value[PL_X86_GPR_COUNT];
+        pl_u32 final_home[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+        for (pl_u32 at = 0u; at < PL_X86_GPR_COUNT; ++at) {
+            final_kind[at] = occ_kind[at];
+            final_value[at] = occ_value[at];
+        }
+        for (pl_u32 at = 0u; at <= count; ++at) final_home[at] = node_home[at];
+        shared_dag_list candidate = search->current;
+        if (!shared_dag_place_finals(
+                shape, final_kind, final_value, final_home, &candidate))
+            return;
+        ++search->finals_ok;
+        pl_u32 total = cost + (candidate.count - search->current.count)
+                     + (shape->flag_node ? 1u : 0u);
+        if (total >= search->best_cost) return;
+        if (shape->flag_node) {
+            if (candidate.count >= PL_X86_SHARED_DAG_MAX_ACTIONS) return;
+            shared_dag_action flags = { 0 };
+            flags.kind = PL_X86_SHARED_DAG_FLAG_ACTION;
+            flags.node = shape->flag_node;
+            candidate.action[candidate.count++] = flags;
+        }
+        search->best = candidate;
+        search->best_cost = total;
+        return;
+    }
+    if (node == shape->flag_node) {
+        shared_dag_dfs(search, occ_kind, occ_value,
+            entry_home, node_home, node + 1u, cost);
+        return;
+    }
+    pl_u32 dests[8];
+    pl_u32 dest_count = shared_dag_collect_dests(shape, node,
+        occ_kind, occ_value, entry_home, node_home, dests, 8u);
+    if (!dest_count) {
+        pl_u32 victim = PL_X86_SHARED_DAG_NONE, victim_last = 0u;
+        for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+            if (!(shape->out_mask & (1u << local)) || occ_kind[local] == 0u)
+                continue;
+            pl_u32 last = occ_kind[local] == 2u
+                ? shape->node_last[occ_value[local]]
+                : shape->entry_last[occ_value[local]];
+            if (last <= node) continue;
+            if (victim == PL_X86_SHARED_DAG_NONE || last > victim_last) {
+                victim = local;
+                victim_last = last;
+            }
+        }
+        if (victim == PL_X86_SHARED_DAG_NONE) return;
+        for (pl_u32 spare = 0u; spare < PL_X86_GPR_COUNT; ++spare) {
+            if (spare == victim
+                    || !shared_dag_available(
+                        spare, node, shape, occ_kind, occ_value))
+                continue;
+            pl_u32 spare_kind[PL_X86_GPR_COUNT], spare_value[PL_X86_GPR_COUNT];
+            pl_u32 spare_entry_home[PL_X86_GPR_COUNT];
+            pl_u32 spare_node_home[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+            for (pl_u32 at = 0u; at < PL_X86_GPR_COUNT; ++at) {
+                spare_kind[at] = occ_kind[at];
+                spare_value[at] = occ_value[at];
+                spare_entry_home[at] = entry_home[at];
+            }
+            for (pl_u32 at = 0u; at <= count; ++at)
+                spare_node_home[at] = node_home[at];
+            if (search->current.count >= PL_X86_SHARED_DAG_MAX_ACTIONS) return;
+            shared_dag_action spill = { 0 };
+            spill.kind = PL_X86_SHARED_DAG_SPILL_ACTION;
+            spill.source = victim;
+            spill.destination = spare;
+            search->current.action[search->current.count++] = spill;
+            spare_kind[spare] = spare_kind[victim];
+            spare_value[spare] = spare_value[victim];
+            if (spare_kind[victim] == 2u)
+                spare_node_home[spare_value[victim]] = spare;
+            else
+                spare_entry_home[spare_value[victim]] = spare;
+            spare_kind[victim] = 0u;
+            shared_dag_dfs(search, spare_kind, spare_value,
+                spare_entry_home, spare_node_home, node, cost + 1u);
+            --search->current.count;
+            return;
+        }
+        return;
+    }
+    for (pl_u32 at = 0u; at < dest_count; ++at) {
+        pl_u32 destination = dests[at];
+        pl_u32 step = shared_dag_step_cost(shape, node, destination,
+            entry_home, node_home);
+        pl_u32 next_kind[PL_X86_GPR_COUNT], next_value[PL_X86_GPR_COUNT];
+        pl_u32 next_entry_home[PL_X86_GPR_COUNT];
+        pl_u32 next_node_home[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+        for (pl_u32 copy = 0u; copy < PL_X86_GPR_COUNT; ++copy) {
+            next_kind[copy] = occ_kind[copy];
+            next_value[copy] = occ_value[copy];
+            next_entry_home[copy] = entry_home[copy];
+        }
+        for (pl_u32 copy = 0u; copy <= count; ++copy)
+            next_node_home[copy] = node_home[copy];
+        if (search->current.count >= PL_X86_SHARED_DAG_MAX_ACTIONS) return;
+        shared_dag_action action = { 0 };
+        action.kind = PL_X86_SHARED_DAG_NODE_ACTION;
+        action.node = node;
+        action.destination = destination;
+        action.bits = shape->bits[node];
+        action.pair_node = shape->pair_node[node];
+        if (action.pair_node)
+            action.remaining = shape->operand[node][0];
+        search->current.action[search->current.count++] = action;
+        shared_dag_apply_node(node, destination,
+            next_kind, next_value, next_entry_home, next_node_home);
+        shared_dag_dfs(search, next_kind, next_value,
+            next_entry_home, next_node_home, node + 1u, cost + step);
+        --search->current.count;
+    }
+}
+
+static int shared_dag_allocate(const shared_dag_shape *shape,
+                               shared_dag_list *list, pl_u32 *stage)
+{
+    if (!shape || !list) return 0;
+    if (shared_dag_allocate_greedy(shape, list, stage)) {
+        if (stage) *stage = 0u;
+        return 1;
+    }
+    pl_u32 count = shape->node_count;
+    pl_u32 occ_kind[PL_X86_GPR_COUNT] = { 0u };
+    pl_u32 occ_value[PL_X86_GPR_COUNT] = { 0u };
+    pl_u32 entry_home[PL_X86_GPR_COUNT];
+    pl_u32 node_home[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        entry_home[local] = local;
+        occ_kind[local] = 1u;
+        occ_value[local] = local;
+    }
+    for (pl_u32 node = 0u; node <= count; ++node)
+        node_home[node] = PL_X86_SHARED_DAG_NONE;
+    shared_dag_search search;
+    search.shape = shape;
+    search.best_cost = 0xffffffffu;
+    search.current.count = 0u;
+    search.expansions = 0u;
+    search.budget = 50000000u;
+    search.leaves = 0u;
+    search.finals_ok = 0u;
+    shared_dag_dfs(&search, occ_kind, occ_value, entry_home, node_home, 1u, 0u);
+    if (search.best_cost == 0xffffffffu) {
+        if (stage) *stage = 0x40u;
+        return 0;
+    }
+    *list = search.best;
+    if (stage) *stage = 0u;
+    return 1;
+}
+
+static void shared_dag_set_aliases(pl_x86_native_selection *selection,
+                                   pl_u32 count, const pl_u32 *entry_home,
+                                   const pl_u32 *node_home)
+{
+    selection->value_alias_count = 0u;
+    for (pl_u32 node = 1u; node <= count
+            && selection->value_alias_count < PL_X86_VALUE_ALIAS_COUNT;
+            ++node) {
+        if (node_home[node] == PL_X86_SHARED_DAG_NONE) continue;
+        pl_u32 at = selection->value_alias_count++;
+        selection->value_alias_kind[at] = PL_OPERAND_NODE;
+        selection->value_alias_value[at] = node;
+        selection->value_alias_local[at] = (pl_u8)node_home[node];
+    }
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT
+            && selection->value_alias_count < PL_X86_VALUE_ALIAS_COUNT;
+            ++local) {
+        if (entry_home[local] == PL_X86_SHARED_DAG_NONE
+                || entry_home[local] == local)
+            continue;
+        pl_u32 at = selection->value_alias_count++;
+        selection->value_alias_kind[at] = PL_OPERAND_LOCAL;
+        selection->value_alias_value[at] = local;
+        selection->value_alias_local[at] = (pl_u8)entry_home[local];
+    }
+}
+
+static int shared_dag_replay(const pl_x86_block *block,
+                             pl_x86_native_selection *selection,
+                             const shared_dag_shape *shape,
+                             const shared_dag_list *list,
+                             const pl_x86_frontend *frontend,
+                             pl_u8 *output, pl_u32 *bytes, pl_u32 *work)
+{
+    pl_u32 count = shape->node_count;
+    pl_u32 occ_kind[PL_X86_GPR_COUNT] = { 0u };
+    pl_u32 occ_value[PL_X86_GPR_COUNT] = { 0u };
+    pl_u32 entry_home[PL_X86_GPR_COUNT];
+    pl_u32 node_home[PL_X86_SHARED_DAG_MAX_NODES + 1u];
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        entry_home[local] = local;
+        occ_kind[local] = 1u;
+        occ_value[local] = local;
+    }
+    for (pl_u32 node = 0u; node <= count; ++node)
+        node_home[node] = PL_X86_SHARED_DAG_NONE;
+    pl_u32 at = 0u, total_work = 0u;
+    for (pl_u32 index = 0u; index < list->count; ++index) {
+        const shared_dag_action *action = &list->action[index];
+        shared_dag_set_aliases(selection, count, entry_home, node_home);
+        pl_u32 written = 0u, pieces = 0u, step_work = 0u;
+        if (action->kind == PL_X86_SHARED_DAG_NODE_ACTION) {
+            if (action->pair_node) {
+                if (action->remaining.kind == PL_OPERAND_CONST)
+                    return 0;
+                pl_u32 remaining_home = shared_dag_holder(
+                    action->remaining, entry_home, node_home);
+                pl_u32 pair_home = node_home[action->pair_node];
+                if (remaining_home >= PL_X86_GPR_COUNT
+                        || pair_home >= PL_X86_GPR_COUNT)
+                    return 0;
+                pieces = 0u;
+                if (action->destination != remaining_home
+                        && !emit_gpr_move(
+                            action->destination, remaining_home,
+                            action->bits, output ? output + at : 0, &pieces))
+                    return 0;
+                pl_u32 add_bytes = 0u;
+                if (!emit_alu_instruction(
+                        action->destination,
+                        (pl_operand){ PL_OPERAND_LOCAL, pair_home },
+                        action->bits, 1u, 0u,
+                        output ? output + at + pieces : 0, &add_bytes))
+                    return 0;
+                written = pieces + add_bytes;
+                step_work = action->destination == remaining_home ? 1u : 2u;
+            } else {
+                pl_operand value = { PL_OPERAND_NODE, action->node };
+                if (frontend) {
+                    int measured = measure_alu_tree(
+                        frontend, block, selection, action->destination,
+                        value, action->bits, at, count + 1u, 0u,
+                        &written, &step_work);
+                    if (measured <= 0) return 0;
+                } else {
+                    if (!write_alu_tree(
+                            block, selection, action->destination, value,
+                            action->bits, at, count + 1u, 0u,
+                            output + at, &written))
+                        return 0;
+                    step_work = 1u;
+                }
+            }
+            if (occ_kind[action->destination] == 2u)
+                node_home[occ_value[action->destination]]
+                    = PL_X86_SHARED_DAG_NONE;
+            else if (occ_kind[action->destination] == 1u)
+                entry_home[occ_value[action->destination]]
+                    = PL_X86_SHARED_DAG_NONE;
+            occ_kind[action->destination] = 2u;
+            occ_value[action->destination] = action->node;
+            node_home[action->node] = action->destination;
+        } else if (action->kind == PL_X86_SHARED_DAG_SPILL_ACTION) {
+            if (!emit_gpr_move(
+                    action->destination, action->source, 64u,
+                    output ? output + at : 0, &written))
+                return 0;
+            step_work = 1u;
+            occ_kind[action->destination] = occ_kind[action->source];
+            occ_value[action->destination] = occ_value[action->source];
+            if (occ_kind[action->source] == 2u)
+                node_home[occ_value[action->source]] = action->destination;
+            else
+                entry_home[occ_value[action->source]] = action->destination;
+            occ_kind[action->source] = 0u;
+        } else if (action->kind == PL_X86_SHARED_DAG_FINAL_ACTION) {
+            if (!emit_gpr_move(
+                    action->destination, action->source, action->bits,
+                    output ? output + at : 0, &written))
+                return 0;
+            step_work = 1u;
+            if (occ_kind[action->source] == 2u)
+                node_home[occ_value[action->source]] = PL_X86_SHARED_DAG_NONE;
+            occ_kind[action->destination] = 2u;
+            occ_value[action->destination] = action->node;
+            node_home[action->node] = action->destination;
+            if (action->source != action->destination)
+                occ_kind[action->source] = 0u;
+        } else {
+            standalone_flag_publication publication;
+            if (!standalone_flag_publication_details(
+                    &block->plan, action->node, &publication)
+                    || !emit_standalone_flag_publication(
+                        &publication, output ? output + at : 0, &written))
+                return 0;
+            step_work = 1u;
+        }
+        if (written > U32_MAX_VALUE - at
+                || step_work > U32_MAX_VALUE - total_work)
+            return PL_ERROR_X86_SELECT;
+        at += written;
+        total_work += step_work;
+    }
+    *bytes = at;
+    *work = total_work;
+    return 1;
+}
+
+static int consumed_flag_depends(const pl_plan *plan, pl_operand value,
+                                 pl_u32 result_node, pl_u32 depth);
+static pl_u32 consumed_flag_node_rank(const pl_plan *plan, pl_u32 local);
+
+/* ---- Transient seed before a flag producer ----
+ *
+ * A final `X86_ALU` publication can have one operand that is an intermediate
+ * reading an entry register which another pending publication overwrites.
+ * Emitting the flag producer first would lose the flags; emitting the
+ * clobbering publication first would lose the entry.  Capture the intermediate
+ * once in a transient output coordinate whose final value is independent, then
+ * run the other publications, then the flag producer, then close the transient
+ * with a flag-preserving (const/copy/insert) publication of its own. */
+
+typedef struct {
+    pl_u32 flag_node;
+    pl_u32 destination;
+    pl_u32 transient;
+    pl_u32 seed_bits;
+    pl_u32 bits, mode, preserves_carry;
+    pl_operand seed;
+    pl_u32 others;
+} transient_seed_frame;
+
+static int transient_seed_frame_shape(const pl_x86_block *block,
+                                      transient_seed_frame *out)
+{
+    if (!block || !out || block->kind != PL_X86_BLOCK_DIRECT
+            || (block->flow != PL_X86_FLOW_NEXT
+                && block->flow != PL_X86_FLOW_JUMP)
+            || (block->flow == PL_X86_FLOW_JUMP
+                && block->successor_count != 1u)
+            || block->dynamic_target || block->has_predicate
+            || block->has_fault_predicate
+            || block->machine_operation != PL_X86_MACHINE_NONE
+            || block->plan.stack_count
+            || block->plan.local_count != PL_X86_LOCAL_COUNT)
+        return 0;
+    const pl_plan *plan = &block->plan;
+    pl_operand flag_value = plan->locals[PL_X86_RFLAGS_LOCAL];
+    if (flag_value.kind != PL_OPERAND_NODE || !flag_value.value
+            || flag_value.value > plan->node_count)
+        return 0;
+    pl_u32 destination = 0u, bits = 0u, mode = 0u, preserves_carry = 0u;
+    pl_operand left, right;
+    if (!alu_node_details(
+            plan, (pl_u32)flag_value.value, &destination, &left, &right,
+            &bits, &mode, &preserves_carry)
+            || destination >= PL_X86_GPR_COUNT || preserves_carry)
+        return 0;
+    if (!publication_is_flag_result(
+            plan, plan->locals[destination], (pl_u32)flag_value.value))
+        return 0;
+    pl_u32 changed = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        pl_operand value = plan->locals[local];
+        if (value.kind == PL_OPERAND_LOCAL && value.value == local) continue;
+        changed |= 1u << local;
+    }
+    if (!(changed & (1u << destination))) return 0;
+    pl_operand seed;
+    if (left.kind == PL_OPERAND_LOCAL && left.value == destination
+            && right.kind == PL_OPERAND_NODE) {
+        seed = right;
+    } else if (right.kind == PL_OPERAND_LOCAL && right.value == destination
+            && left.kind == PL_OPERAND_NODE) {
+        seed = left;
+    } else {
+        return 0;
+    }
+    if (!seed.value || seed.value > plan->node_count) return 0;
+    pl_u32 commutative = (mode == 0u || mode == 1u || mode == 5u || mode == 6u);
+    if (!commutative
+            && !(left.kind == PL_OPERAND_LOCAL
+                 && left.value == destination))
+        return 0;
+    pl_u32 seed_sources = 0u, seed_dependencies = 0u;
+    if (!operand_frame_source_law(
+            plan, seed, &seed_sources, &seed_dependencies)
+            || (seed_dependencies & changed))
+        return 0;
+    /* The intermediate must not already be an architectural publication. */
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+        if ((changed & (1u << local))
+                && plan->locals[local].kind == PL_OPERAND_NODE
+                && plan->locals[local].value == seed.value)
+            return 0;
+    pl_u32 transient = PL_X86_GPR_COUNT;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(changed & (1u << local)) || local == destination) continue;
+        pl_operand value = plan->locals[local];
+        if (consumed_flag_depends(plan, value, (pl_u32)seed.value,
+                plan->node_count + 1u))
+            continue;
+        if (frame_local_publication_clobbers_flags(plan, local)) continue;
+        if (transient == PL_X86_GPR_COUNT
+                || consumed_flag_node_rank(plan, local)
+                   > consumed_flag_node_rank(plan, transient))
+            transient = local;
+    }
+    if (transient >= PL_X86_GPR_COUNT) return 0;
+    pl_u32 others = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(changed & (1u << local)) || local == destination
+                || local == transient)
+            continue;
+        if (consumed_flag_depends(plan, plan->locals[local],
+                (pl_u32)seed.value, plan->node_count + 1u))
+            return 0;
+        if (consumed_flag_depends(plan, plan->locals[local],
+                (pl_u32)flag_value.value, plan->node_count + 1u))
+            return 0;
+        others |= 1u << local;
+    }
+    pl_u32 seed_bits = operand_expression_bits(plan, seed, 0u);
+    if (!seed_bits) return 0;
+    *out = (transient_seed_frame){ 0 };
+    out->flag_node = (pl_u32)flag_value.value;
+    out->destination = destination;
+    out->transient = transient;
+    out->seed_bits = seed_bits;
+    out->bits = bits;
+    out->mode = mode;
+    out->preserves_carry = preserves_carry;
+    out->seed = seed;
+    out->others = others;
+    return 1;
+}
+
+static int measure_direct_transient_seed_frame(
+    const pl_x86_frontend *frontend, const pl_x86_block *block,
+    pl_x86_native_selection *selection)
+{
+    if (!frontend || !block || !selection) return 0;
+    transient_seed_frame shape;
+    if (!transient_seed_frame_shape(block, &shape)) return 0;
+    const pl_plan *plan = &block->plan;
+    pl_u32 bytes = 0u, work = 0u;
+    pl_u32 part = 0u, part_work = 0u;
+    selection->frame_alias_present = 0u;
+    if (measure_alu_tree(
+            frontend, block, selection, shape.transient, shape.seed,
+            shape.seed_bits, bytes, plan->node_count + 1u, 0u,
+            &part, &part_work) <= 0)
+        return 0;
+    bytes += part;
+    work += part_work;
+    selection->frame_alias_value = shape.seed.value;
+    selection->frame_alias_kind = shape.seed.kind;
+    selection->frame_alias_local = (pl_u8)shape.transient;
+    selection->frame_alias_present = 1u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(shape.others & (1u << local))) continue;
+        pl_operand value = plan->locals[local];
+        pl_u32 value_bits = operand_expression_bits(plan, value, 64u);
+        if (measure_alu_tree(
+                frontend, block, selection, local, value, value_bits,
+                bytes, plan->node_count + 1u, 0u,
+                &part, &part_work) <= 0)
+            return 0;
+        bytes += part;
+        work += part_work;
+    }
+    part = 0u;
+    if (!emit_alu_instruction(
+            shape.destination,
+            (pl_operand){ PL_OPERAND_LOCAL, shape.transient },
+            shape.bits, shape.mode, shape.preserves_carry, 0, &part)
+            || bytes > U32_MAX_VALUE - part)
+        return 0;
+    bytes += part;
+    ++work;
+    if (measure_alu_tree(
+            frontend, block, selection, shape.transient,
+            plan->locals[shape.transient],
+            operand_expression_bits(plan, plan->locals[shape.transient], 64u),
+            bytes, plan->node_count + 1u, 0u, &part, &part_work) <= 0)
+        return 0;
+    bytes += part;
+    work += part_work;
+    int aliases = alias_source_address_fields(frontend, block, selection);
+    if (aliases <= 0) return aliases;
+    if (block->flow == PL_X86_FLOW_JUMP) {
+        pl_u32 branch_bytes = block->relax_short_control ? 5u : 2u;
+        int status = append_control_fixup(
+            frontend, block, selection,
+            (pl_u8)(block->relax_short_control ? 4u : 1u),
+            bytes + 1u, bytes + branch_bytes, block->successor[0]);
+        if (status) return status;
+        bytes += branch_bytes;
+        ++work;
+    }
+    selection->output_bytes = bytes;
+    selection->output_instructions = work;
+    selection->supported = 1u;
+    selection->direct_frame = 1u;
+    selection->direct_transient_seed_frame = 1u;
+    selection->reason = PL_X86_NATIVE_SELECT_READY;
+    return 1;
+}
+
+static int write_direct_transient_seed_frame(
+    const pl_x86_block *block,
+    const pl_x86_native_selection *selection, pl_u8 *output)
+{
+    if (!block || !selection || !selection->direct_transient_seed_frame
+            || !output)
+        return PL_ERROR_X86_SELECT;
+    transient_seed_frame shape;
+    if (!transient_seed_frame_shape(block, &shape))
+        return PL_ERROR_X86_SELECT;
+    const pl_plan *plan = &block->plan;
+    pl_x86_native_selection mutable = *selection;
+    pl_u32 at = 0u, written = 0u;
+    mutable.frame_alias_present = 0u;
+    if (!write_alu_tree(
+            block, &mutable, shape.transient, shape.seed, shape.seed_bits,
+            at, plan->node_count + 1u, 0u, output + at, &written))
+        return PL_ERROR_X86_SELECT;
+    at += written;
+    mutable.frame_alias_value = shape.seed.value;
+    mutable.frame_alias_kind = shape.seed.kind;
+    mutable.frame_alias_local = (pl_u8)shape.transient;
+    mutable.frame_alias_present = 1u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(shape.others & (1u << local))) continue;
+        pl_operand value = plan->locals[local];
+        pl_u32 value_bits = operand_expression_bits(plan, value, 64u);
+        if (!write_alu_tree(
+                block, &mutable, local, value, value_bits, at,
+                plan->node_count + 1u, 0u, output + at, &written))
+            return PL_ERROR_X86_SELECT;
+        at += written;
+    }
+    written = 0u;
+    if (!emit_alu_instruction(
+            shape.destination,
+            (pl_operand){ PL_OPERAND_LOCAL, shape.transient },
+            shape.bits, shape.mode, shape.preserves_carry,
+            output + at, &written))
+        return PL_ERROR_X86_SELECT;
+    at += written;
+    if (!write_alu_tree(
+            block, &mutable, shape.transient, plan->locals[shape.transient],
+            operand_expression_bits(plan, plan->locals[shape.transient], 64u),
+            at, plan->node_count + 1u, 0u, output + at, &written))
+        return PL_ERROR_X86_SELECT;
+    at += written;
+    if (block->flow == PL_X86_FLOW_JUMP) {
+        pl_u32 branch_bytes = block->relax_short_control ? 5u : 2u;
+        if (at > selection->output_bytes
+                || selection->output_bytes - at != branch_bytes)
+            return PL_ERROR_X86_SELECT;
+        output[at++] = block->relax_short_control ? 0xe9u : 0xebu;
+        for (pl_u32 byte = 1u; byte < branch_bytes; ++byte)
+            output[at++] = 0u;
+    }
+    return at == selection->output_bytes ? 0 : PL_ERROR_X86_SELECT;
+}
+
+/* ---- Consumed flag-result frame ----
+ *
+ * The final observable conditions can belong to an ALU result that is not
+ * itself an architectural output: the result feeds later publications.  Emit
+ * the independent publications first, then the ALU that produces the observed
+ * flags, then only affine or copy publications over that result.  LEA and MOV
+ * preserve the arithmetic flags, so the emitted flag word is the ALU's own.
+ * This covers the common `sub`/`add` result whose value is consumed by a
+ * following address computation while the flags remain live. */
+
+typedef struct {
+    pl_u32 flag_node;
+    pl_u32 result_node;
+    pl_u32 result_register;
+    pl_operand left, right;
+    pl_u32 bits, mode, preserves_carry;
+    pl_u32 before_mask;
+    pl_u32 after_mask;
+} consumed_flag_frame;
+
+static int consumed_flag_depends(const pl_plan *plan, pl_operand value,
+                                 pl_u32 result_node, pl_u32 depth)
+{
+    if (!depth) return 0;
+    if (value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 0;
+    if (value.value == result_node) return 1;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if (node->argument_at > plan->argument_count
+            || node->argument_count
+               > plan->argument_count - node->argument_at)
+        return 0;
+    for (pl_u32 at = 0u; at < node->argument_count; ++at)
+        if (consumed_flag_depends(
+                plan, plan->arguments[node->argument_at + at],
+                result_node, depth - 1u))
+            return 1;
+    return 0;
+}
+
+static int collect_consumed_affine(
+    const pl_plan *plan, pl_operand value, pl_u32 bits, pl_u32 remaining,
+    pl_u32 result_node, pl_u32 result_register, affine_lea *out)
+{
+    if (!plan || !out || !remaining) return 0;
+    if (value.kind == PL_OPERAND_CONST) {
+        out->displacement += value.value;
+        return 1;
+    }
+    if (value.kind == PL_OPERAND_LOCAL) {
+        if (value.value >= PL_X86_GPR_COUNT) return 0;
+        return append_affine_local(out, (pl_u32)value.value, 0u);
+    }
+    if (value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 0;
+    if (value.value == result_node)
+        return append_affine_local(out, result_register, 0u);
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if (node->argument_at > plan->argument_count
+            || node->argument_count
+               > plan->argument_count - node->argument_at)
+        return 0;
+    if (node->argument_count == 3u
+            && (node->opcode == PL_OPCODE_ADD3[0]
+                || node->opcode == PL_OPCODE_ADD3[1])) {
+        if ((node->opcode == PL_OPCODE_ADD3[0] ? 32u : 64u) != bits)
+            return 0;
+        for (pl_u32 at = 0u; at < 3u; ++at)
+            if (!collect_consumed_affine(
+                    plan, plan->arguments[node->argument_at + at],
+                    bits, remaining - 1u, result_node, result_register, out))
+                return 0;
+        return 1;
+    }
+    pl_operand source, amount;
+    pl_u32 shift_bits = 0u, group = 0u;
+    if (shift_node_details(
+            plan, value, &source, &amount, &shift_bits, &group)
+            && shift_bits == bits && group == 4u
+            && amount.kind == PL_OPERAND_CONST && amount.value <= 3u) {
+        pl_operand leaf = source;
+        if (leaf.kind == PL_OPERAND_NODE && leaf.value == result_node) {
+            leaf = (pl_operand){ PL_OPERAND_LOCAL, result_register };
+        } else if (leaf.kind == PL_OPERAND_NODE) {
+            pl_u32 owner = PL_X86_GPR_COUNT;
+            if (!published_operand_local(plan, leaf, &owner))
+                return 0;
+            leaf = (pl_operand){ PL_OPERAND_LOCAL, owner };
+        }
+        if (leaf.kind != PL_OPERAND_LOCAL) return 0;
+        return append_affine_local(
+            out, (pl_u32)leaf.value, (pl_u32)amount.value);
+    }
+    /* An equal published owner already names the register. */
+    {
+        pl_u32 owner = PL_X86_GPR_COUNT;
+        if (published_operand_local(plan, value, &owner))
+            return append_affine_local(out, owner, 0u);
+    }
+    pl_operand left, right;
+    pl_u32 node_bits = 0u, mode = 0u;
+    if (arithmetic_tree_details(
+            plan, value, &left, &right, &node_bits, &mode)
+            && mode == 1u && node_bits == bits)
+        return collect_consumed_affine(
+                   plan, left, bits, remaining - 1u, result_node,
+                   result_register, out)
+            && collect_consumed_affine(
+                   plan, right, bits, remaining - 1u, result_node,
+                   result_register, out);
+    return 0;
+}
+
+static int consumed_flag_frame_shape(const pl_x86_block *block,
+                                     consumed_flag_frame *out)
+{
+    if (!block || !out || block->kind != PL_X86_BLOCK_DIRECT
+            || (block->flow != PL_X86_FLOW_NEXT
+                && block->flow != PL_X86_FLOW_JUMP)
+            || (block->flow == PL_X86_FLOW_JUMP
+                && block->successor_count != 1u)
+            || block->dynamic_target || block->has_predicate
+            || block->has_fault_predicate
+            || block->machine_operation != PL_X86_MACHINE_NONE
+            || block->plan.stack_count
+            || block->plan.local_count != PL_X86_LOCAL_COUNT)
+        return 0;
+    const pl_plan *plan = &block->plan;
+    pl_operand flag_value = plan->locals[PL_X86_RFLAGS_LOCAL];
+    if (flag_value.kind != PL_OPERAND_NODE || !flag_value.value
+            || flag_value.value > plan->node_count)
+        return 0;
+    pl_operand result, prior;
+    pl_operand left, right;
+    pl_u32 bits = 0u, mode = 0u, preserves_carry = 0u;
+    if (!flag_result_operand(
+            plan, (pl_u32)flag_value.value, &result, &prior)
+            || result.kind != PL_OPERAND_NODE || !result.value
+            || result.value > plan->node_count
+            || !flag_operation_details(
+                plan, flag_value, &left, &right, &bits, &mode,
+                &preserves_carry)
+            || preserves_carry
+            || left.kind != PL_OPERAND_LOCAL
+            || left.value >= PL_X86_GPR_COUNT
+            || (right.kind != PL_OPERAND_LOCAL
+                && right.kind != PL_OPERAND_CONST)
+            || (right.kind == PL_OPERAND_LOCAL
+                && right.value >= PL_X86_GPR_COUNT))
+        return 0;
+    pl_u32 result_node = (pl_u32)result.value;
+    pl_u32 before = 0u, after = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        pl_operand value = plan->locals[local];
+        if (value.kind == PL_OPERAND_LOCAL && value.value == local) continue;
+        if (value.kind == PL_OPERAND_NODE && value.value == result_node)
+            return 0;   /* an ordinary publication already owns it */
+        if (consumed_flag_depends(
+                plan, value, result_node, plan->node_count + 1u))
+            after |= 1u << local;
+        else
+            before |= 1u << local;
+    }
+    if (!after) return 0;
+    if (before & (1u << (pl_u32)left.value)) return 0;
+    if (right.kind == PL_OPERAND_LOCAL
+            && (before & (1u << (pl_u32)right.value)))
+        return 0;
+    *out = (consumed_flag_frame){ 0 };
+    out->flag_node = (pl_u32)flag_value.value;
+    out->result_node = result_node;
+    out->result_register = (pl_u32)left.value;
+    out->left = left;
+    out->right = right;
+    out->bits = bits;
+    out->mode = mode;
+    out->preserves_carry = preserves_carry;
+    out->before_mask = before;
+    out->after_mask = after;
+    return 1;
+}
+
+static pl_u32 consumed_flag_node_rank(const pl_plan *plan, pl_u32 local)
+{
+    pl_operand value = plan->locals[local];
+    return value.kind == PL_OPERAND_NODE ? (pl_u32)value.value : 0u;
+}
+
+static int measure_direct_consumed_flag_frame(
+    const pl_x86_frontend *frontend, const pl_x86_block *block,
+    pl_x86_native_selection *selection)
+{
+    if (!frontend || !block || !selection) return 0;
+    consumed_flag_frame shape;
+    if (!consumed_flag_frame_shape(block, &shape)) return 0;
+    const pl_plan *plan = &block->plan;
+    pl_u32 bytes = 0u, work = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(shape.before_mask & (1u << local))) continue;
+        pl_operand value = plan->locals[local];
+        pl_u32 value_bits = operand_expression_bits(plan, value, 64u);
+        pl_u32 part = 0u, part_work = 0u;
+        int measured = measure_alu_tree(
+            frontend, block, selection, local, value, value_bits,
+            bytes, plan->node_count + 1u, 0u, &part, &part_work);
+        if (measured <= 0 || bytes > U32_MAX_VALUE - part)
+            return measured < 0 ? measured : 0;
+        bytes += part;
+        work += part_work;
+    }
+    pl_u32 producer_bytes = 0u;
+    if (!emit_alu_instruction(
+            shape.result_register, shape.right, shape.bits, shape.mode,
+            shape.preserves_carry, 0, &producer_bytes)
+            || bytes > U32_MAX_VALUE - producer_bytes)
+        return 0;
+    bytes += producer_bytes;
+    ++work;
+    pl_u32 order[PL_X86_GPR_COUNT];
+    pl_u32 order_count = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+        if (shape.after_mask & (1u << local)) order[order_count++] = local;
+    for (pl_u32 at = 1u; at < order_count; ++at) {
+        pl_u32 key = order[at];
+        pl_u32 rank = consumed_flag_node_rank(plan, key);
+        pl_u32 slot = at;
+        while (slot && consumed_flag_node_rank(plan, order[slot - 1u]) > rank) {
+            order[slot] = order[slot - 1u];
+            --slot;
+        }
+        order[slot] = key;
+    }
+    for (pl_u32 at = 0u; at < order_count; ++at) {
+        pl_u32 local = order[at];
+        pl_operand value = plan->locals[local];
+        pl_u32 part = 0u;
+        int is_copy = 0;
+        pl_u32 source = PL_X86_GPR_COUNT;
+        if (value.kind == PL_OPERAND_LOCAL && value.value < PL_X86_GPR_COUNT
+                && value.value != local) {
+            is_copy = 1;
+            source = (pl_u32)value.value;
+        } else if (value.kind == PL_OPERAND_NODE
+                && value.value == shape.result_node) {
+            is_copy = 1;
+            source = shape.result_register;
+        } else if (value.kind == PL_OPERAND_NODE) {
+            pl_u32 owner = PL_X86_GPR_COUNT;
+            if (published_operand_local(plan, value, &owner)
+                    && owner != local) {
+                is_copy = 1;
+                source = owner;
+            }
+        }
+        int emitted = 0;
+        if (is_copy) {
+            pl_u32 value_bits = operand_expression_bits(plan, value, 64u);
+            emitted = emit_gpr_move(
+                local, source, value_bits, 0, &part);
+        } else {
+            affine_lea form = { 0 };
+            pl_u32 value_bits = operand_expression_bits(plan, value, 0u);
+            if (value_bits
+                    && collect_consumed_affine(
+                        plan, value, value_bits,
+                        plan->node_count + 1u, shape.result_node,
+                        shape.result_register, &form)) {
+                if (form.count == 1u && !form.scale_log2[0]
+                        && form.local[0] == local && !form.displacement)
+                    emitted = 1, part = 0u;
+                else
+                    emitted = emit_affine_lea_width(
+                        local, form, value_bits, 0, &part);
+            }
+        }
+        if (!emitted || bytes > U32_MAX_VALUE - part
+                || work == U32_MAX_VALUE)
+            return 0;
+        bytes += part;
+        ++work;
+    }
+    int aliases = alias_source_address_fields(frontend, block, selection);
+    if (aliases <= 0) return aliases;
+    if (block->flow == PL_X86_FLOW_JUMP) {
+        pl_u32 branch_bytes = block->relax_short_control ? 5u : 2u;
+        if (bytes > U32_MAX_VALUE - branch_bytes) return PL_ERROR_X86_SELECT;
+        int status = append_control_fixup(
+            frontend, block, selection,
+            (pl_u8)(block->relax_short_control ? 4u : 1u),
+            bytes + 1u, bytes + branch_bytes, block->successor[0]);
+        if (status) return status;
+        bytes += branch_bytes;
+        ++work;
+    }
+    selection->output_bytes = bytes;
+    selection->output_instructions = work;
+    selection->supported = 1u;
+    selection->direct_frame = 1u;
+    selection->direct_consumed_flag_frame = 1u;
+    selection->reason = PL_X86_NATIVE_SELECT_READY;
+    return 1;
+}
+
+static int write_direct_consumed_flag_frame(
+    const pl_x86_block *block,
+    const pl_x86_native_selection *selection, pl_u8 *output)
+{
+    if (!block || !selection || !selection->direct_consumed_flag_frame
+            || !output)
+        return PL_ERROR_X86_SELECT;
+    consumed_flag_frame shape;
+    pl_u32 bytes = 0u, work = 0u;
+    pl_x86_native_selection mutable = *selection;
+    if (!consumed_flag_frame_shape(block, &shape))
+        return PL_ERROR_X86_SELECT;
+    /* Re-emit with byte output.  The measure path above is the schedule of
+     * record; repeat the same decisions here. */
+    const pl_plan *plan = &block->plan;
+    pl_u32 at = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(shape.before_mask & (1u << local))) continue;
+        pl_operand value = plan->locals[local];
+        pl_u32 value_bits = operand_expression_bits(plan, value, 64u);
+        pl_u32 written = 0u;
+        if (!write_alu_tree(
+                block, &mutable, local, value, value_bits, at,
+                plan->node_count + 1u, 0u, output + at, &written))
+            return PL_ERROR_X86_SELECT;
+        at += written;
+    }
+    pl_u32 written = 0u;
+    if (!emit_alu_instruction(
+            shape.result_register, shape.right, shape.bits, shape.mode,
+            shape.preserves_carry, output + at, &written))
+        return PL_ERROR_X86_SELECT;
+    at += written;
+    pl_u32 order[PL_X86_GPR_COUNT];
+    pl_u32 order_count = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+        if (shape.after_mask & (1u << local)) order[order_count++] = local;
+    for (pl_u32 index = 1u; index < order_count; ++index) {
+        pl_u32 key = order[index];
+        pl_u32 rank = consumed_flag_node_rank(plan, key);
+        pl_u32 slot = index;
+        while (slot && consumed_flag_node_rank(plan, order[slot - 1u]) > rank) {
+            order[slot] = order[slot - 1u];
+            --slot;
+        }
+        order[slot] = key;
+    }
+    for (pl_u32 index = 0u; index < order_count; ++index) {
+        pl_u32 local = order[index];
+        pl_operand value = plan->locals[local];
+        int is_copy = 0;
+        pl_u32 source = PL_X86_GPR_COUNT;
+        if (value.kind == PL_OPERAND_LOCAL && value.value < PL_X86_GPR_COUNT
+                && value.value != local) {
+            is_copy = 1;
+            source = (pl_u32)value.value;
+        } else if (value.kind == PL_OPERAND_NODE
+                && value.value == shape.result_node) {
+            is_copy = 1;
+            source = shape.result_register;
+        } else if (value.kind == PL_OPERAND_NODE) {
+            pl_u32 owner = PL_X86_GPR_COUNT;
+            if (published_operand_local(plan, value, &owner)
+                    && owner != local) {
+                is_copy = 1;
+                source = owner;
+            }
+        }
+        written = 0u;
+        int emitted = 0;
+        if (is_copy) {
+            pl_u32 value_bits = operand_expression_bits(plan, value, 64u);
+            emitted = emit_gpr_move(
+                local, source, value_bits, output + at, &written);
+        } else {
+            affine_lea form = { 0 };
+            pl_u32 value_bits = operand_expression_bits(plan, value, 0u);
+            if (value_bits
+                    && collect_consumed_affine(
+                        plan, value, value_bits,
+                        plan->node_count + 1u, shape.result_node,
+                        shape.result_register, &form)) {
+                if (form.count == 1u && !form.scale_log2[0]
+                        && form.local[0] == local && !form.displacement)
+                    emitted = 1, written = 0u;
+                else
+                    emitted = emit_affine_lea_width(
+                        local, form, value_bits, output + at, &written);
+            }
+        }
+        if (!emitted) return PL_ERROR_X86_SELECT;
+        at += written;
+    }
+    if (block->flow == PL_X86_FLOW_JUMP) {
+        pl_u32 branch_bytes = block->relax_short_control ? 5u : 2u;
+        if (at > selection->output_bytes
+                || selection->output_bytes - at != branch_bytes)
+            return PL_ERROR_X86_SELECT;
+        output[at++] = block->relax_short_control ? 0xe9u : 0xebu;
+        for (pl_u32 byte = 1u; byte < branch_bytes; ++byte)
+            output[at++] = 0u;
+    }
+    (void)bytes;
+    (void)work;
+    return at == selection->output_bytes ? 0 : PL_ERROR_X86_SELECT;
+}
+
+static int measure_direct_shared_dag_frame(
+    const pl_x86_frontend *frontend, const pl_x86_block *block,
+    pl_x86_native_selection *selection)
+{
+    if (!frontend || !block || !selection) return 0;
+    if (block->flow == PL_X86_FLOW_CONDITIONAL) {
+        pl_x86_block body;
+        pl_u32 condition = 0u;
+        if (!conditional_alu_body(block, &body, &condition)) return 0;
+        int measured = measure_direct_shared_dag_frame(
+            frontend, &body, selection);
+        if (measured <= 0) return measured;
+        pl_u32 tail = block->relax_short_control ? 6u : 2u;
+        pl_u32 bytes = selection->output_bytes;
+        if (bytes > U32_MAX_VALUE - tail
+                || selection->output_instructions == U32_MAX_VALUE)
+            return PL_ERROR_X86_SELECT;
+        int status = append_control_fixup(
+            frontend, block, selection,
+            (pl_u8)(block->relax_short_control ? 4u : 1u),
+            bytes + (block->relax_short_control ? 2u : 1u),
+            bytes + tail, block->successor[0]);
+        if (status) return status;
+        selection->output_bytes = bytes + tail;
+        ++selection->output_instructions;
+        selection->direct_frame = 1u;
+        selection->direct_shared_dag_frame = 1u;
+        selection->reason = PL_X86_NATIVE_SELECT_READY;
+        return 1;
+    }
+    if (block->kind != PL_X86_BLOCK_DIRECT
+            || block->flow != PL_X86_FLOW_NEXT
+            || block->dynamic_target || block->has_predicate
+            || block->has_fault_predicate
+            || block->machine_operation != PL_X86_MACHINE_NONE
+            || block->source_identity)
+        return 0;
+    shared_dag_shape shape;
+    shared_dag_list list;
+    if (!shared_dag_shape_build(block, &shape)
+            || !shared_dag_allocate(&shape, &list, 0))
+        return 0;
+    pl_u32 bytes = 0u, work = 0u;
+    if (!shared_dag_replay(
+            block, selection, &shape, &list, frontend, 0, &bytes, &work)
+            || !bytes || !work)
+        return 0;
+    int aliases = alias_source_address_fields(frontend, block, selection);
+    if (aliases <= 0) return aliases;
+    selection->output_bytes = bytes;
+    selection->output_instructions = work;
+    selection->supported = 1u;
+    selection->direct_frame = 1u;
+    selection->direct_shared_dag_frame = 1u;
+    selection->direct_nested_frame = 1u;
+    selection->reason = PL_X86_NATIVE_SELECT_READY;
+    return 1;
+}
+
+static int write_direct_shared_dag_frame(
+    const pl_x86_block *block,
+    const pl_x86_native_selection *selection, pl_u8 *output)
+{
+    if (!block || !selection || !selection->direct_shared_dag_frame
+            || !output)
+        return PL_ERROR_X86_SELECT;
+    if (block->flow == PL_X86_FLOW_CONDITIONAL) {
+        pl_x86_block body;
+        pl_u32 condition = 0u;
+        pl_u32 tail = block->relax_short_control ? 6u : 2u;
+        if (!conditional_alu_body(block, &body, &condition)
+                || selection->output_bytes < tail)
+            return PL_ERROR_X86_SELECT;
+        pl_x86_native_selection body_selection = *selection;
+        body_selection.output_bytes -= tail;
+        int status = write_direct_shared_dag_frame(
+            &body, &body_selection, output);
+        if (status) return status;
+        pl_u32 at = body_selection.output_bytes;
+        if (block->relax_short_control) output[at++] = 0x0fu;
+        output[at++] = (pl_u8)((block->relax_short_control ? 0x80u : 0x70u)
+                               | condition);
+        while (at < selection->output_bytes) output[at++] = 0u;
+        return 0;
+    }
+    if (block->kind != PL_X86_BLOCK_DIRECT
+            || block->flow != PL_X86_FLOW_NEXT
+            || block->dynamic_target || block->has_predicate
+            || block->has_fault_predicate
+            || block->machine_operation != PL_X86_MACHINE_NONE
+            || block->source_identity)
+        return PL_ERROR_X86_SELECT;
+    shared_dag_shape shape;
+    shared_dag_list list;
+    if (!shared_dag_shape_build(block, &shape)
+            || !shared_dag_allocate(&shape, &list, 0))
+        return PL_ERROR_X86_SELECT;
+    pl_u32 bytes = 0u, work = 0u;
+    pl_x86_native_selection mutable = *selection;
+    if (!shared_dag_replay(
+            block, &mutable, &shape, &list, 0, output, &bytes, &work)
+            || bytes != selection->output_bytes)
+        return PL_ERROR_X86_SELECT;
+    return 0;
+}
+
 int pl_x86_select_candidates(const pl_x86_frontend *frontend,
                              const pl_x86_block_workspace *workspace,
                              const pl_x86_block *block,
@@ -16521,6 +20016,8 @@ int pl_x86_select_candidates(const pl_x86_frontend *frontend,
             || block->end < block->start
             || block->end - block->start > U32_MAX_VALUE)
         return PL_ERROR_X86_SELECT;
+    /* A new block owns a new plan; invalidate the address-definition memo. */
+    if (++source_addr_generation == 0u) ++source_addr_generation;
     pl_u32 source_bytes = (pl_u32)(block->end - block->start);
     *out = (pl_x86_native_candidates){ 0 };
     out->diagnostic.blocking_opcode = U32_MAX_VALUE;
@@ -16598,6 +20095,8 @@ int pl_x86_select_candidates(const pl_x86_frontend *frontend,
             measure_direct_entry_flag_branch,
             measure_direct_compare_branch,
             measure_direct_affine_frame,
+            measure_direct_transient_seed_frame,
+            measure_direct_consumed_flag_frame,
             measure_direct_live_frame,
         };
         for (pl_u32 production = 0u;
@@ -16607,6 +20106,18 @@ int pl_x86_select_candidates(const pl_x86_frontend *frontend,
                 out, frontend, block, source_bytes, grammar[production]);
             if (status) {
                 out->diagnostic_stage = 0x100u + production;
+                return status;
+            }
+        }
+        /* The shared-DAG schedule is a last resort: it changes register
+         * allocation across the whole frame, so it must not compete with a
+         * frame production that already has a fixed local spelling. */
+        if (!out->count) {
+            status = append_normalized_candidate(
+                out, frontend, block, source_bytes,
+                measure_direct_shared_dag_frame);
+            if (status) {
+                out->diagnostic_stage = 0x180u;
                 return status;
             }
         }
@@ -16987,7 +20498,13 @@ int pl_x86_select_write_measured(
         return PL_ERROR_X86_SELECT;
     int status = 0;
     if (selection->output_bytes) {
-        status = selection->direct_condition_carry_frame
+        status = selection->direct_transient_seed_frame
+               ? write_direct_transient_seed_frame(block, selection, output)
+               : selection->direct_consumed_flag_frame
+               ? write_direct_consumed_flag_frame(block, selection, output)
+               : selection->direct_shared_dag_frame
+               ? write_direct_shared_dag_frame(block, selection, output)
+               : selection->direct_condition_carry_frame
                ? write_direct_condition_carry_frame(
                     block, selection, output)
                : selection->direct_mul_add_carry_frame

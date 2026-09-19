@@ -431,8 +431,20 @@ typedef struct {
 
 /* An opened frontend proves the caller-owned image once.  Maps and their
  * linked bytes are immutable until the frontend is discarded. */
+#define PL_X86_FRONTEND_CACHE_ENTRIES 128u
+
 typedef struct {
     const pl_x86_image *image;
+    /* Decoding is a pure function of the immutable image and rip, and one
+     * linked instruction is decoded once per block formation and again for
+     * every candidate and liveness sweep over the same run.  A frontend-local
+     * direct-mapped cache keyed by low rip bits turns that reuse into a slot
+     * probe.  The cache is zeroed by pl_x86_frontend_open and by any
+     * designated initializer, so a frontend that only sets `image` starts cold
+     * and can never return a stale decode. */
+    pl_u64 cache_rip[PL_X86_FRONTEND_CACHE_ENTRIES];
+    pl_u8 cache_valid[PL_X86_FRONTEND_CACHE_ENTRIES];
+    pl_x86_instruction cache_instruction[PL_X86_FRONTEND_CACHE_ENTRIES];
 } pl_x86_frontend;
 
 typedef struct {

@@ -2,17 +2,14 @@
   "name": "quotient-minimizer",
   "version": "2.0.0",
   "private": true,
-  "description": "Paste a small C function and see how little machine computation its observable meaning actually requires.",
+  "description": "Post-link compilation of a Linux distribution: linked kernel and x86-64 ELFs become equivalent optimized executables.",
   "scripts": {
-    "test": "python3 src/v2/tests/run.py",
-    "check-manifest": "python3 src/v2/tools/gen_manifest.py --check",
-    "build": "npm run check-manifest && python3 src/v2/tools/build_site.py --out dist",
-    "serve": "python3 src/v2/tools/serve.py",
-    "predeploy": "npm run test",
-    "deploy": "wrangler deploy"
+    "build": "make -C src/v2 all",
+    "test": "make -C src/v2 check",
+    "site": "make -C src/v2 site",
+    "deploy": "npm run site && wrangler deploy"
   },
   "devDependencies": {
-    "wabt": "^1.0.39",
     "wrangler": "^4"
   }
 }

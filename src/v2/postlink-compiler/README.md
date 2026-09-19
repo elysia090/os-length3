@@ -20,6 +20,15 @@ source -> ordinary compiler/linker -> linked x86-64 ELF
                                              vm.wasm
 ```
 
+This compiler is applied to the whole distribution, not only to a single
+program: the repository's goal is the fixed `development-standard-v1` kernel
+image and every linked `ET_EXEC`/`ET_DYN` in its package closure compiled after
+linking into equivalent, ordinary optimized ELFs before their packages are
+signed, assembled into one root that boots and is measured for canonical size
+and paired native execution. That end-to-end obligation is fixed by
+[`../docs/DISTRIBUTION.md`](../docs/DISTRIBUTION.md) and
+[BENCHMARK.md](BENCHMARK.md); this file describes the compiler itself.
+
 The output is an ordinary independently runnable `ET_EXEC` or `ET_DYN` file.
 Its runtime meaning exists only in standard x86 program segments. Proof values
 are global absolute symbols in `SHT_SYMTAB`; one GNU build-id authenticates the
@@ -73,21 +82,32 @@ non-regression certificate, not a timing claim. The current dynamic fixture is
 
 ## Build and check
 
-On Windows, the C tools and instruction-level checks build natively with
-MSYS2 UCRT64 GCC and GNU Make. From this directory in PowerShell:
+The C tools and instruction-level checks build with a native toolchain and GNU
+make. From this directory on x86-64 Linux, with GCC or Clang and the pinned
+Zydis submodule initialized:
+
+```sh
+git submodule update --init --recursive
+make -j4
+make check
+```
+
+`shift-width-check` and the other instruction checks execute the emitted x86 on
+the build CPU and compare its values and defined flags with the source
+instructions and an independent C reference. They use writable pages only
+during construction, then make them read/execute. A Windows host can run the
+same Makefile with MSYS2 UCRT64 GCC and GNU Make by passing an explicit shell
+and compiler:
 
 ```powershell
 $env:PATH = 'C:\msys64\ucrt64\bin;C:\msys64\usr\bin;' + $env:PATH
 make -j4 SHELL=C:/msys64/usr/bin/bash.exe CC=C:/msys64/ucrt64/bin/gcc.exe AR=C:/msys64/ucrt64/bin/ar.exe all select-x86-check shift-width-check normal-form-check physical-check quotient-check instruction-law-check
 ```
 
-`shift-width-check` executes the emitted x86 on the Windows CPU and compares
-its values and defined flags with source instructions and an independent C
-reference. It uses writable pages only during construction, then makes them
-read/execute. These checks need no WSL or Linux input tree. Full ELF workload
-and distribution benchmarks additionally need the target Linux environment;
-Windows host-tool tests do not satisfy those gates. Keep disposable fixture
-inputs and reports in the repository's Windows `temp/` directory.
+Full ELF workload and distribution comparisons additionally need the fixed
+Linux build environment described in [`../../../data/README.md`](../../../data/README.md);
+a host-tool check is not a distribution benchmark. Keep disposable fixture
+inputs and reports out of tracked paths.
 
 ```sh
 make
