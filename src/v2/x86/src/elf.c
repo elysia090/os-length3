@@ -256,20 +256,26 @@ int pl_elf_code_relocation_population(
         if (section.type != PL_ELF_SECTION_RELA || !section.info)
             continue;
         if (section.info >= image->section_count
-                || section.link >= image->section_count
                 || section.entry_bytes != 24u
                 || section.file_bytes % section.entry_bytes)
             return PL_ERROR_ELF;
+        /* Only relocations whose target section is executable are
+         * construction evidence for this compiler.  A static linked image can
+         * carry symbol-free IRELATIVE entries in `.rela.plt` (`sh_link == 0`)
+         * that patch `.got.plt`; those are not code relocations and must not
+         * require a symbol table. */
         pl_elf_section target;
-        pl_elf_section symbols;
         status = pl_elf_section_read(image, section.info, &target);
-        if (!status)
-            status = pl_elf_section_read(image, section.link, &symbols);
+        if (status) return status;
+        if (!pl_elf_section_is_executable(&target)) continue;
+        if (section.link >= image->section_count)
+            return PL_ERROR_ELF;
+        pl_elf_section symbols;
+        status = pl_elf_section_read(image, section.link, &symbols);
         if (status) return status;
         if (symbols.type != PL_ELF_SECTION_SYMTAB
                 && symbols.type != PL_ELF_SECTION_DYNSYM)
             return PL_ERROR_ELF;
-        if (!pl_elf_section_is_executable(&target)) continue;
         if (out->relocation_records
                 > ~0ull - section.file_bytes / section.entry_bytes)
             return PL_ERROR_ELF_RANGE;
@@ -361,5 +367,41 @@ int pl_elf_relocation_read(const pl_elf_image *image,
     if ((pl_u64)out->symbol_index
             >= symbols.file_bytes / symbols.entry_bytes)
         return PL_ERROR_ELF_RANGE;
+    return 0;
+}
+
+/* Symbol-free RELATIVE/IRELATIVE rows (a RELA section with `sh_link == 0`)
+ * carry no symbol; their only operand is the addend.  This reader accepts that
+ * shape without changing pl_elf_relocation_read, which callers rely on to
+ * enforce a real symbol-table link. */
+int pl_elf_relocation_read_symbol_free(const pl_elf_image *image,
+                                       pl_u32 relocation_section,
+                                       pl_u64 relocation_index,
+                                       pl_elf_relocation *out)
+{
+    if (!image || !out) return PL_ERROR_ELF;
+    pl_elf_section relocations;
+    int status = pl_elf_section_read(image, relocation_section, &relocations);
+    if (status) return status;
+    if (relocations.type != PL_ELF_SECTION_RELA
+            || relocations.entry_bytes != PL_ELF_RELOCATION_BYTES
+            || relocations.file_bytes % relocations.entry_bytes
+            || relocations.info >= image->section_count
+            || relocations.link != 0u
+            || relocation_index
+               >= relocations.file_bytes / relocations.entry_bytes)
+        return PL_ERROR_ELF;
+    pl_u64 at = relocations.file_offset
+              + relocation_index * relocations.entry_bytes;
+    if (!extent_fits(at, PL_ELF_RELOCATION_BYTES, image->length))
+        return PL_ERROR_ELF_RANGE;
+    const pl_u8 *row = image->bytes + at;
+    pl_u64 info = pl_read_u64(row + 8u);
+    out->offset = pl_read_u64(row);
+    out->symbol_index = 0u;
+    out->type = (pl_u32)info;
+    out->addend_bits = pl_read_u64(row + 16u);
+    out->target_section = relocations.info;
+    out->symbol_table_section = 0u;
     return 0;
 }

@@ -1,5 +1,13 @@
 # v2 products
 
+The repository goal is one bootable Linux distribution obtained by post-link
+compilation: the kernel and every linked x86-64 ELF in the fixed profile are
+reduced to equivalent, ordinary, optimized ELF executables, each proved against
+its ordinary linked input, and the result is measured for canonical size and
+paired native execution. `src/v2` holds the products that produce that result:
+the native compiler, the proof and artifact machinery, and the two execution
+projections of the accepted output.
+
 The system has one compiler product and two execution/delivery products over
 one canonical Linux distribution identity:
 

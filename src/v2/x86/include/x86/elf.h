@@ -26,6 +26,9 @@
 #define PL_ELF_SECTION_RELA     4u
 #define PL_ELF_SECTION_NOBITS   8u
 #define PL_ELF_SECTION_DYNSYM  11u
+#define PL_ELF_SECTION_INIT_ARRAY    14u
+#define PL_ELF_SECTION_FINI_ARRAY    15u
+#define PL_ELF_SECTION_PREINIT_ARRAY 16u
 #define PL_ELF_SECTION_ALLOC    2u
 #define PL_ELF_SECTION_EXECUTE  4u
 
@@ -148,5 +151,9 @@ int pl_elf_relocation_read(const pl_elf_image *image,
                            pl_u32 relocation_section,
                            pl_u64 relocation_index,
                            pl_elf_relocation *out);
+int pl_elf_relocation_read_symbol_free(const pl_elf_image *image,
+                                       pl_u32 relocation_section,
+                                       pl_u64 relocation_index,
+                                       pl_elf_relocation *out);
 
 #endif /* X86_ELF_H */

@@ -1,4 +1,32 @@
-# Linux build host on Windows
+# Linux build host
+
+The Alpine 3.24.1 cloud image and its frozen 313-package `installed.lock` are
+the pinned *build host* only. They supply Linux build tools and an execution
+oracle; they are not the product. The product `development-standard-v1` is a
+separate from-source musl closure defined by `../sources.env` and
+`../distribution/package-recipes.sh` (Linux, musl, GCC, binutils, BusyBox,
+apk-tools, s6/s6-rc, ...), with its own signed apk world and service DAG, and
+no bootstrap package is copied into the product root.
+
+`linux.py` is the native-Linux equivalent of `windows.mjs`; it uses a local
+`qemu-system-x86_64` instead of the Windows portable build:
+
+```sh
+python3 data/bootstrap/linux.py prepare   # image/key check, differential disk
+python3 data/bootstrap/linux.py serve     # source.tar, upstream cache, NoCloud seed
+python3 data/bootstrap/linux.py boot      # TCG, SSH forwarded on 127.0.0.1:18022
+python3 data/bootstrap/linux.py ssh ...   # run a command in the guest
+```
+
+`boot` needs user-mode (slirp) networking; the minimal oracle built by
+`../oracle/build-qemu.sh` deliberately disables slirp, so a slirp-enabled
+`qemu-system-x86_64` is required for the host (the Windows portable build
+provides it). After the guest is reachable, place the retained signed APK
+inputs in `/build/bootstrap/packages` and run
+`/build/source/data/bootstrap/install-tools.sh install`; a matching
+`/build/bootstrap/installed.lock` is the environment gate.
+
+## Windows host
 
 The build host is not the development-standard-v1 distribution. It supplies
 Linux build tools and an execution oracle without NixOS, WSL, or a host install.

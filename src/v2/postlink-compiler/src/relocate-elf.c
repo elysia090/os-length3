@@ -365,6 +365,47 @@ int pl_x86_relocate_elf(
     int status = pl_elf_open(input, input_bytes, &elf);
     if (status) return PL_ERROR_X86_RELOCATE;
     *report = (pl_x86_relocation_report){ 0 };
+    /* Construction-relocation coverage for pointer arrays.  A `.init_array`/
+     * `.fini_array`/`.preinit_array` slot holds a function address; if the
+     * image carries no relocation section for that array (a link without
+     * `--emit-relocs`), the slot cannot be projected when code moves and would
+     * be emitted stale.  Refuse only that shape: a self-contained image with
+     * empty or absent pointer arrays (the relocation-free product fixture)
+     * still passes because there is nothing to rewrite. */
+    for (pl_u32 section_index = 0u;
+            section_index < elf.section_count; ++section_index) {
+        pl_elf_section section;
+        if (pl_elf_section_read(&elf, section_index, &section))
+            return PL_ERROR_X86_RELOCATE;
+        if (section.type != PL_ELF_SECTION_INIT_ARRAY
+                && section.type != PL_ELF_SECTION_FINI_ARRAY
+                && section.type != PL_ELF_SECTION_PREINIT_ARRAY)
+            continue;
+        int covered = 0;
+        for (pl_u32 other = 0u;
+                other < elf.section_count && !covered; ++other) {
+            pl_elf_section candidate;
+            if (pl_elf_section_read(&elf, other, &candidate))
+                return PL_ERROR_X86_RELOCATE;
+            if (candidate.type == PL_ELF_SECTION_RELA
+                    && candidate.info == section_index)
+                covered = 1;
+        }
+        if (covered) continue;
+        if (section.entry_bytes != 8u || section.file_bytes % 8u)
+            return PL_ERROR_X86_RELOCATE;
+        pl_u64 count = section.file_bytes / 8u;
+        for (pl_u64 row = 0u; row < count; ++row) {
+            pl_u64 at = section.file_offset + row * 8u;
+            if (at > elf.length || 8u > elf.length - at)
+                return PL_ERROR_X86_RELOCATE;
+            const pl_u8 *bytes = elf.bytes + at;
+            pl_u64 value = 0u;
+            for (pl_u32 byte = 0u; byte < 8u; ++byte)
+                value |= (pl_u64)bytes[byte] << (8u * byte);
+            if (value) return PL_ERROR_X86_RELOCATE;
+        }
+    }
     metadata_rewrite metadata = {
         input, input_bytes, runtime, native,
         output, output_bytes, report
@@ -398,17 +439,34 @@ int pl_x86_relocate_elf(
             allocated_place = !!(target_section.flags
                                   & PL_ELF_SECTION_ALLOC);
         }
+        /* A RELA section without a symbol-table link cannot name a symbol;
+         * static images keep symbol-free IRELATIVE rows in `.rela.plt`
+         * (`sh_link == 0`).  Those rows are resolved from their addend by the
+         * RELATIVE/IRELATIVE path below and must not be read as a symbol. */
+        int has_symbols = 0;
+        if (section.link < elf.section_count) {
+            pl_elf_section symbols;
+            status = pl_elf_section_read(&elf, section.link, &symbols);
+            if (status) return PL_ERROR_X86_RELOCATE;
+            has_symbols = symbols.type == PL_ELF_SECTION_SYMTAB
+                       || symbols.type == PL_ELF_SECTION_DYNSYM;
+        }
         pl_u64 count = section.file_bytes / section.entry_bytes;
         pl_x86_table_cursor table = { 0 };
         for (pl_u64 index = 0u; index < count; ++index) {
             pl_elf_relocation relocation;
-            pl_elf_symbol symbol;
-            status = pl_elf_relocation_read(
-                &elf, section_index, index, &relocation);
-            if (!status)
-                status = pl_elf_symbol_read(
-                    &elf, relocation.symbol_table_section,
-                    relocation.symbol_index, &symbol);
+            pl_elf_symbol symbol = { 0 };
+            if (has_symbols) {
+                status = pl_elf_relocation_read(
+                    &elf, section_index, index, &relocation);
+                if (!status)
+                    status = pl_elf_symbol_read(
+                        &elf, relocation.symbol_table_section,
+                        relocation.symbol_index, &symbol);
+            } else {
+                status = pl_elf_relocation_read_symbol_free(
+                    &elf, section_index, index, &relocation);
+            }
             if (status) return PL_ERROR_X86_RELOCATE;
             ++report->records;
 

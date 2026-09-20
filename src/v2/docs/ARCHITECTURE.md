@@ -623,11 +623,13 @@ multiply by are often dense while the values are not.
 
 ## Running the suite
 
-`tests/run.py` hands test *classes* to a pool of worker processes. `solve` is a
-pure function of its arguments, so `tests/support` memoizes it; the shared
-inputs are solved in parallel up front and the workers are forked afterwards,
-which is what stops each of them from recomputing the twenty examples it
-happens to need. `-j 1` runs the plain serial unittest runner.
+The suite is the native C check population built by [`../Makefile`](../Makefile):
+`make` builds each product and `make check` runs the executable regressions,
+including the instruction-level selection, physical, quotient and ELF-proof
+checks. The Makefile refuses the removed Python routes (`qm/`, `kernel/`,
+`tests/`, `tools/`), so a check pass names exactly one implementation. Full
+ELF workload and distribution comparisons additionally need the Linux build
+environment described in `../../data/README.md`.
 
 ## Why the lowering is an SSA DAG
 

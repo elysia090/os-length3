@@ -1463,6 +1463,7 @@ typedef struct {
     pl_x86_native_selection selection;
     pl_x86_native_fixup fixup;
     pl_u32 rank;
+    pl_u32 bridge_bytes;
     int source_identity;
 } native_relax_candidate;
 
@@ -1553,6 +1554,7 @@ static int relax_candidate_open(native_builder *builder,
             &out->selection);
     if (status || !out->selection.supported)
         return status ? status : PL_ERROR_BLOCK;
+    out->bridge_bytes = bridge_bytes;
     int found = 0;
     for (pl_u32 field = 0u; field < out->selection.fixup_count; ++field) {
         const pl_x86_native_fixup *fixup = &out->selection.fixups[field];
@@ -1649,9 +1651,9 @@ static int relax_candidate_activate(native_builder *builder,
     }
     pl_x86_native_selection relaxed;
     candidate->block.relax_short_control = 1u;
-    int status = pl_x86_select_measure(
-        &builder->frontend, &builder->selection,
-        &candidate->block, &relaxed);
+    int status = select_block_under_limits(
+        builder, &candidate->block,
+        candidate->bridge_bytes ? 1u : 0u, &relaxed);
     if (status || !relaxed.supported
             || relaxed.output_bytes < candidate->selection.output_bytes) {
         if (builder->population) {
@@ -1667,6 +1669,13 @@ static int relax_candidate_activate(native_builder *builder,
     pl_u32 delta = relaxed.output_bytes - candidate->selection.output_bytes;
     bit_clear(builder->function_starts, coordinate);
     bit_clear(builder->relax_large, coordinate);
+    bit_clear(builder->covered, coordinate);
+    /* The three closure-dead bits are a 3-bit rank and must round-trip
+     * exactly through relaxed_delta_at: 000=0, 001=1, 010=2, 100=3, 101=4,
+     * 110=10, with 011 reserved as the zero-growth near-control
+     * representative.  Setting covered for every nonzero delta collapsed
+     * 001/101 (and 010/110) into one state, so a true +1/+2 growth was
+     * decoded as +4/+10. */
     if (!delta) {
         /* 011 is the canonical near-control representative with no growth. */
         bit_set(builder->function_starts, coordinate);
@@ -1675,11 +1684,15 @@ static int relax_candidate_activate(native_builder *builder,
         bit_set(builder->function_starts, coordinate);
     } else if (delta == 2u) {
         bit_set(builder->relax_large, coordinate);
-    } else if (delta == 4u)
+    } else if (delta == 3u) {
+        bit_set(builder->covered, coordinate);
+    } else if (delta == 4u) {
+        bit_set(builder->covered, coordinate);
         bit_set(builder->function_starts, coordinate);
-    else if (delta == 10u)
+    } else if (delta == 10u) {
+        bit_set(builder->covered, coordinate);
         bit_set(builder->relax_large, coordinate);
-    else if (delta != 3u) {
+    } else {
         if (builder->population) {
             builder->population->emit_failure_stage = 242u;
             builder->population->emit_failure_address = candidate->block.start;
@@ -1688,7 +1701,6 @@ static int relax_candidate_activate(native_builder *builder,
         }
         return PL_ERROR_BLOCK;
     }
-    if (delta) bit_set(builder->covered, coordinate);
     if (builder->population)
         ++builder->population->relaxation_widened;
     if (!delta) return 0;

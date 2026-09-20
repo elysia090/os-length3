@@ -701,6 +701,20 @@ static int collect_relocation_targets(const pl_elf_image *image,
             if (!(place.flags & PL_ELF_SECTION_ALLOC)) continue;
             code_place = pl_elf_section_is_executable(&place);
         }
+        /* A RELA section without a symbol-table link cannot name a runtime
+         * function or code address.  Static images keep symbol-free
+         * IRELATIVE rows in `.rela.plt` (`sh_link == 0`) that patch the GOT;
+         * they are not entry construction evidence. */
+        {
+            pl_elf_section symbols;
+            if (section.link >= image->section_count)
+                continue;
+            status = pl_elf_section_read(image, section.link, &symbols);
+            if (status) return status;
+            if (symbols.type != PL_ELF_SECTION_SYMTAB
+                    && symbols.type != PL_ELF_SECTION_DYNSYM)
+                continue;
+        }
         pl_x86_table_cursor table = { 0 };
         int place_referenced_by_code = normalized && !code_place
             && !!(analysis_workspace[section.info >> 3u]

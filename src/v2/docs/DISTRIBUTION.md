@@ -2,6 +2,16 @@
 
 > The implementation may be unusual; Linux semantics are not.
 
+This distribution is the repository's product and its test of the post-link
+compiler. The kernel image and every linked `ET_EXEC`/`ET_DYN` in the fixed
+`development-standard-v1` closure are compiled after linking into equivalent,
+ordinary, independently runnable optimized ELFs, each proved against its
+ordinary linked input, before the owning package is signed. The optimized
+packages are then assembled into one candidate root, and the release must boot
+and show a same-identity reduction in canonical size and paired native
+execution. The rest of this file is the contract that makes that result
+reproducible rather than a demonstration.
+
 ## Character
 
 The distribution is small, fast, quiet, simple, predictable, inspectable, and
