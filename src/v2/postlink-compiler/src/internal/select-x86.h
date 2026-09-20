@@ -106,6 +106,13 @@ typedef struct {
     pl_u8 frame_alias_kind;
     pl_u8 frame_alias_local;
     pl_u8 frame_alias_present;
+    /* The alias a frame's publication loop starts from.  measure and write must
+     * resolve `physicalize_transient_operand` from the same state, so the write
+     * path restores this starting alias instead of inheriting whichever alias
+     * the last measured publication happened to leave in `frame_alias_*`. */
+    pl_u8 frame_alias_frame_kind;
+    pl_u8 frame_alias_frame_local;
+    pl_u8 frame_alias_frame_present;
     /* A shared-DAG schedule keeps an intermediate SSA node or a spilled entry
      * generation in a chosen output register across the whole frame, so
      * operand resolution must see that physical coordinate instead of a plan

@@ -73,6 +73,11 @@ static void clear_block(pl_x86_block *out, pl_u64 start)
     out->machine_operation = PL_X86_MACHINE_NONE;
     out->construction_fields = 0u;
     out->source_identity = 0u;
+    /* Widening a direct rel8 terminal is a layout choice, never part of the
+     * block's semantic identity.  Default to no widening; the native layout
+     * pass sets it explicitly and the canonical short spelling is the
+     * standalone-block default. */
+    out->relax_short_control = 0u;
     out->machine_argument = 0u;
 }
 

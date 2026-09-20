@@ -21,10 +21,29 @@ python3 data/bootstrap/linux.py ssh ...   # run a command in the guest
 `boot` needs user-mode (slirp) networking; the minimal oracle built by
 `../oracle/build-qemu.sh` deliberately disables slirp, so a slirp-enabled
 `qemu-system-x86_64` is required for the host (the Windows portable build
-provides it). After the guest is reachable, place the retained signed APK
-inputs in `/build/bootstrap/packages` and run
+provides it). QEMU 11 resolves slirp through the `subprojects/slirp.wrap`
+git subproject, so a source build must have that checkout available and be
+configured with `--enable-slirp`; `linux.py` then defaults to
+`/tmp/libqm-x86-host/qemu-build-11.1.0/{qemu-system-x86_64,qemu-img,pc-bios}`
+(override with `QM_QEMU`, `QM_QEMU_IMG`, `QM_QEMU_BIOS`). KVM is used
+automatically when `/dev/kvm` is usable, with TCG as the fallback.
+
+The host first populates `data/upstream/` with every archive pinned by
+`../sources.env` (the build host serves this cache over HTTP, so the guest does
+not reach upstream itself):
+
+```sh
+data/fetch-upstream.sh
+```
+
+After the guest is reachable, place the retained signed APK inputs in
+`/build/bootstrap/packages` and run
 `/build/source/data/bootstrap/install-tools.sh install`; a matching
-`/build/bootstrap/installed.lock` is the environment gate.
+`/build/bootstrap/installed.lock` is the environment gate. On the pinned Alpine
+repositories `apk fetch --recursive` supplies the retained inputs; a package the
+repository has superseded (for example an older `ca-certificates`) is fetched by
+its exact filename from the same versioned repository path, or the lock is
+refreshed as described below.
 
 ## Windows host
 
@@ -80,6 +99,15 @@ locks before updating this recipe. Every distribution build entry sources
 `environment.sh`; merely setting an environment flag cannot bypass the check.
 Bootstrap packages are never copied into the product root. Booting this host
 alone does not prove the fixed distribution builds, postlinks, boots, or improves runtime.
+
+The retained signed APK inputs track the current Alpine 3.24 stable point
+release. They were last refreshed on 2026-09-20, which advanced
+`ca-certificates` and `ca-certificates-bundle` to `20260909-r0`; the installed
+population remains 313 packages and the Rust build closure remains 35. A refresh
+is a lock change: `packages.sha256` and `installed.lock` are regenerated
+together with `install-tools.sh resolve`, and `rust.sha256` /
+`rust-installed.lock` with `rust.sh resolve`, then the host copies the new
+locks back beside the recipe.
 
 Git 2.55 also builds a Rust static library. Its build-only tools have a separate
 35-package closure in `rust.world`, `rust.sha256` and `rust-installed.lock`.
