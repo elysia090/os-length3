@@ -45,6 +45,19 @@ guest, and the whole-kernel (743 escapes) and GNU make (49 escapes) scans from
 the 2026-09-13 checkpoint become rerunnable once that linked input is copied
 back.
 
+The build host is also reproduced on a native Linux machine: a locally built
+slirp-enabled QEMU 11.1.0 under KVM (`data/bootstrap/linux.py`, SSH on
+127.0.0.1:18022), `data/fetch-upstream.sh` populating `data/upstream/` from
+`data/sources.env`, and the pinned Alpine 3.24.1 image. The retained signed APK
+inputs were refreshed to the current v3.24 stable point release on 2026-09-20
+(`ca-certificates`/`ca-certificates-bundle` `20260611-r0` -> `20260909-r0`; the
+installed population stays 313, the Rust closure stays 35), giving
+`QM_BOOTSTRAP_ID=df4026a1c7c02b49c8d36782c1a361dca0e89f4616349c42f0458b95fcc15dd9`.
+`build-native.sh` builds the native products and passes every instruction-level
+check in the guest. The toolchain checkpoint
+`x86_64-linux-musl-toolchain-f5e7fa887fa3ce95971c1bd71d46c4581f13250e6dec9733c29b1f71ad401ccb.packages`
+is built, and `data/build.sh` is running against it.
+
 The release-size unit is the single canonical Artifact program word
 (`ARTIFACT.md`), at most 75,000,000 bytes after every linked `ET_EXEC`/`ET_DYN`
 is replaced by its proved optimized ELF. It is not the 564 MB source-archive
@@ -127,21 +140,366 @@ source projection own such blocks; nothing becomes an escape from the cap
 post-link now runs end to end in **about 70 seconds** (was >1h17m) and reaches
 the publication gate.
 
-**Open red: the Pareto-unresolved class (kernel `0xffffffff81397304`, static
-glibc `0x41bb01`).**  Each is a normalized candidate traded against the retained
-source on incomparable cost:
+**Open red: the Pareto-unresolved class (static glibc `0x41bb01`).**  The kernel
+witness `0xffffffff81397304` is resolved.  Its block
+(`mov %r14,%rdx; movabs $0xffffffff00000000,%rcx; and %rcx,%r10; or %rax,%r10;
+mov %r10d,%esi`) derives `esi = low32(rax)`, which the ALU frame published as
+`mov %eax,%esi; and $0xffffffff,%esi`.  The 32-bit all-ones mask is the identity
+on the lane and the publication's own 32-bit move already zero-extends, so
+dropping it turns the normalized candidate from `2/6/24` into `2/5/21`, which
+attains both minima and dominates the source `3/5/22`.
+`lane_identity_mask_details` in `select-x86.c` now recognizes
+`lane{32,64}.and(x, all_ones)` for a register base and emits only the lane-width
+move in both the measure and write paths of the ALU frame.  The remaining
+static witness is glibc `0x41bb01` (`3/11/38` vs `4/7/25`).
 
-| witness | normalized (span/work/bytes) | source (span/work/bytes) |
-| --- | --- | --- |
-| `0xffffffff81397304` | `2/6/24` | `3/5/22` |
-| `0x41bb01` | `3/11/38` | `4/7/25` |
+Two further kernel witnesses were cleared on the way.  `0xffffffff813a13c4`
+(`and $0x20,%eax; mov %eax,%edx; shr $0x5,%dx; and $0x1,%edx`) exposed an
+ALU-frame alias that the measure recorded on the selection and the write then
+inherited: `physicalize_transient_operand` resolved the `lane64.and` base
+through a stale alias and emitted `mov %edx,%eax` before EDX was defined.
+`measure_direct_alu_frame` now records the publication loop's starting alias and
+`write_direct_alu_frame` restores it, so both paths resolve operands from the
+same state and the write reproduces its own measurement.  Kernel post-link then
+reaches a new Pareto witness `0xffffffff813d0a5c` (`3/8/24` versus `4/7/23`),
+and stops at native stage 235.
 
-`pl_x86_candidates_select_joint_minimum` returns `PL_ERROR_X86_PARETO` because
-neither spelling dominates.  The normalized candidate is exhausted by
-materialising the `cmov` compare operands; resolving the class needs a
-multi-select shared-flag handoff (or a cost-canonical choice between the
-shorter-span normalized spelling and the lower-work source).  The earlier
-all-near `control_relaxed_at` diagnostic is gone.
+`0xffffffff813d0a5c`..`0xffffffff813d0a73` (`efi_partition+0x5dc`) is a
+straight-line block of seven source instructions whose plan carries two
+multiply chains: `LANE64_EXTEND32_S`, `lane64.and`, `LANE64_SHL`,
+`X86_SHIFT_FLAGS`, `LANE64_INSERT`, then `MULR`/`MUL_HIGH`/`X86_MUL_FLAGS`
+twice.  The normalized ALU frame reaches `span=3` at `work=8` (24 bytes); the
+retained source is `span=4` at `work=7` (23 bytes).  The exact spelling gap is
+the sign extension: the normalized candidate opens with `mov %ebx,%eax; cltq`
+(two instructions) where the source uses `movslq %ebx,%rax` (one).
+`sign_extend_node`/`emit_sign_extend_move` already produce the one-instruction
+`movslq`, but this publication reaches the frame through a two-instruction
+spelling instead, so the same span-3 schedule costs one extra work and the two
+minima have no joint witness.  The plan holds the sign extension and the 32-bit
+insert as two nodes over the same entry: `node1 = PL_OPCODE_EXTEND32_S(local3)`
+and `node5 = LANE64_INSERT(0, local3, 32)`.  The frame emits
+`mov %ebx,%eax` for the insert (its 32-bit zero-extend) and then `cltq` for the
+`EXTEND32_S`, whose `local3` operand is resolved through the frame alias to the
+insert's RAX result; one `movslq %ebx,%rax` expresses both.  Closing it means
+recovering the joint publication — the frame (or the physical fold) must spend
+one `movslq` when an `EXTEND32_S` and a same-source 32-bit insert are both live
+— and keeping measure and write byte-identical.  A first attempt at a combined
+production did not fire because the `EXTEND32_S` operand is the entry local, not
+the insert node, so the alias, not the operand tree, carries the connection.
+
+The frame's local map for this block is the stronger clue: every one of the
+sixteen GPR locals is live, with `local0 = node3` (the shift),
+`local1 = node5` (the 32-bit insert) and `local6..15` carrying the two multiply
+chains.  `node1` (`EXTEND32_S`) is published to no local at all — it is
+materialized inside a tree, which is what produces `cltq`.  `local1`'s only
+candidate consumers are the `MULR`/`MUL_HIGH` nodes, and neither reads it, so
+the two instructions exist because the complete-future mask keeps `local1`
+live rather than because a real observer needs the zero-extended word.  Every
+one of the plan's twelve nodes has been read: `node2 = and(local6,local7)`,
+`node3 = shl(node2,7)`, `node6 = mulr(local8,node2)`,
+`node7 = mul_high(node2,local8,320)`,
+`node8 = mul_flags(local4,local6,local7,320)`, `node9 = mulr(local7,local8)`,
+`node10 = mul_high(local8,local7,320)`,
+`node11 = mul_flags(local8,local9,local10,320)`, plus `node1`/`node4`/`node5`.
+No consumer reads `node1` or `node5`; they are pure outputs kept live by the
+complete-future mask (`local0` and `local1`).  So the fold is not in the ALU
+frame but in the projection: either the lowering must not keep the 32-bit
+insert live when a signed extension of the same entry is its only sibling
+publication, or the frame must be told that one `movslq` publishes both.  The
+next step is to trace how `pl_x86_block_lower_projected_until`'s live mask
+acquires `local1`, since that mask, not the node graph, is what forces the
+extra work.
+
+That trace is now done.  `pl_x86_native_project_live_outputs` sets
+`forced[state] = all_outputs` for an external block (a successor outside the
+closed image, a dynamic target, or an unclosed arm), and this block exits to
+another function, so every GPR local is live (`live=0x7ffff`).  A reference
+census settles the graph: `node1 = EXTEND32_S(local3)` is read by `node3` and
+`node4`, `node3 = shl(node1,7)` is `local0`, `node4 = shift_flags(node3,...)`,
+and `node5 = insert(0,local3,32)` is `local1`.  The retained source publishes
+the two extensions in **different registers** (`movslq %ebx,%rax` and
+`mov %ebx,%ecx`); the normalized frame serialized both into RAX
+(`mov %ebx,%eax` then `cltq`), so the extension of `node1` was spelled relative
+to the incoming accumulator instead of from its own register.  `write_alu_tree`
+and `measure_alu_tree` now spell a 32-bit `sign_extend_node` operand as the
+direct one-instruction `movslq` **before** `write_alu_seed`/`measure_alu_seed`
+can resolve it through the transient alias, which removes the spurious producer
+and the extra work.  Kernel post-link then clears `0xffffffff813d0a5c` and
+reaches the next Pareto witness `0xffffffff81430efd` (`4/9/27` versus
+`5/7/26`).
+
+`0xffffffff81430efd`..`0xffffffff81430f17` (`xz_dec_lzma2_run+0x6ed`) is a
+seven-instruction block whose plan is
+`node1 = insert(0,local2,32)`, `node2 = add(local15,node1)`,
+`node3 = and(local63,node2)`, `node4 = ADD3(local13,local15,node1)`,
+`node5 = compare(local16,node3,8,...)`.  The normalized candidate publishes
+`node2` and `node4` independently, so it materializes `node1` and
+`add %r15,%rcx` twice (27 bytes, `work=9`, `span=4`); the retained source shares
+`node2` and spends one extra `add %r13,%rcx` (26 bytes, `work=7`, `span=5`).
+`node4` is already an `ADD3` whose two operands (`local15`, `node1`) are exactly
+`node2`, so `shared_dag_add3_pair` re-associates it to `ADD(node2, local13)`.
+The next step is to make the ALU frame actually take that re-association when it
+publishes `node4`, so one `add` covers both nodes.
+
+The re-association alone is not enough.  Neither `node2` nor `node1` is
+published to a local — the plan's only GPR publications are `local0 = node3`
+and `local1 = node4` — so when `node4` is re-associated to `ADD(node2,local13)`
+the frame still materializes `node2` inside `node4`'s tree, and `node3`'s tree
+materializes it a second time.  The retained source keeps `node2` in RCX and
+shares it.  A first attempt added a `shared_dag_add3_pair` case to the frame's
+node fallback in both paths, but it does not fire: a direct probe shows
+`shared_dag_add3_pair` itself returns 0 for `node4` even though
+`node2 = lane64_add(local15,node1)` matches two of `node4`'s operands and
+`arithmetic_tree_details(node2)` should report `mode=1, bits=64`.  The frame
+reaches `shared_dag_add3_pair` only after `collect_native_affine_lea`, which
+already accepts `ADD3(a,b,c)` as one LEA, so the re-association case placed after
+it never fires.  The case now sits ahead of `collect_native_affine_lea` in both
+paths.  Probing the exact witness confirmed the relation is real: for
+`node4 = ADD3[1](local13,local15,node1)` the walk reports
+`arithmetic_tree_details(node2) = 1, mode=1, bits=64` with
+`left=local15, right=node1`, exactly two of `node4`'s operands.  The case still
+did not fire because its guard compared the returned width against the `bits`
+variable, which at that point had not yet been computed for this publication;
+dropping the width guard (the re-association already carries its own width) lets
+the frame take it.  Kernel post-link then clears `0xffffffff81430efd` and reaches
+the next Pareto witness `0xffffffff813fd7ff` (`3/9/29` versus `5/8/24`).
+
+`0xffffffff813fd7ff`..`0xffffffff813fd81c` (`__genradix_ptr_alloc+0xff`) is a
+nine-instruction block with `node1 = shl(local15,1)`,
+`node2 = add(local15,node1)`, `node3 = ADD3_32(local15,node1,node2)`,
+`node4 = and(local16,local3,-16,...)`, `node5 = and(local15,node1)`,
+`node6 = bit_summary(node4,local12,64)` (the `bsr`) and
+`node7 = compare(local16,node5,1552,...)`.  Three no-reassociation candidates
+exist: `span=3` at `work=9` (29 bytes, three independent
+`lea (%r15,%r15,2)`), `span=5` at `work=8` (24 bytes, one shared `lea` plus
+`add %ecx,%ecx`), and the retained source `span=5` at `work=9` (29 bytes).  The
+joint minimum needs `span=3` and `work=8` at once, so the short schedule must
+share the `node1`/`node2`/`node3` family the way the long one does.  `node3` is
+already an `ADD3` whose operands include `node1` and `node2`, so
+`shared_dag_add3_pair` is the same mechanism that closed `0xffffffff81430efd`.
+
+That mechanism is now measured on this witness and it is *not* the fix.
+Instrumenting the exact block shows the helper does fire at `node3`:
+`node3 = ADD3_32(local15, node1, node2)` re-associates to `ADD(node2, node2)`
+(`pair=node2`, `remaining=node2`, `bits=32`), and both measure and write take it,
+yet the ALU candidate stays `span=3`/`work=9`.  Dumping the three candidate byte
+streams explains why.  The ALU frame publishes `local1 = node3` then
+`local2 = node5`, and it already collapses each publication to one instruction:
+`node1`/`node2` become `lea (%r15,%r15,2)` and `node5 = local15 + node1` becomes
+the same `lea (%r15,%r15,2)` (`local15 + 2*local15`), giving 9 instructions in 3
+waves.  The `span=5`/`work=8` candidate is the **`direct_frame`**, which folds the
+`+9` of `node7` into a `lea 0x9(%rcx),%edx` and issues the `bsr` later.  So this
+is not a missing share; it is the genuine span/work tradeoff the Pareto gate is
+for: the short-wave ALU schedule cannot fold the extra displacement without
+adding a wave, and the long-wave direct schedule cannot shorten its dependency
+chain.  Resolving it needs a cost-canonical rule (or a schedule that folds the
+displacement while keeping the `bsr` early), not another re-association.
+
+The contract rules out the easy half of that: `CONTRACT.md` requires `sigma` and
+`tau` to be *independently minimized* by **one** candidate and says that when the
+two minima have no joint witness "the Pareto frontier remains unresolved and
+publication fails", so the gate may not be relaxed to prefer the lower-work
+candidate.  The only admissible fix is a frame that attains `span=3` and
+`work=8` together.  Decoding the two byte streams narrows the required
+production: the direct frame folds `node7`'s compare displacement into
+`lea 0x9(%rcx),%edx` over the already-computed `node5 = 3*local15`, while the
+ALU frame spends its third wave on `bsr` and keeps `node5` as the bare
+`lea (%r15,%r15,2)`; the ALU frame therefore needs a production that both keeps
+the `bsr` early and folds the `+9` into the `node5` publication, or the direct
+frame needs a shorter dependency chain.  Neither has been implemented.
+
+One further measured fact narrows the target.  The retained source computes
+`node5 = 3*r15` into ECX, then `add %ecx,%ecx` and `lea 0x9(%rcx),%edx`, i.e. it
+doubles the value it already holds.  The plan's `node3` is that doubling, and a
+valid pair for it is `node5` (`ADD3(local15,node1,node2)` with
+`local15 + node1 = node5`), which **already has an architectural publication**
+(`local2`).  `shared_dag_add3_pair` scans only `candidate < node_number`, and
+`node5` is node 5 while `node3` is node 3, so the scan can never see it and
+picks the unpublished `node2` instead.  Extending the scan past `node_number` is
+the obvious route, but a first attempt that also preferred published candidates
+**segfaulted** the compiler on the kernel (the emitted `pair`/`remaining` were
+not constrained to the frame's expected ordering), so it was reverted.
+
+The segfault is now explained rather than merely observed.  Printing the ALU
+frame's laws for this exact block gives `changed = 0x27` with
+`L1 (node3) src=0x8000 dep=0x0` and `L2 (node5) src=0x8000 dep=0x0`: both are
+computed from entry local 15 alone, and the frame records **no** relation
+between them.  So a publication that reads `local2` would read a register the
+scheduler never ordered — the crash class.  Any fix must therefore make the
+relation visible to the frame's source laws, not just to the helper.  The
+correct form is a **fold-plane** rewrite: rewrite the local that publishes
+`node3` to `ADD(<the local that publishes node5>, node2)`, so
+`alu_frame_source_laws` yields `dependencies[L1] = bit L2` and
+`next_alu_frame_assignment` orders `local2` before `local1` by the existing
+mechanism.  The invariant this must preserve, and which the failed attempt
+violated: a rewritten publication may reference a **published local** or an
+earlier node, never a later node.  Not yet implemented.
+
+Implemented and measured: `shared_dag_add3_published_pair` finds the pair among
+**published locals** (comparing the ADD3's operands with the operands of the
+published add, never naming a later node), `alu_frame_source_laws` records the
+matching dependency so `next_alu_frame_assignment` orders the pair first, and
+both frame paths take the case ahead of the earlier-node form.  This fires
+(`MPUB/WPUB node=3 pairL=2 bits=32`) and shrinks the ALU candidate for the
+`ADD3` block from 29 to 27 bytes, with no crash, and `make check` plus the
+differential fuzz are green.
+
+A follow-on narrowing was tried and rejected.  `equal_lane_add` recognized that
+an ADD3's remaining operand and its published pair are the same lane add written
+at different widths (`node2 = ALU_REGISTER[1][1](local15,node1)` versus
+`node5 = ALU_IMMEDIATE[0][1](local15,node1)`, equal in the low word), and coerced
+the operand to the pair local to avoid a second materialization.  The condition
+does hold (`eq=1` once the local is resolved through `plan->locals`), but
+applying it globally changed other blocks' schedules: the witness's own ALU
+candidate moved from `span=3` to `span=4`, and it is not sound in general
+because the wide node also feeds a `MUL_HIGH` that observes its high bits.
+Reverted; the tree keeps only the published-pair change.
+
+Correction to the ledger below: the `ADD3` block whose ALU candidate went
+29 -> 27 bytes is `0xffffffff81430efd`, not `0xffffffff813fd7ff`.  The two share
+the `local15`/`node1` shape and were conflated during this work.
+
+The doubling rule was then tried properly and rejected, for a decisive reason.
+`0xffffffff813fd7ff` and `0xffffffff81430efd` have the same `ADD3` shape
+(`ADD3(a,b,c)` with `a+b = c` as a published value), yet they need *different*
+spellings: emitting the doubling (`materialize c; add dst,dst`) clears
+`813fd7ff` but moves `81430efd` from `span=3` to `span=4`, reopening a Pareto
+that was already resolved; emitting the pair-add keeps `81430efd` at `3/9/27`
+but leaves `813fd7ff` unresolved.  Verified both ways by building each variant
+and re-running the kernel: the frontier follows the variant, and reverting
+restores `81430efd` at `3/9/27` with `813fd7ff` back as the witness.  So no
+per-node emission rule can decide this: the correct spelling depends on the
+block's whole schedule.  The fix has to be at **candidate selection** — the ALU
+frame should offer both spellings for the same block and let the existing
+joint-minimum/Pareto gate choose per block — not a single hard-coded branch in
+the frame.
+
+Multi-candidate emission was then attempted and reverted.  The shape was: a
+`add3_double_variant` flag on the selection, the published-pair branch honoring
+it, and a second grammar entry (`measure_direct_alu_frame_doubling`) that sets
+the flag before delegating.  With both entries the stop moved to
+`0xffffffff81430efd`, and the frontier became `4/9/27 4/9/27 5/7/26`: the
+doubling spelling clears `0xffffffff813fd7ff` but makes the previously-resolved
+`0xffffffff81430efd` Pareto-unresolved, so the pair spelling and the doubling
+spelling are needed by *different* blocks and neither may be made global.  The
+work was reverted to the published-pair-only state, which reports one unresolved
+block (`pareto=1 at 0xffffffff813fd7ff`, frontier `3/9/27` vs `5/8/24`).
+
+Two controls separate causes from noise.  Disabling the published-pair branch
+restores `3/9/29`, confirming that branch is a real 2-byte improvement on
+`0xffffffff813fd7ff`.  Adding a second, behaviourally identical
+`measure_direct_alu_frame` entry leaves the decision unchanged (still
+`pareto=1 at 0xffffffff813fd7ff`) and only lengthens the informational frontier
+listing to `3/9/27 3/9/27 5/8/24`, so duplicate entries are harmless and the
+`81430efd` regression is caused by the doubling spelling itself, not by adding a
+grammar row.  `pareto=1` counts blocks, not candidates: at most one block is
+unresolved at a time, and `0xffffffff81430efd` is resolved until the doubling
+spelling disturbs it.
+
+The open design question is therefore narrower than "independent measurement":
+the ALU frame must offer the doubling spelling only to blocks where it wins, and
+the only sound way to know that is to measure both spellings for the block and
+let the joint-minimum gate choose.  That requires the two measurements to not
+perturb each other's schedule — the failing coupling is between the two ALU
+frame spellings for the same block, and it must be removed before the second
+spelling can be registered.
+
+A later attempt to re-add the doubling variant confirmed one practical point and
+failed on another.  Re-splicing the doubling arm into the existing
+`if (!write_alu_pair(...))` in the write path is not viable: the edited control
+flow broke `native stage 228` on an unrelated block (`0xffffffff812be3df`,
+`output=0x401 expected=0xffffffff`).  The doubling arm must be written as a
+complete, byte-symmetric branch in both `measure_direct_alu_frame` and
+`write_direct_alu_frame`, mirroring how the published-pair arm was added, rather
+than patched into the pair call.
+
+Writing it that way — one candidate per block, with the pair arm choosing the
+doubling spelling whenever `remaining` is value-equal to the pair — still
+regressed `0xffffffff81430efd` to unresolved (`4/9/27` vs `5/7/26`) while
+clearing `0xffffffff813fd7ff`.  The decisive observation is that
+`0xffffffff81430efd` **never enters the published-pair branch** (instrumenting
+it prints only `PP start=0xffffffff813fd7ff dbl=1 pairL=2 rem=k3/2 bits=32`), so
+the doubling spelling is not what breaks it: the two-block conflict is
+**indirect**, produced by the changed control flow around the pair arm, not by a
+second spelling for the same node.  That is why every local rule tried so far
+trades the two blocks: the tie is between two *frames'* schedules over the same
+plan, and only the per-block candidate comparison can arbitrate it.  Reverted
+again to the verified published-pair-only state (`pareto=1 at
+0xffffffff813fd7ff`, frontier `3/9/27` vs `5/8/24`).
+
+The mechanism is now localised to a register-owner choice.  The verified ALU
+candidate for `0xffffffff813fd7ff` is
+`bsr r12->rax; lea (r15,r15,2)->edx; lea (r15,r15,2)->ebp; mov edx->ecx;
+add ebp,ecx; mov rbx->rbp; and $-16,rbp; cmp eax,edx; jle` — nine instructions,
+where `edx` and `ebp` hold the **same value** (`3*r15`, nodes 2 and 5) and the
+`mov edx->ecx` is pure overhead.  Materialising that value once and adding it to
+itself would reach `work=7` at the same `span`, i.e. below even the direct
+frame's `work=8`.  The doubling arm was meant to do this but measured
+`span=4`: it materialises into `local1`'s destination, whereas `node2` is
+already in `edx` for the `cmp`, so moving the value late lengthens the chain to
+the compare.  The fix is therefore not "double in the destination" but "reuse
+the register the frame has already chosen for that value, and add in place",
+i.e. an owner/alias decision inside `write_alu_pair` that the scheduler's wave
+assignment must agree with.  Writing the doubling arm by splicing it into the
+existing `if (!write_alu_pair(...))` is not viable — that broke `native stage
+228` on unrelated blocks twice (`0xffffffff812be3df`, `0xffffffff812ce0f5`),
+because the measure and write paths have to change together as complete
+byte-symmetric branches.
+
+The two materialisations are not simply redundant: the plan keeps both
+`local1 = node3` and `local2 = node5` live, and `node7` reads `node5` while
+`node3` is its own publication, so the ALU frame must publish two values even
+though they share the `local15`/`node1` family.  The direct frame avoids the
+second one by folding the compare displacement into a `lea`, at the cost of one
+more wave.  So the joint minimum still needs a schedule that both publishes the
+shared family once and keeps the compare chain short; that is not reachable by a
+local operand-owner change.  (A narrower relaxation of `shared_dag_add3_pair`'s
+width check — accepting a 64-bit pair for a 32-bit `ADD3`, sound because the low
+32 bits of a 64-bit add are the 32-bit add — was applied earlier and changed
+nothing, confirming width was not the blocker.)
+
+Hand calculation now gives the exact minimal schedule, and it is one register
+decision.  Writing the plan as `x = local15`: `N1 = 2x`, `N2 = x + 2x = 3x`
+(64-bit), `N5 = x + 2x = 3x` (32-bit), `N3 = x + 2x + 3x = 6x = N5 + N5`, and
+`N7` compares against `N5`.  `N3 = N5 + N5` because `N2` and `N5` are the same
+value, so `N2` need never be materialised.  The source does exactly this in one
+register: `lea (%r15,%r15,2),%ecx` puts `3x` in ECX, then `add %ecx,%ecx` makes
+`6x` — ECX serves both `N5` and `N3`, and the compare operand is the displaced
+`lea 0x9(%rcx),%edx`.  The ALU frame instead materialises `3x` twice
+(`lea ->edx` for the compare and `lea ->ebp` for the `ADD3` operand) and spends
+a `mov` joining them, which is the whole one-instruction gap at `work=9`.
+The fix is therefore a **destination choice**: publish `local2 = N5` first into
+a register and then emit `local1 = N3` as an in-place `add reg,reg` of that same
+register, rather than materialising `N2` into a separate coordinate.  That is
+`next_alu_frame_assignment` choosing `local2`'s register for `local1`'s
+in-place doubling, with both frame paths emitting it byte-identically; the
+earlier `add3_double_variant` attempt failed because it materialised into
+`local1`'s own destination instead of reusing `local2`'s, which lengthened the
+chain to the compare.
+
+That destination choice was then implemented and measured, and it cannot be made
+to work in the ALU frame.  The change was: the published-pair arm rewrites
+`remaining` to the pair local when the two are value-equal, and
+`write_alu_pair`/`measure_alu_pair` gain an `add`-mode self branch that emits
+`add reg,reg` on the pair's own coordinate.  Result: `0xffffffff813fd7ff`
+clears, but `0xffffffff81430efd` regresses to `4/9/27` (from resolved) and the
+frontier becomes `4/9/27 5/7/26`.  The reason is structural: `node7` reads
+`node5` (`local2`), so doubling `local2` in place destroys a value the compare
+still needs, and the frame must first copy `local2` aside — which is exactly the
+extra instruction and wave.  The source avoids this only because its compare
+operand is derived from the *doubled* value (`lea 0x9(%rcx),%edx`), i.e. its
+`node7` does not read `3x` after the doubling, whereas this plan's `node7` does.
+The change was reverted; the tree keeps the published-pair-only state
+(`pareto=1 at 0xffffffff813fd7ff`, frontier `3/9/27` vs `5/8/24`).
+
+The next step is therefore on the **direct frame**, not the ALU frame.  The
+direct frame already attains `work=8` for this block; its `span=5` comes from
+issuing the `bsr` late and folding `node7`'s displacement into a `lea`.  The
+ALU frame demonstrably reaches `span=3` for the same plan, so the missing
+schedule is the direct frame's publication order with the `bsr` moved early.
+That ordering is decided by `write_direct_frame`'s own pending walk, not by
+`next_alu_frame_assignment`, and it does not touch the `node7` → `node5`
+dependency that blocks the ALU-frame route, so it is the safer target.
 
 **Stage 3, measured performance gate: not started.** Only the tiny real
 workloads above are paired; there are no fixed source identities, canonical
@@ -150,6 +508,53 @@ roots, or `postlink-workloads.tsv` measurements.
 **Stages 4-6, Artifact / Storage / Wasm / VM boot: not started.** The Wasm
 backend still returns `WASM_COMPILER_ERROR_INCOMPLETE`, no release artifact is
 published, and no product boot or browser cold shell has been validated.
+
+## Current work: 2026-09-20 (flag-producer scheduling; make check green)
+
+The native ALU frame could publish a value addition *after* the final flag
+producer while still classifying the addition as flag-preserving. That is only
+true when the emitter spells the addition with `LEA`; an addition whose operand
+tree contains a flag-clobbering instruction (a product, a shift, a subtract) is
+materialized with an ordinary `add`/`adc`. `frame_local_publication_clobbers_flags`
+inspected only the publication's root opcode, so a `sub` flag producer followed
+by an independent `imul`+`add` value tree was emitted as `sub; imul; add; jne`
+and the terminal `jne` read the `add` flags. On a real dynamic PIE loop this
+never terminates; the compiler and `postlink-verify` were both green, so the
+miscompile was silent.
+
+`frame_local_emission_clobbers_flags` now walks the whole operand tree: a node
+already published in another local is a register read and stops the walk, while
+a node materialized as part of this publication contributes its instruction.
+`next_alu_frame_assignment` and both standalone-flag `clobberers` loops use it,
+so the clobbering tree is scheduled before the flag producer. A
+`flag_producer_after_clobbering_add` fixture in `select-x86-check` asserts the
+emitted order (`imul; add; sub; jne`), not only the byte count; disabling the
+walk reproduces the `sub`-first order. `make -k check` is green and the dynamic
+fixture now runs identically to its source.
+
+Two adjacent environment/initialization defects are fixed with it. `clear_block`
+now initializes `relax_short_control` to its canonical short-control default, so
+a caller that lowers a block without a layout pass gets a defined spelling; this
+removed the `select-x86-check` preserved-flag prefix-branch red. Freestanding
+`-nostdlib` fixtures build with `-fno-stack-protector`, because the host
+compiler's default `-fstack-protector-strong` otherwise injects a
+`__stack_chk_fail` reference the fixture cannot resolve.
+
+The remaining reds are the four normalization-escape witnesses
+(`0x4083ba 0x419718 0x44792e 0x4170ca`), the static-glibc Pareto witness
+`0x41bb01` (the kernel witness `0xffffffff81397304` is resolved below), the
+`0xffffffff813a13c4` measure/write divergence it exposes, the measured
+performance gate, Artifact/Storage/Wasm, and the distribution boot.
+
+### Pareto witness resolved: lane identity mask (2026-09-20)
+
+`lane{32,64}.and(x, all_ones)` is the identity on the lane, and a lane-width
+publication's own register move already zero-extends, so the ALU frame's
+redundant mask is dropped by `lane_identity_mask_details` in `select-x86.c`
+(measure and write).  The kernel witness `0xffffffff81397304` moves from
+`2/6/24` to `2/5/21`, which attains both minima and dominates the source
+`3/5/22`, so it no longer returns `PL_ERROR_X86_PARETO`.  The next witness,
+`0xffffffff813a13c4`, is a pre-existing ALU-frame measure/write divergence.
 
 ## Current work: 2026-09-18 (working tree; make check green)
 

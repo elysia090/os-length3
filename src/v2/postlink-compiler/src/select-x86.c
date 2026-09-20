@@ -1,5 +1,7 @@
 #include "internal/select-x86.h"
 
+static int equal_operand(pl_operand left, pl_operand right);
+
 #define U32_MAX_VALUE 0xffffffffu
 #define U64_MAX_VALUE 0xffffffffffffffffull
 #define I32_MAX_VALUE 0x7fffffffu
@@ -2319,6 +2321,50 @@ static int sign_extend_value(const pl_plan *plan, pl_u32 node_number,
     return 1;
 }
 
+/* lane{32,64}.and(x, all_ones) is the identity on that lane: the low word is
+ * unchanged and the lane's own width already zero-extends.  A 32-bit mask over
+ * an arbitrary 64-bit base is only redundant when the publication is emitted
+ * at the same 32-bit width (an ordinary 32-bit register move zero-extends);
+ * the frame therefore drops the mask only for a lane-width publication whose
+ * destination move already performs the narrowing. */
+static int lane_identity_mask_details(const pl_plan *plan, pl_operand value,
+                                      pl_operand *source, pl_u32 *bits)
+{
+    if (!plan || !source || !bits || value.kind != PL_OPERAND_NODE
+            || !value.value || value.value > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    pl_u64 mask = 0u;
+    if (node->opcode == PL_OPCODE_ALU_IMMEDIATE[0][0]) {
+        mask = 0xffffffffull;
+        *bits = 32u;
+    } else if (node->opcode == PL_OPCODE_ALU_IMMEDIATE[1][0]
+            || node->opcode == PL_OPCODE_ALU_REGISTER[1][0]) {
+        /* A lane64 register AND whose second operand is a full-mask constant
+         * is the same lane identity as the immediate spelling. */
+        mask = U64_MAX_VALUE;
+        *bits = 64u;
+    } else {
+        return 0;
+    }
+    if (node->argument_count != 2u
+            || node->argument_at > plan->argument_count
+            || node->argument_count
+               > plan->argument_count - node->argument_at)
+        return 0;
+    const pl_operand *arguments = plan->arguments + node->argument_at;
+    if (arguments[1].kind != PL_OPERAND_CONST || arguments[1].value != mask)
+        return 0;
+    /* Keep the rewrite total: only a register-resident base is guaranteed to
+     * materialize at the lane width without another production's help. */
+    if (arguments[0].kind != PL_OPERAND_LOCAL
+            || arguments[0].value >= PL_X86_GPR_COUNT) {
+        return 0;
+    }
+    *source = arguments[0];
+    return 1;
+}
+
 static int sign_extend_node(const pl_plan *plan, pl_u32 node_number,
                             pl_u32 *source, pl_u32 *bits)
 {
@@ -2844,6 +2890,45 @@ static int alu_frame_source_laws(const pl_plan *plan,
         sources[local] = law & 0xffffu;
         dependencies[local] = law >> 16u;
     }
+    /* An ADD3 whose two operands are exactly the value another local publishes
+     * shares that publication: the frame emits `ADD(pair_local, remaining)`, so
+     * this publication must run after the pair.  Recording the dependency here
+     * is what orders them; naming a *published local* (never a later node) is
+     * the invariant that keeps the operand meaningful. */
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        pl_operand value = plan->locals[local];
+        if (value.kind != PL_OPERAND_NODE || !value.value
+                || value.value > plan->node_count)
+            continue;
+        const pl_node *node = &plan->nodes[value.value - 1u];
+        if ((node->opcode != PL_OPCODE_ADD3[0]
+                && node->opcode != PL_OPCODE_ADD3[1])
+                || node->argument_count != 3u
+                || node->argument_at > plan->argument_count
+                || 3u > plan->argument_count - node->argument_at)
+            continue;
+        const pl_operand *argument = plan->arguments + node->argument_at;
+        for (pl_u32 other = 0u; other < PL_X86_GPR_COUNT; ++other) {
+            if (other == local) continue;
+            pl_operand published = plan->locals[other];
+            if (published.kind != PL_OPERAND_NODE || !published.value
+                    || published.value > plan->node_count)
+                continue;
+            pl_operand left, right;
+            pl_u32 other_bits = 0u, other_mode = 0u;
+            if (!arithmetic_tree_details(plan, published, &left, &right,
+                                         &other_bits, &other_mode)
+                    || other_mode != 1u)
+                continue;
+            for (pl_u32 i = 0u; i < 3u; ++i)
+                for (pl_u32 j = i + 1u; j < 3u; ++j)
+                    if ((equal_operand(argument[i], left)
+                                && equal_operand(argument[j], right))
+                            || (equal_operand(argument[i], right)
+                                && equal_operand(argument[j], left)))
+                        dependencies[local] |= 1u << other;
+        }
+    }
     return 1;
 }
 
@@ -3143,6 +3228,82 @@ static int frame_publication_clobbers_flags(const pl_plan *plan,
     return 1;
 }
 
+/* The flag-preservation answer above is the top-level spelling.  When a value
+ * publication is scheduled after the final flag producer, its whole operand
+ * tree must be flag-preserving, not just its root: an addition is spelled with
+ * LEA only when every operand is itself a register, constant or flag-safe
+ * value.  An addition over a product, a shift or a subtract is materialized
+ * with an ordinary add/adc, so it must be emitted before the flag producer. */
+static int publication_tree_clobbers_flags(const pl_plan *plan,
+                                           pl_operand value,
+                                           pl_u32 destination)
+{
+    if (!plan || value.kind == PL_OPERAND_PROJECTION) return 1;
+    if (value.kind == PL_OPERAND_CONST || value.kind == PL_OPERAND_LOCAL)
+        return 0;
+    if (value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 1;
+    /* A node already published in another local is a register read here; its
+     * production is a separate publication that the scheduler orders on its
+     * own.  Only a node materialized as part of this publication (its owner is
+     * the destination, or it has no owner yet) contributes its instruction to
+     * this emission. */
+    pl_u32 owner = publication_owner(plan, value);
+    if (owner < PL_X86_GPR_COUNT && owner != destination)
+        return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if (node->opcode == PL_OPCODE_LANE32_INSERT
+            || node->opcode == PL_OPCODE_LANE64_INSERT
+            || node->opcode == PL_OPCODE_LANE32_EXTEND8_S
+            || node->opcode == PL_OPCODE_LANE32_EXTEND16_S
+            || node->opcode == PL_OPCODE_LANE64_EXTEND8_S
+            || node->opcode == PL_OPCODE_LANE64_EXTEND16_S
+            || node->opcode == PL_OPCODE_EXTEND32_S)
+        return 0;
+    if (node->opcode != PL_OPCODE_ADD
+            && node->opcode != PL_OPCODE_ADD3[0]
+            && node->opcode != PL_OPCODE_ADD3[1]
+            && node->opcode != PL_OPCODE_ALU_IMMEDIATE[0][1]
+            && node->opcode != PL_OPCODE_ALU_IMMEDIATE[1][1]
+            && node->opcode != PL_OPCODE_ALU_REGISTER[0][1]
+            && node->opcode != PL_OPCODE_ALU_REGISTER[1][1])
+        return 1;
+    if (node->argument_at > plan->argument_count
+            || node->argument_count
+               > plan->argument_count - node->argument_at)
+        return 1;
+    for (pl_u32 argument = 0u; argument < node->argument_count; ++argument)
+        if (publication_tree_clobbers_flags(
+                plan, plan->arguments[node->argument_at + argument],
+                destination))
+            return 1;
+    return 0;
+}
+
+/* Scheduling variant of frame_local_publication_clobbers_flags: it answers
+ * whether emitting this local now can change the flags the terminal reads. */
+static int frame_local_emission_clobbers_flags(const pl_plan *plan,
+                                               pl_u32 local)
+{
+    if (!plan || local >= PL_X86_GPR_COUNT) return 1;
+    pl_operand publication = plan->locals[local];
+    pl_u32 owner = publication_owner(plan, publication);
+    if (owner < PL_X86_GPR_COUNT && owner != local) {
+        if (publication.kind == PL_OPERAND_CONST && !publication.value) {
+            pl_u32 move_bytes = 0u, zero_bytes = 0u;
+            if (emit_gpr_move(
+                    local, owner, 32u, (pl_u8 *)0, &move_bytes)
+                    && emit_zero_register(
+                        local, (pl_u8 *)0, &zero_bytes)
+                    && zero_bytes < move_bytes)
+                return 1;
+        }
+        return 0;
+    }
+    return publication_tree_clobbers_flags(plan, publication, local);
+}
+
 /* Equal zero values share one semantic owner, but the shortest native
  * spelling is coordinate-dependent.  A low-register self-XOR can be shorter
  * than a MOV from a high owner and therefore really does clobber flags; feed
@@ -3194,13 +3355,13 @@ static int next_alu_frame_assignment(const pl_plan *plan, pl_u32 pending,
                 if ((blockers & (1u << fanout))
                         && publication_owner(
                             plan, plan->locals[fanout]) == local
-                        && !frame_local_publication_clobbers_flags(
+                        && !frame_local_emission_clobbers_flags(
                             plan, fanout))
                     blockers &= ~(1u << fanout);
             for (pl_u32 blocker = 0u;
                     blocker < PL_X86_GPR_COUNT; ++blocker)
                 if ((blockers & (1u << blocker))
-                        && !frame_local_publication_clobbers_flags(
+                        && !frame_local_emission_clobbers_flags(
                             plan, blocker))
                     blockers &= ~(1u << blocker);
             if (blockers) continue;
@@ -3246,6 +3407,10 @@ static int next_alu_frame_assignment(const pl_plan *plan, pl_u32 pending,
 static int shared_dag_add3_pair(const pl_plan *plan, pl_u32 node_number,
                                 pl_u32 *pair_node, pl_operand *remaining,
                                 pl_u32 *bits);
+static int shared_dag_add3_published_pair(
+    const pl_plan *plan, pl_u32 node_number, pl_u32 *pair_local,
+    pl_operand *remaining, pl_u32 *bits);
+static int equal_operand(pl_operand left, pl_operand right);
 
 static int arithmetic_tree_details(const pl_plan *plan, pl_operand value,
                                    pl_operand *left, pl_operand *right,
@@ -6102,6 +6267,16 @@ static int measure_alu_seed(const pl_x86_frontend *frontend,
         *instructions = 1u;
         return 1;
     }
+    if (value.kind == PL_OPERAND_NODE
+            && sign_extend_node(&block->plan, (pl_u32)value.value,
+                                 &extension_source, &extension_bits)
+            && extension_bits == 32u && bits == 32u) {
+        if (!emit_sign_extend_move(
+                destination, extension_source, extension_bits, 0, bytes))
+            return 0;
+        *instructions = 1u;
+        return 1;
+    }
     pl_operand negation_source;
     pl_u32 negation_bits = 0u;
     if (negation_node_details(
@@ -7263,6 +7438,21 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
             || !remaining || destination >= PL_X86_GPR_COUNT)
         return 0;
     pl_u32 fixup_checkpoint = selection->fixup_count;
+    /* Mirror the write path: a 32-bit sign extension of a register is one
+     * `movslq`, decided before the transient-alias resolution in the seed. */
+    if (value.kind == PL_OPERAND_NODE) {
+        pl_u32 extension_source = 0u, extension_bits = 0u;
+        if (sign_extend_node(&block->plan, (pl_u32)value.value,
+                              &extension_source, &extension_bits)
+                && extension_bits == 32u
+                && emit_sign_extend_move(
+                    destination, extension_source, extension_bits,
+                    (pl_u8 *)0, bytes)) {
+            *instructions = 1u;
+            selection->direct_nested_frame = 1u;
+            return 1;
+        }
+    }
     masked_entry_affine entry_affine;
     if (masked_entry_affine_details(
             &block->plan, value, destination, &entry_affine)
@@ -10830,25 +11020,39 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 &block->plan, pending, final_flag_node,
                 frame_sources, frame_dependencies, &preload)) {
             pl_u32 part = 0u, work = 0u;
+            /* The preload's tree is measured before the alias that records its
+             * destination is installed.  Install the same empty alias state
+             * for the measurement so the write path below reproduces these
+             * bytes exactly; the emitted preload subsequence is self-contained
+             * and does not read the earlier alias. */
+            pl_x86_native_selection preload_measure = *selection;
+            preload_measure.frame_alias_present = 0u;
             int measured = measure_alu_tree(
-                frontend, block, selection, preload.destination,
+                frontend, block, &preload_measure, preload.destination,
                 preload.tree, preload.tree_bits, bytes,
                 block->plan.node_count + 1u, preload.scratch,
                 &part, &work);
             if (measured > 0 && bytes <= U32_MAX_VALUE - part
                     && instructions <= U32_MAX_VALUE - work) {
+                *selection = preload_measure;
                 bytes += part;
                 instructions += work;
                 selection->frame_alias_value = preload.tree.value;
                 selection->frame_alias_kind = preload.tree.kind;
                 selection->frame_alias_local = (pl_u8)preload.destination;
                 selection->frame_alias_present = 1u;
+                /* The write path recomputes the preload shape from the same
+                 * frame laws before it emits the tree; leaving the destination
+                 * dependency relaxed here would make the write-path shape test
+                 * fail and fall back to a different spelling. */
                 frame_sources[preload.destination] = preload.other_source;
-                frame_dependencies[preload.destination] = 0u;
                 selection->direct_nested_frame = 1u;
             }
         }
     }
+    selection->frame_alias_frame_kind = selection->frame_alias_kind;
+    selection->frame_alias_frame_local = selection->frame_alias_local;
+    selection->frame_alias_frame_present = selection->frame_alias_present;
     while (pending || standalone_flags_pending) {
         select_generation_group select_group;
         if (select_generation_group_shape(&block->plan, pending,
@@ -10869,7 +11073,7 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             for (pl_u32 local = 0u;
                     local < PL_X86_GPR_COUNT; ++local)
                 if ((pending & (1u << local))
-                        && frame_local_publication_clobbers_flags(
+                        && frame_local_emission_clobbers_flags(
                             &block->plan, local))
                     clobberers |= 1u << local;
             if (!clobberers
@@ -11182,6 +11386,9 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 &block->plan, value, final_flag_node);
             affine_lea form = { 0 };
             pl_u32 source = 0u, bits = 0u;
+            pl_operand identity_source = { 0 };
+            pl_u32 add3_pair_node = 0u, add3_pair_local = 0u, add3_pair_bits = 0u;
+            pl_operand add3_pair_remaining = { 0 };
             pl_operand shift_source, shift_amount;
             pl_u32 shift_group = 0u;
             conditional_select select;
@@ -11471,6 +11678,36 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 }
                 encoded = seed_bytes + shift_bytes;
                 publication_work = seed_work + 1u;
+            } else if (shared_dag_add3_published_pair(
+                    &block->plan, (pl_u32)value.value,
+                    &add3_pair_local, &add3_pair_remaining, &add3_pair_bits)) {
+                pl_operand pair = { PL_OPERAND_LOCAL, add3_pair_local };
+                int measured = measure_alu_pair(
+                    frontend, block, selection, local, pair,
+                    add3_pair_remaining, add3_pair_bits, 1u, 0u,
+                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    &encoded, &publication_work);
+                if (measured <= 0) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured;
+                }
+            } else if (shared_dag_add3_pair(
+                    &block->plan, (pl_u32)value.value,
+                    &add3_pair_node, &add3_pair_remaining, &add3_pair_bits)) {
+                /* An ADD3 whose two operands are already an earlier binary ADD
+                 * shares that sum.  Take it before the affine LEA, which would
+                 * otherwise rebuild the shared pair inside this tree and cost
+                 * the shared producer twice. */
+                pl_operand pair = { PL_OPERAND_NODE, add3_pair_node };
+                int measured = measure_alu_pair(
+                    frontend, block, selection, local, pair,
+                    add3_pair_remaining, add3_pair_bits, 1u, 0u,
+                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    &encoded, &publication_work);
+                if (measured <= 0) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured;
+                }
             } else if (collect_native_affine_lea(
                     &block->plan, value,
                     block->plan.node_count + 1u, &form, &bits)) {
@@ -11529,6 +11766,17 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 }
                 encoded = seed_bytes + bswap_bytes;
                 publication_work = seed_work + 1u;
+            } else if ((pl_u32)value.value != final_flag_node
+                    && lane_identity_mask_details(
+                        &block->plan, value, &identity_source, &bits)) {
+                int measured = measure_alu_tree(
+                    frontend, block, selection, local, identity_source, bits,
+                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    &encoded, &publication_work);
+                if (measured <= 0) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured;
+                }
             } else {
                 bits = operand_expression_bits(&block->plan, value, 0u);
                 if (!bits) {
@@ -14307,6 +14555,16 @@ static int write_alu_seed(const pl_x86_block *block,
                                  &extension_source, &extension_bits))
         return emit_zero_extend_move(destination, extension_source, extension_bits,
                                      output, written);
+    /* A sign extension whose operand is a 32-bit register is one `movslq`.
+     * Without this branch the extension is materialized relative to the
+     * incoming accumulator (`cltq`), which forces a spurious producer into the
+     * same destination and costs an extra work. */
+    if (value.kind == PL_OPERAND_NODE
+            && sign_extend_node(&block->plan, (pl_u32)value.value,
+                                 &extension_source, &extension_bits)
+            && extension_bits == 32u && bits == 32u)
+        return emit_sign_extend_move(
+            destination, extension_source, extension_bits, output, written);
     pl_operand negation_source;
     pl_u32 negation_bits = 0u;
     if (negation_node_details(
@@ -14443,6 +14701,20 @@ static int write_alu_tree(const pl_x86_block *block,
     if (!block || !selection || !output || !written || !remaining
             || destination >= PL_X86_GPR_COUNT)
         return 0;
+    /* A 32-bit sign extension of a register is one `movslq`.  Do it before
+     * `write_alu_seed`, whose transient-alias resolution would otherwise
+     * rewrite the node to an incoming accumulator and force `cltq` plus a
+     * spurious producer into the same destination. */
+    if (value.kind == PL_OPERAND_NODE) {
+        pl_u32 extension_source = 0u, extension_bits = 0u;
+        if (sign_extend_node(&block->plan, (pl_u32)value.value,
+                              &extension_source, &extension_bits)
+                && extension_bits == 32u
+                && emit_sign_extend_move(
+                    destination, extension_source, extension_bits,
+                    output, written))
+            return 1;
+    }
     masked_entry_affine entry_affine;
     pl_u32 entry_affine_work = 0u;
     if (masked_entry_affine_details(
@@ -15984,10 +16256,14 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     output + at, &written)) {
                 at += written;
                 frame_sources[preload.destination] = preload.other_source;
-                frame_dependencies[preload.destination] = 0u;
             }
         }
     }
+    pl_x86_native_selection frame_write = *selection;
+    frame_write.frame_alias_kind = selection->frame_alias_frame_kind;
+    frame_write.frame_alias_local = selection->frame_alias_frame_local;
+    frame_write.frame_alias_present = selection->frame_alias_frame_present;
+    selection = &frame_write;
     while (pending || standalone_flags_pending) {
         select_generation_group select_group;
         if (select_generation_group_shape(&block->plan, pending,
@@ -16006,7 +16282,7 @@ static int write_direct_alu_frame(const pl_x86_block *block,
             for (pl_u32 local = 0u;
                     local < PL_X86_GPR_COUNT; ++local)
                 if ((pending & (1u << local))
-                        && frame_local_publication_clobbers_flags(
+                        && frame_local_emission_clobbers_flags(
                             &block->plan, local))
                     clobberers |= 1u << local;
             if (!clobberers
@@ -16247,6 +16523,9 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                 &block->plan, value, final_flag_node);
             affine_lea form = { 0 };
             pl_u32 source = 0u, bits = 0u, written = 0u;
+            pl_operand identity_source = { 0 };
+            pl_u32 add3_pair_node = 0u, add3_pair_local = 0u, add3_pair_bits = 0u;
+            pl_operand add3_pair_remaining = { 0 };
             pl_operand shift_source, shift_amount;
             pl_u32 shift_group = 0u;
             conditional_select select;
@@ -16479,6 +16758,28 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                         local, shift_amount, bits, shift_group,
                         output + at, &written))
                     return PL_ERROR_X86_SELECT;
+            } else if (shared_dag_add3_published_pair(
+                    &block->plan, (pl_u32)value.value,
+                    &add3_pair_local, &add3_pair_remaining, &add3_pair_bits)) {
+                pl_operand pair = { PL_OPERAND_LOCAL, add3_pair_local };
+                if (!write_alu_pair(
+                        block, selection, local, pair, add3_pair_remaining,
+                        add3_pair_bits, 1u, 0u, at,
+                        block->plan.node_count + 1u, scratch_mask,
+                        output + at, &written))
+                    return PL_ERROR_X86_SELECT;
+            } else if (shared_dag_add3_pair(
+                    &block->plan, (pl_u32)value.value,
+                    &add3_pair_node, &add3_pair_remaining, &add3_pair_bits)) {
+                /* Prefer the shared pair over the affine LEA so the earlier
+                 * sum is built once, not rebuilt inside this tree. */
+                pl_operand pair = { PL_OPERAND_NODE, add3_pair_node };
+                if (!write_alu_pair(
+                        block, selection, local, pair, add3_pair_remaining,
+                        add3_pair_bits, 1u, 0u, at,
+                        block->plan.node_count + 1u, scratch_mask,
+                        output + at, &written))
+                    return PL_ERROR_X86_SELECT;
             } else if (collect_native_affine_lea(
                     &block->plan, value,
                     block->plan.node_count + 1u, &form, &bits)) {
@@ -16529,6 +16830,21 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                             &written))
                     return PL_ERROR_X86_SELECT;
                 written += seed_bytes;
+            } else if ((pl_u32)value.value != final_flag_node
+                    && lane_identity_mask_details(
+                        &block->plan, value, &identity_source, &bits)) {
+                /* The lane mask is dropped, so the publication is just the
+                 * lane-width move of a register that already holds the base.
+                 * The base must be read as itself: resolving it through a
+                 * transient alias would name a register whose definition is a
+                 * different publication. */
+                pl_x86_native_selection identity_free = *selection;
+                identity_free.frame_alias_present = 0u;
+                if (!write_alu_tree(
+                        block, &identity_free, local, identity_source, bits,
+                        at, block->plan.node_count + 1u, scratch_mask,
+                        output + at, &written))
+                    return PL_ERROR_X86_SELECT;
             } else {
                 bits = operand_expression_bits(&block->plan, value, 0u);
                 if (!bits)
@@ -18430,10 +18746,16 @@ static int shared_dag_add3_pair(const pl_plan *plan, pl_u32 node_number,
     for (pl_u32 candidate = 1u; candidate < node_number; ++candidate) {
         pl_operand left, right;
         pl_u32 candidate_bits = 0u, candidate_mode = 0u;
+        /* A 32-bit ADD3 may consume a 64-bit binary sum: the low 32 bits of a
+         * 64-bit add are exactly the 32-bit add, so the same shared pair is a
+         * valid producer for the narrower node. */
+        int narrow_pair = lane == 0u;
         if (!arithmetic_tree_details(
                 plan, (pl_operand){ PL_OPERAND_NODE, candidate },
                 &left, &right, &candidate_bits, &candidate_mode)
-                || candidate_mode != 1u || candidate_bits != width)
+                || candidate_mode != 1u
+                || (candidate_bits != width
+                    && !(narrow_pair && candidate_bits == 64u)))
             continue;
         for (pl_u32 i = 0u; i < 3u; ++i)
             for (pl_u32 j = i + 1u; j < 3u; ++j) {
@@ -18443,6 +18765,57 @@ static int shared_dag_add3_pair(const pl_plan *plan, pl_u32 node_number,
                              && equal_operand(argument[j], left));
                 if (!match) continue;
                 *pair_node = candidate;
+                *remaining = argument[3u - i - j];
+                *bits = width;
+                return 1;
+            }
+    }
+    return 0;
+}
+
+/* The pair an ADD3 has as a value that another local already publishes.  This
+ * is the same relation as `shared_dag_add3_pair`, but expressed through the
+ * local plane so the pair is a register the frame has ordered, not a later
+ * node.  `pair_local` must be a local whose publication the caller schedules;
+ * the matching dependency is recorded in `alu_frame_source_laws`. */
+static int shared_dag_add3_published_pair(
+    const pl_plan *plan, pl_u32 node_number, pl_u32 *pair_local,
+    pl_operand *remaining, pl_u32 *bits)
+{
+    if (!plan || !pair_local || !remaining || !bits
+            || node_number < 2u || node_number > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[node_number - 1u];
+    pl_u32 lane = node->opcode == PL_OPCODE_ADD3[0] ? 0u
+                : node->opcode == PL_OPCODE_ADD3[1] ? 1u : 2u;
+    if (lane == 2u || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at)
+        return 0;
+    pl_u32 width = lane == 0u ? 32u : 64u;
+    const pl_operand *argument = plan->arguments + node->argument_at;
+    for (pl_u32 other = 0u; other < PL_X86_GPR_COUNT; ++other) {
+        pl_operand published = plan->locals[other];
+        if (published.kind != PL_OPERAND_NODE || !published.value
+                || published.value > plan->node_count)
+            continue;
+        pl_operand left, right;
+        pl_u32 other_bits = 0u, other_mode = 0u;
+        int narrow_pair = lane == 0u;
+        if (!arithmetic_tree_details(plan, published, &left, &right,
+                                     &other_bits, &other_mode)
+                || other_mode != 1u
+                || (other_bits != width
+                    && !(narrow_pair && other_bits == 64u)))
+            continue;
+        for (pl_u32 i = 0u; i < 3u; ++i)
+            for (pl_u32 j = i + 1u; j < 3u; ++j) {
+                int match = (equal_operand(argument[i], left)
+                             && equal_operand(argument[j], right))
+                         || (equal_operand(argument[i], right)
+                             && equal_operand(argument[j], left));
+                if (!match) continue;
+                *pair_local = other;
                 *remaining = argument[3u - i - j];
                 *bits = width;
                 return 1;

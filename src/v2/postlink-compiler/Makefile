@@ -4,7 +4,8 @@ CC ?= cc
 AR ?= ar
 CFLAGS ?= -O2
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
-BARE_FIXTURE_FLAGS = -nostdlib -static -Wl,-no-pie,--emit-relocs
+BARE_FIXTURE_FLAGS = -nostdlib -fno-stack-protector -static \
+	-Wl,-no-pie,--emit-relocs
 BUILD ?= build
 INCLUDES = -Iinclude -Isrc -I../support/include -I../x86/include \
 	-I../optimized-x86/include
@@ -213,7 +214,7 @@ elf-proof-check: $(BUILD)/elf-proof
 relocation-free-product-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
-	$(CC) -nostdlib -static -Wl,-no-pie,--build-id=none \
+	$(CC) -nostdlib -fno-stack-protector -static -Wl,-no-pie,--build-id=none \
 		check/relocation-free-fixture.S \
 		-o "$$temporary/input-without-relocations"; \
 	$(PROGRAM) "$$temporary/input-without-relocations" \
@@ -546,7 +547,7 @@ table-side-exit-check: $(BUILD)/entry
 call-cut-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
-	$(CC) -O2 -fPIE -pie -nostdlib \
+	$(CC) -O2 -fPIE -pie -nostdlib -fno-stack-protector \
 		-Wl,--emit-relocs,--build-id=none check/call-cut-c-fixture.c \
 		-o "$$temporary/input"; \
 	set +e; "$$temporary/input"; source_status=$$?; set -e; \

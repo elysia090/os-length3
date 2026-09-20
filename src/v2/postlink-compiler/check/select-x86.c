@@ -953,6 +953,23 @@ int main(void)
         0x48u, 0x39u, 0xd6u,
         0x0fu, 0x84u, 0x00u, 0x00u, 0x00u, 0x00u,
     };
+    /* The final flag producer's own value publication is a `sub`, and an
+     * independent value-sum tree (`imul` then `add`) clobbers the flags on the
+     * way to `rsi`.  The scheduler must emit the clobbering tree before the
+     * flag producer, so the terminal `jne` reads the `sub` result; emitting
+     * the `sub` first leaves the branch reading the `add` flags. */
+    static const pl_u8 flag_producer_after_clobbering_add[] = {
+        0x48u, 0x69u, 0xf6u, 0x6du, 0x4eu, 0xc6u, 0x41u,
+        0x48u, 0x81u, 0xc6u, 0x39u, 0x30u, 0x00u, 0x00u,
+        0x83u, 0xe8u, 0x01u,
+        0x0fu, 0x85u, 0xe9u, 0xffu, 0xffu, 0xffu,
+    };
+    static const pl_u8 flag_producer_after_clobbering_add_result[] = {
+        0x48u, 0x69u, 0xf6u, 0x6du, 0x4eu, 0xc6u, 0x41u,
+        0x48u, 0x81u, 0xc6u, 0x39u, 0x30u, 0x00u, 0x00u,
+        0x83u, 0xe8u, 0x01u,
+        0x75u, 0x00u,
+    };
     static const pl_u8 live_flags_dead_value[] = {
         0x04u, 0xc3u,
         0x0fu, 0x1fu, 0x84u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
@@ -2564,6 +2581,30 @@ int main(void)
             fputc('\n', stderr);
         }
         return 36;
+    }
+    pl_x86_block flag_producer_block = { 0 };
+    status = select_projected(
+        flag_producer_after_clobbering_add,
+        sizeof flag_producer_after_clobbering_add, 0x1ffffu,
+        &selected, output, &written, &flag_producer_block);
+    if (status || !selected.supported || selected.copied_source
+            || !selected.direct_alu_frame
+            || selected.output_work != 4u || selected.output_span != 3u
+            || written != sizeof flag_producer_after_clobbering_add_result
+            || memcmp(output, flag_producer_after_clobbering_add_result,
+                      sizeof flag_producer_after_clobbering_add_result)) {
+        fprintf(stderr,
+                "native x86 selection: RED (flag producer after clobbering add "
+                "status=%d source/alu/work/span/bytes=%u/%u/%u/%u/%u)\n",
+                status, (unsigned)selected.copied_source,
+                (unsigned)selected.direct_alu_frame,
+                selected.output_work, selected.output_span, written);
+        print_block_shape(&flag_producer_block);
+        fputs("  code:", stderr);
+        for (pl_u32 byte = 0u; byte < written; ++byte)
+            fprintf(stderr, " %02x", output[byte]);
+        fputc('\n', stderr);
+        return 90;
     }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
