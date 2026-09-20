@@ -308,9 +308,215 @@ failed:
     return 0;
 }
 
+/* Partial SETcc shares the entry flag word with ordinary parallel copies and
+ * constants. It must replace only the low byte, not zero-extend the boolean
+ * over the surviving upper 56 bits. Exercise the direct-jump cut as well. */
+static int check_partial_set_frame(pl_u32 code, pl_u32 destination,
+                                    pl_u64 *comparisons)
+{
+    typedef struct { pl_u64 lane, copy, moved, constant, flags; } result;
+    typedef void (__attribute__((sysv_abi)) *function)(result *, const pl_u64 *);
+    pl_u8 source[24]={0x4cu,0x89u,0xf1u,0x49u,0x89u,0xfeu,
+        0x49u,0xbcu,0x21u,0u,0u,0u,0u,0u,0u,4u};
+    pl_u32 length=16u;
+    if (destination>=8u) source[length++]=0x41u;
+    source[length++]=0x0fu; source[length++]=(pl_u8)(0x90u|code);
+    source[length++]=(pl_u8)(0xc0u|(destination&7u));
+    source[length++]=0xebu; source[length++]=0u;
+    static const pl_u8 setup[]={
+        0x41u,0x54u,0x41u,0x56u,0x41u,0x57u,0x49u,0x89u,0xfbu,
+        0x48u,0x8bu,0x16u,0x49u,0x89u,0xd0u,0x49u,0x89u,0xd7u,
+        0x4cu,0x8bu,0x76u,8u,0x48u,0x8bu,0x7eu,16u,
+        0x48u,0x8bu,0x46u,24u,0x48u,0x83u,0xf8u,0u,
+    };
+    pl_u8 observe[]={
+        destination>=8u ? 0x4du:0x49u,0x89u,(pl_u8)(0x03u|((destination&7u)<<3u)),
+        0x49u,0x89u,0x4bu,8u,0x4du,0x89u,0x73u,16u,
+        0x4du,0x89u,0x63u,24u,0x9cu,0x58u,0x49u,0x89u,0x43u,32u,
+        0x41u,0x5fu,0x41u,0x5eu,0x41u,0x5cu,0xc3u,
+    };
+    pl_u8 *memory=test_code_allocate(16384u);
+    if (!memory) return 0;
+    pl_u64 address=(pl_u64)(uintptr_t)(memory+sizeof setup);
+    pl_x86_map map={source,address,length,length,5u,1u};
+    pl_x86_image image={&map,1u,0u,address};
+    pl_x86_frontend frontend;
+    static pl_u8 a[1048576],b[1048576],c[1048576],d[1048576];
+    pl_x86_block_workspace workspace={a,b,sizeof a,64u},scratch={c,d,sizeof c,64u};
+    pl_x86_block block;
+    pl_x86_native_candidates candidates={0};
+    int status=pl_x86_frontend_open(&image,&frontend);
+    if (!status) status=pl_x86_block_lower_projected_until(&frontend,address,address+length,
+        (1u<<PL_X86_LOCAL_COUNT)-1u,&workspace,&block);
+    if (!status) status=pl_x86_select_candidates(&frontend,&scratch,&block,&candidates);
+    if (status || candidates.count<2u) goto failed;
+    memcpy(memory,setup,sizeof setup);
+    memcpy(memory+sizeof setup,source,length);
+    memcpy(memory+sizeof setup+length,observe,sizeof observe);
+    for (pl_u32 i=0u; i<candidates.count; ++i) {
+        pl_x86_native_selection *candidate=&candidates.candidate[i];
+        pl_u8 *body=memory+(i+1u)*512u+sizeof setup;
+        pl_u32 written=0u;
+        memcpy(body-sizeof setup,setup,sizeof setup);
+        status=pl_x86_select_write_measured(&frontend,&block,candidate,body,256u,&written);
+        if (status) goto failed;
+        for (pl_u32 j=0u; j<candidate->fixup_count; ++j) {
+            if (candidate->fixups[j].target!=address+length) goto failed;
+            status=pl_x86_select_bind_fixup(body,written,candidate,j,
+                (pl_u64)(uintptr_t)body,(pl_u64)(uintptr_t)(body+written));
+            if (status) goto failed;
+        }
+        memcpy(body+written,observe,sizeof observe);
+    }
+    if (!test_code_publish(memory,16384u)) goto failed;
+    pl_u64 random=0xb3102ec64fa9875dull;
+    for (pl_u32 sample=0u; sample<2048u; ++sample) {
+        random^=random<<13u; random^=random>>7u; random^=random<<17u;
+        pl_u64 input[]={random,~random,random*17u,sample&3u ? random:0u};
+        pl_u32 parity=0u;
+        for (pl_u32 bit=0u; bit<8u; ++bit) parity^=(pl_u32)(input[3]>>bit)&1u;
+        pl_u64 flags=(!input[3] ? 64u:0u)|(!parity ? 4u:0u)|(input[3]>>63u ? 128u:0u);
+        pl_u64 lane=(input[0]&~255ull)|(pl_u32)condition(code,flags);
+        for (pl_u32 i=0u; i<=candidates.count; ++i) {
+            union { void *object; function call; } fn;
+            fn.object=memory+i*512u;
+            result actual={0}; fn.call(&actual,input);
+            if (actual.lane!=lane || actual.copy!=input[1] || actual.moved!=input[2]
+                    || actual.constant!=0x0400000000000021ull
+                    || (actual.flags&0x8d5u)!=flags) goto failed;
+            ++*comparisons;
+        }
+    }
+    pl_x86_native_selection selected;
+    pl_u32 span=0u,work=0u;
+    status=pl_x86_candidates_select_joint_minimum(&candidates,0u,0u,&selected,&span,&work);
+    if (status || selected.copied_source || !selected.normalized_family_present
+            || work>5u || span>2u) goto failed;
+    test_code_release(memory,16384u); return 1;
+failed:
+    fprintf(stderr,"partial SET frame: RED cc/destination=%u/%u status=%d candidates=%u comparisons=%llu diagnostic=%x\n",
+        code,destination,status,candidates.count,(unsigned long long)*comparisons,
+        candidates.diagnostic.blocking_work);
+    test_code_release(memory,16384u); return 0;
+}
+
+/* The TEST consumes old RDX, an address occupies RDX only until CMOV, and
+ * final RDX is the unrelated entry RAX. These are three different lifetimes,
+ * not a dependency cycle or three materialized copies of one coordinate.
+ * The stack adjustment is in the same cut; its flags must not escape TEST. */
+static int check_transient_address(pl_u32 code, pl_u32 bits, pl_u32 compare,
+                                    pl_u64 *comparisons)
+{
+    pl_u8 source[32]={0x48u,0x83u,0xecu,8u};
+    pl_u32 length=4u;
+    source[length++]=bits==64u ? 0x48u:0x40u;
+    source[length++]=compare ? 0x83u:0x85u;
+    source[length++]=compare ? 0xfau:0xd2u;
+    if (compare) source[length++]=0x7fu;
+    source[length++]=0x48u;source[length++]=0x8du;source[length++]=0x15u;
+    pl_u32 field=length,address_end=length+4u;
+    for (pl_u32 byte=0u;byte<4u;++byte)
+        source[length++]=(pl_u8)((0x400u-address_end)>>(byte*8u));
+    source[length++]=0x48u;source[length++]=0x0fu;
+    source[length++]=(pl_u8)(0x40u|code);source[length++]=0xf2u;
+    source[length++]=0x48u;source[length++]=0x89u;source[length++]=0xc2u;
+    static const pl_u8 setup[]={0x48u,0x89u,0xc8u,0x49u,0x89u,0xe0u};
+    static const pl_u8 observe[]={
+        0x48u,0x89u,0x37u,0x48u,0x89u,0x57u,8u,
+        0x9cu,0x59u,0x48u,0x89u,0x4fu,16u,
+        0x48u,0x89u,0xe0u,0x4cu,0x29u,0xc0u,0x48u,0x89u,0x47u,24u,
+        0x48u,0x8du,0x64u,0x24u,8u,0xc3u,
+    };
+    pl_u8 *memory=test_code_allocate(16384u);
+    if (!memory) return 0;
+    pl_u64 address=(pl_u64)(uintptr_t)memory;
+    pl_x86_map map={source,0x1000u,length,length,5u,1u};
+    pl_x86_image image={&map,1u,0u,0x1000u};
+    pl_x86_frontend frontend;
+    static pl_u8 a[1048576],b[1048576],c[1048576],d[1048576];
+    pl_x86_block_workspace workspace={a,b,sizeof a,64u},scratch={c,d,sizeof c,64u};
+    pl_x86_block block;
+    pl_x86_native_candidates candidates={0};
+    pl_x86_native_selection selected={0};
+    pl_u32 span=0u,work=0u;
+    int status=pl_x86_frontend_open(&image,&frontend);
+    if (!status) status=pl_x86_block_lower_projected_until(&frontend,0x1000u,
+        0x1000u+length,(1u<<PL_X86_LOCAL_COUNT)-1u,&workspace,&block);
+    if (!status) status=pl_x86_select_candidates(&frontend,&scratch,&block,&candidates);
+    if (status) goto failed;
+    for (pl_u32 i=0u;i<=candidates.count;++i) {
+        pl_u8 *entry=memory+i*512u,*body=entry+sizeof setup;
+        pl_u32 written=length;
+        memcpy(entry,setup,sizeof setup);
+        if (!i) {
+            memcpy(body,source,length);
+            pl_u32 displacement=12000u-(pl_u32)sizeof setup-address_end;
+            for (pl_u32 byte=0u;byte<4u;++byte)
+                body[field+byte]=(pl_u8)(displacement>>(byte*8u));
+        } else {
+            const pl_x86_native_selection *candidate=&candidates.candidate[i-1u];
+            status=pl_x86_select_write_measured(&frontend,&block,candidate,body,256u,&written);
+            for (pl_u32 j=0u;!status && j<candidate->fixup_count;++j) {
+                if (candidate->fixups[j].target!=0x1400u) goto failed;
+                status=pl_x86_select_bind_fixup(body,written,candidate,j,
+                    (pl_u64)(uintptr_t)body,address+12000u);
+            }
+            if (status) goto failed;
+        }
+        memcpy(body+written,observe,sizeof observe);
+    }
+    if (!test_code_publish(memory,16384u)) goto failed;
+    typedef void (__attribute__((sysv_abi)) *function)(pl_u64 *,pl_u64,pl_u64,pl_u64);
+    static const pl_u64 edge[]={0u,1u,0x7fu,0x80u,0x7fffffffu,0x80000000u,UINT32_MAX,
+        1ull<<32u,1ull<<63u,UINT64_MAX};
+    pl_u64 random=0x537b0a68c947129full,mask=UINT64_MAX>>(64u-bits);
+    for (pl_u32 sample=0u;sample<4096u;++sample) {
+        random^=random<<13u;random^=random>>7u;random^=random<<17u;
+        pl_u64 input=sample<sizeof edge/sizeof edge[0] ? edge[sample]:random;
+        pl_u64 tested=input&mask,current=~random,next=random*17u;
+        pl_u64 result=compare ? (tested-127u)&mask:tested;
+        pl_u32 parity=0u;
+        for (pl_u32 bit=0u;bit<8u;++bit) parity^=(pl_u32)(result>>bit)&1u;
+        pl_u64 flags=(!result ? 64u:0u)|(!parity ? 4u:0u)
+            |(result>>(bits-1u) ? 128u:0u);
+        if (compare) flags|=(tested<127u ? 1u:0u)|((tested^127u^result)&16u)
+            |(((tested^127u)&(tested^result))>>(bits-1u) ? 2048u:0u);
+        pl_u64 expected[]={condition(code,flags) ? address+12000u:current,next,flags,UINT64_MAX-7u};
+        for (pl_u32 i=0u;i<=candidates.count;++i) {
+            union {void *object;function call;} fn;
+            fn.object=memory+i*512u;
+            pl_u64 actual[4]={0};fn.call(actual,current,input,next);
+            actual[2]&=compare ? 0x8d5u:0x8c5u; /* TEST leaves AF undefined. */
+            if (memcmp(actual,expected,sizeof expected)) {
+                fprintf(stderr,"transient address: mismatch candidate=%u sample=%u\n",i,sample);
+                goto failed;
+            }
+            ++*comparisons;
+        }
+    }
+    status=pl_x86_candidates_select_joint_minimum(&candidates,0u,0u,&selected,&span,&work);
+    if (status || !selected.normalized_family_present || work>5u) goto failed;
+    test_code_release(memory,16384u);return 1;
+failed:
+    fprintf(stderr,"transient address: RED cc/bits/compare=%u/%u/%u status=%d candidates=%u work/span=%u/%u\n",
+        code,bits,compare,status,candidates.count,work,span);
+    test_code_release(memory,16384u);return 0;
+}
+
 int main(void)
 {
     pl_u64 comparisons = 0u;
+    static const pl_u32 transient_codes[]={4u,5u,8u,9u,10u,11u};
+    for (pl_u32 i=0u;i<sizeof transient_codes/sizeof transient_codes[0];++i)
+        for (pl_u32 bits=32u;bits<=64u;bits+=32u)
+            if (!check_transient_address(transient_codes[i],bits,0u,&comparisons)) return 1;
+    for (pl_u32 code=0u;code<16u;++code)
+        for (pl_u32 bits=32u;bits<=64u;bits+=32u)
+            if (!check_transient_address(code,bits,1u,&comparisons)) return 1;
+    static const pl_u32 set_destinations[]={2u,8u,15u};
+    for (pl_u32 code=0u; code<16u; ++code)
+        for (pl_u32 i=0u; i<sizeof set_destinations/sizeof set_destinations[0]; ++i)
+            if (!check_partial_set_frame(code,set_destinations[i],&comparisons)) return 1;
     for (pl_u32 code = 0u; code < 16u; ++code)
         for (pl_u32 bits = 32u; bits <= 64u; bits += 32u)
             for (pl_u32 published = 0u; published < 2u; ++published)

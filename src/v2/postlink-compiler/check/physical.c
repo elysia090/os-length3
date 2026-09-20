@@ -6,8 +6,170 @@
 
 #define ARENA_BYTES (64u * 1024u)
 
+static int signed_projection_demand(void)
+{
+    for (pl_u32 width=8u;width<=32u;width*=2u)
+        for (pl_u32 removed=0u;removed<2u;++removed) {
+            pl_u32 opcode=width==8u ? PL_OPCODE_LANE64_EXTEND8_S
+                : width==16u ? PL_OPCODE_LANE64_EXTEND16_S:PL_OPCODE_EXTEND32_S;
+            pl_node nodes[2]={{PL_OPCODE_ALU_IMMEDIATE[0][0],0u,2u},{opcode,2u,1u}};
+            pl_operand arguments[3]={{PL_OPERAND_LOCAL,0u},
+                {PL_OPERAND_CONST,((1ull<<width)-1u)&~(pl_u64)removed},{PL_OPERAND_NODE,1u}};
+            pl_operand local={PL_OPERAND_NODE,2u};
+            pl_plan input={.nodes=nodes,.node_count=2u,.arguments=arguments,
+                .argument_count=3u,.locals=&local,.local_count=1u};
+            pl_u8 a[ARENA_BYTES],b[ARENA_BYTES];
+            pl_arena first={a,sizeof a,0u},second={b,sizeof b,0u};
+            pl_plan folded={0},compacted={0};
+            int status=pl_fold_local_physical(&input,&first,&folded);
+            if (!status) status=pl_compact_once(&folded,&second,&compacted);
+            if (status || compacted.node_count!=1u+removed
+                    || compacted.nodes[compacted.node_count-1u].opcode!=opcode) {
+                fprintf(stderr,"signed projection demand: RED width=%u removed=%u status=%d nodes=%u\n",
+                    width,removed,status,compacted.node_count);
+                return 1;
+            }
+        }
+    return 0;
+}
+
+static int overlay_bias(void)
+{
+    /* ((x | 32) & 255) - 97 = (x & 223) - 65, modulo 2^32.
+     * Disjoint fixed bits are an additive constant, not another live node. */
+    pl_node nodes[] = {
+        {PL_OPCODE_ALU_IMMEDIATE[0][3],0u,2u},
+        {PL_OPCODE_LANE64_INSERT,2u,3u},
+        {PL_OPCODE_ALU_IMMEDIATE[0][1],5u,2u},
+    };
+    pl_operand arguments[] = {
+        {PL_OPERAND_LOCAL,0u},{PL_OPERAND_CONST,32u},
+        {PL_OPERAND_CONST,0u},{PL_OPERAND_NODE,1u},{PL_OPERAND_CONST,8u},
+        {PL_OPERAND_NODE,2u},{PL_OPERAND_CONST,0xffffff9fu},
+    };
+    pl_operand local = {PL_OPERAND_NODE,3u};
+    pl_plan input = {.nodes=nodes,.node_count=3u,.arguments=arguments,
+        .argument_count=7u,.locals=&local,.local_count=1u};
+    pl_u8 a[ARENA_BYTES],b[ARENA_BYTES];
+    pl_arena first = {a,sizeof a,0u}, second = {b,sizeof b,0u};
+    pl_plan folded = {0}, compacted = {0};
+    int status = pl_fold_local_physical(&input,&first,&folded);
+    if (!status) status = pl_compact_once(&folded,&second,&compacted);
+    if (status || compacted.node_count != 2u
+            || compacted.nodes[0].opcode != PL_OPCODE_ALU_IMMEDIATE[0][0]
+            || compacted.arguments[1].value != 223u
+            || compacted.nodes[1].opcode != PL_OPCODE_ALU_IMMEDIATE[0][1]
+            || compacted.arguments[3].value != 0xffffffbfu) {
+        fprintf(stderr,"overlay bias: RED status=%d nodes=%u\n",status,compacted.node_count);
+        for (pl_u32 i=0u; !status && i<compacted.node_count; ++i) {
+            const pl_node *node=&compacted.nodes[i];
+            fprintf(stderr,"  opcode=%u",node->opcode);
+            for (pl_u32 j=0u;j<node->argument_count;++j) {
+                pl_operand value=compacted.arguments[node->argument_at+j];
+                fprintf(stderr," %u:%llx",value.kind,(unsigned long long)value.value);
+            }
+            fputc('\n',stderr);
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int scaled_linear_word(void)
+{
+    /* ((x + (x << a)) << b) = x * ((1 + 2^a) * 2^b) modulo 2^W.
+     * Sign extension is an opaque shared input to this word identity. */
+    for (pl_u32 variant=0u;variant<4u;++variant) {
+        pl_u32 lane=variant&1u,subtract=variant>>1u;
+        for (pl_u32 a=1u;a<=3u;++a)
+            for (pl_u32 b=1u;b<=4u;++b) {
+                pl_node nodes[]={
+                    {lane ? PL_OPCODE_LANE64_SHL:PL_OPCODE_LANE32_SHL,0u,2u},
+                    {PL_OPCODE_ALU_REGISTER[lane][1u+subtract],2u,2u},
+                    {lane ? PL_OPCODE_LANE64_SHL:PL_OPCODE_LANE32_SHL,4u,2u},
+                };
+                pl_operand arguments[]={
+                    {PL_OPERAND_LOCAL,0u},{PL_OPERAND_CONST,a},
+                    {PL_OPERAND_LOCAL,0u},{PL_OPERAND_NODE,1u},
+                    {PL_OPERAND_NODE,2u},{PL_OPERAND_CONST,b},
+                };
+                pl_operand local={PL_OPERAND_NODE,3u};
+                pl_plan input={.nodes=nodes,.node_count=3u,.arguments=arguments,
+                    .argument_count=6u,.locals=&local,.local_count=1u};
+                pl_u8 first_bytes[ARENA_BYTES],second_bytes[ARENA_BYTES];
+                pl_arena first={first_bytes,sizeof first_bytes,0u};
+                pl_arena second={second_bytes,sizeof second_bytes,0u};
+                pl_plan folded={0},compacted={0};
+                int status=pl_fold_local_physical(&input,&first,&folded);
+                if (!status) status=pl_compact_once(&folded,&second,&compacted);
+                if (status || compacted.node_count!=1u
+                        || compacted.nodes[0].opcode!=(lane ? PL_OPCODE_MULR:PL_OPCODE_LANE32_MULR)
+                        || compacted.arguments[0].kind!=PL_OPERAND_LOCAL
+                        || compacted.arguments[1].kind!=PL_OPERAND_CONST
+                        || compacted.arguments[1].value!=(((subtract ? 1ull-(1ull<<a)
+                            :1ull+(1ull<<a))<<b)&(lane ? ~0ull:0xffffffffull))) {
+                    fprintf(stderr,"scaled linear word: RED lane/a/b=%u/%u/%u status=%d nodes=%u\n",
+                        lane,a,b,status,compacted.node_count);
+                    return 1;
+                }
+            }
+    }
+    return 0;
+}
+
+static int scaled_word_boundaries(void)
+{
+    for (pl_u32 lane=0u;lane<2u;++lane)
+        for (pl_u32 cancel=0u;cancel<2u;++cancel) {
+            pl_u32 mul=lane ? PL_OPCODE_MULR:PL_OPCODE_LANE32_MULR;
+            pl_node nodes[]={{mul,0u,2u},{mul,2u,2u},{PL_OPCODE_ALU_REGISTER[lane][2],4u,2u}};
+            pl_operand arguments[]={{PL_OPERAND_LOCAL,0u},{PL_OPERAND_CONST,3u},
+                {PL_OPERAND_LOCAL,0u},{PL_OPERAND_CONST,2u+cancel},
+                {PL_OPERAND_NODE,1u},{PL_OPERAND_NODE,2u}};
+            pl_operand local={PL_OPERAND_NODE,3u};
+            pl_plan input={.nodes=nodes,.node_count=3u,.arguments=arguments,
+                .argument_count=6u,.locals=&local,.local_count=1u};
+            pl_u8 a[ARENA_BYTES],b[ARENA_BYTES];
+            pl_arena first={a,sizeof a,0u},second={b,sizeof b,0u};
+            pl_plan folded={0},compacted={0};
+            int status=pl_fold_local_physical(&input,&first,&folded);
+            if (!status) status=pl_compact_once(&folded,&second,&compacted);
+            pl_u32 expected=!cancel && !lane;
+            if (status || compacted.node_count!=expected
+                    || (cancel && (compacted.locals[0].kind!=PL_OPERAND_CONST || compacted.locals[0].value))
+                    || (!cancel && lane && compacted.locals[0].kind!=PL_OPERAND_LOCAL)
+                    || (expected && compacted.nodes[0].opcode!=PL_OPCODE_ALU_IMMEDIATE[0][0])) {
+                fprintf(stderr,"scaled word identity: RED lane/cancel=%u/%u status=%d\n",lane,cancel,status);
+                return 1;
+            }
+        }
+    /* A narrow shift is not linear in the wider ring: its truncation remains
+     * observable alongside the untruncated copy of the same entry value. */
+    pl_node nodes[]={{PL_OPCODE_LANE32_SHL,0u,2u},
+        {PL_OPCODE_ALU_REGISTER[1][1],2u,2u},{PL_OPCODE_LANE64_SHL,4u,2u}};
+    pl_operand arguments[]={{PL_OPERAND_LOCAL,0u},{PL_OPERAND_CONST,2u},
+        {PL_OPERAND_LOCAL,0u},{PL_OPERAND_NODE,1u},{PL_OPERAND_NODE,2u},{PL_OPERAND_CONST,4u}};
+    pl_operand local={PL_OPERAND_NODE,3u};
+    pl_plan input={.nodes=nodes,.node_count=3u,.arguments=arguments,
+        .argument_count=6u,.locals=&local,.local_count=1u};
+    pl_u8 a[ARENA_BYTES],b[ARENA_BYTES];
+    pl_arena first={a,sizeof a,0u},second={b,sizeof b,0u};
+    pl_plan folded={0},compacted={0};
+    int status=pl_fold_local_physical(&input,&first,&folded);
+    if (!status) status=pl_compact_once(&folded,&second,&compacted);
+    if (status || compacted.node_count!=3u || compacted.nodes[0].opcode!=PL_OPCODE_LANE32_SHL) {
+        fprintf(stderr,"scaled word width boundary: RED status=%d nodes=%u\n",status,compacted.node_count);
+        return 1;
+    }
+    return 0;
+}
+
 int main(void)
 {
+    if (scaled_linear_word()) return 1;
+    if (scaled_word_boundaries()) return 1;
+    if (overlay_bias()) return 1;
+    if (signed_projection_demand()) return 1;
     pl_node nodes[8] = {
         { PL_OPCODE_ALU_IMMEDIATE[1][1], 0u, 2u },
         { PL_OPCODE_LANE64_INSERT,        2u, 3u },
