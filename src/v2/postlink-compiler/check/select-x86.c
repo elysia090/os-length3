@@ -547,7 +547,9 @@ int main(void)
      * Recomputing the 32-bit tree would add two instructions and split the
      * work/span Pareto frontier. */
     static const pl_u8 arithmetic_width_source[] = {
-        0xc1u, 0xe2u, 0x20u,
+        /* Only a 64-bit zero-count shift is a full-register identity.
+         * shift-width.c separately executes the 32-bit zero-extension case. */
+        0x48u, 0xc1u, 0xe2u, 0x40u,
         0x48u, 0x89u, 0xceu,
         0x48u, 0x89u, 0xd1u,
         0x48u, 0x09u, 0xc1u,
@@ -3407,23 +3409,30 @@ int main(void)
     status = candidates(
         noncanonical_add, sizeof noncanonical_add, 0x1000u,
         &alternatives);
-    if (status || alternatives.count != 2u
-            || !alternatives.candidate[0].direct_frame
-            || !alternatives.candidate[1].copied_source
-            || alternatives.candidate[0].output_span != 1u
-            || alternatives.candidate[1].output_span != 1u
-            || alternatives.candidate[0].output_bytes != 4u
-            || alternatives.candidate[1].output_bytes != 7u) {
+    pl_u32 normalized_add_count = 0u, source_add_count = 0u;
+    for (pl_u32 index = 0u; !status && index < alternatives.count; ++index) {
+        const pl_x86_native_selection *candidate = &alternatives.candidate[index];
+        status = write_candidate(noncanonical_add, sizeof noncanonical_add,
+            0x1000u, candidate, output, sizeof output, &written);
+        if (status || candidate->output_span != 1u || candidate->output_work != 1u)
+            break;
+        if (candidate->copied_source) {
+            if (written != sizeof noncanonical_add - 1u
+                    || memcmp(output, noncanonical_add, written)) break;
+            ++source_add_count;
+        } else {
+            static const pl_u8 canonical_add[] = { 0x48u, 0x83u, 0xc0u, 0x01u };
+            if (!candidate->direct_frame || written != sizeof canonical_add
+                    || memcmp(output, canonical_add, written)) break;
+            ++normalized_add_count;
+        }
+    }
+    if (status || !normalized_add_count || source_add_count != 1u
+            || normalized_add_count + source_add_count != alternatives.count) {
         fprintf(stderr,
                 "native x86 selection: RED (candidate frontier status=%d "
-                "count=%u direct/source=%u/%u span=%u/%u bytes=%u/%u)\n",
-                status, alternatives.count,
-                (unsigned)alternatives.candidate[0].direct_frame,
-                (unsigned)alternatives.candidate[1].copied_source,
-                alternatives.candidate[0].output_span,
-                alternatives.candidate[1].output_span,
-                alternatives.candidate[0].output_bytes,
-                alternatives.candidate[1].output_bytes);
+                "count=%u normalized/source=%u/%u)\n",
+                status, alternatives.count, normalized_add_count, source_add_count);
         return 170;
     }
 

@@ -9,10 +9,10 @@
 #define PL_ERROR_X86_PARETO (-50)
 #define PL_X86_NATIVE_MAX_FIXUPS 64u
 #define PL_X86_VALUE_ALIAS_COUNT 160u
-/* Eighteen proved normalized grammar productions plus the exact linked-source
+/* Nineteen normalized grammar productions plus the exact linked-source
  * spelling.  The selector must expose every matching production: stopping at
  * the first match can hide an independently minimal work or span witness. */
-#define PL_X86_NATIVE_MAX_CANDIDATES 19u
+#define PL_X86_NATIVE_MAX_CANDIDATES 20u
 
 enum pl_x86_native_fixup {
     PL_X86_NATIVE_FIXUP_NONE = 0,
@@ -72,6 +72,10 @@ typedef struct {
      * less work than constructing on an entry owner and copying back.  The
      * mask is transient replay state for the measure/write pair. */
     pl_u32 frame_direct_destination_mask;
+    /* Equal linked bits do not identify a relocated address with a literal.
+     * These final constants require their own binding rather than a copy of
+     * the numeric publication owner. Transient measure/write state only. */
+    pl_u32 frame_distinct_constant_mask;
     pl_x86_native_fixup fixups[PL_X86_NATIVE_MAX_FIXUPS];
     pl_u8 supported;
     pl_u8 copied_source;
@@ -99,9 +103,14 @@ typedef struct {
     pl_u8 direct_compare_handoff_frame;
     pl_u8 direct_live_frame;
     pl_u8 direct_shared_dag_frame;
+    pl_u8 shared_dag_priority_order;
     pl_u8 direct_consumed_flag_frame;
     pl_u8 direct_transient_seed_frame;
     pl_u8 direct_nested_frame;
+    /* One plus the published GPR consumed by a factored indirect JMP; zero
+     * means no factored terminal. The pure body uses the ordinary grammar.
+     * This is compiler replay state, not an executable descriptor. */
+    pl_u8 indirect_tail_owner;
     pl_u8 frame_anchor;
     pl_u8 frame_alias_kind;
     pl_u8 frame_alias_local;

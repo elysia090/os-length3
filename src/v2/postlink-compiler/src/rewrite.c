@@ -196,7 +196,11 @@ typedef struct {
     pl_u32 negative_count;
     pl_u64 constant;
     int cancelled;
+    pl_u32 expanded;
 } linear_cancel_form;
+
+static int operand_is_u32(const pl_plan *plan, pl_operand operand,
+                          pl_u32 remaining);
 
 static int same_physical_operand(pl_operand left, pl_operand right)
 {
@@ -229,10 +233,11 @@ static int linear_cancel_term(linear_cancel_form *form,
 }
 
 static int collect_linear_cancel(const pl_plan *plan, pl_operand operand,
-                                 int sign, pl_u32 remaining,
+                                 int sign, pl_u32 requested_lane, pl_u32 *remaining,
                                  linear_cancel_form *form)
 {
-    if (!plan || !remaining || !form) return 0;
+    if (!plan || !remaining || !*remaining || !form) return 0;
+    --*remaining;
     const pl_node *node = physical_form(plan, operand);
     if (!node) return linear_cancel_term(form, operand, sign);
     if (node->argument_at > plan->argument_count
@@ -245,28 +250,73 @@ static int collect_linear_cancel(const pl_plan *plan, pl_operand operand,
     if (node->argument_count == 2u
             && arithmetic_opcode(
                 node->opcode, &lane, &semantic, &immediate)
-            && lane == 1u && (semantic == 1u || semantic == 2u)) {
+            && lane == requested_lane && (semantic == 1u || semantic == 2u)) {
+        ++form->expanded;
         return collect_linear_cancel(
-                   plan, arguments[0], sign, remaining - 1u, form)
+                   plan, arguments[0], sign, requested_lane, remaining, form)
             && collect_linear_cancel(
                    plan, arguments[1], semantic == 1u ? sign : -sign,
-                   remaining - 1u, form);
+                   requested_lane, remaining, form);
     }
-    if (node->opcode == PL_OPCODE_ADD3[1]
+    if (node->opcode == PL_OPCODE_ADD3[requested_lane]
             && node->argument_count == 3u) {
+        ++form->expanded;
         for (pl_u32 slot = 0u; slot < 3u; ++slot)
             if (!collect_linear_cancel(
-                    plan, arguments[slot], sign, remaining - 1u, form))
+                    plan, arguments[slot], sign, requested_lane, remaining, form))
                 return 0;
         return 1;
     }
     return linear_cancel_term(form, operand, sign);
 }
 
-/* Close only a cancellation which reduces the complete expression to one
- * exact 64-bit x86 arithmetic operation (or an identity).  This is the
- * important global case without allocating a parallel expression tree or
- * increasing the builder's linear arena bound. */
+/* For either logical or arithmetic q=u>>1, u=2q+(u&1) modulo 2^W.
+ * With u=x+s, (u&1)+q-s=x-q. No range or sign assumption about x or s is
+ * needed; the arithmetic-shift sign contribution vanishes after doubling.
+ * Remove the remainder construction before physical owner allocation. */
+static void cancel_half_remainder(const pl_plan *plan, pl_u32 lane,
+                                   linear_cancel_form *form)
+{
+    if (form->positive_count != 2u || form->negative_count != 1u
+            || form->constant) return;
+    for (pl_u32 order=0u; order<2u; ++order) {
+        pl_operand half=form->positive[order], low=form->positive[order^1u];
+        const pl_node *shift=physical_form(plan,half), *mask=physical_form(plan,low);
+        if (!shift || !mask || shift->argument_count!=2u || mask->argument_count!=2u)
+            continue;
+        pl_u32 shr=lane ? PL_OPCODE_LANE64_SHR:PL_OPCODE_LANE32_SHR;
+        pl_u32 sar=lane ? PL_OPCODE_LANE64_SAR:PL_OPCODE_LANE32_SAR;
+        if (shift->opcode!=shr && shift->opcode!=sar) continue;
+        pl_u32 mask_lane=0u, semantic=0u;
+        int immediate=0;
+        if (!arithmetic_opcode(mask->opcode,&mask_lane,&semantic,&immediate)
+                || mask_lane!=lane || semantic!=0u) continue;
+        const pl_operand *s=physical_arguments(plan,shift), *m=physical_arguments(plan,mask);
+        if (s[1].kind!=PL_OPERAND_CONST || s[1].value!=1u
+                || m[1].kind!=PL_OPERAND_CONST || m[1].value!=1u
+                || !same_physical_operand(s[0],m[0])) continue;
+        const pl_node *sum=physical_form(plan,s[0]);
+        if (!sum || sum->argument_count!=2u
+                || !arithmetic_opcode(sum->opcode,&mask_lane,&semantic,&immediate)
+                || mask_lane!=lane || semantic!=1u) continue;
+        const pl_operand *a=physical_arguments(plan,sum);
+        for (pl_u32 side=0u;side<2u;++side) {
+            if (!same_physical_operand(a[side],form->negative[0])) continue;
+            form->positive[0]=a[side^1u];
+            form->positive_count=1u;
+            form->negative[0]=half;
+            form->cancelled=1;
+            return;
+        }
+    }
+}
+
+/* Addition and subtraction form the same additive group modulo 2^32 and
+ * modulo 2^64. Flatten signs before cancellation, so 0-(0-x) becomes x even
+ * without an opposing pair of leaves. Publish a zero-extended word for lane32.
+ * Only emit a single arithmetic node (or identity); retained shared children
+ * are still independently costed by selection. A fixed total visit budget,
+ * not a per-branch depth limit, bounds repeated DAG traversal per input node. */
 static int cancelled_linear_binary(pl_builder *builder, const pl_plan *plan,
                                    pl_u32 opcode, const pl_operand *arguments,
                                    pl_u32 argument_count,
@@ -275,19 +325,20 @@ static int cancelled_linear_binary(pl_builder *builder, const pl_plan *plan,
     if (!builder || !plan || !arguments || !replacement) return -1;
     pl_u32 lane = 0u, semantic = 0u;
     int immediate = 0;
-    linear_cancel_form form = { { { 0u, 0u } }, { { 0u, 0u } },
-                                0u, 0u, 0u, 0 };
+    linear_cancel_form form = {0};
+    pl_u32 remaining = PL_LINEAR_CANCEL_TERMS * 4u;
     if (argument_count != 2u
             || !arithmetic_opcode(opcode, &lane, &semantic, &immediate)
-            || lane != 1u || (semantic != 1u && semantic != 2u)
+            || (semantic != 1u && semantic != 2u)
             || !collect_linear_cancel(
-                plan, arguments[0], 1, plan->node_count + 1u, &form)
+                plan, arguments[0], 1, lane, &remaining, &form)
             || !collect_linear_cancel(
-                plan, arguments[1], semantic == 1u ? 1 : -1,
-                plan->node_count + 1u, &form)
-            || !form.cancelled)
+                plan, arguments[1], semantic == 1u ? 1 : -1, lane, &remaining, &form)
+            || (!form.cancelled && !form.expanded))
         return 0;
 
+    if (!lane) form.constant &= 0xffffffffu;
+    cancel_half_remainder(plan,lane,&form);
     pl_u32 terms = form.positive_count + form.negative_count
                  + (form.constant != 0u ? 1u : 0u);
     if (terms > 2u || form.negative_count > 1u) return 0;
@@ -298,6 +349,12 @@ static int cancelled_linear_binary(pl_builder *builder, const pl_plan *plan,
     if (!form.negative_count && form.positive_count == 1u
             && !form.constant) {
         *replacement = form.positive[0];
+        if (!lane && !operand_is_u32(plan, *replacement, PL_LINEAR_CANCEL_TERMS)) {
+            pl_operand narrow[2] = {*replacement, {PL_OPERAND_CONST, 0xffffffffu}};
+            pl_u32 value = pl_emit_shared(builder, PL_OPCODE_ALU_IMMEDIATE[0][0], narrow, 2u);
+            if (!value) return -1;
+            *replacement = (pl_operand){PL_OPERAND_NODE, value};
+        }
         return 1;
     }
     if (!form.negative_count && !form.positive_count) {
@@ -306,7 +363,7 @@ static int cancelled_linear_binary(pl_builder *builder, const pl_plan *plan,
     }
 
     pl_operand binary[2];
-    pl_u32 result_opcode = PL_OPCODE_ALU_REGISTER[1][1u];
+    pl_u32 result_opcode = PL_OPCODE_ALU_REGISTER[lane][1u];
     if (form.negative_count) {
         if (form.positive_count) {
             if (form.constant) return 0;
@@ -315,7 +372,7 @@ static int cancelled_linear_binary(pl_builder *builder, const pl_plan *plan,
             binary[0] = (pl_operand){ PL_OPERAND_CONST, form.constant };
         }
         binary[1] = form.negative[0];
-        result_opcode = PL_OPCODE_ALU_REGISTER[1][2u];
+        result_opcode = PL_OPCODE_ALU_REGISTER[lane][2u];
     } else {
         binary[0] = form.positive[0];
         binary[1] = form.positive_count == 2u
@@ -323,7 +380,7 @@ static int cancelled_linear_binary(pl_builder *builder, const pl_plan *plan,
                   : (pl_operand){ PL_OPERAND_CONST, form.constant };
         canonical_commutative(binary, 2u);
         if (binary[1].kind == PL_OPERAND_CONST)
-            result_opcode = PL_OPCODE_ALU_IMMEDIATE[1][1u];
+            result_opcode = PL_OPCODE_ALU_IMMEDIATE[lane][1u];
     }
     pl_u32 node = pl_emit_shared(builder, result_opcode, binary, 2u);
     if (!node) return -1;
@@ -558,6 +615,135 @@ static int shift_opcode(pl_u32 opcode, pl_u32 *bits, pl_u32 *semantic)
                     return 1;
                 }
     return 0;
+}
+
+typedef struct {
+    pl_operand base;
+    pl_u64 coefficient;
+    pl_u64 constant;
+    pl_u32 has_base;
+    pl_u32 expanded;
+    pl_u32 products;
+} scaled_word_form;
+
+/* Collect one homogeneous linear value in Z/(2^W). Width-changing and
+ * non-linear operations remain opaque leaves, so a sign extension is never
+ * distributed through the low-word arithmetic it observes. A total visit
+ * budget bounds shared-DAG traversal; it is not renewed for each branch. */
+static int collect_scaled_word(const pl_plan *plan, pl_operand value,
+    pl_u32 lane, pl_u64 coefficient, pl_u32 *remaining, scaled_word_form *form)
+{
+    if (!*remaining) return 0;
+    --*remaining;
+    if (value.kind==PL_OPERAND_CONST) {
+        form->constant+=coefficient*value.value;
+        return 1;
+    }
+    const pl_node *node=physical_form(plan,value);
+    if (node) {
+        if (node->argument_at>plan->argument_count
+                || node->argument_count>plan->argument_count-node->argument_at) return 0;
+        const pl_operand *argument=physical_arguments(plan,node);
+        pl_u32 inner_lane=0u,semantic=0u,bits=0u;
+        int immediate=0;
+        if (node->argument_count==2u
+                && arithmetic_opcode(node->opcode,&inner_lane,&semantic,&immediate)
+                && inner_lane==lane && (semantic==1u || semantic==2u)) {
+            ++form->expanded;
+            return collect_scaled_word(plan,argument[0],lane,coefficient,remaining,form)
+                && collect_scaled_word(plan,argument[1],lane,
+                    semantic==1u ? coefficient:0u-coefficient,remaining,form);
+        }
+        if (node->opcode==PL_OPCODE_ADD3[lane] && node->argument_count==3u) {
+            ++form->expanded;
+            for (pl_u32 i=0u;i<3u;++i)
+                if (!collect_scaled_word(plan,argument[i],lane,coefficient,remaining,form)) return 0;
+            return 1;
+        }
+        if (node->argument_count==2u && argument[1].kind==PL_OPERAND_CONST
+                && shift_opcode(node->opcode,&bits,&semantic)
+                && !semantic && bits==(lane ? 64u:32u)) {
+            ++form->expanded;
+            return collect_scaled_word(plan,argument[0],lane,
+                coefficient<<(argument[1].value&(bits-1u)),remaining,form);
+        }
+        if (node->argument_count==2u
+                && node->opcode==(lane ? PL_OPCODE_MULR:PL_OPCODE_LANE32_MULR)) {
+            for (pl_u32 i=0u;i<2u;++i)
+                if (argument[i].kind==PL_OPERAND_CONST) {
+                    ++form->expanded;
+                    ++form->products;
+                    return collect_scaled_word(plan,argument[i^1u],lane,
+                        coefficient*argument[i].value,remaining,form);
+                }
+        }
+    }
+    if (form->has_base && !same_physical_operand(form->base,value)) return 0;
+    form->base=value;
+    form->has_base=1u;
+    form->coefficient+=coefficient;
+    return 1;
+}
+
+static int fold_scaled_word(pl_builder *builder, const pl_plan *plan,
+    pl_u32 opcode, const pl_operand *argument, pl_u32 argument_count,
+    pl_operand *replacement)
+{
+    pl_u32 bits=0u,semantic=0u,lane=0u,remaining=64u;
+    int immediate=0;
+    scaled_word_form form={0};
+    if (argument_count==2u && argument[1].kind==PL_OPERAND_CONST
+            && shift_opcode(opcode,&bits,&semantic) && !semantic) {
+        pl_u32 shift=(pl_u32)(argument[1].value&(bits-1u));
+        lane=bits==64u;
+        if (!shift || !collect_scaled_word(plan,argument[0],lane,1ull<<shift,&remaining,&form))
+            return 0;
+    } else {
+        if (argument_count==3u && (opcode==PL_OPCODE_ADD3[0] || opcode==PL_OPCODE_ADD3[1])) {
+            lane=opcode==PL_OPCODE_ADD3[1];semantic=1u;
+        } else if (argument_count!=2u
+                || !arithmetic_opcode(opcode,&lane,&semantic,&immediate)
+                || (semantic!=1u && semantic!=2u)) return 0;
+        for (pl_u32 i=0u;i<argument_count;++i)
+            if (!collect_scaled_word(plan,argument[i],lane,
+                    semantic==2u && i==1u ? ~0ull:1u,&remaining,&form)) return 0;
+        /* Absorb a previously collected product into its enclosing sum.
+         * Ordinary LEA-shaped sums retain their one-instruction lowering. */
+        if (!form.products) return 0;
+    }
+    pl_u64 word=lane_word_mask(lane);
+    if (!form.expanded || (form.constant&word)) return 0;
+    pl_u64 factor=form.coefficient&word;
+    if (!factor) {
+        *replacement=(pl_operand){PL_OPERAND_CONST,0u};
+        return 1;
+    }
+    if (factor==1u) {
+        *replacement=form.base;
+        if (!lane && !operand_is_u32(plan,form.base,64u)) {
+            pl_operand narrow[2]={form.base,{PL_OPERAND_CONST,word}};
+            pl_u32 node=pl_emit_shared(builder,PL_OPCODE_ALU_IMMEDIATE[0][0],narrow,2u);
+            if (!node) return -1;
+            *replacement=(pl_operand){PL_OPERAND_NODE,node};
+        }
+        return 1;
+    }
+    pl_operand operands[2]={form.base,{PL_OPERAND_CONST,factor}};
+    pl_u32 result_opcode=lane ? PL_OPCODE_MULR:PL_OPCODE_LANE32_MULR;
+    if (!(factor&(factor-1u))) {
+        pl_u32 count=0u;
+        for (pl_u64 value=factor;value>1u;value>>=1u) ++count;
+        result_opcode=lane ? PL_OPCODE_LANE64_SHL:PL_OPCODE_LANE32_SHL;
+        operands[1].value=count;
+    } else if (lane && factor>0x7fffffffull && factor<0xffffffff80000000ull) {
+        /* Keep the original word graph until this coefficient has a native
+         * lowering. IMUL's 64-bit immediate is exactly a sign-extended i32. */
+        return 0;
+    }
+    pl_u32 node=pl_emit_shared(builder,result_opcode,operands,2u);
+    if (!node) return -1;
+    *replacement=(pl_operand){PL_OPERAND_NODE,node};
+    return 1;
 }
 
 /* A 32-bit consumer observes exactly the low word.  The full-width spelling
@@ -935,6 +1121,68 @@ static int bit_overlay_value(const pl_plan *plan, pl_operand operand,
     return 1;
 }
 
+/* Backward demand from AND(value, mask): a field that the mask never observes
+ * has no residual state. Likewise an input mask before a logical shift is
+ * redundant when it retains every bit the output mask can observe:
+ *   ((x & m) >> k) & n = (x >> k) & n, if (n << k) & ~m == 0.
+ * The dual left-shift law uses n >> k. Width and count masking remain those
+ * of the original shift; only the provably irrelevant input operation goes. */
+static int masked_input(pl_builder *builder, const pl_plan *plan,
+                         pl_operand value, pl_u64 mask, pl_operand *out)
+{
+    *out = value;
+    for (pl_u32 remaining=plan->node_count+1u; remaining; --remaining) {
+        const pl_node *node=physical_form(plan,*out);
+        if (!node) break;
+        const pl_operand *argument=physical_arguments(plan,node);
+        if (!argument) break;
+        if ((node->opcode==PL_OPCODE_LANE32_INSERT || node->opcode==PL_OPCODE_LANE64_INSERT)
+                && node->argument_count==3u && argument[2].kind==PL_OPERAND_CONST) {
+            pl_u64 descriptor=argument[2].value;
+            pl_u32 bits=node->opcode==PL_OPCODE_LANE32_INSERT ? 32u:64u;
+            pl_u32 field=(pl_u32)descriptor&255u;
+            if (!field || field>bits || descriptor!=field
+                    || (bits==32u && mask>>32u)) break;
+            pl_u64 low=field==64u ? ~0ull:(1ull<<field)-1u;
+            if (!(mask&~low)) { *out=argument[1]; continue; }
+            if (!(mask&low)) { *out=argument[0]; continue; }
+        }
+        pl_u32 mask_lane=0u, mask_semantic=0u;
+        int mask_immediate=0;
+        if (node->argument_count==2u && argument[1].kind==PL_OPERAND_CONST
+                && arithmetic_opcode(node->opcode,&mask_lane,&mask_semantic,&mask_immediate)
+                && !mask_semantic && !(mask&~(argument[1].value&lane_word_mask(mask_lane)))) {
+            *out=argument[0];
+            continue;
+        }
+        pl_u32 bits=0u, direction=0u;
+        if (node->argument_count==2u && argument[1].kind==PL_OPERAND_CONST
+                && shift_opcode(node->opcode,&bits,&direction) && direction<2u) {
+            pl_u32 shift_opcode_value=node->opcode;
+            pl_operand shift[2]={argument[0],argument[1]};
+            const pl_node *input=physical_form(plan,shift[0]);
+            pl_u32 lane=0u, semantic=0u;
+            int immediate=0;
+            if (!input || input->argument_count!=2u
+                    || !arithmetic_opcode(input->opcode,&lane,&semantic,&immediate)
+                    || semantic) break;
+            const pl_operand *terms=physical_arguments(plan,input);
+            if (terms[1].kind!=PL_OPERAND_CONST) break;
+            pl_u64 word=bits==64u ? ~0ull:0xffffffffull;
+            pl_u32 count=(pl_u32)(shift[1].value&(bits-1u));
+            pl_u64 demand=direction ? ((mask&word)<<count)&word:(mask&word)>>count;
+            if (demand&~(terms[1].value&lane_word_mask(lane))) break;
+            shift[0]=terms[0];
+            pl_u32 result=pl_emit_shared(builder,shift_opcode_value,shift,2u);
+            if (!result) return -1;
+            *out=(pl_operand){PL_OPERAND_NODE,result};
+            continue;
+        }
+        break;
+    }
+    return 0;
+}
+
 static int canonical_bit_overlay(pl_builder *builder, const pl_plan *plan,
                                  pl_u32 opcode, const pl_operand *argument,
                                  pl_u32 argument_count,
@@ -993,6 +1241,94 @@ static int canonical_bit_overlay(pl_builder *builder, const pl_plan *plan,
             builder, PL_OPCODE_ALU_IMMEDIATE[bits == 64u][3u], operands, 2u);
         if (!value) return -1;
         *replacement = (pl_operand){ PL_OPERAND_NODE, value };
+    }
+    return 1;
+}
+
+/* Normalized overlay bits are disjoint: (x & M) & C = 0. Hence
+ *
+ *     ((x & M) | C) + k = (x & M) + (C + k)  (modulo 2^width).
+ *
+ * The same substitution handles subtraction by a constant. Demand masks and
+ * inserts have already reduced M and C, so the fixed bits disappear into the
+ * one arithmetic bias instead of becoming a second materialized word. */
+static int biased_bit_overlay(pl_builder *builder, const pl_plan *plan,
+                               pl_u32 opcode, const pl_operand *argument,
+                               pl_u32 argument_count,
+                               pl_operand *replacement)
+{
+    pl_u32 lane = 0u, semantic = 0u;
+    int immediate = 0;
+    if (argument_count != 2u || argument[1].kind != PL_OPERAND_CONST
+            || !arithmetic_opcode(opcode,&lane,&semantic,&immediate)
+            || (semantic != 1u && semantic != 2u)) return 0;
+    pl_u64 word = lane_word_mask(lane);
+    bit_overlay form = bit_overlay_atom(argument[0],word);
+    /* Pull back this arithmetic observation through a unary overlay chain.
+     * Each step substitutes one variable and updates two word masks. A fixed
+     * total visit bound avoids expanding a shared DAG per arithmetic node. */
+    for (pl_u32 remaining = 64u; remaining && form.has_base; --remaining) {
+        const pl_node *node = physical_form(plan,form.base);
+        if (!node) break;
+        const pl_operand *terms = physical_arguments(plan,node);
+        pl_u32 inner_lane = 0u, inner_semantic = 0u;
+        int inner_immediate = 0;
+        if (node->argument_count == 2u
+                && arithmetic_opcode(node->opcode,&inner_lane,&inner_semantic,&inner_immediate)
+                && (inner_semantic == 0u || inner_semantic == 3u)) {
+            pl_operand base = terms[0], fixed = terms[1];
+            if (fixed.kind != PL_OPERAND_CONST && base.kind == PL_OPERAND_CONST) {
+                fixed = base; base = terms[1];
+            }
+            if (fixed.kind != PL_OPERAND_CONST) break;
+            form.variable_mask &= lane_word_mask(inner_lane);
+            if (!inner_semantic) form.variable_mask &= fixed.value;
+            else {
+                form.constant |= fixed.value & form.variable_mask;
+                form.variable_mask &= ~fixed.value;
+            }
+            form.base = base;
+        } else if (node->argument_count == 3u
+                && (node->opcode == PL_OPCODE_LANE32_INSERT
+                    || node->opcode == PL_OPCODE_LANE64_INSERT)
+                && terms[0].kind == PL_OPERAND_CONST && !terms[0].value
+                && terms[2].kind == PL_OPERAND_CONST) {
+            pl_u64 field = terms[2].value;
+            pl_u32 width = node->opcode == PL_OPCODE_LANE32_INSERT ? 32u : 64u;
+            if (!field || field > width) break; /* zero offset, valid descriptor */
+            form.variable_mask &= field == 64u ? ~0ull : (1ull << field)-1u;
+            form.base = terms[1];
+        } else break;
+        ++form.operations;
+        if (form.base.kind == PL_OPERAND_CONST) {
+            form.constant |= form.base.value & form.variable_mask;
+            form.variable_mask = 0u;
+        }
+        normalize_bit_overlay(&form,word);
+    }
+    if (!form.operations || !form.constant) return 0;
+    pl_u64 bias = (semantic == 1u ? form.constant + argument[1].value
+                                 : form.constant - argument[1].value) & word;
+    if (!form.has_base) {
+        *replacement = (pl_operand){PL_OPERAND_CONST,bias};
+        return 1;
+    }
+    int needs_mask = form.variable_mask != word
+        || (!lane && !bias && !operand_is_u32(plan,form.base,plan->node_count+1u));
+    pl_u32 cost = (needs_mask ? 1u : 0u) + (bias ? 1u : 0u);
+    if (form.operations + 1u <= cost) return 0;
+    *replacement = form.base;
+    if (needs_mask) {
+        pl_operand operands[2] = {*replacement,{PL_OPERAND_CONST,form.variable_mask}};
+        pl_u32 value = pl_emit_shared(builder,PL_OPCODE_ALU_IMMEDIATE[lane][0u],operands,2u);
+        if (!value) return -1;
+        *replacement = (pl_operand){PL_OPERAND_NODE,value};
+    }
+    if (bias) {
+        pl_operand operands[2] = {*replacement,{PL_OPERAND_CONST,bias}};
+        pl_u32 value = pl_emit_shared(builder,PL_OPCODE_ALU_IMMEDIATE[lane][1u],operands,2u);
+        if (!value) return -1;
+        *replacement = (pl_operand){PL_OPERAND_NODE,value};
     }
     return 1;
 }
@@ -1245,25 +1581,47 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
     for (pl_u32 index = 0u; index <= count; ++index)
         projected[index] = consumed[index] = 0u;
 
-#define REMEMBER_PROJECTION(operand_) do {                                  \
+#define REMEMBER_REFERENCE(operand_) do {                                   \
         pl_operand remembered_ = (operand_);                                \
         if (remembered_.kind == PL_OPERAND_PROJECTION) {                    \
             pl_u64 source_ = remembered_.value >> PL_PROJECTION_SELECTOR_BITS; \
-            if (source_ && source_ <= count) projected[source_] = 1u;       \
+            if (source_ && source_ <= count) {                             \
+                projected[source_] |= 1u;                                 \
+                if ((remembered_.value & 255u) >= 16u) projected[source_] |= 2u; \
+            }                                                              \
+        } else if (remembered_.kind == PL_OPERAND_NODE                     \
+                && remembered_.value && remembered_.value <= count) {      \
+            pl_u8 *uses_ = &consumed[remembered_.value];                    \
+            if ((*uses_ >> 2u) < 2u) *uses_ += 4u;                          \
         }                                                                   \
     } while (0)
+    /* Consumer bits 2..3 saturate at two references, including roots.
+     * Projection bit 1 distinguishes a value/extended projection from the
+     * sixteen conditions, which observe only the same defined flag word. */
     for (pl_u32 index = 0u; index < in->argument_count; ++index)
-        REMEMBER_PROJECTION(in->arguments[index]);
+        REMEMBER_REFERENCE(in->arguments[index]);
     for (pl_u32 index = 0u; index < in->stack_count; ++index)
-        REMEMBER_PROJECTION(in->stack[index]);
+        REMEMBER_REFERENCE(in->stack[index]);
     for (pl_u32 index = 0u; index < in->local_count; ++index)
-        REMEMBER_PROJECTION(in->locals[index]);
-#undef REMEMBER_PROJECTION
+        REMEMBER_REFERENCE(in->locals[index]);
+#undef REMEMBER_REFERENCE
     for (pl_u32 index = 0u; index < in->argument_count; ++index) {
         pl_operand operand = in->arguments[index];
         if (operand.kind == PL_OPERAND_NODE && operand.value
                 && operand.value <= count)
-            consumed[operand.value] = 1u;
+            consumed[operand.value] |= 1u;
+    }
+    /* Bit 1 marks words whose producer also owns an observed shift flag cut.
+     * Multiplication has the same low word, not the same CF/PF/ZF/SF/OF.
+     * Reuse the consumer byte: no second per-node lifetime array is needed. */
+    for (pl_u32 index = 0u; index < count; ++index) {
+        const pl_node *node=&in->nodes[index];
+        if (node->opcode!=PL_OPCODE_X86_SHIFT_FLAGS || node->argument_count!=5u
+                || node->argument_at>in->argument_count
+                || 5u>in->argument_count-node->argument_at) continue;
+        pl_operand result=in->arguments[node->argument_at+2u];
+        if (result.kind==PL_OPERAND_NODE && result.value && result.value<=count)
+            consumed[result.value]|=2u;
     }
 
     pl_remap remap;
@@ -1299,6 +1657,74 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
 
         pl_u32 opcode = node->opcode;
         pl_u32 argument_count = node->argument_count;
+        /* A separately represented narrow result may be used only to form
+         * flags. Fold it into TEST/CMP before owner scheduling. For logical
+         * flags, the AND result itself proves the two TEST operands; SUB also
+         * needs the original operands because CF/OF depend on them. */
+        if (opcode == PL_OPCODE_X86_FLAGS && argument_count == 5u
+                && !(projected[index + 1u] & 2u) && staged[4].kind == PL_OPERAND_CONST) {
+            pl_operand old_result = in->arguments[node->argument_at + 3u];
+            const pl_node *result = physical_form(out, staged[3]);
+            pl_u64 descriptor = staged[4].value;
+            pl_u32 bits = (pl_u32)(descriptor & 0x7fu);
+            pl_u32 mode = (pl_u32)((descriptor >> 8u) & 7u);
+            pl_u32 result_lane = 0u, result_semantic = 0u;
+            int result_immediate = 0;
+            int sole_result = old_result.kind != PL_OPERAND_NODE
+                || (old_result.value && old_result.value <= count
+                    && !projected[old_result.value]
+                    && (consumed[old_result.value] >> 2u) == 1u);
+            if (sole_result
+                    && (bits == 8u || bits == 16u || bits == 32u || bits == 64u)
+                    && descriptor == (bits | ((pl_u64)mode << 8u))
+                    && (mode == 0u || mode == 3u)) {
+                pl_u64 mask = ~0ull >> (64u - bits);
+                int proven = 0;
+                if (result && result->argument_count == 2u
+                        && arithmetic_opcode(result->opcode, &result_lane,
+                            &result_semantic, &result_immediate)
+                        && (result_lane ? 64u : 32u) >= bits) {
+                    const pl_operand *terms = physical_arguments(out, result);
+                    if (mode == 0u && result_semantic == 0u) {
+                        staged[1] = terms[0];
+                        staged[2] = terms[1];
+                        proven = 1;
+                    } else if (mode == 3u && same_operand(staged[1], terms[0])) {
+                        proven = result_semantic == 2u && same_operand(staged[2], terms[1]);
+                        if (result_semantic == 1u && staged[2].kind == PL_OPERAND_CONST
+                                && terms[1].kind == PL_OPERAND_CONST
+                                && !((staged[2].value + terms[1].value) & mask))
+                            proven = 1;
+                    }
+                } else if (mode == 3u && same_operand(staged[1], staged[3])
+                        && staged[2].kind == PL_OPERAND_CONST && !(staged[2].value & mask)) {
+                    proven = 1;
+                } else if (mode == 0u && staged[3].kind == PL_OPERAND_CONST
+                        && !(staged[3].value & mask)) {
+                    staged[2] = (pl_operand){PL_OPERAND_CONST, 0u};
+                    proven = 1;
+                }
+                if (proven) {
+                    staged[3] = staged[4];
+                    argument_count = 4u;
+                    opcode = mode == 0u ? PL_OPCODE_X86_TEST : PL_OPCODE_X86_COMPARE;
+                }
+            }
+        }
+        /* With no value projection, AND and SUB observe exactly TEST and CMP.
+         * Erase the dead architectural write before publication scheduling;
+         * any non-condition projection conservatively retains the producer.
+         * Carry-preserving and extended descriptors are not this identity. */
+        if (opcode == PL_OPCODE_X86_ALU && argument_count == 4u
+                && !(projected[index + 1u] & 2u) && staged[3].kind == PL_OPERAND_CONST) {
+            pl_u64 descriptor = staged[3].value;
+            pl_u32 bits = (pl_u32)(descriptor & 0x7fu);
+            pl_u32 mode = (pl_u32)((descriptor >> 8u) & 7u);
+            if ((bits == 8u || bits == 16u || bits == 32u || bits == 64u)
+                    && (mode == 0u || mode == 3u)
+                    && descriptor == (bits | ((pl_u64)mode << 8u)))
+                opcode = mode == 0u ? PL_OPCODE_X86_TEST : PL_OPCODE_X86_COMPARE;
+        }
         /* Sign-extended and unsigned literals with the same low word are
          * one operand class at a narrow comparison boundary. Preserve
          * the descriptor and prior flags, but erase the unobserved high bits
@@ -1321,6 +1747,12 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
         pl_u32 input_bits = 0u, input_shift = 0u;
         pl_u32 input_lane = 0u, input_semantic = 0u;
         int input_immediate = 0;
+        pl_u32 signed_width = opcode==PL_OPCODE_EXTEND32_S ? 32u
+            : (opcode==PL_OPCODE_LANE32_EXTEND8_S || opcode==PL_OPCODE_LANE64_EXTEND8_S) ? 8u
+            : (opcode==PL_OPCODE_LANE32_EXTEND16_S || opcode==PL_OPCODE_LANE64_EXTEND16_S) ? 16u:0u;
+        if (signed_width && argument_count==1u
+                && masked_input(&builder,out,staged[0],(1ull<<signed_width)-1u,&staged[0])<0)
+            return PL_ERROR_ARENA;
         if (argument_count == 2u
                 && arithmetic_opcode(
                     opcode, &input_lane, &input_semantic, &input_immediate)
@@ -1344,6 +1776,20 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
             pl_u32 offset = ((pl_u32)descriptor >> 8u) & 0xffu;
             if (!(descriptor >> 16u) && field && offset <= bits
                     && field <= bits - offset) {
+                /* The inserted value is observed modulo 2^field. A logical
+                 * left shift by at least field bits is therefore zero in
+                 * that quotient, irrespective of its input. Remove the
+                 * dependency here, before physical owner scheduling. */
+                const pl_node *inner = physical_form(out, staged[1]);
+                pl_u32 shift_bits = 0u, shift_kind = 0u;
+                if (inner && inner->argument_count == 2u
+                        && shift_opcode(inner->opcode, &shift_bits, &shift_kind)
+                        && !shift_kind) {
+                    const pl_operand *shift = physical_arguments(out, inner);
+                    if (shift[1].kind == PL_OPERAND_CONST
+                            && (shift[1].value & (shift_bits - 1u)) >= field)
+                        staged[1] = (pl_operand){PL_OPERAND_CONST, 0u};
+                }
                 if (field == bits && !offset && !projected[index + 1u]) {
                     replacement = staged[1];
                     replace = 1;
@@ -1394,7 +1840,7 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
             }
         }
         if (opcode == PL_OPCODE_X86_CONDITION && argument_count == 2u
-                && !replace && !consumed[index + 1u]
+                && !replace && !(consumed[index + 1u] & 3u)
                 && !projected[index + 1u]
                 && staged[0].kind == PL_OPERAND_NODE
                 && staged[1].kind == PL_OPERAND_CONST
@@ -1435,6 +1881,27 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
                 &replacement);
             if (composed < 0) return PL_ERROR_ARENA;
             replace = composed;
+        }
+        if (!replace && !projected[index + 1u] && !(consumed[index + 1u]&2u)) {
+            int scaled=fold_scaled_word(&builder,out,opcode,staged,argument_count,&replacement);
+            if (scaled<0) return PL_ERROR_ARENA;
+            replace=scaled;
+        }
+        if (!replace && !projected[index + 1u] && argument_count==2u
+                && arithmetic_opcode(opcode,&lane,&semantic,&immediate) && !semantic) {
+            canonical_commutative(staged,2u);
+            if (staged[1].kind==PL_OPERAND_CONST) {
+                pl_u64 demand=staged[1].value&lane_word_mask(lane);
+                if (masked_input(&builder,out,staged[0],demand,&staged[0])<0)
+                    return PL_ERROR_ARENA;
+            }
+        }
+        if (!replace && !projected[index + 1u]) {
+            int biased = biased_bit_overlay(
+                &builder, out, opcode, staged, argument_count,
+                &replacement);
+            if (biased < 0) return PL_ERROR_ARENA;
+            replace = biased;
         }
         if (!replace && !projected[index + 1u]) {
             int overlaid = canonical_bit_overlay(

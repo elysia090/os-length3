@@ -1218,9 +1218,10 @@ static int lower_shift(const pl_x86_instruction *instruction,
         if (constant) {
             amount.value &= bits == 64u ? 63u : 31u;
             if (bits < 32u) amount.value %= bits + 1u;
-            /* A zero count performs the read (and its possible fault), but it
-             * neither writes memory nor changes any architectural output. */
-            if (!amount.value) return 0;
+            /* A zero count preserves flags and performs no memory write.
+             * A 32-bit GPR destination still clears its upper word. */
+            if (!amount.value) return !destination_memory && bits == 32u
+                ? published_register(builder, destination, source, 0) : 0;
         }
         pl_operand rotate_arguments[4] = {
             operand(PL_OPERAND_LOCAL, PL_X86_RFLAGS_LOCAL),
@@ -1252,7 +1253,8 @@ static int lower_shift(const pl_x86_instruction *instruction,
                       ? bits - 1u : bits == 64u ? 63u : 31u;
     if (constant) {
         amount.value &= count_mask;
-        if (!amount.value) return 0;
+        if (!amount.value) return !destination_memory && bits == 32u
+            ? published_register(builder, destination, source, 0) : 0;
     } else {
         pl_operand arguments[2] = {
             amount, operand(PL_OPERAND_CONST, count_mask),

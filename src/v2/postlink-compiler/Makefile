@@ -637,6 +637,17 @@ condition-code-check: $(BUILD)/condition-code
 
 check: condition-code-check
 
+.PHONY: indirect-cut-check
+$(BUILD)/indirect-cut: check/indirect-cut.c check/execute.h $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/indirect-cut.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+indirect-cut-check: $(BUILD)/indirect-cut
+	$(BUILD)/indirect-cut
+
+check: indirect-cut-check
+
 .PHONY: arithmetic-cut-check
 $(BUILD)/arithmetic-cut: check/arithmetic-cut.c check/execute.h $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/arithmetic-cut.c $(LIBRARY) \
