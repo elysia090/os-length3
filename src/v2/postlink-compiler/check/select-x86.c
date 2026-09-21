@@ -2866,6 +2866,32 @@ int main(void)
                 status, flag_only_candidates.count);
         return 98;
     }
+    /* `insert(local, constant, 8|16)` is an in-place lane constant write:
+     * `mov r14b, 1` beside a register copy.  The frame had no production for a
+     * constant inner (in_place_lane_insert only accepts a lane ALU inner), so
+     * the block stayed copied-source. */
+    static const pl_u8 lane_constant_write[] = {
+        0x48u, 0x89u, 0xefu,                      /* mov rdi, rbp */
+        0x41u, 0xb6u, 0x01u,                      /* mov r14b, 1  */
+    };
+    pl_x86_native_candidates lane_candidates;
+    status = candidates_projected(
+        lane_constant_write, sizeof lane_constant_write,
+        0x7ffffu, &lane_candidates);
+    pl_x86_native_selection lane_selected = { 0 };
+    pl_u32 lane_span = 0u, lane_work = 0u;
+    int lane_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &lane_candidates, 0u, 0u, &lane_selected, &lane_span, &lane_work);
+    if (lane_status || !lane_selected.supported
+            || lane_selected.copied_source
+            || lane_span != 1u || lane_work != 2u) {
+        fprintf(stderr, "native x86 selection: RED (lane constant write "
+                "status=%d copied=%u span/work=%u/%u)\n",
+                lane_status, (unsigned)lane_selected.copied_source,
+                lane_span, lane_work);
+        return 99;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,
