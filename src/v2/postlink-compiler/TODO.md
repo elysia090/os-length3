@@ -1166,6 +1166,24 @@ the same instruction and `standalone_flags_pending` is cleared when the group
 fires.  Whole-kernel scan: escapes **476 -> 465**, all `make -k check` targets
 green, differential fuzz 120/0.
 
+### The `0xf003` compare-over-an-unpublished-tree class (49 blocks)
+
+`0xffffffff81249696` (`and eax,0xffffc0; cmp eax,0x20f00; mov eax,0`) has plan
+`N1 = lane32.and(entry EAX, 0xffffc0)`, `N2 = compare(RFLAGS, N1, 0x20f00)`,
+`L0 = const 0`, with `final_flag_node = N2`.  `standalone_flag_publication_details`
+declines because the compare's left operand is the *unpublished* node `N1`
+(`publication_owner(N1) == GPR_COUNT`, because the `and`'s only reader is the
+compare and the later `mov eax,0` overwrites EAX), so `physical_left` is not a
+local and the shape returns 0.  The frame has no production that materializes a
+standalone flag producer's operand tree: for an `X86_ALU` final flag node
+`measure_alu_pair` builds the tree into the value destination, but a `CMP`/`TEST`
+publishes no GPR, so nothing owns the tree.  The missing production materializes
+the compare/test operand tree into a scratch, emits the comparison with that
+scratch, and orders it before the pending publication that overwrites the tree's
+architectural register (the scratch keeps `owner_dependencies & pending` clear,
+so the standalone-flag block can still run first).  48 of the 49 are work
+`floor + 1`, so the class is one instruction from covered.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
