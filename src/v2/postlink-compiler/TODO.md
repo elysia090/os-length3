@@ -1046,6 +1046,18 @@ coordinate**, which simultaneously satisfies `L2` (no `L0 -> L2` edge needed),
 and accumulates the chain in `L0`'s coordinate with the candidate as the only
 scratch.  That is the next production.
 
+Measuring the population instead of only the first witness paid off: tallying
+every counted escape by node count shows most of it is small, not long chains
+(13 at 0 nodes, 69 at 1, 54 at 2, 76 at 3, 80 at 4, ...).  One whole class was a
+normalized-argument-order bug: `standalone_flag_publication_details` read the
+`bt` base from argument slot 2 and the offset from slot 1, but the physical
+rewriter hands over `(prior, base, offset, bits)` (a register base in slot 1, an
+immediate offset in slot 2) for `bt reg,imm`.  It therefore rejected every such
+block with `blocking_work = 0xf003`.  Resolving the base to whichever slot holds
+the register closes **12 blocks (499 -> 487)**.  `check/select-x86.c` gains a
+`bit_test_constant_offset` fixture (candidate count 1 before, 2 after);
+`make -k check`, `condition-code-check` and the fuzz are green.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

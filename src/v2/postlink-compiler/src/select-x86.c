@@ -4931,8 +4931,18 @@ static int standalone_flag_publication_details(
         if (argument[3].kind != PL_OPERAND_CONST
                 || (argument[3].value != 32u && argument[3].value != 64u))
             return 0;
-        pl_operand base = argument[2];
-        pl_operand offset = argument[1];
+        /* The normalized argument order for `bt` is (prior, offset, base,
+         * bits), but the physical rewriter can hand over (prior, base, offset,
+         * bits) when the offset is an immediate.  Resolve the base to whichever
+         * slot holds a register. */
+        pl_u32 base_at = 2u, offset_at = 1u;
+        if (argument[2].kind == PL_OPERAND_CONST
+                && argument[1].kind == PL_OPERAND_LOCAL) {
+            base_at = 1u;
+            offset_at = 2u;
+        }
+        pl_operand base = argument[base_at];
+        pl_operand offset = argument[offset_at];
         physicalize_published_operand(plan, PL_X86_GPR_COUNT, &base);
         physicalize_published_operand(plan, PL_X86_GPR_COUNT, &offset);
         if (base.kind != PL_OPERAND_LOCAL || base.value >= PL_X86_GPR_COUNT
@@ -4947,14 +4957,14 @@ static int standalone_flag_publication_details(
         out->right = offset;
         out->entry_sources = 0u;
         out->owner_dependencies = 0u;
-        if (argument[2].kind == PL_OPERAND_LOCAL
-                && argument[2].value == base.value)
+        if (argument[base_at].kind == PL_OPERAND_LOCAL
+                && argument[base_at].value == base.value)
             out->entry_sources |= 1u << out->left;
         else
             out->owner_dependencies |= 1u << out->left;
         if (offset.kind == PL_OPERAND_LOCAL) {
-            if (argument[1].kind == PL_OPERAND_LOCAL
-                    && argument[1].value == offset.value)
+            if (argument[offset_at].kind == PL_OPERAND_LOCAL
+                    && argument[offset_at].value == offset.value)
                 out->entry_sources |= 1u << (pl_u32)offset.value;
             else
                 out->owner_dependencies |= 1u << (pl_u32)offset.value;

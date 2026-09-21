@@ -2940,6 +2940,25 @@ int main(void)
                 root_unary_candidates.count);
         return 101;
     }
+    /* `bt` whose normalized argument order is (prior, base, offset, bits) but
+     * whose physical rewriter hands over (prior, offset, base, bits) when the
+     * offset is an immediate.  Reading base from the wrong slot left the block
+     * copied-source. */
+    static const pl_u8 bit_test_constant_offset[] = {
+        0x48u, 0xc7u, 0xc6u, 0xc8u, 0xd8u, 0x8cu, 0x81u,
+                                                  /* movabs rsi, addr */
+        0x48u, 0x0fu, 0xbau, 0xe0u, 0x23u,        /* bt rax, 0x23    */
+        0x73u, 0x00u,                             /* jae .+0         */
+    };
+    pl_x86_native_candidates bit_test_candidates;
+    status = candidates_projected(
+        bit_test_constant_offset, sizeof bit_test_constant_offset,
+        0x7ffffu, &bit_test_candidates);
+    if (status || bit_test_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (bit test constant offset "
+                "status=%d candidates=%u)\n", status, bit_test_candidates.count);
+        return 102;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,
