@@ -1207,6 +1207,29 @@ unresolved relocation.  Whole-kernel scan: escapes **463 -> 432** (all 31);
 `check/select-x86.c` gains `indirect_dispatch` (count 1 -> 2, `0xf001` before,
 green after).  `make -k check` green (79), differential fuzz 120/0.
 
+### The `0xf002` residual (28 blocks)
+
+Two exact blockers, both where an ALU consumes a *comparison's* carry:
+
+- `81234414` (`cmp rbp,1; mov ...; mov esi,2; adc esi,0`) and `812498b2`
+  (`cmp eax,1; ...; sbb ebx,ebx`) have `N2 = X86_ALU(N1, const, const, desc)`
+  with `arguments[0] == N1` (the compare).  `alu_node_semantics` requires
+  `arguments[0]` to be the `RFLAGS` local, so `alu_frame_shape` rejects (0xf002).
+  The compare's CF must be emitted before the `adc`/`sbb`; the flag-dependency
+  law currently has no edge from an `X86_ALU`'s prior-flags operand to a compare
+  node.
+- `8127fa0e`/`8128325d` (`xor ecx,ecx; sub rax,rdx; setb cl; neg rdx; jns`)
+  publish the carry Boolean (`setb`) of a *non-final* flag producer while the
+  final flag producer (`neg`) has its own Boolean consumers.  The ALU frame
+  does not run `flag_result_group_shape` at all, and even for the
+  compare-branch frames the group needs a GPR value owner, which a flag-only
+  `sub`/`cmp` does not have.
+
+Other `0xf002` blocks are `sete` of two chained compares (`8128be22`), a
+shift-with-flags (`8121f647`) and a `bsf`+`add`+`je` sequence (`81258eae`), so
+the class is not one production.  Whole numbers after the `0xf001` fix:
+`0x200` 75, `0xf003` ~47, `0xf002` 28, `0x0` 28, `0x202` 24, `0x501` 22.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
