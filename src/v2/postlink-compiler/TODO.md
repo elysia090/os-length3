@@ -948,14 +948,27 @@ candidate is the exact source
 (`output=0x23 expected=0x1f`).  `make -k check` and the 120-case fuzz are
 green.
 
-`0xffffffff8121c995` is a 31-node flag-selector chain: repeated
-`test cl/ch,imm8; cmovne rdx,rax; or reg,imm; mov rdx,rax` where each test picks
-a different constant OR.  Only the copied source is offered and the dense ALU
-frame blocks at `blocking_work = 0x200` (`blocking_opcode = 0x400002`); source
-work is 35 against an SSA floor of 31.  The chain is long enough that the
-first-fit ALU scheduler cannot order the shared `rax`/`rdx` generations; this is
-the next class (a long select chain), and no per-shape handoff has been
-attempted yet.
+`0xffffffff8121c995` (`amd_pmu_lbr_hw_config+0x15`) is a 32-node flag-selector
+chain.  Its plan builds two constants from `L1` (RCX):
+
+```text
+N1 = L1 & 3
+N4/N8/N12/N26 = select(constant, 0, test(L1 or L1>>8, bit))   (4 constant arms)
+N5 = N1 | N4    N9 = N5 | N8    N13 = N9 | N12   ... OR-accumulation
+N16..N23 add shifted bit-extracts of L1
+N27 = N23 | N26
+N28 = N27 | 0x40000 -> L2 (RDX)
+N31 = N27 | ((L1 << 2) & 0x40000) -> L0 (RAX)
+N32 = xor(L6, L6) -> L16 (flags), L6 = projection(N32) = 0
+```
+
+So the final `N27` is published twice (RDX and RAX) and `L6` is a dead-value
+`xor esi,esi`, and changed = {L0, L2, L6}.  Only the copied source is offered
+(work 35, SSA floor 31) and the dense ALU frame blocks at `blocking_work =
+0x200`: the first-fit ALU scheduler cannot order the long OR/select chain with
+the shared `N27` publication.  This is a distinct class (a long constant-select
+chain plus a dead-value `xor` publication) and no production has been
+attempted.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
