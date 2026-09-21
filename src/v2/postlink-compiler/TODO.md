@@ -1193,6 +1193,20 @@ first argument).  `check/select-x86.c` gains `compare_over_unpublished_tree`
 (candidate count 1 -> 2, `0xf003` before, green after).  Whole-kernel scan:
 escapes 465 -> 463.
 
+### The `0xf001` indirect-dispatch class (31 blocks, closed)
+
+Tail dispatches (`mov edx,1; mov esi,0xec; xor edi,edi; jmp *rax`) were rejected
+by the ALU frame's `block->dynamic_target` guard, and `measure_direct_frame`
+only accepted them when the plan had no nodes.  The ALU frame guard now accepts
+`flow == JUMP && dynamic_target && successor_count == 0` and the tail emits
+`jmp *target` via `emit_indirect_jump`, with the target resolved through
+`published_operand_local`.  Blocks carrying `construction_fields` (an absolute
+source relocation the frame cannot express) stay rejected -- without that
+exclusion `code-grid-check` failed on the fixed-stride entry grid with an
+unresolved relocation.  Whole-kernel scan: escapes **463 -> 432** (all 31);
+`check/select-x86.c` gains `indirect_dispatch` (count 1 -> 2, `0xf001` before,
+green after).  `make -k check` green (79), differential fuzz 120/0.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

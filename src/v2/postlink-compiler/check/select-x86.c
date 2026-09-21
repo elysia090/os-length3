@@ -3053,6 +3053,26 @@ int main(void)
                 tree_candidates.diagnostic.blocking_work);
         return 106;
     }
+    /* Tail dispatch: constant/copy publications followed by an indirect jump.
+     * The ALU frame rejected every dynamic target, so the block stayed
+     * copied-source; it now emits the publications and `jmp *target`. */
+    static const pl_u8 indirect_dispatch[] = {
+        0xbau, 0x01u, 0x00u, 0x00u, 0x00u,        /* mov edx, 1         */
+        0xbeu, 0xecu, 0x00u, 0x00u, 0x00u,        /* mov esi, 0xec      */
+        0x31u, 0xffu,                             /* xor edi, edi       */
+        0xffu, 0xe0u,                             /* jmp *rax           */
+    };
+    pl_x86_native_candidates dispatch_candidates;
+    status = candidates_projected(
+        indirect_dispatch, sizeof indirect_dispatch, 0x7ffffu,
+        &dispatch_candidates);
+    if (status || dispatch_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (indirect dispatch "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, dispatch_candidates.count,
+                dispatch_candidates.diagnostic.blocking_work);
+        return 107;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

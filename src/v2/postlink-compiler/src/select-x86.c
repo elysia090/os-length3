@@ -11349,8 +11349,11 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             || (block->flow != PL_X86_FLOW_NEXT
                 && block->flow != PL_X86_FLOW_JUMP)
             || (block->flow == PL_X86_FLOW_JUMP
-                && block->successor_count != 1u)
-            || block->dynamic_target
+                && ((block->dynamic_target
+                     && (block->successor_count != 0u
+                         || block->construction_fields))
+                    || (!block->dynamic_target
+                        && block->successor_count != 1u)))
             || block->has_predicate || block->has_fault_predicate
             || block->machine_operation != PL_X86_MACHINE_NONE) {
         selection->blocking_work = 0xf001u;
@@ -12601,14 +12604,24 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
     int aliases = alias_source_address_fields(frontend, block, selection);
     if (aliases <= 0) return aliases;
     if (block->flow == PL_X86_FLOW_JUMP) {
-        pl_u32 branch_bytes = block->relax_short_control ? 5u : 2u;
-        if (bytes > U32_MAX_VALUE - branch_bytes)
-            return PL_ERROR_X86_SELECT;
-        int status = append_control_fixup(
-            frontend, block, selection,
-            (pl_u8)(block->relax_short_control ? 4u : 1u),
-            bytes + 1u, bytes + branch_bytes, block->successor[0]);
-        if (status) return status;
+        pl_u32 branch_bytes = 0u;
+        if (block->dynamic_target) {
+            pl_u32 target_owner = PL_X86_GPR_COUNT;
+            if (!published_operand_local(
+                    &block->plan, block->target, &target_owner)
+                    || !emit_indirect_jump(
+                        target_owner, (pl_u8 *)0, &branch_bytes))
+                return 0;
+        } else {
+            branch_bytes = block->relax_short_control ? 5u : 2u;
+            if (bytes > U32_MAX_VALUE - branch_bytes)
+                return PL_ERROR_X86_SELECT;
+            int status = append_control_fixup(
+                frontend, block, selection,
+                (pl_u8)(block->relax_short_control ? 4u : 1u),
+                bytes + 1u, bytes + branch_bytes, block->successor[0]);
+            if (status) return status;
+        }
         bytes += branch_bytes;
         ++instructions;
     }
@@ -18064,12 +18077,24 @@ static int write_direct_alu_frame(const pl_x86_block *block,
     }
     if (block->flow == PL_X86_FLOW_JUMP) {
         pl_u32 branch_bytes = block->relax_short_control ? 5u : 2u;
-        if (at > selection->output_bytes
-                || selection->output_bytes - at != branch_bytes)
-            return PL_ERROR_X86_SELECT;
-        output[at++] = block->relax_short_control ? 0xe9u : 0xebu;
-        for (pl_u32 byte = 1u; byte < branch_bytes; ++byte)
-            output[at++] = 0u;
+        if (block->dynamic_target) {
+            pl_u32 target_owner = PL_X86_GPR_COUNT;
+            if (!published_operand_local(
+                    &block->plan, block->target, &target_owner)
+                    || !emit_indirect_jump(
+                        target_owner, output + at, &branch_bytes)
+                    || at > selection->output_bytes
+                    || branch_bytes > selection->output_bytes - at)
+                return PL_ERROR_X86_SELECT;
+            at += branch_bytes;
+        } else {
+            if (at > selection->output_bytes
+                    || selection->output_bytes - at != branch_bytes)
+                return PL_ERROR_X86_SELECT;
+            output[at++] = block->relax_short_control ? 0xe9u : 0xebu;
+            for (pl_u32 byte = 1u; byte < branch_bytes; ++byte)
+                output[at++] = 0u;
+        }
     }
     /* The measure accepted the compare-over-tree shape but the tree could not
      * be materialized here; the final flags were never produced. */
