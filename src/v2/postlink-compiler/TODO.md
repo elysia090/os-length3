@@ -869,6 +869,18 @@ population drops **534 -> 533**; the new first escape is
 `0xffffffff8120d4d2..0xffffffff8120d4d8` (`output=0x2 expected=0x1`).
 `make -k check` and the 120-case fuzz are green.
 
+`0xffffffff8120d4d2` (`io_sq_offload_create+0x162`) is two instructions,
+`mov rdi,rbp; mov r14b,1`, and its plan is one node plus one copy:
+`N1 = insert(L14,1,8) -> L14` and `L7 = L5`.  The SSA work floor is 1 while the
+source emits 2, so the gate flags it.  A probe shows `pl_x86_select_candidates`
+reporting one normalized candidate (plus the source) with first rejection
+`0x500 | 14`, yet the emit path still selects the copied source with
+`normalized_family_present == 0`, so this is a candidate/measure consistency
+question (or a floor that must account for the live register copy), not a
+missing production.  The next step is to make the block's normalized candidate
+win the joint-minimum selection, or to prove the floor is 2 for a block with a
+live copy publication.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
