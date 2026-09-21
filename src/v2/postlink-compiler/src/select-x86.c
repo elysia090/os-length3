@@ -4641,6 +4641,12 @@ typedef struct {
     pl_u32 candidate_local;
     pl_u32 candidate_is_entry;
     pl_u32 candidate_immediate;
+    /* When the candidate arm is a constant whose publication overwrites the
+     * entry register the current arm reads, binding the candidate to that
+     * publication is a cycle.  The constant is materialised instead and the
+     * owner is recorded so the frame can drop the spurious publication
+     * dependency. */
+    pl_u32 candidate_owner;
     pl_u32 compare_left_local;
     pl_u32 value_bits;
     pl_u32 compare_bits;
@@ -5382,6 +5388,7 @@ static int conditional_select_details_inner(const pl_plan *plan,
     pl_u32 candidate_local = 0u;
     pl_u32 candidate_immediate = 0u;
     pl_u32 inverted = 0u;
+    pl_operand candidate_arm = argument[0];
     out->value_bits = select->opcode == PL_OPCODE_LANE32_SELECT
                    || (operand_fits_u32(
                            plan, argument[0], plan->node_count + 1u)
@@ -5408,6 +5415,7 @@ static int conditional_select_details_inner(const pl_plan *plan,
          * condition is one CMOV and preserves both entry values until that
          * instruction: `cmov(!cc) dst,src`. */
         out->current = argument[0];
+        candidate_arm = argument[1];
         candidate_local = second_local;
         inverted = 1u;
     } else if (first_physical) {
@@ -5418,6 +5426,7 @@ static int conditional_select_details_inner(const pl_plan *plan,
          * exact complementary x86 condition.  Adjacent condition codes are
          * complements by ISA definition, hence cc^1 for all 16 encodings. */
         out->current = argument[0];
+        candidate_arm = argument[1];
         candidate_local = second_local;
         inverted = 1u;
     } else {
@@ -5433,8 +5442,32 @@ static int conditional_select_details_inner(const pl_plan *plan,
     out->candidate_immediate = candidate_immediate;
     out->candidate_is_entry = (pl_u32)(inverted ? second_entry : first_entry);
     pl_u32 current_entry = 0u;
-    if (conditional_entry_local(plan, out->current, out->value_bits, &current_entry))
+    int current_is_entry = conditional_entry_local(
+        plan, out->current, out->value_bits, &current_entry);
+    if (current_is_entry)
         out->current = (pl_operand){ PL_OPERAND_LOCAL, current_entry };
+    out->candidate_owner = PL_X86_GPR_COUNT;
+    /* A constant candidate bound to a publication that overwrites the entry
+     * register the current arm still reads is a cycle: the select must run
+     * after that publication to read the constant, and before it to keep the
+     * entry.  Materialise the constant instead; the frame evaluates the
+     * current arm first, before the constant lands, and drops the spurious
+     * publication dependency. */
+    int condition_is_entry_flags =
+        condition_argument[0].kind == PL_OPERAND_LOCAL
+        && condition_argument[0].value == PL_X86_RFLAGS_LOCAL;
+    if (condition_is_entry_flags
+            && !candidate_immediate && candidate_local < PL_X86_GPR_COUNT
+            && current_is_entry && current_entry == candidate_local
+            && candidate_arm.kind == PL_OPERAND_CONST) {
+        out->candidate_value = candidate_arm;
+        out->candidate_owner = candidate_local;
+        candidate_immediate = 1u;
+        candidate_local = PL_X86_GPR_COUNT;
+        out->candidate_local = candidate_local;
+        out->candidate_immediate = candidate_immediate;
+        out->candidate_is_entry = 0u;
+    }
     out->condition = (pl_u32)condition_argument[1].value ^ inverted;
     out->has_compare = 0u;
     out->current_flag_node = 0u;
@@ -5967,6 +6000,29 @@ static int conditional_select_publication_dependencies(
     return 1;
 }
 
+/* A select whose constant candidate is bound to a publication that overwrites
+ * the entry register its current arm reads takes the immediate candidate path
+ * (see conditional_select_details_inner): the frame materialises the constant
+ * itself and evaluates the current arm first.  The generic node law still names
+ * that constant's publication as a dependency, which would deadlock the
+ * scheduler against the entry read, so drop the spurious edge. */
+static int apply_select_candidate_laws(
+    const pl_plan *plan, pl_u32 changed,
+    pl_u32 dependencies[PL_X86_GPR_COUNT])
+{
+    if (!plan || !dependencies) return 0;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(changed & (1u << local))) continue;
+        conditional_select select;
+        if (!conditional_select_details_inner(
+                plan, plan->locals[local], local, 1, &select))
+            continue;
+        if (select.candidate_owner < PL_X86_GPR_COUNT)
+            dependencies[local] &= ~(1u << select.candidate_owner);
+    }
+    return 1;
+}
+
 /* When the compare observed by CMOV is also the block's final architectural
  * flag producer, its value publication and flag publication are one native
  * instruction.  Replace old-entry compare sources with that producer edge;
@@ -6018,6 +6074,9 @@ int pl_x86_select_alu_schedule_diagnostic(
     if (!apply_shared_flag_producer_laws(
             &block->plan, out->changed, out->final_flag_node,
             out->sources, out->dependencies))
+        return PL_ERROR_X86_SELECT;
+    if (!apply_select_candidate_laws(
+            &block->plan, out->changed, out->dependencies))
         return PL_ERROR_X86_SELECT;
     pl_operand result, prior;
     out->final_flag_owner = flag_result_operand(
@@ -11326,6 +11385,9 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
     if (!apply_shared_flag_producer_laws(
             &block->plan, changed, final_flag_node,
             frame_sources, frame_dependencies))
+        return 0;
+    if (!apply_select_candidate_laws(
+            &block->plan, changed, frame_dependencies))
         return 0;
     shared_flag_select_handoff flag_select = { 0 };
     int has_flag_select = shared_flag_select_handoff_shape(
@@ -16810,6 +16872,9 @@ static int write_direct_alu_frame(const pl_x86_block *block,
     if (!apply_shared_flag_producer_laws(
             &block->plan, changed, final_flag_node,
             frame_sources, frame_dependencies))
+        return PL_ERROR_X86_SELECT;
+    if (!apply_select_candidate_laws(
+            &block->plan, changed, frame_dependencies))
         return PL_ERROR_X86_SELECT;
     shared_flag_select_handoff flag_select = { 0 };
     int has_flag_select = shared_flag_select_handoff_shape(

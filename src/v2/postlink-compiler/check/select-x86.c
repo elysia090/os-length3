@@ -2978,6 +2978,37 @@ int main(void)
                 preload_entry_candidates.count);
         return 103;
     }
+    /* A conditional select whose constant candidate is published to the same
+     * register its current arm reads as an entry.  Binding the constant to its
+     * publication makes the select depend on that publication while the
+     * publication overwrites the entry the current needs -- a cycle.  The
+     * source preloads the current, then materialises the constant, then cmovs. */
+    static const pl_u8 select_over_published_constant[] = {
+        0x48u, 0x89u, 0xc6u,                      /* mov rsi, rax       */
+        0xb8u, 0x00u, 0x00u, 0x00u, 0x00u,        /* mov eax, 0         */
+        0x48u, 0x0fu, 0x48u, 0xf0u,               /* cmovs rsi, rax     */
+    };
+    pl_x86_native_candidates constant_candidates;
+    status = candidates_projected(
+        select_over_published_constant,
+        sizeof select_over_published_constant, 0x7ffffu,
+        &constant_candidates);
+    pl_x86_native_selection constant_selected = { 0 };
+    pl_u32 constant_span = 0u, constant_work = 0u;
+    int constant_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &constant_candidates, 0u, 0u, &constant_selected,
+            &constant_span, &constant_work);
+    if (constant_status || constant_candidates.count < 2u
+            || !constant_selected.supported
+            || constant_span != 2u || constant_work != 3u) {
+        fprintf(stderr, "native x86 selection: RED (select over published "
+                "constant status=%d candidates=%u span/work=%u/%u "
+                "diagnostic=0x%x)\n", status,
+                constant_candidates.count, constant_span, constant_work,
+                constant_candidates.diagnostic.blocking_work);
+        return 104;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

@@ -1111,8 +1111,33 @@ breaks it by copying the current into the destination first, then materialising
 the constant into the same coordinate, then the `cmov`.  A sound fix is to let
 this select take the `candidate_immediate` path (materialise the constant
 instead of reading its publication) and preload the current before the constant
-lands -- i.e. the select-current analogue of `flag_value_preload`.  Not
-implemented.
+lands -- i.e. the select-current analogue of `flag_value_preload`.
+
+Implemented.  `conditional_select_details_inner` now takes the immediate
+candidate path when the condition is the entry flag word (no compare), the
+candidate arm is a constant, and the candidate's publication owner is exactly
+the entry register its current arm reads.  It records that owner in
+`candidate_owner`, and `apply_select_candidate_laws` drops the resulting
+spurious publication dependency from the frame law before scheduling, so the
+select is free to run first.  The publication loop already evaluates the current
+arm before the candidate, so the current lands in the destination before the
+constant is materialised: the `flag_value_preload` order without a separate
+pre-pass.  For the witness the frame offers `mov rsi,rax; mov eax,0; cmovs
+rsi,rax; mov eax,0` (span 2, work 4); the constant is materialised into its own
+publication's coordinate (RAX), which the separate `L0` publication then
+repeats, so the copied source's `3/2` stays the joint minimum and is selected.
+The block is nevertheless covered by a normalized production, so the escape gate
+clears.
+
+`check/select-x86.c` gains a `select_over_published_constant` fixture
+(candidate count 1 -> 2, joint minimum span/work 2/3): RED (`candidates=1`,
+`diagnostic=0x200`) before, green after.  Restricting the immediate path to the
+entry-flag condition is what keeps `compare-cut` green: a select with a compare
+resolves the same register conflict through the existing shared-flag handoff at
+`5/2`, and forcing the immediate path there loses that spelling.  `make -k
+check` is green (79 targets).  The two named kernel witnesses share this shape,
+so the population is expected to drop 480 -> 478; the whole-kernel scan was not
+rerun here because no linked kernel input is present on this host.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
