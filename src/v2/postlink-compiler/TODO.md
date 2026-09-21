@@ -987,8 +987,22 @@ Hand calculation, then landed.  The coupling is resolved by two narrow rules:
 Both are needed together: with them the Pareto stays cleared and the escape
 population drops **507 -> 500** (`0xffffffff8121c995` still leads at
 `output=0x23 expected=0x1f`).  `condition-code-check`, `make -k check` (79
-targets) and the 120-case fuzz are green.  `0xffffffff8121c995`'s own remaining
-blocker is now the long chain, not the zero-class dependency.
+targets) and the 120-case fuzz are green.
+
+`0xffffffff8121c995`'s own remaining blocker is now the long chain and it is
+exact.  The frame reaches `blocking_work = 0x280 | 2`: the publication
+`L2 = N28 = N27 | 0x40000` is a `single_bit_or`, and measuring its seed `N27`
+falls into the select `N26 = select(32772, 0, test(N17, 32))` where
+`N17 = L1 >> 8`.  Instrumenting `measure_alu_tree` shows the select fails at the
+final rejection with `remaining = 32` (so the recursion budget is not the
+issue): the select's compare operand `N17` is an unpublished node, so the frame
+seeds it into a scratch and needs a second scratch for the constant candidate
+arm, while `alu_frame_scratch_mask` offers only one free coordinate.  The source
+never materialises `N17`: it tests the high byte directly (`test ch, 0x20`).
+The next step is to let the select compare map a shifted entry byte to its
+high-byte coordinate (`test_byte_coordinate` / `emit_high8_test`) instead of
+seeding the shift node, which removes the extra scratch and should let the
+whole accumulation chain emit.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
