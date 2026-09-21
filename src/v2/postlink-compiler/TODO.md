@@ -895,20 +895,29 @@ N4 = shr(N1, 1) -> L0   N5 = shr(N2, 1) -> L2
 N6 = sub(N4, N5) -> L1  N7 = compare(L16, N6, N3) -> RFLAGS (jae)
 ```
 
-and only the copied source is offered.  A probe reports
+and only the copied source was offered.  A probe reported
 `blocking_work = 0x700`, `blocking_opcode = 0xb`, i.e.
 `next_compare_branch_assignment_excluding(plan, pending = {L0,L1,L3},
-preferred = {L1,L3}, deferred = 0)` finds no legal next publication.  The
-deadlock is exact: `L0 = N4 = shr(N1,1)` and `L3 = N3 = shr(N1,4)` share the
-root `N1 = sub(RBX,RAX)`, so both read entry `RAX` and entry `RBX` while
-writing each other's coordinate.  `used & (1 << L3)` is set by `sources[L0]`
-(entry RBX) and `used & (1 << L0)` by `sources[L3]` (entry RAX), so neither may
-go first; `L1 = N6` depends on `L0` and the already-published `L2`.  The source
-breaks the cycle by computing `N1` once in RBX and copying it to RAX before the
-single shift of each.  This needs a shared-root handoff in the compare-branch
-frame (the dense ALU frame's `generation_join_handoff` is the same idea but is
-not consulted on this path), or routing the compare-branch block through it.
-The source is 11 work against an SSA floor of 8.
+preferred = {L1,L3}, deferred = 0)` found no legal next publication: `L0 = N4 =
+shr(N1,1)` and `L3 = N3 = shr(N1,4)` share the root `N1 = sub(RBX,RAX)`, so
+each reads the coordinate the other overwrites.
+
+`shared_root_shift_handoff_shape` now recognises two pending publications that
+shift the same unpublished root whose operands are exactly those two
+destinations, and both compare-branch paths emit the root once (in place in one
+destination), copy it to the other, then shift each once.  For this block the
+candidate is
+
+```text
+sub rbx,rax; mov rax,rbx; shr rbx,4; shr rax,1; mov rdx,r12; sub rdx,rcx;
+shr rdx,1; mov rcx,rax; sub rcx,rdx; cmp rcx,rbx; jae
+```
+
+(span 6, work 11, the source operations reordered), verified equivalent.
+`check/select-x86.c` gains a `shared_root_shift` fixture (candidate count 1
+before, 2 after).  The escape population drops **510 -> 509**; the new first
+escape is `0xffffffff8121c47d..0xffffffff8121c48f` (`output=0x5 expected=0x4`).
+`make -k check` and the 120-case fuzz are green.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

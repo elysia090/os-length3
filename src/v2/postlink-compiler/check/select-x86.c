@@ -2892,6 +2892,33 @@ int main(void)
                 lane_span, lane_work);
         return 99;
     }
+    /* Two shifts of one unpublished root whose operands are exactly the two
+     * destinations.  Each destination reads the coordinate the other
+     * overwrites, so the compare-branch scheduler deadlocks; the handoff
+     * evaluates the root once, copies it, and shifts each once. */
+    static const pl_u8 shared_root_shift[] = {
+        0x48u, 0x29u, 0xc3u,                      /* sub rbx, rax      */
+        0x4cu, 0x89u, 0xe2u,                      /* mov rdx, r12      */
+        0x48u, 0x89u, 0xd8u,                      /* mov rax, rbx      */
+        0x48u, 0x29u, 0xcau,                      /* sub rdx, rcx      */
+        0x48u, 0xc1u, 0xebu, 0x04u,               /* shr rbx, 4        */
+        0x48u, 0xd1u, 0xe8u,                      /* shr rax, 1        */
+        0x48u, 0xd1u, 0xeau,                      /* shr rdx, 1        */
+        0x48u, 0x89u, 0xc1u,                      /* mov rcx, rax      */
+        0x48u, 0x29u, 0xd1u,                      /* sub rcx, rdx      */
+        0x48u, 0x39u, 0xd9u,                      /* cmp rcx, rbx      */
+        0x0fu, 0x83u, 0x00u, 0x00u, 0x00u, 0x00u, /* jae .+0           */
+    };
+    pl_x86_native_candidates shared_root_candidates;
+    status = candidates_projected(
+        shared_root_shift, sizeof shared_root_shift,
+        0x7ffffu, &shared_root_candidates);
+    if (status || shared_root_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (shared root shift "
+                "status=%d candidates=%u)\n", status,
+                shared_root_candidates.count);
+        return 100;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

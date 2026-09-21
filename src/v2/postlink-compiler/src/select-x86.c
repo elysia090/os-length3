@@ -12583,6 +12583,93 @@ static int next_compare_branch_assignment(const pl_plan *plan, pl_u32 pending,
     return next_compare_branch_assignment_excluding(plan, pending, preferred, 0u, selected);
 }
 
+typedef struct {
+    pl_operand seed;
+    pl_u32 seed_bits;
+    pl_u32 seed_dest;
+    pl_u32 copy_dest;
+    pl_u32 bits;
+    pl_operand amount[2];
+    pl_u32 group[2];
+} shared_root_shift_handoff;
+
+/* Two pending publications that shift the same unpublished root, where the
+ * root reads the entry values of exactly those two destinations:
+ *
+ *   seed = op(D2, D1)   D1 = seed >> k1   D2 = seed >> k2
+ *
+ * Neither destination may be published first under the ordinary anti-
+ * dependency check (each reads the coordinate the other overwrites), yet the
+ * source evaluates the seed once in one coordinate, copies it to the other,
+ * and shifts each once.  Detect that pair so the caller can emit it. */
+static int shared_root_shift_handoff_shape(const pl_plan *plan, pl_u32 pending,
+                                           shared_root_shift_handoff *out)
+{
+    if (!plan || !pending || !out) return 0;
+    for (pl_u32 first = 0u; first < PL_X86_GPR_COUNT; ++first) {
+        if (!(pending & (1u << first))) continue;
+        pl_operand first_source, first_amount;
+        pl_u32 first_bits = 0u, first_group = 0u;
+        if (!shift_node_details(plan, plan->locals[first],
+                &first_source, &first_amount, &first_bits, &first_group)
+                || first_source.kind != PL_OPERAND_NODE
+                || !first_source.value
+                || first_source.value > plan->node_count)
+            continue;
+        for (pl_u32 second = first + 1u;
+                second < PL_X86_GPR_COUNT; ++second) {
+            if (!(pending & (1u << second))) continue;
+            pl_operand second_source, second_amount;
+            pl_u32 second_bits = 0u, second_group = 0u;
+            if (!shift_node_details(plan, plan->locals[second],
+                    &second_source, &second_amount, &second_bits, &second_group)
+                    || second_source.kind != PL_OPERAND_NODE
+                    || second_source.value != first_source.value
+                    || second_bits != first_bits)
+                continue;
+            if (publication_owner(plan, first_source) < PL_X86_GPR_COUNT)
+                continue;
+            pl_operand left, right;
+            pl_u32 seed_bits = 0u, seed_mode = 0u;
+            if (!arithmetic_tree_details(plan, first_source, &left, &right,
+                    &seed_bits, &seed_mode)
+                    || seed_bits != first_bits)
+                continue;
+            pl_u32 seed_dest = PL_X86_GPR_COUNT;
+            if (left.kind == PL_OPERAND_LOCAL && left.value == second
+                    && right.kind == PL_OPERAND_LOCAL
+                    && right.value == first) {
+                seed_dest = second;
+            } else if (associative_mode(seed_mode)
+                    && left.kind == PL_OPERAND_LOCAL && left.value == first
+                    && right.kind == PL_OPERAND_LOCAL
+                    && right.value == second) {
+                seed_dest = first;
+            } else {
+                continue;
+            }
+            out->seed = first_source;
+            out->seed_bits = seed_bits;
+            out->seed_dest = seed_dest;
+            out->copy_dest = seed_dest == first ? second : first;
+            out->bits = first_bits;
+            if (seed_dest == first) {
+                out->amount[0] = first_amount;
+                out->group[0] = first_group;
+                out->amount[1] = second_amount;
+                out->group[1] = second_group;
+            } else {
+                out->amount[0] = second_amount;
+                out->group[0] = second_group;
+                out->amount[1] = first_amount;
+                out->group[1] = first_group;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int next_transient_plain_assignment(const pl_plan *plan,
                                            pl_u32 pending,
                                            pl_u32 *selected)
@@ -14216,6 +14303,37 @@ static int measure_direct_compare_branch(
             bytes += prefix + publication;
             instructions += work + 2u;
             pending &= ~((1u << word.narrow) | (1u << word.wide));
+            continue;
+        }
+        shared_root_shift_handoff root_shift;
+        if (!has_handoff
+                && shared_root_shift_handoff_shape(
+                    &block->plan, pending, &root_shift)) {
+            pl_u32 seed_bytes = 0u, seed_work = 0u, move_bytes = 0u;
+            pl_u32 shift0 = 0u, shift1 = 0u;
+            int measured = measure_alu_tree(
+                frontend, block, selection, root_shift.seed_dest,
+                root_shift.seed, root_shift.seed_bits, bytes,
+                block->plan.node_count + 1u, 0u, &seed_bytes, &seed_work);
+            if (measured <= 0
+                    || !emit_gpr_move(root_shift.copy_dest,
+                        root_shift.seed_dest, root_shift.bits, 0, &move_bytes)
+                    || !emit_shift_instruction(
+                        root_shift.seed_dest, root_shift.amount[0],
+                        root_shift.bits, root_shift.group[0], 0, &shift0)
+                    || !emit_shift_instruction(
+                        root_shift.copy_dest, root_shift.amount[1],
+                        root_shift.bits, root_shift.group[1], 0, &shift1)
+                    || seed_bytes > U32_MAX_VALUE - move_bytes
+                    || seed_bytes + move_bytes > U32_MAX_VALUE - shift0
+                    || seed_bytes + move_bytes + shift0
+                       > U32_MAX_VALUE - shift1
+                    || seed_work > U32_MAX_VALUE - 3u)
+                return measured < 0 ? measured : 0;
+            bytes += seed_bytes + move_bytes + shift0 + shift1;
+            instructions += seed_work + 3u;
+            pending &= ~((1u << root_shift.seed_dest)
+                       | (1u << root_shift.copy_dest));
             continue;
         }
         pl_u32 local = 0u, encoded = 0u, work = 1u;
@@ -17619,6 +17737,40 @@ static int write_direct_compare_branch(
                 return PL_ERROR_X86_SELECT;
             at += prefix + publication;
             pending &= ~((1u << word.narrow) | (1u << word.wide));
+            continue;
+        }
+        shared_root_shift_handoff root_shift;
+        if (!has_handoff
+                && shared_root_shift_handoff_shape(
+                    &block->plan, pending, &root_shift)) {
+            pl_u32 seed_bytes = 0u, move_bytes = 0u, shift0 = 0u, shift1 = 0u;
+            if (!write_alu_tree(block, selection, root_shift.seed_dest,
+                    root_shift.seed, root_shift.seed_bits, at,
+                    block->plan.node_count + 1u, 0u,
+                    output + at, &seed_bytes)
+                    || at > selection->output_bytes
+                    || seed_bytes > selection->output_bytes - at
+                    || !emit_gpr_move(root_shift.copy_dest,
+                        root_shift.seed_dest, root_shift.bits,
+                        output + at + seed_bytes, &move_bytes)
+                    || move_bytes > selection->output_bytes - at - seed_bytes
+                    || !emit_shift_instruction(
+                        root_shift.seed_dest, root_shift.amount[0],
+                        root_shift.bits, root_shift.group[0],
+                        output + at + seed_bytes + move_bytes, &shift0)
+                    || shift0 > selection->output_bytes - at - seed_bytes
+                                - move_bytes
+                    || !emit_shift_instruction(
+                        root_shift.copy_dest, root_shift.amount[1],
+                        root_shift.bits, root_shift.group[1],
+                        output + at + seed_bytes + move_bytes + shift0,
+                        &shift1)
+                    || shift1 > selection->output_bytes - at - seed_bytes
+                                - move_bytes - shift0)
+                return PL_ERROR_X86_SELECT;
+            at += seed_bytes + move_bytes + shift0 + shift1;
+            pending &= ~((1u << root_shift.seed_dest)
+                       | (1u << root_shift.copy_dest));
             continue;
         }
         pl_u32 local = 0u, written = 0u;
