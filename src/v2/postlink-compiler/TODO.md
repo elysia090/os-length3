@@ -1092,6 +1092,28 @@ je` and blocks whose value tree mixes `and`/`or` with a wide `movabs`.  These
 are separate per-shape productions; the `setcc` boolean and the constant/copy
 blocks are the most regular and are the recommended next targets.
 
+The largest `0x200` sub-shape is a select over a published constant that
+clobbers its own current arm.  `0xffffffff8128ffa1` and `0xffffffff81290e50`
+share it:
+
+```text
+mov rsi, rax      ; current = entry RAX
+mov eax, 0        ; candidate = const 0 published to RAX (= L0)
+cmovs rsi, rax    ; L6 = select(0, entry RAX, entry SF)
+```
+
+The plan is `N1 = condition(entry RFLAGS, 8)`, `N2 = select(0, L0, N1) -> L6`,
+`L0 = const 0`.  `conditional_select_details_inner` binds the constant candidate
+to its publication (`first_physical`, `candidate_local = L0`), so the law makes
+`L6` depend on `L0`; but `L6`'s current reads entry `RAX`, which `L0`'s
+publication overwrites, so `L0` must wait for `L6` -- a cycle.  The source
+breaks it by copying the current into the destination first, then materialising
+the constant into the same coordinate, then the `cmov`.  A sound fix is to let
+this select take the `candidate_immediate` path (materialise the constant
+instead of reading its publication) and preload the current before the constant
+lands -- i.e. the select-current analogue of `flag_value_preload`.  Not
+implemented.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
