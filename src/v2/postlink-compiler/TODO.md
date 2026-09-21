@@ -1092,6 +1092,19 @@ je` and blocks whose value tree mixes `and`/`or` with a wide `movabs`.  These
 are separate per-shape productions; the `setcc` boolean and the constant/copy
 blocks are the most regular and are the recommended next targets.
 
+The `setcc` class is now exact.  `0xffffffff812497b9` (`and edx,7; cmp dl,6;
+sete al`) has selection plan `N1 = and(L2,7)`, `N2 = compare(L16,N1,6)` with
+`L0 = projection(N2, selector 4)` (the ZF boolean), `L2 = N1`, `L16 = N2`.
+`alu_frame_shape` rejects it because the projection check requires selector 16
+(the ALU value projection) and `4 != 16`.  Relaxing that check to accept
+selectors 0..16 makes the shape accept, but the projection emission branch then
+calls `alu_node_details`, which requires an `X86_ALU` node while `N2` is an
+`X86_COMPARE`, so the frame blocks at `0x100 | 0`.  The missing piece is a
+`setcc` production: a published flag-selector projection of a `COMPARE`/`TEST`
+must emit the comparison (or test) and then `setcc` into the destination.  The
+relaxation alone changes nothing and was reverted; a production is required.
+The same `0x100` blocker covers the `cmp`+copy+constant blocks.
+
 The largest `0x200` sub-shape is a select over a published constant that
 clobbers its own current arm.  `0xffffffff8128ffa1` and `0xffffffff81290e50`
 share it:
