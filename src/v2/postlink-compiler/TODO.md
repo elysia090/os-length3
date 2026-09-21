@@ -1016,15 +1016,35 @@ publication loop.  That closes one block (**500 -> 499**) with `make -k check`,
 
 `0xffffffff8121c995` itself still blocks at `0x280 | 2`, and the instrumented
 rejection is now exact: `measure_alu_tree(dest = L2, node = N26,
-scratch = 0)`.  The publication `L2 = N27 | 0x40000` asks for the whole
-accumulation chain to be built into RDX, but at that point
-`alu_frame_scratch_mask` offers no free coordinate, so the nested select cannot
-place its constant candidate (nor the source's `mov rdx,rax; or rdx,imm;
-cmovne rax,rdx` pattern).  The source keeps a dedicated accumulator (RAX) and a
-dedicated candidate (RDX) across the chain.  The next step is a frame that
-schedules the constant-select accumulation with those two dedicated
-coordinates and a single `or rdx,imm` per arm, rather than rebuilding `N27`
-inside `L2`'s destination.
+scratch = 0)`.
+
+Hand calculation of the whole block.  The source is one accumulation with two
+coordinates: `RAX` is the accumulator and `RDX` the candidate.
+
+```text
+mov rax, rcx ; and eax, 3                     acc = ecx & 3
+mov rdx, rax ; or rdx, 0x29ffc ; test cl,8  ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x8c54 ; test cl,10  ; cmovne rax, rdx
+mov rdx, rax ; or dl, 0xa8    ; test cl,20  ; cmovne rax, rdx
+mov rdx, rax ; or dh, 8       ; test cl,40  ; cmovne rax, rdx
+mov rdx, rax ; or dh, 1       ; test ch,4   ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x20000; test ch,10  ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x8004 ; test ch,20  ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x40000; test ecx,0x10000 ; cmovne rax, rdx
+xor esi, esi
+```
+
+The frame cannot express this because `L0 = N31 = select(N28, N27, cond)` has
+`N28` as its candidate and `N28` is published to `L2`, so the law makes `L0`
+depend on `L2`; the frame therefore publishes `L2 = N27 | 0x40000` first and
+asks for the whole chain to be built into RDX, where no scratch is free for the
+nested constant candidates.  In the source `N28` is not a separate
+materialisation at all: `mov rdx,rax; or rdx,const` builds it inside `L0`'s own
+publication, and `L2` is that same RDX.  So the fix is a handoff that publishes
+the final select `L0` with its candidate **materialised into `L2`'s
+coordinate**, which simultaneously satisfies `L2` (no `L0 -> L2` edge needed),
+and accumulates the chain in `L0`'s coordinate with the candidate as the only
+scratch.  That is the next production.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
