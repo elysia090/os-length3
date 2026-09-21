@@ -3073,6 +3073,28 @@ int main(void)
                 dispatch_candidates.diagnostic.blocking_work);
         return 107;
     }
+    /* A comparison whose carry feeds an `adc`/`sbb` stays in the ALU's
+     * prior-flags operand instead of the entry RFLAGS local, which
+     * alu_frame_shape rejected.  The frame now emits the comparison and then
+     * the carry-consuming ALU. */
+    static const pl_u8 carry_alu_from_compare[] = {
+        0x48u, 0x83u, 0xfdu, 0x01u,               /* cmp rbp, 1         */
+        0x48u, 0x89u, 0xeau,                      /* mov rdx, rbp       */
+        0x4cu, 0x89u, 0xe7u,                      /* mov rdi, r12       */
+        0xbeu, 0x02u, 0x00u, 0x00u, 0x00u,        /* mov esi, 2         */
+        0x83u, 0xd6u, 0x00u,                      /* adc esi, 0         */
+    };
+    pl_x86_native_candidates carry_candidates;
+    status = candidates_projected(
+        carry_alu_from_compare,
+        sizeof carry_alu_from_compare, 0x7ffffu, &carry_candidates);
+    if (status || carry_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (carry ALU from compare "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, carry_candidates.count,
+                carry_candidates.diagnostic.blocking_work);
+        return 108;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

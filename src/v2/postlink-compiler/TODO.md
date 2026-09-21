@@ -1207,28 +1207,28 @@ unresolved relocation.  Whole-kernel scan: escapes **463 -> 432** (all 31);
 `check/select-x86.c` gains `indirect_dispatch` (count 1 -> 2, `0xf001` before,
 green after).  `make -k check` green (79), differential fuzz 120/0.
 
-### The `0xf002` residual (28 blocks)
+### The `0xf002` residual (28 -> 21 blocks)
 
-Two exact blockers, both where an ALU consumes a *comparison's* carry:
+The comparison-carry blocker is closed.  `81234414`
+(`cmp rbp,1; ...; mov esi,2; adc esi,0`) and `812498b2`
+(`cmp eax,1; ...; sbb ebx,ebx`) have `N2 = X86_ALU(N1, const, const, desc)`
+with `arguments[0] == N1` (the compare), which `alu_node_semantics` rejected
+because it requires the `RFLAGS` local.  `alu_carry_prior_node` admits the node
+in `alu_frame_shape`, and `carry_alu_group_shape` emits the comparison (via
+`emit_flag_coordinate`) and then the `adc`/`sbb` (via `measure_alu_pair` /
+`write_alu_pair`).  The left operand materialization is a `mov` (flag
+preserving), so the comparison's carry is still live at the `adc`.  The group
+only fires when the comparison has no other pending Boolean consumer and none
+of its physical operands is still pending.  Escapes 432 -> 425.
 
-- `81234414` (`cmp rbp,1; mov ...; mov esi,2; adc esi,0`) and `812498b2`
-  (`cmp eax,1; ...; sbb ebx,ebx`) have `N2 = X86_ALU(N1, const, const, desc)`
-  with `arguments[0] == N1` (the compare).  `alu_node_semantics` requires
-  `arguments[0]` to be the `RFLAGS` local, so `alu_frame_shape` rejects (0xf002).
-  The compare's CF must be emitted before the `adc`/`sbb`; the flag-dependency
-  law currently has no edge from an `X86_ALU`'s prior-flags operand to a compare
-  node.
-- `8127fa0e`/`8128325d` (`xor ecx,ecx; sub rax,rdx; setb cl; neg rdx; jns`)
-  publish the carry Boolean (`setb`) of a *non-final* flag producer while the
-  final flag producer (`neg`) has its own Boolean consumers.  The ALU frame
-  does not run `flag_result_group_shape` at all, and even for the
-  compare-branch frames the group needs a GPR value owner, which a flag-only
-  `sub`/`cmp` does not have.
-
-Other `0xf002` blocks are `sete` of two chained compares (`8128be22`), a
-shift-with-flags (`8121f647`) and a `bsf`+`add`+`je` sequence (`81258eae`), so
-the class is not one production.  Whole numbers after the `0xf001` fix:
-`0x200` 75, `0xf003` ~47, `0xf002` 28, `0x0` 28, `0x202` 24, `0x501` 22.
+Remaining `0xf002`: `8127fa0e`/`8128325d`
+(`xor ecx,ecx; sub rax,rdx; setb cl; neg rdx; jns`) publish the carry Boolean of
+a *non-final* flag producer while the final flag producer (`neg`) has its own
+consumers -- the ALU frame does not run `flag_result_group_shape` at all, and the
+group needs a GPR value owner a flag-only `sub`/`cmp` does not have;
+`8128be22` is `sete` over two chained compares; `8121f647` a shift-with-flags;
+`81258eae` a `bsf`+`add`+`je`.  Whole numbers: `0x200` 75, `0xf003` ~47,
+`0xf002` 21, `0x0` 28, `0x202` 24, `0x501` 22.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

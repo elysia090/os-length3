@@ -72,6 +72,19 @@ static int compare_boolean_group_shape(const pl_plan *plan, pl_u32 pending,
                                        pl_u32 final_flag_node,
                                        flag_result_group *out);
 
+/* A CMP/TEST whose comparison feeds an `adc`/`sbb` carry-in: emit the
+ * comparison, then the carry-consuming ALU. */
+typedef struct {
+    pl_u32 destination;
+    pl_operand left, right;
+    pl_u32 bits, mode;
+    pl_operand compare_left, compare_right;
+    pl_u32 compare_bits, compare_test;
+} carry_alu_group;
+
+static int carry_alu_group_shape(const pl_plan *plan, pl_u32 pending,
+                                 pl_u32 final_flag_node, carry_alu_group *out);
+
 static int plan_identity(const pl_plan *plan)
 {
     if (!plan || plan->node_count || plan->stack_count
@@ -2463,6 +2476,48 @@ static int sign_extend_node(const pl_plan *plan, pl_u32 node_number,
  * only a register-allocation constraint.  Every live result must have one
  * architectural GPR projection; the final flag node is recorded separately
  * so dead intermediate flags never impose a false dependency wave. */
+/* `cmp X,imm; ...; adc/sbb D,imm` keeps the comparison as the ALU's
+ * prior-flags operand instead of the entry RFLAGS local.  The comparison must
+ * be emitted first so its carry is live; `carry_alu_group_shape` owns that
+ * spelling.  This predicate only lets `alu_frame_shape` admit the node. */
+static int alu_carry_prior_node(const pl_plan *plan, pl_u32 node_number,
+                                pl_u32 *prior)
+{
+    if (!plan || !node_number || node_number > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[node_number - 1u];
+    if (node->opcode != PL_OPCODE_X86_ALU || node->argument_count != 4u
+            || node->argument_at > plan->argument_count
+            || node->argument_count > plan->argument_count - node->argument_at)
+        return 0;
+    const pl_operand *argument = plan->arguments + node->argument_at;
+    if (argument[0].kind != PL_OPERAND_NODE || !argument[0].value
+            || argument[0].value >= node_number)
+        return 0;
+    const pl_node *compare = &plan->nodes[argument[0].value - 1u];
+    if (compare->opcode != PL_OPCODE_X86_COMPARE
+            && compare->opcode != PL_OPCODE_X86_TEST)
+        return 0;
+    int left_ok = argument[1].kind == PL_OPERAND_CONST
+        || (argument[1].kind == PL_OPERAND_LOCAL
+            && argument[1].value < PL_X86_GPR_COUNT);
+    int right_ok = argument[2].kind == PL_OPERAND_CONST
+        || (argument[2].kind == PL_OPERAND_LOCAL
+            && argument[2].value < PL_X86_GPR_COUNT);
+    if (!left_ok || !right_ok) return 0;
+    if (argument[3].kind != PL_OPERAND_CONST) return 0;
+    pl_u64 descriptor = argument[3].value;
+    pl_u32 bits = (pl_u32)(descriptor & 0x7fu);
+    pl_u32 mode = (pl_u32)((descriptor >> 8u) & 7u);
+    pl_u32 preserves_carry = (pl_u32)((descriptor >> 11u) & 1u);
+    if ((bits != 32u && bits != 64u) || preserves_carry
+            || (mode != 2u && mode != 4u)
+            || descriptor != ((pl_u64)bits | ((pl_u64)mode << 8u)))
+        return 0;
+    if (prior) *prior = (pl_u32)argument[0].value;
+    return 1;
+}
+
 static int alu_frame_shape(const pl_plan *plan, pl_u32 *changed,
                            pl_u32 *final_flag_node)
 {
@@ -2481,7 +2536,8 @@ static int alu_frame_shape(const pl_plan *plan, pl_u32 *changed,
         pl_operand right;
         if (!alu_node_semantics(
                 plan, node, &source, &right,
-                &bits, &mode, &preserves_carry))
+                &bits, &mode, &preserves_carry)
+                && !alu_carry_prior_node(plan, node, 0))
             return 0;
         pl_operand result = {
             PL_OPERAND_PROJECTION, ((pl_u64)node << 8u) | 16u,
@@ -11662,6 +11718,33 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             selection->direct_nested_frame = 1u;
             continue;
         }
+        carry_alu_group carry_group;
+        if (carry_alu_group_shape(
+                &block->plan, pending, final_flag_node, &carry_group)) {
+            pl_u32 compare_bytes = 0u, operation_bytes = 0u;
+            pl_u32 operation_work = 0u;
+            if (!emit_flag_coordinate(
+                    (pl_u32)carry_group.compare_left.value,
+                    carry_group.compare_right, carry_group.compare_bits,
+                    carry_group.compare_test, 0u, (pl_u8 *)0, &compare_bytes))
+                return 0;
+            int measured = measure_alu_pair(
+                frontend, block, selection, carry_group.destination,
+                carry_group.left, carry_group.right, carry_group.bits,
+                carry_group.mode, 0u, bytes + compare_bytes,
+                block->plan.node_count + 1u, 0u,
+                &operation_bytes, &operation_work);
+            if (measured <= 0) return measured < 0 ? measured : 0;
+            if (bytes > U32_MAX_VALUE - compare_bytes - operation_bytes
+                    || instructions > U32_MAX_VALUE - 1u - operation_work)
+                return 0;
+            bytes += compare_bytes + operation_bytes;
+            instructions += 1u + operation_work;
+            pending &= ~(1u << carry_group.destination);
+            standalone_flags_pending = 0;
+            selection->direct_nested_frame = 1u;
+            continue;
+        }
         if (standalone_flags_pending) {
             pl_u32 clobberers = 0u;
             for (pl_u32 local = 0u;
@@ -14718,6 +14801,75 @@ static int compare_tree_flag_shape(const pl_plan *plan, pl_u32 changed,
     return 1;
 }
 
+static int carry_alu_group_shape(const pl_plan *plan, pl_u32 pending,
+                                 pl_u32 final_flag_node, carry_alu_group *out)
+{
+    if (!plan || !out || !pending || !final_flag_node) return 0;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(pending & (1u << local))) continue;
+        pl_operand value = plan->locals[local];
+        if (value.kind != PL_OPERAND_PROJECTION
+                || (value.value & 0xffu) != 16u)
+            continue;
+        pl_u32 node = (pl_u32)(value.value >> 8u);
+        if (node != final_flag_node) continue;
+        pl_u32 prior = 0u;
+        if (!alu_carry_prior_node(plan, node, &prior)) continue;
+        const pl_node *alu = &plan->nodes[node - 1u];
+        const pl_operand *argument = plan->arguments + alu->argument_at;
+        /* No other pending publication may still observe the comparison's
+         * flags; otherwise the comparison is not the unique producer. */
+        pl_u32 shared = 0u;
+        for (pl_u32 index = 0u; index < PL_X86_GPR_COUNT; ++index) {
+            if (index == local || !(pending & (1u << index))) continue;
+            pl_operand publication = plan->locals[index];
+            if (publication.kind == PL_OPERAND_PROJECTION
+                    && (publication.value >> 8u) == prior
+                    && (publication.value & 0xffu) < 16u) {
+                shared = 1u;
+                break;
+            }
+        }
+        if (shared) continue;
+        pl_operand flags = { PL_OPERAND_NODE, prior };
+        pl_operand cleft, cright;
+        pl_u32 cbits = 0u, cmode = 0u, ccarry = 0u;
+        if (!flag_operation_details(plan, flags, &cleft, &cright,
+                &cbits, &cmode, &ccarry) || ccarry)
+            continue;
+        physicalize_published_operand(plan, PL_X86_GPR_COUNT, &cleft);
+        physicalize_published_operand(plan, PL_X86_GPR_COUNT, &cright);
+        if (cleft.kind != PL_OPERAND_LOCAL
+                || cleft.value >= PL_X86_GPR_COUNT)
+            continue;
+        if (cright.kind != PL_OPERAND_CONST
+                && !(cright.kind == PL_OPERAND_LOCAL
+                    && cright.value < PL_X86_GPR_COUNT))
+            continue;
+        pl_u32 reads = 1u << (pl_u32)cleft.value;
+        if (cright.kind == PL_OPERAND_LOCAL)
+            reads |= 1u << (pl_u32)cright.value;
+        if (argument[1].kind == PL_OPERAND_LOCAL)
+            reads |= 1u << (pl_u32)argument[1].value;
+        if (argument[2].kind == PL_OPERAND_LOCAL)
+            reads |= 1u << (pl_u32)argument[2].value;
+        if (reads & pending & ~(1u << local)) continue;
+        pl_u64 descriptor = argument[3].value;
+        out->destination = local;
+        out->left = argument[1];
+        out->right = argument[2];
+        out->bits = (pl_u32)(descriptor & 0x7fu);
+        out->mode = (pl_u32)((descriptor >> 8u) & 7u);
+        out->compare_left = cleft;
+        out->compare_right = cright;
+        out->compare_bits = cbits;
+        out->compare_test =
+            plan->nodes[prior - 1u].opcode == PL_OPCODE_X86_TEST ? 1u : 0u;
+        return 1;
+    }
+    return 0;
+}
+
 static int emit_group_booleans(const pl_plan *plan, const flag_result_group *shape,
                                int before, pl_u8 *output, pl_u32 *written, pl_u32 *work)
 {
@@ -17321,6 +17473,30 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                 return PL_ERROR_X86_SELECT;
             at += post;
             pending &= ~compare_bool.members;
+            standalone_flags_pending = 0;
+            continue;
+        }
+        carry_alu_group carry_group;
+        if (carry_alu_group_shape(
+                &block->plan, pending, final_flag_node, &carry_group)) {
+            pl_u32 compare_bytes = 0u, operation_bytes = 0u;
+            if (!emit_flag_coordinate(
+                    (pl_u32)carry_group.compare_left.value,
+                    carry_group.compare_right, carry_group.compare_bits,
+                    carry_group.compare_test, 0u, output + at, &compare_bytes)
+                    || at > selection->output_bytes
+                    || compare_bytes > selection->output_bytes - at
+                    || !write_alu_pair(
+                        block, selection, carry_group.destination,
+                        carry_group.left, carry_group.right,
+                        carry_group.bits, carry_group.mode, 0u,
+                        at + compare_bytes, block->plan.node_count + 1u, 0u,
+                        output + at + compare_bytes, &operation_bytes)
+                    || operation_bytes
+                       > selection->output_bytes - at - compare_bytes)
+                return PL_ERROR_X86_SELECT;
+            at += compare_bytes + operation_bytes;
+            pending &= ~(1u << carry_group.destination);
             standalone_flags_pending = 0;
             continue;
         }
