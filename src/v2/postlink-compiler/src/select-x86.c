@@ -2304,6 +2304,34 @@ static int zero_extend_node(const pl_plan *plan, pl_u32 node_number,
     return 1;
 }
 
+/* `insert(0, inner, width)` is a pure lane extension: the result is the low
+ * `width` bits of `inner`, zero-extended.  Unlike zero_extend_node this
+ * returns the inserted operand whatever its kind, so a caller can materialize
+ * an inner value that has no publication yet. */
+static int zero_extend_operand(const pl_plan *plan, pl_u32 node_number,
+                               pl_operand *inner, pl_u32 *width)
+{
+    if (!plan || !inner || !width || !node_number
+            || node_number > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[node_number - 1u];
+    if ((node->opcode != PL_OPCODE_LANE64_INSERT
+                && node->opcode != PL_OPCODE_LANE32_INSERT)
+            || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at)
+        return 0;
+    const pl_operand *arguments = plan->arguments + node->argument_at;
+    if (arguments[0].kind != PL_OPERAND_CONST || arguments[0].value
+            || arguments[2].kind != PL_OPERAND_CONST
+            || (arguments[2].value != 8u && arguments[2].value != 16u
+                && arguments[2].value != 32u))
+        return 0;
+    *inner = arguments[1];
+    *width = (pl_u32)arguments[2].value;
+    return 1;
+}
+
 static int sign_extend_value(const pl_plan *plan, pl_u32 node_number,
                              pl_operand *source, pl_u32 *bits)
 {
@@ -6085,7 +6113,10 @@ static int collect_affine_lea_width(const pl_plan *plan, pl_operand value,
     if (value.kind == PL_OPERAND_NODE && value.value
             && value.value <= plan->node_count) {
         const pl_node *node = &plan->nodes[value.value - 1u];
-        if (node->opcode == PL_OPCODE_ADD3[bits == 64u ? 1u : 0u]
+        /* A 32-bit LEA result is the low word of the 64-bit address sum, so a
+         * 64-bit ADD3 is a valid 32-bit address coordinate as well. */
+        if ((node->opcode == PL_OPCODE_ADD3[bits == 64u ? 1u : 0u]
+                || (bits == 32u && node->opcode == PL_OPCODE_ADD3[1]))
                 && node->argument_count == 3u
                 && node->argument_at <= plan->argument_count
                 && node->argument_count
@@ -6129,7 +6160,8 @@ static int collect_affine_lea_width(const pl_plan *plan, pl_operand value,
     pl_u32 node_bits = 0u, mode = 0u;
     if (!arithmetic_tree_details(
             plan, value, &left, &right, &node_bits, &mode)
-            || node_bits != bits || mode != 1u)
+            || mode != 1u
+            || (node_bits != bits && !(bits == 32u && node_bits == 64u)))
         return 0;
     return collect_affine_lea_width(
                plan, left, bits, remaining - 1u, out)
@@ -11897,6 +11929,20 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 if (!emit_zero_extend_move(
                         local, source, bits, (pl_u8 *)0, &encoded))
                     return 0;
+            } else if (zero_extend_operand(
+                    &block->plan, (pl_u32)value.value, &lane_inner, &lane_width)
+                    && lane_width == 32u) {
+                /* A 32-bit zero extension of an inner value with no
+                 * publication of its own: the inner is materialised at 32-bit
+                 * width, and that register write is the zero extension. */
+                int measured = measure_alu_tree(
+                    frontend, block, selection, local, lane_inner, 32u,
+                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    &encoded, &publication_work);
+                if (measured <= 0) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured;
+                }
             } else if (in_place_lane_insert(
                     &block->plan, value, local, &lane_inner, &lane_width)) {
                 int measured = measure_alu_tree(
@@ -17018,6 +17064,14 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     &block->plan, (pl_u32)value.value, &source, &bits)) {
                 if (!emit_zero_extend_move(
                         local, source, bits, output + at, &written))
+                    return PL_ERROR_X86_SELECT;
+            } else if (zero_extend_operand(
+                    &block->plan, (pl_u32)value.value, &lane_inner, &lane_width)
+                    && lane_width == 32u) {
+                if (!write_alu_tree(
+                        block, selection, local, lane_inner, 32u,
+                        at, block->plan.node_count + 1u, scratch_mask,
+                        output + at, &written))
                     return PL_ERROR_X86_SELECT;
             } else if (in_place_lane_insert(
                     &block->plan, value, local, &lane_inner, &lane_width)) {

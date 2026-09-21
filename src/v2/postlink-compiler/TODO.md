@@ -810,6 +810,57 @@ pre-existing and not caused by this change.  The real remaining kernel work is
 therefore a 542-block normalization-escape population whose first witness is
 `0xffffffff812098b1..0xffffffff812098ca`, not the next Pareto point.
 
+The first escape (`__register_chrdev_region.cold`) is a coverage gap, not a
+floor gap.  Its plan mixes ALU nodes with a register copy and two constants:
+
+```text
+N1 = ADD3[1](L2, L6, -1)   N2 = insert(0, N1, 32) -> L1
+N3 = insert(0, L6, 32)  -> L2   N4 = xor(L8, L8) -> RFLAGS (L8 = projection(N4))
+L6 = L14 (copy)   L7 = address constant   L9 = 0xfffff
+```
+
+`alu_frame_shape` accepts it, but the publication loop reaches
+`selection->blocking_work = 0x500 | 1`: `operand_expression_bits` has no case
+for `LANE{32,64}_INSERT`, so the zero-extension publication `N2` has no width
+and the frame rejects.  A first attempt that made `operand_expression_bits`
+return the insert width for every insert moved the failure back to native stage
+228 (`0xffffffff8124b1dc`, `status=-49`): the frame then *attempted* insert
+units it cannot emit and returned an error instead of declining.
+
+The required work is therefore a real insert encoder, not a width probe: for
+`insert(0, inner, 32)` the inner may be emitted at 32-bit width (a 32-bit
+register write is the zero extension itself), while `width < 32` needs the
+inner materialized in a register followed by `movzx`, and an unpublished inner
+must be materializable at the insert's width.  All of this has to keep
+measure/write byte-identical and stay total on the blocks that previously
+declined (`0xffffffff8124b1dc`).  The copied source is the only offered
+candidate today (work 6, span 1, `normalized_family_present=1` via the source
+itself), so the escape gate is a work/coverage gate rather than the
+`out->count == 0` predicate of the 2026-09-18 taxonomy.
+
+First two entries of that population are closed.  `zero_extend_operand` returns
+the inserted operand of `insert(0, inner, width)` whatever its kind, and the
+dense ALU frame's publication loop materialises an inner value that has no
+publication of its own at width 32 (the 32-bit register write is the zero
+extension itself).  `collect_affine_lea_width` now also accepts a 64-bit `ADD3`
+as a 32-bit address coordinate, because a 32-bit LEA is exactly the low word of
+the 64-bit sum; both were needed before `0xffffffff812098b1`'s
+`lea ecx,[rsi+rdx-1]` could be emitted.  `check/select-x86.c` gains a
+`zero_extend_unpublished_inner` fixture (RED with `copied_source=1`, green
+after).  The population drops **542 -> 534**.
+
+The new first escape is `0xffffffff8120bc1c`
+(`io_submit_fail_init.isra.0+0x4c`).  Its plan ends in a conditional select
+`N6 = select(L6|0x100, (L6 & ~0x40)|0x800100, ZF)` whose flags come from
+`N4 = X86_ALU and(L6, 0x40)`; `L6` itself is then overwritten by the constant
+`0xffffff83`, so `N4`'s value has no publication and `alu_frame_shape` rejects
+the block (`publication_owner(projection(N4)) >= GPR_COUNT`).  A flag-only
+`X86_ALU` whose flags a conditional select consumes is a legal frame: the
+select's compare path can emit the tested operation directly (here
+`test`/`and` of `0x40`), and the frame must not require that flag node to have
+a GPR value publication.  `make -k check` and the 120-case fuzz stay green
+after the two closed entries.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

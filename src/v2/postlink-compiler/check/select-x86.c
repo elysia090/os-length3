@@ -2805,6 +2805,39 @@ int main(void)
                 zero_extend_status, zero_extend_span, zero_extend_work);
         return 96;
     }
+    /* `insert(0, inner, 32)` where `inner` is a 64-bit word sum with no
+     * publication of its own.  The frame had no encoder for the extension
+     * (blocking `0x500`), and once it materialises the inner it must accept a
+     * 64-bit ADD3 as a 32-bit address coordinate.  The source spelling
+     * `lea ecx,[rsi+rdx-1]` is the normalized candidate. */
+    static const pl_u8 zero_extend_unpublished_inner[] = {
+        0x8du, 0x4cu, 0x16u, 0xffu,               /* lea ecx, [rsi+rdx-1] */
+        0x41u, 0xb9u, 0xffu, 0xffu, 0x0fu, 0x00u, /* mov r9d, 0xfffff    */
+        0x89u, 0xf2u,                             /* mov edx, esi        */
+        0x45u, 0x31u, 0xc0u,                      /* xor r8d, r8d        */
+        0x4cu, 0x89u, 0xf6u,                      /* mov rsi, r14        */
+        0x48u, 0xc7u, 0xc7u, 0x18u, 0xf4u, 0x8bu, 0x81u,
+                                                  /* mov rdi, 0xffffffff818bf418 */
+    };
+    pl_x86_native_candidates inner_candidates;
+    status = candidates_projected(
+        zero_extend_unpublished_inner,
+        sizeof zero_extend_unpublished_inner, 0x7ffffu, &inner_candidates);
+    pl_x86_native_selection inner_selected = { 0 };
+    pl_u32 inner_span = 0u, inner_work = 0u;
+    int inner_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &inner_candidates, 0u, 0u, &inner_selected,
+            &inner_span, &inner_work);
+    if (inner_status || !inner_selected.supported
+            || inner_selected.copied_source
+            || inner_span != 1u || inner_work != 6u) {
+        fprintf(stderr, "native x86 selection: RED (zero extend unpublished "
+                "inner status=%d copied=%u span/work=%u/%u)\n",
+                inner_status, (unsigned)inner_selected.copied_source,
+                inner_span, inner_work);
+        return 97;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,
