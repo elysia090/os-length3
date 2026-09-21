@@ -948,6 +948,15 @@ candidate is the exact source
 (`output=0x23 expected=0x1f`).  `make -k check` and the 120-case fuzz are
 green.
 
+`0xffffffff8121c995` is a 31-node flag-selector chain: repeated
+`test cl/ch,imm8; cmovne rdx,rax; or reg,imm; mov rdx,rax` where each test picks
+a different constant OR.  Only the copied source is offered and the dense ALU
+frame blocks at `blocking_work = 0x200` (`blocking_opcode = 0x400002`); source
+work is 35 against an SSA floor of 31.  The chain is long enough that the
+first-fit ALU scheduler cannot order the shared `rax`/`rdx` generations; this is
+the next class (a long select chain), and no per-shape handoff has been
+attempted yet.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
