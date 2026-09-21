@@ -458,7 +458,7 @@ width check — accepting a 64-bit pair for a 32-bit `ADD3`, sound because the l
 32 bits of a 64-bit add are the 32-bit add — was applied earlier and changed
 nothing, confirming width was not the blocker.)
 
-Hand calculation now gives the exact minimal schedule, and it is one register
+Hand calculation at this point read the plan literally, and it is one register
 decision.  Writing the plan as `x = local15`: `N1 = 2x`, `N2 = x + 2x = 3x`
 (64-bit), `N5 = x + 2x = 3x` (32-bit), `N3 = x + 2x + 3x = 6x = N5 + N5`, and
 `N7` compares against `N5`.  `N3 = N5 + N5` because `N2` and `N5` are the same
@@ -468,14 +468,19 @@ register: `lea (%r15,%r15,2),%ecx` puts `3x` in ECX, then `add %ecx,%ecx` makes
 `lea 0x9(%rcx),%edx`.  The ALU frame instead materialises `3x` twice
 (`lea ->edx` for the compare and `lea ->ebp` for the `ADD3` operand) and spends
 a `mov` joining them, which is the whole one-instruction gap at `work=9`.
-The fix is therefore a **destination choice**: publish `local2 = N5` first into
-a register and then emit `local1 = N3` as an in-place `add reg,reg` of that same
-register, rather than materialising `N2` into a separate coordinate.  That is
-`next_alu_frame_assignment` choosing `local2`'s register for `local1`'s
+The fix appeared to be a **destination choice**: publish `local2 = N5` first
+into a register and then emit `local1 = N3` as an in-place `add reg,reg` of that
+same register, rather than materialising `N2` into a separate coordinate.  That
+is `next_alu_frame_assignment` choosing `local2`'s register for `local1`'s
 in-place doubling, with both frame paths emitting it byte-identically; the
 earlier `add3_double_variant` attempt failed because it materialised into
 `local1`'s own destination instead of reusing `local2`'s, which lengthened the
 chain to the compare.
+
+That reading was wrong, and the later section below records why: the plan's
+`N7` compares `N5 = 3x` with `bsr`, but the source compares `6x+9` with `bsr`,
+so the plan has no node for the real compare operand at all.  The `work=9`
+"gap" was an artefact of emitting the wrong value, not of a register choice.
 
 That destination choice was then implemented and measured, and it cannot be made
 to work in the ALU frame.  The change was: the published-pair arm rewrites
@@ -492,14 +497,61 @@ operand is derived from the *doubled* value (`lea 0x9(%rcx),%edx`), i.e. its
 The change was reverted; the tree keeps the published-pair-only state
 (`pareto=1 at 0xffffffff813fd7ff`, frontier `3/9/27` vs `5/8/24`).
 
-The next step is therefore on the **direct frame**, not the ALU frame.  The
-direct frame already attains `work=8` for this block; its `span=5` comes from
-issuing the `bsr` late and folding `node7`'s displacement into a `lea`.  The
-ALU frame demonstrably reaches `span=3` for the same plan, so the missing
-schedule is the direct frame's publication order with the `bsr` moved early.
-That ordering is decided by `write_direct_frame`'s own pending walk, not by
-`next_alu_frame_assignment`, and it does not touch the `node7` → `node5`
-dependency that blocks the ALU-frame route, so it is the safer target.
+The next step is therefore **not** the frame at all.  Executing the exact
+27-byte candidate bytes
+
+    49 0f bd c4        bsr    %r12,%rax
+    43 8d 14 7f        lea    (%r15,%r15,2),%edx
+    43 8d 2c 7f        lea    (%r15,%r15,2),%ebp
+    89 d1              mov    %edx,%ecx
+    01 e9              add    %ebp,%ecx
+    48 89 dd           mov    %rbx,%rbp
+    48 83 e5 f0        and    $-16,%rbp
+    39 c2              cmp    %eax,%edx
+    7e 00              jle
+
+against the 24-byte live frame on 500,000 random `(r15,r12,rbx)` triples
+produced **zero** identical results.  The live frame (and the source) compares
+`6x+9` with `bsr`; this candidate compares `3x` with `bsr`.  It is a
+miscompile, not a cheaper schedule: the `span=3` point is unreachable for the
+real comparison.  The Pareto gate is what keeps it out of the artifact — the
+block is never emitted, so `postlink-verify` never runs on it — which is why
+the frontier looked like a genuine tradeoff.
+
+The plan itself carries the discrepancy.  For this block it lists
+`N7 = COMPARE(flags, N5 = 3x, proj1552 = proj(N6) = bsr)`; there is no node for
+`6x+9` at all, while the source is `lea 0x9(%rcx),%edx` with `%rcx = 6x`.
+`proj1552` is a selector-16 projection, which `bit_summary_details` defines as
+the `BIT_SUMMARY` node itself, so the second operand really is the `bsr`
+result.  `write_direct_alu_frame` emits exactly the plan's operands, so the
+fault is upstream of the frame, in whichever rewrite produced the compare's
+operand pair (`pl_reopen_consumed_x86_alu*` / `pl_fold_local_physical` /
+`pl_compact*` are the candidates).  This is the same class as the flag-producer
+miscompile above: a plan that `postlink-verify` and `make check` accept, made
+observable only by executing the synthesized bytes.
+
+The true joint minimum is `span=4, work=8`, and it *is* reachable:
+
+    lea    (%r15,%r15,2),%ecx     ; 3x
+    mov    %rbx,%rbp
+    lea    0x9(%rcx,%rcx,1),%edx  ; 6x+9
+    add    %ecx,%ecx              ; 6x
+    and    $-16,%rbp
+    bsr    %r12,%rax
+    cmp    %eax,%edx
+    jle
+
+is byte-for-byte semantically identical to the 24-byte live frame over
+1,000,000 random inputs, at `span=4` instead of `span=5`.  `span=3` is
+impossible for the correct comparison: `6x+9` from `r15` needs two dependent
+LEAs (`lea 3(,r15,2)` then `3*(2x+3)`, or `lea 3x` then `lea 2*(3x)+9`), so the
+compare operand exists only at depth 1, `cmp` at depth 2 and `jle` at depth 3.
+
+Forcing the smallest-span candidate at this block (debug-only) advances the
+compile past it but immediately makes `0xffffffff81430efd` Pareto-unresolved
+with frontier `4/9/27 5/7/26`, confirming the two witnesses are coupled through
+code layout rather than sharing a spelling.  The next target is the rewrite
+that builds the compare operand, not the frame and not the selector.
 
 **Stage 3, measured performance gate: not started.** Only the tiny real
 workloads above are paired; there are no fixed source identities, canonical
@@ -508,6 +560,29 @@ roots, or `postlink-workloads.tsv` measurements.
 **Stages 4-6, Artifact / Storage / Wasm / VM boot: not started.** The Wasm
 backend still returns `WASM_COMPILER_ERROR_INCOMPLETE`, no release artifact is
 published, and no product boot or browser cold shell has been validated.
+
+## Current work: 2026-09-21 (the 813fd7ff "Pareto" point is a miscompile)
+
+The open witness `0xffffffff813fd7ff` reports frontier `3/9/27` (dense ALU
+frame) versus `5/8/24` (copied-source live frame), and no joint minimum. The
+`span=3` arm is not a cheaper schedule for the real block: executing its exact
+bytes against the live frame on 500,000 random inputs gives zero agreement. The
+live frame (and the source) compare `6x+9` with `bsr`; the ALU arm compares
+`3x` with `bsr`. The plan itself is missing the `+9`: it lists
+`COMPARE(flags, N5 = 3x, proj(N6) = bsr)`, and `proj1552` is the selector-16
+projection that `bit_summary_details` defines as the `BIT_SUMMARY` node itself.
+`write_direct_alu_frame` emits the plan faithfully, so the defect is upstream,
+in the rewrite that builds the compare operand. Because the Pareto gate stops
+the block before emission, `postlink-verify` never ran on it — the same
+"green but wrong" class as the flag-producer miscompile. The genuine joint
+minimum is `span=4, work=8`; an 8-instruction reschedule that folds the `+9`
+into the doubling LEA is byte-for-byte identical to the live frame over
+1,000,000 random inputs at one wave less, and `span=3` is impossible for the
+correct comparison. Forcing the small-span arm (debug only) advances past this
+block but leaves `0xffffffff81430efd` Pareto-unresolved (`4/9/27 5/7/26`),
+confirming the two witnesses are coupled through layout, not a shared spelling.
+See the "The next step is therefore **not** the frame at all" subsection above
+for the exact bytes, the plan dump, and the minimal schedule.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
