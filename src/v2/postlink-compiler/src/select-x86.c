@@ -10989,6 +10989,135 @@ static int flag_value_preload_shape(
     return 1;
 }
 
+typedef struct {
+    pl_u32 local;
+    int is_alu;
+    pl_operand seed;
+    pl_u32 bits;
+    pl_operand amount;
+    pl_u32 group;
+    pl_operand right;
+    pl_u32 mode;
+    pl_u32 preserves_carry;
+    int is_flag;
+} shared_root_consumer;
+
+typedef struct {
+    pl_operand seed;
+    pl_u32 seed_bits;
+    pl_u32 seed_dest;
+    pl_u32 copy_dest;
+    pl_u32 bits;
+    shared_root_consumer dest_consumer;
+    shared_root_consumer copy_consumer;
+} shared_root_unary_handoff;
+
+/* Classify a pending publication as a unary consumer of an unpublished node:
+ * a lane shift, or an architectural ALU pair over a constant whose flags may
+ * be the final observable ones. */
+static int shared_root_consumer_of(const pl_plan *plan, pl_u32 local,
+                                   pl_u32 final_flag_node,
+                                   shared_root_consumer *out)
+{
+    if (!plan || !out || local >= PL_X86_GPR_COUNT) return 0;
+    pl_operand value = plan->locals[local];
+    pl_operand source, amount;
+    pl_u32 bits = 0u, group = 0u;
+    if (shift_node_details(plan, value, &source, &amount, &bits, &group)
+            && source.kind == PL_OPERAND_NODE && source.value
+            && source.value <= plan->node_count) {
+        *out = (shared_root_consumer){ local, 0, source, bits,
+                                       amount, group, { 0 }, 0u, 0u, 0 };
+        return 1;
+    }
+    if (value.kind == PL_OPERAND_PROJECTION && (value.value & 0xffu) == 16u) {
+        pl_u32 node_number = (pl_u32)(value.value >> 8u);
+        pl_operand left, right;
+        pl_u32 alu_bits = 0u, mode = 0u, preserves_carry = 0u;
+        if (!node_number || node_number > plan->node_count
+                || !alu_node_semantics(plan, node_number, &left, &right,
+                       &alu_bits, &mode, &preserves_carry))
+            return 0;
+        if (left.kind == PL_OPERAND_CONST && associative_mode(mode)) {
+            pl_operand swap = left; left = right; right = swap;
+        }
+        if (left.kind != PL_OPERAND_NODE || !left.value
+                || left.value > plan->node_count
+                || right.kind != PL_OPERAND_CONST)
+            return 0;
+        *out = (shared_root_consumer){ local, 1, left, alu_bits,
+                                       { 0 }, 0u, right, mode, preserves_carry,
+                                       node_number == final_flag_node };
+        return 1;
+    }
+    return 0;
+}
+
+/* Two pending publications that apply a unary operation to the same
+ * unpublished root whose operand tree reads the entry values of both
+ * destinations:
+ *
+ *   D1 = op1(seed)   D2 = op2(seed)   seed reads entry D1 and entry D2
+ *
+ * The ordinary scheduler deadlocks (each destination overwrites a coordinate
+ * the root reads), yet the source evaluates the root once, copies it, and
+ * applies each operation.  The flag-producing consumer, when present, is
+ * applied last. */
+static int shared_root_unary_handoff_shape(const pl_plan *plan, pl_u32 pending,
+                                           pl_u32 final_flag_node,
+                                           shared_root_unary_handoff *out)
+{
+    if (!plan || !pending || !out) return 0;
+    for (pl_u32 a = 0u; a < PL_X86_GPR_COUNT; ++a) {
+        if (!(pending & (1u << a))) continue;
+        shared_root_consumer first;
+        if (!shared_root_consumer_of(plan, a, final_flag_node, &first))
+            continue;
+        for (pl_u32 b = a + 1u; b < PL_X86_GPR_COUNT; ++b) {
+            if (!(pending & (1u << b))) continue;
+            shared_root_consumer second;
+            if (!shared_root_consumer_of(plan, b, final_flag_node, &second))
+                continue;
+            if (first.seed.kind != second.seed.kind
+                    || first.seed.value != second.seed.value
+                    || first.bits != second.bits)
+                continue;
+            if (publication_owner(plan, first.seed) < PL_X86_GPR_COUNT)
+                continue;
+            pl_u32 seed_sources = 0u;
+            if (!operand_gpr_sources(plan, first.seed, plan->node_count + 1u,
+                    plan->node_count + 1u, &seed_sources)
+                    || !(seed_sources & (1u << a))
+                    || !(seed_sources & (1u << b)))
+                continue;
+            if (first.is_flag && second.is_flag) continue;
+            pl_u32 seed_dest = a, copy_dest = b;
+            if (first.is_flag) { seed_dest = b; copy_dest = a; }
+            out->seed = first.seed;
+            out->seed_bits = first.bits;
+            out->seed_dest = seed_dest;
+            out->copy_dest = copy_dest;
+            out->bits = first.bits;
+            out->dest_consumer = seed_dest == a ? first : second;
+            out->copy_consumer = seed_dest == a ? second : first;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int emit_shared_root_consumer(const shared_root_consumer *consumer,
+                                     pl_u8 *output, pl_u32 *written)
+{
+    if (!consumer || !written) return 0;
+    if (consumer->is_alu)
+        return emit_alu_instruction(consumer->local, consumer->right,
+            consumer->bits, consumer->mode, consumer->preserves_carry,
+            output, written);
+    return emit_shift_instruction(consumer->local, consumer->amount,
+        consumer->bits, consumer->group, output, written);
+}
+
 static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                                     const pl_x86_block *block,
                                     pl_x86_native_selection *selection)
@@ -11516,6 +11645,40 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 standalone_flags_pending
                     ? standalone_flags.entry_sources : 0u,
                 &local)) {
+            shared_root_unary_handoff root_handoff;
+            if (shared_root_unary_handoff_shape(
+                    &block->plan, pending, final_flag_node, &root_handoff)) {
+                pl_u32 seed_bytes = 0u, seed_work = 0u, copy_bytes = 0u;
+                pl_u32 op_a = 0u, op_b = 0u;
+                int measured = measure_alu_tree(
+                    frontend, block, selection, root_handoff.seed_dest,
+                    root_handoff.seed, root_handoff.seed_bits, bytes,
+                    block->plan.node_count + 1u, 0u, &seed_bytes, &seed_work);
+                if (measured > 0
+                        && emit_gpr_move(root_handoff.copy_dest,
+                            root_handoff.seed_dest, root_handoff.bits,
+                            0, &copy_bytes)
+                        && emit_shared_root_consumer(
+                            &root_handoff.dest_consumer, 0, &op_a)
+                        && emit_shared_root_consumer(
+                            &root_handoff.copy_consumer, 0, &op_b)
+                        && seed_bytes <= U32_MAX_VALUE - copy_bytes
+                        && seed_bytes + copy_bytes
+                           <= U32_MAX_VALUE - op_a
+                        && seed_bytes + copy_bytes + op_a
+                           <= U32_MAX_VALUE - op_b
+                        && seed_work <= U32_MAX_VALUE - 3u
+                        && instructions
+                           <= U32_MAX_VALUE - seed_work - 3u) {
+                    bytes += seed_bytes + copy_bytes + op_a + op_b;
+                    instructions += seed_work + 3u;
+                    pending &= ~((1u << root_handoff.seed_dest)
+                               | (1u << root_handoff.copy_dest));
+                    selection->direct_nested_frame = 1u;
+                    continue;
+                }
+                if (measured < 0) return measured;
+            }
             pl_u32 first = 0u;
             while (first < PL_X86_GPR_COUNT
                     && !(pending & (1u << first)))
@@ -16856,8 +17019,42 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                 frame_sources, frame_dependencies,
                 standalone_flags_pending
                     ? standalone_flags.entry_sources : 0u,
-                &local))
+                &local)) {
+            shared_root_unary_handoff root_handoff;
+            if (shared_root_unary_handoff_shape(
+                    &block->plan, pending, final_flag_node, &root_handoff)) {
+                pl_u32 seed_bytes = 0u, copy_bytes = 0u;
+                pl_u32 op_a = 0u, op_b = 0u;
+                if (!write_alu_tree(block, selection, root_handoff.seed_dest,
+                        root_handoff.seed, root_handoff.seed_bits, at,
+                        block->plan.node_count + 1u, 0u,
+                        output + at, &seed_bytes)
+                        || at > selection->output_bytes
+                        || seed_bytes > selection->output_bytes - at
+                        || !emit_gpr_move(root_handoff.copy_dest,
+                            root_handoff.seed_dest, root_handoff.bits,
+                            output + at + seed_bytes, &copy_bytes)
+                        || copy_bytes > selection->output_bytes - at
+                                        - seed_bytes
+                        || !emit_shared_root_consumer(
+                            &root_handoff.dest_consumer,
+                            output + at + seed_bytes + copy_bytes, &op_a)
+                        || op_a > selection->output_bytes - at - seed_bytes
+                                - copy_bytes
+                        || !emit_shared_root_consumer(
+                            &root_handoff.copy_consumer,
+                            output + at + seed_bytes + copy_bytes + op_a,
+                            &op_b)
+                        || op_b > selection->output_bytes - at - seed_bytes
+                                - copy_bytes - op_a)
+                    return PL_ERROR_X86_SELECT;
+                at += seed_bytes + copy_bytes + op_a + op_b;
+                pending &= ~((1u << root_handoff.seed_dest)
+                           | (1u << root_handoff.copy_dest));
+                continue;
+            }
             return PL_ERROR_X86_SELECT;
+        }
         pl_u32 scratch_mask = alu_frame_scratch_mask(
             pending, local, frame_sources);
         pl_operand value = block->plan.locals[local];

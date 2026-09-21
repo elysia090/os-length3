@@ -929,15 +929,24 @@ N4 = X86_ALU and(N2, ~0x40) -> L0 = projection(N4), and it is the flag producer
 
 so the shared root `N2` is consumed by a masked `and` (the final flags) and a
 `shr`, and it reaches both destinations *transitively* (`N1 = shl(L2,32)`), not
-by naming them directly.  The dense ALU frame blocks with
+by naming them directly.  The dense ALU frame blocked with
 `blocking_work = 0x200` (`next_alu_frame_assignment` finds no first
-publication).  The source evaluates `N2` in RDX (`shl rdx,32; or rdx,rax`),
-copies it to RAX, then `shr rdx,32` and finally `and rax,~0x40` so the flag
-producer stays last.  `shared_root_shift_handoff` does not match because both
-consumers are not shifts and the root names `N1` rather than `L2`; a
-generalised shared-root unary handoff for the dense ALU frame (op pair, direct
-or transitive destination operands, flag producer applied last) is the next
-target.
+publication).
+
+`shared_root_unary_handoff_shape` generalises `shared_root_shift_handoff` for
+the dense ALU frame: it classifies a pending publication as a lane shift or an
+architectural ALU pair over a constant (`shared_root_consumer_of`), requires
+two consumers of the same unpublished root whose operand tree reads the entry
+values of both destinations (`operand_gpr_sources`, so transitive reads count),
+and emits the root once in the non-flag destination, copies it, applies that
+consumer, then applies the flag-producing consumer last.  For this block the
+candidate is the exact source
+`shl rdx,0x20; or rdx,rax; mov rax,rdx; shr rdx,0x20; and rax,~0x40`
+(span 3, work 5).  `check/select-x86.c` gains a `shared_root_unary` fixture
+(candidate count 1 before, 2 after).  The escape population drops
+**509 -> 507**; the new first escape is `0xffffffff8121c995..0xffffffff8121ca1c`
+(`output=0x23 expected=0x1f`).  `make -k check` and the 120-case fuzz are
+green.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

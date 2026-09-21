@@ -2919,6 +2919,27 @@ int main(void)
                 shared_root_candidates.count);
         return 100;
     }
+    /* A shared unpublished root consumed by a shift and by the final
+     * flag-producing `and`, reaching both destinations transitively.  The
+     * dense ALU frame deadlocked (0x200); the generalised handoff evaluates
+     * the root once, copies it, applies the shift, then the and last. */
+    static const pl_u8 shared_root_unary[] = {
+        0x48u, 0xc1u, 0xe2u, 0x20u,               /* shl rdx, 0x20      */
+        0x48u, 0x09u, 0xc2u,                      /* or rdx, rax        */
+        0x48u, 0x89u, 0xd0u,                      /* mov rax, rdx       */
+        0x48u, 0xc1u, 0xeau, 0x20u,               /* shr rdx, 0x20      */
+        0x48u, 0x83u, 0xe0u, 0xbfu,               /* and rax, ~0x40     */
+    };
+    pl_x86_native_candidates root_unary_candidates;
+    status = candidates_projected(
+        shared_root_unary, sizeof shared_root_unary,
+        0x7ffffu, &root_unary_candidates);
+    if (status || root_unary_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (shared root unary "
+                "status=%d candidates=%u)\n", status,
+                root_unary_candidates.count);
+        return 101;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,
