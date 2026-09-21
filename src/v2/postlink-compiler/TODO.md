@@ -561,28 +561,45 @@ roots, or `postlink-workloads.tsv` measurements.
 backend still returns `WASM_COMPILER_ERROR_INCOMPLETE`, no release artifact is
 published, and no product boot or browser cold shell has been validated.
 
-## Current work: 2026-09-21 (the 813fd7ff "Pareto" point is a miscompile)
+## Current work: 2026-09-21 (813fd7ff cleared: a rewrite truncation, not a Pareto tradeoff)
 
-The open witness `0xffffffff813fd7ff` reports frontier `3/9/27` (dense ALU
+The open witness `0xffffffff813fd7ff` reported frontier `3/9/27` (dense ALU
 frame) versus `5/8/24` (copied-source live frame), and no joint minimum. The
-`span=3` arm is not a cheaper schedule for the real block: executing its exact
-bytes against the live frame on 500,000 random inputs gives zero agreement. The
-live frame (and the source) compare `6x+9` with `bsr`; the ALU arm compares
-`3x` with `bsr`. The plan itself is missing the `+9`: it lists
-`COMPARE(flags, N5 = 3x, proj(N6) = bsr)`, and `proj1552` is the selector-16
-projection that `bit_summary_details` defines as the `BIT_SUMMARY` node itself.
-`write_direct_alu_frame` emits the plan faithfully, so the defect is upstream,
-in the rewrite that builds the compare operand. Because the Pareto gate stops
-the block before emission, `postlink-verify` never ran on it — the same
-"green but wrong" class as the flag-producer miscompile. The genuine joint
-minimum is `span=4, work=8`; an 8-instruction reschedule that folds the `+9`
-into the doubling LEA is byte-for-byte identical to the live frame over
-1,000,000 random inputs at one wave less, and `span=3` is impossible for the
-correct comparison. Forcing the small-span arm (debug only) advances past this
-block but leaves `0xffffffff81430efd` Pareto-unresolved (`4/9/27 5/7/26`),
-confirming the two witnesses are coupled through layout, not a shared spelling.
+`span=3` arm was not a cheaper schedule for the real block: executing its exact
+bytes against the live frame on 500,000 random inputs gave zero agreement. The
+live frame (and the source) compare `6x+9` with `bsr`; the ALU arm compared
+`3x` with `bsr`. The Pareto gate stopped the block before emission, so
+`postlink-verify` never ran on it — the same "green but wrong" class as the
+flag-producer miscompile below.
+
+Dumping the plan after every block-formation pass located the defect precisely.
+The pre-rewrite plan is correct (`COMPARE(N8 = bsr, N7 = 32-bit(N6))` with
+`N6 = ADD(proj1040, 9)`), and every pass preserves it except
+`pl_fold_local_physical`. Its rule for `ADD3(a,b,c) + k` overwrote the staged
+operands with the ADD3's three inputs *before* checking that one of them is a
+constant to fold `k` into. When none is (as here, `ADD3(L15,N1,N2) + 9`), it
+left `opcode = ALU_IMMEDIATE` and `argument_count = 2`, emitting the malformed
+`ALU_IMMEDIATE(L15, N1) = 3x` — silently dropping both `c` and `k`.
+
+The fix selects the constant slot first and only rewrites the node when one
+exists; otherwise the outer `ADD3 + k` spelling is preserved. It also copies all
+three operands rather than stopping at the constant, which removes a second
+latent truncation when the constant is not the last slot. `check/physical.c`
+gains an `ADD3`-without-constant fixture: it is RED before the fix and green
+after. With the fix the ALU frame for this block is a correct `span=5, work=9`
+spelling (verified identical to the live frame over 1,000,000 inputs), the live
+frame's `5/8` becomes the joint minimum, and the witness clears. The kernel
+frontier advances to `0xffffffff81430efd` (`4/9/27 5/7/26`).
+
+The genuinely minimal schedule for the old witness was `span=4, work=8` (fold
+the `+9` into the doubling LEA), but the contract only requires a joint minimum
+among the offered candidates, and `5/8` satisfies it; the `4/8` spelling remains
+an unclaimed improvement. The `81430efd` frontier is a real tradeoff for now:
+`5/7/26` computes the live register once and pays a longer branch chain, while
+`4/9/27` recomputes it off the branch chain at two extra instructions.
+
 See the "The next step is therefore **not** the frame at all" subsection above
-for the exact bytes, the plan dump, and the minimal schedule.
+for the old bytes and plan dump.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

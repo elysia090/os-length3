@@ -1597,17 +1597,22 @@ int pl_fold_local_physical(const pl_plan *in, pl_arena *arena, pl_plan *out)
                     const pl_operand *source_arguments =
                         physical_arguments(out, source);
                     pl_u64 addend = staged[1].value;
-                    pl_u32 constants = 0u;
-                    for (pl_u32 slot = 0u; slot < 3u; ++slot) {
-                        staged[slot] = source_arguments[slot];
-                        if (staged[slot].kind == PL_OPERAND_CONST) {
-                            staged[slot].value =
-                                (staged[slot].value + addend) & mask;
-                            ++constants;
+                    pl_u32 constant_slot = 3u;
+                    for (pl_u32 slot = 0u; slot < 3u; ++slot)
+                        if (source_arguments[slot].kind == PL_OPERAND_CONST) {
+                            constant_slot = slot;
                             break;
                         }
-                    }
-                    if (constants) {
+                    /* Only an ADD3 that already names a constant can absorb
+                     * this addend.  Without one there is no third input to
+                     * fold into, and rewriting the operands anyway would
+                     * replace `ADD3(a,b,c) + k` with a two-input node over
+                     * (a,b), dropping both c and k. */
+                    if (constant_slot < 3u) {
+                        for (pl_u32 slot = 0u; slot < 3u; ++slot)
+                            staged[slot] = source_arguments[slot];
+                        staged[constant_slot].value =
+                            (staged[constant_slot].value + addend) & mask;
                         opcode = PL_OPCODE_ADD3[lane];
                         argument_count = 3u;
                     }

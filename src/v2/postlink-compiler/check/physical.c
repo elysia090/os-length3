@@ -255,6 +255,48 @@ int main(void)
             || compacted.locals[0].value != 1u))
         status = PL_ERROR_PLAN;
 
+    /* An ADD3 that names no constant cannot absorb an outer addend.  The
+     * physical form of `ADD3(a,b,c) + k` must stay a two-input node over the
+     * ADD3; rewriting the operands without a constant slot to fold into would
+     * truncate it to a node over (a,b), dropping both c and k. */
+    pl_node add3_add_nodes[2] = {
+        { PL_OPCODE_ADD3[1],             0u, 3u },
+        { PL_OPCODE_ALU_IMMEDIATE[1][1], 3u, 2u },
+    };
+    pl_operand add3_add_arguments[5] = {
+        { PL_OPERAND_LOCAL, 0u }, { PL_OPERAND_LOCAL, 1u },
+        { PL_OPERAND_LOCAL, 2u },
+        { PL_OPERAND_NODE, 1u }, { PL_OPERAND_CONST, 9u },
+    };
+    pl_operand add3_add_locals[1] = {
+        { PL_OPERAND_NODE, 2u },
+    };
+    pl_plan add3_add_input = {
+        .nodes = add3_add_nodes,
+        .node_count = 2u,
+        .arguments = add3_add_arguments,
+        .argument_count = 5u,
+        .locals = add3_add_locals,
+        .local_count = 1u,
+    };
+    first.used = 0u;
+    second.used = 0u;
+    if (!status)
+        status = pl_fold_local_physical(&add3_add_input, &first, &folded);
+    if (!status)
+        status = pl_compact_once(&folded, &second, &compacted);
+    if (!status && (compacted.node_count != 2u
+            || compacted.nodes[1].opcode != PL_OPCODE_ALU_IMMEDIATE[1][1]
+            || compacted.nodes[1].argument_count != 2u
+            || compacted.arguments[compacted.nodes[1].argument_at].kind
+                != PL_OPERAND_NODE
+            || compacted.arguments[compacted.nodes[1].argument_at].value != 1u
+            || compacted.arguments[compacted.nodes[1].argument_at + 1u].kind
+                != PL_OPERAND_CONST
+            || compacted.arguments[compacted.nodes[1].argument_at + 1u].value
+                != 9u))
+        status = PL_ERROR_PLAN;
+
     /* A block-local exact observation retains the final flag producer even
      * when the successor can never read it. Complete-future projection makes
      * that distinction explicit: the RSP publication is live, RFLAGS is not.
