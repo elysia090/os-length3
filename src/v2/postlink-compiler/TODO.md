@@ -1058,6 +1058,19 @@ the register closes **12 blocks (499 -> 487)**.  `check/select-x86.c` gains a
 `bit_test_constant_offset` fixture (candidate count 1 before, 2 after);
 `make -k check`, `condition-code-check` and the fuzz are green.
 
+The next class is the flag-value preload with a bare **entry register** as the
+value tree.  For `0xffffffff8123e543` (`mov rax,rdx; shr rdx,32; or rax,0x1e`)
+the final flag producer is `or(entry RDX, 0x1e)` while `L2 = shr(entry RDX,32)`
+overwrites RDX, so the entry must be copied into the flag destination before
+the clobber.  `flag_value_preload_shape` swapped away from a non-node tree and
+rejected it, so the frame offered nothing.  Keeping the tree when it is an
+entry local with an immediate `other` (preload = one copy, then the immediate
+operation last) closes **7 more blocks (487 -> 480)**; the normalized candidate
+is `mov rax,rdx; mov rdx,rax; shr rdx,0x20; or al,0x1e` (span 2, work 4) and
+the copied source's `3` work stays the joint minimum.
+`check/select-x86.c` gains a `preload_entry_register` fixture (candidate count 1
+before, 2 after).  `make -k check` and the 120-case fuzz are green.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

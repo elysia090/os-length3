@@ -11012,11 +11012,18 @@ static int flag_value_preload_shape(
         return 0;
     pl_u32 destination = publication_owner(plan, result);
     pl_operand tree = left, other = right;
-    if (tree.kind == PL_OPERAND_LOCAL || tree.kind == PL_OPERAND_CONST) {
-        tree = right;
-        other = left;
+    if (tree.kind == PL_OPERAND_LOCAL && other.kind == PL_OPERAND_CONST) {
+        /* The flag operation combines an entry register with an immediate and
+         * another pending publication overwrites that register: preload it with
+         * a copy before the clobber, then apply the immediate last. */
+    } else if (tree.kind == PL_OPERAND_LOCAL
+            || tree.kind == PL_OPERAND_CONST) {
+        pl_operand swap = tree;
+        tree = other;
+        other = swap;
     }
-    if ((tree.kind != PL_OPERAND_NODE && tree.kind != PL_OPERAND_PROJECTION)
+    if ((tree.kind != PL_OPERAND_NODE && tree.kind != PL_OPERAND_PROJECTION
+                && tree.kind != PL_OPERAND_LOCAL)
             || destination >= PL_X86_GPR_COUNT
             || !(pending & (1u << destination))
             || (frame_dependencies[destination] & pending))

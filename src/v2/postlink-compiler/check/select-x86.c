@@ -2959,6 +2959,25 @@ int main(void)
                 "status=%d candidates=%u)\n", status, bit_test_candidates.count);
         return 102;
     }
+    /* The final flag producer combines an entry register with an immediate
+     * while another publication overwrites that register.  The preload shape
+     * only accepted a node value tree, so a bare entry local (`or rdx,0x1e`
+     * with `rdx = rdx >> 32`) declined and the block stayed copied-source. */
+    static const pl_u8 preload_entry_register[] = {
+        0x48u, 0x89u, 0xd0u,                      /* mov rax, rdx       */
+        0x48u, 0xc1u, 0xeau, 0x20u,               /* shr rdx, 0x20      */
+        0x48u, 0x83u, 0xc8u, 0x1eu,               /* or rax, 0x1e       */
+    };
+    pl_x86_native_candidates preload_entry_candidates;
+    status = candidates_projected(
+        preload_entry_register, sizeof preload_entry_register,
+        0x7ffffu, &preload_entry_candidates);
+    if (status || preload_entry_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (preload entry register "
+                "status=%d candidates=%u)\n", status,
+                preload_entry_candidates.count);
+        return 103;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,
