@@ -849,17 +849,25 @@ the 64-bit sum; both were needed before `0xffffffff812098b1`'s
 `zero_extend_unpublished_inner` fixture (RED with `copied_source=1`, green
 after).  The population drops **542 -> 534**.
 
-The new first escape is `0xffffffff8120bc1c`
+The new first escape was `0xffffffff8120bc1c`
 (`io_submit_fail_init.isra.0+0x4c`).  Its plan ends in a conditional select
 `N6 = select(L6|0x100, (L6 & ~0x40)|0x800100, ZF)` whose flags come from
 `N4 = X86_ALU and(L6, 0x40)`; `L6` itself is then overwritten by the constant
-`0xffffff83`, so `N4`'s value has no publication and `alu_frame_shape` rejects
+`0xffffff83`, so `N4`'s value has no publication and `alu_frame_shape` rejected
 the block (`publication_owner(projection(N4)) >= GPR_COUNT`).  A flag-only
 `X86_ALU` whose flags a conditional select consumes is a legal frame: the
-select's compare path can emit the tested operation directly (here
-`test`/`and` of `0x40`), and the frame must not require that flag node to have
-a GPR value publication.  `make -k check` and the 120-case fuzz stay green
-after the two closed entries.
+select's compare path emits the tested operation directly, here
+`test esi,0x40`, which has the same ZF as the source's `and esi,0x40` while the
+dead `and` value is overwritten anyway.  `alu_frame_shape` no longer requires
+the final flag `X86_ALU` to have a GPR value publication.  The block's
+normalized candidate is `mov r8,rsi; bts r8,8; mov rcx,rsi; and rcx,-0x41;
+or rcx,0x800100; test esi,0x40; cmove rcx,r8; mov esi,0xffffff83`
+(span 4, work 8), verified equivalent to the source.  `check/select-x86.c`
+gains a `flag_only_alu_select` fixture that requires a normalized production to
+accept the shape (candidate count 1 -> 2): RED before, green after.  The
+population drops **534 -> 533**; the new first escape is
+`0xffffffff8120d4d2..0xffffffff8120d4d8` (`output=0x2 expected=0x1`).
+`make -k check` and the 120-case fuzz are green.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

@@ -2838,6 +2838,34 @@ int main(void)
                 inner_span, inner_work);
         return 97;
     }
+    /* A flag-only X86_ALU whose value is dead (the coordinate is rewritten by a
+     * constant copy) still feeds a conditional select.  The frame must accept
+     * it and let the select's compare path emit the tested operation; requiring
+     * a GPR value publication left the whole block copied-source. */
+    static const pl_u8 flag_only_alu_select[] = {
+        0x48u, 0x89u, 0xf1u,                      /* mov rcx, rsi        */
+        0x49u, 0x89u, 0xf0u,                      /* mov r8, rsi         */
+        0x48u, 0x83u, 0xe1u, 0xbfu,               /* and rcx, -0x41      */
+        0x49u, 0x81u, 0xc8u, 0x00u, 0x01u, 0x00u, 0x00u,
+                                                  /* or r8, 0x100        */
+        0x48u, 0x81u, 0xc9u, 0x00u, 0x01u, 0x80u, 0x00u,
+                                                  /* or rcx, 0x800100    */
+        0x83u, 0xe6u, 0x40u,                      /* and esi, 0x40       */
+        0xbeu, 0x83u, 0xffu, 0xffu, 0xffu,        /* mov esi, 0xffffff83 */
+        0x49u, 0x0fu, 0x44u, 0xc8u,               /* cmove rcx, r8       */
+    };
+    pl_x86_native_candidates flag_only_candidates;
+    status = candidates_projected(
+        flag_only_alu_select, sizeof flag_only_alu_select,
+        0x7ffffu, &flag_only_candidates);
+    /* One normalized production must accept the block; before the relaxation
+     * only the copied source was offered (count 1). */
+    if (status || flag_only_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (flag-only ALU select "
+                "status=%d candidates=%u)\n",
+                status, flag_only_candidates.count);
+        return 98;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

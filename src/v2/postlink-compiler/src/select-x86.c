@@ -2477,16 +2477,10 @@ static int alu_frame_shape(const pl_plan *plan, pl_u32 *changed,
         }
         *changed |= 1u << local;
     }
-    if (*final_flag_node
-            && plan->nodes[*final_flag_node - 1u].opcode
-               == PL_OPCODE_X86_ALU) {
-        pl_operand result = {
-            PL_OPERAND_PROJECTION,
-            ((pl_u64)*final_flag_node << 8u) | 16u,
-        };
-        if (publication_owner(plan, result) >= PL_X86_GPR_COUNT)
-            return 0;
-    }
+    /* A flag-only X86_ALU (its value dead because the coordinate is rewritten
+     * by a constant copy) is a legal frame when the flags reach a conditional
+     * select: the select's compare path emits the tested operation itself.
+     * Requiring a GPR value publication here rejected those blocks. */
     (void)alu_nodes;
     /* Flags are a publication even when no GPR changes. Their entry operands
      * use the same scheduling law as a frame containing value publications. */
