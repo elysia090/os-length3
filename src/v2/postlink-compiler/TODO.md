@@ -969,26 +969,26 @@ So the final `N27` is published twice (RDX and RAX) and `L6` is a dead-value
 class `L6` (the final flag-producing `xor`), so `L0`/`L2` depend on `L6`, which
 the flags-last rule schedules last.
 
-Hand calculation on the coupling.  Removing the constant substitution for zero
-in `operand_source_law` moves `0xffffffff8121c995` to `0x280` (the
-`single_bit_or` seed `N27` cannot be measured) and, together with protecting the
-`flag_value_preload` destination from scratch reuse, clears a Pareto at
-`0xffffffff8124f4c1` and **reduces escapes 507 -> 488** with no Pareto.
-`0xffffffff8124f4c1`'s `2/10` ALU arm was a miscompile: the preload put
-`N2 = ~RAX & 1` in RAX, then another publication materialised the wide `and`
-mask `0xfff0000000000fff` into RAX as scratch and the final `neg rax` negated
-the mask instead of `N2`.  Protecting the preload destination fixes that arm.
+Hand calculation, then landed.  The coupling is resolved by two narrow rules:
 
-However the zero-class dependency is **semantically load-bearing**:
-`condition-code-check` fails with a flags mismatch (`flags=a02 input=1`) as soon
-as the const-zero substitution is removed, even when
-`physicalize_published_operand` is also taught to materialise constant zero as
-an immediate.  So a zero operand's `publication_owner` is a real ordering edge
-in some generated frames, and it cannot be dropped wholesale.  A sound fix for
-`0xffffffff8121c995` must therefore be frame-local (materialise the zero
-operand as an immediate inside that frame while keeping the reference semantics)
-or a dedicated long-chain schedule; the reverted state keeps escapes 507 and a
-green suite.
+- `zero_self_flag_publication` recognises the owner of constant zero when it is
+  a zero-producing self operation (`xor r,r` / `sub r,r`) that is also the final
+  flag producer.  Both `operand_source_law` and `physicalize_published_operand`
+  keep a constant zero an immediate for that owner, so a zero operand neither
+  waits on nor reads the flag producer's coordinate.  (Only that owner is
+  special-cased; other constant owners keep the existing substitution, which is
+  why `condition-code-check` and the `in-place owner` fixture stay green.)
+- `flag_value_preload` records the preloaded destination as its own entry source
+  (`frame_sources[destination] |= 1<<destination`), so the coordinate stays out
+  of every other publication's scratch pool until the final flag producer runs.
+  Without it, `0xffffffff8124f4c1`'s wide `and` mask landed in the preload
+  destination and the final `neg rax` negated the mask instead of `N2`.
+
+Both are needed together: with them the Pareto stays cleared and the escape
+population drops **507 -> 500** (`0xffffffff8121c995` still leads at
+`output=0x23 expected=0x1f`).  `condition-code-check`, `make -k check` (79
+targets) and the 120-case fuzz are green.  `0xffffffff8121c995`'s own remaining
+blocker is now the long chain, not the zero-class dependency.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

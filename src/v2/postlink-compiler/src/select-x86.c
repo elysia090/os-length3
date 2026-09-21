@@ -2795,6 +2795,29 @@ static pl_u32 publication_owner(const pl_plan *plan, pl_operand operand)
  * numbered, so one forward pass computes the complete source law for every
  * shared node.  This replaces the old recursive DAG expansion, which revisited
  * the same suffix once per root, pending local, and parent path. */
+
+/* The final flag producer's value can be a zero-producing self operation
+ * (`xor r,r` / `sub r,r`).  `publication_owner` prefers that publication as the
+ * owner of constant zero, which makes every zero operand depend on a
+ * coordinate the flags-last rule schedules last.  Callers use this to keep a
+ * constant zero as an immediate instead. */
+static int zero_self_flag_publication(const pl_plan *plan, pl_u32 owner)
+{
+    if (!plan || owner >= PL_X86_GPR_COUNT) return 0;
+    pl_operand value = plan->locals[owner];
+    if (value.kind != PL_OPERAND_PROJECTION || (value.value & 0xffu) != 16u)
+        return 0;
+    pl_u32 node = (pl_u32)(value.value >> 8u);
+    if (!node || node > plan->node_count) return 0;
+    pl_operand left, right;
+    pl_u32 bits = 0u, mode = 0u, preserves_carry = 0u;
+    if (!alu_node_semantics(plan, node, &left, &right,
+            &bits, &mode, &preserves_carry))
+        return 0;
+    return !preserves_carry && (mode == 3u || mode == 6u)
+        && equal_operand(left, right);
+}
+
 static int operand_source_law(const pl_plan *plan, pl_operand operand,
                               const pl_u32 *node_law,
                               pl_u32 available_nodes,
@@ -2805,7 +2828,8 @@ static int operand_source_law(const pl_plan *plan, pl_operand operand,
     if (operand.kind == PL_OPERAND_CONST) {
         if (substitute_publication) {
             pl_u32 owner = publication_owner(plan, operand);
-            if (owner < PL_X86_GPR_COUNT) {
+            if (owner < PL_X86_GPR_COUNT
+                    && !zero_self_flag_publication(plan, owner)) {
                 pl_u32 bit = 1u << owner;
                 *law = bit << 16u;
                 return 1;
@@ -4183,7 +4207,12 @@ static void physicalize_published_operand(const pl_plan *plan,
     if (published_operand_local(plan, *value, &owner)
             && owner != destination
             && !(value->kind == PL_OPERAND_LOCAL
-                 && value->value == owner)) {
+                 && value->value == owner)
+            /* Keep a constant zero an immediate rather than reading the
+             * zero-class flag producer's coordinate (matching
+             * operand_source_law). */
+            && !(value->kind == PL_OPERAND_CONST
+                 && zero_self_flag_publication(plan, owner))) {
         value->kind = PL_OPERAND_LOCAL;
         value->value = owner;
     }
@@ -11401,7 +11430,8 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                  * frame laws before it emits the tree; leaving the destination
                  * dependency relaxed here would make the write-path shape test
                  * fail and fall back to a different spelling. */
-                frame_sources[preload.destination] = preload.other_source;
+                frame_sources[preload.destination] =
+                    preload.other_source | (1u << preload.destination);
                 selection->direct_nested_frame = 1u;
             }
         }
@@ -16831,7 +16861,8 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     block->plan.node_count + 1u, preload.scratch,
                     output + at, &written)) {
                 at += written;
-                frame_sources[preload.destination] = preload.other_source;
+                frame_sources[preload.destination] =
+                    preload.other_source | (1u << preload.destination);
             }
         }
     }
