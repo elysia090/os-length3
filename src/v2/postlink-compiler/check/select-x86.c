@@ -2710,6 +2710,36 @@ int main(void)
                 extend_status, extend_span, extend_work);
         return 93;
     }
+    /* A conditional select whose tested flags are also the value of a separate
+     * publication (the `and` here).  The select skips its own compare because
+     * that publication emits the flags, so the frame's source law must order
+     * the value publication first.  Without the dependency the select reads
+     * the preceding `shl` flags (a miscompile the Pareto gate hides behind a
+     * phantom `3/6` arm); with it both spellings are the source's `4/4`. */
+    static const pl_u8 flag_select_value_publication[] = {
+        0x89u, 0xd3u,                             /* mov ebx, edx      */
+        0xd3u, 0xe3u,                             /* shl ebx, cl       */
+        0x81u, 0xe3u, 0xbfu, 0xefu, 0xffu, 0xffu, /* and ebx, 0xffffefbf */
+        0x48u, 0x0fu, 0x44u, 0xf8u,               /* cmove rdi, rax    */
+    };
+    pl_x86_native_candidates flag_value_candidates;
+    status = candidates_projected(
+        flag_select_value_publication,
+        sizeof flag_select_value_publication, 0x7ffffu,
+        &flag_value_candidates);
+    pl_x86_native_selection flag_value_selected = { 0 };
+    pl_u32 flag_value_span = 0u, flag_value_work = 0u;
+    int flag_value_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &flag_value_candidates, 0u, 0u, &flag_value_selected,
+            &flag_value_span, &flag_value_work);
+    if (flag_value_status || !flag_value_selected.supported
+            || flag_value_span != 4u || flag_value_work != 4u) {
+        fprintf(stderr, "native x86 selection: RED (flag select value "
+                "publication status=%d span/work=%u/%u)\n",
+                flag_value_status, flag_value_span, flag_value_work);
+        return 94;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

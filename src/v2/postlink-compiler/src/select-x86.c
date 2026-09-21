@@ -3027,6 +3027,57 @@ static void add_flag_chain_dependencies(
             break;
         node_number = (pl_u32)prior.value;
     }
+    /* A conditional select that tests the final flag word skips its own
+     * compare when that word has a value publication, so it must be ordered
+     * after the publication that produces those flags.  SSA alone carries no
+     * such edge: the tested flag node is reached through the condition and the
+     * value publication is a separate projection. */
+    if (final_flag_node) {
+        pl_operand flag_result = { 0 }, flag_prior = { 0 };
+        if (flag_result_operand(
+                plan, final_flag_node, &flag_result, &flag_prior)) {
+            pl_u32 flag_owner = publication_owner(plan, flag_result);
+            if (flag_owner < PL_X86_GPR_COUNT) {
+                for (pl_u32 local = 0u;
+                        local < PL_X86_GPR_COUNT; ++local) {
+                    if (local == flag_owner) continue;
+                    pl_operand value = plan->locals[local];
+                    if (value.kind != PL_OPERAND_NODE || !value.value
+                            || value.value > plan->node_count)
+                        continue;
+                    const pl_node *select = &plan->nodes[value.value - 1u];
+                    if ((select->opcode != PL_OPCODE_LANE32_SELECT
+                                && select->opcode != PL_OPCODE_LANE64_SELECT)
+                            || select->argument_count != 3u
+                            || select->argument_at > plan->argument_count
+                            || select->argument_count
+                               > plan->argument_count - select->argument_at)
+                        continue;
+                    pl_operand condition = plan->arguments[
+                        select->argument_at + 2u];
+                    if (condition.kind != PL_OPERAND_NODE
+                            || !condition.value
+                            || condition.value > plan->node_count)
+                        continue;
+                    const pl_node *condition_node =
+                        &plan->nodes[condition.value - 1u];
+                    if (condition_node->opcode != PL_OPCODE_X86_CONDITION
+                            || condition_node->argument_count != 2u
+                            || condition_node->argument_at
+                               > plan->argument_count
+                            || condition_node->argument_count
+                               > plan->argument_count
+                                 - condition_node->argument_at)
+                        continue;
+                    pl_operand tested = plan->arguments[
+                        condition_node->argument_at];
+                    if (tested.kind == PL_OPERAND_NODE
+                            && tested.value == final_flag_node)
+                        dependencies[local] |= 1u << flag_owner;
+                }
+            }
+        }
+    }
 }
 
 typedef struct {

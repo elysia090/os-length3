@@ -706,6 +706,29 @@ is also byte-equivalent to the source on 1,000,000 random inputs and is
 `2/6` spelling remains an unclaimed improvement.  The kernel frontier advances
 to `0xffffffff8154f94e` (`3/6/18 4/4/14`).
 
+`0xffffffff8154f94e` (`tcp_set_congestion_control+0x1ce`) was the same
+"the Pareto gate hides a miscompile" class.  Its plan publishes
+`N2 = shl(edx, ecx & 31)`, `N3 = and(N2, 0xffffefbf)` whose flags are the
+select's condition, `N5 = select(RAX, RDI, ZF(N3)) -> RDI`, and the `and`'s
+value as `L3 = projection(N3)`.  The dense ALU frame ordered the select `L7`
+*before* `L3` and, because the final flag node has a value publication, skipped
+`emit_select_compare`.  The emitted `cmove` therefore read the `shl` flags, not
+the `and` flags: on `rdx=1, cl=6` the source copies `RAX` into `RDI` while the
+candidate leaves `RDI` unchanged.  1,000,000 random inputs miss it because the
+`shl` and `and` results disagree only when `(edx << cl)` is exactly `0x40` or
+`0x1000`.
+
+`add_flag_chain_dependencies` now also orders a conditional select that tests
+the final flag node after the publication that owns that flag node's value
+(reached through `flag_result_operand`, so it also works when the value
+publication is a projection).  The block resolves to the source's **span 4,
+work 4**; the ALU frame declines this shape and a live-frame production emits
+the exact source spelling.  `check/select-x86.c` gains a
+`flag_select_value_publication` fixture: RED (`status=-50`, minima `3/4`)
+before the dependency, green after.  `make -k check` is green and the 120-case
+fuzz reports 0 mismatches.  The kernel frontier advances to
+`0xffffffff815ad0b6` (`5/12/40 6/10/26`).
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
