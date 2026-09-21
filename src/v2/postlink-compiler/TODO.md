@@ -965,10 +965,23 @@ N32 = xor(L6, L6) -> L16 (flags), L6 = projection(N32) = 0
 So the final `N27` is published twice (RDX and RAX) and `L6` is a dead-value
 `xor esi,esi`, and changed = {L0, L2, L6}.  Only the copied source is offered
 (work 35, SSA floor 31) and the dense ALU frame blocks at `blocking_work =
-0x200`: the first-fit ALU scheduler cannot order the long OR/select chain with
-the shared `N27` publication.  This is a distinct class (a long constant-select
-chain plus a dead-value `xor` publication) and no production has been
-attempted.
+0x200`.  The deadlock is exact: `publication_owner(const 0)` names the zero
+class `L6` (the final flag-producing `xor`), so `L0`/`L2` depend on `L6`, which
+the flags-last rule schedules last.
+
+Removing the constant substitution for zero in `operand_source_law` moves the
+block to `0x280` (the `single_bit_or` seed `N27` cannot be measured) and
+**reduces escapes 507 -> 500**, but it exposes a Pareto at
+`0xffffffff8124f4c1` whose `2/10/41` ALU arm is itself a miscompile: it
+substitutes the immediate `1` with its published owner `ECX` and emits
+`not rax; and eax,ecx; mov ecx,1; ...; and r11,rbx; mov rsi,r15; neg rax`,
+reading `ECX` before `mov ecx,1`.  So the constant-substitution machinery
+(law *and* `physicalize_published_operand`) can order a consumer before its
+constant's producer.  The two are coupled: the zero-class dependency fix is
+only sound once a constant is never read from an unordered producer.  The
+reverted state keeps escapes 507; the next step is to make constant operands
+materialise as immediates (or order their `publication_owner` before every
+consumer) and then re-derive the affected schedules.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
