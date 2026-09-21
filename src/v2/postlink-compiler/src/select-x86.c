@@ -68,6 +68,8 @@ typedef struct {
 
 static int emit_group_booleans(const pl_plan *plan, const flag_result_group *shape,
                                int before, pl_u8 *output, pl_u32 *written, pl_u32 *work);
+static int flag_result_group_shape(const pl_plan *plan, pl_u32 pending,
+                                   flag_result_group *out, pl_u32 *deferred);
 static int compare_boolean_group_shape(const pl_plan *plan, pl_u32 pending,
                                        pl_u32 final_flag_node,
                                        flag_result_group *out);
@@ -11745,6 +11747,38 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             selection->direct_nested_frame = 1u;
             continue;
         }
+        flag_result_group alu_bool_group;
+        pl_u32 alu_bool_deferred = 0u;
+        if (flag_result_group_shape(
+                &block->plan, pending, &alu_bool_group, &alu_bool_deferred)) {
+            pl_u32 pre = 0u, pre_work = 0u, operation = 0u;
+            pl_u32 work = 0u, post = 0u, post_work = 0u;
+            if (!emit_group_booleans(
+                    &block->plan, &alu_bool_group, 1, 0, &pre, &pre_work)
+                    || bytes > U32_MAX_VALUE - pre)
+                return 0;
+            int measured = measure_alu_pair(
+                frontend, block, selection, alu_bool_group.owner,
+                alu_bool_group.left, alu_bool_group.right,
+                alu_bool_group.bits, alu_bool_group.mode, 0u,
+                bytes + pre, block->plan.node_count + 1u, 0u,
+                &operation, &work);
+            if (measured <= 0
+                    || !emit_group_booleans(
+                        &block->plan, &alu_bool_group, 0, 0, &post, &post_work)
+                    || operation > U32_MAX_VALUE - pre
+                    || post > U32_MAX_VALUE - pre - operation
+                    || bytes > U32_MAX_VALUE - pre - operation - post
+                    || work > U32_MAX_VALUE - pre_work - post_work
+                    || instructions
+                       > U32_MAX_VALUE - pre_work - work - post_work)
+                return measured < 0 ? measured : 0;
+            bytes += pre + operation + post;
+            instructions += pre_work + work + post_work;
+            pending &= ~alu_bool_group.members;
+            selection->direct_nested_frame = 1u;
+            continue;
+        }
         if (standalone_flags_pending) {
             pl_u32 clobberers = 0u;
             for (pl_u32 local = 0u;
@@ -17498,6 +17532,34 @@ static int write_direct_alu_frame(const pl_x86_block *block,
             at += compare_bytes + operation_bytes;
             pending &= ~(1u << carry_group.destination);
             standalone_flags_pending = 0;
+            continue;
+        }
+        flag_result_group alu_bool_group;
+        pl_u32 alu_bool_deferred = 0u;
+        if (flag_result_group_shape(
+                &block->plan, pending, &alu_bool_group, &alu_bool_deferred)) {
+            pl_u32 pre = 0u, operation = 0u, post = 0u, work = 0u;
+            if (!emit_group_booleans(
+                    &block->plan, &alu_bool_group, 1, output + at, &pre, &work)
+                    || at > selection->output_bytes
+                    || pre > selection->output_bytes - at)
+                return PL_ERROR_X86_SELECT;
+            at += pre;
+            if (!write_alu_pair(
+                    block, selection, alu_bool_group.owner,
+                    alu_bool_group.left, alu_bool_group.right,
+                    alu_bool_group.bits, alu_bool_group.mode, 0u,
+                    at, block->plan.node_count + 1u, 0u,
+                    output + at, &operation)
+                    || operation > selection->output_bytes - at)
+                return PL_ERROR_X86_SELECT;
+            at += operation;
+            if (!emit_group_booleans(
+                    &block->plan, &alu_bool_group, 0, output + at, &post, &work)
+                    || post > selection->output_bytes - at)
+                return PL_ERROR_X86_SELECT;
+            at += post;
+            pending &= ~alu_bool_group.members;
             continue;
         }
         if (standalone_flags_pending) {

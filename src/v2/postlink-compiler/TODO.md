@@ -1221,14 +1221,17 @@ preserving), so the comparison's carry is still live at the `adc`.  The group
 only fires when the comparison has no other pending Boolean consumer and none
 of its physical operands is still pending.  Escapes 432 -> 425.
 
-Remaining `0xf002`: `8127fa0e`/`8128325d`
-(`xor ecx,ecx; sub rax,rdx; setb cl; neg rdx; jns`) publish the carry Boolean of
-a *non-final* flag producer while the final flag producer (`neg`) has its own
-consumers -- the ALU frame does not run `flag_result_group_shape` at all, and the
-group needs a GPR value owner a flag-only `sub`/`cmp` does not have;
-`8128be22` is `sete` over two chained compares; `8121f647` a shift-with-flags;
-`81258eae` a `bsf`+`add`+`je`.  Whole numbers: `0x200` 75, `0xf003` ~47,
-`0xf002` 21, `0x0` 28, `0x202` 24, `0x501` 22.
+The Boolean-group blocker is also closed.  `8127fa0e`/`8128325d`
+(`xor ecx,ecx; sub rax,rdx; setb cl; neg rdx; jns`) publish an `X86_ALU`'s value
+projection AND a carry Boolean of the same node; the compare-branch frames
+already ran `flag_result_group_shape`, but the ALU frame did not, so the
+scheduler deadlocked.  The ALU frame now runs the same group (emit the
+instruction plus its SETcc observations between the pre-zero and post-setcc
+passes).  Escapes 425 -> 418.
+
+Remaining `0xf002`: `8128be22` is `sete` over two chained compares;
+`8121f647` a shift-with-flags; `81258eae` a `bsf`+`add`+`je`.  Whole numbers:
+`0x200` ~68, `0xf003` ~47, `0x0` 28, `0x202` 24, `0x501` 22, `0xf002` ~14.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

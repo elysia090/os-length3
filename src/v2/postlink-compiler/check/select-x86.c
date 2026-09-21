@@ -3095,6 +3095,27 @@ int main(void)
                 carry_candidates.diagnostic.blocking_work);
         return 108;
     }
+    /* A flag-producing ALU whose value AND carry Boolean are both published
+     * (`sub rax,rdx; setb dil; neg rdx`): the ALU frame now runs
+     * flag_result_group_shape so the instruction and its SETcc leave together. */
+    static const pl_u8 alu_with_boolean_group[] = {
+        0x31u, 0xffu,                             /* xor edi, edi       */
+        0x48u, 0x29u, 0xd0u,                      /* sub rax, rdx       */
+        0x40u, 0x0fu, 0x92u, 0xc7u,               /* setb dil           */
+        0x48u, 0xf7u, 0xdau,                      /* neg rdx            */
+        0x79u, 0x00u,                             /* jns .              */
+    };
+    pl_x86_native_candidates bool_group_candidates;
+    status = candidates_projected(
+        alu_with_boolean_group, sizeof alu_with_boolean_group, 0x7ffffu,
+        &bool_group_candidates);
+    if (status || bool_group_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (ALU with Boolean group "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, bool_group_candidates.count,
+                bool_group_candidates.diagnostic.blocking_work);
+        return 109;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,
