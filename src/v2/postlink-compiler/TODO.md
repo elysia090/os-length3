@@ -1071,6 +1071,27 @@ the copied source's `3` work stays the joint minimum.
 `check/select-x86.c` gains a `preload_entry_register` fixture (candidate count 1
 before, 2 after).  `make -k check` and the 120-case fuzz are green.
 
+The remaining 480 escapes are now classified by the first rejection recorded in
+`pl_x86_select_candidates` (the diagnostic for blocks with no normalized
+candidate):
+
+| `blocking_work` | blocks | meaning |
+| --- | --- | --- |
+| `0x200`/`0x202` | 78 + 24 | dense-ALU scheduler deadlock (shared roots) |
+| `0xf002` | 51 | `alu_frame_shape` rejected the block |
+| `0xf003` | 49 | final flag node is neither a value nor a known standalone flag |
+| `0xf001` | 31 | block kind/flow/dynamic/machine outside the ALU frame |
+| `0x0` | 28 | a production returned 0 without recording a rejection |
+| `0x501`/`0x201`/`0x500`/... | 22+13+9+... | per-publication encoder gaps |
+
+Sampled shapes: `0xf002` includes `and edx,7; xor eax,eax; cmp dl,6; sete al`
+(a `setcc` boolean, plan `L0 = condition(cmp)`, `N4 = test(L0,L0)`) and
+`cmp $1,rbp; mov rdx,rbp; mov rdi,r12; mov esi,2` (compare plus copies and a
+constant).  `0xf003` includes `and eax,0xffffc0; cmp eax,0x20f00; mov eax,0;
+je` and blocks whose value tree mixes `and`/`or` with a wide `movabs`.  These
+are separate per-shape productions; the `setcc` boolean and the constant/copy
+blocks are the most regular and are the recommended next targets.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
