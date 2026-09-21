@@ -1233,6 +1233,18 @@ Remaining `0xf002`: `8128be22` is `sete` over two chained compares;
 `8121f647` a shift-with-flags; `81258eae` a `bsf`+`add`+`je`.  Whole numbers:
 `0x200` ~68, `0xf003` ~47, `0x0` 28, `0x202` 24, `0x501` 22, `0xf002` ~14.
 
+### The `0x500` narrow-zero-extension family (25 blocks)
+
+`8121e2bc` (`mov rcx,rdx; shr rcx,0x20; movzx ecx,cx`) has
+`N1 = lane64.shr(L2, 32)` and `N3 = lane64.insert(0, N1, 16)`, with `N1` never
+published.  The ALU frame handled `insert(0, inner, 32)` (materialising the
+inner at 32-bit width is itself the zero extension) but the 8/16-bit lanes fell
+through to `operand_expression_bits`, which returns 0 for an insert, so the
+projection emission blocked at `0x500 | local`.  The frame now materializes the
+inner at its own expression width and emits `MOVZX local, local<lane>`; MOVZX
+preserves the shift's flags, so the final flag node stays the shift.  Whole-kernel
+scan: escapes **418 -> 393**.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

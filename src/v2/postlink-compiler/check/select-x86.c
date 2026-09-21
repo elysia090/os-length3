@@ -3116,6 +3116,26 @@ int main(void)
                 bool_group_candidates.diagnostic.blocking_work);
         return 109;
     }
+    /* `insert(0, inner, 16)` over an inner node with no publication: the frame
+     * materializes the inner at its own width and then MOVZXes the lane.  The
+     * 32-bit form already existed; the narrow lanes fell through to
+     * operand_expression_bits and blocked at 0x500. */
+    static const pl_u8 narrow_zero_extend[] = {
+        0x48u, 0x89u, 0xd1u,                      /* mov rcx, rdx       */
+        0x48u, 0xc1u, 0xe9u, 0x20u,               /* shr rcx, 0x20      */
+        0x0fu, 0xb7u, 0xc9u,                      /* movzx ecx, cx      */
+    };
+    pl_x86_native_candidates narrow_candidates;
+    status = candidates_projected(
+        narrow_zero_extend, sizeof narrow_zero_extend, 0x7ffffu,
+        &narrow_candidates);
+    if (status || narrow_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (narrow zero extend "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, narrow_candidates.count,
+                narrow_candidates.diagnostic.blocking_work);
+        return 110;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

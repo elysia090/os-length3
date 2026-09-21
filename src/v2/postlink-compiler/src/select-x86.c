@@ -12570,6 +12570,32 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     selection->blocking_work = 0x600u | local;
                     return measured;
                 }
+            } else if (zero_extend_operand(
+                    &block->plan, (pl_u32)value.value, &lane_inner, &lane_width)
+                    && (lane_width == 8u || lane_width == 16u)) {
+                /* A narrow zero extension of an inner value with no
+                 * publication: materialize the inner at its own width, then
+                 * MOVZX the requested lane.  MOVZX preserves the shift's
+                 * flags, so the final flag node stays the shift. */
+                pl_u32 inner_bits = operand_expression_bits(
+                    &block->plan, lane_inner, 64u);
+                if (!inner_bits) inner_bits = 64u;
+                int measured = measure_alu_tree(
+                    frontend, block, selection, local, lane_inner, inner_bits,
+                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    &encoded, &publication_work);
+                if (measured <= 0) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured;
+                }
+                pl_u32 extend = 0u;
+                if (!emit_zero_extend_move(
+                        local, local, lane_width, (pl_u8 *)0, &extend)
+                        || encoded > U32_MAX_VALUE - extend
+                        || publication_work == U32_MAX_VALUE)
+                    return 0;
+                encoded += extend;
+                ++publication_work;
             } else if (in_place_lane_insert(
                     &block->plan, value, local, &lane_inner, &lane_width)) {
                 int measured = measure_alu_tree(
@@ -18205,6 +18231,22 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                         at, block->plan.node_count + 1u, scratch_mask,
                         output + at, &written))
                     return PL_ERROR_X86_SELECT;
+            } else if (zero_extend_operand(
+                    &block->plan, (pl_u32)value.value, &lane_inner, &lane_width)
+                    && (lane_width == 8u || lane_width == 16u)) {
+                pl_u32 inner_bits = operand_expression_bits(
+                    &block->plan, lane_inner, 64u);
+                if (!inner_bits) inner_bits = 64u;
+                pl_u32 inner_bytes = 0u;
+                if (!write_alu_tree(
+                        block, selection, local, lane_inner, inner_bits,
+                        at, block->plan.node_count + 1u, scratch_mask,
+                        output + at, &inner_bytes)
+                        || !emit_zero_extend_move(
+                            local, local, lane_width,
+                            output + at + inner_bytes, &written))
+                    return PL_ERROR_X86_SELECT;
+                written += inner_bytes;
             } else if (in_place_lane_insert(
                     &block->plan, value, local, &lane_inner, &lane_width)) {
                 pl_u32 insert_bytes = 0u;
