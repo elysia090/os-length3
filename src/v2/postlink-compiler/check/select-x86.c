@@ -2679,6 +2679,37 @@ int main(void)
                 pair_status, pair_span, pair_work);
         return 92;
     }
+    /* A 32-bit sign extension of a node that another publication already
+     * placed in a GPR.  Rebuilding the node inside the extension makes the
+     * dense ALU frame materialize the negated entry word twice (span 2, work
+     * 7) while the copied source holds work 6 at span 3: no joint witness.
+     * Reading the node's published coordinate emits one `movslq` and the
+     * frame reaches span 3, work 6. */
+    static const pl_u8 extend_published_node[] = {
+        0x48u, 0x89u, 0xf0u,                      /* mov rax, rsi      */
+        0x48u, 0x29u, 0xf2u,                      /* sub rdx, rsi      */
+        0xf7u, 0xd8u,                             /* neg eax           */
+        0x48u, 0x89u, 0xd7u,                      /* mov rdi, rdx      */
+        0x8du, 0x14u, 0x0eu,                      /* lea edx, [rsi+rcx]*/
+        0x48u, 0x63u, 0xf0u,                      /* movslq rsi, eax   */
+    };
+    pl_x86_native_candidates extend_candidates;
+    status = candidates_projected(
+        extend_published_node, sizeof extend_published_node,
+        0x7ffffu, &extend_candidates);
+    pl_x86_native_selection extend_selected = { 0 };
+    pl_u32 extend_span = 0u, extend_work = 0u;
+    int extend_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &extend_candidates, 0u, 0u, &extend_selected,
+            &extend_span, &extend_work);
+    if (extend_status || !extend_selected.supported
+            || extend_span != 3u || extend_work != 6u) {
+        fprintf(stderr, "native x86 selection: RED (extend published node "
+                "status=%d span/work=%u/%u)\n",
+                extend_status, extend_span, extend_work);
+        return 93;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

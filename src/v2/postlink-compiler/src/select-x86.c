@@ -7504,6 +7504,21 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
             selection->direct_nested_frame = 1u;
             return 1;
         }
+        pl_operand extension_argument = { 0 };
+        pl_u32 extension_owner = PL_X86_GPR_COUNT;
+        if (sign_extend_value(&block->plan, (pl_u32)value.value,
+                              &extension_argument, &extension_bits)
+                && extension_bits == 32u
+                && extension_argument.kind == PL_OPERAND_NODE
+                && published_operand_local(
+                    &block->plan, extension_argument, &extension_owner)
+                && emit_sign_extend_move(
+                    destination, extension_owner, extension_bits,
+                    (pl_u8 *)0, bytes)) {
+            *instructions = 1u;
+            selection->direct_nested_frame = 1u;
+            return 1;
+        }
     }
     masked_entry_affine entry_affine;
     if (masked_entry_affine_details(
@@ -14795,6 +14810,22 @@ static int write_alu_tree(const pl_x86_block *block,
                 && extension_bits == 32u
                 && emit_sign_extend_move(
                     destination, extension_source, extension_bits,
+                    output, written))
+            return 1;
+        /* A 32-bit sign extension whose operand is a node another publication
+         * already placed in a GPR is one `movslq` from that coordinate.
+         * Rebuilding the node first would materialize it a second time; the
+         * frame's source law already orders that publication first. */
+        pl_operand extension_argument = { 0 };
+        pl_u32 extension_owner = PL_X86_GPR_COUNT;
+        if (sign_extend_value(&block->plan, (pl_u32)value.value,
+                              &extension_argument, &extension_bits)
+                && extension_bits == 32u
+                && extension_argument.kind == PL_OPERAND_NODE
+                && published_operand_local(
+                    &block->plan, extension_argument, &extension_owner)
+                && emit_sign_extend_move(
+                    destination, extension_owner, extension_bits,
                     output, written))
             return 1;
     }

@@ -664,6 +664,48 @@ targets), the 120-case differential fuzz reports 0 mismatches, and the new
 candidate executes identically to the source on 1,000,000 random inputs.  The
 kernel frontier advances to `0xffffffff814af477` (`2/7/18 3/6/17`).
 
+`0xffffffff814af477` (`skb_segment_list+0x1c7`) is a **genuine** span/work
+tradeoff, unlike the recent phantoms: both offered candidates execute
+identically to the source on 1,000,000 random inputs.  The plan is five nodes
+over one negated entry word:
+
+```text
+N1 = sub(L2, L6)      -> L7 (RDI)   N2 = sub(0, L6)    -> L0 (RAX)
+N3 = flags(0, L6, N2) -> L16        N4 = add(L1, L6)   -> L2 (RDX)
+N5 = EXTEND32_S(N2)   -> L6 (RSI)
+```
+
+The dense ALU frame published `L0 = N2` as `mov eax,esi; neg eax` (two
+instructions into RAX), then `L6 = N5` as `neg esi; movslq rsi,esi` -- a second
+materialization of the same `N2`.  It reached **span 2, work 7**; the copied
+source reached **span 3, work 6**, and the component minima had no joint
+witness.
+
+The 32-bit sign-extension branch of `measure_alu_tree` / `write_alu_tree` only
+consulted an operand that is literally a register (via `sign_extend_node`).  A
+node argument fell through to a path that materialized the node into the
+destination before the `movslq`.  Both now call `sign_extend_value` and, when
+the argument is a node, resolve it through `published_operand_local` and emit
+one `movslq` from that coordinate; the frame's source law already orders that
+publication first.  For this block `L6` becomes `movslq rsi,rax`, the frame
+reaches **span 3, work 6**, and the copied source's `3/6` is the joint minimum,
+so the witness clears.
+
+`check/select-x86.c` gains an `extend_published_node` fixture built from the
+exact six source instructions: RED (`status=-50`, component minima `2/6`)
+before the change, green after.  `make -k check` is green (79 targets) and the
+120-case fuzz reports 0 mismatches.  The hand schedule
+
+```text
+sub rdx,rsi; mov rdi,rdx; lea edx,[rcx+rsi]; neg esi; movslq rsi,esi; mov eax,esi
+```
+
+is also byte-equivalent to the source on 1,000,000 random inputs and is
+**span 2, work 6**; the frame still does not reach that optimum (it would need
+`L0` to be published as a copy of the extension's in-place coordinate), so the
+`2/6` spelling remains an unclaimed improvement.  The kernel frontier advances
+to `0xffffffff8154f94e` (`3/6/18 4/4/14`).
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
