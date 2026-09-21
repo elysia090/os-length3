@@ -1152,6 +1152,20 @@ check` is green (79 targets).  The two named kernel witnesses share this shape,
 so the population is expected to drop 480 -> 478; the whole-kernel scan was not
 rerun here because no linked kernel input is present on this host.
 
+The `0x100`/`setcc` blocker is now closed.  `alu_frame_shape` accepts condition
+projections (selector `0..15`), and a new `compare_boolean_group_shape` plus the
+existing `emit_group_booleans` makes the ALU frame emit a `CMP`/`TEST` together
+with its `SETcc` observations.  For `0xffffffff812497b9`
+(`and edx,7; xor eax,eax; cmp dl,6; sete al`) the frame now emits exactly those
+four bytes (span 3, work 4); `check/select-x86.c` gains a
+`compare_boolean_observation` fixture (candidate count 1 -> 2, `0xf002` before,
+green after; the isolated fixture must use the kernel's `0x7ffff` live mask or
+the plan differs).  Only the case where the comparison is the block's final flag
+producer is handled, so the group's comparison and the final flag publication are
+the same instruction and `standalone_flags_pending` is cleared when the group
+fires.  Whole-kernel scan: escapes **476 -> 465**, all `make -k check` targets
+green, differential fuzz 120/0.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

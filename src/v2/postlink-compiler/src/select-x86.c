@@ -56,6 +56,22 @@ static int write_alu_seed(const pl_x86_block *block,
 static int emit_set_condition(pl_u32 destination, pl_u32 condition,
                               pl_u8 *output, pl_u32 *written);
 
+/* One arithmetic or comparison instruction can publish both a word and a set
+ * of condition observations.  `flag_result_group` carries the members of such a
+ * group; when `owner` is PL_X86_GPR_COUNT the operation is a CMP/TEST that
+ * publishes no GPR value (`test` selects TEST over CMP), and only booleans are
+ * emitted.  The definition of the group shape functions follows later. */
+typedef struct {
+    pl_u32 owner, booleans, zero_before, members, bits, mode, node, test;
+    pl_operand left, right;
+} flag_result_group;
+
+static int emit_group_booleans(const pl_plan *plan, const flag_result_group *shape,
+                               int before, pl_u8 *output, pl_u32 *written, pl_u32 *work);
+static int compare_boolean_group_shape(const pl_plan *plan, pl_u32 pending,
+                                       pl_u32 final_flag_node,
+                                       flag_result_group *out);
+
 static int plan_identity(const pl_plan *plan)
 {
     if (!plan || plan->node_count || plan->stack_count
@@ -2494,9 +2510,12 @@ static int alu_frame_shape(const pl_plan *plan, pl_u32 *changed,
             continue;
         if (local >= PL_X86_GPR_COUNT) return 0;
         if (value.kind == PL_OPERAND_PROJECTION) {
+            /* Selector 16 is an ALU value projection; 0..15 are the condition
+             * Boolean projections (`setcc` over a compare/test).  Both are
+             * publications the frame has to materialize. */
             if (!(value.value >> 8u)
                     || (value.value >> 8u) > plan->node_count
-                    || (value.value & 0xffu) != 16u)
+                    || (value.value & 0xffu) > 16u)
                 return 0;
             ++derived_publications;
         } else if (value.kind == PL_OPERAND_NODE) {
@@ -11555,6 +11574,30 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             selection->direct_nested_frame = 1u;
             continue;
         }
+        flag_result_group compare_bool;
+        if (compare_boolean_group_shape(
+                &block->plan, pending, final_flag_node, &compare_bool)) {
+            pl_u32 pre = 0u, pre_work = 0u, operation = 0u, post = 0u, post_work = 0u;
+            pl_operand left = compare_bool.left, right = compare_bool.right;
+            physicalize_published_operand(&block->plan, PL_X86_GPR_COUNT, &left);
+            physicalize_published_operand(&block->plan, PL_X86_GPR_COUNT, &right);
+            if (!emit_group_booleans(&block->plan, &compare_bool, 1, 0, &pre, &pre_work)
+                    || left.kind != PL_OPERAND_LOCAL
+                    || left.value >= PL_X86_GPR_COUNT
+                    || !emit_flag_coordinate(
+                        (pl_u32)left.value, right, compare_bool.bits,
+                        compare_bool.test, 0u, (pl_u8 *)0, &operation)
+                    || !emit_group_booleans(&block->plan, &compare_bool, 0, 0, &post, &post_work)
+                    || bytes > U32_MAX_VALUE - pre - operation - post
+                    || instructions > U32_MAX_VALUE - pre_work - 1u - post_work)
+                return 0;
+            bytes += pre + operation + post;
+            instructions += pre_work + 1u + post_work;
+            pending &= ~compare_bool.members;
+            standalone_flags_pending = 0;
+            selection->direct_nested_frame = 1u;
+            continue;
+        }
         if (standalone_flags_pending) {
             pl_u32 clobberers = 0u;
             for (pl_u32 local = 0u;
@@ -14393,10 +14436,8 @@ typedef struct {
     pl_operand word;
 } signed_word_handoff;
 
-typedef struct {
-    pl_u32 owner, booleans, zero_before, members, bits, mode;
-    pl_operand left, right;
-} flag_result_group;
+/* `flag_result_group` is declared with the other frame-shape prototypes
+ * above; the compare/test Boolean observation group lives here. */
 
 /* One arithmetic instruction publishes both its word and its conditions.
  * Keep those observations adjacent while allocating their actual GPRs.
@@ -14419,7 +14460,8 @@ static int flag_result_group_shape(const pl_plan *plan, pl_u32 pending,
                 booleans |= 1u << local;
         }
         if (!booleans) continue;
-        flag_result_group shape = { .owner = owner, .booleans = booleans };
+        flag_result_group shape = { .owner = owner, .booleans = booleans,
+                                    .node = node };
         pl_u32 preserves = 0u;
         if (!alu_node_semantics(plan, node, &shape.left, &shape.right,
                 &shape.bits, &shape.mode, &preserves) || preserves
@@ -14437,6 +14479,55 @@ static int flag_result_group_shape(const pl_plan *plan, pl_u32 pending,
         return 1;
     }
     return 0;
+}
+
+/* A CMP/TEST publishes no GPR value, but its condition projections are Boolean
+ * observations the frame still has to materialize.  The comparison is emitted
+ * once as the flag producer, then SETcc per observation.  Only the case where
+ * this comparison is the block's final flag producer is handled here, so the
+ * group's comparison and the final flag publication are the same instruction. */
+static int compare_boolean_group_shape(const pl_plan *plan, pl_u32 pending,
+                                       pl_u32 final_flag_node,
+                                       flag_result_group *out)
+{
+    if (!plan || !out || !pending || !final_flag_node
+            || final_flag_node > plan->node_count)
+        return 0;
+    const pl_node *flag = &plan->nodes[final_flag_node - 1u];
+    if (flag->opcode != PL_OPCODE_X86_COMPARE
+            && flag->opcode != PL_OPCODE_X86_TEST)
+        return 0;
+    pl_u32 booleans = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        pl_operand value = plan->locals[local];
+        if ((pending & (1u << local)) && value.kind == PL_OPERAND_PROJECTION
+                && (value.value >> 8u) == final_flag_node
+                && (value.value & 0xffu) < 16u)
+            booleans |= 1u << local;
+    }
+    if (!booleans) return 0;
+    pl_u32 sources[PL_X86_GPR_COUNT], dependencies[PL_X86_GPR_COUNT];
+    if (!alu_frame_source_laws(plan, sources, dependencies)) return 0;
+    pl_operand flags = { PL_OPERAND_NODE, final_flag_node };
+    pl_u32 preserves_carry = 0u;
+    if (!flag_operation_details(plan, flags, &out->left, &out->right,
+            &out->bits, &out->mode, &preserves_carry)
+            || preserves_carry)
+        return 0;
+    out->owner = PL_X86_GPR_COUNT;
+    out->booleans = booleans;
+    out->members = booleans;
+    out->node = final_flag_node;
+    out->test = flag->opcode == PL_OPCODE_X86_TEST ? 1u : 0u;
+    pl_u32 reads = 0u, frontier = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (!(booleans & (1u << local))) continue;
+        reads |= sources[local] | dependencies[local];
+        frontier |= dependencies[local];
+    }
+    if (frontier & pending & ~booleans) return 0;
+    out->zero_before = booleans & ~reads;
+    return 1;
 }
 
 static int emit_group_booleans(const pl_plan *plan, const flag_result_group *shape,
@@ -17008,6 +17099,32 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     || part > selection->output_bytes - at) return PL_ERROR_X86_SELECT;
             at += part;
             pending &= ~select_group.members;
+            continue;
+        }
+        flag_result_group compare_bool;
+        if (compare_boolean_group_shape(
+                &block->plan, pending, final_flag_node, &compare_bool)) {
+            pl_u32 pre = 0u, operation = 0u, post = 0u, work = 0u;
+            pl_operand left = compare_bool.left, right = compare_bool.right;
+            physicalize_published_operand(&block->plan, PL_X86_GPR_COUNT, &left);
+            physicalize_published_operand(&block->plan, PL_X86_GPR_COUNT, &right);
+            if (!emit_group_booleans(&block->plan, &compare_bool, 1, output + at, &pre, &work)
+                    || at > selection->output_bytes
+                    || pre > selection->output_bytes - at
+                    || left.kind != PL_OPERAND_LOCAL
+                    || left.value >= PL_X86_GPR_COUNT
+                    || !emit_flag_coordinate(
+                        (pl_u32)left.value, right, compare_bool.bits,
+                        compare_bool.test, 0u, output + at + pre, &operation)
+                    || operation > selection->output_bytes - at - pre)
+                return PL_ERROR_X86_SELECT;
+            at += pre + operation;
+            if (!emit_group_booleans(&block->plan, &compare_bool, 0, output + at, &post, &work)
+                    || post > selection->output_bytes - at)
+                return PL_ERROR_X86_SELECT;
+            at += post;
+            pending &= ~compare_bool.members;
+            standalone_flags_pending = 0;
             continue;
         }
         if (standalone_flags_pending) {

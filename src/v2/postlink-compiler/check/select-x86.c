@@ -3009,6 +3009,29 @@ int main(void)
                 constant_candidates.diagnostic.blocking_work);
         return 104;
     }
+    /* A CMP/TEST publishes no GPR value, but its condition projection is a
+     * Boolean observation (`sete al`).  The frame only accepted ALU value
+     * publications, so the compare's Boolean publication declined and the
+     * block stayed copied-source.  The frame now emits the comparison and its
+     * SETcc observations as one group. */
+    static const pl_u8 compare_boolean_observation[] = {
+        0x83u, 0xe2u, 0x07u,                      /* and edx, 7         */
+        0x31u, 0xc0u,                            /* xor eax, eax       */
+        0x80u, 0xfau, 0x06u,                     /* cmp dl, 6          */
+        0x0fu, 0x94u, 0xc0u,                     /* sete al            */
+    };
+    pl_x86_native_candidates boolean_candidates;
+    status = candidates_projected(
+        compare_boolean_observation,
+        sizeof compare_boolean_observation, 0x7ffffu,
+        &boolean_candidates);
+    if (status || boolean_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (compare boolean "
+                "observation status=%d candidates=%u diagnostic=0x%x)\n",
+                status, boolean_candidates.count,
+                boolean_candidates.diagnostic.blocking_work);
+        return 105;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,
