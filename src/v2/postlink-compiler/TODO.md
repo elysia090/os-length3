@@ -896,13 +896,19 @@ N6 = sub(N4, N5) -> L1  N7 = compare(L16, N6, N3) -> RFLAGS (jae)
 ```
 
 and only the copied source is offered.  A probe reports
-`blocking_work = 0x700` with `blocking_opcode = pending`: the compare-branch
-frame's `next_compare_branch_assignment_excluding` finds no legal next
-publication.  `N1` is consumed by two shifts (`N3` and `N4`) so it must be
-published once and reused, and `N3` feeds the terminal compare while `N6`
-depends on `N4`/`N5`; the first-fit assignment deadlocks instead of seeding the
-shared `N1`.  This is a compare-branch scheduler gap (a shared pre-compare
-root), not an encoder gap.  The source is 11 work against an SSA floor of 8.
+`blocking_work = 0x700`, `blocking_opcode = 0xb`, i.e.
+`next_compare_branch_assignment_excluding(plan, pending = {L0,L1,L3},
+preferred = {L1,L3}, deferred = 0)` finds no legal next publication.  The
+deadlock is exact: `L0 = N4 = shr(N1,1)` and `L3 = N3 = shr(N1,4)` share the
+root `N1 = sub(RBX,RAX)`, so both read entry `RAX` and entry `RBX` while
+writing each other's coordinate.  `used & (1 << L3)` is set by `sources[L0]`
+(entry RBX) and `used & (1 << L0)` by `sources[L3]` (entry RAX), so neither may
+go first; `L1 = N6` depends on `L0` and the already-published `L2`.  The source
+breaks the cycle by computing `N1` once in RBX and copying it to RAX before the
+single shift of each.  This needs a shared-root handoff in the compare-branch
+frame (the dense ALU frame's `generation_join_handoff` is the same idea but is
+not consulted on this path), or routing the compare-branch block through it.
+The source is 11 work against an SSA floor of 8.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
