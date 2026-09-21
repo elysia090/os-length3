@@ -969,19 +969,26 @@ So the final `N27` is published twice (RDX and RAX) and `L6` is a dead-value
 class `L6` (the final flag-producing `xor`), so `L0`/`L2` depend on `L6`, which
 the flags-last rule schedules last.
 
-Removing the constant substitution for zero in `operand_source_law` moves the
-block to `0x280` (the `single_bit_or` seed `N27` cannot be measured) and
-**reduces escapes 507 -> 500**, but it exposes a Pareto at
-`0xffffffff8124f4c1` whose `2/10/41` ALU arm is itself a miscompile: it
-substitutes the immediate `1` with its published owner `ECX` and emits
-`not rax; and eax,ecx; mov ecx,1; ...; and r11,rbx; mov rsi,r15; neg rax`,
-reading `ECX` before `mov ecx,1`.  So the constant-substitution machinery
-(law *and* `physicalize_published_operand`) can order a consumer before its
-constant's producer.  The two are coupled: the zero-class dependency fix is
-only sound once a constant is never read from an unordered producer.  The
-reverted state keeps escapes 507; the next step is to make constant operands
-materialise as immediates (or order their `publication_owner` before every
-consumer) and then re-derive the affected schedules.
+Hand calculation on the coupling.  Removing the constant substitution for zero
+in `operand_source_law` moves `0xffffffff8121c995` to `0x280` (the
+`single_bit_or` seed `N27` cannot be measured) and, together with protecting the
+`flag_value_preload` destination from scratch reuse, clears a Pareto at
+`0xffffffff8124f4c1` and **reduces escapes 507 -> 488** with no Pareto.
+`0xffffffff8124f4c1`'s `2/10` ALU arm was a miscompile: the preload put
+`N2 = ~RAX & 1` in RAX, then another publication materialised the wide `and`
+mask `0xfff0000000000fff` into RAX as scratch and the final `neg rax` negated
+the mask instead of `N2`.  Protecting the preload destination fixes that arm.
+
+However the zero-class dependency is **semantically load-bearing**:
+`condition-code-check` fails with a flags mismatch (`flags=a02 input=1`) as soon
+as the const-zero substitution is removed, even when
+`physicalize_published_operand` is also taught to materialise constant zero as
+an immediate.  So a zero operand's `publication_owner` is a real ordering edge
+in some generated frames, and it cannot be dropped wholesale.  A sound fix for
+`0xffffffff8121c995` must therefore be frame-local (materialise the zero
+operand as an immediate inside that frame while keeping the reference semantics)
+or a dedicated long-chain schedule; the reverted state keeps escapes 507 and a
+green suite.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
