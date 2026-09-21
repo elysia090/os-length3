@@ -750,20 +750,28 @@ and executing it against the source on 1,000,000 random inputs gives **zero**
 identical results.
 
 The plan republishes the entry coordinate: `L1` is both the entry `RCX` read
-by `N1`/`N2`/`N3` and the destination of `N9 = L2 & 0xffffff3f`.  The frame's
-source law for `L0` carries both the entry read and the publication dependency
-(`src=2 dep=2` right after `alu_frame_source_laws`), so the scheduler may not
-publish `L1` while `L0`'s tree still reads entry `RCX`; a correct schedule must
-compute `N8` first and only then overwrite `RCX`.  The emitted candidate instead
-computes `N8` into EAX, then materializes `N9` into `RCX`, and because the
-64-bit `and` mask `0xffffff3f` is not a sign-extendable `imm32` it puts the
-constant in EAX -- the coordinate that already holds the unfinished `N8` --
-so `N10 = or(N8, N9)` collapses to the constant.  `add_flag_chain_dependencies`
-is not the cause; the next step is a handoff that evaluates the entry-`RCX`
-subtree before `L1`'s publication (or a scratch for the wide constant that
-excludes every live frame coordinate), after which the two offered spellings
-still need a joint minimum.  The copied source is the correct `6/10/26`; the
-frontier stays at `5/12/40 6/10/26`.
+by `N1`/`N2`/`N3` and the destination of `N9 = L2 & 0xffffff3f`.  A correct
+schedule must evaluate the entry-`RCX` subtree `N8` first and only then
+overwrite `RCX`.  That is exactly the generation-join handoff: it seeds `N8`
+into the join destination EAX, then publishes `L1 = N9`, then joins with
+`or eax, ecx`.  The defect was the join's law update:
+`apply_generation_join_laws` set `sources[destination] = 0`, so the seeded
+coordinate no longer appeared in any source law and the next publication chose
+EAX as its scratch.  `N9`'s 64-bit `and` mask `0xffffff3f` is not a
+sign-extendable `imm32`, so its constant was materialized into EAX -- the
+coordinate holding the unfinished `N8` -- and `N10 = or(N8, N9)` collapsed to
+the constant (0/1,000,000 agreement).
+
+`apply_generation_join_laws` now names the seeded destination as its own entry
+source (`sources[destination] = 1 << destination`) instead of clearing it.  The
+coordinate is live until the join, so it stays out of every other
+publication's scratch pool, and no producer edge appears because no other
+pending publication writes it.  The block resolves to the source's **span 6,
+work 10** (with a correct `7/11` alternative offered); the ALU frame declines
+the shape.  `check/select-x86.c` gains a `generation_join_seed_destination`
+fixture: RED (`status=-50`, minima `5/10`) before the one-line change, green
+after.  `make -k check` is green and the 120-case fuzz reports 0 mismatches.
+The kernel frontier advances to `0xffffffff815cde46` (`3/6/16 4/4/11`).
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 

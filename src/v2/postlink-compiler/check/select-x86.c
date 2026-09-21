@@ -2740,6 +2740,43 @@ int main(void)
                 flag_value_status, flag_value_span, flag_value_work);
         return 94;
     }
+    /* A generation-join seed materializes an entry-only subtree into the join
+     * destination before a sibling publication overwrites the entry register.
+     * That destination coordinate is live until the join, but the entry reads
+     * it consumed are gone from the source law, so a later publication may
+     * pick it as scratch.  Here the wide `and` mask would land in the join
+     * destination and destroy the seed.  Naming the destination as its own
+     * entry source keeps it out of every other scratch pool. */
+    static const pl_u8 generation_join_seed_destination[] = {
+        0x89u, 0xc8u,                             /* mov eax, ecx        */
+        0x01u, 0xc9u,                             /* add ecx, ecx        */
+        0xd0u, 0xe8u,                             /* shr al, 1           */
+        0x81u, 0xe1u, 0x80u, 0x00u, 0x00u, 0x00u, /* and ecx, 0x80       */
+        0x83u, 0xe0u, 0x40u,                      /* and eax, 0x40       */
+        0x09u, 0xc8u,                             /* or eax, ecx         */
+        0x89u, 0xd1u,                             /* mov ecx, edx        */
+        0x80u, 0xe1u, 0x3fu,                      /* and cl, 0x3f        */
+        0x09u, 0xc8u,                             /* or eax, ecx         */
+        0x39u, 0xd0u,                             /* cmp eax, edx        */
+    };
+    pl_x86_native_candidates join_candidates;
+    status = candidates_projected(
+        generation_join_seed_destination,
+        sizeof generation_join_seed_destination, 0x7ffffu,
+        &join_candidates);
+    pl_x86_native_selection join_selected = { 0 };
+    pl_u32 join_span = 0u, join_work = 0u;
+    int join_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &join_candidates, 0u, 0u, &join_selected,
+            &join_span, &join_work);
+    if (join_status || !join_selected.supported
+            || join_span != 6u || join_work != 10u) {
+        fprintf(stderr, "native x86 selection: RED (generation join seed "
+                "destination status=%d span/work=%u/%u)\n",
+                join_status, join_span, join_work);
+        return 95;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

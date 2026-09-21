@@ -10382,7 +10382,12 @@ static int apply_generation_join_laws(
             return 0;
         sources[local] = remaining_sources | alias_bit;
     }
-    sources[handoff->destination] = 0u;
+    /* The seed now lives in the destination coordinate until the join.  That
+     * coordinate is live, so it must stay out of every other publication's
+     * scratch pool and must not be overwritten before the join; naming it as
+     * its own entry source expresses exactly that anti-dependency (no other
+     * pending publication writes it, so no producer edge is created). */
+    sources[handoff->destination] = alias_bit;
     dependencies[handoff->destination] =
         handoff->dependency_owner < PL_X86_GPR_COUNT
         ? 1u << handoff->dependency_owner : 0u;
