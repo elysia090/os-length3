@@ -747,15 +747,23 @@ The ALU arm's exact bytes are
 ```
 
 and executing it against the source on 1,000,000 random inputs gives **zero**
-identical results (`mov eax, 0xffffff3f` overwrites the live `N8` already in
-EAX, so `N10 = or(N8, N9)` collapses to the constant).  `0xffffff3f` is not a
-sign-extendable `imm32` for a 64-bit `and`, so the frame must put it in a
-register, but it chose EAX -- a coordinate holding an operand that has not been
-consumed.  The copied source is the correct `6/10/26` and the frontier is
-`5/12/40 6/10/26`.  The next step is to materialize such a wide constant in a
-free scratch (or spell the same low-32-bit mask as a 32-bit `and`, whose
-immediate fits), never into a live operand coordinate; the two offered
-spellings then still need a joint minimum.
+identical results.
+
+The plan republishes the entry coordinate: `L1` is both the entry `RCX` read
+by `N1`/`N2`/`N3` and the destination of `N9 = L2 & 0xffffff3f`.  The frame's
+source law for `L0` carries both the entry read and the publication dependency
+(`src=2 dep=2` right after `alu_frame_source_laws`), so the scheduler may not
+publish `L1` while `L0`'s tree still reads entry `RCX`; a correct schedule must
+compute `N8` first and only then overwrite `RCX`.  The emitted candidate instead
+computes `N8` into EAX, then materializes `N9` into `RCX`, and because the
+64-bit `and` mask `0xffffff3f` is not a sign-extendable `imm32` it puts the
+constant in EAX -- the coordinate that already holds the unfinished `N8` --
+so `N10 = or(N8, N9)` collapses to the constant.  `add_flag_chain_dependencies`
+is not the cause; the next step is a handoff that evaluates the entry-`RCX`
+subtree before `L1`'s publication (or a scratch for the wide constant that
+excludes every live frame coordinate), after which the two offered spellings
+still need a joint minimum.  The copied source is the correct `6/10/26`; the
+frontier stays at `5/12/40 6/10/26`.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
