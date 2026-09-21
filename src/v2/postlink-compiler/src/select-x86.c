@@ -4116,6 +4116,23 @@ static void physicalize_selected_operand(
     physicalize_published_operand(plan, destination, value);
 }
 
+/* Record that a computed SSA node now lives in one GPR.  A frame that
+ * materializes a shared subtree (a conditional arm, a preloaded tree) into a
+ * destination must resolve later references to that same node through the
+ * destination instead of rebuilding it from an entry local the materializing
+ * publication may already have overwritten. */
+static void push_frame_value_alias(pl_x86_native_selection *selection,
+                                   pl_u8 kind, pl_u64 value, pl_u8 local)
+{
+    if (!selection || local >= PL_X86_GPR_COUNT
+            || selection->value_alias_count >= PL_X86_VALUE_ALIAS_COUNT)
+        return;
+    pl_u32 at = selection->value_alias_count++;
+    selection->value_alias_kind[at] = kind;
+    selection->value_alias_value[at] = value;
+    selection->value_alias_local[at] = local;
+}
+
 /* ADD/AND/OR/XOR have no semantic left/right order.  Prefer the arm whose
  * entry generation already occupies the destructive destination, including a
  * nested shift or arithmetic subtree.  Restricting this to a literal local
@@ -5374,6 +5391,26 @@ static int conditional_select_details(const pl_plan *plan, pl_operand value,
 {
     return conditional_select_details_inner(
         plan, value, destination, 0, out);
+}
+
+/* A still-pending publication that consumes `pair_node` as its destructive
+ * `current` arm.  When an ADD3 trades on a shared pair, building that pair in
+ * the consumer's coordinate lets one materialization serve both publications
+ * instead of rebuilding the pair twice. */
+static pl_u32 alu_add3_pair_consumer(const pl_plan *plan, pl_u32 pending,
+                                     pl_u32 pair_node, pl_u32 skip)
+{
+    if (!plan || !pair_node) return PL_X86_GPR_COUNT;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
+        if (local == skip || !(pending & (1u << local))) continue;
+        conditional_select select;
+        if (conditional_select_details_inner(
+                plan, plan->locals[local], local, 1, &select)
+                && select.current.kind == PL_OPERAND_NODE
+                && select.current.value == pair_node)
+            return local;
+    }
+    return PL_X86_GPR_COUNT;
 }
 
 static int emit_select_compare(const conditional_select *select,
@@ -10846,6 +10883,7 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
     /* Preserve the responsible grammar on a red candidate so a preceding
      * broad frame probe cannot hide the exact dense-ALU rejection. */
     selection->direct_alu_frame = 1u;
+    selection->value_alias_frame_count = selection->value_alias_count;
     entry_select_bit_test_frame entry_select_test;
     if (entry_select_bit_test_frame_shape(
             block, changed, final_flag_node, &entry_select_test)) {
@@ -11519,49 +11557,42 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     select.value_bits, bytes,
                     block->plan.node_count + 1u, scratch_mask,
                     &seed_bytes, &seed_work);
+                /* Seed the compare operand(s) before the true-arm candidate,
+                 * mirroring the write path exactly: the seed resolves the
+                 * `current` value through `local` and the candidate then reuses
+                 * the coordinate the seed finishes with. */
+                pl_x86_native_selection seed_state = *selection;
+                if ((current.kind == PL_OPERAND_NODE
+                        || current.kind == PL_OPERAND_PROJECTION)
+                        && current.value)
+                    push_frame_value_alias(
+                        &seed_state, (pl_u8)current.kind, current.value,
+                        (pl_u8)local);
+                pl_u32 used = scratch_mask & ~(1u << local);
                 pl_u32 cand_local = select.candidate_local;
+                if (!select.candidate_immediate
+                        && cand_local < PL_X86_GPR_COUNT)
+                    used &= ~(1u << cand_local);
                 pl_u32 cand_bytes = 0u, cand_work = 0u;
-                if (measured > 0 && select.candidate_immediate) {
-                    cand_local = PL_X86_GPR_COUNT;
-                    for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
-                            ++scratch)
-                        if (scratch != local
-                                && (scratch_mask & (1u << scratch))) {
-                            cand_local = scratch;
-                            break;
-                        }
-                    if (cand_local >= PL_X86_GPR_COUNT) {
-                        selection->blocking_work = 0x300u | local;
-                        return 0;
-                    }
-                    measured = measure_alu_tree(
-                        frontend, block, selection, cand_local,
-                        select.candidate_value, select.value_bits,
-                        bytes + seed_bytes, block->plan.node_count + 1u,
-                        scratch_mask & ~(1u << cand_local),
-                        &cand_bytes, &cand_work);
-                }
                 pl_u32 compare_bytes = 0u, move_bytes = 0u;
                 pl_u32 compare_seed_bytes = 0u, compare_seed_work = 0u;
                 if (measured > 0
                         && (select.compare_left_seed
                             || select.compare_right_seed)) {
-                    pl_u32 used = scratch_mask;
                     if (select.compare_left_seed) {
                         pl_u32 scratch = PL_X86_GPR_COUNT;
                         for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
-                            if (s != local && s != cand_local
-                                    && (used & (1u << s))) {
+                            if (s != local && (used & (1u << s))) {
                                 scratch = s;
                                 break;
                             }
                         pl_u32 part = 0u, work = 0u;
                         if (scratch >= PL_X86_GPR_COUNT
                                 || measure_alu_tree(
-                                    frontend, block, selection, scratch,
+                                    frontend, block, &seed_state, scratch,
                                     select.compare_left_value,
                                     select.compare_bits,
-                                    bytes + seed_bytes + cand_bytes,
+                                    bytes + seed_bytes,
                                     block->plan.node_count + 1u,
                                     used & ~(1u << scratch),
                                     &part, &work) <= 0)
@@ -11576,19 +11607,17 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     if (measured > 0 && select.compare_right_seed) {
                         pl_u32 scratch = PL_X86_GPR_COUNT;
                         for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
-                            if (s != local && s != cand_local
-                                    && (used & (1u << s))) {
+                            if (s != local && (used & (1u << s))) {
                                 scratch = s;
                                 break;
                             }
                         pl_u32 part = 0u, work = 0u;
                         if (scratch >= PL_X86_GPR_COUNT
                                 || measure_alu_tree(
-                                    frontend, block, selection, scratch,
+                                    frontend, block, &seed_state, scratch,
                                     select.compare_right_value,
                                     select.compare_bits,
-                                    bytes + seed_bytes + cand_bytes
-                                        + compare_seed_bytes,
+                                    bytes + seed_bytes + compare_seed_bytes,
                                     block->plan.node_count + 1u,
                                     used & ~(1u << scratch),
                                     &part, &work) <= 0)
@@ -11601,6 +11630,27 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                             compare_seed_work += work;
                         }
                     }
+                }
+                if (measured > 0 && select.candidate_immediate) {
+                    cand_local = PL_X86_GPR_COUNT;
+                    for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
+                            ++scratch)
+                        if (scratch != local
+                                && (used & (1u << scratch))) {
+                            cand_local = scratch;
+                            break;
+                        }
+                    if (cand_local >= PL_X86_GPR_COUNT) {
+                        selection->blocking_work = 0x300u | local;
+                        return 0;
+                    }
+                    measured = measure_alu_tree(
+                        frontend, block, selection, cand_local,
+                        select.candidate_value, select.value_bits,
+                        bytes + seed_bytes + compare_seed_bytes,
+                        block->plan.node_count + 1u,
+                        used & ~(1u << cand_local),
+                        &cand_bytes, &cand_work);
                 }
                 pl_u32 emit_compare = select.has_compare
                     && (select.compare_node != final_flag_node
@@ -11712,17 +11762,35 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 /* An ADD3 whose two operands are already an earlier binary ADD
                  * shares that sum.  Take it before the affine LEA, which would
                  * otherwise rebuild the shared pair inside this tree and cost
-                 * the shared producer twice. */
+                 * the shared producer twice.  When another pending publication
+                 * needs the same pair as its destructive arm, build the pair in
+                 * that consumer's coordinate so both publications share one
+                 * materialization. */
                 pl_operand pair = { PL_OPERAND_NODE, add3_pair_node };
+                pl_u32 consumer = alu_add3_pair_consumer(
+                    &block->plan, pending, add3_pair_node, local);
+                int share_pair = consumer < PL_X86_GPR_COUNT
+                    && (scratch_mask & (1u << consumer))
+                    && add3_pair_remaining.kind == PL_OPERAND_LOCAL
+                    && add3_pair_remaining.value < PL_X86_GPR_COUNT;
+                pl_operand pair_left = share_pair
+                    ? add3_pair_remaining : pair;
+                pl_operand pair_right = share_pair
+                    ? pair : add3_pair_remaining;
                 int measured = measure_alu_pair(
-                    frontend, block, selection, local, pair,
-                    add3_pair_remaining, add3_pair_bits, 1u, 0u,
-                    bytes, block->plan.node_count + 1u, scratch_mask,
+                    frontend, block, selection, local, pair_left,
+                    pair_right, add3_pair_bits, 1u, 0u,
+                    bytes, block->plan.node_count + 1u,
+                    share_pair ? (1u << consumer) : scratch_mask,
                     &encoded, &publication_work);
                 if (measured <= 0) {
                     selection->blocking_work = 0x600u | local;
                     return measured;
                 }
+                if (share_pair)
+                    push_frame_value_alias(
+                        selection, PL_OPERAND_NODE, add3_pair_node,
+                        (pl_u8)consumer);
             } else if (collect_native_affine_lea(
                     &block->plan, value,
                     block->plan.node_count + 1u, &form, &bits)) {
@@ -16263,6 +16331,7 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                 frame_sources, frame_dependencies, &preload)) {
             pl_x86_native_selection pre = *selection;
             pre.frame_alias_present = 0u;
+            pre.value_alias_count = selection->value_alias_frame_count;
             pl_u32 written = 0u;
             if (write_alu_tree(
                     block, &pre, preload.destination,
@@ -16278,6 +16347,7 @@ static int write_direct_alu_frame(const pl_x86_block *block,
     frame_write.frame_alias_kind = selection->frame_alias_frame_kind;
     frame_write.frame_alias_local = selection->frame_alias_frame_local;
     frame_write.frame_alias_present = selection->frame_alias_frame_present;
+    frame_write.value_alias_count = selection->value_alias_frame_count;
     selection = &frame_write;
     while (pending || standalone_flags_pending) {
         select_generation_group select_group;
@@ -16643,41 +16713,37 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                         output + at, &written)))
                     return PL_ERROR_X86_SELECT;
                 at += written;
+                /* Seed the compare operand(s) before the true-arm candidate.
+                 * The compare operand's tree can reference the `current` value
+                 * just published into `local`, and the candidate can then reuse
+                 * the coordinate the seed finishes with -- the order the source
+                 * uses.  Publishing the candidate first would rebuild `current`
+                 * from an entry local the publication has already overwritten
+                 * and leave no coordinate for the seed. */
+                pl_x86_native_selection seed_state = *selection;
+                if ((current.kind == PL_OPERAND_NODE
+                        || current.kind == PL_OPERAND_PROJECTION)
+                        && current.value)
+                    push_frame_value_alias(
+                        &seed_state, (pl_u8)current.kind, current.value,
+                        (pl_u8)local);
+                pl_u32 used = scratch_mask & ~(1u << local);
                 pl_u32 cand_local = select.candidate_local;
-                if (select.candidate_immediate) {
-                    cand_local = PL_X86_GPR_COUNT;
-                    for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
-                            ++scratch)
-                        if (scratch != local
-                                && (scratch_mask & (1u << scratch))) {
-                            cand_local = scratch;
-                            break;
-                        }
-                    if (cand_local >= PL_X86_GPR_COUNT)
-                        return PL_ERROR_X86_SELECT;
-                    if (!write_alu_tree(
-                            block, selection, cand_local,
-                            select.candidate_value, select.value_bits, at,
-                            block->plan.node_count + 1u,
-                            scratch_mask & ~(1u << cand_local),
-                            output + at, &written))
-                        return PL_ERROR_X86_SELECT;
-                    at += written;
-                }
+                if (!select.candidate_immediate
+                        && cand_local < PL_X86_GPR_COUNT)
+                    used &= ~(1u << cand_local);
                 if (select.compare_left_seed
                         || select.compare_right_seed) {
-                    pl_u32 used = scratch_mask;
                     if (select.compare_left_seed) {
                         pl_u32 scratch = PL_X86_GPR_COUNT;
                         for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
-                            if (s != local && s != cand_local
-                                    && (used & (1u << s))) {
+                            if (s != local && (used & (1u << s))) {
                                 scratch = s;
                                 break;
                             }
                         if (scratch >= PL_X86_GPR_COUNT
                                 || !write_alu_tree(
-                                    block, selection, scratch,
+                                    block, &seed_state, scratch,
                                     select.compare_left_value,
                                     select.compare_bits, at,
                                     block->plan.node_count + 1u,
@@ -16691,14 +16757,13 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     if (select.compare_right_seed) {
                         pl_u32 scratch = PL_X86_GPR_COUNT;
                         for (pl_u32 s = 0u; s < PL_X86_GPR_COUNT; ++s)
-                            if (s != local && s != cand_local
-                                    && (used & (1u << s))) {
+                            if (s != local && (used & (1u << s))) {
                                 scratch = s;
                                 break;
                             }
                         if (scratch >= PL_X86_GPR_COUNT
                                 || !write_alu_tree(
-                                    block, selection, scratch,
+                                    block, &seed_state, scratch,
                                     select.compare_right_value,
                                     select.compare_bits, at,
                                     block->plan.node_count + 1u,
@@ -16710,6 +16775,26 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                         select.compare_right.value = scratch;
                         at += written;
                     }
+                }
+                if (select.candidate_immediate) {
+                    cand_local = PL_X86_GPR_COUNT;
+                    for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
+                            ++scratch)
+                        if (scratch != local
+                                && (used & (1u << scratch))) {
+                            cand_local = scratch;
+                            break;
+                        }
+                    if (cand_local >= PL_X86_GPR_COUNT)
+                        return PL_ERROR_X86_SELECT;
+                    if (!write_alu_tree(
+                            block, selection, cand_local,
+                            select.candidate_value, select.value_bits, at,
+                            block->plan.node_count + 1u,
+                            used & ~(1u << cand_local),
+                            output + at, &written))
+                        return PL_ERROR_X86_SELECT;
+                    at += written;
                 }
                 if (select.has_compare
                         && (select.compare_node != final_flag_node
@@ -16787,14 +16872,32 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     &block->plan, (pl_u32)value.value,
                     &add3_pair_node, &add3_pair_remaining, &add3_pair_bits)) {
                 /* Prefer the shared pair over the affine LEA so the earlier
-                 * sum is built once, not rebuilt inside this tree. */
+                 * sum is built once, not rebuilt inside this tree.  When
+                 * another pending publication needs the same pair as its
+                 * destructive arm, build the pair in that consumer's coordinate
+                 * so both publications share one materialization. */
                 pl_operand pair = { PL_OPERAND_NODE, add3_pair_node };
+                pl_u32 consumer = alu_add3_pair_consumer(
+                    &block->plan, pending, add3_pair_node, local);
+                int share_pair = consumer < PL_X86_GPR_COUNT
+                    && (scratch_mask & (1u << consumer))
+                    && add3_pair_remaining.kind == PL_OPERAND_LOCAL
+                    && add3_pair_remaining.value < PL_X86_GPR_COUNT;
+                pl_operand pair_left = share_pair
+                    ? add3_pair_remaining : pair;
+                pl_operand pair_right = share_pair
+                    ? pair : add3_pair_remaining;
                 if (!write_alu_pair(
-                        block, selection, local, pair, add3_pair_remaining,
+                        block, selection, local, pair_left, pair_right,
                         add3_pair_bits, 1u, 0u, at,
-                        block->plan.node_count + 1u, scratch_mask,
+                        block->plan.node_count + 1u,
+                        share_pair ? (1u << consumer) : scratch_mask,
                         output + at, &written))
                     return PL_ERROR_X86_SELECT;
+                if (share_pair)
+                    push_frame_value_alias(
+                        (pl_x86_native_selection *)selection,
+                        PL_OPERAND_NODE, add3_pair_node, (pl_u8)consumer);
             } else if (collect_native_affine_lea(
                     &block->plan, value,
                     block->plan.node_count + 1u, &form, &bits)) {

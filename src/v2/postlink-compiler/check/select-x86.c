@@ -2640,6 +2640,45 @@ int main(void)
                 add3_status, add3_span, add3_work);
         return 91;
     }
+    /* An ADD3 whose shared pair is also a conditional arm another pending
+     * publication needs.  Building the pair into the ordinary destination
+     * makes the consumer rebuild it, so the dense ALU frame reaches span 7 at
+     * work 15 while the copied source holds work 14 at span 8: no joint
+     * witness.  With the pair built in the consumer's coordinate one
+     * materialization serves both and the frame reaches span 7, work 14. */
+    static const pl_u8 add3_shared_pair_consumer[] = {
+        0x48u, 0xc1u, 0xe0u, 0x06u,               /* shl rax, 6        */
+        0x48u, 0x89u, 0xc1u,                      /* mov rcx, rax      */
+        0x48u, 0x29u, 0xd1u,                      /* sub rcx, rdx      */
+        0x48u, 0x83u, 0xc2u, 0x01u,               /* add rdx, 1        */
+        0x48u, 0x83u, 0xe9u, 0x01u,               /* sub rcx, 1        */
+        0x48u, 0x89u, 0xf1u,                      /* mov rcx, rsi      */
+        0x48u, 0x0fu, 0x48u, 0xc2u,               /* cmovs rax, rdx    */
+        0x48u, 0xc1u, 0xe1u, 0x06u,               /* shl rcx, 6        */
+        0x48u, 0x83u, 0xc1u, 0x3fu,               /* add rcx, 0x3f     */
+        0x4au, 0x8du, 0x14u, 0x01u,               /* lea rdx, [rcx+r8] */
+        0x49u, 0x39u, 0xd1u,                      /* cmp r9, rdx       */
+        0x49u, 0x0fu, 0x48u, 0xcau,               /* cmovs rcx, r10    */
+        0x48u, 0x39u, 0xc1u,                      /* cmp rcx, rax      */
+        0x79u, 0x00u,                             /* jns .+0           */
+    };
+    pl_x86_native_candidates pair_candidates;
+    status = candidates_projected(
+        add3_shared_pair_consumer, sizeof add3_shared_pair_consumer,
+        0x7ffffu, &pair_candidates);
+    pl_x86_native_selection pair_selected = { 0 };
+    pl_u32 pair_span = 0u, pair_work = 0u;
+    int pair_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &pair_candidates, 0u, 0u, &pair_selected,
+            &pair_span, &pair_work);
+    if (pair_status || !pair_selected.supported
+            || pair_span != 7u || pair_work != 14u) {
+        fprintf(stderr, "native x86 selection: RED (ADD3 shared pair consumer "
+                "status=%d span/work=%u/%u)\n",
+                pair_status, pair_span, pair_work);
+        return 92;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

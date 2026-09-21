@@ -619,6 +619,51 @@ because the block is never emitted.
 See the "The next step is therefore **not** the frame at all" subsection above
 for the old bytes and plan dump.
 
+### 2026-09-21 (later): 8143353c cleared — a split publication, then a shared pair
+
+`0xffffffff8143353c` (`dql_completed+0xdc`) was the next frontier, reported
+`7/16/66` (dense ALU frame) versus `8/14/49` (copied source).  Executing the
+exact bytes of the span-7 arm against the source on 1,000,000 random inputs
+gave **zero** identical results (249,715 value-and-flag matches; 750,285 value
+mismatches), so the short arm was again a miscompile the Pareto gate was
+hiding, not a schedule trade-off.
+
+Two defects in the dense ALU frame's conditional-select emission produced it,
+both in the same publication.  The frame wrote the true-arm candidate *before*
+seeding the compare operand, so (a) the scratch pool handed to the compare seed
+still contained the candidate's coordinate and the seed clobbered it, and (b)
+the compare tree rebuilt the `current` value from an entry local that the same
+publication had already overwritten by materialising that arm destructively.
+The emitted `imul rdx,rax,0x40` therefore read the value already shifted once
+(`L0<<12` instead of `L0<<6`) and `cmovs rax,rcx` selected the pre-increment
+arm.  The fix seeds the compare operand(s) first, excludes the destination and
+the chosen candidate coordinate from the scratch pool passed to the seeds, and
+records a transient value alias `current -> local` so the seed resolves the
+materialised arm instead of rebuilding it (`push_frame_value_alias`).  measure
+and write carry the identical order and alias state; a new
+`value_alias_frame_count` checkpoint makes the write path begin from the alias
+population the frame started with rather than the one the completed
+measurement left.
+
+That makes the arm correct, but only reaches `7/15` against the source's
+`8/14`, so the component minima still have no joint witness.  The remaining
+work is one materialisation.  The plan's `N9 = ADD3(L8, N7, 63)` shares its
+pair `N8 = N7 + 63` with the sibling select `N12`, whose destructive arm is
+exactly `N8`; `shared_dag_add3_pair` already re-associates the ADD3, but the
+pair was built into `N9`'s own destination, so `N12` rebuilt `N7`/`N8` a second
+time.  When the pair is also the `current` arm of a still-pending publication
+(found by `alu_add3_pair_consumer`), the frame now builds the pair in that
+consumer's coordinate and produces this publication's result through it, so one
+materialisation serves both.  The correct candidate reaches **span 7, work 14**
+and jointly attains both minima against the source's `8/14`.
+
+`check/select-x86.c` gains an `add3_shared_pair_consumer` fixture built from the
+exact 14 source instructions: it is RED (`status=-50`, component minima `7/14`)
+before the sharing change and green after.  `make -k check` is green (79
+targets), the 120-case differential fuzz reports 0 mismatches, and the new
+candidate executes identically to the source on 1,000,000 random inputs.  The
+kernel frontier advances to `0xffffffff814af477` (`2/7/18 3/6/17`).
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
