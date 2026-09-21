@@ -3032,6 +3032,27 @@ int main(void)
                 boolean_candidates.diagnostic.blocking_work);
         return 105;
     }
+    /* A CMP whose operand is an expression no register publishes (`and
+     * eax,mask; cmp eax,imm; mov eax,0`) has no GPR result to own the AND, so
+     * standalone_flag_publication_details declined (0xf003).  The frame now
+     * materializes the operand tree into a scratch before the comparison. */
+    static const pl_u8 compare_over_unpublished_tree[] = {
+        0x25u, 0xc0u, 0xffu, 0xffu, 0x00u,        /* and eax, 0xffffc0  */
+        0x3du, 0x00u, 0x0fu, 0x02u, 0x00u,        /* cmp eax, 0x20f00   */
+        0xb8u, 0x00u, 0x00u, 0x00u, 0x00u,        /* mov eax, 0         */
+        0x74u, 0x00u,                             /* je .               */
+    };
+    pl_x86_native_candidates tree_candidates;
+    status = candidates_projected(
+        compare_over_unpublished_tree,
+        sizeof compare_over_unpublished_tree, 0x7ffffu, &tree_candidates);
+    if (status || tree_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (compare over "
+                "unpublished tree status=%d candidates=%u diagnostic=0x%x)\n",
+                status, tree_candidates.count,
+                tree_candidates.diagnostic.blocking_work);
+        return 106;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

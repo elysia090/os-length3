@@ -5070,6 +5070,58 @@ static int standalone_flag_publication_details(
     return 1;
 }
 
+/* CMP/TEST can be the final flag producer while one operand is an expression
+ * no register publishes (`and eax,mask; cmp eax,imm; mov eax,0`, where the AND
+ * is read only by the compare and the later MOV overwrites EAX).  The compare
+ * has no GPR result to own that tree, so the frame materializes it into a
+ * scratch and then emits the comparison.  LOCAL operands are the entry
+ * generation (they must be read before any pending publication overwrites
+ * them); NODE/PROJECTION operands name a published owner the tree must wait
+ * for. */
+static int operand_published_dependencies(const pl_plan *plan, pl_operand operand,
+                                          pl_u32 before_node, pl_u32 remaining,
+                                          pl_u32 *deps)
+{
+    if (!plan || !deps || !remaining) return 0;
+    if (operand.kind == PL_OPERAND_CONST
+            || operand.kind == PL_OPERAND_LOCAL)
+        return 1;
+    if (operand.kind != PL_OPERAND_NODE
+            && operand.kind != PL_OPERAND_PROJECTION)
+        return 0;
+    pl_u32 node = operand.kind == PL_OPERAND_NODE
+                ? (pl_u32)operand.value : (pl_u32)(operand.value >> 8u);
+    if (!node || node > plan->node_count) return 0;
+    pl_u32 owner = publication_owner(plan, operand);
+    if (owner < PL_X86_GPR_COUNT) {
+        *deps |= 1u << owner;
+        return 1;
+    }
+    if (node > before_node) return 0;
+    const pl_node *value = &plan->nodes[node - 1u];
+    if (value->argument_at > plan->argument_count
+            || value->argument_count > plan->argument_count - value->argument_at)
+        return 0;
+    for (pl_u32 argument = 0u; argument < value->argument_count; ++argument)
+        if (!operand_published_dependencies(plan,
+                plan->arguments[value->argument_at + argument], node,
+                remaining - 1u, deps))
+            return 0;
+    return 1;
+}
+
+typedef struct {
+    pl_operand tree;
+    pl_u32 tree_bits;
+    pl_operand right;
+    pl_u32 bits, test;
+    pl_u32 entry_sources, owner_dependencies;
+} compare_tree_flag;
+
+static int compare_tree_flag_shape(const pl_plan *plan, pl_u32 changed,
+                                   pl_u32 final_flag_node,
+                                   compare_tree_flag *out);
+
 /* BT tests one bit of the base named by a register offset (`0F A3 /r`) or an
  * imm8 offset (`0F BA /4 ib`).  The flag producer has no GPR result, so this
  * is a standalone final-flag publication like TEST/CMP. */
@@ -11379,13 +11431,22 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
         return 1;
     }
     standalone_flag_publication exact_flags;
+    compare_tree_flag tree_flag = { 0 };
+    int has_compare_tree = final_flag_node
+        && !publication_emits_flag_node(
+            &block->plan, changed, final_flag_node)
+        && !flag_node_has_value_publication(
+            &block->plan, changed, final_flag_node)
+        && compare_tree_flag_shape(
+            &block->plan, changed, final_flag_node, &tree_flag);
     if (final_flag_node
             && !publication_emits_flag_node(
                 &block->plan, changed, final_flag_node)
             && !flag_node_has_value_publication(
                 &block->plan, changed, final_flag_node)
             && !standalone_flag_publication_details(
-                &block->plan, final_flag_node, &exact_flags)) {
+                &block->plan, final_flag_node, &exact_flags)
+            && !has_compare_tree) {
         selection->blocking_work = 0xf003u;
         return 0;
     }
@@ -11618,6 +11679,56 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                 ++instructions;
                 standalone_flags_pending = 0;
                 if (!pending) continue;
+            }
+        }
+        if (has_compare_tree) {
+            pl_u32 clobberers = 0u;
+            for (pl_u32 local = 0u;
+                    local < PL_X86_GPR_COUNT; ++local)
+                if ((pending & (1u << local))
+                        && frame_local_emission_clobbers_flags(
+                            &block->plan, local))
+                    clobberers |= 1u << local;
+            if (!clobberers
+                    && !(tree_flag.owner_dependencies & pending)) {
+                /* Only a register the frame is going to republish anyway may
+                 * host the tree; an unchanged live-out entry register must not
+                 * be clobbered.  alu_frame_scratch_mask excludes the entry
+                 * values other pending publications still read. */
+                pl_u32 scratch_mask = alu_frame_scratch_mask(
+                    pending, PL_X86_GPR_COUNT, frame_sources);
+                scratch_mask &= ~tree_flag.owner_dependencies;
+                if (tree_flag.right.kind == PL_OPERAND_LOCAL)
+                    scratch_mask &= ~(1u << (pl_u32)tree_flag.right.value);
+                pl_u32 scratch = PL_X86_GPR_COUNT;
+                for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+                    if (scratch_mask & (1u << local)) {
+                        scratch = local;
+                        break;
+                    }
+                if (scratch < PL_X86_GPR_COUNT) {
+                    pl_u32 tree_bytes = 0u, tree_work = 0u, compare_bytes = 0u;
+                    int measured = measure_alu_tree(
+                        frontend, block, selection, scratch, tree_flag.tree,
+                        tree_flag.tree_bits, bytes,
+                        block->plan.node_count + 1u, 0u,
+                        &tree_bytes, &tree_work);
+                    if (measured < 0) return measured;
+                    if (measured > 0) {
+                        if (!emit_flag_coordinate(
+                                scratch, tree_flag.right, tree_flag.bits,
+                                tree_flag.test, 0u, (pl_u8 *)0, &compare_bytes)
+                                || bytes > U32_MAX_VALUE - tree_bytes
+                                           - compare_bytes
+                                || instructions
+                                   > U32_MAX_VALUE - tree_work - 1u)
+                            return 0;
+                        bytes += tree_bytes + compare_bytes;
+                        instructions += tree_work + 1u;
+                        has_compare_tree = 0;
+                        continue;
+                    }
+                }
             }
         }
         shared_diamond_handoff diamond;
@@ -12483,6 +12594,10 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
         if (publication_span > span) span = publication_span;
         pending &= ~(1u << local);
     }
+    /* The compare-over-tree shape was accepted by the guard but its tree could
+     * not be materialized, so the final flags were never produced.  Declining
+     * keeps the block an escape instead of emitting a stale-flag candidate. */
+    if (has_compare_tree) return 0;
     int aliases = alias_source_address_fields(frontend, block, selection);
     if (aliases <= 0) return aliases;
     if (block->flow == PL_X86_FLOW_JUMP) {
@@ -14527,6 +14642,66 @@ static int compare_boolean_group_shape(const pl_plan *plan, pl_u32 pending,
     }
     if (frontier & pending & ~booleans) return 0;
     out->zero_before = booleans & ~reads;
+    return 1;
+}
+
+static int compare_tree_flag_shape(const pl_plan *plan, pl_u32 changed,
+                                   pl_u32 final_flag_node,
+                                   compare_tree_flag *out)
+{
+    if (!plan || !out || !final_flag_node
+            || final_flag_node > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[final_flag_node - 1u];
+    if (node->opcode != PL_OPCODE_X86_COMPARE
+            && node->opcode != PL_OPCODE_X86_TEST)
+        return 0;
+    pl_operand flags = { PL_OPERAND_NODE, final_flag_node };
+    pl_operand left, right;
+    pl_u32 bits = 0u, mode = 0u, preserves_carry = 0u;
+    if (!flag_operation_details(plan, flags, &left, &right,
+            &bits, &mode, &preserves_carry) || preserves_carry
+            /* An 8-bit compare can observe a high-byte register, which
+             * test_byte_coordinate rewrites; that path stays with the
+             * standalone shape. */
+            || bits == 8u)
+        return 0;
+    pl_operand physical_left = left, physical_right = right;
+    physicalize_published_operand(plan, PL_X86_GPR_COUNT, &physical_left);
+    physicalize_published_operand(plan, PL_X86_GPR_COUNT, &physical_right);
+    if (physical_left.kind == PL_OPERAND_LOCAL
+            && physical_left.value < PL_X86_GPR_COUNT)
+        return 0;  /* standalone_flag_publication_details owns this shape */
+    if (physical_left.kind != PL_OPERAND_NODE
+            && physical_left.kind != PL_OPERAND_PROJECTION)
+        return 0;
+    if (physical_right.kind != PL_OPERAND_CONST
+            && !(physical_right.kind == PL_OPERAND_LOCAL
+                && physical_right.value < PL_X86_GPR_COUNT))
+        return 0;
+    pl_u32 sources = 0u, deps = 0u;
+    if (!operand_gpr_sources(plan, physical_left, final_flag_node,
+            plan->node_count + 1u, &sources)
+            || !operand_published_dependencies(plan, physical_left,
+                final_flag_node, plan->node_count + 1u, &deps))
+        return 0;
+    pl_u32 clobberers = 0u;
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+        if ((changed & (1u << local))
+                && frame_local_emission_clobbers_flags(plan, local))
+            clobberers |= 1u << local;
+    /* Either the tree can run before any pending publication (nothing to wait
+     * for and no flag clobber pending), or no pending register is one of its
+     * entry sources, so waiting for the other producers cannot destroy it. */
+    int immediate = !clobberers && !(deps & changed);
+    if (!immediate && (sources & changed)) return 0;
+    out->tree = physical_left;
+    out->tree_bits = bits;
+    out->right = physical_right;
+    out->bits = bits;
+    out->test = node->opcode == PL_OPCODE_X86_TEST ? 1u : 0u;
+    out->entry_sources = sources;
+    out->owner_dependencies = deps;
     return 1;
 }
 
@@ -16945,13 +17120,22 @@ static int write_direct_alu_frame(const pl_x86_block *block,
              ? 0 : PL_ERROR_X86_SELECT;
     }
     standalone_flag_publication exact_flags;
+    compare_tree_flag tree_flag = { 0 };
+    int has_compare_tree = final_flag_node
+        && !publication_emits_flag_node(
+            &block->plan, changed, final_flag_node)
+        && !flag_node_has_value_publication(
+            &block->plan, changed, final_flag_node)
+        && compare_tree_flag_shape(
+            &block->plan, changed, final_flag_node, &tree_flag);
     if (final_flag_node
             && !publication_emits_flag_node(
                 &block->plan, changed, final_flag_node)
             && !flag_node_has_value_publication(
                 &block->plan, changed, final_flag_node)
             && !standalone_flag_publication_details(
-                &block->plan, final_flag_node, &exact_flags))
+                &block->plan, final_flag_node, &exact_flags)
+            && !has_compare_tree)
         return PL_ERROR_X86_SELECT;
     pl_u32 frame_sources[PL_X86_GPR_COUNT];
     pl_u32 frame_dependencies[PL_X86_GPR_COUNT];
@@ -17144,6 +17328,49 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                 at += written;
                 standalone_flags_pending = 0;
                 if (!pending) continue;
+            }
+        }
+        if (has_compare_tree) {
+            pl_u32 clobberers = 0u;
+            for (pl_u32 local = 0u;
+                    local < PL_X86_GPR_COUNT; ++local)
+                if ((pending & (1u << local))
+                        && frame_local_emission_clobbers_flags(
+                            &block->plan, local))
+                    clobberers |= 1u << local;
+            if (!clobberers
+                    && !(tree_flag.owner_dependencies & pending)) {
+                pl_u32 scratch_mask = alu_frame_scratch_mask(
+                    pending, PL_X86_GPR_COUNT, frame_sources);
+                scratch_mask &= ~tree_flag.owner_dependencies;
+                if (tree_flag.right.kind == PL_OPERAND_LOCAL)
+                    scratch_mask &= ~(1u << (pl_u32)tree_flag.right.value);
+                pl_u32 scratch = PL_X86_GPR_COUNT;
+                for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+                    if (scratch_mask & (1u << local)) {
+                        scratch = local;
+                        break;
+                    }
+                if (scratch < PL_X86_GPR_COUNT) {
+                    pl_u32 tree_bytes = 0u, compare_bytes = 0u;
+                    if (!write_alu_tree(
+                            block, selection, scratch, tree_flag.tree,
+                            tree_flag.tree_bits, at,
+                            block->plan.node_count + 1u, 0u,
+                            output + at, &tree_bytes)
+                            || at > selection->output_bytes
+                            || tree_bytes > selection->output_bytes - at
+                            || !emit_flag_coordinate(
+                                scratch, tree_flag.right, tree_flag.bits,
+                                tree_flag.test, 0u,
+                                output + at + tree_bytes, &compare_bytes)
+                            || compare_bytes
+                               > selection->output_bytes - at - tree_bytes)
+                        return PL_ERROR_X86_SELECT;
+                    at += tree_bytes + compare_bytes;
+                    has_compare_tree = 0;
+                    continue;
+                }
             }
         }
         shared_diamond_handoff diamond;
@@ -17844,6 +18071,9 @@ static int write_direct_alu_frame(const pl_x86_block *block,
         for (pl_u32 byte = 1u; byte < branch_bytes; ++byte)
             output[at++] = 0u;
     }
+    /* The measure accepted the compare-over-tree shape but the tree could not
+     * be materialized here; the final flags were never produced. */
+    if (has_compare_tree) return PL_ERROR_X86_SELECT;
     return at == selection->output_bytes ? 0 : PL_ERROR_X86_SELECT;
 }
 

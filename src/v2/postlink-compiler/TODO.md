@@ -1166,23 +1166,32 @@ the same instruction and `standalone_flags_pending` is cleared when the group
 fires.  Whole-kernel scan: escapes **476 -> 465**, all `make -k check` targets
 green, differential fuzz 120/0.
 
-### The `0xf003` compare-over-an-unpublished-tree class (49 blocks)
+### The `0xf003` compare-over-an-unpublished-tree class (49 blocks, 2 closed)
 
 `0xffffffff81249696` (`and eax,0xffffc0; cmp eax,0x20f00; mov eax,0`) has plan
 `N1 = lane32.and(entry EAX, 0xffffc0)`, `N2 = compare(RFLAGS, N1, 0x20f00)`,
 `L0 = const 0`, with `final_flag_node = N2`.  `standalone_flag_publication_details`
-declines because the compare's left operand is the *unpublished* node `N1`
+declined because the compare's left operand is the *unpublished* node `N1`
 (`publication_owner(N1) == GPR_COUNT`, because the `and`'s only reader is the
-compare and the later `mov eax,0` overwrites EAX), so `physical_left` is not a
-local and the shape returns 0.  The frame has no production that materializes a
-standalone flag producer's operand tree: for an `X86_ALU` final flag node
-`measure_alu_pair` builds the tree into the value destination, but a `CMP`/`TEST`
-publishes no GPR, so nothing owns the tree.  The missing production materializes
-the compare/test operand tree into a scratch, emits the comparison with that
-scratch, and orders it before the pending publication that overwrites the tree's
-architectural register (the scratch keeps `owner_dependencies & pending` clear,
-so the standalone-flag block can still run first).  48 of the 49 are work
-`floor + 1`, so the class is one instruction from covered.
+compare and the later `mov eax,0` overwrites EAX), so `physical_left` was not a
+local and the shape returned 0.
+
+`compare_tree_flag_shape` + the ALU frame now materialize that operand tree into
+a scratch and emit the comparison: the scratch is chosen from
+`alu_frame_scratch_mask` (a register the frame will republish anyway, never an
+unchanged live-out entry), the tree's published owners must be ready, and the
+tree's entry sources must not be clobbered before it runs.  Two guards are
+essential: 8-bit compares stay with `standalone_flag_publication_details`
+(`test_byte_coordinate` owns the high-byte rewrite), and if the shape is
+accepted but the tree cannot actually be measured the frame must decline
+(post-loop `has_compare_tree` check) or it emits a stale-flag candidate -- the
+first draft silently miscompiled `linked-field-authority-check` that way.
+
+Only 2 of the 49 fire, so the remaining 47 have a different shape (the scratch
+pool is empty, the tree needs a scratch of its own, or the operand is not the
+first argument).  `check/select-x86.c` gains `compare_over_unpublished_tree`
+(candidate count 1 -> 2, `0xf003` before, green after).  Whole-kernel scan:
+escapes 465 -> 463.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
