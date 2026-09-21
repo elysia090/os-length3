@@ -2777,6 +2777,34 @@ int main(void)
                 join_status, join_span, join_work);
         return 95;
     }
+    /* `insert(0, N2, 16)` is N2's 16-bit zero extension while the flags also
+     * name N2.  Stripping the insert because of that flag relation publishes
+     * N2's full 32-bit word; the same block then offers a phantom `3/6` arm
+     * against the real `4/4` and no joint minimum.  The extension must be
+     * emitted from N2's published coordinate. */
+    static const pl_u8 zero_extend_flag_value[] = {
+        0x48u, 0x89u, 0xcau,                      /* mov rdx, rcx      */
+        0x48u, 0x29u, 0xf2u,                      /* sub rdx, rsi      */
+        0x01u, 0xc2u,                             /* add edx, eax      */
+        0x0fu, 0xb7u, 0xc2u,                      /* movzx eax, dx     */
+    };
+    pl_x86_native_candidates zero_extend_candidates;
+    status = candidates_projected(
+        zero_extend_flag_value, sizeof zero_extend_flag_value,
+        0x7ffffu, &zero_extend_candidates);
+    pl_x86_native_selection zero_extend_selected = { 0 };
+    pl_u32 zero_extend_span = 0u, zero_extend_work = 0u;
+    int zero_extend_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &zero_extend_candidates, 0u, 0u, &zero_extend_selected,
+            &zero_extend_span, &zero_extend_work);
+    if (zero_extend_status || !zero_extend_selected.supported
+            || zero_extend_span != 4u || zero_extend_work != 4u) {
+        fprintf(stderr, "native x86 selection: RED (zero extend flag value "
+                "status=%d span/work=%u/%u)\n",
+                zero_extend_status, zero_extend_span, zero_extend_work);
+        return 96;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

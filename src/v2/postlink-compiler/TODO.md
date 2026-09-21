@@ -773,6 +773,43 @@ fixture: RED (`status=-50`, minima `5/10`) before the one-line change, green
 after.  `make -k check` is green and the 120-case fuzz reports 0 mismatches.
 The kernel frontier advances to `0xffffffff815cde46` (`3/6/16 4/4/11`).
 
+`0xffffffff815cde46` (`ipv6_mc_check_mld+0xd6`) is another phantom, and
+clearing it exposed a much larger, previously masked failure.  Its plan is
+`N1 = sub(L1, L6)`, `N2 = add(L0, N1) -> L2`, `N4 = insert(0, N2, 16) -> L0`
+and `N3 = flags(...)` whose value result is `N2`.  `publication_for_emission`
+rewrites an insert publication of the final flag result to the inserted value
+-- correct for an in-place low-lane write, but here `insert(0, N2, 16)` is a
+16-bit zero extension of the 32-bit `N2`, so the rewrite published `N2`'s full
+word.  The frame then emitted `add eax,eax` (both operands resolved to the
+destination) and reached span 3, work 6 against the source's 4/4.
+
+`publication_for_emission` now refuses that rewrite when the insert is a
+zero-based lane extension narrower than a register word **and** the inserted
+value already has its own publication.  `L0` then emits the real
+`movzx eax, dx`, the frame and source both reach **4/4**, and the Pareto
+clears.  `check/select-x86.c` gains a `zero_extend_flag_value` fixture: RED
+(`status=-50`, minima `3/4`) before, green after.  `make -k check` is green and
+the 120-case fuzz reports 0 mismatches.
+
+**Important correction to this ledger.**  With the Pareto gone the compiler
+reaches the normalization-escape gate instead of aborting at `selection_limits`,
+and reports:
+
+```text
+normalization-escape=542 at 0xffffffff812098b1..0xffffffff812098ca
+live=0x7ffff (14092 -> 14092 bytes, 1033 node-delta), selected=788279/788279
+```
+
+The escape gate (stage 244) runs *after* the Pareto stage (235), so every
+`normalization-escape=0` report in this file was masked by whichever Pareto
+aborted the scan first; the kernel's escape population was never actually
+zero at those checkpoints.  A control build that only makes the dense ALU
+frame decline `0xffffffff815cde46` (leaving `publication_for_emission`
+untouched) reports the identical `542`, confirming the population is
+pre-existing and not caused by this change.  The real remaining kernel work is
+therefore a 542-block normalization-escape population whose first witness is
+`0xffffffff812098b1..0xffffffff812098ca`, not the next Pareto point.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

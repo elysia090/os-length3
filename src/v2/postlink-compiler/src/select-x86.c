@@ -4694,6 +4694,19 @@ static pl_operand publication_for_emission(const pl_plan *plan,
             || 3u > plan->argument_count - node->argument_at)
         return value;
     pl_operand inserted = plan->arguments[node->argument_at + 1u];
+    pl_operand base = plan->arguments[node->argument_at];
+    pl_operand width_operand = plan->arguments[node->argument_at + 2u];
+    if (width_operand.kind != PL_OPERAND_CONST)
+        return value;
+    pl_u32 inserted_owner = PL_X86_GPR_COUNT;
+    /* A zero-based lane extension narrower than a register word is a real
+     * truncation (`insert(0, N, 16)`), and if N already has its own
+     * publication this node is its zero-extended image.  Dropping it because
+     * the flags also name N would publish N's full 32-bit word. */
+    if (base.kind == PL_OPERAND_CONST && !base.value
+            && (pl_u32)width_operand.value < 32u
+            && published_operand_local(plan, inserted, &inserted_owner))
+        return value;
     pl_operand left, right;
     pl_u32 bits = 0u, mode = 0u, preserves_carry = 0u;
     if (flag_value_operation_details(
