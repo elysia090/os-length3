@@ -2606,6 +2606,40 @@ int main(void)
         fputc('\n', stderr);
         return 90;
     }
+    /* A three-input add whose inputs are all non-constant cannot be one LEA.
+     * If the dense ALU frame is allowed to publish it after the compare, it
+     * emits a flag-clobbering add/adc and the terminal branch reads the wrong
+     * flags; that candidate then measures a phantom low span and the component
+     * minima have no joint witness.  With the tree classified correctly the
+     * candidate is a legal `span=5, work=9` spelling and the copied source's
+     * `span=5, work=7` is the joint minimum. */
+    static const pl_u8 add3_before_flag_producer[] = {
+        0x89u, 0xd1u,                              /* mov ecx, edx   */
+        0xb8u, 0x3fu, 0x00u, 0x00u, 0x00u,         /* mov eax, 0x3f  */
+        0x4cu, 0x01u, 0xf9u,                       /* add rcx, r15   */
+        0x48u, 0x29u, 0xc8u,                       /* sub rax, rcx   */
+        0x4cu, 0x01u, 0xe9u,                       /* add rcx, r13   */
+        0x48u, 0x83u, 0xf8u, 0x08u,                /* cmp rax, 8     */
+        0x0fu, 0x82u, 0x00u, 0x00u, 0x00u, 0x00u,  /* jb .+0         */
+    };
+    pl_x86_native_candidates add3_candidates;
+    status = candidates_projected(
+        add3_before_flag_producer, sizeof add3_before_flag_producer,
+        0x1ffffu, &add3_candidates);
+    pl_x86_native_selection add3_selected = { 0 };
+    pl_u32 add3_span = 0u, add3_work = 0u;
+    int add3_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &add3_candidates, 0u, 0u, &add3_selected,
+            &add3_span, &add3_work);
+    if (add3_status || !add3_selected.supported
+            || add3_selected.output_span != 5u
+            || add3_selected.output_work != 7u) {
+        fprintf(stderr, "native x86 selection: RED (ADD3 before flag producer "
+                "status=%d span/work=%u/%u)\n",
+                add3_status, add3_span, add3_work);
+        return 91;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

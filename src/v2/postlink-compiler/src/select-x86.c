@@ -3273,6 +3273,21 @@ static int publication_tree_clobbers_flags(const pl_plan *plan,
             || node->argument_count
                > plan->argument_count - node->argument_at)
         return 1;
+    /* A three-input add is one flag-preserving LEA only when one input is a
+     * constant displacement.  Three non-constant inputs (including a carry-in
+     * that is a live flag) need a second, flag-clobbering add/adc, so they
+     * cannot be scheduled after the final flag producer. */
+    if (node->opcode == PL_OPCODE_ADD3[0]
+            || node->opcode == PL_OPCODE_ADD3[1]) {
+        int displacement = 0;
+        for (pl_u32 argument = 0u; argument < node->argument_count; ++argument)
+            if (plan->arguments[node->argument_at + argument].kind
+                    == PL_OPERAND_CONST) {
+                displacement = 1;
+                break;
+            }
+        if (!displacement) return 1;
+    }
     for (pl_u32 argument = 0u; argument < node->argument_count; ++argument)
         if (publication_tree_clobbers_flags(
                 plan, plan->arguments[node->argument_at + argument],

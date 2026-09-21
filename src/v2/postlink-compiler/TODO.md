@@ -594,9 +594,27 @@ frontier advances to `0xffffffff81430efd` (`4/9/27 5/7/26`).
 The genuinely minimal schedule for the old witness was `span=4, work=8` (fold
 the `+9` into the doubling LEA), but the contract only requires a joint minimum
 among the offered candidates, and `5/8` satisfies it; the `4/8` spelling remains
-an unclaimed improvement. The `81430efd` frontier is a real tradeoff for now:
-`5/7/26` computes the live register once and pays a longer branch chain, while
-`4/9/27` recomputes it off the branch chain at two extra instructions.
+an unclaimed improvement.
+
+`0xffffffff81430efd` (`xz_dec_lzma2_run`) was the next frontier, and it was the
+same class of phantom: its `4/9/27` arm republished the live register after the
+compare, so the terminal `jb` read the flags of a following `add` instead of
+`cmp rax,8`. Executing the two candidates on 1,000,000 random inputs gives
+identical values but a different branch condition (CF) in 500,207 cases. The
+plan is sound; the defect is the clobber classifier.
+`publication_tree_clobbers_flags` treated an `ADD3` as flag-preserving whenever
+its operands were, but a three-input add is a single `LEA` only when one input
+is a constant displacement; three non-constant inputs (including a live
+carry-in) need a second, flag-clobbering `add`/`adc`. With that corrected, the
+dense ALU frame keeps the compare textually last and offers a legal `5/9`
+spelling, so the copied source's `5/7` is the joint minimum and the witness
+clears. `check/select-x86.c` gains an `add3_before_flag_producer` fixture that
+asserts a joint minimum exists for the shape: RED before the fix, green after.
+The kernel frontier advances to `0xffffffff8143353c` (`7/16/66 8/14/49`).
+
+Both fixes are in the same "the Pareto gate hides a miscompile" family as the
+flag-producer miscompile below: a candidate that `postlink-verify` never sees
+because the block is never emitted.
 
 See the "The next step is therefore **not** the frame at all" subsection above
 for the old bytes and plan dump.
