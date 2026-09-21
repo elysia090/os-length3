@@ -886,6 +886,24 @@ The escape population drops **533 -> 510**; the new first escape is
 `0xffffffff812162e6..0xffffffff8121630b` (`output=0xb expected=0x8`).
 `make -k check` and the 120-case fuzz are green.
 
+`0xffffffff812162e6` (`calibrate_delay+0x256`) is a conditional block; the
+seven-node plan is
+
+```text
+N1 = sub(L3, L0)   N2 = sub(L12, L1)   N3 = shr(N1, 4) -> L3
+N4 = shr(N1, 1) -> L0   N5 = shr(N2, 1) -> L2
+N6 = sub(N4, N5) -> L1  N7 = compare(L16, N6, N3) -> RFLAGS (jae)
+```
+
+and only the copied source is offered.  A probe reports
+`blocking_work = 0x700` with `blocking_opcode = pending`: the compare-branch
+frame's `next_compare_branch_assignment_excluding` finds no legal next
+publication.  `N1` is consumed by two shifts (`N3` and `N4`) so it must be
+published once and reused, and `N3` feeds the terminal compare while `N6`
+depends on `N4`/`N5`; the first-fit assignment deadlocks instead of seeding the
+shared `N1`.  This is a compare-branch scheduler gap (a shared pre-compare
+root), not an encoder gap.  The source is 11 work against an SSA floor of 8.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
