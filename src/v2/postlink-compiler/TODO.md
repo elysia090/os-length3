@@ -729,6 +729,34 @@ before the dependency, green after.  `make -k check` is green and the 120-case
 fuzz reports 0 mismatches.  The kernel frontier advances to
 `0xffffffff815ad0b6` (`5/12/40 6/10/26`).
 
+`0xffffffff815ad0b6` (`ndisc_router_discovery+0xd6`) is another phantom.  Its
+11-node plan builds `eax` from `ecx`:
+
+```text
+N1 = insert(0, L1, 32)    N2 = L1 + L1        N3 = L1 & 255
+N4 = N3 >> 1              N5 = insert(N1, N4, 8)   N6 = N2 & 128
+N7 = N5 & 64              N8 = N6 | N7        N9 = L2 & 0xffffff3f
+N10 = N8 | N9  -> L0 (RAX)   N11 = compare(L16, N10, L2) -> RFLAGS
+```
+
+The ALU arm's exact bytes are
+
+```text
+8d 04 09 25 80 00 00 00 89 c9 48 81 e1 ff 00 00 00 48 d1 e9
+83 e1 40 09 c8 b8 3f ff ff ff 48 89 d1 48 21 c1 09 c8 39 d0
+```
+
+and executing it against the source on 1,000,000 random inputs gives **zero**
+identical results (`mov eax, 0xffffff3f` overwrites the live `N8` already in
+EAX, so `N10 = or(N8, N9)` collapses to the constant).  `0xffffff3f` is not a
+sign-extendable `imm32` for a 64-bit `and`, so the frame must put it in a
+register, but it chose EAX -- a coordinate holding an operand that has not been
+consumed.  The copied source is the correct `6/10/26` and the frontier is
+`5/12/40 6/10/26`.  The next step is to materialize such a wide constant in a
+free scratch (or spell the same low-32-bit mask as a 32-bit `and`, whose
+immediate fits), never into a live operand coordinate; the two offered
+spellings then still need a joint minimum.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
