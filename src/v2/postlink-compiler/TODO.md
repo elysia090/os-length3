@@ -1004,6 +1004,28 @@ high-byte coordinate (`test_byte_coordinate` / `emit_high8_test`) instead of
 seeding the shift node, which removes the extra scratch and should let the
 whole accumulation chain emit.
 
+`test_byte_coordinate` already handles `bits == 8`, so that is not the gap.  The
+real gap in the nested path was `measure_alu_tree` / `write_alu_tree`'s select
+branch: a select with a **constant** candidate arm
+(`candidate_immediate`, e.g. `select(32772, 0, test(...))`) left
+`candidate_local == GPR_COUNT` and passed it to `emit_conditional_move`, so the
+branch always failed.  Both nested branches now materialise the constant
+candidate into a free scratch coordinate first, exactly like the outer
+publication loop.  That closes one block (**500 -> 499**) with `make -k check`,
+`condition-code-check` and the fuzz green.
+
+`0xffffffff8121c995` itself still blocks at `0x280 | 2`, and the instrumented
+rejection is now exact: `measure_alu_tree(dest = L2, node = N26,
+scratch = 0)`.  The publication `L2 = N27 | 0x40000` asks for the whole
+accumulation chain to be built into RDX, but at that point
+`alu_frame_scratch_mask` offers no free coordinate, so the nested select cannot
+place its constant candidate (nor the source's `mov rdx,rax; or rdx,imm;
+cmovne rax,rdx` pattern).  The source keeps a dedicated accumulator (RAX) and a
+dedicated candidate (RDX) across the chain.  The next step is a frame that
+schedules the constant-select accumulation with those two dedicated
+coordinates and a single `or rdx,imm` per arm, rather than rebuilding `N27`
+inside `L2`'s destination.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

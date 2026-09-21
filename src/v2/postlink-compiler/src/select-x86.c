@@ -8063,6 +8063,7 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
             && select.candidate_local != destination
             && conditional_compare_survives_current(
                 &select, destination)) {
+        pl_u32 at = 0u;
         pl_u32 seed_bytes = 0u, seed_work = 0u;
         int status = select.current_flag_node
             ? measure_selected_flag_value(frontend, block, selection, destination, &select,
@@ -8071,19 +8072,40 @@ static int measure_alu_tree(const pl_x86_frontend *frontend,
             frontend, block, selection, destination, select.current,
             select.value_bits, output_at, remaining - 1u, scratch_mask,
             &seed_bytes, &seed_work);
+        at += seed_bytes;
+        pl_u32 candidate_local = select.candidate_local;
+        pl_u32 cand_bytes = 0u, cand_work = 0u;
+        if (status > 0 && select.candidate_immediate) {
+            candidate_local = PL_X86_GPR_COUNT;
+            for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT; ++scratch)
+                if (scratch != destination
+                        && (scratch_mask & (1u << scratch))) {
+                    candidate_local = scratch;
+                    break;
+                }
+            if (candidate_local >= PL_X86_GPR_COUNT) return 0;
+            status = measure_alu_tree(
+                frontend, block, selection, candidate_local,
+                select.candidate_value, select.value_bits, output_at + at,
+                remaining - 1u, scratch_mask & ~(1u << candidate_local),
+                &cand_bytes, &cand_work);
+            at += cand_bytes;
+        }
         pl_u32 compare_bytes = 0u, move_bytes = 0u;
-        int compared = !status ? 0 : !select.has_compare ? 1
+        int compared = status <= 0 ? 0 : !select.has_compare ? 1
             : emit_select_compare(&select, 0, &compare_bytes);
         if (status > 0 && compared
                 && emit_conditional_move(
-                    destination, select.candidate_local,
+                    destination, candidate_local,
                     select.value_bits, select.condition,
                     (pl_u8 *)0, &move_bytes)
-                && seed_bytes <= U32_MAX_VALUE - compare_bytes
-                && seed_bytes + compare_bytes <= U32_MAX_VALUE - move_bytes
-                && seed_work <= U32_MAX_VALUE - 1u - select.has_compare) {
-            *bytes = seed_bytes + compare_bytes + move_bytes;
-            *instructions = seed_work + 1u + select.has_compare;
+                && at <= U32_MAX_VALUE - compare_bytes
+                && at + compare_bytes <= U32_MAX_VALUE - move_bytes
+                && seed_work <= U32_MAX_VALUE - cand_work
+                && seed_work + cand_work <= U32_MAX_VALUE - 1u
+                                            - select.has_compare) {
+            *bytes = at + compare_bytes + move_bytes;
+            *instructions = seed_work + cand_work + 1u + select.has_compare;
             selection->direct_nested_frame = 1u;
             return 1;
         }
@@ -15619,13 +15641,34 @@ static int write_alu_tree(const pl_x86_block *block,
                 select.value_bits, output_at, remaining - 1u,
                 scratch_mask, output, &encoded)) {
             at += encoded;
+            pl_u32 candidate_local = select.candidate_local;
+            if (select.candidate_immediate) {
+                candidate_local = PL_X86_GPR_COUNT;
+                for (pl_u32 scratch = 0u; scratch < PL_X86_GPR_COUNT;
+                        ++scratch)
+                    if (scratch != destination
+                            && (scratch_mask & (1u << scratch))) {
+                        candidate_local = scratch;
+                        break;
+                    }
+                if (candidate_local >= PL_X86_GPR_COUNT)
+                    return PL_ERROR_X86_SELECT;
+                if (!write_alu_tree(
+                        block, selection, candidate_local,
+                        select.candidate_value, select.value_bits,
+                        output_at + at, remaining - 1u,
+                        scratch_mask & ~(1u << candidate_local),
+                        output + at, &encoded))
+                    return PL_ERROR_X86_SELECT;
+                at += encoded;
+            }
             int compared = !select.has_compare ? 1
                 : emit_select_compare(&select, output + at, &encoded);
             if (compared) {
                 if (select.has_compare)
                     at += encoded;
                 if (emit_conditional_move(
-                        destination, select.candidate_local,
+                        destination, candidate_local,
                         select.value_bits, select.condition,
                         output + at, &encoded)
                         && at <= U32_MAX_VALUE - encoded) {
