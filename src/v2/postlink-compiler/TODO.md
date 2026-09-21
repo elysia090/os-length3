@@ -919,6 +919,26 @@ before, 2 after).  The escape population drops **510 -> 509**; the new first
 escape is `0xffffffff8121c47d..0xffffffff8121c48f` (`output=0x5 expected=0x4`).
 `make -k check` and the 120-case fuzz are green.
 
+`0xffffffff8121c47d` (`amd_pmu_v2_snapshot_branch_stack+0x1d`) is a wider
+version of the same shared-root shape:
+
+```text
+N1 = shl(L2, 32)   N2 = or(L0, N1)   N3 = shr(N2, 32) -> L2
+N4 = X86_ALU and(N2, ~0x40) -> L0 = projection(N4), and it is the flag producer
+```
+
+so the shared root `N2` is consumed by a masked `and` (the final flags) and a
+`shr`, and it reaches both destinations *transitively* (`N1 = shl(L2,32)`), not
+by naming them directly.  The dense ALU frame blocks with
+`blocking_work = 0x200` (`next_alu_frame_assignment` finds no first
+publication).  The source evaluates `N2` in RDX (`shl rdx,32; or rdx,rax`),
+copies it to RAX, then `shr rdx,32` and finally `and rax,~0x40` so the flag
+producer stays last.  `shared_root_shift_handoff` does not match because both
+consumers are not shifts and the root names `N1` rather than `L2`; a
+generalised shared-root unary handoff for the dense ALU frame (op pair, direct
+or transitive destination operands, flag producer applied last) is the next
+target.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
