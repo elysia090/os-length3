@@ -1342,6 +1342,20 @@ a node, but `emit_shift_instruction` only accepts an immediate or CL, so
 (local 1) and then rotate -- the same gap applies to any variable-count
 shift/rotate whose count is a computed node.
 
+### `0x700`/`0xf100`/`0x0` residual (compare-branch and dense)
+
+`0xf100` (9) is `measure_direct_compare_branch`'s initial code when the frame
+fails without a more specific one; `0x700` (11) is its
+`next_compare_branch_assignment_excluding` failure.  Samples: `812d9cb9`
+(`mov r11,rsi; xor ebx,ebx; add r11,rcx; setb bl; cmp r11,rdx` -- an add whose
+carry feeds a SETcc), `812413cc` (`sub rax,0x44; imul rdx,rax` with a movabs
+multiplier), `81258eae` (`bsf ebp,r14d; add ebp,1; je`).  The `0x0` class
+(28) has no recorded rejection: `81233810` is a large-constant LEA
+(`movabs 0x100000000; lea`), `81227075` a `sar`, `8134a6e6` an `imul` with a
+64-bit multiplier, `812c5bac` an `and`/`test`.  All are dense shapes that each
+need a bespoke production; several fail in frames that decline without setting
+a code, so the first step is to make those frames record their exact reason.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
