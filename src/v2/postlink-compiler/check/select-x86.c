@@ -3157,6 +3157,25 @@ int main(void)
                 setcc_candidates.diagnostic.blocking_work);
         return 111;
     }
+    /* An X86_FLAGS wrapper whose published value is the sign-extension of the
+     * flag result (`neg rax; cltq`): MOVSX/Q preserves flags, so the extension
+     * still carries the flag provenance and the frame can emit the value. */
+    static const pl_u8 flags_with_sign_extend[] = {
+        0x48u, 0x89u, 0xd8u,                      /* mov rax, rbx       */
+        0x48u, 0xf7u, 0xd8u,                      /* neg rax            */
+        0x48u, 0x98u,                             /* cltq               */
+    };
+    pl_x86_native_candidates sign_extend_candidates;
+    status = candidates_projected(
+        flags_with_sign_extend, sizeof flags_with_sign_extend, 0x7ffffu,
+        &sign_extend_candidates);
+    if (status || sign_extend_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (flags with sign extend "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, sign_extend_candidates.count,
+                sign_extend_candidates.diagnostic.blocking_work);
+        return 112;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

@@ -1260,11 +1260,12 @@ Measured distribution after the narrow-zero-extension fix: `0x200` 75,
   rejects because `!immediate && (sources & changed)`: with a clobbering sibling
   pending the group cannot fire before the constant, so the entry read would be
   lost.  Relaxing this needs the group to run before the source-overwriter
-  without letting a clobberer run after the comparison.  The 183 ones are
-  `X86_FLAGS` wrappers (`or edi,imm; movslq`): the value published is the
-  sign-extension of the flag node's result, not the result itself, so
-  `flag_value_operation_details` declines and `standalone_flag_publication_details`
-  does not handle `X86_FLAGS`.
+  without letting a clobberer run after the comparison.  The 183 ones
+  (`X86_FLAGS` wrappers, `or edi,imm; movslq`) are partly closed:
+  `publication_is_flag_result` now walks through a sign-extension of the flag
+  result (`publication_is_flag_result` gained a `sign_extend_value` step beside
+  the lane-and/insert steps), so MOVSX/Q keeps the flag provenance and the
+  frame emits the value publication.  Escapes 376 -> 369.
 - `0x502` closed.  `insert(base==dest, condition, 8)` (`setne dl` into a live
   RDX) is emitted by `in_place_condition_insert` as `emit_set_condition`; the
   base's upper bits survive, which is the insert semantics.  It is restricted

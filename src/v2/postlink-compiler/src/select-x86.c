@@ -3384,6 +3384,16 @@ static int publication_is_flag_result(const pl_plan *plan,
                 publication = plan->arguments[mask->argument_at + 1u];
                 continue;
             }
+            /* A sign-extension of the flag result (`or edi,imm; movslq`) also
+             * carries the flag provenance: MOVSX/Q preserves flags, so the
+             * extension's producer still sets the block's final flags. */
+            pl_operand extended;
+            pl_u32 extend_bits = 0u;
+            if (sign_extend_value(plan, (pl_u32)publication.value,
+                    &extended, &extend_bits)) {
+                publication = extended;
+                continue;
+            }
         }
         pl_operand source;
         pl_u32 bits = 0u;
