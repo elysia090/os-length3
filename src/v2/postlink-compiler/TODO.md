@@ -1356,6 +1356,23 @@ multiplier), `81258eae` (`bsf ebp,r14d; add ebp,1; je`).  The `0x0` class
 need a bespoke production; several fail in frames that decline without setting
 a code, so the first step is to make those frames record their exact reason.
 
+### `0xf003` refreshed (37 blocks)
+
+By final-flag opcode: `X86_FLAGS` (183) 8, `COMPARE` (191) 8, `X86_ALU` (203)
+7, `SHIFT_FLAGS` (193) 7, `TEST` (195) 5, `BIT_FLAGS` (197) 2.
+`812b4199` (`and eax,7; mov rbx,c; cmp eax,3; mov rax,c; cmove rax,rbx; jmp`)
+is flow JUMP with `N1 = and(entry RAX,7)`, `N2 = cmp(N1,3)`, `N3 =
+condition(N2,4)`, `N4 = select(const, const, N3)`, `L0 = const`,
+`L3 = N4`.  Relaxing `frame_publication_clobbers_flags` /
+`publication_tree_clobbers_flags` for a select whose condition is an
+`X86_CONDITION` of a node does reach `has_compare_tree == 1` for this block
+(measured), but the ALU frame still does not close it and the kernel count is
+unchanged -- the tree branch is not reached, so an earlier loop production
+(`select_generation_group`/`compare_boolean_group`) or a later frame step
+consumes the block.  That relaxation was reverted (no measured benefit, broad
+scheduling impact).  Next: trace which loop production handles `812b4199`
+before the tree branch.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
