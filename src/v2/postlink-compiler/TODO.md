@@ -1317,6 +1317,21 @@ width) and then emits the lane constant move.  Escapes **369 -> 351**;
 `check/select-x86.c` gains `lane_constant_from_base` (count 1 -> 2, `0x800`
 before, green after).
 
+### Cyclic register permutations (`0xf002`/`0x0`, ~15 blocks)
+
+Most `0xf002` escapes have `plan.node_count == 0`: `812e5fd1`
+(`mov rax,rdi; mov rdi,rsi; mov rsi,rax`) has `L0=LOCAL7`, `L6=LOCAL7`,
+`L7=LOCAL6`, i.e. RDX/RSI swap with RAX as the published temporary.
+`measure_direct_frame` emits a pending register only when its old value is not
+read by another pending local; for this plan the remaining `{6,7}` after L0 is a
+swap where both are needed, so it returns 0, `alu_frame_shape` then rejects the
+node-free plan, and the block escapes at `0xf002`.  The source breaks the cycle
+by publishing RAX first (`mov rax,rdi`) and then reading it (`mov rsi,rax`);
+`measure_frame_value(local, LOCAL7)` cannot resolve through that publication.
+Supporting this needs a cycle-aware copy scheduler (pick a temp / reuse a
+published coordinate), not a shape predicate.  `812b1870` is the same with a
+`movabs` local mixed in.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
