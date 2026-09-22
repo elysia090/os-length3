@@ -1245,6 +1245,41 @@ inner at its own expression width and emits `MOVZX local, local<lane>`; MOVZX
 preserves the shift's flags, so the final flag node stays the shift.  Whole-kernel
 scan: escapes **418 -> 393**.
 
+### Current escape population (393) and the next exact blockers
+
+Measured distribution after the narrow-zero-extension fix: `0x200` 75,
+`0xf003` 44, `0x0` 28, `0x202` 24, `0xf002` 20, `0x800` 14, `0x201` 13,
+`0x206` 12, `0x601` 12, `0x700` 11, `0xf100` 9, `0x802` 8, `0x502` 7,
+`0x602` 7.
+
+- `0xf003` by final-flag opcode: `X86_FLAGS` (183) 13, `SHIFT_FLAGS` (193) 9,
+  `COMPARE` (191) 8, `X86_ALU` (203) 7, `TEST` (195) 5, `BIT_FLAGS` (197) 2.
+  The 191/195 ones are the compare-tree shape with a *flag-clobbering sibling*:
+  `812b4199` is `and eax,7; cmp eax,3; sete; select` where the tree reads entry
+  EAX while a pending `const 0` also overwrites EAX.  `compare_tree_flag_shape`
+  rejects because `!immediate && (sources & changed)`: with a clobbering sibling
+  pending the group cannot fire before the constant, so the entry read would be
+  lost.  Relaxing this needs the group to run before the source-overwriter
+  without letting a clobberer run after the comparison.  The 183 ones are
+  `X86_FLAGS` wrappers (`or edi,imm; movslq`): the value published is the
+  sign-extension of the flag node's result, not the result itself, so
+  `flag_value_operation_details` declines and `standalone_flag_publication_details`
+  does not handle `X86_FLAGS`.
+- `0x502` (`insert(base_local, condition_node, 8)`, e.g. `setne dl` into a live
+  RDX): `in_place_lane_insert` only accepts a lane ALU inner, and the emission
+  is exactly `emit_set_condition`.  It needs the setcc emitted *before* the
+  block's later flag producer (`xor ecx,ecx`), but the frame's source law drops
+  RFLAGS operands (`operand_source_law` returns 0 for `value >= GPR_COUNT`), so
+  it has no edge to order the setcc first.  Adding the insert branch without a
+  flag-read edge risks emitting the setcc after the clobbering producer.
+- `0x800` (`measure_alu_tree` failed): `81249d91` folds a large constant into
+  an in-place add (`N1 = ADD(entry EAX, 0x31FFFFFFFFFFF)`); `measure_alu_pair`
+  cannot encode the immediate and the only pending local is the destination, so
+  `alu_frame_scratch_mask` returns 0 and there is no scratch to materialize the
+  constant into.  `81232239` is an `ADD3` (carry chain) with the same problem.
+- `0x200`/`0x202`/`0x201`/`0x206` remain dense-ALU shared-root handoffs; each
+  sampled block has a different root pair.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
