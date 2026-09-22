@@ -1292,6 +1292,20 @@ Measured distribution after the narrow-zero-extension fix: `0x200` 75,
 - `0x200`/`0x202`/`0x201`/`0x206` remain dense-ALU shared-root handoffs; each
   sampled block has a different root pair.
 
+### Rejected: standalone `SHIFT_FLAGS` in place (miscompile)
+
+A first attempt let `standalone_flag_publication_details` emit a
+`X86_SHIFT_FLAGS` whose value result is dead as `emit_shift_instruction(left,
+amount, ...)` in place.  For `81219fe3` (`mov rdx,rbx; shr rdx,0x20`) that
+produced the work-1 candidate `shr rbx,0x20`, destroying entry RBX, which the
+source explicitly preserves by copying to RDX first.  `make -k check` and the
+fuzz stayed green (no fixture covers it) and the Pareto gate cannot see a
+*work-better* wrong arm, so this was a silent miscompile; it was reverted.  The
+shape is only safe with a liveness check (shift into a register the frame
+republishes, or copy to a scratch); the standalone emitter has no scratch, so
+the production needs the copy form.  Only 1 of the 9 `SHIFT_FLAGS` blocks was
+closed by it anyway.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
