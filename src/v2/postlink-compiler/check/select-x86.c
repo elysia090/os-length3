@@ -3196,6 +3196,26 @@ int main(void)
                 lane_constant_candidates.diagnostic.blocking_work);
         return 113;
     }
+    /* A register permutation cycle whose temporary is itself a publication
+     * (`mov rax,rdi; mov rdi,rsi; mov rsi,rax`).  measure_direct_frame's
+     * "old value free" order deadlocks; the alias pass records that entry RDI
+     * is now in RAX and reads it. */
+    static const pl_u8 register_permutation[] = {
+        0x48u, 0x89u, 0xf8u,                      /* mov rax, rdi       */
+        0x48u, 0x89u, 0xf7u,                      /* mov rdi, rsi       */
+        0x48u, 0x89u, 0xc6u,                      /* mov rsi, rax       */
+    };
+    pl_x86_native_candidates permutation_candidates;
+    status = candidates_projected(
+        register_permutation, sizeof register_permutation, 0x7ffffu,
+        &permutation_candidates);
+    if (status || permutation_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (register permutation "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, permutation_candidates.count,
+                permutation_candidates.diagnostic.blocking_work);
+        return 114;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

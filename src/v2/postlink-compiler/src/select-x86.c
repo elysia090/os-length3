@@ -1615,12 +1615,20 @@ static int measure_direct_frame(const pl_x86_frontend *frontend,
     pl_u32 bytes = 0u;
     pl_u32 instructions = 0u;
     pl_u32 pending = changed;
+    /* `alias[s] = d` records that the entry value of S is now also held by D,
+     * so a copy may read D and S may be overwritten.  This breaks a register
+     * permutation cycle whose temporary is itself a publication
+     * (`mov rax,rdi; mov rdi,rsi; mov rsi,rax`). */
+    pl_u32 alias[PL_X86_GPR_COUNT];
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+        alias[local] = local;
     while (pending) {
         pl_u32 needed = 0u;
         for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
             if (!(pending & (1u << local))) continue;
             pl_operand value = plan->locals[local];
-            if (value.kind == PL_OPERAND_LOCAL)
+            if (value.kind == PL_OPERAND_LOCAL
+                    && alias[(pl_u32)value.value] == (pl_u32)value.value)
                 needed |= 1u << (pl_u32)value.value;
         }
         pl_u32 local = 0u;
@@ -1630,6 +1638,9 @@ static int measure_direct_frame(const pl_x86_frontend *frontend,
             ++local;
         if (local == PL_X86_GPR_COUNT) return 0;
         pl_operand value = plan->locals[local];
+        if (value.kind == PL_OPERAND_LOCAL
+                && alias[(pl_u32)value.value] != (pl_u32)value.value)
+            value.value = alias[(pl_u32)value.value];
         pl_u32 encoded = 0u;
         int measured = measure_frame_value(
             frontend, block, selection, local, value, bytes, &encoded);
@@ -1637,6 +1648,8 @@ static int measure_direct_frame(const pl_x86_frontend *frontend,
         if (bytes > U32_MAX_VALUE - encoded) return PL_ERROR_X86_SELECT;
         bytes += encoded;
         ++instructions;
+        if (plan->locals[local].kind == PL_OPERAND_LOCAL)
+            alias[(pl_u32)plan->locals[local].value] = local;
         pending &= ~(1u << local);
     }
     int aliases = alias_source_address_fields(frontend, block, selection);
@@ -17147,6 +17160,9 @@ static int write_direct_frame(const pl_x86_block *block,
         if (value.kind != PL_OPERAND_LOCAL || value.value != local)
             pending |= 1u << local;
     }
+    pl_u32 alias[PL_X86_GPR_COUNT];
+    for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local)
+        alias[local] = local;
     while (pending) {
         pl_u32 needed = 0u;
         for (pl_u32 local = 0u; local < PL_X86_GPR_COUNT; ++local) {
@@ -17155,7 +17171,8 @@ static int write_direct_frame(const pl_x86_block *block,
             if (value.kind == PL_OPERAND_LOCAL) {
                 if (value.value >= PL_X86_GPR_COUNT)
                     return PL_ERROR_X86_SELECT;
-                needed |= 1u << (pl_u32)value.value;
+                if (alias[(pl_u32)value.value] == (pl_u32)value.value)
+                    needed |= 1u << (pl_u32)value.value;
             }
         }
         pl_u32 local = 0u;
@@ -17165,11 +17182,16 @@ static int write_direct_frame(const pl_x86_block *block,
             ++local;
         if (local == PL_X86_GPR_COUNT) return PL_ERROR_X86_SELECT;
         pl_operand value = block->plan.locals[local];
+        if (value.kind == PL_OPERAND_LOCAL
+                && alias[(pl_u32)value.value] != (pl_u32)value.value)
+            value.value = alias[(pl_u32)value.value];
         pl_u32 encoded = 0u;
         if (!write_frame_value(
                 selection, at, local, value, output + at, &encoded))
             return PL_ERROR_X86_SELECT;
         at += encoded;
+        if (block->plan.locals[local].kind == PL_OPERAND_LOCAL)
+            alias[(pl_u32)block->plan.locals[local].value] = local;
         pending &= ~(1u << local);
     }
     if (block->flow == PL_X86_FLOW_JUMP) {

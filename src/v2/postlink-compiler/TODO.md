@@ -1317,20 +1317,18 @@ width) and then emits the lane constant move.  Escapes **369 -> 351**;
 `check/select-x86.c` gains `lane_constant_from_base` (count 1 -> 2, `0x800`
 before, green after).
 
-### Cyclic register permutations (`0xf002`/`0x0`, ~15 blocks)
+### Cyclic register permutations closed (12 blocks)
 
-Most `0xf002` escapes have `plan.node_count == 0`: `812e5fd1`
-(`mov rax,rdi; mov rdi,rsi; mov rsi,rax`) has `L0=LOCAL7`, `L6=LOCAL7`,
-`L7=LOCAL6`, i.e. RDX/RSI swap with RAX as the published temporary.
-`measure_direct_frame` emits a pending register only when its old value is not
-read by another pending local; for this plan the remaining `{6,7}` after L0 is a
-swap where both are needed, so it returns 0, `alu_frame_shape` then rejects the
-node-free plan, and the block escapes at `0xf002`.  The source breaks the cycle
-by publishing RAX first (`mov rax,rdi`) and then reading it (`mov rsi,rax`);
-`measure_frame_value(local, LOCAL7)` cannot resolve through that publication.
-Supporting this needs a cycle-aware copy scheduler (pick a temp / reuse a
-published coordinate), not a shape predicate.  `812b1870` is the same with a
-`movabs` local mixed in.
+`measure_direct_frame`/`write_direct_frame` now carry an alias array: emitting
+`L = LOCAL S` records `alias[S] = L` (entry S is also in L), a pending copy's
+source is resolved through `alias`, and a source with an alias no longer blocks
+its register from being overwritten.  For `812e5fd1`
+(`mov rax,rdi; mov rdi,rsi; mov rsi,rax`, `L0=LOCAL7, L6=LOCAL7, L7=LOCAL6`)
+the frame emits RAX first, then RDI (source RSI still live), then RSI through
+the alias of RDI in RAX -- exactly the source, span 1 work 3.  Escapes
+**351 -> 339**; `check/select-x86.c` gains `register_permutation` (count 1 -> 2,
+`0xf002` before, green after).  The pure two-cycle with no third publication is
+still a deadlock (no temp is available), but the source has no such shape.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
