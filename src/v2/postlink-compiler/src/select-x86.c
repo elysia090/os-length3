@@ -10060,7 +10060,11 @@ static int measure_alu_pair(const pl_x86_frontend *frontend,
             return 1;
         }
         selection->fixup_count = fixup_checkpoint;
-        return status < 0 ? status : 0;
+        if (status < 0 || right.kind != PL_OPERAND_CONST)
+            return status < 0 ? status : 0;
+        /* A constant that the immediate form cannot encode (`add r64,
+         * imm64-only`) falls through so the scratch path materializes it into a
+         * register first. */
     }
 
     pl_u32 left_sources = 0u;
@@ -16972,7 +16976,9 @@ static int write_alu_pair(const pl_x86_block *block,
             *written = prefix + operation;
             return 1;
         }
-        return 0;
+        if (right.kind != PL_OPERAND_CONST) return 0;
+        /* A constant the immediate form cannot encode falls through so the
+         * scratch path materializes it into a register first. */
     }
 
     pl_u32 left_sources = 0u;

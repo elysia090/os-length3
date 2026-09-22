@@ -1272,11 +1272,19 @@ Measured distribution after the narrow-zero-extension fix: `0x200` 75,
   RFLAGS operands (`operand_source_law` returns 0 for `value >= GPR_COUNT`), so
   it has no edge to order the setcc first.  Adding the insert branch without a
   flag-read edge risks emitting the setcc after the clobbering producer.
-- `0x800` (`measure_alu_tree` failed): `81249d91` folds a large constant into
-  an in-place add (`N1 = ADD(entry EAX, 0x31FFFFFFFFFFF)`); `measure_alu_pair`
-  cannot encode the immediate and the only pending local is the destination, so
-  `alu_frame_scratch_mask` returns 0 and there is no scratch to materialize the
-  constant into.  `81232239` is an `ADD3` (carry chain) with the same problem.
+- `0x800` large-constant add: `81249d91` folds a large constant into an
+  in-place add (`N1 = ADD(entry EAX, 0x31FFFFFFFFFFF)`).  `measure_alu_pair` /
+  `write_alu_pair` returned from the immediate fast path without trying the
+  scratch path, so the add had no encoding.  They now fall through for a
+  CONST right that the immediate form rejects; the scratch path materializes it
+  into the pending `RDX` publication and reuses the folded `-1` displacement,
+  emitting exactly the source (`movabs rdx,0x32000000000000; lea
+  -0x1(%rax,%rdx),%rax; cmp; jb`).  Escapes 393 -> 386.  NOTE: the isolated
+  `candidates_projected` harness cannot reproduce this block -- it does not
+  fold a same-block `movabs` into the ALU node, so the `count` stays >= 2 with
+  or without the fix.  Regression coverage for this one is the whole-kernel
+  scan (7 blocks) plus `make -k check`/fuzz for no regression; no fixture.
+  `81232239` (an `ADD3` carry chain) shares the failure and is not yet fixed.
 - `0x200`/`0x202`/`0x201`/`0x206` remain dense-ALU shared-root handoffs; each
   sampled block has a different root pair.
 
