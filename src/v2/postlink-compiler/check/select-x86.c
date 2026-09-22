@@ -3136,6 +3136,27 @@ int main(void)
                 narrow_candidates.diagnostic.blocking_work);
         return 110;
     }
+    /* `setne dl` is a lane insert of an entry-flags condition into a live RDX.
+     * The frame emits SETcc and must order it before the block's later flag
+     * producer (`xor ecx,ecx`), which publication_reads_entry_flags now
+     * enforces. */
+    static const pl_u8 setcc_lane_insert[] = {
+        0x4cu, 0x89u, 0xe6u,                      /* mov rsi, r12       */
+        0x48u, 0x89u, 0xdfu,                      /* mov rdi, rbx       */
+        0x0fu, 0x95u, 0xc2u,                      /* setne dl           */
+        0x31u, 0xc9u,                             /* xor ecx, ecx       */
+    };
+    pl_x86_native_candidates setcc_candidates;
+    status = candidates_projected(
+        setcc_lane_insert, sizeof setcc_lane_insert, 0x7ffffu,
+        &setcc_candidates);
+    if (status || setcc_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (setcc lane insert "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, setcc_candidates.count,
+                setcc_candidates.diagnostic.blocking_work);
+        return 111;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

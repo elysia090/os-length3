@@ -1265,13 +1265,16 @@ Measured distribution after the narrow-zero-extension fix: `0x200` 75,
   sign-extension of the flag node's result, not the result itself, so
   `flag_value_operation_details` declines and `standalone_flag_publication_details`
   does not handle `X86_FLAGS`.
-- `0x502` (`insert(base_local, condition_node, 8)`, e.g. `setne dl` into a live
-  RDX): `in_place_lane_insert` only accepts a lane ALU inner, and the emission
-  is exactly `emit_set_condition`.  It needs the setcc emitted *before* the
-  block's later flag producer (`xor ecx,ecx`), but the frame's source law drops
-  RFLAGS operands (`operand_source_law` returns 0 for `value >= GPR_COUNT`), so
-  it has no edge to order the setcc first.  Adding the insert branch without a
-  flag-read edge risks emitting the setcc after the clobbering producer.
+- `0x502` closed.  `insert(base==dest, condition, 8)` (`setne dl` into a live
+  RDX) is emitted by `in_place_condition_insert` as `emit_set_condition`; the
+  base's upper bits survive, which is the insert semantics.  It is restricted
+  to a condition whose flags operand is the entry `RFLAGS` local, so the SETcc
+  can be ordered before every in-block flag writer; an in-block producer
+  (`test edi,edi; setne r12b` in `8124ce85`) needs its own edge and was a
+  Pareto witness when the branch first accepted it.  `next_alu_frame_assignment`
+  now keeps a flag-reader as a blocker of the final flag producer
+  (`publication_reads_entry_flags`), so the SETcc lands first.  Escapes
+  386 -> 376.
 - `0x800` large-constant add: `81249d91` folds a large constant into an
   in-place add (`N1 = ADD(entry EAX, 0x31FFFFFFFFFFF)`).  `measure_alu_pair` /
   `write_alu_pair` returned from the immediate fast path without trying the

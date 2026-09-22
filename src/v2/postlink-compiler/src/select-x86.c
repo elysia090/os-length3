@@ -3552,6 +3552,35 @@ static int frame_local_publication_clobbers_flags(
     return frame_publication_clobbers_flags(plan, publication);
 }
 
+/* A publication whose tree observes the *entry* flags (an X86_CONDITION with
+ * the RFLAGS local, possibly wrapped in a lane insert) must be emitted before
+ * the block's final flag producer, which overwrites them.  The scheduler
+ * otherwise treats such a SETcc as flag-preserving and lets the producer run
+ * first. */
+static int publication_reads_entry_flags(const pl_plan *plan, pl_operand value)
+{
+    if (!plan || value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if (node->opcode == PL_OPCODE_X86_CONDITION
+            && node->argument_count == 2u
+            && node->argument_at <= plan->argument_count
+            && 2u <= plan->argument_count - node->argument_at) {
+        pl_operand flags = plan->arguments[node->argument_at];
+        return flags.kind == PL_OPERAND_LOCAL
+            && flags.value == PL_X86_RFLAGS_LOCAL;
+    }
+    if ((node->opcode == PL_OPCODE_LANE64_INSERT
+                || node->opcode == PL_OPCODE_LANE32_INSERT)
+            && node->argument_count == 3u
+            && node->argument_at <= plan->argument_count
+            && 3u <= plan->argument_count - node->argument_at)
+        return publication_reads_entry_flags(
+            plan, plan->arguments[node->argument_at + 1u]);
+    return 0;
+}
+
 static int next_alu_frame_assignment(const pl_plan *plan, pl_u32 pending,
                                      pl_u32 final_flag_node,
                                      const pl_u32 *sources,
@@ -3584,7 +3613,12 @@ static int next_alu_frame_assignment(const pl_plan *plan, pl_u32 pending,
                     blocker < PL_X86_GPR_COUNT; ++blocker)
                 if ((blockers & (1u << blocker))
                         && !frame_local_emission_clobbers_flags(
-                            plan, blocker))
+                            plan, blocker)
+                        /* A SETcc of the entry flags is flag-preserving yet
+                         * still reads them, so it must stay a blocker: the
+                         * final producer would destroy its input. */
+                        && !publication_reads_entry_flags(
+                            plan, plan->locals[blocker]))
                     blockers &= ~(1u << blocker);
             if (blockers) continue;
         }
@@ -4923,6 +4957,44 @@ static int in_place_lane_insert(const pl_plan *plan, pl_operand value,
         return 0;
     *inner = arguments[1];
     *width = (pl_u32)arguments[2].value;
+    return 1;
+}
+
+/* `insert(local, condition, 8)` with base == destination is a SETcc into the
+ * low byte; the base's upper bits survive, which is exactly the insert
+ * semantics.  Emitting it keeps the condition's flag read before the block's
+ * later flag producer (see publication_reads_entry_flags). */
+static int in_place_condition_insert(const pl_plan *plan, pl_operand value,
+                                     pl_u32 local, pl_u32 *condition)
+{
+    if (!plan || !condition || local >= PL_X86_GPR_COUNT
+            || value.kind != PL_OPERAND_NODE || !value.value
+            || value.value > plan->node_count)
+        return 0;
+    const pl_node *node = &plan->nodes[value.value - 1u];
+    if ((node->opcode != PL_OPCODE_LANE64_INSERT
+                && node->opcode != PL_OPCODE_LANE32_INSERT)
+            || node->argument_count != 3u
+            || node->argument_at > plan->argument_count
+            || 3u > plan->argument_count - node->argument_at)
+        return 0;
+    const pl_operand *arguments = plan->arguments + node->argument_at;
+    if (arguments[0].kind != PL_OPERAND_LOCAL
+            || arguments[0].value != local
+            || arguments[2].kind != PL_OPERAND_CONST
+            || arguments[2].value != 8u)
+        return 0;
+    condition_value detail;
+    if (!condition_value_details(plan, arguments[1], &detail)
+            /* Only an entry-flags condition can be materialized here: its
+             * producer is outside the block, so the SETcc can be ordered before
+             * every in-block flag writer.  An in-block producer needs its own
+             * scheduling edge, which publication_reads_entry_flags does not
+             * provide. */
+            || detail.flags.kind != PL_OPERAND_LOCAL
+            || detail.flags.value != PL_X86_RFLAGS_LOCAL)
+        return 0;
+    *condition = detail.condition;
     return 1;
 }
 
@@ -12199,6 +12271,7 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             pl_operand lane_inner;
             pl_u32 lane_width = 0u;
             pl_u64 lane_constant = 0u;
+            pl_u32 insert_condition = 0u;
             pl_u32 flag_mode = 0u, preserves_carry = 0u;
             if (final_flag_node && value.value == final_flag_node
                     && alu_node_semantics(
@@ -12600,6 +12673,12 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     return 0;
                 encoded += extend;
                 ++publication_work;
+            } else if (in_place_condition_insert(
+                    &block->plan, value, local, &insert_condition)) {
+                if (!emit_set_condition(
+                        local, insert_condition, (pl_u8 *)0, &encoded))
+                    return 0;
+                publication_work = 1u;
             } else if (in_place_lane_insert(
                     &block->plan, value, local, &lane_inner, &lane_width)) {
                 int measured = measure_alu_tree(
@@ -17931,6 +18010,7 @@ static int write_direct_alu_frame(const pl_x86_block *block,
             pl_operand lane_inner;
             pl_u32 lane_width = 0u;
             pl_u64 lane_constant = 0u;
+            pl_u32 insert_condition = 0u;
             pl_u32 flag_mode = 0u, preserves_carry = 0u;
             if (final_flag_node && value.value == final_flag_node
                     && alu_node_semantics(
@@ -18253,6 +18333,11 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                             output + at + inner_bytes, &written))
                     return PL_ERROR_X86_SELECT;
                 written += inner_bytes;
+            } else if (in_place_condition_insert(
+                    &block->plan, value, local, &insert_condition)) {
+                if (!emit_set_condition(
+                        local, insert_condition, output + at, &written))
+                    return PL_ERROR_X86_SELECT;
             } else if (in_place_lane_insert(
                     &block->plan, value, local, &lane_inner, &lane_width)) {
                 pl_u32 insert_bytes = 0u;
