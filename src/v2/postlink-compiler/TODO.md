@@ -1373,6 +1373,34 @@ consumes the block.  That relaxation was reverted (no measured benefit, broad
 scheduling impact).  Next: trace which loop production handles `812b4199`
 before the tree branch.
 
+### Trace of `812b4199` and why the select immediate path is unsafe here
+
+`812b4199` (`and eax,7; mov rbx,c2; cmp eax,3; mov rax,c1; cmove rax,rbx`) is
+flow JUMP with `N1=and(entry RAX,7)`, `N2=cmp(N1,3)`, `N3=condition(N2,4)`,
+`N4=select(c1,c2,N3)`, `L0=c1`, `L3=N4`.  `alu_frame_source_laws` gives
+`deps[3]=L0` (candidate publication) and `sources[3]=RAX` (the comparison
+reads entry RAX), so `next_alu_frame_assignment` skips both L0 (used by L3) and
+L3 (waiting on L0): the frame deadlocks at `0x200`, which the guard reports as
+`0xf003`?  No -- the guard fires because `compare_tree_flag_shape` rejects: the
+tree arm reads entry RAX while `L0 = const` overwrites RAX, and the select is a
+clobberer, so `immediate` is false.
+
+Generalising the earlier select-over-published-constant fix
+(`current_is_entry && current_entry == candidate_local`) to "the tree reads the
+candidate's entry" reads `has_compare_tree == 1` and closes 17 kernel blocks
+(339 -> 322, Pareto 0, fuzz green), but `compare-cut-check` expression 8
+(`cmp r10,rdx; movabs r10,c; cmovcc rax,r10`, same shape with r10) then
+**semantically mismatches**: the immediate path drops the candidate dependency
+and materialises the constant for CMOV, which does not reproduce the required
+`compare -> candidate publication -> cmov` order.  All were reverted.
+
+The safe fix is the shared-flag handoff spelling, but
+`apply_shared_flag_producer_laws` requires `flag_node_has_value_publication`
+(the comparison must also publish a value).  For `812b4199` the comparison
+publishes no value, so the handoff never applies.  Next: extend the handoff to
+a comparison with no value publication -- emit the comparison as a standalone
+flag producer before the candidate publication, then the CMOV.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
