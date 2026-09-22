@@ -1306,6 +1306,17 @@ republishes, or copy to a scratch); the standalone emitter has no scratch, so
 the production needs the copy form.  Only 1 of the 9 `SHIFT_FLAGS` blocks was
 closed by it anyway.
 
+### The `0x800` lane-constant-from-base family (18 blocks)
+
+`insert(base, const, 8|16)` with base != destination (`mov rax,rdx; xor al,al`,
+`815ded24`) was rejected: `lane_constant_insert` required base == destination,
+so the node fell through to `operand_expression_bits` (0) and `measure_alu_tree`
+failed.  It now accepts any LOCAL/NODE/PROJECTION base and returns it; the
+emitter materializes the base into the destination (`operand_expression_bits`
+width) and then emits the lane constant move.  Escapes **369 -> 351**;
+`check/select-x86.c` gains `lane_constant_from_base` (count 1 -> 2, `0x800`
+before, green after).
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag

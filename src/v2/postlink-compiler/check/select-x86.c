@@ -3176,6 +3176,26 @@ int main(void)
                 sign_extend_candidates.diagnostic.blocking_work);
         return 112;
     }
+    /* `insert(base, 0, 8)` with base != destination (`mov rax,rdx; xor al,al`)
+     * clears the low byte of a copy.  The frame now materializes the base and
+     * then emits the lane constant move. */
+    static const pl_u8 lane_constant_from_base[] = {
+        0x48u, 0x89u, 0xd0u,                      /* mov rax, rdx       */
+        0x30u, 0xc0u,                             /* xor al, al         */
+        0xf6u, 0xc2u, 0x01u,                      /* test dl, 1         */
+        0x0fu, 0x85u, 0x00u, 0x00u, 0x00u, 0x00u, /* jne .              */
+    };
+    pl_x86_native_candidates lane_constant_candidates;
+    status = candidates_projected(
+        lane_constant_from_base, sizeof lane_constant_from_base, 0x7ffffu,
+        &lane_constant_candidates);
+    if (status || lane_constant_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (lane constant from base "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, lane_constant_candidates.count,
+                lane_constant_candidates.diagnostic.blocking_work);
+        return 113;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

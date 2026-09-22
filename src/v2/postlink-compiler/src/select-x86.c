@@ -5008,15 +5008,16 @@ static int in_place_condition_insert(const pl_plan *plan, pl_operand value,
     return 1;
 }
 
-/* `insert(local, constant, 8|16)` replaces the low lane of the published local
- * with a constant; with base == destination it is one lane-width constant
- * move.  A 32-bit insert would also have to preserve the base's upper word,
- * which a 32-bit move does not, so it stays out of this production. */
+/* `insert(base, constant, 8|16)` replaces the low lane of `base` with a
+ * constant.  With base == destination it is one lane-width constant move
+ * (`xor al,al`); otherwise the caller first materializes the base into the
+ * destination.  A 32-bit insert would also have to preserve the base's upper
+ * word, which a 32-bit move does not, so it stays out of this production. */
 static int lane_constant_insert(const pl_plan *plan, pl_operand value,
-                                pl_u32 local, pl_u64 *constant,
-                                pl_u32 *width)
+                                pl_u32 local, pl_operand *base,
+                                pl_u64 *constant, pl_u32 *width)
 {
-    if (!plan || !constant || !width || local >= PL_X86_GPR_COUNT
+    if (!plan || !base || !constant || !width || local >= PL_X86_GPR_COUNT
             || value.kind != PL_OPERAND_NODE || !value.value
             || value.value > plan->node_count)
         return 0;
@@ -5028,12 +5029,16 @@ static int lane_constant_insert(const pl_plan *plan, pl_operand value,
             || 3u > plan->argument_count - node->argument_at)
         return 0;
     const pl_operand *arguments = plan->arguments + node->argument_at;
-    if (arguments[0].kind != PL_OPERAND_LOCAL
-            || arguments[0].value != local
+    if ((arguments[0].kind != PL_OPERAND_LOCAL
+                && arguments[0].kind != PL_OPERAND_NODE
+                && arguments[0].kind != PL_OPERAND_PROJECTION)
+            || (arguments[0].kind == PL_OPERAND_LOCAL
+                && arguments[0].value >= PL_X86_GPR_COUNT)
             || arguments[1].kind != PL_OPERAND_CONST
             || arguments[2].kind != PL_OPERAND_CONST
             || (arguments[2].value != 8u && arguments[2].value != 16u))
         return 0;
+    *base = arguments[0];
     *constant = arguments[1].value;
     *width = (pl_u32)arguments[2].value;
     return 1;
@@ -12279,6 +12284,7 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
             pl_u32 bit = 0u;
             pl_operand flag_left, flag_right;
             pl_operand lane_inner;
+            pl_operand lane_base;
             pl_u32 lane_width = 0u;
             pl_u64 lane_constant = 0u;
             pl_u32 insert_condition = 0u;
@@ -12700,11 +12706,30 @@ static int measure_direct_alu_frame(const pl_x86_frontend *frontend,
                     return measured;
                 }
             } else if (lane_constant_insert(
-                    &block->plan, value, local, &lane_constant, &lane_width)) {
-                if (!emit_lane_constant_move(
-                        local, lane_constant, lane_width, (pl_u8 *)0, &encoded))
-                    return 0;
-                publication_work = 1u;
+                    &block->plan, value, local, &lane_base,
+                    &lane_constant, &lane_width)) {
+                pl_u32 prefix = 0u, prefix_work = 0u, move = 0u;
+                int measured = 1;
+                if (!(lane_base.kind == PL_OPERAND_LOCAL
+                        && lane_base.value == local)) {
+                    measured = measure_alu_tree(
+                        frontend, block, selection, local, lane_base,
+                        operand_expression_bits(
+                            &block->plan, lane_base, 64u),
+                        bytes, block->plan.node_count + 1u, scratch_mask,
+                        &prefix, &prefix_work);
+                }
+                if (measured <= 0
+                        || !emit_lane_constant_move(
+                            local, lane_constant, lane_width,
+                            (pl_u8 *)0, &move)
+                        || prefix > U32_MAX_VALUE - move
+                        || prefix_work == U32_MAX_VALUE) {
+                    selection->blocking_work = 0x600u | local;
+                    return measured < 0 ? measured : 0;
+                }
+                encoded = prefix + move;
+                publication_work = prefix_work + 1u;
             } else if (value.kind == PL_OPERAND_NODE && value.value
                     && value.value <= block->plan.node_count
                     && (block->plan.nodes[value.value - 1u].opcode
@@ -18018,6 +18043,7 @@ static int write_direct_alu_frame(const pl_x86_block *block,
             pl_u32 bit = 0u;
             pl_operand flag_left, flag_right;
             pl_operand lane_inner;
+            pl_operand lane_base;
             pl_u32 lane_width = 0u;
             pl_u64 lane_constant = 0u;
             pl_u32 insert_condition = 0u;
@@ -18358,10 +18384,23 @@ static int write_direct_alu_frame(const pl_x86_block *block,
                     return PL_ERROR_X86_SELECT;
                 written = insert_bytes;
             } else if (lane_constant_insert(
-                    &block->plan, value, local, &lane_constant, &lane_width)) {
-                if (!emit_lane_constant_move(
-                        local, lane_constant, lane_width, output + at, &written))
+                    &block->plan, value, local, &lane_base,
+                    &lane_constant, &lane_width)) {
+                pl_u32 prefix = 0u, move = 0u;
+                if (!(lane_base.kind == PL_OPERAND_LOCAL
+                        && lane_base.value == local)
+                        && !write_alu_tree(
+                            block, selection, local, lane_base,
+                            operand_expression_bits(
+                                &block->plan, lane_base, 64u),
+                            at, block->plan.node_count + 1u, scratch_mask,
+                            output + at, &prefix))
                     return PL_ERROR_X86_SELECT;
+                if (!emit_lane_constant_move(
+                        local, lane_constant, lane_width,
+                        output + at + prefix, &move))
+                    return PL_ERROR_X86_SELECT;
+                written = prefix + move;
             } else if (value.kind == PL_OPERAND_NODE && value.value
                     && value.value <= block->plan.node_count
                     && (block->plan.nodes[value.value - 1u].opcode
