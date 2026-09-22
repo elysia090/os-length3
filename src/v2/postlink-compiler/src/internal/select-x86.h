@@ -113,6 +113,11 @@ typedef struct {
     pl_u8 frame_alias_frame_kind;
     pl_u8 frame_alias_frame_local;
     pl_u8 frame_alias_frame_present;
+    /* The value-alias population a frame's publication loop starts from.  A
+     * frame that records a mid-loop alias (a shared ADD3 pair built in a
+     * consumer's coordinate) must let the write path begin from the same
+     * population, not from the aliases the completed measurement left. */
+    pl_u8 value_alias_frame_count;
     /* A shared-DAG schedule keeps an intermediate SSA node or a spilled entry
      * generation in a chosen output register across the whole frame, so
      * operand resolution must see that physical coordinate instead of a plan

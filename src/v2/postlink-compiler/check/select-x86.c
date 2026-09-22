@@ -2606,6 +2606,616 @@ int main(void)
         fputc('\n', stderr);
         return 90;
     }
+    /* A three-input add whose inputs are all non-constant cannot be one LEA.
+     * If the dense ALU frame is allowed to publish it after the compare, it
+     * emits a flag-clobbering add/adc and the terminal branch reads the wrong
+     * flags; that candidate then measures a phantom low span and the component
+     * minima have no joint witness.  With the tree classified correctly the
+     * candidate is a legal `span=5, work=9` spelling and the copied source's
+     * `span=5, work=7` is the joint minimum. */
+    static const pl_u8 add3_before_flag_producer[] = {
+        0x89u, 0xd1u,                              /* mov ecx, edx   */
+        0xb8u, 0x3fu, 0x00u, 0x00u, 0x00u,         /* mov eax, 0x3f  */
+        0x4cu, 0x01u, 0xf9u,                       /* add rcx, r15   */
+        0x48u, 0x29u, 0xc8u,                       /* sub rax, rcx   */
+        0x4cu, 0x01u, 0xe9u,                       /* add rcx, r13   */
+        0x48u, 0x83u, 0xf8u, 0x08u,                /* cmp rax, 8     */
+        0x0fu, 0x82u, 0x00u, 0x00u, 0x00u, 0x00u,  /* jb .+0         */
+    };
+    pl_x86_native_candidates add3_candidates;
+    status = candidates_projected(
+        add3_before_flag_producer, sizeof add3_before_flag_producer,
+        0x1ffffu, &add3_candidates);
+    pl_x86_native_selection add3_selected = { 0 };
+    pl_u32 add3_span = 0u, add3_work = 0u;
+    int add3_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &add3_candidates, 0u, 0u, &add3_selected,
+            &add3_span, &add3_work);
+    if (add3_status || !add3_selected.supported
+            || add3_selected.output_span != 5u
+            || add3_selected.output_work != 7u) {
+        fprintf(stderr, "native x86 selection: RED (ADD3 before flag producer "
+                "status=%d span/work=%u/%u)\n",
+                add3_status, add3_span, add3_work);
+        return 91;
+    }
+    /* An ADD3 whose shared pair is also a conditional arm another pending
+     * publication needs.  Building the pair into the ordinary destination
+     * makes the consumer rebuild it, so the dense ALU frame reaches span 7 at
+     * work 15 while the copied source holds work 14 at span 8: no joint
+     * witness.  With the pair built in the consumer's coordinate one
+     * materialization serves both and the frame reaches span 7, work 14. */
+    static const pl_u8 add3_shared_pair_consumer[] = {
+        0x48u, 0xc1u, 0xe0u, 0x06u,               /* shl rax, 6        */
+        0x48u, 0x89u, 0xc1u,                      /* mov rcx, rax      */
+        0x48u, 0x29u, 0xd1u,                      /* sub rcx, rdx      */
+        0x48u, 0x83u, 0xc2u, 0x01u,               /* add rdx, 1        */
+        0x48u, 0x83u, 0xe9u, 0x01u,               /* sub rcx, 1        */
+        0x48u, 0x89u, 0xf1u,                      /* mov rcx, rsi      */
+        0x48u, 0x0fu, 0x48u, 0xc2u,               /* cmovs rax, rdx    */
+        0x48u, 0xc1u, 0xe1u, 0x06u,               /* shl rcx, 6        */
+        0x48u, 0x83u, 0xc1u, 0x3fu,               /* add rcx, 0x3f     */
+        0x4au, 0x8du, 0x14u, 0x01u,               /* lea rdx, [rcx+r8] */
+        0x49u, 0x39u, 0xd1u,                      /* cmp r9, rdx       */
+        0x49u, 0x0fu, 0x48u, 0xcau,               /* cmovs rcx, r10    */
+        0x48u, 0x39u, 0xc1u,                      /* cmp rcx, rax      */
+        0x79u, 0x00u,                             /* jns .+0           */
+    };
+    pl_x86_native_candidates pair_candidates;
+    status = candidates_projected(
+        add3_shared_pair_consumer, sizeof add3_shared_pair_consumer,
+        0x7ffffu, &pair_candidates);
+    pl_x86_native_selection pair_selected = { 0 };
+    pl_u32 pair_span = 0u, pair_work = 0u;
+    int pair_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &pair_candidates, 0u, 0u, &pair_selected,
+            &pair_span, &pair_work);
+    if (pair_status || !pair_selected.supported
+            || pair_span != 7u || pair_work != 14u) {
+        fprintf(stderr, "native x86 selection: RED (ADD3 shared pair consumer "
+                "status=%d span/work=%u/%u)\n",
+                pair_status, pair_span, pair_work);
+        return 92;
+    }
+    /* A 32-bit sign extension of a node that another publication already
+     * placed in a GPR.  Rebuilding the node inside the extension makes the
+     * dense ALU frame materialize the negated entry word twice (span 2, work
+     * 7) while the copied source holds work 6 at span 3: no joint witness.
+     * Reading the node's published coordinate emits one `movslq` and the
+     * frame reaches span 3, work 6. */
+    static const pl_u8 extend_published_node[] = {
+        0x48u, 0x89u, 0xf0u,                      /* mov rax, rsi      */
+        0x48u, 0x29u, 0xf2u,                      /* sub rdx, rsi      */
+        0xf7u, 0xd8u,                             /* neg eax           */
+        0x48u, 0x89u, 0xd7u,                      /* mov rdi, rdx      */
+        0x8du, 0x14u, 0x0eu,                      /* lea edx, [rsi+rcx]*/
+        0x48u, 0x63u, 0xf0u,                      /* movslq rsi, eax   */
+    };
+    pl_x86_native_candidates extend_candidates;
+    status = candidates_projected(
+        extend_published_node, sizeof extend_published_node,
+        0x7ffffu, &extend_candidates);
+    pl_x86_native_selection extend_selected = { 0 };
+    pl_u32 extend_span = 0u, extend_work = 0u;
+    int extend_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &extend_candidates, 0u, 0u, &extend_selected,
+            &extend_span, &extend_work);
+    if (extend_status || !extend_selected.supported
+            || extend_span != 3u || extend_work != 6u) {
+        fprintf(stderr, "native x86 selection: RED (extend published node "
+                "status=%d span/work=%u/%u)\n",
+                extend_status, extend_span, extend_work);
+        return 93;
+    }
+    /* A conditional select whose tested flags are also the value of a separate
+     * publication (the `and` here).  The select skips its own compare because
+     * that publication emits the flags, so the frame's source law must order
+     * the value publication first.  Without the dependency the select reads
+     * the preceding `shl` flags (a miscompile the Pareto gate hides behind a
+     * phantom `3/6` arm); with it both spellings are the source's `4/4`. */
+    static const pl_u8 flag_select_value_publication[] = {
+        0x89u, 0xd3u,                             /* mov ebx, edx      */
+        0xd3u, 0xe3u,                             /* shl ebx, cl       */
+        0x81u, 0xe3u, 0xbfu, 0xefu, 0xffu, 0xffu, /* and ebx, 0xffffefbf */
+        0x48u, 0x0fu, 0x44u, 0xf8u,               /* cmove rdi, rax    */
+    };
+    pl_x86_native_candidates flag_value_candidates;
+    status = candidates_projected(
+        flag_select_value_publication,
+        sizeof flag_select_value_publication, 0x7ffffu,
+        &flag_value_candidates);
+    pl_x86_native_selection flag_value_selected = { 0 };
+    pl_u32 flag_value_span = 0u, flag_value_work = 0u;
+    int flag_value_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &flag_value_candidates, 0u, 0u, &flag_value_selected,
+            &flag_value_span, &flag_value_work);
+    if (flag_value_status || !flag_value_selected.supported
+            || flag_value_span != 4u || flag_value_work != 4u) {
+        fprintf(stderr, "native x86 selection: RED (flag select value "
+                "publication status=%d span/work=%u/%u)\n",
+                flag_value_status, flag_value_span, flag_value_work);
+        return 94;
+    }
+    /* A generation-join seed materializes an entry-only subtree into the join
+     * destination before a sibling publication overwrites the entry register.
+     * That destination coordinate is live until the join, but the entry reads
+     * it consumed are gone from the source law, so a later publication may
+     * pick it as scratch.  Here the wide `and` mask would land in the join
+     * destination and destroy the seed.  Naming the destination as its own
+     * entry source keeps it out of every other scratch pool. */
+    static const pl_u8 generation_join_seed_destination[] = {
+        0x89u, 0xc8u,                             /* mov eax, ecx        */
+        0x01u, 0xc9u,                             /* add ecx, ecx        */
+        0xd0u, 0xe8u,                             /* shr al, 1           */
+        0x81u, 0xe1u, 0x80u, 0x00u, 0x00u, 0x00u, /* and ecx, 0x80       */
+        0x83u, 0xe0u, 0x40u,                      /* and eax, 0x40       */
+        0x09u, 0xc8u,                             /* or eax, ecx         */
+        0x89u, 0xd1u,                             /* mov ecx, edx        */
+        0x80u, 0xe1u, 0x3fu,                      /* and cl, 0x3f        */
+        0x09u, 0xc8u,                             /* or eax, ecx         */
+        0x39u, 0xd0u,                             /* cmp eax, edx        */
+    };
+    pl_x86_native_candidates join_candidates;
+    status = candidates_projected(
+        generation_join_seed_destination,
+        sizeof generation_join_seed_destination, 0x7ffffu,
+        &join_candidates);
+    pl_x86_native_selection join_selected = { 0 };
+    pl_u32 join_span = 0u, join_work = 0u;
+    int join_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &join_candidates, 0u, 0u, &join_selected,
+            &join_span, &join_work);
+    if (join_status || !join_selected.supported
+            || join_span != 6u || join_work != 10u) {
+        fprintf(stderr, "native x86 selection: RED (generation join seed "
+                "destination status=%d span/work=%u/%u)\n",
+                join_status, join_span, join_work);
+        return 95;
+    }
+    /* `insert(0, N2, 16)` is N2's 16-bit zero extension while the flags also
+     * name N2.  Stripping the insert because of that flag relation publishes
+     * N2's full 32-bit word; the same block then offers a phantom `3/6` arm
+     * against the real `4/4` and no joint minimum.  The extension must be
+     * emitted from N2's published coordinate. */
+    static const pl_u8 zero_extend_flag_value[] = {
+        0x48u, 0x89u, 0xcau,                      /* mov rdx, rcx      */
+        0x48u, 0x29u, 0xf2u,                      /* sub rdx, rsi      */
+        0x01u, 0xc2u,                             /* add edx, eax      */
+        0x0fu, 0xb7u, 0xc2u,                      /* movzx eax, dx     */
+    };
+    pl_x86_native_candidates zero_extend_candidates;
+    status = candidates_projected(
+        zero_extend_flag_value, sizeof zero_extend_flag_value,
+        0x7ffffu, &zero_extend_candidates);
+    pl_x86_native_selection zero_extend_selected = { 0 };
+    pl_u32 zero_extend_span = 0u, zero_extend_work = 0u;
+    int zero_extend_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &zero_extend_candidates, 0u, 0u, &zero_extend_selected,
+            &zero_extend_span, &zero_extend_work);
+    if (zero_extend_status || !zero_extend_selected.supported
+            || zero_extend_span != 4u || zero_extend_work != 4u) {
+        fprintf(stderr, "native x86 selection: RED (zero extend flag value "
+                "status=%d span/work=%u/%u)\n",
+                zero_extend_status, zero_extend_span, zero_extend_work);
+        return 96;
+    }
+    /* `insert(0, inner, 32)` where `inner` is a 64-bit word sum with no
+     * publication of its own.  The frame had no encoder for the extension
+     * (blocking `0x500`), and once it materialises the inner it must accept a
+     * 64-bit ADD3 as a 32-bit address coordinate.  The source spelling
+     * `lea ecx,[rsi+rdx-1]` is the normalized candidate. */
+    static const pl_u8 zero_extend_unpublished_inner[] = {
+        0x8du, 0x4cu, 0x16u, 0xffu,               /* lea ecx, [rsi+rdx-1] */
+        0x41u, 0xb9u, 0xffu, 0xffu, 0x0fu, 0x00u, /* mov r9d, 0xfffff    */
+        0x89u, 0xf2u,                             /* mov edx, esi        */
+        0x45u, 0x31u, 0xc0u,                      /* xor r8d, r8d        */
+        0x4cu, 0x89u, 0xf6u,                      /* mov rsi, r14        */
+        0x48u, 0xc7u, 0xc7u, 0x18u, 0xf4u, 0x8bu, 0x81u,
+                                                  /* mov rdi, 0xffffffff818bf418 */
+    };
+    pl_x86_native_candidates inner_candidates;
+    status = candidates_projected(
+        zero_extend_unpublished_inner,
+        sizeof zero_extend_unpublished_inner, 0x7ffffu, &inner_candidates);
+    pl_x86_native_selection inner_selected = { 0 };
+    pl_u32 inner_span = 0u, inner_work = 0u;
+    int inner_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &inner_candidates, 0u, 0u, &inner_selected,
+            &inner_span, &inner_work);
+    if (inner_status || !inner_selected.supported
+            || inner_selected.copied_source
+            || inner_span != 1u || inner_work != 6u) {
+        fprintf(stderr, "native x86 selection: RED (zero extend unpublished "
+                "inner status=%d copied=%u span/work=%u/%u)\n",
+                inner_status, (unsigned)inner_selected.copied_source,
+                inner_span, inner_work);
+        return 97;
+    }
+    /* A flag-only X86_ALU whose value is dead (the coordinate is rewritten by a
+     * constant copy) still feeds a conditional select.  The frame must accept
+     * it and let the select's compare path emit the tested operation; requiring
+     * a GPR value publication left the whole block copied-source. */
+    static const pl_u8 flag_only_alu_select[] = {
+        0x48u, 0x89u, 0xf1u,                      /* mov rcx, rsi        */
+        0x49u, 0x89u, 0xf0u,                      /* mov r8, rsi         */
+        0x48u, 0x83u, 0xe1u, 0xbfu,               /* and rcx, -0x41      */
+        0x49u, 0x81u, 0xc8u, 0x00u, 0x01u, 0x00u, 0x00u,
+                                                  /* or r8, 0x100        */
+        0x48u, 0x81u, 0xc9u, 0x00u, 0x01u, 0x80u, 0x00u,
+                                                  /* or rcx, 0x800100    */
+        0x83u, 0xe6u, 0x40u,                      /* and esi, 0x40       */
+        0xbeu, 0x83u, 0xffu, 0xffu, 0xffu,        /* mov esi, 0xffffff83 */
+        0x49u, 0x0fu, 0x44u, 0xc8u,               /* cmove rcx, r8       */
+    };
+    pl_x86_native_candidates flag_only_candidates;
+    status = candidates_projected(
+        flag_only_alu_select, sizeof flag_only_alu_select,
+        0x7ffffu, &flag_only_candidates);
+    /* One normalized production must accept the block; before the relaxation
+     * only the copied source was offered (count 1). */
+    if (status || flag_only_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (flag-only ALU select "
+                "status=%d candidates=%u)\n",
+                status, flag_only_candidates.count);
+        return 98;
+    }
+    /* `insert(local, constant, 8|16)` is an in-place lane constant write:
+     * `mov r14b, 1` beside a register copy.  The frame had no production for a
+     * constant inner (in_place_lane_insert only accepts a lane ALU inner), so
+     * the block stayed copied-source. */
+    static const pl_u8 lane_constant_write[] = {
+        0x48u, 0x89u, 0xefu,                      /* mov rdi, rbp */
+        0x41u, 0xb6u, 0x01u,                      /* mov r14b, 1  */
+    };
+    pl_x86_native_candidates lane_candidates;
+    status = candidates_projected(
+        lane_constant_write, sizeof lane_constant_write,
+        0x7ffffu, &lane_candidates);
+    pl_x86_native_selection lane_selected = { 0 };
+    pl_u32 lane_span = 0u, lane_work = 0u;
+    int lane_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &lane_candidates, 0u, 0u, &lane_selected, &lane_span, &lane_work);
+    if (lane_status || !lane_selected.supported
+            || lane_selected.copied_source
+            || lane_span != 1u || lane_work != 2u) {
+        fprintf(stderr, "native x86 selection: RED (lane constant write "
+                "status=%d copied=%u span/work=%u/%u)\n",
+                lane_status, (unsigned)lane_selected.copied_source,
+                lane_span, lane_work);
+        return 99;
+    }
+    /* Two shifts of one unpublished root whose operands are exactly the two
+     * destinations.  Each destination reads the coordinate the other
+     * overwrites, so the compare-branch scheduler deadlocks; the handoff
+     * evaluates the root once, copies it, and shifts each once. */
+    static const pl_u8 shared_root_shift[] = {
+        0x48u, 0x29u, 0xc3u,                      /* sub rbx, rax      */
+        0x4cu, 0x89u, 0xe2u,                      /* mov rdx, r12      */
+        0x48u, 0x89u, 0xd8u,                      /* mov rax, rbx      */
+        0x48u, 0x29u, 0xcau,                      /* sub rdx, rcx      */
+        0x48u, 0xc1u, 0xebu, 0x04u,               /* shr rbx, 4        */
+        0x48u, 0xd1u, 0xe8u,                      /* shr rax, 1        */
+        0x48u, 0xd1u, 0xeau,                      /* shr rdx, 1        */
+        0x48u, 0x89u, 0xc1u,                      /* mov rcx, rax      */
+        0x48u, 0x29u, 0xd1u,                      /* sub rcx, rdx      */
+        0x48u, 0x39u, 0xd9u,                      /* cmp rcx, rbx      */
+        0x0fu, 0x83u, 0x00u, 0x00u, 0x00u, 0x00u, /* jae .+0           */
+    };
+    pl_x86_native_candidates shared_root_candidates;
+    status = candidates_projected(
+        shared_root_shift, sizeof shared_root_shift,
+        0x7ffffu, &shared_root_candidates);
+    if (status || shared_root_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (shared root shift "
+                "status=%d candidates=%u)\n", status,
+                shared_root_candidates.count);
+        return 100;
+    }
+    /* A shared unpublished root consumed by a shift and by the final
+     * flag-producing `and`, reaching both destinations transitively.  The
+     * dense ALU frame deadlocked (0x200); the generalised handoff evaluates
+     * the root once, copies it, applies the shift, then the and last. */
+    static const pl_u8 shared_root_unary[] = {
+        0x48u, 0xc1u, 0xe2u, 0x20u,               /* shl rdx, 0x20      */
+        0x48u, 0x09u, 0xc2u,                      /* or rdx, rax        */
+        0x48u, 0x89u, 0xd0u,                      /* mov rax, rdx       */
+        0x48u, 0xc1u, 0xeau, 0x20u,               /* shr rdx, 0x20      */
+        0x48u, 0x83u, 0xe0u, 0xbfu,               /* and rax, ~0x40     */
+    };
+    pl_x86_native_candidates root_unary_candidates;
+    status = candidates_projected(
+        shared_root_unary, sizeof shared_root_unary,
+        0x7ffffu, &root_unary_candidates);
+    if (status || root_unary_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (shared root unary "
+                "status=%d candidates=%u)\n", status,
+                root_unary_candidates.count);
+        return 101;
+    }
+    /* `bt` whose normalized argument order is (prior, base, offset, bits) but
+     * whose physical rewriter hands over (prior, offset, base, bits) when the
+     * offset is an immediate.  Reading base from the wrong slot left the block
+     * copied-source. */
+    static const pl_u8 bit_test_constant_offset[] = {
+        0x48u, 0xc7u, 0xc6u, 0xc8u, 0xd8u, 0x8cu, 0x81u,
+                                                  /* movabs rsi, addr */
+        0x48u, 0x0fu, 0xbau, 0xe0u, 0x23u,        /* bt rax, 0x23    */
+        0x73u, 0x00u,                             /* jae .+0         */
+    };
+    pl_x86_native_candidates bit_test_candidates;
+    status = candidates_projected(
+        bit_test_constant_offset, sizeof bit_test_constant_offset,
+        0x7ffffu, &bit_test_candidates);
+    if (status || bit_test_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (bit test constant offset "
+                "status=%d candidates=%u)\n", status, bit_test_candidates.count);
+        return 102;
+    }
+    /* The final flag producer combines an entry register with an immediate
+     * while another publication overwrites that register.  The preload shape
+     * only accepted a node value tree, so a bare entry local (`or rdx,0x1e`
+     * with `rdx = rdx >> 32`) declined and the block stayed copied-source. */
+    static const pl_u8 preload_entry_register[] = {
+        0x48u, 0x89u, 0xd0u,                      /* mov rax, rdx       */
+        0x48u, 0xc1u, 0xeau, 0x20u,               /* shr rdx, 0x20      */
+        0x48u, 0x83u, 0xc8u, 0x1eu,               /* or rax, 0x1e       */
+    };
+    pl_x86_native_candidates preload_entry_candidates;
+    status = candidates_projected(
+        preload_entry_register, sizeof preload_entry_register,
+        0x7ffffu, &preload_entry_candidates);
+    if (status || preload_entry_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (preload entry register "
+                "status=%d candidates=%u)\n", status,
+                preload_entry_candidates.count);
+        return 103;
+    }
+    /* A conditional select whose constant candidate is published to the same
+     * register its current arm reads as an entry.  Binding the constant to its
+     * publication makes the select depend on that publication while the
+     * publication overwrites the entry the current needs -- a cycle.  The
+     * source preloads the current, then materialises the constant, then cmovs. */
+    static const pl_u8 select_over_published_constant[] = {
+        0x48u, 0x89u, 0xc6u,                      /* mov rsi, rax       */
+        0xb8u, 0x00u, 0x00u, 0x00u, 0x00u,        /* mov eax, 0         */
+        0x48u, 0x0fu, 0x48u, 0xf0u,               /* cmovs rsi, rax     */
+    };
+    pl_x86_native_candidates constant_candidates;
+    status = candidates_projected(
+        select_over_published_constant,
+        sizeof select_over_published_constant, 0x7ffffu,
+        &constant_candidates);
+    pl_x86_native_selection constant_selected = { 0 };
+    pl_u32 constant_span = 0u, constant_work = 0u;
+    int constant_status = status ? status
+        : pl_x86_candidates_select_joint_minimum(
+            &constant_candidates, 0u, 0u, &constant_selected,
+            &constant_span, &constant_work);
+    if (constant_status || constant_candidates.count < 2u
+            || !constant_selected.supported
+            || constant_span != 2u || constant_work != 3u) {
+        fprintf(stderr, "native x86 selection: RED (select over published "
+                "constant status=%d candidates=%u span/work=%u/%u "
+                "diagnostic=0x%x)\n", status,
+                constant_candidates.count, constant_span, constant_work,
+                constant_candidates.diagnostic.blocking_work);
+        return 104;
+    }
+    /* A CMP/TEST publishes no GPR value, but its condition projection is a
+     * Boolean observation (`sete al`).  The frame only accepted ALU value
+     * publications, so the compare's Boolean publication declined and the
+     * block stayed copied-source.  The frame now emits the comparison and its
+     * SETcc observations as one group. */
+    static const pl_u8 compare_boolean_observation[] = {
+        0x83u, 0xe2u, 0x07u,                      /* and edx, 7         */
+        0x31u, 0xc0u,                            /* xor eax, eax       */
+        0x80u, 0xfau, 0x06u,                     /* cmp dl, 6          */
+        0x0fu, 0x94u, 0xc0u,                     /* sete al            */
+    };
+    pl_x86_native_candidates boolean_candidates;
+    status = candidates_projected(
+        compare_boolean_observation,
+        sizeof compare_boolean_observation, 0x7ffffu,
+        &boolean_candidates);
+    if (status || boolean_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (compare boolean "
+                "observation status=%d candidates=%u diagnostic=0x%x)\n",
+                status, boolean_candidates.count,
+                boolean_candidates.diagnostic.blocking_work);
+        return 105;
+    }
+    /* A CMP whose operand is an expression no register publishes (`and
+     * eax,mask; cmp eax,imm; mov eax,0`) has no GPR result to own the AND, so
+     * standalone_flag_publication_details declined (0xf003).  The frame now
+     * materializes the operand tree into a scratch before the comparison. */
+    static const pl_u8 compare_over_unpublished_tree[] = {
+        0x25u, 0xc0u, 0xffu, 0xffu, 0x00u,        /* and eax, 0xffffc0  */
+        0x3du, 0x00u, 0x0fu, 0x02u, 0x00u,        /* cmp eax, 0x20f00   */
+        0xb8u, 0x00u, 0x00u, 0x00u, 0x00u,        /* mov eax, 0         */
+        0x74u, 0x00u,                             /* je .               */
+    };
+    pl_x86_native_candidates tree_candidates;
+    status = candidates_projected(
+        compare_over_unpublished_tree,
+        sizeof compare_over_unpublished_tree, 0x7ffffu, &tree_candidates);
+    if (status || tree_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (compare over "
+                "unpublished tree status=%d candidates=%u diagnostic=0x%x)\n",
+                status, tree_candidates.count,
+                tree_candidates.diagnostic.blocking_work);
+        return 106;
+    }
+    /* Tail dispatch: constant/copy publications followed by an indirect jump.
+     * The ALU frame rejected every dynamic target, so the block stayed
+     * copied-source; it now emits the publications and `jmp *target`. */
+    static const pl_u8 indirect_dispatch[] = {
+        0xbau, 0x01u, 0x00u, 0x00u, 0x00u,        /* mov edx, 1         */
+        0xbeu, 0xecu, 0x00u, 0x00u, 0x00u,        /* mov esi, 0xec      */
+        0x31u, 0xffu,                             /* xor edi, edi       */
+        0xffu, 0xe0u,                             /* jmp *rax           */
+    };
+    pl_x86_native_candidates dispatch_candidates;
+    status = candidates_projected(
+        indirect_dispatch, sizeof indirect_dispatch, 0x7ffffu,
+        &dispatch_candidates);
+    if (status || dispatch_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (indirect dispatch "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, dispatch_candidates.count,
+                dispatch_candidates.diagnostic.blocking_work);
+        return 107;
+    }
+    /* A comparison whose carry feeds an `adc`/`sbb` stays in the ALU's
+     * prior-flags operand instead of the entry RFLAGS local, which
+     * alu_frame_shape rejected.  The frame now emits the comparison and then
+     * the carry-consuming ALU. */
+    static const pl_u8 carry_alu_from_compare[] = {
+        0x48u, 0x83u, 0xfdu, 0x01u,               /* cmp rbp, 1         */
+        0x48u, 0x89u, 0xeau,                      /* mov rdx, rbp       */
+        0x4cu, 0x89u, 0xe7u,                      /* mov rdi, r12       */
+        0xbeu, 0x02u, 0x00u, 0x00u, 0x00u,        /* mov esi, 2         */
+        0x83u, 0xd6u, 0x00u,                      /* adc esi, 0         */
+    };
+    pl_x86_native_candidates carry_candidates;
+    status = candidates_projected(
+        carry_alu_from_compare,
+        sizeof carry_alu_from_compare, 0x7ffffu, &carry_candidates);
+    if (status || carry_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (carry ALU from compare "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, carry_candidates.count,
+                carry_candidates.diagnostic.blocking_work);
+        return 108;
+    }
+    /* A flag-producing ALU whose value AND carry Boolean are both published
+     * (`sub rax,rdx; setb dil; neg rdx`): the ALU frame now runs
+     * flag_result_group_shape so the instruction and its SETcc leave together. */
+    static const pl_u8 alu_with_boolean_group[] = {
+        0x31u, 0xffu,                             /* xor edi, edi       */
+        0x48u, 0x29u, 0xd0u,                      /* sub rax, rdx       */
+        0x40u, 0x0fu, 0x92u, 0xc7u,               /* setb dil           */
+        0x48u, 0xf7u, 0xdau,                      /* neg rdx            */
+        0x79u, 0x00u,                             /* jns .              */
+    };
+    pl_x86_native_candidates bool_group_candidates;
+    status = candidates_projected(
+        alu_with_boolean_group, sizeof alu_with_boolean_group, 0x7ffffu,
+        &bool_group_candidates);
+    if (status || bool_group_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (ALU with Boolean group "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, bool_group_candidates.count,
+                bool_group_candidates.diagnostic.blocking_work);
+        return 109;
+    }
+    /* `insert(0, inner, 16)` over an inner node with no publication: the frame
+     * materializes the inner at its own width and then MOVZXes the lane.  The
+     * 32-bit form already existed; the narrow lanes fell through to
+     * operand_expression_bits and blocked at 0x500. */
+    static const pl_u8 narrow_zero_extend[] = {
+        0x48u, 0x89u, 0xd1u,                      /* mov rcx, rdx       */
+        0x48u, 0xc1u, 0xe9u, 0x20u,               /* shr rcx, 0x20      */
+        0x0fu, 0xb7u, 0xc9u,                      /* movzx ecx, cx      */
+    };
+    pl_x86_native_candidates narrow_candidates;
+    status = candidates_projected(
+        narrow_zero_extend, sizeof narrow_zero_extend, 0x7ffffu,
+        &narrow_candidates);
+    if (status || narrow_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (narrow zero extend "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, narrow_candidates.count,
+                narrow_candidates.diagnostic.blocking_work);
+        return 110;
+    }
+    /* `setne dl` is a lane insert of an entry-flags condition into a live RDX.
+     * The frame emits SETcc and must order it before the block's later flag
+     * producer (`xor ecx,ecx`), which publication_reads_entry_flags now
+     * enforces. */
+    static const pl_u8 setcc_lane_insert[] = {
+        0x4cu, 0x89u, 0xe6u,                      /* mov rsi, r12       */
+        0x48u, 0x89u, 0xdfu,                      /* mov rdi, rbx       */
+        0x0fu, 0x95u, 0xc2u,                      /* setne dl           */
+        0x31u, 0xc9u,                             /* xor ecx, ecx       */
+    };
+    pl_x86_native_candidates setcc_candidates;
+    status = candidates_projected(
+        setcc_lane_insert, sizeof setcc_lane_insert, 0x7ffffu,
+        &setcc_candidates);
+    if (status || setcc_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (setcc lane insert "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, setcc_candidates.count,
+                setcc_candidates.diagnostic.blocking_work);
+        return 111;
+    }
+    /* An X86_FLAGS wrapper whose published value is the sign-extension of the
+     * flag result (`neg rax; cltq`): MOVSX/Q preserves flags, so the extension
+     * still carries the flag provenance and the frame can emit the value. */
+    static const pl_u8 flags_with_sign_extend[] = {
+        0x48u, 0x89u, 0xd8u,                      /* mov rax, rbx       */
+        0x48u, 0xf7u, 0xd8u,                      /* neg rax            */
+        0x48u, 0x98u,                             /* cltq               */
+    };
+    pl_x86_native_candidates sign_extend_candidates;
+    status = candidates_projected(
+        flags_with_sign_extend, sizeof flags_with_sign_extend, 0x7ffffu,
+        &sign_extend_candidates);
+    if (status || sign_extend_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (flags with sign extend "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, sign_extend_candidates.count,
+                sign_extend_candidates.diagnostic.blocking_work);
+        return 112;
+    }
+    /* `insert(base, 0, 8)` with base != destination (`mov rax,rdx; xor al,al`)
+     * clears the low byte of a copy.  The frame now materializes the base and
+     * then emits the lane constant move. */
+    static const pl_u8 lane_constant_from_base[] = {
+        0x48u, 0x89u, 0xd0u,                      /* mov rax, rdx       */
+        0x30u, 0xc0u,                             /* xor al, al         */
+        0xf6u, 0xc2u, 0x01u,                      /* test dl, 1         */
+        0x0fu, 0x85u, 0x00u, 0x00u, 0x00u, 0x00u, /* jne .              */
+    };
+    pl_x86_native_candidates lane_constant_candidates;
+    status = candidates_projected(
+        lane_constant_from_base, sizeof lane_constant_from_base, 0x7ffffu,
+        &lane_constant_candidates);
+    if (status || lane_constant_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (lane constant from base "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, lane_constant_candidates.count,
+                lane_constant_candidates.diagnostic.blocking_work);
+        return 113;
+    }
+    /* A register permutation cycle whose temporary is itself a publication
+     * (`mov rax,rdi; mov rdi,rsi; mov rsi,rax`).  measure_direct_frame's
+     * "old value free" order deadlocks; the alias pass records that entry RDI
+     * is now in RAX and reads it. */
+    static const pl_u8 register_permutation[] = {
+        0x48u, 0x89u, 0xf8u,                      /* mov rax, rdi       */
+        0x48u, 0x89u, 0xf7u,                      /* mov rdi, rsi       */
+        0x48u, 0x89u, 0xc6u,                      /* mov rsi, rax       */
+    };
+    pl_x86_native_candidates permutation_candidates;
+    status = candidates_projected(
+        register_permutation, sizeof register_permutation, 0x7ffffu,
+        &permutation_candidates);
+    if (status || permutation_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (register permutation "
+                "status=%d candidates=%u diagnostic=0x%x)\n",
+                status, permutation_candidates.count,
+                permutation_candidates.diagnostic.blocking_work);
+        return 114;
+    }
     pl_x86_block live_flags_block = { 0 };
     status = select_projected(
         live_flags_dead_value, sizeof live_flags_dead_value, 0x1ffffu,

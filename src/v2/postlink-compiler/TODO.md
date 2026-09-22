@@ -561,28 +561,845 @@ roots, or `postlink-workloads.tsv` measurements.
 backend still returns `WASM_COMPILER_ERROR_INCOMPLETE`, no release artifact is
 published, and no product boot or browser cold shell has been validated.
 
-## Current work: 2026-09-21 (the 813fd7ff "Pareto" point is a miscompile)
+## Current work: 2026-09-21 (813fd7ff cleared: a rewrite truncation, not a Pareto tradeoff)
 
-The open witness `0xffffffff813fd7ff` reports frontier `3/9/27` (dense ALU
+The open witness `0xffffffff813fd7ff` reported frontier `3/9/27` (dense ALU
 frame) versus `5/8/24` (copied-source live frame), and no joint minimum. The
-`span=3` arm is not a cheaper schedule for the real block: executing its exact
-bytes against the live frame on 500,000 random inputs gives zero agreement. The
-live frame (and the source) compare `6x+9` with `bsr`; the ALU arm compares
-`3x` with `bsr`. The plan itself is missing the `+9`: it lists
-`COMPARE(flags, N5 = 3x, proj(N6) = bsr)`, and `proj1552` is the selector-16
-projection that `bit_summary_details` defines as the `BIT_SUMMARY` node itself.
-`write_direct_alu_frame` emits the plan faithfully, so the defect is upstream,
-in the rewrite that builds the compare operand. Because the Pareto gate stops
-the block before emission, `postlink-verify` never ran on it — the same
-"green but wrong" class as the flag-producer miscompile. The genuine joint
-minimum is `span=4, work=8`; an 8-instruction reschedule that folds the `+9`
-into the doubling LEA is byte-for-byte identical to the live frame over
-1,000,000 random inputs at one wave less, and `span=3` is impossible for the
-correct comparison. Forcing the small-span arm (debug only) advances past this
-block but leaves `0xffffffff81430efd` Pareto-unresolved (`4/9/27 5/7/26`),
-confirming the two witnesses are coupled through layout, not a shared spelling.
+`span=3` arm was not a cheaper schedule for the real block: executing its exact
+bytes against the live frame on 500,000 random inputs gave zero agreement. The
+live frame (and the source) compare `6x+9` with `bsr`; the ALU arm compared
+`3x` with `bsr`. The Pareto gate stopped the block before emission, so
+`postlink-verify` never ran on it — the same "green but wrong" class as the
+flag-producer miscompile below.
+
+Dumping the plan after every block-formation pass located the defect precisely.
+The pre-rewrite plan is correct (`COMPARE(N8 = bsr, N7 = 32-bit(N6))` with
+`N6 = ADD(proj1040, 9)`), and every pass preserves it except
+`pl_fold_local_physical`. Its rule for `ADD3(a,b,c) + k` overwrote the staged
+operands with the ADD3's three inputs *before* checking that one of them is a
+constant to fold `k` into. When none is (as here, `ADD3(L15,N1,N2) + 9`), it
+left `opcode = ALU_IMMEDIATE` and `argument_count = 2`, emitting the malformed
+`ALU_IMMEDIATE(L15, N1) = 3x` — silently dropping both `c` and `k`.
+
+The fix selects the constant slot first and only rewrites the node when one
+exists; otherwise the outer `ADD3 + k` spelling is preserved. It also copies all
+three operands rather than stopping at the constant, which removes a second
+latent truncation when the constant is not the last slot. `check/physical.c`
+gains an `ADD3`-without-constant fixture: it is RED before the fix and green
+after. With the fix the ALU frame for this block is a correct `span=5, work=9`
+spelling (verified identical to the live frame over 1,000,000 inputs), the live
+frame's `5/8` becomes the joint minimum, and the witness clears. The kernel
+frontier advances to `0xffffffff81430efd` (`4/9/27 5/7/26`).
+
+The genuinely minimal schedule for the old witness was `span=4, work=8` (fold
+the `+9` into the doubling LEA), but the contract only requires a joint minimum
+among the offered candidates, and `5/8` satisfies it; the `4/8` spelling remains
+an unclaimed improvement.
+
+`0xffffffff81430efd` (`xz_dec_lzma2_run`) was the next frontier, and it was the
+same class of phantom: its `4/9/27` arm republished the live register after the
+compare, so the terminal `jb` read the flags of a following `add` instead of
+`cmp rax,8`. Executing the two candidates on 1,000,000 random inputs gives
+identical values but a different branch condition (CF) in 500,207 cases. The
+plan is sound; the defect is the clobber classifier.
+`publication_tree_clobbers_flags` treated an `ADD3` as flag-preserving whenever
+its operands were, but a three-input add is a single `LEA` only when one input
+is a constant displacement; three non-constant inputs (including a live
+carry-in) need a second, flag-clobbering `add`/`adc`. With that corrected, the
+dense ALU frame keeps the compare textually last and offers a legal `5/9`
+spelling, so the copied source's `5/7` is the joint minimum and the witness
+clears. `check/select-x86.c` gains an `add3_before_flag_producer` fixture that
+asserts a joint minimum exists for the shape: RED before the fix, green after.
+The kernel frontier advances to `0xffffffff8143353c` (`7/16/66 8/14/49`).
+
+Both fixes are in the same "the Pareto gate hides a miscompile" family as the
+flag-producer miscompile below: a candidate that `postlink-verify` never sees
+because the block is never emitted.
+
 See the "The next step is therefore **not** the frame at all" subsection above
-for the exact bytes, the plan dump, and the minimal schedule.
+for the old bytes and plan dump.
+
+### 2026-09-21 (later): 8143353c cleared — a split publication, then a shared pair
+
+`0xffffffff8143353c` (`dql_completed+0xdc`) was the next frontier, reported
+`7/16/66` (dense ALU frame) versus `8/14/49` (copied source).  Executing the
+exact bytes of the span-7 arm against the source on 1,000,000 random inputs
+gave **zero** identical results (249,715 value-and-flag matches; 750,285 value
+mismatches), so the short arm was again a miscompile the Pareto gate was
+hiding, not a schedule trade-off.
+
+Two defects in the dense ALU frame's conditional-select emission produced it,
+both in the same publication.  The frame wrote the true-arm candidate *before*
+seeding the compare operand, so (a) the scratch pool handed to the compare seed
+still contained the candidate's coordinate and the seed clobbered it, and (b)
+the compare tree rebuilt the `current` value from an entry local that the same
+publication had already overwritten by materialising that arm destructively.
+The emitted `imul rdx,rax,0x40` therefore read the value already shifted once
+(`L0<<12` instead of `L0<<6`) and `cmovs rax,rcx` selected the pre-increment
+arm.  The fix seeds the compare operand(s) first, excludes the destination and
+the chosen candidate coordinate from the scratch pool passed to the seeds, and
+records a transient value alias `current -> local` so the seed resolves the
+materialised arm instead of rebuilding it (`push_frame_value_alias`).  measure
+and write carry the identical order and alias state; a new
+`value_alias_frame_count` checkpoint makes the write path begin from the alias
+population the frame started with rather than the one the completed
+measurement left.
+
+That makes the arm correct, but only reaches `7/15` against the source's
+`8/14`, so the component minima still have no joint witness.  The remaining
+work is one materialisation.  The plan's `N9 = ADD3(L8, N7, 63)` shares its
+pair `N8 = N7 + 63` with the sibling select `N12`, whose destructive arm is
+exactly `N8`; `shared_dag_add3_pair` already re-associates the ADD3, but the
+pair was built into `N9`'s own destination, so `N12` rebuilt `N7`/`N8` a second
+time.  When the pair is also the `current` arm of a still-pending publication
+(found by `alu_add3_pair_consumer`), the frame now builds the pair in that
+consumer's coordinate and produces this publication's result through it, so one
+materialisation serves both.  The correct candidate reaches **span 7, work 14**
+and jointly attains both minima against the source's `8/14`.
+
+`check/select-x86.c` gains an `add3_shared_pair_consumer` fixture built from the
+exact 14 source instructions: it is RED (`status=-50`, component minima `7/14`)
+before the sharing change and green after.  `make -k check` is green (79
+targets), the 120-case differential fuzz reports 0 mismatches, and the new
+candidate executes identically to the source on 1,000,000 random inputs.  The
+kernel frontier advances to `0xffffffff814af477` (`2/7/18 3/6/17`).
+
+`0xffffffff814af477` (`skb_segment_list+0x1c7`) is a **genuine** span/work
+tradeoff, unlike the recent phantoms: both offered candidates execute
+identically to the source on 1,000,000 random inputs.  The plan is five nodes
+over one negated entry word:
+
+```text
+N1 = sub(L2, L6)      -> L7 (RDI)   N2 = sub(0, L6)    -> L0 (RAX)
+N3 = flags(0, L6, N2) -> L16        N4 = add(L1, L6)   -> L2 (RDX)
+N5 = EXTEND32_S(N2)   -> L6 (RSI)
+```
+
+The dense ALU frame published `L0 = N2` as `mov eax,esi; neg eax` (two
+instructions into RAX), then `L6 = N5` as `neg esi; movslq rsi,esi` -- a second
+materialization of the same `N2`.  It reached **span 2, work 7**; the copied
+source reached **span 3, work 6**, and the component minima had no joint
+witness.
+
+The 32-bit sign-extension branch of `measure_alu_tree` / `write_alu_tree` only
+consulted an operand that is literally a register (via `sign_extend_node`).  A
+node argument fell through to a path that materialized the node into the
+destination before the `movslq`.  Both now call `sign_extend_value` and, when
+the argument is a node, resolve it through `published_operand_local` and emit
+one `movslq` from that coordinate; the frame's source law already orders that
+publication first.  For this block `L6` becomes `movslq rsi,rax`, the frame
+reaches **span 3, work 6**, and the copied source's `3/6` is the joint minimum,
+so the witness clears.
+
+`check/select-x86.c` gains an `extend_published_node` fixture built from the
+exact six source instructions: RED (`status=-50`, component minima `2/6`)
+before the change, green after.  `make -k check` is green (79 targets) and the
+120-case fuzz reports 0 mismatches.  The hand schedule
+
+```text
+sub rdx,rsi; mov rdi,rdx; lea edx,[rcx+rsi]; neg esi; movslq rsi,esi; mov eax,esi
+```
+
+is also byte-equivalent to the source on 1,000,000 random inputs and is
+**span 2, work 6**; the frame still does not reach that optimum (it would need
+`L0` to be published as a copy of the extension's in-place coordinate), so the
+`2/6` spelling remains an unclaimed improvement.  The kernel frontier advances
+to `0xffffffff8154f94e` (`3/6/18 4/4/14`).
+
+`0xffffffff8154f94e` (`tcp_set_congestion_control+0x1ce`) was the same
+"the Pareto gate hides a miscompile" class.  Its plan publishes
+`N2 = shl(edx, ecx & 31)`, `N3 = and(N2, 0xffffefbf)` whose flags are the
+select's condition, `N5 = select(RAX, RDI, ZF(N3)) -> RDI`, and the `and`'s
+value as `L3 = projection(N3)`.  The dense ALU frame ordered the select `L7`
+*before* `L3` and, because the final flag node has a value publication, skipped
+`emit_select_compare`.  The emitted `cmove` therefore read the `shl` flags, not
+the `and` flags: on `rdx=1, cl=6` the source copies `RAX` into `RDI` while the
+candidate leaves `RDI` unchanged.  1,000,000 random inputs miss it because the
+`shl` and `and` results disagree only when `(edx << cl)` is exactly `0x40` or
+`0x1000`.
+
+`add_flag_chain_dependencies` now also orders a conditional select that tests
+the final flag node after the publication that owns that flag node's value
+(reached through `flag_result_operand`, so it also works when the value
+publication is a projection).  The block resolves to the source's **span 4,
+work 4**; the ALU frame declines this shape and a live-frame production emits
+the exact source spelling.  `check/select-x86.c` gains a
+`flag_select_value_publication` fixture: RED (`status=-50`, minima `3/4`)
+before the dependency, green after.  `make -k check` is green and the 120-case
+fuzz reports 0 mismatches.  The kernel frontier advances to
+`0xffffffff815ad0b6` (`5/12/40 6/10/26`).
+
+`0xffffffff815ad0b6` (`ndisc_router_discovery+0xd6`) is another phantom.  Its
+11-node plan builds `eax` from `ecx`:
+
+```text
+N1 = insert(0, L1, 32)    N2 = L1 + L1        N3 = L1 & 255
+N4 = N3 >> 1              N5 = insert(N1, N4, 8)   N6 = N2 & 128
+N7 = N5 & 64              N8 = N6 | N7        N9 = L2 & 0xffffff3f
+N10 = N8 | N9  -> L0 (RAX)   N11 = compare(L16, N10, L2) -> RFLAGS
+```
+
+The ALU arm's exact bytes are
+
+```text
+8d 04 09 25 80 00 00 00 89 c9 48 81 e1 ff 00 00 00 48 d1 e9
+83 e1 40 09 c8 b8 3f ff ff ff 48 89 d1 48 21 c1 09 c8 39 d0
+```
+
+and executing it against the source on 1,000,000 random inputs gives **zero**
+identical results.
+
+The plan republishes the entry coordinate: `L1` is both the entry `RCX` read
+by `N1`/`N2`/`N3` and the destination of `N9 = L2 & 0xffffff3f`.  A correct
+schedule must evaluate the entry-`RCX` subtree `N8` first and only then
+overwrite `RCX`.  That is exactly the generation-join handoff: it seeds `N8`
+into the join destination EAX, then publishes `L1 = N9`, then joins with
+`or eax, ecx`.  The defect was the join's law update:
+`apply_generation_join_laws` set `sources[destination] = 0`, so the seeded
+coordinate no longer appeared in any source law and the next publication chose
+EAX as its scratch.  `N9`'s 64-bit `and` mask `0xffffff3f` is not a
+sign-extendable `imm32`, so its constant was materialized into EAX -- the
+coordinate holding the unfinished `N8` -- and `N10 = or(N8, N9)` collapsed to
+the constant (0/1,000,000 agreement).
+
+`apply_generation_join_laws` now names the seeded destination as its own entry
+source (`sources[destination] = 1 << destination`) instead of clearing it.  The
+coordinate is live until the join, so it stays out of every other
+publication's scratch pool, and no producer edge appears because no other
+pending publication writes it.  The block resolves to the source's **span 6,
+work 10** (with a correct `7/11` alternative offered); the ALU frame declines
+the shape.  `check/select-x86.c` gains a `generation_join_seed_destination`
+fixture: RED (`status=-50`, minima `5/10`) before the one-line change, green
+after.  `make -k check` is green and the 120-case fuzz reports 0 mismatches.
+The kernel frontier advances to `0xffffffff815cde46` (`3/6/16 4/4/11`).
+
+`0xffffffff815cde46` (`ipv6_mc_check_mld+0xd6`) is another phantom, and
+clearing it exposed a much larger, previously masked failure.  Its plan is
+`N1 = sub(L1, L6)`, `N2 = add(L0, N1) -> L2`, `N4 = insert(0, N2, 16) -> L0`
+and `N3 = flags(...)` whose value result is `N2`.  `publication_for_emission`
+rewrites an insert publication of the final flag result to the inserted value
+-- correct for an in-place low-lane write, but here `insert(0, N2, 16)` is a
+16-bit zero extension of the 32-bit `N2`, so the rewrite published `N2`'s full
+word.  The frame then emitted `add eax,eax` (both operands resolved to the
+destination) and reached span 3, work 6 against the source's 4/4.
+
+`publication_for_emission` now refuses that rewrite when the insert is a
+zero-based lane extension narrower than a register word **and** the inserted
+value already has its own publication.  `L0` then emits the real
+`movzx eax, dx`, the frame and source both reach **4/4**, and the Pareto
+clears.  `check/select-x86.c` gains a `zero_extend_flag_value` fixture: RED
+(`status=-50`, minima `3/4`) before, green after.  `make -k check` is green and
+the 120-case fuzz reports 0 mismatches.
+
+**Important correction to this ledger.**  With the Pareto gone the compiler
+reaches the normalization-escape gate instead of aborting at `selection_limits`,
+and reports:
+
+```text
+normalization-escape=542 at 0xffffffff812098b1..0xffffffff812098ca
+live=0x7ffff (14092 -> 14092 bytes, 1033 node-delta), selected=788279/788279
+```
+
+The escape gate (stage 244) runs *after* the Pareto stage (235), so every
+`normalization-escape=0` report in this file was masked by whichever Pareto
+aborted the scan first; the kernel's escape population was never actually
+zero at those checkpoints.  A control build that only makes the dense ALU
+frame decline `0xffffffff815cde46` (leaving `publication_for_emission`
+untouched) reports the identical `542`, confirming the population is
+pre-existing and not caused by this change.  The real remaining kernel work is
+therefore a 542-block normalization-escape population whose first witness is
+`0xffffffff812098b1..0xffffffff812098ca`, not the next Pareto point.
+
+The first escape (`__register_chrdev_region.cold`) is a coverage gap, not a
+floor gap.  Its plan mixes ALU nodes with a register copy and two constants:
+
+```text
+N1 = ADD3[1](L2, L6, -1)   N2 = insert(0, N1, 32) -> L1
+N3 = insert(0, L6, 32)  -> L2   N4 = xor(L8, L8) -> RFLAGS (L8 = projection(N4))
+L6 = L14 (copy)   L7 = address constant   L9 = 0xfffff
+```
+
+`alu_frame_shape` accepts it, but the publication loop reaches
+`selection->blocking_work = 0x500 | 1`: `operand_expression_bits` has no case
+for `LANE{32,64}_INSERT`, so the zero-extension publication `N2` has no width
+and the frame rejects.  A first attempt that made `operand_expression_bits`
+return the insert width for every insert moved the failure back to native stage
+228 (`0xffffffff8124b1dc`, `status=-49`): the frame then *attempted* insert
+units it cannot emit and returned an error instead of declining.
+
+The required work is therefore a real insert encoder, not a width probe: for
+`insert(0, inner, 32)` the inner may be emitted at 32-bit width (a 32-bit
+register write is the zero extension itself), while `width < 32` needs the
+inner materialized in a register followed by `movzx`, and an unpublished inner
+must be materializable at the insert's width.  All of this has to keep
+measure/write byte-identical and stay total on the blocks that previously
+declined (`0xffffffff8124b1dc`).  The copied source is the only offered
+candidate today (work 6, span 1, `normalized_family_present=1` via the source
+itself), so the escape gate is a work/coverage gate rather than the
+`out->count == 0` predicate of the 2026-09-18 taxonomy.
+
+First two entries of that population are closed.  `zero_extend_operand` returns
+the inserted operand of `insert(0, inner, width)` whatever its kind, and the
+dense ALU frame's publication loop materialises an inner value that has no
+publication of its own at width 32 (the 32-bit register write is the zero
+extension itself).  `collect_affine_lea_width` now also accepts a 64-bit `ADD3`
+as a 32-bit address coordinate, because a 32-bit LEA is exactly the low word of
+the 64-bit sum; both were needed before `0xffffffff812098b1`'s
+`lea ecx,[rsi+rdx-1]` could be emitted.  `check/select-x86.c` gains a
+`zero_extend_unpublished_inner` fixture (RED with `copied_source=1`, green
+after).  The population drops **542 -> 534**.
+
+The new first escape was `0xffffffff8120bc1c`
+(`io_submit_fail_init.isra.0+0x4c`).  Its plan ends in a conditional select
+`N6 = select(L6|0x100, (L6 & ~0x40)|0x800100, ZF)` whose flags come from
+`N4 = X86_ALU and(L6, 0x40)`; `L6` itself is then overwritten by the constant
+`0xffffff83`, so `N4`'s value has no publication and `alu_frame_shape` rejected
+the block (`publication_owner(projection(N4)) >= GPR_COUNT`).  A flag-only
+`X86_ALU` whose flags a conditional select consumes is a legal frame: the
+select's compare path emits the tested operation directly, here
+`test esi,0x40`, which has the same ZF as the source's `and esi,0x40` while the
+dead `and` value is overwritten anyway.  `alu_frame_shape` no longer requires
+the final flag `X86_ALU` to have a GPR value publication.  The block's
+normalized candidate is `mov r8,rsi; bts r8,8; mov rcx,rsi; and rcx,-0x41;
+or rcx,0x800100; test esi,0x40; cmove rcx,r8; mov esi,0xffffff83`
+(span 4, work 8), verified equivalent to the source.  `check/select-x86.c`
+gains a `flag_only_alu_select` fixture that requires a normalized production to
+accept the shape (candidate count 1 -> 2): RED before, green after.  The
+population drops **534 -> 533**; the new first escape is
+`0xffffffff8120d4d2..0xffffffff8120d4d8` (`output=0x2 expected=0x1`).
+`make -k check` and the 120-case fuzz are green.
+
+`0xffffffff8120d4d2` (`io_sq_offload_create+0x162`) is two instructions,
+`mov rdi,rbp; mov r14b,1`, and its plan is one node plus one copy:
+`N1 = insert(L14,1,8) -> L14` and `L7 = L5`.  The frame declined with
+`blocking_work = 0x500 | 14`: `in_place_lane_insert` only accepts a lane ALU
+inner (opcodes 6..9 / 76..79), so a **constant** inner had no production.
+
+A new `lane_constant_insert` recognises `insert(local, constant, 8|16)` with the
+base equal to the published local, and `emit_lane_constant_move` writes the
+constant into the low lane (`mov r14b,1`, `mov r14w,imm16`) preserving the rest.
+Width 32 is deliberately excluded: a 32-bit move would also clear the base's
+upper word, which the insert does not.  The block's normalized candidate is the
+exact source `mov rdi,rbp; mov r14b,1` (span 1, work 2).  `check/select-x86.c`
+gains a `lane_constant_write` fixture (RED `copied_source=1`, green after).
+The escape population drops **533 -> 510**; the new first escape is
+`0xffffffff812162e6..0xffffffff8121630b` (`output=0xb expected=0x8`).
+`make -k check` and the 120-case fuzz are green.
+
+`0xffffffff812162e6` (`calibrate_delay+0x256`) is a conditional block; the
+seven-node plan is
+
+```text
+N1 = sub(L3, L0)   N2 = sub(L12, L1)   N3 = shr(N1, 4) -> L3
+N4 = shr(N1, 1) -> L0   N5 = shr(N2, 1) -> L2
+N6 = sub(N4, N5) -> L1  N7 = compare(L16, N6, N3) -> RFLAGS (jae)
+```
+
+and only the copied source was offered.  A probe reported
+`blocking_work = 0x700`, `blocking_opcode = 0xb`, i.e.
+`next_compare_branch_assignment_excluding(plan, pending = {L0,L1,L3},
+preferred = {L1,L3}, deferred = 0)` found no legal next publication: `L0 = N4 =
+shr(N1,1)` and `L3 = N3 = shr(N1,4)` share the root `N1 = sub(RBX,RAX)`, so
+each reads the coordinate the other overwrites.
+
+`shared_root_shift_handoff_shape` now recognises two pending publications that
+shift the same unpublished root whose operands are exactly those two
+destinations, and both compare-branch paths emit the root once (in place in one
+destination), copy it to the other, then shift each once.  For this block the
+candidate is
+
+```text
+sub rbx,rax; mov rax,rbx; shr rbx,4; shr rax,1; mov rdx,r12; sub rdx,rcx;
+shr rdx,1; mov rcx,rax; sub rcx,rdx; cmp rcx,rbx; jae
+```
+
+(span 6, work 11, the source operations reordered), verified equivalent.
+`check/select-x86.c` gains a `shared_root_shift` fixture (candidate count 1
+before, 2 after).  The escape population drops **510 -> 509**; the new first
+escape is `0xffffffff8121c47d..0xffffffff8121c48f` (`output=0x5 expected=0x4`).
+`make -k check` and the 120-case fuzz are green.
+
+`0xffffffff8121c47d` (`amd_pmu_v2_snapshot_branch_stack+0x1d`) is a wider
+version of the same shared-root shape:
+
+```text
+N1 = shl(L2, 32)   N2 = or(L0, N1)   N3 = shr(N2, 32) -> L2
+N4 = X86_ALU and(N2, ~0x40) -> L0 = projection(N4), and it is the flag producer
+```
+
+so the shared root `N2` is consumed by a masked `and` (the final flags) and a
+`shr`, and it reaches both destinations *transitively* (`N1 = shl(L2,32)`), not
+by naming them directly.  The dense ALU frame blocked with
+`blocking_work = 0x200` (`next_alu_frame_assignment` finds no first
+publication).
+
+`shared_root_unary_handoff_shape` generalises `shared_root_shift_handoff` for
+the dense ALU frame: it classifies a pending publication as a lane shift or an
+architectural ALU pair over a constant (`shared_root_consumer_of`), requires
+two consumers of the same unpublished root whose operand tree reads the entry
+values of both destinations (`operand_gpr_sources`, so transitive reads count),
+and emits the root once in the non-flag destination, copies it, applies that
+consumer, then applies the flag-producing consumer last.  For this block the
+candidate is the exact source
+`shl rdx,0x20; or rdx,rax; mov rax,rdx; shr rdx,0x20; and rax,~0x40`
+(span 3, work 5).  `check/select-x86.c` gains a `shared_root_unary` fixture
+(candidate count 1 before, 2 after).  The escape population drops
+**509 -> 507**; the new first escape is `0xffffffff8121c995..0xffffffff8121ca1c`
+(`output=0x23 expected=0x1f`).  `make -k check` and the 120-case fuzz are
+green.
+
+`0xffffffff8121c995` (`amd_pmu_lbr_hw_config+0x15`) is a 32-node flag-selector
+chain.  Its plan builds two constants from `L1` (RCX):
+
+```text
+N1 = L1 & 3
+N4/N8/N12/N26 = select(constant, 0, test(L1 or L1>>8, bit))   (4 constant arms)
+N5 = N1 | N4    N9 = N5 | N8    N13 = N9 | N12   ... OR-accumulation
+N16..N23 add shifted bit-extracts of L1
+N27 = N23 | N26
+N28 = N27 | 0x40000 -> L2 (RDX)
+N31 = N27 | ((L1 << 2) & 0x40000) -> L0 (RAX)
+N32 = xor(L6, L6) -> L16 (flags), L6 = projection(N32) = 0
+```
+
+So the final `N27` is published twice (RDX and RAX) and `L6` is a dead-value
+`xor esi,esi`, and changed = {L0, L2, L6}.  Only the copied source is offered
+(work 35, SSA floor 31) and the dense ALU frame blocks at `blocking_work =
+0x200`.  The deadlock is exact: `publication_owner(const 0)` names the zero
+class `L6` (the final flag-producing `xor`), so `L0`/`L2` depend on `L6`, which
+the flags-last rule schedules last.
+
+Hand calculation, then landed.  The coupling is resolved by two narrow rules:
+
+- `zero_self_flag_publication` recognises the owner of constant zero when it is
+  a zero-producing self operation (`xor r,r` / `sub r,r`) that is also the final
+  flag producer.  Both `operand_source_law` and `physicalize_published_operand`
+  keep a constant zero an immediate for that owner, so a zero operand neither
+  waits on nor reads the flag producer's coordinate.  (Only that owner is
+  special-cased; other constant owners keep the existing substitution, which is
+  why `condition-code-check` and the `in-place owner` fixture stay green.)
+- `flag_value_preload` records the preloaded destination as its own entry source
+  (`frame_sources[destination] |= 1<<destination`), so the coordinate stays out
+  of every other publication's scratch pool until the final flag producer runs.
+  Without it, `0xffffffff8124f4c1`'s wide `and` mask landed in the preload
+  destination and the final `neg rax` negated the mask instead of `N2`.
+
+Both are needed together: with them the Pareto stays cleared and the escape
+population drops **507 -> 500** (`0xffffffff8121c995` still leads at
+`output=0x23 expected=0x1f`).  `condition-code-check`, `make -k check` (79
+targets) and the 120-case fuzz are green.
+
+`0xffffffff8121c995`'s own remaining blocker is now the long chain and it is
+exact.  The frame reaches `blocking_work = 0x280 | 2`: the publication
+`L2 = N28 = N27 | 0x40000` is a `single_bit_or`, and measuring its seed `N27`
+falls into the select `N26 = select(32772, 0, test(N17, 32))` where
+`N17 = L1 >> 8`.  Instrumenting `measure_alu_tree` shows the select fails at the
+final rejection with `remaining = 32` (so the recursion budget is not the
+issue): the select's compare operand `N17` is an unpublished node, so the frame
+seeds it into a scratch and needs a second scratch for the constant candidate
+arm, while `alu_frame_scratch_mask` offers only one free coordinate.  The source
+never materialises `N17`: it tests the high byte directly (`test ch, 0x20`).
+The next step is to let the select compare map a shifted entry byte to its
+high-byte coordinate (`test_byte_coordinate` / `emit_high8_test`) instead of
+seeding the shift node, which removes the extra scratch and should let the
+whole accumulation chain emit.
+
+`test_byte_coordinate` already handles `bits == 8`, so that is not the gap.  The
+real gap in the nested path was `measure_alu_tree` / `write_alu_tree`'s select
+branch: a select with a **constant** candidate arm
+(`candidate_immediate`, e.g. `select(32772, 0, test(...))`) left
+`candidate_local == GPR_COUNT` and passed it to `emit_conditional_move`, so the
+branch always failed.  Both nested branches now materialise the constant
+candidate into a free scratch coordinate first, exactly like the outer
+publication loop.  That closes one block (**500 -> 499**) with `make -k check`,
+`condition-code-check` and the fuzz green.
+
+`0xffffffff8121c995` itself still blocks at `0x280 | 2`, and the instrumented
+rejection is now exact: `measure_alu_tree(dest = L2, node = N26,
+scratch = 0)`.
+
+Hand calculation of the whole block.  The source is one accumulation with two
+coordinates: `RAX` is the accumulator and `RDX` the candidate.
+
+```text
+mov rax, rcx ; and eax, 3                     acc = ecx & 3
+mov rdx, rax ; or rdx, 0x29ffc ; test cl,8  ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x8c54 ; test cl,10  ; cmovne rax, rdx
+mov rdx, rax ; or dl, 0xa8    ; test cl,20  ; cmovne rax, rdx
+mov rdx, rax ; or dh, 8       ; test cl,40  ; cmovne rax, rdx
+mov rdx, rax ; or dh, 1       ; test ch,4   ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x20000; test ch,10  ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x8004 ; test ch,20  ; cmovne rax, rdx
+mov rdx, rax ; or rdx, 0x40000; test ecx,0x10000 ; cmovne rax, rdx
+xor esi, esi
+```
+
+The frame cannot express this because `L0 = N31 = select(N28, N27, cond)` has
+`N28` as its candidate and `N28` is published to `L2`, so the law makes `L0`
+depend on `L2`; the frame therefore publishes `L2 = N27 | 0x40000` first and
+asks for the whole chain to be built into RDX, where no scratch is free for the
+nested constant candidates.  In the source `N28` is not a separate
+materialisation at all: `mov rdx,rax; or rdx,const` builds it inside `L0`'s own
+publication, and `L2` is that same RDX.  So the fix is a handoff that publishes
+the final select `L0` with its candidate **materialised into `L2`'s
+coordinate**, which simultaneously satisfies `L2` (no `L0 -> L2` edge needed),
+and accumulates the chain in `L0`'s coordinate with the candidate as the only
+scratch.  That is the next production.
+
+Measuring the population instead of only the first witness paid off: tallying
+every counted escape by node count shows most of it is small, not long chains
+(13 at 0 nodes, 69 at 1, 54 at 2, 76 at 3, 80 at 4, ...).  One whole class was a
+normalized-argument-order bug: `standalone_flag_publication_details` read the
+`bt` base from argument slot 2 and the offset from slot 1, but the physical
+rewriter hands over `(prior, base, offset, bits)` (a register base in slot 1, an
+immediate offset in slot 2) for `bt reg,imm`.  It therefore rejected every such
+block with `blocking_work = 0xf003`.  Resolving the base to whichever slot holds
+the register closes **12 blocks (499 -> 487)**.  `check/select-x86.c` gains a
+`bit_test_constant_offset` fixture (candidate count 1 before, 2 after);
+`make -k check`, `condition-code-check` and the fuzz are green.
+
+The next class is the flag-value preload with a bare **entry register** as the
+value tree.  For `0xffffffff8123e543` (`mov rax,rdx; shr rdx,32; or rax,0x1e`)
+the final flag producer is `or(entry RDX, 0x1e)` while `L2 = shr(entry RDX,32)`
+overwrites RDX, so the entry must be copied into the flag destination before
+the clobber.  `flag_value_preload_shape` swapped away from a non-node tree and
+rejected it, so the frame offered nothing.  Keeping the tree when it is an
+entry local with an immediate `other` (preload = one copy, then the immediate
+operation last) closes **7 more blocks (487 -> 480)**; the normalized candidate
+is `mov rax,rdx; mov rdx,rax; shr rdx,0x20; or al,0x1e` (span 2, work 4) and
+the copied source's `3` work stays the joint minimum.
+`check/select-x86.c` gains a `preload_entry_register` fixture (candidate count 1
+before, 2 after).  `make -k check` and the 120-case fuzz are green.
+
+The remaining 480 escapes are now classified by the first rejection recorded in
+`pl_x86_select_candidates` (the diagnostic for blocks with no normalized
+candidate):
+
+| `blocking_work` | blocks | meaning |
+| --- | --- | --- |
+| `0x200`/`0x202` | 78 + 24 | dense-ALU scheduler deadlock (shared roots) |
+| `0xf002` | 51 | `alu_frame_shape` rejected the block |
+| `0xf003` | 49 | final flag node is neither a value nor a known standalone flag |
+| `0xf001` | 31 | block kind/flow/dynamic/machine outside the ALU frame |
+| `0x0` | 28 | a production returned 0 without recording a rejection |
+| `0x501`/`0x201`/`0x500`/... | 22+13+9+... | per-publication encoder gaps |
+
+Sampled shapes: `0xf002` includes `and edx,7; xor eax,eax; cmp dl,6; sete al`
+(a `setcc` boolean, plan `L0 = condition(cmp)`, `N4 = test(L0,L0)`) and
+`cmp $1,rbp; mov rdx,rbp; mov rdi,r12; mov esi,2` (compare plus copies and a
+constant).  `0xf003` includes `and eax,0xffffc0; cmp eax,0x20f00; mov eax,0;
+je` and blocks whose value tree mixes `and`/`or` with a wide `movabs`.  These
+are separate per-shape productions; the `setcc` boolean and the constant/copy
+blocks are the most regular and are the recommended next targets.
+
+The `setcc` class is now exact.  `0xffffffff812497b9` (`and edx,7; cmp dl,6;
+sete al`) has selection plan `N1 = and(L2,7)`, `N2 = compare(L16,N1,6)` with
+`L0 = projection(N2, selector 4)` (the ZF boolean), `L2 = N1`, `L16 = N2`.
+`alu_frame_shape` rejects it because the projection check requires selector 16
+(the ALU value projection) and `4 != 16`.  Relaxing that check to accept
+selectors 0..16 makes the shape accept, but the projection emission branch then
+calls `alu_node_details`, which requires an `X86_ALU` node while `N2` is an
+`X86_COMPARE`, so the frame blocks at `0x100 | 0`.  The missing piece is a
+`setcc` production: a published flag-selector projection of a `COMPARE`/`TEST`
+must emit the comparison (or test) and then `setcc` into the destination.  The
+relaxation alone changes nothing and was reverted; a production is required.
+The same `0x100` blocker covers the `cmp`+copy+constant blocks.
+
+The largest `0x200` sub-shape is a select over a published constant that
+clobbers its own current arm.  `0xffffffff8128ffa1` and `0xffffffff81290e50`
+share it:
+
+```text
+mov rsi, rax      ; current = entry RAX
+mov eax, 0        ; candidate = const 0 published to RAX (= L0)
+cmovs rsi, rax    ; L6 = select(0, entry RAX, entry SF)
+```
+
+The plan is `N1 = condition(entry RFLAGS, 8)`, `N2 = select(0, L0, N1) -> L6`,
+`L0 = const 0`.  `conditional_select_details_inner` binds the constant candidate
+to its publication (`first_physical`, `candidate_local = L0`), so the law makes
+`L6` depend on `L0`; but `L6`'s current reads entry `RAX`, which `L0`'s
+publication overwrites, so `L0` must wait for `L6` -- a cycle.  The source
+breaks it by copying the current into the destination first, then materialising
+the constant into the same coordinate, then the `cmov`.  A sound fix is to let
+this select take the `candidate_immediate` path (materialise the constant
+instead of reading its publication) and preload the current before the constant
+lands -- i.e. the select-current analogue of `flag_value_preload`.
+
+Implemented.  `conditional_select_details_inner` now takes the immediate
+candidate path when the condition is the entry flag word (no compare), the
+candidate arm is a constant, and the candidate's publication owner is exactly
+the entry register its current arm reads.  It records that owner in
+`candidate_owner`, and `apply_select_candidate_laws` drops the resulting
+spurious publication dependency from the frame law before scheduling, so the
+select is free to run first.  The publication loop already evaluates the current
+arm before the candidate, so the current lands in the destination before the
+constant is materialised: the `flag_value_preload` order without a separate
+pre-pass.  For the witness the frame offers `mov rsi,rax; mov eax,0; cmovs
+rsi,rax; mov eax,0` (span 2, work 4); the constant is materialised into its own
+publication's coordinate (RAX), which the separate `L0` publication then
+repeats, so the copied source's `3/2` stays the joint minimum and is selected.
+The block is nevertheless covered by a normalized production, so the escape gate
+clears.
+
+`check/select-x86.c` gains a `select_over_published_constant` fixture
+(candidate count 1 -> 2, joint minimum span/work 2/3): RED (`candidates=1`,
+`diagnostic=0x200`) before, green after.  Restricting the immediate path to the
+entry-flag condition is what keeps `compare-cut` green: a select with a compare
+resolves the same register conflict through the existing shared-flag handoff at
+`5/2`, and forcing the immediate path there loses that spelling.  `make -k
+check` is green (79 targets).  The two named kernel witnesses share this shape,
+so the population is expected to drop 480 -> 478; the whole-kernel scan was not
+rerun here because no linked kernel input is present on this host.
+
+The `0x100`/`setcc` blocker is now closed.  `alu_frame_shape` accepts condition
+projections (selector `0..15`), and a new `compare_boolean_group_shape` plus the
+existing `emit_group_booleans` makes the ALU frame emit a `CMP`/`TEST` together
+with its `SETcc` observations.  For `0xffffffff812497b9`
+(`and edx,7; xor eax,eax; cmp dl,6; sete al`) the frame now emits exactly those
+four bytes (span 3, work 4); `check/select-x86.c` gains a
+`compare_boolean_observation` fixture (candidate count 1 -> 2, `0xf002` before,
+green after; the isolated fixture must use the kernel's `0x7ffff` live mask or
+the plan differs).  Only the case where the comparison is the block's final flag
+producer is handled, so the group's comparison and the final flag publication are
+the same instruction and `standalone_flags_pending` is cleared when the group
+fires.  Whole-kernel scan: escapes **476 -> 465**, all `make -k check` targets
+green, differential fuzz 120/0.
+
+### The `0xf003` compare-over-an-unpublished-tree class (49 blocks, 2 closed)
+
+`0xffffffff81249696` (`and eax,0xffffc0; cmp eax,0x20f00; mov eax,0`) has plan
+`N1 = lane32.and(entry EAX, 0xffffc0)`, `N2 = compare(RFLAGS, N1, 0x20f00)`,
+`L0 = const 0`, with `final_flag_node = N2`.  `standalone_flag_publication_details`
+declined because the compare's left operand is the *unpublished* node `N1`
+(`publication_owner(N1) == GPR_COUNT`, because the `and`'s only reader is the
+compare and the later `mov eax,0` overwrites EAX), so `physical_left` was not a
+local and the shape returned 0.
+
+`compare_tree_flag_shape` + the ALU frame now materialize that operand tree into
+a scratch and emit the comparison: the scratch is chosen from
+`alu_frame_scratch_mask` (a register the frame will republish anyway, never an
+unchanged live-out entry), the tree's published owners must be ready, and the
+tree's entry sources must not be clobbered before it runs.  Two guards are
+essential: 8-bit compares stay with `standalone_flag_publication_details`
+(`test_byte_coordinate` owns the high-byte rewrite), and if the shape is
+accepted but the tree cannot actually be measured the frame must decline
+(post-loop `has_compare_tree` check) or it emits a stale-flag candidate -- the
+first draft silently miscompiled `linked-field-authority-check` that way.
+
+Only 2 of the 49 fire, so the remaining 47 have a different shape (the scratch
+pool is empty, the tree needs a scratch of its own, or the operand is not the
+first argument).  `check/select-x86.c` gains `compare_over_unpublished_tree`
+(candidate count 1 -> 2, `0xf003` before, green after).  Whole-kernel scan:
+escapes 465 -> 463.
+
+### The `0xf001` indirect-dispatch class (31 blocks, closed)
+
+Tail dispatches (`mov edx,1; mov esi,0xec; xor edi,edi; jmp *rax`) were rejected
+by the ALU frame's `block->dynamic_target` guard, and `measure_direct_frame`
+only accepted them when the plan had no nodes.  The ALU frame guard now accepts
+`flow == JUMP && dynamic_target && successor_count == 0` and the tail emits
+`jmp *target` via `emit_indirect_jump`, with the target resolved through
+`published_operand_local`.  Blocks carrying `construction_fields` (an absolute
+source relocation the frame cannot express) stay rejected -- without that
+exclusion `code-grid-check` failed on the fixed-stride entry grid with an
+unresolved relocation.  Whole-kernel scan: escapes **463 -> 432** (all 31);
+`check/select-x86.c` gains `indirect_dispatch` (count 1 -> 2, `0xf001` before,
+green after).  `make -k check` green (79), differential fuzz 120/0.
+
+### The `0xf002` residual (28 -> 21 blocks)
+
+The comparison-carry blocker is closed.  `81234414`
+(`cmp rbp,1; ...; mov esi,2; adc esi,0`) and `812498b2`
+(`cmp eax,1; ...; sbb ebx,ebx`) have `N2 = X86_ALU(N1, const, const, desc)`
+with `arguments[0] == N1` (the compare), which `alu_node_semantics` rejected
+because it requires the `RFLAGS` local.  `alu_carry_prior_node` admits the node
+in `alu_frame_shape`, and `carry_alu_group_shape` emits the comparison (via
+`emit_flag_coordinate`) and then the `adc`/`sbb` (via `measure_alu_pair` /
+`write_alu_pair`).  The left operand materialization is a `mov` (flag
+preserving), so the comparison's carry is still live at the `adc`.  The group
+only fires when the comparison has no other pending Boolean consumer and none
+of its physical operands is still pending.  Escapes 432 -> 425.
+
+The Boolean-group blocker is also closed.  `8127fa0e`/`8128325d`
+(`xor ecx,ecx; sub rax,rdx; setb cl; neg rdx; jns`) publish an `X86_ALU`'s value
+projection AND a carry Boolean of the same node; the compare-branch frames
+already ran `flag_result_group_shape`, but the ALU frame did not, so the
+scheduler deadlocked.  The ALU frame now runs the same group (emit the
+instruction plus its SETcc observations between the pre-zero and post-setcc
+passes).  Escapes 425 -> 418.
+
+Remaining `0xf002`: `8128be22` is `sete` over two chained compares;
+`8121f647` a shift-with-flags; `81258eae` a `bsf`+`add`+`je`.  Whole numbers:
+`0x200` ~68, `0xf003` ~47, `0x0` 28, `0x202` 24, `0x501` 22, `0xf002` ~14.
+
+### The `0x500` narrow-zero-extension family (25 blocks)
+
+`8121e2bc` (`mov rcx,rdx; shr rcx,0x20; movzx ecx,cx`) has
+`N1 = lane64.shr(L2, 32)` and `N3 = lane64.insert(0, N1, 16)`, with `N1` never
+published.  The ALU frame handled `insert(0, inner, 32)` (materialising the
+inner at 32-bit width is itself the zero extension) but the 8/16-bit lanes fell
+through to `operand_expression_bits`, which returns 0 for an insert, so the
+projection emission blocked at `0x500 | local`.  The frame now materializes the
+inner at its own expression width and emits `MOVZX local, local<lane>`; MOVZX
+preserves the shift's flags, so the final flag node stays the shift.  Whole-kernel
+scan: escapes **418 -> 393**.
+
+### Current escape population (393) and the next exact blockers
+
+Measured distribution after the narrow-zero-extension fix: `0x200` 75,
+`0xf003` 44, `0x0` 28, `0x202` 24, `0xf002` 20, `0x800` 14, `0x201` 13,
+`0x206` 12, `0x601` 12, `0x700` 11, `0xf100` 9, `0x802` 8, `0x502` 7,
+`0x602` 7.
+
+- `0xf003` by final-flag opcode: `X86_FLAGS` (183) 13, `SHIFT_FLAGS` (193) 9,
+  `COMPARE` (191) 8, `X86_ALU` (203) 7, `TEST` (195) 5, `BIT_FLAGS` (197) 2.
+  The 191/195 ones are the compare-tree shape with a *flag-clobbering sibling*:
+  `812b4199` is `and eax,7; cmp eax,3; sete; select` where the tree reads entry
+  EAX while a pending `const 0` also overwrites EAX.  `compare_tree_flag_shape`
+  rejects because `!immediate && (sources & changed)`: with a clobbering sibling
+  pending the group cannot fire before the constant, so the entry read would be
+  lost.  Relaxing this needs the group to run before the source-overwriter
+  without letting a clobberer run after the comparison.  The 183 ones
+  (`X86_FLAGS` wrappers, `or edi,imm; movslq`) are partly closed:
+  `publication_is_flag_result` now walks through a sign-extension of the flag
+  result (`publication_is_flag_result` gained a `sign_extend_value` step beside
+  the lane-and/insert steps), so MOVSX/Q keeps the flag provenance and the
+  frame emits the value publication.  Escapes 376 -> 369.
+- `0x502` closed.  `insert(base==dest, condition, 8)` (`setne dl` into a live
+  RDX) is emitted by `in_place_condition_insert` as `emit_set_condition`; the
+  base's upper bits survive, which is the insert semantics.  It is restricted
+  to a condition whose flags operand is the entry `RFLAGS` local, so the SETcc
+  can be ordered before every in-block flag writer; an in-block producer
+  (`test edi,edi; setne r12b` in `8124ce85`) needs its own edge and was a
+  Pareto witness when the branch first accepted it.  `next_alu_frame_assignment`
+  now keeps a flag-reader as a blocker of the final flag producer
+  (`publication_reads_entry_flags`), so the SETcc lands first.  Escapes
+  386 -> 376.
+- `0x800` large-constant add: `81249d91` folds a large constant into an
+  in-place add (`N1 = ADD(entry EAX, 0x31FFFFFFFFFFF)`).  `measure_alu_pair` /
+  `write_alu_pair` returned from the immediate fast path without trying the
+  scratch path, so the add had no encoding.  They now fall through for a
+  CONST right that the immediate form rejects; the scratch path materializes it
+  into the pending `RDX` publication and reuses the folded `-1` displacement,
+  emitting exactly the source (`movabs rdx,0x32000000000000; lea
+  -0x1(%rax,%rdx),%rax; cmp; jb`).  Escapes 393 -> 386.  NOTE: the isolated
+  `candidates_projected` harness cannot reproduce this block -- it does not
+  fold a same-block `movabs` into the ALU node, so the `count` stays >= 2 with
+  or without the fix.  Regression coverage for this one is the whole-kernel
+  scan (7 blocks) plus `make -k check`/fuzz for no regression; no fixture.
+  `81232239` (an `ADD3` carry chain) shares the failure and is not yet fixed.
+- `0x200`/`0x202`/`0x201`/`0x206` remain dense-ALU shared-root handoffs; each
+  sampled block has a different root pair.
+
+### Rejected: standalone `SHIFT_FLAGS` in place (miscompile)
+
+A first attempt let `standalone_flag_publication_details` emit a
+`X86_SHIFT_FLAGS` whose value result is dead as `emit_shift_instruction(left,
+amount, ...)` in place.  For `81219fe3` (`mov rdx,rbx; shr rdx,0x20`) that
+produced the work-1 candidate `shr rbx,0x20`, destroying entry RBX, which the
+source explicitly preserves by copying to RDX first.  `make -k check` and the
+fuzz stayed green (no fixture covers it) and the Pareto gate cannot see a
+*work-better* wrong arm, so this was a silent miscompile; it was reverted.  The
+shape is only safe with a liveness check (shift into a register the frame
+republishes, or copy to a scratch); the standalone emitter has no scratch, so
+the production needs the copy form.  Only 1 of the 9 `SHIFT_FLAGS` blocks was
+closed by it anyway.
+
+### The `0x800` lane-constant-from-base family (18 blocks)
+
+`insert(base, const, 8|16)` with base != destination (`mov rax,rdx; xor al,al`,
+`815ded24`) was rejected: `lane_constant_insert` required base == destination,
+so the node fell through to `operand_expression_bits` (0) and `measure_alu_tree`
+failed.  It now accepts any LOCAL/NODE/PROJECTION base and returns it; the
+emitter materializes the base into the destination (`operand_expression_bits`
+width) and then emits the lane constant move.  Escapes **369 -> 351**;
+`check/select-x86.c` gains `lane_constant_from_base` (count 1 -> 2, `0x800`
+before, green after).
+
+### Cyclic register permutations closed (12 blocks)
+
+`measure_direct_frame`/`write_direct_frame` now carry an alias array: emitting
+`L = LOCAL S` records `alias[S] = L` (entry S is also in L), a pending copy's
+source is resolved through `alias`, and a source with an alias no longer blocks
+its register from being overwritten.  For `812e5fd1`
+(`mov rax,rdi; mov rdi,rsi; mov rsi,rax`, `L0=LOCAL7, L6=LOCAL7, L7=LOCAL6`)
+the frame emits RAX first, then RDI (source RSI still live), then RSI through
+the alias of RDI in RAX -- exactly the source, span 1 work 3.  Escapes
+**351 -> 339**; `check/select-x86.c` gains `register_permutation` (count 1 -> 2,
+`0xf002` before, green after).  The pure two-cycle with no third publication is
+still a deadlock (no temp is available), but the source has no such shape.
+
+### `0x600` residual sites (31 blocks)
+
+The `0x600 | local` codes sit in the ALU frame's NODE if-chain.  By site:
+9 (the final fallback after `operand_expression_bits`) 16 blocks, 4 (bswap) 6,
+2 (narrow zero extend) 5, 3 (in-place lane insert) 4.  `81230848`
+(`mov ecx,ebx; mov eax,-2; rol eax,cl`) has `N3 = lane32.rotl(const,
+N2)` with `N2 = and(zext32(L3),31)`; `shift_node_details` returns the count as
+a node, but `emit_shift_instruction` only accepts an immediate or CL, so
+`measure_alu_tree` fails.  The production must materialize the count into CL
+(local 1) and then rotate -- the same gap applies to any variable-count
+shift/rotate whose count is a computed node.
+
+### `0x700`/`0xf100`/`0x0` residual (compare-branch and dense)
+
+`0xf100` (9) is `measure_direct_compare_branch`'s initial code when the frame
+fails without a more specific one; `0x700` (11) is its
+`next_compare_branch_assignment_excluding` failure.  Samples: `812d9cb9`
+(`mov r11,rsi; xor ebx,ebx; add r11,rcx; setb bl; cmp r11,rdx` -- an add whose
+carry feeds a SETcc), `812413cc` (`sub rax,0x44; imul rdx,rax` with a movabs
+multiplier), `81258eae` (`bsf ebp,r14d; add ebp,1; je`).  The `0x0` class
+(28) has no recorded rejection: `81233810` is a large-constant LEA
+(`movabs 0x100000000; lea`), `81227075` a `sar`, `8134a6e6` an `imul` with a
+64-bit multiplier, `812c5bac` an `and`/`test`.  All are dense shapes that each
+need a bespoke production; several fail in frames that decline without setting
+a code, so the first step is to make those frames record their exact reason.
+
+### `0xf003` refreshed (37 blocks)
+
+By final-flag opcode: `X86_FLAGS` (183) 8, `COMPARE` (191) 8, `X86_ALU` (203)
+7, `SHIFT_FLAGS` (193) 7, `TEST` (195) 5, `BIT_FLAGS` (197) 2.
+`812b4199` (`and eax,7; mov rbx,c; cmp eax,3; mov rax,c; cmove rax,rbx; jmp`)
+is flow JUMP with `N1 = and(entry RAX,7)`, `N2 = cmp(N1,3)`, `N3 =
+condition(N2,4)`, `N4 = select(const, const, N3)`, `L0 = const`,
+`L3 = N4`.  Relaxing `frame_publication_clobbers_flags` /
+`publication_tree_clobbers_flags` for a select whose condition is an
+`X86_CONDITION` of a node does reach `has_compare_tree == 1` for this block
+(measured), but the ALU frame still does not close it and the kernel count is
+unchanged -- the tree branch is not reached, so an earlier loop production
+(`select_generation_group`/`compare_boolean_group`) or a later frame step
+consumes the block.  That relaxation was reverted (no measured benefit, broad
+scheduling impact).  Next: trace which loop production handles `812b4199`
+before the tree branch.
+
+### Trace of `812b4199` and why the select immediate path is unsafe here
+
+`812b4199` (`and eax,7; mov rbx,c2; cmp eax,3; mov rax,c1; cmove rax,rbx`) is
+flow JUMP with `N1=and(entry RAX,7)`, `N2=cmp(N1,3)`, `N3=condition(N2,4)`,
+`N4=select(c1,c2,N3)`, `L0=c1`, `L3=N4`.  `alu_frame_source_laws` gives
+`deps[3]=L0` (candidate publication) and `sources[3]=RAX` (the comparison
+reads entry RAX), so `next_alu_frame_assignment` skips both L0 (used by L3) and
+L3 (waiting on L0): the frame deadlocks at `0x200`, which the guard reports as
+`0xf003`?  No -- the guard fires because `compare_tree_flag_shape` rejects: the
+tree arm reads entry RAX while `L0 = const` overwrites RAX, and the select is a
+clobberer, so `immediate` is false.
+
+Generalising the earlier select-over-published-constant fix
+(`current_is_entry && current_entry == candidate_local`) to "the tree reads the
+candidate's entry" reads `has_compare_tree == 1` and closes 17 kernel blocks
+(339 -> 322, Pareto 0, fuzz green), but `compare-cut-check` expression 8
+(`cmp r10,rdx; movabs r10,c; cmovcc rax,r10`, same shape with r10) then
+**semantically mismatches**: the immediate path drops the candidate dependency
+and materialises the constant for CMOV, which does not reproduce the required
+`compare -> candidate publication -> cmov` order.  All were reverted.
+
+The safe fix is the shared-flag handoff spelling, but
+`apply_shared_flag_producer_laws` requires `flag_node_has_value_publication`
+(the comparison must also publish a value).  For `812b4199` the comparison
+publishes no value, so the handoff never applies.  Next: extend the handoff to
+a comparison with no value publication -- emit the comparison as a standalone
+flag producer before the candidate publication, then the CMOV.
 
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
