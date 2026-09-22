@@ -1330,6 +1330,18 @@ the alias of RDI in RAX -- exactly the source, span 1 work 3.  Escapes
 `0xf002` before, green after).  The pure two-cycle with no third publication is
 still a deadlock (no temp is available), but the source has no such shape.
 
+### `0x600` residual sites (31 blocks)
+
+The `0x600 | local` codes sit in the ALU frame's NODE if-chain.  By site:
+9 (the final fallback after `operand_expression_bits`) 16 blocks, 4 (bswap) 6,
+2 (narrow zero extend) 5, 3 (in-place lane insert) 4.  `81230848`
+(`mov ecx,ebx; mov eax,-2; rol eax,cl`) has `N3 = lane32.rotl(const,
+N2)` with `N2 = and(zext32(L3),31)`; `shift_node_details` returns the count as
+a node, but `emit_shift_instruction` only accepts an immediate or CL, so
+`measure_alu_tree` fails.  The production must materialize the count into CL
+(local 1) and then rotate -- the same gap applies to any variable-count
+shift/rotate whose count is a computed node.
+
 ## Current work: 2026-09-20 (flag-producer scheduling; make check green)
 
 The native ALU frame could publish a value addition *after* the final flag
