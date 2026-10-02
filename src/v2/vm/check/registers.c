@@ -43,7 +43,7 @@ int main(void)
 {
     vm_memory memory;
     vm_memory_page page = {0x1000u,4096u,3u,VM_MEMORY_RAM,0u,0u};
-    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,&page,1u,9u));
+    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,&page,1u,1u,NULL,9u));
     pl_x86_cpuid_result basic = pl_x86_profile_cpuid(1u,0u);
     /* TSD/PCE are architectural. The remaining exposed CR4 bits require
      * PSE/PAE/PGE/FXSR/SSE. Unsupported extension words must remain zero. */

@@ -66,7 +66,7 @@ try {
     // its port argument. Compare its COMPLETE CPU record with the table.
     assert.equal(cut(base,0),1n); assert(data.subarray(base,base + 1256).equals(expected));
     data.set(before,base);
-    assert.equal(vm.vm_open(base,data.length - base,4096,directoryAt,5,9n),0);
+    assert.equal(vm.vm_open(base,data.length - base,4096,directoryAt,5,5,directoryAt + 1024,9n),0);
     assert.equal(vm.vm_bind_state(base),0);
     view.setBigUint64(rows,entry,true); view.setUint32(rows + 8,2,true);
     view.setUint32(rows + 12,1,true); view.setUint32(rows + 16,slot,true); view.setUint32(rows + 20,0,true);

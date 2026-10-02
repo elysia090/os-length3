@@ -54,7 +54,7 @@ function reset(source,rsp,flags,cpl,value,width,push) {
   view.setBigUint64(base + 408,0x1000n,true); view.setBigUint64(base + 416,32n,true);
   view.setBigUint64(base + 424,0xd00n,true); view.setBigUint64(base + 488,16n | BigInt(cpl),true);
   view.setBigUint64(base + 1128,42n,true); view.setBigUint64(port,9n,true);
-  assert.equal(vm.vm_open(base,data.length - base,4096,directoryAt,7,9n),0);
+  assert.equal(vm.vm_open(base,data.length - base,4096,directoryAt,7,7,directoryAt + 1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);
 }
 try {

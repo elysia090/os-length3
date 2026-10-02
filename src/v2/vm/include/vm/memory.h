@@ -24,18 +24,27 @@ typedef struct {
     pl_u32 fault_vector;
     pl_u32 fault_error;
 } vm_memory_page;
+/* One branch per non-first resident page. References name stable row ranks,
+ * so appending a page moves neither a descriptor nor guest RAM. */
+typedef struct { pl_u64 bit; pl_u32 child[2]; } vm_memory_branch;
 typedef struct {
     pl_u8 *bytes;
     pl_u64 byte_count;
-    const vm_memory_page *pages;
+    vm_memory_page *pages;
+    vm_memory_branch *branches;
     pl_u32 page_count;
+    pl_u32 page_capacity, root;
     pl_u32 reserved_bytes;
+    pl_u64 next_offset;
     pl_u64 generation;
     pl_u32 write_touched; /* Caller-cleared mutation bit, not a counter/epoch. */
     vm_memory_reservation reservation;
+    const vm_memory_page *recent[256];
 } vm_memory;
 
-/* Validate the borrowed, sorted page directory once. RAM mappings cannot
+/* Validate the initial borrowed sorted rows once; all later rows append into
+ * the same bit index. Capacity bounds resident pages, not logical guest RAM.
+ * branches has capacity - 1 entries (NULL for capacity <= 1). RAM mappings cannot
  * overlap the reserved supervisor/state/port arena. Physical aliases between
  * guest pages are allowed. Keep directory, generation, arena and residency
  * immutable until the synchronous transaction returns. Fault rows are valid
@@ -44,8 +53,12 @@ typedef struct {
  * misses, never proof that Linux considers a page absent. This single-owner API
  * is not a shared-worker lease or an atomic MMU permission oracle. */
 int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
-                   pl_u32 reserved_bytes, const vm_memory_page *pages,
-                   pl_u32 page_count, pl_u64 generation);
+                   pl_u32 reserved_bytes, vm_memory_page *pages,
+                   pl_u32 page_count, pl_u32 capacity,
+                   vm_memory_branch *branches, pl_u64 generation);
+/* Append only a never-resident page, using the next virgin payload slot.
+ * No eviction/dirty recovery is implied. Failure changes no row or index. */
+int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 rights);
 machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
                                 pl_u64 address, pl_u32 bytes,
                                 pl_u32 access, pl_u64 value);

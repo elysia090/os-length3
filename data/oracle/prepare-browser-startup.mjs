@@ -11,6 +11,15 @@ const files = ['boot.header','boot.command','boot.kernel-page','boot.kernel-last
   'boot.state','boot.segments','boot.json','call.extra-page','cmdline.extra-page','option.extra-page','source.sha256'];
 await mkdir(target,{recursive:true});
 const manifest = {format:'bzimage-startup-diagnostic-v1',linuxBoot:'not-achieved',files:{}};
+manifest.objects = {};
+for (const [kind,name] of [[2,'boot.kernel-object'],[3,'boot.initramfs-object']]) {
+  const bytes = await readFile(path.join(directory,name)), chunkBytes = 65536;
+  const sha256 = value => createHash('sha256').update(value).digest('hex');
+  manifest.objects[kind] = {name,bytes:bytes.length,sha256:sha256(bytes),chunkBytes,chunks:[]};
+  for (let at = 0; at < bytes.length; at += chunkBytes)
+    manifest.objects[kind].chunks.push(sha256(bytes.subarray(at,at + chunkBytes)));
+  await writeFile(path.join(target,name),bytes);
+}
 for (const name of ['vm.wasm','wasm-compiler.wasm',...files]) {
   const source = name === 'vm.wasm' ? providerFile : name === 'wasm-compiler.wasm' ? compilerFile
     : path.join(directory,name);

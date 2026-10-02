@@ -17,15 +17,16 @@ const assert = (value,message = 'startup assertion') => { if (!value) throw new 
 assert.equal = (a,b) => assert(a === b,`startup: ${String(a)} != ${String(b)}`);
 assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'startup imports');
 
-export async function checkStartup(reader,providerBytes,compilerBytes) {
+export async function checkStartup(reader,providerBytes,compilerBytes,readExtent) {
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header'), command = await read('boot.command');
   const kernel = await read('boot.kernel-page'), last = await read('boot.kernel-last-page');
   const stateBytes = await read('boot.state'), segmentBytes = await read('boot.segments');
   const meta = JSON.parse(new TextDecoder().decode(await read('boot.json')));
+  const kernelBytes = header.readUInt32LE(0x1f4) * 16;
   const idtPage = await read('call.extra-page'), cmdlinePage = await read('cmdline.extra-page');
   const optionPage = await read('option.extra-page');
-  const memory = new WebAssembly.Memory({initial:8,maximum:16});
+  const memory = new WebAssembly.Memory({initial:8,maximum:128});
   const provider = await WebAssembly.compile(providerBytes);
   assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
   const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
@@ -35,9 +36,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory:compilerMemory}})).exports;
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;
   const compilerReport = compilerOutput + 65536;
-  const data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
+  let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
   const input = vm.vm_arena_min(), rows = input + 8192, directoryOffset = input + 12288;
-  const base = input + 16384, port = base + 2048, segments = base + 1408, codeView = base + 2112;
+  const capacity = 4096, branches = directoryOffset + capacity * 32;
+  const base = (branches + (capacity - 1) * 16 + 4095) & ~4095;
+  const port = base + 2048, segments = base + 1408, codeView = base + 2112, pageRequest = base + 2176;
   const codeOffset = base + 32768, gdtOffset = base + 45056, stackOffset = base + 49152;
   const idtCodeOffset = base + 53248, bssOffset = base + 57344;
   const cmdlineCodeOffset = base + 61440, optionOffset = base + 65536;
@@ -70,7 +73,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
     data.fill(0,at + 20,at + 32);
   }
   view.setBigUint64(port,9n,true);
-  assert.equal(vm.vm_open(base,data.length - base,4096,directoryOffset,pages.length,9n),0);
+  assert.equal(vm.vm_open(base,data.length - base,4096,directoryOffset,pages.length,capacity,branches,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   // No A/D warmup, candidate RIP list or native prefix modules. C vm_code
   // projects the current translation. This single-owner Worker pins RAM,
@@ -79,13 +82,73 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
   assert(slot >= vm.vm_slot_min());
   let admissions = 0, retired = 0, emittedBytes = 0, copiedCodeBytes = 0;
   let engineMs = 0, coldMs = 0, executionMs = 0;
+  let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
+  let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
+  let firstRepeatWait;
   const trace = [];
   const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
   const rip = () => view.getBigUint64(base + 384,true);
+  async function supplyPhysical() {
+    let status = vm.vm_page_prepare(port,pageRequest);
+    if (status === -3 && memory.buffer.byteLength < 128 * 65536) {
+      memory.grow(8); data = new Bytes(memory.buffer); view = new DataView(memory.buffer);
+      assert.equal(vm.vm_grow(),0); status = vm.vm_page_prepare(port,pageRequest);
+    }
+    assert.equal(status,0);
+    const ticket = view.getBigUint64(pageRequest + 40,true);
+    const offset = view.getUint32(pageRequest + 24,true);
+    const kind = view.getUint32(pageRequest + 32,true), bytes = view.getUint32(pageRequest + 28,true);
+    assert.equal(view.getBigUint64(pageRequest,true),9n);
+    assert(offset >= base + 4096 && offset + 4096 <= data.length,'C-chosen virgin payload slot');
+    if (kind === 2 || kind === 3) {
+      assert(typeof readExtent === 'function','authenticated bounded extent reader');
+      const extent = await readExtent(kind,Number(view.getBigUint64(pageRequest + 16,true)),bytes);
+      assert.equal(extent.length,bytes); assert(bytes > 0 && bytes <= 4096);
+      data.set(extent,offset); data.fill(0,offset + bytes,offset + 4096); sourceExtentBytes += bytes;
+    } else { assert(kind === 0 || kind === 1,'known initial page kind'); assert.equal(bytes,0); }
+    assert.equal(vm.vm_page_commit(port,ticket),0); ++pageSupplies;
+  }
+  function relocationInputs() {
+    assert.equal(retired,378); assert.equal(rip(),0x1000281n);
+    assert.equal(view.getBigUint64(base + 416,true),32n);
+    assert.equal(view.getBigUint64(base + 32,true),stack);
+    assert.equal(view.getBigUint64(base + 392,true),0x402n);
+    assert.equal(view.getBigUint64(base + 48,true),0x12e63f8n);
+    assert.equal(view.getBigUint64(base + 56,true),relocated + 0x2e63f8n);
+    assert.equal(view.getBigUint64(base + 8,true),0x5cc80n);
+    repeatInitialState = data.slice(base,base + stateBytes.length);
+    repeatInitialSegments = data.slice(segments,segments + segmentBytes.length);
+  }
+  function relocationObservation() {
+    const expected = new Bytes(repeatInitialState);
+    expected.writeBigUInt64LE(0n,8); expected.writeBigUInt64LE(0xfffff8n,48);
+    expected.writeBigUInt64LE(relocated - 8n,56); expected.writeBigUInt64LE(0x1000284n,384);
+    expected.writeBigUInt64LE(379n,1128);
+    assert(data.subarray(base,base + expected.length).equals(expected),'complete REP CPU observation');
+    assert(data.subarray(segments,segments + segmentBytes.length).equals(repeatInitialSegments),'REP hidden-cache observation');
+    // Independent diagnostic observation, not guest execution or a JS MMU.
+    // Both source/destination offsets are borrowed from the C-MMU provider.
+    const length = kernelBytes;
+    for (let at = 0; at < length; at += 4096) {
+      assert.equal(vm.vm_code(port,0x1000000n + BigInt(at),codeView),0n);
+      const source = view.getUint32(codeView + 16,true);
+      assert.equal(vm.vm_code(port,relocated + BigInt(at),codeView),0n);
+      const destination = view.getUint32(codeView + 16,true);
+      const bytes = Math.min(4096,length - at);
+      assert(data.subarray(source,source + bytes).equals(data.subarray(destination,destination + bytes)),
+        `C-borrowed relocation memory observation at ${at}`);
+      repeatComparedBytes += bytes;
+    }
+  }
   async function step(limit) {
     const entry = rip();
+    if (entry === 0x1000281n && !repeatInitialState) relocationInputs();
     data.fill(0xa5,codeView,codeView + 24);
-    const projection = vm.vm_code(port,entry,codeView);
+    let projection = vm.vm_code(port,entry,codeView);
+    for (let waits = 0; projection === 2n && waits < 4; ++waits) {
+      const start = performance.now(); await supplyPhysical(); supplyMs += performance.now() - start;
+      projection = vm.vm_code(port,entry,codeView);
+    }
     if (projection) {
       assert(data.subarray(codeView,codeView + 24).every(byte => byte === 0xa5),'rejected view publication');
       return {kind:'fetch',result:String(projection),entry:`0x${entry.toString(16)}`,
@@ -121,9 +184,23 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
     view.setUint32(rows + 12,instructions,true); view.setUint32(rows + 16,slot,true);
     view.setUint32(rows + 20,0,true);
     assert.equal(vm.vm_bind_execution(rows,1,generation),0); ++admissions;
-    const beforeExecution = performance.now();
-    const result = vm.vm_run(port,generation,1);
-    executionMs += performance.now() - beforeExecution;
+    let result;
+    for (let resumes = 0; resumes < 8192; ++resumes) {
+      const beforeExecution = performance.now();
+      result = vm.vm_run(port,generation,1);
+      executionMs += performance.now() - beforeExecution;
+      if (result !== 2n && result !== 10n) break;
+      assert.equal(vm.vm_completed(),0); assert.equal(vm.vm_source_retired(),0n);
+      assert.equal(rip(),entry); assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
+      if (result === 10n) { ++quantumYields; continue; }
+      if (entry === 0x1000281n && !firstRepeatWait) {
+        firstRepeatWait = {address:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
+          bytes:view.getUint32(port + 40,true),access:view.getUint32(port + 44,true)};
+        assert.equal(firstRepeatWait.address,'0x1e283f8');
+        assert.equal(firstRepeatWait.bytes,8); assert.equal(firstRepeatWait.access,18);
+      }
+      const start = performance.now(); await supplyPhysical(); supplyMs += performance.now() - start;
+    }
     const done = Number(vm.vm_source_retired());
     trace.push({entry:`0x${entry.toString(16)}`,instructions:done,next:`0x${rip().toString(16)}`,result:String(result)});
     if (trace.length > 16) trace.shift();
@@ -134,6 +211,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
         requestBytes:view.getUint32(port + 40,true),requestAccess:view.getUint32(port + 44,true)};
     assert.equal(vm.vm_completed(),1); assert.equal(done,instructions);
     retired += done; assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
+    if (entry === 0x1000281n) relocationObservation();
     return null;
   }
   try {
@@ -177,30 +255,18 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
       if (stopped) break;
     }
     assert(stopped,'diagnostic quantum bound, not boot completion');
-    assert.equal(retired,378);
-    assert.equal(rip(),0x1000281n);
-    assert.equal(stopped.kind,'execution'); assert.equal(stopped.result,'2');
-    assert.equal(stopped.completed,0); assert.equal(stopped.sourceRetired,0);
-    assert.equal(stopped.entry,'0x1000281');
-    assert.equal(stopped.requestAddress,'0x1e283f8');
-    assert.equal(stopped.requestBytes,8); assert.equal(stopped.requestAccess,18);
-    // Separate observations derived from the shipped relocation preamble:
-    // CPUID's no-LA57 arm returned, POPFQ consumed the pushed zero, and both
-    // LEAs, ECX byte-count/8, and STD have run. Not a full boot proof.
-    assert.equal(view.getBigUint64(base + 416,true),32n);
-    assert.equal(view.getBigUint64(base + 32,true),stack);
-    assert.equal(view.getBigUint64(base + 392,true),0x402n);
-    assert.equal(view.getBigUint64(base + 48,true),0x12e63f8n);
-    assert.equal(view.getBigUint64(base + 56,true),relocated + 0x2e63f8n);
-    assert.equal(view.getBigUint64(base + 8,true),0x5cc80n);
+    assert(retired >= 379,'REP really completed, not only accepted');
+    assert.equal(repeatComparedBytes,kernelBytes);
     return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
       retired,modules:admissions,admissions,liveSlots:1,manualBranchEntries:0,
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,
-      repeatAdmission:'compiled; first destination physical page pending, no element committed',
+      repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
+      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,repeatComparedBytes,
+      residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
-      emittedBytes,copiedCodeBytes,timingMs:{cold:coldMs,engine:engineMs,execution:executionMs},trace,
+      emittedBytes,copiedCodeBytes,timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs},trace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
       memoryBytes:memory.buffer.byteLength,coldMemoryBytes:compilerMemory.buffer.byteLength};
   } finally {

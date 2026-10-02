@@ -42,7 +42,7 @@ to postpone the next browser product goal behind new native size/speed work.
 
 ## Active browser work — 2026-10-03
 
-Current executable checkpoint: the exact shipped bzImage advances to 378 source
+Current executable checkpoint: the exact shipped bzImage advances to 385 source
 instructions in an actual ordinary-memory browser Worker through cold C-Wasm
 compilation and C table/MMU execution. Register SETcc now uses the common
 condition helper for all 16 conditions. A linear backward read/kill frontier
@@ -62,18 +62,23 @@ bounded Wasm loop through C access/MMU: 336 native x86 CPU/RAM receipts,
 source-code alias continuations pass. Only RCX/RSI/RDI publish on a partial
 return; RIP/retirement advance once at completion. Address-size-32 parent
 narrowing was independently red, including zero count/first fault, and fixed.
-The actual browser's next gate is now C physical residency, not grammar:
-`0x1000281` returns RESOURCE for an 8-byte write at `0x1e283f8` without
-committing an element. Supply that page through a bounded C admission path
-without reopening/resetting VM state, sorted-directory insertion per page,
-all-RAM reconstruction or JS virtual-address mapping. Keep the in-flight
-table slot pinned across the wait, then required MSR,
-exception/device/root supply. The diagnostic still recompiles each demanded cut, copies one bounded
+C online physical admission now resolves that first RESOURCE and all following
+REP waits without VM reopen/reset, sorted insertion, full-RAM reconstruction or
+JS virtual-address mapping. All 3,040,256 copied bytes and the complete REP CPU/
+cache frontier pass. One C index handles initial/append rows; generation/request/
+context/ticket checks admit virgin slots only and refuse resident reinitialization.
+Real browser: 1,481 page supplies / 1,494 resident pages / 1,483 quantum yields,
+47 exact 64 KiB Range reads, 65,536-byte delivery cache, 6,815,744-byte VM memory.
+The 193 demanded cuts still use one live table slot. Its next gate is common
+indirect JMP at `0x10002a1` (cold compile `-102`), then startup/decompression,
+MSR, exception/device/root supply. Page/index quotas and dirty eviction/recovery
+remain explicit limitations; diagnostic chunk hashes are not production AEAD/root
+admission. The diagnostic still recompiles each demanded cut, copies one bounded
 page to independent cold memory, and does not yet connect crossing-first-fetch
 pages or signed production source admission. Never skip instructions or change
 the kernel/backend. Whole-image `-104`, Linux boot, PID 1 and development
 acceptance remain red. Native asset and human UI are unchanged. See the
-condition/admission, CPU/stack-flags and REP/page-wait evidence linked from BROWSER.md.
+condition/admission, CPU/stack-flags and REP/page-supply evidence linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
 implementation, not the minor native benchmark difference: whole-image Wasm
@@ -177,7 +182,7 @@ Ordered next blockers:
 1. Complete executable-generation/load/CPU attestation and C cold-compiler/table
    admission. A uniform two-parameter table, C budget dispatcher and precise
    fetch-page cuts are now tested, not yet a complete admission transaction.
-2. Actual startup sequence: bounded REP page supply and indirect control,
+2. Actual startup sequence: indirect control (REP page supply is now tested),
    then required system/MSR/SIMD/exception operations. Shifts/POPF/REP MOVS, RMW,
    LGDT/LRET, common CR reads/writes and memory CMP/TEST are now tested.
    Decode remains cold compiler work, never a runtime instruction loop.

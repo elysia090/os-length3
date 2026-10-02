@@ -442,14 +442,14 @@ compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
 only an oracle; it is never an execution fallback. The standard browser-control
 route now works: actual `provider.html` v3 passes 512 comparisons and
-`startup.html` executes 378 shipped startup instructions, retains the independent
+`startup.html` executes 385 shipped startup instructions, retains the independent
 full CPU/cache comparison at instruction 86, and checks the absent-option result.
 Ordinary memory, secure context and no isolation were observed.
 Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
 receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. REP page supply/MSR startup,
+remaining ISA/system/exception/device semantics. Indirect control/MSR startup,
 complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
@@ -466,8 +466,26 @@ serialized owner pins source and context across engine compilation. This
 diagnostic still performs one page transport/compilation per cut; warm compiled
 code reuse, first-instruction cross-page supply and general async admission are
 not established. Its fixture manifest does not authenticate a production release.
-See the [current evidence](../vm/check/browser/evidence/2026-10-03-repeat-page-wait.md) for
+See the [current evidence](../vm/check/browser/evidence/2026-10-03-page-supply.md) for
 exact hashes, reservation preconditions and the remaining red gates.
+
+REP's C physical misses now use online admission into the same resident index,
+not reopening the VM or rebuilding a sorted directory. `vm_page_prepare` names
+a virgin slot and exact initial object extent; its ticket, generation, pending
+request and CPU/MMU/RIP context fence commit. Existing resident/dirty pages are
+never reinitialized. `vm_grow` refreshes only the payload extent and keeps the
+compiled continuation/table slot pinned. R resident pages need R rows plus R-1
+bit branches; their lookup has a fixed coordinate-bit bound, not an N-sized
+logical-RAM directory. This serialized working-set projection is not the wire
+Artifact quotient, shared-worker ownership or dirty eviction/recovery.
+
+The actual browser completed and compared the full 3,040,256-byte relocation.
+1,481 C page supplies used 47 exact HTTP 206 object ranges and one 64 KiB
+diagnostic chunk cache. Streaming length, Content-Range and local chunk SHA-256
+are checked before staging; signed release-root/AEAD/ECC admission remains red.
+The VM reached 6,815,744 linear-memory bytes, with a separate 1 MiB cold compiler.
+193 compiled cuts / 385 retired source instructions stop at the common indirect
+`JMP RAX` grammar gate `0x10002a1`; this is not Linux boot or a 3-second shell.
 
 ## Platform sources
 

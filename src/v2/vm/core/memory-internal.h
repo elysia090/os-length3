@@ -2,7 +2,7 @@
 #define VM_MEMORY_INTERNAL_H
 #include <vm/memory.h>
 
-const vm_memory_page *vm_memory_find(const vm_memory *memory, pl_u64 address);
+const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address);
 static inline pl_u64 vm_memory_load(const pl_u8 *bytes, pl_u32 count)
 {
     pl_u64 value = 0u;

@@ -26,7 +26,7 @@ for (let i = 0; i < 4; ++i) {
   view.setUint32(at + 8,(i + 2) * 4096,true);
   view.setUint32(at + 12,3,true); view.setUint32(at + 16,1,true);
 }
-assert.equal(vm.vm_open(base,bytes.length - base,4096,directory,4,9n),0);
+assert.equal(vm.vm_open(base,bytes.length - base,4096,directory,4,4,directory + 1024,9n),0);
 function reset(cpl,rank,selector) {
   bytes.fill(0,base,base + 1256); bytes.fill(0,segments,segments + 136); bytes.fill(0,port,port + 48);
   // The caller's source register must survive even when its upper bits are not

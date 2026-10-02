@@ -6,6 +6,7 @@
 
 static _Alignas(8) pl_u8 arena[65536], page[4096], header[4096];
 static int failures;
+static vm_memory_branch branches[3];
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "boot: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u8 *at, pl_u64 value, pl_u32 bytes)
 { for (pl_u32 i = 0u; i < bytes; ++i) at[i] = (pl_u8)(value >> (8u * i)); }
@@ -100,7 +101,7 @@ int main(int argc, char **argv)
     put(arena + 2048u, 9u, 8u);
     vm_memory memory;
     vm_mmu_context context = {state.cr0, state.cr3, state.cr4, state.efer, 0u};
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u) == 0);
     EXPECT(vm_mmu_access(&memory, 2048u, &context, state.rip, 2u, 9u, 0u) == 0u);
     EXPECT(get(arena + 2056u, 2u) == get(arena + 32768u + 0x200u, 2u));
     printf("bzImage plan: entry=%llx kernel=%llu initramfs=%llu initial-opcodes=%04llx; execution/boot NOT tested\n",

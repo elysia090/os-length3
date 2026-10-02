@@ -11,6 +11,7 @@ static pl_u32 entries[4];
 static const pl_u64 base = 0x400000u;
 static const pl_u32 port = 2048u;
 static int failures;
+static vm_memory_branch branches[5];
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "mmu: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 
 static void put(pl_u32 at, pl_u64 value)
@@ -36,7 +37,7 @@ static void reset(pl_u64 address)
     pages[4] = (vm_memory_page){0x8000u, 28672u, 3u, VM_MEMORY_RAM, 0u, 0u};
     pages[5] = (vm_memory_page){0x9000u, 32768u, 3u, VM_MEMORY_RAM, 0u, 0u};
     put(entries[3] + 8u, 0x9007u);
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 6u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 6u, 6u, branches, 9u) == 0);
 }
 static machine_result access(vm_mmu_context *cpu, pl_u64 address, pl_u32 bytes, pl_u32 flags, pl_u64 value)
 { return vm_mmu_access(&memory, port, cpu, address, bytes, flags, value); }
@@ -72,7 +73,7 @@ int main(void)
     EXPECT(memcmp(&code,&saved_code,sizeof code) == 0);
     EXPECT(vm_mmu_code_page(&memory,port,&code_cpu,base,NULL) == MACHINE_RESULT_ENTRY_MAP);
     reset(base); put(entries[2],0x200083u); pages[5].address = 0x200000u;
-    EXPECT(vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,9u) == 0);
+    EXPECT(vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,6u,branches,9u) == 0);
     EXPECT(vm_mmu_code_page(&memory,port,&code_cpu,base + 29u,&code) == 0u);
     EXPECT(code.offset == 32768u && code.address == base && code.bytes == 4096u);
 
@@ -126,7 +127,7 @@ int main(void)
     reset(base); pages[4].rights = 2u; /* Both residency rights are required. */
     EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == MACHINE_RESULT_BARRIER);
     reset(base); EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == 0u);
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 6u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 6u, 6u, branches, 9u) == 0);
     EXPECT(vm_memory_commit(&memory, port, 0u) == MACHINE_RESULT_ENTRY_MAP);
     EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == 0u);
     put(port, 8u);
@@ -160,7 +161,7 @@ int main(void)
     expect_fault(access(&cpu, base, 8u, 1u, 0u), base, 14u, 0u); /* Not-present first. */
 
     cpu = context(); reset(base); put(entries[2], 0x200083u); pages[5].address = 0x200000u;
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 6u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 6u, 6u, branches, 9u) == 0);
     EXPECT(access(&cpu, base + 256u, 8u, 2u, 0x1234u) == 0u);
     EXPECT(get(32768u + 256u) == 0x1234u && (get(entries[2]) & 96u) == 96u);
     put(entries[2], 0x202083u);

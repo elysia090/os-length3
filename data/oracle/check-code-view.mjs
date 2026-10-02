@@ -32,7 +32,7 @@ function reset() {
   view.setBigUint64(base + 488,0x10n,true); view.setBigUint64(port,9n,true);
   view.setUint32(segments,1,true);
   view.setUint32(segments + 36,0xa09b,true);
-  assert.equal(vm.vm_open(base,data.length - base,4096,directory,5,9n),0);
+  assert.equal(vm.vm_open(base,data.length - base,4096,directory,5,5,directory + 1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   data.fill(0xa5,record,record + 24);
 }

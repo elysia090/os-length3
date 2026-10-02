@@ -48,7 +48,7 @@ for (const name of names) {
   view.setUint32(cutRows + 8, meta.sourceBytes, true);
   view.setUint32(cutRows + 12, meta.instructions, true);
   view.setUint32(cutRows + 16, slot, true);
-  assert.equal(vm.vm_open(base, memory.buffer.byteLength - base, 4096, pageRows, 5, 9n), 0);
+  assert.equal(vm.vm_open(base,memory.buffer.byteLength - base,4096,pageRows,5,5,pageRows + 1024,9n), 0);
   assert.equal(vm.vm_bind_state(state), 0);
   const bind = () => assert.equal(vm.vm_bind_execution(cutRows, 1, 9n), 0);
   for (let row = 0; row < 512; ++row) {

@@ -4,6 +4,7 @@
 #include <stddef.h>
 static _Alignas(8) pl_u8 arena[32768];
 static int failures;
+static vm_memory_branch branches[3];
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "segments: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value)
 { for (pl_u32 i = 0u; i < 8u; ++i) arena[at + i] = (pl_u8)(value >> (i * 8u)); }
@@ -43,7 +44,7 @@ int main(void)
         {0x4000u,16384u,3u,VM_MEMORY_RAM,0u,0u},
     };
     vm_memory memory;
-    EXPECT(!vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 9u));
+    EXPECT(!vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u));
     /* Every null selector and CPL; null SS is legal only for CPL<3, RPL=CPL. */
     unsigned cases = 0u;
     for (pl_u32 cpl = 0u; cpl < 4u; ++cpl)

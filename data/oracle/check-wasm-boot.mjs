@@ -168,7 +168,7 @@ for (let i = 0; i < 7; ++i) {
   view.setUint32(at + 20, 0, true); view.setUint32(at + 24, 0, true); view.setUint32(at + 28, 0, true);
 }
 view.setBigUint64(port, 9n, true);
-assert.equal(vm.vm_open(base, data.length - base, 4096, directory, 7, 9n), 0);
+assert.equal(vm.vm_open(base,data.length - base,4096,directory,7,7,directory + 1024,9n), 0);
 assert.equal(vm.vm_bind_state(base), 0);
 assert.equal(vm.vm_bind_segments(segments),0);
 assert.equal(vm.vm_access(port, BigInt(meta.entry), 2, 9, 0n), 0n);

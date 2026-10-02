@@ -1,4 +1,5 @@
 import {checkStartup} from './startup-check.mjs';
+import {diagnosticExtents} from './extent-reader.mjs';
 
 self.onmessage = async () => {
   try {
@@ -19,9 +20,11 @@ self.onmessage = async () => {
       })());
       return cache.get(name);
     };
-    const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'));
+    const transport = diagnosticExtents(manifest.objects,new URL('./generated-startup/',import.meta.url));
+    const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'),transport.read);
     self.postMessage({...result,secureContext:self.isSecureContext,isolated:self.crossOriginIsolated,
       fixtureIntegrity:'local diagnostic SHA-256; not signed production admission',
+      objectTransport:transport.stats,
       sourceReceipt:new TextDecoder().decode(await read('source.sha256')).trim().split('\n')});
   } catch (error) {
     self.postMessage({format:'browser-bzimage-startup-v1',status:'fail',linuxBoot:'not-achieved',

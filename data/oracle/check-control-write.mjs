@@ -47,7 +47,7 @@ for (const name of names) {
     view.setBigUint64(state + 488,16n | BigInt(cpl),true); view.setBigUint64(state + 1128,42n,true);
     view.setUint32(segments,1,true); view.setUint32(segments + 8 + 16 + 12,0xa09b,true);
     view.setBigUint64(port,9n,true);
-    assert.equal(vm.vm_open(state,bytes.length - state,4096,directoryOffset,5,9n),0);
+    assert.equal(vm.vm_open(state,bytes.length - state,4096,directoryOffset,5,5,directoryOffset + 1024,9n),0);
     assert.equal(vm.vm_bind_state(state),0); assert.equal(vm.vm_bind_segments(segments),0);
   }
   const values = Array.from({length:64},(_,bit) => 1n << BigInt(bit));

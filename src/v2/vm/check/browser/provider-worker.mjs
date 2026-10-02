@@ -105,7 +105,7 @@ self.onmessage = async ({ data: { generation } }) => {
         view.setUint8(base + (offset < 4096 ? 28672 + offset : 40960 + offset - 4096),
           Number((word(36) >> BigInt(i * 8)) & 255n));
       }
-      expect(vm.vm_open(base, memory.buffer.byteLength - base, 4096, directory, 10, 9n) === 0, 'resident admission');
+      expect(vm.vm_open(base,memory.buffer.byteLength - base,4096,directory,10,10,directory + 1024,9n) === 0, 'resident admission');
       expect(vm.vm_bind_state(base) === 0 && vm.vm_bind_execution(cutRow, 1, 9n) === 0, 'compiled execution admission');
       expect(vm.vm_run(port, 9n, 1) === 1n && vm.vm_completed() === 1
         && vm.vm_source_retired() === 1n, 'actual C dispatcher/MMU cut');

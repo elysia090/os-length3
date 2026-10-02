@@ -36,7 +36,7 @@ for (const name of names) {
     view.setUint32(at + 24, error, true); view.setUint32(at + 28, 0, true);
   }
   function open() {
-    assert.equal(vm.vm_open(base, memory.buffer.byteLength - base, 4096, directoryOffset, 6, 9n), 0);
+    assert.equal(vm.vm_open(base,memory.buffer.byteLength - base,4096,directoryOffset,6,6,directoryOffset + 1024,9n), 0);
     assert.equal(vm.vm_bind_state(state), 0);
   }
   function tables(view, address) {
@@ -159,7 +159,7 @@ for (const name of names) {
   }
   // C stack/static data and descriptor rows are outside guest-addressable RAM.
   assert.equal(vm.vm_access(directoryOffset, address, 8, 2, 0n), 6n);
-  assert.equal(vm.vm_open(base, memory.buffer.byteLength, 4096, directoryOffset, 6, 9n), -1);
+  assert.equal(vm.vm_open(base,memory.buffer.byteLength,4096,directoryOffset,6,6,directoryOffset + 1024,9n), -1);
   assert.equal(vm.vm_access(port, address, 8, 1, 0n), 6n);
 }
 console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons; fault delivery/dispatch/Linux boot not tested)`);

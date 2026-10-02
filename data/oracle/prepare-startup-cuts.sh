@@ -18,6 +18,10 @@ cleanup() { rm -rf -- "$stage"; }
 trap cleanup EXIT HUP INT TERM
 tar --zstd --no-same-owner --no-same-permissions -xf "$bundle" -C "$stage" \
   root/boot/kernel root/boot/initramfs
+# Diagnostic range serving retains the exact two immutable source objects,
+# not a reconstructed root, RAM image or alternate execution artifact.
+cp -- "$stage/root/boot/kernel" "$output/boot.kernel-object"
+cp -- "$stage/root/boot/initramfs" "$output/boot.initramfs-object"
 "$repo/src/v2/vm/build/boot-check" "$stage/root/boot/kernel" \
   "$stage/root/boot/initramfs" "$output/call" 0x12e3000 >"$output/call.log"
 "$repo/src/v2/vm/build/boot-check" "$stage/root/boot/kernel" \

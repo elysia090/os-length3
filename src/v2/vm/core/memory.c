@@ -6,16 +6,50 @@
 static int canonical(pl_u64 address)
 { return address >> 47u == 0u || address >> 47u == 0x1ffffu; }
 
+#define LEAF 0x80000000u
+static pl_u32 leaf_rank(const vm_memory *memory, pl_u64 address)
+{
+    pl_u32 ref = memory->root;
+    while (ref && !(ref & LEAF)) {
+        const vm_memory_branch *branch = memory->branches + ref - 1u;
+        ref = branch->child[!!(address & branch->bit)];
+    }
+    return ref;
+}
+static void index_append(vm_memory *memory, pl_u32 rank)
+{
+    pl_u64 address = memory->pages[rank].address;
+    if (!rank) { memory->root = LEAF; return; }
+    pl_u32 leaf = leaf_rank(memory,address);
+    pl_u64 different = address ^ memory->pages[leaf & ~LEAF].address;
+    pl_u64 bit = 1ull << (63u - (pl_u32)__builtin_clzll(different));
+    pl_u32 *link = &memory->root;
+    while (!(*link & LEAF) && memory->branches[*link - 1u].bit > bit) {
+        vm_memory_branch *branch = memory->branches + *link - 1u;
+        link = &branch->child[!!(address & branch->bit)];
+    }
+    vm_memory_branch *branch = memory->branches + rank - 1u;
+    pl_u32 side = (pl_u32)!!(address & bit);
+    branch->bit = bit;
+    branch->child[side] = LEAF | rank;
+    branch->child[side ^ 1u] = *link;
+    *link = rank;
+}
+
 int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
-                   pl_u32 reserved_bytes, const vm_memory_page *pages,
-                   pl_u32 page_count, pl_u64 generation)
+                   pl_u32 reserved_bytes, vm_memory_page *pages,
+                   pl_u32 page_count, pl_u32 capacity,
+                   vm_memory_branch *branches, pl_u64 generation)
 {
     if (!memory) return -1;
     *memory = (vm_memory){ 0 };
-    if (!bytes || !generation || (page_count && !pages)
+    if (!bytes || !generation || page_count > capacity || capacity > 0x100000u
+            || (capacity && !pages) || (capacity > 1u && !branches)
+            || ((uintptr_t)pages & 7u) || ((uintptr_t)branches & 7u)
             || ((uintptr_t)bytes & 7u) || byte_count > 0x100000000ull
             || reserved_bytes < sizeof(machine_memory_port)
             || reserved_bytes > byte_count) return -1;
+    pl_u64 next = ((pl_u64)reserved_bytes + 4095u) & ~4095ull;
     for (pl_u32 i = 0u; i < page_count; ++i) {
         const vm_memory_page *page = pages + i;
         if ((page->address & 4095u) || !canonical(page->address)
@@ -24,27 +58,44 @@ int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
             if ((page->offset & 4095u) || page->offset < reserved_bytes
                     || (pl_u64)page->offset + 4096u > byte_count
                     || !page->rights || page->rights & ~3u) return -1;
+            if ((pl_u64)page->offset + 4096u > next) next = (pl_u64)page->offset + 4096u;
         } else if (page->kind == VM_MEMORY_FAULT) {
             if (page->fault_vector != 14u || !page->rights || page->rights & ~3u) return -1;
         } else if (page->kind != VM_MEMORY_DEFERRED) return -1;
     }
     *memory = (vm_memory){ .bytes = bytes, .byte_count = byte_count, .pages = pages,
+        .branches = branches, .page_capacity = capacity, .next_offset = next,
         .page_count = page_count, .reserved_bytes = reserved_bytes, .generation = generation };
+    for (pl_u32 i = 0u; i < page_count; ++i) index_append(memory,i);
     return 0;
 }
 
-const vm_memory_page *vm_memory_find(const vm_memory *memory, pl_u64 address)
+const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address)
 {
+    if (!memory || !memory->generation || !memory->page_count) return NULL;
     pl_u64 page = address & ~4095ull;
-    pl_u32 first = 0u, end = memory->page_count;
-    while (first < end) {
-        pl_u32 middle = first + (end - first) / 2u;
-        pl_u64 candidate = memory->pages[middle].address;
-        if (candidate < page) first = middle + 1u;
-        else end = middle;
-    }
-    return first < memory->page_count && memory->pages[first].address == page
-         ? memory->pages + first : NULL;
+    pl_u32 lane = (pl_u32)(page >> 12u) & 255u;
+    const vm_memory_page *recent = memory->recent[lane];
+    if (recent && recent->address == page) return recent;
+    pl_u32 ref = leaf_rank(memory,page);
+    const vm_memory_page *result = memory->pages + (ref & ~LEAF);
+    if (result->address != page) return NULL;
+    memory->recent[lane] = result;
+    return result;
+}
+
+int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 rights)
+{
+    if (!memory || !memory->generation || memory->reservation.parts
+            || memory->page_count >= memory->page_capacity
+            || (address & 4095u) || !canonical(address) || vm_memory_find(memory,address)
+            || (pl_u64)offset != memory->next_offset || !rights || rights & ~3u
+            || (pl_u64)offset + 4096u > memory->byte_count) return -1;
+    pl_u32 rank = memory->page_count;
+    memory->pages[rank] = (vm_memory_page){address,offset,rights,VM_MEMORY_RAM,0u,0u};
+    index_append(memory,rank);
+    ++memory->page_count; memory->next_offset += 4096u;
+    return 0;
 }
 
 static pl_u64 read_word(const pl_u8 *bytes)

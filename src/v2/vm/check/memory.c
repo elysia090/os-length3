@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 static int failures;
+static vm_memory_branch branches[3];
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "memory: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static _Alignas(8) pl_u8 arena[32768], saved[32768];
 static const pl_u32 port_offset = 2048u;
@@ -29,7 +30,7 @@ int main(void)
         { base + 8192u, 0u, 3u, VM_MEMORY_FAULT, 14u, 6u },
         { base + 12288u, 0u, 3u, VM_MEMORY_DEFERRED, 0u, 0u } };
     memset(arena, 0xa5, sizeof arena); write64(port_offset, 9u);
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u) == 0);
     EXPECT(vm_memory_access(&memory, port_offset, base + 4093u, 8u, 2u, 0xfedcba9876543210ull) == 0u);
     EXPECT(arena[8192u + 4093u] == 0x10u && arena[24576u] == 0x76u);
     EXPECT(vm_memory_access(&memory, port_offset, base + 4093u, 8u, 1u, 0u) == 0u);
@@ -75,19 +76,19 @@ int main(void)
     EXPECT(vm_memory_access(&memory, port_offset, base, 8u, 3u, 0u) == MACHINE_RESULT_ENTRY_MAP);
     EXPECT(memcmp(saved, arena, sizeof arena) == 0);
     pages[1].rights = 1u;
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u) == 0);
     EXPECT(vm_memory_access(&memory, port_offset, base + 4094u, 8u, 2u, 0u) == MACHINE_RESULT_BARRIER);
     accept_request_metadata();
     EXPECT(memcmp(saved, arena, sizeof arena) == 0);
     pages[1].rights = 3u;
     pages[2].rights = 2u;
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u) == 0);
     EXPECT(vm_memory_access(&memory, port_offset, base + 8192u, 8u, 1u, 0u) == MACHINE_RESULT_BARRIER);
     accept_request_metadata();
     EXPECT(memcmp(saved, arena, sizeof arena) == 0);
     pages[2].rights = 3u;
     pl_u64 seed = 0x814137856cbeadcfull;
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u) == 0);
     for (pl_u32 i = 0u; i < 100000u; ++i) {
         seed ^= seed << 13u; seed ^= seed >> 7u; seed ^= seed << 17u;
         pl_u32 width = 1u << (i & 3u);
@@ -99,13 +100,13 @@ int main(void)
     /* Kernel-half addresses are coordinates, never truncated host offsets;
      * virtual aliases intentionally refer to the same resident physical page. */
     vm_memory_page aliases[] = { ram(base, 8192u), ram(0xffff800000001000ull, 8192u) };
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, aliases, 2u, 9u) == 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, aliases, 2u, 2u, branches, 9u) == 0);
     EXPECT(vm_memory_access(&memory, port_offset, base, 8u, 2u, 0x8877665544332211ull) == 0u);
     EXPECT(vm_memory_access(&memory, port_offset, aliases[1].address, 8u, 1u, 0u) == 0u);
     EXPECT(read64(port_offset + 8u) == 0x8877665544332211ull);
     /* Revoked/rejected reopen clears old authority; it cannot keep using it. */
     pages[0].offset = 0u;
-    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 9u) != 0);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 4u, 4u, branches, 9u) != 0);
     EXPECT(!memory.bytes && !memory.generation);
     EXPECT(vm_memory_access(&memory, port_offset, base, 8u, 1u, 0u) == MACHINE_RESULT_ENTRY_MAP);
     if (!failures) puts("resident RAM boundary: green (100000 round trips; not an MMU/boot)");
