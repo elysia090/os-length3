@@ -1,0 +1,79 @@
+#include <vm/execution.h>
+#include <stdio.h>
+#include <string.h>
+static vm_execution execution;
+static machine_state state;
+static vm_execution_row rows[2];
+static pl_u32 calls, fetches, stop, revoke, revoke_fetch;
+static pl_u64 fetched[2];
+static int failures;
+#define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
+static machine_result fetch(void *owner, pl_u64 address)
+{
+    (void)owner;
+    fetched[fetches++ % 2u] = address;
+    if (revoke_fetch) execution.generation = 0u;
+    return fetches == stop ? machine_result_make(MACHINE_RESULT_FAULT, 14u) : 0u;
+}
+static machine_result call(void *owner, pl_u32 slot)
+{
+    (void)owner; ++calls;
+    state.rip = slot == 1u ? rows[1].entry : rows[0].entry;
+    ++state.retired;
+    if (revoke) execution.generation = 0u;
+    return machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u);
+}
+static machine_result run(pl_u64 generation, pl_u32 budget)
+{ return vm_execution_run(&execution, &state, generation, budget, fetch, call, 0); }
+static void reset(void)
+{
+    memset(&state, 0, sizeof state); calls = fetches = stop = revoke = revoke_fetch = 0u;
+    rows[0] = (vm_execution_row){ 0x400000u, 1u, 1u, 1u, 0u };
+    rows[1] = (vm_execution_row){ 0x400001u, 1u, 1u, 2u, 0u };
+    state.rip = rows[0].entry;
+    EXPECT(!vm_execution_open(&execution, rows, 2u, 9u, &state));
+}
+int main(void)
+{
+    reset(); EXPECT(run(9u, 100000u) == 6u && !calls && !fetches);
+    EXPECT(run(8u, 2u) == 5u && !calls && !fetches);
+    EXPECT(run(9u, 2u) == 1u && calls == 2u && fetches == 2u);
+    EXPECT(execution.completed == 2u && execution.retired == 2u && state.retired == 2u);
+    reset(); stop = 2u; EXPECT(run(9u, 2u) == 115u && calls == 1u && state.retired == 1u);
+    reset(); state.rip = 7u; EXPECT(run(9u, 2u) == 6u && !fetches && !calls);
+    reset(); revoke = 1u; EXPECT(run(9u, 1u) == 5u && calls == 1u && state.retired == 1u);
+    EXPECT(execution.completed == 1u && execution.retired == 1u);
+    EXPECT(run(9u, 2u) == 5u && calls == 1u);
+    reset(); revoke_fetch = 1u;
+    EXPECT(run(9u, 1u) == 5u && !calls && !state.retired);
+    for (pl_u32 word = 0u; word < 5u; ++word) {
+        reset();
+        if (word == 0u) ++state.cr0;
+        else if (word == 1u) ++state.cr3;
+        else if (word == 2u) ++state.cr4;
+        else if (word == 3u) ++state.efer;
+        else ++state.system[MACHINE_SYSTEM_CS];
+        EXPECT(run(9u, 1u) == 5u && !calls && !fetches);
+    }
+    reset(); rows[0] = (vm_execution_row){0x400ffeu, 4u, 1u, 1u, 0u};
+    rows[1].entry = 0x401002u; state.rip = rows[0].entry;
+    EXPECT(!vm_execution_open(&execution, rows, 2u, 9u, &state)); stop = 2u;
+    EXPECT(run(9u, 1u) == 115u && !calls && !state.retired);
+    EXPECT(fetched[0] == 0x400ffeu && fetched[1] == 0x401000u);
+    rows[0].source_instructions = 2u;
+    EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);
+    EXPECT(run(9u, 1u) == 5u && !calls);
+    for (pl_u32 i = 0u; i < 100000u; ++i) {
+        reset(); rows[i & 1u].reserved = 1u;
+        EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);
+        EXPECT(!execution.generation && !execution.rows);
+    }
+    reset(); rows[1].entry = rows[0].entry;
+    EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);
+    reset(); rows[0].entry = 0x800000000000ull;
+    EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);
+    reset(); rows[1].entry = ~0ull; rows[1].source_bytes = 2u;
+    EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);
+    if (!failures) puts("Compiled execution directory/budget/fetch/revoke: green (not Linux boot)");
+    return failures ? 1 : 0;
+}

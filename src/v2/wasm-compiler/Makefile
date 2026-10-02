@@ -7,7 +7,7 @@ INCLUDES = -Iinclude -I../support/include -I../optimized-x86/include \
 BUILD ?= build
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
-	src/emit-cut.c src/lower-register.c src/lower-memory.c src/lower-stack.c
+	src/emit-cut.c src/lower-register.c src/lower-memory.c src/lower-stack.c src/lower-system.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
@@ -47,6 +47,15 @@ $(BUILD)/memory-cut-check: check/memory-cut.c check/native-cut.S $(BUILD)/libwas
 $(BUILD)/stack-cut-check: check/stack-cut.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/stack-cut.c check/native-stack.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+$(BUILD)/fetch-cut-check: check/fetch-cut.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+$(BUILD)/fetch-fixture.elf: check/fetch-fixture.S | $(BUILD)
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none $< -o $@
+
+$(BUILD)/code-cut-check: check/code-cut.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 cut-check: all $(BUILD)/cut-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to the post-linked cut fixture\n' >&2; exit 2; }
@@ -91,8 +100,10 @@ stack-fixture-check: $(BUILD)/stack-cut-check fixture-tools
 	$(BUILD)/stack-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done
 
-check: all $(BUILD)/admission-check cut-fixture-check memory-fixture-check stack-fixture-check
+check: all $(BUILD)/admission-check cut-fixture-check memory-fixture-check stack-fixture-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check
 	$(BUILD)/admission-check
+	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
+	$(BUILD)/code-cut-check
 	@! grep -REn '#include <postlink/|machine-artifact|STEP|Pyodide|Python' include src
 	@! grep -REn 'postlink\.program|OX_PROGRAM|ox_program' include src
 

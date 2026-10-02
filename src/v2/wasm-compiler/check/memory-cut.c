@@ -32,7 +32,7 @@ static int close_output(FILE **file)
 int main(int argc, char **argv)
 {
     if (argc != 3) return 2;
-    FILE *file = NULL, *prefix_file = NULL, *wasm = NULL, *cases = NULL, *meta = NULL;
+    FILE *file = NULL, *prefix_file = NULL, *wasm = NULL, *cases = NULL, *meta = NULL, *source_page = NULL;
     pl_u8 *data = NULL, *ram = NULL;
     void *code = MAP_FAILED;
     size_t code_bytes = 0u;
@@ -96,6 +96,9 @@ int main(int argc, char **argv)
         break;
     }
     if (code == MAP_FAILED) goto finish;
+    source_page = output(argv[2], "source-page");
+    if (!source_page || fwrite((const void *)(uintptr_t)(report.entry & ~4095ull),
+                                1u, 4096u, source_page) != 4096u || close_output(&source_page)) goto finish;
     pl_x86_map map = { code, (pl_u64)(uintptr_t)code, code_bytes, code_bytes, 5u, 1u };
     pl_x86_image image = { &map, 1u, 0u, report.entry };
     pl_x86_instruction instruction;
@@ -152,9 +155,9 @@ int main(int argc, char **argv)
         }
         if (fwrite(record, sizeof record, 1u, cases) != 1u) okay = 0;
     }
-    if (fprintf(meta, "{\"entry\":%llu,\"prefixEntry\":%llu,\"moduleBytes\":%llu,\"bytes\":%u,\"access\":%u,"
+    if (fprintf(meta, "{\"entry\":%llu,\"prefixEntry\":%llu,\"moduleBytes\":%llu,\"sourceBytes\":%llu,\"bytes\":%u,\"access\":%u,"
                 "\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,\"retiredOffset\":%zu}\n",
-                report.entry, elf.entry, report.module_bytes, report.memory_bytes, report.memory_access,
+                report.entry, elf.entry, report.module_bytes, report.source_bytes, report.memory_bytes, report.memory_access,
                 sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
                 offsetof(machine_state, retired)) < 0) okay = 0;
     result = okay ? 0 : 1;
@@ -164,6 +167,7 @@ finish:
     if (wasm && close_output(&wasm)) result = 1;
     if (cases && close_output(&cases)) result = 1;
     if (meta && close_output(&meta)) result = 1;
+    if (source_page && close_output(&source_page)) result = 1;
     if (!relative && ram && ram != MAP_FAILED && munmap(ram, 8192u)) result = 1;
     if (code != MAP_FAILED && munmap(code, code_bytes)) result = 1;
     free(data);

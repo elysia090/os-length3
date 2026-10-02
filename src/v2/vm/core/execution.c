@@ -1,0 +1,89 @@
+#include <vm/execution.h>
+
+static int canonical(pl_u64 address)
+{ return address >> 47u == 0u || address >> 47u == 0x1ffffu; }
+static pl_u64 context_word(const machine_state *state, pl_u32 rank)
+{
+    switch (rank) {
+    case 0u: return state->cr0;
+    case 1u: return state->cr3;
+    case 2u: return state->cr4;
+    case 3u: return state->efer;
+    default: return state->system[MACHINE_SYSTEM_CS];
+    }
+}
+void vm_execution_close(vm_execution *execution)
+{ if (execution) *execution = (vm_execution){ 0 }; }
+int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
+                       pl_u32 count, pl_u64 generation, const machine_state *state)
+{
+    if (!execution) return -1;
+    vm_execution_close(execution);
+    if (!rows || !count || count > VM_EXECUTION_MAX_ROWS || !generation || !state) return -1;
+    for (pl_u32 i = 0u; i < count; ++i) {
+        const vm_execution_row *row = rows + i;
+        if (!canonical(row->entry) || !row->source_bytes || row->source_bytes > 4096u
+                || !row->source_instructions || row->source_instructions > 1024u
+                || row->source_instructions > row->source_bytes || !row->slot
+                || row->slot > VM_EXECUTION_MAX_ROWS || row->reserved
+                || row->entry > ~0ull - (row->source_bytes - 1u)
+                || !canonical(row->entry + row->source_bytes - 1u)
+                || (i && rows[i - 1u].entry >= row->entry)) return -1;
+        if ((row->entry >> 12u) != ((row->entry + row->source_bytes - 1u) >> 12u)
+                && (row->source_instructions != 1u || row->source_bytes > 15u)) return -1;
+    }
+    execution->rows = rows; execution->count = count; execution->generation = generation;
+    for (pl_u32 i = 0u; i < 5u; ++i) execution->context[i] = context_word(state, i);
+    return 0;
+}
+static const vm_execution_row *find(const vm_execution *execution, pl_u64 rip)
+{
+    pl_u32 low = 0u, high = execution->count;
+    while (low < high) {
+        pl_u32 middle = low + (high - low) / 2u;
+        if (execution->rows[middle].entry < rip) low = middle + 1u;
+        else high = middle;
+    }
+    return low < execution->count && execution->rows[low].entry == rip
+         ? execution->rows + low : 0;
+}
+machine_result vm_execution_run(vm_execution *execution, machine_state *state,
+                                pl_u64 generation, pl_u32 maximum_cuts,
+                                vm_execution_fetch fetch, vm_execution_call call,
+                                void *owner)
+{
+    if (execution) { execution->completed = 0u; execution->retired = 0u; }
+    if (!execution || !state || !fetch || !call || !maximum_cuts
+            || maximum_cuts > VM_EXECUTION_MAX_QUANTUM)
+        return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
+    for (pl_u32 i = 0u; i < maximum_cuts; ++i) {
+        if (!generation || execution->generation != generation)
+            return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+        for (pl_u32 j = 0u; j < 5u; ++j)
+            if (execution->context[j] != context_word(state, j)) {
+                execution->generation = 0u;
+                return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+            }
+        const vm_execution_row *row = find(execution, state->rip);
+        if (!row) return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
+        machine_result result = fetch(owner, row->entry);
+        if (result) return result;
+        if (execution->generation != generation)
+            return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+        if ((row->entry >> 12u) != ((row->entry + row->source_bytes - 1u) >> 12u)) {
+            result = fetch(owner, (row->entry & ~4095ull) + 4096u);
+            if (result) return result;
+            if (execution->generation != generation)
+                return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+        }
+        result = call(owner, row->slot);
+        if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) return result;
+        ++execution->completed;
+        execution->retired += row->source_instructions;
+        /* A payload write may revoke inside the compiled function's access
+         * call. Never invoke the next entry, even at the quantum boundary. */
+        if (execution->generation != generation)
+            return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+    }
+    return machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u);
+}

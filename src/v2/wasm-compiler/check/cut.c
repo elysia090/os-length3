@@ -92,6 +92,15 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
     if (report->written_registers & (1u << 4u)) {
         munmap(mapping, mapping_bytes); return 0;
     }
+    /* Only diagnostic page supply. The native observer changes a terminal
+     * byte outside this cut's source span; certified instruction bytes stay
+     * identical. No ELF/source reader is imported by the generated code. */
+    FILE *source_page = output_file(prefix, "source-page");
+    if (!source_page) { munmap(mapping, mapping_bytes); return 0; }
+    const void *page = (const void *)(uintptr_t)(report->entry & ~4095ull);
+    int source_okay = fwrite(page, 1u, 4096u, source_page) == 4096u;
+    if (fclose(source_page)) source_okay = 0;
+    if (!source_okay) { munmap(mapping, mapping_bytes); return 0; }
     FILE *cases = output_file(prefix, "cases");
     FILE *meta = output_file(prefix, "json");
     if (!cases || !meta) {

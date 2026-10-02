@@ -2,9 +2,9 @@
 
 void cut_op(cut_lowering *cut, pl_u32 opcode) { wasm_writer_byte(cut->writer, opcode); }
 void cut_get(cut_lowering *cut, pl_u32 local)
-{ cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, local ? local + cut->extra_parameter : 0u); }
+{ cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, local ? local + 1u : 0u); }
 void cut_set(cut_lowering *cut, pl_u32 local)
-{ cut_op(cut, 0x21u); wasm_writer_uleb(cut->writer, local ? local + cut->extra_parameter : 0u); }
+{ cut_op(cut, 0x21u); wasm_writer_uleb(cut->writer, local ? local + 1u : 0u); }
 
 void cut_const(cut_lowering *cut, pl_u64 bits)
 {

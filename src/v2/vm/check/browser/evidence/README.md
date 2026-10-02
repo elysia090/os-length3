@@ -22,6 +22,12 @@ name/version, isolated run, process RSS or Linux boot result was supplied.
 The diagnostic manifest binds these small test extents; it is not the
 production authenticated release root or a distribution closure certificate.
 
+The refreshed `provider.html` emits format `browser-c-provider-probe-v2` and
+uses C table dispatch as well as C MMU access. Its updated source-page/metadata
+fixture manifest is versioned separately. The Node driver
+`data/oracle/check-provider-worker.mjs` checks that setup, not an actual browser
+Worker or permission result. No v2 browser receipt has been supplied yet.
+
 Reproduce the transport/Node checks with:
 
 ```

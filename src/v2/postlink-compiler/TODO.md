@@ -141,9 +141,10 @@ fetch at 0x1000200 passes. This is initialization/fetch, NOT execution/boot.
 compatibility. Initial zero pages never replace dirty/suspended machine state.
 
 Ordered next blockers:
-1. Uniform compiled-cut/table ABI and bounded C dispatch, with executable
-   generation/load/CPU binding and precise instruction-fetch cuts.
-2. Actual startup sequence: CLI, segment loads, LGDT/LRET, CR4, POPF, REP MOVS
+1. Complete executable-generation/load/CPU attestation and C cold-compiler/table
+   admission. A uniform two-parameter table, C budget dispatcher and precise
+   fetch-page cuts are now tested, not yet a complete admission transaction.
+2. Actual startup sequence: hidden segment state/loads, LGDT/LRET, CR4, POPF, REP MOVS
    and indirect control, then required system/MSR/SIMD/exception operations.
    Decode remains cold compiler work, never a runtime instruction loop.
 3. Admit the actual compressed-kernel code/decompression/relocation path;
@@ -151,6 +152,20 @@ Ordered next blockers:
 4. Real-browser kernel/PID 1/offline terminal, then the existing development
    and browser storage/network acceptance gates. Whole-image -104 and
    actual Linux/browser boot remain red; fixtures/QEMU cannot substitute.
+
+Dispatcher checkpoint: the old pure table type was red with a real Wasm
+signature mismatch. Uniform entries pass 83 modules / 42,496 native cases
+through C dispatch. A fetch-time revoke was independently red; any RAM write,
+including page-table A/D, now revokes before the next call (code can alias
+tables). The call-local mutation bit adds no wrapping write epoch; it does not
+prove supervisor generations/ABA safety or substitute for source attestation.
+The shared C cold compiler accepts borrowed executable pages without a fake
+ELF or source interpreter. Actual shipped `CLD; CLI; XOR eax,eax` retire in a
+single C quantum, then ENTRY_MAP identifies segment load `0x1000204`.
+CLI's non-PVI long-mode IF/#GP matrix passes; hidden state, STI/shadow and
+exception delivery remain red. These are Node/C results, not browser boot.
+The v2 diagnostic Worker uses C table dispatch; its Node setup test does not
+retcon the user's earlier actual-browser v1 receipt. Native asset/UI unchanged.
 
 ## Previous acceptance state — before compiler refactor, 2026-10-02
 

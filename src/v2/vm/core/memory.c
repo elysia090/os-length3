@@ -28,7 +28,7 @@ int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
             if (page->fault_vector != 14u || !page->rights || page->rights & ~3u) return -1;
         } else if (page->kind != VM_MEMORY_DEFERRED) return -1;
     }
-    *memory = (vm_memory){ bytes, byte_count, pages, page_count, reserved_bytes, generation };
+    *memory = (vm_memory){ bytes, byte_count, pages, page_count, reserved_bytes, generation, 0u };
     return 0;
 }
 
@@ -107,6 +107,7 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
         consumed = 0u;
         for (pl_u32 part = 0u; part < parts; ++part) {
             write_word(memory->bytes + offsets[part], value >> (consumed * 8u), lengths[part]);
+            memory->write_touched = 1u;
             consumed += lengths[part];
         }
     } else {

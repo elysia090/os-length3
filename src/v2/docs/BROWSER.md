@@ -241,7 +241,8 @@ Inspection on 2026-10-02 found:
   prefix of the shipped BusyBox entry. Whole-image function/control/dispatcher
   closure still returns `WASM_COMPILER_ERROR_INCOMPLETE`; these small cuts are
   not a Linux execution backend. CLC/STC and CLD/STD join the pure flag frontier;
-  CMC/interior flag consumers and privileged CLI/STI are not guessed.
+  CMC/interior flag consumers and STI remain unsupported. CLI now has a
+  precise long-mode, non-PVI/non-VM cut; pending faults are not exception entry.
   Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
   16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
   with no JavaScript guest-memory callback. CPU exception delivery remains
@@ -326,9 +327,37 @@ bzImage-startup checks use Node as a Wasm engine, separately from that actual
 browser observation. Build with `data/oracle/wasm-tools.ps1`; this pins a
 scope-local official SDK and adds no WASI/runtime or distribution dependency.
 
-Next: one uniform compiled-cut/table ABI and bounded C dispatch with precise
-instruction-fetch and executable-generation admission; then CLI/segment/GDT,
-control/MSR and exception entry needed by the actual compressed startup code.
+The compiled table now has one `cut(i32 state, i32 port) -> i64` type, for pure,
+memory, stack and the admitted CLI cut. A bounded C dispatcher borrows sorted
+coordinate rows, checks executable pages through the C MMU, calls the generated
+function table and returns on budget/fault/miss/revocation. No JS cut loop or
+runtime decoder is introduced. This is a baseline bounded directory, not the
+final minimized dispatch projection or an executable-source attestation.
+Same-page prefixes end before crossing instructions, which execute alone.
+All guest RAM writes revoke admission conservatively, including MMU A/D
+writes: code may alias paging structures. A fetch-time revoke regression was
+red before the pre-call fence. Cold source must be observed after MMU admission,
+with code, CPU/MMU context, rows and table slots pinned until return.
+
+Raw boot/mutable executable pages use the same C cut plan/lowering/emitter as
+accepted ELF segments, with at most two borrowed immutable 4 KiB pages and an
+explicit generation. That input does not verify ELF proofs or authenticate a
+release. The cold supervisor must establish those provenance/lifetime gates;
+the row bounds check alone is not permission to execute arbitrary modules.
+Ordinary optimized-ELF admission is retained, not replaced by a synthetic ELF.
+
+The actual shipped bzImage prefix now retires `CLD; CLI; XOR eax,eax` through
+the C-Wasm dispatcher in Node, without a JS instruction scheduler. It stops at
+`0x1000204` (segment load). A 16-case CPL/IOPL CLI model checks IF/#GP and
+nonretirement; it is not a native CPL0/hardware exception oracle. The prefix
+is only three instructions, NOT kernel/PID 1/browser boot. Whole-image emission
+still returns `-104`. The refreshed `provider.html` v2 fixture tests its native
+memory records through C table dispatch; its Node driver is not a new manual
+browser observation and does not replace the retained v1 receipt.
+
+Next: complete executable-generation/load/CPU attestation, C cold compiler and
+table admission; then hidden segment state/loads, GDT/far/control/MSR and
+exception entry needed by the actual compressed startup code.
 Then implement the PC interrupt/timer/RTC/UART boundary and the release
 initramfs's actual root-device handoff before adding unrelated device families.
 Do not skip that startup with a synthetic ELF, redirect execution into the
@@ -353,3 +382,4 @@ old interpreter, or substitute a QEMU boot for this browser gate.
 * [QEMU disk images and snapshots](https://www.qemu.org/docs/master/system/images.html)
 * [QEMU network backends](https://www.qemu.org/docs/master/system/devices/net.html)
 * [Linux legacy 64-bit boot protocol](https://www.kernel.org/doc/html/latest/arch/x86/boot.html)
+* [Intel architectural/instruction manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)

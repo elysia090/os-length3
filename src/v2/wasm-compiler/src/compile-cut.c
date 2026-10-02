@@ -10,6 +10,29 @@ static int overlaps(const void *left, pl_u64 left_bytes,
     return a <= b ? b - a < left_bytes : a - b < right_bytes;
 }
 
+static int result_aliases(const wasm_compiler *compiler, const pl_x86_image *source,
+                          const wasm_cut_options *options, const pl_u64 *written,
+                          const wasm_cut_report *report)
+{
+    const void *outputs[2] = { written, report };
+    const pl_u64 sizes[2] = { sizeof *written, sizeof *report };
+    if (report && overlaps(written, sizeof *written, report, sizeof *report)) return 1;
+    for (pl_u32 i = 0u; i < 2u; ++i) {
+        if (!outputs[i]) continue;
+        if ((pl_u64)(uintptr_t)outputs[i] > (pl_u64)UINTPTR_MAX - sizes[i]
+                || overlaps(outputs[i], sizes[i], options, sizeof *options)) return 1;
+        if (compiler && (overlaps(outputs[i], sizes[i], compiler, sizeof *compiler)
+                || overlaps(outputs[i], sizes[i], compiler->image.bytes, compiler->image.length))) return 1;
+        if (source) {
+            if (overlaps(outputs[i], sizes[i], source, sizeof *source)
+                    || overlaps(outputs[i], sizes[i], source->maps, source->map_count * sizeof(pl_x86_map))) return 1;
+            for (pl_u32 j = 0u; j < source->map_count; ++j)
+                if (overlaps(outputs[i], sizes[i], source->maps[j].bytes, source->maps[j].file_bytes)) return 1;
+        }
+    }
+    return 0;
+}
+
 static void section(wasm_writer *writer, pl_u32 id, pl_u64 bytes)
 { wasm_writer_byte(writer, id); wasm_writer_uleb(writer, bytes); }
 static void raw(wasm_writer *writer, const pl_u8 *bytes, pl_u32 count)
@@ -24,7 +47,7 @@ static pl_u32 uleb_bytes(pl_u64 value)
 static void module_header(wasm_writer *writer, pl_u64 body_bytes, int memory)
 {
     static const pl_u8 header[] = { 0,0x61,0x73,0x6d,1,0,0,0 };
-    static const pl_u8 type[] = { 1,0x60,1,0x7f,1,0x7e };
+    static const pl_u8 type[] = { 1,0x60,2,0x7f,0x7f,1,0x7e };
     static const pl_u8 imports[] = {
         1,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1
     };
@@ -56,19 +79,36 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int memory)
     wasm_writer_uleb(writer, 1u); wasm_writer_uleb(writer, body_bytes);
 }
 
-static int prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
+static int prepare(const wasm_compiler *compiler, const pl_x86_image *source,
+                    pl_u64 generation, const wasm_cut_options *options,
                     cut_plan *plan, pl_u64 *body_bytes)
 {
     wasm_compile_report admission = { 0 };
     wasm_cut_report measured;
     wasm_writer body = { 0, ~0ull, 0u, 0 };
     wasm_writer header = { 0, ~0ull, 0u, 0 };
-    if (!compiler || !options || !options->maximum_module_bytes
+    if ((!compiler && !source) || !options || !options->maximum_module_bytes
             || !options->maximum_source_instructions
             || options->maximum_source_instructions > WASM_CUT_MAX_INSTRUCTIONS)
         return WASM_COMPILER_ERROR_INPUT;
-    int status = wasm_lower_machine_abi(compiler, &admission);
-    if (!status) status = cut_prepare(compiler, options, plan);
+    int status;
+    if (compiler) {
+        status = wasm_lower_machine_abi(compiler, &admission);
+        if (!status) status = cut_prepare(compiler, options, plan);
+    } else {
+        if (!generation || source->reserved || !source->map_count || source->map_count > 2u
+                || pl_x86_image_validate(source) || !pl_x86_image_contains(source, options->entry))
+            return WASM_COMPILER_ERROR_INPUT;
+        for (pl_u32 i = 0u; i < source->map_count; ++i) {
+            const pl_x86_map *map = source->maps + i;
+            if ((map->address & 4095u) || map->file_bytes != 4096u || map->memory_bytes != 4096u
+                    || map->generation != generation || !(map->flags & PL_ELF_FLAG_EXECUTE)
+                    || (pl_u64)(uintptr_t)map->bytes > (pl_u64)UINTPTR_MAX - 4096u
+                    || (i && source->maps[i - 1u].address + 4096u != map->address))
+                return WASM_COMPILER_ERROR_INPUT;
+        }
+        status = cut_prepare_image(source, options, plan);
+    }
     if (!status) status = cut_emit_body(&body, plan, &measured);
     if (status) return status;
     module_header(&header, body.used, measured.memory_bytes != 0u);
@@ -87,14 +127,15 @@ int wasm_compiler_measure_cut(const wasm_compiler *compiler,
     cut_plan plan;
     pl_u64 body_bytes;
     if (!bytes) return WASM_COMPILER_ERROR_INPUT;
-    int status = prepare(compiler, options, &plan, &body_bytes);
+    int status = prepare(compiler, 0, 0u, options, &plan, &body_bytes);
     if (status) return status;
+    if (result_aliases(compiler, 0, options, bytes, report)) return WASM_COMPILER_ERROR_INPUT;
     *bytes = plan.report.module_bytes;
     if (report) *report = plan.report;
     return 0;
 }
 
-int wasm_compiler_emit_cut(const wasm_compiler *compiler,
+static int emit(const wasm_compiler *compiler, const pl_x86_image *source, pl_u64 generation,
                            const wasm_cut_options *options,
                            pl_u8 *target, pl_u64 capacity,
                            pl_u64 *written, wasm_cut_report *report)
@@ -103,17 +144,26 @@ int wasm_compiler_emit_cut(const wasm_compiler *compiler,
     cut_plan plan;
     wasm_cut_report measured;
     if (!target || !written) return WASM_COMPILER_ERROR_INPUT;
-    int status = prepare(compiler, options, &plan, &body_bytes);
+    int status = prepare(compiler, source, generation, options, &plan, &body_bytes);
     if (status) return status;
+    if (result_aliases(compiler, source, options, written, report)) return WASM_COMPILER_ERROR_INPUT;
     pl_u64 bytes = plan.report.module_bytes;
     if (capacity < bytes) return WASM_COMPILER_ERROR_CAPACITY;
     if (bytes > (pl_u64)UINTPTR_MAX - (pl_u64)(uintptr_t)target
-            || overlaps(target, bytes, compiler->image.bytes, compiler->image.length)
-            || overlaps(target, bytes, compiler, sizeof *compiler)
+            || (compiler && (overlaps(target, bytes, compiler->image.bytes, compiler->image.length)
+                             || overlaps(target, bytes, compiler, sizeof *compiler)))
             || overlaps(target, bytes, options, sizeof *options)
             || overlaps(target, bytes, written, sizeof *written)
             || (report && overlaps(target, bytes, report, sizeof *report)))
         return WASM_COMPILER_ERROR_INPUT;
+    if (source) {
+        if (overlaps(target, bytes, source, sizeof *source)
+                || overlaps(target, bytes, source->maps, source->map_count * sizeof(pl_x86_map)))
+            return WASM_COMPILER_ERROR_INPUT;
+        for (pl_u32 i = 0u; i < source->map_count; ++i)
+            if (overlaps(target, bytes, source->maps[i].bytes, source->maps[i].file_bytes))
+                return WASM_COMPILER_ERROR_INPUT;
+    }
     wasm_writer writer = { target, capacity, 0u, 0 };
     module_header(&writer, body_bytes, plan.report.memory_bytes != 0u);
     status = cut_emit_body(&writer, &plan, &measured);
@@ -123,3 +173,26 @@ int wasm_compiler_emit_cut(const wasm_compiler *compiler,
     if (report) *report = measured;
     return 0;
 }
+
+int wasm_compiler_emit_cut(const wasm_compiler *compiler, const wasm_cut_options *options,
+                           pl_u8 *target, pl_u64 capacity, pl_u64 *written, wasm_cut_report *report)
+{ return emit(compiler, 0, 0u, options, target, capacity, written, report); }
+
+int wasm_compiler_measure_code_cut(const pl_x86_image *source, pl_u64 generation,
+                                   const wasm_cut_options *options, pl_u64 *bytes,
+                                   wasm_cut_report *report)
+{
+    cut_plan plan;
+    pl_u64 body_bytes;
+    if (!bytes) return WASM_COMPILER_ERROR_INPUT;
+    int status = prepare(0, source, generation, options, &plan, &body_bytes);
+    if (status) return status;
+    if (result_aliases(0, source, options, bytes, report)) return WASM_COMPILER_ERROR_INPUT;
+    *bytes = plan.report.module_bytes;
+    if (report) *report = plan.report;
+    return 0;
+}
+int wasm_compiler_emit_code_cut(const pl_x86_image *source, pl_u64 generation,
+                                const wasm_cut_options *options, pl_u8 *target,
+                                pl_u64 capacity, pl_u64 *written, wasm_cut_report *report)
+{ return emit(0, source, generation, options, target, capacity, written, report); }

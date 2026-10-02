@@ -271,6 +271,34 @@ overlays remain permitted only when those flags are overwritten before use.
 
 ## Route into the standalone compiler
 
+### C-Wasm dispatch/startup checkpoint
+
+The VM builder now exports its C function table and bounded `vm_run`, using
+`machine/entry.h`'s uniform `(i32 state, i32 port) -> i64` compiled type. Private
+C callback slots are excluded from the admitted guest directory. Raw boot/code
+pages and optimized ELF segments feed the same cold C cut planner/emitter;
+the former requires external source authentication/generation admission and
+does not invent an ELF proof. No decoder is linked into execution.
+
+```sh
+make -C src/v2/wasm-compiler build/code-cut-check
+# The page is from boot-check's exact shipped bzImage record, not Kbuild vmlinux.
+src/v2/wasm-compiler/build/code-cut-check SHIPPED.kernel-page 0x1000200 NEW-CODE-PREFIX
+node data/oracle/check-wasm-boot.mjs VM.WASM SHIPPED NEW-CODE-PREFIX
+node data/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS
+node data/oracle/prepare-browser-provider.mjs VM.WASM NEW-MEMORY-RECORDS
+node data/oracle/check-provider-worker.mjs
+```
+
+The startup check retires only `CLD; CLI; XOR eax,eax` in C dispatch, then stops
+at the segment-load compile gate `0x1000204`. It is NOT Linux/browser boot.
+The last command adapts only diagnostic fixture delivery/self under Node;
+it is NOT an actual browser Worker/consent observation. `provider.html` v2
+uses C table dispatch; preserve the user's earlier v1 browser receipt as-is.
+All guest RAM mutations, including page-table A/D, revoke code admission:
+physical code/table aliasing is legal. Disjoint write-set optimization, complete
+source/CPU/load/generation attestation and exception/device boot remain open.
+
 The intended construction is:
 
 ```text

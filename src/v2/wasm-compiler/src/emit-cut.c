@@ -11,33 +11,62 @@ int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
                  cut_plan *plan)
 {
     pl_elf_image elf;
-    pl_u64 rip = options->entry;
-    plan->report = (wasm_cut_report){ 0 };
     plan->image = (pl_x86_image){ 0 };
-    for (pl_u32 bit = 0u; bit < 12u; ++bit) plan->last_flag_writer[bit] = ~0u;
     if (pl_elf_open(compiler->image.bytes, compiler->image.length, &elf))
         return WASM_COMPILER_ERROR_PROOF;
     pl_u32 count = 0u;
     if (pl_x86_elf_map_count(&elf, &count)) return WASM_COMPILER_ERROR_PROOF;
     if (count > 64u) return WASM_COMPILER_ERROR_CAPACITY;
     if (pl_x86_image_from_elf(&elf, 0u, 1u, plan->maps, 64u, &plan->image)
-            || !pl_x86_image_contains(&plan->image, rip)) return WASM_COMPILER_ERROR_INPUT;
+            || !pl_x86_image_contains(&plan->image, options->entry)) return WASM_COMPILER_ERROR_INPUT;
+    return cut_prepare_image(&plan->image, options, plan);
+}
+
+int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options,
+                       cut_plan *plan)
+{
+    pl_u64 rip = options->entry;
+    plan->image = *image;
+    plan->report = (wasm_cut_report){ 0 };
+    plan->system_cut = 0u;
+    for (pl_u32 bit = 0u; bit < 12u; ++bit) plan->last_flag_writer[bit] = ~0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
+        if (i && (rip >> 12u) != (options->entry >> 12u)) {
+            plan->report.boundary = WASM_CUT_LIMIT;
+            break;
+        }
         pl_x86_instruction instruction;
-        if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
+        if (pl_x86_decode(&plan->image, rip, &instruction)) {
+            if (!i) return WASM_COMPILER_ERROR_GRAMMAR;
+            plan->report.boundary = WASM_CUT_FAULT;
+            plan->report.boundary_operation = PL_X86_OPERATION_FAULT;
+            break;
+        }
+        /* Later instruction fetch must not fault ahead of an already retired
+         * prefix. Only the first instruction may cross its executable page;
+         * it then occupies a separate one-instruction cut. */
+        int crossing = (instruction.rip >> 12u) != ((instruction.fallthrough - 1u) >> 12u);
+        if (i && ((instruction.rip >> 12u) != (options->entry >> 12u) || crossing)) {
+            plan->report.boundary = WASM_CUT_LIMIT;
+            break;
+        }
         int stack = cut_stack_supported(&instruction);
-        if (stack || cut_memory_supported(&instruction)) {
-            plan->report.boundary = WASM_CUT_MEMORY;
+        int system = cut_system_supported(&instruction);
+        if (system || stack || cut_memory_supported(&instruction)) {
+            plan->report.boundary = system ? WASM_CUT_SYSTEM : WASM_CUT_MEMORY;
             plan->report.boundary_operation = instruction.operation;
             /* Commit the preceding pure slice before this possibly faulting
              * transfer. A memory cut starts at the transfer and contains no
              * earlier architectural writes to roll back. */
             if (!i) {
+                plan->system_cut = (pl_u32)system;
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
-                int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
-                plan->report.memory_bytes = stack ? 8u : instruction.operands[store ? 0u : 1u].bits / 8u;
+                if (!system) {
+                    int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
+                    plan->report.memory_bytes = stack ? 8u : instruction.operands[store ? 0u : 1u].bits / 8u;
+                }
                 if (stack && (instruction.operation == PL_X86_OPERATION_CALL
                               || instruction.operation == PL_X86_OPERATION_RETURN)) {
                     plan->report.boundary = WASM_CUT_CONTROL;
@@ -70,6 +99,7 @@ int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
             break;
         }
         plan->report.boundary = WASM_CUT_LIMIT;
+        if (crossing) break;
     }
     if (!plan->report.source_instructions) return WASM_COMPILER_ERROR_GRAMMAR;
     plan->report.continuation = rip;
@@ -82,9 +112,10 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     pl_u64 rip = plan->report.entry;
     cut.writer = writer;
     cut.report = plan->report;
-    cut.extra_parameter = plan->report.memory_bytes != 0u;
+    cut.has_memory = plan->report.memory_bytes != 0u;
+    cut.has_port = cut.has_memory || plan->system_cut;
     wasm_writer_uleb(writer, 1u);
-    wasm_writer_uleb(writer, cut.extra_parameter ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
+    wasm_writer_uleb(writer, cut.has_memory ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
     wasm_writer_byte(writer, 0x7eu);
     cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
     cut_op(&cut, 0x71u); return_if(&cut);
@@ -95,7 +126,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
     cut_const(&cut, 65536u); cut_op(&cut, 0x7eu);
     cut_op(&cut, 0x56u); return_if(&cut);
-    if (cut.extra_parameter) {
+    if (cut.has_port) {
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u);
         cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
@@ -114,7 +145,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_load(&cut, (pl_u32)offsetof(machine_state, rip));
     cut_const(&cut, rip); cut_op(&cut, 0x52u); return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rflags)); cut_set(&cut, CUT_FLAGS);
-    cut_get(&cut, CUT_FLAGS); cut_const(&cut, cut.extra_parameter ? 0x50100u : 0x10100u);
+    cut_get(&cut, CUT_FLAGS); cut_const(&cut, cut.has_memory ? 0x50100u : 0x10100u);
     cut_op(&cut, 0x83u); cut_op(&cut, 0x50u); cut_op(&cut, 0x45u); return_if(&cut);
     for (pl_u32 i = 0u; i < plan->report.source_instructions; ++i) {
         pl_x86_instruction instruction;
@@ -122,8 +153,9 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         cut.wanted_flags = 0u;
         for (pl_u32 bit = 0u; bit < 12u; ++bit)
             if (plan->last_flag_writer[bit] == i) cut.wanted_flags |= 1u << bit;
-        if (cut.extra_parameter && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
-        else if (cut.extra_parameter) cut_lower_memory(&cut, &instruction);
+        if (cut.has_port && cut_system_supported(&instruction)) cut_lower_system(&cut, &instruction);
+        else if (cut.has_memory && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
+        else if (cut.has_memory) cut_lower_memory(&cut, &instruction);
         else cut_lower_instruction(&cut, &instruction);
         rip = instruction.fallthrough;
     }

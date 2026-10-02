@@ -3,6 +3,7 @@
 #define WASM_COMPILER_CUT_H
 
 #include <wasm-compiler/compiler.h>
+#include <x86/decode.h>
 
 #define WASM_CUT_MAX_INSTRUCTIONS 1024u
 
@@ -12,6 +13,7 @@ enum wasm_cut_boundary {
     WASM_CUT_UNSUPPORTED,
     WASM_CUT_FAULT,
     WASM_CUT_MEMORY,
+    WASM_CUT_SYSTEM,
 };
 
 typedef struct {
@@ -37,7 +39,9 @@ typedef struct {
 } wasm_cut_report;
 
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
- * cut(i32 machine_state_offset) -> i64 machine_result. Architectural addresses
+ * cut(i32 machine_state_offset, i32 memory_port_offset) -> i64 machine_result.
+ * Pure cuts ignore the port; all generated cuts share machine/entry.h's table
+ * type. Architectural addresses
  * remain i64. The supervisor owns an aligned, fully resident state reservation
  * and executable admission, including current generation/fetch permissions
  * and event/debug context. This function is not an MMU or code-admission check.
@@ -45,7 +49,7 @@ typedef struct {
  * mutation. The baseline is long mode without debug single-stepping.
  *
  * A one-instruction RAM cut also imports machine.access (machine/memory.h)
- * and exports cut(i32 state, i32 port) -> i64. Its synchronous C provider must
+ * with the same cut type. Its synchronous C provider must
  * pin translations/residency and keep the state/port arena disjoint from guest
  * RAM. Failed access preserves architectural state and retirement. Alignment
  * checking, FS/GS bases, concurrent workers and MMIO remain unsupported.
@@ -55,8 +59,16 @@ typedef struct {
  * 64-bit register/immediate PUSH, register POP, direct near CALL and RET also
  * use this exact typed transaction. No 16-bit stack, far control or CET
  * context may be admitted by this baseline.
+ * CLI is a precise one-instruction system cut with the same private port but
+ * no host operation import. In long mode without CR4.PVI/EFLAGS.VM it clears
+ * IF when CPL <= IOPL, otherwise publishes #GP(0) without retiring. PVI/VM
+ * contexts are rejected, not implemented with nonvirtual semantics. STI and
+ * interrupt-shadow/exception delivery remain unsupported.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
+ * It also stops before a later instruction that crosses/starts another fetch
+ * page. A crossing first instruction is emitted alone. Thus executable-page
+ * admission cannot fault ahead of retirement of the preceding pure prefix.
  * Success covers only source_bytes, never the continuation or an ELF closure.
  * No decoder or source bytes are imported by the generated function. The
  * caller borrows immutable ELF bytes; no private execution section is read.
@@ -71,5 +83,23 @@ int wasm_compiler_emit_cut(const wasm_compiler *compiler,
                            const wasm_cut_options *options,
                            pl_u8 *target, pl_u64 capacity,
                            pl_u64 *written, wasm_cut_report *report);
+
+/* Cold executable-page admission for raw boot/mutable code. Each borrowed
+ * map is one completely resident, immutable executable 4 KiB page; at most
+ * two adjacent pages are supplied, all with this nonzero generation. The
+ * supervisor authenticates source provenance and pins CPU/MMU/load/code
+ * generation before calling. This is NOT an ELF-proof verifier or a license
+ * to execute unauthenticated bytes. The same plan/lowering/emitter is used as
+ * for accepted ELF cuts, and all unsupported instructions fail compilation.
+ * No source decoding or original instruction fallback occurs during execution.
+ * Output must be disjoint from source pages/maps/image/options/outputs.
+ * No executable zero-fill or synthetic ELF/proof is introduced. */
+int wasm_compiler_measure_code_cut(const pl_x86_image *source, pl_u64 generation,
+                                   const wasm_cut_options *options,
+                                   pl_u64 *bytes, wasm_cut_report *report);
+int wasm_compiler_emit_code_cut(const pl_x86_image *source, pl_u64 generation,
+                                const wasm_cut_options *options,
+                                pl_u8 *target, pl_u64 capacity,
+                                pl_u64 *written, wasm_cut_report *report);
 
 #endif

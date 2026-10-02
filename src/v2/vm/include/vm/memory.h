@@ -25,6 +25,7 @@ typedef struct {
     pl_u32 page_count;
     pl_u32 reserved_bytes;
     pl_u64 generation;
+    pl_u32 write_touched; /* Caller-cleared mutation bit, not a counter/epoch. */
 } vm_memory;
 
 /* Validate the borrowed, sorted page directory once. RAM mappings cannot

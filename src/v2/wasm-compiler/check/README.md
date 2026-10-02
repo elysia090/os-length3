@@ -67,7 +67,7 @@ limit, a direct control cut, or before an unlowered transfer. It does not claim
 the continuation or whole ELF is covered. All source meaning comes from
 ordinary PF_X segments; no proof count is mistaken for a block table. The new
 `x86` dependency is cold compiler machinery only. The generated module imports
-one ordinary wasm32 `machine.memory` and exports `cut(i32) -> i64`; it imports
+one ordinary wasm32 `machine.memory` and exports `cut(i32 state, i32 port) -> i64`; it imports
 no source reader, host function or decoder. Architectural addresses stay i64.
 
 Supported transfers in this checkpoint are register/immediate MOV, MOVZX/SX,
@@ -226,13 +226,53 @@ fixtures include overwritten direction/carry definitions and arithmetic
 interleaving; the native trampoline clears host DF only after capturing guest
 flags, as required by the C calling convention. The 82 pure fixtures plus
 the actual shipped BusyBox prefix pass 83 modules / 42,496 comparisons.
-CMC, CLI/STI, indirect/far/CET control and full system/SIMD/x87 lowering remain
-unsupported. Shared fixture tools finish once before parallel test execution;
+CMC, STI, indirect/far/CET control and full system/SIMD/x87 lowering remain
+unsupported; the CLI subset is described below. Shared fixture tools finish once before parallel test execution;
 concurrent recursive relinking previously reproduced an execution failure.
 
 The actual shipped bzImage also passes C-native/C-Wasm initial page/state
 comparison and MMU fetch at `0x1000200`, using bounded object-source extents.
-This does not execute its `CLD; CLI` startup or certify a Linux boot. The boot
+That initial-page gate does not execute startup or certify a Linux boot. The boot
 loader follows the [Linux 64-bit protocol](https://www.kernel.org/doc/html/latest/arch/x86/boot.html);
-executable admission, uniform compiled-cut/table dispatch, hidden segment
+complete executable admission, hidden segment
 state, CPU exception delivery and interrupt/device/root supply remain red.
+
+## Uniform C dispatch and raw executable-page admission
+
+All cuts now have `machine/entry.h`'s two-parameter table type, including pure
+cuts (which ignore the port). The old pure function type reproduced a real
+C `call_indirect` signature mismatch. The common type passes 83 modules /
+42,496 native cases through `vm/core/execution.c`, as well as direct calls.
+The directory borrows source-span/table-slot rows and performs C-MMU fetch
+checks before invocation. Prefixes end before crossing/page-start instructions;
+a crossing first instruction is emitted alone. A fetch-time revoke first
+failed the native directory test, then passed with the pre-call fence.
+RAM payload AND page-table A/D writes invalidate the code snapshot, including
+when a later fault occurs; physical code/table aliasing is not assumed absent.
+This conservative baseline has no disjoint-write-set optimization claim.
+
+`wasm_compiler_*_code_cut` borrows one/two resident executable pages with a
+nonzero generation. It uses the identical planner and emitter as accepted ELF
+cuts and rejects implicit zero-fill, stale/mixed generation and output aliasing.
+Its shape checks are NOT source authentication, ELF-proof admission or complete
+CPU/MMU/executable-generation attestation. The cold supervisor owes those gates.
+
+The shipped bzImage page produces three direct startup cuts (`CLD`, `CLI`,
+`XOR eax,eax`). A single C quantum retires all three and returns ENTRY_MAP at
+the unlowered segment load `0x1000204`; split budgets preserve the same state.
+CLI clears IF for CPL <= IOPL, otherwise publishes #GP(0) without retirement.
+PVI/VM contexts reject without mutation. The 16 privilege combinations are an
+independent specification matrix, not a native CPL0/QEMU fault-entry proof.
+See the [Intel manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).
+STI/shadow, hidden segment caches, segment/GDT/far operations and Linux boot
+are still red. No source instruction is interpreted or silently skipped.
+
+```sh
+node data/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS
+node data/oracle/check-wasm-boot.mjs VM.WASM SHIPPED-BOOT-PREFIX COMPILED-CODE-PREFIX
+node data/oracle/check-provider-worker.mjs
+```
+
+The last command exercises only the diagnostic Worker's setup under Node with
+fixture delivery adapted to files. Its guest execution is actual C-Wasm, but
+it is NOT a browser permission/Worker/transport observation or Linux boot.
