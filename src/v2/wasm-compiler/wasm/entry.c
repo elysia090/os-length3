@@ -1,0 +1,73 @@
+/* Privileged cold construction exports; never imports of generated guest code. */
+#include <wasm-compiler/cut.h>
+#include <stdint.h>
+
+extern unsigned char __heap_base;
+static wasm_compiler compiler;
+static pl_x86_map maps[2];
+static pl_x86_image source;
+static pl_u32 mode;
+static pl_u64 source_generation;
+
+_Static_assert(sizeof(wasm_cut_report) == 80u, "cut report transport extent");
+
+pl_u32 compiler_arena_min(void)
+{ return ((pl_u32)(uintptr_t)&__heap_base + 4095u) & ~4095u; }
+pl_u32 compiler_report_bytes(void) { return sizeof(wasm_cut_report); }
+
+static int range(pl_u32 offset, pl_u64 bytes)
+{
+    return offset >= compiler_arena_min()
+        && (pl_u64)offset + bytes <= (pl_u64)__builtin_wasm_memory_size(0) * 65536u;
+}
+
+void compiler_close(void)
+{
+    compiler = (wasm_compiler){0}; source = (pl_x86_image){0};
+    maps[0] = maps[1] = (pl_x86_map){0}; mode = 0u; source_generation = 0u;
+}
+
+int compiler_open_elf(pl_u32 offset, pl_u32 bytes)
+{
+    compiler_close();
+    if (!bytes || !range(offset,bytes)) return WASM_COMPILER_ERROR_INPUT;
+    int status = wasm_compiler_open(&compiler,(const pl_u8 *)(uintptr_t)offset,bytes);
+    if (!status) mode = 1u;
+    return status;
+}
+
+int compiler_open_pages(pl_u32 offset, pl_u32 count, pl_u64 address, pl_u64 generation)
+{
+    compiler_close();
+    if (!count || count > 2u || !generation || (address & 4095u)
+            || address > ~0ull - (pl_u64)count * 4096u
+            || !range(offset,count * 4096u)) return WASM_COMPILER_ERROR_INPUT;
+    for (pl_u32 i = 0u; i < count; ++i)
+        maps[i] = (pl_x86_map){(const pl_u8 *)(uintptr_t)(offset + i * 4096u),
+                              address + (pl_u64)i * 4096u,4096u,4096u,
+                              PL_ELF_FLAG_EXECUTE,generation};
+    source = (pl_x86_image){maps,count,0u,address};
+    if (pl_x86_image_validate(&source)) { compiler_close(); return WASM_COMPILER_ERROR_INPUT; }
+    mode = 2u; source_generation = generation;
+    return 0;
+}
+
+/* Report and target are caller-owned disjoint reservations, above C static
+ * data/stack. Source/CPU/load attestation and an immutable borrowed input
+ * lifetime are the supervisor's obligations. These exports neither publish
+ * a function table nor confer execution admission. They cannot compile an
+ * unimplemented instruction or turn a prefix into a whole-image proof. */
+int compiler_emit(pl_u64 entry, pl_u32 maximum_instructions,
+                    pl_u32 target, pl_u32 capacity, pl_u32 report_offset)
+{
+    if (!mode || !capacity || !range(target,capacity) || (report_offset & 7u)
+            || !range(report_offset,sizeof(wasm_cut_report))) return WASM_COMPILER_ERROR_INPUT;
+    wasm_cut_options options = {entry,maximum_instructions,capacity};
+    wasm_cut_report *report = (wasm_cut_report *)(uintptr_t)report_offset;
+    pl_u64 written = 0u;
+    if (mode == 1u)
+        return wasm_compiler_emit_cut(&compiler,&options,(pl_u8 *)(uintptr_t)target,
+                                      capacity,&written,report);
+    return wasm_compiler_emit_code_cut(&source,source_generation,&options,
+                                       (pl_u8 *)(uintptr_t)target,capacity,&written,report);
+}

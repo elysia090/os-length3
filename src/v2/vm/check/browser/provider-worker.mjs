@@ -8,7 +8,7 @@ self.onmessage = async ({ data: { generation } }) => {
     const response = await fetch(new URL('manifest.json', root));
     expect(response.ok, 'run prepare-browser-provider.mjs before opening this probe');
     const manifest = await response.json();
-    expect(manifest.format === 'c-provider-diagnostic-v2' && manifest.linuxBoot === 'not-tested', 'diagnostic manifest');
+    expect(manifest.format === 'c-provider-diagnostic-v3' && manifest.linuxBoot === 'not-tested', 'diagnostic manifest');
     async function fetchFixture(name) {
       const reply = await fetch(new URL(name, root));
       expect(reply.ok, `missing ${name}`);
@@ -21,15 +21,38 @@ self.onmessage = async ({ data: { generation } }) => {
     }
     // The diagnostic manifest only detects stale/corrupt local fixture serving.
     // It is not a signed production root or proof of executable admission.
-    const [providerBytes, cutBytes, caseBytes, metaBytes, codePage] = await Promise.all(
-      ['vm.wasm', 'cut.wasm', 'cases.bin', 'cut.json', 'source-page.bin'].map(fetchFixture));
-    const provider = await WebAssembly.compile(providerBytes), cut = await WebAssembly.compile(cutBytes);
+    const [providerBytes, referenceCut, caseBytes, metaBytes, codePage, compilerBytes] = await Promise.all(
+      ['vm.wasm', 'cut.wasm', 'cases.bin', 'cut.json', 'source-page.bin', 'wasm-compiler.wasm'].map(fetchFixture));
+    const provider = await WebAssembly.compile(providerBytes);
     expect(JSON.stringify(WebAssembly.Module.imports(provider)) === JSON.stringify([
       { module: 'machine', name: 'memory', kind: 'memory' },
     ]), 'C provider must not import host guest-memory semantics');
     const meta = JSON.parse(new TextDecoder().decode(metaBytes)), records = new DataView(caseBytes);
     expect(meta.bytes === 8 && meta.access === 1 && meta.sourceBytes > 0
       && codePage.byteLength === 4096 && caseBytes.byteLength === 512 * 38 * 8, 'native record extent');
+    let generated;
+    {
+      const compilerModule = await WebAssembly.compile(compilerBytes);
+      expect(JSON.stringify(WebAssembly.Module.imports(compilerModule)) === JSON.stringify([
+        {module:'machine',name:'memory',kind:'memory'},
+      ]), 'cold compiler has no WASI/host decoder');
+      // Separate cold memory: independently linked C data/stack must not
+      // overwrite the VM's static data. Only the derived module escapes.
+      const coldMemory = new WebAssembly.Memory({initial:16,maximum:32});
+      const compiler = (await WebAssembly.instantiate(compilerModule,{machine:{memory:coldMemory}})).exports;
+      const input = compiler.compiler_arena_min(), output = input + 8192, report = output + 65536;
+      expect(report + compiler.compiler_report_bytes() <= coldMemory.buffer.byteLength,'bounded cold arena');
+      new Uint8Array(coldMemory.buffer,input,4096).set(new Uint8Array(codePage));
+      expect(compiler.compiler_open_pages(input,1,BigInt(meta.entry) & ~4095n,9n) === 0,'cold borrowed code admission');
+      expect(compiler.compiler_emit(BigInt(meta.entry),1,output,65536,report) === 0,'C-Wasm cut construction');
+      const bytes = Number(new DataView(coldMemory.buffer).getBigUint64(report + 40,true));
+      generated = new Uint8Array(coldMemory.buffer,output,bytes).slice();
+      const expected = new Uint8Array(referenceCut);
+      expect(generated.length === expected.length && generated.every((byte,rank) => byte === expected[rank]),
+        'cold Wasm / native C emitted bytes');
+      compiler.compiler_close();
+    }
+    const cut = await WebAssembly.compile(generated);
     const memory = new WebAssembly.Memory({ initial: 8, maximum: 16 });
     const vm = (await WebAssembly.instantiate(provider, { machine: { memory } })).exports;
     const instance = await WebAssembly.instantiate(cut, { machine: { memory, access: vm.vm_access } });
@@ -94,12 +117,13 @@ self.onmessage = async ({ data: { generation } }) => {
       ++comparisons;
     }
     table.set(slot, null); vm.vm_close();
-    self.postMessage({ format: 'browser-c-provider-probe-v2', status: 'pass', linuxBoot: 'not-tested',
+    self.postMessage({ format: 'browser-c-provider-probe-v3', status: 'pass', linuxBoot: 'not-tested',
       secureContext: self.isSecureContext, isolated: self.crossOriginIsolated, generation,
       comparisons, modules: 1, providerBytes: providerBytes.byteLength,
+      compilerBytes: compilerBytes.byteLength, coldCompilation: 'C-Wasm decoder/planner/emitter',
       guestMemoryCallback: 'C-Wasm function, not JavaScript',
       guestExecution: 'C-Wasm table dispatcher', memoryBytes: memory.buffer.byteLength });
   } catch (error) {
-    self.postMessage({ format: 'browser-c-provider-probe-v2', status: 'fail', linuxBoot: 'not-tested', error: String(error) });
+    self.postMessage({ format: 'browser-c-provider-probe-v3', status: 'fail', linuxBoot: 'not-tested', error: String(error) });
   }
 };

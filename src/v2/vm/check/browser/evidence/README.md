@@ -22,11 +22,22 @@ name/version, isolated run, process RSS or Linux boot result was supplied.
 The diagnostic manifest binds these small test extents; it is not the
 production authenticated release root or a distribution closure certificate.
 
-The refreshed `provider.html` emits format `browser-c-provider-probe-v2` and
+The previous `provider.html` emitted format `browser-c-provider-probe-v2` and
 uses C table dispatch as well as C MMU access. Its updated source-page/metadata
 fixture manifest is versioned separately. The Node driver
 `data/oracle/check-provider-worker.mjs` checks that setup, not an actual browser
 Worker or permission result. No v2 browser receipt has been supplied yet.
+
+The current diagnostic emits `browser-c-provider-probe-v3`. It first constructs
+the memory cut with the 400,394-byte cold C-Wasm compiler, compares its bytes
+with native C emission, and then runs the generated function through the C
+VM/MMU/table. Its Node setup test passes 512 comparisons; this is not a new
+browser observation. Cold compiler memory is separate from VM static/stack
+memory, and has no WASI/host decoder imports. Source/output/reopen guards and
+130 byte-identical native/Wasm emission checks are described in BROWSER.md.
+The actual bundle still stops at memory ADD `0x1000232` after fourteen retired
+instructions. Browser-control kernel initialization still fails before JS;
+neither a v3 real-browser pass nor Linux boot has been recorded.
 
 The later [segment/startup checkpoint](2026-10-02-segments.md) uses a distinct
 10,820-byte provider. It advances the actual shipped startup to fourteen source

@@ -5,6 +5,11 @@ WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iinclude -I../support/include -I../optimized-x86/include \
 	-I../machine-abi/include -I../x86/include
 BUILD ?= build
+WASM_CC ?= clang
+WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
+	-Wl,--no-entry,--strip-all -Xlinker --import-memory=machine,memory \
+	-Wl,--export=compiler_arena_min,--export=compiler_report_bytes,--export=compiler_close \
+	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-memory.c src/lower-stack.c src/lower-system.c
@@ -12,8 +17,22 @@ OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
 
-.PHONY: all check fixture-tools cut-check cut-fixture-check memory-fixture-check stack-fixture-check accepted-input-check projection-check clean
+.PHONY: all wasm check fixture-tools cut-check cut-fixture-check memory-fixture-check stack-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
+
+# Independent cold compiler memory/stack; never the VM's runtime decoder.
+ZYDIS = ../x86/third_party/zydis
+COLD_SOURCES = wasm/entry.c wasm/memory.c $(filter-out src/emit-module.c src/emit-dispatch.c,$(SOURCES)) \
+	../x86/src/elf.c ../x86/src/decode.c ../optimized-x86/src/proof.c \
+	../optimized-x86/src/reader.c ../support/src/sha256.c \
+	$(addprefix $(ZYDIS)/src/,$(addsuffix .c,Register SharedData DecoderData Decoder Mnemonic))
+wasm: $(BUILD)/wasm-compiler.wasm
+$(BUILD)/wasm-compiler.wasm: $(COLD_SOURCES) $(wildcard include/wasm-compiler/*.h src/*.h) | $(BUILD)
+	$(WASM_CC) $(WASM_FLAGS) $(INCLUDES) -I$(ZYDIS)/include \
+		-I$(ZYDIS)/dependencies/zycore/include -I$(ZYDIS)/src \
+		-DZYAN_NO_LIBC -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER \
+		-DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC \
+		$(COLD_SOURCES) -o $@
 
 $(BUILD):
 	mkdir -p $@
@@ -26,8 +45,8 @@ $(BUILD)/%.o: src/%.c | $(BUILD)
 $(BUILD)/libwasm-compiler.a: $(OBJECTS)
 	$(AR) rcs $@ $^
 
-$(BUILD)/wasm-compiler: cli/main.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< \
+$(BUILD)/wasm-compiler: cli/main.c cli/io.c cli/prefix.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/main.c cli/io.c cli/prefix.c \
 		$(BUILD)/libwasm-compiler.a ../optimized-x86/build/liboptimized-x86.a \
 		../x86/build/libx86.a ../support/build/libsupport.a -o $@
 
@@ -104,6 +123,7 @@ check: all $(BUILD)/admission-check cut-fixture-check memory-fixture-check stack
 	$(BUILD)/admission-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
+	bash ../../../data/oracle/check-wasm-cli.sh $(BUILD)/wasm-compiler
 	@! grep -REn '#include <postlink/|machine-artifact|STEP|Pyodide|Python' include src
 	@! grep -REn 'postlink\.program|OX_PROGRAM|ox_program' include src
 

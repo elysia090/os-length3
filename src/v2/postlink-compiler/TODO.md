@@ -179,6 +179,25 @@ VM/compiler ASan/UBSan pass; regenerated native fixture comparisons stay green.
 The standard browser-control kernel initialization still fails before JS.
 See vm/check/browser/evidence/2026-10-02-segments.md; real Linux boot remains red.
 
+Bundle construction checkpoint: `data/oracle/compile-native-bundle.sh` now
+authenticates the exact published 63,219,311-byte archive and constructs kernel
+and BusyBox prefixes directly, without a new bake/Kbuild input or full-root
+expansion. Kernel: 11 modules / 14 instructions / 3,187 bytes, memory ADD still
+red at `0x1000232`; BusyBox: two modules / five instructions / 639 bytes, direct
+CALL emitted but its whole-image control closure not claimed. Prefix CLI exits
+3 with `closed:false`, source/end/control/budget diagnostics and no-clobber/
+rollback checks. Default whole-image emission is still red with -104.
+The cold C compiler now runs in Wasm with only an ordinary-memory import and
+no JS decoder/WASI/allocator: 130 modules match native C emission byte-for-byte.
+The v3 diagnostic Worker compiles its cut in that C-Wasm compiler before C VM
+dispatch; its 512 native comparisons pass in Node, not a real browser receipt.
+Keep compiler and VM C static/stack memory disjoint. Browser-control still fails
+before JS kernel initialization. Final all-product check, compiler ASan/UBSan,
+byte-emission comparison and bundle C-Wasm startup check pass. Native/UI bytes
+remain unchanged. See the
+direct-bundle construction instructions in BROWSER.md. The ordered blockers
+above still apply; this checkpoint does not make Linux/PID 1/browser boot green.
+
 ## Previous acceptance state — before compiler refactor, 2026-10-02
 
 The full `febcab1c...` bake completed successfully. The exact local native

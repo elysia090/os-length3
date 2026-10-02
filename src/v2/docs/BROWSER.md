@@ -368,6 +368,70 @@ initramfs's actual root-device handoff before adding unrelated device families.
 Do not skip that startup with a synthetic ELF, redirect execution into the
 old interpreter, or substitute a QEMU boot for this browser gate.
 
+## Compile directly from the shipped native bundle
+
+The authenticated native `.tar.zst` is now a reproducible cold-construction
+input. It is not necessary to rebuild the distribution or supply an unshipped
+Kbuild `vmlinux`. Run from the repository with C build tools, GNU tar and zstd:
+
+```sh
+bash data/oracle/compile-native-bundle.sh \
+  artifact/native/os-length3-linux-0.1.0-x86_64-1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195.tar.zst \
+  4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc \
+  temp/bundle-compiled
+```
+
+Obtain the expected digest independently from the authenticated release. The
+tool verifies it before extraction, streams only manifest, boot objects and
+`root/bin` (including BusyBox's tar hard-link owners), and deletes its temporary
+members after construction. It never expands the complete root/RAM or changes
+the native bundle. The C loader derives the bzImage entry/source page; the same
+C cold compiler handles that page and proof-bearing BusyBox. Source digests,
+initial boot records, modules and exact non-closure coordinates remain in the
+new diagnostic output. An existing output is refused.
+
+This command deliberately exits **3**, not success: the kernel generates 11
+modules / 14 source instructions / 3,187 bytes and stops at `0x1000232` (memory
+ADD); BusyBox generates two modules / five source instructions / 639 bytes and
+stops after its admitted direct CALL, before claiming either target/return
+closure or execution. A CALL's fallthrough is not a guessed execution trace.
+Whole-image `wasm-compiler INPUT.elf OUTPUT.wasm` still refuses with `-104` and
+creates no output. `--prefix` and `--code-pages` are explicit bounded
+construction modes, not an alternative publisher or runtime fallback.
+
+The cold compiler itself also builds as ordinary Wasm:
+
+```powershell
+./data/oracle/wasm-tools.ps1 -Compiler -Output temp/cold/wasm-compiler.wasm
+```
+
+Its only import is `machine.memory`; it has no WASI, JS decoder, host filesystem,
+allocator or guest instruction interpreter. Privileged construction exports
+borrow immutable accepted ELF or up to two executable pages and emit through
+the same C plan/lowering. They do not attest source provenance, publish table
+slots or certify whole-image closure. Caller source/output/report reservations
+are checked; failed reopen revokes prior input. Independently linked compiler
+and VM static data/stacks use separate memories; only generated module bytes
+cross that construction boundary. Do not instantiate both onto an overlapping
+C static-memory layout. Cold memory can be discarded after its derived modules
+are placed, but actual RSS reclamation is not measured.
+
+Native C and cold C-Wasm outputs match byte-for-byte for 130 modules (the exact
+bundle prefixes, 83 pure, 22 memory, 11 stack/control fixtures and a growth
+repeat). The v3 diagnostic Worker now **constructs** its memory cut in C-Wasm,
+compares it with the native construction receipt, then executes the generated
+cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
+only an oracle; it is never an execution fallback. These are Node results. The
+browser-control tool still fails before JS initialization with kernel-assets
+`os error 3`; no actual v3 browser or Linux boot result is claimed. Earlier v1
+manual-browser receipts retain their original builds and meaning.
+
+This resolves bundle provenance and a usable construction entry, **not** the
+remaining ISA/system/exception/device semantics. Memory RMW, LGDT/far/control
+startup, complete code/load admission and kernel/device boot remain the next
+blockers. Unsupported code must be implemented in the common C lowering and
+machine boundary, not skipped or interpreted by JavaScript.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

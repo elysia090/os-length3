@@ -62,8 +62,10 @@ typedef struct {
  * CLI is a precise one-instruction system cut with the same private port but
  * no host operation import. In long mode without CR4.PVI/EFLAGS.VM it clears
  * IF when CPL <= IOPL, otherwise publishes #GP(0) without retiring. PVI/VM
- * contexts are rejected, not implemented with nonvirtual semantics. STI and
- * interrupt-shadow/exception delivery remain unsupported.
+ * contexts are rejected, not implemented with nonvirtual semantics. Register
+ * MOV ES/SS/DS/FS/GS uses machine.segment and the explicit hidden-cache
+ * companion. MOV SS records its shadow; the dispatcher consumes it at the
+ * next instruction. STI and interrupt/exception delivery remain unsupported.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * It also stops before a later instruction that crosses/starts another fetch

@@ -16,8 +16,9 @@ globalThis.self = { isSecureContext: false, crossOriginIsolated: false,
 await import('../../src/v2/vm/check/browser/provider-worker.mjs');
 await self.onmessage({ data: { generation: 9 } });
 assert.equal(result.status, 'pass', JSON.stringify(result));
-assert.equal(result.format, 'browser-c-provider-probe-v2');
+assert.equal(result.format, 'browser-c-provider-probe-v3');
 assert.equal(result.comparisons, 512);
 assert.equal(result.guestExecution, 'C-Wasm table dispatcher');
+assert.equal(result.coldCompilation, 'C-Wasm decoder/planner/emitter');
 assert.equal(result.linuxBoot, 'not-tested');
-console.log(`Node diagnostic Worker setup -> C dispatcher/MMU: green (${result.comparisons} native cases; NOT an actual browser run)`);
+console.log(`Node diagnostic cold C-Wasm compile -> C dispatcher/MMU: green (${result.comparisons} native cases; NOT an actual browser run)`);

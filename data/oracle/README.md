@@ -22,7 +22,7 @@ node data/oracle/check-wasm-provider.mjs temp/wasm-tools-34/vm.wasm temp/fresh-s
 Only source compilation/native observations run in the build guest; actual
 Wasm comparisons run in Node or the browser. Output directories must be fresh.
 No oracle is an alternate guest execution route. `prepare-browser-provider.mjs
-VM.WASM NATIVE-MEMORY-RECORDS` stages a small ignored diagnostic for
+VM.WASM NATIVE-MEMORY-RECORDS COLD-COMPILER.WASM` stages a small ignored diagnostic for
 `vm/check/browser/provider.html`; the user-supplied 512-case real-browser receipt
 is retained in that directory's `evidence/`. Diagnostic digests detect stale
 fixtures; they are not a production release-root signature.
@@ -286,7 +286,7 @@ make -C src/v2/wasm-compiler build/code-cut-check
 src/v2/wasm-compiler/build/code-cut-check SHIPPED.kernel-page 0x1000200 NEW-CODE-PREFIX
 node data/oracle/check-wasm-boot.mjs VM.WASM SHIPPED NEW-CODE-PREFIX
 node data/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS
-node data/oracle/prepare-browser-provider.mjs VM.WASM NEW-MEMORY-RECORDS
+node data/oracle/prepare-browser-provider.mjs VM.WASM NEW-MEMORY-RECORDS COLD-COMPILER.WASM
 node data/oracle/check-provider-worker.mjs
 ```
 
@@ -298,11 +298,46 @@ cannot represent hidden segment caches or MOV SS inhibition. Run
 matrix against the actual C boundary. It is NOT a hardware fault-entry oracle
 or Linux/browser boot. See vm/check/browser/evidence/2026-10-02-segments.md.
 The last command adapts only diagnostic fixture delivery/self under Node;
-it is NOT an actual browser Worker/consent observation. `provider.html` v2
-uses C table dispatch; preserve the user's earlier v1 browser receipt as-is.
+it is NOT an actual browser Worker/consent observation. `provider.html` v3
+constructs the cut using the cold C-Wasm compiler before C table dispatch;
+the native prebuilt cut is only a byte-comparison oracle, never a fallback.
+Preserve the user's earlier v1 browser receipt as-is.
 All guest RAM mutations, including page-table A/D, revoke code admission:
 physical code/table aliasing is legal. Disjoint write-set optimization, complete
 source/CPU/load/generation attestation and exception/device boot remain open.
+
+### Authenticated bundle and cold compiler construction
+
+Use `compile-native-bundle.sh BUNDLE.tar.zst TRUSTED-SHA256 NEW-DIRECTORY`
+instead of selecting a kernel address/page by hand. It consumes the published
+native bundle, extracts only the required manifest/boot/bin members, lets the
+C loader derive the actual startup entry, and invokes the standalone C CLI.
+The exact published archive generates 11 kernel modules/14 instructions and
+two BusyBox modules/five instructions. Exit 3, `closed:false` and the retained
+whole-image -104 diagnostic explicitly mean partial construction, not boot.
+See [BROWSER.md](../../src/v2/docs/BROWSER.md#compile-directly-from-the-shipped-native-bundle).
+
+Build the same C decoder/planner/emitter as freestanding Wasm:
+
+```powershell
+./data/oracle/wasm-tools.ps1 -Compiler -Output temp/cold/wasm-compiler.wasm
+```
+
+```sh
+node data/oracle/check-cold-compiler.mjs COMPILER.WASM BUNDLE-OUTPUT SHIPPED-BUSYBOX.elf \
+  PURE-NATIVE-RECORDS MEMORY-NATIVE-RECORDS STACK-NATIVE-RECORDS
+```
+
+The 400,394-byte build imports only ordinary `machine.memory`; no WASI,
+allocator, JS decoder or runtime source fallback is linked. This cold compiler
+has its own C static/stack memory; do not overlap it with the independently
+linked VM. The check matches 130 modules byte-for-byte against native C
+construction, and rejects offset/alias/capacity/options/reopen errors without
+mutating caller-owned reservations. Rejection checks cover source/output/report
+reservations, not the compiler's mutable private C stack scratch.
+All-product native check and compiler ASan/UBSan pass; the exact bundle's
+fourteen-instruction C-Wasm dispatcher check is also green. None establishes
+the still-missing whole-image/system/exception/device closure or browser boot.
 
 The intended construction is:
 
