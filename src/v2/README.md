@@ -202,7 +202,7 @@ x86 + optimized-x86
           ▼
  postlink-compiler
 
-optimized-x86 + machine-abi
+x86 (cold decoder) + optimized-x86 + machine-abi
           │
           ▼
     wasm-compiler
@@ -221,8 +221,10 @@ Notably:
 
 - `postlink-compiler` does not know Wasm, VM layout, browser delivery, or the
   artifact store.
-- `wasm-compiler` reads only the accepted optimized ELF and the machine ABI; it
-  never re-decodes the linked input.
+- `wasm-compiler` decodes only the accepted optimized ELF through the public
+  cold `x86` frontend and lowers the machine ABI. It never reopens the original
+  linked input or imports a decoder into execution. Native post-link selection
+  remains independent from the Wasm backend.
 - `vm` executes the machine ABI and faults immutable objects through
   `artifact` and `storage`; it does not link either compiler.
 - `web` owns orchestration and presentation only. It does not implement x86,

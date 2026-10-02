@@ -43,8 +43,8 @@ to postpone the next browser product goal behind new native size/speed work.
 ## Active browser work — 2026-10-02
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
-implementation, not the minor native benchmark difference: Wasm function/
-module/dispatch emission returns `WASM_COMPILER_ERROR_INCOMPLETE`, the compiled
+implementation, not the minor native benchmark difference: whole-image Wasm
+function/module/dispatch closure returns `WASM_COMPILER_ERROR_INCOMPLETE`, the compiled
 machine/MMU/devices are absent, and the old terminal names an artifact outside the
 current catalog. Do not re-enable that historical input as a shortcut.
 
@@ -80,6 +80,26 @@ real encrypted storage, file transfer and NIC/publish adapters.
 NETWORK.md now separates guest MTU from carrier datagram budget: the unimplemented
 C frame bridge must support bounded below-IP fragmentation, not disable IPv6 by
 shrinking its link below 1280 or quietly move packets onto reliable streams.
+
+Cold lowering checkpoint: the public x86 decoder now consumes only the accepted
+optimized ELF segments. Pure register cuts produce ordinary Wasm importing only
+machine.memory; decoding and source bytes are absent from execution. Lazy local
+register loading and dirty-only writeback avoid full-state materialization per
+instruction. Seventy-six post-linked fixture modules plus the first three
+instructions of the shipped BusyBox entry pass 39,424 native-x86/Node-Wasm
+comparisons (narrow parents, flags, LEA, immediates, all 16 Jcc conditions).
+Overlapping output/borrowed-ELF buffers first reproduced mutation on rejection;
+the emission admission now rejects that alias before writing. Bounds, RIP and
+TF/RF rejection do not mutate linear memory. Per-bit final flag definitions
+remove dead intermediate flag computation; the same composed optimized ELF
+now emits 366 instead of 454 Wasm bytes. ADD -> INC preserves the earlier carry;
+INC -> DEC and logical/narrow chains also match the native oracle. Planning,
+measurement and emission use bounded linear passes with one borrowed map table,
+not a decoded instruction vector or repeated module reconstruction.
+These are bounded cut checks, not
+whole-image coverage, Linux/browser boot, new distribution timing or publication.
+Next: precise memory/fault cuts, call/return and compiled machine dispatch;
+then kernel startup/MMU/devices and the real browser resource connections.
 
 ## Previous acceptance state — before compiler refactor, 2026-10-02
 

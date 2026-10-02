@@ -49,7 +49,7 @@ int main(int argc, char **argv)
     if (status) {
         if (status == WASM_COMPILER_ERROR_INCOMPLETE)
             fprintf(stderr,
-                    "wasm-compiler: executable lowering is not implemented; "
+                    "wasm-compiler: whole-image executable lowering is incomplete; "
                     "no module was published\n");
         fprintf(stderr, "wasm-compiler: refused input (%d)\n", status);
         return 1;

@@ -27,7 +27,7 @@ site:
 # starting its consumers, including on an empty tree under `make -j`.
 x86 optimized-x86 machine-abi artifact storage: support
 postlink-compiler: x86 optimized-x86
-wasm-compiler: optimized-x86 machine-abi
+wasm-compiler: x86 optimized-x86 machine-abi
 vm: machine-abi artifact storage
 
 $(PRODUCTS):

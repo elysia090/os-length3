@@ -235,9 +235,12 @@ stale and duplicate acknowledgements never advance a newer generation.
 
 Inspection on 2026-10-02 found:
 
-* `wasm-compiler` opens the ordinary proof-bearing ELF, but function, dispatcher
-  and module emission still return `WASM_COMPILER_ERROR_INCOMPLETE`. Its CLI
-  was not even an `all` target. Native success does not imply a browser backend.
+* `wasm-compiler` now directly emits bounded pure register cuts from the
+  accepted executable segments. Native/Node execution comparison covers 77
+  actual generated modules and 39,424 cases, including a three-instruction
+  prefix of the shipped BusyBox entry. Whole-image function/control/dispatcher
+  closure still returns `WASM_COMPILER_ERROR_INCOMPLETE`; these small cuts are
+  not a Linux execution backend. The CLI is built by `all`.
 * Compiled machine execution, MMU and virtio devices in the new VM product
   are not implemented; the retained `vm/wasm` and `web/vm.js` code still contains
   historical execution machinery. A tested resource gate alone is not a VM.
