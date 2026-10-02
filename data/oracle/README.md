@@ -290,8 +290,13 @@ node data/oracle/prepare-browser-provider.mjs VM.WASM NEW-MEMORY-RECORDS
 node data/oracle/check-provider-worker.mjs
 ```
 
-The startup check retires only `CLD; CLI; XOR eax,eax` in C dispatch, then stops
-at the segment-load compile gate `0x1000204`. It is NOT Linux/browser boot.
+The current startup check retires fourteen shipped source instructions in C
+dispatch, then stops at the memory-ADD compile gate `0x1000232`. Cold-loader
+records include `.segments` as well as `.state`; the frozen register cut alone
+cannot represent hidden segment caches or MOV SS inhibition. Run
+`check-wasm-segments.mjs VM.WASM NEW-CODE-PREFIX` for the generated selector
+matrix against the actual C boundary. It is NOT a hardware fault-entry oracle
+or Linux/browser boot. See vm/check/browser/evidence/2026-10-02-segments.md.
 The last command adapts only diagnostic fixture delivery/self under Node;
 it is NOT an actual browser Worker/consent observation. `provider.html` v2
 uses C table dispatch; preserve the user's earlier v1 browser receipt as-is.

@@ -10,7 +10,8 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=vm_arena_min,--export=vm_open,--export=vm_close,--export=vm_bind_state,--export=vm_access
 WASM_FLAGS += -Wl,--export=vm_boot_prepare,--export=vm_boot_project,--export=vm_boot_initial_state
 WASM_FLAGS += -Wl,--export-table,--growable-table,--export=vm_slot_min,--export=vm_bind_execution,--export=vm_run,--export=vm_completed,--export=vm_source_retired
-SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/execution.c
+WASM_FLAGS += -Wl,--export=vm_boot_initial_segments,--export=vm_bind_segments,--export=vm_segment
+SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
@@ -21,11 +22,12 @@ all: $(BUILD)/libvm.a
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
 wasm: $(BUILD)/vm.wasm
 
-$(BUILD)/vm.wasm: wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c core/memory-internal.h \
+$(BUILD)/vm.wasm: wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c core/memory-internal.h \
 	include/vm/memory.h include/vm/mmu.h include/vm/boot.h include/vm/execution.h ../support/include/support/types.h \
 	../machine-abi/include/machine/state.h ../machine-abi/include/machine/memory.h \
+	include/vm/segments.h ../machine-abi/include/machine/segments.h \
 	../machine-abi/include/machine/result.h ../machine-abi/include/machine/entry.h | $(BUILD)
-	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c -o $@
+	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c -o $@
 
 $(BUILD):
 	mkdir -p $@
@@ -53,12 +55,16 @@ $(BUILD)/boot-check: check/boot.c $(BUILD)/libvm.a
 $(BUILD)/execution-check: check/execution.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
-check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/mmu-check $(BUILD)/boot-check $(BUILD)/execution-check
+$(BUILD)/segments-check: check/segments.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/mmu-check $(BUILD)/boot-check $(BUILD)/execution-check $(BUILD)/segments-check
 	$(BUILD)/resource-check
 	$(BUILD)/memory-check
 	$(BUILD)/mmu-check
 	$(BUILD)/boot-check
 	$(BUILD)/execution-check
+	$(BUILD)/segments-check
 	@! grep -REn '#include <(x86|optimized-x86|postlink|wasm-compiler)/|Pyodide|Python|STEP' include core
 
 clean:

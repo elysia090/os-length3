@@ -114,8 +114,9 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.report = plan->report;
     cut.has_memory = plan->report.memory_bytes != 0u;
     cut.has_port = cut.has_memory || plan->system_cut;
+    cut.has_segment = plan->system_cut == CUT_SYSTEM_SEGMENT;
     wasm_writer_uleb(writer, 1u);
-    wasm_writer_uleb(writer, cut.has_memory ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
+    wasm_writer_uleb(writer, (cut.has_memory || cut.has_segment) ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
     wasm_writer_byte(writer, 0x7eu);
     cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
     cut_op(&cut, 0x71u); return_if(&cut);

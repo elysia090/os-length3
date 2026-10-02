@@ -66,6 +66,10 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             }
         const vm_execution_row *row = find(execution, state->rip);
         if (!row) return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
+        pl_u32 shadow = execution->segments ? execution->segments->mov_ss_shadow : 0u;
+        if (execution->segments && (execution->segments->version != MACHINE_SEGMENTS_ABI_VERSION
+                || shadow > 1u || (shadow && row->source_instructions != 1u)))
+            return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
         machine_result result = fetch(owner, row->entry);
         if (result) return result;
         if (execution->generation != generation)
@@ -78,6 +82,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
         }
         result = call(owner, row->slot);
         if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) return result;
+        if (shadow) execution->segments->mov_ss_shadow = 0u;
         ++execution->completed;
         execution->retired += row->source_instructions;
         /* A payload write may revoke inside the compiled function's access

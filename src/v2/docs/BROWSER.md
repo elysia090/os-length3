@@ -243,6 +243,11 @@ Inspection on 2026-10-02 found:
   not a Linux execution backend. CLC/STC and CLD/STD join the pure flag frontier;
   CMC/interior flag consumers and STI remain unsupported. CLI now has a
   precise long-mode, non-PVI/non-VM cut; pending faults are not exception entry.
+  Register-source segment loads now use the C GDT/LDT/cache boundary, with a
+  versioned architectural companion and MOV SS shadow. The actual shipped
+  startup retires 14 source instructions to `0x1000232` in Node/C-Wasm; this
+  is not browser boot. Memory RMW, LGDT/far/control and complete exception/device
+  startup remain open. See the segment checkpoint in vm/check/browser/evidence.
   Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
   16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
   with no JavaScript guest-memory callback. CPU exception delivery remains

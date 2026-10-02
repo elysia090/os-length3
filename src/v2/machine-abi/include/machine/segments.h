@@ -1,0 +1,37 @@
+/* Architectural segment caches, separate from the frozen register-cut ABI. */
+#ifndef MACHINE_SEGMENTS_H
+#define MACHINE_SEGMENTS_H
+#include <support/types.h>
+
+#define MACHINE_SEGMENTS_ABI_VERSION 1u
+#define MACHINE_SEGMENT_COUNT 8u
+enum machine_segment_rank {
+    MACHINE_SEGMENT_ES, MACHINE_SEGMENT_CS, MACHINE_SEGMENT_SS,
+    MACHINE_SEGMENT_DS, MACHINE_SEGMENT_FS, MACHINE_SEGMENT_GS,
+    MACHINE_SEGMENT_LDTR, MACHINE_SEGMENT_TR,
+};
+#define MACHINE_SEGMENT_UNUSABLE 0x10000u
+
+/* Attributes use the access byte in bits 0..7 and AVL/L/D/G in 12..15.
+ * Selectors remain in machine_state.system; FS/GS base lives here, not in
+ * a duplicate MSR-list entry. Exact suspend retains both architectural cuts.
+ * Descriptor-table edits do not implicitly refresh these hidden caches. */
+typedef struct {
+    pl_u64 base;
+    pl_u32 limit;
+    pl_u32 attributes;
+} machine_segment_cache;
+typedef struct {
+    pl_u32 version;
+    pl_u32 mov_ss_shadow; /* 0/1: inhibits events at the following boundary. */
+    machine_segment_cache cache[MACHINE_SEGMENT_COUNT];
+} machine_segments;
+_Static_assert(sizeof(machine_segments) == 136u, "segment context ABI extent");
+
+/* Compiled register-selector loads import machine.segment:
+ * (i32 private_port, i32 segment_rank, i32 selector) -> i64 result.
+ * DIRECT/0 commits selector/cache only; generated code retires the transfer.
+ * A fault/cache miss leaves selector/cache and retirement unchanged. Paging
+ * A/D and a successfully written descriptor Accessed bit are guest RAM writes.
+ * No source opcode, register number or instruction decoder is passed here. */
+#endif

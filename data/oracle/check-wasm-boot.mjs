@@ -12,6 +12,7 @@ assert.deepEqual(WebAssembly.Module.imports(module), [
 const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
 const header = await readFile(`${prefix}.header`), command = await readFile(`${prefix}.command`);
 const expectedState = await readFile(`${prefix}.state`), expectedPages = await readFile(`${prefix}.metadata`);
+const expectedSegments = await readFile(`${prefix}.segments`);
 const kernel = await readFile(`${prefix}.kernel-page`);
 assert.equal(header.length, 4096); assert.equal(kernel.length, 4096);
 assert.equal(expectedPages.length, 6 * 4096);
@@ -19,6 +20,7 @@ const memory = new WebAssembly.Memory({ initial: 8, maximum: 16 });
 const vm = (await WebAssembly.instantiate(module, { machine: { memory } })).exports;
 const input = vm.vm_arena_min(), base = input + 4 * 4096;
 const output = input + 8192, directory = input + 12288, port = base + 2048;
+const segments = base + 1408;
 let view = new DataView(memory.buffer), data = Buffer.from(memory.buffer);
 data.set(header, input); data.set(command, input + 4096);
 function prepare() {
@@ -33,24 +35,34 @@ for (let i = 0; i < 6; ++i) {
 }
 assert.equal(vm.vm_boot_initial_state(base), 0);
 assert.deepEqual(data.subarray(base, base + expectedState.length), expectedState);
+assert.equal(vm.vm_boot_initial_segments(segments),0);
+assert.deepEqual(data.subarray(segments,segments + expectedSegments.length),expectedSegments);
 async function checkStartup() {
   if (!codePrefix) return;
   // The C cold compiler's output is tied to this opaque shipped code page,
   // not a synthetic ELF or a copied unshipped Kbuild image. No JS cut loop.
   assert.deepEqual(kernel.subarray(0x200, 0x204), Buffer.from([0xfc, 0xfa, 0x31, 0xc0]));
-  const table = vm.__indirect_function_table, firstSlot = table.grow(3);
+  const records = [];
+  for (let i = 0; i < 32; ++i) {
+    const name = i ? `${codePrefix}.${i}` : codePrefix;
+    try { records.push({ name, record: JSON.parse(await readFile(`${name}.json`,'utf8')) }); }
+    catch (error) { if (error.code === 'ENOENT') break; throw error; }
+  }
+  assert.equal(records.length,11);
+  const table = vm.__indirect_function_table, firstSlot = table.grow(records.length);
   assert(firstSlot >= vm.vm_slot_min());
   let next = BigInt(meta.entry), instructions = 0;
   const compiled = [];
-  for (let i = 0; i < 3; ++i) {
-    const name = i ? `${codePrefix}.${i}` : codePrefix;
-    const record = JSON.parse(await readFile(`${name}.json`, 'utf8'));
+  for (const [i, {name,record}] of records.entries()) {
     assert.equal(BigInt(record.entry), next);
     const bytes = await readFile(`${name}.wasm`);
     assert.equal(bytes.length, record.moduleBytes);
     const emitted = await WebAssembly.compile(bytes);
-    assert.deepEqual(WebAssembly.Module.imports(emitted), [{ module: 'machine', name: 'memory', kind: 'memory' }]);
-    const instance = await WebAssembly.instantiate(emitted, { machine: { memory } });
+    const imports = [{ module: 'machine', name: 'memory', kind: 'memory' }];
+    if (i >= 3 && i <= 7) imports.push({module:'machine',name:'segment',kind:'function'});
+    if (i === 9) imports.push({module:'machine',name:'access',kind:'function'});
+    assert.deepEqual(WebAssembly.Module.imports(emitted),imports);
+    const instance = await WebAssembly.instantiate(emitted, { machine: { memory,segment:vm.vm_segment,access:vm.vm_access } });
     table.set(firstSlot + i, instance.exports.cut); compiled.push(instance.exports.cut);
     const row = output + i * 24;
     view.setBigUint64(row, next, true); view.setUint32(row + 8, record.sourceBytes, true);
@@ -58,14 +70,27 @@ async function checkStartup() {
     view.setUint32(row + 20, 0, true);
     next = BigInt(record.continuation); instructions += record.instructions;
   }
-  assert.equal(instructions, 3); assert.equal(next, BigInt(meta.entry) + 4n);
-  assert.equal(vm.vm_bind_execution(output, 3, 9n), 0);
-  assert.equal(vm.vm_run(port, 9n, 32), 6n, 'next segment-load coordinate is not silently executed');
-  assert.equal(vm.vm_completed(), 3); assert.equal(vm.vm_source_retired(), 3n);
+  assert.equal(instructions,14); assert.equal(next,BigInt(meta.entry) + 0x32n);
+  assert.equal(vm.vm_bind_execution(output,records.length,9n),0);
+  assert.equal(vm.vm_run(port,9n,32),6n,'next memory-ADD coordinate is not silently executed');
+  assert.equal(vm.vm_completed(),11); assert.equal(vm.vm_source_retired(),14n);
   const expected = Buffer.from(expectedState);
-  expected.writeBigUInt64LE(next, 384); expected.writeBigUInt64LE(0x46n, 392);
-  expected.writeBigUInt64LE(3n, 1128);
-  assert.deepEqual(data.subarray(base, base + expected.length), expected, 'real CLD/CLI/XOR startup state');
+  const relocated = 0x1000000n + BigInt(header.readUInt32LE(0x260)) - 0x320000n;
+  expected.writeBigUInt64LE(0x1000000n,5 * 8); expected.writeBigUInt64LE(relocated,3 * 8);
+  expected.writeBigUInt64LE(relocated + 0x2ea400n,4 * 8);
+  // This is an independent fixture expectation, not an execution decoder.
+  assert.deepEqual(kernel.subarray(0x22b,0x22e),Buffer.from([0x48,0x8d,0x05]));
+  expected.writeBigUInt64LE(0x1000232n + BigInt(kernel.readInt32LE(0x22e)),0);
+  for (const rank of [0,2,3,4,5]) expected.writeBigUInt64LE(0n,432 + (6 + rank) * 8);
+  expected.writeBigUInt64LE(next,384); expected.writeBigUInt64LE(6n,392);
+  expected.writeBigUInt64LE(14n,1128);
+  assert.deepEqual(data.subarray(base,base + expected.length),expected,'real startup selector/GPR/flags/retirement state');
+  const segmentResult = Buffer.from(expectedSegments);
+  for (const rank of [0,2,3,4,5]) {
+    segmentResult.fill(0,8 + rank * 16,8 + (rank + 1) * 16);
+    segmentResult.writeUInt32LE(0x10000,8 + rank * 16 + 12);
+  }
+  assert.deepEqual(data.subarray(segments,segments + expectedSegments.length),segmentResult,'MOV SS shadow consumed after MOV FS');
   // Independent CLI specification matrix. CPL0 is not a native hardware
   // differential; exception delivery is outside this pending-fault test.
   const cli = compiled[1], cliEntry = BigInt(meta.entry) + 1n;
@@ -98,12 +123,21 @@ async function checkStartup() {
     assert.deepEqual(data.subarray(port, port + 48), savedPort);
   }
   data.set(expectedState, base); view.setBigUint64(port, 9n, true);
-  assert.equal(vm.vm_bind_execution(output, 3, 9n), 0);
+  data.set(expectedSegments,segments);
+  assert.equal(vm.vm_bind_execution(output,records.length,9n),0);
   assert.equal(vm.vm_run(port, 9n, 1), 1n); assert.equal(vm.vm_completed(), 1);
   assert.equal(vm.vm_run(port, 9n, 2), 1n); assert.equal(vm.vm_completed(), 2);
-  assert.equal(vm.vm_run(port, 9n, 1), 6n); assert.equal(vm.vm_completed(), 0);
-  for (let i = 0; i < 3; ++i) table.set(firstSlot + i, null);
-  console.log(`Actual shipped kernel startup -> C dispatcher: 3 instructions retired; next RIP 0x${next.toString(16)} is a segment-load compile gate; Linux boot NOT achieved`);
+  assert.equal(vm.vm_run(port,9n,32),6n); assert.equal(vm.vm_completed(),8);
+  assert.deepEqual(data.subarray(base,base + expected.length),expected);
+  // Host admission of companion state/port aliases must fail before any write.
+  for (const badPort of [base,segments,segments + 128,port + 1]) {
+    const snapshot = Buffer.from(data);
+    assert.equal(vm.vm_segment(badPort,3,0),6n); assert.deepEqual(data,snapshot);
+  }
+  assert.equal(vm.vm_bind_segments(base),-1);
+  assert.equal(vm.vm_segment(port,3,0),6n,'failed companion rebind revokes the old context');
+  for (let i = 0; i < records.length; ++i) table.set(firstSlot + i,null);
+  console.log(`Actual shipped kernel startup -> C dispatcher: 14 instructions retired; next RIP 0x${next.toString(16)} is a memory-ADD compile gate; Linux boot NOT achieved`);
 }
 let saved = Buffer.from(data);
 assert.equal(vm.vm_boot_project(BigInt(meta.kernelAddress), base + 8 * 4096, output), 2);
@@ -136,9 +170,13 @@ for (let i = 0; i < 7; ++i) {
 view.setBigUint64(port, 9n, true);
 assert.equal(vm.vm_open(base, data.length - base, 4096, directory, 7, 9n), 0);
 assert.equal(vm.vm_bind_state(base), 0);
+assert.equal(vm.vm_bind_segments(segments),0);
 assert.equal(vm.vm_access(port, BigInt(meta.entry), 2, 9, 0n), 0n);
 assert.equal(view.getUint16(port + 8, true), kernel.readUInt16LE(0x200));
 assert.deepEqual(data.subarray(base, base + expectedState.length), expectedState);
+// Pre-admit the data-read page walk before binding source/table rows. A/D
+// updates otherwise correctly revoke the quantum and need cold re-admission.
+assert.equal(vm.vm_access(port,0x1260n,4,1,0n),0n);
 await checkStartup();
 assert.equal(vm.vm_boot_initial_state(base), -1, 'live memory admission closes cold-loader writes');
 assert.equal(vm.vm_boot_prepare(input, 0x200, BigInt(meta.imageBytes),

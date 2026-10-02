@@ -144,7 +144,7 @@ Ordered next blockers:
 1. Complete executable-generation/load/CPU attestation and C cold-compiler/table
    admission. A uniform two-parameter table, C budget dispatcher and precise
    fetch-page cuts are now tested, not yet a complete admission transaction.
-2. Actual startup sequence: hidden segment state/loads, LGDT/LRET, CR4, POPF, REP MOVS
+2. Actual startup sequence: precise memory RMW, LGDT/LRET, CR4, POPF, REP MOVS
    and indirect control, then required system/MSR/SIMD/exception operations.
    Decode remains cold compiler work, never a runtime instruction loop.
 3. Admit the actual compressed-kernel code/decompression/relocation path;
@@ -166,6 +166,18 @@ CLI's non-PVI long-mode IF/#GP matrix passes; hidden state, STI/shadow and
 exception delivery remain red. These are Node/C results, not browser boot.
 The v2 diagnostic Worker uses C table dispatch; its Node setup test does not
 retcon the user's earlier actual-browser v1 receipt. Native asset/UI unchanged.
+
+Segment checkpoint: register-source ES/SS/DS/FS/GS loads now use a typed C
+descriptor transaction, not source interpretation. A versioned 136-byte hidden
+cache/MOV SS context leaves the frozen register ABI and native bytes unchanged.
+GDT/LDT, type/privilege/presence, Accessed update and noncommit checks pass 8,272
+native C model cases; generated cuts pass another 8,272 Node/C-Wasm model cases.
+MOV SS forces a one-instruction next cut and its shadow survives pending faults,
+not a complete interrupt/debug delivery proof. Actual shipped startup retires
+14 instructions, then stops at `0x1000232` memory ADD. Final full check and both
+VM/compiler ASan/UBSan pass; regenerated native fixture comparisons stay green.
+The standard browser-control kernel initialization still fails before JS.
+See vm/check/browser/evidence/2026-10-02-segments.md; real Linux boot remains red.
 
 ## Previous acceptance state — before compiler refactor, 2026-10-02
 

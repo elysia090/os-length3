@@ -3,8 +3,9 @@
 #include <string.h>
 static vm_execution execution;
 static machine_state state;
+static machine_segments segments;
 static vm_execution_row rows[2];
-static pl_u32 calls, fetches, stop, revoke, revoke_fetch;
+static pl_u32 calls, fetches, stop, revoke, revoke_fetch, load_ss, call_fault;
 static pl_u64 fetched[2];
 static int failures;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
@@ -18,9 +19,11 @@ static machine_result fetch(void *owner, pl_u64 address)
 static machine_result call(void *owner, pl_u32 slot)
 {
     (void)owner; ++calls;
+    if (call_fault) return 107u;
     state.rip = slot == 1u ? rows[1].entry : rows[0].entry;
     ++state.retired;
     if (revoke) execution.generation = 0u;
+    if (load_ss) segments.mov_ss_shadow = 1u;
     return machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u);
 }
 static machine_result run(pl_u64 generation, pl_u32 budget)
@@ -28,6 +31,8 @@ static machine_result run(pl_u64 generation, pl_u32 budget)
 static void reset(void)
 {
     memset(&state, 0, sizeof state); calls = fetches = stop = revoke = revoke_fetch = 0u;
+    load_ss = call_fault = 0u; segments = (machine_segments){0};
+    segments.version = MACHINE_SEGMENTS_ABI_VERSION;
     rows[0] = (vm_execution_row){ 0x400000u, 1u, 1u, 1u, 0u };
     rows[1] = (vm_execution_row){ 0x400001u, 1u, 1u, 2u, 0u };
     state.rip = rows[0].entry;
@@ -35,6 +40,16 @@ static void reset(void)
 }
 int main(void)
 {
+    reset(); execution.segments = &segments; segments.mov_ss_shadow = 1u;
+    rows[0].source_bytes = rows[0].source_instructions = 2u;
+    EXPECT(run(9u,1u) == 6u && !calls && !fetches && segments.mov_ss_shadow == 1u);
+    reset(); execution.segments = &segments; segments.mov_ss_shadow = 1u;
+    call_fault = 1u; EXPECT(run(9u,1u) == 107u && !state.retired && segments.mov_ss_shadow == 1u);
+    call_fault = 0u; load_ss = 1u;
+    EXPECT(run(9u,1u) == 1u && state.retired == 1u && !segments.mov_ss_shadow);
+    reset(); execution.segments = &segments; load_ss = 1u;
+    EXPECT(run(9u,1u) == 1u && segments.mov_ss_shadow == 1u);
+    load_ss = 0u; EXPECT(run(9u,1u) == 1u && !segments.mov_ss_shadow);
     reset(); EXPECT(run(9u, 100000u) == 6u && !calls && !fetches);
     EXPECT(run(8u, 2u) == 5u && !calls && !fetches);
     EXPECT(run(9u, 2u) == 1u && calls == 2u && fetches == 2u);

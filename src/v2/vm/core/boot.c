@@ -118,3 +118,16 @@ int vm_boot_state(const vm_boot *boot, machine_state *state)
     state->x87_tag = 0xffffu;
     return 0;
 }
+
+int vm_boot_segments(const vm_boot *boot, machine_segments *segments)
+{
+    if (!boot || !boot->header || !segments) return -1;
+    *segments = (machine_segments){0};
+    segments->version = MACHINE_SEGMENTS_ABI_VERSION;
+    for (pl_u32 i = 0u; i < MACHINE_SEGMENT_COUNT; ++i)
+        segments->cache[i].attributes = MACHINE_SEGMENT_UNUSABLE;
+    segments->cache[MACHINE_SEGMENT_CS] = (machine_segment_cache){0u,0xffffffffu,0xa09bu};
+    segments->cache[MACHINE_SEGMENT_DS] = segments->cache[MACHINE_SEGMENT_ES]
+        = segments->cache[MACHINE_SEGMENT_SS] = (machine_segment_cache){0u,0xffffffffu,0xc093u};
+    return 0;
+}

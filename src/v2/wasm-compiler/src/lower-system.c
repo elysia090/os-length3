@@ -2,6 +2,17 @@
 #include "cut-internal.h"
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if (instruction->status == PL_X86_DECODE_VALID && instruction->operation == PL_X86_OPERATION_MOVE
+            && instruction->machine_operation == PL_X86_MACHINE_WRITE_SEGMENT
+            && instruction->flow == PL_X86_FLOW_NEXT && instruction->visible_operand_count == 2u
+            && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER
+            && instruction->operands[0].value.reg.class_id == PL_X86_REGISTER_SEGMENT
+            && instruction->operands[0].value.reg.index < 6u
+            && instruction->operands[0].value.reg.index != 1u
+            && instruction->operands[1].kind == PL_X86_OPERAND_REGISTER
+            && cut_gpr(&instruction->operands[1].value.reg)
+            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
+                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_SEGMENT;
     return instruction->status == PL_X86_DECODE_VALID
         && instruction->operation == PL_X86_OPERATION_FLAG_CONTROL
         && instruction->condition == 5u && !instruction->visible_operand_count
@@ -23,7 +34,16 @@ static void port_store(cut_lowering *cut, pl_u32 offset, pl_u32 bytes)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
-    (void)instruction;
+    if (cut->has_segment) {
+        cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->operands[0].value.reg.index);
+        cut_read_operand(cut,&instruction->operands[1],16u); cut_op(cut,0xa7u);
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u);
+        cut_set(cut,CUT_STATUS); cut_get(cut,CUT_STATUS); cut_op(cut,0x50u); cut_op(cut,0x45u);
+        cut_op(cut,0x04u); cut_op(cut,0x40u);
+        cut_get(cut,CUT_STATUS); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+        return;
+    }
     /* Virtualized protected-mode flags are outside this admitted baseline. */
     cut_load(cut, offsetof(machine_state, cr4)); cut_const(cut, 2u); cut_op(cut, 0x83u);
     cut_get(cut, CUT_FLAGS); cut_const(cut, 0x20000u); cut_op(cut, 0x83u);

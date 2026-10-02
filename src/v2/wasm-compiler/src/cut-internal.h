@@ -8,6 +8,7 @@
 #include <stddef.h>
 enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
        CUT_ADDRESS, CUT_STATUS, CUT_LOCAL_COUNT = 21, CUT_MEMORY_LOCALS = 23 };
+enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT };
 typedef struct {
     wasm_writer *writer;
     wasm_cut_report report;
@@ -15,6 +16,7 @@ typedef struct {
     pl_u32 wanted_flags;
     pl_u32 has_memory;
     pl_u32 has_port;
+    pl_u32 has_segment;
 } cut_lowering;
 typedef struct {
     pl_x86_map maps[64];

@@ -28,6 +28,11 @@ fixture manifest is versioned separately. The Node driver
 `data/oracle/check-provider-worker.mjs` checks that setup, not an actual browser
 Worker or permission result. No v2 browser receipt has been supplied yet.
 
+The later [segment/startup checkpoint](2026-10-02-segments.md) uses a distinct
+10,820-byte provider. It advances the actual shipped startup to fourteen source
+instructions in Node/C-Wasm and preserves the earlier browser receipts. It is
+not a new browser result; Linux boot is still unachieved.
+
 Reproduce the transport/Node checks with:
 
 ```

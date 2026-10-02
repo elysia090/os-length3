@@ -3,6 +3,7 @@
 #define VM_EXECUTION_H
 #include <machine/entry.h>
 #include <machine/state.h>
+#include <machine/segments.h>
 
 #define VM_EXECUTION_MAX_ROWS 4096u
 #define VM_EXECUTION_MAX_QUANTUM 65536u
@@ -22,6 +23,7 @@ typedef struct {
     pl_u64 generation;
     pl_u64 retired;
     pl_u64 context[5];
+    machine_segments *segments; /* Optional only for register-only fixtures. */
 } vm_execution;
 typedef machine_result (*vm_execution_fetch)(void *owner, pl_u64 address);
 typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot);
@@ -49,6 +51,11 @@ void vm_execution_close(vm_execution *execution);
  * Budget exhaustion yields RESOLVE_RIP/0 with completed/retired counters.
  * Revoke after a successful writing cut stops before the following cut.
  * Exceptions are pending, not delivered. This is not a complete machine. */
+/* With an active MOV SS shadow the next row must contain exactly one source
+ * instruction. ENTRY_MAP requests that narrower compile admission; it never
+ * retires a larger slice or decodes an instruction. A successful retirement
+ * consumes the old shadow, including consecutive MOV SS. Pending faults and
+ * host misses preserve it until actual exception delivery/continuation. */
 machine_result vm_execution_run(vm_execution *execution, machine_state *state,
                                 pl_u64 generation, pl_u32 maximum_cuts,
                                 vm_execution_fetch fetch, vm_execution_call call,

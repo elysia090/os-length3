@@ -35,6 +35,24 @@ int main(int argc, char **argv)
     EXPECT(wasm_compiler_measure_code_cut(&source, 9u, &options, &maps[0].generation, 0)
            == WASM_COMPILER_ERROR_INPUT);
     EXPECT(maps[0].generation == 9u);
+    pages[0] = 0x8eu; pages[1] = 0xd8u; /* MOV DS,AX: precise C segment boundary. */
+    EXPECT(!wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.source_bytes == 2u && report.boundary == WASM_CUT_SYSTEM);
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    pages[0] = 0xfcu; pages[1] = 0xfau;
+    for (pl_u32 rank = 0u; rank < 6u; ++rank)
+    for (pl_u32 reg = 0u; reg < 16u; ++reg) {
+        pl_u32 at = reg >= 8u ? 1u : 0u;
+        pages[0] = 0x41u; pages[at] = 0x8eu;
+        pages[at + 1u] = (pl_u8)(0xc0u | (rank << 3u) | (reg & 7u));
+        int status = wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        if (rank == 1u) EXPECT(status == WASM_COMPILER_ERROR_GRAMMAR);
+        else {
+            EXPECT(!status && report.source_bytes == at + 2u && report.source_instructions == 1u);
+            EXPECT(report.read_registers == (1u << reg) && !report.written_registers && !report.flags_written);
+        }
+    }
+    pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;
     EXPECT(wasm_compiler_measure_code_cut(&source, 9u, &options, &options.entry, 0)
            == WASM_COMPILER_ERROR_INPUT);
     EXPECT(options.entry == source.entry);

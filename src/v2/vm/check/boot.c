@@ -38,6 +38,7 @@ int main(int argc, char **argv)
     vm_boot boot;
     vm_boot_source source;
     machine_state state;
+    machine_segments segments;
     pl_u64 image_bytes = 0x2ea400u, initramfs_bytes = 0x65432u;
     FILE *image = NULL, *initramfs = NULL;
     if (argc != 1 && argc != 3 && argc != 4) return 2;
@@ -58,6 +59,10 @@ int main(int argc, char **argv)
                         0x8000000u, command, sizeof command - 1u) == 0);
     if (!boot.header) goto failed;
     EXPECT(vm_boot_state(&boot, &state) == 0);
+    EXPECT(vm_boot_segments(&boot,&segments) == 0);
+    EXPECT(segments.version == MACHINE_SEGMENTS_ABI_VERSION && !segments.mov_ss_shadow);
+    EXPECT(segments.cache[MACHINE_SEGMENT_CS].attributes == 0xa09bu);
+    EXPECT(segments.cache[MACHINE_SEGMENT_SS].attributes == 0xc093u);
     EXPECT(state.rip == boot.kernel_address + 0x200u && state.registers[6] == 0x1000u);
     EXPECT(state.system[MACHINE_SYSTEM_CS] == 16u && !(state.rflags & 0x600u));
     EXPECT(state.cr3 == 0x4000u && state.cr4 == 32u && state.efer == 0x500u);
@@ -102,6 +107,7 @@ int main(int argc, char **argv)
            state.rip, boot.kernel_bytes, initramfs_bytes, get(arena + 2056u, 2u));
 
     if (argc == 4) {
+        if (!write_record(argv[3],"segments",&segments,sizeof segments)) goto failed;
         pl_u8 metadata[6 * 4096];
         for (pl_u32 i = 0u; i < 6u; ++i)
             EXPECT(vm_boot_page(&boot, (pl_u64)(i + 1u) * 4096u,

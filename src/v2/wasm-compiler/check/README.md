@@ -257,15 +257,20 @@ cuts and rejects implicit zero-fill, stale/mixed generation and output aliasing.
 Its shape checks are NOT source authentication, ELF-proof admission or complete
 CPU/MMU/executable-generation attestation. The cold supervisor owes those gates.
 
-The shipped bzImage page produces three direct startup cuts (`CLD`, `CLI`,
-`XOR eax,eax`). A single C quantum retires all three and returns ENTRY_MAP at
-the unlowered segment load `0x1000204`; split budgets preserve the same state.
+The earlier shipped startup checkpoint produced three direct cuts (`CLD`, CLI,
+`XOR eax,eax`). It has now advanced to fourteen instructions across eleven cuts
+through typed C segment loads, with ENTRY_MAP at memory ADD `0x1000232`;
+split budgets preserve the same state. Versioned hidden caches preserve the
+frozen register ABI, and MOV SS requires the next cut to contain one instruction.
+Generated segment cuts pass 8,272 model cases through C-Wasm, not a hardware
+fault/debug-entry oracle. See vm/check/browser/evidence/2026-10-02-segments.md.
 CLI clears IF for CPL <= IOPL, otherwise publishes #GP(0) without retirement.
 PVI/VM contexts reject without mutation. The 16 privilege combinations are an
 independent specification matrix, not a native CPL0/QEMU fault-entry proof.
 See the [Intel manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).
-STI/shadow, hidden segment caches, segment/GDT/far operations and Linux boot
-are still red. No source instruction is interpreted or silently skipped.
+STI, memory-source segment loads, GDTR updates, far/control transfers, complete
+interrupt/debug delivery and Linux boot are still red. No source instruction
+is interpreted or silently skipped.
 
 ```sh
 node data/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS

@@ -2,6 +2,7 @@
 #ifndef VM_BOOT_H
 #define VM_BOOT_H
 #include <machine/state.h>
+#include <machine/segments.h>
 
 enum vm_boot_page_kind {
     VM_BOOT_ZERO = 0, VM_BOOT_METADATA, VM_BOOT_KERNEL, VM_BOOT_INITRAMFS,
@@ -42,4 +43,5 @@ int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
 int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
                   vm_boot_source *source);
 int vm_boot_state(const vm_boot *boot, machine_state *state);
+int vm_boot_segments(const vm_boot *boot, machine_segments *segments);
 #endif
