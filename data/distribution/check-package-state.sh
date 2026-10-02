@@ -104,8 +104,9 @@ fi
 # though it suppresses its own database files. Derive the exact finite set of
 # permitted directory rows from the declared transaction paths; do not admit a
 # generic unowned-directory exception.
-declare -A transaction_directory=()
+declare -A transaction_directory=() transaction_file=()
 for transaction_path in "${DISTRIBUTION_APK_TRANSACTION_PATHS[@]}"; do
+  transaction_file["${transaction_path#/}"]=1
   directory=$(dirname -- "$transaction_path")
   while [[ $directory != / && $directory != . ]]; do
     transaction_directory["${directory#/}/"]=1
@@ -119,6 +120,13 @@ while IFS= read -r audit_row; do
   audit_path=${audit_row#'d '}
   if [[ $audit_row == 'd '* &&
         -n ${transaction_directory["$audit_path"]+present} ]]; then
+    continue
+  fi
+  # The signed index is copied to its guest repository coordinate after the
+  # apk transaction.  It is the one visible added transaction file; the
+  # publication gate compares its bytes with the signed repository index.
+  if [[ $audit_row == 'A '* &&
+        -n ${transaction_file["${audit_row#'A '}"]+present} ]]; then
     continue
   fi
   printf '%s\n' "$audit_row" >>"$unexpected_audit_rows"

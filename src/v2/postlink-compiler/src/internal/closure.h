@@ -3,7 +3,7 @@
 #ifndef POSTLINK_CLOSURE_H
 #define POSTLINK_CLOSURE_H
 
-#include "block.h"
+#include "form-block.h"
 
 /* Return positive and write rank for a closed coordinate, zero when the
  * address belongs to the total runtime resolver, or a negative compiler

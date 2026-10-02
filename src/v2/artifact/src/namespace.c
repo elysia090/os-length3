@@ -641,6 +641,27 @@ int artifact_namespace_reopen_metadata(
         projection, workspace, inode, out, 0);
 }
 
+int artifact_namespace_reopen_content_counts(
+    const artifact_namespace_projection *projection,
+    const artifact_namespace_workspace *workspace,
+    pl_u32 counts[4])
+{
+    if (!projection || !workspace || !counts)
+        return ARTIFACT_ERROR_NAMESPACE_RANGE;
+    inode_material_cursor cursor;
+    int status = inode_material_open(projection, workspace, &cursor);
+    while (!status && cursor.ordinal < projection->inodes) {
+        artifact_namespace_reopened_inode inode = { 0 };
+        status = inode_material_next(
+            projection, workspace, &cursor, &inode, 0);
+    }
+    if (status || cursor.cursor != cursor.end)
+        return status ? status : ARTIFACT_ERROR_NAMESPACE;
+    for (pl_u32 kind = 0u; kind < 4u; ++kind)
+        counts[kind] = cursor.content_count[kind];
+    return 0;
+}
+
 int artifact_namespace_reopen_xattr(
     const artifact_namespace_projection *projection,
     const artifact_namespace_workspace *workspace,

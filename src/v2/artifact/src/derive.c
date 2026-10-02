@@ -7,6 +7,8 @@ static const pl_u8 empty_exception_domain[] =
 static int equal_cell(const artifact_cell *left, const artifact_cell *right)
 {
     if (left->length != right->length) return 0;
+    if (left->length && (!left->bytes || !right->bytes)) return 0;
+    if (left->bytes == right->bytes) return 1;
     for (pl_u32 index = 0u; index < left->length; ++index)
         if (left->bytes[index] != right->bytes[index]) return 0;
     return 1;
@@ -46,8 +48,22 @@ int artifact_derive_project(
     pl_u32 coordinates, const artifact_derive_workspace *workspace,
     artifact_derive_projection *out)
 {
-    if (!actual || !generated || !coordinates
-            || !workspace_valid(workspace, coordinates) || !out)
+    if (!actual || !generated || !coordinates || !workspace || !out)
+        return ARTIFACT_ERROR_DERIVE_RANGE;
+    if (actual == generated) {
+        pl_u64 opened = 0u;
+        for (pl_u32 coordinate = 0u; coordinate < coordinates;
+                ++coordinate) {
+            if ((actual[coordinate].length && !actual[coordinate].bytes)
+                    || !add_u64(&opened, actual[coordinate].length))
+                return ARTIFACT_ERROR_DERIVE_RANGE;
+        }
+        *out = (artifact_derive_projection){
+            coordinates, coordinates, 0u, 0u, opened, 0u, opened,
+        };
+        return 0;
+    }
+    if (!workspace_valid(workspace, coordinates))
         return ARTIFACT_ERROR_DERIVE_RANGE;
     for (pl_u32 index = 0u; index < workspace->support_bytes; ++index)
         workspace->support[index] = 0u;
@@ -122,7 +138,15 @@ int artifact_derive_cell(
     pl_u32 coordinate, artifact_cell *out)
 {
     if (!actual || !generated || coordinate >= coordinates || !out
-            || !workspace_valid(workspace, coordinates))
+            || !workspace)
+        return ARTIFACT_ERROR_DERIVE_RANGE;
+    if (actual == generated) {
+        if (actual[coordinate].length && !actual[coordinate].bytes)
+            return ARTIFACT_ERROR_DERIVE_RANGE;
+        *out = actual[coordinate];
+        return 0;
+    }
+    if (!workspace_valid(workspace, coordinates))
         return ARTIFACT_ERROR_DERIVE_RANGE;
     if (!(workspace->support[coordinate >> 3u]
             & (pl_u8)(1u << (coordinate & 7u)))) {

@@ -41,7 +41,63 @@ int pl_builder_open(pl_builder *builder, pl_plan *plan, pl_arena *arena,
     builder->arena = arena;
     builder->node_capacity = nodes;
     builder->argument_capacity = arguments;
+    builder->shared_slots = 0;
+    builder->shared_capacity = 0;
+    builder->shared_disabled = 0;
     return 0;
+}
+
+static pl_u32 shared_hash(pl_u32 opcode, const pl_operand *arguments,
+                          pl_u32 count)
+{
+    pl_u32 hash = 2166136261u;
+    hash = (hash ^ opcode) * 16777619u;
+    hash = (hash ^ count) * 16777619u;
+    for (pl_u32 index = 0; index < count; ++index) {
+        hash = (hash ^ arguments[index].kind) * 16777619u;
+        hash = (hash ^ (pl_u32)arguments[index].value) * 16777619u;
+        hash = (hash ^ (pl_u32)(arguments[index].value >> 32u))
+             * 16777619u;
+    }
+    return hash;
+}
+
+static void shared_insert(pl_builder *builder, pl_u32 value)
+{
+    pl_plan *plan = builder->plan;
+    const pl_node *node = &plan->nodes[value - 1u];
+    if (!builder->shared_slots || pl_opcode_is_memory(node->opcode)) return;
+    pl_u32 mask = builder->shared_capacity - 1u;
+    pl_u32 at = shared_hash(
+        node->opcode, plan->arguments + node->argument_at,
+        node->argument_count) & mask;
+    while (builder->shared_slots[at]) at = (at + 1u) & mask;
+    builder->shared_slots[at] = value;
+}
+
+static void shared_index_open(pl_builder *builder)
+{
+    if (builder->shared_slots || builder->shared_disabled) return;
+    /* Tiny plans are cheaper to compare directly.  The larger native block
+     * plans use an arena-local index, never a release-wide materialization. */
+    if (builder->node_capacity < 32u
+            || builder->node_capacity > 0x0fffffffu) {
+        builder->shared_disabled = 1u;
+        return;
+    }
+    pl_u32 capacity = 64u;
+    while (capacity < builder->node_capacity * 2u) capacity <<= 1u;
+    pl_u32 *slots = pl_arena_take(
+        builder->arena, capacity * (pl_u32)sizeof *slots);
+    if (!slots) {
+        builder->shared_disabled = 1u;
+        return;
+    }
+    builder->shared_slots = slots;
+    builder->shared_capacity = capacity;
+    for (pl_u32 at = 0; at < capacity; ++at) slots[at] = 0u;
+    for (pl_u32 value = 1u; value <= builder->plan->node_count; ++value)
+        shared_insert(builder, value);
 }
 
 pl_u32 pl_emit(pl_builder *builder, pl_u32 opcode,
@@ -58,6 +114,7 @@ pl_u32 pl_emit(pl_builder *builder, pl_u32 opcode,
     plan->nodes[plan->node_count].argument_at = at;
     plan->nodes[plan->node_count].argument_count = count;
     plan->node_count += 1u;
+    shared_insert(builder, plan->node_count);
     return plan->node_count;
 }
 
@@ -75,7 +132,23 @@ pl_u32 pl_emit_shared(pl_builder *builder, pl_u32 opcode,
                       const pl_operand *arguments, pl_u32 count)
 {
     pl_plan *plan = builder->plan;
-    if (!pl_opcode_is_memory(opcode))
+    if (!pl_opcode_is_memory(opcode)) {
+        shared_index_open(builder);
+        if (builder->shared_slots) {
+            pl_u32 mask = builder->shared_capacity - 1u;
+            pl_u32 at = shared_hash(opcode, arguments, count) & mask;
+            while (builder->shared_slots[at]) {
+                pl_u32 value = builder->shared_slots[at];
+                const pl_node *held = &plan->nodes[value - 1u];
+                if (held->opcode == opcode && held->argument_count == count
+                        && same_operands(
+                            plan->arguments + held->argument_at,
+                            arguments, count))
+                    return value;
+                at = (at + 1u) & mask;
+            }
+            return pl_emit(builder, opcode, arguments, count);
+        }
         for (pl_u32 index = 0; index < plan->node_count; ++index) {
             const pl_node *held = &plan->nodes[index];
             if (held->opcode != opcode || held->argument_count != count
@@ -85,5 +158,6 @@ pl_u32 pl_emit_shared(pl_builder *builder, pl_u32 opcode,
                               arguments, count))
                 return index + 1u;
         }
+    }
     return pl_emit(builder, opcode, arguments, count);
 }

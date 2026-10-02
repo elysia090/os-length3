@@ -1,0 +1,594 @@
+make: Entering directory '/build/source/src/v2'
+make -C support all
+bash ../../data/distribution/check-native-bundle.sh
+make[1]: Entering directory '/build/source/src/v2/support'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/support'
+bash ../../data/oracle/check-package-postlinked-kernel.sh
+postlinked kernel package: green (offset/header rebuild, record escaping, failure restore)
+bash ../../data/distribution/check-service-sources-fixture.sh
+native bundle: green (deterministic single download, ordinary root, hard links)
+make -C x86 all
+service executable sources: green (3 longruns)
+service source gate: green (direct-exec and syntax counterexamples)
+make[1]: Entering directory '/build/source/src/v2/x86'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/x86'
+make -C optimized-x86 all
+make -C machine-abi all
+make[1]: Entering directory '/build/source/src/v2/machine-abi'
+make[1]: Entering directory '/build/source/src/v2/optimized-x86'
+make -C ../support all
+make[1]: Leaving directory '/build/source/src/v2/machine-abi'
+make -C artifact all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make[1]: Entering directory '/build/source/src/v2/artifact'
+make -C ../support all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+make[1]: Leaving directory '/build/source/src/v2/artifact'
+make -C storage all
+make[1]: Entering directory '/build/source/src/v2/storage'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/storage'
+make[1]: Leaving directory '/build/source/src/v2/optimized-x86'
+make -C postlink-compiler all
+make -C wasm-compiler all
+make[1]: Entering directory '/build/source/src/v2/wasm-compiler'
+make[1]: Nothing to be done for 'all'.
+make[1]: Leaving directory '/build/source/src/v2/wasm-compiler'
+make[1]: Entering directory '/build/source/src/v2/postlink-compiler'
+make -C ../support all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+make -C ../x86 all
+make[2]: Entering directory '/build/source/src/v2/x86'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/x86'
+make -C ../optimized-x86 all
+make[2]: Entering directory '/build/source/src/v2/optimized-x86'
+make -C ../support all
+make[3]: Entering directory '/build/source/src/v2/support'
+make[3]: Nothing to be done for 'all'.
+make[3]: Leaving directory '/build/source/src/v2/support'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make[2]: Leaving directory '/build/source/src/v2/optimized-x86'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include cli/main.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-compiler
+make[1]: Leaving directory '/build/source/src/v2/postlink-compiler'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iartifact/include -Ipostlink-compiler/include -Ioptimized-x86/include -Ix86/include -Isupport/include -DARTIFACT_NAMESPACE_LIBRARY \
+	check/complete-release.c artifact/cli/measure-namespace.c \
+	postlink-compiler/build/libpostlink.a \
+	artifact/build/libartifact.a x86/build/libx86.a \
+	optimized-x86/build/liboptimized-x86.a \
+	support/build/libsupport.a -o build/complete-release
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iartifact/include -Ipostlink-compiler/include -Ioptimized-x86/include -Ix86/include -Isupport/include -DARTIFACT_NAMESPACE_LIBRARY \
+	check/complete-release.c artifact/cli/measure-namespace.c \
+	postlink-compiler/build/libpostlink.a \
+	artifact/build/libartifact.a x86/build/libx86.a \
+	optimized-x86/build/liboptimized-x86.a \
+	support/build/libsupport.a -o build/artifact-executable-stage
+artifact executable stage: green (2 ELFs, 8 states, 26 complete observations, 11264 -> 7158 fragment bytes + 7240 canonical bytes, 7722 factor bits)
+real release complete sharing: green (55+55 ELF states -> 43 global future classes; 13630 -> 4657 transient normal-proof class bytes, 0 stored; 27632 final-ELF bytes -> 27326 shared fragment bytes + 27326 canonical bytes -> 17209 factor bits, exact round trip)
+artifact executable stage: green (1 ELFs, 55 states, 116 complete observations, 13816 -> 13801 fragment bytes + 13874 canonical bytes, 15961 factor bits)
+postlink proof: green (23520 -> 13816 bytes, 9 -> 9 work, 9 -> 6 span)
+make[1]: Entering directory '/build/source/src/v2/support'
+build/future-check
+global complete-future quotient: green (two image-local machines -> one 3-state future)
+make[1]: Leaving directory '/build/source/src/v2/support'
+make[1]: Entering directory '/build/source/src/v2/x86'
+build/profile-check
+build/code-map-check
+build/relocation-check
+build/transfer-check
+canonical x86 transfer spelling: green (address/padding erased; semantic distinction retained)
+make[1]: Leaving directory '/build/source/src/v2/x86'
+make[1]: Entering directory '/build/source/src/v2/optimized-x86'
+make -C ../support all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make[1]: Leaving directory '/build/source/src/v2/optimized-x86'
+make[1]: Entering directory '/build/source/src/v2/machine-abi'
+make[1]: Leaving directory '/build/source/src/v2/machine-abi'
+make[1]: Entering directory '/build/source/src/v2/artifact'
+make -C ../support all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+build/index-check
+build/immutable-check
+immutable build residual: green (8 coordinate leaves -> 4 complete residual nodes)
+build/share-check
+artifact complete-sharing quotient: green (10 occurrences -> 7 exact typed classes)
+build/payload-check
+global immutable payload: green (6 extents -> 5 exact owners, 24 duplicate bytes deleted, 38 bytes covered by exact factors)
+build/derive-check
+derived cells: green (6 coordinates -> 3 generated + 3 exceptions / 2 shared values)
+build/layout-check
+artifact generated coordinates: green (4 extents, 0 retained prefix/end cells)
+build/factor-check
+artifact exact substring factor: green (53 bytes, 477 -> 250 bits, gap=0)
+build/factor-index-check
+canonical directory DAG: green (300 rows -> 4 nodes; one change -> 2 new path nodes)
+build/factor-codec-check
+stored substring factor: green (76 opened bytes -> 354 bits; decoder owns no source)
+artifact generated archive view: green (2 members -> 1 external payload rank; 312 generated bytes)
+build/rank-map-check
+rank-map residual: green (7 occurrences, dense rank column removed, 12/14 child cells retained)
+build/future-check
+release block future: green (two ELF-local state graphs -> one exact future quotient)
+build/program-check
+canonical residual program: green (5 proved minima/joint witnesses -> 2 instruction laws -> 3 futures; no component storage modes)
+build/executable-check
+optimized ELF fragment sharing: green (2 images/6 states -> 5 payload owners; all coordinates generated)
+build/complete-check
+complete sharing composition: green (16 typed occurrences/13 classes, 10 payloads/9 owners, 3 generated cells, 176 generated archive bytes, 117 factor-covered bytes)
+build/namespace-check
+artifact namespace normal form: green (31 opened path bytes -> 23 basename bytes + 10 topology bits; one sparse hardlink)
+artifact namespace population: green (6 paths/5 inodes -> 18 basename bytes + 10 bits; 621 factor bits)
+suffix-index factor oracle parity: green (2,046 exhaustive binary + 512 random + 3 long structured words)
+bash check/measure-root.sh build/artifact-measure-root
+artifact immutable-page/ELF/archive population: green
+make[1]: Leaving directory '/build/source/src/v2/artifact'
+make[1]: Entering directory '/build/source/src/v2/storage'
+make[1]: Leaving directory '/build/source/src/v2/storage'
+make[1]: Entering directory '/build/source/src/v2/postlink-compiler'
+make -C ../support all
+make[2]: Entering directory '/build/source/src/v2/support'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/support'
+make -C ../x86 all
+bash ../../../data/distribution/check-measure-root.sh
+make[2]: Entering directory '/build/source/src/v2/x86'
+make[2]: Nothing to be done for 'all'.
+make[2]: Leaving directory '/build/source/src/v2/x86'
+make -C ../optimized-x86 all
+make[2]: Entering directory '/build/source/src/v2/optimized-x86'
+make -C ../support all
+make[3]: Entering directory '/build/source/src/v2/support'
+make[3]: Nothing to be done for 'all'.
+make[3]: Leaving directory '/build/source/src/v2/support'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include cli/main.c build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-verify
+make[2]: Leaving directory '/build/source/src/v2/optimized-x86'
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include cli/main.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/postlink-compiler
+canonical release population: green (payload, boot, graph, xattr)
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/completeness.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/completeness
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/elf-proof.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/elf-proof
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/observed-compile.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/observed-compile
+postlink compile: green (8904 -> 5632 bytes, 2 work, 1 span; direct/source/erased=1/1/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (8904 -> 5632 bytes, 34 -> 2 work, 34 -> 1 span)
+postlink compile: green (23496 -> 13816 bytes, 9 work, 6 span; direct/source/erased=8/47/0 blocks, normalization escape=1 blocks/36 bytes/7 node-delta)
+postlink proof: green (23496 -> 13816 bytes, 9 -> 9 work, 9 -> 6 span)
+postlink compile: green (19944 -> 13816 bytes, 9 work, 6 span; direct/source/erased=5/37/0 blocks, normalization escape=1 blocks/36 bytes/7 node-delta)
+postlink proof: green (19944 -> 13816 bytes, 9 -> 9 work, 9 -> 6 span)
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/runtime-elf-stage.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/runtime-elf-stage
+postlink compile: green (13536 -> 5688 bytes, 6 work, 4 span; direct/source/erased=2/5/0 blocks, normalization escape=2 blocks/45 bytes/5 node-delta)
+postlink proof: green (13536 -> 5688 bytes, 18 -> 6 work, 18 -> 4 span)
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/physical-entry.c \
+	../x86/build/libx86.a ../support/build/libsupport.a -o build/physical-entry
+postlink compile: green (25712 -> 5688 bytes, 5 work, 4 span; direct/source/erased=2/14/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25712 -> 5688 bytes, 21 -> 5 work, 21 -> 4 span)
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/native-closure.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/native-closure
+postlink compile: green (25904 -> 9720 bytes, 2 work, 2 span; direct/source/erased=3/3/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25904 -> 9720 bytes, 17 -> 2 work, 17 -> 2 span)
+postlink compile: green (25872 -> 9720 bytes, 2 work, 1 span; direct/source/erased=5/9/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25872 -> 9720 bytes, 17 -> 2 work, 17 -> 1 span)
+postlink compile: green (14024 -> 13808 bytes, 4 work, 4 span; direct/source/erased=5/4/0 blocks, normalization escape=1 blocks/16 bytes/1 node-delta)
+postlink proof: green (14024 -> 13808 bytes, 4 -> 4 work, 4 -> 4 span)
+postlink compile: green (9240 -> 5688 bytes, 5 work, 3 span; direct/source/erased=6/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (9240 -> 5688 bytes, 5 -> 5 work, 5 -> 3 span)
+postlink compile: green (25696 -> 5672 bytes, 2 work, 1 span; direct/source/erased=3/8/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25696 -> 5672 bytes, 17 -> 2 work, 17 -> 1 span)
+postlink compile: green (30136 -> 9720 bytes, 5 work, 3 span; direct/source/erased=11/15/0 blocks, normalization escape=1 blocks/13 bytes/1 node-delta)
+postlink proof: green (30136 -> 9720 bytes, 33 -> 5 work, 33 -> 3 span)
+postlink compile: green (26192 -> 9760 bytes, 5 work, 2 span; direct/source/erased=5/14/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (26192 -> 9760 bytes, 37 -> 5 work, 37 -> 2 span)
+postlink compile: green (26192 -> 9728 bytes, 6 work, 2 span; direct/source/erased=8/18/0 blocks, normalization escape=1 blocks/32 bytes/5 node-delta)
+postlink proof: green (26192 -> 9728 bytes, 38 -> 6 work, 38 -> 2 span)
+postlink compile: green (17808 -> 9736 bytes, 4 work, 3 span; direct/source/erased=5/8/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (17808 -> 9736 bytes, 33 -> 4 work, 33 -> 3 span)
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/entry.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/entry
+postlink compile: green (16296 -> 13872 bytes, 4 work, 2 span; direct/source/erased=20/29/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (16296 -> 13872 bytes, 4 -> 4 work, 4 -> 2 span)
+postlink compile: green (14040 -> 9800 bytes, 3 work, 2 span; direct/source/erased=18/25/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (14040 -> 9800 bytes, 3 -> 3 work, 3 -> 2 span)
+postlink compile: green (13552 -> 9744 bytes, 4 work, 2 span; direct/source/erased=8/11/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13552 -> 9744 bytes, 4 -> 4 work, 4 -> 2 span)
+postlink compile: green (83240 -> 17912 bytes, 4 work, 3 span; direct/source/erased=1/6/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (83240 -> 17912 bytes, 16 -> 4 work, 16 -> 3 span)
+postlink compile: green (25856 -> 9720 bytes, 2 work, 2 span; direct/source/erased=5/12/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25856 -> 9720 bytes, 33 -> 2 work, 33 -> 2 span)
+native block closure: green (4 boundaries, 7 instructions, 9 -> 4 work, 8 -> 2 span, 4/4 selected, 7 -> 5 emitted instructions, 20 -> 18 selected bytes, 2 bytes eliminated)
+native selection blockers: state/position/control=0/0/0; dominant opcode=4294967295 (0 blocks)
+native selection physical routes: direct/source/erased=1/3/0 blocks, direct/source=10/8 output bytes, omitted-prefix=0 bytes
+normalization escape: 0 blocks, 0 -> 0 bytes, 0 retained plan-node delta, first=0x0
+normalization escape samples:
+maximum normalized work/span: 2@0x40100e / 1@0x40100e; native body coefficient=0.900000000
+rel8 fixed point: 0 candidates, 0 widened, 0 events, 0 local rechecks
+retained normalized source operations:
+normalized physical opcodes: 79=2 145=1 155=1
+maximum work block: 0x40100e..0x401013, 1 instructions, 2 work/1 span
+  shape: kind=0 dynamic=0 predicate=0 fault=0 machine=0 stack=0 fields=0
+  wave 1: n1=op79(l4,cfffffffffffffff8) n2=op155(l4,c401013,cfffffffffffffff8,c10008)
+  publications: l4=n1; control=3/1 target=c0 predicate=c1
+  candidates: 1 (status=0, diagnostic stage=0 blocking=0x0)
+    0: direct=0 source=1 bytes=5 work/span=1/1 families=c0a0i0q0s0m0k0u0t0z0h0o0v0x0b0f0 fixups=1 [0+0 -> 1+4 kind=1 target=0x0] write=0/5 code=e800000000
+postlink compile: green (13496 -> 5640 bytes, 2 work, 1 span; direct/source/erased=1/3/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13496 -> 5640 bytes, 4 -> 2 work, 4 -> 1 span)
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/metadata-closure.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/metadata-closure
+runtime ELF: green (26512 -> 13816 bytes, 175 -> 175 instructions, future=139 blocks/86 observations/120 classes, placement=14 observable/13 classes/121 minimum entries, 182 relocations, 12 metadata pointers)
+postlink proof: green (26512 -> 13816 bytes, 9 -> 9 work, 9 -> 6 span)
+recognized table projection: 0 bases, 0 rows
+native entry population: green (15 candidates -> 3 primary + 6 metadata entries; 7 observable addresses)
+native block closure: green (45 boundaries, 67 instructions, 100 -> 71 work, 85 -> 48 span, 45/45 selected, 67 -> 67 emitted instructions, 270 -> 263 selected bytes, 7 bytes eliminated)
+native selection blockers: state/position/control=0/0/0; dominant opcode=4294967295 (0 blocks)
+native selection physical routes: direct/source/erased=6/39/0 blocks, direct/source=76/187 output bytes, omitted-prefix=0 bytes
+normalization escape: 1 blocks, 36 -> 36 bytes, 7 retained plan-node delta, first=0x10a0
+normalization escape samples: 0x10a0
+maximum normalized work/span: 3@0x1010 / 2@0x1010; native body coefficient=0.974074074
+rel8 fixed point: 7 candidates, 0 widened, 0 events, 7 local rechecks
+retained normalized source operations: 6=12 3=3 21=3 26=3 14=2 8=1 10=1 12=1 15=1
+normalized physical opcodes: 79=23 145=21 155=11 191=5 194=4 203=3 147=1 151=1 156=1 193=1
+maximum work block: 0x1010..0x1016, 1 instructions, 3 work/2 span
+  shape: kind=0 dynamic=0 predicate=0 fault=0 machine=0 stack=0 fields=0
+  wave 1: n1=op145(c3fc0,c0,c10008) n2=op79(l4,cfffffffffffffff8)
+  wave 2: n3=op155(l4,n1,cfffffffffffffff8,c10008,n1)
+  publications: l4=n2; control=0/1 target=c1016 predicate=c1
+  candidates: 1 (status=0, diagnostic stage=0 blocking=0x0)
+    0: direct=0 source=1 bytes=6 work/span=1/1 families=c0a0i0q0s0m0k0u0t0z0h0o0v0x0b0f0 fixups=1 [0+0 -> 2+4 kind=2 target=0x3fc0] write=0/6 code=ff35aa2f0000
+first normalization escape block: 0x10a0..0x10c4, 9 instructions, 1 work/1 span
+  shape: kind=0 dynamic=0 predicate=0 fault=0 machine=0 stack=0 fields=1
+  wave 1: n1=op193(l10,c0,c0,c1,c740)
+  publications: l0=c0 l6=c0 l7=c4008 l16=n1; control=2/1 target=c10d8 predicate=c1
+  candidates: 1 (status=0, diagnostic stage=0 blocking=0x0)
+    0: direct=0 source=1 bytes=36 work/span=9/6 families=c0a0i0q0s0m0k0u0t0z0h0o0v0x0b0f0 fixups=3 [0+0 -> 3+4 kind=2 target=0x4008] [0+0 -> 10+4 kind=2 target=0x4008] [0+0 -> 35+1 kind=1 target=0x10d8] write=0/36 code=488d3d612f0000488d355a2f00004829fe4889f048c1ee3f48c1f8034801c648d1fe7400
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/select-x86.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/select-x86
+recognized table projection: 0 bases, 0 rows
+native entry population: green (7 candidates -> 1 primary + 4 metadata entries; 5 observable addresses)
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/native-layout.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/native-layout
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/population.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/population
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/direct-control.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/direct-control
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/scalar.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/scalar
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/physical.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/physical
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/quotient.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/quotient
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/normal-form.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/normal-form
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/global-minimum.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/global-minimum
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/block-observation.c \
+	build/libpostlink.a ../x86/build/libx86.a \
+	../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/block-observation
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/slice-observation.c \
+	build/libpostlink.a ../x86/build/libx86.a \
+	../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/slice-observation
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/instruction-law.c \
+	build/libpostlink.a ../x86/build/libx86.a \
+	../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/instruction-law
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -I../support/include check/native-benchmark.c \
+	../support/build/libsupport.a -o build/native-benchmark
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/linear-block.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/linear-block
+postlink compile: green (17976 -> 9800 bytes, 4 work, 2 span; direct/source/erased=5/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (17976 -> 9800 bytes, 17 -> 4 work, 17 -> 2 span)
+postlink compile: green (17952 -> 9736 bytes, 6 work, 3 span; direct/source/erased=16/12/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (17952 -> 9736 bytes, 6 -> 6 work, 6 -> 3 span)
+postlink compile: green (13576 -> 9728 bytes, 5 work, 3 span; direct/source/erased=9/2/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13576 -> 9728 bytes, 5 -> 5 work, 5 -> 3 span)
+postlink compile: green (13576 -> 9728 bytes, 5 work, 3 span; direct/source/erased=9/2/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13576 -> 9728 bytes, 5 -> 5 work, 5 -> 3 span)
+postlink compile: green (17952 -> 9736 bytes, 6 work, 3 span; direct/source/erased=15/11/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (17952 -> 9736 bytes, 6 -> 6 work, 6 -> 3 span)
+indirect default table: green (unknown control remains unproved; linked rows own relocation)
+postlink compile: green (13576 -> 9728 bytes, 5 work, 3 span; direct/source/erased=9/2/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13576 -> 9728 bytes, 5 -> 5 work, 5 -> 3 span)
+postlink compile: green (13584 -> 9720 bytes, 2 work, 2 span; direct/source/erased=5/9/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+call-return register lifetime: green
+postlink compile: green (13344 -> 5712 bytes, 4 work, 2 span; direct/source/erased=9/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+entry CL shift alias: green
+postlink compile: green (13632 -> 9720 bytes, 4 work, 2 span; direct/source/erased=7/9/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+shift count publication: green
+postlink compile: green (13448 -> 9712 bytes, 8 work, 5 span; direct/source/erased=4/11/0 blocks, normalization escape=1 blocks/23 bytes/1 node-delta)
+shift count generation: green
+postlink compile: green (13344 -> 5688 bytes, 4 work, 2 span; direct/source/erased=7/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+post-call zero generation: green
+postlink compile: green (13344 -> 5704 bytes, 5 work, 4 span; direct/source/erased=7/4/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+SETcc full-width publication: green
+postlink compile: green (13352 -> 5688 bytes, 4 work, 4 span; direct/source/erased=6/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+wide indexed pointer: green
+postlink compile: green (13440 -> 9720 bytes, 9 work, 5 span; direct/source/erased=7/4/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+bitmap complement mask: green
+postlink compile: green (13536 -> 9744 bytes, 10 work, 5 span; direct/source/erased=6/3/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+affine generation order: green
+postlink compile: green (13488 -> 9720 bytes, 4 work, 3 span; direct/source/erased=7/4/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+bitmask pointer lifetime: green
+postlink compile: green (13880 -> 9760 bytes, 3 work, 2 span; direct/source/erased=6/6/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+scaled address generation: green
+postlink compile: green (13600 -> 9720 bytes, 8 work, 3 span; direct/source/erased=8/3/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+published entry generation: green
+postlink compile: green (9224 -> 5672 bytes, 6 work, 5 span; direct/source/erased=2/2/0 blocks, normalization escape=1 blocks/27 bytes/1 node-delta)
+32-bit publication after 64-bit shift: green
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/shift-width.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/shift-width
+postlink compile: green (13720 -> 9728 bytes, 7 work, 5 span; direct/source/erased=5/4/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+conditional entry alias: green
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/condition-code.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/condition-code
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/arithmetic-cut.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/arithmetic-cut
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/compare-cut.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/compare-cut
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/carry-cut.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/carry-cut
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/shared-expression.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/shared-expression
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -Isrc -I../support/include -I../x86/include -I../optimized-x86/include check/extension-cut.c build/libpostlink.a \
+	../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+	../support/build/libsupport.a -o build/extension-cut
+postlink compile: green (13584 -> 9720 bytes, 4 work, 4 span; direct/source/erased=6/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13584 -> 9720 bytes, 4 -> 4 work, 4 -> 4 span)
+postlink compile: green (13584 -> 9720 bytes, 4 work, 4 span; direct/source/erased=6/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13584 -> 9720 bytes, 4 -> 4 work, 4 -> 4 span)
+postlink compile: green (13584 -> 9720 bytes, 4 work, 4 span; direct/source/erased=6/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13584 -> 9720 bytes, 4 -> 4 work, 4 -> 4 span)
+postlink compile: green (13584 -> 9720 bytes, 4 work, 4 span; direct/source/erased=6/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13584 -> 9720 bytes, 4 -> 4 work, 4 -> 4 span)
+postlink compile: green (13720 -> 9720 bytes, 5 work, 4 span; direct/source/erased=7/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13720 -> 9720 bytes, 5 -> 5 work, 5 -> 4 span)
+postlink compile: green (13720 -> 9720 bytes, 5 work, 4 span; direct/source/erased=7/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13720 -> 9720 bytes, 5 -> 5 work, 5 -> 4 span)
+postlink compile: green (13720 -> 9720 bytes, 5 work, 4 span; direct/source/erased=7/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13720 -> 9720 bytes, 5 -> 5 work, 5 -> 4 span)
+postlink compile: green (13848 -> 9960 bytes, 2 work, 1 span; direct/source/erased=1/1/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13848 -> 9960 bytes, 4 -> 2 work, 4 -> 1 span)
+postlink compile: green (13808 -> 9736 bytes, 2 work, 2 span; direct/source/erased=24/11/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13808 -> 9736 bytes, 1202 -> 2 work, 1202 -> 2 span)
+postlink compile: green (25608 -> 9720 bytes, 2 work, 1 span; direct/source/erased=2/4/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25608 -> 9720 bytes, 33 -> 2 work, 33 -> 1 span)
+postlink compile: green (25608 -> 9720 bytes, 2 work, 1 span; direct/source/erased=2/5/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25608 -> 9720 bytes, 32 -> 2 work, 32 -> 1 span)
+postlink compile: green (25984 -> 9720 bytes, 2 work, 2 span; direct/source/erased=7/11/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25984 -> 9720 bytes, 33 -> 2 work, 33 -> 2 span)
+postlink compile: green (25608 -> 9720 bytes, 3 work, 2 span; direct/source/erased=1/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25608 -> 9720 bytes, 35 -> 3 work, 35 -> 2 span)
+postlink compile: green (25920 -> 9752 bytes, 2 work, 2 span; direct/source/erased=6/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25920 -> 9752 bytes, 34 -> 2 work, 34 -> 2 span)
+postlink compile: green (30216 -> 9720 bytes, 2 work, 2 span; direct/source/erased=7/9/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (30216 -> 9720 bytes, 34 -> 2 work, 34 -> 2 span)
+postlink compile: green (25824 -> 9752 bytes, 3 work, 3 span; direct/source/erased=6/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25824 -> 9752 bytes, 34 -> 3 work, 34 -> 3 span)
+postlink compile: green (25632 -> 5680 bytes, 4 work, 3 span; direct/source/erased=7/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25632 -> 5680 bytes, 33 -> 4 work, 33 -> 3 span)
+postlink compile: green (25920 -> 9752 bytes, 2 work, 2 span; direct/source/erased=6/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25920 -> 9752 bytes, 34 -> 2 work, 34 -> 2 span)
+postlink compile: green (25632 -> 5680 bytes, 4 work, 3 span; direct/source/erased=7/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25632 -> 5680 bytes, 33 -> 4 work, 33 -> 3 span)
+postlink compile: green (25920 -> 9752 bytes, 2 work, 2 span; direct/source/erased=6/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25920 -> 9752 bytes, 34 -> 2 work, 34 -> 2 span)
+postlink compile: green (25632 -> 5688 bytes, 4 work, 3 span; direct/source/erased=7/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25632 -> 5688 bytes, 33 -> 4 work, 33 -> 3 span)
+postlink compile: green (25824 -> 9752 bytes, 3 work, 3 span; direct/source/erased=6/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25824 -> 9752 bytes, 34 -> 3 work, 34 -> 3 span)
+postlink compile: green (25632 -> 5680 bytes, 4 work, 3 span; direct/source/erased=7/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25632 -> 5680 bytes, 33 -> 4 work, 33 -> 3 span)
+postlink compile: green (25632 -> 5680 bytes, 3 work, 2 span; direct/source/erased=8/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25632 -> 5680 bytes, 34 -> 3 work, 34 -> 2 span)
+postlink compile: green (25632 -> 5680 bytes, 4 work, 3 span; direct/source/erased=7/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25632 -> 5680 bytes, 33 -> 4 work, 33 -> 3 span)
+postlink compile: green (25664 -> 5680 bytes, 4 work, 4 span; direct/source/erased=6/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25664 -> 5680 bytes, 33 -> 4 work, 33 -> 4 span)
+postlink compile: green (25632 -> 5688 bytes, 4 work, 3 span; direct/source/erased=7/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25632 -> 5688 bytes, 33 -> 4 work, 33 -> 3 span)
+postlink compile: green (25864 -> 9736 bytes, 5 work, 3 span; direct/source/erased=8/14/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25864 -> 9736 bytes, 33 -> 5 work, 33 -> 3 span)
+postlink compile: green (26072 -> 9728 bytes, 5 work, 2 span; direct/source/erased=13/18/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (26072 -> 9728 bytes, 33 -> 5 work, 33 -> 2 span)
+postlink compile: green (26048 -> 9720 bytes, 2 work, 1 span; direct/source/erased=1/2/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (26048 -> 9720 bytes, 35 -> 2 work, 35 -> 1 span)
+postlink compile: green (25928 -> 9720 bytes, 2 work, 1 span; direct/source/erased=1/2/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25928 -> 9720 bytes, 35 -> 2 work, 35 -> 1 span)
+postlink compile: green (25928 -> 9720 bytes, 2 work, 1 span; direct/source/erased=3/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (25928 -> 9720 bytes, 33 -> 2 work, 33 -> 1 span)
+postlink compile: green (30216 -> 9728 bytes, 2 work, 2 span; direct/source/erased=9/8/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (30216 -> 9728 bytes, 33 -> 2 work, 33 -> 2 span)
+postlink compile: green (26096 -> 9744 bytes, 2 work, 2 span; direct/source/erased=7/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (26096 -> 9744 bytes, 33 -> 2 work, 33 -> 2 span)
+postlink compile: green (17808 -> 9720 bytes, 2 work, 2 span; direct/source/erased=8/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (17808 -> 9720 bytes, 13 -> 2 work, 13 -> 2 span)
+postlink compile: green (17808 -> 9736 bytes, 2 work, 2 span; direct/source/erased=6/10/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (17808 -> 9736 bytes, 2 -> 2 work, 2 -> 2 span)
+postlink compile: green (13680 -> 9728 bytes, 3 work, 2 span; direct/source/erased=8/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13680 -> 9728 bytes, 3 -> 3 work, 3 -> 2 span)
+standard ELF proof: green (18840 -> 13816 bytes)
+postlink compile: green (13680 -> 9728 bytes, 3 work, 2 span; direct/source/erased=8/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13680 -> 9728 bytes, 3 -> 3 work, 3 -> 2 span)
+postlink compile: green (13680 -> 9728 bytes, 3 work, 2 span; direct/source/erased=8/6/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13680 -> 9728 bytes, 3 -> 3 work, 3 -> 2 span)
+standard ELF proof: green (16808 -> 13816 bytes)
+postlink compile: green (13680 -> 9728 bytes, 4 work, 2 span; direct/source/erased=8/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13680 -> 9728 bytes, 4 -> 4 work, 4 -> 2 span)
+runtime ELF: green (23104 -> 10576 bytes, 61 -> 59 instructions, future=39 blocks/27 observations/31 classes, placement=4 observable/3 classes/32 minimum entries, 209 relocations, 0 metadata pointers)
+  state 8 minimum=4/1 emitted=4 bytes=4831ed4889e7488d35cc2d00004883e4f0 operations: op14 op3 op6 op12
+  state 11 minimum=6/2 emitted=6 bytes=488d0dc2ffffff488d5708488d3dc70000004c8d05d00000004531c9ebba operations: op6 op6 op6 op6 op14 op21
+  state 12 minimum=4/3 emitted=4 bytes=488d05ac2f00004839c04889c7eb00 operations: op6 op15 op3 op21
+  state 14 minimum=9/6 emitted=9 bytes=488d3d9c2f0000488d35952f00004829fe4889f048c1ee3f48c1f8034801c648d1fe7400 operations: op6 op6 op10 op3 op26 op26 op8 op26 op21
+  state 20 minimum=2/2 emitted=2 bytes=4889e5740d operations: op3 op21
+  state 35 minimum=3/1 emitted=3 bytes=4889e5488d35572f0000488d3d780f0000 operations: op3 op6 op6
+  state 48 minimum=2/1 emitted=2 bytes=4889e5bf00000000 operations: op3 op3
+observed compile: green (55 blocks -> 27 SSA-law classes [7 control x 26 topology] + 37 binding classes [1 control x 37 parameter]; 88 semantic SSA nodes -> 22 node laws; 78 emitted x86 instructions, 78 source instructions; proved work*/span*=78/64; law 3235 -> 1547 bytes; 23496 -> 13816 ELF bytes)
+block minimum histogram (work/span; max=9/6): 1=48/51 2=2/2 3=1/1 4=2/0 6=1/1 9=1/0
+RFLAGS future projection: 0 dead, 0 emitted, 0 selector-boundary (0 grew, 0 escape, 0 source-identity, 0 changed-output)
+RFLAGS selector first: grammar=0 grew=0 escape=0 changed=0
+postlink compile: green (9880 -> 5688 bytes, 6 work, 4 span; direct/source/erased=2/5/0 blocks, normalization escape=2 blocks/45 bytes/5 node-delta)
+postlink proof: green (9880 -> 5688 bytes, 18 -> 6 work, 18 -> 4 span)
+physical entry: green (0x100000->0x500000, 0x100000->0x500000)
+postlink compile: green (15584 -> 10040 bytes, 4 work, 3 span; direct/source/erased=5/3/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (15584 -> 10040 bytes, 4 -> 4 work, 4 -> 3 span)
+postlink compile: green (13776 -> 9744 bytes, 2 work, 2 span; direct/source/erased=8/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13776 -> 9744 bytes, 2 -> 2 work, 2 -> 2 span)
+postlink compile: green (15584 -> 10040 bytes, 4 work, 3 span; direct/source/erased=4/3/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (15584 -> 10040 bytes, 4 -> 4 work, 4 -> 3 span)
+postlink compile: green (15584 -> 10040 bytes, 4 work, 3 span; direct/source/erased=4/3/1 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (15584 -> 10040 bytes, 4 -> 4 work, 4 -> 3 span)
+postlink compile: green (15176 -> 10088 bytes, 2 work, 2 span; direct/source/erased=6/5/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (15176 -> 10088 bytes, 2 -> 2 work, 2 -> 2 span)
+postlink compile: green (18440 -> 9840 bytes, 3 work, 3 span; direct/source/erased=6/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (18440 -> 9840 bytes, 4 -> 3 work, 4 -> 3 span)
+postlink compile: green (15584 -> 10040 bytes, 4 work, 3 span; direct/source/erased=4/3/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (15584 -> 10040 bytes, 1204 -> 4 work, 1204 -> 3 span)
+postlink compile: green (21584 -> 11040 bytes, 4 work, 3 span; direct/source/erased=4/3/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (21584 -> 11040 bytes, 4 -> 4 work, 4 -> 3 span)
+postlink compile: green (13832 -> 9752 bytes, 3 work, 3 span; direct/source/erased=7/8/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (13832 -> 9752 bytes, 4 -> 3 work, 4 -> 3 span)
+postlink compile: green (17984 -> 9760 bytes, 5 work, 3 span; direct/source/erased=9/7/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (17984 -> 9760 bytes, 5 -> 5 work, 5 -> 3 span)
+postlink compile: green (14808 -> 9888 bytes, 3 work, 3 span; direct/source/erased=12/8/0 blocks, normalization escape=0 blocks/0 bytes/0 node-delta)
+postlink proof: green (14808 -> 9888 bytes, 3 -> 3 work, 3 -> 3 span)
+native block closure: green (8 boundaries, 9 instructions, 12 -> 9 work, 10 -> 6 span, 8/8 selected, 9 -> 11 emitted instructions, 25 -> 35 selected bytes, 0 bytes eliminated)
+native selection blockers: state/position/control=0/0/0; dominant opcode=4294967295 (0 blocks)
+native selection physical routes: direct/source/erased=3/5/0 blocks, direct/source=19/16 output bytes, omitted-prefix=0 bytes
+normalization escape: 0 blocks, 0 -> 0 bytes, 0 retained plan-node delta, first=0x0
+normalization escape samples:
+maximum normalized work/span: 2@0x401007 / 1@0x401000; native body coefficient=1.400000000
+rel8 fixed point: 1 candidates, 0 widened, 0 events, 1 local rechecks
+retained normalized source operations: 3=2 14=1
+normalized physical opcodes: 79=3 145=2 203=2 155=1 194=1
+maximum work block: 0x401007..0x40100c, 1 instructions, 2 work/1 span
+  shape: kind=0 dynamic=0 predicate=0 fault=0 machine=0 stack=0 fields=0
+  wave 1: n1=op79(l4,cfffffffffffffff8) n2=op155(l4,c40100c,cfffffffffffffff8,c10008)
+  publications: l4=n1; control=3/1 target=c401013 predicate=c1
+  candidates: 1 (status=0, diagnostic stage=0 blocking=0x0)
+    0: direct=0 source=1 bytes=5 work/span=1/1 families=c0a0i0q0s0m0k0u0t0z0h0o0v0x0b0f0 fixups=1 [0+0 -> 1+4 kind=1 target=0x401013] write=0/5 code=e800000000
+maximum span block: 0x401000..0x401007, 2 instructions, 1 work/1 span
+  shape: kind=0 dynamic=0 predicate=0 fault=0 machine=0 stack=0 fields=0
+  wave 1: n1=op203(l10,l0,l0,c620)
+  publications: l0=p110 l7=c2a l16=n1; control=0/1 target=c401007 predicate=c1
+  candidates: 3 (status=0, diagnostic stage=0 blocking=0x0)
+    0: direct=1 source=0 bytes=7 work/span=2/1 families=c0a0i0q0s0m0k0u1t0z0h0o0v0x0b0f0 fixups=0 write=0/7 code=31c0bf2a000000
+    1: direct=1 source=0 bytes=7 work/span=2/1 families=c0a0i0q0s0m0k0u0t0z1h0o0v0x0b0f0 fixups=0 write=0/7 code=bf2a00000031c0
+    2: direct=0 source=1 bytes=7 work/span=2/1 families=c0a0i0q0s0m0k0u0t0z0h0o0v0x0b0f0 fixups=0 write=0/7 code=31c0bf2a000000
+build/select-x86
+conditional bit projection: green (work/span/bytes=9/4/31)
+native x86 selection: green (normalized state directly emits shortest acyclic parallel copies and constants; source-relative fields rebound)
+build/native-layout
+native layout: green (unreachable suffix removed; affine 9 -> 5 bytes; ALU 8 -> 5 bytes; insert 4 -> 3 bytes; rel8 cascade=2; direct results=42/42/42/42)
+build/population
+build/direct-control
+direct-control closure: green (function/resolve/fault/halt-continuation; no residual result type)
+build/scalar
+allocated metadata closure: green (unbound unwind key rejected at compile stage -101)
+build/physical
+physical region: green (lane64 and constant-shift materializations removed; conditional masks detached; commutative work shared; affine chains collapsed; zero-guarded values selected directly; terminal-safe future work projected)
+build/quotient
+scalar cut: green (binary32/64 scale and exact-integer translation; 1,000,000 source operations -> 3 retained words, 1 materialization)
+build/normal-form
+build normal form: green (different source instruction histories -> one transfer rank)
+complete future oracle: green (20000 finite machines)
+x86 successor future: green (raw successor coordinates -> complete-future rank)
+external successor observation: green (absolute non-image targets remain observable)
+complete build future: green (cyclic total machine -> exact minimum partition)
+build/global-minimum
+global x86 minimum: green (grammar span/work upper bounds + whole-ELF Kraft order)
+build/block-observation
+canonical block observation: green (53-path law/binding split preserves exact response)
+build/slice-observation
+pure-slice topology spelling: green (source/waves/parameters erased from shared topology)
+build/instruction-law
+canonical instruction law: green (90/6690 -> one SSA law; xor remains distinct)
+bash check/production-benchmark.sh build/native-benchmark
+global weighted quotient oracle: green (20000 machines)
+global weighted quotient: green (one complete-future partition preserves observation, work, live frontier, and successor class)
+build/linear-block
+linear block: green (4096 pure-node quotient and dependency waves)
+build/shift-width
+shift width: green (86295 source/generated/reference comparisons; value and defined flags agree)
+build/condition-code
+condition code: green (1155072 source/generated/reference comparisons; 16 conditions, high bytes, entry/published generations, values and flags)
+build/arithmetic-cut
+arithmetic cut: green (24576 source/generated/reference comparisons; multiply, shared signed/unsigned word shifts, final flags and both branch outcomes)
+build/compare-cut
+native workload busybox-arithmetic: parity green, mean ratio 0.800000000
+native workload busybox-hash: parity green, mean ratio 0.800000000
+native workload bzip2-encode: parity green, mean ratio 0.800000000
+native workload curl-version: parity green, mean ratio 0.800000000
+native workload file-inspect: parity green, mean ratio 0.800000000
+native workload gcc-compile: parity green, mean ratio 0.800000000
+native workload git-hash-object: parity green, mean ratio 0.800000000
+native workload gzip-encode: parity green, mean ratio 0.800000000
+native workload make-parse: parity green, mean ratio 0.800000000
+native workload openssl-version: parity green, mean ratio 0.800000000
+native workload xz-encode: parity green, mean ratio 0.800000000
+post-link production comparison: green (1187 -> 1125 bytes, ratio 0.800000000)
+production benchmark recipe: green (fixed manifest, 401 pairs)
+build/carry-cut
+carry cut: green (4653056 source/generated/reference comparisons; CF/!CF arithmetic/masks, shared ALU/SETcc, aliased inputs, independent final flags/branch)
+build/shared-expression
+bit summary: execution skipped for unavailable CPU operation 2
+bit summary: execution skipped for unavailable CPU operation 3
+bit summary: execution skipped for unavailable CPU operation 2
+bit summary: execution skipped for unavailable CPU operation 3
+shared expression: green (1478656 source/generated/reference comparisons; 32/64-bit shared shifts/products, bit summaries, nonzero guards, flags and entry lifetimes)
+build/extension-cut
+extension cut: green (245760 source/generated/reference comparisons; 8/16/32-bit zero/signed extension, shared expressions, 32/64-bit arithmetic, exact flags and rebased address)
+address flags: green (1310720 source/all-candidates/reference comparisons; signed/unsigned extensions, all Jcc, full flags)
+entry flags: green (7077888 source/generated/reference comparisons; all SETcc, 32/64-bit shifts, logical value-tree preloads, low/high-byte and upper-bit masks)
+compare cut: green (39845888 source/generated/reference comparisons; 8/16/32/64-bit CMP/TEST, signed immediates/registers, all Jcc/SETcc/CMOV, signed and aliased publications)
+build/completeness
+direct semantic completeness: green (464 witnesses)
+make[1]: Leaving directory '/build/source/src/v2/postlink-compiler'
+make[1]: Entering directory '/build/source/src/v2/wasm-compiler'
+make[1]: Leaving directory '/build/source/src/v2/wasm-compiler'
+make: Leaving directory '/build/source/src/v2'

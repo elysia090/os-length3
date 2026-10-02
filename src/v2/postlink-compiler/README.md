@@ -92,6 +92,49 @@ make -j4
 make check
 ```
 
+## Source boundaries
+
+The public product API remains `include/postlink/compiler.h`; private source
+modules do not introduce another output format or runtime dependency.
+
+| Source | Responsibility |
+| --- | --- |
+| `discover-entry.c`, `jump-table.c` | Prove execution entries and indirect targets from ELF evidence |
+| `instruction-semantics.c`, `form-block.c` | Exact instruction laws and barrier-bounded SSA composition |
+| `normalize-ssa.c`, `sweep.c` | Algebraic substitution and dependency-ordered normalization |
+| `compile-elf.c` | Reachable entry closure and whole-ELF construction |
+| `layout-elf.c`, `relocate-elf.c`, `emit-x86.c` | Layout, reference rebinding, and ordinary ELF output |
+| `selection/encoding.c`, `selection/source.c` | Native encodings and source-field ownership |
+| `selection/operands.c`, `expressions.c`, `flags.c`, `select-rules.c` | Operand, width, generation and flag laws |
+| `selection/*-frame.c`, `handoff.c`, `lea.c` | Matching frame productions and their emitted spelling |
+| `selection/tree-measure.c`, `tree-write.c`, `shared-dag.c` | Expression construction and shared-value scheduling |
+| `selection/projection.c`, `candidates.c`, `select.c` | Exact emitted work/span, future projection, Pareto quotient, and selection orchestration |
+
+These are independent translation units, not source-file includes. Cross-module
+helpers have private `pl_select_` names and module headers; `shapes.h` contains
+only the selection grammar's value types. Selection scratch is caller-owned;
+there is no process-global mutable cache, epoch or retained source pointer.
+The static archive is rebuilt with the exact current object population, so a
+renamed or removed translation unit cannot survive as a stale archive member.
+Native GCC parity enumerates nested translation units as well as top-level ones.
+
+```sh
+make selector-reentrancy-check  # independent images and caller arenas
+make selection-policy-check    # 20000 candidate families and bounded metadata
+make compiler-boundaries-check # reject misaligned or short public workspaces
+make source-layout-check       # no unlisted C sources or duplicate archive members
+make sanitizer-check           # ASan + UBSan, including decoder/ELF dependencies
+make thread-sanitizer-check    # TSan; concurrent selection against serial bytes
+```
+
+Sanitizer runs use a disposable independent build tree; they do not replace
+production libraries or distribution checkpoints. `support` also tests arena
+alignment, capacity, NULL, and integer-limit behavior. GCC sanitizer runtimes
+and POSIX threads are test dependencies only, not dependencies of the compiler
+library or the shipped distribution.
+
+## Execution and platform checks
+
 `shift-width-check` and the other instruction checks execute the emitted x86 on
 the build CPU and compare its values and defined flags with the source
 instructions and an independent C reference. They use writable pages only

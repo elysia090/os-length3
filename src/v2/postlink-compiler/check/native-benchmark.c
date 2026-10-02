@@ -33,7 +33,48 @@ static int child_status(pid_t child, int *status)
     }
 }
 
-static int observe(const char *path, char *const arguments[],
+static void close_arguments(char **arguments, pl_u32 count)
+{
+    if (!arguments) return;
+    for (pl_u32 index = 0u; index < count; ++index) free(arguments[index]);
+    free(arguments);
+}
+
+static char **project_arguments(const char *path, char *arguments[], pl_u32 count)
+{
+    static const char token[] = "@EXECUTABLE_DIR@";
+    const char *slash = strrchr(path, '/');
+    const char *directory = slash ? path : ".";
+    size_t directory_bytes = slash ? (size_t)(slash - path) : 1u;
+    if (slash == path) directory_bytes = 1u;
+    char **result = calloc((size_t)count + 1u, sizeof(*result));
+    if (!result) return NULL;
+    for (pl_u32 index = 0u; index < count; ++index) {
+        const char *argument = arguments[index];
+        if (index == 0u && !strcmp(argument, "@EXECUTABLE@")) argument = path;
+        if (!strncmp(argument, token, sizeof(token) - 1u)
+                && argument[sizeof(token) - 1u] == '/') {
+            const char *suffix = argument + sizeof(token) - 1u;
+            size_t suffix_bytes = strlen(suffix);
+            if (directory_bytes > SIZE_MAX - suffix_bytes - 1u) {
+                close_arguments(result, count);
+                return NULL;
+            }
+            result[index] = malloc(directory_bytes + suffix_bytes + 1u);
+            if (result[index]) {
+                memcpy(result[index], directory, directory_bytes);
+                memcpy(result[index] + directory_bytes, suffix, suffix_bytes + 1u);
+            }
+        } else result[index] = strdup(argument);
+        if (!result[index]) {
+            close_arguments(result, count);
+            return NULL;
+        }
+    }
+    return result;
+}
+
+static int observe(const char *path, char *arguments[],
                    observation *out)
 {
     FILE *capture = tmpfile();
@@ -79,7 +120,9 @@ static int observe(const char *path, char *const arguments[],
 static int same_observation(const observation *left,
                             const observation *right)
 {
-    return left->wait_status == right->wait_status
+    return WIFEXITED(left->wait_status)
+        && WEXITSTATUS(left->wait_status) == 0
+        && left->wait_status == right->wait_status
         && left->bytes == right->bytes
         && !memcmp(left->digest, right->digest, PL_SHA256_BYTES);
 }
@@ -91,7 +134,7 @@ static pl_u64 clock_nanoseconds(void)
     return (pl_u64)now.tv_sec * 1000000000ull + (pl_u64)now.tv_nsec;
 }
 
-static int timed(const char *path, char *const arguments[],
+static int timed(const char *path, char *arguments[],
                  int null_descriptor, pl_u64 *nanoseconds)
 {
     pl_u64 begin = clock_nanoseconds();
@@ -108,7 +151,8 @@ static int timed(const char *path, char *const arguments[],
     int status;
     if (!child_status(child, &status)) return 0;
     pl_u64 end = clock_nanoseconds();
-    if (!end || end < begin || !WIFEXITED(status)) return 0;
+    if (!end || end < begin || !WIFEXITED(status)
+            || WEXITSTATUS(status) != 0) return 0;
     *nanoseconds = end - begin;
     return 1;
 }
@@ -136,7 +180,7 @@ int main(int argc, char **argv)
         return 2;
     }
     const pl_u32 runs = PRODUCTION_PAIRED_SAMPLES;
-    char **arguments = &argv[3];
+    pl_u32 argument_count = (pl_u32)(argc - 3);
     struct stat source_stat, optimized_stat;
     if (stat(argv[1], &source_stat) || stat(argv[2], &optimized_stat)
             || source_stat.st_dev != optimized_stat.st_dev) {
@@ -144,9 +188,18 @@ int main(int argc, char **argv)
                 "native-benchmark: SOURCE and OPTIMIZED must be on one filesystem\n");
         return 2;
     }
+    /* Resolve package-relative resources before the measured interval, so
+     * each executable uses its own distribution instead of host data. */
+    char **source_arguments = project_arguments(argv[1], &argv[3], argument_count);
+    char **optimized_arguments = project_arguments(argv[2], &argv[3], argument_count);
+    if (!source_arguments || !optimized_arguments) {
+        close_arguments(source_arguments, argument_count);
+        close_arguments(optimized_arguments, argument_count);
+        return 1;
+    }
     observation source_observation, optimized_observation;
-    if (!observe(argv[1], arguments, &source_observation)
-            || !observe(argv[2], arguments, &optimized_observation)
+    if (!observe(argv[1], source_arguments, &source_observation)
+            || !observe(argv[2], optimized_arguments, &optimized_observation)
             || !same_observation(
                 &source_observation, &optimized_observation)) {
         fprintf(stderr, "native benchmark parity: RED\n");
@@ -165,17 +218,18 @@ int main(int argc, char **argv)
     int null_descriptor = fileno(null_file);
     pl_u64 discarded;
     for (pl_u32 warm = 0u; warm < PRODUCTION_WARMUPS; ++warm)
-        if (!timed(warm & 1u ? argv[1] : argv[2], arguments,
+        if (!timed(warm & 1u ? argv[1] : argv[2],
+                   warm & 1u ? source_arguments : optimized_arguments,
                    null_descriptor, &discarded))
             return 1;
     for (pl_u32 rank = 0u; rank < runs; ++rank) {
         if (rank & 1u) {
-            if (!timed(argv[2], arguments, null_descriptor, &optimized[rank])
-                    || !timed(argv[1], arguments,
+            if (!timed(argv[2], optimized_arguments, null_descriptor, &optimized[rank])
+                    || !timed(argv[1], source_arguments,
                               null_descriptor, &source[rank]))
                 return 1;
-        } else if (!timed(argv[1], arguments, null_descriptor, &source[rank])
-                || !timed(argv[2], arguments,
+        } else if (!timed(argv[1], source_arguments, null_descriptor, &source[rank])
+                || !timed(argv[2], optimized_arguments,
                           null_descriptor, &optimized[rank]))
             return 1;
     }
@@ -203,5 +257,7 @@ int main(int argc, char **argv)
              / (long double)source[runs / 2u]);
     free(optimized);
     free(source);
+    close_arguments(optimized_arguments, argument_count);
+    close_arguments(source_arguments, argument_count);
     return 0;
 }

@@ -10,7 +10,7 @@
 package_recipe acl "$ACL_VERSION-r0" 'POSIX access control list tools' "$ACL_URL" 'LGPL-2.1-or-later AND GPL-2.0-or-later' acl 'attr' '' '' none
 package_recipe apk-tools "$APK_TOOLS_VERSION-r0" 'apk package manager' "$APK_TOOLS_URL" 'GPL-2.0-only' apk-tools '' '' '' none
 package_recipe attr "$ATTR_VERSION-r0" 'extended attribute tools' "$ATTR_URL" 'LGPL-2.1-or-later AND GPL-2.0-or-later' attr '' '' '' none
-package_recipe base-services "$DISTRIBUTION_RELEASE_VERSION-r0" 'compiled standard service graph' 'https://github.com/elysia090/libqm-prototype' 'LicenseRef-libqm-prototype' base-services 's6-rc mdevd' '' '' none
+package_recipe base-services "$DISTRIBUTION_RELEASE_VERSION-r0" 'compiled standard service graph' 'https://github.com/elysia090/libqm-prototype' 'LicenseRef-libqm-prototype' base-services 'busybox s6-rc mdevd' '' '' none
 package_recipe binutils "$BINUTILS_VERSION-r0" 'GNU binary utilities' "$BINUTILS_URL" 'GPL-3.0-or-later' binutils 'zlib' '' '' none
 package_recipe busybox "$BUSYBOX_VERSION-r0" 'small POSIX/Linux userland and rescue init' "$BUSYBOX_URL" 'GPL-2.0-only' busybox '' 'cmd:sh cmd:cpio' '' none
 package_recipe bzip2 "$BZIP2_VERSION-r0" 'bzip2 compressor' "$BZIP2_URL" 'bzip2-1.0.6' bzip2 '' '' '' none
@@ -45,7 +45,7 @@ package_recipe s6 "$S6_VERSION-r0" 'process supervision suite' "$S6_URL" 'ISC' s
 package_recipe s6-rc "$S6_RC_VERSION-r0" 'compiled service dependency manager' "$S6_RC_URL" 'ISC' s6-rc 'skalibs execline s6' '' '' none
 package_recipe shadow "$SHADOW_VERSION-r0" 'account and password administration' "$SHADOW_URL" 'BSD-3-Clause' shadow '' '' '' none
 package_recipe skalibs "$SKALIBS_VERSION-r0" 'small systems programming libraries' "$SKALIBS_URL" 'ISC' skalibs '' '' '' none
-package_recipe system-config "$DISTRIBUTION_RELEASE_VERSION-r0" 'immutable network and client configuration baselines' 'https://github.com/elysia090/libqm-prototype' 'LicenseRef-libqm-prototype' system-config 'nftables openssh-client' '' '' none
+package_recipe system-config "$DISTRIBUTION_RELEASE_VERSION-r0" 'system accounts and immutable network and client configuration baselines' 'https://github.com/elysia090/libqm-prototype' 'LicenseRef-libqm-prototype' system-config 'nftables openssh-client' '' '' none
 package_recipe tar "$TAR_VERSION-r0" 'GNU tar archiver' "$TAR_URL" 'GPL-3.0-or-later' tar '' '' '' none
 package_recipe tzdata "$TZDATA_VERSION-r0" 'IANA timezone database' "$TZDATA_URL" 'LicenseRef-Public-Domain' tzdata '' '' '' none
 package_recipe util-linux "$UTIL_LINUX_VERSION-r0" 'essential Linux system utilities' "$UTIL_LINUX_URL" 'GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause' util-linux '' '' '' none

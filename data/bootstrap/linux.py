@@ -29,6 +29,7 @@ INPUTS = os.path.join(REPO, "data", "upstream", "bootstrap")
 LOCK = json.load(open(os.path.join(HERE, "windows.json")))
 IMAGE = os.path.join(INPUTS, LOCK["image"]["file"])
 DISK = os.path.join(WORK, "build-host.qcow2")
+DISK_CAPACITY = "32G"
 KEY = os.path.join(WORK, "id_ed25519")
 PORT = 18081
 SSH_PORT = 18022
@@ -75,7 +76,7 @@ def prepare():
              "local-build-host", "-f", KEY])
     if not os.path.exists(DISK):
         run([QEMU_IMG, "create", "-f", "qcow2", "-F", "qcow2", "-b", IMAGE,
-             DISK, "64G"])
+             DISK, DISK_CAPACITY])
     print(f"build disk: {DISK}")
 
 
@@ -213,7 +214,7 @@ def boot():
         QEMU, "-L", BIOS, "-machine", "q35", "-accel", accelerator,
         "-cpu", cpu,
         "-m", "8192", "-smp", "6", "-daemonize",
-        "-drive", f"file={DISK},format=qcow2,if=virtio",
+        "-drive", f"file={DISK},format=qcow2,if=virtio,discard=unmap,detect-zeroes=unmap",
         "-netdev", f"user,id=net0,hostfwd=tcp:127.0.0.1:{SSH_PORT}-:22",
         "-device", "virtio-net-pci,netdev=net0",
         "-smbios", f"type=1,serial=ds=nocloud;s=http://10.0.2.2:{PORT}/seed/",

@@ -40,15 +40,11 @@ int main(void)
     pl_u32 *future_class = status ? 0 : malloc(
         (size_t)population.states * sizeof(*future_class));
     pl_u8 *future_scratch = status ? 0 : malloc(future_bytes);
-    artifact_complete_observation *observation = status ? 0 : malloc(
-        (size_t)population.states * sizeof(*observation));
     if (!status && (!share_digest || !share_index || !future_class
-            || !future_scratch || !observation))
+            || !future_scratch))
         status = ARTIFACT_ERROR_PROGRAM_RANGE;
 
     artifact_program_workspace workspace = {
-        .observation = observation,
-        .state_capacity = population.states,
         .future = {
             .immediate = {
                 share_digest, share_digest_bytes,
@@ -116,6 +112,20 @@ int main(void)
         status = ARTIFACT_ERROR_PROGRAM;
     instruction[0] = saved_instruction;
 
+    static const pl_u8 pareto[] = {
+        'X','8','6','N', 5u,2u,3u,
+        1u,1u,1u,2u,1u,1u,'A','B',
+    };
+    instruction[0] = (artifact_cell){ pareto, sizeof(pareto) };
+    if (!status) {
+        status = artifact_program_project(
+            &population, &workspace, &projection);
+        if (!status && (projection.minimum_proof_occurrences != 5u
+                || projection.joint_witness_occurrences != 4u))
+            status = ARTIFACT_ERROR_PROGRAM;
+    }
+    instruction[0] = saved_instruction;
+
     pl_u8 overlong[sizeof(add) + 1u];
     for (pl_u32 index = 0u; index < 7u; ++index)
         overlong[index] = add[index];
@@ -138,7 +148,6 @@ int main(void)
                "-> 3 futures; "
                "no component storage modes)\n");
 
-    free(observation);
     free(future_scratch);
     free(future_class);
     free(share_index);

@@ -16,8 +16,13 @@ repo=$(cd -- "$data/.." && pwd)
 
 signing_key=${QM_APK_SIGNING_KEY:?QM_APK_SIGNING_KEY must name the external private key}
 public_key=${QM_APK_PUBLIC_KEY:?QM_APK_PUBLIC_KEY must name the release public key}
+openssl_tool=${QM_APK_OPENSSL:-openssl}
 signing_key=$(realpath -e -- "$signing_key")
 public_key=$(realpath -e -- "$public_key")
+if ! command -v -- "$openssl_tool" >/dev/null 2>&1; then
+  printf 'package publication cannot execute OpenSSL: %s\n' "$openssl_tool" >&2
+  exit 2
+fi
 if [[ ${QM_ALLOW_TEST_SIGNING_KEY:-0} != 1 && \
       ( $signing_key == "$repo" || $signing_key == "$repo"/* ) ]]; then
   printf 'private package signing key must stay outside the repository: %s\n' \
@@ -29,9 +34,9 @@ if grep -q 'PRIVATE KEY' "$public_key"; then
     "$public_key" >&2
   exit 1
 fi
-private_id=$(openssl pkey -in "$signing_key" -pubout -outform DER | \
+private_id=$("$openssl_tool" pkey -in "$signing_key" -pubout -outform DER | \
   sha256sum | cut -d' ' -f1)
-public_id=$(openssl pkey -pubin -in "$public_key" -outform DER | \
+public_id=$("$openssl_tool" pkey -pubin -in "$public_key" -outform DER | \
   sha256sum | cut -d' ' -f1)
 if [[ $private_id != "$public_id" ]]; then
   printf 'package signing private/public keys do not match\n' >&2
@@ -104,8 +109,10 @@ roots[package-trust]=$partial/package-trust
 
 packages=()
 world=()
+mkdir -p "$partial/payload"
 for package in "${recipe_order[@]}"; do
-  root=${roots[$package]}
+  root=$partial/payload/$package
+  bash "$here/prepare-package-payload.sh" "${roots[$package]}" "$root" >/dev/null
   # Apk records file mtimes.  Normalize the final owner root once, in place,
   # before signatures; no payload copy or parallel timestamp sidecar exists.
   find "$root" -exec touch -h -d "@$DISTRIBUTION_SOURCE_DATE_EPOCH" -- {} +
@@ -130,14 +137,16 @@ for package in "${recipe_order[@]}"; do
       "$package" >&2
     exit 1
   fi
-  "$apk" --sign-key "$signing_key" mkpkg --xattrs=yes \
+  "$apk" mkpkg --sign-key "$signing_key" --xattrs=yes \
     --files "$root" "${info[@]}" --output "$package_file"
+  rm -rf -- "$root"
   packages+=("$package_file")
   world+=("$package=${version[$package]}")
 done
+rmdir -- "$partial/payload"
 
 index=$partial/repository/Packages.adb
-"$apk" --root "$partial/root" --sign-key "$signing_key" mkndx \
+"$apk" --root "$partial/root" mkndx --sign-key "$signing_key" \
   --description "$DISTRIBUTION_PROFILE_ID" \
   --output "$index" "${packages[@]}"
 "$apk" --root "$partial/root" verify "${packages[@]}" "$index"
@@ -148,6 +157,8 @@ mapfile -t sorted_world < <(printf '%s\n' "${world[@]}" | sort -u)
   "${sorted_world[@]}"
 printf '%s\n' "$DISTRIBUTION_PACKAGE_REPOSITORY" \
   >"$partial/root/etc/apk/repositories"
+install -D -m 0644 "$index" \
+  "$partial/root$DISTRIBUTION_PACKAGE_REPOSITORY"
 
 bash "$here/check-package-state.sh" "$partial/root" >&2
 mv -- "$partial" "$output"

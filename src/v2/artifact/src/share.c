@@ -1,5 +1,20 @@
 #include <artifact/share.h>
 
+static artifact_complete_observation read_observation_array(
+    const void *context, pl_u32 index)
+{
+    const artifact_complete_observation *observations = context;
+    return observations[index];
+}
+
+artifact_observation_view artifact_observations_view(
+    const artifact_complete_observation *observations)
+{
+    return (artifact_observation_view){
+        observations, observations ? read_observation_array : 0,
+    };
+}
+
 static int valid_observation(const artifact_complete_observation *value)
 {
     return value && value->family >= ARTIFACT_OBSERVATION_BLOCK
@@ -130,7 +145,7 @@ static void radix_digest(const pl_u8 *digest, pl_u32 *order,
 }
 
 static void merge_collision_group(
-    const artifact_complete_observation *observations,
+    const artifact_observation_view *observations,
     pl_u32 *order, pl_u32 *temporary, pl_u32 first, pl_u32 last)
 {
     pl_u32 count = last - first;
@@ -143,7 +158,9 @@ static void merge_collision_group(
             while (left < middle && right < end) {
                 pl_u32 a = order[first + left];
                 pl_u32 b = order[first + right];
-                if (observation_order(&observations[a], &observations[b]) <= 0) {
+                artifact_complete_observation av = observations->read(observations->context, a);
+                artifact_complete_observation bv = observations->read(observations->context, b);
+                if (observation_order(&av, &bv) <= 0) {
                     temporary[first + out++] = a;
                     ++left;
                 } else {
@@ -174,22 +191,23 @@ static int workspace_valid(const artifact_share_workspace *workspace,
         && workspace->digest_bytes >= occurrences * PL_SHA256_BYTES;
 }
 
-int artifact_share_project(
-    const artifact_complete_observation *observations, pl_u32 occurrences,
+int artifact_share_project_view(
+    const artifact_observation_view *observations, pl_u32 occurrences,
     const artifact_share_workspace *workspace,
     artifact_share_projection *out)
 {
-    if (!observations || !out || !occurrences
+    if (!observations || !observations->read || !out || !occurrences
             || !workspace_valid(workspace, occurrences))
         return ARTIFACT_ERROR_SHARE_RANGE;
 
     pl_u64 opened = 0u;
     for (pl_u32 index = 0u; index < occurrences; ++index) {
-        if (!valid_observation(&observations[index])
-                || !add_u64(&opened, observations[index].domain_bytes)
-                || !add_u64(&opened, observations[index].response_bytes))
+        artifact_complete_observation value = observations->read(observations->context, index);
+        if (!valid_observation(&value)
+                || !add_u64(&opened, value.domain_bytes)
+                || !add_u64(&opened, value.response_bytes))
             return ARTIFACT_ERROR_SHARE_RANGE;
-        observation_digest(&observations[index],
+        observation_digest(&value,
                            workspace->digest
                                + (pl_u64)index * PL_SHA256_BYTES);
         workspace->order[index] = index;
@@ -215,13 +233,15 @@ int artifact_share_project(
     pl_u64 retained = 0u;
     for (pl_u32 at = 0u; at < occurrences; ++at) {
         pl_u32 member = workspace->order[at];
-        if (!classes || !observation_equal(
-                &observations[member],
-                &observations[workspace->representative[classes - 1u]])) {
+        artifact_complete_observation value = observations->read(observations->context, member);
+        artifact_complete_observation previous = classes
+            ? observations->read(observations->context, workspace->representative[classes - 1u])
+            : (artifact_complete_observation){ 0 };
+        if (!classes || !observation_equal(&value, &previous)) {
             workspace->representative[classes++] = member;
-            if (!add_u64(&retained, observations[member].domain_bytes)
+            if (!add_u64(&retained, value.domain_bytes)
                     || !add_u64(&retained,
-                                observations[member].response_bytes))
+                                value.response_bytes))
                 return ARTIFACT_ERROR_SHARE_RANGE;
         }
         workspace->rank[member] = classes - 1u;
@@ -230,6 +250,15 @@ int artifact_share_project(
         occurrences, classes, opened, retained, occurrences,
     };
     return 0;
+}
+
+int artifact_share_project(
+    const artifact_complete_observation *observations, pl_u32 occurrences,
+    const artifact_share_workspace *workspace,
+    artifact_share_projection *out)
+{
+    artifact_observation_view view = artifact_observations_view(observations);
+    return artifact_share_project_view(&view, occurrences, workspace, out);
 }
 
 int artifact_share_verify(

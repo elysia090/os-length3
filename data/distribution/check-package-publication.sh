@@ -302,6 +302,10 @@ if [[ $repository_coordinate != "$DISTRIBUTION_PACKAGE_REPOSITORY" ]]; then
     "$repository_coordinate" >&2
   exit 1
 fi
+if ! cmp -s -- "$index" "$root$DISTRIBUTION_PACKAGE_REPOSITORY"; then
+  printf 'installed repository index differs from the signed publication\n' >&2
+  exit 1
+fi
 
 bash "$here/check-package-state.sh" "$root" >/dev/null
 printf 'signed apk repository, package closure, and ownership: green\n'

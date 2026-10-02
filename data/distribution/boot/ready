@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+case ${1:-} in
+    api)
+        for pair in '/dev devtmpfs' '/proc proc' '/sys sysfs' '/run tmpfs'; do
+            set -- $pair
+            awk -v path="$1" -v kind="$2" \
+                '$2 == path && $3 == kind { found = 1 } END { exit !found }' \
+                /proc/mounts
+        done
+        test -c /dev/console
+        ;;
+    root)
+        awk '$2 == "/" && $3 == "overlay" { found = 1 } END { exit !found }' \
+            /proc/mounts
+        awk '$2 == "/run/release" && $3 == "squashfs" && \
+            $4 ~ /(^|,)ro(,|$)/ { found = 1 } END { exit !found }' /proc/mounts
+        test -s /etc/apk/world
+        test -s /lib/apk/db/installed
+        test -s /etc/passwd
+        test -s /etc/s6-rc/compiled/current/db
+        probe=$(mktemp /root/.workspace-ready.XXXXXXXX)
+        rm -- "$probe"
+        ;;
+    interactive)
+        test "$(readlink /proc/1/exe)" = /usr/bin/s6-svscan
+        for program in /bin/sh /usr/bin/cc /usr/bin/make /usr/bin/git /usr/bin/apk; do
+            test -x "$program"
+        done
+        ;;
+    *) echo 'usage: ready api|root|interactive' >&2; exit 2 ;;
+esac

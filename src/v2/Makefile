@@ -9,7 +9,7 @@ WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iartifact/include -Ipostlink-compiler/include \
 	-Ioptimized-x86/include -Ix86/include -Isupport/include
 
-.PHONY: all check site release-sharing-check artifact-executable-stage-check \
+.PHONY: all check site release-sharing-check artifact-executable-stage-check native-bundle-check postlinked-kernel-package-check service-source-check package-payload-check \
 	clean $(PRODUCTS)
 all: $(PRODUCTS) $(BUILD)/artifact-executable-stage
 
@@ -120,13 +120,16 @@ artifact-executable-stage-check: $(BUILD)/artifact-executable-stage
 	$(CC) -O0 -g -Wl,--emit-relocs \
 		postlink-compiler/check/elf-proof-fixture.c \
 		-o "$$temporary/escape-root/input"; \
-	! $(BUILD)/artifact-executable-stage \
+	$(BUILD)/artifact-executable-stage \
 		--stage "$$temporary/escape-report" \
 		--namespace-root "$$temporary/escape-root" \
 		--payload-root "$$temporary/escape-root" \
 		--archives 0 --payloads 0 --elfs \
 		"$$temporary/escape-root/input" \
-		"$$temporary/escape-output/output" 2>/dev/null; \
+		"$$temporary/escape-output/output"; \
+	grep -qxF 'complete_gate=1' "$$temporary/escape-report"; \
+	optimized-x86/build/postlink-verify "$$temporary/escape-root/input" \
+		"$$temporary/escape-output/output"; \
 	printf orphan >"$$temporary/root/orphan"; \
 	! $(BUILD)/artifact-executable-stage --stage "$$temporary/red-report" \
 		--namespace-root "$$temporary/root" \
@@ -136,13 +139,26 @@ artifact-executable-stage-check: $(BUILD)/artifact-executable-stage
 		"$$temporary/root/input-b" "$$temporary/output/red-b" \
 		2>/dev/null
 
-check: release-sharing-check artifact-executable-stage-check
+native-bundle-check:
+	bash ../../data/distribution/check-native-bundle.sh
+
+postlinked-kernel-package-check:
+	bash ../../data/oracle/check-package-postlinked-kernel.sh
+
+service-source-check:
+	bash ../../data/distribution/check-service-sources-fixture.sh
+
+package-payload-check:
+	bash ../../data/distribution/check-package-payload.sh
+
+check: release-sharing-check artifact-executable-stage-check native-bundle-check postlinked-kernel-package-check service-source-check package-payload-check
 	@for product in $(PRODUCTS); do $(MAKE) -C $$product check || exit; done
 	@! test -e qm
 	@! test -e kernel
 	@! test -e tests
 	@! test -e tools
 	@! test -e machine-artifact
+	@test -d web
 	@! grep -REn 'Pyodide|pyodide|from qm|import qm|from kernel|import kernel|machine-artifact/' \
 		--exclude=Makefile --exclude='*.md' --exclude-dir=build \
 		--exclude-dir=third_party web vm postlink-compiler wasm-compiler

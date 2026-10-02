@@ -4,7 +4,7 @@
 
 #include <postlink/compiler.h>
 #include <x86/elf.h>
-#include "../src/internal/native.h"
+#include "../src/internal/compile-elf.h"
 
 #include <stdlib.h>
 
@@ -134,7 +134,7 @@ static int barrier_slice_is_not_a_size_cut(void)
     pl_u32 grid_count = 0u;
     pl_x86_native_population population = { 0 };
     status = pl_x86_native_analyze(
-        &image, 0, &entry, 1u, 1u,
+        &image, 0, &entry, 0, 1u, 1u,
         grids, 2u, &grid_count,
         workspace, workspace_bytes, &population);
     pl_u64 persistent_bytes = 0u;

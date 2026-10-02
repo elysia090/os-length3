@@ -4,8 +4,8 @@
 #define POSTLINK_RELOCATE_ELF_H
 
 #include "layout-elf.h"
-#include "native.h"
-#include "table.h"
+#include "compile-elf.h"
+#include "jump-table.h"
 
 #define PL_ERROR_X86_RELOCATE (-51)
 

@@ -5,16 +5,20 @@
 
 The current source roles are:
 
-- Linux 7.1.8, the stable release published by kernel.org on 2026-08-09.
-- BusyBox 1.37.0, the versioned upstream release used by the current boot
-  artifact.  BusyBox labels this series unstable; the source and checksum are
-  nevertheless fixed here rather than following a snapshot.
+- Linux 7.2.7, the stable release published by kernel.org on 2026-09-21.
+- BusyBox 1.36.1, the latest release explicitly labelled stable by BusyBox.
+  The newer 1.37.x and 1.38.x series are labelled unstable upstream.
 - musl 1.2.6, GNU make 4.4.1, GNU Binutils 2.46 and GCC 16.2.0, plus the pinned
   POSIX build, archive, HTTPS, Git and OpenSSH-client sources consumed by
   `toolchain/build.sh`;
 - apk-tools, dhcpcd, libmnl/libnftnl/nftables, chrony, e2fsprogs, shadow,
   libxcrypt, libcap, acl, attr, zstd, ncurses, nano and tzdata consumed by
   `distribution/build-system-tools.sh`.
+
+The util-linux 2.42.3 source needs the narrow, checked-in
+[`openat2` include patch](patches/util-linux-2.42.3-openat2.patch) to build
+its idmapped-mount hook against the locked Linux headers. Its digest is part
+of the core-tools component key; the Linux UAPI supplies the flag value.
 
 Together these form the standard read-only system layer and are not inflated
 into the initramfs. `bootstrap/Makefile` is a deterministic parallel-process
@@ -29,10 +33,11 @@ linked x86 executable in the release root is replaced by its independently
 proved optimized ELF before the complete profile gate runs. The gate checks
 the exact command-provider path, service/runtime closure, resource set and
 embedded source/profile locks. It does not call an old Python publisher or
-treat a tar/SquashFS image as canonical identity. Until the C Artifact
-publisher is connected, the recipe terminates after reporting the verified
-input set rather than claiming a published release. No browser-side socket or
-TCP implementation is part of this input.
+treat a tar/SquashFS image as canonical identity. After the verified installed
+root exists, it publishes a deterministic native `.tar.zst` bundle containing
+that root and its boot files. This is a runnable native download, not a claim
+that the later canonical Artifact release word or browser projection is built.
+No browser-side socket or TCP implementation is part of this input.
 
 The same gate runs `artifact-measure-root` over the complete candidate root.
 Its v4 report opens every GNU archive into member/symbol views, proves exact
@@ -89,10 +94,48 @@ population are part of release provenance, not runtime binary payloads:
 
 ```sh
 cd data
-QM_BUILD_ROOT=/tmp/libqm-linux-build \
-QM_TOOLCHAIN_PACKAGE_SET=/build/source/temp/toolchain-output/x86_64-linux-musl-toolchain-<identity>.packages \
+QM_BUILD_ROOT=/build/source/temp/release-build \
+QM_OUTPUT_ROOT=/build/source/temp/release-output \
+QM_TOOLCHAIN_PACKAGE_SET=/absolute/path/to/verified-toolchain.packages \
+QM_APK_SIGNING_KEY=/secure/release.private.pem \
+QM_APK_PUBLIC_KEY=/secure/release.public.pem \
   ./build.sh
 ```
+
+The signing key is an external release input, never a file from this source
+tree. Before publishing, the build enters the candidate root in a private
+mount namespace and requires C compile/run, `make`, `file`, Git repository
+creation/status, `apk info musl`, `curl`, and `ssh -V` to succeed. The signed
+package index is present at the installed repository coordinate; only
+scratch `/tmp` and a separate writable `/root` project home are writable for
+this smoke test. It then extracts the exact downloadable `.tar.zst`, checks
+its manifest and installed-root closure, and repeats the native smoke and an
+upstream zlib `configure`/`make`/`test`/`install` workflow from that extracted
+root. On success the script prints
+`native-download`, its byte count, and the
+bundle publisher prints its SHA-256 digest. Authenticate that digest or a
+signature outside the bundle when publishing the downloadable file. A
+`QM_ALLOW_TEST_SIGNING_KEY=1` run only validates the pipeline; it is not a
+public release.
+
+Before building the kernel or the release-wide ELF population, the build also
+post-link compiles the toolchain's linked `readelf`, `objcopy`, and `as`, verifies their
+ELFs, and compares `readelf -rW` on linked GCC and `objcopy -O binary` on
+linked readelf against their linked versions. It also compares the exact object
+bytes produced by the two assemblers from `distribution/toolchain-preflight.s`.
+A failing command stops the
+build at this preflight instead of producing a formally verified but broken
+download. A green result is cached by the exact compiler, verifier, test
+script, and linked tool bytes; changing any one reruns the commands.
+
+The extracted-bundle gate also starts a loopback HTTPS server with a
+short-lived test certificate. The released `curl` must verify that certificate
+and fetch a file; the released `git` must clone a repository over the same
+verified TLS connection, and the cloned C source must compile and run. This
+does not grant public network access or test the public CA bundle, but it
+prevents a version-only or `file://` smoke test from certifying a broken TLS
+client. A failure leaves the new bundle under a temporary candidate name,
+not the stable download name.
 
 `QM_BUILD_ROOT` keeps the disposable expansion on the build-host filesystem,
 whose backing disk is under Windows `temp/`. Its default is
@@ -110,7 +153,7 @@ configuration lock:
 
 ```sh
 cd data
-QM_LINKED_KERNEL_ROOT=/tmp/libqm-linked-kernel-7.1.8 \
+QM_LINKED_KERNEL_ROOT=/tmp/libqm-linked-kernel-7.2.7 \
   ./build-linked-kernel.sh
 ```
 
@@ -139,7 +182,11 @@ Update policy:
 
 1. Read `https://www.kernel.org/releases.json` and select `latest_stable`.
 2. Use a BusyBox release explicitly labelled stable by busybox.net.
-3. Update URLs and digests in `sources.env` together.
+3. Check each product package against its primary release page or signed tag;
+   select the newest supported stable series, or record an explicit LTS
+   exception. Update URLs and digests in `sources.env` together. Do not
+   advance a version advertised on a page until its source archive and
+   checksum can actually be fetched and pinned.
 4. Regenerate and review the versioned exact `.config` locks.
 5. Build and verify `/init`, the BusyBox prompt, `make -j8 -f
    /opt/qm/Makefile`, `uname -a`, and `ls /` in the real browser before
@@ -154,7 +201,14 @@ post-link compiles and independently verifies each owner's ELFs before those
 exact bytes are eligible for `.apk` creation and signing. The signed apk gate
 is not implied by the package-root checkpoint: it separately signs every
 package and index, installs the exact offline world, and audits the resulting
-ownership database. The Artifact writer remains red. The final path projects
+ownership database. The Artifact writer remains red.
+The publication boundary re-applies the current profile to reused component
+roots before signing: optional forbidden command names are excluded in a
+short-lived, owner-sharing namespace. Component ELF bytes remain unchanged,
+and no file is removed from an already installed apk-owned root. This permits
+package-policy fixes to resume from a verified post-link checkpoint; its
+pre-package population count is not the final installed release population.
+The final path projects
 the authenticated apk-installed root into a demand-paged read-only filesystem at a reserved
 physical address. Upstream Linux owns that mount and its VFS semantics.
 Compiler code, headers, static libraries and trust anchors remain cold until

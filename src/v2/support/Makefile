@@ -6,7 +6,7 @@ BUILD ?= build
 SOURCES = src/arena.c src/sha256.c src/future.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 
-.PHONY: all check future-check clean
+.PHONY: all check future-check arena-check clean
 all: $(BUILD)/libsupport.a
 
 $(BUILD):
@@ -26,7 +26,13 @@ $(BUILD)/future-check: check/future.c $(BUILD)/libsupport.a | $(BUILD)
 future-check: $(BUILD)/future-check
 	$(BUILD)/future-check
 
-check: all future-check
+$(BUILD)/arena-check: check/arena.c $(BUILD)/libsupport.a | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -Iinclude $< $(BUILD)/libsupport.a -o $@
+
+arena-check: $(BUILD)/arena-check
+	$(BUILD)/arena-check
+
+check: all future-check arena-check
 	@! grep -REn '#include <(x86|optimized-x86|postlink|machine|wasm-compiler|artifact|storage|vm)/' include src
 
 clean:

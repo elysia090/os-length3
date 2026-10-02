@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-#include "../src/internal/block.h"
+#include "../src/internal/form-block.h"
 
 #define ARENA_BYTES (64u * 1024u)
 
@@ -378,6 +378,199 @@ int main(void)
             && !(required_inputs & (1u << PL_X86_RFLAGS_LOCAL)))
         status = PL_ERROR_PLAN;
 
+    /* REP MOVSQ reads its address, count, and direction inputs even when
+     * none of its output registers are used by the following block.  This
+     * is a terminal effect, not a reason to project the preceding producer
+     * away. */
+    pl_operand string_locals[PL_X86_LOCAL_COUNT];
+    for (pl_u32 local = 0u; local < PL_X86_LOCAL_COUNT; ++local)
+        string_locals[local] = (pl_operand){ PL_OPERAND_LOCAL, local };
+    pl_x86_block string_block = { 0 };
+    string_block.plan.locals = string_locals;
+    string_block.plan.local_count = PL_X86_LOCAL_COUNT;
+    string_block.machine_operation = PL_X86_MACHINE_STRING;
+    string_block.machine_argument = 8u | (64ull << 8u) | (3ull << 16u);
+    string_block.machine_inputs = (1u << 1u) | (1u << 6u) | (1u << 7u)
+                                | (1u << PL_X86_RFLAGS_LOCAL);
+    second.used = 0u;
+    if (!status)
+        status = pl_x86_block_live_inputs(
+            &string_block, 0u, &second, &required_inputs);
+    pl_u32 string_reads = (1u << 1u) | (1u << 6u) | (1u << 7u)
+                        | (1u << PL_X86_RFLAGS_LOCAL);
+    if (!status && required_inputs != string_reads)
+        status = PL_ERROR_PLAN;
+
+    /* MOVQ XMM1,RSI crosses the vector machine cut, but its scalar source
+     * is still an observable input.  A caller's MOV RSI,R15 must not become
+     * identity merely because no GPR output of MOVQ is live. */
+    pl_x86_block vector_block = { 0 };
+    vector_block.plan.locals = string_locals;
+    vector_block.plan.local_count = PL_X86_LOCAL_COUNT;
+    vector_block.machine_operation = PL_X86_MACHINE_VECTOR;
+    vector_block.machine_argument = 13u | (1ull << 8u)
+                                  | (12ull << 32u);
+    vector_block.machine_inputs = 1u << 6u;
+    second.used = 0u;
+    if (!status)
+        status = pl_x86_block_live_inputs(
+            &vector_block, 0u, &second, &required_inputs);
+    if (!status && required_inputs != (1u << 6u))
+        status = PL_ERROR_PLAN;
+
+    /* CPUID always observes both leaf and subleaf, even if every result is
+     * dead. Its implicit inputs must survive backward future projection. */
+    pl_x86_block cpuid_block = { 0 };
+    cpuid_block.plan.locals = string_locals;
+    cpuid_block.plan.local_count = PL_X86_LOCAL_COUNT;
+    cpuid_block.machine_operation = PL_X86_MACHINE_CPUID;
+    cpuid_block.machine_inputs = (1u << 0u) | (1u << 1u);
+    second.used = 0u;
+    if (!status)
+        status = pl_x86_block_live_inputs(
+            &cpuid_block, 0u, &second, &required_inputs);
+    if (!status && required_inputs != ((1u << 0u) | (1u << 1u)))
+        status = PL_ERROR_PLAN;
+
+    /* TEST(x,x) may still publish flags, but its zero guard cannot change
+     * x & mask: both arms are zero when x is zero.  A test of a different
+     * input must retain the selection. */
+    pl_node guard_nodes[4] = {
+        { PL_OPCODE_ALU_IMMEDIATE[1][0], 0u, 2u },
+        { PL_OPCODE_X86_TEST, 2u, 4u },
+        { PL_OPCODE_X86_CONDITION, 6u, 2u },
+        { PL_OPCODE_LANE64_SELECT, 8u, 3u },
+    };
+    pl_operand guard_arguments[11] = {
+        { PL_OPERAND_LOCAL, 2u }, { PL_OPERAND_CONST, ~1ull },
+        { PL_OPERAND_LOCAL, PL_X86_RFLAGS_LOCAL },
+        { PL_OPERAND_LOCAL, 2u }, { PL_OPERAND_LOCAL, 2u },
+        { PL_OPERAND_CONST, 64u },
+        { PL_OPERAND_NODE, 2u }, { PL_OPERAND_CONST, 4u },
+        { PL_OPERAND_CONST, 0u }, { PL_OPERAND_NODE, 1u },
+        { PL_OPERAND_NODE, 3u },
+    };
+    pl_operand guard_locals[PL_X86_LOCAL_COUNT];
+    for (pl_u32 local = 0u; local < PL_X86_LOCAL_COUNT; ++local)
+        guard_locals[local] = (pl_operand){ PL_OPERAND_LOCAL, local };
+    guard_locals[0] = (pl_operand){ PL_OPERAND_NODE, 4u };
+    guard_locals[PL_X86_RFLAGS_LOCAL] =
+        (pl_operand){ PL_OPERAND_NODE, 2u };
+    pl_plan guard_input = {
+        .nodes = guard_nodes,
+        .node_count = 4u,
+        .arguments = guard_arguments,
+        .argument_count = 11u,
+        .locals = guard_locals,
+        .local_count = PL_X86_LOCAL_COUNT,
+    };
+    first.used = 0u;
+    second.used = 0u;
+    if (!status)
+        status = pl_fold_local_physical(&guard_input, &first, &folded);
+    if (!status)
+        status = pl_compact_once(&folded, &second, &compacted);
+    if (!status && (compacted.node_count != 2u
+            || compacted.locals[0].kind != PL_OPERAND_NODE
+            || compacted.locals[0].value != 1u
+            || compacted.locals[PL_X86_RFLAGS_LOCAL].kind != PL_OPERAND_NODE
+            || compacted.locals[PL_X86_RFLAGS_LOCAL].value != 2u))
+        status = PL_ERROR_PLAN;
+    guard_arguments[4] = (pl_operand){ PL_OPERAND_LOCAL, 3u };
+    first.used = 0u;
+    second.used = 0u;
+    if (!status)
+        status = pl_fold_local_physical(&guard_input, &first, &folded);
+    if (!status)
+        status = pl_compact_once(&folded, &second, &compacted);
+    if (!status && (compacted.node_count != 4u
+            || compacted.nodes[3].opcode != PL_OPCODE_LANE64_SELECT))
+        status = PL_ERROR_PLAN;
+    guard_arguments[4] = (pl_operand){ PL_OPERAND_LOCAL, 2u };
+    guard_arguments[9] = (pl_operand){ PL_OPERAND_LOCAL, 2u };
+    first.used = 0u;
+    second.used = 0u;
+    if (!status)
+        status = pl_fold_local_physical(&guard_input, &first, &folded);
+    if (!status)
+        status = pl_compact_once(&folded, &second, &compacted);
+    if (!status && (compacted.node_count != 1u
+            || compacted.locals[0].kind != PL_OPERAND_LOCAL
+            || compacted.locals[0].value != 2u))
+        status = PL_ERROR_PLAN;
+    guard_arguments[8] = (pl_operand){ PL_OPERAND_NODE, 1u };
+    guard_arguments[9] = (pl_operand){ PL_OPERAND_CONST, 0u };
+    first.used = 0u;
+    second.used = 0u;
+    if (!status)
+        status = pl_fold_local_physical(&guard_input, &first, &folded);
+    if (!status)
+        status = pl_compact_once(&folded, &second, &compacted);
+    if (!status && (compacted.node_count != 1u
+            || compacted.locals[0].kind != PL_OPERAND_CONST
+            || compacted.locals[0].value != 0u))
+        status = PL_ERROR_PLAN;
+    guard_arguments[8] = (pl_operand){ PL_OPERAND_CONST, 0u };
+    guard_arguments[9] = (pl_operand){ PL_OPERAND_NODE, 1u };
+    guard_arguments[5] = (pl_operand){ PL_OPERAND_CONST, 32u };
+    first.used = 0u;
+    second.used = 0u;
+    if (!status)
+        status = pl_fold_local_physical(&guard_input, &first, &folded);
+    if (!status)
+        status = pl_compact_once(&folded, &second, &compacted);
+    if (!status && (compacted.node_count != 4u
+            || compacted.nodes[3].opcode != PL_OPCODE_LANE64_SELECT))
+        status = PL_ERROR_PLAN;
+
+    /* Machine effects observe decoded scalar inputs independently of which
+     * architectural outputs their successors keep. Include implicit and
+     * conditional reads, not just a visible address or one hand-written ISA
+     * family. No privileged instruction is executed by this check. */
+    static const struct {
+        pl_u8 code[7];
+        pl_u32 bytes;
+        pl_u32 inputs;
+    } machine_cases[] = {
+        { { 0x0fu, 0xa2u }, 2u, 0x03u },
+        { { 0x48u, 0x0fu, 0xc7u, 0x0fu }, 4u, 0x8fu },
+        { { 0x0fu, 0x32u }, 2u, 0x02u },
+        { { 0x0fu, 0x30u }, 2u, 0x07u },
+        { { 0x0fu, 0x22u, 0xd8u }, 3u, 0x01u },
+        { { 0x66u, 0x48u, 0x0fu, 0x6eu, 0xceu }, 5u, 1u << 6u },
+        { { 0xf3u, 0x48u, 0xa5u }, 3u, 0x100c2u },
+        { { 0xf3u, 0x48u, 0xabu }, 3u, 0x10083u },
+        { { 0x48u, 0x0fu, 0xb1u, 0x17u }, 4u, 0x85u },
+        { { 0xf0u, 0x48u, 0x0fu, 0xc1u, 0x37u }, 5u, 0xc0u },
+        { { 0x48u, 0x87u, 0x37u }, 3u, 0xc0u },
+        { { 0x64u, 0xf0u, 0x48u, 0x0fu, 0xc1u, 0x37u }, 6u, 0x200c0u },
+        { { 0x65u, 0x48u, 0x0fu, 0xc7u, 0x0fu }, 5u, 0x4008fu },
+        { { 0x0fu, 0xaeu, 0xf0u }, 3u, 0u },
+    };
+    for (pl_u32 index = 0u; !status
+            && index < sizeof machine_cases / sizeof machine_cases[0]; ++index) {
+        const pl_u8 *code = machine_cases[index].code;
+        pl_u32 bytes = machine_cases[index].bytes;
+        pl_u32 expected_inputs = machine_cases[index].inputs;
+        pl_x86_map map = { code, 0x1000u, bytes, bytes,
+            PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u };
+        pl_x86_image image = { &map, 1u, 0u, map.address };
+        pl_x86_frontend frontend;
+        pl_x86_block_workspace workspace = {
+            first_storage, second_storage, sizeof first_storage, 16u };
+        pl_x86_block machine;
+        pl_u8 live_storage[4096];
+        pl_arena live_arena = { live_storage, sizeof live_storage, 0u };
+        status = pl_x86_frontend_open(&image, &frontend);
+        if (!status) status = pl_x86_block_lower_until(
+            &frontend, map.address, map.address + bytes, &workspace, &machine);
+        if (!status) status = pl_x86_block_live_inputs(
+            &machine, 0u, &live_arena, &required_inputs);
+        if (!status && required_inputs != expected_inputs) status = PL_ERROR_PLAN;
+        if (status) fprintf(stderr, "machine inputs: RED (%u status=%d mask=%x want=%x)\n",
+            index, status, required_inputs, expected_inputs);
+    }
+
     if (status) {
         fprintf(stderr, "physical region: RED (%d)\n", status);
         return 1;
@@ -385,6 +578,7 @@ int main(void)
     printf("physical region: green "
            "(lane64 and constant-shift materializations removed; "
            "conditional masks detached; commutative work shared; "
-           "affine chains collapsed; terminal-safe future work projected)\n");
+           "affine chains collapsed; zero-guarded values selected directly; "
+           "terminal-safe future work projected)\n");
     return 0;
 }

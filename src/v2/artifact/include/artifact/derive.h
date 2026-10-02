@@ -41,6 +41,8 @@ int artifact_derive_measure(pl_u32 coordinates, pl_u32 *support_bytes,
 /* `actual[i]` is retained iff it differs byte-for-byte from `generated[i]`.
  * Equal exceptions share one untyped value rank.  Thus the result rejects
  * both failure modes: storing a generated cell and dropping a real residual.
+ * If both pointers name the same previously verified byte population, there
+ * can be no exceptions, and the dense workspace is not read or written.
  * Support/ranks are construction output to the later finite-function encoder,
  * not an assertion that a dense bitmap or rank column should be published. */
 int artifact_derive_project(

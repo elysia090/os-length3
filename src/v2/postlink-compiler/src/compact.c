@@ -130,13 +130,23 @@ static int compact_once(const pl_plan *in, const pl_u8 *live_local,
     out->wave_values = pl_arena_take(
         arena, (kept ? kept : 1u) * (pl_u32)sizeof *out->wave_values);
     if (!out->wave_offsets || !out->wave_values) return PL_ERROR_ARENA;
-    pl_u32 written = 0;
-    out->wave_offsets[0] = 0;
-    for (pl_u32 wave = 1; wave <= span; ++wave) {
-        for (pl_u32 index = 0; index < kept; ++index)
-            if (depth[index + 1u] == wave)
-                out->wave_values[written++] = index + 1u;
-        out->wave_offsets[wave] = written;
+    /* Count, prefix, and scatter by depth.  Repeatedly scanning all nodes for
+     * each wave costs O(kept * span), which is quadratic for a dependency
+     * chain.  Increasing node order within a wave is preserved by the final
+     * forward scatter.  The offsets serve as cursors, so no second table is
+     * materialized. */
+    for (pl_u32 wave = 0; wave <= span; ++wave)
+        out->wave_offsets[wave] = 0;
+    for (pl_u32 index = 0; index < kept; ++index)
+        ++out->wave_offsets[depth[index + 1u]];
+    for (pl_u32 wave = 1; wave <= span; ++wave)
+        out->wave_offsets[wave] += out->wave_offsets[wave - 1u];
+    for (pl_u32 wave = span; wave > 1u; --wave)
+        out->wave_offsets[wave] = out->wave_offsets[wave - 1u];
+    if (span) out->wave_offsets[1] = 0;
+    for (pl_u32 index = 0; index < kept; ++index) {
+        pl_u32 wave = depth[index + 1u];
+        out->wave_values[out->wave_offsets[wave]++] = index + 1u;
     }
 
     out->function = in->function;

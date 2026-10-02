@@ -44,4 +44,10 @@ int artifact_future_project(
     const artifact_future_workspace *workspace,
     artifact_future_projection *out);
 
+int artifact_future_project_view(
+    const artifact_observation_view *observation,
+    const pl_u32 *successor, pl_u32 states, pl_u32 arms,
+    const artifact_future_workspace *workspace,
+    artifact_future_projection *out);
+
 #endif /* ARTIFACT_FUTURE_H */

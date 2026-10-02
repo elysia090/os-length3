@@ -5,6 +5,12 @@
 
 #define BYTES(text) ((const pl_u8 *)(text)), ((pl_u32)(sizeof(text) - 1u))
 
+static artifact_complete_observation read_generated(const void *context, pl_u32 index)
+{
+    const artifact_complete_observation *rows = context;
+    return rows[index];
+}
+
 static int run_projection(const artifact_complete_observation *observation,
                           pl_u32 count, pl_u32 *rank,
                           artifact_share_projection *projection)
@@ -109,6 +115,17 @@ int main(void)
                 != ARTIFACT_ERROR_SHARE_RANK)
             status = ARTIFACT_ERROR_SHARE;
     }
+    /* A generated view has exactly the array's canonical spelling, including
+     * rank naming, byte accounting and exact equality of duplicate rows. */
+    artifact_observation_view view = { observations, read_generated };
+    artifact_share_projection generated = { 0 };
+    if (!status) status = artifact_share_project_view(&view, COUNT, &workspace, &generated);
+    if (!status && (generated.classes != projection.classes
+            || generated.opened_observation_bytes != projection.opened_observation_bytes
+            || generated.retained_observation_bytes != projection.retained_observation_bytes))
+        status = ARTIFACT_ERROR_SHARE;
+    for (pl_u32 index = 0u; !status && index < COUNT; ++index)
+        if (workspace.rank[index] != rank[index]) status = ARTIFACT_ERROR_SHARE_RANK;
     free(indices);
     free(digest);
 

@@ -1,1 +1,1 @@
-/usr/bin/mdevd-coldplug
+/usr/bin/mdevd-coldplug -O 4

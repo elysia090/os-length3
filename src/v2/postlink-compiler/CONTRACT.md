@@ -62,15 +62,21 @@ Completion requires all of the following:
   and never invokes a decoder;
 - compilation fails before publication if any executable coordinate or direct
   edge is not represented; execution never reports `missingBlock`;
+- when normalization cannot improve a semantically closed block, the compiler
+  may select its original x86 body as an explicit native candidate. Its count,
+  bytes and work remain visible in the compile report. This is a compile-time
+  optimization fallback, never a runtime decoder or a missing-block route;
 - the primary artifact contains native x86 transfer functions,
   page-generation bindings and function ranks, not a boot-observed list of
   scalar STEP programs;
 - acceptance minimizes the complete emitted ordinary ELF, not each block in
-  isolation. `sigma=max cut span` and `tau=max cut work` are independently
-  minimized; publication requires one candidate to attain both minima. Only
-  inside that exact physical fiber do final file bytes and canonical ELF byte
-  rank select the representation. If the two minima have no joint witness,
-  the Pareto frontier remains unresolved and publication fails;
+  isolation. `sigma=max cut span` and `tau=max cut work` retain independent
+  lower bounds. When one candidate attains both, the proof marks a joint
+  witness. When no joint witness exists in the admitted grammar, publication
+  selects an exact nondominated x86 candidate and records its actual work and
+  span separately from the lower bounds; it must not claim the unattained
+  componentwise pair as a minimum. This is an explicit optimization miss,
+  never a runtime fallback or missing executable coordinate;
 - a universal codec, rSUBLEQ evaluator, candidate generator, and all-program
   frontier are permitted only as build-side search/proof machinery and are
   absent from the output ELF and its runtime dependency closure;
@@ -163,6 +169,17 @@ edge has an explicit architectural classification.
 - Form pure slices between memory fault, call, MMIO, interrupt and host
   barriers; expose their dependency waves directly.
 - Run backward liveness from the persistent cut before materializing locals.
+- Join independent observations by set union: construction bindings, machine
+  cuts and successor live-ins are additive demands, not priority alternatives.
+  A relocation-bearing indirect jump still preserves the architectural frame
+  until its complete outgoing demand is proved. Its address binding alone does
+  not establish that flags or segment bases are dead at the target.
+- Preserve input generations through physical scheduling, including the
+  architectural flags left intact by a memory cut. A value-tree preload is
+  executable work and may overwrite flags before its final instruction.
+  Defined flags carry the ALU's operand width: a byte operation that preserves
+  a wider value is not equivalent when SF/ZF/PF remain observable. A narrower
+  value-only production requires those overwritten flags to be unobserved.
 - Close store-to-load substitution, call/return stack cancellation, ALU/flags,
   region loads/stores, counted recurrences and affine multiword transactions.
 - Use the already minimal physical-array representation throughout; no tuple
@@ -223,8 +240,10 @@ lookups is measured rather than inferred.
 - Before that composition, reject only componentwise dominated physical
   candidates. A span/work tradeoff remains on the Pareto frontier. A locally
   larger body is legal: it may remove global control/layout bytes. The exact
-  length/rank gate runs only after the complete ELF or its exact canonical
-  Artifact spelling attains both independent physical minima.
+  length/rank gate runs after the complete ELF or its exact canonical Artifact
+  spelling has chosen a proved joint witness or explicitly recorded the
+  selected nonjoint costs. The latter does not certify the theoretical global
+  work/span minimum.
 - Search the unbounded construction space through one complete prefix code and
   a universal build-side evaluator when useful. Quotient candidates by their
   emitted ELF and complete future. Reject release until every unresolved cell

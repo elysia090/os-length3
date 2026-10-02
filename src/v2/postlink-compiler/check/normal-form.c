@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "../src/internal/block.h"
+#include "../src/internal/form-block.h"
 #include "../src/internal/quotient.h"
 
 #define ARENA_BYTES (64u * 1024u)

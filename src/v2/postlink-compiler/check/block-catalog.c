@@ -4,12 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../src/internal/block.h"
+#include "../src/internal/form-block.h"
 #include "../src/internal/closure.h"
 #include "../src/internal/opcodes.h"
 #include "../src/internal/plan.h"
 #include "../src/internal/quotient.h"
-#include "../src/internal/select-x86.h"
+#include "../src/internal/x86-selection.h"
 #include <x86/elf.h>
 
 #define BLOCK_ARENA_BYTES (1024u * 1024u)

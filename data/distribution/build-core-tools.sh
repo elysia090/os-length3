@@ -83,7 +83,34 @@ extract_once "$util_tar" "$util_source"
 extract_once "$kmod_tar" "$kmod_pristine"
 extract_once "$iproute_tar" "$iproute_pristine"
 
-util_key=$(printf '%s\n' "$UTIL_LINUX_SHA256" "$compiler_id" "$QM_BOOTSTRAP_ID" \
+util_patch=$data/patches/util-linux-2.42.3-openat2.patch
+if [[ $UTIL_LINUX_VERSION != 2.42.3 ]]; then
+  printf 'review the version-specific util-linux openat2 patch before upgrading\n' >&2
+  exit 1
+fi
+util_patch_digest=$(sha256sum "$util_patch" | cut -d' ' -f1)
+util_patch_marker=$util_source/.qm-openat2-patched
+if [[ -f $util_patch_marker ]]; then
+  if [[ ! -s $util_patch_marker ]]; then
+    # Accept a checkpoint produced before the marker recorded the patch hash
+    # only if the exact patch can be reversed from that source tree.
+    if ! patch --directory="$util_source" --strip=1 --reverse --dry-run \
+        --batch < "$util_patch" >/dev/null 2>&1; then
+      printf 'util-linux source does not match the locked patch; use a clean core build root\n' >&2
+      exit 1
+    fi
+    printf '%s\n' "$util_patch_digest" > "$util_patch_marker"
+  elif [[ $(<"$util_patch_marker") != "$util_patch_digest" ]]; then
+    printf 'util-linux patch changed; use a clean core build root\n' >&2
+    exit 1
+  fi
+else
+  patch --directory="$util_source" --strip=1 --batch \
+    < "$util_patch" >&2
+  printf '%s\n' "$util_patch_digest" > "$util_patch_marker"
+fi
+util_key=$(printf '%s\n' "$UTIL_LINUX_SHA256" "$util_patch_digest" \
+  "$compiler_id" "$QM_BOOTSTRAP_ID" \
   'util-linux-selected-all-static-v2' | sha256sum | cut -d' ' -f1)
 kmod_key=$(printf '%s\n' "$KMOD_SHA256" "$compiler_id" "$QM_BOOTSTRAP_ID" \
   "$meson_id" "$ninja_id" \

@@ -52,12 +52,10 @@ accepted_interpreter() {
 
 missing=0
 declare -A provider_path provider_package
-previous=
 for specification in "${DISTRIBUTION_COMMAND_PROVIDERS[@]}"; do
   IFS='|' read -r command_name expected_path package extra <<<"$specification"
   if [[ -n $extra || -z $command_name || $expected_path != /* || \
-        -z $package || -n ${provider_path[$command_name]+present} || \
-        ( -n $previous && $command_name < $previous ) ]]; then
+        -z $package || -n ${provider_path[$command_name]+present} ]]; then
     printf 'invalid command provider specification: %s\n' \
       "$specification" >&2
     missing=1
@@ -65,7 +63,6 @@ for specification in "${DISTRIBUTION_COMMAND_PROVIDERS[@]}"; do
   fi
   provider_path[$command_name]=$expected_path
   provider_package[$command_name]=$package
-  previous=$command_name
   if ! path_present "$expected_path"; then
     printf 'missing profile command: %s (%s from %s)\n' \
       "$command_name" "$expected_path" "$package" >&2

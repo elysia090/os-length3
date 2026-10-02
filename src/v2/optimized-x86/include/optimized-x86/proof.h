@@ -20,8 +20,9 @@ typedef struct {
     pl_u64 output_span;
     pl_u64 input_work;
     pl_u64 output_work;
-    /* Independently derived componentwise minima. Publication is valid only
-     * when one emitted candidate attains both and no Pareto cell remains. */
+    /* Independently derived componentwise lower bounds. pareto_complete=1
+     * means the emitted candidate attains both; 2 means an exact nonjoint
+     * Pareto member was selected and its actual costs are output_span/work. */
     pl_u64 minimum_span;
     pl_u64 minimum_work;
     pl_u64 pareto_complete;

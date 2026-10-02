@@ -244,8 +244,12 @@ profile_key=$(sha256sum "$data/distribution/profile.env" \
   "$data/distribution/runtime-closure.tsv.in" \
   "$data/bootstrap/packages.sha256" "$data/bootstrap/installed.lock" | \
   sha256sum | cut -d' ' -f1)
+# The release-metadata package contains the complete source lock, including
+# packages built outside this toolchain. A change to any pinned input must
+# republish that package even when every toolchain component can be reused.
+source_lock=$(sha256sum "$data/sources.env" | cut -d' ' -f1)
 distribution_key=$(printf '%s\n' "$base_key" "$gcc_key" "$system_key" \
-  "$profile_key" 'component-linked-toolchain-package-set-v3' | \
+  "$profile_key" "$source_lock" 'component-linked-toolchain-package-set-v4' | \
   sha256sum | cut -d' ' -f1)
 
 base_prefix="$build/packages/$base_key"
@@ -679,6 +683,16 @@ if [[ ! -f $assembled ]]; then
   # script, so this helper is neither executable closure nor package payload.
   rm -f "$prepared_root/openssl/usr/bin/c_rehash"
   rm -rf "$prepared_root/git/usr/share/git-core/templates/hooks"
+  # The standard profile is a Git client. Server endpoints and IMAP mail
+  # submission are optional packages, not mandatory bytes in every workspace.
+  for git_helper in git-daemon git-http-backend git-imap-send; do
+    helper="$prepared_root/git/usr/libexec/git-core/$git_helper"
+    if [[ ! -f $helper ]]; then
+      printf 'expected optional Git helper is absent: %s\n' "$helper" >&2
+      exit 1
+    fi
+    rm -f -- "$helper"
+  done
 
   ca_root=$prepared_root/ca-certificates
   install -D -m 0644 "$ca_certificates" \

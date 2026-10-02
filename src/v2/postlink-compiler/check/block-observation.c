@@ -1,4 +1,4 @@
-#include "internal/block.h"
+#include "internal/form-block.h"
 
 #include <stdio.h>
 
@@ -61,7 +61,7 @@ static int spell_bindings(const pl_x86_block *block, pl_u32 closed,
 int main(void)
 {
     static const pl_x86_image image = { 0 };
-    static const pl_x86_frontend frontend = { &image };
+    static const pl_x86_frontend frontend = { .image = &image };
     pl_node left_node[] = { { 9u, 0u, 2u } };
     pl_operand left_argument[] = {
         { PL_OPERAND_LOCAL, 7u }, { PL_OPERAND_CONST, 19u },

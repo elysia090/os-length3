@@ -73,6 +73,11 @@ typedef struct {
     pl_arena *arena;
     pl_u32 node_capacity;
     pl_u32 argument_capacity;
+    /* Transient pure-node quotient index.  Zero means not allocated; a tight
+     * caller arena can still use the exact linear comparison path. */
+    pl_u32 *shared_slots;
+    pl_u32 shared_capacity;
+    pl_u8 shared_disabled;
 } pl_builder;
 
 int pl_builder_open(pl_builder *builder, pl_plan *plan, pl_arena *arena,

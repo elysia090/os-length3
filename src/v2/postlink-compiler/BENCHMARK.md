@@ -14,10 +14,21 @@ One comparison names:
   identity proof;
 * the standard distribution recipe revision, whose upstream archives and
   configuration files are digest-pinned under `data/`;
-* the workload manifest SHA-256 and the machine/environment record.
+* the workload manifest SHA-256, the content digests of every repository-local
+  workload input named by it, and the machine/environment record.
 
 Changing any item creates a new comparison. Results from different identities
 are never combined.
+
+The reference distribution must contain the ordinary linked userland **and**
+boot objects reconstructed from its ordinary linked kernel and BusyBox. Kbuild's
+`arch/x86/boot/bzImage` is mutable wrapping output: packaging an optimized kernel
+can update it. Its path or an old timestamp does not certify an unoptimized
+baseline. Reconstruct the reference boot image from the digest-pinned
+`vmlinux.unstripped`, record both identities, then publish the reference package
+root with the same profile, package policy and sources. A diagnostic reference
+that deliberately shares the optimized kernel must be labelled as such, not
+reported as the complete unoptimized release.
 
 ## Saved bytes
 
@@ -55,14 +66,33 @@ by `data/distribution/postlink-workloads.tsv` and recorded by digest.
 It performs eight alternating warm-ups and alternates source/optimized order in
 each pair. Both files must reside on the same filesystem. `argv[0]`, arguments,
 environment, working directory, affinity, CPU frequency policy, and input files
-are identical and recorded.
+are identical and recorded, except that an explicit `@EXECUTABLE@` token
+projects `argv[0]` to each candidate's own path. GCC needs this to locate its
+corresponding `cc1`; a bare `gcc` argument makes both candidates fail.
+An explicit `@EXECUTABLE_DIR@/` resource is likewise resolved to each
+candidate's own directory before the measured interval. The fixed file
+classification workload uses its own installed `magic.mgc`, never the host's
+database; the runner rejects absent, escaping or unequal resource bytes and
+includes their digest in the input record.
 
 Before timing, exit status and the SHA-256 and extent of combined stdout/stderr
 must match. Each result reports source and optimized mean and median wall time.
-The production record also samples retired instructions, cycles, branches,
-branch misses, faults, and peak resident bytes with the platform's native
-counter interface; unsupported counters are recorded as unavailable, never as
-zero.
+The fixed manifest includes real GCC `-O2` code generation into `/dev/null`
+from a header-free C input, so a fast driver `--version` cannot conceal a slow
+or crashing `cc1`. Source and optimized drivers find their respective `cc1`
+relative to their own installed executable paths; separate native-parity checks
+compare their actual assembly bytes.
+The current runner measures paired process wall time only. Retired
+instructions, cycles, branches, branch misses, faults and peak resident bytes
+are not sampled by this runner; no wall-time result may be described as one of
+those counters. A future native counter record must mark unsupported counters
+as unavailable, never as zero, and keep their sampling overhead outside these
+paired wall-time samples.
+
+A measured speed regression still writes the complete comparison with
+`comparison=red-speed` and exits unsuccessfully. Losing its per-workload
+evidence would hide the actual next optimization witness; keeping that evidence
+does not relax the speed gate.
 
 Cold process start, warm process execution, cold Linux shell, and warm guest
 workloads are separate rows. A cached run cannot satisfy a cold-start gate.

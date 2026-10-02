@@ -8,7 +8,6 @@
 
 #define ARTIFACT_ERROR_EXECUTABLE       (-87)
 #define ARTIFACT_ERROR_EXECUTABLE_RANGE (-88)
-#define ARTIFACT_NO_FRAGMENT            0xffffffffu
 
 typedef struct {
     const artifact_cell *image;          /* images */
@@ -20,15 +19,11 @@ typedef struct {
 } artifact_executable_population;
 
 typedef struct {
-    artifact_payload *fragment;          /* states + 2 * images */
+    artifact_payload *fragment;          /* measured nonempty extents */
     pl_u32 fragment_capacity;
     pl_u32 *image_fragment_offset;       /* images + 1 */
     pl_u32 image_fragment_capacity;
-    pl_u32 *state_fragment;              /* states; NO for empty */
-    pl_u32 state_fragment_capacity;
     artifact_payload_workspace payload;
-    pl_u8 *reconstruction;
-    pl_u64 reconstruction_capacity;
 } artifact_executable_workspace;
 
 typedef struct {
@@ -44,10 +39,17 @@ typedef struct {
     pl_u64 reconstructed_bytes;
 } artifact_executable_projection;
 
+/* Exact metadata pass: empty states and empty prefix/suffix gaps contribute
+ * no payload descriptor. Does not allocate or copy executable bytes. */
+int artifact_executable_measure(
+    const artifact_executable_population *population, pl_u32 *fragments);
+
 /* Each image's emitted state spans must be a contiguous file interval in the
  * compiler's dense state order.  Prefix, nonempty state spans and suffix form
  * the sole payload occurrence sequence.  Exact payload ranks then rebuild
- * every ordinary ELF byte; per-state file offsets are generated prefix sums. */
+ * every ordinary ELF byte; per-state file offsets are generated prefix sums.
+ * Reconstruction compares the selected spans directly against the image;
+ * neither a dense state-to-fragment map nor a copied image is required. */
 int artifact_executable_project(
     const artifact_executable_population *population,
     const artifact_executable_workspace *workspace,

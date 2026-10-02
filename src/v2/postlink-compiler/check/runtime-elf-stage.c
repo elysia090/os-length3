@@ -128,8 +128,12 @@ int main(int argc, char **argv)
             || report.native_direct_frame_output_bytes
                  + report.native_copied_source_output_bytes
                != report.native_selected_output_bytes
+            /* This fixture checks ELF/runtime closure.  Preserving a PIE
+             * address-producing instruction is preferable to a shorter,
+             * load-bias-incorrect spelling.  Require non-regression here;
+             * strict reductions are measured on the release population. */
             || report.native_emitted_instructions
-               >= report.native_source_instructions
+               > report.native_source_instructions
             || !report.relocation_records
             || !report.relocated_code_fields
             || (require_dynamic

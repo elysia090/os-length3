@@ -9,6 +9,7 @@ repo=$(cd -- "$here/../.." && pwd)
 [[ $(uname -r) != *[Mm]icrosoft* && $(uname -r) != *WSL* ]]
 work=$repo/temp/bootstrap-rust
 cache=$repo/data/upstream/bootstrap/rust-packages
+bootstrap_cache=${QM_BOOTSTRAP_WORK:-/build/bootstrap}/packages
 mode=${1:-install}
 shift || true
 mkdir -p "$work" "$cache"
@@ -30,12 +31,20 @@ root=$work/roots/$identity
 files=()
 while read -r digest name extra; do
   [[ $digest =~ ^[0-9a-f]{64}$ && $name =~ ^\./[A-Za-z0-9_.+-]+\.apk$ && -z ${extra:-} ]]
-  files+=("$cache/${name#./}")
+  candidate=$cache/${name#./}
+  # A build-only package may already be retained by the pinned base host.
+  # Verify the rust closure's own digest before sharing those exact bytes;
+  # neither cache is an authority merely because a filename matches.
+  if [[ $mode != resolve && ! -f $candidate \
+      && -f $bootstrap_cache/${name#./} ]]; then
+    candidate=$bootstrap_cache/${name#./}
+  fi
+  printf '%s  %s\n' "$digest" "$candidate" | sha256sum --check --status
+  files+=("$candidate")
 done < "$manifest"
 [[ ${#files[@]} -gt 0 ]]
 case $mode in
   install|resolve)
-    (cd "$cache" && sha256sum --check --status "$manifest")
     mkdir -p "$root"
     apk --root "$root" --initdb --keys-dir /etc/apk/keys --no-network \
       --no-scripts --repositories-file /dev/null add "${files[@]}" >&2

@@ -4,6 +4,16 @@
 static const pl_u8 instruction_domain[] =
     "x86-normal-instruction-v5";
 
+static artifact_complete_observation read_instruction(const void *context, pl_u32 state)
+{
+    const artifact_cell *instruction = context;
+    return (artifact_complete_observation){
+        ARTIFACT_OBSERVATION_BLOCK, instruction_domain,
+        (pl_u32)(sizeof(instruction_domain) - 1u),
+        instruction[state].bytes, instruction[state].length,
+    };
+}
+
 static int add_u64(pl_u64 *value, pl_u64 addend)
 {
     if (*value > 0xffffffffffffffffull - addend) return 0;
@@ -33,21 +43,31 @@ static int open_uleb64(const pl_u8 *bytes, pl_u32 length,
 
 static int open_normal_instruction(
     const artifact_cell *cell, pl_u32 arms,
-    pl_u64 *work_lower_bound, pl_u64 *span_lower_bound)
+    pl_u64 *work_lower_bound, pl_u64 *span_lower_bound,
+    int *joint_witness)
 {
     if (!cell || !cell->bytes || cell->length < 11u
-            || arms > 0xffu)
+            || arms > 0xffu || !joint_witness)
         return 0;
     const pl_u8 *bytes = cell->bytes;
     if (bytes[0] != 'X' || bytes[1] != '8'
             || bytes[2] != '6' || bytes[3] != 'N'
             || bytes[4] != 5u || bytes[5] != (pl_u8)arms
-            || bytes[6] != 7u)
+            || (bytes[6] != 7u && bytes[6] != 3u))
         return 0;
+    *joint_witness = bytes[6] == 7u;
     pl_u32 at = 7u;
     pl_u64 law_bytes64 = 0u, binding_bytes64 = 0u;
+    pl_u64 selected_work = 0u, selected_span = 0u;
     if (!open_uleb64(bytes, cell->length, &at, work_lower_bound)
             || !open_uleb64(bytes, cell->length, &at, span_lower_bound)
+            || (!*joint_witness
+                && (!open_uleb64(bytes, cell->length, &at, &selected_work)
+                    || !open_uleb64(bytes, cell->length, &at, &selected_span)
+                    || selected_work < *work_lower_bound
+                    || selected_span < *span_lower_bound
+                    || (selected_work == *work_lower_bound
+                        && selected_span == *span_lower_bound)))
             || !open_uleb64(bytes, cell->length, &at, &law_bytes64)
             || !open_uleb64(bytes, cell->length, &at, &binding_bytes64)
             || !law_bytes64 || !binding_bytes64
@@ -67,9 +87,7 @@ int artifact_program_project(
     if (!population || !workspace || !out || !population->instruction
             || !population->successor || !population->states
             || !population->arms
-            || population->states > 0xffffffffu / population->arms
-            || !workspace->observation
-            || workspace->state_capacity < population->states)
+            || population->states > 0xffffffffu / population->arms)
         return ARTIFACT_ERROR_PROGRAM_RANGE;
 
     artifact_program_projection result = { 0 };
@@ -77,9 +95,11 @@ int artifact_program_project(
     for (pl_u32 state = 0u; state < population->states; ++state) {
         const artifact_cell *instruction = &population->instruction[state];
         pl_u64 work_lower_bound = 0u, span_lower_bound = 0u;
+        int joint_witness = 0;
         if (!open_normal_instruction(
                 instruction, population->arms,
-                &work_lower_bound, &span_lower_bound))
+                &work_lower_bound, &span_lower_bound,
+                &joint_witness))
             return ARTIFACT_ERROR_PROGRAM;
         if (!add_u64(&result.work_lower_bound_sum, work_lower_bound)
                 || !add_u64(&result.span_lower_bound_sum, span_lower_bound))
@@ -89,7 +109,7 @@ int artifact_program_project(
         if (span_lower_bound > result.maximum_span_lower_bound)
             result.maximum_span_lower_bound = span_lower_bound;
         ++result.minimum_proof_occurrences;
-        ++result.joint_witness_occurrences;
+        result.joint_witness_occurrences += joint_witness != 0;
         if (!add_u64(
                 &result.opened_instruction_bytes, instruction->length))
             return ARTIFACT_ERROR_PROGRAM_RANGE;
@@ -101,22 +121,14 @@ int artifact_program_project(
             else if (!add_u64(
                     &result.checked_successor_coordinates, 1u))
                 return ARTIFACT_ERROR_PROGRAM_RANGE;
-        workspace->observation[state] =
-            (artifact_complete_observation){
-                ARTIFACT_OBSERVATION_BLOCK,
-                instruction_domain,
-                (pl_u32)(sizeof(instruction_domain) - 1u),
-                instruction->bytes,
-                instruction->length,
-            };
     }
 
-    artifact_future_population future_population = {
-        workspace->observation, population->successor,
-        population->states, population->arms,
+    artifact_observation_view observations = {
+        population->instruction, read_instruction,
     };
-    int status = artifact_future_project(
-        &future_population, &workspace->future, &result.future);
+    int status = artifact_future_project_view(
+        &observations, population->successor, population->states, population->arms,
+        &workspace->future, &result.future);
     if (status) return status;
 
     result.instruction_classes = result.future.immediate.classes;
@@ -134,7 +146,7 @@ int artifact_program_project(
     if (!result.future.future.classes
             || result.future.future.classes > population->states
             || result.minimum_proof_occurrences != population->states
-            || result.joint_witness_occurrences != population->states
+            || result.joint_witness_occurrences > population->states
             || result.checked_successor_coordinates
                != (pl_u64)population->states * population->arms
             || result.retained_residual_state_rows

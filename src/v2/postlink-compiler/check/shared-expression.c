@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "../src/internal/select-x86.h"
+#include "../src/internal/x86-selection.h"
 #include "execute.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -282,10 +282,11 @@ static int check_summary(pl_u32 bits, pl_u32 mode, pl_u32 alias, pl_u64 *compari
         observation before = { 0 }, after = { 0 };
         original.function(&before, input, 0x123456789abcdef0ull);
         optimized.function(&after, input, 0x123456789abcdef0ull);
-        /* BSR/BSF leave the destination undefined for a zero input. Only
-         * their defined ZF is compared there; this is not a zero-result law. */
+        /* Preserve the actual CPU's zero-input pass-through, including its
+         * upper-half behavior for a 32-bit scan; do not invent a zero result. */
         int defined = mode >= 2u || value != 0u;
         if ((!alias && (before.value != value || after.value != value))
+                || before.value != after.value || before.shifted != after.shifted
                 || (alias && defined && (before.value != result || after.value != result))
                 || (!alias && defined && (before.shifted != result || after.shifted != result))
                 || (alias && (before.shifted != 0x123456789abcdef0ull

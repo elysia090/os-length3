@@ -570,6 +570,12 @@ publication_key=$(
   {
     printf '%s\n' "$recipe_key" \
       'component-linked-standard-system-package-set-v4'
+    sha256sum "$here/build-system-tools.sh" \
+      "$data/config/nftables.conf" "$data/config/ssh_config" \
+      "$data/config/hosts" "$data/config/mdev.conf" \
+      "$data/config/passwd" "$data/config/group" \
+      "$data/config/shadow" "$data/config/gshadow" | \
+      cut -d' ' -f1
     for specification in "${package_roots[@]}"; do
       name=${specification%%:*}
       package_root=${specification#*:}
@@ -641,6 +647,13 @@ if [[ ! -f $publication/.complete ]]; then
     "$config_root/etc/nftables.conf"
   install -D -m 0644 "$data/config/ssh_config" \
     "$config_root/etc/ssh/ssh_config"
+  install -D -m 0644 "$data/config/hosts" "$config_root/etc/hosts"
+  install -D -m 0644 "$data/config/mdev.conf" "$config_root/etc/mdev.conf"
+  install -D -m 0644 "$data/config/passwd" "$config_root/etc/passwd"
+  install -D -m 0644 "$data/config/group" "$config_root/etc/group"
+  install -D -m 0600 "$data/config/shadow" "$config_root/etc/shadow"
+  install -D -m 0600 "$data/config/gshadow" "$config_root/etc/gshadow"
+  install -d -m 0700 "$config_root/root"
   bash "$here/clone-tree.sh" "$config_root" "$candidate"
 
   # These are analysis-root coordinates only.  The product world, installed
@@ -664,6 +677,8 @@ required=(
   usr/bin/getfacl usr/bin/setfacl usr/bin/getfattr usr/bin/setfattr
   usr/bin/zstd usr/bin/nano usr/share/zoneinfo/UTC
   etc/apk/repositories etc/apk/world etc/nftables.conf etc/ssh/ssh_config
+  etc/hosts etc/mdev.conf
+  etc/passwd etc/group etc/shadow etc/gshadow root
 )
 for path in "${required[@]}"; do
   if [[ ! -e $root/$path ]]; then

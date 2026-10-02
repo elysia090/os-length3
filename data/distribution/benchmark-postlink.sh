@@ -23,6 +23,8 @@ for directory in "$source_root" "$optimized_root"; do
     exit 2
   fi
 done
+source_root=$(realpath -e -- "$source_root")
+optimized_root=$(realpath -e -- "$optimized_root")
 if [[ ! -x $benchmark ]]; then
   printf 'native benchmark does not exist: %s\n' "$benchmark" >&2
   exit 2
@@ -82,6 +84,8 @@ fi
 
 rows=$temporary/workloads
 : >"$rows"
+input_rows=$temporary/workload-inputs
+: >"$input_rows"
 declare -A seen=()
 workload_count=0
 weight_total=0
@@ -116,6 +120,27 @@ while IFS= read -r line; do
   for ((index = 4; index < ${#fields[@]}; ++index)); do
     argument=${fields[$index]//@REPOSITORY@/$repository}
     arguments+=("$argument")
+    if [[ ${fields[$index]} == *@REPOSITORY@* ]]; then
+      if [[ $argument != "$repository"/* || ! -f $argument ]]; then
+        printf 'missing fixed workload input: %s\n' "$argument" >&2
+        exit 1
+      fi
+      printf '%s\t%s\t%s\n' "$id" "${argument#"$repository"/}" \
+        "$(sha256sum "$argument" | cut -d' ' -f1)" >>"$input_rows"
+    elif [[ $argument == @EXECUTABLE_DIR@/* ]]; then
+      suffix=${argument#@EXECUTABLE_DIR@/}
+      source_resource=$(realpath -e -- "${source_executable%/*}/$suffix")
+      optimized_resource=$(realpath -e -- "${optimized_executable%/*}/$suffix")
+      if [[ $source_resource != "$source_root"/* \
+            || $optimized_resource != "$optimized_root"/* \
+            || ! -f $source_resource || ! -f $optimized_resource ]] \
+          || ! cmp -s -- "$source_resource" "$optimized_resource"; then
+        printf 'fixed workload package resource is absent, escaping or different: %s\n' "$argument" >&2
+        exit 1
+      fi
+      printf '%s\t%s\t%s\n' "$id" "${source_resource#"$source_root"/}" \
+        "$(sha256sum "$source_resource" | cut -d' ' -f1)" >>"$input_rows"
+    fi
   done
   result=$temporary/$id.result
   taskset -c "$benchmark_cpu" "${fixed_environment[@]}" \
@@ -142,6 +167,7 @@ while IFS= read -r line; do
     printf 'fixed workload timing is incomplete: %s\n' "$id" >&2
     exit 1
   fi
+  printf 'native workload %s: parity green, mean ratio %s\n' "$id" "$ratio"
   source_identity=$(sha256sum "$source_executable" | cut -d' ' -f1)
   optimized_identity=$(sha256sum "$optimized_executable" | cut -d' ' -f1)
   source_extent=$(stat -c %s -- "$source_executable")
@@ -168,20 +194,22 @@ read -r weighted_source weighted_optimized aggregate_ratio < <(
     }
   ' "$rows"
 )
+comparison=green
 if awk -v ratio="$aggregate_ratio" 'BEGIN { exit !(ratio >= 1.0) }'; then
-  printf 'fixed native workload aggregate regressed: ratio=%s\n' \
-    "$aggregate_ratio" >&2
-  exit 1
+  comparison=red-speed
 fi
 
 manifest_digest=$(sha256sum "$manifest" | cut -d' ' -f1)
+workload_inputs_digest=$(sha256sum "$input_rows" | cut -d' ' -f1)
 sources_digest=$(sha256sum "$here/../sources.env" | cut -d' ' -f1)
 profile_digest=$(sha256sum "$here/profile.env" | cut -d' ' -f1)
 benchmark_digest=$(sha256sum "$benchmark" | cut -d' ' -f1)
 temporary_report=$report.partial.$$
 {
   printf 'format=postlink-production-comparison-v2\n'
+  printf 'comparison=%s\n' "$comparison"
   printf 'workload_manifest_sha256=%s\n' "$manifest_digest"
+  printf 'workload_inputs_sha256=%s\n' "$workload_inputs_digest"
   printf 'sources_lock_sha256=%s\n' "$sources_digest"
   printf 'distribution_profile_sha256=%s\n' "$profile_digest"
   printf 'native_benchmark_sha256=%s\n' "$benchmark_digest"
@@ -242,5 +270,10 @@ temporary_report=$report.partial.$$
   done <"$rows"
 } >"$temporary_report"
 mv -- "$temporary_report" "$report"
+if [[ $comparison != green ]]; then
+  printf 'fixed native workload aggregate regressed: ratio=%s; evidence=%s\n' \
+    "$aggregate_ratio" "$report" >&2
+  exit 1
+fi
 printf 'post-link production comparison: green (%s -> %s bytes, ratio %s)\n' \
   "$source_bytes" "$optimized_bytes" "$aggregate_ratio"

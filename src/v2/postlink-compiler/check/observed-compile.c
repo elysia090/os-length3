@@ -2,7 +2,7 @@
 #include <optimized-x86/reader.h>
 #include <support/checked.h>
 
-#include "../src/internal/block.h"
+#include "../src/internal/form-block.h"
 
 #include <stdio.h>
 #include <stdlib.h>

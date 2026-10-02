@@ -1,0 +1,12 @@
+format=native-paired-benchmark-v1
+paired_samples=401
+warmups=8
+parity=green
+wait_status=0
+output_bytes=0
+source_mean_ns=37385760
+source_median_ns=37126600
+optimized_mean_ns=37374542
+optimized_median_ns=37157400
+mean_ratio=0.999699920
+median_ratio=1.000829594

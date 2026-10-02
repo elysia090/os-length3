@@ -1,0 +1,30 @@
+==================
+WARNING: ThreadSanitizer: data race (pid=2354)
+  Read of size 4 at 0x55688efaa008 by thread T2:
+    #0 pl_x86_select_candidates src/select-x86.c:23659 (selector-race-red+0x5c93a) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #1 pl_x86_select_measure src/select-x86.c:24021 (selector-race-red+0x5e7f7) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #2 pl_x86_select_write src/select-x86.c:24138 (selector-race-red+0x5e907) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #3 select_job check/selector-reentrancy.c:30 (selector-race-red+0x343f) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #4 repeat_selection check/selector-reentrancy.c:46 (selector-race-red+0x343f)
+    #5 <null> <null> (libtsan.so.2+0x3de5e) (BuildId: 48e2d2ccd79ae93ce659545762d78d542d72ba21)
+
+  Previous write of size 4 at 0x55688efaa008 by thread T4:
+    #0 pl_x86_select_candidates src/select-x86.c:23659 (selector-race-red+0x5c955) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #1 pl_x86_select_measure src/select-x86.c:24021 (selector-race-red+0x5e7f7) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #2 pl_x86_select_write src/select-x86.c:24138 (selector-race-red+0x5e907) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #3 select_job check/selector-reentrancy.c:30 (selector-race-red+0x343f) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+    #4 repeat_selection check/selector-reentrancy.c:46 (selector-race-red+0x343f)
+    #5 <null> <null> (libtsan.so.2+0x3de5e) (BuildId: 48e2d2ccd79ae93ce659545762d78d542d72ba21)
+
+  Location is global 'source_addr_generation' of size 4 at 0x55688efaa008 (selector-race-red+0xea008)
+
+  Thread T2 (tid=2357, running) created by main thread at:
+    #0 pthread_create <null> (libtsan.so.2+0x47f2d) (BuildId: 48e2d2ccd79ae93ce659545762d78d542d72ba21)
+    #1 main check/selector-reentrancy.c:97 (selector-race-red+0x3928) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+
+  Thread T4 (tid=2359, running) created by main thread at:
+    #0 pthread_create <null> (libtsan.so.2+0x47f2d) (BuildId: 48e2d2ccd79ae93ce659545762d78d542d72ba21)
+    #1 main check/selector-reentrancy.c:97 (selector-race-red+0x3928) (BuildId: 3325ea20dc2ae9c0c16c159634e9fd6b76f484ec)
+
+SUMMARY: ThreadSanitizer: data race src/select-x86.c:23659 in pl_x86_select_candidates
+==================

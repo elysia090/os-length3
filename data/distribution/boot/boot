@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+trap 'echo "Offline service transition failed; terminal remains down." >&2' EXIT
+# This bootstrap service runs once, under the already operational supervisor.
+# Readiness is the compiled DAG's completed transition, not svscan startup.
+/usr/bin/s6-svc -O /run/service/boot
+/usr/bin/s6-rc-init -t 10000 -c /etc/s6-rc/compiled/current \
+    -l /run/s6-rc /run/service
+/usr/bin/s6-rc -t 10000 -l /run/s6-rc -u change boot-offline
+/usr/libexec/system/ready interactive
+printf 'interactive-ready\n'
+/usr/bin/s6-svc -u /run/service/console
+trap - EXIT

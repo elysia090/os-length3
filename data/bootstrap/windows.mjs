@@ -15,6 +15,7 @@ const lock = JSON.parse(readFileSync(join(here, 'windows.json'), 'utf8'));
 const qemu = join(work, 'qemu');
 const image = join(inputs, lock.image.file);
 const disk = join(work, 'build-host.qcow2');
+const diskCapacity = '32G';
 const key = join(work, 'id_ed25519');
 const port = 18081;
 let buildPasswordHash;
@@ -60,7 +61,7 @@ async function prepare() {
   }
   // Reuse the existing disk: never silently reset a build checkpoint.
   if (!existsSync(disk)) {
-    run(join(qemu, 'qemu-img.exe'), ['create', '-f', 'qcow2', '-F', 'qcow2', '-b', image, disk, '64G']);
+    run(join(qemu, 'qemu-img.exe'), ['create', '-f', 'qcow2', '-F', 'qcow2', '-b', image, disk, diskCapacity]);
   }
   const info = JSON.parse(run(join(qemu, 'qemu-img.exe'), ['info', '--output=json', disk],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }));
@@ -113,7 +114,7 @@ function snapshot() {
   const archive = join(work, 'source.tar');
   run('tar.exe', ['-C', repo, '-cf', archive, '--exclude=.git', '--exclude=upstream',
     '--exclude=build', '--exclude=*/build-*/*', '--exclude=node_modules', '--exclude=dist',
-    '--exclude=gmon.out', '--exclude=web', 'data', 'src/v2']);
+    '--exclude=gmon.out', 'data', 'src/v2']);
   const names = new Set(run('tar.exe', ['-tf', archive],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 8 * 1024 * 1024 })
     .split(/\r?\n/));
@@ -168,7 +169,7 @@ function boot() {
   if (!['whpx', 'tcg'].includes(accelerator)) throw new Error('boot requires explicit whpx or tcg');
   const args = ['-L', join(qemu, 'share'), '-machine', 'q35', '-accel', accelerator,
     '-cpu', 'qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+cx16,-svm', '-m', '8192', '-smp', '6',
-    '-drive', `file=${disk.replaceAll('\\', '/')},format=qcow2,if=virtio`,
+    '-drive', `file=${disk.replaceAll('\\', '/')},format=qcow2,if=virtio,discard=unmap,detect-zeroes=unmap`,
     '-netdev', 'user,id=net0,hostfwd=tcp:127.0.0.1:18022-:22',
     '-device', 'virtio-net-pci,netdev=net0',
     '-smbios', `type=1,serial=ds=nocloud;s=http://10.0.2.2:${port}/seed/`,

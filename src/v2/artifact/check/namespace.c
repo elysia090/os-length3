@@ -122,6 +122,15 @@ int main(void)
             || reopened_metadata.gid != 1000u
             || reopened_metadata.xattr_count != 2u))
         status = ARTIFACT_ERROR_NAMESPACE;
+    pl_u32 content_counts[4] = { 9u, 9u, 9u, 9u };
+    if (!status)
+        status = artifact_namespace_reopen_content_counts(
+            &projection, &workspace, content_counts);
+    if (!status && (content_counts[ARTIFACT_NAMESPACE_NO_CONTENT] != 0u
+            || content_counts[ARTIFACT_NAMESPACE_PAYLOAD] != 1u
+            || content_counts[ARTIFACT_NAMESPACE_ELF] != 0u
+            || content_counts[ARTIFACT_NAMESPACE_ARCHIVE] != 0u))
+        status = ARTIFACT_ERROR_NAMESPACE;
     artifact_namespace_xattr reopened_xattr = { 0 };
     if (!status)
         status = artifact_namespace_reopen_xattr(

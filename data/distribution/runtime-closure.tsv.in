@@ -2,6 +2,7 @@ runtime-closure-v1
 /usr/bin/apk	config	/etc/apk/repositories
 /usr/bin/apk	config	/etc/apk/world
 /usr/bin/apk	resource	/etc/apk/keys
+/usr/bin/apk	resource	/system/apk/Packages.adb
 /usr/bin/curl	resource	/etc/ssl/certs/ca-certificates.crt
 /usr/bin/gcc	helper	/usr/bin/as
 /usr/bin/gcc	helper	/usr/bin/ld
@@ -9,6 +10,7 @@ runtime-closure-v1
 /usr/bin/gcc	helper	/usr/libexec/gcc/@TARGET@/@GCC_VERSION@/collect2
 /usr/bin/git	helper	/usr/libexec/git-core/git-remote-http
 /usr/bin/git	helper	/usr/libexec/git-core/git-remote-https
+/usr/bin/mdevd	config	/etc/mdev.conf
 /usr/bin/openssl	resource	/etc/ssl/certs/ca-certificates.crt
 /usr/bin/s6-rc	config	/etc/nftables.conf
 /usr/bin/s6-rc	resource	/etc/s6-rc/compiled/current/db
@@ -19,4 +21,15 @@ runtime-closure-v1
 /usr/bin/s6-rc	service	/usr/bin/mdevd
 /usr/bin/s6-rc	service	/usr/bin/mdevd-coldplug
 /usr/bin/s6-rc	service	/usr/bin/nft
+/usr/bin/s6-rc	service	/usr/libexec/system/ready
+/usr/bin/s6-svscan	helper	/usr/libexec/system/boot
+/usr/bin/s6-svscan	helper	/usr/libexec/system/console
+/usr/bin/s6-svscan	helper	/usr/libexec/system/halt
+/usr/bin/ssh	config	/etc/group
+/usr/bin/ssh	config	/etc/passwd
 /usr/bin/ssh	config	/etc/ssh/ssh_config
+/usr/libexec/system/boot	exec	/usr/bin/s6-rc
+/usr/libexec/system/boot	exec	/usr/bin/s6-rc-init
+/usr/libexec/system/boot	exec	/usr/bin/s6-svc
+/usr/libexec/system/console	exec	/bin/sh
+/usr/libexec/system/init	exec	/usr/bin/s6-svscan

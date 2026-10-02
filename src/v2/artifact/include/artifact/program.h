@@ -27,8 +27,6 @@ typedef struct {
 } artifact_program_population;
 
 typedef struct {
-    artifact_complete_observation *observation;
-    pl_u32 state_capacity;
     artifact_future_workspace future;
 } artifact_program_workspace;
 
@@ -39,11 +37,10 @@ typedef struct {
     pl_u32 instruction_occurrences;
     pl_u32 instruction_classes;
     pl_u32 shared_instruction_occurrences;
-    /* Every X86N5 cell carries the independently derived work* and span*
-     * plus the fact that its exact law jointly attains both. Its live frontier
-     * is derived from the law and is never stored as a second state row. These
-     * sums and
-     * maxima are over occurrences, before release-wide future sharing. */
+    /* Every X86N5 cell carries independent work/span lower bounds. A joint
+     * witness has flag 7; a nonjoint Pareto selection has flag 3 and stores
+     * its actual costs separately. Its live frontier is derived from the law
+     * and is never stored as a second state row. */
     pl_u32 minimum_proof_occurrences;
     pl_u32 joint_witness_occurrences;
     pl_u64 work_lower_bound_sum;

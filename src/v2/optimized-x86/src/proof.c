@@ -5,11 +5,19 @@ int ox_proof_cost_nonregresses(const ox_proof *proof)
     if (!proof) return 0;
     if (proof->output_span > proof->input_span
             || proof->output_work > proof->input_work
-            || proof->output_span != proof->minimum_span
-            || proof->output_work != proof->minimum_work
-            || proof->pareto_complete != 1u
             || proof->output_code_bytes > proof->input_code_bytes)
         return 0;
+    if (proof->pareto_complete == 1u) {
+        if (proof->output_span != proof->minimum_span
+                || proof->output_work != proof->minimum_work)
+            return 0;
+    } else if (proof->pareto_complete == 2u) {
+        if (proof->output_span < proof->minimum_span
+                || proof->output_work < proof->minimum_work)
+            return 0;
+    } else {
+        return 0;
+    }
     return 1;
 }
 

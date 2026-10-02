@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include "../src/internal/transfer.h"
-#include "../src/internal/semantic.h"
+#include "../src/internal/instruction-semantics.h"
 #include <x86/decode.h>
 #include <Zydis/Zydis.h>
 

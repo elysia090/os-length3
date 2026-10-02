@@ -1,1 +1,2 @@
-/usr/bin/mdevd
+#!/bin/sh
+exec /usr/bin/mdevd -D 3 -O 4

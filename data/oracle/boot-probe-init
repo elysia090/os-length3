@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+exec </dev/ttyS0 >/dev/ttyS0 2>&1
+export PATH=/bin HOME=/root TMPDIR=/tmp
+/bin/busybox printf 'oracle-boot-probe-ready\n'
+exec /bin/busybox sh

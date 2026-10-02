@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 
-#include "../src/internal/semantic.h"
+#include "../src/internal/instruction-semantics.h"
 
 typedef struct {
     const char *domain;

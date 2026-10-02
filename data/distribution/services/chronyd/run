@@ -1,1 +1,2 @@
-/usr/bin/chronyd -d
+#!/bin/sh
+exec /usr/bin/chronyd -d

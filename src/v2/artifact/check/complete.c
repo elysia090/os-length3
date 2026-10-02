@@ -92,8 +92,6 @@ static int allocate(const artifact_complete_population *population,
 
     const artifact_program_population *program = population->program;
     pl_u32 states = program ? program->states : 0u;
-    artifact_complete_observation *program_observation = status ? 0 : take(
-        out, (size_t)states * sizeof(*program_observation));
     if (!status)
         status = allocate_share(
             states, out, &out->value.program.future.immediate);
@@ -104,8 +102,6 @@ static int allocate(const artifact_complete_population *population,
     pl_u32 *future_rank = status ? 0 : take(
         out, (size_t)states * sizeof(*future_rank));
     pl_u8 *future_scratch = status ? 0 : take(out, future_bytes);
-    out->value.program.observation = program_observation;
-    out->value.program.state_capacity = states;
     out->value.program.future.future = (pl_finite_future_workspace){
         future_rank, states, future_scratch, future_bytes,
     };
@@ -224,7 +220,7 @@ static int allocate(const artifact_complete_population *population,
             * sizeof(*out->value.payload_end));
     out->value.payload_end_capacity = population->payload_occurrences;
 
-    if (!status && (!program_observation || !future_rank || !future_scratch
+    if (!status && (!future_rank || !future_scratch
             || !payload_digest || !payload_index || !payload_observation
             || (population->archive_count
                 && (!out->value.archive.member_header

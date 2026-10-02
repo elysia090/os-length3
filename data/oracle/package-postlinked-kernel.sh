@@ -6,9 +6,9 @@ if [[ $# != 3 ]]; then
   exit 2
 fi
 
-optimized_vmlinux=$1
-kernel_build=$2
-output_bzimage=$3
+optimized_vmlinux=$(realpath -e -- "$1")
+kernel_build=$(realpath -e -- "$2")
+output_bzimage=$(realpath -m -- "$3")
 
 if [[ ! -f $optimized_vmlinux || ! -f $kernel_build/vmlinux \
       || ! -x $kernel_build/arch/x86/boot/compressed/mkpiggy \
@@ -36,6 +36,10 @@ saved_command() {
     printf 'missing saved Kbuild command: %s\n' "$record" >&2
     return 1
   fi
+  # Kbuild escapes Make's comment marker and dollar signs in saved commands.
+  # Decode that record layer once before invoking the original shell command.
+  command=${command//'$(pound)'/#}
+  command=${command//\$\$/\$}
   sh -c "$command"
 }
 
@@ -50,6 +54,12 @@ saved_command arch/x86/boot/compressed/.vmlinux.bin.gz.cmd
 saved_command arch/x86/boot/compressed/.piggy.S.cmd
 saved_command arch/x86/boot/compressed/.piggy.o.cmd
 saved_command arch/x86/boot/compressed/.vmlinux.cmd
+saved_command arch/x86/boot/.zoffset.h.cmd
+# The setup header embeds the compressed image's lengths and offsets. It must
+# be rebuilt from that same image, not reused from a previous Kbuild payload.
+saved_command arch/x86/boot/.header.o.cmd
+saved_command arch/x86/boot/.setup.elf.cmd
+saved_command arch/x86/boot/.setup.bin.cmd
 saved_command arch/x86/boot/.vmlinux.bin.cmd
 saved_command arch/x86/boot/.bzImage.cmd
 

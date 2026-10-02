@@ -1,28 +1,29 @@
 #!/bin/sh
-
-mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-mount -t proc proc /proc 2>/dev/null || true
-mount -t sysfs sysfs /sys 2>/dev/null || true
-
-# The immutable development system is a reserved physical-memory device.
-# Linux mounts it itself, so pathname lookup, page cache and permissions have
-# exactly the same semantics as every other guest filesystem.
-if ! mount -t squashfs -o ro /dev/mtdblock0 /system; then
-    echo "Toolchain mount failed."
-    exec /bin/sh
-fi
-mount -o bind /system/usr /usr
-mount -o bind /system/etc/ssl /etc/ssl
-
-# BusyBox can resolve commands through an internal fallback even when PATH is
-# absent, but child programs cannot inherit that fallback.  Publish the one
-# ordinary system search path before GCC, make, Git or service processes are
-# launched so every exec observes the same release closure.
+set -eu
 export PATH=/usr/bin:/usr/sbin:/bin:/sbin
-export HOME=/root
-export TMPDIR=/tmp
+trap 'echo "Boot root handoff failed." >&2' EXIT
 
-uname -sr
-echo "BusyBox is ready."
-echo "C toolchain is ready."
-exec /bin/sh
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+/bin/busybox mkdir -p /run /newroot
+/bin/busybox mount -t tmpfs -o mode=0755,size=50% tmpfs /run
+/bin/busybox mkdir -p /run/release /run/cow/upper /run/cow/work
+
+# The adapter supplies only an immutable block device. Linux owns the entire
+# installed filesystem and copies up only objects actually modified. Neither
+# a partial /usr bind nor a writable copy of the release is another root.
+/bin/busybox mount -t squashfs -o ro /dev/mtdblock0 /run/release
+test -s /run/release/lib/apk/db/installed
+test -x /run/release/usr/libexec/system/init
+/bin/busybox mount -t overlay \
+    -o lowerdir=/run/release,upperdir=/run/cow/upper,workdir=/run/cow/work \
+    overlay /newroot
+/bin/busybox mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+for fs in dev proc sys run; do
+    /bin/busybox mount --move /"$fs" /newroot/"$fs"
+done
+
+# switch_root drops the early archive; all subsequent execs use the installed
+# release. The OverlayFS backing mounts move with /run and remain inspectable.
+exec /bin/busybox switch_root -c /dev/console /newroot /usr/libexec/system/init

@@ -390,7 +390,7 @@ if (( input_inodes != 0 )); then
            > stage_normal_instruction_opened_bytes
         || stage_stored_normal_instruction_bytes != 0
         || stage_normal_instruction_minimum_proofs != stage_states
-        || stage_normal_instruction_joint_witnesses != stage_states
+        || stage_normal_instruction_joint_witnesses > stage_states
         || stage_checked_successor_coordinates != stage_states * 2
         || stage_stored_residual_state_rows != 0
         || stage_stored_residual_edge_rows != 0

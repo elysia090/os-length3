@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/bin:/usr/sbin:/bin:/sbin HOME=/root TMPDIR=/tmp TERM=linux
+umask 022
+mkdir -p /run/service/.s6-svscan /run/service/boot /run/service/console /tmp /root
+chmod 1777 /tmp
+chmod 0700 /root
+
+# Only these small live directories are materialized. The compiled database
+# and all executable payloads remain in the immutable installed lower root.
+ln -s /usr/libexec/system/boot /run/service/boot/run
+ln -s /usr/libexec/system/console /run/service/console/run
+ln -s /usr/libexec/system/halt /run/service/.s6-svscan/finish
+ln -s /usr/libexec/system/halt /run/service/.s6-svscan/crash
+: >/run/service/console/down
+exec /usr/bin/s6-svscan /run/service </dev/console >/dev/console 2>&1

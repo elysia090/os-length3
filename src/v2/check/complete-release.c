@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -96,14 +97,6 @@ typedef struct {
     pl_u32 *levels;
     artifact_rank_map_workspace value;
 } owned_rank_map;
-
-typedef struct {
-    pl_u8 *support;
-    pl_u32 *vector;
-    artifact_complete_observation *observation;
-    owned_share share;
-    artifact_derive_workspace value;
-} owned_derive;
 
 static void put_u64_be(pl_u8 *target, pl_u64 value);
 
@@ -294,6 +287,35 @@ static int grow_elfs(release_population *release, pl_u32 capacity)
     return 1;
 }
 
+static int seal_states(release_population *release)
+{
+    /* Geometric construction capacity amortizes append; it is not a live
+     * semantic population. End that slack and the intern index's lifetime
+     * before allocating whole-release proof columns. Payload chunks stay. */
+    if (!release->states) return 0;
+    void *value = realloc(release->instruction,
+        (size_t)release->states * sizeof(*release->instruction));
+    if (!value) return 0;
+    release->instruction = value;
+    value = realloc(release->emitted,
+        (size_t)release->states * sizeof(*release->emitted));
+    if (!value) return 0;
+    release->emitted = value;
+    value = realloc(release->successor,
+        (size_t)release->states * 2u * sizeof(*release->successor));
+    if (!value) return 0;
+    release->successor = value;
+    value = realloc(release->emitted_file_offset,
+        (size_t)release->states * sizeof(*release->emitted_file_offset));
+    if (!value) return 0;
+    release->emitted_file_offset = value;
+    release->state_capacity = release->states;
+    free(release->cells.slot);
+    release->cells.slot = 0;
+    release->cells.slot_capacity = 0u;
+    return 1;
+}
+
 static void clear_pending(release_observer *observer)
 {
     release_population *release = observer->release;
@@ -322,6 +344,10 @@ static int observe_begin(void *opaque, pl_u32 states, pl_u32 arms,
     observer->blocks_seen = 0u;
     observer->emitted_seen = 0u;
     observer->committed = 0u;
+    if (getenv("ARTIFACT_STAGE_PROFILE"))
+        fprintf(stderr,
+                "artifact ELF observations begin: states=%u, source-instructions=%llu\n",
+                states, (unsigned long long)source_instructions);
     return 0;
 }
 
@@ -349,6 +375,15 @@ static int observe_block(
         observer->state_base + successor[1];
     ++observer->blocks_seen;
     observer->previous_blocks = observer->blocks_seen;
+    if (!(state & 0xffffu) && getenv("ARTIFACT_STAGE_PROFILE"))
+    {
+        struct rusage usage = { 0 };
+        (void)getrusage(RUSAGE_SELF, &usage);
+        fprintf(stderr,
+                "artifact ELF observations: %u/%u peak-rss-kib=%ld\n",
+                observer->blocks_seen, observer->expected_states,
+                usage.ru_maxrss);
+    }
     return 0;
 }
 
@@ -379,6 +414,11 @@ static int observe_commit(void *opaque,
     ++release->elfs;
     observer->previous_blocks = 0u;
     observer->committed = 1u;
+    if (getenv("ARTIFACT_STAGE_PROFILE"))
+        fprintf(stderr,
+                "artifact ELF observations committed: %u states, %llu bytes\n",
+                observer->expected_states,
+                (unsigned long long)optimized_elf_bytes);
     return 0;
 }
 
@@ -531,6 +571,8 @@ static append_profile elf_profile;
 static int append_elf(release_population *release, const char *path,
                       const char *output_path)
 {
+    int profile = getenv("ARTIFACT_STAGE_PROFILE") != 0;
+    if (profile) fprintf(stderr, "artifact ELF begin: %s\n", path);
     pl_u8 *input = 0, *output = 0, *workspace = 0;
     pl_u64 input_bytes = 0u, output_bytes = 0u;
     postlink_measurement measurement;
@@ -550,7 +592,16 @@ static int append_elf(release_population *release, const char *path,
     int status = read
         ? postlink_measure(input, input_bytes, &measurement, &report)
         : POSTLINK_ERROR_INPUT_ELF;
-    elf_profile.measure += clock() - begin;
+    clock_t measure_ticks = clock() - begin;
+    elf_profile.measure += measure_ticks;
+    if (profile)
+        fprintf(stderr,
+                "artifact ELF measured: %llu bytes, status=%d, "
+                "output-capacity=%llu workspace=%llu, %.6f CPU seconds\n",
+                (unsigned long long)input_bytes, status,
+                (unsigned long long)(status ? 0u : measurement.output_capacity),
+                (unsigned long long)(status ? 0u : measurement.workspace_bytes),
+                (double)measure_ticks / (double)CLOCKS_PER_SEC);
     if (!status && (measurement.output_capacity > (pl_u64)(size_t)-1
             || measurement.workspace_bytes > (pl_u64)(size_t)-1))
         status = POSTLINK_ERROR_WORKSPACE;
@@ -564,7 +615,17 @@ static int append_elf(release_population *release, const char *path,
             input, input_bytes, output, measurement.output_capacity,
             &output_bytes, workspace, measurement.workspace_bytes,
             &observer, &report);
-        elf_profile.compile += clock() - begin;
+        clock_t compile_ticks = clock() - begin;
+        elf_profile.compile += compile_ticks;
+        if (profile)
+            fprintf(stderr,
+                    "artifact ELF compiled: status=%d, states=%u, "
+                    "output=%llu bytes, required-workspace=%llu, "
+                    "%.6f CPU seconds\n",
+                    status, report.native_blocks,
+                    (unsigned long long)output_bytes,
+                    (unsigned long long)report.required_workspace_bytes,
+                    (double)compile_ticks / (double)CLOCKS_PER_SEC);
         if (status != POSTLINK_ERROR_WORKSPACE
                 || report.required_workspace_bytes
                    <= measurement.workspace_bytes)
@@ -692,15 +753,35 @@ static void close_share_scratch(owned_share_scratch *scratch)
     *scratch = (owned_share_scratch){ 0 };
 }
 
-static int open_rank_map(pl_u32 occurrences, owned_rank_map *out)
+static int rank_map_working_bytes(pl_u32 occurrences, size_t *out)
+{
+    pl_u32 padded = 0u, scratch = 0u, nodes = 0u, levels = 0u;
+    if (!out || artifact_rank_map_measure(
+            occurrences, &padded, &scratch, &nodes, &levels))
+        return 0;
+    *out = (((size_t)padded * sizeof(pl_u32) + 7u) & ~(size_t)7u)
+         + scratch;
+    return 1;
+}
+
+static int open_rank_map(pl_u32 occurrences, void *working,
+                         size_t working_bytes, owned_rank_map *out)
 {
     pl_u32 padded = 0u, scratch_bytes = 0u;
     pl_u32 nodes = 0u, levels = 0u;
     if (artifact_rank_map_measure(
             occurrences, &padded, &scratch_bytes, &nodes, &levels))
         return 0;
-    out->observation = malloc((size_t)padded * sizeof(*out->observation));
-    out->scratch = malloc(scratch_bytes);
+    size_t observation_bytes =
+        ((size_t)padded * sizeof(*out->observation) + 7u) & ~(size_t)7u;
+    if (!working || observation_bytes > working_bytes
+            || scratch_bytes > working_bytes - observation_bytes)
+        return 0;
+    /* Program refinement and each rank-map construction are sequential in
+     * artifact_complete_prepare. Only the two trees survive their respective
+     * construction; lookups read child/level columns, never this working view. */
+    out->observation = working;
+    out->scratch = (pl_u8 *)working + observation_bytes;
     out->children = malloc((size_t)nodes * 2u * sizeof(*out->children));
     out->levels = malloc((size_t)levels * sizeof(*out->levels));
     if (!out->observation || !out->scratch
@@ -719,40 +800,8 @@ static void close_rank_map(owned_rank_map *map)
 {
     free(map->levels);
     free(map->children);
-    free(map->scratch);
-    free(map->observation);
+    /* observation/scratch borrow the enclosing transaction's phase arena. */
     *map = (owned_rank_map){ 0 };
-}
-
-static int open_derive(pl_u32 coordinates, owned_derive *out)
-{
-    pl_u32 support_bytes = 0u, digest_bytes = 0u, indices = 0u;
-    if (artifact_derive_measure(
-            coordinates, &support_bytes, &digest_bytes, &indices))
-        return 0;
-    out->support = malloc(support_bytes);
-    out->vector = malloc((size_t)indices * 3u * sizeof(*out->vector));
-    out->observation = malloc(
-        (size_t)indices * sizeof(*out->observation));
-    if (!out->support || !out->vector || !out->observation
-            || !open_share(coordinates, &out->share))
-        return 0;
-    out->value = (artifact_derive_workspace){
-        out->support, support_bytes,
-        out->vector, out->vector + indices,
-        out->vector + indices * 2u, out->observation,
-        out->share.value, indices,
-    };
-    return 1;
-}
-
-static void close_derive(owned_derive *derived)
-{
-    close_share(&derived->share);
-    free(derived->observation);
-    free(derived->vector);
-    free(derived->support);
-    *derived = (owned_derive){ 0 };
 }
 
 static void put_u64_be(pl_u8 *target, pl_u64 value)
@@ -827,20 +876,12 @@ static int namespace_content_ordinal(
 static int build_argument_order(
     const artifact_namespace_posix *namespace,
     const char *root, char **argv, int base, int stride,
-    pl_u32 count, pl_u32 content_kind, pl_u32 **out)
+    pl_u32 count, pl_u32 content_kind,
+    const pl_u32 content_counts[4], pl_u32 **out)
 {
-    pl_u32 population_count = 0u;
-    for (pl_u32 inode_rank = 0u;
-            inode_rank < namespace->projection.inodes; ++inode_rank) {
-        artifact_namespace_reopened_inode inode = { 0 };
-        if (artifact_namespace_reopen_metadata(
-                &namespace->projection, &namespace->workspace,
-                inode_rank, &inode))
-            return 0;
-        population_count += inode.kind == ARTIFACT_NAMESPACE_REGULAR
-                         && inode.content_kind == content_kind;
-    }
-    if (population_count != count) return 0;
+    if (!content_counts || content_kind > ARTIFACT_NAMESPACE_ARCHIVE
+            || content_counts[content_kind] != count)
+        return 0;
     pl_u32 *order = count ? malloc((size_t)count * sizeof(*order)) : 0;
     if (count && !order) return 0;
     for (pl_u32 index = 0u; index < count; ++index)
@@ -866,8 +907,11 @@ static void profile_phase(int enabled, const char *name, clock_t *previous)
     clock_t now = clock();
     double seconds = now >= *previous
         ? (double)(now - *previous) / (double)CLOCKS_PER_SEC : 0.0;
-    fprintf(stderr, "artifact stage phase: %s %.6f CPU seconds\n",
-            name, seconds);
+    struct rusage usage = { 0 };
+    (void)getrusage(RUSAGE_SELF, &usage);
+    fprintf(stderr,
+            "artifact stage phase: %s %.6f CPU seconds peak-rss-kib=%ld\n",
+            name, seconds, usage.ru_maxrss);
     *previous = now;
 }
 
@@ -924,20 +968,26 @@ int main(int argc, char **argv)
     if (!status && namespace_stage)
         status = artifact_namespace_posix_open(argv[4], &namespace);
     clock_t namespace_open_ticks = clock() - namespace_begin;
+    pl_u32 namespace_content_counts[4] = { 0u, 0u, 0u, 0u };
+    if (!status && namespace_stage)
+        status = artifact_namespace_reopen_content_counts(
+            &namespace.projection, &namespace.workspace,
+            namespace_content_counts);
     pl_u32 *image_order = 0, *archive_order = 0, *external_order = 0;
     clock_t order_begin = clock();
     if (!status && namespace_stage
             && (!build_argument_order(
                     &namespace, argv[4], argv, pair_base, 2,
-                    image_count, ARTIFACT_NAMESPACE_ELF, &image_order)
+                    image_count, ARTIFACT_NAMESPACE_ELF,
+                    namespace_content_counts, &image_order)
                 || !build_argument_order(
                     &namespace, argv[6], argv, archive_base, 1,
                     archive_count, ARTIFACT_NAMESPACE_ARCHIVE,
-                    &archive_order)
+                    namespace_content_counts, &archive_order)
                 || !build_argument_order(
                     &namespace, argv[6], argv, payload_base, 1,
                     external_payload_count, ARTIFACT_NAMESPACE_PAYLOAD,
-                    &external_order)))
+                    namespace_content_counts, &external_order)))
         status = ARTIFACT_ERROR_NAMESPACE;
     clock_t argument_order_ticks = clock() - order_begin;
     if (phase_profile)
@@ -961,6 +1011,17 @@ int main(int argc, char **argv)
         const char *target = stage
             ? argv[pair_base + (int)argument * 2 + 1] : 0;
         status = append_elf(&release, source, target);
+        if (phase_profile) {
+            struct rusage usage = { 0 };
+            (void)getrusage(RUSAGE_SELF, &usage);
+            fprintf(stderr,
+                    "artifact ELF file: %u/%u status=%d states=%u "
+                    "unique-cell-bytes=%llu peak-rss-kib=%ld\n",
+                    image + 1u, profile_image_limit, status,
+                    release.states,
+                    (unsigned long long)release.cells.unique_bytes,
+                    usage.ru_maxrss);
+        }
         if (!image) {
             first_states = release.states;
             first_instructions = release.source_instructions;
@@ -996,6 +1057,8 @@ int main(int argc, char **argv)
     if (!status && !stage && (release.states != first_states * 2u
             || release.source_instructions != first_instructions * 2u))
         status = ARTIFACT_ERROR_PROGRAM;
+    if (!status && !seal_states(&release))
+        status = ARTIFACT_ERROR_PROGRAM_RANGE;
 
     release_archive *archive = archive_count
         ? calloc(archive_count, sizeof(*archive)) : 0;
@@ -1054,37 +1117,12 @@ int main(int argc, char **argv)
     }
     profile_phase(phase_profile, "archive-and-payload-open", &phase_clock);
 
-    artifact_complete_observation *observation = status ? 0 : calloc(
-        release.states, sizeof(*observation));
-    pl_u32 *future_rank = status ? 0 : malloc(
-        (size_t)release.states * sizeof(*future_rank));
+    pl_u32 *future_rank = 0;
     pl_u32 future_bytes = 0u;
-    if (!status)
-        status = pl_finite_future_workspace_measure(
-            release.states, 2u, &future_bytes);
-    pl_u8 *future_scratch = status ? 0 : malloc(future_bytes);
+    pl_u8 *future_scratch = 0;
     owned_share_scratch program_share_scratch = { 0 };
     owned_share instruction_share = { 0 };
-    if (!status && (!observation || !future_rank || !future_scratch
-            || !open_share_scratch(
-                release.states, &program_share_scratch)
-            || !open_share_result(
-                release.states, &program_share_scratch,
-                &instruction_share)))
-        status = ARTIFACT_ERROR_PROGRAM_RANGE;
-
     artifact_program_workspace workspace = { 0 };
-    if (!status) {
-        workspace = (artifact_program_workspace){
-            .observation = observation,
-            .state_capacity = release.states,
-            .future = {
-                .immediate = instruction_share.value,
-                .future = { future_rank, release.states,
-                            future_scratch, future_bytes },
-            },
-        };
-    }
     artifact_program_population population = {
         .instruction = release.instruction,
         .successor = release.successor,
@@ -1095,8 +1133,6 @@ int main(int argc, char **argv)
     artifact_payload *elf_fragment = 0;
     artifact_complete_observation *elf_observation = 0;
     pl_u32 *image_fragment_offset = 0;
-    pl_u32 *state_fragment = 0;
-    pl_u8 *image_reconstruction = 0;
     pl_u8 *elf_factor_code = 0;
     pl_u64 *elf_extent = 0, *factor_cost_tree = 0;
     pl_u32 *factor_vector = 0;
@@ -1111,7 +1147,6 @@ int main(int argc, char **argv)
     owned_share archive_semantic_share = { 0 };
     owned_rank_map block_future_rank = { 0 };
     owned_rank_map payload_rank = { 0 };
-    owned_derive derived = { 0 };
     artifact_complete_observation *complete_payload_observation = 0;
     artifact_payload *complete_payload = 0;
     artifact_payload *archive_material = 0;
@@ -1122,67 +1157,32 @@ int main(int argc, char **argv)
     pl_u32 *archive_long_name_offset = 0;
     pl_u8 *archive_generated = 0;
     artifact_cell *actual_coordinate = 0;
-    artifact_cell *generated_coordinate = 0;
     pl_u8 *actual_coordinate_bytes = 0;
-    pl_u8 *generated_coordinate_bytes = 0;
-    if (!status) {
-        release_stage = 10u;
-        status = artifact_program_project(
-            &population, &workspace, &projection);
-    }
-    profile_phase(phase_profile, "canonical-program-future", &phase_clock);
-    for (pl_u32 state = 0u; !stage && !status
-            && state < first_states; ++state)
-        if (workspace.future.future.state_class[state]
-                != workspace.future.future.state_class[first_states + state])
-            status = ARTIFACT_ERROR_PROGRAM;
-    if (!status && projection.instruction_occurrences != release.states)
-        status = ARTIFACT_ERROR_PROGRAM;
-    /* The two-image harness deliberately supplies equivalent programs and
-     * therefore proves a quantitative sharing lower bound.  A production
-     * release may contain one incompressible ELF: exact ownership is still
-     * correct when every necessary class has one representative. */
-    if (!stage && !status
-            && (projection.future.future.classes > first_states
-                || projection.future.shared_state_occurrences < first_states
-                || projection.retained_instruction_bytes
-                   >= projection.opened_instruction_bytes))
-        status = ARTIFACT_ERROR_PROGRAM;
-
-    if (!status && (release.elfs != image_count
-            || release.states > 0xffffffffu - release.elfs * 2u))
+    if (!status && release.elfs != image_count)
         status = ARTIFACT_ERROR_EXECUTABLE;
-    pl_u32 fragment_capacity = status ? 0u
-        : release.states + release.elfs * 2u;
+    artifact_executable_population executable_population = {
+        release.optimized_elf, source_state_offset,
+        release.emitted, release.emitted_file_offset,
+        release.elfs, release.states,
+    };
+    pl_u32 fragment_capacity = 0u;
+    if (!status)
+        status = artifact_executable_measure(
+            &executable_population, &fragment_capacity);
     elf_fragment = status ? 0 : calloc(
         fragment_capacity, sizeof(*elf_fragment));
     elf_observation = status ? 0 : calloc(
         fragment_capacity, sizeof(*elf_observation));
     image_fragment_offset = status ? 0 : malloc(
         ((size_t)release.elfs + 1u) * sizeof(*image_fragment_offset));
-    state_fragment = status ? 0 : malloc(
-        (size_t)release.states * sizeof(*state_fragment));
-    pl_u64 maximum_image_bytes = 0u;
-    for (pl_u32 image = 0u; !status && image < release.elfs; ++image)
-        if (release.optimized_elf[image].length > maximum_image_bytes)
-            maximum_image_bytes = release.optimized_elf[image].length;
-    image_reconstruction = status ? 0 : malloc((size_t)maximum_image_bytes);
     if (!status && (!elf_fragment || !elf_observation
             || !image_fragment_offset
-            || !state_fragment || !image_reconstruction
             || !open_share(fragment_capacity, &elf_share)))
         status = ARTIFACT_ERROR_EXECUTABLE_RANGE;
-    artifact_executable_population executable_population = {
-        release.optimized_elf, source_state_offset,
-        release.emitted, release.emitted_file_offset,
-        release.elfs, release.states,
-    };
     artifact_executable_workspace executable_workspace = {
         elf_fragment, fragment_capacity,
         image_fragment_offset, release.elfs + 1u,
-        state_fragment, release.states,
         { elf_observation, fragment_capacity, elf_share.value },
-        image_reconstruction, maximum_image_bytes,
     };
     if (!status) {
         release_stage = 20u;
@@ -1202,10 +1202,6 @@ int main(int argc, char **argv)
      * digest/order, coordinate map and reconstruction buffer do not: keeping
      * them until factor selection would add an unrelated linear lifetime. */
     close_share(&elf_share);
-    free(image_reconstruction);
-    image_reconstruction = 0;
-    free(state_fragment);
-    state_fragment = 0;
     free(image_fragment_offset);
     image_fragment_offset = 0;
     free(elf_observation);
@@ -1379,18 +1375,20 @@ int main(int argc, char **argv)
         status = ARTIFACT_ERROR_PAYLOAD_RANGE;
     pl_u32 complete_payload_count = status ? 0u
         : (pl_u32)complete_payload_count64;
-    complete_payload = status ? 0 : calloc(
-        complete_payload_count, sizeof(*complete_payload));
+    /* The executable descriptors become the prefix of the sole global owner
+     * view. Transfer that allocation; copying N descriptors into a second
+     * live array is neither a new observation nor a necessary payload. */
+    if (!status) {
+        complete_payload = realloc(elf_fragment,
+            (size_t)complete_payload_count * sizeof(*complete_payload));
+        if (complete_payload) elf_fragment = 0;
+    }
     complete_payload_observation = status ? 0 : calloc(
         complete_payload_count, sizeof(*complete_payload_observation));
     if (!status && (!complete_payload || !complete_payload_observation
             || !open_share(
                 complete_payload_count, &complete_payload_share)))
         status = ARTIFACT_ERROR_PAYLOAD_RANGE;
-    for (pl_u32 occurrence = 0u;
-            !status && occurrence < elf_projection.fragment_occurrences;
-            ++occurrence)
-        complete_payload[occurrence] = elf_fragment[occurrence];
     pl_u32 payload_member = 0u;
     for (pl_u32 index = 0u; !status && index < archive_count; ++index)
         for (pl_u32 member = 0u;
@@ -1443,52 +1441,52 @@ int main(int argc, char **argv)
      * gate was a second linear route with no independent observation. */
     profile_phase(phase_profile, "payload-quotient", &phase_clock);
 
+    /* Program and ELF-fragment proof scratch are sequential lifetimes.
+     * Keeping the former alive while building a second full-state payload
+     * quotient exhausted 8 GiB on the fixed recipe. The exact program proof
+     * and its complete-gate recheck still run before any publication. */
+    future_rank = status ? 0 : malloc((size_t)release.states * sizeof(*future_rank));
+    if (!status)
+        status = pl_finite_future_workspace_measure(release.states, 2u, &future_bytes);
+    size_t phase_scratch_bytes = future_bytes;
+    size_t block_rank_bytes = 0u, payload_rank_bytes = 0u;
+    if (!status && (!rank_map_working_bytes(release.states, &block_rank_bytes)
+            || !rank_map_working_bytes(complete_payload_count, &payload_rank_bytes)))
+        status = ARTIFACT_ERROR_COMPLETE_RANGE;
+    if (block_rank_bytes > phase_scratch_bytes) phase_scratch_bytes = block_rank_bytes;
+    if (payload_rank_bytes > phase_scratch_bytes) phase_scratch_bytes = payload_rank_bytes;
+    future_scratch = status ? 0 : malloc(phase_scratch_bytes);
+    if (!status && (!future_rank || !future_scratch
+            || !open_share_scratch(release.states, &program_share_scratch)
+            || !open_share_result(release.states, &program_share_scratch,
+                                  &instruction_share)))
+        status = ARTIFACT_ERROR_PROGRAM_RANGE;
     if (!status) {
-        release_stage = 40u;
-        status = artifact_factor_index_measure(
-            (pl_u32)canonical_byte_extent,
-            &factor_vector_capacity, &factor_tree_capacity);
+        workspace = (artifact_program_workspace){
+            .future = {
+                .immediate = instruction_share.value,
+                .future = { future_rank, release.states,
+                            future_scratch, future_bytes },
+            },
+        };
+        release_stage = 10u;
+        status = artifact_program_project(&population, &workspace, &projection);
     }
-    factor_vector = status ? 0 : malloc(
-        (size_t)factor_vector_capacity * 4u * sizeof(*factor_vector));
-    factor_cost_tree = status ? 0 : malloc(
-        (size_t)factor_tree_capacity * sizeof(*factor_cost_tree));
-    if (!status && (!factor_vector
-            || !factor_cost_tree))
-        status = ARTIFACT_ERROR_FACTOR_RANGE;
-    artifact_factor_index_workspace factor_workspace = {
-        .source = factor_vector
-            ? factor_vector + factor_vector_capacity * 2u : 0,
-        .length = factor_vector
-            ? factor_vector + factor_vector_capacity * 3u : 0,
-        .suffix_array = factor_vector,
-        .rank = factor_vector
-            ? factor_vector + factor_vector_capacity : 0,
-        .vector_capacity = factor_vector_capacity,
-        .cost_tree = factor_cost_tree,
-        .tree_capacity = factor_tree_capacity,
-    };
-    pl_u64 factor_workspace_bytes =
-        (pl_u64)factor_vector_capacity * 4u * sizeof(*factor_vector)
-        + (pl_u64)factor_tree_capacity * sizeof(*factor_cost_tree);
-    /* The complete gate owns the sole factor projection.  Allocate from the
-     * all-literal upper bound instead of running the same whole-word quotient
-     * once to discover its exact output size and again to prove publication.
-     * The exact writer can only improve on nine bits per input byte. */
-    pl_u64 factor_code_bytes = status ? 0u
-        : (canonical_byte_extent * 9u + 7u) >> 3u;
-    if (!status && factor_code_bytes > 0xffffffffu)
-        status = ARTIFACT_ERROR_FACTOR_CODEC_RANGE;
-    pl_u64 dead_vector_bytes =
-        (pl_u64)factor_vector_capacity * sizeof(*factor_vector);
-    if (!status && factor_code_bytes > dead_vector_bytes)
-        status = ARTIFACT_ERROR_FACTOR_CODEC_RANGE;
-    if (!status) {
-        /* After factor selection, suffix-array is dead. The stored spelling
-         * reuses it; canonical input bytes remain at their immutable owners
-         * and verification compares the code directly against that view. */
-        elf_factor_code = (pl_u8 *)(void *)factor_vector;
-    }
+    profile_phase(phase_profile, "canonical-program-future", &phase_clock);
+    for (pl_u32 state = 0u; !stage && !status && state < first_states; ++state)
+        if (future_rank[state] != future_rank[first_states + state])
+            status = ARTIFACT_ERROR_PROGRAM;
+    if (!status && projection.instruction_occurrences != release.states)
+        status = ARTIFACT_ERROR_PROGRAM;
+    if (!stage && !status
+            && (projection.future.future.classes > first_states
+                || projection.future.shared_state_occurrences < first_states
+                || projection.retained_instruction_bytes >= projection.opened_instruction_bytes))
+        status = ARTIFACT_ERROR_PROGRAM;
+
+    artifact_factor_index_workspace factor_workspace = { 0 };
+    pl_u64 factor_workspace_bytes = 0u;
+    pl_u64 factor_code_bytes = 0u;
 
     /* The projections above are the authoritative typed populations. Their
      * domains are disjoint, so the global semantic rank is a family/domain
@@ -1503,18 +1501,14 @@ int main(int argc, char **argv)
         : (pl_u32)complete_semantic_count64;
     actual_coordinate = status ? 0 : calloc(
         release.states, sizeof(*actual_coordinate));
-    generated_coordinate = status ? 0 : calloc(
-        release.states, sizeof(*generated_coordinate));
     actual_coordinate_bytes = status ? 0 : malloc(
         (size_t)release.states * 8u);
-    generated_coordinate_bytes = status ? 0 : malloc(
-        (size_t)release.states * 8u);
-    if (!status && (!actual_coordinate || !generated_coordinate
-            || !actual_coordinate_bytes || !generated_coordinate_bytes
-            || !open_rank_map(release.states, &block_future_rank)
+    if (!status && (!actual_coordinate || !actual_coordinate_bytes
+            || !open_rank_map(release.states, future_scratch,
+                              phase_scratch_bytes, &block_future_rank)
             || !open_rank_map(
-                complete_payload_count, &payload_rank)
-            || !open_derive(release.states, &derived)))
+                complete_payload_count, future_scratch,
+                phase_scratch_bytes, &payload_rank)))
         status = ARTIFACT_ERROR_COMPLETE_RANGE;
 
     /* A linked image contributes one layout seed.  Every later emitted-file
@@ -1527,13 +1521,8 @@ int main(int argc, char **argv)
         pl_u64 cursor = release.emitted_file_offset[first];
         for (pl_u32 state = first; state < end; ++state) {
             pl_u8 *actual = actual_coordinate_bytes + (size_t)state * 8u;
-            pl_u8 *generated =
-                generated_coordinate_bytes + (size_t)state * 8u;
             put_u64_be(actual, release.emitted_file_offset[state]);
-            put_u64_be(generated, cursor);
             actual_coordinate[state] = (artifact_cell){ actual, 8u };
-            generated_coordinate[state] =
-                (artifact_cell){ generated, 8u };
             if (release.emitted_file_offset[state] != cursor)
                 status = ARTIFACT_ERROR_COMPLETE;
             else if (cursor > 0xffffffffffffffffull
@@ -1544,16 +1533,11 @@ int main(int argc, char **argv)
         }
     }
 
-    /* A release Artifact cannot turn a source-spelling escape into a complete
-     * proof merely because the resulting bytes are executable.  The complete
-     * stage admits only populations whose normalized candidate grammar closed
-     * every block and whose componentwise span/work frontier has a joint
-     * witness.  Diagnostic/non-stage projections remain available while the
-     * compiler is being extended. */
-    if (!status && namespace_stage
-            && (elf_profile.normalization_escape_blocks
-                || elf_profile.pareto_unresolved_blocks))
-        status = ARTIFACT_ERROR_COMPLETE;
+    /* Exact retained x86 is a compile-time semantic representative, not an
+     * execution fallback. Nonjoint Pareto cells carry independent lower
+     * bounds and actual selected costs separately in X86N5. The namespace
+     * stage may report these optimization misses, but it must not confuse
+     * them with missing executable coordinates. */
 
     artifact_complete_population complete_population = {
         .required_semantic_family_mask = namespace_stage ? 0x3fu
@@ -1586,7 +1570,9 @@ int main(int argc, char **argv)
         .required_namespace_inodes = namespace_stage
             ? namespace.projection.inodes : 0u,
         .actual_cells = actual_coordinate,
-        .generated_cells = generated_coordinate,
+        /* The prefix recurrence above has already checked every generated
+         * coordinate. Both views therefore share the one byte population. */
+        .generated_cells = actual_coordinate,
         .cell_coordinates = release.states,
         .required_cell_coordinates = release.states,
     };
@@ -1603,21 +1589,89 @@ int main(int argc, char **argv)
             archive_generated, maximum_archive_bytes,
         },
         .namespace_workspace = namespace.workspace,
-        .derived = derived.value,
-        .factor = factor_workspace,
-        .factor_code = elf_factor_code,
-        .factor_code_capacity = (pl_u32)factor_code_bytes,
+        .derived = { 0 },
         .payload_end = elf_extent,
         .payload_end_capacity = complete_payload_projection.classes,
     };
+    artifact_byte_view canonical = { 0 };
     if (!status) {
         release_stage = 50u;
-        status = artifact_complete_project(
-            &complete_population, &complete_workspace,
+        status = artifact_complete_prepare(
+            &complete_population, &complete_workspace, &canonical,
             &complete_projection);
     }
-    profile_phase(
-        phase_profile, "complete-sharing-and-factor", &phase_clock);
+    profile_phase(phase_profile, "complete-sharing", &phase_clock);
+    if (!status) {
+        /* The canonical byte view borrows only payload owners, their ranks,
+         * and their CSR ends. Program/future/coordinate scratch has no role
+         * in factor selection, so end its lifetime before allocating the
+         * four full-byte vectors. This keeps two large linear terms from
+         * overlapping at the release-wide peak. */
+        close_rank_map(&block_future_rank);
+        close_share(&instruction_share);
+        close_share_scratch(&program_share_scratch);
+        free(actual_coordinate_bytes);
+        actual_coordinate_bytes = 0;
+        free(actual_coordinate);
+        actual_coordinate = 0;
+        free(future_scratch);
+        future_scratch = 0;
+        free(future_rank);
+        future_rank = 0;
+        free(source_state_offset);
+        source_state_offset = 0;
+        free(release.successor);
+        release.successor = 0;
+        free(release.emitted_file_offset);
+        release.emitted_file_offset = 0;
+        free(release.instruction);
+        release.instruction = 0;
+        free(release.emitted);
+        release.emitted = 0;
+        close_cell_pool(&release.cells);
+
+        release_stage = 40u;
+        status = artifact_factor_index_measure(
+            (pl_u32)canonical_byte_extent,
+            &factor_vector_capacity, &factor_tree_capacity);
+    }
+    factor_vector = status ? 0 : malloc(
+        (size_t)factor_vector_capacity * 4u * sizeof(*factor_vector));
+    factor_cost_tree = status ? 0 : malloc(
+        (size_t)factor_tree_capacity * sizeof(*factor_cost_tree));
+    if (!status && (!factor_vector || !factor_cost_tree))
+        status = ARTIFACT_ERROR_FACTOR_RANGE;
+    factor_workspace = (artifact_factor_index_workspace){
+        .source = factor_vector
+            ? factor_vector + factor_vector_capacity * 2u : 0,
+        .length = factor_vector
+            ? factor_vector + factor_vector_capacity * 3u : 0,
+        .suffix_array = factor_vector,
+        .rank = factor_vector
+            ? factor_vector + factor_vector_capacity : 0,
+        .vector_capacity = factor_vector_capacity,
+        .cost_tree = factor_cost_tree,
+        .tree_capacity = factor_tree_capacity,
+    };
+    factor_workspace_bytes =
+        (pl_u64)factor_vector_capacity * 4u * sizeof(*factor_vector)
+        + (pl_u64)factor_tree_capacity * sizeof(*factor_cost_tree);
+    /* One exact writer uses the all-literal upper bound; after selection its
+     * dead suffix-array space owns the stored spelling. */
+    factor_code_bytes = status ? 0u
+        : (canonical_byte_extent * 9u + 7u) >> 3u;
+    if (!status && (factor_code_bytes > 0xffffffffu
+            || factor_code_bytes
+               > (pl_u64)factor_vector_capacity * sizeof(*factor_vector)))
+        status = ARTIFACT_ERROR_FACTOR_CODEC_RANGE;
+    if (!status) {
+        elf_factor_code = (pl_u8 *)(void *)factor_vector;
+        release_stage = 50u;
+        status = artifact_complete_factor(
+            &canonical, &factor_workspace, elf_factor_code,
+            (pl_u32)factor_code_bytes, &complete_projection);
+    }
+    profile_phase(phase_profile, "factor-selection", &phase_clock);
     if (!status && (complete_projection.semantic_family_mask
                     != (namespace_stage ? 0x3fu
                         : archive_stage ? 0x1fu : 0x0fu)
@@ -1807,13 +1861,10 @@ int main(int argc, char **argv)
                 (unsigned long long)
                     complete_projection.factor.retained_bits);
 
-    close_derive(&derived);
     close_rank_map(&payload_rank);
     close_rank_map(&block_future_rank);
     close_share(&archive_semantic_share);
-    free(generated_coordinate_bytes);
     free(actual_coordinate_bytes);
-    free(generated_coordinate);
     free(actual_coordinate);
     close_share(&complete_payload_share);
     free(complete_payload_observation);
@@ -1829,8 +1880,6 @@ int main(int argc, char **argv)
     free(factor_vector);
     free(elf_extent);
     close_share(&elf_share);
-    free(image_reconstruction);
-    free(state_fragment);
     free(image_fragment_offset);
     free(elf_observation);
     free(elf_fragment);
@@ -1838,7 +1887,6 @@ int main(int argc, char **argv)
     close_share_scratch(&program_share_scratch);
     free(future_scratch);
     free(future_rank);
-    free(observation);
     free(source_state_offset);
     free(external_order);
     free(archive_order);

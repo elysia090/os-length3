@@ -4,13 +4,16 @@
  * successful call emits one ordinary x86-64 ET_EXEC/ET_DYN ELF.  Its proof is
  * represented with standard ELF symbols and a GNU build-id and is accepted by
  * optimized-x86/reader.h.  Unsupported semantics, incomplete closure, or a
- * non-improving cost is a compile error; there is no runtime fallback.
+ * non-improving cost is a compile error. An optimization miss may retain the
+ * original x86 body at compile time; there is no runtime interpreter fallback.
  */
 
 #ifndef POSTLINK_COMPILER_H
 #define POSTLINK_COMPILER_H
 
 #include <support/types.h>
+
+#define POSTLINK_WORKSPACE_ALIGNMENT 16u
 
 #define POSTLINK_NO_INSTRUCTION 0xffffffffu
 #define POSTLINK_PARETO_DIAGNOSTIC_LIMIT 9u
@@ -111,6 +114,8 @@ typedef struct {
     pl_u64 native_overlapping_source_end;
     pl_u64 native_first_overlapping_address;
     pl_u32 entry_candidates;
+    pl_u32 function_symbol_rows;
+    pl_u64 entry_analysis_workspace_bytes;
     pl_u32 native_entries;
     pl_u32 native_observable_entries;
     pl_u32 code_grid_candidates;
@@ -147,6 +152,8 @@ typedef struct {
     pl_u32 native_pareto_bytes[POSTLINK_PARETO_DIAGNOSTIC_LIMIT];
     pl_u32 native_nonimage_control_edges;
     pl_u32 dispatch_base_candidates;
+    /* Closed control domains and retained encoded target addresses are
+     * different counts: a proved row encoding need not prove all reentries. */
     pl_u32 dispatch_bases;
     pl_u32 dispatch_targets;
     pl_u32 input_sections;
@@ -211,7 +218,9 @@ int postlink_measure(const pl_u8 *input, pl_u64 input_bytes,
                      postlink_measurement *measurement,
                      postlink_report *report);
 
-/* Compile into caller-owned storage. output_bytes receives the exact ELF
+/* Compile into caller-owned storage aligned to measurement.workspace_alignment
+ * (POSTLINK_WORKSPACE_ALIGNMENT). Misalignment is rejected before typed access.
+ * output_bytes receives the exact ELF
  * extent. Success implies the output is independently accepted by
  * ox_image_open, is smaller than the input, and does not regress the declared
  * static work/span/code cost. Native speed is a separate paired benchmark. */

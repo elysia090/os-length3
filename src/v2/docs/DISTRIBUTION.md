@@ -19,8 +19,9 @@ otherwise gets out of the way as ordinary Linux.
 
 These are release properties rather than aesthetic claims:
 
-* **small**: one 75 MB (75,000,000-byte) standard delivery bound, one identity for equal
-  content, no unused executable payload, and no mandatory second artifact;
+* **small**: a measured single-file native download first, then the separate
+  75 MB (75,000,000-byte) canonical release-word target; one identity for
+  equal content and no unused executable payload or mandatory second download;
 * **fast**: cold prompt within three seconds, demand-loaded cold tools, native
   x86 execution on native hosts, and no runtime decode or optimization path;
 * **quiet**: no telemetry, discovery broadcast, automatic repository refresh,
@@ -62,6 +63,53 @@ survive.
 This is intentionally narrower and more direct than a general host
 distribution, but more complete than a rescue image or build appliance.
 
+## First native download
+
+The first GitHub release deliverable is a **single reproducible Linux x86-64
+`.tar.zst` root bundle**. It must not wait for the theoretical release-word
+publisher or the browser delivery format. Its members, in sorted path order,
+are a manifest with source/profile, boot-image, and package-index digests,
+the signed installed package root, and the optimized-kernel `bzImage` and
+initramfs already owned
+by that root. It contains no linked-input ELF, compiler scratch, source tree,
+second copy of the package repository, or required browser module. Hard links
+are represented as hard links, not duplicated file payloads.
+The root carries the signed repository index for offline installed-package
+queries. It does not duplicate every `.apk` payload; package mutations need
+a separately delivered repository and a writable derived system root.
+Native network use also needs a launcher-provided resolver configuration and
+network grant; `curl --version` and `ssh -V` do not claim HTTPS connectivity.
+
+Every executable in the extracted root is an independently verified ordinary
+optimized `ET_EXEC`/`ET_DYN` ELF. Zstd compresses the transport bundle once;
+the CPU does **not** execute compressed bytes. On Linux, verify the manifest,
+extract into one immutable directory, and enter that root through the host
+kernel's ordinary namespace/chroot and `execve` facilities. The bundle must
+be authenticated by a separately published digest or signature before its
+internal manifest or package signatures can be trusted. The external
+requirements are therefore Linux x86-64, tar/zstd for installation, and the
+privilege or user-namespace support needed to enter the root. A friendly
+unprivileged launcher and an autonomous bootable image are later packaging
+products, not properties to claim for this first bundle. The included kernel
+is for the separately checked guest boot path; native root execution uses the
+host Linux kernel and must pass its Linux-ABI acceptance test.
+
+Report the actual `.tar.zst` download bytes, extracted unique file bytes,
+cold extraction/start time, and paired native command performance. The
+75,000,000-byte canonical release-word target is a separate later gate; it
+must not prevent a verified, runnable native bundle from being published.
+`data/build.sh` runs the release-wide post-link compiler, builds and checks
+the signed installed root, then calls
+`data/distribution/publish-native-bundle.sh` to make this download. A test-key
+build validates the path but is not a public release. Publication requires the
+complete native parity and root checks, a private-namespace smoke run of the
+actual installed root (`cc`, `make`, `file`, `git init/status`, `apk info`,
+`curl`, `ssh -V`), then an extracted-bundle test that performs a
+certificate-verified `curl` GET and `git clone` against a local HTTPS server,
+reproducible bundle
+verification, and
+a separately authenticated digest or signature tied to the release key.
+
 ## Standard 75 MB profile
 
 The standard profile is one functional closure, not an accidental list of
@@ -88,7 +136,7 @@ than command names. BusyBox stays as the early and recovery surface even when a
 full utility later owns the ordinary interactive command. The provider of each
 required command is fixed by the profile checker.
 
-The published standard release must be at most 75,000,000 canonical artifact
+The later canonical standard release must be at most 75,000,000 artifact
 bytes after every linked ET_EXEC/ET_DYN has become a proved optimized ELF. The
 unit is the emitted canonical program word derived in `ARTIFACT.md`, not a
 filesystem walk, tar extent, SquashFS extent, or storage pack. The earlier
@@ -96,12 +144,13 @@ filesystem walk, tar extent, SquashFS extent, or storage pack. The earlier
 machine-pack route; it was neither this complete package recipe nor an
 Artifact measurement and is not a release-size result.
 
-The current build deliberately reports no standard-release size. It first
-assembles the exact profile, checks command providers, resources, runtime
-closure and every ELF proof, and then stops with `canonical artifact
-publication: not connected`. A tar size or a partial candidate root can never
-turn that red gate green. The first publishable size measurement is emitted
-only after the complete recipe passes and the Artifact writer emits (1).
+The current build reports no canonical standard-release size. It first
+assembles the exact profile and checks command providers, resources, runtime
+closure and every ELF proof. It may then publish the initial native `.tar.zst`
+and report that file's actual download size while saying `canonical artifact
+publication: pending`. A tar size or a partial candidate root can never turn
+the later canonical gate green. That measurement starts only after the
+complete recipe passes and the Artifact writer emits (1).
 
 The standard profile fixes the nonempty Artifact semantic-family mask to all
 six families: block, pure slice, instruction meaning, immutable read, archive
@@ -152,6 +201,33 @@ PID 1 owns one compiled s6-rc service DAG. Service definitions are build input;
 the compiled database is immutable release content and is verified before
 publication. Boot is a state transition, not an ordered directory of shell
 scripts.
+
+The early archive mounts API filesystems and one size-bounded tmpfs `/run`.
+Linux mounts the complete installed SquashFS root read-only at `/run/release`;
+OverlayFS uses that lower and `/run/cow/{upper,work}` as its writable tmpfs
+layer. API mounts and the backing `/run` move into the new root before
+`switch_root` drops the early archive. There is no partial `/usr` bind, full
+writable root copy, or emergency shell that can satisfy a failed boot gate.
+This follows the kernel's [OverlayFS upper/lower contract](https://docs.kernel.org/filesystems/overlayfs.html)
+and [initramfs root handoff](https://docs.kernel.org/filesystems/ramfs-rootfs-initramfs.html).
+
+`/usr/libexec/system/init` becomes the installed `s6-svscan` PID 1. A supervised
+one-attempt bootstrap initializes the immutable compiled s6-rc database and
+requests `boot-offline`; it enables the console only after the complete
+transition succeeds. `mdevd-ready` uses notification fd 3 and the coldplug
+acknowledgement multicast mask shared with `mdevd-coldplug`. Readiness oneshots
+check actual mounts, account/package/service files, writable COW, and PID 1;
+supervisor startup alone is not interactive readiness. Longrun `run` files
+carry an installed `/bin/sh` shebang and exec their daemon: s6-supervise's
+direct exec has no shell fallback. The source gate verifies this before
+database compilation. See [s6 supervision](https://skarnet.org/software/s6/s6-supervise.html)
+and [mdevd readiness](https://skarnet.org/software/mdevd/mdevd.html).
+The console service uses the session already created by s6-supervise and execs
+cttyhack/the interactive shell without a second detaching setsid. A detached
+shell would escape the supervised PID and trigger competing respawns on the
+same terminal. The full boot witness requires the supervised PID to be the
+actual installed BusyBox shell. An explicit comment-only `/etc/mdev.conf`
+selects default guest-device handling without invoking external hotplug code.
 
 The initial graph is:
 

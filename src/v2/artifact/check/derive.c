@@ -77,6 +77,35 @@ int main(void)
             || workspace.rank[3] == workspace.rank[5]))
         status = ARTIFACT_ERROR_DERIVE;
 
+    artifact_derive_workspace no_workspace = { 0 };
+    artifact_derive_projection exact = { 0 };
+    pl_u64 exact_bytes = 0u;
+    for (pl_u32 coordinate = 0u; coordinate < COUNT; ++coordinate)
+        exact_bytes += actual[coordinate].length;
+    if (!status)
+        status = artifact_derive_project(
+            actual, actual, COUNT, &no_workspace, &exact);
+    for (pl_u32 coordinate = 0u; !status && coordinate < COUNT;
+            ++coordinate) {
+        artifact_cell reopened = { 0 };
+        status = artifact_derive_cell(
+            actual, actual, COUNT, &no_workspace,
+            coordinate, &reopened);
+        if (!status && !equal_cell(reopened, actual[coordinate]))
+            status = ARTIFACT_ERROR_DERIVE;
+    }
+    if (!status && (exact.generated_cells != COUNT
+            || exact.exception_cells || exact.exception_classes
+            || exact.opened_bytes != exact_bytes
+            || exact.removed_generated_bytes != exact_bytes
+            || exact.retained_exception_bytes))
+        status = ARTIFACT_ERROR_DERIVE;
+    artifact_cell invalid = { 0, 1u };
+    if (!status && artifact_derive_project(
+            &invalid, &invalid, 1u, &no_workspace, &exact)
+            != ARTIFACT_ERROR_DERIVE_RANGE)
+        status = ARTIFACT_ERROR_DERIVE;
+
     if (status) {
         fprintf(stderr, "derived cells: RED (%d)\n", status);
     } else {

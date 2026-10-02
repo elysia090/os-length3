@@ -80,9 +80,12 @@ ssh -p 18022 -i temp/bootstrap/id_ed25519 -o UserKnownHostsFile=temp/bootstrap/k
 Use `boot tcg` explicitly if WHPX is unavailable. Neither is a product dependency.
 Do not compare TCG emulation times with native hardware times. The bootstrap
 execution configuration is recorded under `temp/bootstrap/execution.json`.
-The 64 GiB sparse differential disk, input archive, keys and all build checkpoints
+The 32 GiB sparse differential disk, input archive, keys and all build checkpoints
 remain under Windows `temp/`. Clean shutdown with guest `poweroff` retains the
 disk; the preparation command never resets an existing build checkpoint.
+The virtual capacity is a ceiling, not preallocated host storage. The guest
+drive passes discard through to qcow2 so `fstrim` can return freed build
+space to the host; peak build usage still has to fit inside 32 GiB.
 
 The current source snapshot is served as `/source.tar`; original source archives
 are served without unpacking through `/upstream-index` and `/upstream/<filename>`.
@@ -111,8 +114,10 @@ locks back beside the recipe.
 
 Git 2.55 also builds a Rust static library. Its build-only tools have a separate
 35-package closure in `rust.world`, `rust.sha256` and `rust-installed.lock`.
-`rust.sh install` verifies the retained signed inputs under
-`data/upstream/bootstrap/rust-packages/` and installs them without scripts into
+`rust.sh install` checks every retained input against `rust.sha256`. It reads
+the Rust cache under `data/upstream/bootstrap/rust-packages/`, or an identical
+package already held in the pinned base bootstrap cache, and installs those
+verified bytes without scripts into
 `temp/bootstrap-rust/roots/<identity>`, not the host's package database.
 `rust.sh run ...` exposes this private tool prefix only to the child command,
 with Cargo networking disabled. The Git checkpoint includes this closure's
@@ -137,7 +142,7 @@ reuses its objects to build the boot wrapper rather than expanding Linux a
 second time. Keep `QM_BUILD_ROOT`, `QM_OUTPUT_ROOT` and `QM_SCRATCH_ROOT`
 under the Windows-backed guest disk's `/build/source/temp/`.
 
-The resolved Linux 7.1.8 configuration was regenerated for GCC 15.2.0,
+The resolved Linux 7.2.7 configuration was regenerated for GCC 15.2.0,
 binutils 2.45.1 and pahole 1.30 from this host, without changing its kernel
 feature choices. The prior Nix compiler capability/version fields are not
 reusable measurement inputs. `SOURCE_DATE_EPOCH` comes from the release profile;

@@ -146,6 +146,14 @@ int artifact_namespace_reopen_metadata(
     const artifact_namespace_workspace *workspace,
     pl_u32 inode, artifact_namespace_reopened_inode *out);
 
+/* Count the content classes in one forward decode of the canonical inode
+ * stream. Reopening inode 0..N separately would decode the same prefix N
+ * times and turn release argument ordering into quadratic work. */
+int artifact_namespace_reopen_content_counts(
+    const artifact_namespace_projection *projection,
+    const artifact_namespace_workspace *workspace,
+    pl_u32 counts[4]);
+
 int artifact_namespace_reopen_xattr(
     const artifact_namespace_projection *projection,
     const artifact_namespace_workspace *workspace,

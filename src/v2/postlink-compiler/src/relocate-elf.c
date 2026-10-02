@@ -1,6 +1,6 @@
 #include "internal/relocate-elf.h"
 #include "internal/metadata.h"
-#include "internal/table.h"
+#include "internal/jump-table.h"
 
 #include <support/checked.h>
 
@@ -20,6 +20,10 @@
 #define R_X86_64_IRELATIVE 37u
 #define R_X86_64_GOTPCRELX 41u
 #define R_X86_64_REX_GOTPCRELX 42u
+/* A retained static relocation seen after TLS local-exec relaxation.  It is
+ * not an ABI relocation to apply to the linked image; accept it only when the
+ * field is the zero displacement of the exact FS:0 load below. */
+#define R_X86_64_RETAINED_TLS_MARKER 130u
 #define ELF_SYMBOL_GNU_IFUNC 10u
 
 static pl_u64 add_modular(pl_u64 base, pl_u64 addend_bits,
@@ -180,6 +184,25 @@ static int input_file_at(const pl_elf_image *elf, pl_u64 address,
         owner = index;
     }
     return owner != 0xffffffffu;
+}
+
+static int relaxed_tls_marker(const pl_elf_image *elf,
+                              const pl_elf_relocation *relocation)
+{
+    if (!elf || !relocation
+            || relocation->type != R_X86_64_RETAINED_TLS_MARKER
+            || relocation->offset < 5u)
+        return 0;
+    pl_u64 file = 0u;
+    if (!input_file_at(elf, relocation->offset - 5u, 9u, &file)
+            || file > elf->length || 9u > elf->length - file)
+        return 0;
+    static const pl_u8 fs_base_load[9] = {
+        0x64u, 0x48u, 0x8bu, 0x04u, 0x25u, 0u, 0u, 0u, 0u
+    };
+    for (pl_u32 byte = 0u; byte < sizeof fs_base_load; ++byte)
+        if (elf->bytes[file + byte] != fs_base_load[byte]) return 0;
+    return 1;
 }
 
 static pl_u64 linked_relative_destination(pl_u64 place,
@@ -470,6 +493,11 @@ int pl_x86_relocate_elf(
             if (status) return PL_ERROR_X86_RELOCATE;
             ++report->records;
 
+            if (code_place && relaxed_tls_marker(&elf, &relocation)) {
+                ++report->unchanged_records;
+                continue;
+            }
+
             int symbol_code = executable_symbol(&elf, &symbol);
             if (symbol_code < 0) return PL_ERROR_X86_RELOCATE;
             int table_row = 0;
@@ -515,7 +543,9 @@ int pl_x86_relocate_elf(
             pl_u64 moved_target = 0u;
             int target_moved = symbol_code
                 && project_code_address(native, candidate, &moved_target);
-            if (symbol_code && !target_moved) {
+            if (symbol_code && !target_moved
+                    && !(allocated_place && !code_place
+                         && pc_relative_type(relocation.type))) {
                 pl_u64 moved_symbol = 0u;
                 if (project_code_address(
                         native, symbol.value, &moved_symbol)) {
@@ -524,6 +554,11 @@ int pl_x86_relocate_elf(
                     target_moved = 1;
                 }
             }
+            /* An unowned datum whose final coordinate has no retained code
+             * projection remains a literal. Do not manufacture a pointer by
+             * moving its construction symbol and retaining a stale addend.
+             * Proved shared-base rows instead resolve their actual targets
+             * below, and fail publication if a required target is missing. */
 
             if (section.flags & PL_ELF_SECTION_ALLOC) {
                 if ((relocation.type == R_X86_64_RELATIVE

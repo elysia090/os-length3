@@ -1,9 +1,50 @@
-#include "../src/internal/select-x86.h"
+#include "../src/internal/x86-selection.h"
 
 #include <stdio.h>
 #include <string.h>
 
 #define SELECT_OUTPUT_CAPACITY 256u
+
+#if defined(__x86_64__) && defined(__GNUC__)
+static pl_u64 and32_mask_flags(pl_u32 value, pl_u32 mask)
+{
+    pl_u64 flags = 0u;
+    __asm__ volatile(
+        "movl %1, %%esi\n\t"
+        "andl %2, %%esi\n\t"
+        "movq %%rsp, %%rsi\n\t"
+        "pushfq\n\tpopq %0"
+        : "=r"(flags) : "r"(value), "r"(mask)
+        : "rsi", "cc", "memory");
+    return flags;
+}
+
+static pl_u64 test8_mask_flags(pl_u32 value, pl_u32 mask)
+{
+    pl_u64 flags = 0u;
+    __asm__ volatile(
+        "movl %1, %%esi\n\t"
+        "testb %b2, %%sil\n\t"
+        "movq %%rsp, %%rsi\n\t"
+        "pushfq\n\tpopq %0"
+        : "=r"(flags) : "r"(value), "r"(mask)
+        : "rsi", "cc", "memory");
+    return flags;
+}
+
+static pl_u64 test16_mask_flags(pl_u32 value, pl_u32 mask)
+{
+    pl_u64 flags = 0u;
+    __asm__ volatile(
+        "movl %1, %%esi\n\t"
+        "testw %w2, %%si\n\t"
+        "movq %%rsp, %%rsi\n\t"
+        "pushfq\n\tpopq %0"
+        : "=r"(flags) : "r"(value), "r"(mask)
+        : "rsi", "cc", "memory");
+    return flags;
+}
+#endif
 
 static int select_with_fields(const pl_u8 *bytes, pl_u32 count,
                               pl_u64 start, int construction_fields,
@@ -201,6 +242,35 @@ static int candidates_projected(
     if (!status)
         status = pl_x86_select_candidates(
             &frontend, &selection_workspace, &block, candidates);
+    return status;
+}
+
+static int write_projected_candidate(
+    const pl_u8 *bytes, pl_u32 count, pl_u32 live_output_mask,
+    const pl_x86_native_selection *selection,
+    pl_u8 output[SELECT_OUTPUT_CAPACITY], pl_u32 *written)
+{
+    pl_x86_map map = {
+        bytes, 0x1000u, count, count,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u,
+    };
+    pl_x86_image image = { &map, 1u, 0u, 0x1000u };
+    pl_x86_frontend frontend;
+    static pl_u8 first[1024u * 1024u];
+    static pl_u8 second[1024u * 1024u];
+    pl_x86_block_workspace workspace = {
+        first, second, sizeof first, 64u,
+    };
+    pl_x86_block block;
+    int status = pl_x86_frontend_open(&image, &frontend);
+    if (!status)
+        status = pl_x86_block_lower_projected_until(
+            &frontend, image.entry, image.entry + count,
+            live_output_mask, &workspace, &block);
+    if (!status)
+        status = pl_x86_select_write_measured(
+            &frontend, &block, selection,
+            output, SELECT_OUTPUT_CAPACITY, written);
     return status;
 }
 
@@ -1433,6 +1503,69 @@ int main(void)
         0x48u, 0xc7u, 0xc7u, 0x18u, 0x4bu, 0x8bu, 0x81u,
         0xebu, 0x00u,
     };
+    /* A RIP-relative address remains 64-bit after the PIE load bias is
+     * applied.  A short MOV EDX,ECX would discard the upper half even when
+     * the link-time target happens to fit in 32 bits. */
+    static const pl_u8 zero_flag_address_copy_source[] = {
+        0x48u, 0x8du, 0x0du, 0x00u, 0x01u, 0x00u, 0x00u,
+        0x31u, 0xc0u,
+        0x48u, 0x89u, 0xcau,
+        0xebu, 0x00u,
+    };
+    /* OpenSSL's CPU-feature branch chooses between two static descriptors.
+     * Their link-time offsets are small, but their runtime PIE addresses are
+     * not 32-bit values. */
+    static const pl_u8 address_select_source[] = {
+        0x48u, 0x8du, 0x15u, 0x92u, 0x96u, 0x34u, 0x00u,
+        0x48u, 0x8du, 0x05u, 0x4bu, 0x95u, 0x34u, 0x00u,
+        0x48u, 0x0fu, 0x45u, 0xc2u,
+    };
+    /* ld_stop_phase publishes phase_data in RAX before adding it to RBX.
+     * If the 64-bit ADD uses RAX instead of an immediate, its publication
+     * must precede the ADD even though the SSA operand is a constant. */
+    static const pl_u8 published_address_add_source[] = {
+        0x48u, 0x8du, 0x1cu, 0xc0u,
+        0x48u, 0x8du, 0x05u, 0x9fu, 0xd4u, 0x28u, 0x00u,
+        0x48u, 0xc1u, 0xe3u, 0x06u,
+        0x48u, 0x01u, 0xc3u,
+        0x48u, 0x81u, 0xecu, 0x20u, 0x01u, 0x00u, 0x00u,
+    };
+    /* A second LEA derived from a RIP-relative address still carries the
+     * load bias.  Replacing it with MOV ECX,0x28d8c0 loses that bias. */
+    static const pl_u8 derived_address_source[] = {
+        0x48u, 0x8du, 0x15u, 0x3au, 0x08u, 0x22u, 0x00u,
+        0x48u, 0x8du, 0x4au, 0x90u,
+        0xebu, 0x2au,
+    };
+    /* alloc_slot shifts EDX with the entry CL, then replaces ECX from R8D
+     * for the independent EAX shift.  The two counts are not interchangeable. */
+    static const pl_u8 entry_shift_count_source[] = {
+        0x41u, 0x83u, 0xeau, 0x01u,
+        0x83u, 0xe5u, 0x3fu,
+        0xd3u, 0xe2u,
+        0x44u, 0x89u, 0xc1u,
+        0x41u, 0x83u, 0xe2u, 0x1fu,
+        0xc1u, 0xe5u, 0x06u,
+        0x83u, 0xeau, 0x01u,
+        0xd3u, 0xe0u,
+        0x41u, 0x83u, 0xcau, 0x20u,
+    };
+    /* The GCC allocator forms a bitmap mask from the entry CL. Moving the
+     * constant into RCX before the shift would replace that count with 1. */
+    static const pl_u8 shift_count_same_register_source[] = {
+        0x41u, 0xb8u, 0x01u, 0x00u, 0x00u, 0x00u, /* mov r8d, 1 */
+        0x48u, 0x0fu, 0xafu, 0xd5u,               /* imul rdx, rbp */
+        0x49u, 0xd3u, 0xe0u,                      /* shl r8, cl */
+        0x4cu, 0x89u, 0xc1u,                      /* mov rcx, r8 */
+        0xebu, 0x00u,                            /* jmp next */
+    };
+    /* A 32-bit index may feed a 64-bit stack address. Folding the two LEAs
+     * is legal, but writing EDI would discard the stack pointer's high half. */
+    static const pl_u8 wide_indexed_address_source[] = {
+        0x8du, 0x51u, 0xffu,                      /* lea edx, [rcx-1] */
+        0x48u, 0x8du, 0x7cu, 0x15u, 0x05u,       /* lea rdi, [rbp+rdx+5] */
+        0xebu, 0x00u,
+    };
     /* Required Byte* coordinate 0xffffffff81202179 in Linux 7.1.8.  EDX is
      * the low word of the already-published shifted RBP node.  It therefore
      * reads EBP directly instead of rebuilding that shift subtree. */
@@ -1550,12 +1683,12 @@ int main(void)
         0x49u, 0xc7u, 0xc0u, 0xddu, 0xd5u, 0x8cu, 0x81u,
         0x49u, 0xc7u, 0xc1u, 0x8eu, 0xeeu, 0x8cu, 0x81u,
         0x49u, 0x89u, 0xc7u,
-        0x0fu, 0xb6u, 0xc4u,
         0x48u, 0x89u, 0xc1u,
         0x48u, 0xc1u, 0xe9u, 0x0cu,
         0x48u, 0x89u, 0xc2u,
         0x48u, 0xc1u, 0xeau, 0x0eu,
         0x0fu, 0xb6u, 0xf0u,
+        0x0fu, 0xb6u, 0xc4u,
     };
     /* Linux 7.1.8 x86-64 code at 0xffffffff8122799a.  The low word of
      * IMUL is multiplication modulo 2^64, hence IMUL RAX,RSI,1<<20 is
@@ -1664,7 +1797,9 @@ int main(void)
     /* At 0xffffffff812279b5 both OR arms are disposable entry owners.  Split
      * forced bits 40 and 2 across them, join once, then apply the encodable
      * mask -28.  The two force instructions occupy the same dependency
-     * wave, so the exact eight-work result has span three. */
+     * wave, so the exact eight-work result has span three. The dead-flag OR
+     * uses AL's two-byte immediate form, so bit 2 stays on RAX and bit 40
+     * moves to RDX. The final AND, not that byte OR, owns the live flags. */
     static const pl_u8 split_entry_overlay_source[] = {
         0x48u, 0x09u, 0xd0u,
         0x48u, 0x0fu, 0xbau, 0xe8u, 0x28u,
@@ -1676,8 +1811,8 @@ int main(void)
         0x31u, 0xffu,
     };
     static const pl_u8 split_entry_overlay_result[] = {
-        0x48u, 0x0fu, 0xbau, 0xe8u, 0x28u,
-        0x80u, 0xcau, 0x04u,
+        0x0cu, 0x04u,
+        0x48u, 0x0fu, 0xbau, 0xeau, 0x28u,
         0x48u, 0x09u, 0xd0u,
         0x48u, 0x83u, 0xe0u, 0xe4u,
         0x31u, 0xffu,
@@ -1841,6 +1976,26 @@ int main(void)
         0x45u, 0x89u, 0xd0u,
         0x45u, 0x89u, 0xd1u,
     };
+    /* BusyBox's aligned stack reservation has one shared subtraction result
+     * in RSP and R14. Compute the aligned count once, subtract independently,
+     * and let the final RSP subtraction publish the exact flags. The generic
+     * frame's restore MOV made the independent work/span minima disagree. */
+    static const pl_u8 shared_sub_source[] = {
+        0xffu, 0xc0u,
+        0x48u, 0x83u, 0xc0u, 0x0fu,
+        0x48u, 0xc1u, 0xe8u, 0x04u,
+        0x48u, 0xc1u, 0xe0u, 0x04u,
+        0x48u, 0x29u, 0xc4u,
+        0x49u, 0x89u, 0xe6u,
+    };
+    static const pl_u8 shared_sub_result[] = {
+        0x49u, 0x89u, 0xe6u,
+        0x8du, 0x40u, 0x01u,
+        0x48u, 0x83u, 0xc0u, 0x0fu,
+        0x48u, 0x83u, 0xe0u, 0xf0u,
+        0x49u, 0x29u, 0xc6u,
+        0x48u, 0x29u, 0xc4u,
+    };
     /* Required Byte* coordinate 0xffffffff815641f9 in Linux 7.1.8.  STC is
      * dead before SAR/TEST.  RDX receives the entry RDI value, but the TEST
      * can still read unchanged RDI directly; testing the new RDX owner would
@@ -1881,6 +2036,102 @@ int main(void)
         fprintf(stderr,
                 "native x86 selection: RED (joint Pareto contract)\n");
         return 18;
+    }
+    /* A segment-base publication followed by a jump has two observable
+     * operations even though its pure SSA plan has no node. Reconstruct both
+     * from the architectural state and control shell, not copied code. */
+    static const pl_u8 fs_base_jump[] = {
+        0xf3u, 0x48u, 0x0fu, 0xaeu, 0xd2u,
+        0xe9u, 0xf6u, 0xffu, 0xffu, 0xffu,
+    };
+    static const pl_u8 fs_base_jump_result[] = {
+        0xf3u, 0x48u, 0x0fu, 0xaeu, 0xd2u, 0xebu, 0x00u,
+    };
+    status = select(fs_base_jump, sizeof fs_base_jump, 0x1000u,
+                    &selected, output, &written);
+    if (status || !selected.supported || selected.copied_source
+            || !selected.normalized_family_present || !selected.direct_frame
+            || selected.output_work != 2u || selected.output_span != 2u
+            || written != sizeof fs_base_jump_result
+            || memcmp(output, fs_base_jump_result,
+                      sizeof fs_base_jump_result)) {
+        fprintf(stderr,
+                "native x86 selection: RED (segment-base state transfer "
+                "status=%d source/normalized/direct=%u/%u/%u "
+                "work/span/bytes=%u/%u/%u)\n",
+                status, (unsigned)selected.copied_source,
+                (unsigned)selected.normalized_family_present,
+                (unsigned)selected.direct_frame,
+                selected.output_work, selected.output_span, written);
+        return 218;
+    }
+    status = select_relaxed(fs_base_jump, sizeof fs_base_jump, 0x1000u,
+                            &selected, output, &written);
+    if (status || !selected.supported || selected.copied_source
+            || !selected.normalized_family_present || !selected.direct_frame
+            || selected.output_work != 2u || selected.output_span != 2u
+            || written != sizeof fs_base_jump) {
+        fprintf(stderr,
+                "native x86 selection: RED (segment-base near control "
+                "status=%d source/normalized/direct=%u/%u/%u "
+                "work/span/bytes=%u/%u/%u)\n",
+                status, (unsigned)selected.copied_source,
+                (unsigned)selected.normalized_family_present,
+                (unsigned)selected.direct_frame,
+                selected.output_work, selected.output_span, written);
+        return 219;
+    }
+    static const pl_u8 gs_base_jump[] = {
+        0xf3u, 0x49u, 0x0fu, 0xaeu, 0xd8u,
+        0xe9u, 0xf6u, 0xffu, 0xffu, 0xffu,
+    };
+    static const pl_u8 gs_base_jump_result[] = {
+        0xf3u, 0x49u, 0x0fu, 0xaeu, 0xd8u, 0xebu, 0x00u,
+    };
+    status = select(gs_base_jump, sizeof gs_base_jump, 0x1000u,
+                    &selected, output, &written);
+    if (status || !selected.supported || selected.copied_source
+            || !selected.normalized_family_present || !selected.direct_frame
+            || selected.output_work != 2u || selected.output_span != 2u
+            || written != sizeof gs_base_jump_result
+            || memcmp(output, gs_base_jump_result,
+                      sizeof gs_base_jump_result)) {
+        fprintf(stderr,
+                "native x86 selection: RED (high-register GS base "
+                "status=%d source/normalized/direct=%u/%u/%u "
+                "work/span/bytes=%u/%u/%u)\n",
+                status, (unsigned)selected.copied_source,
+                (unsigned)selected.normalized_family_present,
+                (unsigned)selected.direct_frame,
+                selected.output_work, selected.output_span, written);
+        return 220;
+    }
+    /* 2^32 is outside LEA's signed disp32. Keeping the constant as a live
+     * RAX publication and using it as the LEA index is exactly two native
+     * operations, despite the normalized addition having one SSA node. */
+    static const pl_u8 wide_constant_add[] = {
+        0x48u, 0xb8u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x01u, 0x00u, 0x00u, 0x00u,
+        0x4cu, 0x8du, 0x2cu, 0x06u,
+    };
+    status = select(wide_constant_add, sizeof wide_constant_add, 0x1000u,
+                    &selected, output, &written);
+    if (status || !selected.supported || selected.copied_source
+            || !selected.normalized_family_present
+            || !selected.direct_affine_frame
+            || selected.output_work != 2u || selected.output_span != 2u
+            || written != sizeof wide_constant_add
+            || memcmp(output, wide_constant_add,
+                      sizeof wide_constant_add)) {
+        fprintf(stderr,
+                "native x86 selection: RED (published wide constant add "
+                "status=%d source/normalized/affine=%u/%u/%u "
+                "work/span/bytes=%u/%u/%u)\n",
+                status, (unsigned)selected.copied_source,
+                (unsigned)selected.normalized_family_present,
+                (unsigned)selected.direct_affine_frame,
+                selected.output_work, selected.output_span, written);
+        return 221;
     }
     pl_x86_native_candidates long_candidates;
     status = candidates(
@@ -2866,6 +3117,32 @@ int main(void)
                 status, flag_only_candidates.count);
         return 98;
     }
+    /* A self-XOR has no low-lane input, but the copied base still owns the
+     * high bits. Neither its instruction nor its dependency may disappear. */
+    static const pl_u8 copied_byte_clear[] = {
+        0x48u, 0x89u, 0xd1u, 0x30u, 0xc9u, /* mov rcx,rdx; xor cl,cl */
+    };
+    static const pl_u8 copied_word_clear[] = {
+        0x48u, 0x89u, 0xd1u, 0x66u, 0x31u, 0xc9u,
+    };
+    const pl_u8 *copied_clear[] = { copied_byte_clear, copied_word_clear };
+    const pl_u32 copied_clear_bytes[] = {
+        sizeof copied_byte_clear, sizeof copied_word_clear,
+    };
+    for (pl_u32 index = 0u; index < 2u; ++index) {
+        status = select_projected(copied_clear[index], copied_clear_bytes[index],
+            0x1ffffu, &selected, output, &written, 0);
+        if (status || !selected.supported || selected.output_work != 2u
+                || selected.output_span != 2u
+                || written != copied_clear_bytes[index]
+                || memcmp(output, copied_clear[index], written)) {
+            fprintf(stderr, "native x86 selection: RED (copied lane clear "
+                    "width=%u status=%d work/span/bytes=%u/%u/%u)\n",
+                    index ? 16u : 8u, status, selected.output_work,
+                    selected.output_span, written);
+            return 242;
+        }
+    }
     /* `insert(local, constant, 8|16)` is an in-place lane constant write:
      * `mov r14b, 1` beside a register copy.  The frame had no production for a
      * constant inner (in_place_lane_insert only accepts a lane ALU inner), so
@@ -2940,10 +3217,8 @@ int main(void)
                 root_unary_candidates.count);
         return 101;
     }
-    /* `bt` whose normalized argument order is (prior, base, offset, bits) but
-     * whose physical rewriter hands over (prior, offset, base, bits) when the
-     * offset is an immediate.  Reading base from the wrong slot left the block
-     * copied-source. */
+    /* BIT_FLAGS keeps (prior, base, offset, width), including an immediate
+     * offset.  Swapping the two register operands tests a different bit. */
     static const pl_u8 bit_test_constant_offset[] = {
         0x48u, 0xc7u, 0xc6u, 0xc8u, 0xd8u, 0x8cu, 0x81u,
                                                   /* movabs rsi, addr */
@@ -2958,6 +3233,64 @@ int main(void)
         fprintf(stderr, "native x86 selection: RED (bit test constant offset "
                 "status=%d candidates=%u)\n", status, bit_test_candidates.count);
         return 102;
+    }
+    /* GCC's musl allocator uses `bt %r8d,%ecx; jae`.  The equal-cost direct
+     * candidate must test ECX at R8D, never R8D at ECX. */
+    static const pl_u8 bit_test_register_offset[] = {
+        0x44u, 0x0fu, 0xa3u, 0xc1u, 0x73u, 0x00u,
+    };
+    status = select(
+        bit_test_register_offset, sizeof bit_test_register_offset,
+        0x1000u, &selected, output, &written);
+    if (status || !selected.supported || selected.copied_source
+            || written != sizeof bit_test_register_offset
+            || memcmp(output, bit_test_register_offset,
+                      sizeof bit_test_register_offset)) {
+        fprintf(stderr, "native x86 selection: RED (bit test register order "
+                "status=%d copied=%u written=%u)\n", status,
+                (unsigned)selected.copied_source, written);
+        return 213;
+    }
+    /* A consumed flag result must materialize each live dependent output.
+     * The malloc path computes RCX = (RDX - R13) - 4 while retaining R15 and
+     * the SUB flags.  Treating RCX's own future publication as an available
+     * input used to erase the LEA and corrupted later address calculations. */
+    static const pl_u8 consumed_flag_source[] = {
+        0x48u, 0x89u, 0xd0u,                    /* mov rax, rdx */
+        0x4cu, 0x0fu, 0xafu, 0xfau,             /* imul r15, rdx */
+        0x4cu, 0x29u, 0xe8u,                    /* sub rax, r13 */
+        0x48u, 0x8du, 0x48u, 0xfcu,             /* lea rcx, [rax-4] */
+    };
+    static const pl_u8 consumed_flag_result[] = {
+        0x4cu, 0x0fu, 0xafu, 0xfau,             /* imul r15, rdx */
+        0x4cu, 0x29u, 0xeau,                    /* sub rdx, r13 */
+        0x48u, 0x8du, 0x4au, 0xfcu,             /* lea rcx, [rdx-4] */
+    };
+    status = select_projected(
+        consumed_flag_source, sizeof consumed_flag_source,
+        (1u << 1u) | (1u << 15u) | (1u << PL_X86_RFLAGS_LOCAL),
+        &selected, output, &written, 0);
+    if (status || !selected.supported || selected.copied_source
+            || written != sizeof consumed_flag_result
+            || memcmp(output, consumed_flag_result,
+                      sizeof consumed_flag_result)) {
+        fprintf(stderr, "native x86 selection: RED (consumed flag output "
+                "status=%d copied=%u written=%u)\n", status,
+                (unsigned)selected.copied_source, written);
+        return 214;
+    }
+    status = select_projected(
+        consumed_flag_source, sizeof consumed_flag_source,
+        (1u << 1u) | (1u << 2u) | (1u << 15u)
+            | (1u << PL_X86_RFLAGS_LOCAL),
+        &selected, output, &written, 0);
+    if (status || !selected.supported
+            || written != sizeof consumed_flag_source
+            || memcmp(output, consumed_flag_source,
+                      sizeof consumed_flag_source)) {
+        fprintf(stderr, "native x86 selection: RED (consumed flag keeps "
+                "live source status=%d written=%u)\n", status, written);
+        return 215;
     }
     /* The final flag producer combines an entry register with an immediate
      * while another publication overwrites that register.  The preload shape
@@ -3008,6 +3341,225 @@ int main(void)
                 constant_candidates.count, constant_span, constant_work,
                 constant_candidates.diagnostic.blocking_work);
         return 104;
+    }
+    /* CMP consumes entry EAX through an AND tree, while the CMOV candidate
+     * publishes a new EAX. The only valid schedule is to evaluate and test
+     * the old EAX before publishing the candidate; MOV and CMOV preserve the
+     * comparison flags. This must not use the immediate-select shortcut. */
+    static const pl_u8 compare_before_candidate[] = {
+        0x83u, 0xe0u, 0x07u,             /* and eax, 7         */
+        0xbbu, 0x57u, 0x13u, 0u, 0u,   /* mov ebx, 0x1357   */
+        0x83u, 0xf8u, 0x03u,             /* cmp eax, 3         */
+        0xb8u, 0x68u, 0x24u, 0u, 0u,   /* mov eax, 0x2468   */
+        0x0fu, 0x44u, 0xd8u,             /* cmove ebx, eax    */
+        0xebu, 0x00u,                    /* jmp next          */
+    };
+    pl_x86_native_candidates compare_handoff_candidates;
+    status = candidates_projected(
+        compare_before_candidate, sizeof compare_before_candidate,
+        0x7ffffu, &compare_handoff_candidates);
+    if (status || compare_handoff_candidates.count < 2u) {
+        fprintf(stderr, "native x86 selection: RED (compare before candidate "
+                "status=%d candidates=%u diagnostic=0x%x)\n", status,
+                compare_handoff_candidates.count,
+                compare_handoff_candidates.diagnostic.blocking_work);
+        return 222;
+    }
+    const pl_x86_native_selection *compare_handoff_frame = 0;
+    for (pl_u32 index = 0u;
+            index < compare_handoff_candidates.count; ++index)
+        if (compare_handoff_candidates.candidate[index]
+                .direct_compare_tree_select_frame)
+            compare_handoff_frame =
+                &compare_handoff_candidates.candidate[index];
+    static const pl_u8 compare_handoff_result[] = {
+        0x83u, 0xe0u, 0x07u,             /* and eax, 7         */
+        0x83u, 0xf8u, 0x03u,             /* cmp eax, 3         */
+        0xbbu, 0x57u, 0x13u, 0u, 0u,   /* mov ebx, 0x1357   */
+        0xb8u, 0x68u, 0x24u, 0u, 0u,   /* mov eax, 0x2468   */
+        0x0fu, 0x44u, 0xd8u,             /* cmove ebx, eax    */
+        0xebu, 0x00u,                    /* jmp next          */
+    };
+    status = compare_handoff_frame ? write_projected_candidate(
+        compare_before_candidate, sizeof compare_before_candidate,
+        0x7ffffu, compare_handoff_frame, output, &written) : -1;
+    if (status || written != sizeof compare_handoff_result
+            || memcmp(output, compare_handoff_result,
+                sizeof compare_handoff_result)) {
+        fprintf(stderr, "native x86 selection: RED (compare before "
+                "candidate emission status=%d bytes=%u)\n",
+                status, written);
+        return 224;
+    }
+    static const pl_u8 compare_before_current[] = {
+        0x83u, 0xe0u, 0x07u,             /* and eax, 7         */
+        0xbbu, 0x68u, 0x24u, 0u, 0u,   /* mov ebx, 0x2468   */
+        0x83u, 0xf8u, 0x03u,             /* cmp eax, 3         */
+        0xb8u, 0x57u, 0x13u, 0u, 0u,   /* mov eax, 0x1357   */
+        0x0fu, 0x44u, 0xc3u,             /* cmove eax, ebx    */
+        0xebu, 0x00u,                    /* jmp next          */
+    };
+    pl_x86_native_candidates compare_current_candidates;
+    status = candidates_projected(
+        compare_before_current, sizeof compare_before_current,
+        0x7ffffu, &compare_current_candidates);
+    const pl_x86_native_selection *compare_current_frame = 0;
+    for (pl_u32 index = 0u;
+            !status && index < compare_current_candidates.count; ++index)
+        if (compare_current_candidates.candidate[index]
+                .direct_compare_tree_select_frame)
+            compare_current_frame =
+                &compare_current_candidates.candidate[index];
+    if (status || !compare_current_frame) {
+        fprintf(stderr, "native x86 selection: RED (compare before current "
+                "status=%d candidates=%u diagnostic=0x%x)\n", status,
+                compare_current_candidates.count,
+                compare_current_candidates.diagnostic.blocking_work);
+        return 223;
+    }
+    static const pl_u8 compare_current_result[] = {
+        0x83u, 0xe0u, 0x07u,             /* and eax, 7         */
+        0x83u, 0xf8u, 0x03u,             /* cmp eax, 3         */
+        0xb8u, 0x57u, 0x13u, 0u, 0u,   /* mov eax, 0x1357   */
+        0xbbu, 0x68u, 0x24u, 0u, 0u,   /* mov ebx, 0x2468   */
+        0x0fu, 0x44u, 0xc3u,             /* cmove eax, ebx    */
+        0xebu, 0x00u,                    /* jmp next          */
+    };
+    status = write_projected_candidate(
+        compare_before_current, sizeof compare_before_current,
+        0x7ffffu, compare_current_frame, output, &written);
+    if (status || written != sizeof compare_current_result
+            || memcmp(output, compare_current_result,
+                sizeof compare_current_result)) {
+        fprintf(stderr, "native x86 selection: RED (compare before "
+                "current emission status=%d bytes=%u)\n",
+                status, written);
+        return 225;
+    }
+    /* The linked .rodata immediate retains its owning MOV byte-for-byte.
+     * BSR's zero-input seed is also live: input AL < 16 reaches zero after
+     * SHR, and the following ADD must then produce zero, not old ECX + 1. */
+    static const pl_u8 live_construction_source[] = {
+        0x48u, 0x89u, 0xd7u,
+        0xbeu, 0x00u, 0x10u, 0x00u, 0x00u,
+        0x48u, 0xc7u, 0xc2u, 0x4cu, 0x02u, 0x8eu, 0x81u,
+        0xb9u, 0xffu, 0xffu, 0xffu, 0xffu,
+        0xc0u, 0xe8u, 0x04u,
+        0x0fu, 0xb6u, 0xc0u,
+        0x0fu, 0xbdu, 0xc8u,
+        0x83u, 0xc1u, 0x01u,
+    };
+    static const pl_u8 live_construction_result[] = {
+        0x48u, 0x89u, 0xd7u,
+        0xbeu, 0x00u, 0x10u, 0x00u, 0x00u,
+        0x48u, 0xc7u, 0xc2u, 0x4cu, 0x02u, 0x8eu, 0x81u,
+        0xb9u, 0xffu, 0xffu, 0xffu, 0xffu,
+        0xc0u, 0xe8u, 0x04u,
+        0x0fu, 0xb6u, 0xc0u,
+        0x0fu, 0xbdu, 0xc8u,
+        0x83u, 0xc1u, 0x01u,
+    };
+    status = select_with_fields(
+        live_construction_source, sizeof live_construction_source,
+        0x1000u, 1, 0, &selected, output, &written);
+    if (status
+            || written != sizeof live_construction_result
+            || memcmp(output, live_construction_result,
+                sizeof live_construction_result)) {
+        fprintf(stderr, "native x86 selection: RED (live construction "
+                "status=%d frame=%u bytes=%u)\n", status,
+                (unsigned)selected.direct_live_frame, written);
+        return 226;
+    }
+    /* Three acyclic entry-register publications precede a condition on
+     * entry RFLAGS. The 32-bit MOV is a zero extension, not a second value
+     * computation; a linked near Jcc field remains a control fixup. */
+    static const pl_u8 entry_flag_extension_branch[] = {
+        0x48u, 0x89u, 0xf5u,             /* mov rbp, rsi       */
+        0x48u, 0x89u, 0xd3u,             /* mov rbx, rdx       */
+        0x89u, 0xfeu,                    /* mov esi, edi       */
+        0x0fu, 0x8eu, 0u, 0u, 0u, 0u,  /* jle next           */
+    };
+    static const pl_u8 entry_flag_extension_result[] = {
+        0x48u, 0x89u, 0xd3u,             /* mov rbx, rdx       */
+        0x48u, 0x89u, 0xf5u,             /* mov rbp, rsi       */
+        0x89u, 0xfeu,                    /* mov esi, edi       */
+        0x0fu, 0x8eu, 0u, 0u, 0u, 0u,  /* jle next           */
+    };
+    status = select_with_fields(
+        entry_flag_extension_branch,
+        sizeof entry_flag_extension_branch,
+        0x1000u, 1, 1, &selected, output, &written);
+    if (status || !selected.direct_entry_branch_frame
+            || written != sizeof entry_flag_extension_result
+            || memcmp(output, entry_flag_extension_result,
+                sizeof entry_flag_extension_result)) {
+        fprintf(stderr, "native x86 selection: RED (entry flag extension "
+                "status=%d frame=%u bytes=%u)\n", status,
+                (unsigned)selected.direct_entry_branch_frame, written);
+        return 227;
+    }
+    /* The AND result is killed by the following full-width MOV, but its
+     * complete defined flags survive to the branch. A 16-bit TEST of 0x80
+     * retains ZF/PF and has SF=CF=OF=0 just like the 32-bit AND. The 8-bit
+     * spelling is invalid here because it would set SF for bit 7. */
+    static const pl_u8 masked_flag_branch[] = {
+        0x81u, 0xe6u, 0x80u, 0u, 0u, 0u, /* and esi, 0x80   */
+        0x48u, 0x89u, 0xe6u,             /* mov rsi, rsp    */
+        0x75u, 0u,                      /* jne next        */
+    };
+    static const pl_u8 masked_flag_branch_result[] = {
+        0x66u, 0xf7u, 0xc6u, 0x80u, 0u, /* test si, 0x80  */
+        0x48u, 0x89u, 0xe6u,             /* mov rsi, rsp    */
+        0x75u, 0u,                      /* jne next        */
+    };
+    status = select(masked_flag_branch, sizeof masked_flag_branch,
+                    0x1000u, &selected, output, &written);
+    if (status || !selected.direct_mask_flag_branch_frame
+            || written != sizeof masked_flag_branch_result
+            || memcmp(output, masked_flag_branch_result,
+                sizeof masked_flag_branch_result)) {
+        fprintf(stderr, "native x86 selection: RED (masked flag branch "
+                "status=%d frame=%u bytes=%u)\n", status,
+                (unsigned)selected.direct_mask_flag_branch_frame, written);
+        return 228;
+    }
+#if defined(__x86_64__) && defined(__GNUC__)
+    /* AF is architecturally undefined for both logical instructions.
+     * Compare every defined arithmetic flag after the flag-preserving MOV. */
+    static const pl_u32 masks[] = {
+        0u, 1u, 0x7fu, 0x80u, 0xffu, 0x100u, 0x7fffu,
+    };
+    for (pl_u32 mask_at = 0u;
+            mask_at < sizeof masks / sizeof masks[0]; ++mask_at) {
+        pl_u32 mask = masks[mask_at];
+        for (pl_u32 value = 0u; value < 65536u; ++value) {
+            pl_u32 input = value
+                | ((value * 0x9e3779b9u) & 0xffff0000u);
+            pl_u64 narrowed = mask <= 0x7fu
+                ? test8_mask_flags(input, mask)
+                : test16_mask_flags(input, mask);
+            if (((and32_mask_flags(input, mask) ^ narrowed)
+                    & 0x8c5u) != 0u) {
+                fprintf(stderr, "native x86 selection: RED (masked flags "
+                        "input=0x%x mask=0x%x)\n", input, mask);
+                return 229;
+            }
+        }
+    }
+#endif
+    static const pl_u8 sign_bit_mask_branch[] = {
+        0x81u, 0xe6u, 0u, 0x80u, 0u, 0u, /* and esi, 0x8000 */
+        0x48u, 0x89u, 0xe6u,
+        0x75u, 0u,
+    };
+    status = select(sign_bit_mask_branch, sizeof sign_bit_mask_branch,
+                    0x1000u, &selected, output, &written);
+    if (status || selected.direct_mask_flag_branch_frame) {
+        fprintf(stderr, "native x86 selection: RED (narrow TEST would "
+                "change SF, status=%d frame=%u)\n", status,
+                (unsigned)selected.direct_mask_flag_branch_frame);
+        return 230;
     }
     /* A CMP/TEST publishes no GPR value, but its condition projection is a
      * Boolean observation (`sete al`).  The frame only accepted ALU value
@@ -3094,6 +3646,77 @@ int main(void)
                 status, carry_candidates.count,
                 carry_candidates.diagnostic.blocking_work);
         return 108;
+    }
+    /* The carry consumed by ADC is produced by CMP, not by the preceding
+     * SHL.  The final ADC flags and both copies of its result are observed. */
+    static const pl_u8 shift_compare_carry[] = {
+        0xc1u, 0xe0u, 0x07u,                     /* shl eax, 7         */
+        0x48u, 0x83u, 0xfdu, 0x01u,              /* cmp rbp, 1         */
+        0x83u, 0xd0u, 0x00u,                     /* adc eax, 0         */
+        0x41u, 0x89u, 0xc4u,                     /* mov r12d, eax      */
+        0x66u, 0x66u, 0x2eu, 0x0fu, 0x1fu, 0x84u, 0x00u,
+        0x00u, 0x00u, 0x00u, 0x00u,              /* alignment NOP      */
+    };
+    pl_x86_native_candidates shift_carry_candidates;
+    status = candidates_projected(
+        shift_compare_carry, sizeof shift_compare_carry,
+        0x11001u, &shift_carry_candidates);
+    static const pl_u8 shift_compare_carry_result[] = {
+        0xc1u, 0xe0u, 0x07u,
+        0x48u, 0x83u, 0xfdu, 0x01u,
+        0x83u, 0xd0u, 0x00u,
+        0x41u, 0x89u, 0xc4u,
+    };
+    pl_u8 shift_carry_output[SELECT_OUTPUT_CAPACITY];
+    pl_u32 shift_carry_written = 0u;
+    if (!status && shift_carry_candidates.count)
+        status = write_projected_candidate(
+            shift_compare_carry, sizeof shift_compare_carry,
+            0x11001u, &shift_carry_candidates.candidate[0],
+            shift_carry_output, &shift_carry_written);
+    if (status || !shift_carry_candidates.count
+            || shift_carry_written != sizeof shift_compare_carry_result
+            || memcmp(shift_carry_output, shift_compare_carry_result,
+                      sizeof shift_compare_carry_result)) {
+        fprintf(stderr, "native x86 selection: RED (shift/compare/ADC "
+                "carry provenance status=%d candidates=%u first_bytes=%u)\n",
+                status, shift_carry_candidates.count,
+                shift_carry_candidates.count
+                    ? shift_carry_candidates.candidate[0].output_bytes : 0u);
+        return 210;
+    }
+    /* The result is copied to RAX and RDX, but the OR still consumes the
+     * entry RDX. Publishing the masked left operand into RDX first turns
+     * the OR into "or rdx, rdx" and passes a zero-length slice to the call. */
+    static const pl_u8 shared_alu_entry_operand[] = {
+        0x4cu, 0x89u, 0xd8u,                     /* mov rax, r11       */
+        0x48u, 0x89u, 0xcfu,                     /* mov rdi, rcx       */
+        0x4cu, 0x89u, 0xd6u,                     /* mov rsi, r10       */
+        0x49u, 0xb8u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0xffu, 0xffu, 0xffu, 0xffu,             /* movabs r8, mask   */
+        0x4cu, 0x21u, 0xc0u,                     /* and rax, r8       */
+        0x48u, 0x09u, 0xd0u,                     /* or rax, rdx       */
+        0x48u, 0x89u, 0xc2u,                     /* mov rdx, rax      */
+    };
+    pl_x86_native_candidates shared_alu_candidates;
+    status = candidates_projected(
+        shared_alu_entry_operand, sizeof shared_alu_entry_operand,
+        0x101c5u, &shared_alu_candidates);
+    pl_u8 shared_alu_output[SELECT_OUTPUT_CAPACITY];
+    pl_u32 shared_alu_written = 0u;
+    if (!status && shared_alu_candidates.count)
+        status = write_projected_candidate(
+            shared_alu_entry_operand, sizeof shared_alu_entry_operand,
+            0x101c5u, &shared_alu_candidates.candidate[0],
+            shared_alu_output, &shared_alu_written);
+    if (status || !shared_alu_candidates.count
+            || shared_alu_written != sizeof shared_alu_entry_operand
+            || memcmp(shared_alu_output, shared_alu_entry_operand,
+                      sizeof shared_alu_entry_operand)) {
+        fprintf(stderr, "native x86 selection: RED (shared ALU result "
+                "overwrites entry operand status=%d candidates=%u)\n",
+                status, shared_alu_candidates.count);
+        return 211;
     }
     /* A flag-producing ALU whose value AND carry Boolean are both published
      * (`sub rax,rdx; setb dil; neg rdx`): the ALU frame now runs
@@ -5108,6 +5731,187 @@ int main(void)
         return 204;
     }
     status = select(
+        zero_flag_address_copy_source,
+        sizeof zero_flag_address_copy_source, 0x1000u,
+        &selected, output, &written);
+    int has_wide_address_copy = 0;
+    for (pl_u32 at = 0u; at + 2u < written; ++at)
+        if (output[at] == 0x48u && output[at + 1u] == 0x89u
+                && output[at + 2u] == 0xcau)
+            has_wide_address_copy = 1;
+    if (status || !selected.supported || !has_wide_address_copy) {
+        fprintf(stderr,
+                "native x86 selection: RED (PIE address copy width "
+                "status=%d bytes=%u)\n", status, written);
+        return 205;
+    }
+    pl_x86_map address_select_map = {
+        address_select_source, 0x439767u,
+        sizeof address_select_source, sizeof address_select_source,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u,
+    };
+    pl_x86_image address_select_image = {
+        &address_select_map, 1u, 0u, 0x439767u,
+    };
+    status = select_image_projected(
+        &address_select_image, sizeof address_select_source,
+        (1u << 0u) | (1u << 2u), 0,
+        &selected, output, &written, 0);
+    int has_wide_address_select = 0;
+    for (pl_u32 at = 0u; at + 3u < written; ++at)
+        if (output[at] == 0x48u && output[at + 1u] == 0x0fu
+                && output[at + 2u] == 0x45u
+                && output[at + 3u] == 0xc2u)
+            has_wide_address_select = 1;
+    if (status || !selected.supported || !has_wide_address_select) {
+        fprintf(stderr,
+                "native x86 selection: RED (PIE address select width "
+                "status=%d bytes=%u)\n", status, written);
+        return 206;
+    }
+    pl_x86_map published_address_map = {
+        published_address_add_source, 0x4dbb6u,
+        sizeof published_address_add_source,
+        sizeof published_address_add_source,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u,
+    };
+    pl_x86_image published_address_image = {
+        &published_address_map, 1u, 0u, 0x4dbb6u,
+    };
+    status = select_image_projected(
+        &published_address_image, sizeof published_address_add_source,
+        0x7ffffu, 0, &selected, output, &written, 0);
+    pl_u32 address_at = written, add_at = written;
+    for (pl_u32 at = 0u; at < written; ++at) {
+        if (at + 6u < written && output[at] == 0x48u
+                && output[at + 1u] == 0x8du
+                && output[at + 2u] == 0x05u)
+            address_at = at;
+        if (at + 2u < written && output[at] == 0x48u
+                && output[at + 1u] == 0x01u
+                && output[at + 2u] == 0xc3u)
+            add_at = at;
+    }
+    if (status || !selected.supported
+            || (add_at < written && address_at >= add_at)) {
+        fprintf(stderr,
+                "native x86 selection: RED (published PIE address order "
+                "status=%d address/add=%u/%u bytes=%u)\n",
+                status, address_at, add_at, written);
+        return 207;
+    }
+    pl_x86_map derived_address_map = {
+        derived_address_source, 0x6d0efu,
+        sizeof derived_address_source,
+        sizeof derived_address_source,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u,
+    };
+    pl_x86_image derived_address_image = {
+        &derived_address_map, 1u, 0u, 0x6d0efu,
+    };
+    status = select_image_projected(
+        &derived_address_image, sizeof derived_address_source,
+        0x7ffffu, 0, &selected, output, &written, 0);
+    if (status || !selected.supported || !selected.copied_source
+            || written != sizeof derived_address_source) {
+        fprintf(stderr,
+                "native x86 selection: RED (derived PIE address "
+                "status=%d source=%u bytes=%u)\n",
+                status, (unsigned)selected.copied_source, written);
+        return 208;
+    }
+    pl_x86_map entry_shift_map = {
+        entry_shift_count_source, 0x1639efu,
+        sizeof entry_shift_count_source,
+        sizeof entry_shift_count_source,
+        PL_ELF_FLAG_READ | PL_ELF_FLAG_EXECUTE, 1u,
+    };
+    pl_x86_image entry_shift_image = {
+        &entry_shift_map, 1u, 0u, 0x1639efu,
+    };
+    pl_x86_block entry_shift_block;
+    status = select_image_projected(
+        &entry_shift_image, sizeof entry_shift_count_source,
+        0x73cf5u, 0, &selected, output, &written, &entry_shift_block);
+    pl_u32 old_count_shift = written, new_count_move = written;
+    for (pl_u32 at = 0u; at < written; ++at) {
+        if (at + 1u < written && output[at] == 0xd3u
+                && output[at + 1u] == 0xe2u)
+            old_count_shift = at;
+        if (at + 2u < written && output[at] == 0x44u
+                && output[at + 1u] == 0x89u
+                && output[at + 2u] == 0xc1u)
+            new_count_move = at;
+    }
+    if (status || !selected.supported || old_count_shift >= written
+            || new_count_move >= written
+            || old_count_shift >= new_count_move) {
+        pl_x86_alu_schedule_diagnostic diagnostic;
+        int diagnostic_status = status ? status
+            : pl_x86_select_alu_schedule_diagnostic(
+                &entry_shift_block, &diagnostic);
+        fprintf(stderr,
+                "native x86 selection: RED (entry shift count lifetime "
+                "status=%d old-shift/new-move=%u/%u bytes=%u "
+                "laws=%d EDX-source=0x%x ECX-source=0x%x)\n",
+                status, old_count_shift, new_count_move, written,
+                diagnostic_status,
+                diagnostic_status ? 0u : diagnostic.sources[2u],
+                diagnostic_status ? 0u : diagnostic.sources[1u]);
+        return 209;
+    }
+    status = select(
+        shift_count_same_register_source,
+        sizeof shift_count_same_register_source,
+        0x1000u, &selected, output, &written);
+    for (pl_u32 at = 0u; !status && at + 7u < written; ++at) {
+        if (output[at] == 0xb9u && output[at + 1u] == 0x01u
+                && output[at + 2u] == 0x00u
+                && output[at + 3u] == 0x00u
+                && output[at + 4u] == 0x00u
+                && output[at + 5u] == 0x48u
+                && output[at + 6u] == 0xd3u
+                && output[at + 7u] == 0xe1u) {
+            fprintf(stderr,
+                    "native x86 selection: RED (entry CL overwritten "
+                    "before variable shift, direct=%u live=%u "
+                    "nested=%u shared=%u bytes=%u)\n",
+                    (unsigned)selected.direct_frame,
+                    (unsigned)selected.direct_live_frame,
+                    (unsigned)selected.direct_nested_frame,
+                    (unsigned)selected.direct_shared_dag_frame,
+                    written);
+            for (pl_u32 byte = 0u; byte < written; ++byte)
+                fprintf(stderr, "%02x%s", output[byte],
+                        byte + 1u == written ? "\n" : " ");
+            return 210;
+        }
+    }
+    if (status || !selected.supported) {
+        fprintf(stderr,
+                "native x86 selection: RED (entry CL fixture status=%d)\n",
+                status);
+        return 210;
+    }
+    status = select(
+        wide_indexed_address_source, sizeof wide_indexed_address_source,
+        0x1000u, &selected, output, &written);
+    for (pl_u32 at = 0u; !status && at + 3u < written; ++at)
+        if (output[at] == 0x8du && output[at + 1u] == 0x7cu
+                && output[at + 2u] == 0x0du
+                && output[at + 3u] == 0x04u) {
+            fprintf(stderr,
+                    "native x86 selection: RED (wide pointer truncated "
+                    "by LEA EDI)\n");
+            return 211;
+        }
+    if (status || !selected.supported) {
+        fprintf(stderr,
+                "native x86 selection: RED (wide indexed address "
+                "status=%d)\n", status);
+        return 211;
+    }
+    status = select(
         published_zero_extend_source,
         sizeof published_zero_extend_source, 0x1000u,
         &selected, output, &written);
@@ -5608,7 +6412,10 @@ int main(void)
         sizeof byte_select_before_compare, sizeof magnitude_before_scan, sizeof shared_bit_fill,
         sizeof nonzero_before_divide, sizeof shared_shifted_product,
         sizeof high_byte_select, sizeof conditional_bit_projection, sizeof shared_arx_mix };
-    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u, 6u, 6u, 17u, 5u, 7u, 8u, 10u, 39u };
+    /* magnitude_before_scan needs its zero-input seed as well as the absolute
+     * value and BSR. The old six-work limit accepted a missing architectural
+     * input, not an equivalent lower-work implementation. */
+    const pl_u32 cut_work[] = { 6u, 4u, 5u, 7u, 10u, 9u, 3u, 3u, 4u, 3u, 6u, 7u, 17u, 5u, 7u, 8u, 10u, 39u };
     for (pl_u32 cut = 0u; cut < sizeof cut_work / sizeof cut_work[0]; ++cut) {
         status = select_projected(cut_source[cut], cut_length[cut],
             (1u << PL_X86_LOCAL_COUNT) - 1u,
@@ -5781,6 +6588,10 @@ int main(void)
                 (unsigned)selected.direct_nested_frame,
                 selected.output_work, selected.output_span,
                 selected.output_bytes, written);
+        fprintf(stderr, "high8 emitted bytes:");
+        for (pl_u32 byte = 0u; byte < written; ++byte)
+            fprintf(stderr, "%02x", output[byte]);
+        fprintf(stderr, "\n");
         return 217;
     }
     status = select(
@@ -5867,6 +6678,69 @@ int main(void)
                 projected.plan.span, written);
         print_block_shape(&projected);
         return 49;
+    }
+    status = select(shared_sub_source, sizeof shared_sub_source,
+                    0x1000u, &selected, output, &written);
+    if (status || !selected.supported || selected.copied_source
+            || !selected.direct_shared_sub_frame
+            || selected.output_work != 6u || selected.output_span != 4u
+            || selected.output_bytes != sizeof shared_sub_result
+            || written != sizeof shared_sub_result
+            || memcmp(output, shared_sub_result, sizeof shared_sub_result)) {
+        fprintf(stderr,
+                "native x86 selection: RED (shared subtraction "
+                "status=%d direct=%u work/span/bytes=%u/%u/%u "
+                "written=%u)\n", status,
+                (unsigned)selected.direct_shared_sub_frame,
+                selected.output_work, selected.output_span,
+                selected.output_bytes, written);
+        return 229;
+    }
+    /* The final TEST observes the entry RAX, while RDX receives RAX-RBX.
+     * Computing the subtraction in RAX first changes the TEST predicate. */
+    static const pl_u8 entry_test_after_subtract[] = {
+        0x48, 0x89, 0xc2,       /* mov rdx, rax */
+        0x48, 0x29, 0xda,       /* sub rdx, rbx */
+        0x48, 0x85, 0xc0,       /* test rax, rax */
+        0xb8, 0xff, 0xff, 0xff, 0xff, /* mov eax, -1 */
+    };
+    status = select_projected(entry_test_after_subtract,
+        sizeof entry_test_after_subtract,
+        (1u << 0u) | (1u << 2u) | (1u << PL_X86_RFLAGS_LOCAL),
+        &selected, output, &written, 0);
+    if (status || !selected.supported || !selected.copied_source
+            || written != sizeof entry_test_after_subtract
+            || memcmp(output, entry_test_after_subtract,
+                      sizeof entry_test_after_subtract)) {
+        fprintf(stderr,
+            "native x86 selection: RED (entry TEST after independent "
+            "subtraction status=%d source=%u written=%u)\n",
+            status, (unsigned)selected.copied_source, written);
+        return 230;
+    }
+    /* Two CMOVs consume different flag generations. The first observes
+     * entry RFLAGS; TEST r8 produces the second. Moving TEST ahead of both
+     * CMOVs makes the first select depend on r8 instead of entry RCX. */
+    static const pl_u8 independent_cmov_flags[] = {
+        0x41, 0x89, 0xd6,             /* mov r14d, edx */
+        0x4c, 0x8d, 0x6c, 0x24, 0x20, /* lea r13, [rsp+0x20] */
+        0x48, 0x8d, 0x6c, 0x24, 0x14, /* lea rbp, [rsp+0x14] */
+        0x4c, 0x0f, 0x45, 0xe9,       /* cmovne r13, rcx */
+        0x4d, 0x85, 0xc0,             /* test r8, r8 */
+        0x49, 0x0f, 0x45, 0xe8,       /* cmovne rbp, r8 */
+        0x31, 0xd2,                   /* xor edx, edx */
+    };
+    status = select(independent_cmov_flags, sizeof independent_cmov_flags,
+                    0x1000u, &selected, output, &written);
+    if (status || !selected.supported || !selected.copied_source
+            || written != sizeof independent_cmov_flags
+            || memcmp(output, independent_cmov_flags,
+                      sizeof independent_cmov_flags)) {
+        fprintf(stderr,
+            "native x86 selection: RED (independent CMOV flag generations "
+            "status=%d source=%u written=%u)\n",
+            status, (unsigned)selected.copied_source, written);
+        return 231;
     }
     printf("native x86 selection: green (normalized state directly emits shortest acyclic parallel copies and constants; source-relative fields rebound)\n");
     return 0;

@@ -35,6 +35,17 @@ typedef struct {
     pl_u32 response_bytes;
 } artifact_complete_observation;
 
+/* A borrowed immutable observation generator. Reading a row creates only a
+ * register-sized value; constant family/domain columns need not be stored N
+ * times. The generator must remain total and unchanged during projection. */
+typedef struct {
+    const void *context;
+    artifact_complete_observation (*read)(const void *context, pl_u32 index);
+} artifact_observation_view;
+
+artifact_observation_view artifact_observations_view(
+    const artifact_complete_observation *observations);
+
 typedef struct {
     pl_u8 *digest;
     pl_u32 digest_bytes;
@@ -63,6 +74,11 @@ int artifact_share_measure(pl_u32 occurrences, pl_u32 *digest_bytes,
  * in full, so digest collision never establishes identity. */
 int artifact_share_project(
     const artifact_complete_observation *observations, pl_u32 occurrences,
+    const artifact_share_workspace *workspace,
+    artifact_share_projection *out);
+
+int artifact_share_project_view(
+    const artifact_observation_view *observations, pl_u32 occurrences,
     const artifact_share_workspace *workspace,
     artifact_share_projection *out);
 

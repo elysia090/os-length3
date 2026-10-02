@@ -107,6 +107,19 @@ int main(int argc, char **argv)
         free(input);
         return 2;
     }
+    rejected = proof;
+    rejected.pareto_complete = 2u;
+    rejected.minimum_span = 1u;
+    rejected.output_span = 2u;
+    if (pl_x86_elf_measure(input, input_bytes, &rejected, &emission)) {
+        free(input);
+        return 2;
+    }
+    rejected.minimum_span = 3u;
+    if (!pl_x86_elf_measure(input, input_bytes, &rejected, &emission)) {
+        free(input);
+        return 2;
+    }
     status = pl_x86_elf_measure(input, input_bytes, &proof, &emission);
     if (status || emission.output_bytes > (pl_u64)(size_t)-1) {
         free(input);

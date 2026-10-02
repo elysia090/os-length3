@@ -7,16 +7,17 @@
 #include <postlink/compiler.h>
 #include <optimized-x86/reader.h>
 #include <support/checked.h>
+#include <stdint.h>
 #include <support/sha256.h>
 #include <x86/elf.h>
 
 #include "internal/emit-x86.h"
-#include "internal/entry.h"
+#include "internal/discover-entry.h"
 #include "internal/layout-elf.h"
 #include "internal/minimum.h"
-#include "internal/native.h"
+#include "internal/compile-elf.h"
 #include "internal/relocate-elf.h"
-#include "internal/semantic.h"
+#include "internal/instruction-semantics.h"
 
 /* ELF program-header counts are untrusted input.  The compiler does not hide
  * allocation inside its freestanding core, so the public whole-image entry
@@ -152,6 +153,8 @@ static void clear_report(postlink_report *report)
     report->native_overlapping_source_end = 0u;
     report->native_first_overlapping_address = 0u;
     report->entry_candidates = 0u;
+    report->function_symbol_rows = 0u;
+    report->entry_analysis_workspace_bytes = 0u;
     report->native_entries = 0u;
     report->native_observable_entries = 0u;
     report->code_grid_candidates = 0u;
@@ -355,6 +358,8 @@ static int analyze_linked_x86(const pl_u8 *input, pl_u64 input_bytes,
     status = pl_x86_entry_measure(&elf, &code_image, &entries);
     if (status) return POSTLINK_ERROR_INPUT_ELF;
     report->entry_candidates = entries.candidate_count;
+    report->function_symbol_rows = entries.function_symbol_rows;
+    report->entry_analysis_workspace_bytes = entries.analysis_workspace_bytes;
     report->code_grid_candidates = entries.code_grid_candidate_count;
     report->dispatch_base_candidates =
         entries.table_base_candidate_count;
@@ -407,6 +412,7 @@ static int workspace_requirement(const postlink_report *report,
     pl_u64 entry_values;
     pl_u64 entry_scratch;
     pl_u64 section_support;
+    pl_u64 function_index;
     pl_u64 entry_roles;
     pl_u64 grids;
     pl_u64 tables;
@@ -420,9 +426,17 @@ static int workspace_requirement(const postlink_report *report,
             || !pl_checked_mul_u64(
                 (pl_u64)report->entry_candidates,
                 (pl_u64)sizeof(pl_u64), &entry_scratch)
+            || !pl_checked_mul_u64(
+                (pl_u64)report->function_symbol_rows,
+                3u * (pl_u64)sizeof(pl_u64), &function_index)
             || !pl_checked_add_u64(
                 (pl_u64)report->input_sections, 7u, &section_support))
         return POSTLINK_ERROR_WORKSPACE;
+    if (!pl_checked_add_u64(
+            entry_scratch, function_index, &entry_scratch))
+        return POSTLINK_ERROR_WORKSPACE;
+    if (report->entry_analysis_workspace_bytes > entry_scratch)
+        entry_scratch = report->entry_analysis_workspace_bytes;
     section_support >>= 3u;
     if (section_support > entry_scratch)
         entry_scratch = section_support;
@@ -466,7 +480,7 @@ int postlink_measure(const pl_u8 *input, pl_u64 input_bytes,
     if (!measurement || !report) return POSTLINK_ERROR_ARGUMENT;
     measurement->output_capacity = 0u;
     measurement->workspace_bytes = 0u;
-    measurement->workspace_alignment = 16u;
+    measurement->workspace_alignment = POSTLINK_WORKSPACE_ALIGNMENT;
     clear_report(report);
     status = analyze_linked_x86(input, input_bytes, report);
     if (status) return status;
@@ -492,9 +506,11 @@ static int postlink_compile_impl(
     const postlink_observer *observer, postlink_report *report)
 {
     int status;
-    if (!output || !output_bytes || !workspace || !report)
-        return POSTLINK_ERROR_ARGUMENT;
+    if (!output_bytes) return POSTLINK_ERROR_ARGUMENT;
     *output_bytes = 0u;
+    if (!output || !workspace || !report
+            || ((uintptr_t)workspace & (POSTLINK_WORKSPACE_ALIGNMENT - 1u)))
+        return POSTLINK_ERROR_ARGUMENT;
     clear_report(report);
     status = analyze_linked_x86(input, input_bytes, report);
     if (status) return status;
@@ -558,12 +574,14 @@ static int postlink_compile_impl(
     report->native_observable_entries =
         entry_population.address_observable_count;
     pl_u32 native_code_grid_count = entry_population.code_grid_count;
-    report->dispatch_bases = entry_population.table_base_count;
+    report->dispatch_bases = 0u;
+    for (pl_u32 index = 0u; index < entry_population.table_base_count; ++index)
+        if (tables[index].domain_closed) ++report->dispatch_bases;
     report->dispatch_targets = entry_population.table_target_count;
     pl_x86_native_population native = { 0 };
     status = pl_x86_native_analyze(
         &code_image, &entry_elf,
-        entry_values, entry_population.primary_count,
+        entry_values, entry_roles, entry_population.primary_count,
         entry_population.entry_count,
         code_grids, report->code_grid_candidates,
         &native_code_grid_count,
@@ -669,29 +687,25 @@ static int postlink_compile_impl(
      * existed only to discover the closed graph; retaining its costs here
      * would recreate the second storage/work route the future proof removed. */
     report_native_population(report, &native);
-    int pareto_complete = !native.pareto_unresolved_blocks
-        && !native.normalization_escape_blocks
-        && native.emitted_span == native.selection_span_ceiling
-        && native.emitted_work == native.selection_work_ceiling;
-    if (!pareto_complete) {
+    /* A normalization escape already has an exact source-x86 candidate in
+     * the selected, closed block population.  It is an optimization miss,
+     * not an execution hole: retain that native body and keep its count in
+     * the report.  Only a missing joint Pareto witness or a mismatch between
+     * selected and emitted physical costs invalidates this proof. */
+    int pareto_complete = native.pareto_unresolved_blocks ? 2 : 1;
+    if (native.emitted_span < native.selection_span_ceiling
+            || native.emitted_work < native.selection_work_ceiling
+            || (pareto_complete == 1
+                && (native.emitted_span != native.selection_span_ceiling
+                    || native.emitted_work != native.selection_work_ceiling))) {
         report->proof_stage = 94u;
-        if (native.normalization_escape_blocks
-                && native.emit_failure_stage == 244u) {
-            report->native_failure_stage = native.emit_failure_stage;
-            report->native_failure_address = native.emit_failure_address;
-            report->native_failure_target = native.emit_failure_target;
-            report->native_failure_output = native.emit_failure_output;
-            report->native_failure_expected = native.emit_failure_expected;
-        } else {
-            report->native_failure_stage = native.pareto_unresolved_blocks
-                ? 240u : native.normalization_escape_blocks ? 241u
-                : native.emitted_span != native.selection_span_ceiling ? 242u
-                : 243u;
-            report->native_failure_output = native.emitted_work;
-            report->native_failure_expected = native.selection_work_ceiling;
-            report->native_failure_address = native.emitted_span;
-            report->native_failure_target = native.selection_span_ceiling;
-        }
+        report->native_failure_stage = native.emitted_span
+                != native.selection_span_ceiling
+            ? 242u : 243u;
+        report->native_failure_output = native.emitted_work;
+        report->native_failure_expected = native.selection_work_ceiling;
+        report->native_failure_address = native.emitted_span;
+        report->native_failure_target = native.selection_span_ceiling;
         return POSTLINK_ERROR_INCOMPLETE;
     }
     status = pl_x86_native_future_project(

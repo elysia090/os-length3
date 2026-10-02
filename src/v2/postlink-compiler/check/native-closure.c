@@ -1,7 +1,7 @@
-#include "../src/internal/entry.h"
+#include "../src/internal/discover-entry.h"
 #include "../src/internal/layout-elf.h"
-#include "../src/internal/native.h"
-#include "../src/internal/select-x86.h"
+#include "../src/internal/compile-elf.h"
+#include "../src/internal/x86-selection.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,7 +39,7 @@ static int map_output(const pl_x86_image *image, const pl_u8 *input,
                       const pl_u32 *live_outputs,
                       pl_u32 live_output_count,
                       pl_x86_native_population *population,
-                      pl_u64 query)
+                      pl_u64 query, pl_u64 *mapped_source)
 {
     pl_x86_runtime_elf_layout runtime;
     int status = pl_x86_runtime_elf_measure(
@@ -97,6 +97,11 @@ static int map_output(const pl_x86_image *image, const pl_u8 *input,
         status = -1;
     pl_u64 exact_source = 0u;
     int exact = 0;
+    pl_u32 owner_rank = 0u;
+    if (!status)
+        status = pl_x86_native_rank(&layout, source, &owner_rank);
+    if (!status && owner_rank >= layout.live_output_count)
+        status = -1;
     if (!status) {
         pl_u64 end = next_source > source ? next_source : source + 256u;
         for (pl_u64 at = source; at < end; ++at) {
@@ -113,13 +118,16 @@ static int map_output(const pl_x86_image *image, const pl_u8 *input,
     }
     if (!status)
         printf("output map: 0x%llx -> source block 0x%llx, "
-               "source byte %s0x%llx, block output 0x%llx, next 0x%llx\n",
+               "source byte %s0x%llx, block output 0x%llx, "
+               "next 0x%llx, live=0x%x\n",
                (unsigned long long)query,
                (unsigned long long)source, exact ? "" : "not-found/",
                (unsigned long long)exact_source,
                (unsigned long long)(layout.output_address + owner_offset),
                (unsigned long long)(next == 0xffffffffu ? 0u
-                   : layout.output_address + next_offset));
+                   : layout.output_address + next_offset),
+               layout.live_outputs[owner_rank]);
+    if (!status && mapped_source) *mapped_source = source;
     free(output);
     return status;
 }
@@ -132,7 +140,7 @@ static int map_source(const pl_x86_image *image, const pl_u8 *input,
                       const pl_u32 *live_outputs,
                       pl_u32 live_output_count,
                       pl_x86_native_population *population,
-                      pl_u64 query)
+                      pl_u64 query, pl_u32 field_bytes)
 {
     pl_x86_runtime_elf_layout runtime;
     int status = pl_x86_runtime_elf_measure(
@@ -149,12 +157,22 @@ static int map_source(const pl_x86_image *image, const pl_u8 *input,
             live_outputs, live_output_count,
             workspace, workspace_bytes, population, &layout);
     pl_u64 projected = 0u;
+    int retained = 0;
     if (!status)
-        status = pl_x86_native_resolve(&layout, query, &projected);
-    if (!status)
-        printf("source map: 0x%llx -> output 0x%llx\n",
-               (unsigned long long)query,
-               (unsigned long long)projected);
+        status = field_bytes
+            ? pl_x86_native_project_field(
+                &layout, query, field_bytes, &projected, &retained)
+            : pl_x86_native_resolve(&layout, query, &projected);
+    if (!status) {
+        if (field_bytes)
+            printf("source field: 0x%llx+%u -> output 0x%llx retained=%d\n",
+                   (unsigned long long)query, field_bytes,
+                   (unsigned long long)projected, retained);
+        else
+            printf("source map: 0x%llx -> output 0x%llx\n",
+                   (unsigned long long)query,
+                   (unsigned long long)projected);
+    }
     free(output);
     return status;
 }
@@ -167,7 +185,9 @@ static char operand_kind(pl_u8 kind)
 
 static int dump_block(const char *label, const pl_x86_image *image,
                       pl_u8 *workspace, pl_u64 workspace_bytes,
-                      pl_u64 address)
+                      pl_u64 address,
+                      const pl_x86_native_escape_sample *sample,
+                      int compact)
 {
     pl_u64 coordinates = 0u;
     for (pl_u32 index = 0u; index < image->map_count; ++index)
@@ -197,8 +217,54 @@ static int dump_block(const char *label, const pl_x86_image *image,
     pl_x86_block block;
     int status = pl_x86_frontend_open(image, &frontend);
     if (!status)
-        status = pl_x86_block_lower(&frontend, address, &formation, &block);
+        status = sample
+            ? pl_x86_block_lower_projected_until(
+                &frontend, address, sample->end,
+                sample->live_output_mask, &formation, &block)
+            : pl_x86_block_lower(&frontend, address, &formation, &block);
     if (status) return status;
+    if (sample) {
+        block.construction_fields = sample->construction_fields;
+        block.relax_short_control = sample->relax_short_control;
+    }
+    pl_x86_native_candidates candidates;
+    if (compact) {
+        status = pl_x86_select_candidates(
+            &frontend, &selection_workspace, &block, &candidates);
+        if (status) return status;
+        printf("escape 0x%llx src=%u nodes=%u span=%u flow=%u "
+               "predicate=%u fault=%u machine=%u fields=%u "
+               "blocking=0x%x sources=0x%x pending=0x%llx candidates=%u",
+               (unsigned long long)block.start,
+               block.instruction_count, block.plan.node_count,
+               block.plan.span, block.flow, block.has_predicate,
+               block.has_fault_predicate, block.machine_operation,
+               block.construction_fields,
+               candidates.diagnostic.blocking_work,
+               candidates.diagnostic.blocking_opcode,
+               (unsigned long long)candidates.diagnostic.projected_instruction_mask,
+               candidates.count);
+        if (candidates.count)
+            printf(" emitted=%u/%u/%u",
+                   candidates.candidate[0].output_instructions,
+                   candidates.candidate[0].output_work,
+                   candidates.candidate[0].output_span);
+        printf(" source_ops=");
+        pl_u64 rip = block.start;
+        for (pl_u32 instruction = 0u;
+                instruction < block.instruction_count; ++instruction) {
+            pl_x86_instruction decoded;
+            status = pl_x86_frontend_decode(&frontend, rip, &decoded);
+            if (status) return status;
+            printf("%s%u", instruction ? "," : "", decoded.operation);
+            rip = decoded.fallthrough;
+        }
+        printf(" plan_ops=");
+        for (pl_u32 node = 0u; node < block.plan.node_count; ++node)
+            printf("%s%u", node ? "," : "", block.plan.nodes[node].opcode);
+        putchar('\n');
+        return 0;
+    }
     printf("%s block: 0x%llx..0x%llx, %u instructions, %u work/%u span\n",
            label, (unsigned long long)block.start,
            (unsigned long long)block.end, block.instruction_count,
@@ -241,11 +307,12 @@ static int dump_block(const char *label, const pl_x86_image *image,
            (unsigned long long)block.target.value,
            operand_kind(block.predicate.kind),
            (unsigned long long)block.predicate.value);
-    pl_x86_native_candidates candidates;
     status = pl_x86_select_candidates(
         &frontend, &selection_workspace, &block, &candidates);
-    printf("  candidates: %u (status=%d, diagnostic stage=%u)\n",
-           candidates.count, status, candidates.diagnostic_stage);
+    printf("  candidates: %u (status=%d, diagnostic stage=%u "
+           "blocking=0x%x)\n",
+           candidates.count, status, candidates.diagnostic_stage,
+           candidates.diagnostic.blocking_work);
     for (pl_u32 candidate = 0u;
             candidate < candidates.count; ++candidate) {
         const pl_x86_native_selection *selection =
@@ -273,6 +340,18 @@ static int dump_block(const char *label, const pl_x86_image *image,
                selection->direct_branch_frame,
                selection->direct_affine_frame,
                selection->fixup_count);
+        if (selection->direct_live_frame || selection->direct_shared_dag_frame
+                || selection->direct_consumed_flag_frame
+                || selection->direct_transient_seed_frame
+                || selection->direct_nested_frame
+                || selection->direct_shared_parent_frame)
+            printf(" extended=live%u/dag%u/flag%u/seed%u/nested%u/parent%u",
+                   selection->direct_live_frame,
+                   selection->direct_shared_dag_frame,
+                   selection->direct_consumed_flag_frame,
+                   selection->direct_transient_seed_frame,
+                   selection->direct_nested_frame,
+                   selection->direct_shared_parent_frame);
         for (pl_u32 field = 0u;
                 field < selection->fixup_count; ++field) {
             const pl_x86_native_fixup *fixup =
@@ -298,6 +377,136 @@ static int dump_block(const char *label, const pl_x86_image *image,
     return status;
 }
 
+static int dump_projected(const pl_x86_image *image, const pl_u8 *input,
+                          pl_u64 input_bytes, pl_u8 *workspace,
+                          pl_u64 workspace_bytes,
+                          const pl_x86_code_grid *code_grids,
+                          pl_u32 code_grid_count,
+                          const pl_u32 *live_outputs,
+                          pl_u32 live_output_count,
+                          pl_x86_native_population *population,
+                          pl_u64 query)
+{
+    pl_x86_runtime_elf_layout runtime;
+    int status = pl_x86_runtime_elf_measure(
+        input, input_bytes, population->selected_output_bytes, &runtime);
+    pl_u8 *output = !status
+                  ? malloc((size_t)population->selected_output_bytes) : 0;
+    pl_x86_native_layout layout;
+    if (!status && !output) status = -1;
+    if (!status)
+        status = pl_x86_native_write_analyzed(
+            image, runtime.code_address, output,
+            (pl_u32)population->selected_output_bytes,
+            code_grids, code_grid_count,
+            live_outputs, live_output_count,
+            workspace, workspace_bytes, population, &layout);
+    pl_u32 rank = 0u;
+    if (!status) status = pl_x86_native_rank(&layout, query, &rank);
+    if (!status && rank >= layout.live_output_count) status = -1;
+    pl_u64 base = 0u, end = 0u;
+    pl_u32 coordinate = 0u;
+    int found = 0;
+    for (pl_u32 index = 0u; !status && index < image->map_count; ++index) {
+        const pl_x86_map *map = &image->maps[index];
+        if (query >= map->address
+                && query - map->address < map->memory_bytes) {
+            coordinate = (pl_u32)(base + query - map->address);
+            end = map->address + map->memory_bytes;
+            for (pl_u32 next = coordinate + 1u;
+                    next < base + map->memory_bytes; ++next)
+                if (boundary_bit(layout.boundaries, next)) {
+                    end = map->address + (pl_u64)next - base;
+                    break;
+                }
+            found = 1;
+            break;
+        }
+        base += map->memory_bytes;
+    }
+    if (!status && (!found || end <= query)) status = -1;
+    if (!status) {
+        pl_x86_native_escape_sample sample = {
+            .start = query,
+            .end = end,
+            .live_output_mask = layout.live_outputs[rank],
+            .construction_fields =
+                (pl_u8)boundary_bit(layout.construction_fields, coordinate),
+            .relax_short_control = (pl_u8)boundary_bit(
+                layout.relaxed_control_coordinates, coordinate),
+        };
+        status = dump_block("requested projected", image, workspace,
+                            workspace_bytes, query, &sample, 0);
+    }
+    free(output);
+    return status;
+}
+
+static int dump_projected_range(const pl_x86_image *image,
+                                const pl_u8 *input, pl_u64 input_bytes,
+                                pl_u8 *workspace, pl_u64 workspace_bytes,
+                                const pl_x86_code_grid *code_grids,
+                                pl_u32 code_grid_count,
+                                const pl_u32 *live_outputs,
+                                pl_u32 live_output_count,
+                                pl_x86_native_population *population,
+                                pl_u64 first, pl_u64 limit)
+{
+    pl_x86_runtime_elf_layout runtime;
+    int status = pl_x86_runtime_elf_measure(
+        input, input_bytes, population->selected_output_bytes, &runtime);
+    pl_u8 *output = !status
+                  ? malloc((size_t)population->selected_output_bytes) : 0;
+    pl_x86_native_layout layout;
+    if (!status && !output) status = -1;
+    if (!status)
+        status = pl_x86_native_write_analyzed(
+            image, runtime.code_address, output,
+            (pl_u32)population->selected_output_bytes,
+            code_grids, code_grid_count,
+            live_outputs, live_output_count,
+            workspace, workspace_bytes, population, &layout);
+    pl_u64 base = 0u;
+    for (pl_u32 index = 0u; !status && index < image->map_count; ++index) {
+        const pl_x86_map *map = &image->maps[index];
+        pl_u64 map_end = map->address + map->memory_bytes;
+        pl_u64 at = first > map->address ? first : map->address;
+        pl_u64 end = limit < map_end ? limit : map_end;
+        for (; at < end; ++at) {
+            pl_u32 coordinate = (pl_u32)(base + at - map->address);
+            if (!boundary_bit(layout.boundaries, coordinate)) continue;
+            pl_u32 rank = 0u;
+            status = pl_x86_native_rank(&layout, at, &rank);
+            if (status || rank >= layout.live_output_count) {
+                status = -1;
+                break;
+            }
+            pl_u64 block_end = map_end;
+            for (pl_u32 next = coordinate + 1u;
+                    next < base + map->memory_bytes; ++next)
+                if (boundary_bit(layout.boundaries, next)) {
+                    block_end = map->address + (pl_u64)next - base;
+                    break;
+                }
+            pl_x86_native_escape_sample sample = {
+                .start = at,
+                .end = block_end,
+                .live_output_mask = layout.live_outputs[rank],
+                .construction_fields = (pl_u8)boundary_bit(
+                    layout.construction_fields, coordinate),
+                .relax_short_control = (pl_u8)boundary_bit(
+                    layout.relaxed_control_coordinates, coordinate),
+            };
+            status = dump_block("requested range", image, workspace,
+                                workspace_bytes, at, &sample, 0);
+            if (status) break;
+        }
+        base += map->memory_bytes;
+    }
+    free(output);
+    return status;
+}
+
 static int load(const char *path, pl_u8 **bytes, pl_u64 *extent)
 {
     FILE *file = fopen(path, "rb");
@@ -315,16 +524,43 @@ static int load(const char *path, pl_u8 **bytes, pl_u64 *extent)
 int main(int argc, char **argv)
 {
     int expect_nonimage = argc == 3 && !strcmp(argv[2], "--nonimage");
+    int escape_report = argc == 3 && !strcmp(argv[2], "--escape-report");
+    int list_tables = argc == 3 && !strcmp(argv[2], "--list-tables");
     int output_query = argc == 4 && !strcmp(argv[2], "--map-output");
+    int output_dump_query = argc == 4 && !strcmp(argv[2], "--dump-output");
     int source_query = argc == 4 && !strcmp(argv[2], "--map-source");
     int dump_query = argc == 4 && !strcmp(argv[2], "--dump-source");
+    int projected_query = argc == 4 && !strcmp(argv[2], "--dump-projected");
+    int projected_range = argc == 5
+                       && !strcmp(argv[2], "--dump-projected-range");
+    int escape_query = argc == 4 && !strcmp(argv[2], "--dump-escape");
+    int field_query = argc == 5 && !strcmp(argv[2], "--map-field");
     char *query_end = 0;
-    pl_u64 query = output_query || source_query || dump_query
+    pl_u64 query = output_query || output_dump_query
+                 || source_query || dump_query
+                 || projected_query
+                 || projected_range
+                 || escape_query || field_query
                  ? strtoull(argv[3], &query_end, 0) : 0u;
-    if ((argc != 2 && !expect_nonimage && !output_query && !source_query
-                && !dump_query)
-            || ((output_query || source_query || dump_query)
-                && (!argv[3][0] || !query_end || *query_end)))
+    char *width_end = 0;
+    unsigned long width = field_query
+                        ? strtoul(argv[4], &width_end, 0) : 0u;
+    char *range_end_text = 0;
+    pl_u64 range_end = projected_range
+                     ? strtoull(argv[4], &range_end_text, 0) : 0u;
+    if ((argc != 2 && !expect_nonimage && !escape_report && !list_tables
+                && !output_query && !output_dump_query && !source_query
+                && !dump_query && !projected_query && !projected_range
+                && !escape_query && !field_query)
+            || ((output_query || output_dump_query || source_query || dump_query
+                    || projected_query
+                    || projected_range
+                    || escape_query || field_query)
+                && (!argv[3][0] || !query_end || *query_end))
+            || (field_query && (!argv[4][0] || !width_end || *width_end
+                || width > 8u || !width))
+            || (projected_range && (!argv[4][0] || !range_end_text
+                || *range_end_text || range_end <= query)))
         return 2;
     pl_u8 *bytes = 0;
     pl_u64 extent = 0u;
@@ -357,6 +593,8 @@ int main(int argc, char **argv)
         (size_t)entry_measure.candidate_count * sizeof *entries) : 0;
     pl_u64 *scratch = !status ? malloc(
         (size_t)entry_measure.candidate_count * sizeof *scratch) : 0;
+    pl_u64 analysis_bytes = entry_measure.analysis_workspace_bytes;
+    pl_u8 *analysis = !status ? malloc((size_t)analysis_bytes) : 0;
     pl_u8 *entry_roles = !status ? malloc(
         (size_t)entry_measure.candidate_count) : 0;
     pl_u8 *entry_role_scratch = !status ? malloc(
@@ -374,7 +612,7 @@ int main(int argc, char **argv)
                  ? entry_measure.table_base_candidate_count : 1u)
         * sizeof *table_scratch) : 0;
     pl_u8 *workspace = !status ? malloc((size_t)native_bytes) : 0;
-    if (!status && (!entries || !scratch
+    if (!status && (!entries || !scratch || !analysis
             || !entry_roles || !entry_role_scratch
             || !code_grids || !tables || !table_scratch || !workspace))
         status = -1;
@@ -386,9 +624,28 @@ int main(int argc, char **argv)
             code_grids, entry_measure.code_grid_candidate_count,
             tables, entry_measure.table_base_candidate_count,
             table_scratch, entry_measure.table_base_candidate_count,
-            (pl_u8 *)(void *)scratch,
-            (pl_u64)entry_measure.candidate_count * sizeof *scratch,
+            analysis, analysis_bytes,
             &entry_written);
+    if (!status && list_tables) {
+        pl_u32 closed = 0u, closed_rows = 0u;
+        for (pl_u32 index = 0u; index < entry_written.table_base_count;
+                ++index)
+            if (tables[index].domain_closed) {
+                ++closed;
+                closed_rows += tables[index].rows;
+            }
+        printf("tables=%u targets=%u\n", closed, closed_rows);
+        printf("shared-base encodings=%u retained addresses=%u\n",
+               entry_written.table_base_count, entry_written.table_target_count);
+        for (pl_u32 index = 0u; index < entry_written.table_base_count;
+                ++index)
+            printf("table base=0x%llx consumer=0x%llx rows=%u index=%u closed=%u\n",
+                   (unsigned long long)tables[index].base,
+                   (unsigned long long)tables[index].consumer,
+                   tables[index].rows, tables[index].index_register,
+                   tables[index].domain_closed);
+        return 0;
+    }
     pl_x86_native_population population;
     pl_u32 native_code_grid_count = entry_written.code_grid_count;
     pl_u32 *live_outputs = 0;
@@ -397,7 +654,7 @@ int main(int argc, char **argv)
     pl_x86_native_future future = { 0 };
     if (!status)
         status = pl_x86_native_analyze(
-            &image, &elf, entries, entry_written.primary_count,
+            &image, &elf, entries, entry_roles, entry_written.primary_count,
             entry_written.entry_count,
             code_grids, entry_measure.code_grid_candidate_count,
             &native_code_grid_count,
@@ -445,8 +702,9 @@ int main(int argc, char **argv)
                 population.blocks);
     if (status && population.emit_failure_address)
         (void)dump_block("failed selection", &image, workspace,
-                         native_bytes, population.emit_failure_address);
-    if (!status && !dump_query
+                         native_bytes, population.emit_failure_address, 0, 0);
+    if (!status && !dump_query && !projected_query && !projected_range
+            && !escape_query
             && (!population.blocks || !population.source_instructions
             || !population.source_work || !population.normalized_work
             || population.normalized_work > population.source_work
@@ -454,25 +712,62 @@ int main(int argc, char **argv)
             || !population.selected_blocks
             || population.selected_blocks + population.unselected_blocks
                != population.blocks
-            || (!output_query && !source_query && !dump_query
+            || (!output_query && !output_dump_query
+                && !source_query && !dump_query
+                && !escape_query
+                && !escape_report
                 && !!population.nonimage_control_edges != expect_nonimage)))
         status = -1;
     if (!status) {
-        if (output_query)
+        if (output_query || output_dump_query) {
+            pl_u64 mapped_source = 0u;
             status = map_output(&image, bytes, extent,
                                 workspace, native_bytes,
                                 code_grids, native_code_grid_count,
                                 live_outputs, population.blocks,
-                                &population, query);
-        else if (source_query)
+                                &population, query, &mapped_source);
+            if (!status && output_dump_query)
+                status = dump_projected(
+                    &image, bytes, extent, workspace, native_bytes,
+                    code_grids, native_code_grid_count,
+                    live_outputs, population.blocks, &population,
+                    mapped_source);
+        } else if (source_query || field_query)
             status = map_source(&image, bytes, extent,
                                 workspace, native_bytes,
                                 code_grids, native_code_grid_count,
                                 live_outputs, population.blocks,
-                                &population, query);
+                                &population, query, (pl_u32)width);
         else if (dump_query)
             status = dump_block(
-                "requested source", &image, workspace, native_bytes, query);
+                "requested source", &image, workspace, native_bytes,
+                query, 0, 0);
+        else if (projected_query)
+            status = dump_projected(
+                &image, bytes, extent, workspace, native_bytes,
+                code_grids, native_code_grid_count,
+                live_outputs, population.blocks, &population, query);
+        else if (projected_range)
+            status = dump_projected_range(
+                &image, bytes, extent, workspace, native_bytes,
+                code_grids, native_code_grid_count,
+                live_outputs, population.blocks, &population,
+                query, range_end);
+        else if (escape_query) {
+            status = -1;
+            for (pl_u32 sample = 0u;
+                    sample < population.normalization_escape_blocks
+                        && sample < PL_X86_NATIVE_ESCAPE_SAMPLE_COUNT;
+                    ++sample)
+                if (population.normalization_escape_sample[sample].start
+                        == query) {
+                    status = dump_block(
+                        "requested escape", &image, workspace, native_bytes,
+                        query, &population.normalization_escape_sample[sample],
+                        0);
+                    break;
+                }
+        }
     }
     if (!status) {
         pl_u32 dominant_opcode = 0xffffffffu;
@@ -522,7 +817,17 @@ int main(int argc, char **argv)
                    population.normalization_escape_output_bytes,
                (unsigned long long)population.normalization_escape_work,
                (unsigned long long)
-                   population.first_normalization_escape_address);
+               population.first_normalization_escape_address);
+        if (!escape_query) {
+            printf("normalization escape samples:");
+            for (pl_u32 sample = 0u;
+                    sample < population.normalization_escape_blocks
+                        && sample < 32u;
+                    ++sample)
+                printf(" 0x%llx", (unsigned long long)
+                       population.normalization_escape_sample[sample].start);
+            printf("\n");
+        }
         printf("maximum normalized work/span: %u@0x%llx / %u@0x%llx; "
                "native body coefficient=%.9Lf\n",
                population.maximum_normalized_work,
@@ -570,22 +875,52 @@ int main(int argc, char **argv)
             population.normalized_opcode[best] = 0u;
         }
         printf("\n");
-        status = dump_block(
-            "maximum work", &image, workspace, native_bytes,
-            population.maximum_work_address);
-        if (!status && population.maximum_span_address
-                != population.maximum_work_address)
+        if (escape_query) {
+            /* The exact requested block was printed above. */
+        } else if (escape_report) {
+            printf("escape report coverage: %u/%u\n",
+                   population.normalization_escape_blocks
+                       < PL_X86_NATIVE_ESCAPE_SAMPLE_COUNT
+                     ? population.normalization_escape_blocks
+                     : PL_X86_NATIVE_ESCAPE_SAMPLE_COUNT,
+                   population.normalization_escape_blocks);
+            for (pl_u32 sample = 0u;
+                    !status && sample < population.normalization_escape_blocks
+                        && sample < PL_X86_NATIVE_ESCAPE_SAMPLE_COUNT;
+                    ++sample)
+                status = dump_block(
+                    "escape", &image, workspace, native_bytes,
+                    population.normalization_escape_sample[sample].start,
+                    &population.normalization_escape_sample[sample], 1);
+        } else {
             status = dump_block(
-                "maximum span", &image, workspace, native_bytes,
-                population.maximum_span_address);
-        if (!status && population.first_normalization_escape_address
-                && population.first_normalization_escape_address
-                   != population.maximum_work_address
-                && population.first_normalization_escape_address
-                   != population.maximum_span_address)
-            status = dump_block(
-                "first normalization escape", &image, workspace, native_bytes,
-                population.first_normalization_escape_address);
+                "maximum work", &image, workspace, native_bytes,
+                population.maximum_work_address, 0, 0);
+            if (!status && population.maximum_span_address
+                    != population.maximum_work_address)
+                status = dump_block(
+                    "maximum span", &image, workspace, native_bytes,
+                    population.maximum_span_address, 0, 0);
+            if (!status && population.first_normalization_escape_address
+                    && population.first_normalization_escape_address
+                       != population.maximum_work_address
+                    && population.first_normalization_escape_address
+                       != population.maximum_span_address)
+                status = dump_block(
+                    "first normalization escape", &image, workspace,
+                    native_bytes,
+                    population.first_normalization_escape_address,
+                    &population.normalization_escape_sample[0], 0);
+            for (pl_u32 sample = 1u;
+                    !status && sample < population.normalization_escape_blocks
+                        && sample < 32u;
+                    ++sample)
+                status = dump_block(
+                    "normalization escape sample", &image, workspace,
+                    native_bytes,
+                    population.normalization_escape_sample[sample].start,
+                    &population.normalization_escape_sample[sample], 0);
+        }
     }
     free(future_workspace);
     free(live_outputs);
@@ -596,6 +931,7 @@ int main(int argc, char **argv)
     free(entry_role_scratch);
     free(entry_roles);
     free(scratch);
+    free(analysis);
     free(entries);
     free(bytes);
     return status ? 1 : 0;

@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "../src/internal/select-x86.h"
+#include "../src/internal/x86-selection.h"
 #include "execute.h"
 #include <stdint.h>
 #include <stdio.h>

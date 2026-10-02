@@ -9,6 +9,21 @@ _start:
     syscall
     mov %rax, %rdi
     call table_value
+    cmp $42, %eax
+    jne .Lbad_result
+    xor %edi, %edi
+    call masked_table_value
+    cmp $42, %eax
+    jne .Lbad_result
+    mov $7, %edi
+    call masked_table_value
+    cmp $42, %eax
+    jne .Lbad_result
+    mov $42, %eax
+    jmp .Lexit
+.Lbad_result:
+    xor %eax, %eax
+.Lexit:
     mov %eax, %edi
     mov $60, %eax
     syscall
@@ -67,6 +82,10 @@ masked_table_value:
     lea .Lmasked_table(%rip), %r11
     mov %edi, %eax
     and $7, %eax
+    /* Scheduling independent work between the mask and indexed load must
+     * preserve the finite dispatch domain for every table row. */
+    mov %edi, %r9d
+    mov $0, %ecx
     movslq (%r11,%rax,4), %rax
     add %r11, %rax
     jmp *%rax

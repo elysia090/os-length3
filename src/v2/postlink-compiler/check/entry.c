@@ -1,6 +1,6 @@
-#include "../src/internal/entry.h"
+#include "../src/internal/discover-entry.h"
 #include "../src/internal/metadata.h"
-#include "../src/internal/table.h"
+#include "../src/internal/jump-table.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -121,6 +121,8 @@ int main(int argc, char **argv)
         (size_t)measured.candidate_count * sizeof *entries);
     pl_u64 *scratch = malloc(
         (size_t)measured.candidate_count * sizeof *scratch);
+    pl_u64 analysis_bytes = measured.analysis_workspace_bytes;
+    pl_u8 *analysis = malloc((size_t)analysis_bytes);
     pl_u8 *roles = malloc((size_t)measured.candidate_count);
     pl_u8 *role_scratch = malloc((size_t)measured.candidate_count);
     pl_x86_code_grid *code_grids = malloc(
@@ -136,7 +138,7 @@ int main(int argc, char **argv)
                  ? measured.table_base_candidate_count : 1u)
         * sizeof *table_scratch);
     pl_x86_entry_population written;
-    if (!entries || !scratch || !roles || !role_scratch || !code_grids
+    if (!entries || !scratch || !analysis || !roles || !role_scratch || !code_grids
             || !tables || !table_scratch) {
         fprintf(stderr,
                 "entry: allocation failed (%u entry, %u table candidates)\n",
@@ -152,8 +154,7 @@ int main(int argc, char **argv)
         code_grids, measured.code_grid_candidate_count,
         tables, measured.table_base_candidate_count,
         table_scratch, measured.table_base_candidate_count,
-        (pl_u8 *)(void *)scratch,
-        (pl_u64)measured.candidate_count * sizeof *scratch,
+        analysis, analysis_bytes,
         &written);
     if (status) {
         fprintf(stderr,
@@ -182,7 +183,9 @@ int main(int argc, char **argv)
         if (entries[index - 1u] >= entries[index]) return 1;
     pl_u32 observable = 0u;
     for (pl_u32 index = 0u; index < written.entry_count; ++index) {
-        if (!(roles[index] & PL_X86_ENTRY_EXECUTION_ROOT)) return 1;
+        if (!(roles[index]
+                & (PL_X86_ENTRY_EXECUTION_ROOT | PL_X86_ENTRY_ADDRESS_VALUE)))
+            return 1;
         if (roles[index] & PL_X86_ENTRY_ADDRESS_VALUE) ++observable;
     }
     if (observable != written.address_observable_count) return 1;
@@ -211,9 +214,9 @@ int main(int argc, char **argv)
         for (pl_u32 index = 0u; index < written.table_base_count; ++index)
             if (tables[index].base >= range_begin
                     && tables[index].base < range_end)
-                printf("table descriptor base=0x%llx rows=%u\n",
+                printf("table descriptor base=0x%llx rows=%u closed=%u\n",
                        (unsigned long long)tables[index].base,
-                       tables[index].rows);
+                       tables[index].rows, tables[index].domain_closed);
     if (list_range
             && list_table_rows(
                 &image, tables, written.table_base_count,
@@ -236,6 +239,7 @@ int main(int argc, char **argv)
     free(roles);
     free(code_grids);
     free(scratch);
+    free(analysis);
     free(table_scratch);
     free(tables);
     free(entries);

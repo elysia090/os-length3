@@ -12,3 +12,6 @@ src/v2/data/out/
 /.pytest_cache/
 /.uv-cache/
 /*.obj
+
+# Native download bytes are release assets, not Git history. Keep receipts.
+/artifact/native/*.tar.zst

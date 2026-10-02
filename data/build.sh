@@ -40,6 +40,15 @@ work=${QM_LINUX_WORK_ROOT:-${QM_SCRATCH_ROOT:-${TMPDIR:-/tmp}}/libqm-linux-work/
 distribution_build=$build/distribution
 mkdir -p "$upstream" "$build" "$out" "$work" "$distribution_build"
 
+# The CLI and the release-wide stage link the same post-link library, but are
+# separate executables. Rebuild both from this checkout before choosing a
+# checkpoint key; an old stage must never publish against a new CLI.
+if [[ -z ${QM_POSTLINK_COMPILER:-} || -z ${QM_POSTLINK_VERIFY:-} \
+      || -z ${QM_ARTIFACT_EXECUTABLE_STAGE:-} \
+      || -z ${QM_ARTIFACT_AUDIT:-} ]]; then
+  make -s -C "$repo/src/v2" -j"${QM_JOBS:-$(nproc)}" all
+fi
+
 postlink_compiler=${QM_POSTLINK_COMPILER:-$repo/src/v2/postlink-compiler/build/postlink-compiler}
 postlink_verify=${QM_POSTLINK_VERIFY:-$repo/src/v2/optimized-x86/build/postlink-verify}
 executable_stage=${QM_ARTIFACT_EXECUTABLE_STAGE:-$repo/src/v2/build/artifact-executable-stage}
@@ -59,6 +68,9 @@ postlink_compiler_tools_digest=$(
     sha256sum "$postlink_verify" | cut -d' ' -f1
   } | sha256sum | cut -d' ' -f1
 )
+# The runtime checks accept or reject a candidate; they do not construct any
+# release byte. Keep their revisions out of the post-link checkpoint key so a
+# stronger smoke test can reuse the same proven ELF population.
 release_publication_tools_digest=$(
   {
     sha256sum "$postlink_compiler" | cut -d' ' -f1
@@ -114,6 +126,9 @@ toolchain_digest=$(basename -- "$QM_TOOLCHAIN_PACKAGE_SET" .packages)
 toolchain_root=$distribution_build/toolchain/$toolchain_digest/root
 bash "$here/distribution/assemble-package-set.sh" \
   "$QM_TOOLCHAIN_PACKAGE_SET" "$toolchain_root" >/dev/null
+bash "$here/distribution/check-postlink-toolchain.sh" \
+  "$toolchain_root" "$postlink_compiler" "$postlink_verify" \
+  "$distribution_build"
 
 # Package management, network configuration, time, filesystem maintenance,
 # accounts, capabilities, ACL/xattr, the editor and timezone database are part
@@ -271,8 +286,8 @@ linux_o="$linked_kernel_root/output/$QM_BOOTSTRAP_ID"
 # ordinary relocation-bearing x86 ELF is the sole compiler input; its proved
 # optimized x86 ELF is independently verifiable and is then wrapped by the
 # unchanged x86 boot protocol.  The checkpoint key binds both linked bytes and
-# the exact compiler/verifier pair, so a tool update redoes only this projection
-# and downstream release assembly rather than rebuilding upstream packages.
+# the exact compiler/verifier pair and boot wrapper. A tool update redoes only
+# this projection and downstream assembly, not the upstream package builds.
 linked_kernel="$linux_o/vmlinux.unstripped"
 if [[ ! -f $linked_kernel ]]; then
   printf 'Kbuild did not retain the relocation-bearing linked kernel: %s\n' \
@@ -288,9 +303,12 @@ if ! readelf -SW "$linked_kernel" | grep '[.]rela[.]' >/dev/null; then
   exit 1
 fi
 linked_kernel_digest=$(sha256sum "$linked_kernel" | cut -d' ' -f1)
+kernel_wrapper_digest=$(
+  sha256sum "$here/oracle/package-postlinked-kernel.sh" | cut -d' ' -f1
+)
 postlinked_kernel_key=$(printf '%s\n' \
-  "$linked_kernel_digest" "$postlink_compiler_tools_digest" \
-  'postlinked-linux-bzimage-v1' | sha256sum | cut -d' ' -f1)
+  "$linked_kernel_digest" "$postlink_compiler_tools_digest" "$kernel_wrapper_digest" \
+  'postlinked-linux-bzimage-v2' | sha256sum | cut -d' ' -f1)
 postlinked_kernel="$build/postlinked-kernel-$postlinked_kernel_key"
 optimized_kernel="$postlinked_kernel/vmlinux"
 kernel_image="$postlinked_kernel/bzImage"
@@ -305,7 +323,7 @@ if [[ ! -f $postlinked_kernel/.complete ]]; then
     "$optimized_kernel" "$linux_o" "$postlinked_kernel/bzImage.tmp"
   mv "$postlinked_kernel/bzImage.tmp" "$kernel_image"
   {
-    printf 'format=postlinked-linux-bzimage-v1\n'
+    printf 'format=postlinked-linux-bzimage-v2\n'
     printf 'linked.sha256=%s\n' "$linked_kernel_digest"
     printf 'optimized.sha256=%s\n' \
       "$(sha256sum "$optimized_kernel" | cut -d' ' -f1)"
@@ -313,6 +331,7 @@ if [[ ! -f $postlinked_kernel/.complete ]]; then
       "$(sha256sum "$kernel_image" | cut -d' ' -f1)"
     printf 'postlink.tools.sha256=%s\n' \
       "$postlink_compiler_tools_digest"
+    printf 'boot-wrapper.sha256=%s\n' "$kernel_wrapper_digest"
   } > "$postlinked_kernel/inputs.tmp"
   mv "$postlinked_kernel/inputs.tmp" "$postlinked_kernel/inputs"
   touch "$postlinked_kernel/.complete"
@@ -434,8 +453,9 @@ postlink_release_report="$postlink_report_root/release.report"
 optimized_package_set="$release_prefix/optimized-$release_key.packages"
 postlink_complete="$release_prefix/.postlink-complete"
 if [[ ! -f $postlink_complete ]]; then
-  if [[ -e $optimized_package_set || -e $optimized_package_root \
-      || -e $postlink_report_root ]]; then
+  if [[ -e $optimized_package_set \
+      || ( -e $optimized_package_root && ! -s $postlink_release_report ) \
+      || ( ! -e $optimized_package_root && -s $postlink_release_report ) ]]; then
     printf 'release-wide post-link checkpoint is incomplete: %s\n' \
       "$release_prefix" >&2
     exit 1
@@ -463,10 +483,12 @@ if [[ ! -f $postlink_complete ]]; then
     # compiler transaction without another N-byte materialization.
     cp -al -- "$package_source/." "$linked_package_forest/$package/"
   done <<<"$package_names"
-  POSTLINK_PAYLOAD_REPORT="$postlink_release_report" \
-    "$here/distribution/optimize-payload.sh" \
-      "$linked_package_forest" "$optimized_package_root" \
-      "$executable_stage" "$postlink_verify"
+  if [[ ! -e $optimized_package_root ]]; then
+    POSTLINK_PAYLOAD_REPORT="$postlink_release_report" \
+      "$here/distribution/optimize-payload.sh" \
+        "$linked_package_forest" "$optimized_package_root" \
+        "$executable_stage" "$postlink_verify"
+  fi
   if [[ ! -d $optimized_package_root || ! -s $postlink_release_report ]] || \
      ! grep -qxF 'format=optimized-payload-report-v12' \
        "$postlink_release_report" || \
@@ -474,6 +496,8 @@ if [[ ! -f $postlink_complete ]]; then
     printf 'release-wide post-link checkpoint did not commit\n' >&2
     exit 1
   fi
+  bash "$here/distribution/check-native-parity.sh" \
+    "$linked_package_forest" "$optimized_package_root"
   cleanup_linked_package_forest
   trap - EXIT HUP INT TERM
 
@@ -536,6 +560,7 @@ package_publication_tools_digest=$(
   {
     sha256sum "$here/distribution/package-recipes.sh"
     sha256sum "$here/distribution/publish-apk.sh"
+    sha256sum "$here/distribution/prepare-package-payload.sh"
     sha256sum "$here/distribution/check-package-recipes.sh"
     sha256sum "$here/distribution/check-package-publication.sh"
     sha256sum "$here/distribution/check-package-state.sh"
@@ -556,6 +581,7 @@ if [[ ! -d $release_root ]]; then
   fi
   QM_APK_SIGNING_KEY="$QM_APK_SIGNING_KEY" \
     QM_APK_PUBLIC_KEY="$package_public_key" \
+    QM_APK_OPENSSL="$toolchain_root/usr/bin/openssl" \
     QM_ALLOW_TEST_SIGNING_KEY="${QM_ALLOW_TEST_SIGNING_KEY:-0}" \
     bash "$here/distribution/publish-apk.sh" \
       "$optimized_package_set" "$apk_publication" >/dev/null
@@ -568,6 +594,9 @@ initramfs=$release_root/boot/initramfs
 # command, dynamic dependency, runtime-discovered resource, service input and
 # proof-bearing ELF must resolve in this one candidate root.
 "$here/distribution/check-root.sh" "$release_root" "$postlink_verify"
+bash "$here/distribution/check-native-runtime.sh" "$release_root"
+bash "$here/distribution/check-native-development.sh" \
+  "$release_root" "$upstream/zlib-$ZLIB_VERSION.tar.xz"
 
 release_population="$out/release-$package_publication_key.population"
 bash "$here/distribution/measure-root.sh" \
@@ -664,6 +693,39 @@ printf '%s\n' \
   "initramfs=$initramfs" \
   "inputs=$release_inputs"
 
+native_bundle="$out/qm-linux-$DISTRIBUTION_RELEASE_VERSION-x86_64-$package_publication_key.tar.zst"
+if [[ -f $native_bundle ]]; then
+  zstd -q -t -- "$native_bundle"
+  bash "$here/distribution/check-native-bundle-runtime.sh" \
+    "$native_bundle" "$release_inputs" "$postlink_verify" \
+    "$upstream/zlib-$ZLIB_VERSION.tar.xz"
+else
+  # Validation must run on the exact downloadable bytes before the stable
+  # download name becomes visible. A failing runtime leaves no false release.
+  native_stage=$(mktemp -d -- "$out/.native-download.XXXXXXXX")
+  if [[ $(dirname -- "$(realpath -e -- "$native_stage")") \
+        != "$(realpath -e -- "$out")" ]]; then
+    printf 'native bundle staging escaped output root\n' >&2
+    exit 1
+  fi
+  native_candidate=$native_stage/$(basename -- "$native_bundle")
+  cleanup_native_stage() {
+    if [[ -d ${native_stage:-} ]]; then
+      rm -f -- "$native_candidate"
+      rmdir -- "$native_stage"
+    fi
+  }
+  trap cleanup_native_stage EXIT
+  bash "$here/distribution/publish-native-bundle.sh" \
+    "$release_root" "$release_inputs" "$native_candidate"
+  bash "$here/distribution/check-native-bundle-runtime.sh" \
+    "$native_candidate" "$release_inputs" "$postlink_verify" \
+    "$upstream/zlib-$ZLIB_VERSION.tar.xz"
+  mv -- "$native_candidate" "$native_bundle"
+  rmdir -- "$native_stage"
+  trap - EXIT
+fi
 printf '%s\n' \
-  'canonical artifact publication: not connected'
-exit 3
+  "native-download=$native_bundle" \
+  "native-download-bytes=$(stat -c %s -- "$native_bundle")" \
+  'canonical artifact publication: pending; not a native bundle prerequisite'

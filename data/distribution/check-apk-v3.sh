@@ -52,7 +52,7 @@ install -m 0644 "$public_key" "$output/candidate/etc/apk/keys/$key_name"
   --repository "$index" add --initdb \
   system-config=0.1.0-r0
 
-for path in etc/nftables.conf etc/ssh/ssh_config; do
+for path in etc/nftables.conf etc/ssh/ssh_config etc/hosts; do
   if [[ ! -f $output/candidate/$path ]] || \
      [[ $(stat -c '%u:%g' -- "$output/candidate/$path") != 0:0 ]]; then
     printf 'apk v3 ownership projection failed: /%s\n' "$path" >&2

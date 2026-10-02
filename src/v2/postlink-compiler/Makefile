@@ -12,16 +12,24 @@ INCLUDES = -Iinclude -Isrc -I../support/include -I../x86/include \
 ZYDIS_INCLUDES = -I../x86/third_party/zydis/include \
 	-I../x86/third_party/zydis/dependencies/zycore/include \
 	-I../x86/third_party/zydis/src
-SOURCES = src/compiler.c src/emit-x86.c src/layout-elf.c src/metadata.c src/relocate-elf.c src/entry.c src/table.c src/native.c src/select-x86.c src/minimum.c src/format.c src/semantic.c src/block.c src/closure.c \
+SOURCES = src/compiler.c src/emit-x86.c src/layout-elf.c src/metadata.c src/relocate-elf.c src/discover-entry.c src/jump-table.c src/compile-elf.c src/minimum.c src/format.c src/instruction-semantics.c src/form-block.c src/closure.c \
 	src/transfer.c src/template.c src/project.c src/plan.c src/compose.c \
-	src/compact.c src/rewrite.c src/sweep.c src/region.c src/alu.c \
-	src/affine.c src/quotient.c src/scalar.c
+	src/compact.c src/normalize-ssa.c src/sweep.c src/region.c src/alu.c \
+	src/affine.c src/quotient.c src/scalar.c \
+	src/selection/encoding.c src/selection/source.c src/selection/operands.c \
+	src/selection/expressions.c src/selection/flags.c src/selection/select-rules.c \
+	src/selection/lea.c src/selection/tree-measure.c src/selection/tree-write.c \
+	src/selection/simple-frame.c src/selection/alu-frame.c \
+	src/selection/arx-frame.c src/selection/carry-frame.c \
+	src/selection/handoff.c src/selection/branch-frame.c \
+	src/selection/state-frame.c src/selection/flag-frame.c \
+	src/selection/shared-dag.c src/selection/projection.c src/selection/select.c src/selection/candidates.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 DEPENDENCIES = $(OBJECTS:.o=.d)
 LIBRARY = $(BUILD)/libpostlink.a
 PROGRAM = $(BUILD)/postlink-compiler
 
-.PHONY: all library check elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check local-code-address-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check instruction-law-check catalog block-catalog native-benchmark distribution-population-check production-benchmark-fixture-check production-benchmark-check linked-completeness-check \
+.PHONY: all library check elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check table-alternative-bound-check stack-slot-table-check copied-memory-table-check backward-exit-table-check backward-loop-table-check chained-table-cut-check nested-table-guards-check local-code-address-check pie-address-difference-check final-flags-after-value-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check instruction-law-check catalog block-catalog native-benchmark distribution-population-check production-benchmark-fixture-check production-benchmark-check linked-completeness-check \
 	clean dependencies
 all: $(PROGRAM)
 library: $(LIBRARY)
@@ -35,12 +43,15 @@ $(BUILD):
 	mkdir -p $@
 
 $(BUILD)/%.o: src/%.c | $(BUILD)
+	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -ffreestanding -MMD -MP -c $< -o $@
 
 -include $(DEPENDENCIES)
 
-$(LIBRARY): $(OBJECTS)
-	$(AR) rcs $@ $^
+$(LIBRARY): $(OBJECTS) Makefile
+	rm -f $@.tmp
+	$(AR) rcs $@.tmp $(OBJECTS)
+	mv $@.tmp $@
 
 $(PROGRAM): cli/main.c $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/main.c $(LIBRARY) \
@@ -103,6 +114,17 @@ $(BUILD)/normal-form: check/normal-form.c $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/normal-form.c $(LIBRARY) \
 		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
 		../support/build/libsupport.a -o $@
+
+$(BUILD)/linear-block: check/linear-block.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/linear-block.c $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+.PHONY: linear-block-check
+linear-block-check: $(BUILD)/linear-block
+	$(BUILD)/linear-block
+
+check: linear-block-check
 
 normal-form-check: $(BUILD)/normal-form
 	$(BUILD)/normal-form
@@ -351,6 +373,272 @@ relative-code-pointer-check: $(PROGRAM)
 	set +e; "$$temporary/output"; output_status=$$?; set -e; \
 	test $$output_status -eq 42
 
+table-alternative-bound-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/table-alternative-bound.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=82 '; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	for variant in merged split large wide; do \
+	variant_flags=; row_count=51; \
+	case "$$variant" in split) variant_flags=-DSPLIT_EDGE;; \
+		large) variant_flags=-DLARGE_FUNCTION;; \
+		wide) variant_flags=-DWIDE_TABLE; row_count=301;; esac; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DNO_OUTER_GUARD check/table-alternative-bound.S \
+		$$variant_flags -o "$$temporary/merged-edge"; \
+	$(BUILD)/native-closure "$$temporary/merged-edge" --list-tables \
+		| grep -Eq "^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=$$row_count "; \
+	set +e; "$$temporary/merged-edge"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/merged-edge" -o "$$temporary/merged-output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/merged-edge" "$$temporary/merged-output"; \
+	set +e; "$$temporary/merged-output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	done
+
+stack-slot-table-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/stack-slot-table.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=7 '; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 10; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 10; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DBREAK_SLOT check/stack-slot-table.S -o "$$temporary/broken-slot"; \
+	$(BUILD)/native-closure "$$temporary/broken-slot" --list-tables \
+		| grep -Eq '^tables=0 targets=0$$'
+
+copied-memory-table-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/copied-memory-table.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=50 '; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DBREAK_COPY check/copied-memory-table.S -o "$$temporary/broken-copy"; \
+	$(BUILD)/native-closure "$$temporary/broken-copy" --list-tables \
+		| grep -Eq '^tables=0 targets=0$$'
+
+.PHONY: affine-memory-table-check
+affine-memory-table-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/affine-memory-table.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=5 .*closed=1$$'; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify "$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	for variant in MUTATE_INDEX MUTATE_COPY MUTATE_MEMORY BYPASS_DEFINITION; do \
+	  $(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none -D$$variant \
+		check/affine-memory-table.S -o "$$temporary/$$variant"; \
+	  $(BUILD)/native-closure "$$temporary/$$variant" --list-tables \
+		| grep -Eq '^tables=0 targets=0$$'; \
+	done
+
+check: affine-memory-table-check
+
+backward-exit-table-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/backward-exit-table.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=32 '; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DBREAK_EXIT check/backward-exit-table.S \
+		-o "$$temporary/broken-exit"; \
+	$(BUILD)/native-closure "$$temporary/broken-exit" --list-tables \
+		| grep -Eq '^tables=0 targets=0$$'
+
+backward-loop-table-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/backward-loop-table.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^table base=0x[0-9a-f]+ consumer=0x[0-9a-f]+ rows=9 '; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DBREAK_LOOP check/backward-loop-table.S \
+		-o "$$temporary/broken-loop"; \
+	$(BUILD)/native-closure "$$temporary/broken-loop" --list-tables \
+		| grep -Eq '^tables=0 targets=0$$'
+
+chained-table-cut-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/chained-table-cut.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^tables=2 targets=12$$'; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DBREAK_CUT check/chained-table-cut.S \
+		-o "$$temporary/broken-cut"; \
+	$(BUILD)/native-closure "$$temporary/broken-cut" --list-tables \
+		| grep -Eq '^tables=1 targets=6$$'
+
+nested-table-guards-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/nested-table-guards.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^tables=2 targets=43$$'; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq ' rows=15 '; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/input"; source_status=$$?; \
+	"$$temporary/output"; output_status=$$?; set -e; \
+	test $$source_status -eq 42; test $$output_status -eq 42; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DALTERNATIVE_PATH check/nested-table-guards.S \
+		-o "$$temporary/alternative"; \
+	$(BUILD)/native-closure "$$temporary/alternative" --list-tables \
+		| grep -Eq ' rows=100 '
+
+.PHONY: closed-table-set-check interior-trampoline-check indirect-default-table-check
+indirect-default-table-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for variant in original stale-rows; do \
+	flags=; if test "$$variant" = stale-rows; then flags=-DSTALE_RELA_ROWS; fi; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		$$flags check/indirect-default-table.S -o "$$temporary/input"; \
+	if test "$$variant" = stale-rows; then \
+		objcopy --dump-section .rodata="$$temporary/rows" "$$temporary/input"; \
+		dd if="$$temporary/rows" of="$$temporary/word" bs=4 count=1 2>/dev/null; \
+		file_offset=$$(objdump -h "$$temporary/input" \
+			| awk '$$2 == ".rodata" { print "0x" $$6 }'); \
+		test -n "$$file_offset"; \
+		dd if="$$temporary/word" of="$$temporary/input" bs=1 \
+			seek=$$((file_offset + 8)) count=4 conv=notrunc 2>/dev/null; \
+	fi; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		> "$$temporary/domains"; \
+	grep -qx 'tables=0 targets=0' "$$temporary/domains"; \
+	grep -qx 'shared-base encodings=1 retained addresses=4' "$$temporary/domains"; \
+	set +e; timeout 5 "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; timeout 5 "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	done; \
+	printf 'indirect default table: green (unknown control remains unproved; linked rows own relocation)\n'
+
+check: indirect-default-table-check
+
+.PHONY: interior-compare-table-check
+interior-compare-table-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for variant in immediate displacement arithmetic; do \
+	  definitions=; \
+	  case $$variant in \
+	    displacement) definitions=-DDISPLACEMENT_COMPARE ;; \
+	    arithmetic) definitions=-DARITHMETIC_COMPARE ;; \
+	  esac; \
+	  $(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+	    $$definitions check/interior-compare-table.S -o "$$temporary/input"; \
+	  $(BUILD)/native-closure "$$temporary/input" --list-tables \
+	    | grep -Eq '^tables=1 targets=4$$'; \
+	  set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	  test $$source_status -eq 42; \
+	  $(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	  ../optimized-x86/build/postlink-verify \
+	    "$$temporary/input" "$$temporary/output"; \
+	  set +e; timeout 5 "$$temporary/output"; output_status=$$?; set -e; \
+	  test $$output_status -eq 42; \
+	done
+
+check: interior-compare-table-check
+
+interior-trampoline-check: $(PROGRAM) $(BUILD)/entry
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none,-Ttext=0x401000 \
+		check/interior-trampoline.S -o "$$temporary/input"; \
+	$(BUILD)/entry "$$temporary/input" 0x401003 0x401004 \
+		> "$$temporary/entries"; \
+	! grep -q '^metadata entry 0x401003 ' "$$temporary/entries"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+closed-table-set-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/closed-table-set.S -o "$$temporary/input"; \
+	$(BUILD)/native-closure "$$temporary/input" --list-tables \
+		| grep -Eq '^tables=2 targets=5$$'; \
+	"$$temporary/input"; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	"$$temporary/output"; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		-DBYPASS_GUARD check/closed-table-set.S -o "$$temporary/bypass"; \
+	$(BUILD)/native-closure "$$temporary/bypass" --list-tables \
+		| grep -Eq '^tables=0 targets=0$$'
+
 local-code-address-check: $(PROGRAM)
 	@set -e; temporary=$$(mktemp -d); \
 	trap 'rm -rf "$$temporary"' EXIT; \
@@ -359,6 +647,34 @@ local-code-address-check: $(PROGRAM)
 		-o "$$temporary/input"; \
 	! readelf -rW "$$temporary/input" \
 		| grep -q 'local_initializer'; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+pie-address-difference-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -fno-stack-protector -fPIE -static-pie \
+		-Wl,--emit-relocs,--build-id=none \
+		check/pie-address-difference.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+final-flags-after-value-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/final-flags-after-value.S \
+		-o "$$temporary/input"; \
 	set +e; "$$temporary/input"; source_status=$$?; set -e; \
 	test $$source_status -eq 42; \
 	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
@@ -522,6 +838,11 @@ entry-check: $(BUILD)/entry
 		-o "$$temporary/roles"; \
 	$(BUILD)/entry "$$temporary/roles" \
 		| grep -q '3 candidates -> 1 primary + 2 metadata entries; 2 observable addresses'; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		-Wl,--build-id=none check/noncontrol-rel32-fixture.S \
+		-o "$$temporary/noncontrol-rel32"; \
+	$(BUILD)/entry "$$temporary/noncontrol-rel32" \
+		| grep -q '1 primary + 0 metadata entries; 0 observable addresses'; \
 	$(CC) -O2 -Wl,--emit-relocs check/elf-proof-fixture.c \
 		-o "$$temporary/input"; \
 	$(BUILD)/entry "$$temporary/input"; \
@@ -608,6 +929,201 @@ native-closure-check: $(BUILD)/native-closure
 		-o "$$temporary/input"; \
 	$(BUILD)/native-closure "$$temporary/input"
 
+call-register-lifetime-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/call-register-lifetime.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'call-return register lifetime: green\n'
+
+check: call-register-lifetime-check
+
+shift-count-alias-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/shift-count-alias.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'entry CL shift alias: green\n'
+
+check: shift-count-alias-check
+
+.PHONY: shift-count-publication-check
+shift-count-publication-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/shift-count-publication.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'shift count publication: green\n'
+
+check: shift-count-publication-check
+
+.PHONY: shift-count-generation-check
+shift-count-generation-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/shift-count-generation.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'shift count generation: green\n'
+
+check: shift-count-generation-check
+
+.PHONY: post-call-zero-generation-check
+post-call-zero-generation-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/post-call-zero-generation.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'post-call zero generation: green\n'
+
+check: post-call-zero-generation-check
+
+.PHONY: setcc-upper-bits-check
+setcc-upper-bits-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/setcc-upper-bits.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'SETcc full-width publication: green\n'
+
+check: setcc-upper-bits-check
+
+wide-indexed-address-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/wide-indexed-address.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'wide indexed pointer: green\n'
+
+check: wide-indexed-address-check
+
+bitmap-complement-mask-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/bitmap-complement-mask.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'bitmap complement mask: green\n'
+
+check: bitmap-complement-mask-check
+
+affine-generation-order-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/affine-generation-order.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	"$$temporary/linked" a b c; \
+	address=$$(nm "$$temporary/linked" | awk '$$3 == "affine_start" { print "0x" $$1 }'); \
+	test -n "$$address"; \
+	$(BUILD)/native-closure "$$temporary/linked" --dump-source "$$address" \
+		> "$$temporary/candidates"; \
+	! grep -q 'code=4c8d6df8' "$$temporary/candidates"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	"$$temporary/optimized" a b c; \
+	printf 'affine generation order: green\n'
+
+check: affine-generation-order-check
+
+bitmask-pointer-lifetime-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/bitmask-pointer-lifetime.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	address=$$(nm "$$temporary/linked" | awk '$$3 == "mask_pointer_start" { print "0x" $$1 }'); \
+	test -n "$$address"; \
+	$(BUILD)/native-closure "$$temporary/linked" --dump-projected \
+		"$$address" > "$$temporary/candidates"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'bitmask pointer lifetime: green\n'
+
+check: bitmask-pointer-lifetime-check
+
+.PHONY: scaled-address-generation-check
+scaled-address-generation-check: $(PROGRAM) $(BUILD)/native-closure
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/scaled-address-generation.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	address=$$(nm "$$temporary/linked" | awk '$$3 == "scaled_address_start" { print "0x" $$1 }'); \
+	test -n "$$address"; \
+	$(BUILD)/native-closure "$$temporary/linked" --dump-projected \
+		"$$address" > "$$temporary/candidates"; \
+	if grep -q 'code=48c1e2024c89e64c8d0497' "$$temporary/candidates"; then \
+		printf 'scaled address reused an already published shift\n' >&2; \
+		exit 1; \
+	fi; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'scaled address generation: green\n'
+
+check: scaled-address-generation-check
+
+.PHONY: published-entry-generation-check
+published-entry-generation-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/published-entry-generation.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'published entry generation: green\n'
+
+check: published-entry-generation-check
+
+.PHONY: conditional-entry-alias-check
+conditional-entry-alias-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--emit-relocs \
+		check/conditional-entry-alias.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'conditional entry alias: green\n'
+
+check: conditional-entry-alias-check
+
+.PHONY: lane32-publication-check
+lane32-publication-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) \
+		check/lane32-publication.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf '32-bit publication after 64-bit shift: green\n'
+
+check: lane32-publication-check
+
 $(BUILD)/select-x86: check/select-x86.c $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/select-x86.c $(LIBRARY) \
 		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
@@ -615,6 +1131,62 @@ $(BUILD)/select-x86: check/select-x86.c $(LIBRARY) dependencies
 
 select-x86-check: $(BUILD)/select-x86
 	$(BUILD)/select-x86
+
+$(BUILD)/selector-reentrancy: check/selector-reentrancy.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -pthread $< $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+.PHONY: selector-reentrancy-check sanitizer-check thread-sanitizer-check
+selector-reentrancy-check: $(BUILD)/selector-reentrancy
+	$(BUILD)/selector-reentrancy
+
+sanitizer-check:
+	bash check/sanitizers.sh address,undefined
+
+thread-sanitizer-check:
+	bash check/sanitizers.sh thread
+
+check: selector-reentrancy-check
+
+$(BUILD)/selection-policy: check/selection-policy.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+.PHONY: selection-policy-check
+selection-policy-check: $(BUILD)/selection-policy
+	$(BUILD)/selection-policy
+
+check: selection-policy-check
+
+$(BUILD)/compiler-boundaries: check/compiler-boundaries.c $(LIBRARY) dependencies
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(LIBRARY) \
+		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \
+		../support/build/libsupport.a -o $@
+
+.PHONY: compiler-boundaries-check
+compiler-boundaries-check: $(BUILD)/compiler-boundaries
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/relocation-free-fixture.S -o "$$temporary/input"; \
+	$(BUILD)/compiler-boundaries "$$temporary/input"
+
+check: compiler-boundaries-check
+
+.PHONY: source-layout-check
+source-layout-check: $(LIBRARY)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	printf '%s\n' $(SOURCES) | LC_ALL=C sort >"$$temporary/declared"; \
+	find src -type f -name '*.c' | LC_ALL=C sort >"$$temporary/actual"; \
+	diff -u "$$temporary/declared" "$$temporary/actual"; \
+	$(AR) t $(LIBRARY) | LC_ALL=C sort | uniq -d >"$$temporary/duplicates"; \
+	test ! -s "$$temporary/duplicates" || \
+		{ cat "$$temporary/duplicates" >&2; exit 1; }
+
+check: source-layout-check
 
 .PHONY: shift-width-check
 $(BUILD)/shift-width: check/shift-width.c check/execute.h $(LIBRARY) dependencies
@@ -709,7 +1281,173 @@ $(BUILD)/population: check/population.c $(LIBRARY) dependencies
 population-check: $(BUILD)/population
 	$(BUILD)/population
 
-check: $(PROGRAM) $(BUILD)/completeness elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check local-code-address-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check block-observation-check slice-observation-check instruction-law-check distribution-population-check production-benchmark-fixture-check
+.PHONY: stack-code-continuation-check
+stack-code-continuation-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for variant in near far copy; do \
+		flags=; \
+		case $$variant in far) flags=-DFAR_RETURN;; copy) flags=-DCOPY_ADDRESS;; esac; \
+		$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none $$flags \
+			check/stack-code-continuation.S -o "$$temporary/$$variant.input"; \
+		set +e; "$$temporary/$$variant.input"; source_status=$$?; set -e; \
+		test $$source_status -eq 42; \
+		$(PROGRAM) "$$temporary/$$variant.input" -o "$$temporary/$$variant.output"; \
+		../optimized-x86/build/postlink-verify \
+			"$$temporary/$$variant.input" "$$temporary/$$variant.output"; \
+		set +e; "$$temporary/$$variant.output"; output_status=$$?; set -e; \
+		test $$output_status -eq 42; \
+	done
+
+.PHONY: observed-call-site-check
+observed-call-site-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/observed-call-site.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+.PHONY: partial-pointer-clear-check
+partial-pointer-clear-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for flags in '' '-DCLEAR_WORD' '-DCLEAR_AND' '-DCLEAR_EXTENDED' \
+		'-DCLEAR_WORD -DCLEAR_EXTENDED'; do \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		$$flags check/partial-pointer-clear.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	done
+
+.PHONY: relative-function-table-check
+relative-function-table-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/relative-function-table.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42
+
+.PHONY: bit-scan-passthrough-check
+bit-scan-passthrough-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for flags in '' '-DSCAN_WORD' '-DSCAN_QUAD' '-DSCAN_REVERSE' \
+		'-DSCAN_WORD -DSCAN_REVERSE' '-DSCAN_QUAD -DSCAN_REVERSE'; do \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		$$flags check/bit-scan-passthrough.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	test $$output_status -eq 42; \
+	done
+
+.PHONY: cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check tail-call-table-rejection-check indirect-flags-frontier-check entry-flags-preload-check
+cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check indirect-flags-frontier-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) -Wl,--build-id=none \
+		check/$(@:-check=).S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	if test $$output_status -ne 42; then \
+	printf '%s: optimized exit %s, expected source exit 42\n' \
+		'$@' "$$output_status" >&2; exit 1; fi
+
+entry-flags-preload-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for variant in 0 1 2 3; do \
+	$(CC) $(BARE_FIXTURE_FLAGS) -DENTRY_FLAGS_CASE=$$variant \
+		-Wl,--build-id=none check/entry-flags-preload.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	if test $$output_status -ne 42; then \
+	printf 'entry-flags-preload variant %s: optimized exit %s, expected 42\n' \
+		"$$variant" "$$output_status" >&2; exit 1; fi; \
+	done
+
+.PHONY: compare-address-flags-check
+compare-address-flags-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for variant in 0 1 2 3; do \
+	$(CC) $(BARE_FIXTURE_FLAGS) -DCOMPARE_ADDRESS_CASE=$$variant \
+		-Wl,--build-id=none check/compare-address-flags.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	if test $$output_status -ne 42; then \
+	printf 'compare-address-flags variant %s: optimized exit %s, expected 42\n' \
+		"$$variant" "$$output_status" >&2; exit 1; fi; \
+	done
+
+check: compare-address-flags-check
+
+.PHONY: transient-entry-generation-check
+transient-entry-generation-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for variant in 0 1 2; do \
+	$(CC) $(BARE_FIXTURE_FLAGS) -DTRANSIENT_ENTRY_CASE=$$variant \
+		-Wl,--build-id=none check/transient-entry-generation.S -o "$$temporary/input"; \
+	set +e; "$$temporary/input"; source_status=$$?; set -e; \
+	test $$source_status -eq 42; \
+	$(PROGRAM) "$$temporary/input" -o "$$temporary/output"; \
+	../optimized-x86/build/postlink-verify \
+		"$$temporary/input" "$$temporary/output"; \
+	set +e; "$$temporary/output"; output_status=$$?; set -e; \
+	if test $$output_status -ne 42; then \
+	printf 'transient-entry-generation variant %s: optimized exit %s, expected 42\n' \
+		"$$variant" "$$output_status" >&2; exit 1; fi; \
+	done
+
+check: transient-entry-generation-check
+
+tail-call-table-rejection-check: $(PROGRAM) $(BUILD)/entry
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	for bypass in 1 2; do \
+	$(CC) $(BARE_FIXTURE_FLAGS) -DBYPASS_GUARD=$$bypass \
+		-Wl,--build-id=none check/tail-call-table.S -o "$$temporary/input"; \
+	$(BUILD)/entry "$$temporary/input" >"$$temporary/entries"; \
+	grep -xF 'recognized table projection: 0 bases, 0 rows' \
+		"$$temporary/entries" >/dev/null; \
+	done
+
+check: closed-table-set-check interior-trampoline-check stack-code-continuation-check observed-call-site-check partial-pointer-clear-check relative-function-table-check bit-scan-passthrough-check cpuid-inputs-check partial-clear-after-flags-check atomic-inputs-check mutable-immediate-field-check unowned-relative-field-check mixed-relative-field-check prefixed-rel32-site-check exception-table-root-check bug-table-root-check tail-call-table-check tail-call-table-rejection-check indirect-flags-frontier-check entry-flags-preload-check
+
+check: $(PROGRAM) $(BUILD)/completeness elf-proof-check observed-compile-check relocation-free-product-check product-gate-check shared-product-gate-check runtime-elf-check modular-address-check physical-entry-check code-grid-check relative-code-pointer-check table-alternative-bound-check stack-slot-table-check copied-memory-table-check backward-exit-table-check backward-loop-table-check chained-table-cut-check nested-table-guards-check local-code-address-check pie-address-difference-check final-flags-after-value-check observed-code-span-check mutable-code-site-check trap-continuation-check alternative-record-check linked-field-authority-check table-side-exit-check call-cut-check dispatch-alias-check profile-extension-check overlapping-control-check patch-trampoline-check mixed-load-check nonimage-control-check dynamic-runtime-check metadata-closure-check entry-check native-closure-check select-x86-check native-layout-check population-check direct-control-check scalar-check physical-check quotient-check normal-form-check global-minimum-check block-observation-check slice-observation-check instruction-law-check distribution-population-check production-benchmark-fixture-check
 	@! grep -REn 'PL_VM_|pl_vm_|wasm-compiler|machine-artifact|delivery|worker' \
 		include src cli
 	$(BUILD)/completeness

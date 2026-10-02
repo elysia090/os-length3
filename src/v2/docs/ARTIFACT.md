@@ -1965,6 +1965,39 @@ is 75,000,000 payload bytes or less.
 8. Bump the executable format once.  The product runtime keeps no compatibility
    reader.
 
+## Construction memory is not retained artifact population
+
+Proof construction uses borrowed immutable byte spans and generated observation
+rows. The program observation is the constant semantic family/domain plus the
+borrowed instruction span; it is read on demand by the same exact sharing and
+finite-future algorithm, not stored as another row per state. Digest radix
+ordering still opens collision candidates and compares every byte; eliminating
+the observation array does not relax equality or remove either complete proof.
+
+Executable fragments enumerate only nonempty state intervals and nonempty
+image prefix/suffix intervals. Empty states still have checked coordinates but
+do not consume fragment descriptors. The sole fragment owner array is
+transferred into the complete payload view. Reconstitution compares selected
+representative spans directly with each original ELF interval and validates the
+final extent; no whole-ELF reconstruction buffer or unused state-to-fragment
+index is needed. Program/future scratch is allocated after fragment scratch has
+been released. Geometrically grown state columns are sealed to actual population
+and the insertion index is dropped when ingestion ends.
+
+Future proof and block/payload rank-map construction also have disjoint
+lifetimes. One working arena is measured as the maximum of those three
+requirements, not their sum. The initial program proof and the complete
+release recheck both finish before block-rank construction, which finishes
+before payload-rank construction. Observation/scratch views borrow the arena;
+the durable child/level trees retain their own storage, and rank lookup reads
+only those trees after construction. Reusing scratch therefore cannot alias
+the retained maps or skip a proof pass.
+
+These are transient build-memory reductions, not deductions from published
+release bytes or claims of a globally minimal program. Both isolated stage
+fixtures and the complete fixed distribution must pass their original proof and
+native execution gates after such a lifetime change.
+
 ## Implementation ownership
 
 | responsibility | implementation |

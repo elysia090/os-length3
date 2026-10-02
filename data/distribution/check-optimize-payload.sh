@@ -118,7 +118,11 @@ if POSTLINK_PAYLOAD_REPORT=$second_report "$here/optimize-payload.sh" \
   printf 'optimized payload incorrectly re-entered post-link compilation\n' >&2
   exit 1
 fi
-grep -q 'lacks static code relocations' "$second_error"
+if ! grep -q 'lacks static construction relocations' "$second_error"; then
+  printf 'unexpected second-pass rejection:\n' >&2
+  cat "$second_error" >&2
+  exit 1
+fi
 [[ ! -e $second ]]
 
 component_routes=(

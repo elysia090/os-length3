@@ -96,9 +96,10 @@ recipe_key=$(printf '%s\n' "$SKALIBS_SHA512" "$EXECLINE_SHA512" \
   "$($cc --version | sed -n '1p')" "$QM_BOOTSTRAP_ID" 'static-init-closure-v2' | \
   sha256sum | cut -d' ' -f1)
 service_source=$here/services
+bash "$here/check-service-sources.sh" "$service_source"
 service_key=$(
-  cd "$service_source"
-  find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | \
+  cd "$here"
+  find services boot -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | \
     cut -d' ' -f1
 )
 prefix=$build/$recipe_key
@@ -171,6 +172,10 @@ if [[ ! -f $publication/.complete ]]; then
     bash "$here/clone-tree.sh" "$prepared" "$candidate"
   done
   service_root=$prepared_root/base-services
+  install -d -m 0755 "$service_root/usr/libexec/system"
+  for script in init boot console halt ready; do
+    install -m 0755 "$here/boot/$script" "$service_root/usr/libexec/system/$script"
+  done
   compiled=$service_root/etc/s6-rc/compiled/current
   mkdir -p "$(dirname -- "$compiled")"
   "$candidate/usr/bin/s6-rc-compile" "$compiled" "$service_source"
