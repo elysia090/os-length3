@@ -48,6 +48,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->image = *image;
     plan->report = (wasm_cut_report){ 0 };
     plan->system_cut = 0u;
+    plan->repeat_cut = 0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -71,7 +72,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
         }
         int stack = cut_stack_supported(&instruction);
         int system = cut_system_supported(&instruction);
-        if (system || stack || cut_memory_supported(&instruction)) {
+        int repeat = cut_repeat_supported(&instruction);
+        if (system || stack || repeat || cut_memory_supported(&instruction)) {
             plan->report.boundary = system ? WASM_CUT_SYSTEM : WASM_CUT_MEMORY;
             plan->report.boundary_operation = instruction.operation;
             /* Commit the preceding pure slice before this possibly faulting
@@ -79,12 +81,13 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
              * earlier architectural writes to roll back. */
             if (!i) {
                 plan->system_cut = (pl_u32)system;
+                plan->repeat_cut = (pl_u32)repeat;
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
                 plan->flag_frontier[0] = 0u;
                 if (!system) {
                     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
-                    plan->report.memory_bytes = stack ? instruction.operand_width / 8u
+                    plan->report.memory_bytes = stack || repeat ? instruction.operand_width / 8u
                         : instruction.operands[store ? 0u : 1u].bits / 8u;
                 }
                 if (stack && (instruction.operation == PL_X86_OPERATION_CALL
@@ -135,8 +138,10 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.has_table = plan->system_cut == CUT_SYSTEM_TABLE;
     cut.has_far_return = plan->system_cut == CUT_SYSTEM_FAR_RETURN;
     cut.has_control_write = plan->system_cut == CUT_SYSTEM_CONTROL_WRITE;
+    cut.has_repeat = plan->repeat_cut;
     wasm_writer_uleb(writer, 1u);
-    wasm_writer_uleb(writer, cut.has_port ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
+    wasm_writer_uleb(writer, cut.has_repeat ? CUT_REPEAT_LOCALS
+                           : cut.has_port ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
     wasm_writer_byte(writer, 0x7eu);
     cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
     cut_op(&cut, 0x71u); return_if(&cut);
@@ -173,6 +178,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
         cut.wanted_flags = plan->flag_frontier[i] >> 16u;
         if (plan->system_cut) cut_lower_system(&cut, &instruction);
+        else if (cut.has_repeat) cut_lower_repeat(&cut, &instruction);
         else if (cut.has_memory && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
         else if (cut.has_memory) cut_lower_memory(&cut, &instruction);
         else cut_lower_instruction(&cut, &instruction);

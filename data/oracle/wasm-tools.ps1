@@ -34,6 +34,7 @@ try {
       'src/v2/wasm-compiler/src/emit-function.c', 'src/v2/wasm-compiler/src/compile-cut.c',
       'src/v2/wasm-compiler/src/emit-cut.c', 'src/v2/wasm-compiler/src/lower-register.c',
       'src/v2/wasm-compiler/src/lower-shift.c',
+      'src/v2/wasm-compiler/src/lower-repeat.c',
       'src/v2/wasm-compiler/src/lower-memory.c', 'src/v2/wasm-compiler/src/lower-stack.c',
       'src/v2/wasm-compiler/src/lower-system.c', 'src/v2/x86/src/decode.c', 'src/v2/x86/src/elf.c',
       'src/v2/optimized-x86/src/proof.c', 'src/v2/optimized-x86/src/reader.c', 'src/v2/support/src/sha256.c'

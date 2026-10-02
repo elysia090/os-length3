@@ -6,6 +6,7 @@ static machine_state state;
 static machine_segments segments;
 static vm_execution_row rows[2];
 static pl_u32 calls, fetches, stop, revoke, revoke_fetch, load_ss, call_fault;
+static pl_u32 yielding, called_slot;
 static pl_u64 fetched[2];
 static int failures;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
@@ -19,7 +20,13 @@ static machine_result fetch(void *owner, pl_u64 address)
 static machine_result call(void *owner, pl_u32 slot)
 {
     (void)owner; ++calls;
+    called_slot = slot;
     if (call_fault) return 107u;
+    if (yielding) {
+        if (revoke) execution.generation = 0u;
+        return machine_result_make(MACHINE_RESULT_BARRIER,
+            yielding == 1u ? MACHINE_BARRIER_QUANTUM : MACHINE_BARRIER_RESOURCE);
+    }
     state.rip = slot == 1u ? rows[1].entry : rows[0].entry;
     ++state.retired;
     if (revoke) execution.generation = 0u;
@@ -31,7 +38,7 @@ static machine_result run(pl_u64 generation, pl_u32 budget)
 static void reset(void)
 {
     memset(&state, 0, sizeof state); calls = fetches = stop = revoke = revoke_fetch = 0u;
-    load_ss = call_fault = 0u; segments = (machine_segments){0};
+    load_ss = call_fault = yielding = called_slot = 0u; segments = (machine_segments){0};
     segments.version = MACHINE_SEGMENTS_ABI_VERSION;
     rows[0] = (vm_execution_row){ 0x400000u, 1u, 1u, 1u, 0u };
     rows[1] = (vm_execution_row){ 0x400001u, 1u, 1u, 2u, 0u };
@@ -59,6 +66,42 @@ int main(void)
     reset(); revoke = 1u; EXPECT(run(9u, 1u) == 5u && calls == 1u && state.retired == 1u);
     EXPECT(execution.completed == 1u && execution.retired == 1u);
     EXPECT(run(9u, 2u) == 5u && calls == 1u);
+    reset(); yielding = revoke = 1u; execution.segments = &segments; segments.mov_ss_shadow = 1u;
+    EXPECT(run(9u,1u) == 10u && fetches == 1u && calls == 1u);
+    EXPECT(!execution.completed && !execution.retired && !state.retired && segments.mov_ss_shadow == 1u);
+    /* Source bytes/borrowed rows may have changed by this instruction's own
+     * stores. Its latched slot, not a fresh fetch/row lookup, must resume. */
+    rows[0].slot = 2u;
+    EXPECT(run(8u,1u) == 5u && calls == 1u);
+    EXPECT(run(9u,1u) == 10u && fetches == 1u && calls == 2u && called_slot == 1u);
+    yielding = 0u;
+    EXPECT(run(9u,1u) == 5u && calls == 3u && fetches == 1u && state.retired == 1u);
+    EXPECT(execution.completed == 1u && execution.retired == 1u && !segments.mov_ss_shadow);
+    EXPECT(run(9u,1u) == 5u && calls == 3u);
+    reset(); yielding = 2u;
+    EXPECT(run(9u,1u) == 2u && execution.continuation.slot == 1u);
+    EXPECT(run(9u,1u) == 2u && calls == 2u && fetches == 1u);
+    call_fault = 1u;
+    EXPECT(run(9u,1u) == 107u && !execution.continuation.slot && !execution.continuation_generation);
+    reset(); yielding = 1u;
+    EXPECT(run(9u,1u) == 10u);
+    state.rip++;
+    EXPECT(run(9u,1u) == 6u && calls == 1u && !execution.continuation.slot);
+    for (pl_u32 word = 0u; word < 5u; ++word) {
+        reset(); yielding = 1u; EXPECT(run(9u,1u) == 10u);
+        if (word == 0u) ++state.cr0;
+        else if (word == 1u) ++state.cr3;
+        else if (word == 2u) ++state.cr4;
+        else if (word == 3u) ++state.efer;
+        else ++state.system[MACHINE_SYSTEM_CS];
+        EXPECT(run(9u,1u) == 5u && calls == 1u && !execution.continuation.slot);
+    }
+    reset(); yielding = 1u; EXPECT(run(9u,1u) == 10u);
+    vm_execution_close(&execution);
+    EXPECT(run(9u,1u) == 5u && calls == 1u && !execution.continuation.slot);
+    EXPECT(!vm_execution_open(&execution,rows,2u,10u,&state));
+    EXPECT(run(9u,1u) == 5u && calls == 1u);
+    EXPECT(run(10u,1u) == 10u && calls == 2u && fetches == 2u);
     reset(); revoke_fetch = 1u;
     EXPECT(run(9u, 1u) == 5u && !calls && !state.retired);
     for (pl_u32 word = 0u; word < 5u; ++word) {

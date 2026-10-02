@@ -128,7 +128,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
     trace.push({entry:`0x${entry.toString(16)}`,instructions:done,next:`0x${rip().toString(16)}`,result:String(result)});
     if (trace.length > 16) trace.shift();
     if (result !== 1n && result !== 5n)
-      return {kind:'execution',result:String(result),entry:`0x${entry.toString(16)}`};
+      return {kind:'execution',result:String(result),entry:`0x${entry.toString(16)}`,
+        completed:vm.vm_completed(),sourceRetired:done,
+        requestAddress:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
+        requestBytes:view.getUint32(port + 40,true),requestAccess:view.getUint32(port + 44,true)};
     assert.equal(vm.vm_completed(),1); assert.equal(done,instructions);
     retired += done; assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
     return null;
@@ -176,8 +179,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
     assert(stopped,'diagnostic quantum bound, not boot completion');
     assert.equal(retired,378);
     assert.equal(rip(),0x1000281n);
-    assert.equal(stopped.kind,'compile'); assert.equal(stopped.status,-102);
+    assert.equal(stopped.kind,'execution'); assert.equal(stopped.result,'2');
+    assert.equal(stopped.completed,0); assert.equal(stopped.sourceRetired,0);
     assert.equal(stopped.entry,'0x1000281');
+    assert.equal(stopped.requestAddress,'0x1e283f8');
+    assert.equal(stopped.requestBytes,8); assert.equal(stopped.requestAccess,18);
     // Separate observations derived from the shipped relocation preamble:
     // CPUID's no-LA57 arm returned, POPFQ consumed the pushed zero, and both
     // LEAs, ECX byte-count/8, and STD have run. Not a full boot proof.
@@ -191,6 +197,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
       retired,modules:admissions,admissions,liveSlots:1,manualBranchEntries:0,
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,
+      repeatAdmission:'compiled; first destination physical page pending, no element committed',
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes,timingMs:{cold:coldMs,engine:engineMs,execution:executionMs},trace,

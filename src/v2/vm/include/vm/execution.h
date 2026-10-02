@@ -24,6 +24,8 @@ typedef struct {
     pl_u64 retired;
     pl_u64 context[5];
     machine_segments *segments; /* Optional only for register-only fixtures. */
+    vm_execution_row continuation; /* One latched instruction, not a CPU frame. */
+    pl_u64 continuation_generation;
 } vm_execution;
 typedef machine_result (*vm_execution_fetch)(void *owner, pl_u64 address);
 typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot);
@@ -51,6 +53,14 @@ void vm_execution_close(vm_execution *execution);
  * Budget exhaustion yields RESOLVE_RIP/0 with completed/retired counters.
  * Revoke after a successful writing cut stops before the following cut.
  * Exceptions are pending, not delivered. This is not a complete machine. */
+/* A single-instruction RESOURCE/QUANTUM barrier pins its original table slot
+ * and source identity. Resume does not refetch/redecode self-modified bytes.
+ * Its completed element frontier is already in architectural state; no state
+ * copy is stored here. Pin the slot/context and serialize CPU/host writers
+ * across the wait. Ordinary code admission stays revoked after payload writes;
+ * only this in-flight instruction may continue. Completion/fault releases the
+ * latch. Host reopen/close or a changed CPU/MMU context cancels it. This does
+ * not deliver interrupts or prove async source/module authenticity. */
 /* With an active MOV SS shadow the next row must contain exactly one source
  * instruction. ENTRY_MAP requests that narrower compile admission; it never
  * retires a larger slice or decodes an instruction. A successful retirement

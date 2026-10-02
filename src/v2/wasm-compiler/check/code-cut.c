@@ -141,6 +141,35 @@ int main(int argc, char **argv)
         EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
                == WASM_COMPILER_ERROR_GRAMMAR);
     }
+    for (pl_u32 address = 32u; address <= 64u; address += 32u)
+    for (pl_u32 width = 8u; width <= 64u; width *= 2u) {
+        pl_u32 at = 0u;
+        memset(pages,0x90,sizeof pages); pages[at++] = 0xf3u;
+        if (address == 32u) pages[at++] = 0x67u;
+        if (width == 16u) pages[at++] = 0x66u;
+        if (width == 64u) pages[at++] = 0x48u;
+        pages[at++] = width == 8u ? 0xa4u : 0xa5u;
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_bytes == at && report.source_instructions == 1u
+            && report.memory_bytes == width / 8u && report.memory_access == 3u
+            && report.read_registers == 0xc2u && report.written_registers == 0xc2u
+            && !report.flags_written);
+        if (argc == 2 && !failures) {
+            char prefix[4096], json[160];
+            int n = snprintf(prefix,sizeof prefix,"%s/repeat-%u-%u",argv[1],width,address);
+            int j = snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"sourceBytes\":%u,\"instructions\":1,\"width\":%u,\"address\":%u}\n",at,width,address);
+            if (n <= 0 || (size_t)n >= sizeof prefix || j <= 0 || (size_t)j >= sizeof json
+                || write_record(prefix,"json",json,(size_t)j) || write_record(prefix,"wasm",output,(size_t)bytes)
+                || write_record(prefix,"source-page",pages,4096u)) return 1;
+        }
+        pages[0] = 0x64u; pages[1] = 0xf3u; pages[2] = 0xa4u;
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+               == WASM_COMPILER_ERROR_GRAMMAR); /* FS base is not silently DS. */
+        pages[0] = 0xf0u; pages[1] = 0xf3u; pages[2] = 0xa4u;
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+               == WASM_COMPILER_ERROR_GRAMMAR);
+    }
+    memset(pages,0x90,sizeof pages);
     pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;
     pages[3] = 0x90u;
     EXPECT(wasm_compiler_measure_code_cut(&source, 9u, &options, &options.entry, 0)

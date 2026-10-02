@@ -320,6 +320,8 @@ machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
     if (!private_port(port))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     execution_owner owner = { port };
+    if (vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) != resident.generation)
+        return machine_result_make(MACHINE_RESULT_STALE_GENERATION,0u);
     return vm_execution_run(&execution, (machine_state *)(uintptr_t)state_offset,
                              generation, maximum_cuts, fetch_entry, call_entry, &owner);
 }

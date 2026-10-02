@@ -21,6 +21,14 @@ enum machine_result_kind {
     MACHINE_RESULT_TRANSITION = 7,
 };
 
+/* Host-residency wait and bounded execution yield are not guest exceptions.
+ * A latched one-instruction entry remains pinned until it finishes or faults. */
+enum machine_barrier_reason {
+    MACHINE_BARRIER_RESOURCE = 0u,
+    MACHINE_BARRIER_QUANTUM = 1u,
+};
+#define MACHINE_REPEAT_MAX_ELEMENTS 256u
+
 static inline machine_result machine_result_make(pl_u32 kind, pl_u64 payload)
 {
     return (payload << MACHINE_RESULT_KIND_BITS)

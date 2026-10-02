@@ -143,6 +143,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
 
 static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
 {
+    if (plan->repeat_cut) return 1;
     if (plan->system_cut == CUT_SYSTEM_CONTROL_WRITE) return 6;
     if (plan->system_cut == CUT_SYSTEM_FAR_RETURN) return 5;
     if (plan->system_cut == CUT_SYSTEM_TABLE) return 4;

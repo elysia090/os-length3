@@ -7,7 +7,8 @@
 #include <x86/decode.h>
 #include <stddef.h>
 enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
-       CUT_ADDRESS, CUT_STATUS, CUT_LOCAL_COUNT = 21, CUT_MEMORY_LOCALS = 23 };
+       CUT_ADDRESS, CUT_STATUS, CUT_REPEAT_BUDGET,
+       CUT_LOCAL_COUNT = 21, CUT_MEMORY_LOCALS = 23, CUT_REPEAT_LOCALS = 24 };
 enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT, CUT_SYSTEM_TABLE,
        CUT_SYSTEM_FAR_RETURN, CUT_SYSTEM_CONTROL_READ, CUT_SYSTEM_CONTROL_WRITE,
        CUT_SYSTEM_CPUID };
@@ -22,6 +23,7 @@ typedef struct {
     pl_u32 has_table;
     pl_u32 has_far_return;
     pl_u32 has_control_write;
+    pl_u32 has_repeat;
 } cut_lowering;
 typedef struct {
     pl_x86_map maps[64];
@@ -31,6 +33,7 @@ typedef struct {
      * No decoded instruction or architectural predecessor frame is retained. */
     pl_u32 flag_frontier[WASM_CUT_MAX_INSTRUCTIONS];
     pl_u32 system_cut;
+    pl_u32 repeat_cut;
 } cut_plan;
 void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);
@@ -53,6 +56,9 @@ void cut_arithmetic_flags(cut_lowering *cut, pl_u32 width, int subtraction,
                           int logical, int keep_carry);
 int cut_stack_supported(const pl_x86_instruction *instruction);
 void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction);
+int cut_repeat_supported(const pl_x86_instruction *instruction);
+void cut_lower_repeat(cut_lowering *cut, const pl_x86_instruction *instruction);
+void cut_repeat_frontier(cut_lowering *cut);
 int cut_system_supported(const pl_x86_instruction *instruction);
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_instruction_supported(const pl_x86_instruction *instruction);

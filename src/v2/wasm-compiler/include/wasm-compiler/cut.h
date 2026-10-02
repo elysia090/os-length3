@@ -51,8 +51,16 @@ typedef struct {
  * A one-instruction RAM cut also imports machine.access (machine/memory.h)
  * with the same cut type. Its synchronous C provider must
  * pin translations/residency and keep the state/port arena disjoint from guest
- * RAM. Failed access preserves architectural state and retirement. Alignment
+ * RAM. Ordinary failed access preserves architectural state and retirement. Alignment
  * checking, FS/GS bases, concurrent workers and MMIO remain unsupported.
+ * REP MOVS is a one-instruction Wasm loop through the same access boundary.
+ * Completed elements publish only RCX/RSI/RDI at a return, while RIP and
+ * retirement stay unchanged until completion. An element's load precedes its
+ * all-fragment store. Address-size 32 zero-extends the three implicit parents
+ * even for zero count/first architectural fault. A bounded 256-element return
+ * uses BARRIER/QUANTUM; a physical miss uses BARRIER/RESOURCE. The serialized
+ * C dispatcher pins the original instruction across those returns, including
+ * self-modification. Stale/invalid entry remains a refusal, not a fault.
  * AC is rejected, not silently ignored. The C-Wasm provider now performs a
  * four-level 4 KiB/2 MiB walk under its pinned CPU/physical-residency context;
  * exception delivery and executable-generation admission are separate gates.

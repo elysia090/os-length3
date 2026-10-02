@@ -129,6 +129,13 @@ void cut_access_status(cut_lowering *cut)
     cut_set(cut, CUT_STATUS);
     cut_get(cut, CUT_STATUS); cut_op(cut, 0x50u); cut_op(cut, 0x45u);
     cut_op(cut, 0x04u); cut_op(cut, 0x40u);
+    if (cut->has_repeat) {
+        /* Architectural fault/residency wait starts the instruction. Entry
+         * refusal or a stale port does not acquire that authority. */
+        cut_get(cut,CUT_STATUS); cut_const(cut,6u); cut_op(cut,0x83u);
+        cut_const(cut,2u); cut_op(cut,0x51u);
+        cut_op(cut,0x04u); cut_op(cut,0x40u); cut_repeat_frontier(cut); cut_op(cut,0x0bu);
+    }
     cut_get(cut, CUT_STATUS); cut_op(cut, 0x0fu); cut_op(cut, 0x0bu);
 }
 

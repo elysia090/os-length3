@@ -57,34 +57,53 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             || maximum_cuts > VM_EXECUTION_MAX_QUANTUM)
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     for (pl_u32 i = 0u; i < maximum_cuts; ++i) {
-        if (!generation || execution->generation != generation)
+        int resuming = execution->continuation.slot != 0u;
+        if (!generation || (resuming ? execution->continuation_generation : execution->generation) != generation)
             return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
         for (pl_u32 j = 0u; j < 5u; ++j)
             if (execution->context[j] != context_word(state, j)) {
                 execution->generation = 0u;
+                execution->continuation = (vm_execution_row){0};
+                execution->continuation_generation = 0u;
                 return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
             }
-        const vm_execution_row *row = find(execution, state->rip);
+        const vm_execution_row *row = resuming ? &execution->continuation : find(execution, state->rip);
         if (!row) return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
+        if (state->rip != row->entry) {
+            execution->generation = 0u; execution->continuation = (vm_execution_row){0};
+            execution->continuation_generation = 0u;
+            return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
+        }
         pl_u32 shadow = execution->segments ? execution->segments->mov_ss_shadow : 0u;
         if (execution->segments && (execution->segments->version != MACHINE_SEGMENTS_ABI_VERSION
                 || shadow > 1u || (shadow && row->source_instructions != 1u)))
             return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
-        machine_result result = fetch(owner, row->entry);
-        if (result) return result;
-        if (execution->generation != generation)
-            return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
-        if ((row->entry >> 12u) != ((row->entry + row->source_bytes - 1u) >> 12u)) {
-            result = fetch(owner, (row->entry & ~4095ull) + 4096u);
+        machine_result result;
+        if (!resuming) {
+            result = fetch(owner, row->entry);
             if (result) return result;
             if (execution->generation != generation)
                 return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+            if ((row->entry >> 12u) != ((row->entry + row->source_bytes - 1u) >> 12u)) {
+                result = fetch(owner, (row->entry & ~4095ull) + 4096u);
+                if (result) return result;
+                if (execution->generation != generation)
+                    return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+            }
         }
+        pl_u32 source_instructions = row->source_instructions;
         result = call(owner, row->slot);
+        if (machine_result_kind(result) == MACHINE_RESULT_BARRIER
+                && machine_result_payload(result) <= MACHINE_BARRIER_QUANTUM
+                && source_instructions == 1u && state->rip == row->entry) {
+            execution->continuation = *row; execution->continuation_generation = generation;
+            return result;
+        }
+        execution->continuation = (vm_execution_row){0}; execution->continuation_generation = 0u;
         if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) return result;
         if (shadow) execution->segments->mov_ss_shadow = 0u;
         ++execution->completed;
-        execution->retired += row->source_instructions;
+        execution->retired += source_instructions;
         /* A payload write may revoke inside the compiled function's access
          * call. Never invoke the next entry, even at the quantum boundary. */
         if (execution->generation != generation)
