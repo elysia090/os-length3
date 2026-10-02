@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 extern unsigned char __heap_base;
+_Static_assert(sizeof(vm_code_page) == 24u, "borrowed code view transport extent");
 static vm_memory resident;
 static pl_u32 arena_base;
 static pl_u32 state_offset;
@@ -141,13 +142,15 @@ int vm_bind_segments(pl_u32 segments)
     return 0;
 }
 
-static int private_port(pl_u32 port)
+static int private_record(pl_u32 port, pl_u32 bytes)
 {
     return state_offset && !(port & 7u) && port >= arena_base
-        && (pl_u64)(port - arena_base) + sizeof(machine_memory_port) <= resident.reserved_bytes
-        && separate(port,sizeof(machine_memory_port),state_offset,sizeof(machine_state))
-        && (!segments_offset || separate(port,sizeof(machine_memory_port),segments_offset,sizeof(machine_segments)));
+        && (pl_u64)(port - arena_base) + bytes <= resident.reserved_bytes
+        && separate(port,bytes,state_offset,sizeof(machine_state))
+        && (!segments_offset || separate(port,bytes,segments_offset,sizeof(machine_segments)));
 }
+static int private_port(pl_u32 port)
+{ return private_record(port,sizeof(machine_memory_port)); }
 
 machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
                           pl_u32 access, pl_u64 value)
@@ -179,6 +182,29 @@ static vm_mmu_context cpu_context(void)
     const machine_state *state = (const machine_state *)(uintptr_t)state_offset;
     return (vm_mmu_context){state->cr0,state->cr3,state->cr4,state->efer,
         (pl_u32)state->system[MACHINE_SYSTEM_CS] & 3u};
+}
+/* Admission-only borrowing API. No source decoding, no RAM reconstruction,
+ * and no export/import granted to the emitted machine function. */
+machine_result vm_code(pl_u32 port, pl_u64 address, pl_u32 target)
+{
+    vm_memory_abort(&resident);
+    if (!segments_offset || !private_port(port) || !private_record(target,sizeof(vm_code_page))
+            || !separate(target,sizeof(vm_code_page),port,sizeof(machine_memory_port)))
+        return MACHINE_RESULT_ENTRY_MAP;
+    const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
+    pl_u32 cs = segments->cache[MACHINE_SEGMENT_CS].attributes;
+    if (!(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE)))
+        return MACHINE_RESULT_ENTRY_MAP; /* The cold backend accepts 64-bit code only. */
+    vm_mmu_context context = cpu_context();
+    vm_code_page page;
+    resident.write_touched = 0u;
+    machine_result result = vm_mmu_code_page(&resident,port - arena_base,&context,address,&page);
+    if (resident.write_touched) execution.generation = 0u;
+    if (!result) {
+        page.offset += arena_base;
+        *(vm_code_page *)(uintptr_t)target = page;
+    }
+    return result;
 }
 machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
 {

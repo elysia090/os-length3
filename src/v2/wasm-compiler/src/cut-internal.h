@@ -26,7 +26,9 @@ typedef struct {
     pl_x86_map maps[64];
     pl_x86_image image;
     wasm_cut_report report;
-    pl_u32 last_flag_kill[12];
+    /* Low 16: bounded source offset. High 16: needed flag definitions.
+     * No decoded instruction or architectural predecessor frame is retained. */
+    pl_u32 flag_frontier[WASM_CUT_MAX_INSTRUCTIONS];
     pl_u32 system_cut;
 } cut_plan;
 void cut_op(cut_lowering *cut, pl_u32 opcode);
@@ -55,6 +57,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_instruction_supported(const pl_x86_instruction *instruction);
 pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction);
 pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction);
+pl_u32 cut_flag_read_mask(const pl_x86_instruction *instruction);
 int cut_shift_supported(const pl_x86_instruction *instruction);
 void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction);

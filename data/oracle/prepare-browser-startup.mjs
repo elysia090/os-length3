@@ -9,12 +9,6 @@ if (!directory) throw new Error('usage: prepare-browser-startup.mjs VM.WASM COMP
 const target = fileURLToPath(new URL('../../src/v2/vm/check/browser/generated-startup/',import.meta.url));
 const files = ['boot.header','boot.command','boot.kernel-page','boot.kernel-last-page',
   'boot.state','boot.segments','boot.json','call.extra-page','cmdline.extra-page','option.extra-page','source.sha256'];
-for (const prefix of ['kernel','after-return','idt','control-read','configure','after-compare','cmdline-cut',
-  'cmdline-find','cmdline-body',...['state','char','word','option','compare','next','test','increment','rank'].map(name => `cmdline-${name}`)]) {
-  const name = `${prefix}.summary.json`;
-  const summary = JSON.parse(await readFile(path.join(directory,name)));
-  files.push(name,...summary.cuts.map(cut => cut.rank ? `${prefix}.${cut.rank}.wasm` : `${prefix}.wasm`));
-}
 await mkdir(target,{recursive:true});
 const manifest = {format:'bzimage-startup-diagnostic-v1',linuxBoot:'not-achieved',files:{}};
 for (const name of ['vm.wasm','wasm-compiler.wasm',...files]) {

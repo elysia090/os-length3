@@ -40,23 +40,27 @@ they are not the new Release asset name.
 The older ordered witness list below is a diagnostic backlog, not permission
 to postpone the next browser product goal behind new native size/speed work.
 
-## Active browser work — 2026-10-02
+## Active browser work — 2026-10-03
 
-Current executable checkpoint: the exact shipped bzImage advances to 86 source
+Current executable checkpoint: the exact shipped bzImage advances to 351 source
 instructions in an actual ordinary-memory browser Worker through cold C-Wasm
-compilation and C table/MMU execution. Common CR0/2/3/4/8 writes now enforce the
-fixed CPU profile and revoke execution admission even for equal-value writes;
-read-only memory CMP/TEST shares the existing ALU/flags path. Common register
-SHL/SHR/SAR now lowers immediate/CL counts at all integer widths; conditional
-count-zero definitions retain their incoming flag frontier. 79,872 native
-cases pass both direct Wasm and C VM dispatch. Full CPU/cache and stack/BSS
-observations pass, and the command-line option page comes from the same bundle.
-Next concrete grammar red: `0x12e299e`, `SETA AL`. Extend the general flag
-use/definition frontier for interior consumers and lower register SETcc,
-then exact exception entry and required device/root supply. Never skip source
-instructions or substitute another kernel/backend. Whole-image `-104`, Linux
-boot, PID 1 and development acceptance remain red. Source/native asset and
-human UI are unchanged. See the shift evidence linked from BROWSER.md.
+compilation and C table/MMU execution. Register SETcc now uses the common
+condition helper for all 16 conditions. A linear backward read/kill frontier
+preserves interior flag consumers and conditional zero-count definitions;
+198 modules / 101,376 native comparisons pass direct Wasm and C dispatch.
+The C MMU now supplies a borrowed executable-page view, not a JS guest-address
+cast. Admission follows actual RIP, with one live table slot and ZERO manually
+listed branch entries or precompiled browser prefix modules. The complete
+86-instruction CPU/cache observation still passes, followed by the command-line
+scanner returning false for absent `no5lvl`. Next concrete grammar red:
+`0x12e3d9b`, CPUID (leaf/subleaf zero). Define the fixed CPU-profile response
+and lower that common system boundary, then required MSR, exception/device/root
+supply. The diagnostic still recompiles each demanded cut, copies one bounded
+page to independent cold memory, and does not yet connect crossing-first-fetch
+pages or signed production source admission. Never skip instructions or change
+the kernel/backend. Whole-image `-104`, Linux boot, PID 1 and development
+acceptance remain red. Native asset and human UI are unchanged. See the
+condition/admission evidence linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
 implementation, not the minor native benchmark difference: whole-image Wasm

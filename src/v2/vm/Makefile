@@ -12,7 +12,7 @@ WASM_FLAGS += -Wl,--export=vm_boot_prepare,--export=vm_boot_project,--export=vm_
 WASM_FLAGS += -Wl,--export-table,--growable-table,--export=vm_slot_min,--export=vm_bind_execution,--export=vm_run,--export=vm_completed,--export=vm_source_retired
 WASM_FLAGS += -Wl,--export=vm_boot_initial_segments,--export=vm_bind_segments,--export=vm_segment
 WASM_FLAGS += -Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--export=vm_table,--export=vm_return
-WASM_FLAGS += -Wl,--export=vm_control
+WASM_FLAGS += -Wl,--export=vm_control,--export=vm_code
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 

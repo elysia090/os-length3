@@ -210,3 +210,20 @@ machine_result vm_mmu_read_record(vm_memory *memory, pl_u32 port_offset,
             target[consumed++] = memory->bytes[ready.offsets[i] + j];
     return 0u;
 }
+
+machine_result vm_mmu_code_page(vm_memory *memory, pl_u32 port_offset,
+                                const vm_mmu_context *context, pl_u64 address,
+                                vm_code_page *target)
+{
+    vm_memory_abort(memory);
+    if (!target) return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result status = preflight(memory,port_offset,context,address,1u,
+                                      (pl_u32)MACHINE_MEMORY_READ | (pl_u32)VM_MMU_EXECUTE,&ready);
+    if (status) return status;
+    /* Translation and residency have 4 KiB minimum granularity, including
+     * a 2 MiB leaf. The byte's page offset is preserved by the page walk. */
+    *target = (vm_code_page){address & ~4095ull,memory->generation,
+                            ready.offsets[0] - (pl_u32)(address & 4095u),4096u};
+    return 0u;
+}

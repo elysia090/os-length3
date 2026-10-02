@@ -241,15 +241,17 @@ Inspection on 2026-10-02 found:
   prefix of the shipped BusyBox entry. Whole-image function/control/dispatcher
   closure still returns `WASM_COMPILER_ERROR_INCOMPLETE`; these small cuts are
   not a Linux execution backend. CLC/STC and CLD/STD join the pure flag frontier;
-  CMC/interior flag consumers and STI remain unsupported. CLI now has a
+  CMC/ADC/CMOV and STI remain unsupported. SETcc interior flag consumers now
+  use the common backward read/kill frontier. CLI has a
   precise long-mode, non-PVI/non-VM cut; pending faults are not exception entry.
   Register-source segment loads now use the C GDT/LDT/cache boundary, with a
   versioned architectural companion and MOV SS shadow. The actual shipped
-  startup now retires 86 source instructions to `0x12e299e` in a real browser
+  startup now retires 351 source instructions to `0x12e3d9b` in a real browser
   Worker and Node/C-Wasm. Memory RMW, LGDT/LIDT and same-CPL long-mode far RET
-  and general control-register reads/writes, memory CMP/TEST and register SHL/SHR/SAR are admitted. SETcc/MSR,
+  and general control-register reads/writes, memory CMP/TEST, register SHL/SHR/SAR
+  and all 16 register SETcc conditions are admitted. CPUID/MSR,
   complete exception/device startup remain open.
-  See [the current checkpoint](../vm/check/browser/evidence/2026-10-02-shifts.md).
+  See [the current checkpoint](../vm/check/browser/evidence/2026-10-03-conditions.md).
   Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
   16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
   with no JavaScript guest-memory callback. CPU exception delivery remains
@@ -364,10 +366,10 @@ browser observation and does not replace the retained v1 receipt.
 
 The latest checkpoint supersedes that three-instruction prefix: typed C memory
 RMW, table loads, same-CPL long-mode far RET, control reads/writes and memory
-CMP/TEST and register shifts advance to 86 instructions in the actual browser.
+CMP/TEST, register shifts and SETcc advance to 351 instructions in the actual browser.
 The command-line option page also comes from the same authenticated bzImage.
-The next grammar red is `SETA AL` at `0x12e299e` (cold compilation refuses -102).
-Next: common interior flag-consumer dependencies, SETcc, MSR and remaining compressed
+The next grammar red is `CPUID` at `0x12e3d9b` (cold compilation refuses -102).
+Next: fixed-profile CPUID, MSR and remaining compressed
 startup operations, complete executable-generation/load/CPU attestation and
 exception entry. A cold compiler and bounded table admission exist; they do
 not yet provide whole-image closure or a production authenticated code supply.
@@ -424,32 +426,40 @@ cross that construction boundary. Do not instantiate both onto an overlapping
 C static-memory layout. Cold memory can be discarded after its derived modules
 are placed, but actual RSS reclamation is not measured.
 
-Native C and cold C-Wasm outputs match byte-for-byte in 534 emissions, including
+Native C and cold C-Wasm outputs match byte-for-byte in 734 emissions, including
 repeats, over the exact bundle/startup prefixes, 83 pure, 22 memory, 11
 stack/control, 22 new RMW, 80 control-read, 80 control-write, 16 memory CMP/TEST
-and 156 register-shift
+and 156 register-shift and 198 register-condition
 fixtures. The v3 diagnostic Worker **constructs** its memory cut in C-Wasm,
 compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
 only an oracle; it is never an execution fallback. The standard browser-control
 route now works: actual `provider.html` v3 passes 512 comparisons and
-`startup.html` executes 86 shipped startup instructions with full CPU/cache
-state comparison. Ordinary memory, secure context and no isolation were observed.
+`startup.html` executes 351 shipped startup instructions, retains the independent
+full CPU/cache comparison at instruction 86, and checks the absent-option result.
+Ordinary memory, secure context and no isolation were observed.
 Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
 receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. SETcc/MSR startup,
+remaining ISA/system/exception/device semantics. CPUID/MSR startup,
 complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
 
-Reproduce the fixed 86-instruction witness with
+Reproduce the current bounded startup observation with
 `data/oracle/prepare-startup-cuts.sh`, then `check-wasm-startup.mjs` and
 `prepare-browser-startup.mjs`. The common validator runs in Node and the browser;
 it is diagnostic input construction/assertions, not JS guest execution.
-Its fixture manifest does not authenticate a production release. See the
-[current evidence](../vm/check/browser/evidence/2026-10-02-shifts.md) for
+The browser no longer downloads native prefix modules or branch-entry lists:
+`vm_code` borrows the current C-MMU-checked page and the cold C compiler emits
+only the demanded RIP, into one reusable function-table slot. No guest-address
+translation, opcode decoding or branch execution is implemented in JS. The
+serialized owner pins source and context across engine compilation. This
+diagnostic still performs one page transport/compilation per cut; warm compiled
+code reuse, first-instruction cross-page supply and general async admission are
+not established. Its fixture manifest does not authenticate a production release.
+See the [current evidence](../vm/check/browser/evidence/2026-10-03-conditions.md) for
 exact hashes, reservation preconditions and the remaining red gates.
 
 ## Platform sources

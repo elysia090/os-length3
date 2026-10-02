@@ -50,6 +50,32 @@ static void expect_fault(machine_result result, pl_u64 address, pl_u32 vector, p
 
 int main(void)
 {
+    /* An executable linear page is not a physical RAM offset. Borrow the
+     * C-translated, non-identity page; never mutate output on a rejected view. */
+    vm_mmu_context code_cpu = context(); reset(base);
+    vm_code_page code = {0}, saved_code;
+    EXPECT(vm_mmu_code_page(&memory,port,&code_cpu,base + 17u,&code) == 0u);
+    EXPECT(code.address == base && code.generation == 9u
+           && code.offset == 28672u && code.bytes == 4096u);
+    for (pl_u32 i = 0u; i < 4u; ++i) EXPECT(get(entries[i]) & 32u);
+    EXPECT(!(get(entries[3]) & 64u)); /* Fetch never sets Dirty. */
+    saved_code = code;
+    put(entries[3],get(entries[3]) | (1ull << 63u));
+    expect_fault(vm_mmu_code_page(&memory,port,&code_cpu,base + 17u,&code),base + 17u,14u,17u);
+    EXPECT(memcmp(&code,&saved_code,sizeof code) == 0);
+    reset(base); pages[4].kind = VM_MEMORY_DEFERRED;
+    EXPECT(vm_mmu_code_page(&memory,port,&code_cpu,base + 17u,&code) == MACHINE_RESULT_BARRIER);
+    EXPECT(get(port + 32u) == 0x8011u && get(port + 40u) == ((pl_u64)17u << 32u | 1u));
+    EXPECT(memcmp(&code,&saved_code,sizeof code) == 0);
+    reset(base); put(port,8u);
+    EXPECT(vm_mmu_code_page(&memory,port,&code_cpu,base,&code) == MACHINE_RESULT_STALE_GENERATION);
+    EXPECT(memcmp(&code,&saved_code,sizeof code) == 0);
+    EXPECT(vm_mmu_code_page(&memory,port,&code_cpu,base,NULL) == MACHINE_RESULT_ENTRY_MAP);
+    reset(base); put(entries[2],0x200083u); pages[5].address = 0x200000u;
+    EXPECT(vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,9u) == 0);
+    EXPECT(vm_mmu_code_page(&memory,port,&code_cpu,base + 29u,&code) == 0u);
+    EXPECT(code.offset == 32768u && code.address == base && code.bytes == 4096u);
+
     vm_mmu_context cpu = context(); reset(base);
     EXPECT(access(&cpu, base + 4093u, 8u, 2u, 0x8877665544332211ull) == 0u);
     EXPECT(arena[28672u + 4093u] == 0x11u && arena[32768u] == 0x44u);

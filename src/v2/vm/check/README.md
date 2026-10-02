@@ -1,8 +1,17 @@
 # VM control boundary checks
 
-The new C product currently implements only scoped resource-operation admission.
-It does not execute x86, lower Wasm, boot Linux or implement virtio/MMU devices.
-The old `wasm/` implementation is not linked into `libvm.a`.
+The C product implements resource admission, resident physical RAM, scoped
+four-level MMU/segment/control boundaries, a bzImage boot plan, and compiled
+function-table execution. The separate compiler lowers x86; the VM does not
+decode/interpret instructions. Linux boot, exception entry and virtio devices
+remain incomplete. `wasm/entry.c` is the freestanding wrapper of this C core.
+
+The [current browser receipt](browser/evidence/2026-10-03-conditions.md) retires
+351 exact shipped source instructions through cold C compilation and C execution,
+not a booted Linux. The borrowed-code view has native non-identity/2 MiB/NX/stale
+checks and 20 actual C-Wasm export cases, including private-output aliases,
+compatibility-mode rejection, A-bit source aliasing and post-growth borrowing.
+Run `node data/oracle/check-code-view.mjs VM.WASM` separately from native C checks.
 
 ```
 make -C src/v2/vm check

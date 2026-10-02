@@ -7,6 +7,25 @@ static void return_if(cut_lowering *cut)
     cut_op(cut, 0x0fu); cut_op(cut, 0x0bu);
 }
 
+static int flag_dependencies(cut_plan *plan)
+{
+    pl_u32 live = 0xfffu; /* The cut's outgoing architectural flags are observable. */
+    for (pl_u32 rank = (pl_u32)plan->report.source_instructions; rank; ) {
+        --rank;
+        pl_u32 offset = plan->flag_frontier[rank];
+        pl_x86_instruction instruction;
+        if (pl_x86_decode(&plan->image, plan->report.entry + offset, &instruction))
+            return WASM_COMPILER_ERROR_GRAMMAR;
+        pl_u32 wanted = live & cut_flag_write_mask(&instruction);
+        plan->flag_frontier[rank] = offset | (wanted << 16u);
+        /* A consumer sees the incoming definition, including when the same
+         * operation writes flags. Conditional zero-count shifts never kill
+         * their predecessor. No future use is confused with a later kill. */
+        live = (live & ~cut_flag_kill_mask(&instruction)) | cut_flag_read_mask(&instruction);
+    }
+    return 0;
+}
+
 int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
                  cut_plan *plan)
 {
@@ -29,7 +48,6 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->image = *image;
     plan->report = (wasm_cut_report){ 0 };
     plan->system_cut = 0u;
-    for (pl_u32 bit = 0u; bit < 12u; ++bit) plan->last_flag_kill[bit] = ~0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -63,9 +81,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->system_cut = (pl_u32)system;
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
-                pl_u32 flags = cut_flag_kill_mask(&instruction);
-                for (pl_u32 bit = 0u; bit < 12u; ++bit)
-                    if (flags & (1u << bit)) plan->last_flag_kill[bit] = 0u;
+                plan->flag_frontier[0] = 0u;
                 if (!system) {
                     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
                     plan->report.memory_bytes = stack ? 8u : instruction.operands[store ? 0u : 1u].bits / 8u;
@@ -86,15 +102,10 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             plan->report.boundary_operation = instruction.operation;
             break;
         }
-        /* Only unconditional definitions kill the incoming flag frontier.
-         * A CL shift can preserve every bit when its masked count is zero:
-         * retain all conditional writers following the last unconditional
-         * one. INC/DEC similarly do not kill CF. This is a linear two-pass
-         * frontier, not a list of predecessor-state materializations.
-         * Interior flag consumers still require a separate dependency proof. */
-        pl_u32 flags = cut_flag_kill_mask(&instruction);
-        for (pl_u32 bit = 0u; bit < 12u; ++bit)
-            if (flags & (1u << bit)) plan->last_flag_kill[bit] = i;
+        /* Only source coordinates are kept for the reverse dependency pass.
+         * Later instructions stay in the entry page; a crossing first
+         * instruction stands alone. Therefore this offset fits sixteen bits. */
+        plan->flag_frontier[i] = (pl_u32)(rip - options->entry);
         ++plan->report.source_instructions;
         plan->report.source_bytes += instruction.length;
         rip = instruction.fallthrough;
@@ -108,7 +119,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     }
     if (!plan->report.source_instructions) return WASM_COMPILER_ERROR_GRAMMAR;
     plan->report.continuation = rip;
-    return 0;
+    return flag_dependencies(plan);
 }
 
 int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *report)
@@ -159,11 +170,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     for (pl_u32 i = 0u; i < plan->report.source_instructions; ++i) {
         pl_x86_instruction instruction;
         if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
-        cut.wanted_flags = 0u;
-        pl_u32 possible = cut_flag_write_mask(&instruction);
-        for (pl_u32 bit = 0u; bit < 12u; ++bit)
-            if ((possible & (1u << bit)) && (plan->last_flag_kill[bit] == ~0u
-                    || i >= plan->last_flag_kill[bit])) cut.wanted_flags |= 1u << bit;
+        cut.wanted_flags = plan->flag_frontier[i] >> 16u;
         if (cut.has_port && cut_system_supported(&instruction)) cut_lower_system(&cut, &instruction);
         else if (cut.has_memory && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
         else if (cut.has_memory) cut_lower_memory(&cut, &instruction);

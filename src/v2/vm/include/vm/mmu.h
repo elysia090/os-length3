@@ -12,6 +12,11 @@ typedef struct {
     pl_u32 cpl;
 } vm_mmu_context;
 
+typedef struct {
+    pl_u64 address, generation;
+    pl_u32 offset, bytes;
+} vm_code_page;
+
 /* The directory describes resident PHYSICAL pages, not guest translations.
  * All context/rows/residency are pinned by a serialized single-vCPU owner.
  * A table or data cache miss requests physical admission; it is never #PF.
@@ -35,4 +40,14 @@ machine_result vm_mmu_reserve(vm_memory *physical, pl_u32 port_offset,
 machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,
                                   const vm_mmu_context *context, pl_u64 address,
                                   pl_u32 bytes, pl_u32 access, pl_u8 *target);
+/* Privileged, borrowed executable page, not a generated-code import.
+ * Translate the exact requested RIP (including its precise fetch fault),
+ * then expose its resident 4 KiB fragment without copying payload. offset
+ * is relative to physical->bytes, NEVER the guest virtual address. The
+ * serialized owner pins context, bytes and directory through compilation
+ * and execution admission. Any intervening mutation requires a fresh view.
+ * target is disjoint private caller memory; it is unchanged on failure. */
+machine_result vm_mmu_code_page(vm_memory *physical, pl_u32 port_offset,
+                                const vm_mmu_context *context, pl_u64 address,
+                                vm_code_page *target);
 #endif

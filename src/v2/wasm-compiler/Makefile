@@ -17,7 +17,7 @@ OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
 
-.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check memory-fixture-check stack-fixture-check accepted-input-check projection-check clean
+.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 
 # Independent cold compiler memory/stack; never the VM's runtime decoder.
@@ -105,6 +105,16 @@ shift-fixture-check: $(BUILD)/cut-check fixture-tools
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done
 
+condition-fixture-check: $(BUILD)/cut-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	for rank in 1 2 3 4 5 6; do \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
+		-DCONDITION_CASE=$$rank check/condition-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
+	done
+
 memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
 	for rank in 0 20 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
@@ -129,7 +139,7 @@ stack-fixture-check: $(BUILD)/stack-cut-check fixture-tools
 	$(BUILD)/stack-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check memory-fixture-check stack-fixture-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check
 	$(BUILD)/admission-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
