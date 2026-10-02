@@ -9,7 +9,7 @@ if (!directory) throw new Error('usage: prepare-browser-startup.mjs VM.WASM COMP
 const target = fileURLToPath(new URL('../../src/v2/vm/check/browser/generated-startup/',import.meta.url));
 const files = ['boot.header','boot.command','boot.kernel-page','boot.kernel-last-page',
   'boot.state','boot.segments','boot.json','call.extra-page','source.sha256'];
-for (const prefix of ['kernel','after-return','idt']) {
+for (const prefix of ['kernel','after-return','idt','control-read']) {
   const name = `${prefix}.summary.json`;
   const summary = JSON.parse(await readFile(path.join(directory,name)));
   files.push(name,...summary.cuts.map(cut => cut.rank ? `${prefix}.${cut.rank}.wasm` : `${prefix}.wasm`));

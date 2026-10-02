@@ -245,10 +245,11 @@ Inspection on 2026-10-02 found:
   precise long-mode, non-PVI/non-VM cut; pending faults are not exception entry.
   Register-source segment loads now use the C GDT/LDT/cache boundary, with a
   versioned architectural companion and MOV SS shadow. The actual shipped
-  startup now retires 26 source instructions to `0x100024d` in a real browser
+  startup now retires 28 source instructions to `0x1000255` in a real browser
   Worker and Node/C-Wasm. Memory RMW, LGDT/LIDT and same-CPL long-mode far RET
-  are admitted. Control-register/MSR, complete exception/device startup remain
-  open. See [the current checkpoint](../vm/check/browser/evidence/2026-10-02-rmw-control.md).
+  and general control-register reads are admitted. Control writes/MSR,
+  complete exception/device startup remain open.
+  See [the current checkpoint](../vm/check/browser/evidence/2026-10-02-control-read.md).
   Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
   16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
   with no JavaScript guest-memory callback. CPU exception delivery remains
@@ -362,9 +363,9 @@ memory records through C table dispatch; its Node driver is not a new manual
 browser observation and does not replace the retained v1 receipt.
 
 The latest checkpoint supersedes that three-instruction prefix: typed C memory
-RMW, table loads and same-CPL long-mode far RET advance to 26 instructions in
-the actual browser. The next concrete instruction is MOV CR4,RAX at `0x100024d`.
-Next: common control-register/MSR semantics and remaining actual compressed
+RMW, table loads, same-CPL long-mode far RET and control reads advance to 28
+instructions in the actual browser. CR4 write at `0x1000255` remains red.
+Next: common control-write legality/context invalidation, MSR and remaining actual compressed
 startup operations, complete executable-generation/load/CPU attestation and
 exception entry. A cold compiler and bounded table admission exist; they do
 not yet provide whole-image closure or a production authenticated code supply.
@@ -421,30 +422,30 @@ cross that construction boundary. Do not instantiate both onto an overlapping
 C static-memory layout. Cold memory can be discarded after its derived modules
 are placed, but actual RSS reclamation is not measured.
 
-Native C and cold C-Wasm outputs match byte-for-byte in 165 emissions, including
+Native C and cold C-Wasm outputs match byte-for-byte in 247 emissions, including
 repeats, over the exact bundle/startup prefixes, 83 pure, 22 memory, 11
-stack/control and 22 new RMW fixtures. The v3 diagnostic Worker **constructs** its memory cut in C-Wasm,
+stack/control, 22 new RMW and 80 control-read fixtures. The v3 diagnostic Worker **constructs** its memory cut in C-Wasm,
 compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
 only an oracle; it is never an execution fallback. The standard browser-control
 route now works: actual `provider.html` v3 passes 512 comparisons and
-`startup.html` executes 26 shipped startup instructions with full CPU/cache
+`startup.html` executes 28 shipped startup instructions with full CPU/cache
 state comparison. Ordinary memory, secure context and no isolation were observed.
 Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
 receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. Control-register/MSR startup,
+remaining ISA/system/exception/device semantics. Control-write/MSR startup,
 complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
 
-Reproduce the fixed 26-instruction witness with
+Reproduce the fixed 28-instruction witness with
 `data/oracle/prepare-startup-cuts.sh`, then `check-wasm-startup.mjs` and
 `prepare-browser-startup.mjs`. The common validator runs in Node and the browser;
 it is diagnostic input construction/assertions, not JS guest execution.
 Its fixture manifest does not authenticate a production release. See the
-[current evidence](../vm/check/browser/evidence/2026-10-02-rmw-control.md) for
+[current evidence](../vm/check/browser/evidence/2026-10-02-control-read.md) for
 exact hashes, reservation preconditions and the remaining red gates.
 
 ## Platform sources

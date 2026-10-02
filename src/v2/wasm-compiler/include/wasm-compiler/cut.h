@@ -57,8 +57,12 @@ typedef struct {
  * four-level 4 KiB/2 MiB walk under its pinned CPU/physical-residency context;
  * exception delivery and executable-generation admission are separate gates.
  * 64-bit register/immediate PUSH, register POP, direct near CALL and RET also
- * use this exact typed transaction. No 16-bit stack, far control or CET
- * context may be admitted by this baseline.
+ * use this exact typed transaction. No 16-bit stack or CET context may be
+ * admitted by this baseline. Same-CPL 64-bit far RET has a separate typed C
+ * descriptor/cache boundary; outer-CPL and compatibility transfers reject.
+ * Memory ADD/SUB/AND/OR/XOR uses machine.reserve/commit with pinned physical
+ * fragments; generated Wasm computes arithmetic, not a C opcode callback.
+ * LGDT/LIDT uses machine.table with ten-byte all-fragment preflight.
  * CLI is a precise one-instruction system cut with the same private port but
  * no host operation import. In long mode without CR4.PVI/EFLAGS.VM it clears
  * IF when CPL <= IOPL, otherwise publishes #GP(0) without retiring. PVI/VM
@@ -66,6 +70,11 @@ typedef struct {
  * MOV ES/SS/DS/FS/GS uses machine.segment and the explicit hidden-cache
  * companion. MOV SS records its shadow; the dispatcher consumes it at the
  * next instruction. STI and interrupt/exception delivery remain unsupported.
+ * Long-mode MOV from CR0/CR2/CR3/CR4/CR8 is a one-instruction compiled system
+ * cut: CPL0 reads the frozen state field; other CPLs publish #GP(0) without
+ * modifying CPU state or retirement. Undefined arithmetic flags preserve
+ * their previous values as the selected representative. Control writes remain
+ * unsupported until register legality and context invalidation are implemented.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * It also stops before a later instruction that crosses/starts another fetch

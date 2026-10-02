@@ -3,6 +3,21 @@
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if (instruction->status == PL_X86_DECODE_VALID
+            && instruction->machine_operation == PL_X86_MACHINE_READ_CONTROL
+            && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
+            && instruction->visible_operand_count == 2u
+            && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER
+            && cut_gpr(&instruction->operands[0].value.reg)
+            && instruction->operands[0].value.reg.bits == 64u
+            && instruction->operands[1].kind == PL_X86_OPERAND_REGISTER
+            && instruction->operands[1].value.reg.class_id == PL_X86_REGISTER_CONTROL
+            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
+                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) {
+        pl_u32 rank = instruction->operands[1].value.reg.index;
+        if (rank == 0u || rank == 2u || rank == 3u || rank == 4u || rank == 8u)
+            return CUT_SYSTEM_CONTROL_READ;
+    }
+    if (instruction->status == PL_X86_DECODE_VALID
             && instruction->machine_operation == PL_X86_MACHINE_FAR_RETURN
             && instruction->flow == PL_X86_FLOW_RETURN && instruction->operand_width == 64u
             && instruction->machine_argument <= 65535u
@@ -58,6 +73,28 @@ static void port_store(cut_lowering *cut, pl_u32 offset, pl_u32 bytes)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (instruction->machine_operation == PL_X86_MACHINE_READ_CONTROL) {
+        cut_get(cut,CUT_FLAGS); cut_const(cut,0x20000u); cut_op(cut,0x83u);
+        cut_op(cut,0x50u); cut_op(cut,0x45u);
+        cut_op(cut,0x04u); cut_op(cut,0x40u);
+        cut_const(cut,MACHINE_RESULT_ENTRY_MAP); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+        cut_load(cut,offsetof(machine_state,system) + MACHINE_SYSTEM_CS * 8u);
+        cut_const(cut,3u); cut_op(cut,0x83u); cut_op(cut,0x50u); cut_op(cut,0x45u);
+        cut_op(cut,0x04u); cut_op(cut,0x40u);
+        cut_load(cut,offsetof(machine_state,rip)); port_store(cut,offsetof(machine_memory_port,fault_address),8u);
+        cut_const(cut,13u); port_store(cut,offsetof(machine_memory_port,fault_vector),4u);
+        cut_const(cut,0u); port_store(cut,offsetof(machine_memory_port,fault_error),4u);
+        cut_const(cut,machine_result_make(MACHINE_RESULT_FAULT,13u)); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+        pl_u32 rank = instruction->operands[1].value.reg.index;
+        pl_u32 offset = rank == 0u ? offsetof(machine_state,cr0)
+            : rank == 3u ? offsetof(machine_state,cr3) : rank == 4u ? offsetof(machine_state,cr4)
+            : offsetof(machine_state,system) + (rank == 2u ? MACHINE_SYSTEM_CR2 : MACHINE_SYSTEM_CR8) * 8u;
+        cut_load(cut,offset); cut_set(cut,CUT_VALUE);
+        cut_write_register(cut,&instruction->operands[0].value.reg);
+        /* Arithmetic flags are architecturally undefined: preserve their
+         * prior values as the chosen representative, not an exact oracle. */
+        return;
+    }
     if (cut->has_far_return) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);

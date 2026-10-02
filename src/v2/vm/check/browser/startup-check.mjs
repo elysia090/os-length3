@@ -26,6 +26,7 @@ const kernel = await read('boot.kernel-page'), last = await read('boot.kernel-la
 const stateBytes = await read('boot.state'), segmentBytes = await read('boot.segments');
 const meta = await json('boot.json'), summary = await json('kernel.summary.json');
 const afterReturn = await json('after-return.summary.json'), idt = await json('idt.summary.json');
+const controlRead = await json('control-read.summary.json');
 const idtPage = await read('call.extra-page');
 assert.equal(summary.instructions,20); assert.equal(summary.modules,17);
 assert.equal(BigInt(summary.stop.entry),0x1000243n);
@@ -78,7 +79,8 @@ for (const [address,bytes,access] of [[0x1000200n,1,9],[0x1260n,4,1],
     address === gdt ? last.readBigUInt64LE(0) : 0n),0n);
 const cuts = [ ...summary.cuts.map(cut => ({...cut,prefix:'kernel'})),
   ...afterReturn.cuts.map(cut => ({...cut,prefix:'after-return'})),
-  ...idt.cuts.map(cut => ({...cut,prefix:'idt'})) ].sort((a,b) => Number(BigInt(a.entry) - BigInt(b.entry)));
+  ...idt.cuts.map(cut => ({...cut,prefix:'idt'})),
+  ...controlRead.cuts.map(cut => ({...cut,prefix:'control-read'})) ].sort((a,b) => Number(BigInt(a.entry) - BigInt(b.entry)));
 const table = vm.__indirect_function_table, firstSlot = table.grow(cuts.length);
 assert(firstSlot >= vm.vm_slot_min());
 let admissionCount = 0;
@@ -138,15 +140,16 @@ await admit();
 assert.equal(vm.vm_run(port,9n,32),5n); // LEA then IDTR backing-record store.
 assert.equal(vm.vm_completed(),2); assert.equal(vm.vm_source_retired(),2n);
 await admit();
-assert.equal(vm.vm_run(port,9n,32),6n); // LIDT then RET; next CR4 read is not yet compiled.
-assert.equal(vm.vm_completed(),2); assert.equal(vm.vm_source_retired(),2n);
-assert.equal(view.getBigUint64(base + 384,true),0x100024dn);
+assert.equal(vm.vm_run(port,9n,32),6n); // LIDT/RET, CR4 read/AND; CR4 write is not yet compiled.
+assert.equal(vm.vm_completed(),4); assert.equal(vm.vm_source_retired(),4n);
+assert.equal(view.getBigUint64(base + 384,true),0x1000255n);
 const expected = new Bytes(stateBytes), expectedSegments = new Bytes(segmentBytes);
-expected.writeBigUInt64LE(0x12e6050n,0); expected.writeBigUInt64LE(relocated,3 * 8);
+expected.writeBigUInt64LE(stateBytes.readBigUInt64LE(416) & 0x1060n,0);
+expected.writeBigUInt64LE(relocated,3 * 8);
 expected.writeBigUInt64LE(0x1000n,15 * 8);
 expected.writeBigUInt64LE(stack,4 * 8); expected.writeBigUInt64LE(0x1000000n,5 * 8);
 // The ADD result's low byte is 0x08: odd parity, no carry/overflow/AF/SF/ZF.
-expected.writeBigUInt64LE(0x100024dn,384); expected.writeBigUInt64LE(2n,392);
+expected.writeBigUInt64LE(0x1000255n,384); expected.writeBigUInt64LE(2n,392);
 expected.writeBigUInt64LE(last.readBigUInt64LE(2) + gdt,432 + 2 * 8);
 expected.writeBigUInt64LE(BigInt(last.readUInt16LE(0)),432 + 3 * 8);
 expected.writeBigUInt64LE(0x12e6050n,432 + 4 * 8);
@@ -161,8 +164,8 @@ assert.equal(descriptor,0x00af9b000000ffffn);
 expectedSegments.writeBigUInt64LE(0n,8 + 16);
 expectedSegments.writeUInt32LE(0xffffffff,8 + 16 + 8);
 expectedSegments.writeUInt32LE(0xa09b,8 + 16 + 12);
-expected.writeBigUInt64LE(26n,1128);
-assert(data.subarray(base,base + stateBytes.length).equals(expected),'complete architectural state after twenty-six actual startup instructions');
+expected.writeBigUInt64LE(28n,1128);
+assert(data.subarray(base,base + stateBytes.length).equals(expected),'complete architectural state after twenty-eight actual startup instructions');
 assert(data.subarray(segments,segments + segmentBytes.length).equals(expectedSegments));
 assert.equal(view.getBigUint64(stackOffset + Number((stack - 16n) & 4095n),true),0x1000245n);
 assert.equal(view.getBigUint64(stackOffset + Number((stack - 8n) & 4095n),true),0x100024dn);
@@ -170,8 +173,8 @@ for (let i = 0; i < cuts.length; ++i) table.set(firstSlot + i,null);
 cc.compiler_close(); vm.vm_close();
 return {
   format:'browser-bzimage-startup-v1', status:'pass', linuxBoot:'not-achieved',
-  retired:26, modules:cuts.length, admissions:admissionCount,
-  nextRip:'0x100024d', nextGate:'MOV CR4,RAX',
+  retired:28, modules:cuts.length, admissions:admissionCount,
+  nextRip:'0x1000255', nextGate:'MOV CR4,RAX (CR4 write)',
   guestExecution:'C-Wasm table dispatcher/MMU', coldCompilation:'C-Wasm decoder/planner/emitter',
   guestMemoryCallback:'C-Wasm, not JavaScript',
   providerBytes:providerBytes.byteLength, compilerBytes:compilerBytes.byteLength,

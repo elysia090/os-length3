@@ -18,7 +18,7 @@ static int write_record(const char *prefix, const char *suffix, const void *byte
 }
 int main(int argc, char **argv)
 {
-    if (argc != 1 && argc != 4) return 2;
+    if (argc != 1 && argc != 2 && argc != 4) return 2;
     pl_x86_map maps[2] = {
         {pages, 0x400000u, 4096u, 4096u, PL_ELF_FLAG_EXECUTE, 9u},
         {pages + 4096u, 0x401000u, 4096u, 4096u, PL_ELF_FLAG_EXECUTE, 9u},
@@ -66,7 +66,34 @@ int main(int argc, char **argv)
     EXPECT(report.source_instructions == 1u && report.source_bytes == 2u && report.boundary == WASM_CUT_CONTROL);
     pages[0] = 0xcbu;
     EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
+    /* Every long-mode control source and destination GPR shares one lowering.
+     * No privileged hardware instruction is executed by this fixture tool. */
+    static const pl_u32 controls[] = {0u,2u,3u,4u,8u};
+    for (pl_u32 rank = 0u; rank < sizeof controls / sizeof controls[0]; ++rank)
+    for (pl_u32 reg = 0u; reg < 16u; ++reg) {
+        pl_u32 control = controls[rank], rex = (control == 8u ? 4u : 0u) | (reg >= 8u ? 1u : 0u);
+        pl_u32 at = rex ? 1u : 0u;
+        pages[0] = (pl_u8)(0x40u | rex); pages[at] = 0x0fu; pages[at + 1u] = 0x20u;
+        pages[at + 2u] = (pl_u8)(0xc0u | ((control & 7u) << 3u) | (reg & 7u));
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions == 1u && report.source_bytes == at + 3u
+            && report.boundary == WASM_CUT_SYSTEM && report.written_registers == (1u << reg)
+            && !report.read_registers && !report.flags_written);
+        if (argc == 2 && !failures) {
+            char prefix[4096], json[256];
+            int n = snprintf(prefix,sizeof prefix,"%s/control-%u-%u",argv[1],control,reg);
+            if (n <= 0 || (size_t)n >= sizeof prefix) return 1;
+            n = snprintf(json,sizeof json,
+                "{\"entry\":\"4194304\",\"control\":%u,\"reg\":%u,\"sourceBytes\":%u}\n",control,reg,at + 3u);
+            if (n <= 0 || (size_t)n >= sizeof json || write_record(prefix,"json",json,(size_t)n)
+                    || write_record(prefix,"wasm",output,(size_t)bytes)
+                    || write_record(prefix,"source-page",pages,4096u)) return 1;
+        }
+        pages[at + 1u] = 0x22u; /* Writes remain a separate precise red gate. */
+        EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
+    }
     pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;
+    pages[3] = 0x90u;
     EXPECT(wasm_compiler_measure_code_cut(&source, 9u, &options, &options.entry, 0)
            == WASM_COMPILER_ERROR_INPUT);
     EXPECT(options.entry == source.entry);

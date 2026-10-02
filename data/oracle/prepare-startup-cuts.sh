@@ -28,4 +28,6 @@ prefix --code-pages 0x1000000 0x1000245 "$output/boot.kernel-page" \
   "$output/after-return" >"$output/after-return.log"
 prefix --code-pages 0x12e3000 0x12e3bb0 "$output/call.extra-page" \
   "$output/idt" >"$output/idt.log"
+prefix --code-pages 0x1000000 0x100024d "$output/boot.kernel-page" \
+  "$output/control-read" >"$output/control-read.log"
 printf 'Bounded shipped startup witnesses prepared; Linux boot remains RED.\n'

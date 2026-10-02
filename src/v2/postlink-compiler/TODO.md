@@ -43,11 +43,12 @@ to postpone the next browser product goal behind new native size/speed work.
 ## Active browser work — 2026-10-02
 
 Current executable checkpoint: the exact shipped bzImage advances from 14 to
-26 source instructions in an actual ordinary-memory browser Worker through
+28 source instructions in an actual ordinary-memory browser Worker through
 cold C-Wasm compilation and C table/MMU execution. Memory RMW, LGDT/LIDT and
-same-CPL long-mode far RET are admitted; full CPU/cache observations pass.
-Next concrete red coordinate: `0x100024d`, MOV CR4,RAX. Implement common
-control-register semantics (and the following real decompressor operations),
+same-CPL long-mode far RET and general control-register reads are admitted;
+full CPU/cache observations pass. Next concrete red coordinate: `0x1000255`,
+CR4 write. Implement common control-write legality/context invalidation
+(and the following real decompressor operations),
 then exact exception entry and required device/root supply. Never skip source
 instructions or substitute another kernel/backend. Whole-image `-104`, Linux
 boot, PID 1 and development acceptance remain red. Source/native asset and

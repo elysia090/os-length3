@@ -52,6 +52,13 @@ instructions, 23 rows and seven admissions, stopping at MOV CR4,RAX
 `0x100024d`. Full CPU/cache state is checked in ordinary memory. These results
 do not replace historical receipts or claim Linux boot, isolation or RSS release.
 
+The [subsequent common control-read checkpoint](2026-10-02-control-read.md)
+records 28 instructions in the actual browser, through the CR4 read/AND, with
+CR4 write red at `0x1000255`. Its distinct 404,071-byte cold compiler and
+`2026-10-02-startup-control-read.json` do not replace the prior builds/JSON.
+Linux boot is still unachieved; the read/write display-order clarification is
+included in that checkpoint.
+
 Reproduce the transport/Node checks with:
 
 ```

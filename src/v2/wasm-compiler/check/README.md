@@ -275,11 +275,14 @@ is interpreted or silently skipped.
 The current shared C-Wasm path additionally admits memory-destination
 ADD/SUB/AND/OR/XOR, ten-byte LGDT/LIDT records and same-CPL 64-bit far RET.
 The 22 new RMW modules pass 11,264 native-x86 comparisons. The shipped bzImage
-now executes 26 startup instructions in an actual browser Worker and compares
-all CPU/cache bytes; it stops at MOV CR4,RAX `0x100024d`, not Linux boot.
+now executes 28 startup instructions in an actual browser Worker and compares
+all CPU/cache bytes; it stops at CR4 write `0x1000255`, not Linux boot.
 Outer-CPL/compatibility far transfers and full exception delivery remain red.
 See vm/check/browser/evidence/2026-10-02-rmw-control.md for reservation/Accessed
 write regressions, exact builds and reproducible cold construction.
+The later 2026-10-02-control-read.md checkpoint adds common CR0/CR2/CR3/CR4/CR8
+reads: 80 modules, 5,360 privilege/value model cases and 247 total native/cold
+byte-identical emissions including repeats. This is not a hardware CPL0 fault oracle.
 
 ```sh
 node data/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS
