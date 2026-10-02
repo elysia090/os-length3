@@ -75,8 +75,9 @@ LEA, ADD/SUB, AND/OR/XOR, CMP/TEST, INC/DEC, NEG/NOT, NOP and direct Jcc/JMP.
 Narrow/high-byte writes preserve their parent, 32-bit writes zero its upper
 half, INC/DEC preserve carry and arithmetic flags are computed at operand
 width. Logical AF is undefined and is not compared with an invented native
-value. Memory, precise faults, calls/returns, system/SIMD/x87 transfers and
-dynamic executable-generation admission remain unimplemented in this backend.
+value. The RAM boundary checkpoint below adds scalar memory cuts; actual MMU
+fault delivery, calls/returns, system/SIMD/x87 transfers and dynamic
+executable-generation admission remain unimplemented in this backend.
 Long-mode, zero-load-bias input and an event-free admitted cut are prerequisites.
 The generated state guard rejects wrong RIP, TF/RF, misalignment and a missing
 complete state reservation before any write; it is not a Linux fault handler.
@@ -141,3 +142,66 @@ bundle bytes and the human UI remain unchanged.
 Instruction/flag references are the
 [Intel manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
 and the [WebAssembly binary instruction specification](https://webassembly.github.io/spec/core/binary/instructions.html).
+
+## Scalar RAM cuts — 2026-10-02
+
+MOV loads/stores, including narrow/high-byte parents, MOVZX/SX, signed
+immediate stores, address32 truncation, indexed and RIP-relative addressing,
+now emit one-instruction memory cuts. A preceding pure cut ends **before** the
+faulting instruction; the memory cut updates registers/RIP/retired only after
+its complete RAM transaction succeeds. The module imports `machine.memory`
+and the typed C boundary `machine.access`, and exports `cut(i32 state, i32 port)`.
+No instruction bytes, decoded operation descriptor or per-byte host calls are
+in that boundary. `machine/memory.h` fixes its address/range/right/value ABI.
+State/port extents, alignment and disjointness are checked before calling it.
+AC, TF/RF and FS/GS accesses remain explicit rejection rather than guessed
+alignment, segment or debug semantics.
+
+`vm/core/memory.c` admits **already translated** resident page projections.
+The supervisor owns their CPU/MMU context, generation and synchronous lifetime.
+It excludes the state/port arena from guest RAM, keeps 64-bit guest addresses,
+and preflights at most two page fragments before a scalar store. Physical
+aliases and noncontiguous resident pages are allowed. It copies neither the
+whole machine state nor pages, allocates no heap, and uses only two fragment
+coordinates. A missing/denied/deferred translation returns a bounded admission
+request containing the original address, width and right. It is not falsely
+reported as a guest page fault or zero-filled RAM. Only an explicit cached
+exception for that access/context produces a pending fault. The supervisor,
+not this RAM cache, must deliver it and set CR2 where appropriate. This is a
+serialized owner boundary, **not a complete x86 MMU, device layer or SMP atomicity
+proof**. Future concurrent eviction needs a pinned/fenced owner protocol.
+
+The previous register-only library rejects the same post-linked memory fixture
+with `-102`. Current emission passes **22 modules / 11,264 native-x86 versus
+Node-Wasm comparisons**, plus failure-return noncommit, invalid/aliased port,
+debug/alignment rejection, memory growth and prefix-commit checks. The first
+test run exposed a test-oracle error: after `MOV RDI,[RDI]`, failure retry reused
+the loaded RDI instead of restoring the pre-instruction address. Restoring the
+complete input before each retry makes the alias case meaningful and green.
+The C resident boundary passes 100,000 scalar write/read round trips, separate
+cross-page partial-store, cached-fault direction, high/kernel address, physical
+alias, stale-generation, invalid-reopen and reserved-arena checks.
+
+ASan/UBSan, including leak detection, also pass. The new native oracle first
+failed because its fixed 64-bit test mapping intersected ASan's reserved shadow
+gap; the rejected mmap path leaked its ELF input buffer. The oracle now uses
+application high memory and one cleanup path for files, mappings and input,
+without disabling sanitizer checks or overwriting an existing mapping.
+
+```sh
+make -C src/v2 all
+make -C src/v2/wasm-compiler check
+make -C src/v2/wasm-compiler build/memory-cut-check
+bash data/oracle/check-wasm-memory.sh temp/new-memory-cut-records
+node data/oracle/check-wasm-memory.mjs temp/new-memory-cut-records
+make -C src/v2/vm check
+```
+
+The Node access callback is explicitly a **test double**, not a product JS
+execution route. The C provider is independently executed natively, not yet
+compiled/linked into the new `vm.wasm`. C-Wasm integration, complete exception
+priority/delivery, paging/permissions, call/return, device access and whole-image
+dispatch/closure remain red. Existing 77 register modules / 39,424 comparisons
+still pass after rebuilding. Do not add these fixture counts to kernel coverage
+or claim browser boot, distribution speed/size improvement or a native re-bake.
+Published native bundle bytes and the human UI are unchanged.

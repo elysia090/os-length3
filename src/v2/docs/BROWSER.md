@@ -240,10 +240,14 @@ Inspection on 2026-10-02 found:
   actual generated modules and 39,424 cases, including a three-instruction
   prefix of the shipped BusyBox entry. Whole-image function/control/dispatcher
   closure still returns `WASM_COMPILER_ERROR_INCOMPLETE`; these small cuts are
-  not a Linux execution backend. The CLI is built by `all`.
-* Compiled machine execution, MMU and virtio devices in the new VM product
+  not a Linux execution backend. Scalar memory cuts additionally pass 22 modules
+  and 11,264 native/Node comparisons using a typed access test double; actual
+  C-Wasm RAM integration and CPU exception delivery remain unconnected. The CLI
+  is built by `all`.
+* The C resource gate and synchronous resident RAM projection exist, but
+  compiled machine dispatch, MMU and virtio devices in the new VM product
   are not implemented; the retained `vm/wasm` and `web/vm.js` code still contains
-  historical execution machinery. A tested resource gate alone is not a VM.
+  historical execution machinery. Resource/RAM boundaries alone are not a VM.
 * `linux-worker.js` defaults to `linux-x86-64-machine`, which is absent from
   the current catalog and is not the shipped bundle. Re-enabling that old
   catalog entry would not test this release.

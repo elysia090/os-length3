@@ -21,7 +21,7 @@ static pl_u32 uleb_bytes(pl_u64 value)
     return bytes;
 }
 
-static void module_header(wasm_writer *writer, pl_u64 body_bytes)
+static void module_header(wasm_writer *writer, pl_u64 body_bytes, int memory)
 {
     static const pl_u8 header[] = { 0,0x61,0x73,0x6d,1,0,0,0 };
     static const pl_u8 type[] = { 1,0x60,1,0x7f,1,0x7e };
@@ -30,11 +30,28 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes)
     };
     static const pl_u8 functions[] = { 1,0 };
     static const pl_u8 exports[] = { 1,3,'c','u','t',0,0 };
+    static const pl_u8 memory_type[] = {
+        2,0x60,5,0x7f,0x7e,0x7f,0x7f,0x7e,1,0x7e,
+        0x60,2,0x7f,0x7f,1,0x7e
+    };
+    static const pl_u8 memory_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',6,'a','c','c','e','s','s',0,0
+    };
+    static const pl_u8 memory_functions[] = { 1,1 };
+    static const pl_u8 memory_exports[] = { 1,3,'c','u','t',0,1 };
     raw(writer, header, sizeof header);
-    section(writer, 1u, sizeof type); raw(writer, type, sizeof type);
-    section(writer, 2u, sizeof imports); raw(writer, imports, sizeof imports);
-    section(writer, 3u, sizeof functions); raw(writer, functions, sizeof functions);
-    section(writer, 7u, sizeof exports); raw(writer, exports, sizeof exports);
+    if (memory) {
+        section(writer, 1u, sizeof memory_type); raw(writer, memory_type, sizeof memory_type);
+        section(writer, 2u, sizeof memory_imports); raw(writer, memory_imports, sizeof memory_imports);
+        section(writer, 3u, sizeof memory_functions); raw(writer, memory_functions, sizeof memory_functions);
+        section(writer, 7u, sizeof memory_exports); raw(writer, memory_exports, sizeof memory_exports);
+    } else {
+        section(writer, 1u, sizeof type); raw(writer, type, sizeof type);
+        section(writer, 2u, sizeof imports); raw(writer, imports, sizeof imports);
+        section(writer, 3u, sizeof functions); raw(writer, functions, sizeof functions);
+        section(writer, 7u, sizeof exports); raw(writer, exports, sizeof exports);
+    }
     section(writer, 10u, 1u + uleb_bytes(body_bytes) + body_bytes);
     wasm_writer_uleb(writer, 1u); wasm_writer_uleb(writer, body_bytes);
 }
@@ -54,7 +71,7 @@ static int prepare(const wasm_compiler *compiler, const wasm_cut_options *option
     if (!status) status = cut_prepare(compiler, options, plan);
     if (!status) status = cut_emit_body(&body, plan, &measured);
     if (status) return status;
-    module_header(&header, body.used);
+    module_header(&header, body.used, measured.memory_bytes != 0u);
     if (!pl_checked_add_u64(header.used, body.used, &measured.module_bytes)
             || measured.module_bytes > options->maximum_module_bytes)
         return WASM_COMPILER_ERROR_CAPACITY;
@@ -98,7 +115,7 @@ int wasm_compiler_emit_cut(const wasm_compiler *compiler,
             || (report && overlaps(target, bytes, report, sizeof *report)))
         return WASM_COMPILER_ERROR_INPUT;
     wasm_writer writer = { target, capacity, 0u, 0 };
-    module_header(&writer, body_bytes);
+    module_header(&writer, body_bytes, plan.report.memory_bytes != 0u);
     status = cut_emit_body(&writer, &plan, &measured);
     if (status) return status;
     measured.module_bytes = writer.used;

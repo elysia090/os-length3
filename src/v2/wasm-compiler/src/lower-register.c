@@ -2,9 +2,9 @@
 
 void cut_op(cut_lowering *cut, pl_u32 opcode) { wasm_writer_byte(cut->writer, opcode); }
 void cut_get(cut_lowering *cut, pl_u32 local)
-{ cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, local); }
+{ cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, local ? local + cut->extra_parameter : 0u); }
 void cut_set(cut_lowering *cut, pl_u32 local)
-{ cut_op(cut, 0x21u); wasm_writer_uleb(cut->writer, local); }
+{ cut_op(cut, 0x21u); wasm_writer_uleb(cut->writer, local ? local + cut->extra_parameter : 0u); }
 
 void cut_const(cut_lowering *cut, pl_u64 bits)
 {
@@ -37,7 +37,7 @@ void cut_store(cut_lowering *cut, pl_u32 offset, pl_u32 local)
     wasm_writer_uleb(cut->writer, 3u); wasm_writer_uleb(cut->writer, offset);
 }
 
-static int gpr(const pl_x86_register *reg)
+int cut_gpr(const pl_x86_register *reg)
 {
     return reg->class_id == PL_X86_REGISTER_GPR && reg->index < 16u
         && (reg->bits == 8u || reg->bits == 16u || reg->bits == 32u || reg->bits == 64u)
@@ -45,7 +45,7 @@ static int gpr(const pl_x86_register *reg)
 }
 static int source_operand(const pl_x86_operand *operand)
 {
-    return (operand->kind == PL_X86_OPERAND_REGISTER && gpr(&operand->value.reg))
+    return (operand->kind == PL_X86_OPERAND_REGISTER && cut_gpr(&operand->value.reg))
         || operand->kind == PL_X86_OPERAND_IMMEDIATE;
 }
 static int canonical(pl_u64 address)
@@ -85,7 +85,7 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
                 || (instruction->flow == PL_X86_FLOW_CONDITIONAL && instruction->condition < 16u))
             && (instruction->flags & PL_X86_INSTRUCTION_DIRECT_TARGET) && canonical(instruction->target);
     if (instruction->flow != PL_X86_FLOW_NEXT || !count
-            || operands[0].kind != PL_X86_OPERAND_REGISTER || !gpr(&operands[0].value.reg)) return 0;
+            || operands[0].kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&operands[0].value.reg)) return 0;
     switch (instruction->operation) {
     case PL_X86_OPERATION_COMPLEMENT:
     case PL_X86_OPERATION_NEGATE:
@@ -106,8 +106,8 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
         return count == 2u && operands[1].kind == PL_X86_OPERAND_MEMORY
             && (instruction->address_width == 32u || instruction->address_width == 64u)
             && (memory->base.class_id == PL_X86_REGISTER_NONE
-                || memory->base.class_id == PL_X86_REGISTER_IP || gpr(&memory->base))
-            && (memory->index.class_id == PL_X86_REGISTER_NONE || gpr(&memory->index))
+                || memory->base.class_id == PL_X86_REGISTER_IP || cut_gpr(&memory->base))
+            && (memory->index.class_id == PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
             && (!memory->scale || memory->scale == 1u || memory->scale == 2u
                 || memory->scale == 4u || memory->scale == 8u);
     }
@@ -129,7 +129,7 @@ static void read_register(cut_lowering *cut, const pl_x86_register *reg)
     if (reg->flags & PL_X86_REGISTER_HIGH8) { cut_const(cut, 8u); cut_op(cut, 0x88u); }
     cut_mask(cut, reg->bits);
 }
-static void read_operand(cut_lowering *cut, const pl_x86_operand *operand, pl_u32 width)
+void cut_read_operand(cut_lowering *cut, const pl_x86_operand *operand, pl_u32 width)
 {
     if (operand->kind == PL_X86_OPERAND_REGISTER) read_register(cut, &operand->value.reg);
     else cut_const(cut, operand->value.immediate);
@@ -137,7 +137,7 @@ static void read_operand(cut_lowering *cut, const pl_x86_operand *operand, pl_u3
 }
 
 /* Narrow writes preserve the parent; a 32-bit write defines all 64 bits. */
-static void write_register(cut_lowering *cut, const pl_x86_register *reg)
+void cut_write_register(cut_lowering *cut, const pl_x86_register *reg)
 {
     pl_u32 index = reg->index;
     pl_u32 shift = reg->flags & PL_X86_REGISTER_HIGH8 ? 8u : 0u;
@@ -219,9 +219,9 @@ static void arithmetic_flags(cut_lowering *cut, pl_u32 width,
     cut_set(cut, CUT_FLAGS); cut->report.flags_written = 1u;
 }
 
-static void effective_address(cut_lowering *cut, const pl_x86_instruction *instruction)
+void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruction,
+                            const pl_x86_memory *memory)
 {
-    const pl_x86_memory *memory = &instruction->operands[1].value.memory;
     if (memory->base.class_id == PL_X86_REGISTER_IP) cut_const(cut, instruction->fallthrough);
     else if (memory->base.class_id == PL_X86_REGISTER_GPR) read_register(cut, &memory->base);
     else cut_const(cut, 0u);
@@ -251,16 +251,17 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     int writes = operation != PL_X86_OPERATION_COMPARE && operation != PL_X86_OPERATION_TEST;
     if (operation == PL_X86_OPERATION_MOVE || operation == PL_X86_OPERATION_MOVE_ZERO_EXTEND
             || operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {
-        read_operand(cut, &operands[1], width);
+        cut_read_operand(cut, &operands[1], width);
         if (operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {
             pl_u32 source_bits = operands[1].bits;
             cut_const(cut, 64u - source_bits); cut_op(cut, 0x86u);
             cut_const(cut, 64u - source_bits); cut_op(cut, 0x87u);
         }
-    } else if (operation == PL_X86_OPERATION_LOAD_ADDRESS) effective_address(cut, instruction);
+    } else if (operation == PL_X86_OPERATION_LOAD_ADDRESS)
+        cut_effective_address(cut, instruction, &operands[1].value.memory);
     else {
         read_register(cut, &operands[0].value.reg); cut_set(cut, CUT_LEFT);
-        if (instruction->visible_operand_count == 2u) read_operand(cut, &operands[1], width);
+        if (instruction->visible_operand_count == 2u) cut_read_operand(cut, &operands[1], width);
         else cut_const(cut, 1u);
         cut_set(cut, CUT_RIGHT);
         if (operation == PL_X86_OPERATION_NEGATE) {
@@ -289,8 +290,8 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
                 operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_OR
                     || operation == PL_X86_OPERATION_XOR || operation == PL_X86_OPERATION_TEST,
                 operation == PL_X86_OPERATION_INCREMENT || operation == PL_X86_OPERATION_DECREMENT);
-        if (writes) write_register(cut, &operands[0].value.reg);
+        if (writes) cut_write_register(cut, &operands[0].value.reg);
         return;
     }
-    cut_mask(cut, width); cut_set(cut, CUT_VALUE); write_register(cut, &operands[0].value.reg);
+    cut_mask(cut, width); cut_set(cut, CUT_VALUE); cut_write_register(cut, &operands[0].value.reg);
 }

@@ -98,8 +98,24 @@ measurement and emission use bounded linear passes with one borrowed map table,
 not a decoded instruction vector or repeated module reconstruction.
 These are bounded cut checks, not
 whole-image coverage, Linux/browser boot, new distribution timing or publication.
-Next: precise memory/fault cuts, call/return and compiled machine dispatch;
-then kernel startup/MMU/devices and the real browser resource connections.
+Scalar-memory checkpoint: MOV/MOVZX/SX loads and MOV stores now produce a
+one-instruction direct Wasm cut behind the typed C RAM boundary. The preceding
+pure slice ends before the faulting instruction. State/port alias/bounds and
+AC/TF/RF checks happen before access; failure does not retire or mutate CPU
+state. Twenty-two post-linked memory modules pass 11,264 native/Node cases.
+The old register-only compiler rejects the same input with -102; the existing
+77 register modules/39,424 comparisons still pass after rebuilding. C resident
+RAM passes 100,000 write/read round trips, cross-page preflight, high-address
+aliases, cached-fault direction, stale generation and invalid reopen checks.
+Missing translation/residency is a bounded address/range/right request, not
+an invented page fault, zero-fill or decoder fallback. That provider requires
+a serialized pinned owner and already admitted CPU/MMU context; it is not a
+page-table walker or concurrent-worker atomicity proof. The Node access
+function is a test double, not product execution. No native artifact/UI changed.
+Next: compile/link the C provider into the new Wasm VM; actual MMU translation
+and fault delivery; call/return and compiled machine dispatch; then kernel
+startup/devices and real browser resource connections. Whole-image -104 and
+actual Linux/browser boot remain red.
 
 ## Previous acceptance state — before compiler refactor, 2026-10-02
 

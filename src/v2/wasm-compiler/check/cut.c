@@ -49,7 +49,8 @@ static int same_report(const wasm_cut_report *a, const wasm_cut_report *b)
         && a->read_registers == b->read_registers
         && a->written_registers == b->written_registers
         && a->flags_written == b->flags_written && a->boundary == b->boundary
-        && a->boundary_operation == b->boundary_operation;
+        && a->boundary_operation == b->boundary_operation
+        && a->memory_bytes == b->memory_bytes && a->memory_access == b->memory_access;
 }
 
 static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,

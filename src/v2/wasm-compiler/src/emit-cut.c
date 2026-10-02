@@ -26,6 +26,21 @@ int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         pl_x86_instruction instruction;
         if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
+        if (cut_memory_supported(&instruction)) {
+            plan->report.boundary = WASM_CUT_MEMORY;
+            plan->report.boundary_operation = instruction.operation;
+            /* Commit the preceding pure slice before this possibly faulting
+             * transfer. A memory cut starts at the transfer and contains no
+             * earlier architectural writes to roll back. */
+            if (!i) {
+                plan->report.source_instructions = 1u;
+                plan->report.source_bytes = instruction.length;
+                int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
+                plan->report.memory_bytes = instruction.operands[store ? 0u : 1u].bits / 8u;
+                rip = instruction.fallthrough;
+            }
+            break;
+        }
         if (!cut_instruction_supported(&instruction)) {
             plan->report.boundary = instruction.flow == PL_X86_FLOW_FAULT
                                  ? WASM_CUT_FAULT : WASM_CUT_UNSUPPORTED;
@@ -61,8 +76,9 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     pl_u64 rip = plan->report.entry;
     cut.writer = writer;
     cut.report = plan->report;
+    cut.extra_parameter = plan->report.memory_bytes != 0u;
     wasm_writer_uleb(writer, 1u);
-    wasm_writer_uleb(writer, CUT_LOCAL_COUNT);
+    wasm_writer_uleb(writer, cut.extra_parameter ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
     wasm_writer_byte(writer, 0x7eu);
     cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
     cut_op(&cut, 0x71u); return_if(&cut);
@@ -73,10 +89,26 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
     cut_const(&cut, 65536u); cut_op(&cut, 0x7eu);
     cut_op(&cut, 0x56u); return_if(&cut);
+    if (cut.extra_parameter) {
+        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u);
+        cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
+        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
+        cut_const(&cut, sizeof(machine_memory_port)); cut_op(&cut, 0x7cu);
+        cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
+        cut_const(&cut, 65536u); cut_op(&cut, 0x7eu); cut_op(&cut, 0x56u); return_if(&cut);
+        /* Both ranges have been validated with non-wrapping i64 arithmetic. */
+        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
+        cut_get(&cut, 0u); cut_op(&cut, 0xadu); cut_const(&cut, sizeof(machine_state));
+        cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
+        cut_get(&cut, 0u); cut_op(&cut, 0xadu);
+        cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
+        cut_const(&cut, sizeof(machine_memory_port)); cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
+        cut_op(&cut, 0x71u); return_if(&cut);
+    }
     cut_load(&cut, (pl_u32)offsetof(machine_state, rip));
     cut_const(&cut, rip); cut_op(&cut, 0x52u); return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rflags)); cut_set(&cut, CUT_FLAGS);
-    cut_get(&cut, CUT_FLAGS); cut_const(&cut, 0x10100u);
+    cut_get(&cut, CUT_FLAGS); cut_const(&cut, cut.extra_parameter ? 0x50100u : 0x10100u);
     cut_op(&cut, 0x83u); cut_op(&cut, 0x50u); cut_op(&cut, 0x45u); return_if(&cut);
     for (pl_u32 i = 0u; i < plan->report.source_instructions; ++i) {
         pl_x86_instruction instruction;
@@ -84,7 +116,8 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         cut.wanted_flags = 0u;
         for (pl_u32 bit = 0u; bit < 12u; ++bit)
             if (plan->last_flag_writer[bit] == i) cut.wanted_flags |= 1u << bit;
-        cut_lower_instruction(&cut, &instruction);
+        if (cut.extra_parameter) cut_lower_memory(&cut, &instruction);
+        else cut_lower_instruction(&cut, &instruction);
         rip = instruction.fallthrough;
     }
     if (cut.report.boundary != WASM_CUT_CONTROL) {

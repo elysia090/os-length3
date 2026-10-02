@@ -11,6 +11,7 @@ enum wasm_cut_boundary {
     WASM_CUT_CONTROL,
     WASM_CUT_UNSUPPORTED,
     WASM_CUT_FAULT,
+    WASM_CUT_MEMORY,
 };
 
 typedef struct {
@@ -31,6 +32,8 @@ typedef struct {
     pl_u32 flags_written;
     pl_u32 boundary;
     pl_u32 boundary_operation;
+    pl_u32 memory_bytes;
+    pl_u32 memory_access;
 } wasm_cut_report;
 
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
@@ -40,6 +43,13 @@ typedef struct {
  * and event/debug context. This function is not an MMU or code-admission check.
  * RIP mismatch or TF/RF returns ENTRY_MAP without
  * mutation. The baseline is long mode without debug single-stepping.
+ *
+ * A one-instruction RAM cut also imports machine.access (machine/memory.h)
+ * and exports cut(i32 state, i32 port) -> i64. Its synchronous C provider must
+ * pin translations/residency and keep the state/port arena disjoint from guest
+ * RAM. Failed access preserves architectural state and retirement. Alignment
+ * checking, FS/GS bases, concurrent workers, MMIO and paging are not admitted
+ * by this baseline. AC is rejected, not silently ignored.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * Success covers only source_bytes, never the continuation or an ELF closure.
