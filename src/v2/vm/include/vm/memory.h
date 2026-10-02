@@ -11,6 +11,12 @@ enum vm_memory_page_kind {
     VM_MEMORY_DEFERRED,
 };
 typedef struct {
+    pl_u64 generation;
+    pl_u32 port, parts;
+    pl_u32 offsets[2], lengths[2];
+} vm_memory_reservation;
+
+typedef struct {
     pl_u64 address;
     pl_u32 offset;
     pl_u32 rights;
@@ -26,6 +32,7 @@ typedef struct {
     pl_u32 reserved_bytes;
     pl_u64 generation;
     pl_u32 write_touched; /* Caller-cleared mutation bit, not a counter/epoch. */
+    vm_memory_reservation reservation;
 } vm_memory;
 
 /* Validate the borrowed, sorted page directory once. RAM mappings cannot
@@ -42,4 +49,10 @@ int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
 machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
                                 pl_u64 address, pl_u32 bytes,
                                 pl_u32 access, pl_u64 value);
+/* A synchronous single-owner reservation pins at most two physical fragments.
+ * It is consumed even by a failed commit; reopen, any other access or abort
+ * revokes it. No owner may mutate directory/context/residency while reserved.
+ * This is not LOCK/SMP atomicity or an asynchronous worker lease. */
+void vm_memory_abort(vm_memory *memory);
+machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 value);
 #endif

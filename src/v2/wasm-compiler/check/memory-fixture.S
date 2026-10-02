@@ -53,6 +53,37 @@ _start:
     mov rax, [rip + 8]
 #elif MEMORY_CASE == 22
     mov rax, qword ptr fs:[rdi]
+#elif MEMORY_CASE >= 23 && MEMORY_CASE <= 42
+#if (MEMORY_CASE - 23) % 4 == 0
+#define DEST qword ptr [rdi]
+#define SOURCE rax
+#elif (MEMORY_CASE - 23) % 4 == 1
+#define DEST dword ptr [rdi]
+#define SOURCE eax
+#elif (MEMORY_CASE - 23) % 4 == 2
+#define DEST word ptr [rdi]
+#define SOURCE ax
+#else
+#define DEST byte ptr [rdi]
+#define SOURCE al
+#endif
+#if MEMORY_CASE < 27
+    add DEST, SOURCE
+#elif MEMORY_CASE < 31
+    sub DEST, SOURCE
+#elif MEMORY_CASE < 35
+    and DEST, SOURCE
+#elif MEMORY_CASE < 39
+    or DEST, SOURCE
+#else
+    xor DEST, SOURCE
+#endif
+#elif MEMORY_CASE == 43
+    add qword ptr [rdi], rdi
+#elif MEMORY_CASE == 44
+    add qword ptr [rdi], -123
+#elif MEMORY_CASE == 45
+    lock add qword ptr [rdi], rax
 #else
 #error unsupported case
 #endif

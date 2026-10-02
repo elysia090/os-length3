@@ -1,6 +1,7 @@
 /* Descriptor validation at the compiled architectural transaction boundary. */
 #include <vm/segments.h>
 #include "memory-internal.h"
+#include "segments-internal.h"
 #include <stddef.h>
 
 static int canonical(pl_u64 address)
@@ -16,7 +17,8 @@ machine_result vm_segment_load(vm_memory *physical, pl_u32 port_offset,
                                 machine_state *state, machine_segments *segments,
                                 pl_u32 rank, pl_u32 selector)
 {
-    if (!physical || !state || !segments || (port_offset & 7u)
+    vm_memory_abort(physical);
+    if (!physical || !physical->bytes || !state || !segments || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > physical->reserved_bytes
             || segments->version != MACHINE_SEGMENTS_ABI_VERSION || segments->mov_ss_shadow > 1u
             || rank >= 6u || rank == MACHINE_SEGMENT_CS || selector > 65535u
@@ -67,10 +69,7 @@ machine_result vm_segment_load(vm_memory *physical, pl_u32 port_offset,
                     : ((code && !(type & 2u)) || (!conforming && (cpl > dpl || rpl > dpl)))))
             return fault(port,state,13u,error);
         if (!(access & 128u)) return fault(port,state,rank == MACHINE_SEGMENT_SS ? 12u : 11u,error);
-        next.base = ((descriptor >> 16u) & 0xffffffu) | ((descriptor >> 32u) & 0xff000000u);
-        next.limit = (pl_u32)(descriptor & 65535u) | (pl_u32)((descriptor >> 32u) & 0xf0000u);
-        next.attributes = access | (pl_u32)((descriptor >> 40u) & 0xf000u) | 1u;
-        if (next.attributes & 0x8000u) next.limit = (next.limit << 12u) | 4095u;
+        next = vm_segment_cache_decode(descriptor);
         if (!(access & 1u)) {
             status = vm_mmu_access(physical,port_offset,&context,address + 5u,1u,MACHINE_MEMORY_WRITE,access | 1u);
             if (status) return status;

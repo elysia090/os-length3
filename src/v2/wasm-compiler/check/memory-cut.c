@@ -148,6 +148,10 @@ int main(int argc, char **argv)
         record[4] = state.registers[4];
         for (pl_u32 reg = 0u; reg < 16u; ++reg) record[17u + reg] = state.registers[reg];
         record[33] = state.rflags; record[34] = report.continuation;
+        /* AF has no defined native value for logical operations. The compiled
+         * long-mode projection canonically clears this undefined flag. */
+        if (instruction.operation == PL_X86_OPERATION_AND || instruction.operation == PL_X86_OPERATION_OR
+                || instruction.operation == PL_X86_OPERATION_XOR) record[33] &= ~0x10ull;
         record[37] = read_word((const pl_u8 *)(uintptr_t)address);
         if (!relative) {
             if (store) memcpy(saved + offset, ram + offset, report.memory_bytes);

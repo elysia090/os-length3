@@ -184,7 +184,7 @@ static void shift_flag(cut_lowering *cut, pl_u32 bit)
     if (bit) { cut_const(cut, bit); cut_op(cut, 0x86u); }
     cut_op(cut, 0x84u);
 }
-static void arithmetic_flags(cut_lowering *cut, pl_u32 width,
+void cut_arithmetic_flags(cut_lowering *cut, pl_u32 width,
                               int subtraction, int logical, int keep_carry)
 {
     pl_u32 wanted = cut->wanted_flags;
@@ -300,7 +300,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         }
         cut_mask(cut, width); cut_set(cut, CUT_VALUE);
         if (operation != PL_X86_OPERATION_COMPLEMENT)
-            arithmetic_flags(cut, width,
+            cut_arithmetic_flags(cut, width,
                 operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_COMPARE
                     || operation == PL_X86_OPERATION_DECREMENT || operation == PL_X86_OPERATION_NEGATE,
                 operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_OR

@@ -25,4 +25,14 @@ typedef struct {
 machine_result vm_mmu_access(vm_memory *physical, pl_u32 port_offset,
                              const vm_mmu_context *context, pl_u64 address,
                              pl_u32 bytes, pl_u32 access, pl_u64 value);
+/* Read with write-intent translation, preserving #PF W/R and exact physical
+ * destinations until commit. access must be READ|WRITE, optionally STACK. */
+machine_result vm_mmu_reserve(vm_memory *physical, pl_u32 port_offset,
+                              const vm_mmu_context *context, pl_u64 address,
+                              pl_u32 bytes, pl_u32 access);
+/* Privileged C caller only: target is a disjoint private buffer of bytes
+ * (1..16), never a guest/state/directory pointer. Not a generated-code import. */
+machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,
+                                  const vm_mmu_context *context, pl_u64 address,
+                                  pl_u32 bytes, pl_u32 access, pl_u8 *target);
 #endif

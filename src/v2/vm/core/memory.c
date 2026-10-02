@@ -28,7 +28,8 @@ int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
             if (page->fault_vector != 14u || !page->rights || page->rights & ~3u) return -1;
         } else if (page->kind != VM_MEMORY_DEFERRED) return -1;
     }
-    *memory = (vm_memory){ bytes, byte_count, pages, page_count, reserved_bytes, generation, 0u };
+    *memory = (vm_memory){ .bytes = bytes, .byte_count = byte_count, .pages = pages,
+        .page_count = page_count, .reserved_bytes = reserved_bytes, .generation = generation };
     return 0;
 }
 
@@ -72,6 +73,7 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
                                 pl_u64 address, pl_u32 bytes,
                                 pl_u32 access, pl_u64 value)
 {
+    vm_memory_abort(memory);
     if (!memory || !memory->bytes || !memory->generation || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > memory->reserved_bytes
             || (bytes != 1u && bytes != 2u && bytes != 4u && bytes != 8u)
@@ -119,4 +121,28 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
         write_word(port + offsetof(machine_memory_port, value), value, 8u);
     }
     return machine_result_make(MACHINE_RESULT_DIRECT, 0u);
+}
+
+void vm_memory_abort(vm_memory *memory)
+{ if (memory) memory->reservation = (vm_memory_reservation){ 0 }; }
+
+machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 value)
+{
+    if (!memory) return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation saved = memory->reservation;
+    vm_memory_abort(memory);
+    if (!memory->bytes || !memory->generation || (port_offset & 7u)
+            || (pl_u64)port_offset + sizeof(machine_memory_port) > memory->reserved_bytes)
+        return MACHINE_RESULT_ENTRY_MAP;
+    if (read_word(memory->bytes + port_offset) != memory->generation)
+        return MACHINE_RESULT_STALE_GENERATION;
+    if (saved.generation != memory->generation || saved.port != port_offset
+            || !saved.parts || saved.parts > 2u) return MACHINE_RESULT_ENTRY_MAP;
+    pl_u32 consumed = 0u;
+    for (pl_u32 i = 0u; i < saved.parts; ++i) {
+        write_word(memory->bytes + saved.offsets[i], value >> (consumed * 8u), saved.lengths[i]);
+        consumed += saved.lengths[i];
+    }
+    memory->write_touched = 1u;
+    return 0u;
 }

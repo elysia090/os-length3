@@ -33,7 +33,7 @@ static machine_result resident_word(vm_memory *memory, pl_u8 *port,
                                     pl_u8 **result)
 {
     const vm_memory_page *page = vm_memory_find(memory, address);
-    if (!page || page->kind != VM_MEMORY_RAM || !(page->rights & access))
+    if (!page || page->kind != VM_MEMORY_RAM || (page->rights & access) != access)
         return pending(port, address, bytes, access);
     *result = memory->bytes + page->offset + (pl_u32)(address & 4095u);
     return 0u;
@@ -105,16 +105,16 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
     return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
 }
 
-machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
-                             const vm_mmu_context *context, pl_u64 address,
-                             pl_u32 bytes, pl_u32 access, pl_u64 value)
+static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
+                                 const vm_mmu_context *context, pl_u64 address,
+                                 pl_u32 bytes, pl_u32 access, vm_memory_reservation *ready)
 {
+    vm_memory_abort(memory);
     if (!memory || !memory->bytes || !memory->generation || !context_supported(context)
             || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > memory->reserved_bytes
-            || (bytes != 1u && bytes != 2u && bytes != 4u && bytes != 8u)
-            || (access & ~15u) || ((access & 3u) != MACHINE_MEMORY_READ
-                               && (access & 3u) != MACHINE_MEMORY_WRITE)
+            || !bytes || bytes > 16u || !ready
+            || (access & ~15u) || !(access & 3u)
             || ((access & VM_MMU_EXECUTE) && (access & (MACHINE_MEMORY_WRITE | MACHINE_MEMORY_STACK))))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     pl_u8 *port = memory->bytes + port_offset;
@@ -124,33 +124,89 @@ machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
             || address > ~0ull - (bytes - 1u)
             || ((address + bytes - 1u) >> 47u != 0u && (address + bytes - 1u) >> 47u != 0x1ffffu))
         return exception(port, address, access & MACHINE_MEMORY_STACK ? 12u : 13u, 0u);
-    pl_u8 *fragments[2];
-    pl_u32 lengths[2], parts = 0u, consumed = 0u;
+    *ready = (vm_memory_reservation){ .generation = memory->generation, .port = port_offset };
+    pl_u32 consumed = 0u;
     while (consumed < bytes) {
         pl_u64 current = address + consumed, physical = 0u;
         machine_result status = walk(memory, port, context, current, access, &physical);
         if (status) return status;
         pl_u32 length = 4096u - (pl_u32)(current & 4095u);
         if (length > bytes - consumed) length = bytes - consumed;
-        status = resident_word(memory, port, physical, access & 3u, length, fragments + parts);
+        pl_u8 *fragment = NULL;
+        status = resident_word(memory, port, physical, access & 3u, length, &fragment);
         if (status) return status;
-        lengths[parts++] = length;
+        ready->offsets[ready->parts] = (pl_u32)(fragment - memory->bytes);
+        ready->lengths[ready->parts++] = length;
         consumed += length;
     }
-    consumed = 0u;
+    return 0u;
+}
+
+machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
+                             const vm_mmu_context *context, pl_u64 address,
+                             pl_u32 bytes, pl_u32 access, pl_u64 value)
+{
+    vm_memory_abort(memory);
+    if ((bytes != 1u && bytes != 2u && bytes != 4u && bytes != 8u)
+            || ((access & 3u) != MACHINE_MEMORY_READ && (access & 3u) != MACHINE_MEMORY_WRITE))
+        return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result status = preflight(memory, port_offset, context, address, bytes, access, &ready);
+    if (status) return status;
+    pl_u32 consumed = 0u;
     if (access & MACHINE_MEMORY_WRITE) {
-        for (pl_u32 i = 0u; i < parts; ++i) {
-            vm_memory_store(fragments[i], value >> (consumed * 8u), lengths[i]);
+        for (pl_u32 i = 0u; i < ready.parts; ++i) {
+            vm_memory_store(memory->bytes + ready.offsets[i], value >> (consumed * 8u), ready.lengths[i]);
             memory->write_touched = 1u;
-            consumed += lengths[i];
+            consumed += ready.lengths[i];
         }
     } else {
         value = 0u;
-        for (pl_u32 i = 0u; i < parts; ++i) {
-            value |= vm_memory_load(fragments[i], lengths[i]) << (consumed * 8u);
-            consumed += lengths[i];
+        for (pl_u32 i = 0u; i < ready.parts; ++i) {
+            value |= vm_memory_load(memory->bytes + ready.offsets[i], ready.lengths[i]) << (consumed * 8u);
+            consumed += ready.lengths[i];
         }
-        vm_memory_store(port + offsetof(machine_memory_port, value), value, 8u);
+        vm_memory_store(memory->bytes + port_offset + offsetof(machine_memory_port, value), value, 8u);
     }
+    return 0u;
+}
+
+machine_result vm_mmu_reserve(vm_memory *memory, pl_u32 port_offset,
+                              const vm_mmu_context *context, pl_u64 address,
+                              pl_u32 bytes, pl_u32 access)
+{
+    vm_memory_abort(memory);
+    if ((bytes != 1u && bytes != 2u && bytes != 4u && bytes != 8u)
+            || (access & ~7u) || (access & 3u) != 3u) return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result status = preflight(memory, port_offset, context, address, bytes, access, &ready);
+    if (status) return status;
+    pl_u64 value = 0u;
+    pl_u32 consumed = 0u;
+    for (pl_u32 i = 0u; i < ready.parts; ++i) {
+        value |= vm_memory_load(memory->bytes + ready.offsets[i], ready.lengths[i]) << (consumed * 8u);
+        consumed += ready.lengths[i];
+    }
+    vm_memory_store(memory->bytes + port_offset + offsetof(machine_memory_port, value), value, 8u);
+    memory->reservation = ready;
+    return 0u;
+}
+
+/* Private, bounded architectural records (e.g. the ten-byte GDTR operand).
+ * No payload is copied until every fragment has passed the same MMU checks. */
+machine_result vm_mmu_read_record(vm_memory *memory, pl_u32 port_offset,
+                                  const vm_mmu_context *context, pl_u64 address,
+                                  pl_u32 bytes, pl_u32 access, pl_u8 *target)
+{
+    vm_memory_abort(memory);
+    if (!target || (access & ~7u) || (access & 3u) != MACHINE_MEMORY_READ)
+        return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result status = preflight(memory, port_offset, context, address, bytes, access, &ready);
+    if (status) return status;
+    pl_u32 consumed = 0u;
+    for (pl_u32 i = 0u; i < ready.parts; ++i)
+        for (pl_u32 j = 0u; j < ready.lengths[i]; ++j)
+            target[consumed++] = memory->bytes[ready.offsets[i] + j];
     return 0u;
 }

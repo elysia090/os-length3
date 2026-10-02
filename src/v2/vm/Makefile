@@ -11,7 +11,8 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 WASM_FLAGS += -Wl,--export=vm_boot_prepare,--export=vm_boot_project,--export=vm_boot_initial_state
 WASM_FLAGS += -Wl,--export-table,--growable-table,--export=vm_slot_min,--export=vm_bind_execution,--export=vm_run,--export=vm_completed,--export=vm_source_retired
 WASM_FLAGS += -Wl,--export=vm_boot_initial_segments,--export=vm_bind_segments,--export=vm_segment
-SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c
+WASM_FLAGS += -Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--export=vm_table,--export=vm_return
+SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c core/tables.c core/control.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
@@ -22,12 +23,12 @@ all: $(BUILD)/libvm.a
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
 wasm: $(BUILD)/vm.wasm
 
-$(BUILD)/vm.wasm: wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c core/memory-internal.h \
+$(BUILD)/vm.wasm: wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c core/tables.c core/control.c core/memory-internal.h core/segments-internal.h \
 	include/vm/memory.h include/vm/mmu.h include/vm/boot.h include/vm/execution.h ../support/include/support/types.h \
 	../machine-abi/include/machine/state.h ../machine-abi/include/machine/memory.h \
-	include/vm/segments.h ../machine-abi/include/machine/segments.h \
+	include/vm/segments.h include/vm/tables.h include/vm/control.h ../machine-abi/include/machine/segments.h \
 	../machine-abi/include/machine/result.h ../machine-abi/include/machine/entry.h | $(BUILD)
-	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c -o $@
+	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/execution.c core/segments.c core/tables.c core/control.c -o $@
 
 $(BUILD):
 	mkdir -p $@

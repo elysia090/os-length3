@@ -245,9 +245,10 @@ Inspection on 2026-10-02 found:
   precise long-mode, non-PVI/non-VM cut; pending faults are not exception entry.
   Register-source segment loads now use the C GDT/LDT/cache boundary, with a
   versioned architectural companion and MOV SS shadow. The actual shipped
-  startup retires 14 source instructions to `0x1000232` in Node/C-Wasm; this
-  is not browser boot. Memory RMW, LGDT/far/control and complete exception/device
-  startup remain open. See the segment checkpoint in vm/check/browser/evidence.
+  startup now retires 26 source instructions to `0x100024d` in a real browser
+  Worker and Node/C-Wasm. Memory RMW, LGDT/LIDT and same-CPL long-mode far RET
+  are admitted. Control-register/MSR, complete exception/device startup remain
+  open. See [the current checkpoint](../vm/check/browser/evidence/2026-10-02-rmw-control.md).
   Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
   16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
   with no JavaScript guest-memory callback. CPU exception delivery remains
@@ -258,8 +259,8 @@ Inspection on 2026-10-02 found:
   reserved physical bits and A/D updates; a physical cache miss returns an
   exact host request, not a fabricated Linux page fault. Its 49,152 permission
   cases are a model test, not a hardware/QEMU fault-delivery differential.
-  Compiled machine dispatch, CPU exception delivery and virtio devices remain
-  unimplemented; the retained `vm/wasm` and `web/vm.js` code still contains
+  Bounded C table dispatch exists; complete closure, CPU exception delivery and
+  virtio devices remain unimplemented. The retained `vm/wasm` and `web/vm.js` code still contains
   historical execution machinery. Resource/RAM boundaries alone are not a VM.
 * `linux-worker.js` defaults to `linux-x86-64-machine`, which is absent from
   the current catalog and is not the shipped bundle. Re-enabling that old
@@ -351,7 +352,7 @@ release. The cold supervisor must establish those provenance/lifetime gates;
 the row bounds check alone is not permission to execute arbitrary modules.
 Ordinary optimized-ELF admission is retained, not replaced by a synthetic ELF.
 
-The actual shipped bzImage prefix now retires `CLD; CLI; XOR eax,eax` through
+The earlier shipped bzImage checkpoint retired `CLD; CLI; XOR eax,eax` through
 the C-Wasm dispatcher in Node, without a JS instruction scheduler. It stops at
 `0x1000204` (segment load). A 16-case CPL/IOPL CLI model checks IF/#GP and
 nonretirement; it is not a native CPL0/hardware exception oracle. The prefix
@@ -360,9 +361,13 @@ still returns `-104`. The refreshed `provider.html` v2 fixture tests its native
 memory records through C table dispatch; its Node driver is not a new manual
 browser observation and does not replace the retained v1 receipt.
 
-Next: complete executable-generation/load/CPU attestation, C cold compiler and
-table admission; then hidden segment state/loads, GDT/far/control/MSR and
-exception entry needed by the actual compressed startup code.
+The latest checkpoint supersedes that three-instruction prefix: typed C memory
+RMW, table loads and same-CPL long-mode far RET advance to 26 instructions in
+the actual browser. The next concrete instruction is MOV CR4,RAX at `0x100024d`.
+Next: common control-register/MSR semantics and remaining actual compressed
+startup operations, complete executable-generation/load/CPU attestation and
+exception entry. A cold compiler and bounded table admission exist; they do
+not yet provide whole-image closure or a production authenticated code supply.
 Then implement the PC interrupt/timer/RTC/UART boundary and the release
 initramfs's actual root-device handoff before adding unrelated device families.
 Do not skip that startup with a synthetic ELF, redirect execution into the
@@ -390,9 +395,9 @@ C cold compiler handles that page and proof-bearing BusyBox. Source digests,
 initial boot records, modules and exact non-closure coordinates remain in the
 new diagnostic output. An existing output is refused.
 
-This command deliberately exits **3**, not success: the kernel generates 11
-modules / 14 source instructions / 3,187 bytes and stops at `0x1000232` (memory
-ADD); BusyBox generates two modules / five source instructions / 639 bytes and
+This command deliberately exits **3**, not success: the kernel generates 17
+modules / 20 source instructions / 5,024 bytes and stops at the admitted far
+RET `0x1000243` (unknown execution continuation); BusyBox generates two modules / five source instructions / 639 bytes and
 stops after its admitted direct CALL, before claiming either target/return
 closure or execution. A CALL's fallthrough is not a guessed execution trace.
 Whole-image `wasm-compiler INPUT.elf OUTPUT.wasm` still refuses with `-104` and
@@ -416,21 +421,31 @@ cross that construction boundary. Do not instantiate both onto an overlapping
 C static-memory layout. Cold memory can be discarded after its derived modules
 are placed, but actual RSS reclamation is not measured.
 
-Native C and cold C-Wasm outputs match byte-for-byte for 130 modules (the exact
-bundle prefixes, 83 pure, 22 memory, 11 stack/control fixtures and a growth
-repeat). The v3 diagnostic Worker now **constructs** its memory cut in C-Wasm,
+Native C and cold C-Wasm outputs match byte-for-byte in 165 emissions, including
+repeats, over the exact bundle/startup prefixes, 83 pure, 22 memory, 11
+stack/control and 22 new RMW fixtures. The v3 diagnostic Worker **constructs** its memory cut in C-Wasm,
 compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
-only an oracle; it is never an execution fallback. These are Node results. The
-browser-control tool still fails before JS initialization with kernel-assets
-`os error 3`; no actual v3 browser or Linux boot result is claimed. Earlier v1
-manual-browser receipts retain their original builds and meaning.
+only an oracle; it is never an execution fallback. The standard browser-control
+route now works: actual `provider.html` v3 passes 512 comparisons and
+`startup.html` executes 26 shipped startup instructions with full CPU/cache
+state comparison. Ordinary memory, secure context and no isolation were observed.
+Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
+receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. Memory RMW, LGDT/far/control
-startup, complete code/load admission and kernel/device boot remain the next
+remaining ISA/system/exception/device semantics. Control-register/MSR startup,
+complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
+
+Reproduce the fixed 26-instruction witness with
+`data/oracle/prepare-startup-cuts.sh`, then `check-wasm-startup.mjs` and
+`prepare-browser-startup.mjs`. The common validator runs in Node and the browser;
+it is diagnostic input construction/assertions, not JS guest execution.
+Its fixture manifest does not authenticate a production release. See the
+[current evidence](../vm/check/browser/evidence/2026-10-02-rmw-control.md) for
+exact hashes, reservation preconditions and the remaining red gates.
 
 ## Platform sources
 

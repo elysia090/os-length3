@@ -8,7 +8,7 @@
 #include <stddef.h>
 enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
        CUT_ADDRESS, CUT_STATUS, CUT_LOCAL_COUNT = 21, CUT_MEMORY_LOCALS = 23 };
-enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT };
+enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT, CUT_SYSTEM_TABLE, CUT_SYSTEM_FAR_RETURN };
 typedef struct {
     wasm_writer *writer;
     wasm_cut_report report;
@@ -17,6 +17,8 @@ typedef struct {
     pl_u32 has_memory;
     pl_u32 has_port;
     pl_u32 has_segment;
+    pl_u32 has_table;
+    pl_u32 has_far_return;
 } cut_lowering;
 typedef struct {
     pl_x86_map maps[64];
@@ -41,6 +43,9 @@ int cut_memory_supported(const pl_x86_instruction *instruction);
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_access(cut_lowering *cut);
 void cut_access_value(cut_lowering *cut);
+void cut_access_status(cut_lowering *cut);
+void cut_arithmetic_flags(cut_lowering *cut, pl_u32 width, int subtraction,
+                          int logical, int keep_carry);
 int cut_stack_supported(const pl_x86_instruction *instruction);
 void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_system_supported(const pl_x86_instruction *instruction);

@@ -2,6 +2,30 @@
 #include "cut-internal.h"
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if (instruction->status == PL_X86_DECODE_VALID
+            && instruction->machine_operation == PL_X86_MACHINE_FAR_RETURN
+            && instruction->flow == PL_X86_FLOW_RETURN && instruction->operand_width == 64u
+            && instruction->machine_argument <= 65535u
+            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
+                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_FAR_RETURN;
+    if (instruction->status == PL_X86_DECODE_VALID
+            && instruction->machine_operation == PL_X86_MACHINE_DESCRIPTOR_TABLE
+            && instruction->machine_argument <= 1u
+            && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
+            && instruction->visible_operand_count == 1u
+            && instruction->operands[0].kind == PL_X86_OPERAND_MEMORY
+            && (instruction->address_width == 32u || instruction->address_width == 64u)
+            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
+                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) {
+        const pl_x86_memory *memory = &instruction->operands[0].value.memory;
+        if ((memory->segment.class_id == PL_X86_REGISTER_NONE
+                || (memory->segment.class_id == PL_X86_REGISTER_SEGMENT && memory->segment.index < 4u))
+                && (memory->base.class_id == PL_X86_REGISTER_NONE
+                    || memory->base.class_id == PL_X86_REGISTER_IP || cut_gpr(&memory->base))
+                && (memory->index.class_id == PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
+                && (!memory->scale || memory->scale == 1u || memory->scale == 2u
+                    || memory->scale == 4u || memory->scale == 8u)) return CUT_SYSTEM_TABLE;
+    }
     if (instruction->status == PL_X86_DECODE_VALID && instruction->operation == PL_X86_OPERATION_MOVE
             && instruction->machine_operation == PL_X86_MACHINE_WRITE_SEGMENT
             && instruction->flow == PL_X86_FLOW_NEXT && instruction->visible_operand_count == 2u
@@ -34,6 +58,26 @@ static void port_store(cut_lowering *cut, pl_u32 offset, pl_u32 bytes)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (cut->has_far_return) {
+        cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
+        return;
+    }
+    if (cut->has_table) {
+        const pl_x86_memory *memory = &instruction->operands[0].value.memory;
+        cut_effective_address(cut,instruction,memory); cut_set(cut,CUT_ADDRESS);
+        cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_get(cut,CUT_ADDRESS);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,
+            MACHINE_MEMORY_READ | (memory->segment.class_id == PL_X86_REGISTER_SEGMENT
+                && memory->segment.index == 2u ? MACHINE_MEMORY_STACK : 0u));
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u);
+        cut_access_status(cut);
+        return;
+    }
     if (cut->has_segment) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->operands[0].value.reg.index);

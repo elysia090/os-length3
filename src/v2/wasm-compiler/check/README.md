@@ -268,9 +268,18 @@ CLI clears IF for CPL <= IOPL, otherwise publishes #GP(0) without retirement.
 PVI/VM contexts reject without mutation. The 16 privilege combinations are an
 independent specification matrix, not a native CPL0/QEMU fault-entry proof.
 See the [Intel manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).
-STI, memory-source segment loads, GDTR updates, far/control transfers, complete
+STI, memory-source segment loads, control-register/mode transfers, complete
 interrupt/debug delivery and Linux boot are still red. No source instruction
 is interpreted or silently skipped.
+
+The current shared C-Wasm path additionally admits memory-destination
+ADD/SUB/AND/OR/XOR, ten-byte LGDT/LIDT records and same-CPL 64-bit far RET.
+The 22 new RMW modules pass 11,264 native-x86 comparisons. The shipped bzImage
+now executes 26 startup instructions in an actual browser Worker and compares
+all CPU/cache bytes; it stops at MOV CR4,RAX `0x100024d`, not Linux boot.
+Outer-CPL/compatibility far transfers and full exception delivery remain red.
+See vm/check/browser/evidence/2026-10-02-rmw-control.md for reservation/Accessed
+write regressions, exact builds and reproducible cold construction.
 
 ```sh
 node data/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS

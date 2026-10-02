@@ -63,6 +63,9 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->system_cut = (pl_u32)system;
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
+                pl_u32 flags = cut_flag_write_mask(&instruction);
+                for (pl_u32 bit = 0u; bit < 12u; ++bit)
+                    if (flags & (1u << bit)) plan->last_flag_writer[bit] = 0u;
                 if (!system) {
                     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
                     plan->report.memory_bytes = stack ? 8u : instruction.operands[store ? 0u : 1u].bits / 8u;
@@ -72,6 +75,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->report.boundary = WASM_CUT_CONTROL;
                     plan->report.branch_target = instruction.target;
                 }
+                if (system == CUT_SYSTEM_FAR_RETURN) plan->report.boundary = WASM_CUT_CONTROL;
                 rip = instruction.fallthrough;
             }
             break;
@@ -115,8 +119,10 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.has_memory = plan->report.memory_bytes != 0u;
     cut.has_port = cut.has_memory || plan->system_cut;
     cut.has_segment = plan->system_cut == CUT_SYSTEM_SEGMENT;
+    cut.has_table = plan->system_cut == CUT_SYSTEM_TABLE;
+    cut.has_far_return = plan->system_cut == CUT_SYSTEM_FAR_RETURN;
     wasm_writer_uleb(writer, 1u);
-    wasm_writer_uleb(writer, (cut.has_memory || cut.has_segment) ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
+    wasm_writer_uleb(writer, cut.has_port ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
     wasm_writer_byte(writer, 0x7eu);
     cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
     cut_op(&cut, 0x71u); return_if(&cut);
@@ -146,7 +152,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_load(&cut, (pl_u32)offsetof(machine_state, rip));
     cut_const(&cut, rip); cut_op(&cut, 0x52u); return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rflags)); cut_set(&cut, CUT_FLAGS);
-    cut_get(&cut, CUT_FLAGS); cut_const(&cut, cut.has_memory ? 0x50100u : 0x10100u);
+    cut_get(&cut, CUT_FLAGS); cut_const(&cut, (cut.has_memory || cut.has_table) ? 0x50100u : 0x10100u);
     cut_op(&cut, 0x83u); cut_op(&cut, 0x50u); cut_op(&cut, 0x45u); return_if(&cut);
     for (pl_u32 i = 0u; i < plan->report.source_instructions; ++i) {
         pl_x86_instruction instruction;

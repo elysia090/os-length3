@@ -1,4 +1,6 @@
 #include <vm/mmu.h>
+#include <vm/tables.h>
+#include <vm/control.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -63,6 +65,52 @@ int main(void)
     EXPECT(get(entries[0]) & 32u); /* Ancestor A is an architectural side effect. */
     EXPECT(get(port + 8u) == 0u);
 
+    /* A write-intent read must preflight both pages and preserve the exact
+     * physical destinations across the pure calculation, without rewalking. */
+    reset(base); cpu = context();
+    EXPECT(access(&cpu, base + 4093u, 8u, 2u, 0x8877665544332211ull) == 0u);
+    EXPECT(vm_mmu_reserve(&memory, port, &cpu, base + 4093u, 8u, 3u) == 0u);
+    EXPECT(get(port + 8u) == 0x8877665544332211ull);
+    EXPECT(vm_memory_commit(&memory, port, 0x123456789abcdef0ull) == 0u);
+    EXPECT(access(&cpu, base + 4093u, 8u, 1u, 0u) == 0u);
+    EXPECT(get(port + 8u) == 0x123456789abcdef0ull);
+    EXPECT(vm_memory_commit(&memory, port, 0u) == MACHINE_RESULT_ENTRY_MAP);
+
+    reset(base); EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == 0u);
+    put(port + 64u,9u);
+    EXPECT(vm_memory_commit(&memory,port + 64u,0u) == MACHINE_RESULT_ENTRY_MAP);
+    EXPECT(vm_memory_commit(&memory,port,0u) == MACHINE_RESULT_ENTRY_MAP);
+    EXPECT(vm_mmu_reserve(&memory,port,&cpu,base,8u,3u) == 0u);
+    vm_memory_abort(&memory);
+    EXPECT(vm_memory_commit(&memory,port,0u) == MACHINE_RESULT_ENTRY_MAP);
+    /* The RMW target can itself be a paging structure. A second translation
+     * after the store would observe a different machine, not this instruction. */
+    reset(base); put(entries[3],0x4067u);
+    EXPECT(vm_mmu_reserve(&memory,port,&cpu,base,8u,3u) == 0u);
+    EXPECT(get(port + 8u) == 0x4067u);
+    EXPECT(vm_memory_commit(&memory,port,0u) == 0u);
+    EXPECT(get(entries[3]) == 0u);
+    reset(base); put(entries[3] + 8u, 0u); memset(arena + 28672u, 0xa5, 8192u);
+    memcpy(saved, arena, sizeof arena);
+    expect_fault(vm_mmu_reserve(&memory, port, &cpu, base + 4093u, 8u, 3u), base + 4096u, 14u, 2u);
+    EXPECT(memcmp(saved + 28672u, arena + 28672u, 8192u) == 0);
+    EXPECT(vm_memory_commit(&memory, port, 0u) == MACHINE_RESULT_ENTRY_MAP);
+    reset(base); put(entries[3], 0x8005u);
+    expect_fault(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u), base, 14u, 3u);
+    reset(base); pages[4].rights = 2u; /* Both residency rights are required. */
+    EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == MACHINE_RESULT_BARRIER);
+    reset(base); EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == 0u);
+    EXPECT(vm_memory_open(&memory, arena, sizeof arena, 4096u, pages, 6u, 9u) == 0);
+    EXPECT(vm_memory_commit(&memory, port, 0u) == MACHINE_RESULT_ENTRY_MAP);
+    EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == 0u);
+    put(port, 8u);
+    EXPECT(vm_memory_commit(&memory, port, 0u) == MACHINE_RESULT_STALE_GENERATION);
+    put(port, 9u);
+    EXPECT(vm_memory_commit(&memory, port, 0u) == MACHINE_RESULT_ENTRY_MAP);
+    EXPECT(vm_mmu_reserve(&memory, port, &cpu, base, 8u, 3u) == 0u);
+    EXPECT(access(&cpu, base, 8u, 1u, 0u) == 0u);
+    EXPECT(vm_memory_commit(&memory, port, 0u) == MACHINE_RESULT_ENTRY_MAP);
+
     reset(base); pages[1].kind = VM_MEMORY_DEFERRED;
     EXPECT(access(&cpu, base, 8u, 1u, 0u) == MACHINE_RESULT_BARRIER);
     EXPECT(get(port + 32u) == 0x2000u);
@@ -107,6 +155,116 @@ int main(void)
     reset(0xffff800000400000ull);
     EXPECT(access(&cpu, 0xffff800000400000ull, 8u, 2u, 0x1234u) == 0u);
     EXPECT(get(28672u) == 0x1234u);
+
+    /* Ten-byte architectural records commit CPU state only after complete
+     * MMU admission. Null/noncanonical source, privilege and misses are not
+     * successful table loads. Loaded bases need not be canonical themselves. */
+    for (pl_u32 offset = 4085u; offset <= 4095u; ++offset)
+        for (pl_u32 rank = 0u; rank < 2u; ++rank) {
+            reset(base); cpu = context();
+            machine_state state = {0}, before;
+            state.cr0 = cpu.cr0; state.cr3 = cpu.cr3; state.cr4 = cpu.cr4;
+            state.efer = cpu.efer; state.rflags = 2u; state.rip = 0x1234u;
+            state.system[MACHINE_SYSTEM_CS] = 16u;
+            state.system[MACHINE_SYSTEM_GDTR_BASE] = 0x9876u;
+            for (pl_u32 i = 0u; i < 10u; ++i) arena[28672u + offset + i] = (pl_u8)(i + 1u);
+            before = state;
+            EXPECT(vm_table_load(&memory,port,&state,base + offset,rank,1u) == 0u);
+            pl_u32 at = rank ? MACHINE_SYSTEM_IDTR_BASE : MACHINE_SYSTEM_GDTR_BASE;
+            before.system[at] = 0x0a09080706050403ull; before.system[at + 1u] = 0x0201u;
+            EXPECT(memcmp(&state,&before,sizeof state) == 0);
+            state = before; state.system[MACHINE_SYSTEM_CS] = 19u; before = state;
+            put(entries[3],0u);
+            expect_fault(vm_table_load(&memory,port,&state,~0ull,rank,1u),state.rip,13u,0u);
+            EXPECT(memcmp(&state,&before,sizeof state) == 0);
+            state.system[MACHINE_SYSTEM_CS] = 16u; before = state;
+            expect_fault(vm_table_load(&memory,port,&state,base + offset,rank,1u),base + offset,14u,0u);
+            EXPECT(memcmp(&state,&before,sizeof state) == 0);
+            put(entries[3],0x8067u); put(entries[3] + 8u,0u);
+            if (offset >= 4087u) {
+                expect_fault(vm_table_load(&memory,port,&state,base + offset,rank,1u),base + 4096u,14u,0u);
+                EXPECT(memcmp(&state,&before,sizeof state) == 0);
+            }
+        }
+
+    /* Far return: complete stack preflight, descriptor/privilege validation,
+     * hidden CS commit and deliberate rejection of outer/mode transitions. */
+    pl_u32 returns = 0u;
+    for (pl_u32 cpl = 0u; cpl < 4u; ++cpl)
+    for (pl_u32 rpl = 0u; rpl < 4u; ++rpl)
+    for (pl_u32 access_byte = 0u; access_byte < 256u; ++access_byte) {
+        reset(base); cpu = context();
+        machine_state state = {0}, before;
+        machine_segments segments = {0}, old_segments;
+        segments.version = MACHINE_SEGMENTS_ABI_VERSION;
+        segments.cache[MACHINE_SEGMENT_CS].attributes = 0xa09bu;
+        state.cr0 = cpu.cr0; state.cr3 = cpu.cr3; state.cr4 = cpu.cr4; state.efer = cpu.efer;
+        state.rflags = 2u; state.rip = base + 32u;
+        state.system[MACHINE_SYSTEM_CS] = 8u | cpl;
+        state.system[MACHINE_SYSTEM_GDTR_BASE] = base;
+        state.system[MACHINE_SYSTEM_GDTR_LIMIT] = 31u;
+        state.registers[4] = base + 4093u;
+        pl_u64 descriptor = 0x00af00000000ffffull | ((pl_u64)access_byte << 40u);
+        put(28672u + 16u,descriptor);
+        pl_u64 frame[2] = {base + 256u,0xffffffffffff0010ull | rpl};
+        memcpy(arena + 28672u + 4093u,frame,sizeof frame);
+        before = state; old_segments = segments;
+        machine_result result = vm_far_return(&memory,port,&state,&segments,7u);
+        pl_u32 dpl = (access_byte >> 5u) & 3u, vector = 0u;
+        int denied = (access_byte & 24u) != 24u || rpl < cpl
+            || (access_byte & 4u ? dpl > rpl : dpl != rpl);
+        if (denied) vector = 13u; else if (!(access_byte & 128u)) vector = 11u;
+        if (vector) expect_fault(result,before.rip,vector,16u);
+        else if (rpl != cpl) EXPECT(result == MACHINE_RESULT_ENTRY_MAP);
+        else {
+            EXPECT(result == 0u);
+            before.system[MACHINE_SYSTEM_CS] = 16u | rpl;
+            before.rip = base + 256u; before.registers[4] += 23u;
+            old_segments.cache[MACHINE_SEGMENT_CS] = (machine_segment_cache){0u,0xffffffffu,
+                0xa000u | access_byte | 1u};
+            EXPECT((arena[28672u + 21u] & 1u) != 0u);
+        }
+        EXPECT(memcmp(&state,&before,sizeof state) == 0);
+        EXPECT(memcmp(&segments,&old_segments,sizeof segments) == 0);
+        ++returns;
+    }
+    reset(base); cpu = context();
+    machine_state returning = {0}, before_return;
+    machine_segments return_segments = {0}, before_segments;
+    return_segments.version = MACHINE_SEGMENTS_ABI_VERSION;
+    return_segments.cache[MACHINE_SEGMENT_CS].attributes = 0xa09bu;
+    returning.cr0 = cpu.cr0; returning.cr3 = cpu.cr3; returning.cr4 = cpu.cr4;
+    returning.efer = cpu.efer; returning.rflags = 2u; returning.rip = base + 64u;
+    returning.system[MACHINE_SYSTEM_CS] = 16u; returning.system[MACHINE_SYSTEM_GDTR_BASE] = base;
+    returning.system[MACHINE_SYSTEM_GDTR_LIMIT] = 31u; returning.registers[4] = base + 4093u;
+    put(28672u + 16u,0x00af9a000000ffffull);
+    pl_u64 frame[2] = {0x800000000000ull,16u};
+    memcpy(arena + 28672u + 4093u,frame,sizeof frame);
+    before_return = returning; before_segments = return_segments;
+    expect_fault(vm_far_return(&memory,port,&returning,&return_segments,0u),returning.rip,13u,0u);
+    EXPECT(!(arena[28672u + 21u] & 1u));
+    put(entries[3] + 8u,0u);
+    expect_fault(vm_far_return(&memory,port,&returning,&return_segments,0u),base + 4096u,14u,0u);
+    EXPECT(memcmp(&returning,&before_return,sizeof returning) == 0);
+    EXPECT(memcmp(&return_segments,&before_segments,sizeof return_segments) == 0);
+    put(entries[3] + 8u,0x9067u);
+    frame[0] = base + 256u; memcpy(arena + 28672u + 4093u,frame,sizeof frame);
+    /* The implicit descriptor Accessed store can fault after a valid stack
+     * read. No target/cache/RSP update may escape that precise boundary. */
+    put(entries[3],0x8065u);
+    expect_fault(vm_far_return(&memory,port,&returning,&return_segments,0u),base + 21u,14u,3u);
+    EXPECT(!(arena[28672u + 21u] & 1u));
+    EXPECT(memcmp(&returning,&before_return,sizeof returning) == 0);
+    EXPECT(memcmp(&return_segments,&before_segments,sizeof return_segments) == 0);
+    put(entries[3],0x8067u); put(28672u + 16u,0x00ef9b000000ffffull); /* Invalid L=DB=1. */
+    expect_fault(vm_far_return(&memory,port,&returning,&return_segments,0u),returning.rip,13u,16u);
+    EXPECT(memcmp(&returning,&before_return,sizeof returning) == 0);
+    EXPECT(memcmp(&return_segments,&before_segments,sizeof return_segments) == 0);
+    put(28672u + 16u,0x00cf9b000000ffffull); /* Valid compatibility target, not admitted. */
+    EXPECT(vm_far_return(&memory,port,&returning,&return_segments,0u) == MACHINE_RESULT_ENTRY_MAP);
+    EXPECT(memcmp(&returning,&before_return,sizeof returning) == 0);
+    EXPECT(memcmp(&return_segments,&before_segments,sizeof return_segments) == 0);
+    printf("Far-return descriptor/privilege model: %u cases; not hardware exception entry\n",returns);
 
     /* Exhaustive permissions meet over all four levels, both privilege
      * classes, supervisor WP settings and read/write/execute directions. */

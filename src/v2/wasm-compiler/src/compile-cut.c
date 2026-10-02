@@ -71,8 +71,46 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',7,'s','e','g','m','e','n','t',0,0
     };
+    static const pl_u8 rmw_type[] = {
+        3,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
+        0x60,2,0x7f,0x7e,1,0x7e, 0x60,2,0x7f,0x7f,1,0x7e
+    };
+    static const pl_u8 rmw_imports[] = {
+        3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',7,'r','e','s','e','r','v','e',0,0,
+        7,'m','a','c','h','i','n','e',6,'c','o','m','m','i','t',0,1
+    };
+    static const pl_u8 rmw_functions[] = { 1,2 };
+    static const pl_u8 rmw_exports[] = { 1,3,'c','u','t',0,2 };
+    static const pl_u8 table_type[] = {
+        2,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e, 0x60,2,0x7f,0x7f,1,0x7e
+    };
+    static const pl_u8 table_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',5,'t','a','b','l','e',0,0
+    };
+    static const pl_u8 return_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',10,'f','a','r','_','r','e','t','u','r','n',0,0
+    };
     raw(writer, header, sizeof header);
-    if (boundary) {
+    if (boundary == 5) {
+        section(writer,1u,sizeof type); raw(writer,type,sizeof type);
+        section(writer,2u,sizeof return_imports); raw(writer,return_imports,sizeof return_imports);
+        section(writer,3u,sizeof functions); raw(writer,functions,sizeof functions);
+        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
+    } else if (boundary == 3 || boundary == 4) {
+        section(writer,1u,boundary == 3 ? sizeof rmw_type : sizeof table_type);
+        if (boundary == 3) raw(writer,rmw_type,sizeof rmw_type);
+        else raw(writer,table_type,sizeof table_type);
+        section(writer,2u,boundary == 3 ? sizeof rmw_imports : sizeof table_imports);
+        if (boundary == 3) raw(writer,rmw_imports,sizeof rmw_imports);
+        else raw(writer,table_imports,sizeof table_imports);
+        section(writer,3u,sizeof memory_functions);
+        raw(writer,boundary == 3 ? rmw_functions : memory_functions,sizeof memory_functions);
+        section(writer,7u,sizeof memory_exports);
+        raw(writer,boundary == 3 ? rmw_exports : memory_exports,sizeof memory_exports);
+    } else if (boundary) {
         section(writer, 1u, boundary == 2 ? sizeof segment_type : sizeof memory_type);
         if (boundary == 2) raw(writer,segment_type,sizeof segment_type);
         else raw(writer,memory_type,sizeof memory_type);
@@ -89,6 +127,14 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     }
     section(writer, 10u, 1u + uleb_bytes(body_bytes) + body_bytes);
     wasm_writer_uleb(writer, 1u); wasm_writer_uleb(writer, body_bytes);
+}
+
+static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
+{
+    if (plan->system_cut == CUT_SYSTEM_FAR_RETURN) return 5;
+    if (plan->system_cut == CUT_SYSTEM_TABLE) return 4;
+    if (plan->system_cut == CUT_SYSTEM_SEGMENT) return 2;
+    return (report->memory_access & 3u) == 3u ? 3 : report->memory_bytes != 0u;
 }
 
 static int prepare(const wasm_compiler *compiler, const pl_x86_image *source,
@@ -123,7 +169,7 @@ static int prepare(const wasm_compiler *compiler, const pl_x86_image *source,
     }
     if (!status) status = cut_emit_body(&body, plan, &measured);
     if (status) return status;
-    module_header(&header, body.used, plan->system_cut == CUT_SYSTEM_SEGMENT ? 2 : measured.memory_bytes != 0u);
+    module_header(&header, body.used, boundary_kind(plan, &measured));
     if (!pl_checked_add_u64(header.used, body.used, &measured.module_bytes)
             || measured.module_bytes > options->maximum_module_bytes)
         return WASM_COMPILER_ERROR_CAPACITY;
@@ -177,7 +223,7 @@ static int emit(const wasm_compiler *compiler, const pl_x86_image *source, pl_u6
                 return WASM_COMPILER_ERROR_INPUT;
     }
     wasm_writer writer = { target, capacity, 0u, 0 };
-    module_header(&writer, body_bytes, plan.system_cut == CUT_SYSTEM_SEGMENT ? 2 : plan.report.memory_bytes != 0u);
+    module_header(&writer, body_bytes, boundary_kind(&plan, &plan.report));
     status = cut_emit_body(&writer, &plan, &measured);
     if (status) return status;
     measured.module_bytes = writer.used;

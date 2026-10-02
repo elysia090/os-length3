@@ -16,3 +16,4 @@ src/v2/data/out/
 # Native download bytes are release assets, not Git history. Keep receipts.
 /artifact/native/*.tar.zst
 /src/v2/vm/check/browser/generated/
+/src/v2/vm/check/browser/generated-startup/

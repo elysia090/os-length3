@@ -41,7 +41,7 @@ int main(int argc, char **argv)
     machine_segments segments;
     pl_u64 image_bytes = 0x2ea400u, initramfs_bytes = 0x65432u;
     FILE *image = NULL, *initramfs = NULL;
-    if (argc != 1 && argc != 3 && argc != 4) return 2;
+    if (argc != 1 && argc != 3 && argc != 4 && argc != 5) return 2;
     header[0x1f1u] = 31u; header[0x200u] = 0xebu; header[0x201u] = 0x6au;
     put(header + 0x1feu, 0xaa55u, 2u); put(header + 0x202u, 0x53726448u, 4u);
     put(header + 0x206u, 0x20fu, 2u); header[0x211u] = 1u; header[0x236u] = 1u;
@@ -106,8 +106,16 @@ int main(int argc, char **argv)
     printf("bzImage plan: entry=%llx kernel=%llu initramfs=%llu initial-opcodes=%04llx; execution/boot NOT tested\n",
            state.rip, boot.kernel_bytes, initramfs_bytes, get(arena + 2056u, 2u));
 
-    if (argc == 4) {
+    if (argc >= 4) {
         if (!write_record(argv[3],"segments",&segments,sizeof segments)) goto failed;
+        /* A separate bounded last page, never an expanded bzImage/RAM. It
+         * includes the shipped decompressor's GDT and final zero padding. */
+        pl_u64 tail = (boot.kernel_bytes - 1u) & ~4095ull;
+        if (!image || vm_boot_page(&boot,boot.kernel_address + tail,page,&source) != VM_BOOT_KERNEL
+                || fseek(image,(long)source.offset,SEEK_SET)) goto failed;
+        memset(page,0,sizeof page);
+        if (fread(page,1u,source.bytes,image) != source.bytes
+                || !write_record(argv[3],"kernel-last-page",page,sizeof page)) goto failed;
         pl_u8 metadata[6 * 4096];
         for (pl_u32 i = 0u; i < 6u; ++i)
             EXPECT(vm_boot_page(&boot, (pl_u64)(i + 1u) * 4096u,
@@ -125,6 +133,16 @@ int main(int argc, char **argv)
                 || !write_record(argv[3], "state", &state, sizeof state)
                 || !write_record(argv[3], "metadata", metadata, sizeof metadata)
                 || !write_record(argv[3], "kernel-page", arena + 32768u, 4096u)) goto failed;
+        if (argc == 5) {
+            char *end = NULL;
+            unsigned long long requested = strtoull(argv[4],&end,0);
+            if (!argv[4][0] || argv[4][0] == '-' || !end || *end
+                    || vm_boot_page(&boot,(pl_u64)requested,page,&source) != VM_BOOT_KERNEL
+                    || fseek(image,(long)source.offset,SEEK_SET)) goto failed;
+            memset(page,0,sizeof page);
+            if (fread(page,1u,source.bytes,image) != source.bytes
+                    || !write_record(argv[3],"extra-page",page,sizeof page)) goto failed;
+        }
     }
 
     vm_boot before = boot;

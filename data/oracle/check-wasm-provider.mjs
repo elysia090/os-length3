@@ -21,7 +21,7 @@ for (const name of names) {
   const memory = new WebAssembly.Memory({ initial: 8, maximum: 16 });
   const vm = (await WebAssembly.instantiate(provider, { machine: { memory } })).exports;
   const instance = await WebAssembly.instantiate(module, {
-    machine: { memory, access: vm.vm_access },
+    machine: { memory, access: vm.vm_access, reserve: vm.vm_reserve, commit: vm.vm_commit },
   });
   const directoryOffset = vm.vm_arena_min(), base = directoryOffset + 4096;
   const state = base, port = base + 2048, firstPage = base + 28672, nextPage = base + 40960;
@@ -89,7 +89,8 @@ for (const name of names) {
     if (meta.access & 2) {
       for (let i = 0; i < meta.bytes; ++i)
         expected[payloadAt(address, i) - base] = Number((word(37) >> BigInt(i * 8)) & 255n);
-    } else {
+    }
+    if (meta.access & 1) {
       expectedView.setBigUint64(port - base + 8,
         word(36) & ((1n << BigInt(meta.bytes * 8)) - 1n), true);
     }

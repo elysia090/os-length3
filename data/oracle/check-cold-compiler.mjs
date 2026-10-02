@@ -38,9 +38,27 @@ for (const cut of kernelSummary.cuts) {
 }
 transport().fill(0xa5,output,output + 65536); transport().fill(0xa5,report,report + 80);
 const saved = Buffer.from(transport().subarray(input,report + 80));
-assert.equal(c.compiler_emit(BigInt(kernelSummary.stop.entry),1024,output,65536,report),-102);
-assert.deepEqual(transport().subarray(input,report + 80),saved,'unsupported bundle coordinate must not publish or mutate source/output');
+if (kernelSummary.stop.kind === 'control') {
+  const final = kernelSummary.cuts.at(-1);
+  await compare(path.join(bundleDirectory,final.rank ? `kernel.${final.rank}` : 'kernel'),final.entry,1024);
+} else {
+  assert.equal(c.compiler_emit(BigInt(kernelSummary.stop.entry),1024,output,65536,report),-102);
+  assert.deepEqual(transport().subarray(input,report + 80),saved,'unsupported bundle coordinate must not publish or mutate source/output');
+}
 assert.deepEqual(transport().subarray(input,input + page.length),page);
+
+// Optional fixed shipped-startup witnesses, not speculative branch closure.
+for (const [prefix,sourceName,address] of [['after-return','boot.kernel-page',BigInt(boot.kernelAddress)],
+    ['idt','call.extra-page',0x12e3000n]]) {
+  let summary;
+  try { summary = JSON.parse(await readFile(path.join(bundleDirectory,`${prefix}.summary.json`))); }
+  catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+  const source = await readFile(path.join(bundleDirectory,sourceName));
+  assert.equal(source.length,4096); transport().set(source,input);
+  assert.equal(c.compiler_open_pages(input,1,address,9n),0);
+  for (const cut of summary.cuts)
+    await compare(path.join(bundleDirectory,cut.rank ? `${prefix}.${cut.rank}` : prefix),cut.entry,1024);
+}
 
 const busybox = await readFile(busyboxFile);
 assert(busybox.length <= output - input);
@@ -107,4 +125,4 @@ assert.equal(c.compiler_open_pages(input,1,BigInt(boot.kernelAddress),9n),0);
 await compare(path.join(bundleDirectory,'kernel'),boot.entry,1024);
 c.compiler_close();
 assert.equal(c.compiler_emit(BigInt(boot.entry),1024,output,65536,report),-100);
-console.log(`Native bundle / fixtures -> cold C-Wasm compiler: green (${count} byte-identical modules; no WASI/JS decoder; Linux boot NOT tested)`);
+console.log(`Native bundle / fixtures -> cold C-Wasm compiler: green (${count} byte-identical emissions, including repeats; no WASI/JS decoder; Linux boot NOT tested)`);

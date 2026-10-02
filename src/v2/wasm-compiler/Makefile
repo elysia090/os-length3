@@ -97,12 +97,12 @@ cut-fixture-check: $(BUILD)/cut-check fixture-tools
 
 memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
-	for rank in 0 20 22; do \
+	for rank in 0 20 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
 	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
 		-DMEMORY_CASE=$$rank check/memory-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
 	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
-	if [ $$rank = 22 ]; then \
+	if [ $$rank = 22 ] || [ $$rank = 45 ]; then \
 		if $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; then exit 1; fi; \
 	else $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; fi; \
 	done

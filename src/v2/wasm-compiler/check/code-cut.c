@@ -40,6 +40,15 @@ int main(int argc, char **argv)
     EXPECT(report.source_instructions == 1u && report.source_bytes == 2u && report.boundary == WASM_CUT_SYSTEM);
     EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
     pages[0] = 0xfcu; pages[1] = 0xfau;
+    /* Typed descriptor transfers are barrier flow, not ordinary NEXT flow. */
+    for (pl_u32 rank = 0u; rank < 4u; ++rank) {
+        pages[0] = 0x0fu; pages[1] = 0x01u; pages[2] = (pl_u8)(0x10u + rank * 8u);
+        int status = wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        if (rank < 2u) EXPECT(!status && report.source_bytes == 3u
+            && report.source_instructions == 1u && report.boundary == WASM_CUT_SYSTEM);
+        else EXPECT(status == WASM_COMPILER_ERROR_GRAMMAR); /* Non-table-load encodings. */
+    }
+    pages[0] = 0xfcu; pages[1] = 0xfau;
     for (pl_u32 rank = 0u; rank < 6u; ++rank)
     for (pl_u32 reg = 0u; reg < 16u; ++reg) {
         pl_u32 at = reg >= 8u ? 1u : 0u;
@@ -52,6 +61,11 @@ int main(int argc, char **argv)
             EXPECT(report.read_registers == (1u << reg) && !report.written_registers && !report.flags_written);
         }
     }
+    pages[0] = 0x48u; pages[1] = 0xcbu;
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.source_bytes == 2u && report.boundary == WASM_CUT_CONTROL);
+    pages[0] = 0xcbu;
+    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
     pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;
     EXPECT(wasm_compiler_measure_code_cut(&source, 9u, &options, &options.entry, 0)
            == WASM_COMPILER_ERROR_INPUT);

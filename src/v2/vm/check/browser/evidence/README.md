@@ -28,7 +28,7 @@ fixture manifest is versioned separately. The Node driver
 `data/oracle/check-provider-worker.mjs` checks that setup, not an actual browser
 Worker or permission result. No v2 browser receipt has been supplied yet.
 
-The current diagnostic emits `browser-c-provider-probe-v3`. It first constructs
+The prior cold-compiler checkpoint emitted `browser-c-provider-probe-v3`. It first constructed
 the memory cut with the 400,394-byte cold C-Wasm compiler, compares its bytes
 with native C emission, and then runs the generated function through the C
 VM/MMU/table. Its Node setup test passes 512 comparisons; this is not a new
@@ -37,12 +37,20 @@ memory, and has no WASI/host decoder imports. Source/output/reopen guards and
 130 byte-identical native/Wasm emission checks are described in BROWSER.md.
 The actual bundle still stops at memory ADD `0x1000232` after fourteen retired
 instructions. Browser-control kernel initialization still fails before JS;
-neither a v3 real-browser pass nor Linux boot has been recorded.
+neither a v3 real-browser pass nor Linux boot was recorded at that checkpoint.
 
 The later [segment/startup checkpoint](2026-10-02-segments.md) uses a distinct
 10,820-byte provider. It advances the actual shipped startup to fourteen source
 instructions in Node/C-Wasm and preserves the earlier browser receipts. It is
 not a new browser result; Linux boot is still unachieved.
+
+The [current RMW/control checkpoint](2026-10-02-rmw-control.md) uses a distinct
+15,329-byte provider and 403,325-byte cold compiler. The standard in-app browser
+route now succeeds: `2026-10-02-c-provider-v3.json` records 512 actual-browser
+native comparisons; `2026-10-02-startup.json` records 26 actual shipped startup
+instructions, 23 rows and seven admissions, stopping at MOV CR4,RAX
+`0x100024d`. Full CPU/cache state is checked in ordinary memory. These results
+do not replace historical receipts or claim Linux boot, isolation or RSS release.
 
 Reproduce the transport/Node checks with:
 
