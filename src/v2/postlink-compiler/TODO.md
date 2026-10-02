@@ -14,11 +14,13 @@ they are not the new Release asset name.
    The new download is 63,219,311 bytes, publication `1a0bddc2340a...`,
    optimized package identity `cc18062ec832...`. All 383 ELF and 31 archive
    paths match the previous executable bytes; the prior timing result is
-   retained, not relabeled as a new benchmark. Publish as a GitHub **pre-release**, with SHA256SUMS,
-   fixed source inputs, build/configuration/patch/compiler sources and honest
-   candidate limitations. Commit the source/evidence in a new PR; keep binary
-   archives out of Git. The small benchmark difference remains accepted for
-   this stage, not relabeled as a speedup.
+   retained, not relabeled as a new benchmark. Published as
+   [OS Length3 Linux 0.1.0-rc.1](https://github.com/elysia090/libqm-prototype/releases/tag/os-length3-linux-v0.1.0-rc.1)
+   with SHA256SUMS, all 48 authenticated source inputs, decoder submodules,
+   build/configuration/patch/compiler sources and honest candidate limitations.
+   All four GitHub asset sizes/digests match the local bytes. The source/evidence
+   is in PR #14; binary archives remain outside Git. The small benchmark
+   difference remains accepted for this stage, not relabeled as a speedup.
 2. The next goal is **the same shipped bundle running on Wasm in a real
    browser**. Preserve its release/root/optimized-ELF identity. Connect the
    optimized-x86 reader, Wasm compiler, machine ABI, VM and authenticated
