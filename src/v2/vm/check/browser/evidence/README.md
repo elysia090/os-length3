@@ -11,6 +11,17 @@ The separate `--isolated` server configuration is checked by the Node/HTTP
 test, but no isolated **browser** result has been recorded. Do not turn server
 header checks into a shared-memory browser claim.
 
+`2026-10-02-c-provider.json` is the subsequent user-supplied observation from
+`provider.html` on the same loopback server. An actual generated memory cut
+calls the C-Wasm MMU/access export directly, not a JavaScript memory test
+double: 512 native-x86 comparisons pass in one ordinary-memory Worker,
+generation 9, 589,824 linear-memory bytes. That observed provider is 3,920
+bytes, SHA-256 `19ed2814a339526e3856ad2fd099d68d6a3dedf356b981db1323b40fe68528a9`.
+Later builds are not retroactively substituted into this receipt. No browser
+name/version, isolated run, process RSS or Linux boot result was supplied.
+The diagnostic manifest binds these small test extents; it is not the
+production authenticated release root or a distribution closure certificate.
+
 Reproduce the transport/Node checks with:
 
 ```

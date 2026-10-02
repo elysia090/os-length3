@@ -20,7 +20,11 @@ $(BUILD) $(BUILD)/zydis:
 	mkdir -p $@
 
 $(BUILD)/%.o: src/%.c | $(BUILD)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) -ffreestanding -c $< -o $@
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) -MMD -MP -ffreestanding -c $< -o $@
+
+# Also covers an incremental checkout whose objects predate dependency files.
+$(BUILD)/decode.o: include/x86/profile.h
+-include $(OBJECTS:.o=.d)
 
 $(BUILD)/zydis/%.o: $(ZYDIS)/src/%.c | $(BUILD)/zydis
 	$(CC) $(CFLAGS) $(INCLUDES) $(DEFINES) -ffreestanding \
@@ -29,7 +33,10 @@ $(BUILD)/zydis/%.o: $(ZYDIS)/src/%.c | $(BUILD)/zydis
 $(BUILD)/libx86.a: $(OBJECTS) $(ZYDIS_OBJECTS)
 	$(AR) rcs $@ $^
 
-$(BUILD)/profile-check: check/profile.c | $(BUILD)
+$(BUILD)/profile-check: check/profile.c include/x86/profile.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+
+$(BUILD)/kernel-profile-check: check/kernel-profile.c include/x86/profile.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
 
 $(BUILD)/code-map-check: check/code-map.c $(BUILD)/libx86.a | $(BUILD)
@@ -44,9 +51,10 @@ $(BUILD)/transfer-check: check/transfer.c $(BUILD)/libx86.a | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) $< \
 		$(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 
-check: all $(BUILD)/profile-check $(BUILD)/code-map-check \
+check: all $(BUILD)/profile-check $(BUILD)/kernel-profile-check $(BUILD)/code-map-check \
 	$(BUILD)/relocation-check $(BUILD)/transfer-check
 	$(BUILD)/profile-check
+	$(BUILD)/kernel-profile-check
 	$(BUILD)/code-map-check
 	$(BUILD)/relocation-check
 	$(BUILD)/transfer-check

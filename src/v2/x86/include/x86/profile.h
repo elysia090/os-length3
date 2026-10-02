@@ -10,7 +10,7 @@
 
 #include <support/types.h>
 
-#define PL_X86_PROFILE_ID             "development-standard-v1"
+#define PL_X86_PROFILE_ID             "development-standard-v2"
 #define PL_X86_PROFILE_LEVEL          "x86-64-v2"
 
 #define PL_X86_CPUID_MAX_BASIC        7u
@@ -24,10 +24,14 @@
                                      | (1u << 13u) | (1u << 19u) \
                                      | (1u << 20u) | (1u << 23u))
 
-/* CPUID.1:EDX: the psABI baseline plus PSE, TSC and MSR for the machine. */
+/* CPUID.1:EDX: psABI plus PSE, TSC, MSR, PAE and PGE for the machine.
+ * PAE/PGE are required by the shipped 64-bit kernel. A page walker without
+ * a TLB handles global and nonglobal translations identically; introducing
+ * a TLB must also implement CR4.PGE and the architectural invalidations. */
 #define PL_X86_CPUID_1_EDX            ((1u << 0u)  | (1u << 3u)  \
                                      | (1u << 4u)  | (1u << 5u)  \
-                                     | (1u << 8u)  | (1u << 15u) \
+                                     | (1u << 6u)  | (1u << 8u)  \
+                                     | (1u << 13u) | (1u << 15u) \
                                      | (1u << 23u) | (1u << 24u) \
                                      | (1u << 25u) | (1u << 26u))
 

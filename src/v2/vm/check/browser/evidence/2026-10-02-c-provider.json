@@ -1,0 +1,13 @@
+{
+  "format": "browser-c-provider-probe-v1",
+  "status": "pass",
+  "linuxBoot": "not-tested",
+  "secureContext": true,
+  "isolated": false,
+  "generation": 9,
+  "comparisons": 512,
+  "modules": 1,
+  "providerBytes": 3920,
+  "guestMemoryCallback": "C-Wasm function, not JavaScript",
+  "memoryBytes": 589824
+}

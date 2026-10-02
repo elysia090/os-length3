@@ -44,8 +44,8 @@ to postpone the next browser product goal behind new native size/speed work.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
 implementation, not the minor native benchmark difference: whole-image Wasm
-function/module/dispatch closure returns `WASM_COMPILER_ERROR_INCOMPLETE`, the compiled
-machine/MMU/devices are absent, and the old terminal names an artifact outside the
+function/module/dispatch closure returns `WASM_COMPILER_ERROR_INCOMPLETE`, the complete
+machine/exception/device boundary is missing, and the old terminal names an artifact outside the
 current catalog. Do not re-enable that historical input as a shortcut.
 
 First establish real-browser capability probes and a built CLI/executable
@@ -73,8 +73,8 @@ authority-restart, lane-alias and exhaustion tests, including 100,000 cases and
 ASan/UBSan. Root product checks also pass. A two-lane equal-sequence reply first
 failed; the complete ticket address now includes lane rank. API inventory is
 passive, requests no browser consent and reports no connection as usable.
-This control boundary does not make the still-missing executable lowering, MMU
-or virtio implementation green. The next implementation remains accepted-x86
+This control boundary does not make whole-image executable lowering, exception
+delivery or virtio implementation green. The next implementation remains accepted-x86
 lowering and C machine/device integration, then binding these resource lanes to
 real encrypted storage, file transfer and NIC/publish adapters.
 NETWORK.md now separates guest MTU from carrier datagram budget: the unimplemented
@@ -112,10 +112,45 @@ an invented page fault, zero-fill or decoder fallback. That provider requires
 a serialized pinned owner and already admitted CPU/MMU context; it is not a
 page-table walker or concurrent-worker atomicity proof. The Node access
 function is a test double, not product execution. No native artifact/UI changed.
-Next: compile/link the C provider into the new Wasm VM; actual MMU translation
-and fault delivery; call/return and compiled machine dispatch; then kernel
-startup/devices and real browser resource connections. Whole-image -104 and
-actual Linux/browser boot remain red.
+This earlier test-double checkpoint is superseded by the C-Wasm integration
+below, not relabeled as an actual browser run.
+
+Current checkpoint: all 22 memory and 11 64-bit stack/control modules now run
+through the actual C vm.wasm/MMU function export, with 16,896 native-x86/Node
+comparisons. PUSH/POP/direct near CALL/RET preserve cross-page preflight and
+fault noncommit; POP RSP and the pushed CALL return coordinate are explicit
+oracle cases. The four-level 4 KiB/2 MiB MMU passes 49,152 permission cases,
+canonical/#SS/#GP, physical-miss, A/D and reserved-bit checks. That matrix is
+not yet a QEMU/hardware exception-delivery differential or complete MMU.
+The user supplied an actual ordinary-memory browser result: 512 cases,
+generation 9, 3,920-byte provider, no JS guest-memory callback. Its exact
+receipt is retained in vm/check/browser/evidence; later builds are distinct.
+CLC/STC/CLD/STD also join the pure frontier; all 83 pure modules, including
+the shipped BusyBox prefix, pass 42,496 native/Node comparisons. Undefined
+flags remain excluded and CMC/interior flag consumers are still rejected.
+
+The shipped kernel's generated feature masks reproduced a missing PAE/PGE
+CPU contract (`00002040`); the independently versioned v2 CPU identity passes
+that gate. The fixed distribution recipe is still v1, and published bundle
+bytes/v1 receipts are unchanged. No exactly masked native boot is claimed.
+The C boot loader now borrows the bzImage header and emits only initial
+metadata pages or bounded kernel/initramfs source extents. Actual shipped
+kernel/initramfs -> native/C-Wasm initial-state/page comparison -> C-MMU
+fetch at 0x1000200 passes. This is initialization/fetch, NOT execution/boot.
+100,000 header mutations check safe rejection/layout, not universal boot
+compatibility. Initial zero pages never replace dirty/suspended machine state.
+
+Ordered next blockers:
+1. Uniform compiled-cut/table ABI and bounded C dispatch, with executable
+   generation/load/CPU binding and precise instruction-fetch cuts.
+2. Actual startup sequence: CLI, segment loads, LGDT/LRET, CR4, POPF, REP MOVS
+   and indirect control, then required system/MSR/SIMD/exception operations.
+   Decode remains cold compiler work, never a runtime instruction loop.
+3. Admit the actual compressed-kernel code/decompression/relocation path;
+   connect interrupts, UART and authenticated read-only root block supply.
+4. Real-browser kernel/PID 1/offline terminal, then the existing development
+   and browser storage/network acceptance gates. Whole-image -104 and
+   actual Linux/browser boot remain red; fixtures/QEMU cannot substitute.
 
 ## Previous acceptance state — before compiler refactor, 2026-10-02
 

@@ -9,7 +9,7 @@ int main(void)
 {
     pl_x86_cpuid_result leaf1 = pl_x86_profile_cpuid(1u, 0u);
     const pl_u32 required_ecx[] = { 0u, 9u, 13u, 19u, 20u, 23u };
-    const pl_u32 required_edx[] = { 0u, 8u, 15u, 23u, 24u, 25u, 26u };
+    const pl_u32 required_edx[] = { 0u, 3u, 4u, 5u, 6u, 8u, 13u, 15u, 23u, 24u, 25u, 26u };
     for (pl_u32 i = 0u;
          i < sizeof(required_ecx) / sizeof(required_ecx[0]); ++i)
         if (!has(leaf1.ecx, required_ecx[i])) return 1;

@@ -26,7 +26,8 @@ int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         pl_x86_instruction instruction;
         if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
-        if (cut_memory_supported(&instruction)) {
+        int stack = cut_stack_supported(&instruction);
+        if (stack || cut_memory_supported(&instruction)) {
             plan->report.boundary = WASM_CUT_MEMORY;
             plan->report.boundary_operation = instruction.operation;
             /* Commit the preceding pure slice before this possibly faulting
@@ -36,7 +37,12 @@ int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
                 int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
-                plan->report.memory_bytes = instruction.operands[store ? 0u : 1u].bits / 8u;
+                plan->report.memory_bytes = stack ? 8u : instruction.operands[store ? 0u : 1u].bits / 8u;
+                if (stack && (instruction.operation == PL_X86_OPERATION_CALL
+                              || instruction.operation == PL_X86_OPERATION_RETURN)) {
+                    plan->report.boundary = WASM_CUT_CONTROL;
+                    plan->report.branch_target = instruction.target;
+                }
                 rip = instruction.fallthrough;
             }
             break;
@@ -116,7 +122,8 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         cut.wanted_flags = 0u;
         for (pl_u32 bit = 0u; bit < 12u; ++bit)
             if (plan->last_flag_writer[bit] == i) cut.wanted_flags |= 1u << bit;
-        if (cut.extra_parameter) cut_lower_memory(&cut, &instruction);
+        if (cut.extra_parameter && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
+        else if (cut.extra_parameter) cut_lower_memory(&cut, &instruction);
         else cut_lower_instruction(&cut, &instruction);
         rip = instruction.fallthrough;
     }

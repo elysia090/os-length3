@@ -48,8 +48,13 @@ typedef struct {
  * and exports cut(i32 state, i32 port) -> i64. Its synchronous C provider must
  * pin translations/residency and keep the state/port arena disjoint from guest
  * RAM. Failed access preserves architectural state and retirement. Alignment
- * checking, FS/GS bases, concurrent workers, MMIO and paging are not admitted
- * by this baseline. AC is rejected, not silently ignored.
+ * checking, FS/GS bases, concurrent workers and MMIO remain unsupported.
+ * AC is rejected, not silently ignored. The C-Wasm provider now performs a
+ * four-level 4 KiB/2 MiB walk under its pinned CPU/physical-residency context;
+ * exception delivery and executable-generation admission are separate gates.
+ * 64-bit register/immediate PUSH, register POP, direct near CALL and RET also
+ * use this exact typed transaction. No 16-bit stack, far control or CET
+ * context may be admitted by this baseline.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * Success covers only source_bytes, never the continuation or an ELF closure.

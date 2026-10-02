@@ -35,10 +35,12 @@ _Static_assert(offsetof(machine_memory_port, request_address) == 32u, "memory re
 /* Generated memory cuts import machine.access:
  * (i32 port, i64 linear_address, i32 bytes, i32 access, i64 value) -> i64 result.
  * DIRECT/0 commits a complete scalar transaction and supplies port.value for
- * reads. Other results perform no RAM write; FAULT updates only the fault
- * fields, BARRIER only the request fields. That complete address/range/right
+ * reads. Other results perform no payload store; architectural page-table A/D
+ * updates may already have occurred. FAULT publishes the fault fields;
+ * BARRIER the request fields. That complete address/range/right
  * request lets admission proceed without decoding the source instruction.
- * BARRIER requests translation/residency/device admission, never a
+ * Providers may mark a residency request as physical (bit 4); do not interpret
+ * its address as a guest linear pointer. BARRIER requests admission, never a
  * source-instruction interpreter. No concurrent remap/eviction is permitted
  * during the synchronous call. The provider is C VM code, not a JS syscall. */
 #endif

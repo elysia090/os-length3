@@ -34,6 +34,7 @@ native_cut:
     mov 0(%rax),%rax
     call *(%rsp)
     pushfq
+    cld /* Restore the host C ABI after capturing the guest direction flag. */
     push %rax
     push %rdx
     mov 32(%rsp),%rax

@@ -1,4 +1,5 @@
 #include <vm/memory.h>
+#include "memory-internal.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -31,7 +32,7 @@ int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
     return 0;
 }
 
-static const vm_memory_page *find(const vm_memory *memory, pl_u64 address)
+const vm_memory_page *vm_memory_find(const vm_memory *memory, pl_u64 address)
 {
     pl_u64 page = address & ~4095ull;
     pl_u32 first = 0u, end = memory->page_count;
@@ -46,13 +47,9 @@ static const vm_memory_page *find(const vm_memory *memory, pl_u64 address)
 }
 
 static pl_u64 read_word(const pl_u8 *bytes)
-{
-    pl_u64 value = 0u;
-    for (pl_u32 i = 0u; i < 8u; ++i) value |= (pl_u64)bytes[i] << (i * 8u);
-    return value;
-}
+{ return vm_memory_load(bytes, 8u); }
 static void write_word(pl_u8 *bytes, pl_u64 value, pl_u32 count)
-{ for (pl_u32 i = 0u; i < count; ++i) bytes[i] = (pl_u8)(value >> (i * 8u)); }
+{ vm_memory_store(bytes, value, count); }
 
 static machine_result fault(pl_u8 *port, pl_u64 address,
                              pl_u32 vector, pl_u32 error)
@@ -93,7 +90,7 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
     pl_u32 offsets[2], lengths[2], parts = 0u, consumed = 0u;
     while (consumed < bytes) {
         pl_u64 current = address + consumed;
-        const vm_memory_page *page = find(memory, current);
+        const vm_memory_page *page = vm_memory_find(memory, current);
         if (!page || page->kind == VM_MEMORY_DEFERRED)
             return defer(port, address, bytes, access);
         if (page->kind == VM_MEMORY_FAULT && (page->rights & (access & 3u)))

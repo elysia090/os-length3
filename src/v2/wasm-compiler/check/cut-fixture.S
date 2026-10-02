@@ -70,6 +70,24 @@ _start:
 #elif CUT_SPECIAL == 15
     inc %ax
     dec %al
+#elif CUT_SPECIAL == 16
+    cld
+#elif CUT_SPECIAL == 17
+    std
+#elif CUT_SPECIAL == 18
+    std
+    add %rcx,%rax
+    cld
+#elif CUT_SPECIAL == 19
+    cld
+    std
+    inc %ax
+#elif CUT_SPECIAL == 20
+    stc
+    inc %rax
+#elif CUT_SPECIAL == 21
+    clc
+    add %rcx,%rax
 #else
     mov %rdi,%rax
     add %rsi,%rax

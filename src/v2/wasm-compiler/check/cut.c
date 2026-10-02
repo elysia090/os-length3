@@ -137,7 +137,7 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
             }
             state.registers[reg] = value; record[reg] = value;
         }
-        state.rflags = 0x202u | (random_word(&seed) & 0x8d5u);
+        state.rflags = 0x202u | (random_word(&seed) & 0xcd5u);
         record[16] = state.rflags;
         native_cut(&state, (const void *)(uintptr_t)report->entry);
         record[4] = state.registers[4];

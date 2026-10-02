@@ -197,11 +197,42 @@ node data/oracle/check-wasm-memory.mjs temp/new-memory-cut-records
 make -C src/v2/vm check
 ```
 
-The Node access callback is explicitly a **test double**, not a product JS
-execution route. The C provider is independently executed natively, not yet
-compiled/linked into the new `vm.wasm`. C-Wasm integration, complete exception
-priority/delivery, paging/permissions, call/return, device access and whole-image
-dispatch/closure remain red. Existing 77 register modules / 39,424 comparisons
-still pass after rebuilding. Do not add these fixture counts to kernel coverage
-or claim browser boot, distribution speed/size improvement or a native re-bake.
+The original Node access callback remains a **test double**, not a product JS
+execution route. The subsequent actual C-Wasm integration below supersedes
+that checkpoint; do not relabel the original callback results as C-provider
+execution. Do not add fixture counts to kernel coverage or claim browser boot,
+distribution speed/size improvement or a native re-bake.
 Published native bundle bytes and the human UI are unchanged.
+
+## Actual C-Wasm MMU and stack/control cuts
+
+The scope-local build in `data/oracle/wasm-tools.ps1` now links the C resident
+physical directory and four-level 4 KiB/2 MiB MMU into `vm.wasm` with exactly
+one import: `machine.memory`. Generated cuts import its actual `vm_access`
+function. All 22 memory modules plus 11 64-bit PUSH/POP/direct CALL/RET modules
+pass 16,896 native-x86/Node comparisons through this provider, with no JS guest
+memory semantics. Its ordinary-Worker actual browser observation is 512 cases;
+see `vm/check/browser/evidence/README.md` for that exact 3,920-byte build.
+The current loader-enabled provider is a later build, not that receipt.
+
+Stack fixtures use a separate instrumented native jump/catch trampoline so
+PUSH RSP, POP RSP, RET immediate and CALL's true source return coordinate are
+observed without a hidden oracle stack write. Only the test mapping's catcher
+and relocation bias are normalized. Full register/RAM results and failure
+noncommit remain checked. ASan/UBSan and leak checks also pass.
+
+CLC/STC/CLD/STD now participate in the per-bit final flag frontier. Six new
+fixtures include overwritten direction/carry definitions and arithmetic
+interleaving; the native trampoline clears host DF only after capturing guest
+flags, as required by the C calling convention. The 82 pure fixtures plus
+the actual shipped BusyBox prefix pass 83 modules / 42,496 comparisons.
+CMC, CLI/STI, indirect/far/CET control and full system/SIMD/x87 lowering remain
+unsupported. Shared fixture tools finish once before parallel test execution;
+concurrent recursive relinking previously reproduced an execution failure.
+
+The actual shipped bzImage also passes C-native/C-Wasm initial page/state
+comparison and MMU fetch at `0x1000200`, using bounded object-source extents.
+This does not execute its `CLD; CLI` startup or certify a Linux boot. The boot
+loader follows the [Linux 64-bit protocol](https://www.kernel.org/doc/html/latest/arch/x86/boot.html);
+executable admission, uniform compiled-cut/table dispatch, hidden segment
+state, CPU exception delivery and interrupt/device/root supply remain red.

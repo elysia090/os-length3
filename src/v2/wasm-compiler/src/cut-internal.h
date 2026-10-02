@@ -35,6 +35,10 @@ void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruct
                             const pl_x86_memory *memory);
 int cut_memory_supported(const pl_x86_instruction *instruction);
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction);
+void cut_access(cut_lowering *cut);
+void cut_access_value(cut_lowering *cut);
+int cut_stack_supported(const pl_x86_instruction *instruction);
+void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_instruction_supported(const pl_x86_instruction *instruction);
 pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction);
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction);

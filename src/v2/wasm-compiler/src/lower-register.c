@@ -64,6 +64,9 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_TEST: return 0x8d5u;
     case PL_X86_OPERATION_INCREMENT:
     case PL_X86_OPERATION_DECREMENT: return 0x8d4u;
+    case PL_X86_OPERATION_FLAG_CONTROL:
+        return instruction->condition < 2u ? 1u
+            : instruction->condition == 3u || instruction->condition == 4u ? 0x400u : 0u;
     default: return 0u;
     }
 }
@@ -80,6 +83,9 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
                 | PL_X86_INSTRUCTION_PRIVILEGED | PL_X86_INSTRUCTION_TRAP_AFTER))
             || !canonical(instruction->rip) || !canonical(instruction->fallthrough)) return 0;
     if (instruction->operation == PL_X86_OPERATION_NOP) return 1;
+    if (instruction->operation == PL_X86_OPERATION_FLAG_CONTROL)
+        return instruction->flow == PL_X86_FLOW_NEXT && !count
+            && (instruction->condition < 2u || instruction->condition == 3u || instruction->condition == 4u);
     if (instruction->operation == PL_X86_OPERATION_BRANCH)
         return (instruction->flow == PL_X86_FLOW_JUMP
                 || (instruction->flow == PL_X86_FLOW_CONDITIONAL && instruction->condition < 16u))
@@ -239,6 +245,16 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     const pl_x86_operand *operands = instruction->operands;
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
+    if (operation == PL_X86_OPERATION_FLAG_CONTROL) {
+        pl_u32 bit = instruction->condition < 2u ? 1u : 0x400u;
+        if (!(cut->wanted_flags & bit)) return;
+        cut_get(cut, CUT_FLAGS); cut_const(cut, ~(pl_u64)bit); cut_op(cut, 0x83u);
+        if (instruction->condition == 1u || instruction->condition == 4u) {
+            cut_const(cut, bit); cut_op(cut, 0x84u);
+        }
+        cut_set(cut, CUT_FLAGS); cut->report.flags_written = 1u;
+        return;
+    }
     if (operation == PL_X86_OPERATION_BRANCH) {
         cut_const(cut, instruction->target);
         if (instruction->flow == PL_X86_FLOW_CONDITIONAL) {

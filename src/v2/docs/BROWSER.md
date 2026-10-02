@@ -236,17 +236,24 @@ stale and duplicate acknowledgements never advance a newer generation.
 Inspection on 2026-10-02 found:
 
 * `wasm-compiler` now directly emits bounded pure register cuts from the
-  accepted executable segments. Native/Node execution comparison covers 77
-  actual generated modules and 39,424 cases, including a three-instruction
+  accepted executable segments. Native/Node execution comparison covers 83
+  actual generated modules and 42,496 cases, including a three-instruction
   prefix of the shipped BusyBox entry. Whole-image function/control/dispatcher
   closure still returns `WASM_COMPILER_ERROR_INCOMPLETE`; these small cuts are
-  not a Linux execution backend. Scalar memory cuts additionally pass 22 modules
-  and 11,264 native/Node comparisons using a typed access test double; actual
-  C-Wasm RAM integration and CPU exception delivery remain unconnected. The CLI
+  not a Linux execution backend. CLC/STC and CLD/STD join the pure flag frontier;
+  CMC/interior flag consumers and privileged CLI/STI are not guessed.
+  Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
+  16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
+  with no JavaScript guest-memory callback. CPU exception delivery remains
+  unconnected. The CLI
   is built by `all`.
-* The C resource gate and synchronous resident RAM projection exist, but
-  compiled machine dispatch, MMU and virtio devices in the new VM product
-  are not implemented; the retained `vm/wasm` and `web/vm.js` code still contains
+* The C resource gate, resident physical RAM and four-level 4 KiB/2 MiB MMU
+  now exist. The MMU checks canonical addresses, level permissions, WP/NX,
+  reserved physical bits and A/D updates; a physical cache miss returns an
+  exact host request, not a fabricated Linux page fault. Its 49,152 permission
+  cases are a model test, not a hardware/QEMU fault-delivery differential.
+  Compiled machine dispatch, CPU exception delivery and virtio devices remain
+  unimplemented; the retained `vm/wasm` and `web/vm.js` code still contains
   historical execution machinery. Resource/RAM boundaries alone are not a VM.
 * `linux-worker.js` defaults to `linux-x86-64-machine`, which is absent from
   the current catalog and is not the shipped bundle. Re-enabling that old
@@ -254,6 +261,22 @@ Inspection on 2026-10-02 found:
 * A bzImage includes boot/decompression code and is not just an ELF function.
   Kernel startup, physical/virtual aliases, alternatives/relocation and precise
   instruction faults require an explicit compiled machine/boot boundary.
+  `vm/core/boot.c` now borrows only its header and produces initial zero-page,
+  command, GDT and identity tables independently by physical page. Kernel and
+  initramfs pages return bounded source extents rather than an expanded image.
+  The exact shipped kernel/initramfs pass native and C-Wasm initial-state/page
+  comparison and MMU fetch at `0x1000200` (`CLD; CLI`). No instruction or Linux
+  boot was executed by that gate. Initial-content projection is not a dirty
+  RAM cache-miss or suspend resolver. Hidden segment caches, compressed-kernel
+  executable admission and root block-device publication still need integration.
+* The old fixed CPU table omitted PAE/PGE required by this actual kernel.
+  The generated kernel feature-header gate reproduced `missing=00002040`;
+  `development-standard-v2` corrects that CPU identity. The distribution
+  recipe remains v1 and the published bundle/receipts are unchanged. Matching
+  required CPUID bits is necessary, not evidence of complete CPU emulation.
+  The frozen root still declares its old contract. A future product publication
+  must reconcile that metadata and both execution projections; running a test
+  under v2 does not certify the old exact-v1 release contract.
 * `cc`/`as`/`ld`, `exec`, runtime code patching and executable mappings generate
   new code. Before claiming development acceptance, define a compile-admission
   transaction for each executable generation. Compile the accepted x86 bytes
@@ -295,6 +318,22 @@ passes with ordinary memory and no isolation: two fresh Worker generations,
 HTTP 206 response. This supports the single-Worker baseline. Linux boot, RSS
 reclamation and the isolated-browser configuration remain unverified.
 
+The subsequent `provider.html` user observation passes 512 real native-x86
+comparisons through the 3,920-byte C-Wasm MMU provider, in ordinary memory at
+generation 9. That receipt names its exact build, not later loader additions.
+No Linux boot claim follows from either probe. The automated C-provider and
+bzImage-startup checks use Node as a Wasm engine, separately from that actual
+browser observation. Build with `data/oracle/wasm-tools.ps1`; this pins a
+scope-local official SDK and adds no WASI/runtime or distribution dependency.
+
+Next: one uniform compiled-cut/table ABI and bounded C dispatch with precise
+instruction-fetch and executable-generation admission; then CLI/segment/GDT,
+control/MSR and exception entry needed by the actual compressed startup code.
+Then implement the PC interrupt/timer/RTC/UART boundary and the release
+initramfs's actual root-device handoff before adding unrelated device families.
+Do not skip that startup with a synthetic ELF, redirect execution into the
+old interpreter, or substitute a QEMU boot for this browser gate.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)
@@ -313,3 +352,4 @@ reclamation and the isolated-browser configuration remain unverified.
 * [QEMU device/backend separation](https://www.qemu.org/docs/master/system/device-emulation.html)
 * [QEMU disk images and snapshots](https://www.qemu.org/docs/master/system/images.html)
 * [QEMU network backends](https://www.qemu.org/docs/master/system/devices/net.html)
+* [Linux legacy 64-bit boot protocol](https://www.kernel.org/doc/html/latest/arch/x86/boot.html)

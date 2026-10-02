@@ -1,0 +1,45 @@
+/* Linux legacy 64-bit bzImage entry; no decompression or instruction execution. */
+#ifndef VM_BOOT_H
+#define VM_BOOT_H
+#include <machine/state.h>
+
+enum vm_boot_page_kind {
+    VM_BOOT_ZERO = 0, VM_BOOT_METADATA, VM_BOOT_KERNEL, VM_BOOT_INITRAMFS,
+};
+typedef struct {
+    const pl_u8 *header;
+    const pl_u8 *command;
+    pl_u32 header_end;
+    pl_u32 command_bytes;
+    pl_u64 ram_bytes;
+    pl_u64 kernel_offset;
+    pl_u64 kernel_bytes;
+    pl_u64 kernel_address;
+    pl_u64 kernel_reservation;
+    pl_u64 initramfs_bytes;
+    pl_u64 initramfs_address;
+} vm_boot;
+typedef struct {
+    pl_u64 offset; /* authenticated object's coordinate, not a URL */
+    pl_u32 bytes;
+    pl_u32 kind;
+} vm_boot_source;
+
+/* Borrow the authenticated first image page and command until close. Object
+ * identity/authentication is the caller's Artifact/Storage obligation, not a
+ * magic-number check. All output objects must be disjoint from borrowed input.
+ * Rejecting reopen clears the old plan. The baseline supplies <1 GiB RAM and
+ * uses preferred_address; no EFI, BIOS, above-4G or 32-bit entry is fabricated. */
+int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
+                  pl_u64 image_bytes, pl_u64 initramfs_bytes, pl_u64 ram_bytes,
+                  const pl_u8 *command, pl_u32 command_bytes);
+/* For ZERO/METADATA, write exactly one page. For source pages, return a bounded
+ * object extent without touching target: the caller authenticates/copies that
+ * extent and zeroes only its final padding. Never reconstruct the whole image.
+ * Unmapped physical addresses fail, rather than masquerading as zero RAM.
+ * This projects INITIAL content only: it is not a post-execution cache-miss
+ * resolver. Dirty/COW and suspend state must never be replaced by these zeros. */
+int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
+                  vm_boot_source *source);
+int vm_boot_state(const vm_boot *boot, machine_state *state);
+#endif

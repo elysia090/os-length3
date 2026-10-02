@@ -50,6 +50,20 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (memory->value.memory.segment.class_id == PL_X86_REGISTER_SEGMENT
             && memory->value.memory.segment.index == 2u)
         cut->report.memory_access |= MACHINE_MEMORY_STACK;
+    cut_access(cut);
+    if (!store) {
+        cut_access_value(cut);
+        if (instruction->operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {
+            cut_const(cut, 64u - memory->bits); cut_op(cut, 0x86u);
+            cut_const(cut, 64u - memory->bits); cut_op(cut, 0x87u);
+        }
+        cut_mask(cut, operands[0].value.reg.bits); cut_set(cut, CUT_VALUE);
+        cut_write_register(cut, &operands[0].value.reg);
+    }
+}
+
+void cut_access(cut_lowering *cut)
+{
     cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u); /* private port parameter */
     cut_get(cut, CUT_ADDRESS);
     cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, cut->report.memory_bytes);
@@ -60,15 +74,11 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut_get(cut, CUT_STATUS); cut_op(cut, 0x50u); cut_op(cut, 0x45u);
     cut_op(cut, 0x04u); cut_op(cut, 0x40u);
     cut_get(cut, CUT_STATUS); cut_op(cut, 0x0fu); cut_op(cut, 0x0bu);
-    if (!store) {
-        cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
-        cut_op(cut, 0x29u); wasm_writer_uleb(cut->writer, 3u);
-        wasm_writer_uleb(cut->writer, offsetof(machine_memory_port, value));
-        if (instruction->operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {
-            cut_const(cut, 64u - memory->bits); cut_op(cut, 0x86u);
-            cut_const(cut, 64u - memory->bits); cut_op(cut, 0x87u);
-        }
-        cut_mask(cut, operands[0].value.reg.bits); cut_set(cut, CUT_VALUE);
-        cut_write_register(cut, &operands[0].value.reg);
-    }
+}
+
+void cut_access_value(cut_lowering *cut)
+{
+    cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
+    cut_op(cut, 0x29u); wasm_writer_uleb(cut->writer, 3u);
+    wasm_writer_uleb(cut->writer, offsetof(machine_memory_port, value));
 }

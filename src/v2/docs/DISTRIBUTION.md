@@ -382,19 +382,29 @@ guest test. A JavaScript or native userspace syscall fallback is a release error
 ## CPU and ELF contract
 
 `x86-64-v2` is the standard release's human-facing CPU level, not its normative
-definition. The normative `development-standard-v1` record is the exact table
+definition. The normative `development-standard-v2` CPU record is the exact table
 below; every unlisted leaf, subleaf and bit is zero.
 
 | surface | exact value |
 | --- | --- |
 | CPUID.0 EAX/EBX/ECX/EDX | `00000007 756e6547 6c65746e 49656e69` |
-| CPUID.1 EAX/EBX/ECX/EDX | `000306a9 00000000 00982201 07808139` |
+| CPUID.1 EAX/EBX/ECX/EDX | `000306a9 00000000 00982201 0780a179` |
 | CPUID.7.0 EAX/EBX/ECX/EDX | `00000000 00000000 00000000 00000000` |
 | CPUID.80000000 EAX | `80000008` |
 | CPUID.80000001 ECX/EDX | `00000001 20100800` |
 | CPUID.80000008 EAX | `00003028` |
 | XCR0 / XSAVE | not exposed; CPUID.0d is zero and XGETBV/XSETBV are `#UD` |
-| CPU-derived auxv | `AT_HWCAP=07808139`, `AT_HWCAP2=0`, `AT_PLATFORM=x86_64`, `AT_PAGESZ=4096`, `AT_CLKTCK=100` |
+| CPU-derived auxv | `AT_HWCAP=0780a179`, `AT_HWCAP2=0`, `AT_PLATFORM=x86_64`, `AT_PAGESZ=4096`, `AT_CLKTCK=100` |
+
+The distribution recipe is still `development-standard-v1`; its CPU contract
+is independently versioned. The v2 CPU revision adds PAE and PGE, missing from
+the original table although the shipped kernel's generated REQUIRED_MASK0 is
+`0700a169`. The old table failed with missing bits `00002040`. Published
+v0.1.0-rc.1 bytes and v1 receipts are immutable and are not retroactively
+certified under this revision. Run `data/oracle/check-kernel-profile.sh` with
+the actual KBUILD generated feature header. This is a necessary CPU-identity
+check, not a successful CPU implementation or boot test. In particular, prior
+QEMU boots did not validate an exactly masked v2 CPUID contract.
 
 The CPUID words include the x86-64 psABI baseline and CMPXCHG16B, LAHF/SAHF,
 POPCNT, SSE3, SSSE3, SSE4.1 and SSE4.2. CR4.OSFXSR is required; AVX, XSAVE,

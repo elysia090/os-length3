@@ -1,5 +1,63 @@
 # x86 semantic oracles
 
+## C-Wasm browser boundary — 2026-10-02
+
+`powershell -File data/oracle/wasm-tools.ps1` pins official wasi-sdk-34's
+Windows archive by SHA-256 and extracts only Clang, wasm-ld and builtin headers
+under repository `temp/`. It builds the freestanding C VM provider with one
+import, `machine.memory`: no WASI guest libc, JS guest-memory callback, decoder
+or distribution dependency. The pin is a build-tool version, not a claim that
+its LLVM release-candidate compiler is a stable release.
+
+```sh
+make -C src/v2 all
+bash data/oracle/check-wasm-cuts.sh temp/fresh-register-records
+node data/oracle/check-wasm-cuts.mjs temp/fresh-register-records
+bash data/oracle/check-wasm-memory.sh temp/fresh-memory-records
+bash data/oracle/check-wasm-stack.sh temp/fresh-stack-records
+node data/oracle/check-wasm-provider.mjs temp/wasm-tools-34/vm.wasm temp/fresh-memory-records
+node data/oracle/check-wasm-provider.mjs temp/wasm-tools-34/vm.wasm temp/fresh-stack-records
+```
+
+Only source compilation/native observations run in the build guest; actual
+Wasm comparisons run in Node or the browser. Output directories must be fresh.
+No oracle is an alternate guest execution route. `prepare-browser-provider.mjs
+VM.WASM NATIVE-MEMORY-RECORDS` stages a small ignored diagnostic for
+`vm/check/browser/provider.html`; the user-supplied 512-case real-browser receipt
+is retained in that directory's `evidence/`. Diagnostic digests detect stale
+fixtures; they are not a production release-root signature.
+
+The compressed-kernel CPU check is independently reproducible:
+
+```sh
+make -C src/v2/x86 build/kernel-profile-check
+sh data/oracle/check-kernel-profile.sh ACTUAL-KBUILD src/v2/x86/build/kernel-profile-check
+```
+
+It reads that build's generated `asm/cpufeaturemasks.h`, not an architecture-name
+guess. The exact shipped 7.2.7 configuration exposed missing PAE/PGE in v1;
+the v2 CPU contract passes. The required hardware masks do not certify every
+advertised instruction or exactly masked native CPU execution.
+
+After authenticated extraction of the **published** native bundle, reproduce
+its bounded cold boot-state/page projection without reading the whole kernel:
+
+```sh
+make -C src/v2/vm build/boot-check
+mkdir temp/fresh-boot-records
+src/v2/vm/build/boot-check ROOT/boot/kernel ROOT/boot/initramfs temp/fresh-boot-records/shipped
+node data/oracle/check-wasm-boot.mjs temp/wasm-tools-34/vm.wasm temp/fresh-boot-records/shipped
+```
+
+If the build guest and Node are separate, transfer only the small generated
+records. The comparison covers C-generated boot parameters, GDT, initial
+identity tables/state and a C-MMU fetch of the actual 64-bit entry, not kernel
+instruction execution, CPU exception delivery, root-device publication or
+Linux boot. Dirty/COW state is outside this initial-content projection and
+must never be reconstructed as initial zero RAM after execution.
+
+## Independent native oracles
+
 The product does not contain QEMU, KVM, Remill or Intel XED. These pinned
 upstreams are development inputs used to prove the standalone C post-link
 compiler. They never become a runtime fallback, a delivery object or part of

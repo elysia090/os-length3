@@ -32,7 +32,7 @@ for opcode in add sub and or xor cmp test inc dec neg not; do
     emit "$opcode-$width" "${args[@]}"
   done
 done
-for rank in {1..15}; do emit "special-$rank" -DCUT_SPECIAL="$rank"; done
+for rank in {1..21}; do emit "special-$rank" -DCUT_SPECIAL="$rank"; done
 for opcode in jo jno jb jae je jne jbe ja js jns jp jnp jl jge jle jg; do
   emit "branch-$opcode" -DCUT_BRANCH="$opcode"
 done
