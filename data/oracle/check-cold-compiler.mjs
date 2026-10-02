@@ -50,6 +50,9 @@ assert.deepEqual(transport().subarray(input,input + page.length),page);
 // Optional fixed shipped-startup witnesses, not speculative branch closure.
 for (const [prefix,sourceName,address] of [['after-return','boot.kernel-page',BigInt(boot.kernelAddress)],
     ['control-read','boot.kernel-page',BigInt(boot.kernelAddress)],
+    ['configure','call.extra-page',0x12e3000n],
+    ['after-compare','call.extra-page',0x12e3000n],
+    ['cmdline-cut','cmdline.extra-page',0x12e2000n],
     ['idt','call.extra-page',0x12e3000n]]) {
   let summary;
   try { summary = JSON.parse(await readFile(path.join(bundleDirectory,`${prefix}.summary.json`))); }

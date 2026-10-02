@@ -275,14 +275,32 @@ is interpreted or silently skipped.
 The current shared C-Wasm path additionally admits memory-destination
 ADD/SUB/AND/OR/XOR, ten-byte LGDT/LIDT records and same-CPL 64-bit far RET.
 The 22 new RMW modules pass 11,264 native-x86 comparisons. The shipped bzImage
-now executes 28 startup instructions in an actual browser Worker and compares
-all CPU/cache bytes; it stops at CR4 write `0x1000255`, not Linux boot.
+now executes 48 startup instructions in an actual browser Worker and compares
+all CPU/cache bytes; it stops at register SHL `0x12e2a96`, not Linux boot.
 Outer-CPL/compatibility far transfers and full exception delivery remain red.
 See vm/check/browser/evidence/2026-10-02-rmw-control.md for reservation/Accessed
 write regressions, exact builds and reproducible cold construction.
 The later 2026-10-02-control-read.md checkpoint adds common CR0/CR2/CR3/CR4/CR8
 reads: 80 modules, 5,360 privilege/value model cases and 247 total native/cold
 byte-identical emissions including repeats. This is not a hardware CPL0 fault oracle.
+
+The later 2026-10-02-control-write.md checkpoint adds common CR0/2/3/4/8 writes
+through the C semantic boundary: 486 native model cases and 80 generated
+modules / 23,360 C-Wasm model cases. Reserved bits, CR0/CR3 normalization,
+privilege, equal-value invalidation and reservation cancellation are explicit.
+Sixteen memory CMP/TEST modules pass 8,192 actual native-x86/C-Wasm comparisons,
+including operand order, narrow/high-byte operands and split-page failure
+noncommit. All 362 native/cold emissions are byte-identical. No Linux boot or
+hardware exception-entry claim follows from these gates.
+
+```sh
+mkdir temp/new-control
+src/v2/wasm-compiler/build/code-cut-check temp/new-control
+node data/oracle/check-control-read.mjs temp/new-control
+node data/oracle/check-control-write.mjs VM.WASM temp/new-control
+bash data/oracle/prepare-compare-cuts.sh temp/new-compare
+node data/oracle/check-wasm-provider.mjs VM.WASM temp/new-compare
+```
 
 ```sh
 node data/oracle/check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORDS

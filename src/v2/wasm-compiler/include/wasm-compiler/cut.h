@@ -62,6 +62,8 @@ typedef struct {
  * descriptor/cache boundary; outer-CPL and compatibility transfers reject.
  * Memory ADD/SUB/AND/OR/XOR uses machine.reserve/commit with pinned physical
  * fragments; generated Wasm computes arithmetic, not a C opcode callback.
+ * Memory CMP/TEST uses a READ-only machine.access followed by shared ALU/flags
+ * lowering, with no payload/GPR write and no flag commit before read success.
  * LGDT/LIDT uses machine.table with ten-byte all-fragment preflight.
  * CLI is a precise one-instruction system cut with the same private port but
  * no host operation import. In long mode without CR4.PVI/EFLAGS.VM it clears
@@ -73,8 +75,10 @@ typedef struct {
  * Long-mode MOV from CR0/CR2/CR3/CR4/CR8 is a one-instruction compiled system
  * cut: CPL0 reads the frozen state field; other CPLs publish #GP(0) without
  * modifying CPU state or retirement. Undefined arithmetic flags preserve
- * their previous values as the selected representative. Control writes remain
- * unsupported until register legality and context invalidation are implemented.
+ * their previous values as the selected representative. MOV to the same
+ * control registers uses machine.control (private port, rank, value): the C
+ * boundary enforces the fixed CPU profile and complete write legality before
+ * publishing state, and revokes executable context even for equal-value writes.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * It also stops before a later instruction that crosses/starts another fetch

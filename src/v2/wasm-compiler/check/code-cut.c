@@ -89,8 +89,21 @@ int main(int argc, char **argv)
                     || write_record(prefix,"wasm",output,(size_t)bytes)
                     || write_record(prefix,"source-page",pages,4096u)) return 1;
         }
-        pages[at + 1u] = 0x22u; /* Writes remain a separate precise red gate. */
-        EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
+        pages[at + 1u] = 0x22u;
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions == 1u && report.source_bytes == at + 3u
+            && report.boundary == WASM_CUT_SYSTEM && report.read_registers == (1u << reg)
+            && !report.written_registers && !report.flags_written);
+        if (argc == 2 && !failures) {
+            char prefix[4096], json[256];
+            int n = snprintf(prefix,sizeof prefix,"%s/control-write-%u-%u",argv[1],control,reg);
+            if (n <= 0 || (size_t)n >= sizeof prefix) return 1;
+            n = snprintf(json,sizeof json,
+                "{\"entry\":\"4194304\",\"control\":%u,\"reg\":%u,\"sourceBytes\":%u}\n",control,reg,at + 3u);
+            if (n <= 0 || (size_t)n >= sizeof json || write_record(prefix,"json",json,(size_t)n)
+                    || write_record(prefix,"wasm",output,(size_t)bytes)
+                    || write_record(prefix,"source-page",pages,4096u)) return 1;
+        }
     }
     pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;
     pages[3] = 0x90u;

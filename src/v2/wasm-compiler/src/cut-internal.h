@@ -9,7 +9,7 @@
 enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
        CUT_ADDRESS, CUT_STATUS, CUT_LOCAL_COUNT = 21, CUT_MEMORY_LOCALS = 23 };
 enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT, CUT_SYSTEM_TABLE,
-       CUT_SYSTEM_FAR_RETURN, CUT_SYSTEM_CONTROL_READ };
+       CUT_SYSTEM_FAR_RETURN, CUT_SYSTEM_CONTROL_READ, CUT_SYSTEM_CONTROL_WRITE };
 typedef struct {
     wasm_writer *writer;
     wasm_cut_report report;
@@ -20,6 +20,7 @@ typedef struct {
     pl_u32 has_segment;
     pl_u32 has_table;
     pl_u32 has_far_return;
+    pl_u32 has_control_write;
 } cut_lowering;
 typedef struct {
     pl_x86_map maps[64];

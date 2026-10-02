@@ -151,10 +151,11 @@ int main(int argc, char **argv)
         /* AF has no defined native value for logical operations. The compiled
          * long-mode projection canonically clears this undefined flag. */
         if (instruction.operation == PL_X86_OPERATION_AND || instruction.operation == PL_X86_OPERATION_OR
-                || instruction.operation == PL_X86_OPERATION_XOR) record[33] &= ~0x10ull;
+                || instruction.operation == PL_X86_OPERATION_XOR
+                || instruction.operation == PL_X86_OPERATION_TEST) record[33] &= ~0x10ull;
         record[37] = read_word((const pl_u8 *)(uintptr_t)address);
         if (!relative) {
-            if (store) memcpy(saved + offset, ram + offset, report.memory_bytes);
+            if (report.memory_access & MACHINE_MEMORY_WRITE) memcpy(saved + offset, ram + offset, report.memory_bytes);
             if (memcmp(saved, ram, sizeof saved)) okay = 0;
         }
         if (fwrite(record, sizeof record, 1u, cases) != 1u) okay = 0;

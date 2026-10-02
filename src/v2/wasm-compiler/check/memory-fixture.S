@@ -84,6 +84,38 @@ _start:
     add qword ptr [rdi], -123
 #elif MEMORY_CASE == 45
     lock add qword ptr [rdi], rax
+#elif MEMORY_CASE == 46
+    cmp byte ptr [rdi + 0x1ef], 0
+#elif MEMORY_CASE == 47
+    cmp word ptr [rdi], -1
+#elif MEMORY_CASE == 48
+    cmp dword ptr [rdi], r9d
+#elif MEMORY_CASE == 49
+    cmp qword ptr [rdi], r11
+#elif MEMORY_CASE == 50
+    cmp al, byte ptr [rdi]
+#elif MEMORY_CASE == 51
+    cmp ax, word ptr [rdi]
+#elif MEMORY_CASE == 52
+    cmp r9d, dword ptr [rdi]
+#elif MEMORY_CASE == 53
+    cmp r11, qword ptr [rdi]
+#elif MEMORY_CASE == 54
+    test byte ptr [rdi], ah
+#elif MEMORY_CASE == 55
+    test word ptr [rdi], ax
+#elif MEMORY_CASE == 56
+    test dword ptr [rdi], r9d
+#elif MEMORY_CASE == 57
+    test qword ptr [rdi], r11
+#elif MEMORY_CASE == 58
+    test byte ptr [rdi], 0x80
+#elif MEMORY_CASE == 59
+    test word ptr [rdi], 0x8001
+#elif MEMORY_CASE == 60
+    test dword ptr [edi], 0x80000001
+#elif MEMORY_CASE == 61
+    test qword ptr [rdi + rcx*4 + 7], -123
 #else
 #error unsupported case
 #endif

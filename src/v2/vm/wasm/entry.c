@@ -5,6 +5,7 @@
 #include <vm/segments.h>
 #include <vm/tables.h>
 #include <vm/control.h>
+#include <vm/registers.h>
 #include <machine/state.h>
 #include "../core/memory-internal.h"
 #include <stdint.h>
@@ -221,6 +222,19 @@ machine_result vm_return(pl_u32 port, pl_u32 discard_bytes)
     machine_result result = vm_far_return(&resident,port - arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,discard_bytes);
     if (resident.write_touched) execution.generation = 0u;
+    return result;
+}
+
+machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
+{
+    vm_memory_abort(&resident);
+    if (!segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    machine_result result = vm_control_write(&resident,port - arena_base,
+        (machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,rank,value);
+    /* Even equal-value CR3 writes invalidate paging caches. With no retained
+     * TLB, revoking compiled fetch-context admission is sufficient; do not
+     * silently continue under the previous proof after a successful write. */
+    if (!result) execution.generation = 0u;
     return result;
 }
 

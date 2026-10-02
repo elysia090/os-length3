@@ -121,6 +121,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.has_segment = plan->system_cut == CUT_SYSTEM_SEGMENT;
     cut.has_table = plan->system_cut == CUT_SYSTEM_TABLE;
     cut.has_far_return = plan->system_cut == CUT_SYSTEM_FAR_RETURN;
+    cut.has_control_write = plan->system_cut == CUT_SYSTEM_CONTROL_WRITE;
     wasm_writer_uleb(writer, 1u);
     wasm_writer_uleb(writer, cut.has_port ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
     wasm_writer_byte(writer, 0x7eu);

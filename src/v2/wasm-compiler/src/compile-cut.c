@@ -93,8 +93,20 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',10,'f','a','r','_','r','e','t','u','r','n',0,0
     };
+    static const pl_u8 control_type[] = {
+        2,0x60,3,0x7f,0x7f,0x7e,1,0x7e, 0x60,2,0x7f,0x7f,1,0x7e
+    };
+    static const pl_u8 control_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',7,'c','o','n','t','r','o','l',0,0
+    };
     raw(writer, header, sizeof header);
-    if (boundary == 5) {
+    if (boundary == 6) {
+        section(writer,1u,sizeof control_type); raw(writer,control_type,sizeof control_type);
+        section(writer,2u,sizeof control_imports); raw(writer,control_imports,sizeof control_imports);
+        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
+        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
+    } else if (boundary == 5) {
         section(writer,1u,sizeof type); raw(writer,type,sizeof type);
         section(writer,2u,sizeof return_imports); raw(writer,return_imports,sizeof return_imports);
         section(writer,3u,sizeof functions); raw(writer,functions,sizeof functions);
@@ -131,6 +143,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
 
 static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
 {
+    if (plan->system_cut == CUT_SYSTEM_CONTROL_WRITE) return 6;
     if (plan->system_cut == CUT_SYSTEM_FAR_RETURN) return 5;
     if (plan->system_cut == CUT_SYSTEM_TABLE) return 4;
     if (plan->system_cut == CUT_SYSTEM_SEGMENT) return 2;

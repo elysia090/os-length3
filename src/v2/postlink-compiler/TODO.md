@@ -42,13 +42,16 @@ to postpone the next browser product goal behind new native size/speed work.
 
 ## Active browser work — 2026-10-02
 
-Current executable checkpoint: the exact shipped bzImage advances from 14 to
-28 source instructions in an actual ordinary-memory browser Worker through
-cold C-Wasm compilation and C table/MMU execution. Memory RMW, LGDT/LIDT and
-same-CPL long-mode far RET and general control-register reads are admitted;
-full CPU/cache observations pass. Next concrete red coordinate: `0x1000255`,
-CR4 write. Implement common control-write legality/context invalidation
-(and the following real decompressor operations),
+Current executable checkpoint: the exact shipped bzImage advances to 48 source
+instructions in an actual ordinary-memory browser Worker through cold C-Wasm
+compilation and C table/MMU execution. Common CR0/2/3/4/8 writes now enforce the
+fixed CPU profile and revoke execution admission even for equal-value writes;
+read-only memory CMP/TEST shares the existing ALU/flags path. Full CPU/cache and
+stack/BSS observations pass. The CALL destination page is supplied from the
+same authenticated bundle, not left as an artificial missing-page blocker.
+Next concrete grammar red: `0x12e2a96`, `SHL RDI,32`. Implement common register
+shift lowering with precise defined flags and the conditional count-zero flag
+frontier (do not discard a preceding flag writer),
 then exact exception entry and required device/root supply. Never skip source
 instructions or substitute another kernel/backend. Whole-image `-104`, Linux
 boot, PID 1 and development acceptance remain red. Source/native asset and
@@ -156,8 +159,9 @@ Ordered next blockers:
 1. Complete executable-generation/load/CPU attestation and C cold-compiler/table
    admission. A uniform two-parameter table, C budget dispatcher and precise
    fetch-page cuts are now tested, not yet a complete admission transaction.
-2. Actual startup sequence: precise memory RMW, LGDT/LRET, CR4, POPF, REP MOVS
-   and indirect control, then required system/MSR/SIMD/exception operations.
+2. Actual startup sequence: register shifts, POPF, REP MOVS and indirect
+   control, then required system/MSR/SIMD/exception operations. RMW,
+   LGDT/LRET, common CR reads/writes and memory CMP/TEST are now tested.
    Decode remains cold compiler work, never a runtime instruction loop.
 3. Admit the actual compressed-kernel code/decompression/relocation path;
    connect interrupts, UART and authenticated read-only root block supply.

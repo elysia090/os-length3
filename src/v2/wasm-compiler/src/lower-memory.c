@@ -9,11 +9,17 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)
             || (instruction->address_width != 32u && instruction->address_width != 64u)) return 0;
     const pl_x86_operand *operands = instruction->operands;
-    int store = operands[0].kind == PL_X86_OPERAND_MEMORY;
-    const pl_x86_operand *memory = &operands[store ? 0u : 1u];
+    int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
+    int observe = instruction->operation == PL_X86_OPERATION_COMPARE
+               || instruction->operation == PL_X86_OPERATION_TEST;
+    const pl_x86_operand *memory = &operands[first ? 0u : 1u];
     if (memory->kind != PL_X86_OPERAND_MEMORY || (memory->bits != 8u
             && memory->bits != 16u && memory->bits != 32u && memory->bits != 64u)) return 0;
-    if (store) {
+    if (observe) {
+        const pl_x86_operand *other = &operands[first ? 1u : 0u];
+        if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
+                && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
+    } else if (first) {
         if ((instruction->operation != PL_X86_OPERATION_MOVE
                 && instruction->operation != PL_X86_OPERATION_ADD
                 && instruction->operation != PL_X86_OPERATION_SUBTRACT
@@ -43,9 +49,12 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     const pl_x86_operand *operands = instruction->operands;
-    int store = operands[0].kind == PL_X86_OPERAND_MEMORY;
+    int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
+    int observe = instruction->operation == PL_X86_OPERATION_COMPARE
+               || instruction->operation == PL_X86_OPERATION_TEST;
+    int store = first && !observe;
     int rmw = store && instruction->operation != PL_X86_OPERATION_MOVE;
-    const pl_x86_operand *memory = &operands[store ? 0u : 1u];
+    const pl_x86_operand *memory = &operands[first ? 0u : 1u];
     cut_effective_address(cut, instruction, &memory->value.memory);
     cut_set(cut, CUT_ADDRESS);
     if (store) cut_read_operand(cut, &operands[1], memory->bits);
@@ -57,6 +66,18 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (memory->value.memory.segment.class_id == PL_X86_REGISTER_SEGMENT
             && memory->value.memory.segment.index == 2u)
         cut->report.memory_access |= MACHINE_MEMORY_STACK;
+    if (observe) {
+        cut_read_operand(cut,&operands[first ? 1u : 0u],memory->bits);
+        cut_set(cut,first ? CUT_RIGHT : CUT_LEFT);
+        cut_access(cut); /* READ only, even when the first operand is memory. */
+        cut_access_value(cut); cut_set(cut,first ? CUT_LEFT : CUT_RIGHT);
+        cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT);
+        cut_op(cut,instruction->operation == PL_X86_OPERATION_COMPARE ? 0x7du : 0x83u);
+        cut_mask(cut,memory->bits); cut_set(cut,CUT_VALUE);
+        cut_arithmetic_flags(cut,memory->bits,instruction->operation == PL_X86_OPERATION_COMPARE,
+            instruction->operation == PL_X86_OPERATION_TEST,0);
+        return; /* No GPR/payload store; a failed load never commits flags. */
+    }
     if (rmw) {
         /* Only the translation/reservation lives in C. The arithmetic and
          * live flags remain ordinary compiled SSA, not an operation callback. */
