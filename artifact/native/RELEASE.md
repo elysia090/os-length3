@@ -1,4 +1,4 @@
-# Native development distribution 0.1.0-rc.1
+# OS Length3 Linux 0.1.0-rc.1
 
 This pre-release contains the fixed `development-standard-v1` Linux environment:
 the included Linux kernel/initramfs, musl, BusyBox, s6/s6-rc/mdevd, apk-tools,
@@ -9,6 +9,14 @@ The complete linked population is post-link compiled into ordinary x86-64
 ELFs. This candidate is rebuilt with the responsibility-split compiler, not
 the bundle from before that refactor. There is no browser runtime dependency
 to use the extracted native programs on an appropriate Linux x86-64 host.
+
+The new executable download is **63,219,311 bytes**. Its complete canonical
+filesystem is 251,808,351 bytes versus the fixed linked population's
+517,221,624 bytes (51.315% reduction, independently of transport compression).
+All 199 ELF calls, package/resource closure, extracted C/make, upstream build,
+certificate-verified curl/Git HTTPS and exact kernel/root boot passed.
+One QEMU TCG ready observation was 1,826.0 ms, excluding acquisition and extraction;
+this is neither a browser nor a statistical cold-start guarantee.
 
 ## Assets and verification
 
@@ -28,7 +36,7 @@ Download the executable and SHA256SUMS into one directory, then on Linux:
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS
 mkdir opened
-tar --zstd -xf qm-linux-0.1.0-x86_64-*.tar.zst -C opened
+tar --zstd -xf os-length3-linux-0.1.0-x86_64-*.tar.zst -C opened
 ```
 
 `opened/root` is a normal Linux root, not a host installer. Use an isolated

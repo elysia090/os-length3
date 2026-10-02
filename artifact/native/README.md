@@ -1,13 +1,13 @@
-# Native distribution candidate — 2026-10-02
+# OS Length3 Linux — native candidate, 2026-10-02
 
-The local downloadable candidate is
-`qm-linux-0.1.0-x86_64-3238ae0211825f491739179b04c8235796ebfb0d9786a8488728c4e19a71992c.tar.zst`.
+The downloadable candidate is
+`os-length3-linux-0.1.0-x86_64-1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195.tar.zst`.
 It contains the complete fixed `development-standard-v1` root, its manifest,
 post-linked ordinary x86-64 executables, kernel and initramfs. No browser,
 Wasm runtime, runtime x86 interpreter, source forest or second package archive
 is required to execute the extracted native programs.
 
-**Status: functional candidate, not an approved public release.** The local
+**Status: functional pre-release candidate, not production-approved.** The local
 package signatures use a test key. The raw strict speed comparison is red;
 the user accepts that small difference for the current correctness stage.
 It is not the active blocker and is not evidence of a speedup. Neither global
@@ -17,15 +17,15 @@ minimality nor browser completion is claimed.
 
 | Measurement | Result |
 | --- | ---: |
-| Exact download | 63,219,319 bytes |
+| Exact download | 63,219,311 bytes |
 | Complete linked-input canonical filesystem | 517,221,624 bytes |
-| Complete optimized canonical filesystem | 251,808,350 bytes |
+| Complete optimized canonical filesystem | 251,808,351 bytes |
 | Filesystem reduction | 51.315% |
 | Post-linked ELF input/output population | 479,197,872 / 199,325,312 bytes |
 | ELF compilation calls | 199 |
 | Signed installed packages | 45 |
-| QEMU TCG full-root ready marker, one observation | 1,879.9 ms |
-| Fixed 11-workload weighted native wall-time ratio | 1.002329099 (red) |
+| QEMU TCG full-root ready marker, new single observation | 1,826.0 ms |
+| Prior fixed 11-workload weighted native wall-time ratio | 1.002329099 (red) |
 
 Download compression is transport-only. The 63.2 MB download does **not**
 establish the separate 75,000,000-byte canonical program-word target. The
@@ -50,15 +50,27 @@ pre-archive root:
 - included optimized kernel -> actual PID 1/services -> terminal commands,
   C/make/Git/AES/apk and immutable lower/dirty COW isolation in QEMU TCG.
 
-The fixed native benchmark used 401 alternating pairs per workload, one guest
+This distribution was re-baked after the compiler refactor, reusing unchanged
+upstream/component checkpoints but re-running all 199 ELF post-link calls and
+kernel compilation. The new bundle's extracted runtime, upstream development,
+certificate-verified curl/Git HTTPS, and actual kernel/root boot passed.
+All 383 ELF paths and 31 archive paths in the optimized package population
+are byte-identical to the previous compiler output; the optimized kernel ELF
+is also byte-identical. See `compiler-refactor/payload-comparison.log` and
+the new release inputs. The package/publication and initramfs identities are
+new; old receipts remain historical rather than being renamed.
+
+The prior fixed native benchmark used 401 alternating pairs per workload, one guest
 CPU and no concurrent bake, against the complete original linked population.
 It ran native x86 on a WHPX build guest; the host kernel was Alpine Linux
 6.18.35, not the included distribution kernel. All workload observations
 matched, but aggregate execution time was 0.233% worse. GCC and Git identity
 calibrations are retained alongside the failed result. They do not turn it
-green. No cycle, retired-instruction or bare-metal claim is made.
+green. Its execution ratio is retained because the executable bytes match,
+not presented as a newly timed benchmark. No cycle, retired-instruction or
+bare-metal claim is made.
 
-The 1.88-second ready marker is one QEMU TCG oracle observation with a prepared
+The new 1.826-second ready marker is one QEMU TCG oracle observation with a prepared
 system image. It excludes download and extraction and is not a browser or
 statistical cold-start guarantee. LTP, glibc testsuite and the complete requested
 kselftest families have not been claimed as passed.
@@ -70,9 +82,9 @@ signature before extraction. For this local candidate, `SHA256SUMS` records
 the digest obtained from the authenticated build connection:
 
 ```sh
-sha256sum -c SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
 mkdir opened
-tar --zstd -xf qm-linux-0.1.0-x86_64-3238ae0211825f491739179b04c8235796ebfb0d9786a8488728c4e19a71992c.tar.zst -C opened
+tar --zstd -xf os-length3-linux-0.1.0-x86_64-1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195.tar.zst -C opened
 ```
 
 `opened/root` is an ordinary Linux root. Enter it through an isolated Linux
@@ -88,5 +100,18 @@ Package mutation and external networking require an explicit repository,
 writable derived root, resolver and network grant; offline package queries,
 C development and local Git do not.
 
+The new receipts are `release-1a0bddc2340a...inputs`, its `.population` and
+`.exact-pages.population`, `full-bake-refactor-oct02.log`,
+`refactor-identities.sha256`, `refactor-native-boot.log`, and `acceptance.env`.
+The previous `3238ae02...`, `native-boot.log` and benchmark logs identify the
+earlier candidate. Raw build logs retain the pre-rename `qm-linux` transport
+filename; renaming the new archive to `os-length3-linux` changes no payload byte.
+
+The separate `os-length3-linux-0.1.0-rc.1-sources.tar` Release asset supplies
+the fixed authenticated upstream archives and recipe/configuration/patch/
+compiler sources, including the decoder submodules and original license
+notices. It is optional for execution and excluded from executable download
+size. Follow `RELEASE-SOURCE.txt` and `recipe/data/README.md` after extraction.
+
 See `verification/` for the immutable input identities, build log, full boot
-log, filesystem populations and the unhidden red performance result.
+log, filesystem populations and the unhidden prior red performance result.

@@ -137,6 +137,32 @@ prevents a version-only or `file://` smoke test from certifying a broken TLS
 client. A failure leaves the new bundle under a temporary candidate name,
 not the stable download name.
 
+## Native Release assets
+
+The public distribution name is **OS Length3 Linux**. `build.sh` produces
+`os-length3-linux-VERSION-x86_64-PUBLICATION.tar.zst`: one complete ordinary
+root plus its kernel/initramfs and manifest. The native archive is a GitHub
+Release asset, not a committed binary or an unprivileged host installer.
+Receipts and download instructions live in [`artifact/native/`](../artifact/native/README.md).
+Test-key builds must be marked as pre-releases, not production trust roots.
+
+Publish the executable beside `SHA256SUMS` and a separate source asset.
+After committing the recipe and matching source receipts, run from the repo:
+
+```sh
+node data/distribution/prepare-release-sources.mjs \
+  temp/release-output/os-length3-linux-0.1.0-rc.1-sources.tar
+```
+
+This verifies the fixed upstream archives (including paired build-only zic),
+the recipe commit and decoder gitlinks, then packages their compressed inputs
+and build/configuration/patch/compiler sources without expanding a second
+source forest. No signing private key, build-host disk or scratch tree enters
+the asset. Record its digest and recipe commit separately; source availability
+is not a claim of hash-identical reproduction under a different build host.
+The source download is optional for executing the native bundle and is not
+counted as executable delivery size.
+
 `QM_BUILD_ROOT` keeps the disposable expansion on the build-host filesystem,
 whose backing disk is under Windows `temp/`. Its default is
 `$TMPDIR/libqm-linux-build`; `QM_OUTPUT_ROOT` likewise defaults to

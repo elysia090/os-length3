@@ -2,11 +2,19 @@
 
 ## Immediate delivery and next product goal — 2026-10-02
 
-1. Re-bake the entire fixed distribution with the refactored compiler. Reuse
-   unchanged upstream/component checkpoints, never the earlier optimized ELF
-   population. Authenticate the exact new bundle, test its extracted C/make,
-   Git/HTTPS and package closure, and boot its included kernel/root with the
-   native oracle. Publish it as a GitHub **pre-release**, with SHA256SUMS,
+The public download/product name is `os-length3-linux`. Older `qm-linux`
+filenames in raw verification receipts identify historical candidates;
+they are not the new Release asset name.
+
+1. The full refactored-compiler re-bake is complete: 199 ELF calls, kernel
+   proof, 45 installed packages, package/resource closure, extracted C/make,
+   upstream development and certificate-verified Git/HTTPS are green.
+   The exact new kernel/root passed PID 1/services, offline shell, C/make -j4,
+   Git/AES/apk and COW in QEMU TCG (one ready observation: 1,826.0 ms).
+   The new download is 63,219,311 bytes, publication `1a0bddc2340a...`,
+   optimized package identity `cc18062ec832...`. All 383 ELF and 31 archive
+   paths match the previous executable bytes; the prior timing result is
+   retained, not relabeled as a new benchmark. Publish as a GitHub **pre-release**, with SHA256SUMS,
    fixed source inputs, build/configuration/patch/compiler sources and honest
    candidate limitations. Commit the source/evidence in a new PR; keep binary
    archives out of Git. The small benchmark difference remains accepted for
@@ -30,7 +38,7 @@
 The older ordered witness list below is a diagnostic backlog, not permission
 to postpone the next browser product goal behind new native size/speed work.
 
-## Current acceptance state — 2026-10-02
+## Previous acceptance state — before compiler refactor, 2026-10-02
 
 The full `febcab1c...` bake completed successfully. The exact local native
 download is retained in [artifact/native](../../../artifact/native/README.md):

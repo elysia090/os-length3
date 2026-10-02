@@ -693,7 +693,7 @@ printf '%s\n' \
   "initramfs=$initramfs" \
   "inputs=$release_inputs"
 
-native_bundle="$out/qm-linux-$DISTRIBUTION_RELEASE_VERSION-x86_64-$package_publication_key.tar.zst"
+native_bundle="$out/os-length3-linux-$DISTRIBUTION_RELEASE_VERSION-x86_64-$package_publication_key.tar.zst"
 if [[ -f $native_bundle ]]; then
   zstd -q -t -- "$native_bundle"
   bash "$here/distribution/check-native-bundle-runtime.sh" \

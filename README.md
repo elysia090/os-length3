@@ -54,8 +54,9 @@ QM makes of each of them is in [`src/v2/README.md`](src/v2/README.md).
 
 ## Quick start
 
-The native distribution candidate is distributed as a GitHub Release asset,
-not committed as a binary in Git. See [`artifact/native/`](artifact/native/README.md)
+The **OS Length3 Linux** native distribution candidate is distributed as a
+GitHub Release asset, not committed as a binary in Git. See
+[`artifact/native/`](artifact/native/README.md)
 for its checksum, scope, verification receipts and source inputs. The next
 product milestone is to run that same authenticated Linux bundle through the
 Wasm projection, without replacing Linux syscall/VFS semantics in JavaScript.
