@@ -29,7 +29,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->image = *image;
     plan->report = (wasm_cut_report){ 0 };
     plan->system_cut = 0u;
-    for (pl_u32 bit = 0u; bit < 12u; ++bit) plan->last_flag_writer[bit] = ~0u;
+    for (pl_u32 bit = 0u; bit < 12u; ++bit) plan->last_flag_kill[bit] = ~0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -63,9 +63,9 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->system_cut = (pl_u32)system;
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
-                pl_u32 flags = cut_flag_write_mask(&instruction);
+                pl_u32 flags = cut_flag_kill_mask(&instruction);
                 for (pl_u32 bit = 0u; bit < 12u; ++bit)
-                    if (flags & (1u << bit)) plan->last_flag_writer[bit] = 0u;
+                    if (flags & (1u << bit)) plan->last_flag_kill[bit] = 0u;
                 if (!system) {
                     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
                     plan->report.memory_bytes = stack ? 8u : instruction.operands[store ? 0u : 1u].bits / 8u;
@@ -86,14 +86,15 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             plan->report.boundary_operation = instruction.operation;
             break;
         }
-        /* Accepted nonterminal transfers never consume arithmetic flags.
-         * INC/DEC retain CF, and the terminating branch observes the final
-         * definitions. Thus one last writer per bit is the complete frontier.
-         * Adding ADC/CMOV or an interior flag consumer requires extending this
-         * dependency proof, not treating it as another independent writer. */
-        pl_u32 flags = cut_flag_write_mask(&instruction);
+        /* Only unconditional definitions kill the incoming flag frontier.
+         * A CL shift can preserve every bit when its masked count is zero:
+         * retain all conditional writers following the last unconditional
+         * one. INC/DEC similarly do not kill CF. This is a linear two-pass
+         * frontier, not a list of predecessor-state materializations.
+         * Interior flag consumers still require a separate dependency proof. */
+        pl_u32 flags = cut_flag_kill_mask(&instruction);
         for (pl_u32 bit = 0u; bit < 12u; ++bit)
-            if (flags & (1u << bit)) plan->last_flag_writer[bit] = i;
+            if (flags & (1u << bit)) plan->last_flag_kill[bit] = i;
         ++plan->report.source_instructions;
         plan->report.source_bytes += instruction.length;
         rip = instruction.fallthrough;
@@ -159,8 +160,10 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         pl_x86_instruction instruction;
         if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
         cut.wanted_flags = 0u;
+        pl_u32 possible = cut_flag_write_mask(&instruction);
         for (pl_u32 bit = 0u; bit < 12u; ++bit)
-            if (plan->last_flag_writer[bit] == i) cut.wanted_flags |= 1u << bit;
+            if ((possible & (1u << bit)) && (plan->last_flag_kill[bit] == ~0u
+                    || i >= plan->last_flag_kill[bit])) cut.wanted_flags |= 1u << bit;
         if (cut.has_port && cut_system_supported(&instruction)) cut_lower_system(&cut, &instruction);
         else if (cut.has_memory && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
         else if (cut.has_memory) cut_lower_memory(&cut, &instruction);

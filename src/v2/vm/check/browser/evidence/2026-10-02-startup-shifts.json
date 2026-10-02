@@ -1,0 +1,26 @@
+{
+  "format": "browser-bzimage-startup-v1",
+  "status": "pass",
+  "linuxBoot": "not-achieved",
+  "retired": 86,
+  "modules": 60,
+  "admissions": 15,
+  "nextRip": "0x12e299e",
+  "nextGate": "SETA AL (conditional register result)",
+  "guestExecution": "C-Wasm table dispatcher/MMU",
+  "coldCompilation": "C-Wasm decoder/planner/emitter",
+  "guestMemoryCallback": "C-Wasm, not JavaScript",
+  "providerBytes": 16103,
+  "compilerBytes": 406416,
+  "memoryBytes": 524288,
+  "coldMemoryBytes": 1048576,
+  "secureContext": true,
+  "isolated": false,
+  "fixtureIntegrity": "local diagnostic SHA-256; not signed production admission",
+  "sourceReceipt": [
+    "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc  native-bundle",
+    "21771c757255406ce090faa6c5108b72618f794c8e46379a4a3d50dc21364e67  root/boot/kernel",
+    "90ad6681efc64bbbf5d10b92ac3aa62cc12eafc6dc88b790cec055a4bffb4ff1  root/boot/initramfs",
+    "62a1aa4720607ec8c3ec38c50041cc7ff3dae9e29ebd335b589283c8e0381212  root/bin/busybox"
+  ]
+}

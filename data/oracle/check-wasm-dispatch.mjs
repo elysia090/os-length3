@@ -16,6 +16,11 @@ for (const name of names) {
   const cases = await readFile(`${prefix}.cases`);
   assert.equal(cases.length, 512 * 35 * 8);
   const records = new DataView(cases.buffer, cases.byteOffset, cases.byteLength);
+  const masks = await readFile(`${prefix}.flags-masks`).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (masks) assert.equal(masks.length, 512 * 8);
   const memory = new WebAssembly.Memory({ initial: 16, maximum: 32 });
   const vm = (await WebAssembly.instantiate(provider, { machine: { memory } })).exports;
   const cut = (await WebAssembly.instantiate(await readFile(`${prefix}.wasm`), { machine: { memory } })).instance.exports.cut;
@@ -61,7 +66,8 @@ for (const name of names) {
     for (let reg = 0; reg < 16; ++reg) expected.setBigUint64(reg * 8, word(17 + reg), true);
     expected.setBigUint64(384, word(34), true); expected.setBigUint64(1128, 42n + BigInt(meta.instructions), true);
     const flags = view.getBigUint64(state + 392, true);
-    assert.equal(flags & BigInt(meta.flagsMask), word(33) & BigInt(meta.flagsMask));
+    const mask = masks ? masks.readBigUInt64LE(row * 8) : BigInt(meta.flagsMask);
+    assert.equal(flags & mask, word(33) & mask, `${name}: defined flags row ${row}`);
     expected.setBigUint64(392, flags, true);
     assert.deepEqual(Buffer.from(memory.buffer, state, meta.stateBytes), saved);
     assert.equal(vm.vm_completed(), 1); assert.equal(vm.vm_source_retired(), BigInt(meta.instructions));

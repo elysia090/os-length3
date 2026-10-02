@@ -30,8 +30,13 @@ const controlRead = await json('control-read.summary.json');
 const configure = await json('configure.summary.json');
 const afterCompare = await json('after-compare.summary.json');
 const cmdlineCut = await json('cmdline-cut.summary.json');
+const cmdlineFind = await json('cmdline-find.summary.json');
+const cmdlineBody = await json('cmdline-body.summary.json');
+const scans = await Promise.all(['state','char','word','option','compare','next','test','increment','rank']
+  .map(async name => ({prefix:`cmdline-${name}`,summary:await json(`cmdline-${name}.summary.json`)})));
 const idtPage = await read('call.extra-page');
 const cmdlinePage = await read('cmdline.extra-page');
+const optionPage = await read('option.extra-page');
 assert.equal(summary.instructions,20); assert.equal(summary.modules,17);
 assert.equal(BigInt(summary.stop.entry),0x1000243n);
 const memory = new WebAssembly.Memory({initial:8,maximum:16});
@@ -51,6 +56,7 @@ const codeOffset = base + 32768, gdtOffset = base + 45056, stackOffset = base + 
 const idtCodeOffset = base + 53248;
 const bssOffset = base + 57344;
 const cmdlineCodeOffset = base + 61440;
+const optionOffset = base + 65536;
 const relocated = 0x1000000n + BigInt(header.readUInt32LE(0x260)) - 0x320000n;
 const stack = relocated + 0x2ea400n;
 const gdt = 0x1000232n + BigInt(kernel.readInt32LE(0x22e));
@@ -65,12 +71,15 @@ assert.equal(view.getBigUint64(rows,true),BigInt(meta.kernelOffset) + gdt - BigI
 assert.equal(view.getUint32(rows + 8,true),1024);
 data.set(last,gdtOffset); data.set(kernel,codeOffset); data.set(idtPage,idtCodeOffset);
 data.set(cmdlinePage,cmdlineCodeOffset);
+assert.equal(vm.vm_boot_project(0x12e4000n,optionOffset,rows),2);
+assert.equal(view.getBigUint64(rows,true),BigInt(meta.kernelOffset) + 0x2e4000n);
+data.set(optionPage,optionOffset);
 assert.equal(vm.vm_boot_project(stack & ~4095n,stackOffset,rows),0);
 assert.equal(vm.vm_boot_project(0x12ea000n,bssOffset,rows),0);
 assert.equal(vm.vm_boot_initial_state(base),0); assert.equal(vm.vm_boot_initial_segments(segments),0);
 const pages = Array.from({length:6},(_,i) => [BigInt((i + 1) * 4096),base + (i + 2) * 4096]);
 pages.push([0x1000000n,codeOffset],[0x12e2000n,cmdlineCodeOffset],[0x12e3000n,idtCodeOffset],
-  [gdt,gdtOffset],[0x12ea000n,bssOffset],[stack & ~4095n,stackOffset]);
+  [0x12e4000n,optionOffset],[gdt,gdtOffset],[0x12ea000n,bssOffset],[stack & ~4095n,stackOffset]);
 for (const [i,[address,offset]] of pages.entries()) {
   const at = directoryOffset + i * 32;
   view.setBigUint64(at,address,true); view.setUint32(at + 8,offset - base,true);
@@ -91,7 +100,11 @@ const cuts = [ ...summary.cuts.map(cut => ({...cut,prefix:'kernel'})),
   ...controlRead.cuts.map(cut => ({...cut,prefix:'control-read'})),
   ...configure.cuts.map(cut => ({...cut,prefix:'configure'})),
   ...afterCompare.cuts.map(cut => ({...cut,prefix:'after-compare'})),
-  ...cmdlineCut.cuts.map(cut => ({...cut,prefix:'cmdline-cut'})) ].sort((a,b) => Number(BigInt(a.entry) - BigInt(b.entry)));
+  ...cmdlineCut.cuts.map(cut => ({...cut,prefix:'cmdline-cut'})),
+  ...cmdlineFind.cuts.map(cut => ({...cut,prefix:'cmdline-find'})),
+  ...cmdlineBody.cuts.map(cut => ({...cut,prefix:'cmdline-body'})),
+  ...scans.flatMap(({prefix,summary:scan}) => scan.cuts.map(cut => ({...cut,prefix})))
+].sort((a,b) => Number(BigInt(a.entry) - BigInt(b.entry)));
 const codeSources = new Map([[0x1000000n,[codeOffset,kernel]],
   [0x12e2000n,[cmdlineCodeOffset,cmdlinePage]],[0x12e3000n,[idtCodeOffset,idtPage]]]);
 const table = vm.__indirect_function_table, firstSlot = table.grow(cuts.length);
@@ -184,18 +197,31 @@ assert.equal(vm.vm_run(port,9n,32),5n); // Actual CALL get_cmdline_str into the 
 assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n);
 assert.equal(view.getBigUint64(base + 384,true),0x12e2a80n);
 await admit();
-assert.equal(vm.vm_run(port,9n,32),6n); assert.equal(vm.vm_source_retired(),4n);
-assert.equal(vm.vm_completed(),4); assert.equal(view.getBigUint64(base + 384,true),0x12e2a96n);
+assert.equal(new TextDecoder().decode(command).replace(/\0.*$/s,''),'console=ttyS0 nokaslr');
+assert.equal(new TextDecoder().decode(optionPage.subarray(0xfa6,0xfad)),'no5lvl\0');
+assert.equal(vm.vm_run(port,9n,32),6n); assert.equal(vm.vm_source_retired(),42n);
+assert.equal(vm.vm_completed(),20); assert.equal(view.getBigUint64(base + 384,true),0x12e299en);
+// Distinguish a true grammar red from an absent preconstructed dispatch row.
+const refusal = new Bytes(compilerMemory.buffer);
+refusal.set(data.subarray(cmdlineCodeOffset,cmdlineCodeOffset + 4096),compilerInput);
+assert.equal(cc.compiler_open_pages(compilerInput,1,0x12e2000n,9n),0);
+refusal.fill(0xa5,compilerOutput,compilerReport + 80);
+assert.equal(cc.compiler_emit(0x12e299en,1024,compilerOutput,65536,compilerReport),-102);
+assert(refusal.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),
+  'unlowered SETA cannot publish bytes/report or execute through a fallback');
 const expected = new Bytes(stateBytes), expectedSegments = new Bytes(segmentBytes);
-expected.writeBigUInt64LE(0x1000n,0); expected.writeBigUInt64LE(0x2000n,2 * 8);
+expected.writeBigUInt64LE(0x6fn,0); expected.writeBigUInt64LE(0x12000n,1 * 8);
+expected.writeBigUInt64LE(0x6en,2 * 8);
 expected.writeBigUInt64LE(relocated,3 * 8);
 expected.writeBigUInt64LE(0x1000n,15 * 8);
 const relocatedInput = relocated + 0x31f000n;
 expected.writeBigUInt64LE(stack - 216n,4 * 8); expected.writeBigUInt64LE(relocatedInput,5 * 8);
-expected.writeBigUInt64LE(0x12e4fa6n,6 * 8); expected.writeBigUInt64LE(0n,7 * 8);
+expected.writeBigUInt64LE(0x12e4fa6n,6 * 8); expected.writeBigUInt64LE(0x2002n,7 * 8);
+expected.writeBigUInt64LE(0xffffe001n,8 * 8); expected.writeBigUInt64LE(3n,9 * 8);
+expected.writeBigUInt64LE(0x12e4fa6n,11 * 8);
 expected.writeBigUInt64LE(0x1000n,12 * 8);
-// CMP 0,0: zero/even-parity, no carry/overflow/AF/SF. JNE must fall through.
-expected.writeBigUInt64LE(0x12e2a96n,384); expected.writeBigUInt64LE(0x46n,392);
+// CMP 'o',space: 0x4f, odd parity, no carry/zero/sign/overflow/AF.
+expected.writeBigUInt64LE(0x12e299en,384); expected.writeBigUInt64LE(0x2n,392);
 expected.writeBigUInt64LE(last.readBigUInt64LE(2) + gdt,432 + 2 * 8);
 expected.writeBigUInt64LE(BigInt(last.readUInt16LE(0)),432 + 3 * 8);
 expected.writeBigUInt64LE(0x12e6050n,432 + 4 * 8);
@@ -210,8 +236,8 @@ assert.equal(descriptor,0x00af9b000000ffffn);
 expectedSegments.writeBigUInt64LE(0n,8 + 16);
 expectedSegments.writeUInt32LE(0xffffffff,8 + 16 + 8);
 expectedSegments.writeUInt32LE(0xa09b,8 + 16 + 12);
-expected.writeBigUInt64LE(48n,1128);
-assert(data.subarray(base,base + stateBytes.length).equals(expected),'complete architectural state after forty-eight actual startup instructions');
+expected.writeBigUInt64LE(86n,1128);
+assert(data.subarray(base,base + stateBytes.length).equals(expected),'complete architectural state after eighty-six actual startup instructions');
 assert(data.subarray(segments,segments + segmentBytes.length).equals(expectedSegments));
 for (const [distance,value] of [[8n,0x1000267n],[16n,0n],[24n,0n],
     [32n,0x1000000n],[40n,relocated],[216n,0x12e3d93n]])
@@ -220,8 +246,8 @@ for (let i = 0; i < cuts.length; ++i) table.set(firstSlot + i,null);
 cc.compiler_close(); vm.vm_close();
 return {
   format:'browser-bzimage-startup-v1', status:'pass', linuxBoot:'not-achieved',
-  retired:48, modules:cuts.length, admissions:admissionCount,
-  nextRip:'0x12e2a96', nextGate:'SHL RDI,32 (register shift)',
+  retired:86, modules:cuts.length, admissions:admissionCount,
+  nextRip:'0x12e299e', nextGate:'SETA AL (conditional register result)',
   guestExecution:'C-Wasm table dispatcher/MMU', coldCompilation:'C-Wasm decoder/planner/emitter',
   guestMemoryCallback:'C-Wasm, not JavaScript',
   providerBytes:providerBytes.byteLength, compilerBytes:compilerBytes.byteLength,

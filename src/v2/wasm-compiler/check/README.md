@@ -93,7 +93,7 @@ unproved costs. There is no decoded-instruction array or ELF-sized heap: up to
 objects. The 1024-source-instruction and module-byte limits fail explicitly.
 Emission rejects output overlap with borrowed input or control descriptors.
 
-Flags use a per-bit last-definition frontier. No supported nonterminal transfer
+The initial register checkpoint used a per-bit last-definition frontier. No supported nonterminal transfer
 consumes arithmetic flags; INC/DEC retain CF and a terminal Jcc consumes the
 final definitions. Therefore only those last definitions need computation.
 This condition must be extended before admitting ADC/CMOV or an interior flag
@@ -275,8 +275,8 @@ is interpreted or silently skipped.
 The current shared C-Wasm path additionally admits memory-destination
 ADD/SUB/AND/OR/XOR, ten-byte LGDT/LIDT records and same-CPL 64-bit far RET.
 The 22 new RMW modules pass 11,264 native-x86 comparisons. The shipped bzImage
-now executes 48 startup instructions in an actual browser Worker and compares
-all CPU/cache bytes; it stops at register SHL `0x12e2a96`, not Linux boot.
+now executes 86 startup instructions in an actual browser Worker and compares
+all CPU/cache bytes; it stops at SETA `0x12e299e`, not Linux boot.
 Outer-CPL/compatibility far transfers and full exception delivery remain red.
 See vm/check/browser/evidence/2026-10-02-rmw-control.md for reservation/Accessed
 write regressions, exact builds and reproducible cold construction.
@@ -300,6 +300,37 @@ node data/oracle/check-control-read.mjs temp/new-control
 node data/oracle/check-control-write.mjs VM.WASM temp/new-control
 bash data/oracle/prepare-compare-cuts.sh temp/new-compare
 node data/oracle/check-wasm-provider.mjs VM.WASM temp/new-compare
+```
+
+## Conditional shift frontier — 2026-10-02
+
+Common register SHL/SHR/SAR lower directly to integer Wasm, not a VM opcode
+callback. Immediate/CL, 8/16/32/64-bit parents, high bytes and aliases are tested.
+Only unconditional flag definitions kill earlier ones. For each bit, retain
+the final unconditional definition and all following conditional definitions;
+count zero leaves those incoming flags intact. This is two bounded linear passes
+with twelve ranks, no per-instruction flag/state materialization. Interior flag
+consumers remain refused until their separate use/definition dependencies exist.
+
+The native observer now emits one flags mask per input. Undefined multi-bit
+OF/AF and narrow logical-shift CF are excluded only where undefined, not from
+count-zero observations. It refuses dynamic-count fixtures whose earlier
+instructions changed RCX; it does not implement a guest interpreter. All 128
+CL count representatives and seeded inputs are observed on actual native x86.
+
+The preimplementation shift fixture refused with -102. **156 post-linked
+modules / 79,872 cases** now pass both direct Wasm and actual C table/MMU
+dispatch. Existing pure/memory/RMW/stack/CMP tests remain green; **534** total
+native/cold emissions are byte-identical including repeats. Full C checks and
+compiler ASan/UBSan pass. The same shipped bzImage reaches **86** instructions
+in an ordinary-memory browser Worker; SETA AL still refuses emission with -102
+and leaves the output reservation unchanged. No Linux/PID 1/cold-ready claim.
+See [the current receipt](../../vm/check/browser/evidence/2026-10-02-shifts.md).
+
+```sh
+bash data/oracle/prepare-shift-cuts.sh temp/new-shifts
+node data/oracle/check-wasm-cuts.mjs temp/new-shifts
+node data/oracle/check-wasm-dispatch.mjs VM.WASM temp/new-shifts
 ```
 
 ```sh

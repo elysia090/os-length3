@@ -245,11 +245,11 @@ Inspection on 2026-10-02 found:
   precise long-mode, non-PVI/non-VM cut; pending faults are not exception entry.
   Register-source segment loads now use the C GDT/LDT/cache boundary, with a
   versioned architectural companion and MOV SS shadow. The actual shipped
-  startup now retires 48 source instructions to `0x12e2a96` in a real browser
+  startup now retires 86 source instructions to `0x12e299e` in a real browser
   Worker and Node/C-Wasm. Memory RMW, LGDT/LIDT and same-CPL long-mode far RET
-  and general control-register reads/writes and memory CMP/TEST are admitted. Register shifts/MSR,
+  and general control-register reads/writes, memory CMP/TEST and register SHL/SHR/SAR are admitted. SETcc/MSR,
   complete exception/device startup remain open.
-  See [the current checkpoint](../vm/check/browser/evidence/2026-10-02-control-write.md).
+  See [the current checkpoint](../vm/check/browser/evidence/2026-10-02-shifts.md).
   Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
   16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
   with no JavaScript guest-memory callback. CPU exception delivery remains
@@ -364,9 +364,10 @@ browser observation and does not replace the retained v1 receipt.
 
 The latest checkpoint supersedes that three-instruction prefix: typed C memory
 RMW, table loads, same-CPL long-mode far RET, control reads/writes and memory
-CMP/TEST advance to 48 instructions in the actual browser. The next grammar
-red is `SHL RDI,32` at `0x12e2a96`, after the real CALL destination page is supplied.
-Next: common register shifts, MSR and remaining actual compressed
+CMP/TEST and register shifts advance to 86 instructions in the actual browser.
+The command-line option page also comes from the same authenticated bzImage.
+The next grammar red is `SETA AL` at `0x12e299e` (cold compilation refuses -102).
+Next: common interior flag-consumer dependencies, SETcc, MSR and remaining compressed
 startup operations, complete executable-generation/load/CPU attestation and
 exception entry. A cold compiler and bounded table admission exist; they do
 not yet provide whole-image closure or a production authenticated code supply.
@@ -423,31 +424,32 @@ cross that construction boundary. Do not instantiate both onto an overlapping
 C static-memory layout. Cold memory can be discarded after its derived modules
 are placed, but actual RSS reclamation is not measured.
 
-Native C and cold C-Wasm outputs match byte-for-byte in 362 emissions, including
+Native C and cold C-Wasm outputs match byte-for-byte in 534 emissions, including
 repeats, over the exact bundle/startup prefixes, 83 pure, 22 memory, 11
-stack/control, 22 new RMW, 80 control-read, 80 control-write and 16 memory CMP/TEST
+stack/control, 22 new RMW, 80 control-read, 80 control-write, 16 memory CMP/TEST
+and 156 register-shift
 fixtures. The v3 diagnostic Worker **constructs** its memory cut in C-Wasm,
 compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
 only an oracle; it is never an execution fallback. The standard browser-control
 route now works: actual `provider.html` v3 passes 512 comparisons and
-`startup.html` executes 48 shipped startup instructions with full CPU/cache
+`startup.html` executes 86 shipped startup instructions with full CPU/cache
 state comparison. Ordinary memory, secure context and no isolation were observed.
 Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
 receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. Register shift/MSR startup,
+remaining ISA/system/exception/device semantics. SETcc/MSR startup,
 complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
 
-Reproduce the fixed 48-instruction witness with
+Reproduce the fixed 86-instruction witness with
 `data/oracle/prepare-startup-cuts.sh`, then `check-wasm-startup.mjs` and
 `prepare-browser-startup.mjs`. The common validator runs in Node and the browser;
 it is diagnostic input construction/assertions, not JS guest execution.
 Its fixture manifest does not authenticate a production release. See the
-[current evidence](../vm/check/browser/evidence/2026-10-02-control-write.md) for
+[current evidence](../vm/check/browser/evidence/2026-10-02-shifts.md) for
 exact hashes, reservation preconditions and the remaining red gates.
 
 ## Platform sources

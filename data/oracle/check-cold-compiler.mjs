@@ -53,6 +53,10 @@ for (const [prefix,sourceName,address] of [['after-return','boot.kernel-page',Bi
     ['configure','call.extra-page',0x12e3000n],
     ['after-compare','call.extra-page',0x12e3000n],
     ['cmdline-cut','cmdline.extra-page',0x12e2000n],
+    ['cmdline-find','cmdline.extra-page',0x12e2000n],
+    ['cmdline-body','cmdline.extra-page',0x12e2000n],
+    ...['state','char','word','option','compare','next','test','increment','rank']
+      .map(name => [`cmdline-${name}`,'cmdline.extra-page',0x12e2000n]),
     ['idt','call.extra-page',0x12e3000n]]) {
   let summary;
   try { summary = JSON.parse(await readFile(path.join(bundleDirectory,`${prefix}.summary.json`))); }

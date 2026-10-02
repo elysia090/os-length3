@@ -26,6 +26,11 @@ for (const file of files) {
   const instance = await WebAssembly.instantiate(module, { machine: { memory } });
   const cases = await readFile(`${prefix}.cases`);
   const records = new DataView(cases.buffer, cases.byteOffset, cases.byteLength);
+  const masks = await readFile(`${prefix}.flags-masks`).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+    return null; // Older immutable receipts use the recorded common mask.
+  });
+  if (masks) assert.equal(masks.length, 512 * 8);
   assert.equal(cases.length, 512 * 35 * 8);
   assert.equal(meta.stateBytes % 8, 0);
   for (let row = 0; row < 512; ++row) {
@@ -48,7 +53,7 @@ for (const file of files) {
       BigInt.asUintN(64, 0xfffffffffffffffen + BigInt(meta.instructions)), true);
     assert.equal(instance.exports.cut(offset), 1n, `${file}: result row ${row}`);
     const flags = view.getBigUint64(offset + meta.flagsOffset, true);
-    const mask = BigInt(meta.flagsMask);
+    const mask = masks ? masks.readBigUInt64LE(row * 8) : BigInt(meta.flagsMask);
     assert.equal(flags & mask, word(33) & mask, `${file}: defined flags row ${row}`);
     expectedView.setBigUint64(offset + meta.flagsOffset, flags, true);
     assert.deepEqual(actual, expected, `${file}: complete memory/cut row ${row}`);

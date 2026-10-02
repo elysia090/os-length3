@@ -53,6 +53,61 @@ static int same_report(const wasm_cut_report *a, const wasm_cut_report *b)
         && a->memory_bytes == b->memory_bytes && a->memory_access == b->memory_access;
 }
 
+static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *report,
+                             pl_u64 initial_rcx, pl_u64 *out)
+{
+    pl_u64 rip = report->entry, mask = ~0ull;
+    int rcx_written = 0;
+    for (pl_u64 i = 0u; i < report->source_instructions; ++i) {
+        pl_x86_instruction instruction;
+        if (pl_x86_decode(image, rip, &instruction)) return 0;
+        switch (instruction.operation) {
+        case PL_X86_OPERATION_SHIFT: {
+            const pl_x86_operand *count = &instruction.operands[1];
+            /* This observer does not interpret a preceding RCX write. Fixtures
+             * keep CL stable until its last use, including CL/CH aliases. */
+            if (count->kind == PL_X86_OPERAND_REGISTER && rcx_written) return 0;
+            pl_u32 width = instruction.operands[0].bits;
+            pl_u64 bits = count->kind == PL_X86_OPERAND_IMMEDIATE
+                        ? count->value.immediate : initial_rcx;
+            pl_u64 n = bits & (width == 64u ? 63u : 31u);
+            if (n) {
+                mask |= 0xc5u; /* PF, ZF, SF and initially CF */
+                mask &= ~0x810ull; /* AF and multi-bit OF are undefined */
+                if (n == 1u) mask |= 0x800u;
+                if (instruction.condition != 7u && n >= width) mask &= ~1ull;
+            }
+            break;
+        }
+        case PL_X86_OPERATION_AND:
+        case PL_X86_OPERATION_OR:
+        case PL_X86_OPERATION_XOR:
+        case PL_X86_OPERATION_TEST: mask = (mask | 0x8c5u) & ~0x10ull; break;
+        case PL_X86_OPERATION_INCREMENT:
+        case PL_X86_OPERATION_DECREMENT: mask |= 0x8d4u; break;
+        case PL_X86_OPERATION_ADD:
+        case PL_X86_OPERATION_SUBTRACT:
+        case PL_X86_OPERATION_COMPARE:
+        case PL_X86_OPERATION_NEGATE: mask |= 0x8d5u; break;
+        case PL_X86_OPERATION_FLAG_CONTROL:
+            if (instruction.condition < 2u) mask |= 1u;
+            else if (instruction.condition == 3u || instruction.condition == 4u) mask |= 0x400u;
+            break;
+        default: break;
+        }
+        for (pl_u32 rank = 0u; rank < instruction.visible_operand_count; ++rank) {
+            const pl_x86_operand *operand = &instruction.operands[rank];
+            if (operand->kind == PL_X86_OPERAND_REGISTER
+                    && operand->value.reg.class_id == PL_X86_REGISTER_GPR
+                    && operand->value.reg.index == 1u
+                    && (operand->flags & (PL_X86_OPERAND_WRITE | PL_X86_OPERAND_CONDITIONAL_WRITE)))
+                rcx_written = 1;
+        }
+        rip = instruction.fallthrough;
+    }
+    *out = mask; return 1;
+}
+
 static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
                        const char *prefix)
 {
@@ -103,33 +158,20 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
     if (!source_okay) { munmap(mapping, mapping_bytes); return 0; }
     FILE *cases = output_file(prefix, "cases");
     FILE *meta = output_file(prefix, "json");
-    if (!cases || !meta) {
+    FILE *masks = output_file(prefix, "flags-masks");
+    if (!cases || !meta || !masks) {
         if (cases) fclose(cases);
         if (meta) fclose(meta);
+        if (masks) fclose(masks);
         munmap(mapping, mapping_bytes); return 0;
     }
     pl_u64 flags_mask = ~0ull;
-    /* Logical AF is undefined, not an assertion about the native CPU. */
+    /* Flags have a per-input definedness mask. Count zero is fully preserved;
+     * excluding AF/OF globally would hide precisely that dependency bug. */
     pl_x86_map map = { (pl_u8 *)mapping, (pl_u64)(uintptr_t)mapping,
                       mapping_bytes, mapping_bytes, 5u, 1u };
     pl_x86_image image = { &map, 1u, 0u, report->entry };
-    pl_u64 rip = report->entry;
     int okay = 1;
-    for (pl_u64 i = 0u; i < report->source_instructions; ++i) {
-        pl_x86_instruction instruction;
-        if (pl_x86_decode(&image, rip, &instruction)) { okay = 0; break; }
-        if (instruction.operation == PL_X86_OPERATION_AND
-                || instruction.operation == PL_X86_OPERATION_OR
-                || instruction.operation == PL_X86_OPERATION_XOR
-                || instruction.operation == PL_X86_OPERATION_TEST) flags_mask &= ~0x10ull;
-        else if (instruction.operation == PL_X86_OPERATION_ADD
-                || instruction.operation == PL_X86_OPERATION_SUBTRACT
-                || instruction.operation == PL_X86_OPERATION_COMPARE
-                || instruction.operation == PL_X86_OPERATION_INCREMENT
-                || instruction.operation == PL_X86_OPERATION_DECREMENT
-                || instruction.operation == PL_X86_OPERATION_NEGATE) flags_mask = ~0ull;
-        rip = instruction.fallthrough;
-    }
     pl_u64 seed = 0x0123456789abcdefull;
     for (pl_u32 i = 0u; okay && i < 512u; ++i) {
         machine_state state = { 0 };
@@ -146,8 +188,19 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
             }
             state.registers[reg] = value; record[reg] = value;
         }
+        /* Include every count in both masking domains, not only random CL. */
+        if (i < 128u) {
+            state.registers[1] = (state.registers[1] & ~255ull) | i;
+            record[1] = state.registers[1];
+        }
         state.rflags = 0x202u | (random_word(&seed) & 0xcd5u);
         record[16] = state.rflags;
+        pl_u64 row_mask;
+        if (!oracle_flags_mask(&image, report, state.registers[1], &row_mask)) {
+            fprintf(stderr, "native defined-flags observer requires stable CL input\n");
+            okay = 0; break;
+        }
+        flags_mask &= row_mask;
         native_cut(&state, (const void *)(uintptr_t)report->entry);
         record[4] = state.registers[4];
         pl_u64 next = report->continuation;
@@ -160,6 +213,7 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
         for (pl_u32 reg = 0u; reg < 16u; ++reg) record[17u + reg] = state.registers[reg];
         record[33] = state.rflags; record[34] = next;
         if (fwrite(record, sizeof record, 1u, cases) != 1u) { okay = 0; break; }
+        if (fwrite(&row_mask, sizeof row_mask, 1u, masks) != 1u) { okay = 0; break; }
     }
     if (fprintf(meta,
         "{\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,"
@@ -172,6 +226,7 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
         report->boundary) < 0) okay = 0;
     if (fclose(cases)) okay = 0;
     if (fclose(meta)) okay = 0;
+    if (fclose(masks)) okay = 0;
     if (munmap(mapping, mapping_bytes)) okay = 0;
     return okay;
 }

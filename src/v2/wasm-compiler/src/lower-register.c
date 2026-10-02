@@ -64,11 +64,24 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_TEST: return 0x8d5u;
     case PL_X86_OPERATION_INCREMENT:
     case PL_X86_OPERATION_DECREMENT: return 0x8d4u;
+    case PL_X86_OPERATION_SHIFT:
+        if (!cut_shift_supported(instruction)) return 0u;
+        if (instruction->operands[1].kind == PL_X86_OPERAND_IMMEDIATE
+                && !(instruction->operands[1].value.immediate
+                     & (instruction->operands[0].bits == 64u ? 63u : 31u))) return 0u;
+        return 0x8d5u;
     case PL_X86_OPERATION_FLAG_CONTROL:
         return instruction->condition < 2u ? 1u
             : instruction->condition == 3u || instruction->condition == 4u ? 0x400u : 0u;
     default: return 0u;
     }
+}
+
+pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction)
+{
+    if (instruction->operation == PL_X86_OPERATION_SHIFT
+            && instruction->operands[1].kind == PL_X86_OPERAND_REGISTER) return 0u;
+    return cut_flag_write_mask(instruction);
 }
 
 int cut_instruction_supported(const pl_x86_instruction *instruction)
@@ -97,6 +110,7 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_NEGATE:
     case PL_X86_OPERATION_INCREMENT:
     case PL_X86_OPERATION_DECREMENT: return count == 1u;
+    case PL_X86_OPERATION_SHIFT: return cut_shift_supported(instruction);
     case PL_X86_OPERATION_MOVE:
     case PL_X86_OPERATION_MOVE_ZERO_EXTEND:
     case PL_X86_OPERATION_MOVE_SIGN_EXTEND:
@@ -245,6 +259,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     const pl_x86_operand *operands = instruction->operands;
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
+    if (operation == PL_X86_OPERATION_SHIFT) { cut_lower_shift(cut, instruction); return; }
     if (operation == PL_X86_OPERATION_FLAG_CONTROL) {
         pl_u32 bit = instruction->condition < 2u ? 1u : 0x400u;
         if (!(cut->wanted_flags & bit)) return;

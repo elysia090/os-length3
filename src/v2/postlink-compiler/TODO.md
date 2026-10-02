@@ -42,20 +42,21 @@ to postpone the next browser product goal behind new native size/speed work.
 
 ## Active browser work — 2026-10-02
 
-Current executable checkpoint: the exact shipped bzImage advances to 48 source
+Current executable checkpoint: the exact shipped bzImage advances to 86 source
 instructions in an actual ordinary-memory browser Worker through cold C-Wasm
 compilation and C table/MMU execution. Common CR0/2/3/4/8 writes now enforce the
 fixed CPU profile and revoke execution admission even for equal-value writes;
-read-only memory CMP/TEST shares the existing ALU/flags path. Full CPU/cache and
-stack/BSS observations pass. The CALL destination page is supplied from the
-same authenticated bundle, not left as an artificial missing-page blocker.
-Next concrete grammar red: `0x12e2a96`, `SHL RDI,32`. Implement common register
-shift lowering with precise defined flags and the conditional count-zero flag
-frontier (do not discard a preceding flag writer),
+read-only memory CMP/TEST shares the existing ALU/flags path. Common register
+SHL/SHR/SAR now lowers immediate/CL counts at all integer widths; conditional
+count-zero definitions retain their incoming flag frontier. 79,872 native
+cases pass both direct Wasm and C VM dispatch. Full CPU/cache and stack/BSS
+observations pass, and the command-line option page comes from the same bundle.
+Next concrete grammar red: `0x12e299e`, `SETA AL`. Extend the general flag
+use/definition frontier for interior consumers and lower register SETcc,
 then exact exception entry and required device/root supply. Never skip source
 instructions or substitute another kernel/backend. Whole-image `-104`, Linux
 boot, PID 1 and development acceptance remain red. Source/native asset and
-human UI are unchanged. See the RMW/control evidence linked from BROWSER.md.
+human UI are unchanged. See the shift evidence linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
 implementation, not the minor native benchmark difference: whole-image Wasm
