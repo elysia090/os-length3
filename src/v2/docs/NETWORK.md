@@ -41,6 +41,12 @@ Ethernet frames use WebTransport datagrams. Loss and reordering remain visible
 to Linux; the browser does not add another acknowledgement or retransmission
 scheme over TCP and QUIC.
 
+Admission requires an actual datagram-capable session, not just the existence
+of `WebTransport`. Reject reliable-only negotiation, absent datagrams or an
+an unusable maximum datagram size as unavailable networking. Do not quietly
+substitute reliable streams or fetch for the NIC. This does not block offline
+shell readiness.
+
 A single reliable bidirectional stream carries only control records:
 
 ```text
@@ -53,17 +59,42 @@ credit(generation, receive_frames, receive_bytes)
 close(generation, reason)
 ```
 
-The negotiated guest MTU is no greater than the WebTransport maximum datagram
-size minus the generation header. Tunnel fragmentation is not implemented.
-The gateway must return the ordinary ICMP packet-too-big signal when its onward
-path has a smaller MTU.
+Do not derive guest MTU by blindly subtracting a transport header from the
+datagram limit. IPv6 requires a link MTU of at least 1280; a smaller carrier
+requires fragmentation/reassembly below IPv6. Ethernet and bridge headers also
+consume bytes. The guest link keeps its declared Linux MTU (initial target:
+1500), while the bridge fragments an opaque Ethernet frame when necessary.
+This is not IP fragmentation, a socket implementation or a reliable tunnel.
+The gateway still returns ordinary ICMP packet-too-big for a smaller *onward*
+IP path.
 
-Every datagram starts with the negotiated fixed-width protocol version and a
-64-bit generation, followed by exactly one Ethernet frame. The WebTransport
-session already preserves datagram boundaries and QUIC authenticates the
-record, so there is no length field, packet hash, or transport-level sequence
-number. Trace order is recorded at `network_poll`; TCP and QUIC already own the
-sequence spaces they require.
+The not-yet-implemented bridge protocol uses one fixed 32-byte little-endian
+header, including on single-fragment frames:
+
+```
+version:u32 | frame_extent:u32 | generation:u64 | frame_rank:u64
+fragment_rank:u32 | fragment_stride:u32
+```
+
+For admitted datagram budget `D > 32`, stride `P = D - 32`, frame extent `F`,
+fragment `i` has exactly the bytes `[i*P, min(F,(i+1)*P))`. The receiver checks
+the negotiated stride, nonzero bounded `F`, rank `< ceil(F/P)` and that exact
+payload extent **before** copying. One bounded arena reservation and presence
+bitmap hold a frame; no packet-sized prefix scan, file hash or second buffer
+per fragment is required. Bound pending frame count, fragment count, bytes,
+rate and lifetime. Discard incomplete/expired/invalid frames, duplicate parts
+never advance completion twice, and admit a complete frame only once. Loss
+remains normal link packet loss; the bridge does not retransmit or ACK fragments.
+The frame rank is only a reassembly coordinate, not a TCP/QUIC reliability
+sequence. It cannot wrap under the same session/generation. Raw peer traffic
+remains untrusted input, and this design is not yet an implemented NIC.
+
+The WebTransport session already preserves datagram boundaries and QUIC
+authenticates its records. Authority scope and grant revision are immutable
+session bindings outside this header: queued/callback records retain their
+captured binding rather than acquiring the latest grant at delivery time.
+Regrant opens a newly authorized session. Trace order is recorded at
+`network_poll`; reliable control records are not a second packet transport.
 
 The WebTransport connection lives outside the disposable VM worker. Restarting
 the VM publishes a new generation before any frame is admitted. Frames and
@@ -104,16 +135,44 @@ acknowledges a TX descriptor only after the frame has either entered the
 bounded WebTransport send queue or been deliberately dropped by the declared
 queue policy.
 
+## Workspace connections and ingress
+
+The product model is the workspace connection defined in
+[BROWSER.md](BROWSER.md), not a list of emulated PC hardware. A network grant
+binds workspace, authority scope, resource/lane, machine generation, grant revision,
+gateway policy, direction, routes, expiry and byte/queue budgets. The C resource
+gate fences operation completions; the gateway independently enforces origin,
+session and route policy. Revoke stops new admissions and closes the connection,
+but cannot unsend a frame already delivered to an external peer.
+
+A development server needs a separate **publish** grant for one guest port and
+its ingress audience. The packet gateway can route/NAT that ingress through
+the same NIC; it does not expose all ports or add host reachability by default.
+Return an actual usable browser endpoint, not a guest-local IP that the browser
+cannot route. A guest TLS endpoint keeps its TLS keys/certificate semantics in
+Linux. If HTTPS preview of a plain HTTP server requires an external application
+proxy, it is a distinct, declared service with its own TLS termination and
+audience policy, not a change to the packet gateway invariant or a silent
+guest socket fallback. Test expiry/revocation and cross-workspace access.
+
+The browser transport broker may outlive the CPU Worker. This does not entitle
+old network replies to mutate a replacement machine; generation and grant
+revision are checked before RX admission. Live link recovery still follows the
+declared link-down/up contract unless a full network/device suspend cut has
+been proved. No browser or Service Worker API promises immortal TCP sessions.
+
 ## Implementation order
 
 1. Enable the upstream Linux network stack and `virtio-mmio`/`virtio-net`
    drivers without patching kernel networking code.
 2. Add the standard virtio MMIO register page, one RX queue, one TX queue, and
    one interrupt to the x86 machine.
-3. Publish bounded TX/RX batches through `network_poll` in Python, `vm.wasm`,
-   and the browser with no interpreter fallback.
-4. Add the WebTransport adapter and gateway, then prove ICMP, DNS, HTTPS, Git,
-   packet loss, MTU reduction, worker restart, and deterministic replay.
+3. Publish bounded TX/RX batches through the C machine ABI and `vm.wasm` to
+   the browser host transport; no Python/JS instruction or socket fallback.
+4. Add the bounded C frame bridge, WebTransport adapter and gateway, then prove
+   ICMP, DNS, HTTPS, Git, IPv4/IPv6 with a datagram budget smaller than 1280,
+   duplicate/reordered/missing fragments, MTU reduction, worker restart and
+   deterministic replay. Resource-gate unit success cannot pass this gate.
 
 ## Standards
 
@@ -121,4 +180,6 @@ queue policy.
 - RFC 9221, *An Unreliable Datagram Extension to QUIC*.
 - RFC 9297, *HTTP Datagrams and the Capsule Protocol*.
 - RFC 9484, *Proxying IP in HTTP*.
+- [RFC 8200 section 5](https://www.rfc-editor.org/rfc/rfc8200.html#section-5), IPv6 minimum link MTU and below-IP fragmentation.
+- [WebTransport maximum datagram size](https://developer.mozilla.org/en-US/docs/Web/API/WebTransportDatagramDuplexStream/maxDatagramSize).
 - W3C, *WebTransport*, Working Draft.

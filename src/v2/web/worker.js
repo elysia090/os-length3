@@ -1,15 +1,16 @@
 /* Playground control boundary.
  *
- * Source execution is deliberately unavailable until the C post-link compiler
- * is published as an accepted optimized ELF and lowered through the common VM.
+ * Source execution is unavailable until the browser frontend and accepted-x86
+ * lowering are connected to the compiled machine. Native post-link publication
+ * does not by itself establish a runnable browser backend.
  * This worker never imports a language runtime, compiler wrapper, or alternate
  * WebAssembly executor. Keeping the UI responsive while the product gate is
  * red is preferable to silently reviving a second execution route.
  */
 
 const unavailable = {
-  message: 'native post-link emission is not published yet',
-  text: 'Run requires linked x86 -> optimized x86 -> VM. The native emitter is still the active publication gate.',
+  message: 'browser execution is not connected yet',
+  text: 'Run requires linked x86 -> optimized x86 -> Wasm -> VM. The native bundle is published; browser lowering and machine execution remain incomplete.',
 };
 
 function post(type, payload = {}) {
@@ -32,7 +33,7 @@ function rejectSolve() {
   post('done', {
     has_main: false,
     run_ready: false,
-    result: { ok: false, stage: 'postlink', error: unavailable },
+    result: { ok: false, stage: 'browser', error: unavailable },
   });
 }
 

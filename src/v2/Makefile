@@ -1,5 +1,5 @@
 PRODUCTS = support x86 optimized-x86 machine-abi artifact storage \
-	postlink-compiler wasm-compiler
+	postlink-compiler wasm-compiler vm
 BUILD ?= build
 SITE ?= ../../dist
 ARTIFACT ?= ../../artifact
@@ -28,6 +28,7 @@ site:
 x86 optimized-x86 machine-abi artifact storage: support
 postlink-compiler: x86 optimized-x86
 wasm-compiler: optimized-x86 machine-abi
+vm: machine-abi artifact storage
 
 $(PRODUCTS):
 	$(MAKE) -C $@ all

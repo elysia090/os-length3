@@ -171,8 +171,9 @@ src/v2/
 │  │  ├─ memory.h
 │  │  ├─ mmu.h
 │  │  ├─ device.h
-│  │  └─ lifecycle.h
-│  ├─ core/
+│  │  ├─ lifecycle.h
+│  │  └─ resource.h
+│  ├─ core/resource.c       scoped host-batch admission; machine core pending
 │  ├─ wasm/
 │  └─ check/
 └─ web/
@@ -269,6 +270,8 @@ The derivations and invariants are normative in:
 - [STORAGE.md](docs/STORAGE.md)
 - [NETWORK.md](docs/NETWORK.md)
 - [DISTRIBUTION.md](docs/DISTRIBUTION.md)
+- [BROWSER.md](docs/BROWSER.md): browser constraints, release binding, red gates
+  and implementation order for the shipped native bundle.
 
 ## Deletion rule
 

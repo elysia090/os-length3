@@ -40,6 +40,47 @@ they are not the new Release asset name.
 The older ordered witness list below is a diagnostic backlog, not permission
 to postpone the next browser product goal behind new native size/speed work.
 
+## Active browser work — 2026-10-02
+
+Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
+implementation, not the minor native benchmark difference: Wasm function/
+module/dispatch emission returns `WASM_COMPILER_ERROR_INCOMPLETE`, the compiled
+machine/MMU/devices are absent, and the old terminal names an artifact outside the
+current catalog. Do not re-enable that historical input as a shortcut.
+
+First establish real-browser capability probes and a built CLI/executable
+projection red gate, then implement cold accepted-x86 lowering and the C
+machine boundary. Single-worker wasm32 with bounded physical residency is the
+baseline; memory64, shared workers and network grants do not gate offline boot.
+Executable generation from C/as/ld and kernel patching needs compile admission,
+not an interpreter or a pre-enumerated list of future user programs.
+
+Boundary checkpoint: the user-supplied ordinary-memory browser probe passed
+two successive Workers, the i64/memory/table ABI and an eight-byte Range read.
+The isolated browser and RSS reclamation are not measured. The built Wasm CLI
+accepts the shipped BusyBox proof but rejects executable emission with `-104`;
+this remains a real red gate, not a browser boot. Rejected reopen now clears
+all previously admitted ELF state; its regression first failed and then passed.
+
+Expanded browser success condition: boot is only the entry gate. The same Linux
+workspace must use encrypted page-native local/remote storage, explicit selected
+file import/export, revocable NIC/gateway connectivity and publication of a
+chosen guest service to a real browser URL. Browser consent, grant revision,
+machine generation and durability/root receipts have distinct lifetimes. See
+BROWSER.md's acceptance matrix; no QEMU feature-superset or raw-socket claim.
+The small C resource gate now passes stale/duplicate/cancel/revoke, range/budget,
+authority-restart, lane-alias and exhaustion tests, including 100,000 cases and
+ASan/UBSan. Root product checks also pass. A two-lane equal-sequence reply first
+failed; the complete ticket address now includes lane rank. API inventory is
+passive, requests no browser consent and reports no connection as usable.
+This control boundary does not make the still-missing executable lowering, MMU
+or virtio implementation green. The next implementation remains accepted-x86
+lowering and C machine/device integration, then binding these resource lanes to
+real encrypted storage, file transfer and NIC/publish adapters.
+NETWORK.md now separates guest MTU from carrier datagram budget: the unimplemented
+C frame bridge must support bounded below-IP fragmentation, not disable IPv6 by
+shrinking its link below 1280 or quietly move packets onto reliable streams.
+
 ## Previous acceptance state — before compiler refactor, 2026-10-02
 
 The full `febcab1c...` bake completed successfully. The exact local native

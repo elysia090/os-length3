@@ -33,6 +33,8 @@ typedef struct {
     pl_u64 bytes;
 } wasm_compile_report;
 
+/* Borrow immutable ELF bytes until the compiler is discarded. Failed reopen
+ * invalidates the compiler; it must not retain a previous accepted image. */
 int wasm_compiler_open(wasm_compiler *compiler,
                        const pl_u8 *elf, pl_u64 elf_bytes);
 int wasm_compiler_measure(const wasm_compiler *compiler,

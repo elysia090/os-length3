@@ -20,6 +20,15 @@ authenticated extents through fetch/browser persistence, holds dirty COW pages
 outside disposable Workers, and drops Worker-owned Wasm memory on eviction.
 The tier mechanism changes; admission through the canonical root does not.
 
+Browser resource/consent and workspace behavior are specified in
+[BROWSER.md](BROWSER.md). OPFS, IndexedDB, Cache and Web Locks are adapters,
+not guest VFS or a distributed root authority. A successful cache write or
+`persist()` grant does not prove remote durability. Connection operation ACKs
+must pass generation/revision fencing and then storage authentication; only
+the receipt/quorum and root-CAS contract below can acknowledge a durable commit.
+User-selected plaintext import/export is an explicitly granted transfer outside
+the managed ciphertext tiers. It never creates a browser POSIX filesystem.
+
 ## Required properties
 
 Let `A` be the canonical executable or filesystem object and let `T_i` be any
