@@ -76,6 +76,9 @@ $(BUILD)/fetch-fixture.elf: check/fetch-fixture.S | $(BUILD)
 $(BUILD)/code-cut-check: check/code-cut.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+$(BUILD)/flags-check: check/flags.c check/native-flags.S | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) check/flags.c check/native-flags.S -o $@
+
 cut-check: all $(BUILD)/cut-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to the post-linked cut fixture\n' >&2; exit 2; }
 	$(BUILD)/cut-check "$(INPUT)"
@@ -139,10 +142,11 @@ stack-fixture-check: $(BUILD)/stack-cut-check fixture-tools
 	$(BUILD)/stack-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
 	$(BUILD)/admission-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
+	$(BUILD)/flags-check
 	bash ../../../data/oracle/check-wasm-cli.sh $(BUILD)/wasm-compiler
 	@! grep -REn '#include <postlink/|machine-artifact|STEP|Pyodide|Python' include src
 	@! grep -REn 'postlink\.program|OX_PROGRAM|ox_program' include src

@@ -342,3 +342,33 @@ node data/oracle/check-provider-worker.mjs
 The last command exercises only the diagnostic Worker's setup under Node with
 fixture delivery adapted to files. Its guest execution is actual C-Wasm, but
 it is NOT a browser permission/Worker/transport observation or Linux boot.
+
+## Fixed CPU and stack flags — 2026-10-03
+
+CPUID emits the fixed release profile as constants, not host CPUID or a VM
+operation import. All four zero-extended outputs and unchanged CPU words are
+checked against an independent literal table: 7,504 direct/C-dispatch cases,
+plus 15,008 unchanged TF/RF refusals. Non-structured leaves ignore ECX;
+structured rows currently all vanish to zero. A profile change must update
+the normative table and its independent red gate, never discover host bits.
+
+Both 16/64-bit PUSHF/POPF use the existing precise C MMU stack transfer. The
+POPF mask comes from CPL and incoming IOPL; reserved/VM/VIF/VIP bits persist,
+RF clears, and AC/ID are full-width only. Four emission refusals were first
+RED. 8,192 CPL/IOPL CPU/RAM cases, 4,096 real CPL3 record comparisons, and 36
+stack-fault/pending/stale/alias/entry-flag cases now pass. The assembly observer
+restores host flags and never enables TF/AC/NT on the host. Model coverage of
+those bits is not an exception/debug/interrupt delivery proof.
+
+```sh
+mkdir temp/new-flags
+build/code-cut-check temp/new-flags
+build/flags-check temp/new-flags/native.bin
+node ../../../data/oracle/check-cpuid.mjs VM.WASM temp/new-flags
+node ../../../data/oracle/check-stack-flags.mjs VM.WASM temp/new-flags
+```
+
+The actual browser startup reaches 378 instructions and checks the derived
+relocation registers, then refuses REP MOVSQ at `0x1000281`. Complete CPU/cache
+observation at 86 is preserved. Linux boot and whole-image closure remain RED.
+See [the build-specific receipt](../../vm/check/browser/evidence/2026-10-03-cpu-stack-flags.md).

@@ -246,12 +246,13 @@ Inspection on 2026-10-02 found:
   precise long-mode, non-PVI/non-VM cut; pending faults are not exception entry.
   Register-source segment loads now use the C GDT/LDT/cache boundary, with a
   versioned architectural companion and MOV SS shadow. The actual shipped
-  startup now retires 351 source instructions to `0x12e3d9b` in a real browser
+  startup now retires 378 source instructions to `0x1000281` in a real browser
   Worker and Node/C-Wasm. Memory RMW, LGDT/LIDT and same-CPL long-mode far RET
   and general control-register reads/writes, memory CMP/TEST, register SHL/SHR/SAR
-  and all 16 register SETcc conditions are admitted. CPUID/MSR,
+  and all 16 register SETcc conditions are admitted. Fixed-profile CPUID and
+  16/64-bit stack flags transfers also pass their independent matrices. REP MOVS/MSR,
   complete exception/device startup remain open.
-  See [the current checkpoint](../vm/check/browser/evidence/2026-10-03-conditions.md).
+  See [the current checkpoint](../vm/check/browser/evidence/2026-10-03-cpu-stack-flags.md).
   Scalar memory plus 64-bit PUSH/POP/direct CALL/RET cuts pass 33 modules and
   16,896 native/Node comparisons through the actual C-Wasm access/MMU export,
   with no JavaScript guest-memory callback. CPU exception delivery remains
@@ -366,10 +367,11 @@ browser observation and does not replace the retained v1 receipt.
 
 The latest checkpoint supersedes that three-instruction prefix: typed C memory
 RMW, table loads, same-CPL long-mode far RET, control reads/writes and memory
-CMP/TEST, register shifts and SETcc advance to 351 instructions in the actual browser.
+CMP/TEST, register shifts, SETcc, fixed-profile CPUID and stack flags advance to
+378 instructions in the actual browser.
 The command-line option page also comes from the same authenticated bzImage.
-The next grammar red is `CPUID` at `0x12e3d9b` (cold compilation refuses -102).
-Next: fixed-profile CPUID, MSR and remaining compressed
+The next grammar red is `REP MOVSQ` at `0x1000281` (cold compilation refuses -102).
+Next: precise partial-progress/restart and page-native transfer supply, MSR and remaining compressed
 startup operations, complete executable-generation/load/CPU attestation and
 exception entry. A cold compiler and bounded table admission exist; they do
 not yet provide whole-image closure or a production authenticated code supply.
@@ -435,14 +437,14 @@ compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
 only an oracle; it is never an execution fallback. The standard browser-control
 route now works: actual `provider.html` v3 passes 512 comparisons and
-`startup.html` executes 351 shipped startup instructions, retains the independent
+`startup.html` executes 378 shipped startup instructions, retains the independent
 full CPU/cache comparison at instruction 86, and checks the absent-option result.
 Ordinary memory, secure context and no isolation were observed.
 Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
 receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. CPUID/MSR startup,
+remaining ISA/system/exception/device semantics. REP MOVS/MSR startup,
 complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
@@ -459,7 +461,7 @@ serialized owner pins source and context across engine compilation. This
 diagnostic still performs one page transport/compilation per cut; warm compiled
 code reuse, first-instruction cross-page supply and general async admission are
 not established. Its fixture manifest does not authenticate a production release.
-See the [current evidence](../vm/check/browser/evidence/2026-10-03-conditions.md) for
+See the [current evidence](../vm/check/browser/evidence/2026-10-03-cpu-stack-flags.md) for
 exact hashes, reservation preconditions and the remaining red gates.
 
 ## Platform sources

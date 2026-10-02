@@ -105,6 +105,42 @@ int main(int argc, char **argv)
                     || write_record(prefix,"source-page",pages,4096u)) return 1;
         }
     }
+    pages[0] = 0x0fu; pages[1] = 0xa2u; /* CPUID: frozen profile, no host callback. */
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.source_bytes == 2u
+        && report.boundary == WASM_CUT_SYSTEM && report.read_registers == 1u
+        && report.written_registers == 15u && !report.flags_written && !report.memory_bytes);
+    if (argc == 2 && !failures) {
+        char prefix[4096];
+        int n = snprintf(prefix,sizeof prefix,"%s/cpuid",argv[1]);
+        static const char json[] = "{\"entry\":\"4194304\",\"sourceBytes\":2,\"instructions\":1}\n";
+        if (n <= 0 || (size_t)n >= sizeof prefix || write_record(prefix,"json",json,sizeof json - 1u)
+            || write_record(prefix,"wasm",output,(size_t)bytes)
+            || write_record(prefix,"source-page",pages,4096u)) return 1;
+    }
+    pages[0] = 0xf0u; pages[1] = 0x0fu; pages[2] = 0xa2u;
+    EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+           == WASM_COMPILER_ERROR_GRAMMAR); /* LOCK CPUID is not a valid transfer. */
+    for (pl_u32 rank = 0u; rank < 4u; ++rank) {
+        static const char *const names[] = {"pushfq", "popfq", "pushf", "popf"};
+        pl_u32 at = rank >= 2u ? 1u : 0u;
+        pages[0] = 0x66u; pages[at] = (pl_u8)(0x9cu + (rank & 1u)); pages[at + 1u] = 0x90u;
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions == 1u && report.source_bytes == at + 1u
+            && report.memory_bytes == (at ? 2u : 8u) && report.read_registers == 16u
+            && report.written_registers == 16u && report.flags_written == (rank & 1u));
+        if (argc == 2 && !failures) {
+            char prefix[4096], json[128];
+            int n = snprintf(prefix,sizeof prefix,"%s/%s",argv[1],names[rank]);
+            int j = snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"sourceBytes\":%u,\"instructions\":1}\n",at + 1u);
+            if (n <= 0 || (size_t)n >= sizeof prefix || j <= 0 || (size_t)j >= sizeof json
+                || write_record(prefix,"json",json,(size_t)j) || write_record(prefix,"wasm",output,(size_t)bytes)
+                || write_record(prefix,"source-page",pages,4096u)) return 1;
+        }
+        pages[0] = 0xf0u; pages[1] = (pl_u8)(0x9cu + (rank & 1u));
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+               == WASM_COMPILER_ERROR_GRAMMAR);
+    }
     pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;
     pages[3] = 0x90u;
     EXPECT(wasm_compiler_measure_code_cut(&source, 9u, &options, &options.entry, 0)

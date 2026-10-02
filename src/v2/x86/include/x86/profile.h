@@ -1,8 +1,9 @@
 /* Exact virtual CPU identity shared by admission, native execution and Wasm.
  *
  * "x86-64-v2" is only the user-facing level name.  These words are the
- * normative contract.  Every unlisted CPUID leaf and every unlisted bit is
- * zero, so host discovery can never silently widen the accepted ISA.
+ * normative contract. Every unlisted CPUID leaf/structured subleaf and bit
+ * is zero. ECX is ignored by the listed nonstructured leaves, as specified
+ * by the architecture. Host discovery never widens the accepted ISA.
  */
 
 #ifndef X86_PROFILE_H

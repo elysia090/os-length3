@@ -174,14 +174,23 @@ export async function checkStartup(reader,providerBytes,compilerBytes) {
       if (stopped) break;
     }
     assert(stopped,'diagnostic quantum bound, not boot completion');
-    assert.equal(retired,351); assert.equal(rip(),0x12e3d9bn);
+    assert.equal(retired,378);
+    assert.equal(rip(),0x1000281n);
     assert.equal(stopped.kind,'compile'); assert.equal(stopped.status,-102);
-    // no5lvl is absent from the supplied command line: the actual scanner
-    // returns false. The next genuine gate is CPUID leaf zero, subleaf zero.
-    assert.equal(view.getBigUint64(base,true),0n); assert.equal(view.getBigUint64(base + 8,true),0n);
+    assert.equal(stopped.entry,'0x1000281');
+    // Separate observations derived from the shipped relocation preamble:
+    // CPUID's no-LA57 arm returned, POPFQ consumed the pushed zero, and both
+    // LEAs, ECX byte-count/8, and STD have run. Not a full boot proof.
+    assert.equal(view.getBigUint64(base + 416,true),32n);
+    assert.equal(view.getBigUint64(base + 32,true),stack);
+    assert.equal(view.getBigUint64(base + 392,true),0x402n);
+    assert.equal(view.getBigUint64(base + 48,true),0x12e63f8n);
+    assert.equal(view.getBigUint64(base + 56,true),relocated + 0x2e63f8n);
+    assert.equal(view.getBigUint64(base + 8,true),0x5cc80n);
     return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
       retired,modules:admissions,admissions,liveSlots:1,manualBranchEntries:0,
-      independentStateCheckpoint:86,nextRip:`0x${rip().toString(16)}`,nextGate:stopped,
+      independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
+      nextRip:`0x${rip().toString(16)}`,nextGate:stopped,
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes,timingMs:{cold:coldMs,engine:engineMs,execution:executionMs},trace,

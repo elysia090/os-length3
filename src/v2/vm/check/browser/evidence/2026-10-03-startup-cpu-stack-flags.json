@@ -1,0 +1,60 @@
+{
+  "format": "browser-bzimage-startup-v1",
+  "status": "pass",
+  "linuxBoot": "not-achieved",
+  "retired": 378,
+  "modules": 188,
+  "admissions": 188,
+  "liveSlots": 1,
+  "manualBranchEntries": 0,
+  "independentStateCheckpoint": 86,
+  "relocationRegisterCheckpoint": 378,
+  "nextRip": "0x1000281",
+  "nextGate": {
+    "kind": "compile",
+    "status": -102,
+    "entry": "0x1000281"
+  },
+  "guestExecution": "C-Wasm table dispatcher/MMU",
+  "coldCompilation": "C-Wasm decoder/planner/emitter",
+  "guestMemoryCallback": "C-Wasm, not JavaScript",
+  "sourceProjection": "C-MMU borrowed page, no JS virtual-to-physical mapping",
+  "emittedBytes": 59913,
+  "copiedCodeBytes": 774144,
+  "timingMs": {
+    "cold": 7.599999904632568,
+    "engine": 19.799999833106995,
+    "execution": 2.600000262260437
+  },
+  "trace": [
+    {"entry":"0x12e3d9d","instructions":2,"next":"0x12e3fa8","result":"1"},
+    {"entry":"0x12e3fa8","instructions":2,"next":"0x12e3faf","result":"1"},
+    {"entry":"0x12e3faf","instructions":1,"next":"0x12e3fb1","result":"1"},
+    {"entry":"0x12e3fb1","instructions":2,"next":"0x12e3da6","result":"1"},
+    {"entry":"0x12e3da6","instructions":1,"next":"0x12e3da9","result":"1"},
+    {"entry":"0x12e3da9","instructions":1,"next":"0x12e3dac","result":"1"},
+    {"entry":"0x12e3dac","instructions":4,"next":"0x12e3f82","result":"1"},
+    {"entry":"0x12e3f82","instructions":1,"next":"0x12e3f89","result":"1"},
+    {"entry":"0x12e3f89","instructions":1,"next":"0x12e3f8a","result":"1"},
+    {"entry":"0x12e3f8a","instructions":1,"next":"0x12e3f8b","result":"1"},
+    {"entry":"0x12e3f8b","instructions":1,"next":"0x12e3f8d","result":"1"},
+    {"entry":"0x12e3f8d","instructions":1,"next":"0x12e3f8f","result":"1"},
+    {"entry":"0x12e3f8f","instructions":1,"next":"0x1000267","result":"1"},
+    {"entry":"0x1000267","instructions":1,"next":"0x1000269","result":"5"},
+    {"entry":"0x1000269","instructions":1,"next":"0x100026a","result":"1"},
+    {"entry":"0x100026a","instructions":5,"next":"0x1000281","result":"1"}
+  ],
+  "providerBytes": 16745,
+  "compilerBytes": 407876,
+  "memoryBytes": 524288,
+  "coldMemoryBytes": 1048576,
+  "secureContext": true,
+  "isolated": false,
+  "fixtureIntegrity": "local diagnostic SHA-256; not signed production admission",
+  "sourceReceipt": [
+    "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc  native-bundle",
+    "21771c757255406ce090faa6c5108b72618f794c8e46379a4a3d50dc21364e67  root/boot/kernel",
+    "90ad6681efc64bbbf5d10b92ac3aa62cc12eafc6dc88b790cec055a4bffb4ff1  root/boot/initramfs",
+    "62a1aa4720607ec8c3ec38c50041cc7ff3dae9e29ebd335b589283c8e0381212  root/bin/busybox"
+  ]
+}

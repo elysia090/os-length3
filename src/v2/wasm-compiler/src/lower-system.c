@@ -1,7 +1,14 @@
 /* Precise privileged transfers, compiled before execution. */
 #include "cut-internal.h"
+#include <x86/profile.h>
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if (instruction->status == PL_X86_DECODE_VALID
+            && instruction->machine_operation == PL_X86_MACHINE_CPUID
+            && !instruction->visible_operand_count
+            && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
+            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
+                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_CPUID;
     if (instruction->status == PL_X86_DECODE_VALID
             && instruction->machine_operation == PL_X86_MACHINE_WRITE_CONTROL
             && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
@@ -86,8 +93,45 @@ static void port_store(cut_lowering *cut, pl_u32 offset, pl_u32 bytes)
     wasm_writer_uleb(cut->writer, bytes == 8u ? 3u : 2u);
     wasm_writer_uleb(cut->writer, offset);
 }
+static void cpuid_result(cut_lowering *cut, pl_x86_cpuid_result result)
+{
+    const pl_u32 words[] = {result.eax,result.ecx,result.edx,result.ebx};
+    for (pl_u32 reg = 0u; reg < 4u; ++reg) {
+        cut_const(cut,words[reg]); cut_set(cut,reg + 1u);
+    }
+    cut->loaded |= 15u; cut->report.written_registers |= 15u;
+}
+static void lower_cpuid(cut_lowering *cut)
+{
+    static const pl_u32 leaves[] = {0u,1u,7u,0x80000000u,0x80000001u,0x80000008u};
+    /* Snapshot EAX before any of the four architectural outputs overwrite
+     * their parents. CPUID is a serializing one-instruction cut, not a host
+     * capability callback. Profile rows become ordinary Wasm constants. */
+    cut_load(cut,offsetof(machine_state,registers)); cut_mask(cut,32u); cut_set(cut,CUT_LEFT);
+    cut->report.read_registers |= 1u;
+    pl_u32 nesting = 0u;
+    for (pl_u32 rank = 0u; rank < sizeof leaves / sizeof leaves[0]; ++rank) {
+        pl_u32 leaf = leaves[rank];
+        pl_x86_cpuid_result result = pl_x86_profile_cpuid(leaf,0u);
+        if (!(result.eax | result.ebx | result.ecx | result.edx)) continue;
+        cut_get(cut,CUT_LEFT); cut_const(cut,leaf); cut_op(cut,0x51u);
+        if (leaf == 7u) {
+            /* All current structured rows are zero and disappear. If the
+             * contract changes, retain its subleaf dependency explicitly. */
+            cut_load(cut,offsetof(machine_state,registers) + 8u); cut_mask(cut,32u);
+            cut_op(cut,0x50u); cut_op(cut,0x71u); cut->report.read_registers |= 2u;
+        }
+        cut_op(cut,0x04u); cut_op(cut,0x40u);
+        cpuid_result(cut,result); cut_op(cut,0x05u); ++nesting;
+    }
+    cpuid_result(cut,(pl_x86_cpuid_result){0});
+    while (nesting--) cut_op(cut,0x0bu);
+}
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (instruction->machine_operation == PL_X86_MACHINE_CPUID) {
+        lower_cpuid(cut); return;
+    }
     if (cut->has_control_write) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->operands[0].value.reg.index);

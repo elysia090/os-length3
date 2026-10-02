@@ -383,7 +383,8 @@ guest test. A JavaScript or native userspace syscall fallback is a release error
 
 `x86-64-v2` is the standard release's human-facing CPU level, not its normative
 definition. The normative `development-standard-v2` CPU record is the exact table
-below; every unlisted leaf, subleaf and bit is zero.
+below; every unlisted leaf, structured subleaf and bit is zero. ECX input is
+ignored on the listed nonstructured leaves; only leaf 7 selects by subleaf.
 
 | surface | exact value |
 | --- | --- |

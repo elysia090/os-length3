@@ -59,6 +59,15 @@ CR4 write red at `0x1000255`. Its distinct 404,071-byte cold compiler and
 Linux boot is still unachieved; the read/write display-order clarification is
 included in that checkpoint.
 
+The [latest CPU/stack-flags checkpoint](2026-10-03-cpu-stack-flags.md) records
+378 actual-browser startup instructions, 188 demand admissions and one live
+slot, with no manual branch-entry list. Fixed-profile CPUID and both widths of
+stack flags transfers use common cold C lowering. Complete CPU/cache state at
+86 and independently derived relocation registers at 378 pass. Its exact
+[JSON](2026-10-03-startup-cpu-stack-flags.json) retains the REP MOVSQ grammar
+refusal at `0x1000281`; neither partial startup nor model matrices certify
+Linux boot, whole-image closure, exception entry, RSS or cold-shell timing.
+
 Reproduce the transport/Node checks with:
 
 ```

@@ -84,7 +84,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->flag_frontier[0] = 0u;
                 if (!system) {
                     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
-                    plan->report.memory_bytes = stack ? 8u : instruction.operands[store ? 0u : 1u].bits / 8u;
+                    plan->report.memory_bytes = stack ? instruction.operand_width / 8u
+                        : instruction.operands[store ? 0u : 1u].bits / 8u;
                 }
                 if (stack && (instruction.operation == PL_X86_OPERATION_CALL
                               || instruction.operation == PL_X86_OPERATION_RETURN)) {
@@ -129,7 +130,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.writer = writer;
     cut.report = plan->report;
     cut.has_memory = plan->report.memory_bytes != 0u;
-    cut.has_port = cut.has_memory || plan->system_cut;
+    cut.has_port = cut.has_memory || (plan->system_cut && plan->system_cut != CUT_SYSTEM_CPUID);
     cut.has_segment = plan->system_cut == CUT_SYSTEM_SEGMENT;
     cut.has_table = plan->system_cut == CUT_SYSTEM_TABLE;
     cut.has_far_return = plan->system_cut == CUT_SYSTEM_FAR_RETURN;
@@ -171,7 +172,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         pl_x86_instruction instruction;
         if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
         cut.wanted_flags = plan->flag_frontier[i] >> 16u;
-        if (cut.has_port && cut_system_supported(&instruction)) cut_lower_system(&cut, &instruction);
+        if (plan->system_cut) cut_lower_system(&cut, &instruction);
         else if (cut.has_memory && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
         else if (cut.has_memory) cut_lower_memory(&cut, &instruction);
         else cut_lower_instruction(&cut, &instruction);

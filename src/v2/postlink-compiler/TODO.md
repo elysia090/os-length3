@@ -42,7 +42,7 @@ to postpone the next browser product goal behind new native size/speed work.
 
 ## Active browser work — 2026-10-03
 
-Current executable checkpoint: the exact shipped bzImage advances to 351 source
+Current executable checkpoint: the exact shipped bzImage advances to 378 source
 instructions in an actual ordinary-memory browser Worker through cold C-Wasm
 compilation and C table/MMU execution. Register SETcc now uses the common
 condition helper for all 16 conditions. A linear backward read/kill frontier
@@ -52,15 +52,19 @@ The C MMU now supplies a borrowed executable-page view, not a JS guest-address
 cast. Admission follows actual RIP, with one live table slot and ZERO manually
 listed branch entries or precompiled browser prefix modules. The complete
 86-instruction CPU/cache observation still passes, followed by the command-line
-scanner returning false for absent `no5lvl`. Next concrete grammar red:
-`0x12e3d9b`, CPUID (leaf/subleaf zero). Define the fixed CPU-profile response
-and lower that common system boundary, then required MSR, exception/device/root
-supply. The diagnostic still recompiles each demanded cut, copies one bounded
+scanner returning false for absent `no5lvl`. Fixed-profile CPUID now emits
+constants directly, with 7,504 complete CPU comparisons and 15,008 entry-flag
+rejections. Common 16/64-bit PUSHF/POPF passes 8,192 CPL/IOPL cases, 4,096
+actual CPL3 x86 receipts and 36 fault/refusal cases. The relocation input
+registers are independently checked at 378. Next concrete grammar red:
+`0x1000281`, REP MOVSQ. Implement its precise partial-progress/restart contract
+and bounded source/destination page supply, then required MSR,
+exception/device/root supply. The diagnostic still recompiles each demanded cut, copies one bounded
 page to independent cold memory, and does not yet connect crossing-first-fetch
 pages or signed production source admission. Never skip instructions or change
 the kernel/backend. Whole-image `-104`, Linux boot, PID 1 and development
 acceptance remain red. Native asset and human UI are unchanged. See the
-condition/admission evidence linked from BROWSER.md.
+condition/admission and CPU/stack-flags evidence linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
 implementation, not the minor native benchmark difference: whole-image Wasm
