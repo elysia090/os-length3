@@ -382,6 +382,18 @@ direct cuts and C table dispatch. `prepare-memory-bit-cuts.sh` plus
 `check-wasm-provider.mjs` covers immediate memory BT/BTS/BTR/BTC CPU/RAM and
 protection-fault results, not exception entry. None is a Linux/PID 1 boot gate.
 
+The [memory-unary/source-tail checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-unary-source-tail.md)
+adds `prepare-memory-unary-cuts.sh NEW-DIRECTORY` (22 ordinary post-linked
+INC/DEC/NEG/NOT forms). `check-wasm-provider.mjs VM.WASM NEW-DIRECTORY` compares
+CPU/RAM, actual native faults and separately RF success/failure semantics.
+`check-source-admission.mjs VM.WASM COMPILER.WASM` compiles/installs ten real
+single/two-page cuts through C source ownership and C dispatch, checking
+demand-only FETCH, non-contiguous physical pages, exact writes, pinned A-bit
+aliases, NX/nonpresent/residency, remap and lifecycle rejection. It is a
+boundary regression, not boot or a cryptographic compilation attestation.
+Regenerate fixtures for current compiler/ABI bytes; a stale fixture rejection
+must not be relabeled as a pass.
+
 This division avoids rebuilding QEMU while preserving the final route:
 
 ```text

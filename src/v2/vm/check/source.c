@@ -40,6 +40,73 @@ static void mmu_alias(void)
 }
 static int probe(pl_u64 entry, pl_u32 limit)
 { return vm_sources_probe(&sources,&page,entry,limit,&row); }
+static void crossing(void)
+{
+    const pl_u64 entry = page.address+4095u;
+    vm_code_page next = {page.address+4096u,9u,32768u,4096u};
+    vm_sources_open(&sources,9u,3u);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    pl_u32 slot = row.slot;
+    EXPECT(probe(entry,1024u) == 2);
+    EXPECT(!vm_sources_extend(&sources,&next,&row));
+    EXPECT(row.slot == slot && row.source_bytes == 3u);
+    /* Two non-contiguous physical owners, exact extent, and no payload copy. */
+    vm_sources_write(&sources,page.offset+4094u,1u);
+    vm_sources_write(&sources,next.offset+2u,1u);
+    EXPECT(probe(entry,1024u) == 2);
+    EXPECT(!vm_sources_extend(&sources,&next,&row));
+    vm_sources_write(&sources,next.offset+1u,1u);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    vm_sources_write(&sources,page.offset+4095u,1u);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    vm_sources_write(&sources,next.offset+100u,1u);
+    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    vm_sources_write(&sources,page.offset+100u,1u);
+    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    /* Source generation and mapping changes cannot reuse an old tail. */
+    EXPECT(probe(entry,1024u) == 1);
+    vm_code_page wrong = next; wrong.generation = 10u;
+    memset(&row,0xa5,sizeof row); vm_execution_row saved = row;
+    EXPECT(vm_sources_extend(&sources,&wrong,&row) == -1);
+    EXPECT(!memcmp(&row,&saved,sizeof row));
+    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    EXPECT(vm_sources_publish(&sources,16u,1u,&row) == -1);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    EXPECT(vm_sources_publish(&sources,3u,2u,&row) == -1);
+    EXPECT(probe(entry,1024u) == 1);
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    EXPECT(!vm_sources_publish(&sources,15u,1u,&row));
+    EXPECT(probe(entry,1024u) == 2);
+    next.offset = 36864u;
+    EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    /* Collision and physical alias owners must also revoke both extents. */
+    for (pl_u32 alias=0u;alias<2u;++alias) {
+        next.offset = page.offset+(alias ? 0u : VM_SOURCE_WATCH_BUCKETS*4096u);
+        vm_sources_open(&sources,9u,3u);
+        EXPECT(probe(entry,1024u) == 1);
+        EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
+        EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+        vm_sources_write(&sources,next.offset+2u,1u);
+        EXPECT(probe(entry,1024u) == 2);
+        EXPECT(!vm_sources_extend(&sources,&next,&row));
+        vm_sources_write(&sources,next.offset,1u);
+        EXPECT(probe(entry,1024u) == 1);
+    }
+    vm_sources_open(&sources,9u,3u);
+}
 int main(void)
 {
     vm_sources_open(&sources,9u,3u);
@@ -120,6 +187,7 @@ int main(void)
     EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
     vm_sources_write(&sources,0u,0xffffffffu); EXPECT(probe(0x400080u,1u) == 1);
     page.offset = 8192u;
+    crossing();
     mmu_alias();
     if (!failures) puts("source admission: bounded zero-copy source/write frontier green (100000 replacement cases)");
     return failures != 0;

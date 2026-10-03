@@ -12,6 +12,9 @@
 #define WASM_COMPILER_ERROR_GRAMMAR    (-102)
 #define WASM_COMPILER_ERROR_CAPACITY   (-103)
 #define WASM_COMPILER_ERROR_INCOMPLETE (-104)
+/* The first instruction is truncated in the supplied source. Demand fetch
+ * admission from the machine owner; this is not unsupported semantics or #PF. */
+#define WASM_COMPILER_ERROR_FETCH      (-105)
 
 typedef struct {
     ox_image image;

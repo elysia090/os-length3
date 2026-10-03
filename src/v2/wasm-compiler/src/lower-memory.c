@@ -7,6 +7,32 @@ static int binary_arithmetic(pl_u32 operation)
         || operation == PL_X86_OPERATION_XOR;
 }
 
+static int unary_arithmetic(pl_u32 operation)
+{
+    return operation == PL_X86_OPERATION_INCREMENT || operation == PL_X86_OPERATION_DECREMENT
+        || operation == PL_X86_OPERATION_NEGATE || operation == PL_X86_OPERATION_COMPLEMENT;
+}
+
+static void unary_value(cut_lowering *cut, pl_u32 operation, pl_u32 width)
+{
+    if (operation == PL_X86_OPERATION_NEGATE) {
+        cut_get(cut,CUT_LEFT); cut_set(cut,CUT_RIGHT);
+        cut_const(cut,0u); cut_set(cut,CUT_LEFT);
+    } else { cut_const(cut,1u); cut_set(cut,CUT_RIGHT); }
+    cut_get(cut,CUT_LEFT);
+    if (operation == PL_X86_OPERATION_COMPLEMENT) {
+        cut_const(cut,~0ull); cut_op(cut,0x85u);
+    } else {
+        cut_get(cut,CUT_RIGHT); cut_op(cut,operation == PL_X86_OPERATION_INCREMENT ? 0x7cu : 0x7du);
+    }
+    cut_mask(cut,width); cut_set(cut,CUT_VALUE);
+    /* INC/DEC never redefine CF; NOT never defines any flag. Flags stay
+     * local SSA until the existing memory commit has succeeded. */
+    if (operation != PL_X86_OPERATION_COMPLEMENT)
+        cut_arithmetic_flags(cut,width,operation != PL_X86_OPERATION_INCREMENT,0,
+            operation == PL_X86_OPERATION_NEGATE ? CUT_CARRY_NORMAL : CUT_CARRY_PRESERVE);
+}
+
 static void arithmetic(cut_lowering *cut, pl_u32 operation, pl_u32 width)
 {
     cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT);
@@ -41,14 +67,16 @@ static void bit_value(cut_lowering *cut,const pl_x86_instruction *instruction)
 
 int cut_memory_supported(const pl_x86_instruction *instruction)
 {
+    int unary = unary_arithmetic(instruction->operation);
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
             || instruction->machine_operation != PL_X86_MACHINE_NONE
-            || instruction->visible_operand_count != 2u
+            || instruction->visible_operand_count != (unary ? 1u : 2u)
             || instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_PRIVILEGED
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)
             || (instruction->address_width != 32u && instruction->address_width != 64u)) return 0;
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
+    if (unary && !first) return 0;
     int conditional = instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE;
     if (conditional && (first || instruction->condition >= 16u
             || operands[0].bits < 16u || operands[0].bits != operands[1].bits)) return 0;
@@ -64,17 +92,17 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         const pl_x86_operand *other = &operands[first ? 1u : 0u];
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
-    } else if (first) {
+    } else if (first && !unary) {
         if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || !cut_gpr(&operands[1].value.reg)))) return 0;
-    } else if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation)
+    } else if (!first && ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation)
                  && !conditional
                  && instruction->operation != PL_X86_OPERATION_MOVE_ZERO_EXTEND
                  && instruction->operation != PL_X86_OPERATION_MOVE_SIGN_EXTEND)
             || operands[0].kind != PL_X86_OPERAND_REGISTER
-            || !cut_gpr(&operands[0].value.reg)) return 0;
+            || !cut_gpr(&operands[0].value.reg))) return 0;
     const pl_x86_memory *address = &memory->value.memory;
     return (address->segment.class_id == PL_X86_REGISTER_NONE
             || (address->segment.class_id == PL_X86_REGISTER_SEGMENT && address->segment.index < 4u))
@@ -91,6 +119,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
+    int unary = unary_arithmetic(instruction->operation);
     int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
                || instruction->operation == PL_X86_OPERATION_TEST || (bit && !instruction->condition);
@@ -100,7 +129,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     const pl_x86_operand *memory = &operands[first ? 0u : 1u];
     cut_effective_address(cut, instruction, &memory->value.memory);
     cut_set(cut, CUT_ADDRESS);
-    if (store) cut_read_operand(cut, &operands[1], memory->bits);
+    if (store && !unary) cut_read_operand(cut, &operands[1], memory->bits);
     else cut_const(cut, 0u);
     cut_set(cut, rmw ? CUT_RIGHT : CUT_VALUE);
     cut->report.memory_bytes = memory->bits / 8u;
@@ -133,7 +162,8 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 0u);
         cut_access_status(cut);
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
-        if (bit) bit_value(cut,instruction);
+        if (unary) unary_value(cut,instruction->operation,memory->bits);
+        else if (bit) bit_value(cut,instruction);
         else arithmetic(cut,instruction->operation,memory->bits);
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
         cut_get(cut, CUT_VALUE);

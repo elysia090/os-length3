@@ -14,7 +14,7 @@ WASM_FLAGS += -Wl,--export=vm_boot_initial_segments,--export=vm_bind_segments,--
 WASM_FLAGS += -Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--export=vm_table,--export=vm_return
 WASM_FLAGS += -Wl,--export=vm_control,--export=vm_code,--export=vm_grow,--export=vm_page_prepare,--export=vm_page_commit,--export=vm_page_count
 WASM_FLAGS += -Wl,--export=vm_fault,--export=vm_iret,--export=vm_msr
-WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_publish,--export=vm_sources_reset
+WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_extend,--export=vm_source_publish,--export=vm_sources_reset
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/exception.c core/source.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))

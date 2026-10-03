@@ -297,15 +297,34 @@ machine_result vm_code(pl_u32 port, pl_u64 address, pl_u32 target)
 
 /* Privileged compile admission only; no generated function imports this API.
  * 0 is an already compiled source row; RESOLVE_RIP/0 is a pinned compile miss.
- * C-MMU fetch permission and residency are always revalidated first. */
+ * C-MMU fetch permission and residency are always revalidated first.
+ * view_target reserves TWO code-page records; the unused tail is zero. */
+static machine_result source_tail(pl_u32 port, pl_u32 view_target, pl_u32 row_target)
+{
+    if (!sources.pending || sources.pending_page.address > ~0ull-4096u)
+        return MACHINE_RESULT_ENTRY_MAP;
+    vm_code_page first = sources.pending_page, next; vm_execution_row row;
+    vm_mmu_context context = cpu_context(); resident.write_touched = 0u;
+    machine_result result = vm_mmu_code_page(&resident,port-arena_base,&context,
+        first.address+4096u,&next);
+    if (resident.write_touched) execution.generation = 0u;
+    if (result) return memory_result(port,result);
+    int status = vm_sources_extend(&sources,&next,&row);
+    if (status < 0) return MACHINE_RESULT_STALE_GENERATION;
+    first.offset += arena_base; next.offset += arena_base;
+    vm_code_page *views = (vm_code_page *)(uintptr_t)view_target;
+    views[0] = first; views[1] = next;
+    *(vm_execution_row *)(uintptr_t)row_target = row;
+    return status ? MACHINE_RESULT_RESOLVE_RIP : 0u;
+}
 machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
                               pl_u32 view_target, pl_u32 row_target)
 {
     sources.pending = 0u;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
     if (delivery.stage || execution.continuation.slot || !segments_offset || !private_port(port)
-            || !private_record(view_target,sizeof(vm_code_page))
-            || !separate(view_target,sizeof(vm_code_page),port,sizeof(machine_memory_port))
+            || !private_record(view_target,2u*sizeof(vm_code_page))
+            || !separate(view_target,2u*sizeof(vm_code_page),port,sizeof(machine_memory_port))
             || !execution_record(row_target,sizeof(vm_execution_row))) return MACHINE_RESULT_ENTRY_MAP;
     const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
     pl_u32 cs = segments->cache[MACHINE_SEGMENT_CS].attributes;
@@ -318,10 +337,23 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
     if (result) return memory_result(port,result);
     int status = vm_sources_probe(&sources,&page,entry,limit,&row);
     if (status < 0) return MACHINE_RESULT_ENTRY_MAP;
+    if (status == 2) return source_tail(port,view_target,row_target);
     page.offset += arena_base;
-    *(vm_code_page *)(uintptr_t)view_target = page;
+    vm_code_page *views = (vm_code_page *)(uintptr_t)view_target;
+    views[0] = page; views[1] = (vm_code_page){0};
     *(vm_execution_row *)(uintptr_t)row_target = row;
     return status ? MACHINE_RESULT_RESOLVE_RIP : 0u;
+}
+/* A FETCH request from the trusted cold decoder is the only authority to
+ * extend an uncompiled source. This API never decodes or executes x86. */
+machine_result vm_source_extend(pl_u32 port, pl_u32 view_target, pl_u32 row_target)
+{
+    vm_supply_reset(&supply); vm_memory_abort(&resident);
+    if (delivery.stage || execution.continuation.slot || !segments_offset || !private_port(port)
+            || !private_record(view_target,2u*sizeof(vm_code_page))
+            || !separate(view_target,2u*sizeof(vm_code_page),port,sizeof(machine_memory_port))
+            || !execution_record(row_target,sizeof(vm_execution_row))) return MACHINE_RESULT_ENTRY_MAP;
+    return source_tail(port,view_target,row_target);
 }
 int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 row_target)
 {

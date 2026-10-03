@@ -313,6 +313,29 @@ int main(int argc, char **argv)
             && report.memory_bytes == 8u && report.boundary == WASM_CUT_MEMORY
             && report.memory_access == (condition ? 3u : 1u) && report.flags_written == 1u);
     }
+    for (pl_u32 operation=0u;operation<4u;++operation) {
+        for (pl_u32 width=0u;width<4u;++width) {
+            pl_u8 unary[3]; pl_u32 count=0u;
+            if (width == 1u) unary[count++]=0x66u;
+            if (width == 3u) unary[count++]=0x48u;
+            unary[count++]=(pl_u8)((operation < 2u ? 0xfeu : 0xf6u)+(width != 0u));
+            unary[count++]=(pl_u8)(operation < 2u ? operation*8u : operation == 2u ? 0x18u : 0x10u);
+            memset(pages,0x90,sizeof pages); memcpy(pages,unary,count);
+            EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+            EXPECT(report.source_instructions == 1u && report.source_bytes == count
+                && report.memory_bytes == (1u << width) && report.memory_access == 3u
+                && report.boundary == WASM_CUT_MEMORY && !report.written_registers
+                && report.flags_written == (operation != 3u));
+        }
+        /* LOCK is a separate atomicity contract, not an ignored prefix. */
+        const pl_u8 locked[]={0xf0u,0x48u,(pl_u8)(operation < 2u ? 0xffu : 0xf7u),
+            (pl_u8)(operation < 2u ? operation*8u : operation == 2u ? 0x18u : 0x10u)};
+        memset(pages,0x90,sizeof pages); memcpy(pages,locked,sizeof locked);
+        memset(output,0xa5,sizeof output);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            == WASM_COMPILER_ERROR_GRAMMAR);
+        for (pl_u32 at=0u;at<sizeof output;++at) EXPECT(output[at] == 0xa5u);
+    }
     for (pl_u32 form = 0u; form < sizeof rejected / sizeof rejected[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected[form],sizeof rejected[0]);
         memset(output,0xa5,sizeof output);
@@ -346,6 +369,28 @@ int main(int argc, char **argv)
     pages[4094] = 0xfcu; pages[4095] = 0x48u; pages[4096] = 0xb8u;
     EXPECT(!wasm_compiler_measure_code_cut(&source, 9u, &options, &bytes, &report));
     EXPECT(report.source_bytes == 1u && report.source_instructions == 1u);
+    /* Only an incomplete FIRST instruction requests source admission. A
+     * preceding complete instruction commits without fetching its successor. */
+    source.entry = options.entry = 0x400fffu;
+    memset(output,0xa5,sizeof output); memset(&report,0xa5,sizeof report); bytes = 99u;
+    wasm_cut_report fetch_saved = report;
+    EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+        == WASM_COMPILER_ERROR_FETCH);
+    EXPECT(bytes == 99u && !memcmp(&report,&fetch_saved,sizeof report));
+    for (pl_u32 i=0u;i<sizeof output;++i) EXPECT(output[i] == 0xa5u);
+    /* A complete but unsupported instruction must not ask for more bytes. */
+    options.entry = source.entry = 0x400ffeu; pages[4094] = 0x0fu; pages[4095] = 0x05u;
+    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,0)
+        == WASM_COMPILER_ERROR_GRAMMAR);
+    options.entry = source.entry = 0x400fffu; pages[4095] = 0x0fu;
+    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,0)
+        == WASM_COMPILER_ERROR_FETCH);
+    options.entry = source.entry = 0x400ff1u;
+    memset(pages+4081u,0x66,15u); /* Too-long prefix stream is not truncation. */
+    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,0)
+        == WASM_COMPILER_ERROR_GRAMMAR);
+    source.entry = options.entry = 0x400ffeu;
+    pages[4094] = 0xfcu; pages[4095] = 0x48u; pages[4096] = 0xb8u;
     source.map_count = 2u;
     for (pl_u32 i = 4097u; i < 4105u; ++i) pages[i] = (pl_u8)i;
     pages[4105] = 0xfau;

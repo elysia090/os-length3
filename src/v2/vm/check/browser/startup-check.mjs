@@ -237,19 +237,21 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       bssInitialState = data.slice(base,base + stateBytes.length);
       bssInitialSegments = data.slice(segments,segments + segmentBytes.length);
     }
-    data.fill(0xa5,codeView,codeView + 24);
+    data.fill(0xa5,codeView,codeView + 48);
     let beforeAdmission = performance.now();
     let projection = vm.vm_source_query(port,entry,limit,codeView,rows);
     admissionMs += performance.now() - beforeAdmission;
-    for (let waits = 0; projection === 2n && waits < 4; ++waits) {
-      const start = performance.now(); const supplied = await supplyPhysical(); supplyMs += performance.now() - start;
-      if (!supplied) return {...resourceGate,entry:`0x${entry.toString(16)}`};
+    for (let waits = 0; (projection === 2n || projection === 5n) && waits < 4; ++waits) {
+      if (projection === 2n) {
+        const start = performance.now(); const supplied = await supplyPhysical(); supplyMs += performance.now() - start;
+        if (!supplied) return {...resourceGate,entry:`0x${entry.toString(16)}`};
+      }
       beforeAdmission = performance.now();
       projection = vm.vm_source_query(port,entry,limit,codeView,rows);
       admissionMs += performance.now() - beforeAdmission;
     }
     if (projection !== 0n && projection !== 1n) {
-      assert(data.subarray(codeView,codeView + 24).every(byte => byte === 0xa5),'rejected view publication');
+      assert(data.subarray(codeView,codeView + 48).every(byte => byte === 0xa5),'rejected view publication');
       const delivery = await deliverFault(projection,entry);
       if (delivery) return delivery.deliveryResult === '0' ? null : {kind:'exception-delivery',...delivery};
       return {kind:'fetch',result:String(projection),entry:`0x${entry.toString(16)}`,
@@ -264,12 +266,41 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert(slot >= firstSlot && slot < firstSlot + sourceCapacity,'C-chosen bounded engine slot');
     if (projection === 1n) {
       ++sourceMisses;
-      cold.set(data.subarray(offset,offset + bytes),compilerInput); copiedCodeBytes += bytes;
-      const started = performance.now();
-      assert.equal(cc.compiler_open_pages(compilerInput,1,address,generation),0);
-      cold.fill(0xa5,compilerOutput,compilerReport + 80);
-      const status = cc.compiler_emit(entry,limit,compilerOutput,65536,compilerReport);
-      coldMs += performance.now() - started;
+      const construct = () => {
+        const count = view.getUint32(codeView + 44,true) ? 2 : 1;
+        for (let page = 0; page < count; ++page) {
+          const at = codeView + page*24, physical = view.getUint32(at + 16,true);
+          assert.equal(view.getBigUint64(at,true),address + BigInt(page*4096));
+          assert.equal(view.getBigUint64(at + 8,true),generation);
+          assert.equal(view.getUint32(at + 20,true),4096);
+          assert(physical >= base + 4096 && physical + 4096 <= data.length,'C-verified source fragment');
+          cold.set(data.subarray(physical,physical + 4096),compilerInput + page*4096);
+          copiedCodeBytes += 4096;
+        }
+        const started = performance.now();
+        assert.equal(cc.compiler_open_pages(compilerInput,count,address,generation),0);
+        cold.fill(0xa5,compilerOutput,compilerReport + 80);
+        const status = cc.compiler_emit(entry,limit,compilerOutput,65536,compilerReport);
+        coldMs += performance.now() - started; return status;
+      };
+      let status = construct();
+      if (status === -105) {
+        assert.equal(view.getUint32(codeView + 44,true),0,'only the first truncated instruction requests a tail');
+        assert(cold.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),'fetch request cannot publish');
+        let following = vm.vm_source_extend(port,codeView,rows);
+        for (let waits=0;following === 2n && waits<4;++waits) {
+          const start=performance.now(), supplied=await supplyPhysical(); supplyMs += performance.now()-start;
+          if (!supplied) return {...resourceGate,entry:`0x${entry.toString(16)}`};
+          following=vm.vm_source_extend(port,codeView,rows);
+        }
+        if (following === 5n) return null; // Source pin changed: re-admit the same unretired RIP.
+        if (following !== 1n) {
+          const delivery=await deliverFault(following,entry);
+          if (delivery) return delivery.deliveryResult === '0' ? null : {kind:'exception-delivery',...delivery};
+          return {kind:'source-tail',result:String(following),entry:`0x${entry.toString(16)}`};
+        }
+        status = construct();
+      }
       if (status) {
         assert(cold.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),'refusal cannot publish');
         const available = Math.min(15,4096 - Number(entry & 4095n));

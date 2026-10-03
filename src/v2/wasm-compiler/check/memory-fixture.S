@@ -213,6 +213,37 @@ _start:
     bt dword ptr [rdi], 35
 #elif MEMORY_CASE == 106
     bts qword ptr [rdi], 63
+#elif MEMORY_CASE >= 107 && MEMORY_CASE <= 122
+#if (MEMORY_CASE - 107) % 4 == 0
+#define DEST byte ptr [rdi]
+#elif (MEMORY_CASE - 107) % 4 == 1
+#define DEST word ptr [rdi]
+#elif (MEMORY_CASE - 107) % 4 == 2
+#define DEST dword ptr [rdi]
+#else
+#define DEST qword ptr [rdi]
+#endif
+#if MEMORY_CASE < 111
+    inc DEST
+#elif MEMORY_CASE < 115
+    dec DEST
+#elif MEMORY_CASE < 119
+    neg DEST
+#else
+    not DEST
+#endif
+#elif MEMORY_CASE == 123
+    inc dword ptr [rip + 8]
+#elif MEMORY_CASE == 124
+    dec word ptr [edi]
+#elif MEMORY_CASE == 125
+    neg qword ptr [rdi + rcx*4 + 7]
+#elif MEMORY_CASE == 126
+    not byte ptr [rbp]
+#elif MEMORY_CASE == 127
+    inc qword ptr [r12]
+#elif MEMORY_CASE == 128
+    dec qword ptr [rip + 8]
 #else
 #error unsupported case
 #endif

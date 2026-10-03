@@ -701,6 +701,41 @@ the diagnostic fixture/module/output-digest requests. Bounded cache capacity,
 source alias invalidation and explicit waits remain mandatory when reducing
 these costs. The full product goal is active, not completed by diagnostic pass.
 
+### Memory unary and demanded instruction-tail checkpoint
+
+[Current common-path evidence](../vm/check/browser/evidence/2026-10-03-memory-unary-source-tail.md)
+closes 8/16/32/64-bit memory INC/DEC/NEG/NOT through C-MMU reserve/commit.
+INC/DEC retain CF; failed transactions publish neither flags nor CPU/RIP.
+22 post-linked forms / 11,264 CPU/RAM / 10,240 actual protection-fault /
+21,504 RF checks pass. Fresh CMOV memory, full product checks, selected compiler
+sanitizers and all VM-core ASan/UBSan are green; sanitizer scopes and stale
+fixture rejection are explicit in the evidence.
+
+The following boundary failure was a truncated FIRST instruction, not an ISA
+fallback. The common compiler returns `WASM_COMPILER_ERROR_FETCH` (`-105`)
+without publication. `vm_source_query` reserves **two** 24-byte code views,
+initially zeroing the unused tail. Only that compiler demand invokes
+`vm_source_extend`; C MMU owns its next-page permission/residency/translation.
+A cached crossing also revalidates both pages. Publication allows only one
+crossing instruction of at most 15 bytes. Known source extents watch both
+physical offsets; pending compilation pins both whole pages. A-bit alias
+writes cancel the pin and return stale admission, requiring re-query at the
+same unretired RIP. No JS opcode or virtual-to-physical interpretation occurs.
+Native bounded/source alias cases and ten actual C-Wasm cold emissions cover
+non-contiguous owners, writes/cancellation, NX/nonpresent/residency, remap,
+generation, grow/rebind and C dispatcher rejection. 338 native/cold emissions
+remain byte-identical. This serialized-owner contract is not an SMP lease proof.
+
+Actual browser: 129,071,601 instructions / 64,425,459 admissions; all 14,622,864
+decompressed bytes still match. Six #PFs and one #GP are handled by the guest.
+The next refusal is ordinary non-LOCK memory CMPXCHG at `0xffffffff81096d52`.
+PID 1/shell, full closure and storage/network acceptance remain red. Source
+metadata is 6,752 bytes / 64 rows, with zero payload copies. VM/cold memories
+remain 15,728,640 / 1,048,576 bytes. Engine replacement 35.6 s, execution 30.8 s
+and admission 20.1 s dominate construction 6.0 s in this single diagnostic;
+none is a cold-shell or controlled speed comparison. Native archive and human
+UI are unchanged. The full goal is active.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

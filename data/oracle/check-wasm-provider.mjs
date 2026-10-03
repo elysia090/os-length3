@@ -13,7 +13,7 @@ assert.deepEqual(WebAssembly.Module.imports(provider), [
 ]);
 const names = (await readdir(directory)).filter(name => /^memory-\d+\.json$/.test(name)).sort();
 assert(names.length > 0);
-let comparisons = 0, hardwareFaults = 0;
+let comparisons = 0, hardwareFaults = 0, resumeFlagChecks = 0;
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
@@ -105,6 +105,14 @@ for (const name of names) {
     assert.deepEqual(Buffer.from(memory.buffer, directoryOffset, 192), savedDirectory);
     ++comparisons;
 
+    // RF is not settable by this native user-mode input harness. Independently
+    // test the architectural successful-retirement rule with the real C MMU.
+    arena().set(initial); view.setBigUint64(state + meta.flagsOffset,word(16) | 0x10000n,true);
+    open();
+    assert.equal(instance.exports.cut(state,port),1n);
+    assert.deepEqual(arena(),expected,`${name}: successful access clears RF, row ${row}`);
+    ++resumeFlagChecks;
+
     arena().set(initial); view.setBigUint64(port, 8n, true);
     const stale = Buffer.from(arena());
     assert.equal(instance.exports.cut(state, port), 5n);
@@ -151,6 +159,16 @@ for (const name of names) {
       assert.equal(instance.exports.cut(state,port),(observed(36) << 3n) | 3n,`${name}: native protection row ${row}`);
       assert.deepEqual(arena(),expectedFault,`${name}: native CMOV fault preserves CPU regardless of condition`);
       ++hardwareFaults;
+
+      // A pending architectural fault must retain the incoming RF. Hardware
+      // fault entry adds RF to its saved frame; this component does not enter it.
+      arena().set(expectedFault);
+      view.setBigUint64(state + meta.flagsOffset,observed(16) | 0x10000n,true);
+      open();
+      const rfFault=Buffer.from(arena());
+      assert.equal(instance.exports.cut(state,port),(observed(36) << 3n) | 3n);
+      assert.deepEqual(arena(),rfFault,`${name}: failed access preserves RF, row ${row}`);
+      ++resumeFlagChecks;
     }
   }
   // Force a split write into noncontiguous resident pages, then a second-page
@@ -189,4 +207,4 @@ for (const name of names) {
   assert.equal(vm.vm_open(base,memory.buffer.byteLength,4096,directoryOffset,6,6,directoryOffset + 1024,9n), -1);
   assert.equal(vm.vm_access(port, address, 8, 1, 0n), 6n);
 }
-console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons; exception entry/dispatch/Linux boot not tested)`);
+console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks; exception entry/dispatch/Linux boot not tested)`);

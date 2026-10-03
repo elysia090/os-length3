@@ -63,6 +63,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             plan->report.boundary_operation = PL_X86_OPERATION_FAULT;
             break;
         }
+        if (!i && instruction.status == PL_X86_DECODE_FETCH_FAULT)
+            return WASM_COMPILER_ERROR_FETCH;
         /* Later instruction fetch must not fault ahead of an already retired
          * prefix. Only the first instruction may cross its executable page;
          * it then occupies a separate one-instruction cut. */

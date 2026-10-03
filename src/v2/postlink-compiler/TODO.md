@@ -122,7 +122,7 @@ quota state uses 1,967 compilations / 998,033 source hits, 8,056,832 cumulative
 code-copy bytes instead of 4,096,000,000; fetch/residence are unchanged. Timing
 observations are not cold-shell latency. No native release/human UI changed.
 
-Latest common-path checkpoint: MISC_ENABLE/effective CPUID, all six implicit
+Previous common-path checkpoint: MISC_ENABLE/effective CPUID, all six implicit
 sign extensions, precise 8/16/32-bit register DIV/IDIV and immediate memory
 BT/BTS/BTR/BTC are implemented. 316 fresh native/cold emissions, full product
 checks and selected lowering ASan/UBSan pass. Division matches 12,288 native
@@ -134,8 +134,23 @@ families are still explicit, not skipped or mapped to a guessed fault.
 Actual browser adopts Linux's own high virtual mappings and reaches
 129,063,662 retirements / 64,421,578 admissions. Six #PFs enter and return from
 guest handlers; output still matches all 14,622,864 decompressed bytes.
-Next refusal is memory INC at `0xffffffff81401759`. PID 1/shell remains red.
-See [the current evidence](../vm/check/browser/evidence/2026-10-03-misc-arithmetic.md).
+That run stopped at memory INC. See [its evidence](../vm/check/browser/evidence/2026-10-03-misc-arithmetic.md).
+
+Latest checkpoint closes common 8/16/32/64-bit memory INC/DEC/NEG/NOT, with
+precise existing C-MMU reserve/commit and incoming-CF preservation for INC/DEC.
+22 post-linked forms pass 11,264 CPU/RAM / 10,240 actual protection-fault /
+21,504 RF checks; fresh CMOV fixtures also pass. The subsequent first-instruction
+page-boundary entrance defect is closed through a compiler FETCH demand and
+C-MMU-only tail admission, not speculative next-page fetch. Cached crossings
+revalidate both owners. Source metadata is now 6,752 bytes / 64 rows / zero
+payload copies. Exact writes, two non-contiguous owners, NX/nonpresent/residency,
+remap, pending page-wide cancellation, A-bit table aliases and generation/grow
+are checked in the actual C-Wasm owner/dispatcher. Full product checks, all
+VM-core ASan/UBSan, selected lowering sanitizers and 338 native/cold byte-identical
+emissions pass. Actual browser executes 129,071,601 instructions / 64,425,459
+admissions with unchanged full decompression output. The next -102 is ordinary
+memory CMPXCHG at `0xffffffff81096d52`; it has not retired. PID 1/shell remains
+red. See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-unary-source-tail.md).
 
 Next, in order:
 
@@ -163,10 +178,11 @@ Next, in order:
    #GP for this available-but-unimplemented MSR is fixed; TSC/SYSCALL/MISC
    pending keys refuse explicitly, not an invented guest fault/default zero.
    MISC_ENABLE/CPUID and subsequent arithmetic/bit cuts are now closed as
-   described above. The remaining real red is `ff 05 a1 c8 75 00`, memory INC,
-   effective address `0xffffffff81b5e000`. Implement common memory
-   INC/DEC/NEG/NOT with native comparisons, incoming-CF preservation for
-   INC/DEC, exact fault/no-publication and existing reservation/commit.
+   described above. Memory unary and demand-driven first-instruction tails are
+   now closed as well. The next real red is `4c 0f b1 4b 18`, ordinary non-LOCK
+   `CMPXCHG qword ptr [RBX+0x18],R9`. Close common compare/exchange widths and
+   aliases with native CPU/RAM/fault observations, including failure-arm write
+   permission, accumulator parent rules and exact flags/commit ordering.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
    Engine replacement (33.9 s), VM execution (30.2 s) and source/MMU admission
