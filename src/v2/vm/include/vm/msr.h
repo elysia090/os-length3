@@ -6,8 +6,10 @@
 /* CPL0, 48-bit canonical addresses, EFER SCE/LME/LMA/NXE. LMA is read-only
  * (writes ignored); LME cannot change while paging is enabled. Unavailable
  * keys and reserved values fault before any publication. Advertised TSC and
- * syscall/Intel MISC_ENABLE MSRs not yet implemented are admission refusals,
+ * syscall MSRs not yet implemented are admission refusals,
  * not invented #GP.
+ * MISC_ENABLE and CPUID share the fixed two-rank residual bank. Its status
+ * and active-NXE write restrictions are explicit admission boundaries.
  * No guest RAM walk,
  * time/device emulation or opcode decoder belongs to this register boundary.
  * Abort every outstanding reservation, including on refusal or stale input. */

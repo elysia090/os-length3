@@ -296,12 +296,22 @@ int main(int argc, char **argv)
     }
     static const pl_u8 rejected_bits[][6] = {
         {0xf0u,0x48u,0x0fu,0xbau,0xeeu,0x3au}, /* LOCK register BTS is invalid. */
-        {0x48u,0x0fu,0xbau,0x28u,0x3au,0x90u}, /* Memory BTS requires its own precise RMW cut. */
+        {0xf0u,0x48u,0x0fu,0xbau,0x28u,0x3au}, /* Locked memory RMW is not admitted yet. */
+        {0x48u,0x0fu,0xabu,0x08u,0x90u,0x90u}, /* Register bit-string index needs signed word displacement. */
     };
     for (pl_u32 form = 0u; form < sizeof rejected_bits / sizeof rejected_bits[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected_bits[form],sizeof rejected_bits[0]);
         EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
             == WASM_COMPILER_ERROR_GRAMMAR);
+    }
+    for (pl_u32 condition=0u;condition<4u;++condition) {
+        memset(pages,0x90,sizeof pages);
+        const pl_u8 bit[]={0x48u,0x0fu,0xbau,(pl_u8)(0x20u+condition*8u),0x3fu};
+        memcpy(pages,bit,sizeof bit);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions == 1u && report.source_bytes == sizeof bit
+            && report.memory_bytes == 8u && report.boundary == WASM_CUT_MEMORY
+            && report.memory_access == (condition ? 3u : 1u) && report.flags_written == 1u);
     }
     for (pl_u32 form = 0u; form < sizeof rejected / sizeof rejected[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected[form],sizeof rejected[0]);

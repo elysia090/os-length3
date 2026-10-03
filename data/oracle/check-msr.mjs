@@ -94,10 +94,47 @@ for (let rank = 0; rank < 3; ++rank) {
   assert.equal(cut(state,port),5n); assert.deepEqual(bytes.subarray(state,state+4096),before);
   reset(0,keys[2],0n); assert.equal(vm.vm_reserve(port,entry,8,3),0n);
   assert.equal(vm.vm_msr(port,0,0xffffffff,0n),107n); assert.equal(vm.vm_commit(port,0n),6n);
-  if (rank !== 2) for (const key of [0x10,0xc0000081,0xc0000082,0xc0000083,0xc0000084,0x1a0]) {
+  if (rank !== 2) for (const key of [0x10,0xc0000081,0xc0000082,0xc0000083,0xc0000084]) {
     reset(0,key,0n); const before = Buffer.from(bytes.subarray(state,state+4096));
     assert.equal(cut(state,port),6n); assert.deepEqual(bytes.subarray(state,state+4096),before);
     assert.equal(view.getUint32(port+24,true),0,'known but unimplemented is not an invented exception');
+  }
+  if (rank !== 2) {
+    for (let cpl=0;cpl<4;++cpl) for (let bits=0;bits<8;++bits) {
+      const value=0x1800n|BigInt(bits&1)|(bits&2 ? 1n<<22n : 0n)|(bits&4 ? 1n<<34n : 0n);
+      reset(cpl,0x1a0,value);
+      // Retain a preexisting inactive GS owner while installing rank 1.
+      view.setUint32(state+608,1,true); put(state+616,0xc0000102); put(state+872,0x42);
+      const expected=Buffer.from(bytes.subarray(state,state+1256));
+      const hidden=Buffer.from(bytes.subarray(segments,segments+136));
+      if (!cpl) {
+        if (!rank) {
+          expected.writeUInt32LE(2,608); expected.writeBigUInt64LE(0x1a0n,624); expected.writeBigUInt64LE(value,880);
+        } else {
+          expected.writeBigUInt64LE(0x1801n,0); expected.writeBigUInt64LE(0n,16);
+        }
+        expected.writeBigUInt64LE(0x202n,392); expected.writeBigUInt64LE(entry+2n,384);
+        expected.writeBigUInt64LE(43n,1128);
+      }
+      assert.equal(cut(state,port),cpl ? 107n : 1n); assert.deepEqual(bytes.subarray(state,state+1256),expected);
+      assert.deepEqual(bytes.subarray(segments,segments+136),hidden); ++comparisons;
+    }
+    reset(0,0x1a0,0x1801n); assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+    assert.equal(vm.vm_run(port,9n,1),rank ? 1n : 5n);
+    assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n); ++dispatches;
+    if (!rank) for (let bit=0;bit<64;++bit) {
+      if ([0,22,34].includes(bit)) continue;
+      reset(0,0x1a0,0x1801n^(1n<<BigInt(bit))); const before=Buffer.from(bytes.subarray(state,state+4096));
+      assert.equal(cut(state,port),bit === 11 || bit === 12 ? 6n : 107n);
+      assert.deepEqual(bytes.subarray(state,state+1256),before.subarray(0,1256));
+      assert.deepEqual(bytes.subarray(segments,segments+136),before.subarray(1408,1544));
+      if (bit === 11 || bit === 12) assert.equal(view.getUint32(port+24,true),0);
+      else {
+        assert.equal(view.getBigUint64(port+16,true),entry); assert.equal(view.getUint32(port+24,true),13);
+        assert.equal(view.getUint32(port+28,true),0);
+      }
+      ++comparisons;
+    }
   }
   table.set(slot,null); vm.vm_close();
 }

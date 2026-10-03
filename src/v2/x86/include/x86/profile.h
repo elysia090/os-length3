@@ -1,7 +1,9 @@
 /* Exact virtual CPU identity shared by admission, native execution and Wasm.
  *
  * "x86-64-v2" is only the user-facing level name.  These words are the
- * normative contract. Every unlisted CPUID leaf/structured subleaf and bit
+ * normative reset/capability contract. Architectural MISC_ENABLE controls
+ * can lower the effective maximum basic leaf to 2 or hide NX; they never
+ * widen this table. Every unlisted CPUID leaf/structured subleaf and bit
  * is zero. ECX is ignored by the listed nonstructured leaves, as specified
  * by the architecture. Host discovery never widens the accepted ISA.
  */

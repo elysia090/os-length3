@@ -1,0 +1,102 @@
+{
+  "evidenceFormat": "visible-browser-receipt-projection-v1",
+  "observationDate": "2026-10-03",
+  "source": "visible #result, actual Codex in-app browser; trace omitted",
+  "url": "http://127.0.0.1:8080/src/v2/vm/check/browser/startup.html?budget=extended",
+  "format": "browser-bzimage-startup-v1",
+  "status": "pass",
+  "statusScope": "bounded diagnostic, not product boot",
+  "linuxBoot": "not-achieved",
+  "secureContext": true,
+  "isolated": false,
+  "decompressedOutput": {
+    "entry": "0x1e23d31",
+    "comparedBytes": 14622864,
+    "pages": 3571,
+    "sha256": "6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9",
+    "gzipCrc32": 380732796,
+    "oracle": "independent gzip CRC/ISIZE verified; exact per-page SHA-256 comparison before ELF PT_LOAD moves",
+    "guestCrc": "PREBOOT uses raw inflate; this is independent output validation, not a guest CRC check"
+  },
+  "linuxEntry": {
+    "entry": "0x14015e4",
+    "instructions": 5,
+    "nextRip": "0x14015f7",
+    "retired": 129057478
+  },
+  "retired": 129063662,
+  "modules": 368946,
+  "admissions": 64421578,
+  "liveSlots": 64,
+  "manualBranchEntries": 0,
+  "nextRip": "0xffffffff81401759",
+  "nextGate": {
+    "kind": "compile",
+    "status": -102,
+    "entry": "0xffffffff81401759",
+    "source": [255, 5, 161, 200, 117, 0, 86, 72, 139, 116, 36, 8, 72, 137, 124],
+    "sourceAvailable": 15,
+    "cpu": {
+      "registers": [
+        "0xffffffff81a03f20", "0x400", "0xffffffff", "0x1000",
+        "0xffffffff81a03ef8", "0xb0", "0xffff888000001000", "0xffffffff81b8a720",
+        "0x81408e000010174f", "0xffffffff", "0xffffffffffff", "0xffffffff0000ffff",
+        "0x0", "0x0", "0x0", "0x1000"
+      ],
+      "flags": "0x86",
+      "cr3": "0x1b1d000"
+    }
+  },
+  "exceptions": [
+    {"entry": "0x1e21913", "vector": 14, "error": 2, "address": "0x1000000", "deliveryResult": "0", "nextRip": "0x1e25cc0", "cr2": "0x1000000"},
+    {"entry": "0x1e21913", "vector": 14, "error": 2, "address": "0x1200000", "deliveryResult": "0", "nextRip": "0x1e25cc0", "cr2": "0x1200000"},
+    {"entry": "0x1e218e5", "vector": 14, "error": 2, "address": "0x1400000", "deliveryResult": "0", "nextRip": "0x1e25cc0", "cr2": "0x1400000"},
+    {"entry": "0x1e21913", "vector": 14, "error": 2, "address": "0x1600000", "deliveryResult": "0", "nextRip": "0x1e25cc0", "cr2": "0x1600000"},
+    {"entry": "0x1e21a40", "vector": 14, "error": 2, "address": "0x1800000", "deliveryResult": "0", "nextRip": "0x1e25cc0", "cr2": "0x1800000"},
+    {"entry": "0xffffffff814017e2", "vector": 14, "error": 0, "address": "0xffff888000001000", "deliveryResult": "0", "nextRip": "0xffffffff814016b6", "cr2": "0xffff888000001000"}
+  ],
+  "pageSupplies": 3674,
+  "residentPages": 3687,
+  "sourceExtentBytes": 3022848,
+  "descriptorCapacity": 8192,
+  "descriptorBytes": 393200,
+  "quantumYields": 7687,
+  "repeatComparedBytes": 3040256,
+  "bssComparedBytes": 98656,
+  "memsetComparedBytes": 131104,
+  "guestExecution": "C-Wasm table dispatcher/MMU",
+  "coldCompilation": "C-Wasm decoder/planner/emitter",
+  "guestMemoryCallback": "C-Wasm, not JavaScript",
+  "sourceProjection": "C-MMU borrowed page, no JS virtual-to-physical mapping",
+  "emittedBytes": 129393596,
+  "copiedCodeBytes": 1511206912,
+  "engineReuse": {
+    "compilations": 368946, "hits": 0, "entries": 64,
+    "retainedModuleBytes": 21253, "maximumEntries": 64, "maximumBytes": 262144
+  },
+  "sourceReuse": {
+    "hits": 64052632, "misses": 368947, "capacity": 64,
+    "metadataBytes": 6216, "sourcePayloadBytes": 0
+  },
+  "timingMs": {
+    "cold": 5993.199982404709, "engine": 33943.19997668266,
+    "execution": 30237.60001039505, "supply": 225.9000004529953,
+    "admission": 19746.400027513504
+  },
+  "providerBytes": 29994,
+  "compilerBytes": 417125,
+  "memoryBytes": 15728640,
+  "coldMemoryBytes": 1048576,
+  "fixtureIntegrity": "local diagnostic SHA-256; not signed production admission",
+  "objectTransport": {
+    "fetches": 47, "fetchedBytes": 3056640, "requestedBytes": 3022848,
+    "cacheHighWaterBytes": 65536, "cachedBytes": 65536
+  },
+  "sourceReceipt": [
+    "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc  native-bundle",
+    "21771c757255406ce090faa6c5108b72618f794c8e46379a4a3d50dc21364e67  root/boot/kernel",
+    "90ad6681efc64bbbf5d10b92ac3aa62cc12eafc6dc88b790cec055a4bffb4ff1  root/boot/initramfs",
+    "62a1aa4720607ec8c3ec38c50041cc7ff3dae9e29ebd335b589283c8e0381212  root/bin/busybox"
+  ],
+  "projectionScope": "Counters/state observed in visible result. Not a persisted machine checkpoint, signed-root admission, cold-shell benchmark or PID 1 evidence."
+}

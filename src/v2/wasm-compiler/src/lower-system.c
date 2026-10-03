@@ -4,6 +4,7 @@
 #include <machine/msr.h>
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if (cut_divide_supported(instruction)) return CUT_SYSTEM_DIVIDE;
     if (instruction->status == PL_X86_DECODE_VALID
             && (instruction->machine_operation == PL_X86_MACHINE_READ_MSR
                 || instruction->machine_operation == PL_X86_MACHINE_WRITE_MSR
@@ -116,12 +117,49 @@ static void cpuid_result(cut_lowering *cut, pl_x86_cpuid_result result)
     }
     cut->loaded |= 15u; cut->report.written_registers |= 15u;
 }
+static void refuse_cpuid_if(cut_lowering *cut)
+{
+    cut_op(cut,0x04u); cut_op(cut,0x40u);
+    cut_const(cut,MACHINE_RESULT_ENTRY_MAP); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+}
+static void cpuid_controls(cut_lowering *cut)
+{
+    /* Compile the same fixed owner invariant as machine_msr_bank_valid.
+     * No table scan, host operation import or duplicated control state. */
+    cut_load(cut,offsetof(machine_state,msr_count)); cut_mask(cut,32u); cut_set(cut,CUT_RIGHT);
+    cut_get(cut,CUT_RIGHT); cut_const(cut,2u); cut_op(cut,0x56u); refuse_cpuid_if(cut);
+    cut_get(cut,CUT_RIGHT); cut_op(cut,0x50u); cut_op(cut,0x45u);
+    cut_op(cut,0x04u); cut_op(cut,0x40u);
+    cut_load(cut,offsetof(machine_state,msr_keys)); cut_const(cut,MACHINE_MSR_KERNEL_GS_BASE);
+    cut_op(cut,0x52u); refuse_cpuid_if(cut);
+    cut_load(cut,offsetof(machine_state,msr_values)); cut_set(cut,CUT_LEFT);
+    cut_get(cut,CUT_LEFT); cut_const(cut,16u); cut_op(cut,0x86u);
+    cut_const(cut,16u); cut_op(cut,0x87u); cut_get(cut,CUT_LEFT);
+    cut_op(cut,0x52u); refuse_cpuid_if(cut); cut_op(cut,0x0bu);
+    cut_const(cut,MACHINE_MISC_RESET); cut_set(cut,CUT_VALUE);
+    cut_get(cut,CUT_RIGHT); cut_const(cut,2u); cut_op(cut,0x51u);
+    cut_op(cut,0x04u); cut_op(cut,0x40u);
+    cut_load(cut,offsetof(machine_state,msr_keys)+8u); cut_const(cut,MACHINE_MSR_MISC_ENABLE);
+    cut_op(cut,0x52u); refuse_cpuid_if(cut);
+    cut_load(cut,offsetof(machine_state,msr_values)+8u); cut_set(cut,CUT_VALUE);
+    cut_get(cut,CUT_VALUE); cut_const(cut,~(MACHINE_MISC_WRITABLE|MACHINE_MISC_READ_ONLY)); cut_op(cut,0x83u);
+    cut_get(cut,CUT_VALUE); cut_const(cut,MACHINE_MISC_READ_ONLY); cut_op(cut,0x83u);
+    cut_const(cut,MACHINE_MISC_READ_ONLY); cut_op(cut,0x85u); cut_op(cut,0x84u);
+    cut_op(cut,0x50u); cut_op(cut,0x45u); refuse_cpuid_if(cut);
+    cut_get(cut,CUT_VALUE); cut_const(cut,MACHINE_MISC_XD_DISABLE); cut_op(cut,0x83u);
+    cut_op(cut,0x50u); cut_op(cut,0x45u);
+    cut_load(cut,offsetof(machine_state,efer)); cut_const(cut,0x800u); cut_op(cut,0x83u);
+    cut_op(cut,0x50u); cut_op(cut,0x45u); cut_op(cut,0x71u); refuse_cpuid_if(cut);
+    cut_op(cut,0x0bu);
+}
 static void lower_cpuid(cut_lowering *cut)
 {
     static const pl_u32 leaves[] = {0u,1u,7u,0x80000000u,0x80000001u,0x80000008u};
     /* Snapshot EAX before any of the four architectural outputs overwrite
      * their parents. CPUID is a serializing one-instruction cut, not a host
-     * capability callback. Profile rows become ordinary Wasm constants. */
+     * capability callback. Profile constants plus canonical MSR controls
+     * implement effective NX/maximum-leaf values after architectural writes. */
+    cpuid_controls(cut);
     cut_load(cut,offsetof(machine_state,registers)); cut_mask(cut,32u); cut_set(cut,CUT_LEFT);
     cut->report.read_registers |= 1u;
     pl_u32 nesting = 0u;
@@ -137,13 +175,24 @@ static void lower_cpuid(cut_lowering *cut)
             cut_op(cut,0x50u); cut_op(cut,0x71u); cut->report.read_registers |= 2u;
         }
         cut_op(cut,0x04u); cut_op(cut,0x40u);
-        cpuid_result(cut,result); cut_op(cut,0x05u); ++nesting;
+        cpuid_result(cut,result);
+        if (leaf == 0u) {
+            cut_const(cut,2u); cut_get(cut,1u);
+            cut_get(cut,CUT_VALUE); cut_const(cut,MACHINE_MISC_LIMIT_CPUID); cut_op(cut,0x83u);
+            cut_op(cut,0x50u); cut_op(cut,0x45u); cut_op(cut,0x1bu); cut_set(cut,1u);
+        } else if (leaf == 0x80000001u) {
+            cut_get(cut,3u); cut_const(cut,~(1ull<<20u)); cut_op(cut,0x83u); cut_get(cut,3u);
+            cut_get(cut,CUT_VALUE); cut_const(cut,MACHINE_MISC_XD_DISABLE); cut_op(cut,0x83u);
+            cut_op(cut,0x50u); cut_op(cut,0x45u); cut_op(cut,0x1bu); cut_set(cut,3u);
+        }
+        cut_op(cut,0x05u); ++nesting;
     }
     cpuid_result(cut,(pl_x86_cpuid_result){0});
     while (nesting--) cut_op(cut,0x0bu);
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (cut_divide_supported(instruction)) { cut_lower_divide(cut,instruction); return; }
     if (cut->has_msr) {
         int write = instruction->machine_operation == PL_X86_MACHINE_WRITE_MSR;
         int swap = instruction->machine_operation == PL_X86_MACHINE_SWAP_GS;

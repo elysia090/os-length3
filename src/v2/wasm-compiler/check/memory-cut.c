@@ -144,8 +144,11 @@ int main(int argc, char **argv)
         pl_u64 address = instruction.fallthrough + (pl_u64)operand->displacement;
         if (address < (pl_u64)(uintptr_t)code || code_bytes < 8u
                 || address - (pl_u64)(uintptr_t)code > code_bytes - 8u) goto finish;
+        if ((report.memory_access & MACHINE_MEMORY_WRITE)
+                && mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
     }
-    if (!relative && instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE) {
+    if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
+            || instruction.operation == PL_X86_OPERATION_BIT_TEST)) {
         struct sigaction action = {.sa_sigaction=memory_exception,.sa_flags=SA_SIGINFO};
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
@@ -188,6 +191,12 @@ int main(int argc, char **argv)
         if (instruction.operation == PL_X86_OPERATION_AND || instruction.operation == PL_X86_OPERATION_OR
                 || instruction.operation == PL_X86_OPERATION_XOR
                 || instruction.operation == PL_X86_OPERATION_TEST) record[33] &= ~0x10ull;
+        if (instruction.operation == PL_X86_OPERATION_BIT_TEST) {
+            /* CF is the native oracle; OF/SF/AF/PF are undefined, not zero.
+             * Validate all other flags before choosing the incoming values. */
+            if ((record[33]^record[16])&~0x895ull) goto finish;
+            record[33]=(record[33]&1u)|(record[16]&~1ull);
+        }
         record[37] = read_word((const pl_u8 *)(uintptr_t)address);
         if (!relative) {
             if (report.memory_access & MACHINE_MEMORY_WRITE) memcpy(saved + offset, ram + offset, report.memory_bytes);

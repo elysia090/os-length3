@@ -1,5 +1,5 @@
 // Fixed release CPUID contract, NOT passthrough to the development host CPU.
-// Literal public table is the independent specification oracle. The program
+// Literal reset table + architectural MSR controls are the independent oracle. The program
 // under test is emitted C-Wasm and the actual C table/MMU dispatcher.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -33,7 +33,7 @@ function random() {
   seed = BigInt.asUintN(64,seed ^ (seed << 17n)); return seed;
 }
 try {
-  for (const leaf of leaves) for (const subleaf of subleaves)
+  for (const leaf of leaves) for (const subleaf of subleaves) for (let controls = 0; controls < 8; ++controls)
   for (let cpl = 0; cpl < 4; ++cpl) for (let sample = 0; sample < 4; ++sample) {
     const data = Buffer.from(memory.buffer), view = new DataView(memory.buffer);
     data.fill(0,base);
@@ -55,17 +55,36 @@ try {
     const flags = 2n | (random() & 0xed5n) | (sample & 1 ? 0x10000n : 0n);
     view.setBigUint64(base + 384,entry,true); view.setBigUint64(base + 392,flags,true);
     view.setBigUint64(base + 400,0x80010001n,true); view.setBigUint64(base + 408,0x1000n,true);
-    view.setBigUint64(base + 416,32n,true); view.setBigUint64(base + 424,0xd00n,true);
+    view.setBigUint64(base + 416,32n,true); view.setBigUint64(base + 424,controls & 4 ? 0x500n : 0xd00n,true);
+    if (controls) {
+      view.setUint32(base + 608,2,true); view.setBigUint64(base + 616,0xc0000102n,true);
+      view.setBigUint64(base + 624,0x1a0n,true);
+      view.setBigUint64(base + 872,0xffff800012340000n,true);
+      view.setBigUint64(base + 880,0x1800n|BigInt(controls & 1)
+        | (controls & 2 ? 1n << 22n : 0n) | (controls & 4 ? 1n << 34n : 0n),true);
+    } else if (sample & 2) {
+      view.setUint32(base + 608,1,true); view.setBigUint64(base + 616,0xc0000102n,true);
+      view.setBigUint64(base + 872,0xffff800012340000n,true);
+      // Uncounted rank 1 is not live. It must not change effective features.
+      view.setBigUint64(base + 624,0xffffffffn,true); view.setBigUint64(base + 880,~0n & 0xffffffffffffffffn,true);
+    } else {
+      view.setBigUint64(base + 616,0xffffffffn,true); view.setBigUint64(base + 872,1n << 47n,true);
+      view.setBigUint64(base + 624,0xffffffffn,true); view.setBigUint64(base + 880,0x400001801n,true);
+    }
+    view.setUint32(base + 612,0x1f80,true); // Do not conflate count's u32 load with adjacent MXCSR.
     view.setBigUint64(base + 488,16n | BigInt(cpl),true); view.setBigUint64(base + 1128,42n,true);
     view.setBigUint64(port,9n,true);
     const before = Buffer.from(data.subarray(base,base + 1256));
-    const expected = Buffer.from(before), words = literal.get(leaf) ?? [0,0,0,0];
+    const expected = Buffer.from(before), words = [...(literal.get(leaf) ?? [0,0,0,0])];
+    if (leaf === 0 && controls & 2) words[0] = 2;
+    if (leaf === 0x80000001 && controls & 4) words[2] &= ~(1 << 20);
     for (let reg = 0; reg < 4; ++reg) expected.writeBigUInt64LE(BigInt(words[reg]),reg * 8);
     expected.writeBigUInt64LE(entry + 2n,384); expected.writeBigUInt64LE(43n,1128);
     expected.writeBigUInt64LE(flags & ~0x10000n,392);
     // Direct generated function has no VM/JS operation imports and ignores
     // its port argument. Compare its COMPLETE CPU record with the table.
-    assert.equal(cut(base,0),1n); assert(data.subarray(base,base + 1256).equals(expected));
+    assert.equal(cut(base,0),1n);
+    assert(data.subarray(base,base + 1256).equals(expected),`leaf ${leaf.toString(16)} controls ${controls} CPL ${cpl}`);
     data.set(before,base);
     assert.equal(vm.vm_open(base,data.length - base,4096,directoryAt,5,5,directoryAt + 1024,9n),0);
     assert.equal(vm.vm_bind_state(base),0);
@@ -80,5 +99,25 @@ try {
       assert.equal(cut(base,0),6n); assert(data.subarray(base,base + 1256).equals(saved)); ++rejected;
     }
   }
+  // A corrupt persisted owner layout must not be interpreted as valid CPU
+  // controls. Clear TF so this actually tests the bank guard, not flag refusal.
+  const data = Buffer.from(memory.buffer), view = new DataView(memory.buffer);
+  for (const corruption of ['count','owner0','owner1','canonical','reserved','status','NXE']) {
+    view.setBigUint64(base + 384,entry,true); view.setBigUint64(base + 392,0x202n,true);
+    view.setBigUint64(base + 424,0x500n,true); view.setUint32(base + 608,2,true);
+    view.setBigUint64(base + 616,0xc0000102n,true); view.setBigUint64(base + 624,0x1a0n,true);
+    view.setBigUint64(base + 872,0n,true); view.setBigUint64(base + 880,0x1801n,true);
+    if (corruption === 'count') view.setUint32(base + 608,33,true);
+    if (corruption === 'owner0') view.setBigUint64(base + 616,0x1a0n,true);
+    if (corruption === 'owner1') view.setBigUint64(base + 624,0xc0000102n,true);
+    if (corruption === 'canonical') view.setBigUint64(base + 872,1n << 47n,true);
+    if (corruption === 'reserved') view.setBigUint64(base + 880,0x1803n,true);
+    if (corruption === 'status') view.setBigUint64(base + 880,1n,true);
+    if (corruption === 'NXE') {
+      view.setBigUint64(base + 880,0x400001801n,true); view.setBigUint64(base + 424,0xd00n,true);
+    }
+    const before = Buffer.from(data.subarray(base,base + 1256));
+    assert.equal(cut(base,0),6n,corruption); assert(data.subarray(base,base + 1256).equals(before)); ++rejected;
+  }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); }
-console.log(`Fixed-profile CPUID: green (${comparisons} complete CPU comparisons direct+C dispatcher including successful RF retirement, ${rejected} TF rejections; NOT host CPUID/hardware privileged oracle/Linux boot)`);
+console.log(`Fixed-profile CPUID: green (${comparisons} complete CPU comparisons direct+C dispatcher including RF retirement, ${rejected} TF/bank refusals; NOT host CPUID/hardware privileged oracle/Linux boot)`);

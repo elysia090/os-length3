@@ -21,6 +21,24 @@ static void arithmetic(cut_lowering *cut, pl_u32 operation, pl_u32 width)
             || operation == PL_X86_OPERATION_XOR || operation == PL_X86_OPERATION_TEST,0);
 }
 
+static void bit_value(cut_lowering *cut,const pl_x86_instruction *instruction)
+{
+    cut_const(cut,1u); cut_get(cut,CUT_RIGHT); cut_const(cut,instruction->operands[0].bits-1u);
+    cut_op(cut,0x83u); cut_op(cut,0x86u); cut_set(cut,CUT_RIGHT);
+    /* CF observes the original bit. Undefined flags keep their incoming
+     * representative; ZF and every defined non-arithmetic flag are unchanged. */
+    cut_get(cut,CUT_FLAGS); cut_const(cut,~1ull); cut_op(cut,0x83u);
+    cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x83u);
+    cut_op(cut,0x50u); cut_op(cut,0x45u); cut_op(cut,0xadu); cut_op(cut,0x84u);
+    cut_set(cut,CUT_FLAGS); cut->report.flags_written=1u;
+    if (instruction->condition) {
+        cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT);
+        if (instruction->condition == 2u) { cut_const(cut,~0ull); cut_op(cut,0x85u); }
+        cut_op(cut,instruction->condition == 1u ? 0x84u : instruction->condition == 2u ? 0x83u : 0x85u);
+        cut_mask(cut,instruction->operands[0].bits); cut_set(cut,CUT_VALUE);
+    }
+}
+
 int cut_memory_supported(const pl_x86_instruction *instruction)
 {
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
@@ -36,6 +54,9 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
             || operands[0].bits < 16u || operands[0].bits != operands[1].bits)) return 0;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
                || instruction->operation == PL_X86_OPERATION_TEST;
+    int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
+    if (bit && (!first || instruction->condition >= 4u || operands[0].bits < 16u
+            || operands[1].kind != PL_X86_OPERAND_IMMEDIATE)) return 0;
     const pl_x86_operand *memory = &operands[first ? 0u : 1u];
     if (memory->kind != PL_X86_OPERAND_MEMORY || (memory->bits != 8u
             && memory->bits != 16u && memory->bits != 32u && memory->bits != 64u)) return 0;
@@ -44,7 +65,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
     } else if (first) {
-        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation))
+        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || !cut_gpr(&operands[1].value.reg)))) return 0;
@@ -70,8 +91,9 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
+    int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
-               || instruction->operation == PL_X86_OPERATION_TEST;
+               || instruction->operation == PL_X86_OPERATION_TEST || (bit && !instruction->condition);
     int store = first && !observe;
     int rmw = store && instruction->operation != PL_X86_OPERATION_MOVE;
     int load_arithmetic = !first && binary_arithmetic(instruction->operation);
@@ -97,7 +119,8 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_set(cut,first ? CUT_RIGHT : CUT_LEFT);
         cut_access(cut); /* READ only, even when the first operand is memory. */
         cut_access_value(cut); cut_set(cut,first ? CUT_LEFT : CUT_RIGHT);
-        arithmetic(cut,instruction->operation,memory->bits);
+        if (bit) bit_value(cut,instruction);
+        else arithmetic(cut,instruction->operation,memory->bits);
         return; /* No GPR/payload store; a failed load never commits flags. */
     }
     if (rmw) {
@@ -110,7 +133,8 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 0u);
         cut_access_status(cut);
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
-        arithmetic(cut,instruction->operation,memory->bits);
+        if (bit) bit_value(cut,instruction);
+        else arithmetic(cut,instruction->operation,memory->bits);
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
         cut_get(cut, CUT_VALUE);
         cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 1u);

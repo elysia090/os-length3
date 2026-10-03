@@ -25,9 +25,7 @@ machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,
             || (state->rflags & 0x20100u) || (state->efer & 0x500u) != 0x500u
             || (state->efer & ~0xd01ull) || (state->cr0 & 0x80000001u) != 0x80000001u
             || !(state->cr4 & 32u) || (state->cr4 & ~VM_CPU_CR4_VISIBLE)
-            || operation > MACHINE_MSR_SWAP_GS || state->msr_count > 1u
-            || (state->msr_count && (state->msr_keys[0] != MACHINE_MSR_KERNEL_GS_BASE
-                || !canonical(state->msr_values[0])))
+            || operation > MACHINE_MSR_SWAP_GS || !machine_msr_bank_valid(state)
             || !canonical(segments->cache[MACHINE_SEGMENT_FS].base)
             || !canonical(segments->cache[MACHINE_SEGMENT_GS].base))
         return MACHINE_RESULT_ENTRY_MAP;
@@ -36,15 +34,14 @@ machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,
     if (state->system[MACHINE_SYSTEM_CS] & 3u) return gp(port,state);
     if (operation != MACHINE_MSR_SWAP_GS && (key == MACHINE_MSR_TSC
             || key == MACHINE_MSR_STAR || key == MACHINE_MSR_LSTAR
-            || key == MACHINE_MSR_CSTAR || key == MACHINE_MSR_SYSCALL_MASK
-            || key == MACHINE_MSR_MISC_ENABLE))
+            || key == MACHINE_MSR_CSTAR || key == MACHINE_MSR_SYSCALL_MASK))
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 *destination;
     if (operation == MACHINE_MSR_SWAP_GS) {
         pl_u64 inactive = state->msr_count ? state->msr_values[0] : 0u;
         state->msr_keys[0] = MACHINE_MSR_KERNEL_GS_BASE;
         state->msr_values[0] = segments->cache[MACHINE_SEGMENT_GS].base;
-        state->msr_count = 1u;
+        if (!state->msr_count) state->msr_count = 1u;
         segments->cache[MACHINE_SEGMENT_GS].base = inactive;
         return 0u;
     }
@@ -52,18 +49,31 @@ machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,
     else if (key == MACHINE_MSR_FS_BASE) destination = &segments->cache[MACHINE_SEGMENT_FS].base;
     else if (key == MACHINE_MSR_GS_BASE) destination = &segments->cache[MACHINE_SEGMENT_GS].base;
     else if (key == MACHINE_MSR_KERNEL_GS_BASE) destination = &state->msr_values[0];
+    else if (key == MACHINE_MSR_MISC_ENABLE) destination = &state->msr_values[1];
     else return gp(port,state);
     if (operation == MACHINE_MSR_READ) {
         vm_memory_store(port + offsetof(machine_memory_port,value),
-            key == MACHINE_MSR_KERNEL_GS_BASE && !state->msr_count ? 0u : *destination,8u);
+            key == MACHINE_MSR_MISC_ENABLE ? machine_misc_enable(state)
+                : key == MACHINE_MSR_KERNEL_GS_BASE && !state->msr_count ? 0u : *destination,8u);
         return 0u;
     }
     if (key == MACHINE_MSR_EFER) {
-        if ((value & ~0xd01ull) || ((value ^ state->efer) & 0x100u)) return gp(port,state);
+        if ((value & ~0xd01ull) || ((value ^ state->efer) & 0x100u)
+                || ((value & 0x800u) && (machine_misc_enable(state) & MACHINE_MISC_XD_DISABLE))) return gp(port,state);
         value = (value & ~0x400ull) | (state->efer & 0x400u);
+    } else if (key == MACHINE_MSR_MISC_ENABLE) {
+        if (value & ~(MACHINE_MISC_WRITABLE | MACHINE_MISC_READ_ONLY)) return gp(port,state);
+        if ((value & MACHINE_MISC_READ_ONLY) != MACHINE_MISC_READ_ONLY
+                || ((value & MACHINE_MISC_XD_DISABLE) && (state->efer & 0x800u)))
+            return MACHINE_RESULT_ENTRY_MAP;
     } else if (!canonical(value)) return gp(port,state);
     if (key == MACHINE_MSR_KERNEL_GS_BASE) {
-        state->msr_keys[0] = key; state->msr_count = 1u;
+        state->msr_keys[0] = key; if (!state->msr_count) state->msr_count = 1u;
+    } else if (key == MACHINE_MSR_MISC_ENABLE) {
+        if (!state->msr_count) {
+            state->msr_keys[0] = MACHINE_MSR_KERNEL_GS_BASE; state->msr_values[0] = 0u;
+        }
+        state->msr_keys[1] = key; state->msr_count = 2u;
     }
     *destination = value;
     return 0u;

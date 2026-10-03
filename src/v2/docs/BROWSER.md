@@ -668,6 +668,39 @@ and are not a production total-transfer or signed-root/AEAD/ECC proof.
 Native archive and human UI bytes are unchanged. Close the common MSR boundary
 next, then demanded kernel/device semantics, PID 1 and full product acceptance.
 
+### CPU controls, division and high-virtual memory-bit checkpoint
+
+The [current common-path evidence](../vm/check/browser/evidence/2026-10-03-misc-arithmetic.md)
+closes Intel MISC_ENABLE/effective CPUID, all six implicit sign extensions,
+8/16/32-bit register DIV/IDIV with precise #DE, and immediate memory
+BT/BTS/BTR/BTC through existing C-MMU reservation/commit. Native observations
+and direct Wasm/C-dispatch checks distinguish defined flags from chosen
+undefined representatives. Memory-bit checks cover direct C-MMU invocation,
+not a second table-dispatch/exception-entry claim. 316 native/cold emissions,
+full product checks and selected lowering ASan/UBSan pass. 64-bit/memory
+division, LOCK/register-indexed memory bit strings and pending time/syscall
+MSRs remain explicit admission boundaries. There is no source interpreter,
+guest patch or changed CPU signature. QEMU's MISC oracle validates legal
+transport only, not its missing CPUID side effects.
+
+Actual browser executes 129,063,662 instructions / 64,421,578 admissions,
+adopts Linux's own high virtual mappings and delivers six real #PFs to guest
+handlers. Decompressed output still matches all 14,622,864 bytes before
+PT_LOAD moves. Next refusal is memory INC (`ff 05 a1 c8 75 00`) at
+`0xffffffff81401759`, effective address `0xffffffff81b5e000`. Close the common
+memory unary family and its fault/CF/commit rules, not a coordinate-specific
+shim. PID 1/shell, full closure, authenticated storage/network and cold shell
+three seconds remain red. Native publication and human UI are unchanged.
+
+VM/cold memory stays 15,728,640 / 1,048,576 bytes and source payload-cache
+copies stay zero. Engine replacement 33.9 s, execution 30.2 s and admission
+19.7 s dominate cold construction 6.0 s in this single diagnostic run; they
+are not cold-ready measurements. 1,511,206,912 cumulative code-copy bytes
+are work, not artifact/resident/delivery size. 47 object ranges still exclude
+the diagnostic fixture/module/output-digest requests. Bounded cache capacity,
+source alias invalidation and explicit waits remain mandatory when reducing
+these costs. The full product goal is active, not completed by diagnostic pass.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

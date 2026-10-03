@@ -184,6 +184,35 @@ _start:
     add rax, qword ptr [rip + 8]
 #elif MEMORY_CASE == 88
     add rax, qword ptr fs:[rdi]
+#elif MEMORY_CASE >= 89 && MEMORY_CASE <= 100
+#if (MEMORY_CASE - 89) % 3 == 0
+#define DEST word ptr [rdi]
+#elif (MEMORY_CASE - 89) % 3 == 1
+#define DEST dword ptr [rdi]
+#else
+#define DEST qword ptr [rdi]
+#endif
+#if MEMORY_CASE < 92
+    bt DEST, 255
+#elif MEMORY_CASE < 95
+    bts DEST, 255
+#elif MEMORY_CASE < 98
+    btr DEST, 255
+#else
+    btc DEST, 255
+#endif
+#elif MEMORY_CASE == 101
+    bts qword ptr [rip + 8], 63
+#elif MEMORY_CASE == 102
+    bts word ptr [edi], 16
+#elif MEMORY_CASE == 103
+    btr qword ptr [rdi + rcx*4 + 7], 67
+#elif MEMORY_CASE == 104
+    btc qword ptr [rbp], 0
+#elif MEMORY_CASE == 105
+    bt dword ptr [rdi], 35
+#elif MEMORY_CASE == 106
+    bts qword ptr [rdi], 63
 #else
 #error unsupported case
 #endif

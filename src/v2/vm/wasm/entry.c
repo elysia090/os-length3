@@ -433,9 +433,10 @@ machine_result vm_msr(pl_u32 port, pl_u32 operation, pl_u32 key, pl_u64 value)
     machine_result result = vm_msr_transfer(&resident,port - arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,
         operation,key,value);
-    /* EFER changes NX/SYSCALL interpretation; revoke the current admission.
+    /* EFER/MISC_ENABLE change CPU interpretation; revoke current admission.
      * FS/GS only change data addresses read freshly by the C access boundary. */
-    if (!result && operation == MACHINE_MSR_WRITE && key == MACHINE_MSR_EFER)
+    if (!result && operation == MACHINE_MSR_WRITE
+            && (key == MACHINE_MSR_EFER || key == MACHINE_MSR_MISC_ENABLE))
         execution.generation = 0u;
     return result;
 }

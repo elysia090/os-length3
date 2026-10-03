@@ -85,14 +85,56 @@ int main(void)
         EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
     }
     const pl_u32 pending[] = {MACHINE_MSR_TSC,MACHINE_MSR_STAR,MACHINE_MSR_LSTAR,
-        MACHINE_MSR_CSTAR,MACHINE_MSR_SYSCALL_MASK,MACHINE_MSR_MISC_ENABLE};
+        MACHINE_MSR_CSTAR,MACHINE_MSR_SYSCALL_MASK};
     for (pl_u32 k=0u;k<sizeof pending/sizeof pending[0];++k) for (pl_u32 op=0u;op<2u;++op) {
         reset(0u); machine_state before=state; machine_segments hidden=segments;
         EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,op,pending[k],0u) == MACHINE_RESULT_ENTRY_MAP);
         EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
         EXPECT(!get(24u));
     }
-    for (pl_u32 bad = 0u; bad < 7u; ++bad) {
+    /* The profile exposes fast strings and NX, but no PMU/BTS/PEBS. The
+     * latter unavailable indicators are read-only, not arbitrary zero MSRs. */
+    reset(0u);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,0u,MACHINE_MSR_MISC_ENABLE,0u));
+    EXPECT(get(8u) == 0x1801u && !state.msr_count);
+    for (pl_u32 cpl=0u;cpl<4u;++cpl) for (pl_u32 bits=0u;bits<8u;++bits) {
+        reset(cpl); machine_state before=state; machine_segments hidden=segments;
+        pl_u64 value=0x1800u|(bits&1u)|((bits&2u) ? 1ull<<22u : 0u)|((bits&4u) ? 1ull<<34u : 0u);
+        EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_MISC_ENABLE,value)
+            == (cpl ? 107u : 0u));
+        if (!cpl) {
+            before.msr_count=2u; before.msr_keys[0]=MACHINE_MSR_KERNEL_GS_BASE;
+            before.msr_keys[1]=MACHINE_MSR_MISC_ENABLE; before.msr_values[1]=value;
+            EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,0u,MACHINE_MSR_MISC_ENABLE,0u));
+            EXPECT(get(8u) == value);
+        }
+        EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden)); ++cases;
+    }
+    for (pl_u32 bit=0u;bit<64u;++bit) {
+        if (bit == 0u || bit == 22u || bit == 34u) continue;
+        reset(0u); machine_state before=state; machine_segments hidden=segments;
+        pl_u64 value=0x1801u^(1ull<<bit);
+        /* Modifying read-only status is outside this admitted write policy;
+         * do not invent a model-dependent exception. Reserved ones are #GP. */
+        EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_MISC_ENABLE,value)
+            == (bit == 11u || bit == 12u ? MACHINE_RESULT_ENTRY_MAP : 107u));
+        EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden)); ++cases;
+    }
+    reset(0u);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_MISC_ENABLE,0x400001801ull));
+    EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_EFER,0xd00u) == 107u);
+    EXPECT(state.efer == 0x500u);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,2u,0u,0u));
+    EXPECT(state.msr_count == 2u && state.msr_values[1] == 0x400001801ull);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_KERNEL_GS_BASE,0x42u));
+    EXPECT(state.msr_count == 2u && state.msr_values[1] == 0x400001801ull);
+    {
+        reset(0u); state.efer=0xd00u; machine_state before=state; machine_segments hidden=segments;
+        EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_MISC_ENABLE,0x400001801ull)
+            == MACHINE_RESULT_ENTRY_MAP);
+        EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
+    }
+    for (pl_u32 bad = 0u; bad < 14u; ++bad) {
         reset(0u);
         if (!bad) state.msr_count = 33u;
         if (bad == 1u) { state.msr_count = 1u; state.msr_keys[0] = MACHINE_MSR_GS_BASE; }
@@ -101,6 +143,17 @@ int main(void)
         if (bad == 4u) state.efer |= 2u;
         if (bad == 5u) segments.cache[MACHINE_SEGMENT_FS].base = 1ull << 47u;
         if (bad == 6u) segments.cache[MACHINE_SEGMENT_GS].base = 1ull << 47u;
+        if (bad >= 7u) {
+            state.msr_count=2u; state.msr_keys[0]=MACHINE_MSR_KERNEL_GS_BASE;
+            state.msr_keys[1]=MACHINE_MSR_MISC_ENABLE; state.msr_values[1]=0x1801u;
+            if (bad == 7u) state.msr_count=3u;
+            if (bad == 8u) state.msr_keys[0]=MACHINE_MSR_MISC_ENABLE;
+            if (bad == 9u) state.msr_keys[1]=MACHINE_MSR_KERNEL_GS_BASE;
+            if (bad == 10u) state.msr_values[0]=1ull<<47u;
+            if (bad == 11u) state.msr_values[1]=0x1803u;
+            if (bad == 12u) state.msr_values[1]=1u;
+            if (bad == 13u) { state.msr_values[1]=0x400001801ull; state.efer=0xd00u; }
+        }
         machine_state before = state; machine_segments hidden = segments;
         EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_GS_BASE,0u) == MACHINE_RESULT_ENTRY_MAP);
         EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));

@@ -37,6 +37,9 @@ _start:
 .code64
 long_start:
     xor %r12d, %r12d
+.ifdef MISC_CASES
+    jmp misc_loop
+.endif
 case_loop:
     mov $record, %edi
     mov %r12, (%rdi)
@@ -149,11 +152,75 @@ emit:
     mov $10, %al
     out %al, $0xe9
     inc %r12d
+.ifdef MISC_CASES
+    cmp $9, %r12d
+    jb misc_loop
+.else
     cmp $32, %r12d
     jb case_loop
+.endif
     mov $0x10, %eax
     out %eax, $0xf4
     hlt
+.ifdef MISC_CASES
+misc_loop:
+    mov $record, %edi
+    mov %r12, (%rdi)
+    movq $0, 8(%rdi)
+    movq $0x1a0, 16(%rdi)
+    mov $0x1a0, %ecx
+    test %r12d, %r12d
+    jz misc_read
+    mov %r12d, %eax
+    dec %eax
+    mov %eax, %edx
+    mov %eax, %r8d
+    and $1, %eax
+    and $2, %edx
+    shl $21, %edx
+    or %edx, %eax
+    and $4, %r8d
+    mov %r8d, %edx
+    movq $1, 8(%rdi)
+    mov %rdx, %r8
+    shl $32, %r8
+    or %rax, %r8
+    mov %r8, 24(%rdi)
+    pushq $0x202
+    popfq
+    wrmsr
+    jmp misc_capture
+misc_read:
+    pushq $0x202
+    popfq
+misc_capture:
+    pushfq
+    pop %rax
+    mov %rax, 64(%rdi)
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 32(%rdi)
+    test %r12d, %r12d
+    jnz misc_cpuid
+    mov %rax, 24(%rdi)
+misc_cpuid:
+    mov $0xc0000080, %ecx
+    rdmsr
+    shl $32, %rdx
+    or %rdx, %rax
+    mov %rax, 40(%rdi)
+    xor %eax, %eax
+    cpuid
+    mov %rax, 48(%rdi)
+    mov $0x80000001, %eax
+    cpuid
+    mov %rdx, 56(%rdi)
+    cld
+    mov $record, %esi
+    mov $9, %r8d
+    jmp print_word
+.endif
 .section .rodata,"a"
 .balign 8
 gdt:

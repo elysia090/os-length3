@@ -371,6 +371,17 @@ operations against the same cut. Device I/O, clock, entropy and physical-page
 delivery are the only host events. `WRMSR`, `LGDT`, control-register moves,
 `IRET`, `SYSCALL` and page faults are machine semantics, not host barriers.
 
+The [current browser arithmetic/CPU-control checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-misc-arithmetic.md)
+keeps independent reference scopes explicit. `prepare-msr.sh DIR misc` plus
+`check-msr-misc-system.mjs` compares nine legal QEMU MISC_ENABLE rows. TCG's
+unchanged CPUID after those writes does not prove the architectural Limit/XD
+side effects; those have separate literal-contract tests. `extend-check` and
+`divide-check` capture actual native register/flags/#DE observations before
+testing cold lowering; `check-extend.mjs` and `check-divide.mjs` separately run
+direct cuts and C table dispatch. `prepare-memory-bit-cuts.sh` plus
+`check-wasm-provider.mjs` covers immediate memory BT/BTS/BTR/BTC CPU/RAM and
+protection-fault results, not exception entry. None is a Linux/PID 1 boot gate.
+
 This division avoids rebuilding QEMU while preserving the final route:
 
 ```text

@@ -12,7 +12,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
-	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-repeat.c src/lower-branch.c
+	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-repeat.c src/lower-branch.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
@@ -27,7 +27,9 @@ COLD_SOURCES = wasm/entry.c wasm/memory.c $(filter-out src/emit-module.c src/emi
 	../optimized-x86/src/reader.c ../support/src/sha256.c \
 	$(addprefix $(ZYDIS)/src/,$(addsuffix .c,Register SharedData DecoderData Decoder Mnemonic))
 wasm: $(BUILD)/wasm-compiler.wasm
-$(BUILD)/wasm-compiler.wasm: $(COLD_SOURCES) $(wildcard include/wasm-compiler/*.h src/*.h) | $(BUILD)
+$(BUILD)/wasm-compiler.wasm: $(COLD_SOURCES) $(wildcard include/wasm-compiler/*.h src/*.h \
+	../machine-abi/include/machine/*.h ../x86/include/x86/*.h \
+	../optimized-x86/include/optimized-x86/*.h ../support/include/support/*.h) | $(BUILD)
 	$(WASM_CC) $(WASM_FLAGS) $(INCLUDES) -I$(ZYDIS)/include \
 		-I$(ZYDIS)/dependencies/zycore/include -I$(ZYDIS)/src \
 		-DZYAN_NO_LIBC -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER \
@@ -92,6 +94,14 @@ $(BUILD)/call-check: check/call.c check/native-stack.S $(BUILD)/libwasm-compiler
 
 $(BUILD)/leave-check: check/leave.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/leave.c check/native-stack.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+$(BUILD)/extend-check: check/extend.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/extend.c check/native-cut.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+$(BUILD)/divide-check: check/divide.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/divide.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 cut-check: all $(BUILD)/cut-check
@@ -179,7 +189,8 @@ memory-cmov-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
 	for rank in 0 20 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 \
-		62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88; do \
+		62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 \
+		89 90 91 92 93 94 95 96 97 98 99 100 101 102 103 104 105 106; do \
 	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
 		-DMEMORY_CASE=$$rank check/memory-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
@@ -215,11 +226,13 @@ multiply-fixture-check: $(BUILD)/cut-check fixture-tools
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done; done
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
 	$(BUILD)/admission-check
 	$(BUILD)/branch-check
 	$(BUILD)/call-check
 	$(BUILD)/leave-check
+	$(BUILD)/extend-check
+	$(BUILD)/divide-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
 	$(BUILD)/flags-check

@@ -122,6 +122,21 @@ quota state uses 1,967 compilations / 998,033 source hits, 8,056,832 cumulative
 code-copy bytes instead of 4,096,000,000; fetch/residence are unchanged. Timing
 observations are not cold-shell latency. No native release/human UI changed.
 
+Latest common-path checkpoint: MISC_ENABLE/effective CPUID, all six implicit
+sign extensions, precise 8/16/32-bit register DIV/IDIV and immediate memory
+BT/BTS/BTR/BTC are implemented. 316 fresh native/cold emissions, full product
+checks and selected lowering ASan/UBSan pass. Division matches 12,288 native
+CPU observations / 7,661 #DE frames in direct Wasm and separately C dispatch;
+memory bit operations match 9,216 CPU/RAM / 8,704 protection-fault observations
+through C-MMU (not a separate exception-entry completeness claim). QEMU's
+MISC oracle does not prove its missing CPUID side effects. Pending/unsupported
+families are still explicit, not skipped or mapped to a guessed fault.
+Actual browser adopts Linux's own high virtual mappings and reaches
+129,063,662 retirements / 64,421,578 admissions. Six #PFs enter and return from
+guest handlers; output still matches all 14,622,864 decompressed bytes.
+Next refusal is memory INC at `0xffffffff81401759`. PID 1/shell remains red.
+See [the current evidence](../vm/check/browser/evidence/2026-10-03-misc-arithmetic.md).
+
 Next, in order:
 
 1. Actual browser decompression is now completely observed: all 14,622,864
@@ -143,15 +158,19 @@ Next, in order:
    and separately C dispatch, including cross-page/protection and preserved
    state on faults. Full checks, 256 native/cold emissions, selected ASan/UBSan,
    RF clearing and physical waits pass. No warning, interpreter or skip.
-   Final browser: 129,057,543 retirements / 64,417,818 admissions; next RDMSR
+   Prior browser: 129,057,543 retirements / 64,417,818 admissions; next RDMSR
    at 0x102dcc6, ECX=0x1a0 (Intel MISC_ENABLE), result 6. The initial wrong
    #GP for this available-but-unimplemented MSR is fixed; TSC/SYSCALL/MISC
    pending keys refuse explicitly, not an invented guest fault/default zero.
-   Implement the common MISC_ENABLE/CPUID contract and its independent tests.
-   Do not evade it by changing CPU signature or patching the guest path.
-   PID 1/shell are still not achieved. See 2026-10-03-msr/leave evidence.
-   Engine replacement (33.5 s), VM execution (29.6 s) and source/MMU admission
-   (19.2 s) exceed cold construction (5.9 s) in the final repeat. Analyze exact
+   MISC_ENABLE/CPUID and subsequent arithmetic/bit cuts are now closed as
+   described above. The remaining real red is `ff 05 a1 c8 75 00`, memory INC,
+   effective address `0xffffffff81b5e000`. Implement common memory
+   INC/DEC/NEG/NOT with native comparisons, incoming-CF preservation for
+   INC/DEC, exact fault/no-publication and existing reservation/commit.
+   Do not patch the guest, change CPU signature or add kernel-coordinate code.
+   PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
+   Engine replacement (33.9 s), VM execution (30.2 s) and source/MMU admission
+   (19.7 s) exceed cold construction (6.0 s) in the latest repeat. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Add crossing-first-instruction supply while
@@ -177,7 +196,7 @@ page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-linux-entry.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-misc-arithmetic.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

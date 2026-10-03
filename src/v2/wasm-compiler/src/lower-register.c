@@ -114,6 +114,11 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
                 | PL_X86_INSTRUCTION_PRIVILEGED | PL_X86_INSTRUCTION_TRAP_AFTER))
             || !canonical(instruction->rip) || !canonical(instruction->fallthrough)) return 0;
     if (instruction->operation == PL_X86_OPERATION_NOP) return 1;
+    if (instruction->operation == PL_X86_OPERATION_ACCUMULATOR_EXTEND
+            || instruction->operation == PL_X86_OPERATION_HIGH_EXTEND)
+        return instruction->flow == PL_X86_FLOW_NEXT && !count
+            && instruction->condition < 3u
+            && instruction->operand_width == (16u << instruction->condition);
     if (instruction->operation == PL_X86_OPERATION_FLAG_CONTROL)
         return instruction->flow == PL_X86_FLOW_NEXT && !count
             && (instruction->condition < 2u || instruction->condition == 3u || instruction->condition == 4u);
@@ -301,6 +306,24 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     const pl_x86_operand *operands = instruction->operands;
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
+    if (operation == PL_X86_OPERATION_ACCUMULATOR_EXTEND
+            || operation == PL_X86_OPERATION_HIGH_EXTEND) {
+        pl_u32 width = instruction->operand_width;
+        int high = operation == PL_X86_OPERATION_HIGH_EXTEND;
+        pl_u32 source_bits = high ? width : width / 2u;
+        /* The implicit source uses the current slice value, not entry RAM.
+         * Wasm sign-extension truncates first; unrelated upper bits disappear.
+         * High-half conversion is exactly an all-zero/all-one sign mask. */
+        load_register(cut, 0u); cut_get(cut, 1u);
+        if (source_bits < 64u) cut_op(cut, source_bits == 8u ? 0xc2u : source_bits == 16u ? 0xc3u : 0xc4u);
+        if (high) { cut_const(cut, 63u); cut_op(cut, 0x87u); }
+        cut_mask(cut, width); cut_set(cut, CUT_VALUE);
+        pl_x86_register destination = { 0 };
+        destination.class_id = PL_X86_REGISTER_GPR;
+        destination.index = high ? 2u : 0u; destination.bits = (pl_u16)width;
+        cut_write_register(cut, &destination);
+        return;
+    }
     if (operation == PL_X86_OPERATION_SHIFT) { cut_lower_shift(cut, instruction); return; }
     if (operation == PL_X86_OPERATION_MULTIPLY_SIGNED) { cut_lower_multiply(cut, instruction); return; }
     if (operation == PL_X86_OPERATION_BIT_TEST) {

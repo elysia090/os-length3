@@ -11,7 +11,7 @@ enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
        CUT_LOCAL_COUNT = 21, CUT_MEMORY_LOCALS = 23, CUT_REPEAT_LOCALS = 24 };
 enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT, CUT_SYSTEM_TABLE,
        CUT_SYSTEM_FAR_RETURN, CUT_SYSTEM_CONTROL_READ, CUT_SYSTEM_CONTROL_WRITE,
-       CUT_SYSTEM_CPUID, CUT_SYSTEM_INTERRUPT_RETURN, CUT_SYSTEM_MSR };
+       CUT_SYSTEM_CPUID, CUT_SYSTEM_INTERRUPT_RETURN, CUT_SYSTEM_MSR, CUT_SYSTEM_DIVIDE };
 enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
 typedef struct {
     wasm_writer *writer;
@@ -77,6 +77,8 @@ int cut_shift_supported(const pl_x86_instruction *instruction);
 void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_multiply_supported(const pl_x86_instruction *instruction);
 void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction);
+int cut_divide_supported(const pl_x86_instruction *instruction);
+void cut_lower_divide(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
                  cut_plan *plan);
