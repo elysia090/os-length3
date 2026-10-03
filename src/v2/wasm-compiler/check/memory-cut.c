@@ -144,7 +144,9 @@ int main(int argc, char **argv)
         || instruction.operation == PL_X86_OPERATION_NEGATE
         || instruction.operation == PL_X86_OPERATION_COMPLEMENT;
     int exchange = instruction.operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
-    int multiply = instruction.operation == PL_X86_OPERATION_MULTIPLY_SIGNED;
+    int multiply = instruction.operation == PL_X86_OPERATION_MULTIPLY_SIGNED
+        || instruction.operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED;
+    int implicit = multiply && instruction.visible_operand_count == 1u;
     int set = instruction.operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int selector = instruction.machine_operation == PL_X86_MACHINE_READ_SELECTOR;
     pl_u64 selectors[6]; native_selectors(selectors);
@@ -223,12 +225,12 @@ int main(int argc, char **argv)
             if (instruction.address_width == 32u) state.registers[base_register] |= 0xdeadbeef00000000ull;
         } else address = instruction.fallthrough + (pl_u64)operand->displacement + word_offset;
         if (multiply && !relative && row < 256u) {
-            pl_u32 width = report.memory_bytes*8u, destination=instruction.operands[0].value.reg.index;
+            pl_u32 width = report.memory_bytes*8u, destination=implicit ? 0u : instruction.operands[0].value.reg.index;
             pl_u64 sign = 1ull << (width-1u), mask = ~0ull >> (64u-width);
             const pl_u64 edges[] = {0u,1u,mask,mask-1u,sign,sign-1u,sign+1u,127u,128u,
                 255u,256u,0xffffffffu,0x100000000ull,0x80000000u,0x8000000000000000ull,~0ull};
             pl_u64 value=edges[row%16u]&mask;
-            if (instruction.visible_operand_count==2u
+            if ((instruction.visible_operand_count==2u || implicit)
                     && !(operand->base.class_id==PL_X86_REGISTER_GPR && operand->base.index==destination)
                     && !(operand->index.class_id==PL_X86_REGISTER_GPR && operand->index.index==destination))
                 state.registers[destination]=(state.registers[destination]&~mask)|(edges[(row/16u)%16u]&mask);

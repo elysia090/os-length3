@@ -116,6 +116,12 @@ $(BUILD)/divide-check: check/divide.c check/native-cut.S $(BUILD)/libwasm-compil
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/divide.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+$(BUILD)/implicit-multiply-check: check/implicit-multiply.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/implicit-multiply.c check/native-cut.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+check: $(BUILD)/implicit-multiply-check
+
 cut-check: all $(BUILD)/cut-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to the post-linked cut fixture\n' >&2; exit 2; }
 	$(BUILD)/cut-check "$(INPUT)"
@@ -230,7 +236,9 @@ memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 		210 211 212 213 214 215 216 217 218 219 220 221 222 223 \
 		224 225 226 227 228 229 230 231 232 233 234 235 236 237 238 239 240 241 242 243 244 245 \
 		246 247 248 249 250 251 252 253 254 255 256 257 258 259 260 261 262 263 264 265 266 267 \
-		268 269 270 271 272 273 274 275 276 277 278 279 280; do \
+		268 269 270 271 272 273 274 275 276 277 278 279 280 \
+		281 282 283 284 285 286 287 288 289 290 291 292 293 294 295 296 297 298 299 300 301 302 303 \
+		304 305 306 307 308 309 310 311 312 313 314 315 316 317 318 319 320 321 322 323 324 325 326; do \
 	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
 		-DMEMORY_CASE=$$rank check/memory-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
@@ -286,6 +294,7 @@ check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check select
 	$(BUILD)/pop-memory-check
 	$(BUILD)/extend-check
 	$(BUILD)/divide-check
+	$(BUILD)/implicit-multiply-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
 	$(BUILD)/invalidate-check

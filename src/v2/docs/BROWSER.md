@@ -974,6 +974,24 @@ and the next refusal is `48 f7 e2` (implicit full-width MUL RDX) at
 `0xffffffff810ab884`. Delivery/residency and complete decompression are
 unchanged. Linux/PID 1/shell and workspace/network product gates remain unmet.
 
+## Implicit full products — 2026-10-03
+
+[The full-product receipt](../vm/check/browser/evidence/2026-10-03-implicit-multiply.md)
+connects register and memory MUL/one-operand IMUL at all four operand widths
+to the shared product/high-limb SSA. Memory source is a precise C READ before
+implicit publication, not a store or opcode callback. AX/upper parents,
+RDX:RAX, CF/OF, incoming undefined flags, aliases and composed source reads
+are checked against actual native observations.
+
+38 register modules / 19,456 native cases and 46 memory modules / 23,552
+successes / 22,528 protection-fault frames pass in direct and C-dispatch
+comparisons; full checks, selected sanitizers and 1,008 cold emissions pass.
+Actual browser advances to 136,073,617 retired / 68,669,194 admissions. Next
+is memory-source IDIV dword [RSP+4] at `0xffffffff81008e75`, not the previous
+implicit MUL gate. Zero manual branches, complete decompression and delivery
+counts are preserved. Linux/PID 1/shell, authenticated production storage /
+network acceptance and cold shell 3 seconds remain unachieved.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

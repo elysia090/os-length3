@@ -429,6 +429,62 @@ _start:
     imul r10d, dword ptr [rip+512], -128
 #elif MEMORY_CASE == 280
     imul cx, word ptr ss:[rdi+r11*2+7], -128
+#elif MEMORY_CASE >= 281 && MEMORY_CASE <= 312
+#if (MEMORY_CASE-281)/8 < 2
+#define PRODUCT mul
+#else
+#define PRODUCT imul
+#endif
+#if (MEMORY_CASE-281)%8 < 4
+#if (MEMORY_CASE-281)%16 < 8
+#define ADDRESS [rdi]
+#else
+#define ADDRESS [rbx]
+#endif
+#else
+#if (MEMORY_CASE-281)%16 < 8
+#define ADDRESS [edi]
+#else
+#define ADDRESS [ebx]
+#endif
+#endif
+#if (MEMORY_CASE-281)%4 == 0
+    PRODUCT byte ptr ADDRESS
+#elif (MEMORY_CASE-281)%4 == 1
+    PRODUCT word ptr ADDRESS
+#elif (MEMORY_CASE-281)%4 == 2
+    PRODUCT dword ptr ADDRESS
+#else
+    PRODUCT qword ptr ADDRESS
+#endif
+#elif MEMORY_CASE == 313
+    mul qword ptr [rax]
+#elif MEMORY_CASE == 314
+    imul qword ptr [rax]
+#elif MEMORY_CASE == 315
+    mul qword ptr [rdx]
+#elif MEMORY_CASE == 316
+    imul qword ptr [rdx]
+#elif MEMORY_CASE == 317
+    mul byte ptr [r12]
+#elif MEMORY_CASE == 318
+    imul byte ptr [r12]
+#elif MEMORY_CASE == 319
+    mul word ptr ss:[rbp]
+#elif MEMORY_CASE == 320
+    imul word ptr ss:[rbp]
+#elif MEMORY_CASE == 321
+    mul dword ptr [rdi+rcx*4+7]
+#elif MEMORY_CASE == 322
+    imul dword ptr [rdi+rcx*4+7]
+#elif MEMORY_CASE == 323
+    mul qword ptr [rip+512]
+#elif MEMORY_CASE == 324
+    imul qword ptr [rip+512]
+#elif MEMORY_CASE == 325
+    mul qword ptr [rdi+rax*8+7]
+#elif MEMORY_CASE == 326
+    imul qword ptr [rdi+rax*8+7]
 #else
 #error unsupported case
 #endif

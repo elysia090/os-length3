@@ -213,12 +213,27 @@ int main(int argc, char **argv)
         EXPECT(report.written_registers==(rank==1u ? 128u : 1u));
         EXPECT(report.read_registers==(rank==0u ? 0u : 128u));
     }
-    // Implicit double-width, FS and LOCK forms still explicitly refuse.
-    static const pl_u8 multiply_rejected[][5] = {
+    // Implicit double-width forms publish AX or DX:AX after the same product.
+    static const pl_u8 implicit_multiply[][5] = {
         {0xf7u,0xe8u,0x90u,0x90u,0x90u},
         {0xf7u,0x28u,0x90u,0x90u,0x90u},
+        {0x48u,0xf7u,0xe2u,0x90u,0x90u},
+        {0xf6u,0xe4u,0x90u,0x90u,0x90u},
+    };
+    for (pl_u32 rank=0u;rank<4u;++rank) {
+        memcpy(pages,implicit_multiply[rank],sizeof implicit_multiply[rank]);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions==1u && report.flags_written
+            && report.written_registers==(rank==3u ? 1u : 5u));
+        EXPECT(report.boundary==(rank==1u ? WASM_CUT_MEMORY : WASM_CUT_LIMIT));
+        EXPECT(report.memory_access==(rank==1u ? MACHINE_MEMORY_READ : 0u));
+    }
+    // FS address bases and invalid LOCK encodings still explicitly refuse.
+    static const pl_u8 multiply_rejected[][5] = {
         {0x64u,0x0fu,0xafu,0x07u,0x90u},
         {0xf0u,0x0fu,0xafu,0xc7u,0x90u},
+        {0x64u,0x48u,0xf7u,0x27u,0x90u},
+        {0xf0u,0x48u,0xf7u,0xe2u,0x90u},
     };
     options.maximum_source_instructions = 1u;
     for (pl_u32 rank = 0u; rank < sizeof multiply_rejected / sizeof multiply_rejected[0]; ++rank) {

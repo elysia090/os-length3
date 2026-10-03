@@ -109,7 +109,9 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     int selector = cut_selector_read_supported(instruction);
-    int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED;
+    int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED
+        || instruction->operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED;
+    int implicit = multiply && instruction->visible_operand_count == 1u;
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
             || (instruction->machine_operation != PL_X86_MACHINE_NONE
                 && !selector && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
@@ -152,7 +154,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         const pl_x86_operand *other = &operands[first ? 1u : 0u];
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
-    } else if (first && !unary && !set) {
+    } else if (first && !unary && !set && !implicit) {
         if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !exchange)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
@@ -185,7 +187,10 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
                || instruction->operation == PL_X86_OPERATION_TEST || (bit && !instruction->condition);
-    int store = first && !observe;
+    int implicit = instruction->visible_operand_count == 1u
+        && (instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED
+            || instruction->operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED);
+    int store = first && !observe && !implicit;
     int rmw = store && instruction->operation != PL_X86_OPERATION_MOVE && !set;
     int load_arithmetic = !first && binary_arithmetic(instruction->operation);
     int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED;
@@ -250,6 +255,14 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     } else cut_access(cut);
     if (!store) {
         cut_access_value(cut);
+        if (implicit) {
+            cut_set(cut,CUT_RIGHT);
+            pl_x86_operand acc=accumulator(memory->bits);
+            cut_read_operand(cut,&acc,memory->bits); cut_set(cut,CUT_LEFT);
+            cut_implicit_multiply_value(cut,memory->bits,
+                instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED);
+            return;
+        }
         if (instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE) {
             /* The temporary source load precedes the condition check, even
              * when false. A fault returns before any parent/RIP publication.

@@ -301,16 +301,25 @@ Next, in order:
    separately C dispatch, 1,140 algebraic full-width boundaries, selected
    sanitizers, full checks and 924 cold emissions. Browser advances to
    134,840,569 retired / 67,826,980 admissions. Next is `48 f7 e2` (MUL RDX)
-   at 0xffffffff810ab884: close implicit RDX:RAX products using the existing
-   product/high-limb SSA, with native full-result/CF/OF tests. Do not treat the
+   at 0xffffffff810ab884. That common implicit product entrance is now closed:
+   register/memory MUL and one-operand IMUL use the shared high-limb SSA;
+   38 register modules / 19,456 native cases and 46 memory modules / 23,552
+   successes / 22,528 #PF frames pass direct and C-dispatch comparisons.
+   Full checks, selected sanitizers and 1,008 cold emissions pass. The actual
+   browser now reaches 136,073,617 retired / 68,669,194 admissions. Next is
+   `f7 7c 24 04` (IDIV dword [RSP+4]) at 0xffffffff81008e75: connect all
+   ordinary memory DIV/IDIV source widths to the existing precise division
+   SSA after a C load, proving #PF priority before #DE and no early register
+   publication. No kernel-coordinate arithmetic or interpreter fallback.
+   Do not treat the
    bounded 128/64 divider as a global work/span-minimum proof. Memory division
    remains an explicit grammar refusal. Boot/PID 1/shell remain unmet.
    The old linked System.map is not the optimized address authority.
    Keep the CPU profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (92.2 s), VM execution (34.3 s) and source/MMU admission
-   (22.0 s) exceed cold construction (16.0 s) in the latest uncontrolled
+   Engine replacement (94.9 s), VM execution (35.1 s) and source/MMU admission
+   (22.5 s) exceed cold construction (16.6 s) in the latest uncontrolled
    observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
