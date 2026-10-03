@@ -752,6 +752,22 @@ with unchanged decompression witnesses. Next refusal: memory SETE at
 `0xffffffff81096421`. Linux/PID 1/shell and the full product goal remain red.
 Human UI/native publication are unchanged; component pass is not boot.
 
+### Memory condition-store checkpoint
+
+[Current evidence](../vm/check/browser/evidence/2026-10-03-memory-condition.md)
+closes all 16 memory SETcc predicates through the existing condition SSA and
+C-MMU byte store. False also writes; flags and GPRs remain unchanged. 25
+post-linked forms pass 12,800 CPU/RAM, 12,288 native fault and 25,088 RF checks.
+32 entrance assertions were red first; exact RSP encoding, prefix separation,
+ignored ModRM.reg and fixed-byte width are covered. Two source-alias cases
+separately retire once through C dispatch and revoke equal-byte false stores.
+Full product checks, selected lowering sanitizers and 395 native/cold emissions
+pass. Actual browser reaches 129,387,892 retirements / 64,571,332 admissions;
+all decompression witnesses stay unchanged. Next refusal is register-index
+memory BTS at `0xffffffff81054a7c`, whose signed word-offset calculation remains
+open. PID 1/shell and the full goal remain red; component pass is not boot.
+Human UI and the native publication are unchanged.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

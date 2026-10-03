@@ -396,10 +396,16 @@ must not be relabeled as a pass.
 
 The [scalar memory exchange checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-exchange.md)
 adds `prepare-memory-exchange-cuts.sh NEW-DIRECTORY` (32 ordinary post-linked
-CMPXCHG forms, LOCK/no-LOCK). The current `check-source-admission.mjs VM.WASM
-COMPILER.WASM` performs 14 real cold emissions, including four both-arm/LOCK
+CMPXCHG forms, LOCK/no-LOCK). At that checkpoint `check-source-admission.mjs VM.WASM
+COMPILER.WASM` performed 14 real cold emissions, including four both-arm/LOCK
 source-alias writes through C dispatch, and rejects shared-memory linking.
 LOCK coverage assumes one serialized owner of ordinary memory, not SMP.
+
+The [memory condition checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-condition.md)
+adds `prepare-memory-condition-cuts.sh NEW-DIRECTORY` (25 ordinary post-linked
+SETcc forms). The current source-admission driver now performs 16 actual cold
+emissions, including both SETcc truth values and equal-byte source invalidation.
+The prior ten/fourteen-operation receipts remain historical observations.
 
 This division avoids rebuilding QEMU while preserving the final route:
 

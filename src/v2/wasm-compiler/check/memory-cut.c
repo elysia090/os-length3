@@ -136,7 +136,9 @@ int main(int argc, char **argv)
         || instruction.operation == PL_X86_OPERATION_NEGATE
         || instruction.operation == PL_X86_OPERATION_COMPLEMENT;
     int exchange = instruction.operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
+    int set = instruction.operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int precise_rmw = unary || exchange;
+    int precise_write = precise_rmw || set;
     const pl_x86_memory *operand = &instruction.operands[store ? 0u : 1u].value.memory;
     relative = operand->base.class_id == PL_X86_REGISTER_IP;
     /* High application memory, not ASan's reserved low shadow/gap. */
@@ -154,7 +156,7 @@ int main(int argc, char **argv)
                 && mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
     }
     if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
-            || instruction.operation == PL_X86_OPERATION_BIT_TEST || precise_rmw)) {
+            || instruction.operation == PL_X86_OPERATION_BIT_TEST || precise_write)) {
         struct sigaction action = {.sa_sigaction=memory_exception,.sa_flags=SA_SIGINFO};
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
@@ -170,8 +172,15 @@ int main(int argc, char **argv)
         machine_state state = { 0 }; pl_u64 record[38];
         for (pl_u32 reg = 0u; reg < 16u; ++reg) state.registers[reg] = random_word(&seed);
         state.rflags = 0x202u | (random_word(&seed) & 0x8d5u);
+        if (set && row < 256u) {
+            static const pl_u32 positions[] = {0u,2u,4u,6u,7u,11u};
+            state.rflags = 0x202u;
+            for (pl_u32 bit=0u;bit<6u;++bit)
+                state.rflags |= (pl_u64)((row>>bit)&1u) << positions[bit];
+        }
         if (unary) state.rflags = (state.rflags & ~1ull) | (row & 1u);
         pl_u32 offset = row % 3u == 0u ? 4093u : row % 3u == 1u ? 0u : 4088u;
+        if (set) offset = row&1u ? 4095u : 0u;
         pl_u64 address = base + offset;
         if (!relative) {
             for (pl_u32 i = 0u; i < 8192u; ++i) ram[i] = (pl_u8)(i * 37u + row * 13u);
@@ -227,6 +236,7 @@ int main(int argc, char **argv)
         }
         record[37] = read_word((const pl_u8 *)(uintptr_t)address);
         if (instruction.operation == PL_X86_OPERATION_COMPLEMENT && record[33] != record[16]) goto finish;
+        if (set && record[33] != record[16]) goto finish;
         if ((instruction.operation == PL_X86_OPERATION_INCREMENT || instruction.operation == PL_X86_OPERATION_DECREMENT)
                 && ((record[33]^record[16])&1u)) goto finish;
         if (!relative) {
@@ -241,14 +251,14 @@ int main(int argc, char **argv)
             for (pl_u32 reg = 0u; reg < 16u; ++reg) state.registers[reg] = record[reg];
             state.rflags = record[16];
             pl_u8 *protected_page = ram + (((address - base) + report.memory_bytes - 1u) & ~4095ull);
-            if (exchange) for (pl_u32 i=0u;i<report.memory_bytes;++i)
+            if (exchange || set) for (pl_u32 i=0u;i<report.memory_bytes;++i)
                 ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(record[36] >> (8u*i));
-            if (precise_rmw) memcpy(saved,ram,sizeof saved);
-            int readable = precise_rmw && (exchange ? (row&2u) : (row&1u));
+            if (precise_write) memcpy(saved,ram,sizeof saved);
+            int readable = precise_write && (set ? (row&64u) : exchange ? (row&2u) : (row&1u));
             if (mprotect(protected_page,4096u,readable ? PROT_READ : PROT_NONE)) goto finish;
             int trapped = observe_fault(&state,(const void *)(uintptr_t)report.entry);
             if (mprotect(protected_page,4096u,PROT_READ | PROT_WRITE)) goto finish;
-            if (precise_rmw && memcmp(saved,ram,sizeof saved)) goto finish;
+            if (precise_write && memcmp(saved,ram,sizeof saved)) goto finish;
             if (!trapped || fault_vector != 14u || fault_state.rip != report.entry
                     || (fault_state.rflags & ~0x10000ull) != state.rflags) goto finish;
             pl_u64 observed[38];

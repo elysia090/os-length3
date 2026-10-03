@@ -308,6 +308,27 @@ _start:
     lock cmpxchg dword ptr [rbp], r11d
 #elif MEMORY_CASE == 160
     lock cmpxchg qword ptr [r12], r9
+#elif MEMORY_CASE >= 161 && MEMORY_CASE <= 176
+    /* The opcode's condition rank is independent of the addressing mode. */
+    .byte 0x0f, 0x90 + (MEMORY_CASE - 161), 0x07
+#elif MEMORY_CASE == 177
+    setle byte ptr [edi]
+#elif MEMORY_CASE == 178
+    setg byte ptr [rbp]
+#elif MEMORY_CASE == 179
+    setb byte ptr [r12]
+#elif MEMORY_CASE == 180
+    seta byte ptr [rdi + rcx*4 + 7]
+#elif MEMORY_CASE == 181
+    setne byte ptr [rip + 8]
+#elif MEMORY_CASE == 182
+    setp byte ptr ss:[rdi]
+#elif MEMORY_CASE == 183
+    sets byte ptr [r12 + r9*8 + 7]
+#elif MEMORY_CASE == 184
+    .byte 0x0f, 0x94, 0x3f /* ModRM.reg is ignored; still SETE [RDI]. */
+#elif MEMORY_CASE == 185
+    .byte 0x66, 0x48, 0x0f, 0x94, 0x07 /* Operand stays 8-bit. */
 #else
 #error unsupported case
 #endif

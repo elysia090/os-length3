@@ -208,6 +208,22 @@ for (const locked of [false,true]) for (const equal of [false,true]) {
   assert.deepEqual(data.slice(code,code+8),originalBytes);
   put(base+384,0x400000n); assert.equal(query(),1n);
 }
+// Memory SETcc uses the same C store boundary on both truth values. False
+// writes zero over the already-zero ModRM byte; equal bytes still invalidate.
+for (const equal of [false,true]) {
+  put(leaf,0x8067n); data.set([0x0f,0x94,0x00],code);
+  put(base,0x400002n); put(base+384,0x400000n); put(base+392,equal ? 0x43n : 3n);
+  assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
+  assert.equal(query(),1n); await publish();
+  assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  assert.equal(vm.vm_run(port,9n,1),5n);
+  assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n);
+  assert.equal(view.getBigUint64(base+384,true),0x400003n);
+  assert.equal(view.getBigUint64(base,true),0x400002n);
+  assert.equal(view.getBigUint64(base+392,true),equal ? 0x43n : 3n);
+  assert.equal(data[code+2],equal ? 1 : 0);
+  put(base+384,0x400000n); assert.equal(query(),1n);
+}
 for (let i = 0; i < vm.vm_source_capacity(); ++i) table.set(firstSlot+i,null);
 cc.compiler_close(); vm.vm_close();
-console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);
+console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK and SETcc truth values, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);

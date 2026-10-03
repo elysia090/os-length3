@@ -27,6 +27,42 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    /* Memory SETcc always stores a byte, even for a false condition. Its
+     * flag predicate shares the pure register path; only the store can fault. */
+    for (pl_u32 address32 = 0u; address32 < 2u; ++address32)
+    for (pl_u32 condition = 0u; condition < 16u; ++condition) {
+        pl_u32 at = address32;
+        pages[0] = 0x67u; pages[at] = 0x0fu;
+        pages[at+1u] = (pl_u8)(0x90u+condition); pages[at+2u] = 0x07u;
+        int status = wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_instructions == 1u && report.source_bytes == at+3u
+            && report.boundary == WASM_CUT_MEMORY && report.memory_bytes == 1u
+            && report.memory_access == 2u && report.read_registers == 128u
+            && !report.written_registers && !report.flags_written);
+    }
+    static const pl_u8 set_stack[] = {0x0fu,0x94u,0x44u,0x24u,0x2eu};
+    memcpy(pages,set_stack,sizeof set_stack);
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.source_bytes == sizeof set_stack
+        && report.memory_bytes == 1u && report.memory_access == 6u
+        && report.read_registers == 16u && !report.written_registers && !report.flags_written);
+    /* The pure predecessor must retire separately. A later faulting store
+     * cannot roll back its flags, nor speculate past it during compilation. */
+    static const pl_u8 set_prefix[] = {0x48u,0x39u,0xc8u,0x0fu,0x94u,0x07u};
+    memcpy(pages,set_prefix,sizeof set_prefix);
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.source_bytes == 3u
+        && report.flags_written && !report.memory_bytes && report.continuation == source.entry+3u);
+    static const pl_u8 set_rejected[][4] = {
+        {0xf0u,0x0fu,0x94u,0x07u}, {0x64u,0x0fu,0x94u,0x07u}, {0x65u,0x0fu,0x94u,0x07u},
+    };
+    for (pl_u32 rank = 0u; rank < sizeof set_rejected/sizeof set_rejected[0]; ++rank) {
+        memcpy(pages,set_rejected[rank],sizeof set_rejected[rank]); memset(output,0xa5,sizeof output);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            == WASM_COMPILER_ERROR_GRAMMAR);
+        for (pl_u32 at = 0u; at < sizeof output; ++at) EXPECT(output[at] == 0xa5u);
+    }
     /* MSR transfers and SWAPGS must be ordinary one-instruction system cuts,
      * not address-specific startup exceptions. */
     static const pl_u8 msr_codes[][3] = {{0x0f,0x30,0x90},{0x0f,0x32,0x90},{0x0f,0x01,0xf8}};

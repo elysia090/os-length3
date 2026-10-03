@@ -152,7 +152,7 @@ admissions with unchanged full decompression output. The next -102 is ordinary
 memory CMPXCHG at `0xffffffff81096d52`; it has not retired. PID 1/shell remains
 red. See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-unary-source-tail.md).
 
-Latest checkpoint closes common scalar memory CMPXCHG, LOCK/no-LOCK at all
+Previous checkpoint closes common scalar memory CMPXCHG, LOCK/no-LOCK at all
 four widths, preserving the native typed descriptor and lowering its exact
 meaning to SSA plus existing C-MMU reserve/commit. Both comparison arms write;
 faults publish no CPU state. LOCK is closed only for the synchronous serialized
@@ -165,6 +165,17 @@ pass. Actual browser: 129,078,646 retired / 64,428,968 admissions, unchanged
 complete decompressed output. The next -102 is memory SETE at
 `0xffffffff81096421`. PID 1/shell remains red.
 See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-exchange.md).
+
+Latest checkpoint closes all 16 memory SETcc conditions through common condition
+SSA and the existing C-MMU byte store. 32 entrance cases were red, then green;
+25 post-linked forms pass 12,800 CPU/RAM / 12,288 native protection-fault /
+25,088 RF checks. Both truth values write, flags/GPRs are unchanged and failures
+do not publish RIP/retirement. Two source-alias cases separately retire once
+through C dispatch and revoke even equal-byte false writes. Full product check,
+selected lowering sanitizers and 395 native/cold emissions pass. Actual browser:
+129,387,892 retired / 64,571,332 admissions, unchanged full output. Next -102:
+register-index memory BTS at `0xffffffff81054a7c`. PID 1/shell remains red.
+See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-condition.md).
 
 Next, in order:
 
@@ -193,14 +204,17 @@ Next, in order:
    pending keys refuse explicitly, not an invented guest fault/default zero.
    MISC_ENABLE/CPUID and subsequent arithmetic/bit cuts are now closed as
    described above. Memory unary and demand-driven first-instruction tails are
-   now closed as well, followed by scalar memory CMPXCHG. The next real red is
-   `0f 94 44 24 2e`, `SETE byte ptr [RSP+0x2e]`. Close common memory SETcc for
-   all 16 conditions, including false-arm writes, preserved flags and precise
-   write faults. Keep condition computation in SSA and the existing C-MMU store.
+   now closed as well, followed by scalar memory CMPXCHG and memory SETcc.
+   The next real red is `48 0f ab 3d 2c f1 89 00`, register-index memory BTS
+   at `0xffffffff81054a7c`. Close common BT/BTS/BTR/BTC signed register-index
+   address adjustment, including negative/word-crossing indexes, 16/32/64-bit
+   widths, address-size 32, SS, flags and precise load/RMW faults. The existing
+   immediate form intentionally masks within its word, not this bit-string
+   address contract. Keep address arithmetic in SSA and C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (35.2 s), VM execution (31.1 s) and source/MMU admission
-   (20.4 s) exceed cold construction (6.1 s) in the latest observation. Analyze exact
+   Engine replacement (39.9 s), VM execution (31.2 s) and source/MMU admission
+   (20.2 s) exceed cold construction (6.5 s) in the latest observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Preserve demand-only crossing
@@ -216,7 +230,7 @@ Next, in order:
    Whole-image `-104`, boot, cold shell and production admission remain red.
 
 Physical supply remains one unsorted C index, never VM reopen/reset or a JS
-MMU. Extended browser: 3,674 page supplies / 3,687 resident pages, 47 HTTP 206
+MMU. Latest extended browser: 3,680 page supplies / 3,693 resident pages, 49 HTTP 206
 ranges, 65,536-byte chunk cache, 15,728,640 VM memory / 1 MiB cold memory.
 The default 1,000,000-admission / 2,000,000-retirement diagnostic stays small;
 `?budget=extended` now selects 150,000,000 / 300,000,000 and at most 32 MiB memory.
@@ -226,7 +240,7 @@ page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-misc-arithmetic.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-memory-condition.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
