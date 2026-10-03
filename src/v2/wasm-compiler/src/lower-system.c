@@ -5,6 +5,11 @@
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if (cut_divide_supported(instruction)) return CUT_SYSTEM_DIVIDE;
+    if (cut_selector_read_supported(instruction)
+            && instruction->operands[0].kind==PL_X86_OPERAND_REGISTER
+            && !(instruction->flags&(PL_X86_INSTRUCTION_READS_MEMORY
+                |PL_X86_INSTRUCTION_WRITES_MEMORY)))
+        return CUT_SYSTEM_SELECTOR_READ;
     if (instruction->status == PL_X86_DECODE_VALID
             && (instruction->machine_operation == PL_X86_MACHINE_READ_MSR
                 || instruction->machine_operation == PL_X86_MACHINE_WRITE_MSR
@@ -193,6 +198,11 @@ static void lower_cpuid(cut_lowering *cut)
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     if (cut_divide_supported(instruction)) { cut_lower_divide(cut,instruction); return; }
+    if (instruction->machine_operation==PL_X86_MACHINE_READ_SELECTOR) {
+        cut_read_operand(cut,&instruction->operands[1],16u); cut_set(cut,CUT_VALUE);
+        cut_write_register(cut,&instruction->operands[0].value.reg);
+        return;
+    }
     if (cut->has_msr) {
         int write = instruction->machine_operation == PL_X86_MACHINE_WRITE_MSR;
         int swap = instruction->machine_operation == PL_X86_MACHINE_SWAP_GS;

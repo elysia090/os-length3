@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <ucontext.h>
+#include "native-selectors.h"
 
 extern void native_cut(machine_state *state, const void *code);
 static sigjmp_buf fault_return;
@@ -144,10 +145,12 @@ int main(int argc, char **argv)
         || instruction.operation == PL_X86_OPERATION_COMPLEMENT;
     int exchange = instruction.operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     int set = instruction.operation == PL_X86_OPERATION_CONDITIONAL_SET;
+    int selector = instruction.machine_operation == PL_X86_MACHINE_READ_SELECTOR;
+    pl_u64 selectors[6]; native_selectors(selectors);
     int bit = instruction.operation == PL_X86_OPERATION_BIT_TEST;
     int indexed_bit = bit && instruction.operands[1].kind == PL_X86_OPERAND_REGISTER;
     int precise_rmw = unary || exchange || (bit && instruction.condition);
-    int precise_write = precise_rmw || set;
+    int precise_write = precise_rmw || set || selector;
     const pl_x86_memory *operand = &instruction.operands[store ? 0u : 1u].value.memory;
     relative = operand->base.class_id == PL_X86_REGISTER_IP;
     /* High application memory, not ASan's reserved low shadow/gap. */
@@ -190,6 +193,7 @@ int main(int argc, char **argv)
         if (unary) state.rflags = (state.rflags & ~1ull) | (row & 1u);
         pl_u32 offset = row % 3u == 0u ? 4093u : row % 3u == 1u ? 0u : 4088u;
         if (set) offset = row&1u ? 4095u : 0u;
+        if (selector) offset = row%3u==0u ? 4095u : row%3u==1u ? 0u : 4094u;
         pl_u64 address = base + offset;
         pl_u64 word_offset=0u;
         if (indexed_bit) {
@@ -265,6 +269,7 @@ int main(int argc, char **argv)
         record[37] = read_word((const pl_u8 *)(uintptr_t)address);
         if (instruction.operation == PL_X86_OPERATION_COMPLEMENT && record[33] != record[16]) goto finish;
         if (set && record[33] != record[16]) goto finish;
+        if (selector && record[33] != record[16]) goto finish;
         if ((instruction.operation == PL_X86_OPERATION_INCREMENT || instruction.operation == PL_X86_OPERATION_DECREMENT)
                 && ((record[33]^record[16])&1u)) goto finish;
         if (!relative) {
@@ -279,7 +284,7 @@ int main(int argc, char **argv)
             for (pl_u32 reg = 0u; reg < 16u; ++reg) state.registers[reg] = record[reg];
             state.rflags = record[16];
             pl_u8 *protected_page = ram + (((address - base) + report.memory_bytes - 1u) & ~4095ull);
-            if (exchange || set || (bit && instruction.condition)) for (pl_u32 i=0u;i<report.memory_bytes;++i)
+            if (exchange || set || selector || (bit && instruction.condition)) for (pl_u32 i=0u;i<report.memory_bytes;++i)
                 ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(record[36] >> (8u*i));
             if (precise_write) memcpy(saved,ram,sizeof saved);
             int readable = precise_write && (set ? (row&64u) : exchange ? (row&2u) : (row&1u));
@@ -301,10 +306,14 @@ int main(int argc, char **argv)
         }
     }
     if (fprintf(meta, "{\"entry\":%llu,\"prefixEntry\":%llu,\"moduleBytes\":%llu,\"sourceBytes\":%llu,\"bytes\":%u,\"access\":%u,"
-                "\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,\"retiredOffset\":%zu}\n",
+                "\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,\"retiredOffset\":%zu,"
+                "\"selector\":{\"enabled\":%u,\"offset\":%zu,\"rank\":%u,"
+                "\"native\":[\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\"]}}\n",
                 report.entry, elf.entry, report.module_bytes, report.source_bytes, report.memory_bytes, report.memory_access,
                 sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
-                offsetof(machine_state, retired)) < 0) okay = 0;
+                offsetof(machine_state, retired),(unsigned)selector,
+                offsetof(machine_state,system)+MACHINE_SYSTEM_ES*8u,instruction.operands[1].value.reg.index,
+                selectors[0],selectors[1],selectors[2],selectors[3],selectors[4],selectors[5]) < 0) okay = 0;
     result = okay ? 0 : 1;
 finish:
     if (file && close_output(&file)) result = 1;

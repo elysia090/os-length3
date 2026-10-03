@@ -43,6 +43,27 @@ int cut_gpr(const pl_x86_register *reg)
         && (reg->bits == 8u || reg->bits == 16u || reg->bits == 32u || reg->bits == 64u)
         && (!(reg->flags & PL_X86_REGISTER_HIGH8) || (reg->bits == 8u && reg->index < 4u));
 }
+int cut_selector_read_supported(const pl_x86_instruction *instruction)
+{
+    if (instruction->status!=PL_X86_DECODE_VALID || instruction->flow!=PL_X86_FLOW_NEXT
+            || instruction->operation!=PL_X86_OPERATION_MOVE
+            || instruction->machine_operation!=PL_X86_MACHINE_READ_SELECTOR
+            || instruction->visible_operand_count!=2u
+            || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER))) return 0;
+    const pl_x86_operand *destination=&instruction->operands[0], *source=&instruction->operands[1];
+    if (source->kind!=PL_X86_OPERAND_REGISTER || source->bits!=16u
+            || source->value.reg.class_id!=PL_X86_REGISTER_SEGMENT
+            || source->value.reg.index>=6u || source->value.reg.bits!=16u
+            || source->value.reg.flags) return 0;
+    int memory=destination->kind==PL_X86_OPERAND_MEMORY;
+    if (memory ? destination->bits!=16u
+        : destination->kind!=PL_X86_OPERAND_REGISTER || !cut_gpr(&destination->value.reg)
+            || destination->bits<16u || destination->bits!=destination->value.reg.bits) return 0;
+    pl_u32 target=memory ? 0u : destination->value.reg.index;
+    return instruction->machine_argument==(source->value.reg.index|((pl_u64)memory<<8u)
+        |((pl_u64)target<<16u)|((pl_u64)destination->bits<<24u));
+}
 static int source_operand(const pl_x86_operand *operand)
 {
     return (operand->kind == PL_X86_OPERAND_REGISTER && cut_gpr(&operand->value.reg))
@@ -194,7 +215,14 @@ static void read_register(cut_lowering *cut, const pl_x86_register *reg)
 }
 void cut_read_operand(cut_lowering *cut, const pl_x86_operand *operand, pl_u32 width)
 {
-    if (operand->kind == PL_X86_OPERAND_REGISTER) read_register(cut, &operand->value.reg);
+    if (operand->kind==PL_X86_OPERAND_REGISTER
+            && operand->value.reg.class_id==PL_X86_REGISTER_SEGMENT) {
+        /* The visible selector is already owned by architectural state.
+         * Reading it neither consults a descriptor nor changes its cache. */
+        cut_load(cut,offsetof(machine_state,system)
+            +(MACHINE_SYSTEM_ES+operand->value.reg.index)*8u);
+        cut_mask(cut,16u);
+    } else if (operand->kind == PL_X86_OPERAND_REGISTER) read_register(cut, &operand->value.reg);
     else cut_const(cut, operand->value.immediate);
     cut_mask(cut, width);
 }

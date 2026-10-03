@@ -17,7 +17,7 @@ OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
 
-.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
+.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 
 # Independent cold compiler memory/stack; never the VM's runtime decoder.
@@ -57,11 +57,11 @@ $(BUILD)/admission-check: check/admission.c $(BUILD)/libwasm-compiler.a $(PROVID
 		$(BUILD)/libwasm-compiler.a ../optimized-x86/build/liboptimized-x86.a \
 		../x86/build/libx86.a ../support/build/libsupport.a -o $@
 
-$(BUILD)/cut-check: check/cut.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+$(BUILD)/cut-check: check/cut.c check/native-cut.S check/native-selectors.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/cut.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
-$(BUILD)/memory-cut-check: check/memory-cut.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+$(BUILD)/memory-cut-check: check/memory-cut.c check/native-cut.S check/native-selectors.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/memory-cut.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
@@ -132,6 +132,25 @@ shift-fixture-check: $(BUILD)/cut-check fixture-tools
 	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done
+
+selector-fixture-check: $(BUILD)/cut-check $(BUILD)/memory-cut-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	for segment in 0 1 2 3 4 5; do for width in 16 32 64; do for extended in 0 1; do \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
+		-DSELECTOR_RANK=$$segment -DSELECTOR_WIDTH=$$width -DSELECTOR_EXTENDED=$$extended \
+		check/selector-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
+	done; done; done; \
+	for segment in 0 1 2 3 4 5; do for prefix in 0 1 2; do \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs -DSELECTOR_MEMORY=1 \
+		-DSELECTOR_RANK=$$segment -DSELECTOR_PREFIX=$$prefix \
+		check/selector-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/memory"; \
+	done; done
 
 condition-fixture-check: $(BUILD)/cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
@@ -244,7 +263,7 @@ summary-fixture-check: $(BUILD)/cut-check fixture-tools
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut" $$limit; \
 	done; done; done
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
 	$(BUILD)/admission-check
 	$(BUILD)/branch-check
 	$(BUILD)/call-check

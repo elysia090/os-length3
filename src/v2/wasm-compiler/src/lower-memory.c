@@ -108,9 +108,10 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int unary = unary_arithmetic(instruction->operation);
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
+    int selector = cut_selector_read_supported(instruction);
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
             || (instruction->machine_operation != PL_X86_MACHINE_NONE
-                && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
+                && !selector && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || instruction->visible_operand_count != (unary || set ? 1u : 2u)
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
                 && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
@@ -153,7 +154,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !exchange)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
-                        || !cut_gpr(&operands[1].value.reg)))) return 0;
+                        || (!selector && !cut_gpr(&operands[1].value.reg))))) return 0;
     } else if (!first && ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation)
                  && !conditional
                  && instruction->operation != PL_X86_OPERATION_MOVE_ZERO_EXTEND

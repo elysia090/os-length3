@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {seedNativeSelector} from './selector-observation.mjs';
 
 const [providerFile, directory] = process.argv.slice(2);
 if (!providerFile || !directory)
@@ -13,7 +14,7 @@ assert.deepEqual(WebAssembly.Module.imports(provider), [
 ]);
 const names = (await readdir(directory)).filter(name => /^memory-\d+\.json$/.test(name)).sort();
 assert(names.length > 0);
-let comparisons = 0, hardwareFaults = 0, resumeFlagChecks = 0;
+let comparisons = 0, hardwareFaults = 0, resumeFlagChecks = 0, selectorModels = 0;
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
@@ -82,6 +83,7 @@ for (const name of names) {
     view.setBigUint64(state + meta.retiredOffset, 42n, true);
     view.setBigUint64(port, 9n, true);
     const address = word(35), leaf = tables(view, address);
+    seedNativeSelector(view, state, meta);
     for (let i = 0; i < 8; ++i)
       view.setUint8(payloadAt(address, i), Number((word(36) >> BigInt(i * 8)) & 255n));
     open();
@@ -104,6 +106,27 @@ for (const name of names) {
     assert.deepEqual(arena(), expected, `${name}: native/C-Wasm row ${row}`);
     assert.deepEqual(Buffer.from(memory.buffer, directoryOffset, 192), savedDirectory);
     ++comparisons;
+
+    if (meta.selector?.enabled) {
+      // Change the guest's selector, not the oracle process's descriptor.
+      // The instruction reads its low 16 visible bits without a GDT/LDT
+      // lookup, and writes exactly two payload bytes even with REX.W.
+      arena().set(initial);
+      const selectorOffset = meta.selector.offset + meta.selector.rank * 8;
+      const selector = BigInt(row < 16 ? row : (row * 65521) & 65535);
+      view.setBigUint64(state + selectorOffset, 0xdead000000000000n | selector, true);
+      const model = Buffer.from(arena());
+      const m = new DataView(model.buffer, model.byteOffset, model.byteLength);
+      m.setBigUint64(meta.ripOffset, word(34), true);
+      m.setBigUint64(meta.flagsOffset, word(33), true);
+      m.setBigUint64(meta.retiredOffset, 43n, true);
+      for (let i = 0; i < 2; ++i)
+        model[payloadAt(address, i) - base] = Number((selector >> BigInt(i * 8)) & 255n);
+      open();
+      assert.equal(instance.exports.cut(state, port), 1n);
+      assert.deepEqual(arena(), model, `${name}: visible guest selector model ${row}`);
+      ++selectorModels;
+    }
 
     // RF is not settable by this native user-mode input harness. Independently
     // test the architectural successful-retirement rule with the real C MMU.
@@ -135,7 +158,8 @@ for (const name of names) {
     const faultView = new DataView(fault.buffer, fault.byteOffset, fault.byteLength);
     faultView.setBigUint64(port - base + 16, address, true);
     faultView.setUint32(port - base + 24, 14, true);
-    faultView.setUint32(port - base + 28, meta.access & 2, true);
+    faultView.setUint32(port - base + 28, (meta.access & 2)
+      | (meta.selector?.enabled && meta.selector.rank === 1 ? 4 : 0), true);
     faultView.setBigUint64(leaf - base, 0n, true);
     assert.deepEqual(arena(), fault, 'fault must not commit CPU or payload');
     if (faultRecords) {
@@ -207,4 +231,4 @@ for (const name of names) {
   assert.equal(vm.vm_open(base,memory.buffer.byteLength,4096,directoryOffset,6,6,directoryOffset + 1024,9n), -1);
   assert.equal(vm.vm_access(port, address, 8, 1, 0n), 6n);
 }
-console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks; exception entry/dispatch/Linux boot not tested)`);
+console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks, ${selectorModels} guest selector models; exception entry/dispatch/Linux boot not tested)`);

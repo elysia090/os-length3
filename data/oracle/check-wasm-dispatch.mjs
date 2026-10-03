@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {seedNativeSelector} from './selector-observation.mjs';
 const [providerFile, directory] = process.argv.slice(2);
 if (!providerFile || !directory)
   throw new Error('usage: node check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORD-DIRECTORY');
@@ -60,6 +61,7 @@ for (const name of names) {
     view.setBigUint64(state + 400, 0x80010001n, true); view.setBigUint64(state + 408, 0x1000n, true);
     view.setBigUint64(state + 416, 32n, true); view.setBigUint64(state + 424, 0xd00n, true);
     view.setBigUint64(state + 432 + 7 * 8, 0x10n, true);
+    seedNativeSelector(view, state, meta);
     view.setBigUint64(state + 1128, 42n, true); view.setBigUint64(port, 9n, true);
     bind(); const saved = Buffer.from(memory.buffer, state, meta.stateBytes).slice();
     assert.equal(vm.vm_run(port, 9n, 1), 1n, `${name}: C table/native row ${row}`);

@@ -444,6 +444,16 @@ script still prepares the 156 SHL/SHR/SAR regressions. The observer distinguishe
 masked flag count from modulo-width value rotation and excludes only undefined
 multi-bit OF per input. Memory and through-carry forms remain explicit refusals.
 
+The [visible-selector checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-selector.md)
+uses `prepare-selector-cuts.sh NEW-DIRECTORY`, then direct/C-dispatch register
+and C-MMU memory comparisons on its two subdirectories. Test-only selector
+capture binds native observations to the oracle's actual process state; product
+code never reads those host values. Separate model checks vary guest selectors.
+All six selector reads preserve flags; register destinations obey width/parent
+rules and every memory-prefix form stores exactly two bytes. Protected splits
+must not publish CPU or partial payload. TF remains refused; RF is accepted
+and clears only after successful retirement, never during a pending fault.
+
 This division avoids rebuilding QEMU while preserving the final route:
 
 ```text

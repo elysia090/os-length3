@@ -844,6 +844,23 @@ refusal is `8c d0` (MOV EAX,SS) at `0xffffffff814045bb`. Read the existing
 architectural selector state in the common compiler; never synthesize a host
 selector or maintain a second dictionary. PID 1/shell and the full goal are red.
 
+### Common visible-selector checkpoint
+
+[Current evidence](../vm/check/browser/evidence/2026-10-03-selector.md) closes
+all six visible selector reads using the existing architectural word and common
+parent/store paths. 72 entrances were red first. 36 post-linked register forms
+pass 18,432 native comparisons in direct Wasm and C dispatch; 39 memory forms
+pass 19,968 C-MMU/native comparisons, 19,456 actual protection faults and 39,424
+RF checks. Separate guest-selector models prevent a host-value constant from
+passing. Register reads import no callback; even REX.W memory writes two bytes.
+Full checks, selected sanitizers, 693 cold emissions and source-owner checks pass.
+
+Actual browser: 130,172,569 retired / 64,984,606 admissions, unchanged full
+decompression output. Next -102 is INVLPG [rdi] (`0f 01 3f`) at
+`0xffffffff8104a503`. Prove its exact effect against the existing translation
+owner and privilege rules; do not call it a kernel-specific no-op. PID 1/shell,
+production authentication and the full development/storage/network goal are red.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

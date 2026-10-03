@@ -8,6 +8,7 @@
 #include <wasm-compiler/cut.h>
 #include <machine/state.h>
 #include <x86/decode.h>
+#include "native-selectors.h"
 
 _Static_assert(offsetof(machine_state, rflags) == 392u, "native oracle ABI");
 extern void native_cut(machine_state *state, const void *code);
@@ -194,12 +195,16 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
     /* Definedness and lowering use the unchanged certified source, not the
      * terminal observer byte or an ISA-equivalent native prefix twin. */
     pl_x86_image image = { &source_map, 1u, 0u, report->entry };
-    pl_x86_instruction carry = { 0 }, multiply = { 0 }, summary = { 0 };
+    pl_x86_instruction carry = { 0 }, multiply = { 0 }, summary = { 0 }, selector = { 0 };
+    pl_u64 selectors[6]; native_selectors(selectors);
     pl_u32 legacy_prefix_twin = 0u;
     for (pl_u64 rip = report->entry, i = 0u; i < report->source_instructions; ++i) {
         pl_x86_instruction instruction;
         if (pl_x86_decode_profile(&image,rip,&instruction)) {
             fclose(cases); fclose(meta); fclose(masks); munmap(mapping,mapping_bytes); return 0;
+        }
+        if (instruction.machine_operation==PL_X86_MACHINE_READ_SELECTOR) {
+            selector=instruction; break;
         }
         if (instruction.operation==PL_X86_OPERATION_BIT_SUMMARY) {
             summary=instruction;
@@ -324,11 +329,17 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
         "\"retiredOffset\":%zu,\"entry\":\"%llu\",\"instructions\":%llu,"
         "\"flagsMask\":\"%llu\",\"writtenRegisters\":%u,\"sourceBytes\":%llu,"
         "\"moduleBytes\":%llu,\"boundary\":%u,"
+        "\"selector\":{\"enabled\":%u,\"offset\":%zu,\"rank\":%u,\"width\":%u,\"destination\":%u,"
+        "\"native\":[\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\"]},"
         "\"summary\":{\"source\":%u,\"destination\":%u,\"width\":%u,\"undefinedZeroDestination\":%u,\"nativeLegacyPrefixTwin\":%u}}\n",
         sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
         offsetof(machine_state, retired), report->entry, report->source_instructions,
         flags_mask, report->written_registers, report->source_bytes, report->module_bytes,
-        report->boundary,summary.operands[1].value.reg.index,summary.operands[0].value.reg.index,
+        report->boundary,(unsigned)!!selector.length,
+        offsetof(machine_state,system)+MACHINE_SYSTEM_ES*8u,selector.operands[1].value.reg.index,
+        selector.operands[0].bits,selector.operands[0].value.reg.index,
+        selectors[0],selectors[1],selectors[2],selectors[3],selectors[4],selectors[5],
+        summary.operands[1].value.reg.index,summary.operands[0].value.reg.index,
         summary.length ? summary.operands[1].bits : 0u,
         (unsigned)(summary.length && summary.condition<2u && report->source_instructions==1u),
         legacy_prefix_twin) < 0) okay = 0;

@@ -3,11 +3,12 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {seedNativeSelector, checkSelectorModel} from './selector-observation.mjs';
 const directory = process.argv[2];
 if (!directory) throw new Error('usage: node check-wasm-cuts.mjs RECORD-DIRECTORY');
 const files = (await readdir(directory)).filter(name => name.endsWith('.json')).sort();
 assert(files.length > 0, 'no actual native oracle records');
-let comparisons = 0, legacyTwinModules = 0, zeroRepresentatives = 0;
+let comparisons = 0, legacyTwinModules = 0, zeroRepresentatives = 0, selectorModels = 0;
 for (const file of files) {
   const prefix = path.join(directory, file.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
@@ -47,6 +48,7 @@ for (const file of files) {
     // retirement. Native rows have RF=0; replay their same defined result.
     view.setBigUint64(offset + meta.flagsOffset, word(16) | (row >= 384 ? 0x10000n : 0n), true);
     view.setBigUint64(offset + meta.retiredOffset, 0xfffffffffffffffen, true);
+    seedNativeSelector(view, offset, meta);
     const expected = Buffer.from(actual);
     const expectedView = new DataView(expected.buffer, expected.byteOffset, expected.byteLength);
     for (let reg = 0; reg < 16; ++reg)
@@ -71,6 +73,7 @@ for (const file of files) {
     assert.deepEqual(actual, expected, `${file}: complete memory/cut row ${row}`);
     ++comparisons;
   }
+  selectorModels += checkSelectorModel(instance.exports.cut, memory, meta);
   const view = new DataView(memory.buffer);
   const contents = Buffer.from(memory.buffer);
   contents.fill(0x5a);
@@ -93,4 +96,4 @@ for (const file of files) {
   assert.equal(instance.exports.cut(0), 6n, `${file}: wrong RIP`);
   assert.deepEqual(contents, snapshot);
 }
-console.log(`Generated Wasm/native x86: green (${files.length} modules, ${comparisons} comparisons; ${legacyTwinModules} legacy-prefix native twins, ${zeroRepresentatives} chosen undefined zero destinations; not Linux/browser boot)`);
+console.log(`Generated Wasm/native x86: green (${files.length} modules, ${comparisons} comparisons; ${selectorModels} guest selector models; ${legacyTwinModules} legacy-prefix native twins, ${zeroRepresentatives} chosen undefined zero destinations; not Linux/browser boot)`);

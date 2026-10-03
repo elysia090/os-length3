@@ -251,18 +251,23 @@ Next, in order:
    now closed as well, followed by scalar memory CMPXCHG, memory SETcc and
    ordinary signed register-index memory BT/BTS/BTR/BTC.
    Profile-bound legacy scan/count semantics are now closed as described above.
-   Common register ROL/ROR is now closed as described above. The next real red
-   is `8c d0` (MOV EAX,SS) at `0xffffffff814045bb`. Close selector reads from
-   existing architectural segment state, with all selectors, destination widths,
-   aliases, unchanged flags and precise memory forms. Make general entrance and
-   native/model comparisons red first. No host selector constant or duplicate
-   segment state/dictionary is permitted. These reads precede frame construction;
-   do not skip them or guess the target return frame.
+   Common register ROL/ROR and visible selector reads are now closed through
+   shared SSA/parent/C-MMU paths. 72 selector entrances were red, then green;
+   36 register / 39 memory forms pass native/C-dispatch/C-MMU and independent
+   guest-selector model comparisons. Full checks, selected lowering sanitizers,
+   693 cold emissions and the 20 source-owner regressions pass.
+   Latest real browser: 130,172,569 retired / 64,984,606 admissions; eight #PFs
+   and six #GPs enter Linux handlers, unchanged complete decompression output.
+   The next real -102 is `0f 01 3f` (INVLPG [rdi]) at `0xffffffff8104a503`.
+   First prove which translation state the C MMU actually retains, then close
+   the architectural effect and privilege/fault rules with general red witnesses.
+   Do not skip it, use a coordinate-specific no-op, or confuse compiled-source
+   and engine caches with a TLB. Native source/profile and ownership stay fixed.
    Keep the profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (39.4 s), VM execution (31.2 s) and source/MMU admission
-   (20.2 s) exceed cold construction (6.8 s) in the latest observation. Analyze exact
+   Engine replacement (53.3 s), VM execution (31.8 s) and source/MMU admission
+   (20.5 s) exceed cold construction (9.2 s) in the latest observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Preserve demand-only crossing
@@ -278,7 +283,7 @@ Next, in order:
    Whole-image `-104`, boot, cold shell and production admission remain red.
 
 Physical supply remains one unsorted C index, never VM reopen/reset or a JS
-MMU. Latest extended browser: 3,680 page supplies / 3,693 resident pages, 49 HTTP 206
+MMU. Latest extended browser: 3,681 page supplies / 3,694 resident pages, 49 HTTP 206
 ranges, 65,536-byte chunk cache, 15,728,640 VM memory / 1 MiB cold memory.
 The default 1,000,000-admission / 2,000,000-retirement diagnostic stays small;
 `?budget=extended` now selects 150,000,000 / 300,000,000 and at most 32 MiB memory.
@@ -288,7 +293,7 @@ page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-rotate.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-selector.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

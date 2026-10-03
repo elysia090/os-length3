@@ -30,6 +30,50 @@ int main(int argc, char **argv)
     /* Count encodings are legacy scans in the immutable no-BMI1/LZCNT
      * profile. POPCNT has its own enabled feature, not either extension. */
     options.maximum_source_instructions=1u;
+    /* Selector reads are not descriptor loads. Register destinations use
+     * their own width; even a REX.W memory form stores only two bytes. */
+    for (pl_u32 segment=0u;segment<6u;++segment)
+    for (pl_u32 width=16u;width<=64u;width*=2u)
+    for (pl_u32 extended=0u;extended<2u;++extended) {
+        pl_u32 at=0u, reg=extended ? 9u : 0u;
+        memset(pages,0x90,sizeof pages);
+        if (width==16u) pages[at++]=0x66u;
+        if (width==64u || extended) pages[at++]=(pl_u8)(0x40u|(width==64u ? 8u : 0u)|extended);
+        pages[at++]=0x8cu; pages[at++]=(pl_u8)(0xc0u|(segment<<3u)|(reg&7u));
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_instructions==1u && report.source_bytes==at
+            && report.boundary==WASM_CUT_SYSTEM && !report.memory_bytes
+            && !report.flags_written && report.written_registers==(1u<<reg)
+            && report.read_registers==(width==16u ? 1u<<reg : 0u));
+    }
+    for (pl_u32 segment=0u;segment<6u;++segment)
+    for (pl_u32 prefix=0u;prefix<3u;++prefix)
+    for (pl_u32 address32=0u;address32<2u;++address32) {
+        pl_u32 at=0u;
+        memset(pages,0x90,sizeof pages);
+        if (address32) pages[at++]=0x67u;
+        if (prefix) pages[at++]=(pl_u8)(prefix==1u ? 0x66u : 0x48u);
+        pages[at++]=0x8cu; pages[at++]=(pl_u8)(7u|(segment<<3u));
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_instructions==1u && report.source_bytes==at
+            && report.boundary==WASM_CUT_MEMORY && report.memory_bytes==2u
+            && report.memory_access==2u && report.read_registers==128u
+            && !report.written_registers && !report.flags_written);
+    }
+    static const pl_u8 selector_refused[][3]={
+        {0x8cu,0xf0u,0x90u}, {0x8cu,0xf8u,0x90u}, /* Reserved Sreg encodings. */
+        {0xf0u,0x8cu,0xd0u}, {0xf0u,0x8cu,0x17u}, /* LOCK is not a selector read. */
+        {0x64u,0x8cu,0x17u}, {0x65u,0x8cu,0x17u}, /* Unlowered address bases. */
+    };
+    for (pl_u32 rank=0u;rank<sizeof selector_refused/sizeof selector_refused[0];++rank) {
+        memset(pages,0x90,sizeof pages); memcpy(pages,selector_refused[rank],3u);
+        memset(output,0xa5,sizeof output);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            ==WASM_COMPILER_ERROR_GRAMMAR);
+        for (pl_u32 at=0u;at<sizeof output;++at) EXPECT(output[at]==0xa5u);
+    }
     /* A nonzero whole-width turn keeps the value but updates CF. The flag
      * count is masked, not reduced modulo the narrow destination width. */
     for (pl_u32 kind=0u;kind<2u;++kind)

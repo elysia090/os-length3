@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {seedNativeSelector} from './selector-observation.mjs';
 const directory = process.argv[2];
 if (!directory) throw new Error('usage: node check-wasm-memory.mjs RECORD-DIRECTORY');
 const names = (await readdir(directory)).filter(name => /^memory-[0-9]+\.json$/.test(name)).sort();
@@ -52,6 +53,7 @@ for (const name of names) {
     view.setBigUint64(meta.ripOffset, BigInt(meta.entry), true);
     view.setBigUint64(meta.flagsOffset, word(16), true);
     view.setBigUint64(meta.retiredOffset, 42n, true);
+    seedNativeSelector(view, state, meta);
     view.setBigUint64(port, 9n, true);
     view.setBigUint64(payload, word(36), true);
     expectedAddress = word(35); expectedValue = word(37);
@@ -69,6 +71,12 @@ for (const name of names) {
     assert.equal(calls, 1, 'one typed C boundary, no per-byte host calls');
     assert.deepEqual(all, expected, `${name}: native memory/register row ${row}`);
     ++comparisons;
+    // RF restored by an architectural return is accepted; it clears only
+    // after a successful access. It is not a debug-entry refusal like TF.
+    all.set(initial); view.setBigUint64(meta.flagsOffset,word(16)|0x10000n,true);
+    currentResult=0n; calls=0;
+    assert.equal(instance.exports.cut(state,port),1n); assert.equal(calls,1);
+    assert.deepEqual(all,expected,`${name}: successful memory RF clear`);
     for (const result of [2n, (14n << 3n) | 3n, 5n, 6n]) {
       all.set(initial);
       currentResult = result; calls = 0;
@@ -92,7 +100,7 @@ for (const name of names) {
     assert.equal(instance.exports.cut(invalidState, port), 6n);
     assert.equal(calls, 0); assert.deepEqual(all, saved);
   }
-  for (const flags of [0x302n, 0x10202n, 0x40202n]) {
+  for (const flags of [0x302n, 0x10302n, 0x40202n]) {
     view.setBigUint64(meta.flagsOffset, flags, true); calls = 0;
     const saved = Buffer.from(all);
     assert.equal(instance.exports.cut(state, port), 6n);
