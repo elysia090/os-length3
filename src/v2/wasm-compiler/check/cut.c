@@ -98,6 +98,9 @@ static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *r
         case PL_X86_OPERATION_BIT_TEST:
             mask = (mask | 1u) & ~0x894ull; /* CF defined, ZF unchanged; OF/SF/AF/PF undefined. */
             break;
+        case PL_X86_OPERATION_MULTIPLY_SIGNED:
+            mask = (mask | 0x801u) & ~0xd4ull; /* Only CF/OF are defined. */
+            break;
         default: break;
         }
         for (pl_u32 rank = 0u; rank < instruction.visible_operand_count; ++rank) {
@@ -176,7 +179,7 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
     pl_x86_map map = { (pl_u8 *)mapping, (pl_u64)(uintptr_t)mapping,
                       mapping_bytes, mapping_bytes, 5u, 1u };
     pl_x86_image image = { &map, 1u, 0u, report->entry };
-    pl_x86_instruction carry = { 0 };
+    pl_x86_instruction carry = { 0 }, multiply = { 0 };
     for (pl_u64 rip = report->entry, i = 0u; i < report->source_instructions; ++i) {
         pl_x86_instruction instruction;
         if (pl_x86_decode(&image,rip,&instruction)) {
@@ -185,6 +188,9 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
         if (instruction.operation == PL_X86_OPERATION_ADD_CARRY
                 || instruction.operation == PL_X86_OPERATION_SUBTRACT_BORROW) {
             carry = instruction; break;
+        }
+        if (instruction.operation == PL_X86_OPERATION_MULTIPLY_SIGNED) {
+            multiply = instruction; break;
         }
         rip = instruction.fallthrough;
     }
@@ -206,11 +212,27 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
             state.registers[reg] = value; record[reg] = value;
         }
         /* Include every count in both masking domains, not only random CL. */
-        if (i < 128u && !carry.length) {
+        if (i < 128u && !carry.length && !multiply.length) {
             state.registers[1] = (state.registers[1] & ~255ull) | i;
             record[1] = state.registers[1];
         }
         state.rflags = 0x202u | (random_word(&seed) & 0xcd5u);
+        if (i < 256u && multiply.length) {
+            pl_u32 width = multiply.operands[0].bits;
+            pl_u64 sign = 1ull << (width - 1u), maximum = width == 64u ? ~0ull : (1ull << width) - 1u;
+            const pl_u64 boundary[] = {0u,1u,2u,3u,15u,16u,127u,128u,
+                sign - 1u,sign,sign + 1u,maximum - 1u,maximum,
+                0xffffffffu & maximum,0x100000000ull & maximum,0x100000001ull & maximum};
+            for (pl_u32 rank = 0u; rank < 2u; ++rank) {
+                const pl_x86_operand *operand = &multiply.operands[
+                    multiply.visible_operand_count == 2u ? rank : rank + 1u];
+                if (operand->kind != PL_X86_OPERAND_REGISTER) continue;
+                pl_u32 reg = operand->value.reg.index;
+                pl_u64 value = boundary[(i >> (rank ? 0u : 4u)) & 15u];
+                state.registers[reg] = (state.registers[reg] & ~maximum) | value;
+                record[reg] = state.registers[reg];
+            }
+        }
         if (i < 128u && carry.length) {
             /* Both CF values for every pair of width-specific boundaries.
              * Hardware, not an arithmetic reimplementation, supplies outputs. */

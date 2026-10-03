@@ -74,6 +74,8 @@ pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction);
 pl_u32 cut_flag_read_mask(const pl_x86_instruction *instruction);
 int cut_shift_supported(const pl_x86_instruction *instruction);
 void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction);
+int cut_multiply_supported(const pl_x86_instruction *instruction);
+void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
                  cut_plan *plan);

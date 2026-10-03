@@ -27,6 +27,22 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    // Signed two/three-operand register multiplication is pure. Implicit
+    // double-width, memory and LOCK forms remain explicit grammar refusals.
+    static const pl_u8 multiply_rejected[][5] = {
+        {0xf7u,0xe8u,0x90u,0x90u,0x90u},
+        {0x0fu,0xafu,0x00u,0x90u,0x90u},
+        {0xf0u,0x0fu,0xafu,0xc7u,0x90u},
+    };
+    options.maximum_source_instructions = 1u;
+    for (pl_u32 rank = 0u; rank < sizeof multiply_rejected / sizeof multiply_rejected[0]; ++rank) {
+        memcpy(pages,multiply_rejected[rank],sizeof multiply_rejected[rank]);
+        memset(output,0xa5,sizeof output);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            == WASM_COMPILER_ERROR_GRAMMAR);
+        for (pl_u32 at = 0u; at < sizeof output; ++at) EXPECT(output[at] == 0xa5u);
+    }
+    options.maximum_source_instructions = 1024u;
     memset(pages, 0x90, sizeof pages); pages[0] = 0xfcu; pages[1] = 0xfau;
     EXPECT(!wasm_compiler_measure_code_cut(&source, 9u, &options, &bytes, &report));
     EXPECT(report.source_bytes == 1u && report.source_instructions == 1u);

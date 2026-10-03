@@ -42,7 +42,9 @@ for (const file of files) {
     const word = rank => records.getBigUint64((row * 35 + rank) * 8, true);
     for (let reg = 0; reg < 16; ++reg) view.setBigUint64(offset + reg * 8, word(reg), true);
     view.setBigUint64(offset + meta.ripOffset, BigInt(meta.entry), true);
-    view.setBigUint64(offset + meta.flagsOffset, word(16), true);
+    // RF restored by IRETQ is legal at entry and clears only after successful
+    // retirement. Native rows have RF=0; replay their same defined result.
+    view.setBigUint64(offset + meta.flagsOffset, word(16) | (row >= 384 ? 0x10000n : 0n), true);
     view.setBigUint64(offset + meta.retiredOffset, 0xfffffffffffffffen, true);
     const expected = Buffer.from(actual);
     const expectedView = new DataView(expected.buffer, expected.byteOffset, expected.byteLength);
@@ -53,6 +55,7 @@ for (const file of files) {
       BigInt.asUintN(64, 0xfffffffffffffffen + BigInt(meta.instructions)), true);
     assert.equal(instance.exports.cut(offset), 1n, `${file}: result row ${row}`);
     const flags = view.getBigUint64(offset + meta.flagsOffset, true);
+    assert.equal(flags & 0x10000n,0n,`${file}: successful RF clear row ${row}`);
     const mask = masks ? masks.readBigUInt64LE(row * 8) : BigInt(meta.flagsMask);
     assert.equal(flags & mask, word(33) & mask, `${file}: defined flags row ${row}`);
     expectedView.setBigUint64(offset + meta.flagsOffset, flags, true);
@@ -69,7 +72,7 @@ for (const file of files) {
     assert.equal(instance.exports.cut(badOffset), 6n, `${file}: invalid reservation`);
     assert.deepEqual(contents, snapshot);
   }
-  for (const flags of [0x302n, 0x10202n]) {
+  for (const flags of [0x302n, 0x10302n]) {
     view.setBigUint64(meta.flagsOffset, flags, true);
     const snapshot = Buffer.from(contents);
     assert.equal(instance.exports.cut(0), 6n, `${file}: debug cut rejection`);

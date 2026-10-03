@@ -2,7 +2,52 @@
 .globl _start
 .type _start,@function
 _start:
-#if defined(CUT_CARRY)
+#if defined(CUT_MULTIPLY)
+#if CUT_WIDTH == 16
+#define DEST %ax
+#define SOURCE %di
+#elif CUT_WIDTH == 32
+#define DEST %eax
+#define SOURCE %edi
+#else
+#define DEST %rax
+#define SOURCE %rdi
+#endif
+#if CUT_MULTIPLY_CASE == 1
+    imul DEST,DEST
+#elif CUT_MULTIPLY_CASE == 2
+    imul $56,SOURCE,DEST
+#elif CUT_MULTIPLY_CASE == 3
+    imul $-128,SOURCE,DEST
+#elif CUT_MULTIPLY_CASE == 4
+    imul $0x123456,SOURCE,DEST
+#elif CUT_MULTIPLY_CASE == 5
+    imul $-1,SOURCE,DEST
+#elif CUT_MULTIPLY_CASE == 6
+    imul $0,SOURCE,DEST
+#elif CUT_MULTIPLY_CASE == 7
+    imul $56,DEST,DEST
+#elif CUT_MULTIPLY_CASE == 8
+    imul SOURCE,DEST
+    seto %dl
+    setb %sil
+    xor %r8d,%r8d
+#elif CUT_MULTIPLY_CASE == 9
+    imul SOURCE,DEST
+    add %rdx,%rsi
+#elif CUT_MULTIPLY_CASE == 10
+#if CUT_WIDTH == 16
+    imul %r8w,%r9w
+#elif CUT_WIDTH == 32
+    imul %r8d,%r9d
+#else
+    imul %r8,%r9
+#endif
+    mov %r9,%rax
+#else
+    imul SOURCE,DEST
+#endif
+#elif defined(CUT_CARRY)
 #if CUT_WIDTH == 8
 #define DEST %al
 #define SOURCE %cl
