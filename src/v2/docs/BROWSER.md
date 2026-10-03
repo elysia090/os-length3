@@ -768,6 +768,25 @@ memory BTS at `0xffffffff81054a7c`, whose signed word-offset calculation remains
 open. PID 1/shell and the full goal remain red; component pass is not boot.
 Human UI and the native publication are unchanged.
 
+### Signed memory bit-string checkpoint
+
+[Current evidence](../vm/check/browser/evidence/2026-10-03-memory-index.md)
+closes ordinary register-indexed memory BT/BTS/BTR/BTC through signed address
+SSA plus the existing C-MMU read/reserve/commit boundary. 24 entrance assertions
+were red first; 38 post-linked forms pass 19,456 CPU/RAM, 17,408 native fault
+and 36,864 RF checks. Negative indexes use floor division, not zero truncation.
+Four actual cold source-alias cases separately pass C dispatch: BT reuses,
+equal-byte BTS invalidates, including an unmapped original base whose adjusted
+word is mapped. The source driver now performs 20 real cold emissions.
+Fresh immediate-bit regressions, full product checks, selected lowering
+sanitizers and 433 native/cold emissions pass. LOCK bit strings and FS/GS
+remain explicit boundaries; this is not SMP, full ISA or exception proof.
+Actual browser passes BTS and reaches 129,394,681 retirements / 64,574,988
+admissions, with unchanged decompression output and native bundle/human UI.
+Next refusal: `f3 48 0f bc c9` at `0xffffffff813e188f`. The fixed CPUID
+contract has no BMI1/LZCNT, so close its legacy scan semantics without widening
+the CPU profile. PID 1/shell and the full product goal remain red.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

@@ -27,6 +27,24 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    /* Memory register indexes name a signed bit-string coordinate, unlike
+     * immediate indexes. Cover every family/width/address-size entrance. */
+    static const pl_u8 bit_opcodes[] = {0xa3u,0xabu,0xb3u,0xbbu};
+    for (pl_u32 address32=0u;address32<2u;++address32)
+    for (pl_u32 width=16u;width<=64u;width*=2u)
+    for (pl_u32 kind=0u;kind<4u;++kind) {
+        pl_u32 at=0u;
+        if (address32) pages[at++]=0x67u;
+        if (width==16u) pages[at++]=0x66u;
+        if (width==64u) pages[at++]=0x48u;
+        pages[at++]=0x0fu; pages[at++]=bit_opcodes[kind]; pages[at++]=0x0fu;
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_instructions==1u && report.source_bytes==at
+            && report.boundary==WASM_CUT_MEMORY && report.memory_bytes==width/8u
+            && report.memory_access==(kind ? 3u : 1u) && report.read_registers==130u
+            && !report.written_registers && report.flags_written);
+    }
     /* Memory SETcc always stores a byte, even for a false condition. Its
      * flag predicate shares the pure register path; only the store can fault. */
     for (pl_u32 address32 = 0u; address32 < 2u; ++address32)
@@ -333,7 +351,7 @@ int main(int argc, char **argv)
     static const pl_u8 rejected_bits[][6] = {
         {0xf0u,0x48u,0x0fu,0xbau,0xeeu,0x3au}, /* LOCK register BTS is invalid. */
         {0xf0u,0x48u,0x0fu,0xbau,0x28u,0x3au}, /* Locked memory RMW is not admitted yet. */
-        {0x48u,0x0fu,0xabu,0x08u,0x90u,0x90u}, /* Register bit-string index needs signed word displacement. */
+        {0x64u,0x48u,0x0fu,0xabu,0x08u,0x90u}, /* FS base is not ordinary flat memory. */
     };
     for (pl_u32 form = 0u; form < sizeof rejected_bits / sizeof rejected_bits[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected_bits[form],sizeof rejected_bits[0]);

@@ -166,7 +166,7 @@ complete decompressed output. The next -102 is memory SETE at
 `0xffffffff81096421`. PID 1/shell remains red.
 See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-exchange.md).
 
-Latest checkpoint closes all 16 memory SETcc conditions through common condition
+Previous checkpoint closes all 16 memory SETcc conditions through common condition
 SSA and the existing C-MMU byte store. 32 entrance cases were red, then green;
 25 post-linked forms pass 12,800 CPU/RAM / 12,288 native protection-fault /
 25,088 RF checks. Both truth values write, flags/GPRs are unchanged and failures
@@ -176,6 +176,23 @@ selected lowering sanitizers and 395 native/cold emissions pass. Actual browser:
 129,387,892 retired / 64,571,332 admissions, unchanged full output. Next -102:
 register-index memory BTS at `0xffffffff81054a7c`. PID 1/shell remains red.
 See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-condition.md).
+
+Latest checkpoint closes ordinary signed register-index memory BT/BTS/BTR/BTC
+through address SSA and the existing C-MMU read/reserve/commit. 24 entrance
+assertions were red, then green. 38 post-linked forms pass 19,456 CPU/RAM /
+17,408 native protection-fault / 36,864 RF comparisons; signed floor division,
+all widths/address sizes and shared bit/SIB indexes are covered. Four actual
+cold signed BT/BTS source-alias cases separately run C dispatch, including an
+unmapped original base and equal-value write fencing. Full product check,
+selected lowering ASan/UBSan, fresh immediate-bit regressions and 433
+native/cold byte-identical emissions pass. Source admission now performs 20
+actual cold emissions. Native bundle and human UI are unchanged. Actual
+browser: 129,394,681 retired / 64,574,988 admissions; decompression witnesses
+are unchanged. Next -102: `f3 48 0f bc c9` at `0xffffffff813e188f`. The fixed
+CPUID profile has no BMI1/LZCNT: close the legacy scan encoding contract before
+lowering the corresponding pure summary. Do not silently publish TZCNT flags
+or widen CPU features. PID 1/shell and the full product goal remain red.
+See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-index.md).
 
 Next, in order:
 
@@ -204,17 +221,21 @@ Next, in order:
    pending keys refuse explicitly, not an invented guest fault/default zero.
    MISC_ENABLE/CPUID and subsequent arithmetic/bit cuts are now closed as
    described above. Memory unary and demand-driven first-instruction tails are
-   now closed as well, followed by scalar memory CMPXCHG and memory SETcc.
-   The next real red is `48 0f ab 3d 2c f1 89 00`, register-index memory BTS
-   at `0xffffffff81054a7c`. Close common BT/BTS/BTR/BTC signed register-index
-   address adjustment, including negative/word-crossing indexes, 16/32/64-bit
-   widths, address-size 32, SS, flags and precise load/RMW faults. The existing
-   immediate form intentionally masks within its word, not this bit-string
-   address contract. Keep address arithmetic in SSA and C-MMU ownership intact.
+   now closed as well, followed by scalar memory CMPXCHG, memory SETcc and
+   ordinary signed register-index memory BT/BTS/BTR/BTC.
+   The next real red is `f3 48 0f bc c9` at `0xffffffff813e188f`. The shared
+   decoder currently enables Zydis's default TZCNT/LZCNT modes although the
+   normative profile publishes neither BMI1 nor LZCNT. First make the general
+   decoder obey those feature-dependent legacy BSF/BSR encodings, with red
+   profile tests; then close common pure scan/summary SSA, including all
+   widths, aliases, zero-source/undefined-destination behavior, ZF consumers
+   and parent publication. Confirm the oracle's actual CPU feature set instead
+   of comparing TZCNT against a BMI1-enabled host and claiming legacy semantics.
+   Keep the profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (39.9 s), VM execution (31.2 s) and source/MMU admission
-   (20.2 s) exceed cold construction (6.5 s) in the latest observation. Analyze exact
+   Engine replacement (39.4 s), VM execution (31.2 s) and source/MMU admission
+   (20.2 s) exceed cold construction (6.8 s) in the latest observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Preserve demand-only crossing
@@ -240,7 +261,7 @@ page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-memory-condition.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-memory-index.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

@@ -224,6 +224,28 @@ for (const equal of [false,true]) {
   assert.equal(data[code+2],equal ? 1 : 0);
   put(base+384,0x400000n); assert.equal(query(),1n);
 }
+// The signed bit-string offset selects the source owner, not the original
+// base coordinate. Positive indexes start on the unmapped preceding VA;
+// negative indexes start in the following word. BT only observes, whereas
+// an equal-value BTS still writes and must fence that physical source alias.
+for (const write of [false,true]) for (const index of [-61n,67n]) {
+  put(leaf,0x8067n); data.set([0x48,0x0f,write ? 0xab : 0xa3,0x0f,0x90,0x90,0x90,0x90],code);
+  const originalBytes = data.slice(code,code+8);
+  const originalBase = index < 0n ? 0x400008n : 0x3ffff8n;
+  put(base+8,BigInt.asUintN(64,index)); put(base+56,originalBase);
+  put(base+384,0x400000n); put(base+392,2n);
+  assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
+  assert.equal(query(),1n); await publish();
+  assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  assert.equal(vm.vm_run(port,9n,1),write ? 5n : 1n);
+  assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n);
+  assert.equal(view.getBigUint64(base+384,true),0x400004n);
+  assert.equal(view.getBigUint64(base+392,true),3n);
+  assert.equal(view.getBigUint64(base+8,true),BigInt.asUintN(64,index));
+  assert.equal(view.getBigUint64(base+56,true),originalBase);
+  assert.deepEqual(data.slice(code,code+8),originalBytes);
+  put(base+384,0x400000n); assert.equal(query(),write ? 1n : 0n);
+}
 for (let i = 0; i < vm.vm_source_capacity(); ++i) table.set(firstSlot+i,null);
 cc.compiler_close(); vm.vm_close();
-console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK and SETcc truth values, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);
+console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK, SETcc truth values and signed BT/BTS source aliases, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);

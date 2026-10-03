@@ -49,6 +49,13 @@ static pl_u64 read_word(const pl_u8 *bytes)
     for (pl_u32 i = 0u; i < 8u; ++i) value |= (pl_u64)bytes[i] << (8u * i);
     return value;
 }
+static pl_u64 bit_word_offset(pl_u64 index,pl_u32 width)
+{
+    index &= ~0ull >> (64u-width);
+    pl_u64 offset=index >> 3u;
+    if (index & (1ull << (width-1u))) offset |= ~0ull << (width-3u);
+    return offset & (0u-(pl_u64)(width/8u));
+}
 static int close_output(FILE **file)
 {
     int status = fclose(*file); *file = NULL; return status;
@@ -137,7 +144,9 @@ int main(int argc, char **argv)
         || instruction.operation == PL_X86_OPERATION_COMPLEMENT;
     int exchange = instruction.operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     int set = instruction.operation == PL_X86_OPERATION_CONDITIONAL_SET;
-    int precise_rmw = unary || exchange;
+    int bit = instruction.operation == PL_X86_OPERATION_BIT_TEST;
+    int indexed_bit = bit && instruction.operands[1].kind == PL_X86_OPERAND_REGISTER;
+    int precise_rmw = unary || exchange || (bit && instruction.condition);
     int precise_write = precise_rmw || set;
     const pl_x86_memory *operand = &instruction.operands[store ? 0u : 1u].value.memory;
     relative = operand->base.class_id == PL_X86_REGISTER_IP;
@@ -152,7 +161,7 @@ int main(int argc, char **argv)
         pl_u64 address = instruction.fallthrough + (pl_u64)operand->displacement;
         if (address < (pl_u64)(uintptr_t)code || code_bytes < 8u
                 || address - (pl_u64)(uintptr_t)code > code_bytes - 8u) goto finish;
-        if ((report.memory_access & MACHINE_MEMORY_WRITE)
+        if (((report.memory_access & MACHINE_MEMORY_WRITE) || indexed_bit)
                 && mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
     }
     if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
@@ -175,25 +184,44 @@ int main(int argc, char **argv)
         if (set && row < 256u) {
             static const pl_u32 positions[] = {0u,2u,4u,6u,7u,11u};
             state.rflags = 0x202u;
-            for (pl_u32 bit=0u;bit<6u;++bit)
-                state.rflags |= (pl_u64)((row>>bit)&1u) << positions[bit];
+            for (pl_u32 flag_rank=0u;flag_rank<6u;++flag_rank)
+                state.rflags |= (pl_u64)((row>>flag_rank)&1u) << positions[flag_rank];
         }
         if (unary) state.rflags = (state.rflags & ~1ull) | (row & 1u);
         pl_u32 offset = row % 3u == 0u ? 4093u : row % 3u == 1u ? 0u : 4088u;
         if (set) offset = row&1u ? 4095u : 0u;
         pl_u64 address = base + offset;
+        pl_u64 word_offset=0u;
+        if (indexed_bit) {
+            pl_u32 width=report.memory_bytes*8u, index_register=instruction.operands[1].value.reg.index;
+            pl_u64 mask=~0ull >> (64u-width), sign=1ull << (width-1u);
+            const pl_u64 edges[]={0u,1u,width-1u,width,width+1u,2u*width-1u,2u*width,
+                ~0ull,0u-(pl_u64)width,0u-(pl_u64)width-1u,0u-2u*(pl_u64)width,
+                0u-2u*(pl_u64)width-1u,255u,0ull-255u,sign,sign-1u,sign+1u,mask,mask-1u};
+            pl_u64 index=row<128u ? edges[row%(relative ? 14u : 19u)]
+                : random_word(&seed) & (relative ? 511u : 65535u);
+            if (row>=128u && (row&1u)) index=0u-index;
+            state.registers[index_register]=(state.registers[index_register]&~mask)|(index&mask);
+            word_offset=bit_word_offset(index,width);
+        }
         if (!relative) {
             for (pl_u32 i = 0u; i < 8192u; ++i) ram[i] = (pl_u8)(i * 37u + row * 13u);
             if (operand->base.class_id != PL_X86_REGISTER_GPR || operand->base.index >= 16u)
                 goto finish;
             pl_u32 base_register = operand->base.index;
-            state.registers[base_register] = address - (pl_u64)operand->displacement;
+            state.registers[base_register] = address - word_offset - (pl_u64)operand->displacement;
             if (operand->index.class_id == PL_X86_REGISTER_GPR) {
-                state.registers[operand->index.index] = row & 15u;
+                if (!indexed_bit || operand->index.index != instruction.operands[1].value.reg.index)
+                    state.registers[operand->index.index] = row & 15u;
                 state.registers[base_register] -= state.registers[operand->index.index] * operand->scale;
             }
             if (instruction.address_width == 32u) state.registers[base_register] |= 0xdeadbeef00000000ull;
-        } else address = instruction.fallthrough + (pl_u64)operand->displacement;
+        } else address = instruction.fallthrough + (pl_u64)operand->displacement + word_offset;
+        if (indexed_bit && row<128u) {
+            pl_u64 value=row&1u ? (~0ull >> (64u-report.memory_bytes*8u)) : 0u;
+            for (pl_u32 i=0u;i<report.memory_bytes;++i)
+                ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(value >> (8u*i));
+        }
         if (unary && row < 48u) {
             pl_u32 width = report.memory_bytes*8u;
             pl_u64 sign = 1ull << (width-1u), mask = width == 64u ? ~0ull : (1ull << width)-1u;
@@ -251,7 +279,7 @@ int main(int argc, char **argv)
             for (pl_u32 reg = 0u; reg < 16u; ++reg) state.registers[reg] = record[reg];
             state.rflags = record[16];
             pl_u8 *protected_page = ram + (((address - base) + report.memory_bytes - 1u) & ~4095ull);
-            if (exchange || set) for (pl_u32 i=0u;i<report.memory_bytes;++i)
+            if (exchange || set || (bit && instruction.condition)) for (pl_u32 i=0u;i<report.memory_bytes;++i)
                 ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(record[36] >> (8u*i));
             if (precise_write) memcpy(saved,ram,sizeof saved);
             int readable = precise_write && (set ? (row&64u) : exchange ? (row&2u) : (row&1u));

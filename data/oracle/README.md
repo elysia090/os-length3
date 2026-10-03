@@ -403,9 +403,18 @@ LOCK coverage assumes one serialized owner of ordinary memory, not SMP.
 
 The [memory condition checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-condition.md)
 adds `prepare-memory-condition-cuts.sh NEW-DIRECTORY` (25 ordinary post-linked
-SETcc forms). The current source-admission driver now performs 16 actual cold
+SETcc forms). At that checkpoint the source-admission driver performed 16 actual cold
 emissions, including both SETcc truth values and equal-byte source invalidation.
 The prior ten/fourteen-operation receipts remain historical observations.
+
+The [signed memory bit-string checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-index.md)
+adds `prepare-memory-index-cuts.sh NEW-DIRECTORY` (38 ordinary post-linked
+BT/BTS/BTR/BTC forms). It covers signed register indexes, negative/word/page
+crossings, all widths/address sizes and shared bit/SIB indexes through the
+same C MMU. The current source-admission driver performs 20 real cold emissions,
+including signed BT/BTS source owners reached from an unmapped original base
+and equal-byte modification fences. Native fault and sanitizer scopes remain
+explicit in the evidence; component green is not Linux boot.
 
 This division avoids rebuilding QEMU while preserving the final route:
 

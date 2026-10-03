@@ -65,6 +65,22 @@ static void bit_value(cut_lowering *cut,const pl_x86_instruction *instruction)
     }
 }
 
+static void bit_address(cut_lowering *cut,const pl_x86_instruction *instruction)
+{
+    pl_u32 width=instruction->operands[0].bits;
+    /* floor(signed index / width) * (width/8) equals
+     * (sign_extend(index) >> 3) & -(width/8). Arithmetic shift handles
+     * negative indexes without division or a materialized bit string. */
+    cut_get(cut,CUT_ADDRESS); cut_get(cut,CUT_RIGHT);
+    if (width<64u) {
+        cut_const(cut,64u-width); cut_op(cut,0x86u);
+        cut_const(cut,64u-width); cut_op(cut,0x87u);
+    }
+    cut_const(cut,3u); cut_op(cut,0x87u);
+    cut_const(cut,0u-(pl_u64)(width/8u)); cut_op(cut,0x83u);
+    cut_op(cut,0x7cu); cut_mask(cut,instruction->address_width); cut_set(cut,CUT_ADDRESS);
+}
+
 static pl_x86_operand accumulator(pl_u32 width)
 {
     pl_x86_operand result = {0};
@@ -123,7 +139,9 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
                || instruction->operation == PL_X86_OPERATION_TEST;
     int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
     if (bit && (!first || instruction->condition >= 4u || operands[0].bits < 16u
-            || operands[1].kind != PL_X86_OPERAND_IMMEDIATE)) return 0;
+            || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
+                && (operands[1].kind != PL_X86_OPERAND_REGISTER
+                    || !cut_gpr(&operands[1].value.reg) || operands[1].bits != operands[0].bits)))) return 0;
     const pl_x86_operand *memory = &operands[first ? 0u : 1u];
     if (memory->kind != PL_X86_OPERAND_MEMORY || (memory->bits != 8u
             && memory->bits != 16u && memory->bits != 32u && memory->bits != 64u)) return 0;
@@ -171,9 +189,11 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut_effective_address(cut, instruction, &memory->value.memory);
     cut_set(cut, CUT_ADDRESS);
     if (set) { cut_condition(cut,instruction->condition); cut_op(cut,0xadu); }
+    else if (bit) cut_read_operand(cut,&operands[1],memory->bits);
     else if (store && !unary) cut_read_operand(cut, &operands[1], memory->bits);
     else cut_const(cut, 0u);
-    cut_set(cut, rmw ? CUT_RIGHT : CUT_VALUE);
+    cut_set(cut, rmw || bit ? CUT_RIGHT : CUT_VALUE);
+    if (bit && operands[1].kind == PL_X86_OPERAND_REGISTER) bit_address(cut,instruction);
     cut->report.memory_bytes = memory->bits / 8u;
     cut->report.memory_access = store ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ;
     if (rmw) cut->report.memory_access |= MACHINE_MEMORY_READ;
@@ -186,8 +206,10 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_read_operand(cut,&operands[0],memory->bits); cut_set(cut,CUT_LEFT);
     }
     if (observe) {
-        cut_read_operand(cut,&operands[first ? 1u : 0u],memory->bits);
-        cut_set(cut,first ? CUT_RIGHT : CUT_LEFT);
+        if (!bit) {
+            cut_read_operand(cut,&operands[first ? 1u : 0u],memory->bits);
+            cut_set(cut,first ? CUT_RIGHT : CUT_LEFT);
+        }
         cut_access(cut); /* READ only, even when the first operand is memory. */
         cut_access_value(cut); cut_set(cut,first ? CUT_LEFT : CUT_RIGHT);
         if (bit) bit_value(cut,instruction);

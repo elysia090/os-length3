@@ -329,6 +329,55 @@ _start:
     .byte 0x0f, 0x94, 0x3f /* ModRM.reg is ignored; still SETE [RDI]. */
 #elif MEMORY_CASE == 185
     .byte 0x66, 0x48, 0x0f, 0x94, 0x07 /* Operand stays 8-bit. */
+#elif MEMORY_CASE >= 186 && MEMORY_CASE <= 209
+#if (MEMORY_CASE-186)%6 < 3
+#define ADDRESS [rdi]
+#else
+#define ADDRESS [edi]
+#endif
+#if (MEMORY_CASE-186)%3 == 0
+#define DEST word ptr ADDRESS
+#define INDEX cx
+#elif (MEMORY_CASE-186)%3 == 1
+#define DEST dword ptr ADDRESS
+#define INDEX ecx
+#else
+#define DEST qword ptr ADDRESS
+#define INDEX rcx
+#endif
+#if MEMORY_CASE < 192
+    bt DEST, INDEX
+#elif MEMORY_CASE < 198
+    bts DEST, INDEX
+#elif MEMORY_CASE < 204
+    btr DEST, INDEX
+#else
+    btc DEST, INDEX
+#endif
+#elif MEMORY_CASE >= 210 && MEMORY_CASE <= 221
+#if MEMORY_CASE < 214
+#define DEST qword ptr [rip+512]
+#define INDEX rdi
+#elif MEMORY_CASE < 218
+#define DEST qword ptr [rdi+rcx*4+7]
+#define INDEX rcx
+#else
+#define DEST word ptr [rbp]
+#define INDEX cx
+#endif
+#if (MEMORY_CASE-210)%4 == 0
+    bt DEST, INDEX
+#elif (MEMORY_CASE-210)%4 == 1
+    bts DEST, INDEX
+#elif (MEMORY_CASE-210)%4 == 2
+    btr DEST, INDEX
+#else
+    btc DEST, INDEX
+#endif
+#elif MEMORY_CASE == 222
+    bts dword ptr [r12+r9*8+7], r9d
+#elif MEMORY_CASE == 223
+    btc qword ptr ss:[rdi], r11
 #else
 #error unsupported case
 #endif
