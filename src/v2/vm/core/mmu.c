@@ -30,12 +30,14 @@ static machine_result exception(pl_u8 *port, pl_u64 address, pl_u32 vector, pl_u
 
 static machine_result resident_word(vm_memory *memory, pl_u8 *port,
                                     pl_u64 address, pl_u32 access, pl_u32 bytes,
-                                    pl_u8 **result)
+                                    pl_u8 **result, pl_u32 *discard)
 {
     const vm_memory_page *page = vm_memory_find(memory, address);
-    if (!page || page->kind != VM_MEMORY_RAM || (page->rights & access) != access)
+    if (!page || (page->kind != VM_MEMORY_RAM && page->kind != VM_MEMORY_ROM)
+            || (page->rights & access) != access)
         return pending(port, address, bytes, access);
     *result = memory->bytes + page->offset + (pl_u32)(address & 4095u);
+    if (discard) *discard = page->kind == VM_MEMORY_ROM;
     return 0u;
 }
 
@@ -68,7 +70,8 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
     for (pl_u32 level = 0u; level < 4u; ++level) {
         pl_u64 at = table + ((address >> shifts[level]) & 511u) * 8u;
         pl_u8 *entry_bytes = NULL;
-        machine_result status = resident_word(memory, port, at, MACHINE_MEMORY_READ, 8u, &entry_bytes);
+        pl_u32 discard = 0u;
+        machine_result status = resident_word(memory, port, at, MACHINE_MEMORY_READ, 8u, &entry_bytes,&discard);
         if (status) return status;
         pl_u64 entry = vm_memory_load(entry_bytes, 8u);
         if (!(entry & PRESENT)) return exception(port, address, 14u, error);
@@ -88,13 +91,15 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
         pl_u32 set = ACCESSED | (leaf && write ? DIRTY : 0u);
         if (set & ~(pl_u32)entry) {
             pl_u8 *writable_entry = NULL;
-            status = resident_word(memory, port, at, MACHINE_MEMORY_WRITE, 8u, &writable_entry);
+            status = resident_word(memory, port, at, MACHINE_MEMORY_WRITE, 8u, &writable_entry,NULL);
             if (status) return status;
             /* Serialized, pinned owner: no competing CPU/device/table writer
              * can occur between this load and store. This is not SMP CAS. */
-            vm_memory_before_write(memory,(pl_u32)(writable_entry - memory->bytes),8u);
-            vm_memory_store(writable_entry, entry | set, 8u);
-            memory->write_touched = 1u;
+            if (!discard) {
+                vm_memory_before_write(memory,(pl_u32)(writable_entry - memory->bytes),8u);
+                vm_memory_store(writable_entry, entry | set, 8u);
+                memory->write_touched = 1u;
+            }
         }
         if (leaf) {
             pl_u64 offset_mask = (1ull << shift) - 1u;
@@ -134,8 +139,10 @@ static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
         pl_u32 length = 4096u - (pl_u32)(current & 4095u);
         if (length > bytes - consumed) length = bytes - consumed;
         pl_u8 *fragment = NULL;
-        status = resident_word(memory, port, physical, access & 3u, length, &fragment);
+        pl_u32 discard = 0u;
+        status = resident_word(memory, port, physical, access & 3u, length, &fragment,&discard);
         if (status) return status;
+        ready->discard |= discard << ready->parts;
         ready->offsets[ready->parts] = (pl_u32)(fragment - memory->bytes);
         ready->lengths[ready->parts++] = length;
         consumed += length;
@@ -157,9 +164,11 @@ machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
     pl_u32 consumed = 0u;
     if (access & MACHINE_MEMORY_WRITE) {
         for (pl_u32 i = 0u; i < ready.parts; ++i) {
-            vm_memory_before_write(memory,ready.offsets[i],ready.lengths[i]);
-            vm_memory_store(memory->bytes + ready.offsets[i], value >> (consumed * 8u), ready.lengths[i]);
-            memory->write_touched = 1u;
+            if (!(ready.discard & (1u << i))) {
+                vm_memory_before_write(memory,ready.offsets[i],ready.lengths[i]);
+                vm_memory_store(memory->bytes + ready.offsets[i], value >> (consumed * 8u), ready.lengths[i]);
+                memory->write_touched = 1u;
+            }
             consumed += ready.lengths[i];
         }
     } else {

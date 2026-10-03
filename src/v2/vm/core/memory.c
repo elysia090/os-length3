@@ -84,7 +84,7 @@ const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address)
     return result;
 }
 
-int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 rights)
+static int append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 rights, pl_u32 kind)
 {
     if (!memory || !memory->generation || memory->reservation.parts
             || memory->page_count >= memory->page_capacity
@@ -92,11 +92,15 @@ int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 ri
             || (pl_u64)offset != memory->next_offset || !rights || rights & ~3u
             || (pl_u64)offset + 4096u > memory->byte_count) return -1;
     pl_u32 rank = memory->page_count;
-    memory->pages[rank] = (vm_memory_page){address,offset,rights,VM_MEMORY_RAM,0u,0u};
+    memory->pages[rank] = (vm_memory_page){address,offset,rights,kind,0u,0u};
     index_append(memory,rank);
     ++memory->page_count; memory->next_offset += 4096u;
     return 0;
 }
+int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 rights)
+{ return append(memory,address,offset,rights,VM_MEMORY_RAM); }
+int vm_memory_append_rom(vm_memory *memory, pl_u64 address, pl_u32 offset)
+{ return append(memory,address,offset,3u,VM_MEMORY_ROM); }
 
 static pl_u64 read_word(const pl_u8 *bytes)
 { return vm_memory_load(bytes, 8u); }
@@ -140,7 +144,7 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
     /* Preflight every fragment before touching payload. Missing translations,
      * nonresident RAM, devices and permission misses request admission. Only
      * an explicitly cached architectural exception is a guest page fault. */
-    pl_u32 offsets[2], lengths[2], parts = 0u, consumed = 0u;
+    pl_u32 offsets[2], lengths[2], parts = 0u, consumed = 0u, discard = 0u;
     while (consumed < bytes) {
         pl_u64 current = address + consumed;
         const vm_memory_page *page = vm_memory_find(memory, current);
@@ -148,20 +152,24 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
             return defer(port, address, bytes, access);
         if (page->kind == VM_MEMORY_FAULT && (page->rights & (access & 3u)))
             return fault(port, current, page->fault_vector, page->fault_error);
-        if (page->kind != VM_MEMORY_RAM || !(page->rights & (access & 3u)))
+        if ((page->kind != VM_MEMORY_RAM && page->kind != VM_MEMORY_ROM)
+                || !(page->rights & (access & 3u)))
             return defer(port, address, bytes, access);
         pl_u32 offset = (pl_u32)(current & 4095u);
         pl_u32 length = 4096u - offset;
         if (length > bytes - consumed) length = bytes - consumed;
+        if (page->kind == VM_MEMORY_ROM) discard |= 1u << parts;
         offsets[parts] = page->offset + offset; lengths[parts++] = length;
         consumed += length;
     }
     if (access & MACHINE_MEMORY_WRITE) {
         consumed = 0u;
         for (pl_u32 part = 0u; part < parts; ++part) {
-            vm_memory_before_write(memory,offsets[part],lengths[part]);
-            write_word(memory->bytes + offsets[part], value >> (consumed * 8u), lengths[part]);
-            memory->write_touched = 1u;
+            if (!(discard & (1u << part))) {
+                vm_memory_before_write(memory,offsets[part],lengths[part]);
+                write_word(memory->bytes + offsets[part], value >> (consumed * 8u), lengths[part]);
+                memory->write_touched = 1u;
+            }
             consumed += lengths[part];
         }
     } else {
@@ -192,10 +200,12 @@ machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 va
             || !saved.parts || saved.parts > 2u) return MACHINE_RESULT_ENTRY_MAP;
     pl_u32 consumed = 0u;
     for (pl_u32 i = 0u; i < saved.parts; ++i) {
-        vm_memory_before_write(memory,saved.offsets[i],saved.lengths[i]);
-        write_word(memory->bytes + saved.offsets[i], value >> (consumed * 8u), saved.lengths[i]);
+        if (!(saved.discard & (1u << i))) {
+            vm_memory_before_write(memory,saved.offsets[i],saved.lengths[i]);
+            write_word(memory->bytes + saved.offsets[i], value >> (consumed * 8u), saved.lengths[i]);
+            memory->write_touched = 1u;
+        }
         consumed += saved.lengths[i];
     }
-    memory->write_touched = 1u;
     return 0u;
 }

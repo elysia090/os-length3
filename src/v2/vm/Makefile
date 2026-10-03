@@ -63,6 +63,9 @@ $(BUILD)/mmu-check: check/mmu.c $(BUILD)/libvm.a
 $(BUILD)/boot-check: check/boot.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
+$(BUILD)/rom-check: check/rom.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
 $(BUILD)/execution-check: check/execution.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
@@ -81,13 +84,14 @@ $(BUILD)/source-check: check/source.c $(BUILD)/libvm.a
 $(BUILD)/msr-check: check/msr.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
-check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/page-index-check $(BUILD)/supply-check $(BUILD)/mmu-check $(BUILD)/boot-check $(BUILD)/execution-check $(BUILD)/segments-check $(BUILD)/registers-check $(BUILD)/exception-check $(BUILD)/source-check $(BUILD)/msr-check
+check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/page-index-check $(BUILD)/supply-check $(BUILD)/mmu-check $(BUILD)/boot-check $(BUILD)/rom-check $(BUILD)/execution-check $(BUILD)/segments-check $(BUILD)/registers-check $(BUILD)/exception-check $(BUILD)/source-check $(BUILD)/msr-check
 	$(BUILD)/resource-check
 	$(BUILD)/memory-check
 	$(BUILD)/page-index-check
 	$(BUILD)/supply-check
 	$(BUILD)/mmu-check
 	$(BUILD)/boot-check
+	$(BUILD)/rom-check
 	$(BUILD)/execution-check
 	$(BUILD)/segments-check
 	$(BUILD)/registers-check

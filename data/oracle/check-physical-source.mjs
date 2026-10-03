@@ -30,7 +30,7 @@ put(base+488,8); put(base+1128,42);
 assert.equal(vm.vm_open(base,memory.buffer.byteLength-base,4096,directory,4,8,branches,9n),0);
 assert.equal(vm.vm_bind_state(base),0);
 let count=0;
-for (const physical of [0xa0000n,0xf0000n,BigInt(meta.ramBytes)])
+for (const physical of [0xa0000n,0xbf000n,BigInt(meta.ramBytes)])
 for (const direction of [1,2,3]) for (const width of [1,2,4,8]) {
   put(ptes[3],physical|0x67n); // already-accessed/dirty table: isolate supply effects
   bytes.fill(0xa5,request,request+48);

@@ -6,6 +6,7 @@
 
 enum vm_boot_page_kind {
     VM_BOOT_ZERO = 0, VM_BOOT_METADATA, VM_BOOT_KERNEL, VM_BOOT_INITRAMFS,
+    VM_BOOT_ROM,
 };
 typedef struct {
     const pl_u8 *header;
@@ -34,10 +35,15 @@ typedef struct {
 int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
                   pl_u64 image_bytes, pl_u64 initramfs_bytes, pl_u64 ram_bytes,
                   const pl_u8 *command, pl_u32 command_bytes);
-/* For ZERO/METADATA, write exactly one page. For source pages, return a bounded
+/* For ZERO/METADATA/ROM, write exactly one page. For source pages, return a bounded
  * object extent without touching target: the caller authenticates/copies that
  * extent and zeroes only its final padding. Never reconstruct the whole image.
  * Unmapped physical addresses fail, rather than masquerading as zero RAM.
+ * The direct-entry platform exposes erased (0xff) reserved ROM in the range
+ * [0xc0000,0x100000), with no SMBIOS/ACPI/MP/option-ROM tables or BIOS service.
+ * Writes to admitted ROM are discarded by physical memory, not guest #PF.
+ * The VGA/device window 0xa0000..0xc0000 remains unassigned. Neither region is
+ * RAM in E820. ROM is reconstructible immutable machine state, not dirty COW.
  * This projects INITIAL content only: it is not a post-execution cache-miss
  * resolver. Dirty/COW and suspend state must never be replaced by these zeros. */
 int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,

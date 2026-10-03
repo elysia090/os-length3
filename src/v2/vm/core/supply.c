@@ -70,7 +70,10 @@ int vm_supply_commit(vm_page_supply *supply, vm_memory *memory,
 {
     if (!current(supply,memory,state,port) || !ticket || ticket != supply->prepared.ticket) return -1;
     const vm_page_request *request = &supply->prepared;
-    if (vm_memory_append(memory,request->address,request->target_offset,request->rights)) return -1;
+    int status = request->source_kind == VM_BOOT_ROM
+        ? vm_memory_append_rom(memory,request->address,request->target_offset)
+        : vm_memory_append(memory,request->address,request->target_offset,request->rights);
+    if (status) return -1;
     vm_supply_reset(supply);
     return 0;
 }

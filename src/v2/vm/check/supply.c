@@ -38,7 +38,7 @@ int main(void)
     EXPECT(vm_supply_prepare(&supply,&memory,&boot,&state,0u,&request) == -1 && arena[4096] == 0x5au);
     /* A valid physical request outside the boot source map is not stale
      * input, zero RAM, a guest #PF or permission to fabricate firmware. */
-    pending(&supply,&memory,&state,0xf0000u);
+    pending(&supply,&memory,&state,0xa0000u);
     memset(&request,0xa5,sizeof request); sentinel=request;
     memset(arena+8192u,0xa5,4096u);
     EXPECT(vm_supply_prepare(&supply,&memory,&boot,&state,0u,&request) == VM_SUPPLY_SOURCE_UNMAPPED);

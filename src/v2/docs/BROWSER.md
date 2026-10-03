@@ -883,6 +883,24 @@ the C-owned physical boundary. Do not patch the guest or use a runtime oracle.
 Native distribution/profile and human UI remain unchanged. PID 1/shell,
 production authentication and full development/storage/network goals are red.
 
+## Reserved firmware projection — 2026-10-03
+
+[ROM derivation and actual browser receipt](../vm/check/browser/evidence/2026-10-03-rom.md)
+replaces the prior F0000 physical-source refusal with an explicit erased ROM
+resource in the direct-entry machine. The legacy hole is still E820 reserved,
+not zero RAM. Physical writes/RMW discard only ROM fragments after real guest
+paging checks; ordinary RAM mutations keep source/engine invalidation intact.
+No BIOS/EFI service, guest patch or runtime oracle is added. The CPU profile,
+native bundle and human UI are unchanged; the physical machine contract is
+explicitly extended. Arbitrary ROM payloads, mixed pages, RW/NX, reservations
+and independent QEMU ROM-bus observations match the common C MMU.
+
+Actual browser reaches 130,560,760 retired / 65,228,266 admissions, with exactly
+16 extra resident ROM pages and no additional object fetches. Next is general
+memory POP (`8f 04 24`) at `0xffffffff81033a58`; derive its effective-address
+and fault priority using native witnesses before implementation. PID 1/shell
+and the full development/storage/network goal remain unachieved.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

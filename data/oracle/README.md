@@ -490,6 +490,35 @@ rules and every memory-prefix form stores exactly two bytes. Protected splits
 must not publish CPU or partial payload. TF remains refused; RF is accepted
 and clears only after successful retirement, never during a pending fault.
 
+### Physical ROM versus guest paging rights
+
+`make -C src/v2/vm check` includes 12,000 arbitrary-payload ROM cases; the
+direct-entry boot template covers every page in C0000..100000. Actual C-Wasm
+checks use the same boot fixtures as the browser:
+
+```sh
+node data/oracle/check-rom.mjs VM.WASM BOOT-FIXTURE-DIRECTORY
+node data/oracle/check-physical-source.mjs VM.WASM BOOT-FIXTURE-DIRECTORY
+```
+
+The second command still refuses A0000/BF000/out-of-RAM, never inventing a
+page or guest fault. Firmware fill is an explicit platform policy, not inferred
+from E820. For an independent actual ROM-bus oracle, in a new scratch directory:
+
+```sh
+as --32 data/oracle/rom-system.S -o SCRATCH/system.o
+ld -m elf_i386 -T data/oracle/exception-entry.ld SCRATCH/system.o -o SCRATCH/system.elf
+node data/oracle/check-rom-system.mjs QEMU SCRATCH/system.elf SCRATCH/new-system.log
+src/v2/vm/build/rom-check SCRATCH/new-system.log
+```
+
+The pinned official QEMU from the existing oracle recipe is used only for
+reference. The last command compares its 17 observed arbitrary ROM words
+against C-MMU writes and reservations. Repeat with the ASan/UBSan C binary.
+These are bus transfer checks, not full instruction flags/exception proof or
+Linux boot. [Derivation and limitations](../../src/v2/vm/check/browser/evidence/2026-10-03-rom.md)
+record the actual browser's next memory POP refusal.
+
 This division avoids rebuilding QEMU while preserving the final route:
 
 ```text

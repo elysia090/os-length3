@@ -1,4 +1,4 @@
-/* Resident projection of already-admitted translations, not an x86 MMU. */
+/* Resident pages and bus mutability; guest translation belongs to the MMU. */
 #ifndef VM_MEMORY_H
 #define VM_MEMORY_H
 #include <machine/memory.h>
@@ -9,11 +9,13 @@ enum vm_memory_page_kind {
     VM_MEMORY_RAM = 1u,
     VM_MEMORY_FAULT,
     VM_MEMORY_DEFERRED,
+    VM_MEMORY_ROM,
 };
 typedef struct {
     pl_u64 generation;
     pl_u32 port, parts;
     pl_u32 offsets[2], lengths[2];
+    pl_u32 discard; /* Physical ROM fragments; guest paging rights checked first. */
 } vm_memory_reservation;
 
 typedef struct {
@@ -67,6 +69,12 @@ int vm_memory_open(vm_memory *memory, pl_u8 *bytes, pl_u64 byte_count,
 /* Append only a never-resident page, using the next virgin payload slot.
  * No eviction/dirty recovery is implied. Failure changes no row or index. */
 int vm_memory_append(vm_memory *memory, pl_u64 address, pl_u32 offset, pl_u32 rights);
+/* ROM uses a virgin payload slot, so it cannot alias any writable RAM extent.
+ * Reads/fetches use its bytes; writes/RMW commits succeed without changing
+ * payload, dirty state or write observers. Page-table permissions still apply.
+ * Initial vm_memory_open rows do not admit ROM: reconstruct it after open;
+ * neither a RAM permission miss nor a deferred device is implicitly ROM. */
+int vm_memory_append_rom(vm_memory *memory, pl_u64 address, pl_u32 offset);
 machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
                                 pl_u64 address, pl_u32 bytes,
                                 pl_u32 access, pl_u64 value);

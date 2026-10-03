@@ -83,6 +83,13 @@ int main(int argc, char **argv)
     EXPECT(vm_boot_page(&boot, boot.initramfs_address, page, &source) == VM_BOOT_INITRAMFS);
     EXPECT(source.offset == 0u && source.bytes == (initramfs_bytes < 4096u ? initramfs_bytes : 4096u));
     EXPECT(vm_boot_page(&boot, 0xa0000u, page, &source) == -1);
+    /* Direct-entry platform: no legacy tables or executable BIOS. Erased
+     * firmware windows remain reserved ROM, never allocatable zero RAM. */
+    for (pl_u64 at = 0xc0000u; at < 0x100000u; at += 4096u) {
+        EXPECT(vm_boot_page(&boot, at, page, &source) == VM_BOOT_ROM);
+        EXPECT(source.bytes == 0u && source.offset == 0u && source.kind == VM_BOOT_ROM);
+        for (pl_u32 i = 0u; i < 4096u; ++i) EXPECT(page[i] == 0xffu);
+    }
     EXPECT(vm_boot_page(&boot, boot.ram_bytes, page, &source) == -1);
 
     /* Three generated table pages plus the actual first kernel source page.

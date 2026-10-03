@@ -133,7 +133,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       const extent = await readExtent(kind,Number(view.getBigUint64(pageRequest + 16,true)),bytes);
       assert.equal(extent.length,bytes); assert(bytes > 0 && bytes <= 4096);
       data.set(extent,offset); data.fill(0,offset + bytes,offset + 4096); sourceExtentBytes += bytes;
-    } else { assert(kind === 0 || kind === 1,'known initial page kind'); assert.equal(bytes,0); }
+    } else { assert(kind === 0 || kind === 1 || kind === 4,'known initial page kind'); assert.equal(bytes,0); }
     assert.equal(vm.vm_page_commit(port,ticket),0); ++pageSupplies;
     return true;
   }

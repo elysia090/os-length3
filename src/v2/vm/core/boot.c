@@ -53,8 +53,15 @@ int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
                   vm_boot_source *source)
 {
     if (!boot || !boot->header || !target || !source || (address & 4095u)
-            || address >= boot->ram_bytes || (address >= 0xa0000u && address < 0x100000u))
+            || address >= boot->ram_bytes || (address >= 0xa0000u && address < 0xc0000u))
         return -1;
+    if (address >= 0xc0000u && address < 0x100000u) {
+        /* Erased ROM is this direct-entry machine's explicit firmware policy,
+         * not a value inferred from E820 or a missing artifact/cache page. */
+        for (pl_u32 i = 0u; i < 4096u; ++i) target[i] = 0xffu;
+        *source = (vm_boot_source){0u,0u,VM_BOOT_ROM};
+        return VM_BOOT_ROM;
+    }
     pl_u64 offset = 0u, bytes = 0u;
     pl_u32 kind = VM_BOOT_ZERO;
     if (address >= boot->kernel_address && address - boot->kernel_address < boot->kernel_bytes) {
