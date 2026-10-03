@@ -9,8 +9,33 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/mman.h>
+#include <signal.h>
+#include <setjmp.h>
+#include <ucontext.h>
 
 extern void native_cut(machine_state *state, const void *code);
+static sigjmp_buf fault_return;
+static machine_state fault_state;
+static pl_u64 fault_address, fault_vector, fault_error;
+static void memory_exception(int number, siginfo_t *info, void *pointer)
+{
+    (void)number;
+    const ucontext_t *context = pointer;
+    static const int ranks[] = {REG_RAX,REG_RCX,REG_RDX,REG_RBX,REG_RSP,REG_RBP,REG_RSI,REG_RDI,
+        REG_R8,REG_R9,REG_R10,REG_R11,REG_R12,REG_R13,REG_R14,REG_R15};
+    for (pl_u32 i = 0u; i < 16u; ++i) fault_state.registers[i] = (pl_u64)context->uc_mcontext.gregs[ranks[i]];
+    fault_state.rflags = (pl_u64)context->uc_mcontext.gregs[REG_EFL];
+    fault_state.rip = (pl_u64)context->uc_mcontext.gregs[REG_RIP];
+    fault_address = (pl_u64)(uintptr_t)info->si_addr;
+    fault_vector = (pl_u64)context->uc_mcontext.gregs[REG_TRAPNO];
+    fault_error = (pl_u64)context->uc_mcontext.gregs[REG_ERR];
+    siglongjmp(fault_return,1);
+}
+static int observe_fault(machine_state *state, const void *code)
+{
+    if (sigsetjmp(fault_return,1)) return 1;
+    native_cut(state,code); return 0;
+}
 static pl_u64 random_word(pl_u64 *seed)
 { *seed ^= *seed << 13u; *seed ^= *seed >> 7u; *seed ^= *seed << 17u; return *seed; }
 static FILE *output(const char *prefix, const char *suffix)
@@ -32,7 +57,9 @@ static int close_output(FILE **file)
 int main(int argc, char **argv)
 {
     if (argc != 3) return 2;
-    FILE *file = NULL, *prefix_file = NULL, *wasm = NULL, *cases = NULL, *meta = NULL, *source_page = NULL;
+    FILE *file = NULL, *prefix_file = NULL, *wasm = NULL, *cases = NULL, *meta = NULL, *source_page = NULL, *faults = NULL;
+    struct sigaction old_action;
+    int action_installed = 0;
     pl_u8 *data = NULL, *ram = NULL;
     void *code = MAP_FAILED;
     size_t code_bytes = 0u;
@@ -118,6 +145,14 @@ int main(int argc, char **argv)
         if (address < (pl_u64)(uintptr_t)code || code_bytes < 8u
                 || address - (pl_u64)(uintptr_t)code > code_bytes - 8u) goto finish;
     }
+    if (!relative && instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE) {
+        struct sigaction action = {.sa_sigaction=memory_exception,.sa_flags=SA_SIGINFO};
+        sigemptyset(&action.sa_mask);
+        if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
+        action_installed = 1;
+        faults = output(argv[2],"faults");
+        if (!faults) goto finish;
+    }
     cases = output(argv[2], "cases"); meta = output(argv[2], "json");
     if (!cases || !meta) goto finish;
     pl_u64 seed = 0xa56e14dfabc81234ull;
@@ -159,6 +194,27 @@ int main(int argc, char **argv)
             if (memcmp(saved, ram, sizeof saved)) okay = 0;
         }
         if (fwrite(record, sizeof record, 1u, cases) != 1u) okay = 0;
+        if (faults) {
+            /* Actual protection faults with both true and false conditions.
+             * Protect the last operand fragment to include split-page reads. */
+            for (pl_u32 reg = 0u; reg < 16u; ++reg) state.registers[reg] = record[reg];
+            state.rflags = record[16];
+            pl_u8 *protected_page = ram + (((address - base) + report.memory_bytes - 1u) & ~4095ull);
+            if (mprotect(protected_page,4096u,PROT_NONE)) goto finish;
+            int trapped = observe_fault(&state,(const void *)(uintptr_t)report.entry);
+            if (mprotect(protected_page,4096u,PROT_READ | PROT_WRITE)) goto finish;
+            if (!trapped || fault_vector != 14u || fault_state.rip != report.entry
+                    || (fault_state.rflags & ~0x10000ull) != state.rflags) goto finish;
+            pl_u64 observed[38];
+            for (pl_u32 reg = 0u; reg < 16u; ++reg) {
+                if (fault_state.registers[reg] != state.registers[reg]) goto finish;
+                observed[reg] = state.registers[reg]; observed[17u + reg] = fault_state.registers[reg];
+            }
+            observed[16] = state.rflags; observed[33] = fault_state.rflags;
+            observed[34] = fault_state.rip; observed[35] = fault_address;
+            observed[36] = fault_vector; observed[37] = fault_error;
+            if (fwrite(observed,sizeof observed,1u,faults) != 1u) okay = 0;
+        }
     }
     if (fprintf(meta, "{\"entry\":%llu,\"prefixEntry\":%llu,\"moduleBytes\":%llu,\"sourceBytes\":%llu,\"bytes\":%u,\"access\":%u,"
                 "\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,\"retiredOffset\":%zu}\n",
@@ -173,6 +229,8 @@ finish:
     if (cases && close_output(&cases)) result = 1;
     if (meta && close_output(&meta)) result = 1;
     if (source_page && close_output(&source_page)) result = 1;
+    if (faults && close_output(&faults)) result = 1;
+    if (action_installed && sigaction(SIGSEGV,&old_action,NULL)) result = 1;
     if (!relative && ram && ram != MAP_FAILED && munmap(ram, 8192u)) result = 1;
     if (code != MAP_FAILED && munmap(code, code_bytes)) result = 1;
     free(data);

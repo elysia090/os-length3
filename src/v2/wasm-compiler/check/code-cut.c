@@ -194,6 +194,18 @@ int main(int argc, char **argv)
         {0x65u,0xffu,0x20u}, {0xffu,0x28u,0x90u}, /* Far control is not near JMP. */
         {0xf0u,0xffu,0xe0u}, {0xffu,0x18u,0x90u}, {0x64u,0xffu,0x10u},
     };
+    /* ADC/SBB consume CF even if a later instruction overwrites every flag.
+     * SBB EAX,EAX is also the next instruction in the shipped boot payload. */
+    for (pl_u32 borrow = 0u; borrow < 2u; ++borrow) {
+        memset(pages,0x90,sizeof pages);
+        pages[0] = (pl_u8)(borrow ? 0x19u : 0x11u); pages[1] = 0xc0u;
+        options.maximum_source_instructions = 1u;
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_bytes == 2u && report.source_instructions == 1u
+            && report.read_registers == 1u && report.written_registers == 1u
+            && report.flags_written && !report.memory_bytes);
+    }
+    options.maximum_source_instructions = 1024u;
     /* Actual shipped startup instruction: BTS RSI,58. It is a pure register
      * cut, not a special kernel callback or a memory-address bit operation. */
     static const pl_u8 bit_source[] = {0x48u,0x0fu,0xbau,0xeeu,0x3au};
@@ -203,6 +215,25 @@ int main(int argc, char **argv)
     EXPECT(report.source_bytes == 5u && report.written_registers == 64u
         && report.read_registers == 64u && report.flags_written && !report.memory_bytes);
     options.maximum_source_instructions = 1024u;
+    /* A memory CMOV loads unconditionally, then selects the destination.
+     * Its first instruction is never folded into an infallible pure slice. */
+    static const pl_u8 conditional_load[] = {0x48u,0x0fu,0x44u,0x05u,0x90u,0xb3u,0u,0u};
+    memset(pages,0x90,sizeof pages); memcpy(pages,conditional_load,sizeof conditional_load);
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_bytes == 8u && report.source_instructions == 1u
+        && report.boundary == WASM_CUT_MEMORY && report.memory_bytes == 8u
+        && report.memory_access == 1u && report.written_registers == 1u && !report.flags_written);
+    static const pl_u8 rejected_carry_loads[][5] = {
+        {0xf0u,0x19u,0xc0u,0x90u,0x90u}, /* LOCK register SBB is invalid. */
+        {0x48u,0x19u,0x00u,0x90u,0x90u}, /* Memory carry needs precise RMW semantics. */
+        {0x64u,0x48u,0x0fu,0x44u,0x00u}, /* An FS-base source is not ordinary DS. */
+        {0xf0u,0x48u,0x0fu,0x44u,0x00u}, /* CMOV does not accept LOCK. */
+    };
+    for (pl_u32 form = 0u; form < sizeof rejected_carry_loads / sizeof rejected_carry_loads[0]; ++form) {
+        memset(pages,0x90,sizeof pages); memcpy(pages,rejected_carry_loads[form],sizeof rejected_carry_loads[0]);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            == WASM_COMPILER_ERROR_GRAMMAR);
+    }
     static const pl_u8 rejected_bits[][6] = {
         {0xf0u,0x48u,0x0fu,0xbau,0xeeu,0x3au}, /* LOCK register BTS is invalid. */
         {0x48u,0x0fu,0xbau,0x28u,0x3au,0x90u}, /* Memory BTS requires its own precise RMW cut. */

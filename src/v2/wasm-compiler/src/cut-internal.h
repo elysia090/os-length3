@@ -12,6 +12,7 @@ enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
 enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT, CUT_SYSTEM_TABLE,
        CUT_SYSTEM_FAR_RETURN, CUT_SYSTEM_CONTROL_READ, CUT_SYSTEM_CONTROL_WRITE,
        CUT_SYSTEM_CPUID };
+enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
 typedef struct {
     wasm_writer *writer;
     wasm_cut_report report;
@@ -46,6 +47,7 @@ void cut_store(cut_lowering *cut, pl_u32 offset, pl_u32 local);
 int cut_gpr(const pl_x86_register *reg);
 void cut_read_operand(cut_lowering *cut, const pl_x86_operand *operand, pl_u32 width);
 void cut_write_register(cut_lowering *cut, const pl_x86_register *reg);
+void cut_condition(cut_lowering *cut, pl_u32 condition);
 void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruction,
                             const pl_x86_memory *memory);
 int cut_memory_supported(const pl_x86_instruction *instruction);
@@ -54,7 +56,7 @@ void cut_access(cut_lowering *cut);
 void cut_access_value(cut_lowering *cut);
 void cut_access_status(cut_lowering *cut);
 void cut_arithmetic_flags(cut_lowering *cut, pl_u32 width, int subtraction,
-                          int logical, int keep_carry);
+                          int logical, int carry_mode);
 int cut_stack_supported(const pl_x86_instruction *instruction);
 void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_indirect_supported(const pl_x86_instruction *instruction);

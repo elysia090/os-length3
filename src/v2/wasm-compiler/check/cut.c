@@ -86,7 +86,9 @@ static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *r
         case PL_X86_OPERATION_INCREMENT:
         case PL_X86_OPERATION_DECREMENT: mask |= 0x8d4u; break;
         case PL_X86_OPERATION_ADD:
+        case PL_X86_OPERATION_ADD_CARRY:
         case PL_X86_OPERATION_SUBTRACT:
+        case PL_X86_OPERATION_SUBTRACT_BORROW:
         case PL_X86_OPERATION_COMPARE:
         case PL_X86_OPERATION_NEGATE: mask |= 0x8d5u; break;
         case PL_X86_OPERATION_FLAG_CONTROL:
@@ -174,6 +176,18 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
     pl_x86_map map = { (pl_u8 *)mapping, (pl_u64)(uintptr_t)mapping,
                       mapping_bytes, mapping_bytes, 5u, 1u };
     pl_x86_image image = { &map, 1u, 0u, report->entry };
+    pl_x86_instruction carry = { 0 };
+    for (pl_u64 rip = report->entry, i = 0u; i < report->source_instructions; ++i) {
+        pl_x86_instruction instruction;
+        if (pl_x86_decode(&image,rip,&instruction)) {
+            fclose(cases); fclose(meta); fclose(masks); munmap(mapping,mapping_bytes); return 0;
+        }
+        if (instruction.operation == PL_X86_OPERATION_ADD_CARRY
+                || instruction.operation == PL_X86_OPERATION_SUBTRACT_BORROW) {
+            carry = instruction; break;
+        }
+        rip = instruction.fallthrough;
+    }
     int okay = 1;
     pl_u64 seed = 0x0123456789abcdefull;
     for (pl_u32 i = 0u; okay && i < 512u; ++i) {
@@ -192,11 +206,28 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
             state.registers[reg] = value; record[reg] = value;
         }
         /* Include every count in both masking domains, not only random CL. */
-        if (i < 128u) {
+        if (i < 128u && !carry.length) {
             state.registers[1] = (state.registers[1] & ~255ull) | i;
             record[1] = state.registers[1];
         }
         state.rflags = 0x202u | (random_word(&seed) & 0xcd5u);
+        if (i < 128u && carry.length) {
+            /* Both CF values for every pair of width-specific boundaries.
+             * Hardware, not an arithmetic reimplementation, supplies outputs. */
+            pl_u32 width = carry.operands[0].bits;
+            pl_u64 sign = 1ull << (width - 1u), maximum = width == 64u ? ~0ull : (1ull << width) - 1u;
+            const pl_u64 boundary[] = {0u,1u,15u,16u,sign - 1u,sign,maximum - 1u,maximum};
+            for (pl_u32 rank = 0u; rank < 2u; ++rank) {
+                const pl_x86_operand *operand = &carry.operands[rank];
+                if (operand->kind != PL_X86_OPERAND_REGISTER) continue;
+                const pl_x86_register *reg = &operand->value.reg;
+                pl_u32 shift = reg->flags & PL_X86_REGISTER_HIGH8 ? 8u : 0u;
+                pl_u64 value = boundary[(i >> (rank ? 1u : 4u)) & 7u];
+                state.registers[reg->index] = (state.registers[reg->index] & ~(maximum << shift)) | (value << shift);
+                record[reg->index] = state.registers[reg->index];
+            }
+            state.rflags = (state.rflags & ~1ull) | (i & 1u);
+        }
         record[16] = state.rflags;
         pl_u64 row_mask;
         if (!oracle_flags_mask(&image, report, state.registers[1], &row_mask)) {

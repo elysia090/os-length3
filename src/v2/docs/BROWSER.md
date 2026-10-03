@@ -541,6 +541,34 @@ added. Linux boot, exception entry, authenticated production root/device
 integration, offline development, storage/network use and cold-shell 3s
 remain red. The same full product goal is unchanged.
 
+### Carry and memory-conditional-move checkpoint
+
+The [latest evidence](../vm/check/browser/evidence/2026-10-03-carry-memory-cmov.md)
+closes register ADC/SBB and memory-source CMOVcc through common C lowering.
+Incoming CF joins the reverse frontier even when all outgoing flags are killed.
+66 carry modules / 33,792 native comparisons pass in direct Wasm and C dispatch;
+54 memory-CMOV modules / 27,648 CPU/RAM comparisons and 27,136 actual protection
+faults pass through the C MMU. The source load faults even when the condition
+is false; no parent/RIP/retirement is published on that fault. False 32-bit
+destinations zero their high parent only on successful access.
+
+The actual browser reaches 368,735 source instructions / 284,606 admissions,
+past both previous compiler refusals. It now stops on pending #PF(2), address
+`0x1000000`, at `0x1e21913` (`45 88 32`, decompressor output store), CR3
+`0x1e41000`. Linux's upstream stage-2 IDT and `do_boot_page_fault` supply the
+identity-map handler. The C VM currently returns pending fault metadata but
+does not enter that guest handler. Next implement exact IDT/stack/CR2/IRET
+semantics with a system/hardware oracle, not a host mapping shim. The old
+physical-wait request fields are distinct from the current fault fields.
+
+All relocation/BSS/memset observations remain green. VM/cold memory and 47
+HTTP ranges are unchanged; one table slot is active. Bounded engine reuse
+retains 64 instances / 20,360 bytes, but C compilation still occurs on every
+cut and code transport accumulates 1,165,746,176 bytes. That is work, not
+resident memory or artifact size. Native bundle and human UI are unchanged;
+Linux/PID 1/shell, production storage/network and cold-shell 3 seconds remain
+unachieved. The full product goal is still active.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

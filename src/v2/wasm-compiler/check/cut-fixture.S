@@ -2,7 +2,56 @@
 .globl _start
 .type _start,@function
 _start:
-#if defined(CUT_BIT)
+#if defined(CUT_CARRY)
+#if CUT_WIDTH == 8
+#define DEST %al
+#define SOURCE %cl
+#elif CUT_WIDTH == 16
+#define DEST %ax
+#define SOURCE %cx
+#elif CUT_WIDTH == 32
+#define DEST %eax
+#define SOURCE %ecx
+#else
+#define DEST %rax
+#define SOURCE %rcx
+#endif
+#if CUT_CARRY_CASE == 1
+    CUT_CARRY DEST,DEST
+#elif CUT_CARRY_CASE == 2
+    CUT_CARRY $-1,DEST
+#elif CUT_CARRY_CASE == 3
+    CUT_CARRY %cl,%ah
+#elif CUT_CARRY_CASE == 4
+#if CUT_WIDTH == 8
+    CUT_CARRY %r8b,%r9b
+#elif CUT_WIDTH == 16
+    CUT_CARRY %r8w,%r9w
+#elif CUT_WIDTH == 32
+    CUT_CARRY %r8d,%r9d
+#else
+    CUT_CARRY %r8,%r9
+#endif
+    mov %r9,%rax
+#elif CUT_CARRY_CASE == 5
+    add %rdx,%rsi
+    CUT_CARRY SOURCE,DEST
+    setb %dl
+    xor %r8d,%r8d
+#elif CUT_CARRY_CASE == 6
+    cmp %rdx,%rsi
+    CUT_CARRY SOURCE,DEST
+    CUT_CARRY $-1,DEST
+#elif CUT_CARRY_CASE == 7
+    clc
+    CUT_CARRY SOURCE,DEST
+#elif CUT_CARRY_CASE == 8
+    stc
+    CUT_CARRY SOURCE,DEST
+#else
+    CUT_CARRY SOURCE,DEST
+#endif
+#elif defined(CUT_BIT)
 #if CUT_WIDTH == 16
 #define DEST %ax
 #define SOURCE %di

@@ -31,6 +31,9 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
             || (instruction->address_width != 32u && instruction->address_width != 64u)) return 0;
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
+    int conditional = instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE;
+    if (conditional && (first || instruction->condition >= 16u
+            || operands[0].bits < 16u || operands[0].bits != operands[1].bits)) return 0;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
                || instruction->operation == PL_X86_OPERATION_TEST;
     const pl_x86_operand *memory = &operands[first ? 0u : 1u];
@@ -46,6 +49,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || !cut_gpr(&operands[1].value.reg)))) return 0;
     } else if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation)
+                 && !conditional
                  && instruction->operation != PL_X86_OPERATION_MOVE_ZERO_EXTEND
                  && instruction->operation != PL_X86_OPERATION_MOVE_SIGN_EXTEND)
             || operands[0].kind != PL_X86_OPERAND_REGISTER
@@ -114,7 +118,14 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     } else cut_access(cut);
     if (!store) {
         cut_access_value(cut);
-        if (load_arithmetic) {
+        if (instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE) {
+            /* The temporary source load precedes the condition check, even
+             * when false. A fault returns before any parent/RIP publication.
+             * The common register write also zeroes a false 32-bit parent. */
+            cut_read_operand(cut,&operands[0],memory->bits);
+            cut_condition(cut,instruction->condition); cut_op(cut,0x1bu);
+            cut_set(cut,CUT_VALUE);
+        } else if (load_arithmetic) {
             cut_set(cut,CUT_RIGHT); arithmetic(cut,instruction->operation,memory->bits);
         } else {
             if (instruction->operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {

@@ -238,6 +238,15 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     if (result !== 1n && result !== 5n)
       return {kind:'execution',result:String(result),entry:`0x${entry.toString(16)}`,
         completed:vm.vm_completed(),sourceRetired:done,
+        faultAddress:`0x${view.getBigUint64(port + 16,true).toString(16)}`,
+        faultVector:view.getUint32(port + 24,true),faultError:view.getUint32(port + 28,true),
+        cpu:{registers:Array.from({length:16},(_,i) => `0x${view.getBigUint64(base + i * 8,true).toString(16)}`),
+          cr0:`0x${view.getBigUint64(base + 400,true).toString(16)}`,
+          cr3:`0x${view.getBigUint64(base + 408,true).toString(16)}`,
+          cr4:`0x${view.getBigUint64(base + 416,true).toString(16)}`,
+          efer:`0x${view.getBigUint64(base + 424,true).toString(16)}`},
+        // Request fields can be from an older wait; fault fields above are
+        // authoritative only for a pending architectural fault result.
         requestAddress:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
         requestBytes:view.getUint32(port + 40,true),requestAccess:view.getUint32(port + 44,true)};
     assert.equal(vm.vm_completed(),1); assert.equal(done,instructions);

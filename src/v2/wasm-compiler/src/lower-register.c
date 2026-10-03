@@ -55,7 +55,9 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
 {
     switch (instruction->operation) {
     case PL_X86_OPERATION_ADD:
+    case PL_X86_OPERATION_ADD_CARRY:
     case PL_X86_OPERATION_SUBTRACT:
+    case PL_X86_OPERATION_SUBTRACT_BORROW:
     case PL_X86_OPERATION_COMPARE:
     case PL_X86_OPERATION_NEGATE:
     case PL_X86_OPERATION_AND:
@@ -88,6 +90,8 @@ pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction)
 pl_u32 cut_flag_read_mask(const pl_x86_instruction *instruction)
 {
     static const pl_u32 condition_bits[] = { 0x800u,1u,0x40u,0x41u,0x80u,4u,0x880u,0x8c0u };
+    if (instruction->operation == PL_X86_OPERATION_ADD_CARRY
+            || instruction->operation == PL_X86_OPERATION_SUBTRACT_BORROW) return 1u;
     if (instruction->condition < 16u
             && (instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET
                 || instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE
@@ -138,7 +142,9 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_MOVE_ZERO_EXTEND:
     case PL_X86_OPERATION_MOVE_SIGN_EXTEND:
     case PL_X86_OPERATION_ADD:
+    case PL_X86_OPERATION_ADD_CARRY:
     case PL_X86_OPERATION_SUBTRACT:
+    case PL_X86_OPERATION_SUBTRACT_BORROW:
     case PL_X86_OPERATION_AND:
     case PL_X86_OPERATION_OR:
     case PL_X86_OPERATION_XOR:
@@ -200,7 +206,7 @@ static void flag_bit(cut_lowering *cut, pl_u32 bit)
     cut_get(cut, CUT_FLAGS); cut_const(cut, bit); cut_op(cut, 0x88u);
     cut_const(cut, 1u); cut_op(cut, 0x83u); cut_op(cut, 0xa7u);
 }
-static void condition(cut_lowering *cut, pl_u32 code)
+void cut_condition(cut_lowering *cut, pl_u32 code)
 {
     switch (code >> 1u) {
     case 0u: flag_bit(cut, 11u); break;
@@ -222,17 +228,28 @@ static void shift_flag(cut_lowering *cut, pl_u32 bit)
     cut_op(cut, 0x84u);
 }
 void cut_arithmetic_flags(cut_lowering *cut, pl_u32 width,
-                              int subtraction, int logical, int keep_carry)
+                              int subtraction, int logical, int carry_mode)
 {
     pl_u32 wanted = cut->wanted_flags;
     if (!wanted) return;
     cut_get(cut, CUT_FLAGS);
     cut_const(cut, ~(pl_u64)wanted); cut_op(cut, 0x83u);
     if (!logical) {
-        if (!keep_carry && (wanted & 1u)) {
+        if (carry_mode != CUT_CARRY_PRESERVE && (wanted & 1u)) {
             cut_get(cut, subtraction ? CUT_LEFT : CUT_VALUE);
             cut_get(cut, subtraction ? CUT_RIGHT : CUT_LEFT);
-            cut_op(cut, 0x54u); cut_op(cut, 0xadu); shift_flag(cut, 0u);
+            cut_op(cut, 0x54u);
+            if (carry_mode == CUT_CARRY_INPUT) {
+                /* With r reduced modulo 2^width and c the original CF:
+                 * ADC carry = (r < a) | (c & (r == a));
+                 * SBB borrow = (a < b) | (c & (a == b)).
+                 * Folding c into b first loses a carry at b == UINT_MAX. */
+                cut_get(cut, CUT_LEFT);
+                cut_get(cut, subtraction ? CUT_RIGHT : CUT_VALUE); cut_op(cut, 0x51u);
+                cut_get(cut, CUT_NEXT); cut_op(cut, 0xa7u); cut_op(cut, 0x71u);
+                cut_op(cut, 0x72u);
+            }
+            cut_op(cut, 0xadu); shift_flag(cut, 0u);
         }
         if (wanted & 0x10u) {
             cut_get(cut, CUT_LEFT); cut_get(cut, CUT_RIGHT); cut_op(cut, 0x85u);
@@ -307,7 +324,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         return;
     }
     if (operation == PL_X86_OPERATION_CONDITIONAL_SET) {
-        condition(cut, instruction->condition); cut_op(cut, 0xadu);
+        cut_condition(cut, instruction->condition); cut_op(cut, 0xadu);
         cut_set(cut, CUT_VALUE); cut_write_register(cut, &operands[0].value.reg);
         return;
     }
@@ -316,7 +333,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         // A 32-bit destination zeroes its parent even when the condition fails.
         cut_read_operand(cut,&operands[1],operands[0].bits);
         cut_read_operand(cut,&operands[0],operands[0].bits);
-        condition(cut,instruction->condition); cut_op(cut,0x1bu);
+        cut_condition(cut,instruction->condition); cut_op(cut,0x1bu);
         cut_set(cut,CUT_VALUE); cut_write_register(cut,&operands[0].value.reg);
         return;
     }
@@ -334,7 +351,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         cut_const(cut, instruction->target);
         if (instruction->flow == PL_X86_FLOW_CONDITIONAL) {
             cut_const(cut, instruction->fallthrough);
-            condition(cut, instruction->condition); cut_op(cut, 0x1bu);
+            cut_condition(cut, instruction->condition); cut_op(cut, 0x1bu);
         }
         cut_set(cut, CUT_NEXT); return;
     }
@@ -351,6 +368,14 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     } else if (operation == PL_X86_OPERATION_LOAD_ADDRESS)
         cut_effective_address(cut, instruction, &operands[1].value.memory);
     else {
+        int carry_input = operation == PL_X86_OPERATION_ADD_CARRY
+                       || operation == PL_X86_OPERATION_SUBTRACT_BORROW;
+        if (carry_input) {
+            /* The next control target is assigned after this pure slice.
+             * Capture CF before any flag definition, including self aliases. */
+            cut_get(cut, CUT_FLAGS); cut_const(cut, 1u); cut_op(cut, 0x83u);
+            cut_set(cut, CUT_NEXT);
+        }
         read_register(cut, &operands[0].value.reg); cut_set(cut, CUT_LEFT);
         if (instruction->visible_operand_count == 2u) cut_read_operand(cut, &operands[1], width);
         else cut_const(cut, 1u);
@@ -366,21 +391,26 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
             cut_get(cut, CUT_RIGHT);
             pl_u32 opcode = 0x7cu;
             if (operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_COMPARE
+                    || operation == PL_X86_OPERATION_SUBTRACT_BORROW
                     || operation == PL_X86_OPERATION_DECREMENT || operation == PL_X86_OPERATION_NEGATE)
                 opcode = 0x7du;
             else if (operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_TEST) opcode = 0x83u;
             else if (operation == PL_X86_OPERATION_OR) opcode = 0x84u;
             else if (operation == PL_X86_OPERATION_XOR) opcode = 0x85u;
             cut_op(cut, opcode);
+            if (carry_input) { cut_get(cut, CUT_NEXT); cut_op(cut, opcode); }
         }
         cut_mask(cut, width); cut_set(cut, CUT_VALUE);
         if (operation != PL_X86_OPERATION_COMPLEMENT)
             cut_arithmetic_flags(cut, width,
                 operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_COMPARE
+                    || operation == PL_X86_OPERATION_SUBTRACT_BORROW
                     || operation == PL_X86_OPERATION_DECREMENT || operation == PL_X86_OPERATION_NEGATE,
                 operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_OR
                     || operation == PL_X86_OPERATION_XOR || operation == PL_X86_OPERATION_TEST,
-                operation == PL_X86_OPERATION_INCREMENT || operation == PL_X86_OPERATION_DECREMENT);
+                carry_input ? CUT_CARRY_INPUT
+                    : operation == PL_X86_OPERATION_INCREMENT || operation == PL_X86_OPERATION_DECREMENT
+                        ? CUT_CARRY_PRESERVE : CUT_CARRY_NORMAL);
         if (writes) cut_write_register(cut, &operands[0].value.reg);
         return;
     }

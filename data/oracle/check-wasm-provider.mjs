@@ -13,7 +13,7 @@ assert.deepEqual(WebAssembly.Module.imports(provider), [
 ]);
 const names = (await readdir(directory)).filter(name => /^memory-\d+\.json$/.test(name)).sort();
 assert(names.length > 0);
-let comparisons = 0;
+let comparisons = 0, hardwareFaults = 0;
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
@@ -28,6 +28,11 @@ for (const name of names) {
   const cases = await readFile(`${prefix}.cases`);
   assert.equal(cases.length, 512 * 38 * 8);
   const records = new DataView(cases.buffer, cases.byteOffset, cases.byteLength);
+  const faultRecords = await readFile(`${prefix}.faults`).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+    return null;
+  });
+  if (faultRecords) assert.equal(faultRecords.length,512 * 38 * 8);
   function page(view, rank, address, offset, rights = 3, kind = 1, error = 0) {
     const at = directoryOffset + rank * 32;
     view.setBigUint64(at, address, true);
@@ -125,6 +130,28 @@ for (const name of names) {
     faultView.setUint32(port - base + 28, meta.access & 2, true);
     faultView.setBigUint64(leaf - base, 0n, true);
     assert.deepEqual(arena(), fault, 'fault must not commit CPU or payload');
+    if (faultRecords) {
+      arena().set(initial); tables(view,address);
+      const observed = rank => faultRecords.readBigUInt64LE((row * 38 + rank) * 8);
+      for (let reg = 0; reg < 16; ++reg) view.setBigUint64(state + reg * 8,observed(reg),true);
+      view.setBigUint64(state + meta.flagsOffset,observed(16),true);
+      view.setBigUint64(state + 432 + 7 * 8,0x13n,true); // Same user-mode #PF bits as hardware.
+      const failedLeaf = leaf + Number((observed(35) >> 12n) - (address >> 12n)) * 8;
+      view.setBigUint64(failedLeaf,observed(37) & 1n ? 0x8063n : 0n,true);
+      open();
+      const expectedFault = Buffer.from(arena());
+      const e = new DataView(expectedFault.buffer,expectedFault.byteOffset,expectedFault.byteLength);
+      for (let reg = 0; reg < 16; ++reg) e.setBigUint64(reg * 8,observed(17 + reg),true);
+      // RF is added by hardware fault entry, not by this pending-fault boundary.
+      e.setBigUint64(meta.flagsOffset,observed(33) & ~0x10000n,true);
+      e.setBigUint64(meta.ripOffset,observed(34),true);
+      e.setBigUint64(port - base + 16,observed(35),true);
+      e.setUint32(port - base + 24,Number(observed(36)),true);
+      e.setUint32(port - base + 28,Number(observed(37)),true);
+      assert.equal(instance.exports.cut(state,port),(observed(36) << 3n) | 3n,`${name}: native protection row ${row}`);
+      assert.deepEqual(arena(),expectedFault,`${name}: native CMOV fault preserves CPU regardless of condition`);
+      ++hardwareFaults;
+    }
   }
   // Force a split write into noncontiguous resident pages, then a second-page
   // fault. The C boundary must preflight both pages before the first byte.
@@ -162,4 +189,4 @@ for (const name of names) {
   assert.equal(vm.vm_open(base,memory.buffer.byteLength,4096,directoryOffset,6,6,directoryOffset + 1024,9n), -1);
   assert.equal(vm.vm_access(port, address, 8, 1, 0n), 6n);
 }
-console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons; fault delivery/dispatch/Linux boot not tested)`);
+console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons; exception entry/dispatch/Linux boot not tested)`);

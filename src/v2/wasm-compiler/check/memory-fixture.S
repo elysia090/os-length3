@@ -6,7 +6,36 @@
 .global _start
 .type _start,@function
 _start:
-#if MEMORY_CASE == 0
+#if defined(MEMORY_CMOV)
+#if MEMORY_WIDTH == 16
+#define DEST ax
+#define SOURCE word ptr [rdi]
+#elif MEMORY_WIDTH == 32
+#define DEST eax
+#define SOURCE dword ptr [rdi]
+#else
+#define DEST rax
+#define SOURCE qword ptr [rdi]
+#endif
+#if MEMORY_CMOV_CASE == 1
+    MEMORY_CMOV rdi, qword ptr [rdi]
+#elif MEMORY_CMOV_CASE == 2
+    MEMORY_CMOV edi, dword ptr [edi]
+#elif MEMORY_CMOV_CASE == 3
+    MEMORY_CMOV rbp, qword ptr [rbp]
+#elif MEMORY_CMOV_CASE == 4
+    MEMORY_CMOV eax, dword ptr [rdi + rcx*4 + 7]
+#elif MEMORY_CMOV_CASE == 5
+    MEMORY_CMOV r9w, word ptr [rdi]
+    mov rax,r9
+#elif MEMORY_CMOV_CASE == 6
+    MEMORY_CMOV rax, qword ptr [rip + 8]
+#elif MEMORY_CMOV_CASE == 7
+    MEMORY_CMOV rax, qword ptr fs:[rdi]
+#else
+    MEMORY_CMOV DEST,SOURCE
+#endif
+#elif MEMORY_CASE == 0
     mov rax, [rdi]
 #elif MEMORY_CASE == 1
     mov eax, [rdi]

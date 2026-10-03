@@ -61,7 +61,7 @@ check and selected compiler/lowering ASan/UBSan pass. Previous JMP/REP/RMW
 regressions remain green; linked decoder/provider archives in the sanitizer
 run are normal builds, not whole-TCB coverage.
 
-Current executable checkpoint adds common near indirect CALL and register
+Previous executable checkpoint added common near indirect CALL and register
 BT/BTS/BTR/BTC. CALL passes 27 native/cold byte-identical modules and 6,912
 actual x86 CPU/stack comparisons (2,150 exception frames), including 448
 target-#GP cases whose return-address payload store survives while CPU/RSP/RIP
@@ -71,28 +71,46 @@ cases in direct Wasm and separately C dispatch, including narrow parents,
 modulo-width indexes, self-aliases and an interior CF consumer. Full product
 check and selected compiler/lowering ASan/UBSan pass.
 
-The actual ordinary-memory browser Worker executes 330,245 source instructions
-with 263,420 demanded admissions, one active table slot and no manually listed
+Current checkpoint adds common register ADC/SBB and memory-source CMOVcc.
+ADC/SBB passes 66 ordinary post-linked modules / 33,792 native comparisons,
+and separately C table dispatch, including both carry inputs, width-specific
+boundary pairs, high bytes, self aliases and CF consumers before later kills.
+CMOV memory passes all 16 conditions at 16/32/64 bits, plus address aliases,
+address-size 32, SS, SIB, extended GPR and RIP forms: 54 modules / 27,648 complete
+CPU/RAM comparisons. 27,136 actual protection faults, including false conditions,
+match the C MMU's pending fault and unchanged CPU. No exception-entry claim.
+Full product check, selected compiler/lowering ASan/UBSan and previous CALL/JMP
+regressions pass; 238 new native/cold emission comparisons and 203 previous
+CMOV/bit/memory-ALU comparisons are byte-identical. Sanitizer-linked decoder/
+provider archives remain normal builds, not whole-TCB sanitizer coverage.
+
+The actual ordinary-memory browser Worker executes 368,735 source instructions
+with 284,606 demanded admissions, one active table slot and no manually listed
 branch coordinates. The complete independent 86-instruction CPU/cache and
 378-instruction relocation-register witnesses, all 3,040,256 copied kernel
 bytes, 98,656 REP BSS bytes and three scalar memset returns totaling 131,104
 bytes pass. The count is predominantly memset iterations, not a boot percentage.
-Initial page-table construction and its indirect allocator call have progressed.
-The next exact red is `SBB eax,eax` (`19 c0`) at `0x1e24306`, compile `-102`.
+The previous SBB and memory CMOVE at `0x1e21078` both compile and execute.
+The next red is pending #PF(2), fault address `0x1000000`, at `0x1e21913`,
+`MOV [r10],r14b` (`45 88 32`), CR3 `0x1e41000`. The exact Linux 7.2.7 upstream
+source installs `boot_page_fault` in stage-2 IDT; `do_boot_page_fault` maps the
+non-present 2 MiB identity range. Deliver that guest exception, not a JS page
+table repair. Older port request `0x1e60000` is not this fault address.
 Neither the instruction count nor passing component checks establish Linux boot.
 
 Next, in order:
 
-1. Implement common register ADC/SBB, with incoming CF in the reverse flag
-   frontier and exact carry/borrow/AF/OF semantics at every width. Make the
-   actual startup SBB and composed CF-consumer witnesses red against actual
-   x86, then compare generated cuts through C dispatch. Never add
-   an address-specific allocator/kernel shim or manually choose the target.
+1. Implement the common long-mode exception boundary: validate IDT/code
+   descriptor, exact stack frame/flags/CR2 publication and fault competition,
+   dispatch the guest's #PF handler and return through IRETQ. Make hardware/
+   system-oracle witnesses red first. Missing physical pages are host waits;
+   guest non-present PTEs are Linux faults. Never overwrite guest mappings,
+   skip the fault, manually choose a handler or add a kernel callback in JS.
 2. Remove repeated C construction/page-copy fixed costs using C-owned reusable
    source admission, with exact source/lifetime checks and code-alias revocation.
    Engine reuse is now bounded and requires an identical successful C emission:
-   659 compilations / 262,761 hits, 64 retained instances / 20,024 bytes. It does
-   NOT remove C analysis or the cumulative 1,078,972,416 bytes of code transport.
+   1,620 compilations / 282,986 hits, 64 retained instances / 20,360 bytes. It does
+   NOT remove C analysis or the cumulative 1,165,746,176 bytes of code transport.
    Add crossing-first-instruction supply and preserve precise fetch ordering.
 3. Finish actual startup/decompression, MSR/exception/device/root supply, then
    Linux/PID 1/shell and the complete development/storage/network acceptance.
@@ -105,7 +123,7 @@ The 300,000-admission / 500,000-retirement bound is an explicit diagnostic
 quota; exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-call-bit.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-carry-memory-cmov.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
