@@ -27,6 +27,27 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    /* MSR transfers and SWAPGS must be ordinary one-instruction system cuts,
+     * not address-specific startup exceptions. */
+    static const pl_u8 msr_codes[][3] = {{0x0f,0x30,0x90},{0x0f,0x32,0x90},{0x0f,0x01,0xf8}};
+    for (pl_u32 rank = 0u; rank < 3u; ++rank) {
+        memcpy(pages,msr_codes[rank],3u);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions == 1u && report.source_bytes == (rank == 2u ? 3u : 2u)
+            && report.boundary == WASM_CUT_SYSTEM && !report.flags_written && !report.memory_bytes);
+        EXPECT(report.read_registers == (rank == 0u ? 7u : rank == 1u ? 2u : 0u));
+        EXPECT(report.written_registers == (rank == 1u ? 5u : 0u));
+        if (argc == 2 && !failures) {
+            char prefix[4096], json[256];
+            int n = snprintf(prefix,sizeof prefix,"%s/msr-%u",argv[1],rank);
+            if (n <= 0 || (size_t)n >= sizeof prefix) return 1;
+            n = snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"operation\":%u,\"sourceBytes\":%u}\n",
+                rank == 0u ? 1u : rank == 1u ? 0u : 2u,rank == 2u ? 3u : 2u);
+            if (n <= 0 || (size_t)n >= sizeof json || write_record(prefix,"json",json,(size_t)n)
+                || write_record(prefix,"wasm",output,(size_t)bytes)
+                || write_record(prefix,"source-page",pages,4096u)) return 1;
+        }
+    }
     // Signed two/three-operand register multiplication is pure. Implicit
     // double-width, memory and LOCK forms remain explicit grammar refusals.
     static const pl_u8 multiply_rejected[][5] = {

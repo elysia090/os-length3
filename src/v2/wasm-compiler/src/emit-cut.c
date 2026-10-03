@@ -148,6 +148,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.has_far_return = plan->system_cut == CUT_SYSTEM_FAR_RETURN;
     cut.has_interrupt_return = plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN;
     cut.has_control_write = plan->system_cut == CUT_SYSTEM_CONTROL_WRITE;
+    cut.has_msr = plan->system_cut == CUT_SYSTEM_MSR;
     cut.has_repeat = plan->repeat_cut;
     wasm_writer_uleb(writer, 1u);
     wasm_writer_uleb(writer, cut.has_repeat ? CUT_REPEAT_LOCALS

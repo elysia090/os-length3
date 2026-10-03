@@ -6,6 +6,7 @@
 #include <vm/tables.h>
 #include <vm/control.h>
 #include <vm/registers.h>
+#include <vm/msr.h>
 #include <vm/supply.h>
 #include <vm/exception.h>
 #include <vm/source.h>
@@ -421,6 +422,21 @@ machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
      * TLB, revoking compiled fetch-context admission is sufficient; do not
      * silently continue under the previous proof after a successful write. */
     if (!result) execution.generation = 0u;
+    return result;
+}
+
+machine_result vm_msr(pl_u32 port, pl_u32 operation, pl_u32 key, pl_u64 value)
+{
+    vm_supply_reset(&supply);
+    vm_memory_abort(&resident);
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    machine_result result = vm_msr_transfer(&resident,port - arena_base,
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,
+        operation,key,value);
+    /* EFER changes NX/SYSCALL interpretation; revoke the current admission.
+     * FS/GS only change data addresses read freshly by the C access boundary. */
+    if (!result && operation == MACHINE_MSR_WRITE && key == MACHINE_MSR_EFER)
+        execution.generation = 0u;
     return result;
 }
 

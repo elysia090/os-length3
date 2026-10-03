@@ -107,8 +107,20 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',4,'i','r','e','t',0,0
     };
+    static const pl_u8 msr_type[] = {
+        2,0x60,4,0x7f,0x7f,0x7f,0x7e,1,0x7e, 0x60,2,0x7f,0x7f,1,0x7e
+    };
+    static const pl_u8 msr_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',3,'m','s','r',0,0
+    };
     raw(writer, header, sizeof header);
-    if (boundary == 7) {
+    if (boundary == 8) {
+        section(writer,1u,sizeof msr_type); raw(writer,msr_type,sizeof msr_type);
+        section(writer,2u,sizeof msr_imports); raw(writer,msr_imports,sizeof msr_imports);
+        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
+        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
+    } else if (boundary == 7) {
         section(writer,1u,sizeof interrupt_type); raw(writer,interrupt_type,sizeof interrupt_type);
         section(writer,2u,sizeof interrupt_imports); raw(writer,interrupt_imports,sizeof interrupt_imports);
         section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
@@ -158,6 +170,7 @@ static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
     /* A CALL's target read and stack write are ordered scalar transactions,
      * not an RMW reservation on a single memory operand. */
     if (plan->repeat_cut || (plan->indirect_cut && report->memory_bytes)) return 1;
+    if (plan->system_cut == CUT_SYSTEM_MSR) return 8;
     if (plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN) return 7;
     if (plan->system_cut == CUT_SYSTEM_CONTROL_WRITE) return 6;
     if (plan->system_cut == CUT_SYSTEM_FAR_RETURN) return 5;

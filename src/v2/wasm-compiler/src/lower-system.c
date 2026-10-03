@@ -1,8 +1,17 @@
 /* Precise privileged transfers, compiled before execution. */
 #include "cut-internal.h"
 #include <x86/profile.h>
+#include <machine/msr.h>
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if (instruction->status == PL_X86_DECODE_VALID
+            && (instruction->machine_operation == PL_X86_MACHINE_READ_MSR
+                || instruction->machine_operation == PL_X86_MACHINE_WRITE_MSR
+                || instruction->machine_operation == PL_X86_MACHINE_SWAP_GS)
+            && !instruction->visible_operand_count
+            && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
+            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
+                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_MSR;
     if (instruction->status == PL_X86_DECODE_VALID
             && instruction->machine_operation == PL_X86_MACHINE_INTERRUPT_RETURN
             && instruction->machine_argument == 64u && instruction->operand_width == 64u
@@ -135,6 +144,34 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (cut->has_msr) {
+        int write = instruction->machine_operation == PL_X86_MACHINE_WRITE_MSR;
+        int swap = instruction->machine_operation == PL_X86_MACHINE_SWAP_GS;
+        cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,
+            swap ? MACHINE_MSR_SWAP_GS : write ? MACHINE_MSR_WRITE : MACHINE_MSR_READ);
+        if (swap) { cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,0u); }
+        else {
+            cut_load(cut,offsetof(machine_state,registers) + 8u); cut_op(cut,0xa7u);
+            cut->report.read_registers |= 2u;
+        }
+        if (write) {
+            cut_load(cut,offsetof(machine_state,registers)); cut_mask(cut,32u);
+            cut_load(cut,offsetof(machine_state,registers) + 16u); cut_mask(cut,32u);
+            cut_const(cut,32u); cut_op(cut,0x86u); cut_op(cut,0x84u);
+            cut->report.read_registers |= 5u;
+        } else cut_const(cut,0u);
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        if (!write && !swap) {
+            cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+            cut_op(cut,0x29u); wasm_writer_uleb(cut->writer,3u);
+            wasm_writer_uleb(cut->writer,offsetof(machine_memory_port,value));
+            cut_set(cut,CUT_VALUE); cut_get(cut,CUT_VALUE); cut_mask(cut,32u); cut_set(cut,1u);
+            cut_get(cut,CUT_VALUE); cut_const(cut,32u); cut_op(cut,0x88u); cut_set(cut,3u);
+            cut->loaded |= 5u; cut->report.written_registers |= 5u;
+        }
+        return;
+    }
     if (cut->has_interrupt_return) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);

@@ -131,9 +131,16 @@ Next, in order:
    preceding real red at 0x1e23d8b; 32 ELF modules / 16,384 actual x86 cases
    pass in direct Wasm and separately the C dispatcher. Full product checks,
    selected lowering ASan/UBSan and 98 native/cold byte-identical emissions pass.
-   Next is the actual WRMSR at 0x14015f7 (ECX=0xc0000101, EDX:EAX=0).
-   Implement common MSR/hidden-cache semantics and precise faults, not a
-   kernel-address special case or skip. PID 1/shell are still not achieved.
+   Common WRMSR/RDMSR/SWAPGS now close that actual WRMSR, through the existing
+   hidden FS/GS cache and EFER owner, with known inactive kernel-GS only in the
+   MSR bank. No duplicate dictionary/default-zero path. Full checks, 1,152 C
+   and 2,156 C-Wasm model cases, 32 legal QEMU TCG rows / 160 comparisons,
+   250 native/cold byte-identical emissions and selected ASan/UBSan pass.
+   Privilege/reserved/noncanonical faults are model-tested, not system-oracle
+   proved. Actual browser reaches 129,057,505 retirements / 64,417,792 admissions;
+   next is ordinary LEAVE at 0x1017cf3 (c9), compile -102. Implement common
+   stack semantics and fault ordering, not a coordinate-specific skip.
+   PID 1/shell are still not achieved. See the 2026-10-03-msr evidence.
    Engine replacement (34.2 s), VM execution (30.1 s) and source/MMU admission
    (19.9 s) exceed cold construction (5.8 s) in the final repeat. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
