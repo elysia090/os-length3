@@ -496,7 +496,7 @@ No step at the erroneous zero-page RIP is counted as progress. This still is
 not Linux boot or a 3-second shell, and production storage/network acceptance
 remains open. Native bundle and human UI are unchanged.
 
-The [current common-lowering evidence](../vm/check/browser/evidence/2026-10-03-stos-alu-cmov.md)
+The [earlier common-lowering evidence](../vm/check/browser/evidence/2026-10-03-stos-alu-cmov.md)
 closes REP STOS, register-destination memory ADD/SUB/AND/OR/XOR and register
 CMOVcc through the common C compiler. Native x86 CPU/RAM/fault observations,
 13,312 memory-ALU and 26,112 CMOV comparisons, and 431 exact native/cold emission
@@ -516,6 +516,30 @@ one slot; VM/cold memories stay 6,815,744 / 1,048,576 bytes. Linux boot and the
 3-second cold shell remain red. Next test indirect CALL fault ordering and
 remove C reanalysis/page-copy fixed costs with C-owned source admission before
 claiming production executable-generation/load or storage/device closure.
+
+### Indirect CALL and register-bit checkpoint
+
+The [current evidence](../vm/check/browser/evidence/2026-10-03-call-bit.md)
+adds common near indirect CALL and register BT/BTS/BTR/BTC. Actual x86
+observations established a critical ordering: load the target with old RSP,
+store the return address, then check target canonicality. A target #GP keeps
+the stack payload store but not the CPU/RSP/RIP update. All 27 CALL forms /
+6,912 CPU/stack comparisons match C vm.wasm, including 2,150 fault frames;
+448 retain that #GP store. Register bit operations pass 60 post-linked ELF
+modules / 30,720 defined-flags and complete-state cases in direct Wasm and
+separately through the C dispatcher. Undefined bit-operation flags retain
+the chosen representative; they are not mislabeled as hardware-defined.
+
+Actual browser startup now reaches 330,245 retired instructions / 263,420
+demanded admissions. The next exact unsupported instruction is `19 c0`,
+`SBB eax,eax`, at `0x1e24306`. One table slot, the independent relocation/BSS/
+memset observations, 47 exact HTTP ranges and 6,815,744-byte VM memory remain.
+The cache retains 64 instances / 20,024 bytes; its 659 engine compilations
+and 262,761 hits do not remove per-cut C reconstruction or the cumulative
+1,078,972,416 code-copy bytes. No interpreter or address-specific shim was
+added. Linux boot, exception entry, authenticated production root/device
+integration, offline development, storage/network use and cold-shell 3s
+remain red. The same full product goal is unchanged.
 
 ## Platform sources
 

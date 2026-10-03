@@ -5,8 +5,10 @@ static int canonical(pl_u64 value)
 
 int cut_indirect_supported(const pl_x86_instruction *instruction)
 {
-    if (instruction->status != PL_X86_DECODE_VALID || instruction->operation != PL_X86_OPERATION_BRANCH
-            || instruction->flow != PL_X86_FLOW_JUMP || instruction->machine_operation != PL_X86_MACHINE_NONE
+    int call = instruction->operation == PL_X86_OPERATION_CALL && instruction->flow == PL_X86_FLOW_CALL;
+    if (instruction->status != PL_X86_DECODE_VALID
+            || (!call && (instruction->operation != PL_X86_OPERATION_BRANCH || instruction->flow != PL_X86_FLOW_JUMP))
+            || instruction->machine_operation != PL_X86_MACHINE_NONE
             || !(instruction->flags & PL_X86_INSTRUCTION_INDIRECT)
             || instruction->flags & (PL_X86_INSTRUCTION_DIRECT_TARGET | PL_X86_INSTRUCTION_LOCKED
                 | PL_X86_INSTRUCTION_PRIVILEGED | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)
@@ -29,7 +31,8 @@ int cut_indirect_supported(const pl_x86_instruction *instruction)
 
 /* Target is in LEFT. A pending #GP is not exception delivery or CR2.
  * Port/state reservations have already been checked. No CPU publication
- * precedes this check; memory-target faults therefore win over target #GP. */
+ * precedes this check. CALL's return-address payload store does precede it:
+ * a target #GP retains that store but never publishes the new RSP/RIP. */
 void cut_reject_target(cut_lowering *cut)
 {
     cut_get(cut,CUT_LEFT); cut_const(cut,47u); cut_op(cut,0x88u); cut_op(cut,0x50u);
@@ -55,6 +58,11 @@ void cut_lower_indirect(cut_lowering *cut, const pl_x86_instruction *instruction
                 && operand->value.memory.segment.index == 2u) cut->report.memory_access |= MACHINE_MEMORY_STACK;
         cut_access(cut); cut_access_value(cut);
     } else cut_read_operand(cut,operand,64u);
-    cut_set(cut,CUT_LEFT); cut_reject_target(cut);
+    cut_set(cut,CUT_LEFT);
+    pl_u32 target_access = cut->report.memory_access;
+    if (instruction->operation == PL_X86_OPERATION_CALL)
+        cut_lower_stack(cut,instruction); /* Uses old RSP after reading the target. */
+    cut_reject_target(cut);
     cut_get(cut,CUT_LEFT); cut_set(cut,CUT_NEXT);
+    cut->report.memory_access |= target_access;
 }

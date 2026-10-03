@@ -143,7 +143,9 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
 
 static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
 {
-    if (plan->repeat_cut) return 1;
+    /* A CALL's target read and stack write are ordered scalar transactions,
+     * not an RMW reservation on a single memory operand. */
+    if (plan->repeat_cut || (plan->indirect_cut && report->memory_bytes)) return 1;
     if (plan->system_cut == CUT_SYSTEM_CONTROL_WRITE) return 6;
     if (plan->system_cut == CUT_SYSTEM_FAR_RETURN) return 5;
     if (plan->system_cut == CUT_SYSTEM_TABLE) return 4;

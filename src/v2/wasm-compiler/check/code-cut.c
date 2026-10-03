@@ -173,23 +173,45 @@ int main(int argc, char **argv)
     }
     /* Generic indirect control, including the pure-prefix boundary that
      * otherwise misclassified an unemitted successor as a branch. */
+    for (pl_u32 family = 0u; family < 2u; ++family)
     for (pl_u32 form = 0u; form < 3u; ++form) {
         memset(pages,0x90,sizeof pages); pages[0] = 0xffu;
-        pages[1] = form ? 0x20u : 0xe0u;
+        pages[1] = (pl_u8)((form ? 0x20u : 0xe0u) - (family ? 0x10u : 0u));
         if (form == 2u) {
             static const pl_u8 prefix[] = {0x48u,0x8du,0x80u,0x31u,0u,0u,0u,0xffu,0xe0u};
             memcpy(pages,prefix,sizeof prefix);
+            if (family) pages[8] = 0xd0u;
         }
         EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
         EXPECT(report.source_instructions == 1u && report.source_bytes == (form == 2u ? 7u : 2u));
         EXPECT(report.boundary == (form == 2u ? WASM_CUT_LIMIT : WASM_CUT_CONTROL));
-        EXPECT(report.memory_bytes == (form == 1u ? 8u : 0u) && !report.flags_written);
+        EXPECT(report.memory_bytes == (form != 2u && (family || form == 1u) ? 8u : 0u)
+            && !report.flags_written);
+        EXPECT(report.written_registers == (family && form != 2u ? 16u : form == 2u ? 1u : 0u));
     }
     static const pl_u8 rejected[][3] = {
         {0x64u,0xffu,0x20u}, /* FS memory target needs explicit base semantics. */
         {0x65u,0xffu,0x20u}, {0xffu,0x28u,0x90u}, /* Far control is not near JMP. */
-        {0xf0u,0xffu,0xe0u}, {0xffu,0xd0u,0x90u}, {0xffu,0x10u,0x90u},
+        {0xf0u,0xffu,0xe0u}, {0xffu,0x18u,0x90u}, {0x64u,0xffu,0x10u},
     };
+    /* Actual shipped startup instruction: BTS RSI,58. It is a pure register
+     * cut, not a special kernel callback or a memory-address bit operation. */
+    static const pl_u8 bit_source[] = {0x48u,0x0fu,0xbau,0xeeu,0x3au};
+    memset(pages,0x90,sizeof pages); memcpy(pages,bit_source,sizeof bit_source);
+    options.maximum_source_instructions = 1u;
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_bytes == 5u && report.written_registers == 64u
+        && report.read_registers == 64u && report.flags_written && !report.memory_bytes);
+    options.maximum_source_instructions = 1024u;
+    static const pl_u8 rejected_bits[][6] = {
+        {0xf0u,0x48u,0x0fu,0xbau,0xeeu,0x3au}, /* LOCK register BTS is invalid. */
+        {0x48u,0x0fu,0xbau,0x28u,0x3au,0x90u}, /* Memory BTS requires its own precise RMW cut. */
+    };
+    for (pl_u32 form = 0u; form < sizeof rejected_bits / sizeof rejected_bits[0]; ++form) {
+        memset(pages,0x90,sizeof pages); memcpy(pages,rejected_bits[form],sizeof rejected_bits[0]);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            == WASM_COMPILER_ERROR_GRAMMAR);
+    }
     for (pl_u32 form = 0u; form < sizeof rejected / sizeof rejected[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected[form],sizeof rejected[0]);
         memset(output,0xa5,sizeof output);

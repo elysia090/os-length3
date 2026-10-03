@@ -93,6 +93,9 @@ static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *r
             if (instruction.condition < 2u) mask |= 1u;
             else if (instruction.condition == 3u || instruction.condition == 4u) mask |= 0x400u;
             break;
+        case PL_X86_OPERATION_BIT_TEST:
+            mask = (mask | 1u) & ~0x894ull; /* CF defined, ZF unchanged; OF/SF/AF/PF undefined. */
+            break;
         default: break;
         }
         for (pl_u32 rank = 0u; rank < instruction.visible_operand_count; ++rank) {

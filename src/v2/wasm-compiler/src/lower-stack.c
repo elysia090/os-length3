@@ -102,7 +102,8 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (instruction->operation == PL_X86_OPERATION_POP) {
         cut_get(cut, CUT_LEFT); cut_set(cut, CUT_VALUE);
         cut_write_register(cut, &instruction->operands[0].value.reg);
-    } else if (instruction->operation == PL_X86_OPERATION_CALL) {
+    } else if (instruction->operation == PL_X86_OPERATION_CALL
+            && instruction->flags & PL_X86_INSTRUCTION_DIRECT_TARGET) {
         cut_const(cut, instruction->target); cut_set(cut, CUT_NEXT);
     }
 }

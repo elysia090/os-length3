@@ -91,7 +91,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
                 plan->flag_frontier[0] = 0u;
-                if (indirect) plan->report.memory_bytes = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
+                if (indirect) plan->report.memory_bytes = instruction.operation == PL_X86_OPERATION_CALL
+                    || instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
                 else if (!system) {
                     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
                     plan->report.memory_bytes = stack || repeat ? instruction.operand_width / 8u

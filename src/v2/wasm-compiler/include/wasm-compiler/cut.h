@@ -64,10 +64,15 @@ typedef struct {
  * AC is rejected, not silently ignored. The C-Wasm provider now performs a
  * four-level 4 KiB/2 MiB walk under its pinned CPU/physical-residency context;
  * exception delivery and executable-generation admission are separate gates.
- * 64-bit register/immediate PUSH, register POP, direct near CALL and RET also
+ * 64-bit register/immediate PUSH, register POP, direct/indirect near CALL and RET also
  * use this exact typed transaction. No 16-bit stack or CET context may be
  * admitted by this baseline. Same-CPL 64-bit far RET has a separate typed C
  * descriptor/cache boundary; outer-CPL and compatibility transfers reject.
+ * Near indirect CALL reads its target using old RSP/address state, performs
+ * the all-fragment stack store, then checks the target's canonicality. A
+ * target #GP retains that payload store, with CPU/RSP/RIP/retirement unchanged.
+ * A failed target read or stack transaction prevents the target check. The
+ * next target fetch is a separate admission after successful CALL retirement.
  * Memory ADD/SUB/AND/OR/XOR uses machine.reserve/commit with pinned physical
  * fragments; generated Wasm computes arithmetic, not a C opcode callback.
  * Memory CMP/TEST uses a READ-only machine.access followed by shared ALU/flags

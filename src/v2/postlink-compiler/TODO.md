@@ -49,7 +49,7 @@ granted virtual-NIC HTTPS/Git/service use. Linux remains the sole semantic
 authority. No source interpreter, opcode skip or fallback is permitted.
 Native release and human UI stay unchanged. Cold shell 3 seconds is unmet.
 
-Current executable checkpoint: common REP STOS, memory-source
+Previous executable checkpoint: common REP STOS, memory-source
 ADD/SUB/AND/OR/XOR and register CMOVcc are implemented and verified against
 actual x86. STOS passes all 8/16/32/64 widths and 32/64 address sizes, DF,
 zero-count, partial/cross-page faults, code aliases and bounded continuations;
@@ -61,26 +61,38 @@ check and selected compiler/lowering ASan/UBSan pass. Previous JMP/REP/RMW
 regressions remain green; linked decoder/provider archives in the sanitizer
 run are normal builds, not whole-TCB coverage.
 
-The actual ordinary-memory browser Worker executes 328,375 source instructions
-with 262,536 demanded admissions, one active table slot and no manually listed
+Current executable checkpoint adds common near indirect CALL and register
+BT/BTS/BTR/BTC. CALL passes 27 native/cold byte-identical modules and 6,912
+actual x86 CPU/stack comparisons (2,150 exception frames), including 448
+target-#GP cases whose return-address payload store survives while CPU/RSP/RIP
+remain unchanged. Target reads precede stack stores; stack faults precede the
+target check. Register bit operations pass 60 post-linked ELF modules / 30,720
+cases in direct Wasm and separately C dispatch, including narrow parents,
+modulo-width indexes, self-aliases and an interior CF consumer. Full product
+check and selected compiler/lowering ASan/UBSan pass.
+
+The actual ordinary-memory browser Worker executes 330,245 source instructions
+with 263,420 demanded admissions, one active table slot and no manually listed
 branch coordinates. The complete independent 86-instruction CPU/cache and
 378-instruction relocation-register witnesses, all 3,040,256 copied kernel
 bytes, 98,656 REP BSS bytes and three scalar memset returns totaling 131,104
 bytes pass. The count is predominantly memset iterations, not a boot percentage.
-Initial page-table construction has begun. The next exact red is indirect
-`CALL [r12]` (`41 ff 14 24`) at `0x1e25239`, compile `-102`.
+Initial page-table construction and its indirect allocator call have progressed.
+The next exact red is `SBB eax,eax` (`19 c0`) at `0x1e24306`, compile `-102`.
+Neither the instruction count nor passing component checks establish Linux boot.
 
 Next, in order:
 
-1. Implement common near indirect CALL for register/memory targets. Make
-   target-read/#GP/stack-reservation ordering and fault noncommit red against
-   actual x86, then compare generated cuts through C MMU/dispatch. Never add
+1. Implement common register ADC/SBB, with incoming CF in the reverse flag
+   frontier and exact carry/borrow/AF/OF semantics at every width. Make the
+   actual startup SBB and composed CF-consumer witnesses red against actual
+   x86, then compare generated cuts through C dispatch. Never add
    an address-specific allocator/kernel shim or manually choose the target.
 2. Remove repeated C construction/page-copy fixed costs using C-owned reusable
    source admission, with exact source/lifetime checks and code-alias revocation.
    Engine reuse is now bounded and requires an identical successful C emission:
-   221 compilations / 262,315 hits, 64 retained instances / 19,657 bytes. It does
-   NOT remove C analysis or the cumulative 1,075,351,552 bytes of code transport.
+   659 compilations / 262,761 hits, 64 retained instances / 20,024 bytes. It does
+   NOT remove C analysis or the cumulative 1,078,972,416 bytes of code transport.
    Add crossing-first-instruction supply and preserve precise fetch ordering.
 3. Finish actual startup/decompression, MSR/exception/device/root supply, then
    Linux/PID 1/shell and the complete development/storage/network acceptance.
@@ -93,7 +105,7 @@ The 300,000-admission / 500,000-retirement bound is an explicit diagnostic
 quota; exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-stos-alu-cmov.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-call-bit.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

@@ -73,6 +73,7 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_FLAG_CONTROL:
         return instruction->condition < 2u ? 1u
             : instruction->condition == 3u || instruction->condition == 4u ? 0x400u : 0u;
+    case PL_X86_OPERATION_BIT_TEST: return 1u;
     default: return 0u;
     }
 }
@@ -123,6 +124,10 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_INCREMENT:
     case PL_X86_OPERATION_DECREMENT: return count == 1u;
     case PL_X86_OPERATION_SHIFT: return cut_shift_supported(instruction);
+    case PL_X86_OPERATION_BIT_TEST:
+        return count == 2u && instruction->condition < 4u && operands[0].bits >= 16u
+            && source_operand(&operands[1])
+            && (operands[1].kind == PL_X86_OPERAND_IMMEDIATE || operands[0].bits == operands[1].bits);
     case PL_X86_OPERATION_CONDITIONAL_SET:
         return count == 1u && operands[0].bits == 8u && instruction->condition < 16u;
     case PL_X86_OPERATION_CONDITIONAL_MOVE:
@@ -278,6 +283,29 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
     if (operation == PL_X86_OPERATION_SHIFT) { cut_lower_shift(cut, instruction); return; }
+    if (operation == PL_X86_OPERATION_BIT_TEST) {
+        pl_u32 width = operands[0].bits;
+        if (!instruction->condition && !(cut->wanted_flags & 1u)) return;
+        cut_read_operand(cut,&operands[0],width); cut_set(cut,CUT_LEFT);
+        cut_read_operand(cut,&operands[1],width);
+        cut_const(cut,width - 1u); cut_op(cut,0x83u); cut_set(cut,CUT_RIGHT);
+        cut_const(cut,1u); cut_get(cut,CUT_RIGHT); cut_op(cut,0x86u); cut_set(cut,CUT_RIGHT);
+        if (cut->wanted_flags & 1u) {
+            /* CF observes the old bit, including a source/destination alias.
+             * ZF is unaffected; undefined OF/SF/AF/PF keep their chosen value. */
+            cut_get(cut,CUT_FLAGS); cut_const(cut,~1ull); cut_op(cut,0x83u);
+            cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x83u);
+            cut_op(cut,0x50u); cut_op(cut,0x45u); cut_op(cut,0xadu); cut_op(cut,0x84u);
+            cut_set(cut,CUT_FLAGS); cut->report.flags_written = 1u;
+        }
+        if (instruction->condition) {
+            cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT);
+            if (instruction->condition == 2u) { cut_const(cut,~0ull); cut_op(cut,0x85u); }
+            cut_op(cut,instruction->condition == 1u ? 0x84u : instruction->condition == 2u ? 0x83u : 0x85u);
+            cut_mask(cut,width); cut_set(cut,CUT_VALUE); cut_write_register(cut,&operands[0].value.reg);
+        }
+        return;
+    }
     if (operation == PL_X86_OPERATION_CONDITIONAL_SET) {
         condition(cut, instruction->condition); cut_op(cut, 0xadu);
         cut_set(cut, CUT_VALUE); cut_write_register(cut, &operands[0].value.reg);
