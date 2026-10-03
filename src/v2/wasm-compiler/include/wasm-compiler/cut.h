@@ -81,7 +81,9 @@ typedef struct {
  * residency wait precedes #DE. The shared divider captures the divisor before
  * implicit AX/DX:RAX publication, rejects zero/quotient overflow without
  * retiring, and never uses a Wasm trap as an architectural divide fault.
- * LGDT/LIDT uses machine.table with ten-byte all-fragment preflight.
+ * LGDT/LIDT uses machine.table with a complete ten-byte read. SGDT/SIDT
+ * uses the same boundary with ordered limit/base stores and a C-owned
+ * next-store frontier across residency waits; later faults retain payload.
  * CLI is a precise one-instruction system cut with the same private port but
  * no host operation import. In long mode without CR4.PVI/EFLAGS.VM it clears
  * IF when CPL <= IOPL, otherwise publishes #GP(0) without retiring. PVI/VM

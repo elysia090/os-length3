@@ -1023,8 +1023,42 @@ LOCK/SMP ADC/SBB and FS/GS addressing still refuse rather than silently weaken.
 Actual browser: 136,209,125 retired / 68,765,994 admissions, zero manual branch
 entries and unchanged full decompression/delivery. Next -102 is SGDT [RSP+0xe]
 (`0f 01 44 24 0e`) at `0xffffffff8103af89`. Connect common descriptor stores
-to the existing table owner and complete C-MMU write preflight, not a Linux
-constant. PID 1/shell and the full development/storage/network goal stay red.
+to the existing table owner, not a Linux constant. The subsequent native
+store observation below supersedes the proposed whole-record write preflight:
+an earlier limit store can survive a fault on the base. PID 1/shell and the full
+development/storage/network goal stay red.
+
+## Ordered descriptor stores — 2026-10-04
+
+[The descriptor-transfer evidence](../vm/check/browser/evidence/2026-10-04-descriptor-transfer.md)
+closes common SGDT/SIDT through the existing `machine.table` C boundary and
+GDTR/IDTR owner. Forty-eight compiler entrances were red first. The long-mode
+operand is ten bytes even with 66/REX.W. The two-byte limit precedes the
+eight-byte base: a later guest #PF preserves the earlier payload, while CPU
+state and retirement remain unpublished. Physical absence is a host wait,
+not a guest #PF. A 104-byte C-owned frontier binds the exact next store and
+its architectural inputs; it is not a full-state snapshot or ten-byte atomic
+operation. Refused unrelated APIs preserve the prepared supply ticket.
+
+Ninety-six native/cold emissions, 16,128 C-MMU/dispatch models, 108 unique
+actual x86 user-mode observations in the reference QEMU TCG build VM,
+216 waits/retries, 2,244 refusals and 108 ordinary-abort preservations pass.
+The native grid was initially defective: an address-size-32 reference capture
+used a truncated stack pointer and stale signal continuation. Row count alone
+missed duplicated coordinates. Complete grid admission now rejects that
+receipt; all native calls use a current continuation and low-address payload.
+Full product checks, all VM-core and selected lowering ASan/UBSan, 1,308 cold
+emissions and previous carry/divide/IO/source/supply regressions pass.
+UMIP cases are explicit models only; the fixed CPU profile is not widened.
+No Linux/PID 1/shell, complete exception-entry or physical-hardware claim.
+
+The actual browser executes SGDT and reaches the next compiler refusal:
+`0f 00 d8`, LTR AX, at `0xffffffff8103afa1`, selector 0x40. The next common
+boundary must validate/load the system descriptor, update its busy bit and
+publish the architectural TR cache only at the correct precise cut. Do not
+set a known Linux selector or bypass descriptor faults. TSS/IST exception
+coverage remains a separate open requirement. Native release and human UI
+are unchanged; the full browser development/storage/network goal stays active.
 
 ## Platform sources
 

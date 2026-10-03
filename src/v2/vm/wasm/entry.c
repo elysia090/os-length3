@@ -25,6 +25,7 @@ static vm_boot boot;
 static vm_execution execution;
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
+static vm_table_frontier table_frontier;
 static vm_sources sources;
 static vm_clock clock_owner;
 static vm_pit pit;
@@ -49,6 +50,7 @@ pl_u32 vm_arena_min(void)
 
 void vm_close(void)
 {
+    table_frontier=(vm_table_frontier){0};
     vm_clock_close(&clock_owner); vm_pit_reset(&pit);
     vm_sources_open(&sources,0u,vm_slot_min());
     vm_supply_reset(&supply);
@@ -164,6 +166,7 @@ pl_u32 vm_page_count(void) { return resident.page_count; }
 
 int vm_bind_state(pl_u32 state)
 {
+    table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
@@ -181,6 +184,7 @@ int vm_bind_state(pl_u32 state)
 
 int vm_bind_segments(pl_u32 segments)
 {
+    table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
@@ -247,6 +251,7 @@ static machine_result memory_result(pl_u32 port, machine_result result)
 machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
                           pl_u32 access, pl_u64 value)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !private_port(port))
@@ -280,6 +285,7 @@ static vm_mmu_context cpu_context(void)
  * and no export/import granted to the emitted machine function. */
 machine_result vm_code(pl_u32 port, pl_u64 address, pl_u32 target)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !segments_offset || !private_port(port) || !private_record(target,sizeof(vm_code_page))
@@ -326,6 +332,7 @@ static machine_result source_tail(pl_u32 port, pl_u32 view_target, pl_u32 row_ta
 machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
                               pl_u32 view_target, pl_u32 row_target)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     sources.pending = 0u;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
     if (delivery.stage || execution.continuation.slot || !segments_offset || !private_port(port)
@@ -354,6 +361,7 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
  * extend an uncompiled source. This API never decodes or executes x86. */
 machine_result vm_source_extend(pl_u32 port, pl_u32 view_target, pl_u32 row_target)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
     if (delivery.stage || execution.continuation.slot || !segments_offset || !private_port(port)
             || !private_record(view_target,2u*sizeof(vm_code_page))
@@ -363,7 +371,7 @@ machine_result vm_source_extend(pl_u32 port, pl_u32 view_target, pl_u32 row_targ
 }
 int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 row_target)
 {
-    if (delivery.stage || execution.continuation.slot
+    if (delivery.stage || table_frontier.stage || execution.continuation.slot
             || !execution_record(row_target,sizeof(vm_execution_row))) {
         sources.pending = 0u; return -1;
     }
@@ -371,12 +379,13 @@ int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 row_target)
 }
 int vm_sources_reset(void)
 {
-    if (delivery.stage || execution.continuation.slot) return -1;
+    if (delivery.stage || table_frontier.stage || execution.continuation.slot) return -1;
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     vm_execution_close(&execution); return 0;
 }
 machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
@@ -388,6 +397,7 @@ machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 acce
 }
 machine_result vm_commit(pl_u32 port, pl_u64 value)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     if (delivery.stage || !private_port(port)) { vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP; }
     resident.write_touched = 0u;
@@ -395,10 +405,17 @@ machine_result vm_commit(pl_u32 port, pl_u64 value)
     if (resident.write_touched) execution.generation = 0u;
     return result;
 }
-void vm_abort(void) { vm_memory_abort(&resident); vm_supply_reset(&supply); vm_clock_abort(&clock_owner); }
+void vm_abort(void)
+{
+    /* Ordinary RMW cancellation cannot undo a completed descriptor store or
+     * cancel its prepared page supply. Close/rebind ends that continuation. */
+    if (table_frontier.stage) return;
+    vm_memory_abort(&resident); vm_supply_reset(&supply); vm_clock_abort(&clock_owner);
+}
 
 machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     resident.write_touched = 0u;
@@ -411,6 +428,7 @@ machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 val
 }
 machine_result vm_time(pl_u32 port)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     return vm_time_read(&resident,port - arena_base,(const machine_state *)(uintptr_t)state_offset,
@@ -418,7 +436,7 @@ machine_result vm_time(pl_u32 port)
 }
 int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanoseconds)
 {
-    if (!private_port(port) || delivery.stage || generation != resident.generation
+    if (!private_port(port) || delivery.stage || table_frontier.stage || generation != resident.generation
             || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) != generation) return -1;
     return vm_clock_reply(&clock_owner,generation,port - arena_base,
         (const machine_state *)(uintptr_t)state_offset,ticket,nanoseconds);
@@ -433,14 +451,15 @@ machine_result vm_table(pl_u32 port, pl_u64 address, pl_u32 rank, pl_u32 access)
     pl_u32 cs = segments->cache[MACHINE_SEGMENT_CS].attributes;
     if (!(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))) return MACHINE_RESULT_ENTRY_MAP;
     resident.write_touched = 0u;
-    machine_result result = vm_table_load(&resident,port - arena_base,
-        (machine_state *)(uintptr_t)state_offset,address,rank,access);
+    machine_result result = vm_table_transfer(&resident,port - arena_base,
+        (machine_state *)(uintptr_t)state_offset,&table_frontier,address,rank,access);
     if (resident.write_touched) execution.generation = 0u;
     return memory_result(port,result);
 }
 
 machine_result vm_return(pl_u32 port, pl_u32 discard_bytes)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
@@ -455,6 +474,7 @@ machine_result vm_return(pl_u32 port, pl_u32 discard_bytes)
  * This export is not an import available to emitted guest functions. */
 machine_result vm_fault(pl_u32 port)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (!segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
@@ -466,6 +486,7 @@ machine_result vm_fault(pl_u32 port)
 }
 machine_result vm_iret(pl_u32 port)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
@@ -478,6 +499,7 @@ machine_result vm_iret(pl_u32 port)
 
 machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
@@ -492,6 +514,7 @@ machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
 
 machine_result vm_msr(pl_u32 port, pl_u32 operation, pl_u32 key, pl_u64 value)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
@@ -508,6 +531,7 @@ machine_result vm_msr(pl_u32 port, pl_u32 operation, pl_u32 key, pl_u64 value)
 
 machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 {
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !segments_offset || !private_port(port)) return machine_result_make(MACHINE_RESULT_ENTRY_MAP,0u);
@@ -520,7 +544,7 @@ machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 
 int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
 {
-    if (delivery.stage) return -1;
+    if (delivery.stage || table_frontier.stage) return -1;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     vm_execution_close(&execution);

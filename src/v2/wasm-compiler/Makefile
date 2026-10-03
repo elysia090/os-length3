@@ -84,6 +84,14 @@ $(BUILD)/invalidate-check: check/invalidate.c $(BUILD)/libwasm-compiler.a $(PROV
 $(BUILD)/io-check: check/io.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+$(BUILD)/table-check: check/table.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+check: table-check
+.PHONY: table-check
+table-check: $(BUILD)/table-check
+	$(BUILD)/table-check
+
 check: $(BUILD)/io-check
 
 $(BUILD)/flags-check: check/flags.c check/native-flags.S | $(BUILD)

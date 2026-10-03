@@ -63,6 +63,14 @@ $(BUILD)/supply-check: check/supply.c $(BUILD)/libvm.a
 $(BUILD)/mmu-check: check/mmu.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
+$(BUILD)/tables-check: check/tables.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+.PHONY: tables-check
+check: tables-check
+tables-check: $(BUILD)/tables-check
+	$(BUILD)/tables-check
+
 $(BUILD)/boot-check: check/boot.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 

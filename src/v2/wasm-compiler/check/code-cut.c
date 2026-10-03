@@ -52,6 +52,27 @@ int main(int argc, char **argv)
             && report.memory_access==(shape==0u ? 1u : 3u) && report.flags_written
             && report.written_registers==(shape==0u ? 1u : 0u));
     }
+    /* Both descriptor stores transfer ten bytes in long mode, irrespective
+     * of operand-size prefixes. They remain precise one-instruction cuts. */
+    for (pl_u32 table=0u;table<2u;++table)
+    for (pl_u32 prefix=0u;prefix<3u;++prefix)
+    for (pl_u32 address32=0u;address32<2u;++address32)
+    for (pl_u32 shape=0u;shape<4u;++shape) {
+        pl_u32 at=0u; memset(pages,0x90,sizeof pages);
+        if (address32) pages[at++]=0x67u;
+        if (prefix==1u) pages[at++]=0x66u;
+        if (prefix==2u || shape==2u)
+            pages[at++]=(pl_u8)(0x40u|(prefix==2u ? 8u : 0u)|(shape==2u ? 1u : 0u));
+        pages[at++]=0x0fu; pages[at++]=0x01u;
+        pages[at++]=(pl_u8)((table<<3u)|(shape==0u ? 7u : shape==1u ? 0x44u
+            : shape==2u ? 0x44u : 5u));
+        if (shape==1u || shape==2u) { pages[at++]=(pl_u8)(shape==1u ? 0x24u : 0x8cu); pages[at++]=14u; }
+        if (shape==3u) for (pl_u32 byte=0u;byte<4u;++byte) pages[at++]=0u;
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_bytes==at && report.source_instructions==1u
+            && report.boundary==WASM_CUT_SYSTEM && !report.written_registers && !report.flags_written);
+    }
     /* Selector reads are not descriptor loads. Register destinations use
      * their own width; even a REX.W memory form stores only two bytes. */
     for (pl_u32 segment=0u;segment<6u;++segment)

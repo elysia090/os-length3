@@ -323,9 +323,25 @@ Next, in order:
    write-fault witnesses pass. Full checks, selected 52-fixture sanitizers and
    1,212 cold emissions pass. Actual browser reaches 136,209,125 retired /
    68,765,994 admissions. Next -102 is `0f 01 44 24 0e`, SGDT [RSP+0xe], at
-   0xffffffff8103af89. Derive SGDT/SIDT through the existing GDTR/IDTR owner,
-   complete C-MMU write preflight and UMIP privilege/fault witnesses, not a
-   fixed kernel descriptor. See [current evidence](../vm/check/browser/evidence/2026-10-04-memory-carry.md).
+   0xffffffff8103af89. This common SGDT/SIDT entrance is now closed through
+   the existing table owner and ordered two/eight-byte stores. Actual native
+   #PF observation disproves a whole-record write preflight: the earlier
+   limit can survive a later base fault. A 104-byte C-owned next-store frontier
+   retains no CPU snapshot and is pinned across physical waits. Ninety-six
+   native/cold forms, 16,128 state/dispatch models, 108 unique actual native
+   observations, 216 waits/retries, 2,244 refusals and 108 ordinary-abort
+   preservations pass. Native row uniqueness first caught a truncated-stack
+   reference capture and stale siglongjmp; corrected capture and full-grid
+   validation supersede that defective receipt. Full checks, all VM-core /
+   selected lowering sanitizers, 1,308 cold emissions and prior carry/divide/
+   IO/source/supply regressions pass. UMIP models do not widen the CPU profile.
+   Actual browser passes SGDT and next refuses `0f 00 d8`, LTR AX, selector
+   0x40, at 0xffffffff8103afa1. Close the general register/memory system-selector
+   transfer through the existing hidden segment owner: precise descriptor
+   type/presence/limit/canonical/fetch/write ordering, TSS busy-bit update and
+   TR publication, with system-oracle red cases. Do not write a fixed Linux
+   cache or skip the instruction. TSS/IST fault entry remains separately open.
+   See [current evidence](../vm/check/browser/evidence/2026-10-04-descriptor-transfer.md).
    Do not treat the
    bounded 128/64 divider as a global work/span-minimum proof. Memory division
    is now compiled through the same arithmetic after a C read. Boot/PID 1/shell remain unmet.
@@ -333,10 +349,10 @@ Next, in order:
    Keep the CPU profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (174.4 s), VM execution (40.5 s) and source/MMU admission
-   (24.4 s) dominate the latest uncontrolled observation. Other checks overlapped;
+   Engine replacement, VM execution and source/MMU admission still dominate
+   the recorded uncontrolled observations. Other checks overlapped;
    these are not a controlled speed comparison or cold-ready measurement.
-   Engine reuse reports zero hits / 1,211,568 compilations, despite bounded
+   Engine reuse reports zero hits / over 1.2 million compilations, despite bounded
    64-module residency. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source

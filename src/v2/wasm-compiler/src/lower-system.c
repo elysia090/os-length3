@@ -88,7 +88,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
                                        | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_FAR_RETURN;
     if (instruction->status == PL_X86_DECODE_VALID
             && instruction->machine_operation == PL_X86_MACHINE_DESCRIPTOR_TABLE
-            && instruction->machine_argument <= 1u
+            && instruction->machine_argument <= 3u
             && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
             && instruction->visible_operand_count == 1u
             && instruction->operands[0].kind == PL_X86_OPERAND_MEMORY
@@ -323,9 +323,10 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_effective_address(cut,instruction,memory); cut_set(cut,CUT_ADDRESS);
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_get(cut,CUT_ADDRESS);
-        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument & 1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,
-            MACHINE_MEMORY_READ | (memory->segment.class_id == PL_X86_REGISTER_SEGMENT
+            (instruction->machine_argument & 2u ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ)
+            | (memory->segment.class_id == PL_X86_REGISTER_SEGMENT
                 && memory->segment.index == 2u ? MACHINE_MEMORY_STACK : 0u));
         cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u);
         cut_access_status(cut);

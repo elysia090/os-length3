@@ -217,26 +217,27 @@ int main(void)
         for (pl_u32 rank = 0u; rank < 2u; ++rank) {
             reset(base); cpu = context();
             machine_state state = {0}, before;
+            vm_table_frontier frontier={0};
             state.cr0 = cpu.cr0; state.cr3 = cpu.cr3; state.cr4 = cpu.cr4;
             state.efer = cpu.efer; state.rflags = 2u; state.rip = 0x1234u;
             state.system[MACHINE_SYSTEM_CS] = 16u;
             state.system[MACHINE_SYSTEM_GDTR_BASE] = 0x9876u;
             for (pl_u32 i = 0u; i < 10u; ++i) arena[28672u + offset + i] = (pl_u8)(i + 1u);
             before = state;
-            EXPECT(vm_table_load(&memory,port,&state,base + offset,rank,1u) == 0u);
+            EXPECT(vm_table_transfer(&memory,port,&state,&frontier,base + offset,rank,1u) == 0u);
             pl_u32 at = rank ? MACHINE_SYSTEM_IDTR_BASE : MACHINE_SYSTEM_GDTR_BASE;
             before.system[at] = 0x0a09080706050403ull; before.system[at + 1u] = 0x0201u;
             EXPECT(memcmp(&state,&before,sizeof state) == 0);
             state = before; state.system[MACHINE_SYSTEM_CS] = 19u; before = state;
             put(entries[3],0u);
-            expect_fault(vm_table_load(&memory,port,&state,~0ull,rank,1u),state.rip,13u,0u);
+            expect_fault(vm_table_transfer(&memory,port,&state,&frontier,~0ull,rank,1u),state.rip,13u,0u);
             EXPECT(memcmp(&state,&before,sizeof state) == 0);
             state.system[MACHINE_SYSTEM_CS] = 16u; before = state;
-            expect_fault(vm_table_load(&memory,port,&state,base + offset,rank,1u),base + offset,14u,0u);
+            expect_fault(vm_table_transfer(&memory,port,&state,&frontier,base + offset,rank,1u),base + offset,14u,0u);
             EXPECT(memcmp(&state,&before,sizeof state) == 0);
             put(entries[3],0x8067u); put(entries[3] + 8u,0u);
             if (offset >= 4087u) {
-                expect_fault(vm_table_load(&memory,port,&state,base + offset,rank,1u),base + 4096u,14u,0u);
+                expect_fault(vm_table_transfer(&memory,port,&state,&frontier,base + offset,rank,1u),base + 4096u,14u,0u);
                 EXPECT(memcmp(&state,&before,sizeof state) == 0);
             }
         }

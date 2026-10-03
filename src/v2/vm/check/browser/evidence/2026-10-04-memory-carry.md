@@ -75,9 +75,11 @@ Native bundle: unchanged 63,219,311 bytes, SHA-256
 [The fresh actual browser receipt](2026-10-04-memory-carry-browser.json) passes
 memory ADC and reaches 136,209,125 retired / 68,765,994 admissions. Next -102
 is `0f 01 44 24 0e`, SGDT [RSP+0xe], at `0xffffffff8103af89`.
-RSP=0xffffffff81a03ec0, flags=6, CR3=0x1a2a000. Connect descriptor stores to
-the existing GDTR/IDTR owner and complete C-MMU write preflight, including
-UMIP privilege and split-page faults, not a fixed Linux descriptor constant.
+RSP=0xffffffff81a03ec0, flags=6, CR3=0x1a2a000. The next descriptor-store
+checkpoint supersedes the proposed complete write preflight: actual native
+observation shows a completed two-byte limit survives a later base #PF.
+Use the [ordered-store evidence](2026-10-04-descriptor-transfer.md), not a fixed
+Linux descriptor constant or an invented atomic ten-byte store.
 
 Full decompression stays 14,622,864 bytes / 3,571 pages, SHA-256
 `6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9`.
