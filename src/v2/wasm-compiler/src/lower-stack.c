@@ -21,6 +21,22 @@ int cut_stack_supported(const pl_x86_instruction *instruction)
             && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
             && instruction->machine_operation == (instruction->operation == PL_X86_OPERATION_POP_FLAGS
                 ? PL_X86_MACHINE_POP_FLAGS : PL_X86_MACHINE_NONE);
+    if (instruction->operation == PL_X86_OPERATION_POP && count == 1u
+            && operand->kind == PL_X86_OPERAND_MEMORY) {
+        const pl_x86_memory *memory = &operand->value.memory;
+        return instruction->flow == PL_X86_FLOW_NEXT
+            && instruction->machine_operation == PL_X86_MACHINE_NONE
+            && (instruction->operand_width == 16u || instruction->operand_width == 64u)
+            && operand->bits == instruction->operand_width
+            && (instruction->address_width == 32u || instruction->address_width == 64u)
+            && (memory->segment.class_id == PL_X86_REGISTER_NONE
+                || (memory->segment.class_id == PL_X86_REGISTER_SEGMENT && memory->segment.index < 4u))
+            && (memory->base.class_id == PL_X86_REGISTER_NONE
+                || memory->base.class_id == PL_X86_REGISTER_IP || cut_gpr(&memory->base))
+            && (memory->index.class_id == PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
+            && (!memory->scale || memory->scale == 1u || memory->scale == 2u
+                || memory->scale == 4u || memory->scale == 8u);
+    }
     if (instruction->operand_width != 64u || instruction->machine_operation != PL_X86_MACHINE_NONE) return 0;
     if (instruction->operation == PL_X86_OPERATION_CALL)
         return instruction->flow == PL_X86_FLOW_CALL && count == 1u
@@ -117,7 +133,19 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_write_register(cut,&destination);
     } else if (instruction->operation == PL_X86_OPERATION_POP) {
         cut_get(cut, CUT_LEFT); cut_set(cut, CUT_VALUE);
-        cut_write_register(cut, &instruction->operands[0].value.reg);
+        if (instruction->operands[0].kind == PL_X86_OPERAND_MEMORY) {
+            /* The stack read precedes destination translation. RSP's new
+             * value is a local SSA binding: a store fault or residency wait
+             * publishes neither it nor retirement. Address-size truncation
+             * applies to the destination, never to the implicit stack read. */
+            const pl_x86_memory *memory = &instruction->operands[0].value.memory;
+            cut_effective_address(cut, instruction, memory); cut_set(cut, CUT_ADDRESS);
+            cut->report.memory_access = MACHINE_MEMORY_WRITE;
+            if (memory->segment.class_id == PL_X86_REGISTER_SEGMENT && memory->segment.index == 2u)
+                cut->report.memory_access |= MACHINE_MEMORY_STACK;
+            cut_access(cut);
+            cut->report.memory_access |= MACHINE_MEMORY_READ | MACHINE_MEMORY_STACK;
+        } else cut_write_register(cut, &instruction->operands[0].value.reg);
     } else if (instruction->operation == PL_X86_OPERATION_CALL
             && instruction->flags & PL_X86_INSTRUCTION_DIRECT_TARGET) {
         cut_const(cut, instruction->target); cut_set(cut, CUT_NEXT);

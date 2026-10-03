@@ -901,6 +901,22 @@ memory POP (`8f 04 24`) at `0xffffffff81033a58`; derive its effective-address
 and fault priority using native witnesses before implementation. PID 1/shell
 and the full development/storage/network goal remain unachieved.
 
+## Ordered memory POP and actual I/O gate — 2026-10-03
+
+[Common lowering and actual browser evidence](../vm/check/browser/evidence/2026-10-03-pop-memory.md)
+supersedes the memory POP stop. A stack read precedes destination translation;
+the post-increment RSP is a local SSA binding until the store succeeds. Flat
+16/64-bit operands and 32/64-bit destination addresses use existing C-MMU
+transactions, not a new interpreter, syscall shim or RMW reservation.
+Native fault frames, C dispatch, source-alias writes, retries and RF checks pass.
+
+Actual browser: 130,560,767 retired / 65,228,273 admissions, unchanged complete
+decompression, delivery and residency. Next is `IN AL,0x61` at
+`0xffffffff810338c5`, followed by OUT to the same port. General I/O admission
+and the PIT/TSC clock/device owner are missing. The fixed kernel's calibration
+source is evidence for that contract, not permission to substitute a constant
+read or precomputed result. PID 1/shell and the full goal are still unachieved.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

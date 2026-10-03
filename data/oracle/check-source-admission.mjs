@@ -246,6 +246,23 @@ for (const write of [false,true]) for (const index of [-61n,67n]) {
   assert.deepEqual(data.slice(code,code+8),originalBytes);
   put(base+384,0x400000n); assert.equal(query(),write ? 1n : 0n);
 }
+// POP is an ordered stack read then destination write, not a single RMW.
+// The write must fence its exact code owner even when bytes are unchanged.
+for (const [rank,address] of [0x400000n,0x400000n,0x400080n].entries()) {
+  put(leaf,0x8067n); put(leaf+8,0x9067n);
+  data.set([0x8f,0x07,0x90,0x90,0x90,0x90,0x90,0x90],code);
+  const oldBytes = data.slice(code,code+8), stackAt = base+view.getUint32(directory+5*32+8,true)+256;
+  data.set(rank === 1 ? new Uint8Array(8).fill(0x90) : oldBytes,stackAt);
+  put(base+32,0x401100n); put(base+56,address); put(base+384,0x400000n); put(base+392,2n);
+  assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
+  assert.equal(query(),1n); await publish(); assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  const beforeStack = data.slice(stackAt,stackAt+8);
+  assert.equal(vm.vm_run(port,9n,1),5n); assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n);
+  assert.equal(view.getBigUint64(base+32,true),0x401108n); assert.equal(view.getBigUint64(base+384,true),0x400002n);
+  assert.equal(view.getBigUint64(base+392,true),2n); assert.deepEqual(data.slice(stackAt,stackAt+8),beforeStack);
+  assert.deepEqual(data.slice(code+Number(address-0x400000n),code+Number(address-0x400000n)+8),beforeStack);
+  put(base+384,0x400000n); assert.equal(query(),rank === 2 ? 0n : 1n);
+}
 for (let i = 0; i < vm.vm_source_capacity(); ++i) table.set(firstSlot+i,null);
 cc.compiler_close(); vm.vm_close();
-console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK, SETcc truth values and signed BT/BTS source aliases, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);
+console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK, SETcc truth values, signed BT/BTS and ordered POP source aliases, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);

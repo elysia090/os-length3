@@ -519,6 +519,29 @@ These are bus transfer checks, not full instruction flags/exception proof or
 Linux boot. [Derivation and limitations](../../src/v2/vm/check/browser/evidence/2026-10-03-rom.md)
 record the actual browser's next memory POP refusal.
 
+### Ordered POP stack read and memory destination
+
+In a fresh scratch directory, with the built native C compiler:
+
+```sh
+make -C src/v2/wasm-compiler build/pop-memory-check
+mkdir SCRATCH
+src/v2/wasm-compiler/build/pop-memory-check SCRATCH
+node data/oracle/check-pop-memory.mjs VM.WASM COMPILER.WASM SCRATCH
+node data/oracle/check-source-admission.mjs VM.WASM COMPILER.WASM
+```
+
+`pop-memory-check SCRATCH --observe` obtains native-only receipts before lowering exists.
+The new test is also part of normal `make check`. Native and actual C-MMU
+checks compare the post-increment destination, separate 64-bit stack address,
+fault priority, complete CPU/payload, retries and RF. The high test stack is
+in a mapping disjoint from ASan's shadow; sanitizer coverage is explicitly
+scoped in [the evidence](../../src/v2/vm/check/browser/evidence/2026-10-03-pop-memory.md).
+Regenerate CALL receipts with the current `call-check NEW-DIRECTORY` before
+running `check-call.mjs`: old emitted modules predate successful RF clearing.
+The fresh driver compares both fault-time preservation and successful clearing,
+never unconditionally refuses RF. None of these component passes is Linux boot.
+
 This division avoids rebuilding QEMU while preserving the final route:
 
 ```text

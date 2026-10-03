@@ -167,9 +167,10 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
 
 static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
 {
-    /* A CALL's target read and stack write are ordered scalar transactions,
+    /* CALL target/stack and POP stack/destination are ordered transfers,
      * not an RMW reservation on a single memory operand. */
-    if (plan->repeat_cut || (plan->indirect_cut && report->memory_bytes)) return 1;
+    if (plan->repeat_cut || (report->memory_bytes && (plan->indirect_cut
+            || report->boundary_operation == PL_X86_OPERATION_POP))) return 1;
     if (plan->system_cut == CUT_SYSTEM_MSR) return 8;
     if (plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN) return 7;
     if (plan->system_cut == CUT_SYSTEM_CONTROL_WRITE) return 6;

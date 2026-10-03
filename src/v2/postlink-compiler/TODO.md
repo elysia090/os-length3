@@ -271,17 +271,25 @@ Next, in order:
    cases and 17 independent QEMU ROM-bus rows match. Full product checks,
    all C VM core ASan/UBSan and 20 source-owner regressions pass. Unassigned
    A0000/BF000/out-of-RAM supply still refuses, without fabricated pages/#PF.
-   Latest real browser: 130,560,760 retired / 65,228,266 admissions; eight #PFs
+   Previous real browser: 130,560,760 retired / 65,228,266 admissions; eight #PFs
    and six #GPs enter Linux handlers, unchanged complete decompression output.
-   Next compiler refusal is `0xffffffff81033a58`, `8f 04 24` (POP [RSP]).
-   Derive general memory POP post-increment address and read/store fault
-   priority, make native fault witnesses red, then lower through common C-MMU.
+   Its next compiler refusal was `0xffffffff81033a58`, `8f 04 24` (POP [RSP]).
+   Common memory POP is now closed with ordered read/store SSA, post-increment
+   destination and native/C-MMU fault, alias, retry and RF witnesses. Full checks,
+   selected sanitizers, 801 cold emissions and 23 source-owner emissions pass.
+   Actual browser reaches 130,560,767 retired / 65,228,273 admissions, unchanged
+   decompression, delivery and residency. Next actual refusal: IN AL,0x61
+   (`e4 61`) at 0xffffffff810338c5, followed by OUT 0x61,AL. Close general IN/OUT
+   through the C device ABI and a consistent PIT/TSC clock/event owner; the
+   fixed kernel's tsc.c calibration sequence supplies the use case, not a
+   kernel-coordinate shortcut or constant/precomputed calibration result.
    The old linked System.map is not the optimized address authority.
    Keep the CPU profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (53.3 s), VM execution (31.9 s) and source/MMU admission
-   (21.0 s) exceed cold construction (9.3 s) in the latest observation. Analyze exact
+   Engine replacement (54.8 s), VM execution (47.8 s) and source/MMU admission
+   (29.3 s) exceed cold construction (9.3 s) in the latest uncontrolled
+   observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Preserve demand-only crossing
@@ -307,7 +315,7 @@ page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-rom.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-pop-memory.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

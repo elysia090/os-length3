@@ -19,7 +19,7 @@ const port = base + 2048, segments = base + 1408, codeView = base + 2112;
 const code = base + 28672, ram = base + 32768, ramPte = base + 24576 + 320 * 8;
 const entry = 0x400000n, start = 0x12340000n, stride = 44 * 8;
 const slot = vm.__indirect_function_table.grow(1);
-let comparisons = 0, faults = 0, retainedStores = 0, parity = 0, refusals = 0, boundaries = 0;
+let comparisons = 0, faults = 0, retainedStores = 0, parity = 0, refusals = 0, boundaries = 0, rf = 0;
 const u64 = (record, rank) => record.readBigUInt64LE(rank * 8);
 function offset(address) {
   if (address >= entry && address <= entry + 4096n - 8n) return code + Number(address - entry);
@@ -102,12 +102,18 @@ try {
         ++faults; if (vector === 13n) ++retainedStores;
       }
       ++comparisons;
+      reset(source,meta.sourceBytes,record);
+      view.setBigUint64(base+392,u64(record,16)|0x10000n,true);
+      const rfExpected = Buffer.from(expected);
+      if (vector) rfExpected.writeBigUInt64LE(u64(record,16)|0x10000n,392);
+      assert.equal(cut(base,port),vector ? vector<<3n|3n : 1n);
+      assert(data.subarray(base,base+1256).equals(rfExpected)); assert(data.subarray(code,ram+8192).equals(bytes)); ++rf;
     }
     const record = native.subarray(0, stride);
-    for (const failure of ['TF','RF','AC','alias','wrap','stale']) {
+    for (const failure of ['TF','AC','alias','wrap','stale']) {
       reset(source, meta.sourceBytes, record);
-      if (failure === 'TF' || failure === 'RF' || failure === 'AC')
-        view.setBigUint64(base + 392, 0x202n | ({TF:256n, RF:65536n, AC:262144n}[failure]), true);
+      if (failure === 'TF' || failure === 'AC')
+        view.setBigUint64(base + 392, 0x202n | ({TF:256n, AC:262144n}[failure]), true);
       if (failure === 'stale') view.setBigUint64(port, 8n, true);
       const before = cpu(), bytes = payload();
       assert.equal(failure === 'stale' ? vm.vm_run(port, 9n, 1)
@@ -129,4 +135,4 @@ try {
     }
   }
 } finally { vm.__indirect_function_table.set(slot, null); vm.vm_close(); cc.compiler_close(); }
-console.log(`Indirect CALL: green (${parity} native/cold identical modules; ${comparisons} actual x86 CPU/stack cases, ${faults} exception frames, ${retainedStores} #GP-retained stores, ${refusals} refusals, ${boundaries} fetch/residency cases; NOT exception delivery/Linux boot)`);
+console.log(`Indirect CALL: green (${parity} native/cold identical modules; ${comparisons} actual x86 CPU/stack cases, ${faults} exception frames, ${retainedStores} #GP-retained stores, ${refusals} refusals, ${boundaries} fetch/residency cases, ${rf} RF checks; NOT exception delivery/Linux boot)`);
