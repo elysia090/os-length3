@@ -6,7 +6,8 @@ const [providerFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-msr.mjs VM.WASM CODE-CUT-DIRECTORY');
 const provider = await WebAssembly.compile(await readFile(providerFile));
 assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
-const keys = [0xc0000080,0xc0000100,0xc0000101,0xc0000102,0,0xffffffff,0x1234];
+const keys = [0xc0000080,0xc0000100,0xc0000101,0xc0000102,
+  0xc0000081,0xc0000082,0xc0000083,0xc0000084,0,0xffffffff,0x1234];
 const values = Array.from({length:64},(_,bit) => 1n << BigInt(bit));
 values.push(0n,1n,0x7fffffffffffn,0x800000000000n,0xffff7fffffffffffn,0xffff800000000000n,0xffffffffffffffffn,
   0x100n,0x500n,0x900n,0xd01n);
@@ -55,16 +56,27 @@ for (let rank = 0; rank < 3; ++rank) {
     if (rank !== 0 && value !== 0n) continue; // READ/SWAP have no value operand.
     if (key === keys[0] && value !== 0n) value |= 0x100n;
     reset(cpl,key,value);
-    const unknown = !keys.slice(0,4).includes(key);
+    const unknown = !keys.slice(0,8).includes(key);
     const invalid = cpl !== 0 || (rank !== 2 && unknown) || (rank === 0 &&
-      (key === keys[0] ? !!(value & ~0xd01n) || !(value & 0x100n) : !canonical(value)));
+      (key === keys[0] ? !!(value & ~0xd01n) || !(value & 0x100n)
+        : key === keys[4] ? !!(value&0xffffffffn) : key === keys[6] ? false
+        : key === keys[7] ? !!(value>>32n) : !canonical(value)));
     const expected = Buffer.from(bytes.subarray(state,state+1256));
     const hidden = Buffer.from(bytes.subarray(segments,segments+136));
     if (!invalid) {
       if (rank === 0) {
         if (key === keys[0]) expected.writeBigUInt64LE((value & ~0x400n) | 0x400n,424);
         else if (key === keys[1] || key === keys[2]) hidden.writeBigUInt64LE(value,key === keys[1] ? 72 : 88);
-        else { expected.writeUInt32LE(1,608); expected.writeBigUInt64LE(BigInt(key),616); expected.writeBigUInt64LE(value,872); }
+        else if (key===keys[3]) { expected.writeUInt32LE(1,608); expected.writeBigUInt64LE(BigInt(key),616); expected.writeBigUInt64LE(value,872); }
+        else {
+          const owner=key-0xc0000081+2;
+          expected.writeUInt32LE(owner+1,608);
+          for (let i=0;i<=owner;++i) {
+            expected.writeBigUInt64LE(BigInt(i===0 ? 0xc0000102 : i===1 ? 0x1a0 : 0xc0000081+i-2),616+i*8);
+            expected.writeBigUInt64LE(i===1 ? 0x1801n : 0n,872+i*8);
+          }
+          expected.writeBigUInt64LE(value,872+owner*8);
+        }
       } else if (rank === 1) {
         const read = key === keys[0] ? 0x500n : key === keys[1] ? 0x123456n : key === keys[2] ? 0xffff800012340000n : 0n;
         expected.writeBigUInt64LE(read & 0xffffffffn,0); expected.writeBigUInt64LE(read >> 32n,16);
@@ -94,7 +106,7 @@ for (let rank = 0; rank < 3; ++rank) {
   assert.equal(cut(state,port),5n); assert.deepEqual(bytes.subarray(state,state+4096),before);
   reset(0,keys[2],0n); assert.equal(vm.vm_reserve(port,entry,8,3),0n);
   assert.equal(vm.vm_msr(port,0,0xffffffff,0n),107n); assert.equal(vm.vm_commit(port,0n),6n);
-  if (rank !== 2) for (const key of [0x10,0xc0000081,0xc0000082,0xc0000083,0xc0000084]) {
+  if (rank !== 2) for (const key of [0x10]) {
     reset(0,key,0n); const before = Buffer.from(bytes.subarray(state,state+4096));
     assert.equal(cut(state,port),6n); assert.deepEqual(bytes.subarray(state,state+4096),before);
     assert.equal(view.getUint32(port+24,true),0,'known but unimplemented is not an invented exception');

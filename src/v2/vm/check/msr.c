@@ -84,13 +84,78 @@ int main(void)
         }
         EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
     }
-    const pl_u32 pending[] = {MACHINE_MSR_TSC,MACHINE_MSR_STAR,MACHINE_MSR_LSTAR,
-        MACHINE_MSR_CSTAR,MACHINE_MSR_SYSCALL_MASK};
+    const pl_u32 pending[] = {MACHINE_MSR_TSC};
     for (pl_u32 k=0u;k<sizeof pending/sizeof pending[0];++k) for (pl_u32 op=0u;op<2u;++op) {
         reset(0u); machine_state before=state; machine_segments hidden=segments;
         EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,op,pending[k],0u) == MACHINE_RESULT_ENTRY_MAP);
         EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
         EXPECT(!get(24u));
+    }
+    /* Intel syscall configuration is four distinct value contracts. LSTAR
+     * must be canonical; unused Intel CSTAR is not an address access. STAR
+     * low 32 and FMASK high 32 are reserved. SCE does not gate MSR access. */
+    const pl_u32 syscall_keys[]={MACHINE_MSR_STAR,MACHINE_MSR_LSTAR,
+        MACHINE_MSR_CSTAR,MACHINE_MSR_SYSCALL_MASK};
+    for (pl_u32 cpl=0u;cpl<4u;++cpl) for (pl_u32 k=0u;k<4u;++k)
+    for (pl_u32 n=0u;n<71u;++n) {
+        reset(cpl); state.efer|=(n&1u);
+        for (pl_u32 i=0u;i<6u;++i) { state.msr_keys[i]=~0ull; state.msr_values[i]=0xa5a5a5a5a5a5a5a5ull; }
+        pl_u64 value=n<64u ? 1ull<<n : boundaries[n-64u];
+        int invalid=cpl || (k==0u ? !!(value&0xffffffffu)
+            : k==1u ? !(value>>47u==0u || value>>47u==0x1ffffu)
+            : k==3u ? !!(value>>32u) : 0);
+        machine_state wanted=state; machine_segments hidden=segments;
+        EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,syscall_keys[k],value)==(invalid ? 107u : 0u));
+        if (!invalid) {
+            wanted.msr_count=k+3u; wanted.msr_keys[0]=MACHINE_MSR_KERNEL_GS_BASE;
+            wanted.msr_values[0]=0u; wanted.msr_keys[1]=MACHINE_MSR_MISC_ENABLE;
+            wanted.msr_values[1]=0x1801u;
+            for (pl_u32 i=2u;i<k+3u;++i) { wanted.msr_keys[i]=syscall_keys[i-2u]; wanted.msr_values[i]=0u; }
+            wanted.msr_values[k+2u]=value;
+            EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,0u,syscall_keys[k],0u));
+            EXPECT(get(8u)==value);
+        } else EXPECT(get(16u)==state.rip && get(24u)==13u);
+        EXPECT(!memcmp(&wanted,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden)); ++cases;
+    }
+    /* Creating/reset-reading one rank never drops a later live value. */
+    reset(0u);
+    for (pl_u32 k=0u;k<4u;++k) {
+        machine_state before_read=state;
+        EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,0u,syscall_keys[k],0u));
+        EXPECT(!get(8u) && !memcmp(&state,&before_read,sizeof state));
+    }
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_SYSCALL_MASK,0x257fd5u));
+    EXPECT(state.msr_count==6u);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_STAR,0x0023001000000000ull));
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_MISC_ENABLE,0x401800u));
+    EXPECT(state.msr_count==6u && state.msr_values[5]==0x257fd5u && state.msr_values[2]==0x0023001000000000ull);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,2u,0u,0u));
+    EXPECT(state.msr_count==6u && state.msr_values[1]==0x401800u && state.msr_values[5]==0x257fd5u);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,0u,MACHINE_MSR_MISC_ENABLE,0u));
+    EXPECT(get(8u)==0x401800u);
+    EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_MISC_ENABLE,0x400001801ull));
+    {
+        machine_state saved=state;
+        EXPECT(state.msr_count==6u);
+        EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_EFER,0xd00u)==107u);
+        EXPECT(!memcmp(&saved,&state,sizeof state));
+        EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,0u,MACHINE_MSR_MISC_ENABLE,0u));
+        EXPECT(get(8u)==0x400001801ull);
+    }
+    for (pl_u32 bad=0u;bad<7u;++bad) {
+        reset(0u); state.msr_count=6u;
+        for (pl_u32 i=0u;i<6u;++i) {
+            state.msr_keys[i]=i==0u ? MACHINE_MSR_KERNEL_GS_BASE
+                : i==1u ? MACHINE_MSR_MISC_ENABLE : syscall_keys[i-2u];
+            state.msr_values[i]=i==1u ? 0x1801u : 0u;
+        }
+        if (bad<4u) state.msr_keys[2u+bad]=0u;
+        if (bad==4u) state.msr_values[2]=1u;
+        if (bad==5u) state.msr_values[3]=1ull<<47u;
+        if (bad==6u) state.msr_values[5]=1ull<<32u;
+        machine_state saved=state;
+        EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,0u,MACHINE_MSR_STAR,0u)==6u);
+        EXPECT(!memcmp(&saved,&state,sizeof state)); ++cases;
     }
     /* The profile exposes fast strings and NX, but no PMU/BTS/PEBS. The
      * latter unavailable indicators are read-only, not arbitrary zero MSRs. */

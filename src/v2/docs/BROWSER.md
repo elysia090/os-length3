@@ -1094,6 +1094,39 @@ unmet. Engine residency is bounded to 64 modules / 20,461 bytes, but over
 Cumulative emitted/copied bytes are not RSS or delivery size. Timing and
 retirement differences are not a controlled speedup or boot percentage.
 
+## Syscall MSR ownership — 2026-10-04
+
+[The syscall-register evidence](../vm/check/browser/evidence/2026-10-04-syscall-msr.md)
+closes the prior STAR stop through the existing C `machine.msr` boundary.
+STAR/LSTAR/CSTAR/FMASK have distinct reserved/address laws; the six-rank
+prefix shares its invariant with generated CPUID. Reads do not materialize
+absent ranks, later live ranks survive MISC/SWAPGS updates, and unknown or
+corrupt banks cannot become reset-zero dictionaries. The fixed profile and
+Linux authority are unchanged. Syscall execution itself remains open.
+
+Tests were red first. All 2,388 C / 3,513 C-Wasm models, 60,032 CPUID CPU
+comparisons / 60,046 refusals, current 622 cold emissions, full checks and
+VM-core / selected full-lowering sanitizer checks pass. The actual system
+oracle has 288 unique rows: 194 match, and 94 explicitly verified differences
+are QEMU accepting Intel-reserved/noncanonical inputs. Those faults remain
+Intel models, not physical CPU observations. The oracle's partial first
+capture is invalid; masked PIC and explicit #GP capture produce the full grid.
+The previous CALL reference intermittency is not claimed resolved.
+
+Fresh actual browser passes STAR and reaches 136,211,240 retired /
+68,767,197 admissions. Next is compiler GRAMMAR (-102) on MOV DR7,RAX,
+`0f 23 f8`, at `0xffffffff8103b125`; the optimized ELF source independently
+matches. Close that common debug-register boundary without fixed guest DR
+values, skipped operations or ignored debug faults. The full decompressed
+output/native bundle hashes and human UI remain unchanged.
+
+Six #PF and ten #GP events enter Linux's own handlers. Linux/PID 1/shell,
+complete development/storage/network acceptance and cold shell 3 seconds
+remain unmet. Delivery is still 49 ranges / 3,154,432 fetched bytes; engine
+residency is 64 modules / 20,390 bytes but over 1.2 million compilations and
+zero reported reuse. Cumulative copies/timing/retirements do not establish
+RSS, download reduction, controlled speedup or boot completion percentage.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

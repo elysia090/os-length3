@@ -347,10 +347,21 @@ Next, in order:
    68,766,303 admissions and next stops on WRMSR IA32_STAR (0xc0000081) at
    0xffffffff8103adf2. This is C ENTRY_MAP (6), not a compiler refusal or guest
    #GP; the displayed port fault fields are stale from an earlier exception.
-   Close STAR/LSTAR/CSTAR/SYSCALL_MASK through the existing fixed-rank MSR owner
-   and common generated cuts. Keep syscall/TSS/IST execution separately open;
-   no fixed Linux cache, guessed fault, skipped instruction or profile expansion.
-   See [current evidence](../vm/check/browser/evidence/2026-10-04-system-segments.md).
+   STAR/LSTAR/CSTAR/SYSCALL_MASK are now closed through the same C MSR owner,
+   with one six-rank prefix and consistent generated CPUID resume validation.
+   New tests were red first (957 assertions); 2,388 C / 3,513 C-Wasm models,
+   60,032 CPUID CPU comparisons / 60,046 refusals and 622 cold emissions pass.
+   The 288-row actual system oracle matches 194 rows and explicitly retains
+   94 QEMU/Intel reserved/canonical differences; this is not hardware fault
+   proof. Full checks and VM-core / selected full-lowering sanitizers pass.
+   Actual browser reaches 136,211,240 retired / 68,767,197 admissions and next
+   refuses MOV DR7,RAX (`0f 23 f8`) at 0xffffffff8103b125, RAX 0x400. This is
+   compiler GRAMMAR (-102); the decoder already types the debug-register
+   family. Close the common read/write debug boundary and precise privilege,
+   reserved/alias/GD fault behavior with system-oracle reds. Do not publish
+   fixed Linux DR state or ignore debug faults. Syscall/TSS/IST execution
+   remains separately open; no skipped instruction or profile expansion.
+   See [current evidence](../vm/check/browser/evidence/2026-10-04-syscall-msr.md).
    Do not treat the
    bounded 128/64 divider as a global work/span-minimum proof. Memory division
    is now compiled through the same arithmetic after a C read. Boot/PID 1/shell remain unmet.

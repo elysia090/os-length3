@@ -32,9 +32,7 @@ machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,
     pl_u8 *port = physical->bytes + port_offset;
     if (vm_memory_load(port,8u) != physical->generation) return MACHINE_RESULT_STALE_GENERATION;
     if (state->system[MACHINE_SYSTEM_CS] & 3u) return gp(port,state);
-    if (operation != MACHINE_MSR_SWAP_GS && (key == MACHINE_MSR_TSC
-            || key == MACHINE_MSR_STAR || key == MACHINE_MSR_LSTAR
-            || key == MACHINE_MSR_CSTAR || key == MACHINE_MSR_SYSCALL_MASK))
+    if (operation != MACHINE_MSR_SWAP_GS && key == MACHINE_MSR_TSC)
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 *destination;
     if (operation == MACHINE_MSR_SWAP_GS) {
@@ -45,16 +43,18 @@ machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,
         segments->cache[MACHINE_SEGMENT_GS].base = inactive;
         return 0u;
     }
-    if (key == MACHINE_MSR_EFER) destination = &state->efer;
+    pl_u32 rank=MACHINE_MSR_BANK_COUNT;
+    if (key==MACHINE_MSR_KERNEL_GS_BASE) rank=0u;
+    else if (key==MACHINE_MSR_MISC_ENABLE) rank=1u;
+    else if (key>=MACHINE_MSR_STAR && key<=MACHINE_MSR_SYSCALL_MASK) rank=key-MACHINE_MSR_STAR+2u;
+    if (rank<MACHINE_MSR_BANK_COUNT) destination=&state->msr_values[rank];
+    else if (key == MACHINE_MSR_EFER) destination = &state->efer;
     else if (key == MACHINE_MSR_FS_BASE) destination = &segments->cache[MACHINE_SEGMENT_FS].base;
     else if (key == MACHINE_MSR_GS_BASE) destination = &segments->cache[MACHINE_SEGMENT_GS].base;
-    else if (key == MACHINE_MSR_KERNEL_GS_BASE) destination = &state->msr_values[0];
-    else if (key == MACHINE_MSR_MISC_ENABLE) destination = &state->msr_values[1];
     else return gp(port,state);
     if (operation == MACHINE_MSR_READ) {
         vm_memory_store(port + offsetof(machine_memory_port,value),
-            key == MACHINE_MSR_MISC_ENABLE ? machine_misc_enable(state)
-                : key == MACHINE_MSR_KERNEL_GS_BASE && !state->msr_count ? 0u : *destination,8u);
+            rank<MACHINE_MSR_BANK_COUNT && rank>=state->msr_count ? machine_msr_rank_reset(rank) : *destination,8u);
         return 0u;
     }
     if (key == MACHINE_MSR_EFER) {
@@ -66,14 +66,12 @@ machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,
         if ((value & MACHINE_MISC_READ_ONLY) != MACHINE_MISC_READ_ONLY
                 || ((value & MACHINE_MISC_XD_DISABLE) && (state->efer & 0x800u)))
             return MACHINE_RESULT_ENTRY_MAP;
-    } else if (!canonical(value)) return gp(port,state);
-    if (key == MACHINE_MSR_KERNEL_GS_BASE) {
-        state->msr_keys[0] = key; if (!state->msr_count) state->msr_count = 1u;
-    } else if (key == MACHINE_MSR_MISC_ENABLE) {
-        if (!state->msr_count) {
-            state->msr_keys[0] = MACHINE_MSR_KERNEL_GS_BASE; state->msr_values[0] = 0u;
-        }
-        state->msr_keys[1] = key; state->msr_count = 2u;
+    } else if (rank<MACHINE_MSR_BANK_COUNT
+            ? !machine_msr_rank_value_valid(rank,value) : !canonical(value)) return gp(port,state);
+    if (rank<MACHINE_MSR_BANK_COUNT) while (state->msr_count<=rank) {
+        pl_u32 next=state->msr_count;
+        state->msr_keys[next]=machine_msr_rank_key(next);
+        state->msr_values[next]=machine_msr_rank_reset(next); ++state->msr_count;
     }
     *destination = value;
     return 0u;

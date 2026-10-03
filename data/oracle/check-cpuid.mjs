@@ -62,6 +62,14 @@ try {
       view.setBigUint64(base + 872,0xffff800012340000n,true);
       view.setBigUint64(base + 880,0x1800n|BigInt(controls & 1)
         | (controls & 2 ? 1n << 22n : 0n) | (controls & 4 ? 1n << 34n : 0n),true);
+      if (sample===3) {
+        const count=3+(leaf&3); view.setUint32(base+608,count,true);
+        const values=[0x0023001000000000n,0xffff800012340000n,0x800000000000n,0x257fd5n];
+        for (let i=2;i<count;++i) {
+          view.setBigUint64(base+616+i*8,BigInt(0xc0000081+i-2),true);
+          view.setBigUint64(base+872+i*8,values[i-2],true);
+        }
+      }
     } else if (sample & 2) {
       view.setUint32(base + 608,1,true); view.setBigUint64(base + 616,0xc0000102n,true);
       view.setBigUint64(base + 872,0xffff800012340000n,true);
@@ -118,6 +126,23 @@ try {
     }
     const before = Buffer.from(data.subarray(base,base + 1256));
     assert.equal(cut(base,0),6n,corruption); assert(data.subarray(base,base + 1256).equals(before)); ++rejected;
+  }
+  // The new syscall ranks must have the same resume invariant in generated
+  // CPUID and the C MSR owner. CSTAR's unused full-width value is admissible.
+  for (const corruption of ['owner2','owner3','owner4','owner5','STAR','LSTAR','FMASK']) {
+    view.setBigUint64(base+392,0x202n,true); view.setBigUint64(base+424,0x500n,true);
+    view.setUint32(base+608,6,true);
+    for (let i=0;i<6;++i) {
+      view.setBigUint64(base+616+i*8,BigInt(i===0 ? 0xc0000102 : i===1 ? 0x1a0 : 0xc0000081+i-2),true);
+      view.setBigUint64(base+872+i*8,i===1 ? 0x1801n : 0n,true);
+    }
+    if (corruption.startsWith('owner')) view.setBigUint64(base+616+Number(corruption[5])*8,0n,true);
+    if (corruption==='STAR') view.setBigUint64(base+888,1n,true);
+    if (corruption==='LSTAR') view.setBigUint64(base+896,1n<<47n,true);
+    if (corruption==='FMASK') view.setBigUint64(base+912,1n<<32n,true);
+    const before=Buffer.from(data.subarray(base,base+1256));
+    assert.equal(cut(base,0),6n,corruption); assert(data.subarray(base,base+1256).equals(before));
+    ++rejected;
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); }
 console.log(`Fixed-profile CPUID: green (${comparisons} complete CPU comparisons direct+C dispatcher including RF retirement, ${rejected} TF/bank refusals; NOT host CPUID/hardware privileged oracle/Linux boot)`);

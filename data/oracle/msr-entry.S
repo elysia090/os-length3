@@ -8,6 +8,9 @@
 .global _start
 _start:
     cli
+    mov $0xff,%al
+    out %al,$0x21
+    out %al,$0xa1
     lgdt gdt_pointer
     mov $0x10, %ax
     mov %ax, %ds
@@ -39,6 +42,20 @@ long_start:
     xor %r12d, %r12d
 .ifdef MISC_CASES
     jmp misc_loop
+.endif
+.ifdef SYSCALL_CASES
+    lea syscall_gp(%rip),%rsi
+    lea syscall_idt+13*16(%rip),%rdi
+    mov %si,(%rdi)
+    movw $8,2(%rdi)
+    movb $0,4(%rdi)
+    movb $0x8e,5(%rdi)
+    mov %esi,%edx
+    shr $16,%edx
+    mov %dx,6(%rdi)
+    movq $0,8(%rdi)
+    lidt syscall_idt_pointer(%rip)
+    jmp syscall_loop
 .endif
 case_loop:
     mov $record, %edi
@@ -156,12 +173,94 @@ emit:
     cmp $9, %r12d
     jb misc_loop
 .else
+.ifdef SYSCALL_CASES
+    cmp $288, %r12d
+    jb syscall_loop
+.else
     cmp $32, %r12d
     jb case_loop
+.endif
 .endif
     mov $0x10, %eax
     out %eax, $0xf4
     hlt
+.ifdef SYSCALL_CASES
+syscall_loop:
+    mov $record,%edi
+    mov %r12,(%rdi)
+    movq $1,8(%rdi)
+    movq $0,72(%rdi)
+    movq $0,80(%rdi)
+    mov $0xc0000081,%ecx
+    xor %eax,%eax
+    xor %edx,%edx
+    mov $4,%r9d
+syscall_reset:
+    wrmsr
+    inc %ecx
+    dec %r9d
+    jnz syscall_reset
+    mov %r12d,%eax
+    xor %edx,%edx
+    mov $72,%ecx
+    div %ecx
+    lea 0xc0000081(%eax),%ecx
+    mov %rcx,16(%rdi)
+    cmp $64,%edx
+    jae syscall_boundary
+    mov %ecx,%r9d
+    mov %edx,%ecx
+    mov $1,%eax
+    shl %cl,%rax
+    mov %r9d,%ecx
+    jmp syscall_write
+syscall_boundary:
+    sub $64,%edx
+    mov syscall_values(,%edx,8),%rax
+syscall_write:
+    mov %rax,24(%rdi)
+    mov %rax,%rdx
+    shr $32,%rdx
+    movabs $0xdeadbeef00000000,%r8
+    or %r8,%rax
+    or %r8,%rdx
+    or %r8,%rcx
+    pushq $0x202
+    popfq
+    pushfq
+    popq 88(%rdi)
+    wrmsr
+syscall_continue:
+    pushfq
+    popq 64(%rdi)
+    mov $0xc0000081,%ecx
+    lea 32(%rdi),%r10
+    mov $4,%r9d
+syscall_capture:
+    rdmsr
+    shl $32,%rdx
+    or %rdx,%rax
+    mov %rax,(%r10)
+    inc %ecx
+    add $8,%r10
+    dec %r9d
+    jnz syscall_capture
+    cli
+    cld
+    mov $record,%esi
+    mov $12,%r8d
+    jmp print_word
+syscall_gp:
+    push %rax
+    movq $13,record+72(%rip)
+    mov 8(%rsp),%rax
+    mov %rax,record+80(%rip)
+    lea syscall_continue(%rip),%rax
+    mov %rax,16(%rsp)
+    pop %rax
+    add $8,%rsp
+    iretq
+.endif
 .ifdef MISC_CASES
 misc_loop:
     mov $record, %edi
@@ -230,12 +329,18 @@ gdt_pointer:
     .long gdt
 values:
     .quad 0, 1, 0x7fffffffffff, 0xffff800000000000, -1, 0x1234567890
+syscall_values:
+    .quad 0,1,0x7fffffffffff,0x800000000000,0xffff7fffffffffff,0xffff800000000000,-1,0x0023001000000000
+syscall_idt_pointer:
+    .word 4095
+    .long syscall_idt,0
 .section .bss,"aw",@nobits
 .balign 4096
 pml4: .skip 4096
 pdpt: .skip 4096
 pd: .skip 4096
-record: .skip 80
+record: .skip 96
+syscall_idt: .skip 4096
 .balign 16
 stack: .skip 8192
 stack_end:

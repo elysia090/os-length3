@@ -192,7 +192,7 @@ static void cpuid_controls(cut_lowering *cut)
     /* Compile the same fixed owner invariant as machine_msr_bank_valid.
      * No table scan, host operation import or duplicated control state. */
     cut_load(cut,offsetof(machine_state,msr_count)); cut_mask(cut,32u); cut_set(cut,CUT_RIGHT);
-    cut_get(cut,CUT_RIGHT); cut_const(cut,2u); cut_op(cut,0x56u); refuse_cpuid_if(cut);
+    cut_get(cut,CUT_RIGHT); cut_const(cut,MACHINE_MSR_BANK_COUNT); cut_op(cut,0x56u); refuse_cpuid_if(cut);
     cut_get(cut,CUT_RIGHT); cut_op(cut,0x50u); cut_op(cut,0x45u);
     cut_op(cut,0x04u); cut_op(cut,0x40u);
     cut_load(cut,offsetof(machine_state,msr_keys)); cut_const(cut,MACHINE_MSR_KERNEL_GS_BASE);
@@ -202,7 +202,7 @@ static void cpuid_controls(cut_lowering *cut)
     cut_const(cut,16u); cut_op(cut,0x87u); cut_get(cut,CUT_LEFT);
     cut_op(cut,0x52u); refuse_cpuid_if(cut); cut_op(cut,0x0bu);
     cut_const(cut,MACHINE_MISC_RESET); cut_set(cut,CUT_VALUE);
-    cut_get(cut,CUT_RIGHT); cut_const(cut,2u); cut_op(cut,0x51u);
+    cut_get(cut,CUT_RIGHT); cut_const(cut,2u); cut_op(cut,0x5au);
     cut_op(cut,0x04u); cut_op(cut,0x40u);
     cut_load(cut,offsetof(machine_state,msr_keys)+8u); cut_const(cut,MACHINE_MSR_MISC_ENABLE);
     cut_op(cut,0x52u); refuse_cpuid_if(cut);
@@ -216,6 +216,26 @@ static void cpuid_controls(cut_lowering *cut)
     cut_load(cut,offsetof(machine_state,efer)); cut_const(cut,0x800u); cut_op(cut,0x83u);
     cut_op(cut,0x50u); cut_op(cut,0x45u); cut_op(cut,0x71u); refuse_cpuid_if(cut);
     cut_op(cut,0x0bu);
+    /* Emit the same fixed prefix invariant, not a runtime dictionary scan.
+     * Uncounted rank payloads are ignored; CPUID never materializes them. */
+    for (pl_u32 rank=2u;rank<MACHINE_MSR_BANK_COUNT;++rank) {
+        cut_get(cut,CUT_RIGHT); cut_const(cut,rank); cut_op(cut,0x56u);
+        cut_op(cut,0x04u); cut_op(cut,0x40u);
+        cut_load(cut,offsetof(machine_state,msr_keys)+rank*8u);
+        cut_const(cut,machine_msr_rank_key(rank)); cut_op(cut,0x52u); refuse_cpuid_if(cut);
+        if (rank!=4u) {
+            cut_load(cut,offsetof(machine_state,msr_values)+rank*8u);
+            if (rank==3u) {
+                cut_set(cut,CUT_LEFT); cut_get(cut,CUT_LEFT); cut_const(cut,16u); cut_op(cut,0x86u);
+                cut_const(cut,16u); cut_op(cut,0x87u); cut_get(cut,CUT_LEFT); cut_op(cut,0x52u);
+            } else {
+                cut_const(cut,rank==2u ? 0xffffffffu : 0xffffffff00000000ull); cut_op(cut,0x83u);
+                cut_op(cut,0x50u); cut_op(cut,0x45u);
+            }
+            refuse_cpuid_if(cut);
+        }
+        cut_op(cut,0x0bu);
+    }
 }
 static void lower_cpuid(cut_lowering *cut)
 {
