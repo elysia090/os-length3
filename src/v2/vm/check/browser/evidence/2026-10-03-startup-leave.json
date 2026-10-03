@@ -1,0 +1,92 @@
+{
+  "evidenceFormat": "visible-browser-startup-projection-v1",
+  "projection": "From visible #result JSON. Historical traces omitted; retained port fields explicitly labeled non-authoritative for result 6.",
+  "format": "browser-bzimage-startup-v1",
+  "status": "pass",
+  "linuxBoot": "not-achieved",
+  "decompressedOutput": {
+    "comparedBytes": 14622864,
+    "pages": 3571,
+    "sha256": "6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9",
+    "gzipCrc32": 380732796
+  },
+  "linuxEntry": {
+    "entry": "0x14015e4",
+    "instructions": 5,
+    "nextRip": "0x14015f7",
+    "retired": 129057478
+  },
+  "retired": 129057543,
+  "modules": 368692,
+  "admissions": 64417818,
+  "nextRip": "0x102dcc6",
+  "nextGate": {
+    "kind": "execution",
+    "result": "6",
+    "entry": "0x102dcc6",
+    "completed": 0,
+    "sourceRetired": 0,
+    "cpu": {
+      "registers": [
+        "0x6", "0x1a0", "0x780a179", "0x0",
+        "0x1a03f48", "0x1000000", "0x0", "0x1a00000",
+        "0x1a04000", "0x0", "0x1e2d4a0", "0x1e2d440",
+        "0x0", "0x0", "0x0", "0x1000"
+      ],
+      "cr0": "0x80000011",
+      "cr3": "0x1e41000",
+      "cr4": "0x20",
+      "efer": "0x500"
+    },
+    "retainedPortFields": {
+      "authoritativeForThisStop": false,
+      "faultAddress": "0x1800000",
+      "faultVector": 14,
+      "faultError": 2,
+      "requestAddress": "0x1b41000",
+      "requestBytes": 2,
+      "requestAccess": 18
+    }
+  },
+  "exceptionCount": 5,
+  "pageSupplies": 3674,
+  "residentPages": 3687,
+  "memoryBytes": 15728640,
+  "coldMemoryBytes": 1048576,
+  "providerBytes": 29651,
+  "compilerBytes": 414480,
+  "providerSha256": "b51d4d6c924b9b729a938b332e06620f15f32f67c9c3d934747ebd57079a8981",
+  "compilerSha256": "9d798b03f902b2786d0085effe85a7dc88e0c69ce7b2cbc7464ff9d943e64a5e",
+  "sourceReuse": {
+    "hits": 64049126,
+    "misses": 368692,
+    "capacity": 64,
+    "metadataBytes": 6216,
+    "sourcePayloadBytes": 0
+  },
+  "engineReuse": {
+    "compilations": 368692,
+    "hits": 0,
+    "entries": 64,
+    "retainedModuleBytes": 20996
+  },
+  "copiedCodeBytes": 1510162432,
+  "emittedBytes": 129306849,
+  "timingMs": {
+    "cold": 5927.59998691082,
+    "engine": 33538.799998283386,
+    "execution": 29623.500027418137,
+    "supply": 186.89999949932098,
+    "admission": 19236.199986815453
+  },
+  "objectTransport": {
+    "fetches": 47,
+    "fetchedBytes": 3056640,
+    "requestedBytes": 3022848,
+    "cacheHighWaterBytes": 65536
+  },
+  "secureContext": true,
+  "isolated": false,
+  "fixtureIntegrity": "local diagnostic SHA-256; not signed production admission",
+  "nativeBundleSha256": "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc"
+}

@@ -11,6 +11,10 @@ int cut_stack_supported(const pl_x86_instruction *instruction)
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)) return 0;
     pl_u32 count = instruction->visible_operand_count;
     const pl_x86_operand *operand = instruction->operands;
+    if (instruction->operation == PL_X86_OPERATION_LEAVE)
+        return !count && instruction->flow == PL_X86_FLOW_NEXT
+            && instruction->machine_operation == PL_X86_MACHINE_NONE
+            && (instruction->operand_width == 16u || instruction->operand_width == 64u);
     if (instruction->operation == PL_X86_OPERATION_PUSH_FLAGS
             || instruction->operation == PL_X86_OPERATION_POP_FLAGS)
         return !count && (instruction->operand_width == 16u || instruction->operand_width == 64u)
@@ -66,11 +70,18 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     const pl_x86_operand rsp = { .kind = PL_X86_OPERAND_REGISTER, .bits = 64u,
         .value.reg = {PL_X86_REGISTER_GPR, 4u, 64u, 0u} };
+    const pl_x86_operand rbp = { .kind = PL_X86_OPERAND_REGISTER, .bits = 64u,
+        .value.reg = {PL_X86_REGISTER_GPR, 5u, 64u, 0u} };
+    int leave = instruction->operation == PL_X86_OPERATION_LEAVE;
     int push = instruction->operation == PL_X86_OPERATION_PUSH
             || instruction->operation == PL_X86_OPERATION_PUSH_FLAGS
             || instruction->operation == PL_X86_OPERATION_CALL;
     pl_u32 bytes = instruction->operand_width / 8u;
-    cut_read_operand(cut, &rsp, 64u);
+    /* Stack-address size is always 64 in long mode, including 67 LEAVE and
+     * 66 LEAVE. Only the popped BP operand narrows. Do not publish the
+     * temporary RSP=RBP before a successful SS read: faults restart at the
+     * original CPU state, as independently observed in native execution. */
+    cut_read_operand(cut, leave ? &rbp : &rsp, 64u);
     if (push) { cut_const(cut, bytes); cut_op(cut, 0x7du); }
     cut_set(cut, CUT_ADDRESS);
     if (instruction->operation == PL_X86_OPERATION_CALL) cut_const(cut, instruction->fallthrough);
@@ -99,7 +110,12 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_const(cut, increment); cut_op(cut, 0x7cu);
     }
     cut_set(cut, CUT_VALUE); cut_write_register(cut, &rsp.value.reg);
-    if (instruction->operation == PL_X86_OPERATION_POP) {
+    if (leave) {
+        pl_x86_register destination = rbp.value.reg;
+        destination.bits = (pl_u16)instruction->operand_width;
+        cut_get(cut,CUT_LEFT); cut_set(cut,CUT_VALUE);
+        cut_write_register(cut,&destination);
+    } else if (instruction->operation == PL_X86_OPERATION_POP) {
         cut_get(cut, CUT_LEFT); cut_set(cut, CUT_VALUE);
         cut_write_register(cut, &instruction->operands[0].value.reg);
     } else if (instruction->operation == PL_X86_OPERATION_CALL

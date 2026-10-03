@@ -64,6 +64,19 @@ int main(int argc, char **argv)
         for (pl_u32 at = 0u; at < sizeof output; ++at) EXPECT(output[at] == 0xa5u);
     }
     options.maximum_source_instructions = 1024u;
+    /* LEAVE is a possibly faulting read, not a pure MOV RSP,RBP prefix.
+     * No output publication is allowed for a locked encoding. */
+    pages[0] = 0xc9u;
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.boundary == WASM_CUT_MEMORY
+        && report.memory_bytes == 8u && report.read_registers == 32u && report.written_registers == 48u);
+    pages[0] = 0x66u; pages[1] = 0xc9u;
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.memory_bytes == 2u);
+    pages[0] = 0xf0u; pages[1] = 0xc9u; memset(output,0xa5,sizeof output);
+    EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+        == WASM_COMPILER_ERROR_GRAMMAR);
+    for (pl_u32 at = 0u; at < sizeof output; ++at) EXPECT(output[at] == 0xa5u);
     memset(pages, 0x90, sizeof pages); pages[0] = 0xfcu; pages[1] = 0xfau;
     EXPECT(!wasm_compiler_measure_code_cut(&source, 9u, &options, &bytes, &report));
     EXPECT(report.source_bytes == 1u && report.source_instructions == 1u);

@@ -138,11 +138,20 @@ Next, in order:
    250 native/cold byte-identical emissions and selected ASan/UBSan pass.
    Privilege/reserved/noncanonical faults are model-tested, not system-oracle
    proved. Actual browser reaches 129,057,505 retirements / 64,417,792 admissions;
-   next is ordinary LEAVE at 0x1017cf3 (c9), compile -102. Implement common
-   stack semantics and fault ordering, not a coordinate-specific skip.
-   PID 1/shell are still not achieved. See the 2026-10-03-msr evidence.
-   Engine replacement (34.2 s), VM execution (30.1 s) and source/MMU admission
-   (19.9 s) exceed cold construction (5.8 s) in the final repeat. Analyze exact
+   Common 16/64-bit LEAVE now closes the following stop: six native forms /
+   1,536 complete CPU/RAM observations / 490 #SS/#PF frames match direct Wasm
+   and separately C dispatch, including cross-page/protection and preserved
+   state on faults. Full checks, 256 native/cold emissions, selected ASan/UBSan,
+   RF clearing and physical waits pass. No warning, interpreter or skip.
+   Final browser: 129,057,543 retirements / 64,417,818 admissions; next RDMSR
+   at 0x102dcc6, ECX=0x1a0 (Intel MISC_ENABLE), result 6. The initial wrong
+   #GP for this available-but-unimplemented MSR is fixed; TSC/SYSCALL/MISC
+   pending keys refuse explicitly, not an invented guest fault/default zero.
+   Implement the common MISC_ENABLE/CPUID contract and its independent tests.
+   Do not evade it by changing CPU signature or patching the guest path.
+   PID 1/shell are still not achieved. See 2026-10-03-msr/leave evidence.
+   Engine replacement (33.5 s), VM execution (29.6 s) and source/MMU admission
+   (19.2 s) exceed cold construction (5.9 s) in the final repeat. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Add crossing-first-instruction supply while

@@ -67,7 +67,7 @@ int main(void)
     }
     reset(0u); EXPECT(!vm_msr_transfer(&memory,0u,&state,&segments,0u,MACHINE_MSR_KERNEL_GS_BASE,0u));
     EXPECT(!get(8u) && !state.msr_count);
-    const pl_u32 unknown[] = {0u,0xffffffffu,0xc0000103u,0x10u,0x174u};
+    const pl_u32 unknown[] = {0u,0xffffffffu,0xc0000103u,0x1234u,0x174u};
     for (pl_u32 key = 0u; key < 5u; ++key) for (pl_u32 op = 0u; op < 2u; ++op) {
         reset(0u); machine_state before = state; machine_segments hidden = segments;
         EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,op,unknown[key],0u) == 107u);
@@ -83,6 +83,14 @@ int main(void)
             before.msr_count = 1u; before.msr_keys[0] = MACHINE_MSR_KERNEL_GS_BASE;
         }
         EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
+    }
+    const pl_u32 pending[] = {MACHINE_MSR_TSC,MACHINE_MSR_STAR,MACHINE_MSR_LSTAR,
+        MACHINE_MSR_CSTAR,MACHINE_MSR_SYSCALL_MASK,MACHINE_MSR_MISC_ENABLE};
+    for (pl_u32 k=0u;k<sizeof pending/sizeof pending[0];++k) for (pl_u32 op=0u;op<2u;++op) {
+        reset(0u); machine_state before=state; machine_segments hidden=segments;
+        EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,op,pending[k],0u) == MACHINE_RESULT_ENTRY_MAP);
+        EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
+        EXPECT(!get(24u));
     }
     for (pl_u32 bad = 0u; bad < 7u; ++bad) {
         reset(0u);

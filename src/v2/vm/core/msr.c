@@ -34,6 +34,11 @@ machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,
     pl_u8 *port = physical->bytes + port_offset;
     if (vm_memory_load(port,8u) != physical->generation) return MACHINE_RESULT_STALE_GENERATION;
     if (state->system[MACHINE_SYSTEM_CS] & 3u) return gp(port,state);
+    if (operation != MACHINE_MSR_SWAP_GS && (key == MACHINE_MSR_TSC
+            || key == MACHINE_MSR_STAR || key == MACHINE_MSR_LSTAR
+            || key == MACHINE_MSR_CSTAR || key == MACHINE_MSR_SYSCALL_MASK
+            || key == MACHINE_MSR_MISC_ENABLE))
+        return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 *destination;
     if (operation == MACHINE_MSR_SWAP_GS) {
         pl_u64 inactive = state->msr_count ? state->msr_values[0] : 0u;

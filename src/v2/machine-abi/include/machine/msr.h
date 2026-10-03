@@ -13,6 +13,16 @@ enum machine_msr_operation {
 #define MACHINE_MSR_FS_BASE 0xc0000100u
 #define MACHINE_MSR_GS_BASE 0xc0000101u
 #define MACHINE_MSR_KERNEL_GS_BASE 0xc0000102u
+#define MACHINE_MSR_TSC 0x10u
+#define MACHINE_MSR_STAR 0xc0000081u
+#define MACHINE_MSR_LSTAR 0xc0000082u
+#define MACHINE_MSR_CSTAR 0xc0000083u
+#define MACHINE_MSR_SYSCALL_MASK 0xc0000084u
+#define MACHINE_MSR_MISC_ENABLE 0x1a0u
+
+/* TSC/SYSCALL and Intel MISC_ENABLE belong to the declared CPU profile.
+ * Their remaining time/control boundaries are not implemented here: refuse admission,
+ * rather than invent #GP for an architecturally available register. */
 
 /* EFER and active FS/GS bases already have canonical owners. Only the
  * inactive KERNEL_GS_BASE lives in state.msr_{keys,values}. Its absent row

@@ -5,7 +5,10 @@
 
 /* CPL0, 48-bit canonical addresses, EFER SCE/LME/LMA/NXE. LMA is read-only
  * (writes ignored); LME cannot change while paging is enabled. Unavailable
- * keys and reserved values fault before any publication. No guest RAM walk,
+ * keys and reserved values fault before any publication. Advertised TSC and
+ * syscall/Intel MISC_ENABLE MSRs not yet implemented are admission refusals,
+ * not invented #GP.
+ * No guest RAM walk,
  * time/device emulation or opcode decoder belongs to this register boundary.
  * Abort every outstanding reservation, including on refusal or stale input. */
 machine_result vm_msr_transfer(vm_memory *physical, pl_u32 port_offset,

@@ -6,7 +6,7 @@ const [providerFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-msr.mjs VM.WASM CODE-CUT-DIRECTORY');
 const provider = await WebAssembly.compile(await readFile(providerFile));
 assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
-const keys = [0xc0000080,0xc0000100,0xc0000101,0xc0000102,0,0xffffffff,0x10];
+const keys = [0xc0000080,0xc0000100,0xc0000101,0xc0000102,0,0xffffffff,0x1234];
 const values = Array.from({length:64},(_,bit) => 1n << BigInt(bit));
 values.push(0n,1n,0x7fffffffffffn,0x800000000000n,0xffff7fffffffffffn,0xffff800000000000n,0xffffffffffffffffn,
   0x100n,0x500n,0x900n,0xd01n);
@@ -94,6 +94,11 @@ for (let rank = 0; rank < 3; ++rank) {
   assert.equal(cut(state,port),5n); assert.deepEqual(bytes.subarray(state,state+4096),before);
   reset(0,keys[2],0n); assert.equal(vm.vm_reserve(port,entry,8,3),0n);
   assert.equal(vm.vm_msr(port,0,0xffffffff,0n),107n); assert.equal(vm.vm_commit(port,0n),6n);
+  if (rank !== 2) for (const key of [0x10,0xc0000081,0xc0000082,0xc0000083,0xc0000084,0x1a0]) {
+    reset(0,key,0n); const before = Buffer.from(bytes.subarray(state,state+4096));
+    assert.equal(cut(state,port),6n); assert.deepEqual(bytes.subarray(state,state+4096),before);
+    assert.equal(view.getUint32(port+24,true),0,'known but unimplemented is not an invented exception');
+  }
   table.set(slot,null); vm.vm_close();
 }
 console.log(JSON.stringify({format:'c-wasm-msr-model-v1',status:'pass',comparisons,dispatches,
