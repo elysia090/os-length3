@@ -1,0 +1,77 @@
+#include <vm/io.h>
+#include "memory-internal.h"
+#include <stddef.h>
+static machine_result context(vm_memory *physical, pl_u32 port,
+    const machine_state *state, const machine_segments *segments)
+{
+    vm_memory_abort(physical);
+    if (!physical || !physical->bytes || !physical->generation || !state || !segments
+            || (port & 7u) || (pl_u64)port + sizeof(machine_memory_port) > physical->reserved_bytes
+            || segments->version != MACHINE_SEGMENTS_ABI_VERSION || segments->mov_ss_shadow > 1u
+            || !(segments->cache[MACHINE_SEGMENT_CS].attributes & 0x2000u)
+            || (segments->cache[MACHINE_SEGMENT_CS].attributes & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
+            || (state->rflags & 0x20100u) || (state->efer & 0x500u) != 0x500u
+            || (state->efer & ~0xd01ull) || (state->cr0 & 0x80000001u) != 0x80000001u
+            || !(state->cr4 & 32u) || (state->cr4 & ~VM_CPU_CR4_VISIBLE)) return MACHINE_RESULT_ENTRY_MAP;
+    return vm_memory_load(physical->bytes + port,8u) == physical->generation ? 0u : MACHINE_RESULT_STALE_GENERATION;
+}
+static machine_result gp(vm_memory *physical, pl_u32 port, const machine_state *state)
+{
+    pl_u8 *output = physical->bytes + port;
+    vm_memory_store(output + offsetof(machine_memory_port,fault_address),state->rip,8u);
+    vm_memory_store(output + offsetof(machine_memory_port,fault_vector),13u,4u);
+    vm_memory_store(output + offsetof(machine_memory_port,fault_error),0u,4u);
+    return machine_result_make(MACHINE_RESULT_FAULT,13u);
+}
+static machine_result permission(vm_memory *physical, pl_u32 port, const machine_state *state,
+    const machine_segments *segments, pl_u32 coordinate, pl_u32 bytes)
+{
+    pl_u32 cpl = (pl_u32)state->system[MACHINE_SYSTEM_CS] & 3u;
+    if (cpl <= ((state->rflags >> 12u) & 3u)) return 0u;
+    const machine_segment_cache *tr = &segments->cache[MACHINE_SEGMENT_TR];
+    if ((tr->attributes & (MACHINE_SEGMENT_UNUSABLE | 0x90u)) != 0x80u
+            || (tr->attributes & 15u) != 11u) return MACHINE_RESULT_ENTRY_MAP;
+    if (tr->limit < 103u) return gp(physical,port,state);
+    vm_mmu_context supervisor = {state->cr0,state->cr3,state->cr4,state->efer,0u};
+    pl_u8 word[2];
+    if (tr->base > ~0ull - 103u) return gp(physical,port,state);
+    machine_result result = vm_mmu_read_record(physical,port,&supervisor,tr->base + 102u,2u,MACHINE_MEMORY_READ,word);
+    if (result) return result;
+    pl_u32 offset = (pl_u32)vm_memory_load(word,2u) + (coordinate >> 3u);
+    /* x86 reads two bitmap bytes even for an aligned one-byte transfer. */
+    if (offset + 1u > tr->limit || tr->base > ~0ull - offset - 1u) return gp(physical,port,state);
+    result = vm_mmu_read_record(physical,port,&supervisor,tr->base + offset,2u,MACHINE_MEMORY_READ,word);
+    if (result) return result;
+    return ((vm_memory_load(word,2u) >> (coordinate & 7u)) & ((1u << bytes) - 1u))
+        ? gp(physical,port,state) : 0u;
+}
+machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
+    const machine_state *state, const machine_segments *segments,
+    vm_clock *clock, vm_pit *pit, pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
+{
+    machine_result result = context(physical,port,state,segments);
+    if (result) return result;
+    pl_u32 bytes = transfer & 255u, write = (transfer >> 8u) & 1u;
+    if (!clock || !pit || coordinate > 65535u || (transfer & ~0x1ffu)
+            || (bytes != 1u && bytes != 2u && bytes != 4u)) return MACHINE_RESULT_ENTRY_MAP;
+    result = permission(physical,port,state,segments,coordinate,bytes);
+    if (result) return result;
+    pl_u32 byte = write ? (pl_u32)value & 255u : 0u;
+    if (bytes != 1u || !vm_pit_accepts(coordinate,write,byte)) return MACHINE_RESULT_ENTRY_MAP;
+    result = vm_clock_sample(clock,physical,port,state,((pl_u64)transfer << 16u) | coordinate,write ? value : 0u);
+    if (result) return result;
+    if (vm_pit_transfer(pit,clock->now,coordinate,write,&byte)) return MACHINE_RESULT_ENTRY_MAP;
+    if (!write) vm_memory_store(physical->bytes + port + offsetof(machine_memory_port,value),byte,8u);
+    vm_clock_consume(clock); return 0u;
+}
+machine_result vm_time_read(vm_memory *physical, pl_u32 port,
+    const machine_state *state, const machine_segments *segments, vm_clock *clock)
+{
+    machine_result result = context(physical,port,state,segments);
+    if (result) return result;
+    if ((state->cr4 & 4u) && (state->system[MACHINE_SYSTEM_CS] & 3u)) return gp(physical,port,state);
+    result = vm_clock_sample(clock,physical,port,state,0x100000000ull,0u);
+    if (result) return result;
+    vm_memory_store(physical->bytes + port + offsetof(machine_memory_port,value),clock->now,8u);
+    vm_clock_consume(clock); return 0u;
+}

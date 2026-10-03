@@ -277,18 +277,25 @@ Next, in order:
    Common memory POP is now closed with ordered read/store SSA, post-increment
    destination and native/C-MMU fault, alias, retry and RF witnesses. Full checks,
    selected sanitizers, 801 cold emissions and 23 source-owner emissions pass.
-   Actual browser reaches 130,560,767 retired / 65,228,273 admissions, unchanged
-   decompression, delivery and residency. Next actual refusal: IN AL,0x61
-   (`e4 61`) at 0xffffffff810338c5, followed by OUT 0x61,AL. Close general IN/OUT
-   through the C device ABI and a consistent PIT/TSC clock/event owner; the
-   fixed kernel's tsc.c calibration sequence supplies the use case, not a
-   kernel-coordinate shortcut or constant/precomputed calibration result.
+   General scalar IN/OUT and RDTSC now use generated C imports, precise TSS
+   bitmap permission reads and identity-bound clock wait/reply/consume. Binary
+   PIT mode 0 is supported; other modes/BCD/string I/O/undeclared devices and
+   TSC MSR access refuse. The diagnostic samples active C execution time, not
+   source count or compile/delivery stalls; IRQ/RTC/recovery remain incomplete.
+   Full checks, C VM core/selected compiler sanitizers, 827 cold emissions and
+   3,328 actual C-Wasm I/O/time observations pass (model, not hardware oracle).
+   Actual browser reaches 134,155,429 retired / 67,443,593 admissions, 13 clock
+   events and unchanged complete decompression/delivery. This does not prove
+   the selected Linux calibration frequency. Next actual refusal is memory
+   IMUL RAX,[RIP+0x751f64],24 (`48 6b 05 64 1f 75 00 18`) at
+   0xffffffff81419204. Connect existing multiply SSA to the precise C load,
+   with red entrance/native complete CPU+fault comparisons before claiming it.
    The old linked System.map is not the optimized address authority.
    Keep the CPU profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (54.8 s), VM execution (47.8 s) and source/MMU admission
-   (29.3 s) exceed cold construction (9.3 s) in the latest uncontrolled
+   Engine replacement (88.6 s), VM execution (33.9 s) and source/MMU admission
+   (21.8 s) exceed cold construction (15.4 s) in the latest uncontrolled
    observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source

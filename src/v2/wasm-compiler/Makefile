@@ -12,7 +12,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
-	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-repeat.c src/lower-branch.c
+	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-repeat.c src/lower-branch.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
@@ -80,6 +80,11 @@ $(BUILD)/code-cut-check: check/code-cut.c $(BUILD)/libwasm-compiler.a $(PROVIDER
 
 $(BUILD)/invalidate-check: check/invalidate.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+$(BUILD)/io-check: check/io.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+check: $(BUILD)/io-check
 
 $(BUILD)/flags-check: check/flags.c check/native-flags.S | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) check/flags.c check/native-flags.S -o $@
@@ -281,6 +286,7 @@ check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check select
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
 	$(BUILD)/invalidate-check
+	$(BUILD)/io-check
 	$(BUILD)/flags-check
 	bash ../../../data/oracle/check-wasm-cli.sh $(BUILD)/wasm-compiler
 	@! grep -REn '#include <postlink/|machine-artifact|STEP|Pyodide|Python' include src

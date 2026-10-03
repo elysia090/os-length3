@@ -7,6 +7,7 @@
 #include <vm/control.h>
 #include <vm/registers.h>
 #include <vm/msr.h>
+#include <vm/io.h>
 #include <vm/supply.h>
 #include <vm/exception.h>
 #include <vm/source.h>
@@ -25,6 +26,8 @@ static vm_execution execution;
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
 static vm_sources sources;
+static vm_clock clock_owner;
+static vm_pit pit;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result call_entry(void *pointer, pl_u32 slot);
@@ -46,6 +49,7 @@ pl_u32 vm_arena_min(void)
 
 void vm_close(void)
 {
+    vm_clock_close(&clock_owner); vm_pit_reset(&pit);
     vm_sources_open(&sources,0u,vm_slot_min());
     vm_supply_reset(&supply);
     delivery = (vm_fault_delivery){0};
@@ -160,6 +164,7 @@ pl_u32 vm_page_count(void) { return resident.page_count; }
 
 int vm_bind_state(pl_u32 state)
 {
+    vm_clock_abort(&clock_owner);
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
@@ -176,6 +181,7 @@ int vm_bind_state(pl_u32 state)
 
 int vm_bind_segments(pl_u32 segments)
 {
+    vm_clock_abort(&clock_owner);
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
@@ -389,7 +395,34 @@ machine_result vm_commit(pl_u32 port, pl_u64 value)
     if (resident.write_touched) execution.generation = 0u;
     return result;
 }
-void vm_abort(void) { vm_memory_abort(&resident); vm_supply_reset(&supply); }
+void vm_abort(void) { vm_memory_abort(&resident); vm_supply_reset(&supply); vm_clock_abort(&clock_owner); }
+
+machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
+{
+    vm_supply_reset(&supply);
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    resident.write_touched = 0u;
+    machine_result result = vm_io_transfer(&resident,port - arena_base,
+        (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
+        &clock_owner,&pit,coordinate,transfer,value);
+    if (resident.write_touched) execution.generation = 0u;
+    return result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CLOCK)
+        ? result : memory_result(port,result);
+}
+machine_result vm_time(pl_u32 port)
+{
+    vm_supply_reset(&supply);
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    return vm_time_read(&resident,port - arena_base,(const machine_state *)(uintptr_t)state_offset,
+        (const machine_segments *)(uintptr_t)segments_offset,&clock_owner);
+}
+int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanoseconds)
+{
+    if (!private_port(port) || delivery.stage || generation != resident.generation
+            || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) != generation) return -1;
+    return vm_clock_reply(&clock_owner,generation,port - arena_base,
+        (const machine_state *)(uintptr_t)state_offset,ticket,nanoseconds);
+}
 
 machine_result vm_table(pl_u32 port, pl_u64 address, pl_u32 rank, pl_u32 access)
 {

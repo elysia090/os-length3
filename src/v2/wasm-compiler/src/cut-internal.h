@@ -12,7 +12,7 @@ enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
 enum { CUT_SYSTEM_NONE, CUT_SYSTEM_CLI, CUT_SYSTEM_SEGMENT, CUT_SYSTEM_TABLE,
        CUT_SYSTEM_FAR_RETURN, CUT_SYSTEM_CONTROL_READ, CUT_SYSTEM_CONTROL_WRITE,
        CUT_SYSTEM_CPUID, CUT_SYSTEM_INTERRUPT_RETURN, CUT_SYSTEM_MSR, CUT_SYSTEM_DIVIDE,
-       CUT_SYSTEM_SELECTOR_READ, CUT_SYSTEM_INVALIDATE_PAGE };
+       CUT_SYSTEM_SELECTOR_READ, CUT_SYSTEM_INVALIDATE_PAGE, CUT_SYSTEM_IO, CUT_SYSTEM_TIME };
 enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
 typedef struct {
     wasm_writer *writer;
@@ -70,6 +70,8 @@ int cut_repeat_supported(const pl_x86_instruction *instruction);
 void cut_lower_repeat(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_repeat_frontier(cut_lowering *cut);
 int cut_system_supported(const pl_x86_instruction *instruction);
+int cut_io_supported(const pl_x86_instruction *instruction);
+void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_instruction_supported(const pl_x86_instruction *instruction);
 pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction);

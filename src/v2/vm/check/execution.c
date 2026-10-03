@@ -25,7 +25,7 @@ static machine_result call(void *owner, pl_u32 slot)
     if (yielding) {
         if (revoke) execution.generation = 0u;
         return machine_result_make(MACHINE_RESULT_BARRIER,
-            yielding == 1u ? MACHINE_BARRIER_QUANTUM : MACHINE_BARRIER_RESOURCE);
+            yielding == 1u ? MACHINE_BARRIER_QUANTUM : yielding == 3u ? MACHINE_BARRIER_CLOCK : MACHINE_BARRIER_RESOURCE);
     }
     state.rip = slot == 1u ? rows[1].entry : rows[0].entry;
     ++state.retired;
@@ -81,6 +81,13 @@ int main(void)
     reset(); yielding = 2u;
     EXPECT(run(9u,1u) == 2u && execution.continuation.slot == 1u);
     EXPECT(run(9u,1u) == 2u && calls == 2u && fetches == 1u);
+    reset(); yielding = 3u;
+    EXPECT(run(9u,1u) == 18u && calls == 1u && fetches == 1u && !state.retired);
+    EXPECT(run(9u,1u) == 18u && calls == 2u && fetches == 1u && !state.retired);
+    yielding = 0u;
+    EXPECT(run(9u,1u) == 1u && calls == 3u && fetches == 1u && state.retired == 1u);
+    reset(); yielding = 2u;
+    EXPECT(run(9u,1u) == 2u);
     call_fault = 1u;
     EXPECT(run(9u,1u) == 107u && !execution.continuation.slot && !execution.continuation_generation);
     reset(); yielding = 1u;

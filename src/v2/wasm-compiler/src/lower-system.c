@@ -4,6 +4,8 @@
 #include <machine/msr.h>
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    int io = cut_io_supported(instruction);
+    if (io) return io;
     if (cut_divide_supported(instruction)) return CUT_SYSTEM_DIVIDE;
     if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_INVALIDATE_PAGE
@@ -228,6 +230,7 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (cut_io_supported(instruction)) { cut_lower_io(cut,instruction); return; }
     if (cut_divide_supported(instruction)) { cut_lower_divide(cut,instruction); return; }
     if (instruction->machine_operation==PL_X86_MACHINE_READ_SELECTOR) {
         cut_read_operand(cut,&instruction->operands[1],16u); cut_set(cut,CUT_VALUE);

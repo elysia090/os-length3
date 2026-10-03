@@ -39,7 +39,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory:compilerMemory}})).exports;
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
-    table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr}});
+    table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,
+    io:vm.vm_io,time:vm.vm_time}});
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;
   const compilerReport = compilerOutput + 65536;
   let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
@@ -93,6 +94,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let resourceGate;
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
+  let clockEvents = 0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
   let firstRepeatWait;
   let bssInitialState, bssInitialSegments, bssComparedBytes = 0;
@@ -339,10 +341,20 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       const beforeExecution = performance.now();
       result = vm.vm_run(port,generation,1);
       executionMs += performance.now() - beforeExecution;
-      if (result !== 2n && result !== 10n) break;
+      if (result !== 2n && result !== 10n && result !== 18n) break;
       assert.equal(vm.vm_completed(),0); assert.equal(vm.vm_source_retired(),0n);
       assert.equal(rip(),entry); assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
       if (result === 10n) { ++quantumYields; continue; }
+      if (result === 18n) {
+        assert.equal(view.getUint32(port + 40,true),0);
+        assert.equal(view.getUint32(port + 44,true),0x100);
+        // This diagnostic clock advances only by measured C execution time,
+        // excluding asynchronous compilation, delivery and Worker/UI stalls.
+        // No instruction-count clock, guest port model or calibration result.
+        assert.equal(vm.vm_clock_commit(port,generation,view.getBigUint64(port + 32,true),
+          BigInt(Math.round(executionMs * 1000000))),0);
+        ++clockEvents; continue;
+      }
       if (entry === 0x1000281n && !firstRepeatWait) {
         firstRepeatWait = {address:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
           bytes:view.getUint32(port + 40,true),access:view.getUint32(port + 44,true)};
@@ -494,7 +506,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
-      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,repeatComparedBytes,bssComparedBytes,
+      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,
+      clockContract:'sampled active C execution nanoseconds; virtual TSC 1 GHz, PIT 1193182 Hz; compilation/delivery paused',
+      repeatComparedBytes,bssComparedBytes,
       memsetComparedBytes,memsetReturns,
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',

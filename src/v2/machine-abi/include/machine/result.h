@@ -26,6 +26,7 @@ enum machine_result_kind {
 enum machine_barrier_reason {
     MACHINE_BARRIER_RESOURCE = 0u,
     MACHINE_BARRIER_QUANTUM = 1u,
+    MACHINE_BARRIER_CLOCK = 2u,
 };
 #define MACHINE_REPEAT_MAX_ELEMENTS 256u
 

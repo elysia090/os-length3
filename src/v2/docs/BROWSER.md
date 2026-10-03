@@ -917,6 +917,28 @@ and the PIT/TSC clock/device owner are missing. The fixed kernel's calibration
 source is evidence for that contract, not permission to substitute a constant
 read or precomputed result. PID 1/shell and the full goal are still unachieved.
 
+## Scalar I/O and explicit clock — 2026-10-03
+
+[The I/O/clock receipt](../vm/check/browser/evidence/2026-10-03-io-clock.md)
+closes scalar immediate/DX IN/OUT and RDTSC through generated C imports.
+The C-MMU owns TSS I/O permission reads and precise faults. A generation/port/
+RIP/operation-bound clock ticket prevents wait/replay from executing a device
+transition twice. Binary PIT mode 0 is the supported device model; other modes,
+BCD, string I/O, RDTSCP/RDPMC, undeclared devices and TSC MSR access still refuse.
+No guest opcode, constant calibration result or kernel-specific path is used.
+The diagnostic clock samples active C execution, not engine/delivery stalls;
+this is not yet production RTC/interrupt/recovery semantics.
+
+Actual browser: 134,155,429 retired / 67,443,593 admissions, 13 clock events,
+zero manual branch entries and unchanged complete decompression. Eight #PF
+and seven #GP events enter Linux. Next is memory-input IMUL RAX,[RIP+disp],24
+at `0xffffffff81419204`, status -102: connect the existing multiply SSA to the
+precise C load, with independent native fault/value receipts. The selected
+Linux calibration frequency is not established by this receipt. PID 1/shell,
+authenticated production workspace/network use and cold shell 3 seconds remain
+unachieved. Full checks, VM core/selected lowering sanitizers, 827 cold emissions
+and previous memory POP direct/dispatch comparisons pass.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)
