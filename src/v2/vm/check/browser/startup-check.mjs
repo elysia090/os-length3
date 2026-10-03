@@ -18,7 +18,8 @@ const assert = (value,message = 'startup assertion') => { if (!value) throw new 
 assert.equal = (a,b) => assert(a === b,`startup: ${String(a)} != ${String(b)}`);
 assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'startup imports');
 
-export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,{extended = false} = {}) {
+export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
+    {extended = false,onProgress = () => {},decompression} = {}) {
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header'), command = await read('boot.command');
   const kernel = await read('boot.kernel-page'), last = await read('boot.kernel-last-page');
@@ -96,6 +97,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let firstRepeatWait;
   let bssInitialState, bssInitialSegments, bssComparedBytes = 0;
   let memsetInput, memsetComparedBytes = 0, memsetReturns = 0;
+  let decompressedOutput, linuxEntry;
+  const decompressionEntry = decompression ? BigInt(decompression.observationRip) : 0n;
+  const linuxEntryAddress = decompression ? BigInt(decompression.elfEntry) : 0n;
   const trace = [];
   const relocationTrace = [];
   const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
@@ -162,6 +166,38 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     repeatInitialState = data.slice(base,base + stateBytes.length);
     repeatInitialSegments = data.slice(segments,segments + segmentBytes.length);
   }
+  async function observeDecompression(entry) {
+    assert.equal(decompression.format,'shipped-kernel-decompression-observation-v1');
+    assert.equal(decompression.pageBytes,4096);
+    assert.equal(decompression.outputBytes,14622864);
+    assert.equal(decompression.pages.length,Math.ceil(decompression.outputBytes / 4096));
+    assert.equal(vm.vm_code(port,entry,codeView),0n);
+    const instruction = view.getUint32(codeView + 16,true) + Number(entry & 4095n);
+    assert(data.subarray(instruction,instruction + decompression.observationSource.length)
+      .equals(decompression.observationSource),'exact native ELF-header-read witness');
+    const savedState = data.slice(base,base + stateBytes.length);
+    const savedSegments = data.slice(segments,segments + segmentBytes.length);
+    let comparedBytes = 0;
+    for (let rank = 0; rank < decompression.pages.length; ++rank) {
+      const address = BigInt(decompression.outputAddress) + BigInt(rank * 4096);
+      assert.equal(vm.vm_code(port,address,codeView),0n);
+      const offset = view.getUint32(codeView + 16,true);
+      const bytes = Math.min(4096,decompression.outputBytes - rank * 4096);
+      // A bounded independent observation: no whole output reconstruction,
+      // host decompressor, address translation or replacement guest bytes.
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256',data.subarray(offset,offset + bytes)));
+      const hex = Array.from(digest,byte => byte.toString(16).padStart(2,'0')).join('');
+      assert.equal(hex,decompression.pages[rank]); comparedBytes += bytes;
+    }
+    assert(data.subarray(base,base + stateBytes.length).equals(savedState),'decompression observation preserves CPU');
+    assert(data.subarray(segments,segments + segmentBytes.length).equals(savedSegments),'decompression observation preserves caches');
+    decompressedOutput = {entry:`0x${entry.toString(16)}`,comparedBytes,pages:decompression.pages.length,
+      sha256:decompression.outputSha256,gzipCrc32:decompression.gzipCrc32,
+      oracle:'independent gzip CRC/ISIZE verified; exact per-page SHA-256 comparison before ELF PT_LOAD moves',
+      guestCrc:'PREBOOT uses raw inflate; this is independent output validation, not a guest CRC check'};
+    onProgress({format:'browser-bzimage-startup-v1',status:'running',linuxBoot:'not-achieved',retired,admissions,
+      nextRip:`0x${entry.toString(16)}`,decompressedOutput});
+  }
   function relocationObservation() {
     const expected = new Bytes(repeatInitialState);
     expected.writeBigUInt64LE(0n,8); expected.writeBigUInt64LE(0xfffff8n,48);
@@ -185,6 +221,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   }
   async function step(limit) {
     const entry = rip();
+    if (decompression && !decompressedOutput && entry === decompressionEntry) await observeDecompression(entry);
     if (entry === relocated + 0x2e2700n) {
       assert(!memsetInput,'no nested diagnostic memset');
       assert.equal(view.getBigUint64(base + 48,true),0n);
@@ -316,6 +353,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         requestBytes:view.getUint32(port + 40,true),requestAccess:view.getUint32(port + 44,true)};
     assert.equal(vm.vm_completed(),1); assert.equal(done,instructions);
     retired += done; assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
+    if (decompression && !linuxEntry && entry === linuxEntryAddress) {
+      assert(decompressedOutput,'Linux entry must follow independently checked decompression');
+      linuxEntry = {entry:`0x${entry.toString(16)}`,instructions:done,
+        nextRip:`0x${rip().toString(16)}`,retired};
+    }
     if (entry === 0x1000281n) relocationObservation();
     if (entry === relocated + 0x2ded17n) {
       const expected = new Bytes(bssInitialState);
@@ -384,11 +426,22 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     let stopped;
     // Real scalar startup loops can retire far more than a tiny probe quota.
     // These are diagnostic limits, never synthetic execution completion.
-    const maximumAdmissions = extended ? 50000000 : 1000000;
-    const maximumRetired = extended ? 100000000 : 2000000;
+    const maximumAdmissions = extended ? 150000000 : 1000000;
+    const maximumRetired = extended ? 300000000 : 2000000;
+    let reportedRetired = 0;
     while (admissions < maximumAdmissions && retired < maximumRetired) {
       stopped = await step(view.getUint32(segments + 4,true) ? 1 : 1024);
       if (stopped) break;
+      if (extended && retired - reportedRetired >= 10000000) {
+        reportedRetired = retired;
+        // Observation only: no CPU snapshot, guest mutation or restart.
+        onProgress({format:'browser-bzimage-startup-v1',status:'running',linuxBoot:'not-achieved',
+          retired,admissions,nextRip:`0x${rip().toString(16)}`,maximumAdmissions,maximumRetired,
+          outputRegister:`0x${view.getBigUint64(base + 80,true).toString(16)}`,
+          residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
+          sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity},
+          timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs}});
+      }
     }
     if (!stopped) stopped = {kind:'quota',entry:`0x${rip().toString(16)}`,admissions,retired,
       maximumAdmissions,maximumRetired,
@@ -398,6 +451,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert(retired >= 379,'REP really completed, not only accepted');
     assert.equal(repeatComparedBytes,kernelBytes);
     return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
+      decompressedOutput,linuxEntry,
       retired,modules:engines.stats().compilations,admissions,liveSlots:installedSlots.size,manualBranchEntries:0,
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,

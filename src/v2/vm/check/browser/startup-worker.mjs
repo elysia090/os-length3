@@ -22,7 +22,8 @@ self.onmessage = async ({data}) => {
     };
     const transport = diagnosticExtents(manifest.objects,new URL('./generated-startup/',import.meta.url));
     const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'),transport.read,
-      {extended:data?.extended === true});
+      {extended:data?.extended === true,onProgress:progress => self.postMessage(progress),
+        decompression:JSON.parse(new TextDecoder().decode(await read('boot.decompression.json')))});
     self.postMessage({...result,secureContext:self.isSecureContext,isolated:self.crossOriginIsolated,
       fixtureIntegrity:'local diagnostic SHA-256; not signed production admission',
       objectTransport:transport.stats,

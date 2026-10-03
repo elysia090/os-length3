@@ -639,6 +639,35 @@ not an unbounded cache or a decoder in JavaScript. Finish decompression and
 validate its full output before calling Linux entry green. The complete
 development/storage/network goal and cold-shell three seconds remain open.
 
+### Full decompression and actual ELF entry checkpoint
+
+The [Linux-entry evidence](../vm/check/browser/evidence/2026-10-03-linux-entry.md)
+records 129,057,478 source retirements / 64,417,773 admissions in the real
+ordinary-memory browser Worker. All 14,622,864 decompressed bytes / 3,571
+pages match independent gzip output before Linux's own PT_LOAD memmoves.
+Only bounded C-MMU views and diagnostic page digests are observed; no host
+decompressor supplies guest output or skips startup. PREBOOT uses raw inflate,
+so the CRC/ISIZE verification belongs to the independent oracle, not a claim
+that Linux itself checked the gzip trailer. The actual guest then executes
+the shipped ELF entry 0x14015e4 and stops on unsupported WRMSR at 0x14015f7.
+Linux/PID 1/shell and cold shell three seconds remain unmet.
+
+Common two/three-operand register IMUL at 16/32/64 bits closes the preceding
+real ELF-parsing refusal. Defined CF/OF, sign-extended immediates, source/target
+aliases, narrow parents and interior flag consumers match 16,384 actual x86
+cases in direct Wasm and separately the C dispatcher. Undefined flags are
+chosen, not incorrectly compared with hardware's incidental values. No kernel
+coordinate callback or JavaScript guest semantics were introduced.
+
+Default diagnostics remain at 1,000,000 admissions / 2,000,000 retirements.
+`?budget=extended` now permits 150,000,000 / 300,000,000 and 32 MiB maximum
+memory; progress is observational and does not dispose/restart the Worker.
+The current high-water is 15,728,640 bytes / 3,687 resident pages. The 47
+object ranges do not include diagnostic fixture/module/page-hash-list requests
+and are not a production total-transfer or signed-root/AEAD/ECC proof.
+Native archive and human UI bytes are unchanged. Close the common MSR boundary
+next, then demanded kernel/device semantics, PID 1 and full product acceptance.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

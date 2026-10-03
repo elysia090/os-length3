@@ -124,12 +124,18 @@ observations are not cold-shell latency. No native release/human UI changed.
 
 Next, in order:
 
-1. Extended actual browser decompression now reaches 100,000,000 retirements /
-   49,451,059 admissions; four guest #PF handlers return and output R10 reaches
-   0x17be190. The stop is an explicit quota, not boot or complete output/CRC
-   validation. Finish and validate the decompressor, then reach Linux entry.
-   Engine replacement (27.4 s), VM execution (23.1 s) and source/MMU admission
-   (14.9 s) exceed cold construction (4.7 s) in this observation. Analyze exact
+1. Actual browser decompression is now completely observed: all 14,622,864
+   bytes / 3,571 pages match an independent gzip CRC/ISIZE-validated output,
+   before Linux's own PT_LOAD moves. The guest then executes the ELF entry
+   0x14015e4. Common 16/32/64-bit two/three-operand register IMUL closes the
+   preceding real red at 0x1e23d8b; 32 ELF modules / 16,384 actual x86 cases
+   pass in direct Wasm and separately the C dispatcher. Full product checks,
+   selected lowering ASan/UBSan and 98 native/cold byte-identical emissions pass.
+   Next is the actual WRMSR at 0x14015f7 (ECX=0xc0000101, EDX:EAX=0).
+   Implement common MSR/hidden-cache semantics and precise faults, not a
+   kernel-address special case or skip. PID 1/shell are still not achieved.
+   Engine replacement (34.2 s), VM execution (30.1 s) and source/MMU admission
+   (19.9 s) exceed cold construction (5.8 s) in the final repeat. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Add crossing-first-instruction supply while
@@ -140,19 +146,22 @@ Next, in order:
    is a host wait; a guest non-present PTE is a Linux fault. Never overwrite
    guest mappings, skip faults or install a host-selected handler. Secondary
    delivery faults currently stop explicitly; #DF/triple-fault remains open.
-3. Finish actual startup/decompression, MSR/device/root supply, then
+3. Finish actual kernel startup, MSR/device/root supply, then
    Linux/PID 1/shell and the complete development/storage/network acceptance.
    Whole-image `-104`, boot, cold shell and production admission remain red.
 
 Physical supply remains one unsorted C index, never VM reopen/reset or a JS
-MMU. Extended browser: 2,775 page supplies / 2,788 resident pages, 47 HTTP 206
-ranges, 65,536-byte chunk cache, 12,058,624 VM memory / 1 MiB cold memory.
+MMU. Extended browser: 3,674 page supplies / 3,687 resident pages, 47 HTTP 206
+ranges, 65,536-byte chunk cache, 15,728,640 VM memory / 1 MiB cold memory.
 The default 1,000,000-admission / 2,000,000-retirement diagnostic stays small;
-`?budget=extended` selects 50,000,000 / 100,000,000 and at most 32 MiB memory.
+`?budget=extended` now selects 150,000,000 / 300,000,000 and at most 32 MiB memory.
+Progress messages retain the same Worker; they are not persistence checkpoints.
+The ordinary small profile stays unchanged. The output oracle is a diagnostic
+page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-decompression.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-linux-entry.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
