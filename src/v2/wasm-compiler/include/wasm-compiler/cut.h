@@ -77,6 +77,10 @@ typedef struct {
  * fragments; generated Wasm computes arithmetic, not a C opcode callback.
  * Memory CMP/TEST uses a READ-only machine.access followed by shared ALU/flags
  * lowering, with no payload/GPR write and no flag commit before read success.
+ * Memory DIV/IDIV also reads before any arithmetic guard: an operand #PF or
+ * residency wait precedes #DE. The shared divider captures the divisor before
+ * implicit AX/DX:RAX publication, rejects zero/quotient overflow without
+ * retiring, and never uses a Wasm trap as an architectural divide fault.
  * LGDT/LIDT uses machine.table with ten-byte all-fragment preflight.
  * CLI is a precise one-instruction system cut with the same private port but
  * no host operation import. In long mode without CR4.PVI/EFLAGS.VM it clears

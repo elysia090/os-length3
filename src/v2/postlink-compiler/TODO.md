@@ -311,15 +311,23 @@ Next, in order:
    ordinary memory DIV/IDIV source widths to the existing precise division
    SSA after a C load, proving #PF priority before #DE and no early register
    publication. No kernel-coordinate arithmetic or interpreter fallback.
+   This common memory division entrance is now closed: 72 native/cold modules,
+   36,864 native observations / 19,598 #DE / 36,864 #PF frames,
+   C-MMU/dispatch/wait/retry/RF/refusal checks, full checks, selected sanitizers
+   and 1,080 cold emissions pass. Actual browser advances to 136,129,036
+   retired / 68,707,852 admissions. Next is `83 54 24 70 00`, ADC dword
+   [RSP+0x70],0, at 0xffffffff81203942. Close general memory ADC/SBB using
+   the existing carry SSA and precise reserve/commit, not a coordinate-specific
+   increment. See [its evidence](../vm/check/browser/evidence/2026-10-03-memory-divide.md).
    Do not treat the
    bounded 128/64 divider as a global work/span-minimum proof. Memory division
-   remains an explicit grammar refusal. Boot/PID 1/shell remain unmet.
+   is now compiled through the same arithmetic after a C read. Boot/PID 1/shell remain unmet.
    The old linked System.map is not the optimized address authority.
    Keep the CPU profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (94.9 s), VM execution (35.1 s) and source/MMU admission
-   (22.5 s) exceed cold construction (16.6 s) in the latest uncontrolled
+   Engine replacement (97.1 s), VM execution (35.3 s) and source/MMU admission
+   (22.5 s) exceed cold construction (16.7 s) in the latest uncontrolled
    observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source

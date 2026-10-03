@@ -125,7 +125,7 @@ int main(int argc,char **argv)
             if (wasm_compiler_emit_code_cut(&composed,9u,&two,prior_module,sizeof prior_module,&prior_bytes,&prior)
                     || prior.source_instructions != 1u || prior.source_bytes != 2u
                     || prior.continuation != image.entry+2u || prior.boundary != WASM_CUT_SYSTEM) goto finish;
-            static const pl_u8 refused[][4]={{0xf0,0xf7,0xf9,0},{0xf7,0x39,0,0}};
+            static const pl_u8 refused[][4]={{0xf0,0xf7,0xf9,0},{0x64,0xf7,0x39,0}};
             for (pl_u32 rank=0u;rank<2u;++rank) {
                 memcpy(prefix,refused[rank],4u); pl_u64 unchanged=77u;
                 wasm_cut_report saved; memset(&saved,0xa5,sizeof saved); memset(prior_module,0xa5,sizeof prior_module);

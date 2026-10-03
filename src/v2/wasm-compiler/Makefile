@@ -122,6 +122,12 @@ $(BUILD)/implicit-multiply-check: check/implicit-multiply.c check/native-cut.S $
 
 check: $(BUILD)/implicit-multiply-check
 
+$(BUILD)/memory-divide-check: check/memory-divide.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/memory-divide.c check/native-stack.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+check: $(BUILD)/memory-divide-check
+
 cut-check: all $(BUILD)/cut-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to the post-linked cut fixture\n' >&2; exit 2; }
 	$(BUILD)/cut-check "$(INPUT)"
@@ -295,6 +301,7 @@ check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check select
 	$(BUILD)/extend-check
 	$(BUILD)/divide-check
 	$(BUILD)/implicit-multiply-check
+	$(BUILD)/memory-divide-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
 	$(BUILD)/invalidate-check

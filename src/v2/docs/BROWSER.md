@@ -992,6 +992,23 @@ implicit MUL gate. Zero manual branches, complete decompression and delivery
 counts are preserved. Linux/PID 1/shell, authenticated production storage /
 network acceptance and cold shell 3 seconds remain unachieved.
 
+## Precise memory division — 2026-10-03
+
+[The memory-division receipt](../vm/check/browser/evidence/2026-10-03-memory-divide.md)
+connects ordinary memory DIV/IDIV at all four widths to the same existing
+divider after a precise C-MMU READ. Operand #PF/wait precedes #DE; neither
+failure publishes implicit registers, flags, RIP or retirement. There is no
+arithmetic import, interpreter fallback or guest patch.
+
+72 modules / 36,864 native observations / 19,598 #DE / 36,864 #PF frames,
+221,280 C-dispatch comparisons, 147,456 RF checks, 73,728 waits/retries,
+576 entry refusals and 192 explicitly model-only address-fault checks pass.
+Full checks, selected sanitizers and 1,080 cold/native emissions pass. Actual
+browser reaches 136,129,036 retired / 68,707,852 admissions; next is ordinary
+memory ADC dword [RSP+0x70],0 at `0xffffffff81203942`. Full decompression,
+native bundle, CPU profile and zero manual branches remain unchanged.
+Linux/PID 1/shell and the full workspace/network product gates remain red.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

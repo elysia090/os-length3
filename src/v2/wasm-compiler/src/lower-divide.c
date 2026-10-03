@@ -1,4 +1,4 @@
-/* Register division with an architectural fault cut, not a Wasm trap. */
+/* Division with an architectural fault cut, not a Wasm trap. */
 #include "cut-internal.h"
 
 int cut_divide_supported(const pl_x86_instruction *instruction)
@@ -8,12 +8,14 @@ int cut_divide_supported(const pl_x86_instruction *instruction)
             || instruction->operation == PL_X86_OPERATION_DIVIDE_SIGNED)
         && instruction->machine_operation == PL_X86_MACHINE_NONE
         && instruction->flow == PL_X86_FLOW_NEXT && instruction->visible_operand_count == 1u
-        && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER
-        && cut_gpr(&instruction->operands[0].value.reg)
+        && (instruction->operands[0].kind == PL_X86_OPERAND_MEMORY
+            || (instruction->operands[0].kind == PL_X86_OPERAND_REGISTER
+                && cut_gpr(&instruction->operands[0].value.reg)
+                && !(instruction->flags & PL_X86_INSTRUCTION_READS_MEMORY)))
         && instruction->operands[0].bits == instruction->operand_width
         && (instruction->operand_width == 8u || instruction->operand_width == 16u
             || instruction->operand_width == 32u || instruction->operand_width == 64u)
-        && !(instruction->flags & (PL_X86_INSTRUCTION_READS_MEMORY | PL_X86_INSTRUCTION_WRITES_MEMORY
+        && !(instruction->flags & (PL_X86_INSTRUCTION_WRITES_MEMORY
             | PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER
             | PL_X86_INSTRUCTION_PRIVILEGED | PL_X86_INSTRUCTION_BARRIER));
 }
@@ -111,13 +113,13 @@ static void wide_divide(cut_lowering *cut,const pl_x86_instruction *instruction)
     accumulator.value.reg.index=2u;
     cut_get(cut,CUT_NEXT); cut_set(cut,CUT_VALUE); cut_write_register(cut,&accumulator.value.reg);
 }
-void cut_lower_divide(cut_lowering *cut,const pl_x86_instruction *instruction)
+void cut_divide_value(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
     pl_u32 width=instruction->operand_width;
     int signed_divide=instruction->operation == PL_X86_OPERATION_DIVIDE_SIGNED;
-    /* Snapshot divisor and both dividend halves before any aliased write.
+    /* Consume the captured raw divisor on the stack. Memory source has
+     * already passed the C read/fault boundary, before any #DE guard.
      * Up to 32-bit operands, the complete dividend fits one i64. */
-    cut_read_operand(cut,&instruction->operands[0],width);
     if (signed_divide && width<64u) cut_op(cut,width == 8u ? 0xc2u : width == 16u ? 0xc3u : 0xc4u);
     cut_set(cut,CUT_RIGHT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x50u); fault_if(cut,instruction->rip);
     if (width==64u) { wide_divide(cut,instruction); return; }
@@ -157,4 +159,11 @@ void cut_lower_divide(cut_lowering *cut,const pl_x86_instruction *instruction)
     }
     /* CF/OF/SF/ZF/AF/PF are undefined. Keep their incoming representative;
      * RF is cleared only by the common successful-retirement epilogue. */
+}
+
+void cut_lower_divide(cut_lowering *cut,const pl_x86_instruction *instruction)
+{
+    /* Snapshot the register source before either implicit publication. */
+    cut_read_operand(cut,&instruction->operands[0],instruction->operand_width);
+    cut_divide_value(cut,instruction);
 }

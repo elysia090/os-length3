@@ -85,6 +85,7 @@ void cut_implicit_multiply_value(cut_lowering *cut, pl_u32 width, int signed_pro
 void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_summary(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_divide_supported(const pl_x86_instruction *instruction);
+void cut_divide_value(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_divide(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,

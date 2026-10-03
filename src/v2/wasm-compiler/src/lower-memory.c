@@ -112,10 +112,12 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED
         || instruction->operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED;
     int implicit = multiply && instruction->visible_operand_count == 1u;
+    int divide = instruction->operation == PL_X86_OPERATION_DIVIDE_SIGNED
+        || instruction->operation == PL_X86_OPERATION_DIVIDE_UNSIGNED;
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
             || (instruction->machine_operation != PL_X86_MACHINE_NONE
                 && !selector && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
-            || (multiply ? !cut_multiply_supported(instruction)
+            || (divide ? !cut_divide_supported(instruction) : multiply ? !cut_multiply_supported(instruction)
                 : instruction->visible_operand_count != (unary || set ? 1u : 2u))
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
                 && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
@@ -154,7 +156,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         const pl_x86_operand *other = &operands[first ? 1u : 0u];
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
-    } else if (first && !unary && !set && !implicit) {
+    } else if (first && !unary && !set && !implicit && !divide) {
         if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !exchange)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
@@ -190,7 +192,9 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     int implicit = instruction->visible_operand_count == 1u
         && (instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED
             || instruction->operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED);
-    int store = first && !observe && !implicit;
+    int divide = instruction->operation == PL_X86_OPERATION_DIVIDE_SIGNED
+        || instruction->operation == PL_X86_OPERATION_DIVIDE_UNSIGNED;
+    int store = first && !observe && !implicit && !divide;
     int rmw = store && instruction->operation != PL_X86_OPERATION_MOVE && !set;
     int load_arithmetic = !first && binary_arithmetic(instruction->operation);
     int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED;
@@ -255,6 +259,12 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     } else cut_access(cut);
     if (!store) {
         cut_access_value(cut);
+        if (divide) {
+            /* #PF/wait returned before here. A readable zero/overflow now
+             * reaches #DE, with no early RAX/RDX/flags/RIP publication. */
+            cut_divide_value(cut,instruction);
+            return;
+        }
         if (implicit) {
             cut_set(cut,CUT_RIGHT);
             pl_x86_operand acc=accumulator(memory->bits);
