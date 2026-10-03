@@ -59,6 +59,7 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_SUBTRACT:
     case PL_X86_OPERATION_SUBTRACT_BORROW:
     case PL_X86_OPERATION_COMPARE:
+    case PL_X86_OPERATION_COMPARE_EXCHANGE:
     case PL_X86_OPERATION_NEGATE:
     case PL_X86_OPERATION_AND:
     case PL_X86_OPERATION_OR:

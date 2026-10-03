@@ -136,7 +136,7 @@ Actual browser adopts Linux's own high virtual mappings and reaches
 guest handlers; output still matches all 14,622,864 decompressed bytes.
 That run stopped at memory INC. See [its evidence](../vm/check/browser/evidence/2026-10-03-misc-arithmetic.md).
 
-Latest checkpoint closes common 8/16/32/64-bit memory INC/DEC/NEG/NOT, with
+Previous checkpoint closes common 8/16/32/64-bit memory INC/DEC/NEG/NOT, with
 precise existing C-MMU reserve/commit and incoming-CF preservation for INC/DEC.
 22 post-linked forms pass 11,264 CPU/RAM / 10,240 actual protection-fault /
 21,504 RF checks; fresh CMOV fixtures also pass. The subsequent first-instruction
@@ -151,6 +151,20 @@ emissions pass. Actual browser executes 129,071,601 instructions / 64,425,459
 admissions with unchanged full decompression output. The next -102 is ordinary
 memory CMPXCHG at `0xffffffff81096d52`; it has not retired. PID 1/shell remains
 red. See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-unary-source-tail.md).
+
+Latest checkpoint closes common scalar memory CMPXCHG, LOCK/no-LOCK at all
+four widths, preserving the native typed descriptor and lowering its exact
+meaning to SSA plus existing C-MMU reserve/commit. Both comparison arms write;
+faults publish no CPU state. LOCK is closed only for the synchronous serialized
+ordinary-memory owner, not SMP; provider and generated modules reject shared
+memory linking. 32 post-linked forms pass 16,384 CPU/RAM / 14,848 native
+protection-fault / 31,232 RF checks. Four source-alias compare/exchange cases
+also retire once through C dispatch and invalidate even equal-byte writes.
+Full product checks, selected lowering sanitizers and 370 native/cold emissions
+pass. Actual browser: 129,078,646 retired / 64,428,968 admissions, unchanged
+complete decompressed output. The next -102 is memory SETE at
+`0xffffffff81096421`. PID 1/shell remains red.
+See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-exchange.md).
 
 Next, in order:
 
@@ -179,18 +193,18 @@ Next, in order:
    pending keys refuse explicitly, not an invented guest fault/default zero.
    MISC_ENABLE/CPUID and subsequent arithmetic/bit cuts are now closed as
    described above. Memory unary and demand-driven first-instruction tails are
-   now closed as well. The next real red is `4c 0f b1 4b 18`, ordinary non-LOCK
-   `CMPXCHG qword ptr [RBX+0x18],R9`. Close common compare/exchange widths and
-   aliases with native CPU/RAM/fault observations, including failure-arm write
-   permission, accumulator parent rules and exact flags/commit ordering.
+   now closed as well, followed by scalar memory CMPXCHG. The next real red is
+   `0f 94 44 24 2e`, `SETE byte ptr [RSP+0x2e]`. Close common memory SETcc for
+   all 16 conditions, including false-arm writes, preserved flags and precise
+   write faults. Keep condition computation in SSA and the existing C-MMU store.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (33.9 s), VM execution (30.2 s) and source/MMU admission
-   (19.7 s) exceed cold construction (6.0 s) in the latest repeat. Analyze exact
+   Engine replacement (35.2 s), VM execution (31.1 s) and source/MMU admission
+   (20.4 s) exceed cold construction (6.1 s) in the latest observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
-   admission, never a JavaScript source cache. Add crossing-first-instruction supply while
-   preserving precise fetch ordering. Preserve source/compiler/engine lifetime
+   admission, never a JavaScript source cache. Preserve demand-only crossing
+   supply and precise fetch ordering. Preserve source/compiler/engine lifetime
    and alias invalidation; concurrent admission/remap is not implemented.
 2. Expand exception/IRET fault-priority and privilege/TSS/IST coverage as actual
    startup demands it, using common system-oracle witnesses. Physical absence

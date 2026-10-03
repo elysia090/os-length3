@@ -7,6 +7,8 @@ if (!compilerFile) throw new Error('usage: check-source-admission.mjs VM.WASM CO
 const memory = new WebAssembly.Memory({initial:8,maximum:16});
 const provider = await WebAssembly.compile(await readFile(vmFile));
 assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
+const sharedMemory = new WebAssembly.Memory({initial:8,maximum:16,shared:true});
+await assert.rejects(() => WebAssembly.instantiate(provider,{machine:{memory:sharedMemory}}),WebAssembly.LinkError);
 const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
 const coldMemory = new WebAssembly.Memory({initial:16});
 const cc = (await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
@@ -47,7 +49,13 @@ async function publish(entry = 0x400000n) {
   assert.equal(cc.compiler_open_pages(input,count,entry & ~4095n,9n),0);
   assert.equal(cc.compiler_emit(entry,1,output,65536,receipt),0);
   const length = Number(report.getBigUint64(receipt + 40,true));
-  const instance = await WebAssembly.instantiate(cold.slice(output,output+length),{machine:{memory}});
+  const generated = cold.slice(output,output+length);
+  if (!emitted) await assert.rejects(() => WebAssembly.instantiate(generated,{
+    machine:{memory:sharedMemory,access:vm.vm_access,reserve:vm.vm_reserve,commit:vm.vm_commit},
+  }),WebAssembly.LinkError);
+  const instance = await WebAssembly.instantiate(generated,{
+    machine:{memory,access:vm.vm_access,reserve:vm.vm_reserve,commit:vm.vm_commit},
+  });
   table.set(slot,instance.instance.exports.cut);
   assert.equal(vm.vm_source_publish(Number(report.getBigUint64(receipt + 32,true)),
     Number(report.getBigUint64(receipt + 24,true)),rows),0); ++emitted;
@@ -181,6 +189,25 @@ assert.equal(vm.vm_source_publish(3,1,rows),-1);
 assert.equal(query(1,entry),1n);
 assert.equal(vm.vm_source_extend(port,codeView,rows),1n);
 assert.equal(view.getUint32(codeView+16,true),base+20480);
+// Both CMPXCHG arms, with/without LOCK, perform a real write cycle even when
+// the resulting byte is equal. The C dispatcher must retire exactly once,
+// then fence source aliases before invoking any further compiled code.
+for (const locked of [false,true]) for (const equal of [false,true]) {
+  const source = locked ? [0xf0,0x48,0x0f,0xb1,0x0f,0x90,0x90,0x90] : [0x48,0x0f,0xb1,0x0f,0x90,0x90,0x90,0x90];
+  put(leaf,0x8067n); put(tailLeaf,tailPte); data.set(source,code);
+  const original = view.getBigUint64(code,true), originalBytes = data.slice(code,code+8);
+  put(base,equal ? original : 0n); put(base+8,original); put(base+56,0x400000n);
+  put(base+384,0x400000n); put(base+392,3n);
+  assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
+  assert.equal(query(),1n); await publish();
+  assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  assert.equal(vm.vm_run(port,9n,1),5n);
+  assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n);
+  assert.equal(view.getBigUint64(base+384,true),0x400000n+BigInt(locked ? 5 : 4));
+  assert.equal(view.getBigUint64(base,true),original);
+  assert.deepEqual(data.slice(code,code+8),originalBytes);
+  put(base+384,0x400000n); assert.equal(query(),1n);
+}
 for (let i = 0; i < vm.vm_source_capacity(); ++i) table.set(firstSlot+i,null);
 cc.compiler_close(); vm.vm_close();
-console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);
+console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);

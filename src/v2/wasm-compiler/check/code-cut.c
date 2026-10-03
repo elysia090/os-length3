@@ -336,6 +336,33 @@ int main(int argc, char **argv)
             == WASM_COMPILER_ERROR_GRAMMAR);
         for (pl_u32 at=0u;at<sizeof output;++at) EXPECT(output[at] == 0xa5u);
     }
+    for (pl_u32 locked=0u;locked<2u;++locked) for (pl_u32 width=0u;width<4u;++width) {
+        pl_u8 exchange[5]; pl_u32 count=0u;
+        if (locked) exchange[count++]=0xf0u;
+        if (width == 1u) exchange[count++]=0x66u;
+        if (width == 3u) exchange[count++]=0x48u;
+        exchange[count++]=0x0fu; exchange[count++]=(pl_u8)(0xb0u+(width != 0u));
+        exchange[count++]=0x0fu; /* [RDI], CL/CX/ECX/RCX, implicit accumulator */
+        memset(pages,0x90,sizeof pages); memcpy(pages,exchange,count);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions == 1u && report.source_bytes == count
+            && report.memory_bytes == (1u << width) && report.memory_access == 3u
+            && report.boundary == WASM_CUT_MEMORY && report.written_registers == 1u
+            && report.read_registers == 0x83u && report.flags_written);
+    }
+    static const pl_u8 exchange_rejected[][6] = {
+        {0xf0u,0x48u,0x0fu,0xb1u,0xcfu,0x90u}, /* LOCK register destination is invalid. */
+        {0x64u,0x48u,0x0fu,0xb1u,0x0fu,0x90u}, /* Missing FS base. */
+        {0x48u,0x0fu,0xc7u,0x0fu,0x90u,0x90u}, /* CMPXCHG16B is a distinct pair/align contract. */
+        {0x0fu,0xc7u,0x0fu,0x90u,0x90u,0x90u}, /* CMPXCHG8B is not scalar CMPXCHG. */
+    };
+    for (pl_u32 i=0u;i<sizeof exchange_rejected/sizeof exchange_rejected[0];++i) {
+        memset(pages,0x90,sizeof pages); memcpy(pages,exchange_rejected[i],sizeof exchange_rejected[0]);
+        memset(output,0xa5,sizeof output);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            == WASM_COMPILER_ERROR_GRAMMAR);
+        for (pl_u32 at=0u;at<sizeof output;++at) EXPECT(output[at] == 0xa5u);
+    }
     for (pl_u32 form = 0u; form < sizeof rejected / sizeof rejected[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected[form],sizeof rejected[0]);
         memset(output,0xa5,sizeof output);

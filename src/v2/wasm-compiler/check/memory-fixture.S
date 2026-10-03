@@ -244,6 +244,70 @@ _start:
     inc qword ptr [r12]
 #elif MEMORY_CASE == 128
     dec qword ptr [rip + 8]
+#elif MEMORY_CASE == 129
+    cmpxchg byte ptr [rdi], cl
+#elif MEMORY_CASE == 130
+    cmpxchg word ptr [rdi], cx
+#elif MEMORY_CASE == 131
+    cmpxchg dword ptr [rdi], ecx
+#elif MEMORY_CASE == 132
+    cmpxchg qword ptr [rdi], rcx
+#elif MEMORY_CASE == 133
+    cmpxchg byte ptr [rdi], ah
+#elif MEMORY_CASE == 134
+    cmpxchg byte ptr [rdi], al
+#elif MEMORY_CASE == 135
+    cmpxchg word ptr [rdi], ax
+#elif MEMORY_CASE == 136
+    cmpxchg dword ptr [rdi], eax
+#elif MEMORY_CASE == 137
+    cmpxchg qword ptr [rdi], rax
+#elif MEMORY_CASE == 138
+    cmpxchg qword ptr [rax], rcx
+#elif MEMORY_CASE == 139
+    cmpxchg byte ptr [rdi + rax*2 + 7], cl
+#elif MEMORY_CASE == 140
+    cmpxchg dword ptr [rdi + rcx*4 + 7], ecx
+#elif MEMORY_CASE == 141
+    cmpxchg word ptr [edi], cx
+#elif MEMORY_CASE == 142
+    cmpxchg dword ptr [rbp], r11d
+#elif MEMORY_CASE == 143
+    cmpxchg qword ptr [r12], r9
+#elif MEMORY_CASE == 144
+    cmpxchg qword ptr [rip + 8], r9
+#elif MEMORY_CASE == 145
+    cmpxchg dword ptr [rip + 8], ecx
+#elif MEMORY_CASE == 146
+    cmpxchg byte ptr ss:[rdi], cl
+#elif MEMORY_CASE == 147
+    cmpxchg qword ptr [rdi + rcx*8 + 7], r8
+#elif MEMORY_CASE == 148
+    cmpxchg qword ptr [rbx + 24], r9
+#elif MEMORY_CASE == 149
+    lock cmpxchg byte ptr [rdi], cl
+#elif MEMORY_CASE == 150
+    lock cmpxchg word ptr [rdi], cx
+#elif MEMORY_CASE == 151
+    lock cmpxchg dword ptr [rdi], ecx
+#elif MEMORY_CASE == 152
+    lock cmpxchg qword ptr [rdi], rcx
+#elif MEMORY_CASE == 153
+    lock cmpxchg byte ptr [rdi], ah
+#elif MEMORY_CASE == 154
+    lock cmpxchg qword ptr [rax], rcx
+#elif MEMORY_CASE == 155
+    lock cmpxchg dword ptr [rdi + rcx*4 + 7], ecx
+#elif MEMORY_CASE == 156
+    lock cmpxchg qword ptr [rbx + 24], r9
+#elif MEMORY_CASE == 157
+    lock cmpxchg qword ptr [rip + 8], r9
+#elif MEMORY_CASE == 158
+    lock cmpxchg word ptr [edi], cx
+#elif MEMORY_CASE == 159
+    lock cmpxchg dword ptr [rbp], r11d
+#elif MEMORY_CASE == 160
+    lock cmpxchg qword ptr [r12], r9
 #else
 #error unsupported case
 #endif

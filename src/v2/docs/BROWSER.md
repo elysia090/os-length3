@@ -728,13 +728,29 @@ remain byte-identical. This serialized-owner contract is not an SMP lease proof.
 
 Actual browser: 129,071,601 instructions / 64,425,459 admissions; all 14,622,864
 decompressed bytes still match. Six #PFs and one #GP are handled by the guest.
-The next refusal is ordinary non-LOCK memory CMPXCHG at `0xffffffff81096d52`.
+The next refusal at that checkpoint was ordinary non-LOCK memory CMPXCHG at `0xffffffff81096d52`.
 PID 1/shell, full closure and storage/network acceptance remain red. Source
 metadata is 6,752 bytes / 64 rows, with zero payload copies. VM/cold memories
 remain 15,728,640 / 1,048,576 bytes. Engine replacement 35.6 s, execution 30.8 s
 and admission 20.1 s dominate construction 6.0 s in this single diagnostic;
 none is a cold-shell or controlled speed comparison. Native archive and human
 UI are unchanged. The full goal is active.
+
+### Scalar memory compare/exchange checkpoint
+
+[Current evidence](../vm/check/browser/evidence/2026-10-03-memory-exchange.md)
+closes scalar CMPXCHG with/without LOCK at all widths. The native typed effect
+and proof are unchanged; this projection specializes it to SSA plus existing
+C-MMU reserve/commit, not a runtime opcode callback. Both arms perform a write
+cycle, including equal-byte mismatch. LOCK assumes synchronous serialized
+ownership of ordinary memory, not SMP; both provider and emitted modules reject
+shared-memory linking. 32 post-linked forms pass 16,384 CPU/RAM, 14,848 native
+fault and 31,232 RF checks. Four source-alias cases separately pass C dispatch.
+Full product checks, selected lowering ASan/UBSan and 370 native/cold emissions
+are green. Actual browser reaches 129,078,646 retirements / 64,428,968 admissions
+with unchanged decompression witnesses. Next refusal: memory SETE at
+`0xffffffff81096421`. Linux/PID 1/shell and the full product goal remain red.
+Human UI/native publication are unchanged; component pass is not boot.
 
 ## Platform sources
 

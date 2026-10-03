@@ -65,19 +65,56 @@ static void bit_value(cut_lowering *cut,const pl_x86_instruction *instruction)
     }
 }
 
+static pl_x86_operand accumulator(pl_u32 width)
+{
+    pl_x86_operand result = {0};
+    result.kind = PL_X86_OPERAND_REGISTER; result.bits = (pl_u16)width;
+    result.value.reg.class_id = PL_X86_REGISTER_GPR;
+    result.value.reg.bits = (pl_u16)width;
+    return result;
+}
+static void exchange_value(cut_lowering *cut,pl_u32 width)
+{
+    /* Snapshot SRC and old DEST before the implicit accumulator can change.
+     * Flags observe accumulator - old DEST, not SRC - DEST. */
+    cut_get(cut,CUT_RIGHT); cut_set(cut,CUT_NEXT);
+    cut_get(cut,CUT_LEFT); cut_set(cut,CUT_RIGHT);
+    pl_x86_operand acc = accumulator(width);
+    cut_read_operand(cut,&acc,width); cut_set(cut,CUT_LEFT);
+    arithmetic(cut,PL_X86_OPERATION_COMPARE,width);
+    cut_get(cut,CUT_NEXT); cut_get(cut,CUT_RIGHT);
+    cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x51u);
+    cut_op(cut,0x1bu); cut_set(cut,CUT_VALUE);
+}
+
 int cut_memory_supported(const pl_x86_instruction *instruction)
 {
     int unary = unary_arithmetic(instruction->operation);
+    int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
-            || instruction->machine_operation != PL_X86_MACHINE_NONE
+            || (instruction->machine_operation != PL_X86_MACHINE_NONE
+                && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || instruction->visible_operand_count != (unary ? 1u : 2u)
-            || instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_PRIVILEGED
+            || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
+                && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
+            || instruction->flags & (PL_X86_INSTRUCTION_PRIVILEGED
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)
             || (instruction->address_width != 32u && instruction->address_width != 64u)) return 0;
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
     if (unary && !first) return 0;
     int conditional = instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE;
+    if (exchange && (!first || operands[1].kind != PL_X86_OPERAND_REGISTER
+            || !cut_gpr(&operands[1].value.reg) || operands[0].bits != operands[1].bits)) return 0;
+    /* The accepted native descriptor retains this precise transaction as a
+     * typed machine effect. This ordinary, non-shared-memory projection has
+     * one serialized owner: reserve/commit is synchronous, with no intervening
+     * guest writer, event or await. That closes LOCK too, not SMP/shared RAM.
+     * Both forms specialize to SSA, never an atomic-op runtime callback. */
+    if (exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC
+            && instruction->machine_argument != (2u | ((pl_u64)(operands[1].bits/8u)<<8u)
+                | ((pl_u64)operands[1].value.reg.index<<16u)
+                | ((pl_u64)!!(operands[1].value.reg.flags&PL_X86_REGISTER_HIGH8)<<24u))) return 0;
     if (conditional && (first || instruction->condition >= 16u
             || operands[0].bits < 16u || operands[0].bits != operands[1].bits)) return 0;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
@@ -93,7 +130,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
     } else if (first && !unary) {
-        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit)
+        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !exchange)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || !cut_gpr(&operands[1].value.reg)))) return 0;
@@ -120,6 +157,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
     int unary = unary_arithmetic(instruction->operation);
+    int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
                || instruction->operation == PL_X86_OPERATION_TEST || (bit && !instruction->condition);
@@ -164,11 +202,21 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
         if (unary) unary_value(cut,instruction->operation,memory->bits);
         else if (bit) bit_value(cut,instruction);
+        else if (exchange) exchange_value(cut,memory->bits);
         else arithmetic(cut,instruction->operation,memory->bits);
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
         cut_get(cut, CUT_VALUE);
         cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 1u);
         cut_access_status(cut);
+        if (exchange) {
+            /* Both arms committed a memory write. Only mismatch writes the
+             * accumulator; successful dword CMPXCHG preserves RAX[63:32]. */
+            cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x52u);
+            cut_op(cut,0x04u); cut_op(cut,0x40u);
+            cut_get(cut,CUT_RIGHT); cut_set(cut,CUT_VALUE);
+            pl_x86_operand acc = accumulator(memory->bits);
+            cut_write_register(cut,&acc.value.reg); cut_op(cut,0x0bu);
+        }
     } else cut_access(cut);
     if (!store) {
         cut_access_value(cut);

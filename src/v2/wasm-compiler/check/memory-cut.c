@@ -135,6 +135,8 @@ int main(int argc, char **argv)
         || instruction.operation == PL_X86_OPERATION_DECREMENT
         || instruction.operation == PL_X86_OPERATION_NEGATE
         || instruction.operation == PL_X86_OPERATION_COMPLEMENT;
+    int exchange = instruction.operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
+    int precise_rmw = unary || exchange;
     const pl_x86_memory *operand = &instruction.operands[store ? 0u : 1u].value.memory;
     relative = operand->base.class_id == PL_X86_REGISTER_IP;
     /* High application memory, not ASan's reserved low shadow/gap. */
@@ -152,7 +154,7 @@ int main(int argc, char **argv)
                 && mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
     }
     if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
-            || instruction.operation == PL_X86_OPERATION_BIT_TEST || unary)) {
+            || instruction.operation == PL_X86_OPERATION_BIT_TEST || precise_rmw)) {
         struct sigaction action = {.sa_sigaction=memory_exception,.sa_flags=SA_SIGINFO};
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
@@ -191,6 +193,19 @@ int main(int argc, char **argv)
             for (pl_u32 i=0u;i<report.memory_bytes;++i)
                 ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(value >> (8u*i));
         }
+        if (exchange) {
+            pl_u32 width = report.memory_bytes*8u;
+            pl_u64 mask = ~0ull >> (64u-width), sign = 1ull << (width-1u);
+            const pl_u64 edges[] = {0u,1u,mask,mask-1u,sign,sign-1u,sign+1u,15u,16u,255u,256u,~15ull};
+            if (row < 96u && !(operand->base.class_id == PL_X86_REGISTER_GPR && !operand->base.index)
+                    && !(operand->index.class_id == PL_X86_REGISTER_GPR && !operand->index.index))
+                state.registers[0] = (state.registers[0]&~mask)|(edges[(row/2u)%12u]&mask);
+            pl_u64 acc = state.registers[0]&mask;
+            pl_u64 value = row&1u ? (row < 96u ? edges[(row/2u+5u)%12u] : random_word(&seed))&mask : acc;
+            if ((row&1u) && value == acc) value ^= 1u;
+            for (pl_u32 i=0u;i<report.memory_bytes;++i)
+                ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(value >> (8u*i));
+        }
         if (!relative) memcpy(saved,ram,sizeof saved);
         for (pl_u32 reg = 0u; reg < 16u; ++reg) record[reg] = state.registers[reg];
         record[16] = state.rflags; record[35] = address;
@@ -221,16 +236,19 @@ int main(int argc, char **argv)
         if (fwrite(record, sizeof record, 1u, cases) != 1u) okay = 0;
         if (faults) {
             /* Protect the last operand fragment, including split pages.
-             * Unary RMW alternates non-present and readable-but-not-writable
+             * RMW alternates non-present and readable-but-not-writable
              * memory: a successful read must not hide the write fault. */
             for (pl_u32 reg = 0u; reg < 16u; ++reg) state.registers[reg] = record[reg];
             state.rflags = record[16];
             pl_u8 *protected_page = ram + (((address - base) + report.memory_bytes - 1u) & ~4095ull);
-            if (unary) memcpy(saved,ram,sizeof saved);
-            if (mprotect(protected_page,4096u,unary && (row&1u) ? PROT_READ : PROT_NONE)) goto finish;
+            if (exchange) for (pl_u32 i=0u;i<report.memory_bytes;++i)
+                ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(record[36] >> (8u*i));
+            if (precise_rmw) memcpy(saved,ram,sizeof saved);
+            int readable = precise_rmw && (exchange ? (row&2u) : (row&1u));
+            if (mprotect(protected_page,4096u,readable ? PROT_READ : PROT_NONE)) goto finish;
             int trapped = observe_fault(&state,(const void *)(uintptr_t)report.entry);
             if (mprotect(protected_page,4096u,PROT_READ | PROT_WRITE)) goto finish;
-            if (unary && memcmp(saved,ram,sizeof saved)) goto finish;
+            if (precise_rmw && memcmp(saved,ram,sizeof saved)) goto finish;
             if (!trapped || fault_vector != 14u || fault_state.rip != report.entry
                     || (fault_state.rflags & ~0x10000ull) != state.rflags) goto finish;
             pl_u64 observed[38];

@@ -386,13 +386,20 @@ The [memory-unary/source-tail checkpoint](../../src/v2/vm/check/browser/evidence
 adds `prepare-memory-unary-cuts.sh NEW-DIRECTORY` (22 ordinary post-linked
 INC/DEC/NEG/NOT forms). `check-wasm-provider.mjs VM.WASM NEW-DIRECTORY` compares
 CPU/RAM, actual native faults and separately RF success/failure semantics.
-`check-source-admission.mjs VM.WASM COMPILER.WASM` compiles/installs ten real
+The checkpoint then compiled/installed ten real
 single/two-page cuts through C source ownership and C dispatch, checking
 demand-only FETCH, non-contiguous physical pages, exact writes, pinned A-bit
 aliases, NX/nonpresent/residency, remap and lifecycle rejection. It is a
 boundary regression, not boot or a cryptographic compilation attestation.
 Regenerate fixtures for current compiler/ABI bytes; a stale fixture rejection
 must not be relabeled as a pass.
+
+The [scalar memory exchange checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-memory-exchange.md)
+adds `prepare-memory-exchange-cuts.sh NEW-DIRECTORY` (32 ordinary post-linked
+CMPXCHG forms, LOCK/no-LOCK). The current `check-source-admission.mjs VM.WASM
+COMPILER.WASM` performs 14 real cold emissions, including four both-arm/LOCK
+source-alias writes through C dispatch, and rejects shared-memory linking.
+LOCK coverage assumes one serialized owner of ordinary memory, not SMP.
 
 This division avoids rebuilding QEMU while preserving the final route:
 
