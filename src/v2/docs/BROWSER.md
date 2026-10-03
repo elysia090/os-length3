@@ -1052,13 +1052,47 @@ emissions and previous carry/divide/IO/source/supply regressions pass.
 UMIP cases are explicit models only; the fixed CPU profile is not widened.
 No Linux/PID 1/shell, complete exception-entry or physical-hardware claim.
 
-The actual browser executes SGDT and reaches the next compiler refusal:
-`0f 00 d8`, LTR AX, at `0xffffffff8103afa1`, selector 0x40. The next common
-boundary must validate/load the system descriptor, update its busy bit and
-publish the architectural TR cache only at the correct precise cut. Do not
-set a known Linux selector or bypass descriptor faults. TSS/IST exception
-coverage remains a separate open requirement. Native release and human UI
-are unchanged; the full browser development/storage/network goal stays active.
+That browser executed SGDT and next refused `0f 00 d8`, LTR AX, at
+`0xffffffff8103afa1`, selector 0x40. The common system-selector boundary below
+now closes that entrance. TSS/IST exception coverage remains a separate open
+requirement. Native release and human UI are unchanged; the full browser
+development/storage/network goal stays active.
+
+## System descriptor loads — 2026-10-04
+
+[The system-segment evidence](../vm/check/browser/evidence/2026-10-04-system-segments.md)
+closes LLDT/LTR GPR/memory inputs through common effective-address SSA,
+precise C source reads and the existing hidden-segment owner. CPL denial
+precedes source memory. Descriptor type/presence/bounds/upper checks precede
+publication; LTR performs the entire sixteen-byte implicit descriptor RMW
+before publishing the busy TR cache. Physical supply waits have no busy/cache
+publication and can restart the pinned input. No full-state snapshot,
+descriptor dictionary, kernel-coordinate constant or interpreter is added.
+This is serialized ordinary memory, not task switching or SMP.
+
+All 144 native/cold emissions, 8,274 C and 153,360 C-Wasm models, 144 actual
+waits and 3,024 system-oracle comparisons pass. The 3,072-row observer also
+records 48 explicit QEMU/Intel legacy sixteen-bit TSS disagreements rather
+than calling them matches. Hidden-cache/cross-page system-fault tests are
+Intel models, not complete hardware observations. All linked VM-core and
+selected lowering sanitizers, current 438 cold emissions and prior precise
+memory/descriptor/IO/source/supply regressions pass. A first full-run CALL
+reference observation was intermittent: four isolated reruns and the full
+retry passed; the cause is still open and that failed run is retained as red.
+
+Actual browser passes LTR and reaches 136,209,819 retired / 68,766,303
+admissions, zero manual branch coordinates. The next gate is WRMSR IA32_STAR,
+ECX `0xc0000081`, at `0xffffffff8103adf2`: C ENTRY_MAP (6), not an unsupported
+opcode or guest #GP. Displayed port fault fields are stale prior-exception
+values. Close syscall MSR ownership with precise common reset/write/read
+semantics; syscall and TSS/IST execution remain separately open.
+
+Full decompressed output and native bundle hashes are unchanged. Linux/PID 1,
+shell, development/storage/network acceptance and cold shell 3 seconds remain
+unmet. Engine residency is bounded to 64 modules / 20,461 bytes, but over
+1.2 million compilations / zero reported reuse remains dominant work.
+Cumulative emitted/copied bytes are not RSS or delivery size. Timing and
+retirement differences are not a controlled speedup or boot percentage.
 
 ## Platform sources
 

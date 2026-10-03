@@ -87,6 +87,14 @@ $(BUILD)/io-check: check/io.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 $(BUILD)/table-check: check/table.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+$(BUILD)/system-segments-check: check/system-segments.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: system-segments-check
+check: system-segments-check
+system-segments-check: $(BUILD)/system-segments-check
+	$(BUILD)/system-segments-check
+
 check: table-check
 .PHONY: table-check
 table-check: $(BUILD)/table-check

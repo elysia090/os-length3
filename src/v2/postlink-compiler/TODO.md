@@ -335,13 +335,22 @@ Next, in order:
    validation supersede that defective receipt. Full checks, all VM-core /
    selected lowering sanitizers, 1,308 cold emissions and prior carry/divide/
    IO/source/supply regressions pass. UMIP models do not widen the CPU profile.
-   Actual browser passes SGDT and next refuses `0f 00 d8`, LTR AX, selector
-   0x40, at 0xffffffff8103afa1. Close the general register/memory system-selector
-   transfer through the existing hidden segment owner: precise descriptor
-   type/presence/limit/canonical/fetch/write ordering, TSS busy-bit update and
-   TR publication, with system-oracle red cases. Do not write a fixed Linux
-   cache or skip the instruction. TSS/IST fault entry remains separately open.
-   See [current evidence](../vm/check/browser/evidence/2026-10-04-descriptor-transfer.md).
+   The subsequent LTR AX at 0xffffffff8103afa1 is now closed through the common
+   LLDT/LTR register/memory entrance and C hidden-segment owner. Whole-record
+   descriptor RMW precedes busy TR/cache publication. All 144 compiler forms,
+   8,274 C models, 153,360 C-Wasm models, 144 waits and 3,024 actual system-oracle
+   comparisons pass; 48 QEMU legacy-TSS differences remain explicitly modeled.
+   The first full check exposed an intermittent pre-existing native CALL
+   observation; four isolated repeats and the full retry passed, but its
+   cause remains unresolved. All VM-core / selected lowering sanitizers and
+   current 438 cold emissions pass. Actual browser reaches 136,209,819 retired /
+   68,766,303 admissions and next stops on WRMSR IA32_STAR (0xc0000081) at
+   0xffffffff8103adf2. This is C ENTRY_MAP (6), not a compiler refusal or guest
+   #GP; the displayed port fault fields are stale from an earlier exception.
+   Close STAR/LSTAR/CSTAR/SYSCALL_MASK through the existing fixed-rank MSR owner
+   and common generated cuts. Keep syscall/TSS/IST execution separately open;
+   no fixed Linux cache, guessed fault, skipped instruction or profile expansion.
+   See [current evidence](../vm/check/browser/evidence/2026-10-04-system-segments.md).
    Do not treat the
    bounded 128/64 divider as a global work/span-minimum proof. Memory division
    is now compiled through the same arithmetic after a C read. Boot/PID 1/shell remain unmet.

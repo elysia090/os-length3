@@ -186,7 +186,8 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
 void vm_memory_abort(vm_memory *memory)
 { if (memory) memory->reservation = (vm_memory_reservation){ 0 }; }
 
-machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 value)
+machine_result vm_memory_commit_record(vm_memory *memory, pl_u32 port_offset,
+                                       const pl_u8 *value, pl_u32 bytes)
 {
     if (!memory) return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation saved = memory->reservation;
@@ -197,15 +198,36 @@ machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 va
     if (read_word(memory->bytes + port_offset) != memory->generation)
         return MACHINE_RESULT_STALE_GENERATION;
     if (saved.generation != memory->generation || saved.port != port_offset
-            || !saved.parts || saved.parts > 2u) return MACHINE_RESULT_ENTRY_MAP;
+            || !saved.parts || saved.parts > 2u || !value || !bytes || bytes>16u)
+        return MACHINE_RESULT_ENTRY_MAP;
+    pl_u32 total=0u;
+    for (pl_u32 i=0u;i<saved.parts;++i) {
+        if (!saved.lengths[i] || saved.lengths[i]>16u
+                || (pl_u64)saved.offsets[i]+saved.lengths[i]>memory->byte_count)
+            return MACHINE_RESULT_ENTRY_MAP;
+        total+=saved.lengths[i];
+    }
+    if (total!=bytes) return MACHINE_RESULT_ENTRY_MAP;
     pl_u32 consumed = 0u;
     for (pl_u32 i = 0u; i < saved.parts; ++i) {
         if (!(saved.discard & (1u << i))) {
             vm_memory_before_write(memory,saved.offsets[i],saved.lengths[i]);
-            write_word(memory->bytes + saved.offsets[i], value >> (consumed * 8u), saved.lengths[i]);
+            for (pl_u32 j=0u;j<saved.lengths[i];++j)
+                memory->bytes[saved.offsets[i]+j]=value[consumed+j];
             memory->write_touched = 1u;
         }
         consumed += saved.lengths[i];
     }
     return 0u;
+}
+
+machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 value)
+{
+    pl_u8 record[8];
+    for (pl_u32 i=0u;i<8u;++i) record[i]=(pl_u8)(value>>(i*8u));
+    pl_u32 bytes=0u;
+    if (memory) for (pl_u32 i=0u;i<memory->reservation.parts && i<2u;++i)
+        bytes+=memory->reservation.lengths[i];
+    if (bytes>8u) { vm_memory_abort(memory); return MACHINE_RESULT_ENTRY_MAP; }
+    return vm_memory_commit_record(memory,port_offset,record,bytes);
 }

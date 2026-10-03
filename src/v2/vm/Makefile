@@ -83,6 +83,14 @@ $(BUILD)/execution-check: check/execution.c $(BUILD)/libvm.a
 $(BUILD)/segments-check: check/segments.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
+$(BUILD)/system-segments-check: check/system-segments.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+.PHONY: system-segments-check
+check: system-segments-check
+system-segments-check: $(BUILD)/system-segments-check
+	$(BUILD)/system-segments-check
+
 $(BUILD)/registers-check: check/registers.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -I../x86/include $< $(BUILD)/libvm.a -o $@
 

@@ -84,4 +84,8 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
  * This is not LOCK/SMP atomicity or an asynchronous worker lease. */
 void vm_memory_abort(vm_memory *memory);
 machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 value);
+/* Private, disjoint record bytes (1..16), consumed under the same pinned
+ * synchronous owner as scalar commit. Not a generated-code import. */
+machine_result vm_memory_commit_record(vm_memory *memory, pl_u32 port_offset,
+                                       const pl_u8 *value, pl_u32 bytes);
 #endif

@@ -42,6 +42,12 @@ machine_result vm_mmu_access(vm_memory *physical, pl_u32 port_offset,
 machine_result vm_mmu_reserve(vm_memory *physical, pl_u32 port_offset,
                               const vm_mmu_context *context, pl_u64 address,
                               pl_u32 bytes, pl_u32 access);
+/* Bounded record RMW for implicit system descriptors: all fragments obtain
+ * read/write rights before target is filled or a reservation is published.
+ * Private target is disjoint from guest/state/directory. No SMP claim. */
+machine_result vm_mmu_reserve_record(vm_memory *physical, pl_u32 port_offset,
+                                     const vm_mmu_context *context, pl_u64 address,
+                                     pl_u32 bytes, pl_u8 *target);
 /* Privileged C caller only: target is a disjoint private buffer of bytes
  * (1..16), never a guest/state/directory pointer. Not a generated-code import. */
 machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,

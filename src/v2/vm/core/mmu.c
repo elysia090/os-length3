@@ -203,6 +203,23 @@ machine_result vm_mmu_reserve(vm_memory *memory, pl_u32 port_offset,
     return 0u;
 }
 
+machine_result vm_mmu_reserve_record(vm_memory *memory, pl_u32 port_offset,
+                                     const vm_mmu_context *context, pl_u64 address,
+                                     pl_u32 bytes, pl_u8 *target)
+{
+    vm_memory_abort(memory);
+    if (!target) return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result status=preflight(memory,port_offset,context,address,bytes,3u,&ready);
+    if (status) return status;
+    pl_u32 consumed=0u;
+    for (pl_u32 i=0u;i<ready.parts;++i)
+        for (pl_u32 j=0u;j<ready.lengths[i];++j)
+            target[consumed++]=memory->bytes[ready.offsets[i]+j];
+    memory->reservation=ready;
+    return 0u;
+}
+
 /* Private, bounded architectural records (e.g. the ten-byte GDTR operand).
  * No payload is copied until every fragment has passed the same MMU checks. */
 machine_result vm_mmu_read_record(vm_memory *memory, pl_u32 port_offset,

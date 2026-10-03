@@ -13,6 +13,58 @@ static machine_result fault(pl_u8 *port, const machine_state *state, pl_u32 vect
     vm_memory_store(port + offsetof(machine_memory_port,fault_error),error,4u);
     return machine_result_make(MACHINE_RESULT_FAULT,vector);
 }
+static machine_result system_load(vm_memory *physical, pl_u32 port_offset,
+                                   machine_state *state, machine_segments *segments,
+                                   pl_u32 rank, pl_u32 selector)
+{
+    pl_u8 *port=physical->bytes+port_offset;
+    pl_u32 error=selector&0xfffcu;
+    if (state->system[MACHINE_SYSTEM_CS]&3u) return fault(port,state,13u,0u);
+    if (!error) {
+        if (rank==MACHINE_SEGMENT_TR) return fault(port,state,13u,0u);
+        state->system[MACHINE_SYSTEM_LDTR]=selector;
+        segments->cache[rank]=(machine_segment_cache){0u,0u,MACHINE_SEGMENT_UNUSABLE};
+        return 0u;
+    }
+    if (selector&4u) return fault(port,state,13u,error);
+    pl_u64 base=state->system[MACHINE_SYSTEM_GDTR_BASE];
+    pl_u64 limit=state->system[MACHINE_SYSTEM_GDTR_LIMIT];
+    pl_u32 index=selector&0xfff8u;
+    if (limit>65535u) return MACHINE_RESULT_ENTRY_MAP;
+    if ((pl_u64)index+15u>limit || base>~0ull-index-15u
+            || !canonical(base+index) || !canonical(base+index+15u))
+        return fault(port,state,13u,error);
+    pl_u64 address=base+index;
+    vm_mmu_context context={state->cr0,state->cr3,state->cr4,state->efer,0u};
+    machine_result status=vm_mmu_access(physical,port_offset,&context,address,8u,MACHINE_MEMORY_READ,0u);
+    if (status) return status;
+    pl_u64 low=vm_memory_load(port+offsetof(machine_memory_port,value),8u);
+    pl_u32 access=(pl_u32)(low>>40u)&255u;
+    if ((access&31u)!=(rank==MACHINE_SEGMENT_TR ? 9u : 2u)) return fault(port,state,13u,error);
+    if (!(access&128u)) return fault(port,state,11u,error);
+    status=vm_mmu_access(physical,port_offset,&context,address+8u,8u,MACHINE_MEMORY_READ,0u);
+    if (status) return status;
+    pl_u64 high=vm_memory_load(port+offsetof(machine_memory_port,value),8u);
+    if (high&(15ull<<40u)) return fault(port,state,13u,error);
+    machine_segment_cache next=vm_segment_cache_raw(low);
+    next.base|=(high&0xffffffffu)<<32u;
+    if (rank==MACHINE_SEGMENT_TR) {
+        /* All descriptor write rights precede the busy update and cache
+         * publication. The pinned ordinary-memory owner serializes this
+         * entire implicit RMW; no asynchronous writer or SMP is admitted.
+         * Read again after paging A/D writes, which can alias the descriptor. */
+        pl_u8 record[16];
+        status=vm_mmu_reserve_record(physical,port_offset,&context,address,16u,record);
+        if (status) return status;
+        record[5]|=2u;
+        status=vm_memory_commit_record(physical,port_offset,record,16u);
+        if (status) return status;
+        next.attributes|=2u; /* The loaded TSS is busy; no task switch. */
+    }
+    state->system[MACHINE_SYSTEM_ES+rank]=selector;
+    segments->cache[rank]=next;
+    return 0u;
+}
 machine_result vm_segment_load(vm_memory *physical, pl_u32 port_offset,
                                 machine_state *state, machine_segments *segments,
                                 pl_u32 rank, pl_u32 selector)
@@ -21,7 +73,7 @@ machine_result vm_segment_load(vm_memory *physical, pl_u32 port_offset,
     if (!physical || !physical->bytes || !state || !segments || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > physical->reserved_bytes
             || segments->version != MACHINE_SEGMENTS_ABI_VERSION || segments->mov_ss_shadow > 1u
-            || rank >= 6u || rank == MACHINE_SEGMENT_CS || selector > 65535u
+            || rank >= MACHINE_SEGMENT_COUNT || rank == MACHINE_SEGMENT_CS || selector > 65535u
             || !(segments->cache[MACHINE_SEGMENT_CS].attributes & 0x2000u)
             || (segments->cache[MACHINE_SEGMENT_CS].attributes & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
             || (state->cr0 & 0x80000001ull) != 0x80000001ull
@@ -31,6 +83,7 @@ machine_result vm_segment_load(vm_memory *physical, pl_u32 port_offset,
     pl_u8 *port = physical->bytes + port_offset;
     if (!physical->generation || vm_memory_load(port,8u) != physical->generation)
         return machine_result_make(MACHINE_RESULT_STALE_GENERATION,0u);
+    if (rank>=MACHINE_SEGMENT_LDTR) return system_load(physical,port_offset,state,segments,rank,selector);
     pl_u32 cpl = (pl_u32)state->system[MACHINE_SYSTEM_CS] & 3u;
     pl_u32 rpl = selector & 3u, error = selector & 0xfffcu;
     machine_segment_cache next = {0u,0u,MACHINE_SEGMENT_UNUSABLE};

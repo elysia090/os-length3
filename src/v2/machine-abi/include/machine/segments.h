@@ -28,10 +28,12 @@ typedef struct {
 } machine_segments;
 _Static_assert(sizeof(machine_segments) == 136u, "segment context ABI extent");
 
-/* Compiled register-selector loads import machine.segment:
+/* Compiled selector loads import machine.segment:
  * (i32 private_port, i32 segment_rank, i32 selector) -> i64 result.
  * DIRECT/0 commits selector/cache only; generated code retires the transfer.
  * A fault/cache miss leaves selector/cache and retirement unchanged. Paging
- * A/D and a successfully written descriptor Accessed bit are guest RAM writes.
+ * A/D and successful descriptor Accessed/busy updates are guest RAM writes.
+ * Memory-source system loads read through machine.access first; no source
+ * opcode or EA decoder is added to the segment owner. LDTR/TR require CPL0.
  * No source opcode, register number or instruction decoder is passed here. */
 #endif

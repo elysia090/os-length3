@@ -9,6 +9,32 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     if (cut_divide_supported(instruction)
             && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER) return CUT_SYSTEM_DIVIDE;
     if (instruction->status==PL_X86_DECODE_VALID
+            && instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
+            && ((instruction->machine_argument&255u)==2u || (instruction->machine_argument&255u)==3u)
+            && instruction->visible_operand_count==1u
+            && (instruction->flow==PL_X86_FLOW_NEXT || instruction->flow==PL_X86_FLOW_SYSTEM)
+            && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                                     |PL_X86_INSTRUCTION_TRAP_AFTER))) {
+        const pl_x86_operand *source=&instruction->operands[0];
+        pl_u64 operation=instruction->machine_argument&255u;
+        if (source->kind==PL_X86_OPERAND_REGISTER && cut_gpr(&source->value.reg)
+                && source->bits==16u && source->value.reg.bits==16u
+                && instruction->machine_argument==(operation|((pl_u64)source->value.reg.index<<16u)))
+            return CUT_SYSTEM_SEGMENT;
+        if (source->kind==PL_X86_OPERAND_MEMORY && source->bits==16u
+                && instruction->machine_argument==(operation|256u)
+                && (instruction->address_width==32u || instruction->address_width==64u)) {
+            const pl_x86_memory *memory=&source->value.memory;
+            if ((memory->segment.class_id==PL_X86_REGISTER_NONE
+                    || (memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index<4u))
+                    && (memory->base.class_id==PL_X86_REGISTER_NONE
+                        || memory->base.class_id==PL_X86_REGISTER_IP || cut_gpr(&memory->base))
+                    && (memory->index.class_id==PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
+                    && (!memory->scale || memory->scale==1u || memory->scale==2u
+                        || memory->scale==4u || memory->scale==8u)) return CUT_SYSTEM_SEGMENT;
+        }
+    }
+    if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_INVALIDATE_PAGE
             && !instruction->machine_argument && instruction->visible_operand_count==1u
             && instruction->operands[0].kind==PL_X86_OPERAND_MEMORY
@@ -333,10 +359,27 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         return;
     }
     if (cut->has_segment) {
+        int system=instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR;
+        if (system) {
+            require_cpl0(cut); /* Privilege precedes even a memory-source fault. */
+            if (cut->has_memory) {
+                cut_effective_address(cut,instruction,&instruction->operands[0].value.memory);
+                cut_set(cut,CUT_ADDRESS);
+                const pl_x86_memory *memory=&instruction->operands[0].value.memory;
+                cut->report.memory_access=MACHINE_MEMORY_READ
+                    | (memory->segment.class_id==PL_X86_REGISTER_SEGMENT
+                        && memory->segment.index==2u ? MACHINE_MEMORY_STACK : 0u);
+                cut_const(cut,0u); cut_set(cut,CUT_VALUE); cut_access(cut); cut_access_value(cut);
+            } else cut_read_operand(cut,&instruction->operands[0],16u);
+            cut_set(cut,CUT_LEFT);
+        }
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
-        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->operands[0].value.reg.index);
-        cut_read_operand(cut,&instruction->operands[1],16u); cut_op(cut,0xa7u);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,system
+            ? 4u+(instruction->machine_argument&255u) : instruction->operands[0].value.reg.index);
+        if (system) cut_get(cut,CUT_LEFT);
+        else cut_read_operand(cut,&instruction->operands[1],16u);
+        cut_op(cut,0xa7u);
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,cut->has_memory ? 1u : 0u);
         cut_set(cut,CUT_STATUS); cut_get(cut,CUT_STATUS); cut_op(cut,0x50u); cut_op(cut,0x45u);
         cut_op(cut,0x04u); cut_op(cut,0x40u);
         cut_get(cut,CUT_STATUS); cut_op(cut,0x0fu); cut_op(cut,0x0bu);

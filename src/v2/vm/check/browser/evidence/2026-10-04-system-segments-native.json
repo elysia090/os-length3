@@ -1,0 +1,13 @@
+{
+  "format": "c-wasm-system-segment-v1",
+  "status": "pass",
+  "parity": 144,
+  "models": 153360,
+  "waits": 144,
+  "nativeComparisons": 3024,
+  "nativeRows": 3072,
+  "knownOracleDifferences": 48,
+  "oracle": "QEMU TCG CPL0, not physical hardware",
+  "hiddenCacheAndCrossPageFaults": "Intel SDM model, not fully observed system faults",
+  "linuxBoot": "not-tested"
+}
