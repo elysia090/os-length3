@@ -956,6 +956,24 @@ still excludes 128/64 dividends. Extend that path with precise #DE, not a
 kernel-specific shortcut. Linux/PID 1/shell, workspace/network acceptance and
 cold shell 3 seconds remain unachieved.
 
+## Full-width register division — 2026-10-03
+
+[The complete division receipt](../vm/check/browser/evidence/2026-10-03-divide64.md)
+extends the existing compiled register DIV/IDIV cut to 64-bit operands and the
+full 128-bit RDX:RAX dividend. Magnitude normalization, `H<D`, direct H=0
+division or a bounded restoring loop, and signed range/sign restoration all
+precede publication. Zero/overflow return precise #DE, never an engine trap
+or host arithmetic fallback. This exact bounded representation is not claimed
+as globally minimum work/span. Memory division still explicitly refuses.
+
+32 modules / 16,384 actual x86 observations / 10,348 #DE frames match direct
+Wasm and separately C dispatch. 1,140 algebraic wide-boundary cases, 160 entry
+refusals, full checks, selected sanitizers and 924 cold emissions pass. Actual
+browser reaches 134,840,569 retired / 67,826,980 admissions; IDIV now passes,
+and the next refusal is `48 f7 e2` (implicit full-width MUL RDX) at
+`0xffffffff810ab884`. Delivery/residency and complete decompression are
+unchanged. Linux/PID 1/shell and workspace/network product gates remain unmet.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

@@ -296,12 +296,21 @@ Next, in order:
    (`48 f7 ff`) at 0xffffffff81413f53. Extend existing register division to
    precise full 128/64 quotient/remainder/#DE, not a coordinate shortcut or
    only sign-extended dividends. The C device owner and fixed profile stay intact.
+   That general division entrance is now closed: 32 native/cold modules,
+   16,384 complete native observations / 10,348 #DE frames in direct Wasm and
+   separately C dispatch, 1,140 algebraic full-width boundaries, selected
+   sanitizers, full checks and 924 cold emissions. Browser advances to
+   134,840,569 retired / 67,826,980 admissions. Next is `48 f7 e2` (MUL RDX)
+   at 0xffffffff810ab884: close implicit RDX:RAX products using the existing
+   product/high-limb SSA, with native full-result/CF/OF tests. Do not treat the
+   bounded 128/64 divider as a global work/span-minimum proof. Memory division
+   remains an explicit grammar refusal. Boot/PID 1/shell remain unmet.
    The old linked System.map is not the optimized address authority.
    Keep the CPU profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (92.7 s), VM execution (34.3 s) and source/MMU admission
-   (22.1 s) exceed cold construction (15.8 s) in the latest uncontrolled
+   Engine replacement (92.2 s), VM execution (34.3 s) and source/MMU admission
+   (22.0 s) exceed cold construction (16.0 s) in the latest uncontrolled
    observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source

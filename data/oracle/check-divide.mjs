@@ -1,6 +1,6 @@
 // Hardware-visible quotient/remainder and #DE; undefined flags use a declared representative.
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
 const [providerFile,compilerFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-divide.mjs VM.WASM COMPILER.WASM DIVIDE-FIXTURE-DIRECTORY');
@@ -18,6 +18,7 @@ const put = (at,value) => view.setBigUint64(at,BigInt(value),true);
 const u64 = (record,rank) => record.readBigUInt64LE(rank*8);
 const cpu = () => Buffer.from(data.subarray(base,base+1256));
 let parity = 0, comparisons = 0, directComparisons = 0, faults = 0, refusals = 0;
+let wideAlgebraComparisons = 0;
 function reset(source,meta,record) {
   data.fill(0,base);
   for (const [first,end] of [[128,384],[432,488],[496,1128],[1136,1256]]) data.fill(0x5a,base+first,base+end);
@@ -39,7 +40,11 @@ function reset(source,meta,record) {
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 try {
-  for (let form = 0; form < 24; ++form) {
+  const forms=(await readdir(directory)).filter(name => /^divide-\d+\.json$/.test(name))
+    .map(name => Number(name.slice(7,-5))).sort((a,b)=>a-b);
+  assert(forms.length === 24 || forms.length === 32,'complete declared width matrix is required');
+  assert.deepEqual(forms,Array.from({length:forms.length},(_,rank)=>rank));
+  for (const form of forms) {
     const prefix = path.join(directory,`divide-${form}`), source = await readFile(`${prefix}.source-page`);
     const meta = JSON.parse(await readFile(`${prefix}.json`)), emitted = await readFile(`${prefix}.wasm`);
     const native = await readFile(`${prefix}.cases`); assert.equal(native.length,512*stride);
@@ -87,8 +92,52 @@ try {
       assert(data.subarray(base,base+1256).equals(before));
       if (failure !== 'stale') assert(data.subarray(port,port+72).equals(frontier)); ++refusals;
     }
+    if (form === 24 || form === 28) {
+      // Independent unbounded-integer test oracle, never a product runtime.
+      // Stress the restoring step's 65th-bit carry and exact signed limits,
+      // in addition to the actual x86 observations above.
+      const signed = form === 28, mask = (1n<<64n)-1n, sign = 1n<<63n;
+      const divisors = [0n,1n,2n,127n,128n,32767n,sign-1n,sign,mask-1n,mask];
+      function algebra(numerator,rawDivisor) {
+        const n = signed ? BigInt.asIntN(128,numerator) : BigInt.asUintN(128,numerator);
+        const d = signed ? BigInt.asIntN(64,rawDivisor) : BigInt.asUintN(64,rawDivisor);
+        const quotient = d ? n/d : 0n, remainder = d ? n%d : 0n;
+        const fault = !d || quotient < (signed ? -sign : 0n) || quotient > (signed ? sign-1n : mask);
+        const sample = Buffer.from(record);
+        sample.writeBigUInt64LE(BigInt.asUintN(64,n),0);
+        sample.writeBigUInt64LE(BigInt.asUintN(64,n>>64n),2*8);
+        sample.writeBigUInt64LE(BigInt.asUintN(64,d),12*8);
+        sample.writeBigUInt64LE(0x10202n,16*8); // Incoming RF survives #DE only.
+        reset(source,meta,sample); const expected = cpu();
+        if (!fault) {
+          expected.writeBigUInt64LE(BigInt.asUintN(64,quotient),0);
+          expected.writeBigUInt64LE(BigInt.asUintN(64,remainder),16);
+          expected.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);
+          expected.writeBigUInt64LE(0x202n,392); expected.writeBigUInt64LE(43n,1128);
+        }
+        assert.equal(vm.vm_run(port,9n,1),fault ? 3n : 1n,`wide algebra: ${n}/${d}`);
+        assert(data.subarray(base,base+1256).equals(expected));
+        assert.equal(vm.vm_completed(),fault ? 0 : 1); assert.equal(vm.vm_source_retired(),fault ? 0n : 1n);
+        if (fault) {
+          assert.equal(view.getBigUint64(port+16,true),entry);
+          assert.equal(view.getUint32(port+24,true),0); assert.equal(view.getUint32(port+28,true),0);
+        }
+        reset(source,meta,sample); assert.equal(cut(base,port),fault ? 3n : 1n);
+        assert(data.subarray(base,base+1256).equals(expected)); ++wideAlgebraComparisons;
+      }
+      for (const d of divisors) {
+        for (const h of [0n,1n,BigInt.asUintN(64,d-1n),d,sign,mask])
+          for (const l of [0n,1n,2n,sign-1n,sign,mask]) algebra((h<<64n)|l,d);
+        const divisor = signed ? BigInt.asIntN(64,d) : d;
+        const magnitude = divisor < 0n ? -divisor : divisor;
+        for (const q of (signed ? [-sign-1n,-sign,-sign+1n,-1n,0n,1n,sign-1n,sign,sign+1n]
+          : [0n,1n,mask-1n,mask,mask+1n]))
+          for (const r of [0n,magnitude ? magnitude-1n : 0n,1n-magnitude])
+            algebra(divisor*q+r,d);
+      }
+    }
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); cc.compiler_close(); }
-console.log(JSON.stringify({format:'c-wasm-register-division-native-v1',status:'pass',parity,comparisons,directComparisons,faults,refusals,
+console.log(JSON.stringify({format:'c-wasm-register-division-native-v1',status:'pass',parity,comparisons,directComparisons,faults,refusals,wideAlgebraComparisons,
   oracle:'actual x86 user-mode execution in reference build VM; not physical hardware',
   undefinedFlags:'incoming representative, not a hardware equality claim',linuxBoot:'not-tested',exceptionDelivery:'not-tested'},null,2));

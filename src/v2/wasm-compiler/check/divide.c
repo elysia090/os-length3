@@ -48,11 +48,12 @@ int main(int argc,char **argv)
     pl_u8 *code=mmap(NULL,4096u,PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
     int status=1; pl_u32 observations=0u,faults=0u; pl_u64 seed=0xab98765432cd1234ull;
     if (code == MAP_FAILED) goto finish;
-    for (pl_u32 form=0u;form<24u;++form) {
+    for (pl_u32 form=0u;form<32u;++form) {
         pl_u32 width=8u << (form/8u), signed_divide=(form/4u)%2u, variant=form%4u;
         pl_u32 n=0u; memset(page,0x90,sizeof page);
         if (width == 16u) page[n++]=0x66u;
-        if (!variant) page[n++]=0x41u;
+        if (width == 64u) page[n++]=!variant ? 0x49u : 0x48u;
+        else if (!variant) page[n++]=0x41u;
         page[n++]=width == 8u ? 0xf6u : 0xf7u;
         page[n++]=(pl_u8)((signed_divide ? 0xf8u : 0xf0u)
             | (!variant ? 4u : variant == 1u ? 0u : variant == 2u ? 2u : width == 8u ? 4u : 1u));
@@ -62,13 +63,13 @@ int main(int argc,char **argv)
             machine_state before={0},actual;
             for (pl_u32 rank=0u;rank<16u;++rank) before.registers[rank]=random_word(&seed);
             before.rflags=0x202u|(random_word(&seed)&0xcd5u);
-            pl_u64 mask=(1ull << width)-1u,sign=1ull << (width-1u);
+            pl_u64 mask=~0ull >> (64u-width),sign=1ull << (width-1u);
             const pl_u64 boundary[]={0u,1u,2u,sign-1u,sign,sign+1u,mask-1u,mask};
             if (row<256u) {
                 pl_u32 divisor=!variant ? 12u : variant == 1u ? 0u : variant == 2u ? 2u : width == 8u ? 0u : 1u;
                 pl_u32 shift=width == 8u && variant == 3u ? 8u : 0u;
                 pl_u32 dividend_bits=width == 8u ? 16u : width;
-                pl_u64 low_mask=(1ull << dividend_bits)-1u;
+                pl_u64 low_mask=~0ull >> (64u-dividend_bits);
                 before.registers[0]=(before.registers[0]&~low_mask)|boundary[(row >> 3u)%8u];
                 before.registers[2]=(before.registers[2]&~mask)|boundary[(row >> 6u)%8u];
                 before.registers[divisor]=(before.registers[divisor]&~(mask << shift))
@@ -80,6 +81,15 @@ int main(int argc,char **argv)
                 before.registers[2]=row%4u < 2u ? sign : mask;
                 if (width == 8u) before.registers[0]=row%2u ? 0xffffu : 0x8000u;
                 before.registers[12]=row%8u < 4u ? mask : 2u;
+            }
+            if (width==64u && !variant && row>=272u && row<304u) {
+                /* Exact signed quotient limits, all signs, wide quotients
+                 * that fit, zero and high==divisor unsigned overflow. */
+                static const pl_u64 low[]={0u,1u,~0ull,1ull<<63u,0x7fffffffffffffffull,
+                    0ull-(1ull<<63u)-1u,0ull-17u,17u};
+                before.registers[0]=low[row%8u];
+                before.registers[2]=row&8u ? ~0ull : row&16u ? 1u : 0u;
+                before.registers[12]=row%4u==0u ? 0u : row%4u==1u ? 1u : row%4u==2u ? ~0ull : 2u;
             }
             actual=before; observe(&actual,code);
             before.registers[4]=actual.registers[4];
@@ -115,9 +125,8 @@ int main(int argc,char **argv)
             if (wasm_compiler_emit_code_cut(&composed,9u,&two,prior_module,sizeof prior_module,&prior_bytes,&prior)
                     || prior.source_instructions != 1u || prior.source_bytes != 2u
                     || prior.continuation != image.entry+2u || prior.boundary != WASM_CUT_SYSTEM) goto finish;
-            static const pl_u8 refused[][4]={{0xf0,0xf7,0xf9,0},
-                {0x48,0xf7,0xf9,0},{0xf7,0x39,0,0}};
-            for (pl_u32 rank=0u;rank<3u;++rank) {
+            static const pl_u8 refused[][4]={{0xf0,0xf7,0xf9,0},{0xf7,0x39,0,0}};
+            for (pl_u32 rank=0u;rank<2u;++rank) {
                 memcpy(prefix,refused[rank],4u); pl_u64 unchanged=77u;
                 wasm_cut_report saved; memset(&saved,0xa5,sizeof saved); memset(prior_module,0xa5,sizeof prior_module);
                 if (wasm_compiler_emit_code_cut(&composed,9u,&options,prior_module,sizeof prior_module,&unchanged,&saved)

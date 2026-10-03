@@ -1,0 +1,14 @@
+{
+  "format": "c-wasm-register-division-native-v1",
+  "status": "pass",
+  "parity": 32,
+  "comparisons": 16384,
+  "directComparisons": 16384,
+  "faults": 10348,
+  "refusals": 160,
+  "wideAlgebraComparisons": 1140,
+  "oracle": "actual x86 user-mode execution in reference build VM; not physical hardware",
+  "undefinedFlags": "incoming representative, not a hardware equality claim",
+  "linuxBoot": "not-tested",
+  "exceptionDelivery": "not-tested"
+}
