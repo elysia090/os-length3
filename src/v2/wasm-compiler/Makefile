@@ -17,7 +17,7 @@ OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
 
-.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
+.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 
 # Independent cold compiler memory/stack; never the VM's runtime decoder.
@@ -125,14 +125,26 @@ condition-fixture-check: $(BUILD)/cut-check fixture-tools
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done
 
+cmov-fixture-check: $(BUILD)/cut-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	for opcode in cmovo cmovno cmovb cmovae cmove cmovne cmovbe cmova cmovs cmovns cmovp cmovnp cmovl cmovge cmovle cmovg; do \
+	for width in 16 32 64; do \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
+		-DCUT_CMOV=$$opcode -DCUT_WIDTH=$$width check/cut-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
+	done; done
+
 memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
-	for rank in 0 20 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45; do \
+	for rank in 0 20 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 \
+		62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88; do \
 	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
 		-DMEMORY_CASE=$$rank check/memory-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
 	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
-	if [ $$rank = 22 ] || [ $$rank = 45 ]; then \
+	if [ $$rank = 22 ] || [ $$rank = 45 ] || [ $$rank = 88 ]; then \
 		if $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; then exit 1; fi; \
 	else $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; fi; \
 	done
@@ -151,9 +163,9 @@ stack-fixture-check: $(BUILD)/stack-cut-check fixture-tools
 
 repeat-fixture-check: $(BUILD)/repeat-check
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
-	$(BUILD)/repeat-check "$$scratch/native.bin" "$$scratch/fault.bin"
+	$(BUILD)/repeat-check "$$scratch/native.bin" "$$scratch/fault.bin" "$$scratch/stos-native.bin" "$$scratch/stos-fault.bin"
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
 	$(BUILD)/admission-check
 	$(BUILD)/branch-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf

@@ -1,5 +1,26 @@
 #include "cut-internal.h"
 
+static int binary_arithmetic(pl_u32 operation)
+{
+    return operation == PL_X86_OPERATION_ADD || operation == PL_X86_OPERATION_SUBTRACT
+        || operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_OR
+        || operation == PL_X86_OPERATION_XOR;
+}
+
+static void arithmetic(cut_lowering *cut, pl_u32 operation, pl_u32 width)
+{
+    cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT);
+    cut_op(cut,operation == PL_X86_OPERATION_ADD ? 0x7cu
+        : operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_COMPARE ? 0x7du
+        : operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_TEST ? 0x83u
+        : operation == PL_X86_OPERATION_OR ? 0x84u : 0x85u);
+    cut_mask(cut,width); cut_set(cut,CUT_VALUE);
+    cut_arithmetic_flags(cut,width,
+        operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_COMPARE,
+        operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_OR
+            || operation == PL_X86_OPERATION_XOR || operation == PL_X86_OPERATION_TEST,0);
+}
+
 int cut_memory_supported(const pl_x86_instruction *instruction)
 {
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
@@ -20,16 +41,11 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
     } else if (first) {
-        if ((instruction->operation != PL_X86_OPERATION_MOVE
-                && instruction->operation != PL_X86_OPERATION_ADD
-                && instruction->operation != PL_X86_OPERATION_SUBTRACT
-                && instruction->operation != PL_X86_OPERATION_AND
-                && instruction->operation != PL_X86_OPERATION_OR
-                && instruction->operation != PL_X86_OPERATION_XOR)
+        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation))
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || !cut_gpr(&operands[1].value.reg)))) return 0;
-    } else if ((instruction->operation != PL_X86_OPERATION_MOVE
+    } else if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation)
                  && instruction->operation != PL_X86_OPERATION_MOVE_ZERO_EXTEND
                  && instruction->operation != PL_X86_OPERATION_MOVE_SIGN_EXTEND)
             || operands[0].kind != PL_X86_OPERAND_REGISTER
@@ -54,6 +70,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
                || instruction->operation == PL_X86_OPERATION_TEST;
     int store = first && !observe;
     int rmw = store && instruction->operation != PL_X86_OPERATION_MOVE;
+    int load_arithmetic = !first && binary_arithmetic(instruction->operation);
     const pl_x86_operand *memory = &operands[first ? 0u : 1u];
     cut_effective_address(cut, instruction, &memory->value.memory);
     cut_set(cut, CUT_ADDRESS);
@@ -66,16 +83,17 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (memory->value.memory.segment.class_id == PL_X86_REGISTER_SEGMENT
             && memory->value.memory.segment.index == 2u)
         cut->report.memory_access |= MACHINE_MEMORY_STACK;
+    if (load_arithmetic) {
+        // Capture the destination before loading through its aliased address.
+        // A failed C read leaves both the parent register and flags untouched.
+        cut_read_operand(cut,&operands[0],memory->bits); cut_set(cut,CUT_LEFT);
+    }
     if (observe) {
         cut_read_operand(cut,&operands[first ? 1u : 0u],memory->bits);
         cut_set(cut,first ? CUT_RIGHT : CUT_LEFT);
         cut_access(cut); /* READ only, even when the first operand is memory. */
         cut_access_value(cut); cut_set(cut,first ? CUT_LEFT : CUT_RIGHT);
-        cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT);
-        cut_op(cut,instruction->operation == PL_X86_OPERATION_COMPARE ? 0x7du : 0x83u);
-        cut_mask(cut,memory->bits); cut_set(cut,CUT_VALUE);
-        cut_arithmetic_flags(cut,memory->bits,instruction->operation == PL_X86_OPERATION_COMPARE,
-            instruction->operation == PL_X86_OPERATION_TEST,0);
+        arithmetic(cut,instruction->operation,memory->bits);
         return; /* No GPR/payload store; a failed load never commits flags. */
     }
     if (rmw) {
@@ -88,15 +106,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 0u);
         cut_access_status(cut);
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
-        cut_get(cut, CUT_LEFT); cut_get(cut, CUT_RIGHT);
-        pl_u32 op = instruction->operation;
-        cut_op(cut, op == PL_X86_OPERATION_ADD ? 0x7cu
-            : op == PL_X86_OPERATION_SUBTRACT ? 0x7du
-            : op == PL_X86_OPERATION_AND ? 0x83u
-            : op == PL_X86_OPERATION_OR ? 0x84u : 0x85u);
-        cut_mask(cut, memory->bits); cut_set(cut, CUT_VALUE);
-        cut_arithmetic_flags(cut, memory->bits, op == PL_X86_OPERATION_SUBTRACT,
-            op == PL_X86_OPERATION_AND || op == PL_X86_OPERATION_OR || op == PL_X86_OPERATION_XOR, 0);
+        arithmetic(cut,instruction->operation,memory->bits);
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
         cut_get(cut, CUT_VALUE);
         cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 1u);
@@ -104,11 +114,15 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     } else cut_access(cut);
     if (!store) {
         cut_access_value(cut);
-        if (instruction->operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {
-            cut_const(cut, 64u - memory->bits); cut_op(cut, 0x86u);
-            cut_const(cut, 64u - memory->bits); cut_op(cut, 0x87u);
+        if (load_arithmetic) {
+            cut_set(cut,CUT_RIGHT); arithmetic(cut,instruction->operation,memory->bits);
+        } else {
+            if (instruction->operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {
+                cut_const(cut, 64u - memory->bits); cut_op(cut, 0x86u);
+                cut_const(cut, 64u - memory->bits); cut_op(cut, 0x87u);
+            }
+            cut_mask(cut, operands[0].value.reg.bits); cut_set(cut, CUT_VALUE);
         }
-        cut_mask(cut, operands[0].value.reg.bits); cut_set(cut, CUT_VALUE);
         cut_write_register(cut, &operands[0].value.reg);
     }
 }

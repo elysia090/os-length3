@@ -3,8 +3,10 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-const [providerFile,directory] = process.argv.slice(2);
-if (!directory) throw new Error('usage: check-repeat.mjs VM.WASM REPEAT-FIXTURE-DIRECTORY');
+const [providerFile,directory,family = 'movs'] = process.argv.slice(2);
+if (!directory || !['movs','stos'].includes(family))
+  throw new Error('usage: check-repeat.mjs VM.WASM REPEAT-FIXTURE-DIRECTORY [movs|stos]');
+const store = family === 'stos';
 const memory = new WebAssembly.Memory({initial:8,maximum:16});
 const vm = (await WebAssembly.instantiate(await readFile(providerFile),{machine:{memory}})).instance.exports;
 const data = Buffer.from(memory.buffer), view = new DataView(memory.buffer);
@@ -12,14 +14,15 @@ const directoryAt = vm.vm_arena_min(), rows = directoryAt + 512, base = director
 const port = base + 2048, segments = base + 1408, code = base + 24576, ram = base + 28672;
 const entry = 0x400000n, start = 0x500000n, pte = base + 20480 + 256 * 8;
 const slot = vm.__indirect_function_table.grow(1);
-const native = await readFile(path.join(directory,'native.bin')), recordBytes = 96 + 16384;
+const native = await readFile(path.join(directory,store ? 'stos-native.bin' : 'native.bin'));
+const recordHeader = store ? 128 : 96, recordBytes = recordHeader + 16384;
 assert.equal(native.length,336 * recordBytes);
 let seed = 0xabcdef123456789n, comparisons = 0, yields = 0, faults = 0, stale = 0, selfModification = 0;
 function random() {
   seed = BigInt.asUintN(64,seed ^ seed << 13n); seed ^= seed >> 7n;
   seed = BigInt.asUintN(64,seed ^ seed << 17n); return seed;
 }
-function reset(source,sourceBytes,count,src,dst,df,sample,width) {
+function reset(source,sourceBytes,count,src,dst,df,sample,width,accumulator) {
   data.fill(0,base);
   for (let rank = 0; rank < 9; ++rank) {
     const at = directoryAt + rank * 32;
@@ -35,6 +38,7 @@ function reset(source,sourceBytes,count,src,dst,df,sample,width) {
   data.set(source,code);
   for (let i = 0; i < 16384; ++i) data[ram + i] = (i * 37 + sample * 17 + width) & 255;
   for (let reg = 0; reg < 16; ++reg) view.setBigUint64(base + reg * 8,random(),true);
+  if (accumulator !== undefined) view.setBigUint64(base,accumulator,true);
   view.setBigUint64(base + 8,count,true); view.setBigUint64(base + 48,src,true); view.setBigUint64(base + 56,dst,true);
   view.setBigUint64(base + 384,entry,true); view.setBigUint64(base + 392,0x202n | (df ? 0x400n : 0n),true);
   view.setBigUint64(base + 400,0x80010011n,true); view.setBigUint64(base + 408,0x1000n,true);
@@ -52,21 +56,29 @@ function advance(cpu,payload,width,address,limit) {
   let count = cpu.readBigUInt64LE(8), src = cpu.readBigUInt64LE(48), dst = cpu.readBigUInt64LE(56);
   const stride = cpu.readBigUInt64LE(392) & 0x400n ? -BigInt(size) : BigInt(size);
   for (let n = 0; n < limit && (count & mask); ++n) {
-    const from = Number((src & mask) - start), to = Number((dst & mask) - start);
+    const to = Number((dst & mask) - start);
     // One element loads before storing, including its own byte overlap.
-    const value = Buffer.from(payload.subarray(from,from + size)); payload.set(value,to);
-    count = (count - 1n) & mask; src = (src + stride) & mask; dst = (dst + stride) & mask;
+    if (store) {
+      for (let byte = 0; byte < size; ++byte)
+        payload[to + byte] = Number(cpu.readBigUInt64LE(0) >> BigInt(byte * 8) & 255n);
+    } else {
+      const from = Number((src & mask) - start);
+      const value = Buffer.from(payload.subarray(from,from + size)); payload.set(value,to);
+      src = (src + stride) & mask;
+    }
+    count = (count - 1n) & mask; dst = (dst + stride) & mask;
   }
-  if ((count & mask) === 0n) { count &= mask; src &= mask; dst &= mask; }
-  cpu.writeBigUInt64LE(count,8); cpu.writeBigUInt64LE(src,48); cpu.writeBigUInt64LE(dst,56);
+  if ((count & mask) === 0n) { count &= mask; if (!store) src &= mask; dst &= mask; }
+  cpu.writeBigUInt64LE(count,8); if (!store) cpu.writeBigUInt64LE(src,48); cpu.writeBigUInt64LE(dst,56);
   return (count & mask) === 0n;
 }
 function narrow(cpu,address) {
-  if (address === 32) for (const offset of [8,48,56]) cpu.writeBigUInt64LE(cpu.readBigUInt64LE(offset) & 0xffffffffn,offset);
+  if (address === 32) for (const offset of store ? [8,56] : [8,48,56])
+    cpu.writeBigUInt64LE(cpu.readBigUInt64LE(offset) & 0xffffffffn,offset);
 }
 try {
   for (const address of [32,64]) for (const width of [8,16,32,64]) {
-    const prefix = path.join(directory,`repeat-${width}-${address}`);
+    const prefix = path.join(directory,`${store ? 'stos' : 'repeat'}-${width}-${address}`);
     const module = await WebAssembly.compile(await readFile(`${prefix}.wasm`));
     assert.deepEqual(WebAssembly.Module.imports(module),[
       {module:'machine',name:'memory',kind:'memory'},{module:'machine',name:'access',kind:'function'}]);
@@ -77,7 +89,7 @@ try {
       if (native.readBigUInt64LE(at) !== BigInt(width) || native.readBigUInt64LE(at + 8) !== BigInt(address)) continue;
       const df = Number(native.readBigUInt64LE(at + 24)), sample = Number(native.readBigUInt64LE(at + 40));
       reset(source,meta.sourceBytes,native.readBigUInt64LE(at + 48),native.readBigUInt64LE(at + 56),
-        native.readBigUInt64LE(at + 64),df,sample,width);
+        native.readBigUInt64LE(at + 64),df,sample,width,store ? native.readBigUInt64LE(at + 96) : undefined);
       const expected = Buffer.from(data.subarray(base,base + 1256)), payload = Buffer.from(data.subarray(ram,ram + 16384));
       let complete = false;
       while (!complete) {
@@ -102,10 +114,14 @@ try {
       for (let rank = 0; rank < 3; ++rank)
         assert.equal(view.getBigUint64(base + [8,48,56][rank],true),native.readBigUInt64LE(at + 72 + rank * 8),
           `${width}/${address}: actual x86 parent register ${rank}`);
-      assert(data.subarray(ram,ram + 16384).equals(native.subarray(at + 96,at + recordBytes)),`${width}/${address}: actual x86 RAM`);
+      if (store) {
+        assert.equal(view.getBigUint64(base,true),native.readBigUInt64LE(at + 104),'actual x86 accumulator');
+        assert.equal(view.getBigUint64(base + 392,true),native.readBigUInt64LE(at + 120),'actual x86 flags');
+      }
+      assert(data.subarray(ram,ram + 16384).equals(native.subarray(at + recordHeader,at + recordBytes)),`${width}/${address}: actual x86 RAM`);
       ++comparisons;
     }
-    for (const operation of ['read','write']) for (const failure of ['pte','resident','cross-element']) {
+    for (const operation of store ? ['write'] : ['read','write']) for (const failure of ['pte','resident','cross-element']) {
       const size = width / 8, crossing = start + 4096n - BigInt(2 * size);
       const src = operation === 'read' ? crossing : start + 8192n;
       const dst = operation === 'write' ? crossing : start + 8192n;
@@ -133,19 +149,22 @@ try {
       }
       ++faults;
     }
-    const faultNative = await readFile(path.join(directory,'fault.bin')), faultRecordBytes = 112 + 16384;
+    const faultNative = await readFile(path.join(directory,store ? 'stos-fault.bin' : 'fault.bin'));
+    const faultHeader = store ? 128 : 112, faultRecordBytes = faultHeader + 16384;
     assert.equal(faultNative.length,44 * faultRecordBytes);
     for (let at = 0; at < faultNative.length; at += faultRecordBytes) {
       if (faultNative.readBigUInt64LE(at) !== BigInt(width) || faultNative.readBigUInt64LE(at + 8) !== BigInt(address)) continue;
       const operation = Number(faultNative.readBigUInt64LE(at + 16)), failure = Number(faultNative.readBigUInt64LE(at + 24));
       reset(source,meta.sourceBytes,faultNative.readBigUInt64LE(at + 32),faultNative.readBigUInt64LE(at + 40),
-        faultNative.readBigUInt64LE(at + 48),0,0,width);
+        faultNative.readBigUInt64LE(at + 48),store ? operation : 0,0,width,
+        store ? faultNative.readBigUInt64LE(at + 112) : undefined);
       const expected = Buffer.from(data.subarray(base,base + 1256)), payload = Buffer.from(data.subarray(ram,ram + 16384));
       narrow(expected,address); if (failure === 1) advance(expected,payload,width,address,2);
       view.setBigUint64(pte + 8,0n,true);
       assert.equal(vm.vm_run(port,9n,1),115n);
       assert(data.subarray(base,base + 1256).equals(expected),'hardware fault: complete pre-delivery CPU');
-      assert(data.subarray(ram,ram + 16384).equals(faultNative.subarray(at + 112,at + faultRecordBytes)),'hardware fault RAM');
+      assert(data.subarray(ram,ram + 16384).equals(faultNative.subarray(at + faultHeader,at + faultRecordBytes)),'hardware fault RAM');
+      if (store) assert.equal(view.getBigUint64(base,true),faultNative.readBigUInt64LE(at + 120),'hardware fault accumulator');
       for (let rank = 0; rank < 3; ++rank)
         assert.equal(view.getBigUint64(base + [8,48,56][rank],true),faultNative.readBigUInt64LE(at + 56 + rank * 8));
       // Hardware saved context adds RF during exception delivery, not MOVS.
@@ -177,8 +196,10 @@ try {
       const expectedCode = Buffer.from(data.subarray(code,code + 4096)), sourceRam = Buffer.from(data.subarray(ram,ram + 16384));
       for (let part = 0; part < 3; ++part) {
         const first = part * 256, end = Math.min(first + 256,513);
-        expectedCode.set(sourceRam.subarray(512 + first,512 + end),first);
-        expected.writeBigUInt64LE(BigInt(513 - end),8); expected.writeBigUInt64LE(start + BigInt(512 + end),48);
+        if (store) expectedCode.fill(Number(expected.readBigUInt64LE(0) & 255n),first,end);
+        else expectedCode.set(sourceRam.subarray(512 + first,512 + end),first);
+        expected.writeBigUInt64LE(BigInt(513 - end),8);
+        if (!store) expected.writeBigUInt64LE(start + BigInt(512 + end),48);
         expected.writeBigUInt64LE(entry + BigInt(end),56);
         if (end === 513) { expected.writeBigUInt64LE(entry + BigInt(meta.sourceBytes),384); expected.writeBigUInt64LE(43n,1128); }
         assert.equal(vm.vm_run(port,9n,1),end === 513 ? 5n : 10n);
@@ -190,4 +211,4 @@ try {
     }
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); }
-console.log(`REP MOVS: green (${comparisons} native x86 CPU/RAM receipts, ${yields} bounded latch resumes, ${stale} entry/stale refusals, ${faults} partial/fault/miss cases, ${selfModification} source-code alias continuations; NOT exception delivery/Linux boot)`);
+console.log(`REP ${store ? 'STOS' : 'MOVS'}: green (${comparisons} native x86 CPU/RAM receipts, ${yields} bounded latch resumes, ${stale} entry/stale refusals, ${faults} partial/fault/miss cases, ${selfModification} source-code alias continuations; NOT exception delivery/Linux boot)`);

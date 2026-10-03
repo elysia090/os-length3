@@ -141,6 +141,7 @@ int main(int argc, char **argv)
         EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
                == WASM_COMPILER_ERROR_GRAMMAR);
     }
+    for (pl_u32 family = 0u; family < 2u; ++family)
     for (pl_u32 address = 32u; address <= 64u; address += 32u)
     for (pl_u32 width = 8u; width <= 64u; width *= 2u) {
         pl_u32 at = 0u;
@@ -148,15 +149,16 @@ int main(int argc, char **argv)
         if (address == 32u) pages[at++] = 0x67u;
         if (width == 16u) pages[at++] = 0x66u;
         if (width == 64u) pages[at++] = 0x48u;
-        pages[at++] = width == 8u ? 0xa4u : 0xa5u;
+        pages[at++] = (pl_u8)((family ? 0xaau : 0xa4u) + (width != 8u));
         EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
         EXPECT(report.source_bytes == at && report.source_instructions == 1u
-            && report.memory_bytes == width / 8u && report.memory_access == 3u
-            && report.read_registers == 0xc2u && report.written_registers == 0xc2u
+            && report.memory_bytes == width / 8u && report.memory_access == (family ? 2u : 3u)
+            && report.read_registers == (family ? 0x83u : 0xc2u)
+            && report.written_registers == (family ? 0x82u : 0xc2u)
             && !report.flags_written);
         if (argc == 2 && !failures) {
             char prefix[4096], json[160];
-            int n = snprintf(prefix,sizeof prefix,"%s/repeat-%u-%u",argv[1],width,address);
+            int n = snprintf(prefix,sizeof prefix,"%s/%s-%u-%u",argv[1],family ? "stos" : "repeat",width,address);
             int j = snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"sourceBytes\":%u,\"instructions\":1,\"width\":%u,\"address\":%u}\n",at,width,address);
             if (n <= 0 || (size_t)n >= sizeof prefix || j <= 0 || (size_t)j >= sizeof json
                 || write_record(prefix,"json",json,(size_t)j) || write_record(prefix,"wasm",output,(size_t)bytes)

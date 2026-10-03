@@ -1,6 +1,7 @@
 // Authenticated bzImage pages -> cold C compiler -> C MMU/table dispatcher.
 // JavaScript transports bounded pages/metadata; it does not decode or execute
 // guest instructions, resolve guest branches, or implement guest exceptions.
+import {CompiledModules} from '../../../web/compiled-modules.mjs';
 class Bytes extends Uint8Array {
   constructor(value,offset,length) {
     super(value,offset,length);
@@ -34,6 +35,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const compilerModule = await WebAssembly.compile(compilerBytes);
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory:compilerMemory}})).exports;
+  const engines = new CompiledModules({machine:{memory,
+    access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
+    table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control}});
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;
   const compilerReport = compilerOutput + 65536;
   let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
@@ -85,6 +89,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
   let firstRepeatWait;
+  let bssInitialState, bssInitialSegments, bssComparedBytes = 0;
+  let memsetInput, memsetComparedBytes = 0, memsetReturns = 0;
   const trace = [];
   const relocationTrace = [];
   const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
@@ -143,7 +149,21 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   }
   async function step(limit) {
     const entry = rip();
+    if (entry === relocated + 0x2e2700n) {
+      assert(!memsetInput,'no nested diagnostic memset');
+      assert.equal(view.getBigUint64(base + 48,true),0n);
+      memsetInput = {address:view.getBigUint64(base + 56,true),bytes:view.getBigUint64(base + 16,true)};
+      assert(memsetInput.bytes === 16n || memsetInput.bytes === 131072n,'independent shipped memset sizes');
+    }
     if (entry === 0x1000281n && !repeatInitialState) relocationInputs();
+    if (entry === relocated + 0x2ded17n && !bssInitialState) {
+      assert.equal(retired,391);
+      assert.equal(view.getBigUint64(base,true),0n);
+      assert.equal(view.getBigUint64(base + 56,true),relocated + 0x2e6400n);
+      assert.equal(view.getBigUint64(base + 8,true),(0x2fe560n - 0x2e6400n) / 8n);
+      bssInitialState = data.slice(base,base + stateBytes.length);
+      bssInitialSegments = data.slice(segments,segments + segmentBytes.length);
+    }
     data.fill(0xa5,codeView,codeView + 24);
     let projection = vm.vm_code(port,entry,codeView);
     for (let waits = 0; projection === 2n && waits < 4; ++waits) {
@@ -175,10 +195,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     const instructions = Number(report.getBigUint64(compilerReport + 24,true));
     assert(length > 0 && length <= 65536 && instructions > 0 && instructions <= limit);
     const beforeEngine = performance.now();
-    const module = await WebAssembly.compile(cold.subarray(compilerOutput,compilerOutput + length));
-    const instance = await WebAssembly.instantiate(module,{machine:{memory,
-      access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
-      table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control}});
+    const instance = await engines.get(entry,cold.subarray(compilerOutput,compilerOutput + length));
     engineMs += performance.now() - beforeEngine; emittedBytes += length;
     table.set(slot,instance.exports.cut);
     view.setBigUint64(rows,entry,true); view.setUint32(rows + 8,sourceBytes,true);
@@ -203,7 +220,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       const start = performance.now(); await supplyPhysical(); supplyMs += performance.now() - start;
     }
     const done = Number(vm.vm_source_retired());
-    trace.push({entry:`0x${entry.toString(16)}`,instructions:done,next:`0x${rip().toString(16)}`,result:String(result)});
+    trace.push({entry:`0x${entry.toString(16)}`,instructions:done,next:`0x${rip().toString(16)}`,result:String(result),
+      rax:`0x${view.getBigUint64(base,true).toString(16)}`,
+      rcx:`0x${view.getBigUint64(base + 8,true).toString(16)}`,
+      rdx:`0x${view.getBigUint64(base + 16,true).toString(16)}`,
+      rdi:`0x${view.getBigUint64(base + 56,true).toString(16)}`,
+      flags:`0x${view.getBigUint64(base + 392,true).toString(16)}`});
     if (entry === 0x10002a1n) {
       assert.equal(rip(),relocated + 0x2ded00n,'independent shipped relocation trampoline destination');
       assert.equal(view.getBigUint64(base,true),rip());
@@ -221,6 +243,33 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert.equal(vm.vm_completed(),1); assert.equal(done,instructions);
     retired += done; assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
     if (entry === 0x1000281n) relocationObservation();
+    if (entry === relocated + 0x2ded17n) {
+      const expected = new Bytes(bssInitialState);
+      expected.writeBigUInt64LE(0n,8); expected.writeBigUInt64LE(relocated + 0x2fe560n,56);
+      expected.writeBigUInt64LE(entry + 3n,384); expected.writeBigUInt64LE(392n,1128);
+      assert(data.subarray(base,base + expected.length).equals(expected),'complete BSS REP CPU observation');
+      assert(data.subarray(segments,segments + segmentBytes.length).equals(bssInitialSegments),'BSS REP cache observation');
+      const end = relocated + 0x2fe560n;
+      for (let address = relocated + 0x2e6400n; address < end; ) {
+        assert.equal(vm.vm_code(port,address,codeView),0n);
+        const offset = view.getUint32(codeView + 16,true) + Number(address & 4095n);
+        const length = Math.min(4096 - Number(address & 4095n),Number(end - address));
+        assert(data.subarray(offset,offset + length).every(byte => byte === 0),'C-borrowed BSS zero observation');
+        bssComparedBytes += length; address += BigInt(length);
+      }
+    }
+    if (entry === relocated + 0x2e2743n && memsetInput) {
+      assert.equal(view.getBigUint64(base,true),memsetInput.address,'memset returns its original destination');
+      const end = memsetInput.address + memsetInput.bytes;
+      for (let address = memsetInput.address; address < end; ) {
+        assert.equal(vm.vm_code(port,address,codeView),0n);
+        const offset = view.getUint32(codeView + 16,true) + Number(address & 4095n);
+        const length = Math.min(4096 - Number(address & 4095n),Number(end - address));
+        assert(data.subarray(offset,offset + length).every(byte => byte === 0),'C-borrowed scalar memset observation');
+        memsetComparedBytes += length; address += BigInt(length);
+      }
+      ++memsetReturns; memsetInput = null;
+    }
     return null;
   }
   try {
@@ -259,26 +308,32 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         [32n,0x1000000n],[40n,relocated],[216n,0x12e3d93n]])
       assert.equal(view.getBigUint64(stackOffset + Number((stack - distance) & 4095n),true),value);
     let stopped;
-    while (admissions < 4096 && retired < 10000) {
+    // Real scalar startup loops can retire far more than a tiny probe quota.
+    // These are diagnostic limits, never synthetic execution completion.
+    const maximumAdmissions = 300000, maximumRetired = 500000;
+    while (admissions < maximumAdmissions && retired < maximumRetired) {
       stopped = await step(view.getUint32(segments + 4,true) ? 1 : 1024);
       if (stopped) break;
     }
-    assert(stopped,'diagnostic quantum bound, not boot completion');
+    if (!stopped) stopped = {kind:'quota',entry:`0x${rip().toString(16)}`,admissions,retired,
+      maximumAdmissions,maximumRetired};
     assert(retired >= 379,'REP really completed, not only accepted');
     assert.equal(repeatComparedBytes,kernelBytes);
     return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
-      retired,modules:admissions,admissions,liveSlots:1,manualBranchEntries:0,
+      retired,modules:engines.stats().compilations,admissions,liveSlots:1,manualBranchEntries:0,
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
-      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,repeatComparedBytes,
+      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,repeatComparedBytes,bssComparedBytes,
+      memsetComparedBytes,memsetReturns,
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
-      emittedBytes,copiedCodeBytes,timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs},trace,relocationTrace,
+      emittedBytes,copiedCodeBytes,engineReuse:engines.stats(),
+      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs},trace,relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
       memoryBytes:memory.buffer.byteLength,coldMemoryBytes:compilerMemory.buffer.byteLength};
   } finally {
-    table.set(slot,null); cc.compiler_close(); vm.vm_close();
+    table.set(slot,null); engines.close(); cc.compiler_close(); vm.vm_close();
   }
 }

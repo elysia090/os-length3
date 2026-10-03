@@ -433,7 +433,7 @@ cross that construction boundary. Do not instantiate both onto an overlapping
 C static-memory layout. Cold memory can be discarded after its derived modules
 are placed, but actual RSS reclamation is not measured.
 
-Native C and cold C-Wasm outputs match byte-for-byte in 734 emissions, including
+Earlier native C and cold C-Wasm receipts match byte-for-byte in 734 emissions, including
 repeats, over the exact bundle/startup prefixes, 83 pure, 22 memory, 11
 stack/control, 22 new RMW, 80 control-read, 80 control-write, 16 memory CMP/TEST
 and 156 register-shift and 198 register-condition
@@ -442,14 +442,14 @@ compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
 only an oracle; it is never an execution fallback. The standard browser-control
 route now works: actual `provider.html` v3 passes 512 comparisons and
-`startup.html` executes 391 shipped startup instructions, retains the independent
+`startup.html` now executes 328,375 shipped startup instructions, retains the independent
 full CPU/cache comparison at instruction 86, and checks the absent-option result.
 Ordinary memory, secure context and no isolation were observed.
 Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
 receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. Indirect CALL/far control, REP store/MSR startup,
+remaining ISA/system/exception/device semantics. Indirect CALL/far control, MSR startup,
 complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
@@ -463,8 +463,9 @@ The browser no longer downloads native prefix modules or branch-entry lists:
 only the demanded RIP, into one reusable function-table slot. No guest-address
 translation, opcode decoding or branch execution is implemented in JS. The
 serialized owner pins source and context across engine compilation. This
-diagnostic still performs one page transport/compilation per cut; warm compiled
-code reuse, first-instruction cross-page supply and general async admission are
+diagnostic still performs one page transport/C compilation per cut; bounded
+engine-instance reuse now requires exact emitted-body equality. C-owned warm
+source admission, first-instruction cross-page supply and general async admission are
 not established. Its fixture manifest does not authenticate a production release.
 See the [page-supply evidence](../vm/check/browser/evidence/2026-10-03-page-supply.md) for
 exact hashes, reservation preconditions and the remaining red gates.
@@ -489,10 +490,32 @@ The [current indirect-JMP evidence](../vm/check/browser/evidence/2026-10-03-indi
 passes 6,144 actual x86/C-Wasm CPU comparisons, including 768 #GP receipts,
 and the unemitted-successor/pure-prefix regression. In the actual browser,
 195 cuts / 391 retired instructions include the independently checked transfer
-`0x10002a1 -> 0x1e20d00`; the next red is REP STOSQ at `0x1e20d17` (`-102`).
+`0x10002a1 -> 0x1e20d00`; that historical checkpoint's red was REP STOSQ
+at `0x1e20d17` (`-102`).
 No step at the erroneous zero-page RIP is counted as progress. This still is
 not Linux boot or a 3-second shell, and production storage/network acceptance
 remains open. Native bundle and human UI are unchanged.
+
+The [current common-lowering evidence](../vm/check/browser/evidence/2026-10-03-stos-alu-cmov.md)
+closes REP STOS, register-destination memory ADD/SUB/AND/OR/XOR and register
+CMOVcc through the common C compiler. Native x86 CPU/RAM/fault observations,
+13,312 memory-ALU and 26,112 CMOV comparisons, and 431 exact native/cold emission
+comparisons pass. The actual browser compares the full relocation, 98,656 BSS
+bytes and three scalar zero-fill returns totaling 131,104 bytes. It reaches
+328,375 retired instructions / 262,536 demanded admissions, mostly scalar
+memset iterations, not a coverage percentage or an `/init` estimate. The next
+red is indirect `CALL [r12]`, `41 ff 14 24`, at `0x1e25239` (`-102`).
+
+Engine work reuses identical C-emitted modules, bounded to 64 instances /
+256 KiB within one Worker owner, without decoding source or choosing guest
+branches. There were 221 engine compilations / 262,315 exact-body hits; 19,657
+emitted bytes remained in the cache. The C compiler still runs on every cut,
+and code-page transport accumulated 1,075,351,552 bytes. This repeated work is
+not eliminated or misreported as resident/delivery size. The active table has
+one slot; VM/cold memories stay 6,815,744 / 1,048,576 bytes. Linux boot and the
+3-second cold shell remain red. Next test indirect CALL fault ordering and
+remove C reanalysis/page-copy fixed costs with C-owned source admission before
+claiming production executable-generation/load or storage/device closure.
 
 ## Platform sources
 

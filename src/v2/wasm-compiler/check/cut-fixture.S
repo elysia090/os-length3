@@ -2,7 +2,30 @@
 .globl _start
 .type _start,@function
 _start:
-#if defined(CUT_OPCODE)
+#if defined(CUT_CMOV)
+#if CUT_WIDTH == 16
+#define DEST %ax
+#define SOURCE %di
+#elif CUT_WIDTH == 32
+#define DEST %eax
+#define SOURCE %edi
+#else
+#define DEST %rax
+#define SOURCE %rdi
+#endif
+#if CUT_CMOV_CASE == 1
+    CUT_CMOV DEST,DEST
+#elif CUT_CMOV_CASE == 2
+    add %rdx,%rsi
+    CUT_CMOV SOURCE,DEST
+    xor %r8d,%r8d
+#elif CUT_CMOV_CASE == 3
+    CUT_CMOV %r9d,%ecx
+    mov %rcx,%rax
+#else
+    CUT_CMOV SOURCE,DEST
+#endif
+#elif defined(CUT_OPCODE)
 #if CUT_WIDTH == 8
 #define DEST %al
 #define SOURCE %cl

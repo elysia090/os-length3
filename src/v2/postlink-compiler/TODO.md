@@ -1,4 +1,4 @@
-# Remaining work — 2026-10-02
+# Remaining work — 2026-10-03
 
 ## Immediate delivery and next product goal — 2026-10-02
 
@@ -42,56 +42,59 @@ to postpone the next browser product goal behind new native size/speed work.
 
 ## Active browser work — 2026-10-03
 
-Current executable checkpoint: the exact shipped bzImage advances to 385 source
-instructions in an actual ordinary-memory browser Worker through cold C-Wasm
-compilation and C table/MMU execution. Register SETcc now uses the common
-condition helper for all 16 conditions. A linear backward read/kill frontier
-preserves interior flag consumers and conditional zero-count definitions;
-198 modules / 101,376 native comparisons pass direct Wasm and C dispatch.
-The C MMU now supplies a borrowed executable-page view, not a JS guest-address
-cast. Admission follows actual RIP, with one live table slot and ZERO manually
-listed branch entries or precompiled browser prefix modules. The complete
-86-instruction CPU/cache observation still passes, followed by the command-line
-scanner returning false for absent `no5lvl`. Fixed-profile CPUID now emits
-constants directly, with 7,504 complete CPU comparisons and 15,008 entry-flag
-rejections. Common 16/64-bit PUSHF/POPF passes 8,192 CPL/IOPL cases, 4,096
-actual CPL3 x86 receipts and 36 fault/refusal cases. The relocation input
-registers are independently checked at 378. REP MOVS now emits an ordinary
-bounded Wasm loop through C access/MMU: 336 native x86 CPU/RAM receipts,
-44 native fault records, 144 latch resumes, 192 entry/stale refusals and two
-source-code alias continuations pass. Only RCX/RSI/RDI publish on a partial
-return; RIP/retirement advance once at completion. Address-size-32 parent
-narrowing was independently red, including zero count/first fault, and fixed.
-C online physical admission now resolves that first RESOURCE and all following
-REP waits without VM reopen/reset, sorted insertion, full-RAM reconstruction or
-JS virtual-address mapping. All 3,040,256 copied bytes and the complete REP CPU/
-cache frontier pass. One C index handles initial/append rows; generation/request/
-context/ticket checks admit virgin slots only and refuse resident reinitialization.
-Real browser: 1,481 page supplies / 1,494 resident pages / 1,483 quantum yields,
-47 exact 64 KiB Range reads, 65,536-byte delivery cache, 6,815,744-byte VM memory.
-Common indirect near JMP now passes 6,144 native/C-Wasm CPU comparisons,
-including 768 actual #GP frames. A pure prefix incorrectly inheriting its
-unemitted successor's CONTROL classification was reproduced as red and fixed;
-prefix/fault compositions and independent shipped trampoline observation pass.
-Real browser: 195 demanded cuts / 391 retired instructions / one live table slot,
-with exact `0x10002a1 -> 0x1e20d00`. The next gate is common REP STOSQ at
-`0x1e20d17` (cold compile `-102`), then startup/decompression, MSR and
-exception/device/root supply. First add the generic store frontier to the bounded
-REP lowering: all 8/16/32/64-bit widths, 32/64-bit address sizes, DF, zero count,
-partial/cross-page faults and quantum/resource continuation. Preserve RAX/RSI;
-publish only RCX/RDI on partial return and retire once on completion. Compare
-actual x86 CPU/RAM/fault receipts before resuming the unchanged shipped kernel.
-Page/index quotas and dirty eviction/recovery
-remain explicit limitations; diagnostic chunk hashes are not production AEAD/root
-admission. The diagnostic still recompiles each demanded cut, copies one bounded
-page to independent cold memory, and does not yet connect crossing-first-fetch
-pages or signed production source admission. Never skip instructions or change
-the kernel/backend. Whole-image `-104`, Linux boot, PID 1 and development
-acceptance remain red. Native asset and human UI are unchanged. See the
-condition/admission, CPU/stack-flags, REP/page-supply and indirect-JMP evidence
-linked from BROWSER.md. The product goal remains full Linux/PID 1/offline shell,
-C compile/link/run, make/local Git/apk, workspace/storage recovery and granted
-network/service use, not another partial startup counter.
+Goal: the same published native bundle -> independent C cold compiler ->
+C vm.wasm -> real-browser Linux/PID 1/offline shell -> C compile/link/run,
+make -j4/local Git/apk, then authenticated storage/workspace recovery and
+granted virtual-NIC HTTPS/Git/service use. Linux remains the sole semantic
+authority. No source interpreter, opcode skip or fallback is permitted.
+Native release and human UI stay unchanged. Cold shell 3 seconds is unmet.
+
+Current executable checkpoint: common REP STOS, memory-source
+ADD/SUB/AND/OR/XOR and register CMOVcc are implemented and verified against
+actual x86. STOS passes all 8/16/32/64 widths and 32/64 address sizes, DF,
+zero-count, partial/cross-page faults, code aliases and bounded continuations;
+only RCX/RDI publish on partial return. Memory-source ALU passes 26 modules /
+13,312 complete CPU/RAM comparisons; CMOV passes 51 modules / 26,112 comparisons
+in direct Wasm and separately C dispatch, including false 32-bit parent zeroing
+and interior flag consumers. 431 native/cold emission comparisons, full product
+check and selected compiler/lowering ASan/UBSan pass. Previous JMP/REP/RMW
+regressions remain green; linked decoder/provider archives in the sanitizer
+run are normal builds, not whole-TCB coverage.
+
+The actual ordinary-memory browser Worker executes 328,375 source instructions
+with 262,536 demanded admissions, one active table slot and no manually listed
+branch coordinates. The complete independent 86-instruction CPU/cache and
+378-instruction relocation-register witnesses, all 3,040,256 copied kernel
+bytes, 98,656 REP BSS bytes and three scalar memset returns totaling 131,104
+bytes pass. The count is predominantly memset iterations, not a boot percentage.
+Initial page-table construction has begun. The next exact red is indirect
+`CALL [r12]` (`41 ff 14 24`) at `0x1e25239`, compile `-102`.
+
+Next, in order:
+
+1. Implement common near indirect CALL for register/memory targets. Make
+   target-read/#GP/stack-reservation ordering and fault noncommit red against
+   actual x86, then compare generated cuts through C MMU/dispatch. Never add
+   an address-specific allocator/kernel shim or manually choose the target.
+2. Remove repeated C construction/page-copy fixed costs using C-owned reusable
+   source admission, with exact source/lifetime checks and code-alias revocation.
+   Engine reuse is now bounded and requires an identical successful C emission:
+   221 compilations / 262,315 hits, 64 retained instances / 19,657 bytes. It does
+   NOT remove C analysis or the cumulative 1,075,351,552 bytes of code transport.
+   Add crossing-first-instruction supply and preserve precise fetch ordering.
+3. Finish actual startup/decompression, MSR/exception/device/root supply, then
+   Linux/PID 1/shell and the complete development/storage/network acceptance.
+   Whole-image `-104`, boot, cold shell and production admission remain red.
+
+Physical supply remains one unsorted C index, never VM reopen/reset or a JS
+MMU. Browser: 1,536 page supplies / 1,549 resident pages, 47 HTTP 206 ranges,
+65,536-byte diagnostic chunk cache, 6,815,744 VM memory / 1 MiB cold memory.
+The 300,000-admission / 500,000-retirement bound is an explicit diagnostic
+quota; exhaustion is not boot success. Local chunk SHA-256 does not establish
+signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
+admission remain open. See
+[the current evidence](../vm/check/browser/evidence/2026-10-03-stos-alu-cmov.md)
+and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
 implementation, not the minor native benchmark difference: whole-image Wasm

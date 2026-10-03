@@ -116,6 +116,45 @@ _start:
     test dword ptr [edi], 0x80000001
 #elif MEMORY_CASE == 61
     test qword ptr [rdi + rcx*4 + 7], -123
+#elif MEMORY_CASE >= 62 && MEMORY_CASE <= 81
+#if (MEMORY_CASE - 62) % 4 == 0
+#define DEST rax
+#define SOURCE qword ptr [rdi]
+#elif (MEMORY_CASE - 62) % 4 == 1
+#define DEST eax
+#define SOURCE dword ptr [rdi]
+#elif (MEMORY_CASE - 62) % 4 == 2
+#define DEST ax
+#define SOURCE word ptr [rdi]
+#else
+#define DEST al
+#define SOURCE byte ptr [rdi]
+#endif
+#if MEMORY_CASE < 66
+    add DEST, SOURCE
+#elif MEMORY_CASE < 70
+    sub DEST, SOURCE
+#elif MEMORY_CASE < 74
+    and DEST, SOURCE
+#elif MEMORY_CASE < 78
+    or DEST, SOURCE
+#else
+    xor DEST, SOURCE
+#endif
+#elif MEMORY_CASE == 82
+    add ah, byte ptr [rdi]
+#elif MEMORY_CASE == 83
+    add rdi, qword ptr [rdi]
+#elif MEMORY_CASE == 84
+    sub eax, dword ptr [rdi + rcx*4 + 7]
+#elif MEMORY_CASE == 85
+    or edi, dword ptr [edi]
+#elif MEMORY_CASE == 86
+    xor rbp, qword ptr [rbp]
+#elif MEMORY_CASE == 87
+    add rax, qword ptr [rip + 8]
+#elif MEMORY_CASE == 88
+    add rax, qword ptr fs:[rdi]
 #else
 #error unsupported case
 #endif
