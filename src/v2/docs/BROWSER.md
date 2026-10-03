@@ -825,6 +825,25 @@ admissions, with unchanged complete decompression output. Next refusal is
 `66 c1 c0 08` (ROL AX,8) at `0xffffffff8103acc0`. PID 1/shell and the full
 product goal remain red. The observation is not cold-ready performance.
 
+### Common register rotate checkpoint
+
+[Current evidence](../vm/check/browser/evidence/2026-10-03-rotate.md) closes
+register ROL/ROR across all widths and immediate/CL counts. 48 entrances were
+red first; 110 ordinary post-linked forms pass 56,320 direct Wasm and separately
+C-dispatch comparisons. Narrow words become periodic packed words, then one
+native Wasm rotate and low-width projection; no bit loop or opcode callback.
+Flag count stays masked rather than modulo width. A nonzero whole turn updates
+CF; a masked-zero turn preserves every flag. Undefined multi-bit OF is not
+asserted as a hardware value. Memory and through-carry rotations still refuse.
+Fresh shift regressions, full checks, selected lowering sanitizers, 618 cold
+emissions and the 20 source-owner regressions pass, not ISA/boot completeness.
+
+Actual browser passes the old ROL, reaching 129,965,641 retirements /
+64,842,476 admissions, with unchanged complete decompression output. Next
+refusal is `8c d0` (MOV EAX,SS) at `0xffffffff814045bb`. Read the existing
+architectural selector state in the common compiler; never synthesize a host
+selector or maintain a second dictionary. PID 1/shell and the full goal are red.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

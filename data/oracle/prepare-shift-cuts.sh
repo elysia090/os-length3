@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# == 1 && ! -e $1 ]] || { printf 'usage: %s NEW-OUTPUT-DIRECTORY\n' "$0" >&2; exit 2; }
+[[ $# -ge 1 && $# -le 2 && ! -e $1 ]] || { printf 'usage: %s NEW-OUTPUT-DIRECTORY [shift|rotate]\n' "$0" >&2; exit 2; }
+family=${2:-shift}
+case $family in
+  shift) opcodes=(shl shr sar); first=1; last=12;;
+  rotate) opcodes=(rol ror); first=13; last=26;;
+  *) printf 'unknown shift family\n' >&2; exit 2;;
+esac
 repo=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 mkdir -p -- "$1"
 output=$(cd -- "$1" && pwd)
@@ -15,7 +21,7 @@ emit() {
     "$output/$name.linked.elf" "$output/$name.optimized.elf"
   "$repo/src/v2/wasm-compiler/build/cut-check" "$output/$name.optimized.elf" "$output/$name"
 }
-for opcode in shl shr sar; do
+for opcode in "${opcodes[@]}"; do
   for width in 8 16 32 64; do
     emit "$opcode-$width-cl" -DSHIFT_OPCODE="$opcode" -DSHIFT_WIDTH="$width"
     for count in 0 1 7 8 15 16 31 32 63 64 255; do
@@ -23,5 +29,5 @@ for opcode in shl shr sar; do
     done
   done
 done
-for rank in {1..12}; do emit "compose-$rank" -DSHIFT_CASE="$rank"; done
+for ((rank=first;rank<=last;++rank)); do emit "compose-$rank" -DSHIFT_CASE="$rank"; done
 printf 'Native shift records prepared; execute both direct Wasm and C table comparisons.\n'

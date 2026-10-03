@@ -5,7 +5,7 @@ int cut_shift_supported(const pl_x86_instruction *instruction)
     const pl_x86_operand *count = &instruction->operands[1];
     return instruction->operation == PL_X86_OPERATION_SHIFT
         && instruction->visible_operand_count == 2u
-        && (instruction->condition == 4u || instruction->condition == 5u
+        && (instruction->condition < 2u || instruction->condition == 4u || instruction->condition == 5u
             || instruction->condition == 7u)
         && (count->kind == PL_X86_OPERAND_IMMEDIATE
             || (count->kind == PL_X86_OPERAND_REGISTER && cut_gpr(&count->value.reg)
@@ -62,6 +62,55 @@ static void flags(cut_lowering *cut, pl_u32 width, pl_u32 kind)
     cut->report.flags_written = 1u;
 }
 
+static void rotate_flags(cut_lowering *cut, pl_u32 width, pl_u32 kind)
+{
+    pl_u32 wanted=cut->wanted_flags&0x801u;
+    if (!wanted) return;
+    /* Use the masked count, not count modulo width: a nonzero whole-word
+     * turn updates CF even though its result equals the incoming value. */
+    cut_get(cut,CUT_RIGHT); cut_op(cut,0x50u); cut_op(cut,0x45u);
+    cut_op(cut,0x04u); cut_op(cut,0x40u);
+    cut_get(cut,CUT_FLAGS); cut_const(cut,~(pl_u64)wanted); cut_op(cut,0x83u);
+    if (wanted&1u) {
+        cut_get(cut,CUT_VALUE);
+        if (kind) { cut_const(cut,width-1u); cut_op(cut,0x88u); }
+        cut_const(cut,1u); cut_op(cut,0x83u); cut_op(cut,0x84u);
+    }
+    if (wanted&0x800u) {
+        cut_get(cut,CUT_VALUE); cut_const(cut,width-1u); cut_op(cut,0x88u);
+        cut_get(cut,CUT_VALUE);
+        if (kind) { cut_const(cut,width-2u); cut_op(cut,0x88u); }
+        cut_op(cut,0x85u); cut_const(cut,1u); cut_op(cut,0x83u);
+        cut_const(cut,0u); cut_get(cut,CUT_RIGHT); cut_const(cut,1u);
+        cut_op(cut,0x51u); cut_op(cut,0x1bu);
+        cut_const(cut,11u); cut_op(cut,0x86u); cut_op(cut,0x84u);
+    }
+    /* SF/ZF/AF/PF are unchanged. Multi-bit OF chooses zero; count zero
+     * preserves every flag, including definitions earlier in this slice. */
+    cut_set(cut,CUT_FLAGS); cut_op(cut,0x0bu);
+    cut->report.flags_written=1u;
+}
+
+static void rotate_value(cut_lowering *cut, pl_u32 width, pl_u32 kind)
+{
+    cut_get(cut,CUT_LEFT);
+    if (width==32u) {
+        cut_op(cut,0xa7u); cut_get(cut,CUT_RIGHT); cut_op(cut,0xa7u);
+        cut_op(cut,kind ? 0x78u : 0x77u); cut_op(cut,0xadu);
+    } else {
+        if (width<32u) {
+            /* K = sum_j 2^(j*w). Masked x*K repeats the w-bit word without
+             * carry. Its period is w, so one 64-bit rotate projects exactly
+             * to rotate_w(x,count); no bit loop or second count is needed. */
+            cut_const(cut,width==8u ? 0x0101010101010101ull : 0x0001000100010001ull);
+            cut_op(cut,0x7eu);
+        }
+        cut_get(cut,CUT_RIGHT); cut_op(cut,kind ? 0x8au : 0x89u);
+    }
+    cut_mask(cut,width); cut_set(cut,CUT_VALUE);
+    rotate_flags(cut,width,kind);
+}
+
 void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     const pl_x86_operand *operands = instruction->operands;
@@ -71,6 +120,11 @@ void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut_read_operand(cut, &operands[1], 8u);
     cut_const(cut, width == 64u ? 63u : 31u); cut_op(cut, 0x83u);
     cut_set(cut, CUT_RIGHT);
+    if (kind<2u) {
+        rotate_value(cut,width,kind);
+        cut_write_register(cut,&operands[0].value.reg);
+        return;
+    }
     cut_get(cut, CUT_LEFT);
     if (kind == 7u && width < 64u) {
         cut_const(cut, 64u - width); cut_op(cut, 0x86u);

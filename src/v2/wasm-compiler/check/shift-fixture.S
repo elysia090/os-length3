@@ -57,6 +57,50 @@ _start:
     sar %cl,%r15
     dec %r15
     mov %r15,%rax
+#elif SHIFT_CASE == 13
+    rol %cl,%cl
+    mov %rcx,%rax
+#elif SHIFT_CASE == 14
+    ror %cl,%ch
+    mov %rcx,%rax
+#elif SHIFT_CASE == 15
+    rol %cl,%r9d
+    mov %r9,%rax
+#elif SHIFT_CASE == 16
+    add %rdx,%rax
+    rol %cl,%ax
+#elif SHIFT_CASE == 17
+    and %rdx,%rax
+    ror %cl,%rax
+#elif SHIFT_CASE == 18
+    rol %cl,%ax
+    setc %dl
+    xor %r8d,%r8d
+#elif SHIFT_CASE == 19
+    ror %cl,%rax
+    setc %dl
+    xor %r8d,%r8d
+#elif SHIFT_CASE == 20
+    rol $16,%ax
+#elif SHIFT_CASE == 21
+    ror $8,%ah
+#elif SHIFT_CASE == 22
+    xor %rdx,%rax
+    rol $0,%eax
+#elif SHIFT_CASE == 23
+    add %rdx,%rax
+    ror $32,%eax
+#elif SHIFT_CASE == 24
+    rol $1,%r15
+    ror %cl,%r15
+    dec %r15
+    mov %r15,%rax
+#elif SHIFT_CASE == 25
+    rol %cl,%ax
+    setz %dl
+#elif SHIFT_CASE == 26
+    ror %cl,%rax
+    adc %rcx,%rax
 #else
 #error unknown shift fixture
 #endif

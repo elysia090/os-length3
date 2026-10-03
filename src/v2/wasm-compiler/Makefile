@@ -125,7 +125,7 @@ cut-fixture-check: $(BUILD)/cut-check fixture-tools
 
 shift-fixture-check: $(BUILD)/cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
-	for rank in 1 2 3 4 5 6 7 8 9 10 11 12; do \
+	for rank in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26; do \
 	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
 		-DSHIFT_CASE=$$rank check/shift-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \

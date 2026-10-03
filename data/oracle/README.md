@@ -435,6 +435,15 @@ destinations and undefined flags are not asserted as defined hardware values;
 the drivers separately test the chosen whole-parent destination representative.
 No such rewrite, CPU feature change or interpreter exists in product execution.
 
+The [common rotate checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-rotate.md)
+uses `prepare-shift-cuts.sh NEW-DIRECTORY rotate`, followed by direct and C-table
+`check-wasm-cuts.mjs` / `check-wasm-dispatch.mjs` comparison. 110 ordinary
+post-linked forms cover all widths/count masks, narrow/high/extended aliases,
+whole turns, preserved zero-count flags and interior consumers. The default
+script still prepares the 156 SHL/SHR/SAR regressions. The observer distinguishes
+masked flag count from modulo-width value rotation and excludes only undefined
+multi-bit OF per input. Memory and through-carry forms remain explicit refusals.
+
 This division avoids rebuilding QEMU while preserving the final route:
 
 ```text

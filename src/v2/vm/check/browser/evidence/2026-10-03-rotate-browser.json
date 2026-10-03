@@ -1,0 +1,256 @@
+{
+  "format": "browser-bzimage-startup-v1",
+  "status": "pass",
+  "linuxBoot": "not-achieved",
+  "decompressedOutput": {
+    "entry": "0x1e23d31",
+    "comparedBytes": 14622864,
+    "pages": 3571,
+    "sha256": "6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9",
+    "gzipCrc32": 380732796,
+    "oracle": "independent gzip CRC/ISIZE verified; exact per-page SHA-256 comparison before ELF PT_LOAD moves",
+    "guestCrc": "PREBOOT uses raw inflate; this is independent output validation, not a guest CRC check"
+  },
+  "linuxEntry": {
+    "entry": "0x14015e4",
+    "instructions": 5,
+    "nextRip": "0x14015f7",
+    "retired": 129057478
+  },
+  "retired": 129965641,
+  "modules": 460793,
+  "admissions": 64842476,
+  "liveSlots": 64,
+  "manualBranchEntries": 0,
+  "independentStateCheckpoint": 86,
+  "relocationRegisterCheckpoint": 378,
+  "nextRip": "0xffffffff814045bb",
+  "nextGate": {
+    "kind": "compile",
+    "status": -102,
+    "entry": "0xffffffff814045bb",
+    "source": [
+      140,
+      208,
+      80,
+      84,
+      72,
+      131,
+      4,
+      36,
+      8,
+      156,
+      140,
+      200,
+      80,
+      104,
+      207
+    ],
+    "sourceAvailable": 15,
+    "cpu": {
+      "registers": [
+        "0x0",
+        "0x0",
+        "0x46",
+        "0xffffffff81b8c7f5",
+        "0xffffffff81a03e50",
+        "0x5",
+        "0xffffffff81b8c7fa",
+        "0xffffffff8101b3d7",
+        "0x9a",
+        "0xffffffff81a03e98",
+        "0x0",
+        "0xe08",
+        "0xffffffff8101b3d2",
+        "0x0",
+        "0x1",
+        "0x1000"
+      ],
+      "flags": "0x46",
+      "cr3": "0x1b1d000"
+    }
+  },
+  "exceptions": [
+    {
+      "entry": "0x1e21913",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1000000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1000000"
+    },
+    {
+      "entry": "0x1e21913",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1200000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1200000"
+    },
+    {
+      "entry": "0x1e218e5",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1400000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1400000"
+    },
+    {
+      "entry": "0x1e21913",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1600000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1600000"
+    },
+    {
+      "entry": "0x1e21a40",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1800000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1800000"
+    },
+    {
+      "entry": "0xffffffff814017e2",
+      "vector": 14,
+      "error": 0,
+      "address": "0xffff888000001000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016b6",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff810414b1",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff810414b1",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff810414be",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff810414be",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff81041474",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff81041474",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff813ca4f6",
+      "vector": 14,
+      "error": 0,
+      "address": "0xffff888001e62000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016b6",
+      "cr2": "0xffff888001e62000"
+    },
+    {
+      "entry": "0xffffffff8103d5ef",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8103d5ef",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888001e62000"
+    },
+    {
+      "entry": "0xffffffff8103d5ff",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8103d5ff",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888001e62000"
+    },
+    {
+      "entry": "0xffffffff81041474",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff81041474",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888001e62000"
+    }
+  ],
+  "repeatAdmission": "completed through one pinned module; all copied bytes checked through C-MMU views",
+  "firstRepeatWait": {
+    "address": "0x1e283f8",
+    "bytes": 8,
+    "access": 18
+  },
+  "pageSupplies": 3680,
+  "sourceExtentBytes": 3046912,
+  "quantumYields": 7697,
+  "repeatComparedBytes": 3040256,
+  "bssComparedBytes": 98656,
+  "memsetComparedBytes": 131104,
+  "memsetReturns": 3,
+  "residentPages": 3693,
+  "descriptorCapacity": 8192,
+  "descriptorBytes": 393200,
+  "guestExecution": "C-Wasm table dispatcher/MMU",
+  "coldCompilation": "C-Wasm decoder/planner/emitter",
+  "guestMemoryCallback": "C-Wasm, not JavaScript",
+  "sourceProjection": "C-MMU borrowed page, no JS virtual-to-physical mapping",
+  "emittedBytes": 159423704,
+  "copiedCodeBytes": 1887649792,
+  "engineReuse": {
+    "compilations": 460793,
+    "hits": 0,
+    "entries": 64,
+    "retainedModuleBytes": 20281,
+    "maximumEntries": 64,
+    "maximumBytes": 262144
+  },
+  "sourceReuse": {
+    "hits": 64381683,
+    "misses": 460794,
+    "capacity": 64,
+    "metadataBytes": 6752,
+    "sourcePayloadBytes": 0
+  },
+  "timingMs": {
+    "cold": 7595.79999089241,
+    "engine": 42610.6999925375,
+    "execution": 31016.40002167225,
+    "supply": 176.4000004529953,
+    "admission": 20327.20000386238
+  },
+  "providerBytes": 31653,
+  "compilerBytes": 420055,
+  "memoryBytes": 15728640,
+  "coldMemoryBytes": 1048576,
+  "secureContext": true,
+  "isolated": false,
+  "fixtureIntegrity": "local diagnostic SHA-256; not signed production admission",
+  "objectTransport": {
+    "fetches": 49,
+    "fetchedBytes": 3154432,
+    "requestedBytes": 3046912,
+    "cacheHighWaterBytes": 65536,
+    "cachedBytes": 32256
+  },
+  "sourceReceipt": [
+    "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc  native-bundle",
+    "21771c757255406ce090faa6c5108b72618f794c8e46379a4a3d50dc21364e67  root/boot/kernel",
+    "90ad6681efc64bbbf5d10b92ac3aa62cc12eafc6dc88b790cec055a4bffb4ff1  root/boot/initramfs",
+    "62a1aa4720607ec8c3ec38c50041cc7ff3dae9e29ebd335b589283c8e0381212  root/bin/busybox"
+  ]
+}

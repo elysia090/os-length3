@@ -72,7 +72,7 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
         if (instruction->operands[1].kind == PL_X86_OPERAND_IMMEDIATE
                 && !(instruction->operands[1].value.immediate
                      & (instruction->operands[0].bits == 64u ? 63u : 31u))) return 0u;
-        return 0x8d5u;
+        return instruction->condition<2u ? 0x801u : 0x8d5u;
     case PL_X86_OPERATION_FLAG_CONTROL:
         return instruction->condition < 2u ? 1u
             : instruction->condition == 3u || instruction->condition == 4u ? 0x400u : 0u;

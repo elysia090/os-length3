@@ -30,6 +30,37 @@ int main(int argc, char **argv)
     /* Count encodings are legacy scans in the immutable no-BMI1/LZCNT
      * profile. POPCNT has its own enabled feature, not either extension. */
     options.maximum_source_instructions=1u;
+    /* A nonzero whole-width turn keeps the value but updates CF. The flag
+     * count is masked, not reduced modulo the narrow destination width. */
+    for (pl_u32 kind=0u;kind<2u;++kind)
+    for (pl_u32 width=8u;width<=64u;width*=2u)
+    for (pl_u32 edge=0u;edge<6u;++edge) {
+        pl_u32 count=edge==0u ? 0u : edge==1u ? 1u : edge==2u ? width/2u
+            : edge==3u ? width : edge==4u ? 255u : 0u;
+        pl_u32 at=0u;
+        memset(pages,0x90,sizeof pages);
+        if (width==16u) pages[at++]=0x66u;
+        if (width==64u) pages[at++]=0x48u;
+        pages[at++]=(pl_u8)(edge==5u ? (width==8u ? 0xd2u : 0xd3u)
+                                                   : (width==8u ? 0xc0u : 0xc1u));
+        pages[at++]=(pl_u8)(0xc0u|(kind<<3u));
+        if (edge!=5u) pages[at++]=(pl_u8)count;
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_instructions==1u && report.source_bytes==at
+            && !report.memory_bytes && report.written_registers==1u
+            && report.flags_written==(edge==5u || !!(count&(width==64u ? 63u : 31u))));
+    }
+    /* Do not admit through-carry or memory forms through the pure register
+     * grammar just because their rotate/shift operation tag is shared. */
+    for (pl_u32 kind=0u;kind<4u;++kind) {
+        memset(pages,0x90,sizeof pages);
+        pages[0]=0x66u; pages[1]=0xc1u;
+        pages[2]=(pl_u8)((kind<2u ? 0xd0u : 0x07u)|((kind&1u)<<3u));
+        pages[3]=8u;
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            ==WASM_COMPILER_ERROR_GRAMMAR);
+    }
     for (pl_u32 kind=0u;kind<5u;++kind)
     for (pl_u32 width=16u;width<=64u;width*=2u) {
         pl_u32 at=0u;

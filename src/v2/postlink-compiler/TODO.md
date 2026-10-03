@@ -209,6 +209,18 @@ Next -102 is `66 c1 c0 08` (ROL AX,8) at `0xffffffff8103acc0`.
 PID 1/shell and the full product goal remain red.
 See [current evidence](../vm/check/browser/evidence/2026-10-03-summary.md).
 
+Latest checkpoint closes common register ROL/ROR through exact periodic-word
+SSA and native Wasm rotate. 48 entrances were red, then green; 110 ordinary
+post-linked forms pass 56,320 comparisons in direct and separately C dispatch,
+with correct masked count versus modulo-width rotation, all widths/aliases,
+CF/OF definedness, predecessor flags and interior consumers. Fresh 156 shift
+regressions, full product check, selected lowering ASan/UBSan, 618 native/cold
+emissions and all 20 source-owner regressions pass. Actual browser:
+129,965,641 retired / 64,842,476 admissions, unchanged complete decompression.
+Next -102 is `8c d0` (MOV EAX,SS) at `0xffffffff814045bb`.
+PID 1/shell and the full product goal remain red.
+See [current evidence](../vm/check/browser/evidence/2026-10-03-rotate.md).
+
 Next, in order:
 
 1. Actual browser decompression is now completely observed: all 14,622,864
@@ -239,11 +251,13 @@ Next, in order:
    now closed as well, followed by scalar memory CMPXCHG, memory SETcc and
    ordinary signed register-index memory BT/BTS/BTR/BTC.
    Profile-bound legacy scan/count semantics are now closed as described above.
-   The next real red is `66 c1 c0 08` (ROL AX,8) at `0xffffffff8103acc0`.
-   Close general ROL/ROR width/count/alias and CF/OF semantics, preserving other
-   flags and predecessors when count is zero. Distinguish the masked flag count
-   from modulo-width value rotation, including a nonzero full-width turn.
-   Make entrance and actual native comparison tests red before lowering.
+   Common register ROL/ROR is now closed as described above. The next real red
+   is `8c d0` (MOV EAX,SS) at `0xffffffff814045bb`. Close selector reads from
+   existing architectural segment state, with all selectors, destination widths,
+   aliases, unchanged flags and precise memory forms. Make general entrance and
+   native/model comparisons red first. No host selector constant or duplicate
+   segment state/dictionary is permitted. These reads precede frame construction;
+   do not skip them or guess the target return frame.
    Keep the profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
@@ -274,7 +288,7 @@ page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-memory-index.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-rotate.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
