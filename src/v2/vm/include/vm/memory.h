@@ -27,6 +27,12 @@ typedef struct {
 /* One branch per non-first resident page. References name stable row ranks,
  * so appending a page moves neither a descriptor nor guest RAM. */
 typedef struct { pl_u64 bit; pl_u32 child[2]; } vm_memory_branch;
+/* Optional serialized invalidation hook, invoked before each physical RAM
+ * fragment is changed, including paging A/D and reservation commit. Offsets
+ * are relative to bytes, not guest virtual addresses. The hook cannot reenter
+ * or mutate RAM/context/directory. External host writes must revoke separately.
+ * A cancelled reservation never invokes it; an equal-value store still does. */
+typedef void (*vm_memory_write_observer)(void *owner, pl_u32 offset, pl_u32 bytes);
 typedef struct {
     pl_u8 *bytes;
     pl_u64 byte_count;
@@ -38,6 +44,8 @@ typedef struct {
     pl_u64 next_offset;
     pl_u64 generation;
     pl_u32 write_touched; /* Caller-cleared mutation bit, not a counter/epoch. */
+    vm_memory_write_observer before_write;
+    void *write_owner;
     vm_memory_reservation reservation;
     const vm_memory_page *recent[256];
 } vm_memory;

@@ -597,6 +597,29 @@ remove this fixed cost with C-owned reusable source admission and exact source,
 lifetime and alias validation before widening startup further. Native bundle
 and human UI remain unchanged; the complete product goal is active.
 
+### C-owned source-admission checkpoint
+
+The [source-admission evidence](../vm/check/browser/evidence/2026-10-03-source-admission.md)
+eliminates the previous repeated C construction/transport before engine reuse.
+C keeps 64 exact source-extent rows and 6,216 bytes of candidate/write indexes,
+not copied source pages. Every query still performs executable MMU admission;
+physical RAM/A/D/reservation writes invalidate intersecting rows before mutation.
+Unknown compile spans are page-pinned during async engine installation; writes
+cancel publication. Host remap/table changes require reset. Compiler/profile,
+residency and CPU state remain pinned by one serialized owner, not an SMP proof.
+
+At exactly the same 1,616,430 retired instructions and complete observed CPU
+quota state, 1,000,000 C compile calls fall to 1,967, and cumulative code recopy
+falls 4,096,000,000 -> 8,056,832 bytes (99.8033%). Fetch, resident pages/memory,
+source release and independent relocation/BSS/memset observations are unchanged.
+This is work reduction, not artifact compression or a boot-time benchmark.
+The pending-source observer and private function-table overlap were red first
+and are covered by native/C-Wasm regressions. Source payload copies are zero
+inside the metadata cache; miss transfer to the independent compiler remains.
+Next widen actual startup/decompression, preserving explicit budgets and the
+full product goal. Crossing-first-instruction admission and production storage
+remain open; a reusable one-page cut is not whole-machine closure.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

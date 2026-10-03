@@ -3,6 +3,10 @@
 #include <vm/memory.h>
 
 const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address);
+static inline void vm_memory_before_write(vm_memory *memory, pl_u32 offset, pl_u32 bytes)
+{
+    if (memory->before_write) memory->before_write(memory->write_owner,offset,bytes);
+}
 static inline pl_u64 vm_memory_load(const pl_u8 *bytes, pl_u32 count)
 {
     pl_u64 value = 0u;

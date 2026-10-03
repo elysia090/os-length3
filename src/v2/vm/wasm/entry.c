@@ -8,6 +8,7 @@
 #include <vm/registers.h>
 #include <vm/supply.h>
 #include <vm/exception.h>
+#include <vm/source.h>
 #include <machine/state.h>
 #include "../core/memory-internal.h"
 #include <stdint.h>
@@ -22,14 +23,19 @@ static vm_boot boot;
 static vm_execution execution;
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
+static vm_sources sources;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result call_entry(void *pointer, pl_u32 slot);
+pl_u32 vm_source_capacity(void) { return VM_SOURCE_ROWS; }
+pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
 
 pl_u32 vm_slot_min(void)
 {
     pl_u32 fetch = (pl_u32)(uintptr_t)fetch_entry, call = (pl_u32)(uintptr_t)call_entry;
-    return (fetch > call ? fetch : call) + 1u;
+    pl_u32 write = (pl_u32)(uintptr_t)vm_sources_write;
+    pl_u32 last = fetch > call ? fetch : call;
+    return (last > write ? last : write) + 1u;
 }
 
 pl_u32 vm_arena_min(void)
@@ -39,6 +45,7 @@ pl_u32 vm_arena_min(void)
 
 void vm_close(void)
 {
+    vm_sources_open(&sources,0u,vm_slot_min());
     vm_supply_reset(&supply);
     delivery = (vm_fault_delivery){0};
     resident = (vm_memory){ 0 };
@@ -132,6 +139,8 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
     if (vm_memory_open(&resident, (pl_u8 *)(uintptr_t)base, bytes, reserved,
                        (vm_memory_page *)(uintptr_t)directory,
                        count, capacity, (vm_memory_branch *)(uintptr_t)branches, generation)) return -1;
+    vm_sources_open(&sources,generation,vm_slot_min());
+    resident.before_write = vm_sources_write; resident.write_owner = &sources;
     arena_base = base;
     boot = prepared_boot; boot_header = header; boot_header_bytes = header_bytes; boot_command = command;
     return 0;
@@ -150,6 +159,7 @@ pl_u32 vm_page_count(void) { return resident.page_count; }
 
 int vm_bind_state(pl_u32 state)
 {
+    vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
@@ -165,6 +175,7 @@ int vm_bind_state(pl_u32 state)
 
 int vm_bind_segments(pl_u32 segments)
 {
+    vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
@@ -187,6 +198,19 @@ static int private_record(pl_u32 port, pl_u32 bytes)
 }
 static int private_port(pl_u32 port)
 { return private_record(port,sizeof(machine_memory_port)); }
+
+static int execution_record(pl_u32 rows, pl_u32 bytes)
+{
+    pl_u32 directory = (pl_u32)(uintptr_t)resident.pages;
+    pl_u32 branches = (pl_u32)(uintptr_t)resident.branches;
+    return state_offset && !(rows & 7u) && rows >= vm_arena_min()
+        && (pl_u64)rows + bytes <= arena_base
+        && separate(rows,bytes,directory,resident.page_capacity * (pl_u32)sizeof(vm_memory_page))
+        && (resident.page_capacity <= 1u || separate(rows,bytes,branches,
+            (resident.page_capacity - 1u) * (pl_u32)sizeof(vm_memory_branch)))
+        && (!boot.header || (separate(rows,bytes,boot_header,boot_header_bytes)
+            && separate(rows,bytes,boot_command,boot.command_bytes)));
+}
 
 int vm_page_prepare(pl_u32 port, pl_u32 record)
 {
@@ -268,6 +292,49 @@ machine_result vm_code(pl_u32 port, pl_u64 address, pl_u32 target)
         *(vm_code_page *)(uintptr_t)target = page;
     }
     return memory_result(port,result);
+}
+
+/* Privileged compile admission only; no generated function imports this API.
+ * 0 is an already compiled source row; RESOLVE_RIP/0 is a pinned compile miss.
+ * C-MMU fetch permission and residency are always revalidated first. */
+machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
+                              pl_u32 view_target, pl_u32 row_target)
+{
+    sources.pending = 0u;
+    vm_supply_reset(&supply); vm_memory_abort(&resident);
+    if (delivery.stage || execution.continuation.slot || !segments_offset || !private_port(port)
+            || !private_record(view_target,sizeof(vm_code_page))
+            || !separate(view_target,sizeof(vm_code_page),port,sizeof(machine_memory_port))
+            || !execution_record(row_target,sizeof(vm_execution_row))) return MACHINE_RESULT_ENTRY_MAP;
+    const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
+    pl_u32 cs = segments->cache[MACHINE_SEGMENT_CS].attributes;
+    if (!(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
+            || !limit || limit > 1024u) return MACHINE_RESULT_ENTRY_MAP;
+    vm_code_page page; vm_execution_row row;
+    vm_mmu_context context = cpu_context(); resident.write_touched = 0u;
+    machine_result result = vm_mmu_code_page(&resident,port - arena_base,&context,entry,&page);
+    if (resident.write_touched) execution.generation = 0u;
+    if (result) return memory_result(port,result);
+    int status = vm_sources_probe(&sources,&page,entry,limit,&row);
+    if (status < 0) return MACHINE_RESULT_ENTRY_MAP;
+    page.offset += arena_base;
+    *(vm_code_page *)(uintptr_t)view_target = page;
+    *(vm_execution_row *)(uintptr_t)row_target = row;
+    return status ? MACHINE_RESULT_RESOLVE_RIP : 0u;
+}
+int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 row_target)
+{
+    if (delivery.stage || execution.continuation.slot
+            || !execution_record(row_target,sizeof(vm_execution_row))) {
+        sources.pending = 0u; return -1;
+    }
+    return vm_sources_publish(&sources,bytes,instructions,(vm_execution_row *)(uintptr_t)row_target);
+}
+int vm_sources_reset(void)
+{
+    if (delivery.stage || execution.continuation.slot) return -1;
+    vm_sources_open(&sources,resident.generation,vm_slot_min());
+    vm_execution_close(&execution); return 0;
 }
 machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
 {
@@ -376,17 +443,9 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
     vm_memory_abort(&resident);
     vm_execution_close(&execution);
     pl_u64 bytes = (pl_u64)count * sizeof(vm_execution_row);
-    pl_u32 directory = (pl_u32)(uintptr_t)resident.pages;
-    pl_u32 branches = (pl_u32)(uintptr_t)resident.branches;
     if (!state_offset || !count || count > VM_EXECUTION_MAX_ROWS
-            || !generation || generation != resident.generation || (rows & 7u)
-            || rows < vm_arena_min() || (pl_u64)rows + bytes > arena_base
-            || !separate(rows, (pl_u32)bytes, directory,
-                          resident.page_capacity * (pl_u32)sizeof(vm_memory_page))
-            || (resident.page_capacity > 1u && !separate(rows,(pl_u32)bytes,branches,
-                        (resident.page_capacity - 1u) * (pl_u32)sizeof(vm_memory_branch)))
-            || (boot.header && (!separate(rows,(pl_u32)bytes,boot_header,boot_header_bytes)
-                || !separate(rows,(pl_u32)bytes,boot_command,boot.command_bytes)))) return -1;
+            || !generation || generation != resident.generation
+            || !execution_record(rows,(pl_u32)bytes)) return -1;
     const vm_execution_row *directory_rows = (const vm_execution_row *)(uintptr_t)rows;
     for (pl_u32 i = 0u; i < count; ++i)
         if (directory_rows[i].slot < vm_slot_min()) return -1;

@@ -82,10 +82,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   // No A/D warmup, candidate RIP list or native prefix modules. C vm_code
   // projects the current translation. This single-owner Worker pins RAM,
   // directory and CPU context across async engine compilation/admission.
-  const table = vm.__indirect_function_table, slot = table.grow(1);
-  assert(slot >= vm.vm_slot_min());
+  const table = vm.__indirect_function_table, firstSlot = vm.vm_slot_min();
+  const sourceCapacity = vm.vm_source_capacity(), installedSlots = new Set();
+  table.grow(Math.max(0,firstSlot + sourceCapacity - table.length));
   let admissions = 0, retired = 0, emittedBytes = 0, copiedCodeBytes = 0;
   const exceptions = [];
+  let sourceHits = 0, sourceMisses = 0, admissionMs = 0;
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
@@ -189,12 +191,16 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       bssInitialSegments = data.slice(segments,segments + segmentBytes.length);
     }
     data.fill(0xa5,codeView,codeView + 24);
-    let projection = vm.vm_code(port,entry,codeView);
+    let beforeAdmission = performance.now();
+    let projection = vm.vm_source_query(port,entry,limit,codeView,rows);
+    admissionMs += performance.now() - beforeAdmission;
     for (let waits = 0; projection === 2n && waits < 4; ++waits) {
       const start = performance.now(); await supplyPhysical(); supplyMs += performance.now() - start;
-      projection = vm.vm_code(port,entry,codeView);
+      beforeAdmission = performance.now();
+      projection = vm.vm_source_query(port,entry,limit,codeView,rows);
+      admissionMs += performance.now() - beforeAdmission;
     }
-    if (projection) {
+    if (projection !== 0n && projection !== 1n) {
       assert(data.subarray(codeView,codeView + 24).every(byte => byte === 0xa5),'rejected view publication');
       const delivery = await deliverFault(projection,entry);
       if (delivery) return delivery.deliveryResult === '0' ? null : {kind:'exception-delivery',...delivery};
@@ -206,27 +212,35 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     const offset = view.getUint32(codeView + 16,true), bytes = view.getUint32(codeView + 20,true);
     assert.equal(address,entry & ~4095n); assert.equal(generation,9n); assert.equal(bytes,4096);
     assert(offset >= base + 4096 && offset + bytes <= data.length,'C-verified resident view');
-    cold.set(data.subarray(offset,offset + bytes),compilerInput); copiedCodeBytes += bytes;
-    const started = performance.now();
-    assert.equal(cc.compiler_open_pages(compilerInput,1,address,generation),0);
-    cold.fill(0xa5,compilerOutput,compilerReport + 80);
-    const status = cc.compiler_emit(entry,limit,compilerOutput,65536,compilerReport);
-    coldMs += performance.now() - started;
-    if (status) {
-      assert(cold.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),'refusal cannot publish');
-      return {kind:'compile',status,entry:`0x${entry.toString(16)}`};
-    }
-    const length = Number(report.getBigUint64(compilerReport + 40,true));
-    const sourceBytes = Number(report.getBigUint64(compilerReport + 32,true));
-    const instructions = Number(report.getBigUint64(compilerReport + 24,true));
-    assert(length > 0 && length <= 65536 && instructions > 0 && instructions <= limit);
-    const beforeEngine = performance.now();
-    const instance = await engines.get(entry,cold.subarray(compilerOutput,compilerOutput + length));
-    engineMs += performance.now() - beforeEngine; emittedBytes += length;
-    table.set(slot,instance.exports.cut);
-    view.setBigUint64(rows,entry,true); view.setUint32(rows + 8,sourceBytes,true);
-    view.setUint32(rows + 12,instructions,true); view.setUint32(rows + 16,slot,true);
-    view.setUint32(rows + 20,0,true);
+    const slot = view.getUint32(rows + 16,true);
+    assert(slot >= firstSlot && slot < firstSlot + sourceCapacity,'C-chosen bounded engine slot');
+    if (projection === 1n) {
+      ++sourceMisses;
+      cold.set(data.subarray(offset,offset + bytes),compilerInput); copiedCodeBytes += bytes;
+      const started = performance.now();
+      assert.equal(cc.compiler_open_pages(compilerInput,1,address,generation),0);
+      cold.fill(0xa5,compilerOutput,compilerReport + 80);
+      const status = cc.compiler_emit(entry,limit,compilerOutput,65536,compilerReport);
+      coldMs += performance.now() - started;
+      if (status) {
+        assert(cold.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),'refusal cannot publish');
+        return {kind:'compile',status,entry:`0x${entry.toString(16)}`};
+      }
+      const length = Number(report.getBigUint64(compilerReport + 40,true));
+      const sourceBytes = Number(report.getBigUint64(compilerReport + 32,true));
+      const instructions = Number(report.getBigUint64(compilerReport + 24,true));
+      assert(length > 0 && length <= 65536 && instructions > 0 && instructions <= limit);
+      const beforeEngine = performance.now();
+      const instance = await engines.get(slot,cold.subarray(compilerOutput,compilerOutput + length));
+      engineMs += performance.now() - beforeEngine; emittedBytes += length;
+      table.set(slot,instance.exports.cut); installedSlots.add(slot);
+      beforeAdmission = performance.now();
+      assert.equal(vm.vm_source_publish(sourceBytes,instructions,rows),0);
+      admissionMs += performance.now() - beforeAdmission;
+    } else { ++sourceHits; assert(installedSlots.has(slot),'C hit requires its installed engine handle'); }
+    const sourceBytes = view.getUint32(rows + 8,true), instructions = view.getUint32(rows + 12,true);
+    assert.equal(view.getBigUint64(rows,true),entry);
+    assert(instructions > 0 && instructions <= limit);
     assert.equal(vm.vm_bind_execution(rows,1,generation),0); ++admissions;
     let result;
     for (let resumes = 0; resumes < 8192; ++resumes) {
@@ -257,8 +271,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       assert.equal(view.getBigUint64(base,true),rip());
     }
     if (retired >= 384 && relocationTrace.length < 16)
-      relocationTrace.push({...trace.at(-1),source:Array.from(cold.subarray(compilerInput + Number(entry - address),
-        compilerInput + Number(entry - address) + Math.min(sourceBytes,24))),
+      relocationTrace.push({...trace.at(-1),source:Array.from(data.subarray(offset + Number(entry - address),
+        offset + Number(entry - address) + Math.min(sourceBytes,24))),
         rax:`0x${view.getBigUint64(base,true).toString(16)}`,rsp:`0x${view.getBigUint64(base + 32,true).toString(16)}`});
     if (trace.length > 16) trace.shift();
     if (result !== 1n && result !== 5n) {
@@ -365,7 +379,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert(retired >= 379,'REP really completed, not only accepted');
     assert.equal(repeatComparedBytes,kernelBytes);
     return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
-      retired,modules:engines.stats().compilations,admissions,liveSlots:1,manualBranchEntries:0,
+      retired,modules:engines.stats().compilations,admissions,liveSlots:installedSlots.size,manualBranchEntries:0,
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
@@ -375,10 +389,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes,engineReuse:engines.stats(),
-      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs},trace,relocationTrace,
+      sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
+      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs},trace,relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
       memoryBytes:memory.buffer.byteLength,coldMemoryBytes:compilerMemory.buffer.byteLength};
   } finally {
-    table.set(slot,null); engines.close(); cc.compiler_close(); vm.vm_close();
+    for (const slot of installedSlots) table.set(slot,null);
+    engines.close(); cc.compiler_close(); vm.vm_close();
   }
 }

@@ -159,6 +159,7 @@ machine_result vm_memory_access(vm_memory *memory, pl_u32 port_offset,
     if (access & MACHINE_MEMORY_WRITE) {
         consumed = 0u;
         for (pl_u32 part = 0u; part < parts; ++part) {
+            vm_memory_before_write(memory,offsets[part],lengths[part]);
             write_word(memory->bytes + offsets[part], value >> (consumed * 8u), lengths[part]);
             memory->write_touched = 1u;
             consumed += lengths[part];
@@ -191,6 +192,7 @@ machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 va
             || !saved.parts || saved.parts > 2u) return MACHINE_RESULT_ENTRY_MAP;
     pl_u32 consumed = 0u;
     for (pl_u32 i = 0u; i < saved.parts; ++i) {
+        vm_memory_before_write(memory,saved.offsets[i],saved.lengths[i]);
         write_word(memory->bytes + saved.offsets[i], value >> (consumed * 8u), saved.lengths[i]);
         consumed += saved.lengths[i];
     }

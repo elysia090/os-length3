@@ -110,16 +110,25 @@ TSS/IST, outer returns, #DF/triple fault, IRQ/NMI/debug and complete IRET fault
 ordering remain open. The event frontier is 160 bytes, not a CPU snapshot;
 completed aliasing frame stores are not replayed after a residency wait.
 
+Current source-admission checkpoint removes repeated transport/construction:
+64 C-owned exact physical source extents, 6,216 bytes metadata, zero source
+payload copies. Every lookup still executes the C MMU; RAM/A/D/reservation
+writes invalidate exact intersections before mutation. Pending compilation
+pins the whole source page; any write cancels publication. Native 100,000
+replacement/collision and actual PML4-alias/#PF cases, ASan/UBSan and six real
+C-Wasm compile/install/reuse cases pass. Private callback-slot overlap was red
+in the actual browser and is now covered. The same 1,616,430-retirement CPU
+quota state uses 1,967 compilations / 998,033 source hits, 8,056,832 cumulative
+code-copy bytes instead of 4,096,000,000; fetch/residence are unchanged. Timing
+observations are not cold-shell latency. No native release/human UI changed.
+
 Next, in order:
 
-1. Remove repeated C construction/page-copy fixed costs using C-owned reusable
-   source admission, with exact source/lifetime checks and code-alias revocation.
-   Engine reuse is now bounded and requires an identical successful C emission:
-   1,957 compilations / 998,043 hits, 64 retained instances / 21,650 bytes. It does
-   NOT remove C analysis or the cumulative 4,096,000,000 bytes of code transport.
-   C construction is about 7,905 ms versus 555 ms VM execution in this observation,
-   not a cold-shell benchmark or a claim about resident/transfer bytes.
-   Add crossing-first-instruction supply and preserve precise fetch ordering.
+1. Continue actual startup/decompression with a larger explicit diagnostic
+   budget; use the current C-owned source admission, not repeated construction
+   or a JavaScript source cache. Add crossing-first-instruction supply while
+   preserving precise fetch ordering. Preserve source/compiler/engine lifetime
+   and alias invalidation; concurrent admission/remap is not implemented.
 2. Expand exception/IRET fault-priority and privilege/TSS/IST coverage as actual
    startup demands it, using common system-oracle witnesses. Physical absence
    is a host wait; a guest non-present PTE is a Linux fault. Never overwrite
@@ -136,7 +145,7 @@ The 1,000,000-admission / 2,000,000-retirement bound is an explicit diagnostic
 quota; exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-exception-entry.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-source-admission.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

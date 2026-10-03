@@ -92,6 +92,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
             if (status) return status;
             /* Serialized, pinned owner: no competing CPU/device/table writer
              * can occur between this load and store. This is not SMP CAS. */
+            vm_memory_before_write(memory,(pl_u32)(writable_entry - memory->bytes),8u);
             vm_memory_store(writable_entry, entry | set, 8u);
             memory->write_touched = 1u;
         }
@@ -156,6 +157,7 @@ machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
     pl_u32 consumed = 0u;
     if (access & MACHINE_MEMORY_WRITE) {
         for (pl_u32 i = 0u; i < ready.parts; ++i) {
+            vm_memory_before_write(memory,ready.offsets[i],ready.lengths[i]);
             vm_memory_store(memory->bytes + ready.offsets[i], value >> (consumed * 8u), ready.lengths[i]);
             memory->write_touched = 1u;
             consumed += ready.lengths[i];
