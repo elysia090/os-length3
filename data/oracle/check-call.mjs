@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [providerFile, compilerFile, directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-call.mjs VM.WASM COMPILER.WASM CALL-FIXTURE-DIRECTORY');
 const memory = new WebAssembly.Memory({initial:8, maximum:16});
@@ -30,6 +31,7 @@ function reset(source, bytes, record) {
   data.fill(0, base);
   for (const [first, end] of [[128,384],[432,488],[496,1128],[1136,1256]])
     data.fill(0x5a, base + first, base + end);
+  seedDisabledDebug(view, base);
   const physical = [0x1000,0x2000,0x3000,0x4000,0x5000,0x8000,0x9000,0xa000];
   for (const [rank, address] of physical.entries()) {
     const at = directoryAt + rank * 32;

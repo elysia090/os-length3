@@ -121,6 +121,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     int selector = cut_selector_read_supported(instruction);
+    int summary = instruction->operation == PL_X86_OPERATION_BIT_SUMMARY;
     int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED
         || instruction->operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED;
     int implicit = multiply && instruction->visible_operand_count == 1u;
@@ -141,6 +142,8 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     if ((unary || set) && !first) return 0;
     if (set && (instruction->condition >= 16u || operands[0].bits != 8u)) return 0;
     int conditional = instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE;
+    if (summary && (first || (instruction->condition >= 2u && instruction->condition != 4u)
+            || operands[0].bits < 16u || operands[0].bits != operands[1].bits)) return 0;
     if (exchange && (!first || operands[1].kind != PL_X86_OPERAND_REGISTER
             || !cut_gpr(&operands[1].value.reg) || operands[0].bits != operands[1].bits)) return 0;
     /* The accepted native descriptor retains this precise transaction as a
@@ -174,7 +177,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || (!selector && !cut_gpr(&operands[1].value.reg))))) return 0;
     } else if (!first && ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation)
-                 && !conditional && !multiply
+                 && !conditional && !multiply && !summary
                  && instruction->operation != PL_X86_OPERATION_MOVE_ZERO_EXTEND
                  && instruction->operation != PL_X86_OPERATION_MOVE_SIGN_EXTEND)
             || operands[0].kind != PL_X86_OPERAND_REGISTER
@@ -271,6 +274,13 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     } else cut_access(cut);
     if (!store) {
         cut_access_value(cut);
+        if (instruction->operation == PL_X86_OPERATION_BIT_SUMMARY) {
+            /* One precise read returns before shared scan/count SSA. Zero
+             * input cannot bypass #PF/#SS/#GP or a residency wait, nor publish
+             * a destination/flag before that read has succeeded. */
+            cut_summary_value(cut,instruction);
+            return;
+        }
         if (divide) {
             /* #PF/wait returned before here. A readable zero/overflow now
              * reaches #DE, with no early RAX/RDX/flags/RIP publication. */

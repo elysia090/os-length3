@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [vmFile,compilerFile,directory,observationFile]=process.argv.slice(2);
 if (!observationFile) throw new Error('usage: check-descriptor-transfer.mjs VM.WASM COMPILER.WASM FIXTURES NATIVE-OBSERVATION.json');
 const memory=new WebAssembly.Memory({initial:8,maximum:16}), coldMemory=new WebAssembly.Memory({initial:16});
@@ -46,6 +47,7 @@ function reset(source,meta,offset,cpl=0,umip=0,protection=0,residentSecond=true,
   put(base+20480,0x8067); put(base+20488,protection===1 ? 0 : protection===2 ? 0x9065 : 0x9067);
   data.fill(0xa5,first,first+4096); data.fill(0xa5,second,second+4096); data.set(source.subarray(0,16),first);
   data.fill(0x93,state,state+1256);
+  seedDisabledDebug(view, state);
   const address=meta.shape===3 ? entry+BigInt(meta.sourceBytes+512) : entry+BigInt(offset);
   for (let reg=0;reg<16;++reg) put(state+reg*8,0xabcdef9800000000n+BigInt(reg*256+sample));
   put(state+7*8,address); put(state+4*8,address-14n); put(state+12*8,address-18n); put(state+8,1);

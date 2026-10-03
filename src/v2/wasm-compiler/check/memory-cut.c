@@ -137,7 +137,7 @@ int main(int argc, char **argv)
     pl_x86_map map = { code, (pl_u64)(uintptr_t)code, code_bytes, code_bytes, 5u, 1u };
     pl_x86_image image = { &map, 1u, 0u, report.entry };
     pl_x86_instruction instruction;
-    if (pl_x86_decode(&image, report.entry, &instruction)) goto finish;
+    if (pl_x86_decode_profile(&image, report.entry, &instruction)) goto finish;
     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
     int unary = instruction.operation == PL_X86_OPERATION_INCREMENT
         || instruction.operation == PL_X86_OPERATION_DECREMENT
@@ -151,6 +151,20 @@ int main(int argc, char **argv)
     int implicit = multiply && instruction.visible_operand_count == 1u;
     int set = instruction.operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int selector = instruction.machine_operation == PL_X86_MACHINE_READ_SELECTOR;
+    int summary = instruction.operation == PL_X86_OPERATION_BIT_SUMMARY;
+    int scan = summary && instruction.condition < 2u;
+    unsigned legacy_prefix_twin = 0u;
+    if (scan) for (pl_u32 at=0u;at<instruction.length && instruction.source[at]!=0x0fu;++at) {
+        if (instruction.source[at]!=0xf3u) continue;
+        if (at) goto finish; /* This witness requires a leading one-byte prefix. */
+        /* Observe an ISA-equivalent native legacy scan, not the host's
+         * TZCNT/LZCNT extension. Keep product/source-page bytes unchanged.
+         * NOP replaces only this oracle prefix and preserves coordinates. */
+        if (mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
+        *((pl_u8 *)(uintptr_t)instruction.rip+at)=0x90u;
+        if (mprotect(code,code_bytes,PROT_READ | PROT_EXEC)) goto finish;
+        legacy_prefix_twin=1u;
+    }
     pl_u64 selectors[6]; native_selectors(selectors);
     int bit = instruction.operation == PL_X86_OPERATION_BIT_TEST;
     int indexed_bit = bit && instruction.operands[1].kind == PL_X86_OPERAND_REGISTER;
@@ -169,11 +183,11 @@ int main(int argc, char **argv)
         pl_u64 address = instruction.fallthrough + (pl_u64)operand->displacement;
         if (address < (pl_u64)(uintptr_t)code || code_bytes < 8u
                 || address - (pl_u64)(uintptr_t)code > code_bytes - 8u) goto finish;
-        if (((report.memory_access & MACHINE_MEMORY_WRITE) || indexed_bit)
+        if (((report.memory_access & MACHINE_MEMORY_WRITE) || indexed_bit || summary)
                 && mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
     }
     if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
-            || instruction.operation == PL_X86_OPERATION_BIT_TEST || multiply || carry || precise_write)) {
+            || instruction.operation == PL_X86_OPERATION_BIT_TEST || multiply || carry || precise_write || summary)) {
         struct sigaction action = {.sa_sigaction=memory_exception,.sa_flags=SA_SIGINFO};
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
@@ -254,6 +268,14 @@ int main(int argc, char **argv)
             for (pl_u32 i=0u;i<report.memory_bytes;++i)
                 ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(value >> (8u*i));
         }
+        if (summary) {
+            pl_u32 width=report.memory_bytes*8u, edge=(row/2u)%(width+3u);
+            pl_u64 mask=~0ull>>(64u-width);
+            pl_u64 value=row<256u ? (edge==0u ? 0u : edge<=width ? 1ull<<(edge-1u)
+                : edge==width+1u ? mask : mask>>1u) : random_word(&seed)&mask;
+            for (pl_u32 i=0u;i<report.memory_bytes;++i)
+                ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(value>>(8u*i));
+        }
         if (indexed_bit && row<128u) {
             pl_u64 value=row&1u ? (~0ull >> (64u-report.memory_bytes*8u)) : 0u;
             for (pl_u32 i=0u;i<report.memory_bytes;++i)
@@ -306,6 +328,18 @@ int main(int argc, char **argv)
             if ((record[33]^record[16])&~0x8d5ull) goto finish;
             record[33]=(record[33]&~0xd4ull)|(record[16]&0xd4u);
         }
+        if (scan) {
+            /* Only ZF is defined among arithmetic flags. All other flags
+             * outside that undefined set must match the native observation.
+             * A zero-source destination is also undefined: choose the whole
+             * incoming parent, never relabel it as a defined hardware result. */
+            if ((record[33]^record[16])&~0x8d5ull) goto finish;
+            record[33]=(record[33]&0x40u)|(record[16]&~0x40ull);
+            if (!(record[36]&(~0ull>>(64u-report.memory_bytes*8u)))) {
+                pl_u32 destination=instruction.operands[0].value.reg.index;
+                record[17u+destination]=record[destination];
+            }
+        }
         record[37] = read_word((const pl_u8 *)(uintptr_t)address);
         if (instruction.operation == PL_X86_OPERATION_COMPLEMENT && record[33] != record[16]) goto finish;
         if (set && record[33] != record[16]) goto finish;
@@ -332,7 +366,10 @@ int main(int argc, char **argv)
             int trapped = observe_fault(&state,(const void *)(uintptr_t)report.entry);
             if (mprotect(protected_page,4096u,PROT_READ | PROT_WRITE)) goto finish;
             if (precise_write && memcmp(saved,ram,sizeof saved)) goto finish;
-            if (!trapped || fault_vector != 14u || fault_state.rip != report.entry
+            /* The leading oracle-only NOP is a separate retired instruction.
+             * Retain that actual fault RIP; the reader must explicitly map
+             * this one-byte twin coordinate back to the original prefix. */
+            if (!trapped || fault_vector != 14u || fault_state.rip != report.entry+legacy_prefix_twin
                     || (fault_state.rflags & ~0x10000ull) != state.rflags) goto finish;
             pl_u64 observed[38];
             for (pl_u32 reg = 0u; reg < 16u; ++reg) {
@@ -348,12 +385,16 @@ int main(int argc, char **argv)
     if (fprintf(meta, "{\"entry\":%llu,\"prefixEntry\":%llu,\"moduleBytes\":%llu,\"sourceBytes\":%llu,\"bytes\":%u,\"access\":%u,"
                 "\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,\"retiredOffset\":%zu,"
                 "\"selector\":{\"enabled\":%u,\"offset\":%zu,\"rank\":%u,"
-                "\"native\":[\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\"]}}\n",
+                "\"native\":[\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\"]},"
+                "\"summary\":{\"enabled\":%u,\"scan\":%u,\"destination\":%u,\"width\":%u,"
+                "\"nativeLegacyPrefixTwin\":%u,\"nativeFaultOffset\":%u}}\n",
                 report.entry, elf.entry, report.module_bytes, report.source_bytes, report.memory_bytes, report.memory_access,
                 sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
                 offsetof(machine_state, retired),(unsigned)selector,
                 offsetof(machine_state,system)+MACHINE_SYSTEM_ES*8u,instruction.operands[1].value.reg.index,
-                selectors[0],selectors[1],selectors[2],selectors[3],selectors[4],selectors[5]) < 0) okay = 0;
+                selectors[0],selectors[1],selectors[2],selectors[3],selectors[4],selectors[5],
+                (unsigned)summary,(unsigned)scan,instruction.operands[0].value.reg.index,
+                summary ? report.memory_bytes*8u : 0u,legacy_prefix_twin,legacy_prefix_twin) < 0) okay = 0;
     result = okay ? 0 : 1;
 finish:
     if (file && close_output(&file)) result = 1;

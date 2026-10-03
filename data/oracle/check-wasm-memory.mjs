@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 import {seedNativeSelector} from './selector-observation.mjs';
 const directory = process.argv[2];
 if (!directory) throw new Error('usage: node check-wasm-memory.mjs RECORD-DIRECTORY');
@@ -54,6 +55,7 @@ for (const name of names) {
     view.setBigUint64(meta.flagsOffset, word(16), true);
     view.setBigUint64(meta.retiredOffset, 42n, true);
     seedNativeSelector(view, state, meta);
+    seedDisabledDebug(view, state);
     view.setBigUint64(port, 9n, true);
     view.setBigUint64(payload, word(36), true);
     expectedAddress = word(35); expectedValue = word(37);

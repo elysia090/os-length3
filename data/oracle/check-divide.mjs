@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [providerFile,compilerFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-divide.mjs VM.WASM COMPILER.WASM DIVIDE-FIXTURE-DIRECTORY');
 const memory = new WebAssembly.Memory({initial:8});
@@ -22,6 +23,7 @@ let wideAlgebraComparisons = 0;
 function reset(source,meta,record) {
   data.fill(0,base);
   for (const [first,end] of [[128,384],[432,488],[496,1128],[1136,1256]]) data.fill(0x5a,base+first,base+end);
+  seedDisabledDebug(view, base);
   for (const [rank,address] of [0x1000,0x2000,0x3000,0x4000,0x8000].entries()) {
     const at = directoryAt+rank*32; put(at,address); view.setUint32(at+8,(rank+2)*4096,true);
     view.setUint32(at+12,3,true); view.setUint32(at+16,1,true); data.fill(0,at+20,at+32);

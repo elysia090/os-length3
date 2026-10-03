@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [vmFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-invalidate.mjs VM.WASM INVALIDATE-FIXTURE-DIRECTORY');
 const names=(await readdir(directory)).filter(x=>/^invalidate-\d+\.json$/.test(x));
@@ -18,6 +19,7 @@ for (const name of names) {
   const bytes=Buffer.from(memory.buffer), view=new DataView(memory.buffer), state=4096, port=8192;
   for (let cpl=0;cpl<4;++cpl) for (let sample=0;sample<32;++sample) {
     bytes.fill(0x93,state,state+1256); bytes.fill(0xa5,port,port+48);
+    seedDisabledDebug(view, state);
     for (let reg=0;reg<16;++reg) view.setBigUint64(state+reg*8,BigInt.asUintN(64,
       [0n,0x400000n,0x800000000000n,0xffff7fffffffffffn,0xffff800000000000n,-1n][sample%6]
       +BigInt(reg*(sample+1))),true);

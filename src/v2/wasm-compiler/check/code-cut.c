@@ -60,6 +60,30 @@ int main(int argc, char **argv)
     /* Count encodings are legacy scans in the immutable no-BMI1/LZCNT
      * profile. POPCNT has its own enabled feature, not either extension. */
     options.maximum_source_instructions=1u;
+    for (pl_u32 kind=0u;kind<5u;++kind)
+    for (pl_u32 width=16u;width<=64u;width*=2u)
+    for (pl_u32 address32=0u;address32<2u;++address32)
+    for (pl_u32 shape=0u;shape<6u;++shape) {
+        pl_u32 at=0u; memset(pages,0x90,sizeof pages);
+        if (address32) pages[at++]=0x67u;
+        if (kind>=2u) pages[at++]=0xf3u;
+        if (width==16u) pages[at++]=0x66u;
+        if (width==64u || shape==3u)
+            pages[at++]=(pl_u8)(0x40u|(width==64u ? 8u : 0u)|(shape==3u ? 5u : 0u));
+        pages[at++]=0x0fu;
+        pages[at++]=(pl_u8)(kind==4u ? 0xb8u : kind==1u || kind==3u ? 0xbdu : 0xbcu);
+        pages[at++]=(pl_u8)(shape==0u ? 7u : shape==1u ? 0x3fu : shape==2u ? 0x44u
+            : shape==3u ? 0x0cu : shape==4u ? 5u : 0x55u);
+        if (shape==2u || shape==3u) { pages[at++]=0xcfu; if (shape==2u) pages[at++]=7u; }
+        if (shape==4u) for (pl_u32 byte=0u;byte<4u;++byte) pages[at++]=0u;
+        if (shape==5u) pages[at++]=24u; /* The actual Linux BSR gate. */
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_bytes==at && report.source_instructions==1u
+            && report.boundary==WASM_CUT_MEMORY && report.memory_bytes==width/8u
+            && report.memory_access==(shape==5u ? 5u : 1u) && report.flags_written
+            && report.written_registers==(shape==1u ? 128u : shape==3u ? 512u : shape==5u ? 4u : 1u));
+    }
     /* Carry is an incoming dependency for both a precise load and RMW.
      * Immediate zero still performs a read and an unconditional write. */
     for (pl_u32 subtract=0u;subtract<2u;++subtract)

@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 import {seedNativeSelector} from './selector-observation.mjs';
 
 const [providerFile, directory, mode] = process.argv.slice(2);
@@ -162,6 +163,7 @@ for (const name of names) {
     view.setBigUint64(port, 9n, true);
     const address = word(35), leaf = tables(view, address);
     seedNativeSelector(view, state, meta);
+    seedDisabledDebug(view, state);
     for (let i = 0; i < 8; ++i)
       view.setUint8(payloadAt(address, i), Number((word(36) >> BigInt(i * 8)) & 255n));
     open();
@@ -266,6 +268,8 @@ for (const name of names) {
     if (faultRecords) {
       arena().set(initial); tables(view,address);
       const observed = rank => faultRecords.readBigUInt64LE((row * 38 + rank) * 8);
+      const twinOffset=BigInt(meta.summary?.nativeFaultOffset ?? 0);
+      assert.equal(observed(34),BigInt(meta.entry)+twinOffset,'actual native fault RIP, including an explicit ISA twin');
       for (let reg = 0; reg < 16; ++reg) view.setBigUint64(state + reg * 8,observed(reg),true);
       view.setBigUint64(state + meta.flagsOffset,observed(16),true);
       view.setBigUint64(state + 432 + 7 * 8,0x13n,true); // Same user-mode #PF bits as hardware.
@@ -284,7 +288,7 @@ for (const name of names) {
       for (let reg = 0; reg < 16; ++reg) e.setBigUint64(reg * 8,observed(17 + reg),true);
       // RF is added by hardware fault entry, not by this pending-fault boundary.
       e.setBigUint64(meta.flagsOffset,observed(33) & ~0x10000n,true);
-      e.setBigUint64(meta.ripOffset,observed(34),true);
+      e.setBigUint64(meta.ripOffset,observed(34)-twinOffset,true);
       e.setBigUint64(port - base + 16,observed(35),true);
       e.setUint32(port - base + 24,Number(observed(36)),true);
       e.setUint32(port - base + 28,Number(observed(37)),true);

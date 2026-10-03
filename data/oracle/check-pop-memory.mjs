@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [providerFile,compilerFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-pop-memory.mjs VM.WASM COMPILER.WASM NATIVE-DIRECTORY');
 const memory = new WebAssembly.Memory({initial:8});
@@ -25,6 +26,7 @@ const payload = () => Buffer.from(data.subarray(code,base+65536));
 function reset(source,meta,record,row) {
   data.fill(0,base);
   for (const [first,end] of [[128,384],[432,488],[496,1128],[1136,1256]]) data.fill(0x5a,base+first,base+end);
+  seedDisabledDebug(view, base);
   for (let i = 0; i < 16; ++i) {
     const where = directoryAt+i*32; put(where,(i+1)*4096); view.setUint32(where+8,(i+2)*4096,true);
     view.setUint32(where+12,3,true); view.setUint32(where+16,1,true); data.fill(0,where+20,where+32);

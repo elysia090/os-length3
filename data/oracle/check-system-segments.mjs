@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [vmFile,compilerFile,directory,traceFile]=process.argv.slice(2);
 if (!traceFile) throw new Error('usage: check-system-segments.mjs VM.WASM COMPILER.WASM FIXTURES SYSTEM.TRACE');
 const memory=new WebAssembly.Memory({initial:8,maximum:16}), cm=new WebAssembly.Memory({initial:16});
@@ -33,6 +34,7 @@ function reset(source,meta,{cpl=0,selector=24,low=0x1234n|BigInt(meta.task ? 0x8
   data.fill(0xa5,first,second+4096); data.set(source.subarray(0,16),first);
   put(first+offset,low); put(first+offset+8,high);
   data.fill(0x93,state,state+1256);
+  seedDisabledDebug(view, state);
   for (let reg=0;reg<16;++reg) put(state+reg*8,0xabcdeffedcba0000n|BigInt(selector));
   if (meta.memory) {
     const address=meta.form===3 ? entry+BigInt(meta.sourceBytes+512) : entry+BigInt(sourceOffset);

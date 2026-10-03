@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 import {seedNativeSelector, checkSelectorModel} from './selector-observation.mjs';
 const directory = process.argv[2];
 if (!directory) throw new Error('usage: node check-wasm-cuts.mjs RECORD-DIRECTORY');
@@ -49,6 +50,7 @@ for (const file of files) {
     view.setBigUint64(offset + meta.flagsOffset, word(16) | (row >= 384 ? 0x10000n : 0n), true);
     view.setBigUint64(offset + meta.retiredOffset, 0xfffffffffffffffen, true);
     seedNativeSelector(view, offset, meta);
+    seedDisabledDebug(view, offset);
     const expected = Buffer.from(actual);
     const expectedView = new DataView(expected.buffer, expected.byteOffset, expected.byteLength);
     for (let reg = 0; reg < 16; ++reg)
@@ -77,6 +79,7 @@ for (const file of files) {
   const view = new DataView(memory.buffer);
   const contents = Buffer.from(memory.buffer);
   contents.fill(0x5a);
+  seedDisabledDebug(view, 0);
   view.setBigUint64(meta.ripOffset, BigInt(meta.entry), true);
   view.setBigUint64(meta.flagsOffset, 0x202n, true);
   for (const badOffset of [1, -1, contents.length - meta.stateBytes + 8, contents.length]) {

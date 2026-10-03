@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [providerFile,compilerFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-memory-divide.mjs VM.WASM COMPILER.WASM RECORD-DIRECTORY');
 const memory = new WebAssembly.Memory({initial:8}), data = Buffer.from(memory.buffer), view = new DataView(memory.buffer);
@@ -31,6 +32,7 @@ function open(meta) {
 function setup(source,meta,record) {
   arena().fill(0);
   for (const [first,end] of [[128,384],[432,488],[496,1128],[1136,1256]]) data.fill(0x5a,base+first,base+end);
+  seedDisabledDebug(view, base);
   for (let reg=0;reg<16;++reg) put(base+reg*8,word(record,reg));
   put(base+392,word(record,16)); put(base+384,entry); put(base+1128,42);
   put(base+400,0x80010001); put(base+408,0x1000); put(base+416,32); put(base+424,0xd00);

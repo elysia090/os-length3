@@ -2,9 +2,15 @@
 
 void cut_lower_summary(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
-    pl_u32 width=instruction->operands[0].bits, kind=instruction->condition;
+    cut_read_operand(cut,&instruction->operands[1],instruction->operands[0].bits);
+    cut_summary_value(cut,instruction);
+}
+
+void cut_summary_value(cut_lowering *cut,const pl_x86_instruction *instruction)
+{
+    pl_u32 kind=instruction->condition;
     int scan=kind<2u;
-    cut_read_operand(cut,&instruction->operands[1],width); cut_set(cut,CUT_LEFT);
+    cut_set(cut,CUT_LEFT);
     if (scan) {
         /* Zero-source scans leave the destination undefined. Choose its
          * incoming whole-parent representative, including 32-bit high bits;

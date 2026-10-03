@@ -1,5 +1,6 @@
 // Oracle input/model checks only. These helpers never implement guest reads.
 import assert from 'node:assert/strict';
+import {seedDisabledDebug} from './machine-observation.mjs';
 export function seedNativeSelector(view, base, meta) {
   if (!meta.selector?.enabled) return;
   const selector = meta.selector;
@@ -17,6 +18,7 @@ export function checkSelectorModel(cut, memory, meta) {
   for (let row = 0; row < 512; ++row) {
     const contents = Buffer.from(memory.buffer); contents.fill(0x5a);
     const view = new DataView(memory.buffer);
+    seedDisabledDebug(view, 0);
     // Every null RPL/TI, boundary, and unrelated descriptor index is read
     // without validating a descriptor. Upper reserved storage is masked.
     const value = BigInt(row < 16 ? row : (row * 65521) & 65535);

@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {seedDisabledDebug} from './machine-observation.mjs';
 const [providerFile,compilerFile,directory] = process.argv.slice(2);
 if (!directory) throw new Error('usage: check-branch.mjs VM.WASM COMPILER.WASM BRANCH-FIXTURE-DIRECTORY');
 const memory = new WebAssembly.Memory({initial:8,maximum:16});
@@ -20,13 +21,14 @@ const code = base + 28672, ram = base + 32768;
 const entry = 0x400000n, start = 0x12340000n;
 const ramPte = base + 24576 + 320 * 8;
 const slot = vm.__indirect_function_table.grow(1);
-let comparisons = 0, generalProtection = 0, faultOrdering = 0, refusals = 0, parity = 0, prefixes = 0;
+let comparisons = 0, generalProtection = 0, faultOrdering = 0, refusals = 0, parity = 0, prefixes = 0, resumeFlags = 0;
 function reset(source,sourceBytes,record,target) {
   data.fill(0,base);
   // Poison unrelated architectural storage: accidental zero publication must
   // not look like preservation merely because the fixture started at zero.
   for (const [first,end] of [[128,384],[432,488],[496,1128],[1136,1256]])
     data.fill(0x5a,base + first,base + end);
+  seedDisabledDebug(view, base);
   const physical = [0x1000,0x2000,0x3000,0x4000,0x5000,0x8000,0x9000,0xa000];
   for (const [rank,address] of physical.entries()) {
     const at = directoryAt + rank * 32;
@@ -97,11 +99,21 @@ try {
         assert.equal(view.getBigUint64(port + 16,true),target); ++generalProtection;
       }
       ++comparisons;
+      // RF restored by exception return is accepted, unlike TF. Success
+      // clears it; a pending target fault preserves it without retirement.
+      reset(source,meta.sourceBytes,record,target);
+      view.setBigUint64(base+392,record.readBigUInt64LE(16*8)|0x10000n,true);
+      const rfExpected=Buffer.from(expected);
+      if (fault) rfExpected.writeBigUInt64LE(record.readBigUInt64LE(33*8)|0x10000n,392);
+      assert.equal(vm.vm_run(port,9n,1),fault ? 107n : 1n,`form ${form}/RF row ${row}`);
+      assert(data.subarray(base,base+1256).equals(rfExpected),`form ${form}/RF complete CPU ${row}`);
+      assert(data.subarray(code,ram+8192).equals(bytes),'RF changes no JMP payload');
+      assert.equal(vm.vm_source_retired(),fault ? 0n : 1n); ++resumeFlags;
     }
     const record = native.subarray(0,304);
-    for (const failure of ['TF','RF','alias','wrap','stale']) {
+    for (const failure of ['TF','alias','wrap','stale']) {
       reset(source,meta.sourceBytes,record,record.readBigUInt64LE(34 * 8));
-      if (failure === 'TF' || failure === 'RF') view.setBigUint64(base + 392,0x202n | (failure === 'TF' ? 256n : 65536n),true);
+      if (failure === 'TF') view.setBigUint64(base + 392,0x302n,true);
       if (failure === 'stale') view.setBigUint64(port,8n,true);
       const before = cpu(), bytes = payload();
       assert.equal(failure === 'stale' ? vm.vm_run(port,9n,1)
@@ -170,4 +182,4 @@ try {
     assert(data.subarray(code,ram + 8192).equals(bytes)); ++prefixes;
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); cc.compiler_close(); }
-console.log(`Indirect JMP: green (${parity} native/cold byte-identical modules; ${comparisons} actual x86 CPU comparisons, ${generalProtection} #GP receipts, ${faultOrdering} C-MMU fault-ordering cases, ${refusals} refusals, ${prefixes} prefix/fault compositions; NOT exception delivery/Linux boot)`);
+console.log(`Indirect JMP: green (${parity} native/cold byte-identical modules; ${comparisons} actual x86 CPU comparisons, ${generalProtection} #GP receipts, ${faultOrdering} C-MMU fault-ordering cases, ${refusals} refusals, ${resumeFlags} RF checks, ${prefixes} prefix/fault compositions; NOT exception delivery/Linux boot)`);

@@ -86,6 +86,7 @@ void cut_multiply_value(cut_lowering *cut, pl_u32 width);
 void cut_implicit_multiply_value(cut_lowering *cut, pl_u32 width, int signed_product);
 void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_summary(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_summary_value(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_divide_supported(const pl_x86_instruction *instruction);
 void cut_divide_value(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_divide(cut_lowering *cut, const pl_x86_instruction *instruction);
