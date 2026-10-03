@@ -25,8 +25,10 @@ typedef struct {
  * observable architectural side effect must not be rolled back as host I/O.
  * LA57, PCID, SMEP/SMAP, protection keys, 1 GiB pages and non-long-mode are
  * deliberately not accepted. Unsupported CPU context returns ENTRY_MAP,
- * rather than silently translating with fewer permissions. Fault delivery,
- * CR2 publication, TLB invalidation and interrupt entry are separate work. */
+ * rather than silently translating with fewer permissions. Fault delivery
+ * and CR2 publication use the separate exception boundary (currently only
+ * CPL0, long-mode, IST=0). General IRQ/TSS/IST/double-fault handling and a
+ * retained architectural TLB remain separate work. */
 machine_result vm_mmu_access(vm_memory *physical, pl_u32 port_offset,
                              const vm_mmu_context *context, pl_u64 address,
                              pl_u32 bytes, pl_u32 access, pl_u64 value);

@@ -57,6 +57,7 @@ for (const name of names) {
     if (meta.control === 0) value |= 0x80000001n;
     if (meta.control === 4) value |= 32n;
     reset(cpl,value);
+    if (value & 1n) view.setBigUint64(state + 392,0x10202n,true);
     let invalid = cpl !== 0, normalized = value;
     if (meta.control === 0) {
       invalid ||= value > 0xffffffffn || (value & 0x60000000n) === 0x20000000n;
@@ -69,6 +70,7 @@ for (const name of names) {
     const hidden = Buffer.from(bytes.subarray(segments,segments + 136));
     if (!invalid) {
       expected.writeBigUInt64LE(normalized,offsets[meta.control]);
+      expected.writeBigUInt64LE(0x202n,392);
       expected.writeBigUInt64LE(entry + BigInt(meta.sourceBytes),384); expected.writeBigUInt64LE(43n,1128);
     }
     assert.equal(cut(state,port),invalid ? 107n : 1n,`${name}: value ${value.toString(16)} CPL ${cpl}`);
@@ -92,7 +94,7 @@ for (const name of names) {
     reset(0,32n); before = Buffer.from(bytes.subarray(state,state + 1256));
     assert.equal(cut(state,badPort),6n); assert.deepEqual(bytes.subarray(state,state + 1256),before);
   }
-  for (const flag of [0x100n,0x10000n,0x20000n]) {
+  for (const flag of [0x100n,0x20000n]) {
     reset(0,32n); view.setBigUint64(state + 392,flag | 2n,true);
     before = Buffer.from(bytes.subarray(state,state + 1256));
     assert.equal(cut(state,port),6n); assert.deepEqual(bytes.subarray(state,state + 1256),before);

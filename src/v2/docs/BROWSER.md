@@ -569,6 +569,34 @@ resident memory or artifact size. Native bundle and human UI are unchanged;
 Linux/PID 1/shell, production storage/network and cold-shell 3 seconds remain
 unachieved. The full product goal is still active.
 
+### Common fault-entry and IRETQ checkpoint
+
+The [current evidence](../vm/check/browser/evidence/2026-10-03-exception-entry.md)
+closes the previous decompressor #PF through the guest IDT, not host mapping
+repair. C validates the CPL0 long-mode IST=0 gate/code/frame and enters Linux's
+own handler; cold compiled IRETQ restores its five-word return frame. One
+160-byte C event frontier preserves consumed descriptors and completed stores
+across physical-residency waits, including an IDT/stack alias. No full CPU
+snapshot or JavaScript handler address is used. RF survives fault/return and
+clears on the next ordinary successful retirement.
+
+96 QEMU TCG system-oracle #PF/#UD/#GP frames match native C and C-Wasm; all
+96 compiled IRETQ returns and following RF clears pass. Full product checks,
+all linked C VM core ASan/UBSan and fresh control/carry/memory-CMOV regressions
+pass. TSS/IST, outer privilege, #DF/triple fault, IRQ/NMI/debug, complete IRET
+fault ordering and production storage admission are still open, not inferred
+from these frames.
+
+Actual browser startup reaches 1,616,430 retired source instructions /
+1,000,000 admissions; the guest handler returns and decompression progresses.
+The next stop is the explicit diagnostic quota, not Linux boot. All earlier
+independent CPU/copy/BSS/memset observations remain green. Code-page recopy
+accumulates 4,096,000,000 bytes, C construction about 7,905 ms versus execution
+555 ms. These are repeated work, not memory residence or artifact size. Next
+remove this fixed cost with C-owned reusable source admission and exact source,
+lifetime and alias validation before widening startup further. Native bundle
+and human UI remain unchanged; the complete product goal is active.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

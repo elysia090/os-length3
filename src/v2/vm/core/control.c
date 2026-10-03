@@ -22,7 +22,7 @@ machine_result vm_far_return(vm_memory *physical, pl_u32 port_offset,
             || segments->version != MACHINE_SEGMENTS_ABI_VERSION || segments->mov_ss_shadow > 1u
             || !(segments->cache[MACHINE_SEGMENT_CS].attributes & 0x2000u)
             || (segments->cache[MACHINE_SEGMENT_CS].attributes & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
-            || (state->rflags & 0x70100u) || (state->cr4 & (1ull << 23u))) return MACHINE_RESULT_ENTRY_MAP;
+            || (state->rflags & 0x60100u) || (state->cr4 & (1ull << 23u))) return MACHINE_RESULT_ENTRY_MAP;
     pl_u8 *port = physical->bytes + port_offset;
     if (vm_memory_load(port,8u) != physical->generation) return MACHINE_RESULT_STALE_GENERATION;
     pl_u32 cpl = (pl_u32)state->system[MACHINE_SYSTEM_CS] & 3u;

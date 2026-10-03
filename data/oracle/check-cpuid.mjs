@@ -52,7 +52,7 @@ try {
     for (let reg = 0; reg < 16; ++reg) view.setBigUint64(base + reg * 8,random(),true);
     view.setBigUint64(base,(random() & ~0xffffffffn) | BigInt(leaf),true);
     view.setBigUint64(base + 8,(random() & ~0xffffffffn) | BigInt(subleaf),true);
-    const flags = 2n | (random() & 0xed5n);
+    const flags = 2n | (random() & 0xed5n) | (sample & 1 ? 0x10000n : 0n);
     view.setBigUint64(base + 384,entry,true); view.setBigUint64(base + 392,flags,true);
     view.setBigUint64(base + 400,0x80010001n,true); view.setBigUint64(base + 408,0x1000n,true);
     view.setBigUint64(base + 416,32n,true); view.setBigUint64(base + 424,0xd00n,true);
@@ -62,6 +62,7 @@ try {
     const expected = Buffer.from(before), words = literal.get(leaf) ?? [0,0,0,0];
     for (let reg = 0; reg < 4; ++reg) expected.writeBigUInt64LE(BigInt(words[reg]),reg * 8);
     expected.writeBigUInt64LE(entry + 2n,384); expected.writeBigUInt64LE(43n,1128);
+    expected.writeBigUInt64LE(flags & ~0x10000n,392);
     // Direct generated function has no VM/JS operation imports and ignores
     // its port argument. Compare its COMPLETE CPU record with the table.
     assert.equal(cut(base,0),1n); assert(data.subarray(base,base + 1256).equals(expected));
@@ -73,11 +74,11 @@ try {
     assert.equal(vm.vm_bind_execution(rows,1,9n),0);
     assert.equal(vm.vm_run(port,9n,1),1n); assert.equal(vm.vm_source_retired(),1n);
     assert(data.subarray(base,base + 1256).equals(expected)); ++comparisons;
-    for (const flag of [0x100n,0x10000n]) {
+    for (const flag of [0x100n]) {
       data.set(before,base); view.setBigUint64(base + 392,flags | flag,true);
       const saved = Buffer.from(data.subarray(base,base + 1256));
       assert.equal(cut(base,0),6n); assert(data.subarray(base,base + 1256).equals(saved)); ++rejected;
     }
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); }
-console.log(`Fixed-profile CPUID: green (${comparisons} complete CPU comparisons direct+C dispatcher, ${rejected} TF/RF rejections; NOT host CPUID/hardware privileged oracle/Linux boot)`);
+console.log(`Fixed-profile CPUID: green (${comparisons} complete CPU comparisons direct+C dispatcher including successful RF retirement, ${rejected} TF rejections; NOT host CPUID/hardware privileged oracle/Linux boot)`);

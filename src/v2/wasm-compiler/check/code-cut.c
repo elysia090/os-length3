@@ -66,6 +66,16 @@ int main(int argc, char **argv)
     EXPECT(report.source_instructions == 1u && report.source_bytes == 2u && report.boundary == WASM_CUT_CONTROL);
     pages[0] = 0xcbu;
     EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
+    pages[0] = 0x48u; pages[1] = 0xcfu; /* IRETQ is a one-instruction C event boundary. */
+    EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+    EXPECT(report.source_instructions == 1u && report.source_bytes == 2u
+        && report.boundary == WASM_CUT_CONTROL && report.flags_written);
+    pages[0] = 0xcfu; /* IRETD/IRETW must not silently use the 64-bit frame. */
+    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
+    pages[0] = 0x66u; pages[1] = 0xcfu;
+    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
+    pages[0] = 0xf0u; pages[1] = 0x48u; pages[2] = 0xcfu;
+    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
     /* Every long-mode control source and destination GPR shares one lowering.
      * No privileged hardware instruction is executed by this fixture tool. */
     static const pl_u32 controls[] = {0u,2u,3u,4u,8u};

@@ -21,7 +21,7 @@ for (const name of names) {
     for (let reg = 0; reg < 16; ++reg) view.setBigUint64(state + reg * 8,0x12340000n + BigInt(reg),true);
     const value = meta.control === 8 ? BigInt(sample)
       : BigInt.asUintN(64,0x80000000000000ffn * BigInt(sample));
-    const flags = 2n | BigInt(sample & 7) | (sample & 8 ? 0x200n : 0n);
+    const flags = 2n | BigInt(sample & 7) | (sample & 8 ? 0x200n : 0n) | (sample & 4 ? 0x10000n : 0n);
     view.setBigUint64(state + offsets[meta.control],value,true);
     view.setBigUint64(state + 384,BigInt(meta.entry),true); view.setBigUint64(state + 392,flags,true);
     view.setBigUint64(state + 488,16n | BigInt(cpl),true); view.setBigUint64(state + 1128,42n,true);
@@ -33,12 +33,13 @@ for (const name of names) {
     } else {
       assert.equal(cut(state,port),1n);
       expected.writeBigUInt64LE(value,meta.reg * 8);
+      expected.writeBigUInt64LE(flags & ~0x10000n,392);
       expected.writeBigUInt64LE(BigInt(meta.entry) + BigInt(meta.sourceBytes),384);
       expected.writeBigUInt64LE(43n,1128);
     }
     assert(bytes.subarray(state,state + 1256).equals(expected)); ++cases;
   }
-  for (const flag of [0x100n,0x10000n,0x20000n]) {
+  for (const flag of [0x100n,0x20000n]) {
     view.setBigUint64(state + 384,BigInt(meta.entry),true);
     view.setBigUint64(state + 392,2n | flag,true);
     view.setBigUint64(state + 488,16n,true);

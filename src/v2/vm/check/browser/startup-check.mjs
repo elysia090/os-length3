@@ -37,7 +37,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory:compilerMemory}})).exports;
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
-    table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control}});
+    table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret}});
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;
   const compilerReport = compilerOutput + 65536;
   let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
@@ -85,6 +85,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const table = vm.__indirect_function_table, slot = table.grow(1);
   assert(slot >= vm.vm_slot_min());
   let admissions = 0, retired = 0, emittedBytes = 0, copiedCodeBytes = 0;
+  const exceptions = [];
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
@@ -114,6 +115,29 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       data.set(extent,offset); data.fill(0,offset + bytes,offset + 4096); sourceExtentBytes += bytes;
     } else { assert(kind === 0 || kind === 1,'known initial page kind'); assert.equal(bytes,0); }
     assert.equal(vm.vm_page_commit(port,ticket),0); ++pageSupplies;
+  }
+  async function deliverFault(result,entry) {
+    if ((result & 7n) !== 3n) return null;
+    const event = {entry:`0x${entry.toString(16)}`,vector:view.getUint32(port + 24,true),
+      error:view.getUint32(port + 28,true),address:`0x${view.getBigUint64(port + 16,true).toString(16)}`};
+    let deliveryResult;
+    for (let waits = 0; waits < 16; ++waits) {
+      const start = performance.now(); deliveryResult = vm.vm_fault(port);
+      executionMs += performance.now() - start;
+      if (deliveryResult !== 2n) break;
+      const beforeSupply = performance.now(); await supplyPhysical(); supplyMs += performance.now() - beforeSupply;
+    }
+    event.deliveryResult = String(deliveryResult); event.nextRip = `0x${rip().toString(16)}`;
+    event.cr2 = `0x${view.getBigUint64(base + 432,true).toString(16)}`;
+    exceptions.push(event);
+    if (exceptions.length > 16) exceptions.shift();
+    // C owns the IDT, frame, handler target and page-wait continuation.
+    // A secondary fault/unsupported delivery stops this probe explicitly;
+    // it is not reclassified as successful boot or recursively skipped.
+    if ((deliveryResult & 7n) === 3n) event.secondary = {
+      vector:view.getUint32(port + 24,true),error:view.getUint32(port + 28,true),
+      address:`0x${view.getBigUint64(port + 16,true).toString(16)}`};
+    return event;
   }
   function relocationInputs() {
     assert.equal(retired,378); assert.equal(rip(),0x1000281n);
@@ -172,6 +196,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     }
     if (projection) {
       assert(data.subarray(codeView,codeView + 24).every(byte => byte === 0xa5),'rejected view publication');
+      const delivery = await deliverFault(projection,entry);
+      if (delivery) return delivery.deliveryResult === '0' ? null : {kind:'exception-delivery',...delivery};
       return {kind:'fetch',result:String(projection),entry:`0x${entry.toString(16)}`,
         requestAddress:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
         requestBytes:view.getUint32(port + 40,true),requestAccess:view.getUint32(port + 44,true)};
@@ -235,6 +261,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         compilerInput + Number(entry - address) + Math.min(sourceBytes,24))),
         rax:`0x${view.getBigUint64(base,true).toString(16)}`,rsp:`0x${view.getBigUint64(base + 32,true).toString(16)}`});
     if (trace.length > 16) trace.shift();
+    if (result !== 1n && result !== 5n) {
+      const delivery = await deliverFault(result,entry);
+      if (delivery) {
+        assert.equal(done,0); assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
+        return delivery.deliveryResult === '0' ? null : {kind:'exception-delivery',...delivery};
+      }
+    }
     if (result !== 1n && result !== 5n)
       return {kind:'execution',result:String(result),entry:`0x${entry.toString(16)}`,
         completed:vm.vm_completed(),sourceRetired:done,
@@ -319,19 +352,22 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     let stopped;
     // Real scalar startup loops can retire far more than a tiny probe quota.
     // These are diagnostic limits, never synthetic execution completion.
-    const maximumAdmissions = 300000, maximumRetired = 500000;
+    const maximumAdmissions = 1000000, maximumRetired = 2000000;
     while (admissions < maximumAdmissions && retired < maximumRetired) {
       stopped = await step(view.getUint32(segments + 4,true) ? 1 : 1024);
       if (stopped) break;
     }
     if (!stopped) stopped = {kind:'quota',entry:`0x${rip().toString(16)}`,admissions,retired,
-      maximumAdmissions,maximumRetired};
+      maximumAdmissions,maximumRetired,
+      cpu:{registers:Array.from({length:16},(_,i) => `0x${view.getBigUint64(base + i*8,true).toString(16)}`),
+        flags:`0x${view.getBigUint64(base + 392,true).toString(16)}`,
+        cr3:`0x${view.getBigUint64(base + 408,true).toString(16)}`}};
     assert(retired >= 379,'REP really completed, not only accepted');
     assert.equal(repeatComparedBytes,kernelBytes);
     return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
       retired,modules:engines.stats().compilations,admissions,liveSlots:1,manualBranchEntries:0,
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
-      nextRip:`0x${rip().toString(16)}`,nextGate:stopped,
+      nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
       firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,repeatComparedBytes,bssComparedBytes,
       memsetComparedBytes,memsetReturns,

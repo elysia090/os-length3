@@ -20,7 +20,7 @@ machine_result vm_control_write(vm_memory *physical, pl_u32 port_offset,
             || segments->version != MACHINE_SEGMENTS_ABI_VERSION || segments->mov_ss_shadow > 1u
             || !(segments->cache[MACHINE_SEGMENT_CS].attributes & 0x2000u)
             || (segments->cache[MACHINE_SEGMENT_CS].attributes & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
-            || (state->rflags & 0x30100u) || (state->efer & 0x500u) != 0x500u
+            || (state->rflags & 0x20100u) || (state->efer & 0x500u) != 0x500u
             || (state->cr0 & 0x80000001u) != 0x80000001u
             || !(state->cr4 & 32u) || (state->cr4 & ~VM_CPU_CR4_VISIBLE)
             || (rank != 0u && rank != 2u && rank != 3u && rank != 4u && rank != 8u))

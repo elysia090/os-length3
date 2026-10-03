@@ -4,6 +4,12 @@
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if (instruction->status == PL_X86_DECODE_VALID
+            && instruction->machine_operation == PL_X86_MACHINE_INTERRUPT_RETURN
+            && instruction->machine_argument == 64u && instruction->operand_width == 64u
+            && instruction->flow == PL_X86_FLOW_RETURN
+            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
+                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_INTERRUPT_RETURN;
+    if (instruction->status == PL_X86_DECODE_VALID
             && instruction->machine_operation == PL_X86_MACHINE_CPUID
             && !instruction->visible_operand_count
             && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
@@ -129,6 +135,14 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (cut->has_interrupt_return) {
+        cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
+        cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);
+        cut->report.flags_written = 1u;
+        return;
+    }
     if (instruction->machine_operation == PL_X86_MACHINE_CPUID) {
         lower_cpuid(cut); return;
     }

@@ -71,7 +71,7 @@ cases in direct Wasm and separately C dispatch, including narrow parents,
 modulo-width indexes, self-aliases and an interior CF consumer. Full product
 check and selected compiler/lowering ASan/UBSan pass.
 
-Current checkpoint adds common register ADC/SBB and memory-source CMOVcc.
+Previous checkpoint adds common register ADC/SBB and memory-source CMOVcc.
 ADC/SBB passes 66 ordinary post-linked modules / 33,792 native comparisons,
 and separately C table dispatch, including both carry inputs, width-specific
 boundary pairs, high bytes, self aliases and CF consumers before later kills.
@@ -98,32 +98,45 @@ non-present 2 MiB identity range. Deliver that guest exception, not a JS page
 table repair. Older port request `0x1e60000` is not this fault address.
 Neither the instruction count nor passing component checks establish Linux boot.
 
+Current checkpoint closes that #PF through common CPL0 long-mode IST=0
+IDT/code/stack/flags/CR2 delivery and cold compiled IRETQ. Linux's own handler
+maps the missing range and resumes decompression. Actual browser: 1,616,430
+retired / 1,000,000 admissions, stopped only by the diagnostic quota. 96 QEMU
+TCG system-oracle #PF/#UD/#GP frames, native C/C-Wasm entry, compiled IRETQ and
+following RF clears pass; this is not physical-hardware or complete exception
+coverage. Full product checks and all linked C VM core ASan/UBSan pass.
+Fresh control, carry dispatch and memory-CMOV/fault regressions are green.
+TSS/IST, outer returns, #DF/triple fault, IRQ/NMI/debug and complete IRET fault
+ordering remain open. The event frontier is 160 bytes, not a CPU snapshot;
+completed aliasing frame stores are not replayed after a residency wait.
+
 Next, in order:
 
-1. Implement the common long-mode exception boundary: validate IDT/code
-   descriptor, exact stack frame/flags/CR2 publication and fault competition,
-   dispatch the guest's #PF handler and return through IRETQ. Make hardware/
-   system-oracle witnesses red first. Missing physical pages are host waits;
-   guest non-present PTEs are Linux faults. Never overwrite guest mappings,
-   skip the fault, manually choose a handler or add a kernel callback in JS.
-2. Remove repeated C construction/page-copy fixed costs using C-owned reusable
+1. Remove repeated C construction/page-copy fixed costs using C-owned reusable
    source admission, with exact source/lifetime checks and code-alias revocation.
    Engine reuse is now bounded and requires an identical successful C emission:
-   1,620 compilations / 282,986 hits, 64 retained instances / 20,360 bytes. It does
-   NOT remove C analysis or the cumulative 1,165,746,176 bytes of code transport.
+   1,957 compilations / 998,043 hits, 64 retained instances / 21,650 bytes. It does
+   NOT remove C analysis or the cumulative 4,096,000,000 bytes of code transport.
+   C construction is about 7,905 ms versus 555 ms VM execution in this observation,
+   not a cold-shell benchmark or a claim about resident/transfer bytes.
    Add crossing-first-instruction supply and preserve precise fetch ordering.
-3. Finish actual startup/decompression, MSR/exception/device/root supply, then
+2. Expand exception/IRET fault-priority and privilege/TSS/IST coverage as actual
+   startup demands it, using common system-oracle witnesses. Physical absence
+   is a host wait; a guest non-present PTE is a Linux fault. Never overwrite
+   guest mappings, skip faults or install a host-selected handler. Secondary
+   delivery faults currently stop explicitly; #DF/triple-fault remains open.
+3. Finish actual startup/decompression, MSR/device/root supply, then
    Linux/PID 1/shell and the complete development/storage/network acceptance.
    Whole-image `-104`, boot, cold shell and production admission remain red.
 
 Physical supply remains one unsorted C index, never VM reopen/reset or a JS
 MMU. Browser: 1,536 page supplies / 1,549 resident pages, 47 HTTP 206 ranges,
 65,536-byte diagnostic chunk cache, 6,815,744 VM memory / 1 MiB cold memory.
-The 300,000-admission / 500,000-retirement bound is an explicit diagnostic
+The 1,000,000-admission / 2,000,000-retirement bound is an explicit diagnostic
 quota; exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-carry-memory-cmov.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-exception-entry.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

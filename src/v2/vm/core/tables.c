@@ -11,7 +11,7 @@ machine_result vm_table_load(vm_memory *physical, pl_u32 port_offset,
             || rank > 1u || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > physical->reserved_bytes
             || (access & ~7u) || (access & 3u) != MACHINE_MEMORY_READ
-            || (state->efer & 0x500u) != 0x500u || (state->rflags & 0x70100u))
+            || (state->efer & 0x500u) != 0x500u || (state->rflags & 0x60100u))
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u8 *port = physical->bytes + port_offset;
     if (vm_memory_load(port,8u) != physical->generation) return MACHINE_RESULT_STALE_GENERATION;

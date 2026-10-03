@@ -7,6 +7,7 @@
 #include <vm/control.h>
 #include <vm/registers.h>
 #include <vm/supply.h>
+#include <vm/exception.h>
 #include <machine/state.h>
 #include "../core/memory-internal.h"
 #include <stdint.h>
@@ -20,6 +21,7 @@ static pl_u32 segments_offset;
 static vm_boot boot;
 static vm_execution execution;
 static vm_page_supply supply;
+static vm_fault_delivery delivery;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result call_entry(void *pointer, pl_u32 slot);
@@ -38,6 +40,7 @@ pl_u32 vm_arena_min(void)
 void vm_close(void)
 {
     vm_supply_reset(&supply);
+    delivery = (vm_fault_delivery){0};
     resident = (vm_memory){ 0 };
     arena_base = 0u;
     state_offset = 0u;
@@ -147,6 +150,7 @@ pl_u32 vm_page_count(void) { return resident.page_count; }
 
 int vm_bind_state(pl_u32 state)
 {
+    delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     vm_execution_close(&execution);
@@ -161,6 +165,7 @@ int vm_bind_state(pl_u32 state)
 
 int vm_bind_segments(pl_u32 segments)
 {
+    delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     vm_execution_close(&execution); segments_offset = 0u;
@@ -213,7 +218,7 @@ machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (!private_port(port))
+    if (delivery.stage || !private_port(port))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     const pl_u8 *state = resident.bytes + state_offset - arena_base;
     vm_mmu_context context = {
@@ -246,7 +251,7 @@ machine_result vm_code(pl_u32 port, pl_u64 address, pl_u32 target)
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (!segments_offset || !private_port(port) || !private_record(target,sizeof(vm_code_page))
+    if (delivery.stage || !segments_offset || !private_port(port) || !private_record(target,sizeof(vm_code_page))
             || !separate(target,sizeof(vm_code_page),port,sizeof(machine_memory_port)))
         return MACHINE_RESULT_ENTRY_MAP;
     const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
@@ -268,7 +273,7 @@ machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 acce
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (!private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     vm_mmu_context context = cpu_context();
     resident.write_touched = 0u;
     machine_result result = vm_mmu_reserve(&resident,port - arena_base,&context,address,bytes,access);
@@ -278,7 +283,7 @@ machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 acce
 machine_result vm_commit(pl_u32 port, pl_u64 value)
 {
     vm_supply_reset(&supply);
-    if (!private_port(port)) { vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP; }
+    if (delivery.stage || !private_port(port)) { vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP; }
     resident.write_touched = 0u;
     machine_result result = vm_memory_commit(&resident,port - arena_base,value);
     if (resident.write_touched) execution.generation = 0u;
@@ -290,7 +295,7 @@ machine_result vm_table(pl_u32 port, pl_u64 address, pl_u32 rank, pl_u32 access)
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (!segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
     pl_u32 cs = segments->cache[MACHINE_SEGMENT_CS].attributes;
     if (!(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))) return MACHINE_RESULT_ENTRY_MAP;
@@ -305,7 +310,7 @@ machine_result vm_return(pl_u32 port, pl_u32 discard_bytes)
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (!segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     resident.write_touched = 0u;
     machine_result result = vm_far_return(&resident,port - arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,discard_bytes);
@@ -313,11 +318,36 @@ machine_result vm_return(pl_u32 port, pl_u32 discard_bytes)
     return memory_result(port,result);
 }
 
-machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
+/* A pending architectural event is owned by C across physical page waits.
+ * This export is not an import available to emitted guest functions. */
+machine_result vm_fault(pl_u32 port)
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (!segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    vm_execution_close(&execution);
+    resident.write_touched = 0u;
+    machine_result result = vm_fault_enter(&resident,port - arena_base,
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,&delivery);
+    return memory_result(port,result);
+}
+machine_result vm_iret(pl_u32 port)
+{
+    vm_supply_reset(&supply);
+    vm_memory_abort(&resident);
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    resident.write_touched = 0u;
+    machine_result result = vm_interrupt_return(&resident,port - arena_base,
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset);
+    if (!result || resident.write_touched) execution.generation = 0u;
+    return memory_result(port,result);
+}
+
+machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
+{
+    vm_supply_reset(&supply);
+    vm_memory_abort(&resident);
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     machine_result result = vm_control_write(&resident,port - arena_base,
         (machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,rank,value);
     /* Even equal-value CR3 writes invalidate paging caches. With no retained
@@ -331,7 +361,7 @@ machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (!segments_offset || !private_port(port)) return machine_result_make(MACHINE_RESULT_ENTRY_MAP,0u);
+    if (delivery.stage || !segments_offset || !private_port(port)) return machine_result_make(MACHINE_RESULT_ENTRY_MAP,0u);
     resident.write_touched = 0u;
     machine_result result = vm_segment_load(&resident,port - arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,rank,selector);
@@ -341,6 +371,7 @@ machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 
 int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
 {
+    if (delivery.stage) return -1;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     vm_execution_close(&execution);
