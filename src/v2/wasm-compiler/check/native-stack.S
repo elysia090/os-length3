@@ -55,6 +55,7 @@ native_stack_capture:
     mov native_stack_host(%rip),%rsp
     pushfq
     popq native_stack_result+128(%rip)
+    cld /* The captured guest DF must not leak into the C oracle caller. */
     pop %r15
     pop %r14
     pop %r13

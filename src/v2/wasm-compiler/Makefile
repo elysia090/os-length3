@@ -12,7 +12,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
-	src/emit-cut.c src/lower-register.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-repeat.c
+	src/emit-cut.c src/lower-register.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-repeat.c src/lower-branch.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
@@ -82,6 +82,10 @@ $(BUILD)/flags-check: check/flags.c check/native-flags.S | $(BUILD)
 $(BUILD)/repeat-check: check/repeat.c check/native-repeat.S check/native-cut.S | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/repeat.c check/native-repeat.S check/native-cut.S -o $@
 
+$(BUILD)/branch-check: check/branch.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/branch.c check/native-stack.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
 cut-check: all $(BUILD)/cut-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to the post-linked cut fixture\n' >&2; exit 2; }
 	$(BUILD)/cut-check "$(INPUT)"
@@ -149,8 +153,9 @@ repeat-fixture-check: $(BUILD)/repeat-check
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
 	$(BUILD)/repeat-check "$$scratch/native.bin" "$$scratch/fault.bin"
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
 	$(BUILD)/admission-check
+	$(BUILD)/branch-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
 	$(BUILD)/flags-check

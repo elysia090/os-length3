@@ -69,16 +69,29 @@ cache frontier pass. One C index handles initial/append rows; generation/request
 context/ticket checks admit virgin slots only and refuse resident reinitialization.
 Real browser: 1,481 page supplies / 1,494 resident pages / 1,483 quantum yields,
 47 exact 64 KiB Range reads, 65,536-byte delivery cache, 6,815,744-byte VM memory.
-The 193 demanded cuts still use one live table slot. Its next gate is common
-indirect JMP at `0x10002a1` (cold compile `-102`), then startup/decompression,
-MSR, exception/device/root supply. Page/index quotas and dirty eviction/recovery
+Common indirect near JMP now passes 6,144 native/C-Wasm CPU comparisons,
+including 768 actual #GP frames. A pure prefix incorrectly inheriting its
+unemitted successor's CONTROL classification was reproduced as red and fixed;
+prefix/fault compositions and independent shipped trampoline observation pass.
+Real browser: 195 demanded cuts / 391 retired instructions / one live table slot,
+with exact `0x10002a1 -> 0x1e20d00`. The next gate is common REP STOSQ at
+`0x1e20d17` (cold compile `-102`), then startup/decompression, MSR and
+exception/device/root supply. First add the generic store frontier to the bounded
+REP lowering: all 8/16/32/64-bit widths, 32/64-bit address sizes, DF, zero count,
+partial/cross-page faults and quantum/resource continuation. Preserve RAX/RSI;
+publish only RCX/RDI on partial return and retire once on completion. Compare
+actual x86 CPU/RAM/fault receipts before resuming the unchanged shipped kernel.
+Page/index quotas and dirty eviction/recovery
 remain explicit limitations; diagnostic chunk hashes are not production AEAD/root
 admission. The diagnostic still recompiles each demanded cut, copies one bounded
 page to independent cold memory, and does not yet connect crossing-first-fetch
 pages or signed production source admission. Never skip instructions or change
 the kernel/backend. Whole-image `-104`, Linux boot, PID 1 and development
 acceptance remain red. Native asset and human UI are unchanged. See the
-condition/admission, CPU/stack-flags and REP/page-supply evidence linked from BROWSER.md.
+condition/admission, CPU/stack-flags, REP/page-supply and indirect-JMP evidence
+linked from BROWSER.md. The product goal remains full Linux/PID 1/offline shell,
+C compile/link/run, make/local Git/apk, workspace/storage recovery and granted
+network/service use, not another partial startup counter.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend
 implementation, not the minor native benchmark difference: whole-image Wasm

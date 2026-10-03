@@ -308,6 +308,21 @@ source/CPU/load/generation attestation and exception/device boot remain open.
 
 ### Authenticated bundle and cold compiler construction
 
+The latest [common indirect-JMP checkpoint](../../src/v2/vm/check/browser/evidence/2026-10-03-indirect-jmp.md)
+uses actual native x86 receipts and the C VM/MMU, not a JS memory callback:
+
+```sh
+make -C src/v2/wasm-compiler build/branch-check
+mkdir NEW-BRANCH-DIRECTORY
+src/v2/wasm-compiler/build/branch-check NEW-BRANCH-DIRECTORY
+node data/oracle/check-branch.mjs VM.WASM COMPILER.WASM NEW-BRANCH-DIRECTORY
+```
+
+It checks all GPR targets and ordinary memory-address forms, precise target
+faults, load-before-target fault ordering, and the pure-prefix boundary before
+an unemitted indirect successor. Startup now reaches the relocated trampoline
+and stops at REP STOSQ (391 retired instructions); this is not Linux boot.
+
 Use `compile-native-bundle.sh BUNDLE.tar.zst TRUSTED-SHA256 NEW-DIRECTORY`
 instead of selecting a kernel address/page by hand. It consumes the published
 native bundle, extracts only the required manifest/boot/bin members, lets the

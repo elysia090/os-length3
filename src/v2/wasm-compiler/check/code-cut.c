@@ -169,6 +169,32 @@ int main(int argc, char **argv)
         EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
                == WASM_COMPILER_ERROR_GRAMMAR);
     }
+    /* Generic indirect control, including the pure-prefix boundary that
+     * otherwise misclassified an unemitted successor as a branch. */
+    for (pl_u32 form = 0u; form < 3u; ++form) {
+        memset(pages,0x90,sizeof pages); pages[0] = 0xffu;
+        pages[1] = form ? 0x20u : 0xe0u;
+        if (form == 2u) {
+            static const pl_u8 prefix[] = {0x48u,0x8du,0x80u,0x31u,0u,0u,0u,0xffu,0xe0u};
+            memcpy(pages,prefix,sizeof prefix);
+        }
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions == 1u && report.source_bytes == (form == 2u ? 7u : 2u));
+        EXPECT(report.boundary == (form == 2u ? WASM_CUT_LIMIT : WASM_CUT_CONTROL));
+        EXPECT(report.memory_bytes == (form == 1u ? 8u : 0u) && !report.flags_written);
+    }
+    static const pl_u8 rejected[][3] = {
+        {0x64u,0xffu,0x20u}, /* FS memory target needs explicit base semantics. */
+        {0x65u,0xffu,0x20u}, {0xffu,0x28u,0x90u}, /* Far control is not near JMP. */
+        {0xf0u,0xffu,0xe0u}, {0xffu,0xd0u,0x90u}, {0xffu,0x10u,0x90u},
+    };
+    for (pl_u32 form = 0u; form < sizeof rejected / sizeof rejected[0]; ++form) {
+        memset(pages,0x90,sizeof pages); memcpy(pages,rejected[form],sizeof rejected[0]);
+        memset(output,0xa5,sizeof output);
+        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
+            == WASM_COMPILER_ERROR_GRAMMAR);
+        for (pl_u32 i = 0u; i < sizeof output; ++i) EXPECT(output[i] == 0xa5u);
+    }
     memset(pages,0x90,sizeof pages);
     pages[0] = 0xfcu; pages[1] = 0xfau; pages[2] = 0x90u;
     pages[3] = 0x90u;

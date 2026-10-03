@@ -86,6 +86,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
   let firstRepeatWait;
   const trace = [];
+  const relocationTrace = [];
   const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
   const rip = () => view.getBigUint64(base + 384,true);
   async function supplyPhysical() {
@@ -203,6 +204,14 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     }
     const done = Number(vm.vm_source_retired());
     trace.push({entry:`0x${entry.toString(16)}`,instructions:done,next:`0x${rip().toString(16)}`,result:String(result)});
+    if (entry === 0x10002a1n) {
+      assert.equal(rip(),relocated + 0x2ded00n,'independent shipped relocation trampoline destination');
+      assert.equal(view.getBigUint64(base,true),rip());
+    }
+    if (retired >= 384 && relocationTrace.length < 16)
+      relocationTrace.push({...trace.at(-1),source:Array.from(cold.subarray(compilerInput + Number(entry - address),
+        compilerInput + Number(entry - address) + Math.min(sourceBytes,24))),
+        rax:`0x${view.getBigUint64(base,true).toString(16)}`,rsp:`0x${view.getBigUint64(base + 32,true).toString(16)}`});
     if (trace.length > 16) trace.shift();
     if (result !== 1n && result !== 5n)
       return {kind:'execution',result:String(result),entry:`0x${entry.toString(16)}`,
@@ -266,7 +275,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
-      emittedBytes,copiedCodeBytes,timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs},trace,
+      emittedBytes,copiedCodeBytes,timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs},trace,relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
       memoryBytes:memory.buffer.byteLength,coldMemoryBytes:compilerMemory.buffer.byteLength};
   } finally {

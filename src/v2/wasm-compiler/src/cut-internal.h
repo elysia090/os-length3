@@ -34,6 +34,7 @@ typedef struct {
     pl_u32 flag_frontier[WASM_CUT_MAX_INSTRUCTIONS];
     pl_u32 system_cut;
     pl_u32 repeat_cut;
+    pl_u32 indirect_cut;
 } cut_plan;
 void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);
@@ -56,6 +57,9 @@ void cut_arithmetic_flags(cut_lowering *cut, pl_u32 width, int subtraction,
                           int logical, int keep_carry);
 int cut_stack_supported(const pl_x86_instruction *instruction);
 void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction);
+int cut_indirect_supported(const pl_x86_instruction *instruction);
+void cut_lower_indirect(cut_lowering *cut, const pl_x86_instruction *instruction);
+void cut_reject_target(cut_lowering *cut);
 int cut_repeat_supported(const pl_x86_instruction *instruction);
 void cut_lower_repeat(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_repeat_frontier(cut_lowering *cut);

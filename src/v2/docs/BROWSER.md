@@ -442,14 +442,14 @@ compares it with the native construction receipt, then executes the generated
 cut through the C VM table/MMU for 512 native comparisons. The prebuilt cut is
 only an oracle; it is never an execution fallback. The standard browser-control
 route now works: actual `provider.html` v3 passes 512 comparisons and
-`startup.html` executes 385 shipped startup instructions, retains the independent
+`startup.html` executes 391 shipped startup instructions, retains the independent
 full CPU/cache comparison at instruction 86, and checks the absent-option result.
 Ordinary memory, secure context and no isolation were observed.
 Linux boot and RSS reclamation remain unachieved/unmeasured. Earlier v1 manual
 receipts retain their original builds and meaning.
 
 This resolves bundle provenance and a usable construction entry, **not** the
-remaining ISA/system/exception/device semantics. Indirect control/MSR startup,
+remaining ISA/system/exception/device semantics. Indirect CALL/far control, REP store/MSR startup,
 complete code/load admission and kernel/device boot remain the next
 blockers. Unsupported code must be implemented in the common C lowering and
 machine boundary, not skipped or interpreted by JavaScript.
@@ -466,7 +466,7 @@ serialized owner pins source and context across engine compilation. This
 diagnostic still performs one page transport/compilation per cut; warm compiled
 code reuse, first-instruction cross-page supply and general async admission are
 not established. Its fixture manifest does not authenticate a production release.
-See the [current evidence](../vm/check/browser/evidence/2026-10-03-page-supply.md) for
+See the [page-supply evidence](../vm/check/browser/evidence/2026-10-03-page-supply.md) for
 exact hashes, reservation preconditions and the remaining red gates.
 
 REP's C physical misses now use online admission into the same resident index,
@@ -484,8 +484,15 @@ The actual browser completed and compared the full 3,040,256-byte relocation.
 diagnostic chunk cache. Streaming length, Content-Range and local chunk SHA-256
 are checked before staging; signed release-root/AEAD/ECC admission remains red.
 The VM reached 6,815,744 linear-memory bytes, with a separate 1 MiB cold compiler.
-193 compiled cuts / 385 retired source instructions stop at the common indirect
-`JMP RAX` grammar gate `0x10002a1`; this is not Linux boot or a 3-second shell.
+That page-supply checkpoint stopped at 193 cuts / 385 retired source instructions.
+The [current indirect-JMP evidence](../vm/check/browser/evidence/2026-10-03-indirect-jmp.md)
+passes 6,144 actual x86/C-Wasm CPU comparisons, including 768 #GP receipts,
+and the unemitted-successor/pure-prefix regression. In the actual browser,
+195 cuts / 391 retired instructions include the independently checked transfer
+`0x10002a1 -> 0x1e20d00`; the next red is REP STOSQ at `0x1e20d17` (`-102`).
+No step at the erroneous zero-page RIP is counted as progress. This still is
+not Linux boot or a 3-second shell, and production storage/network acceptance
+remains open. Native bundle and human UI are unchanged.
 
 ## Platform sources
 

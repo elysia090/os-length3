@@ -21,7 +21,7 @@ async function compare(prefix, entry, instructions) {
   const expected = await readFile(`${prefix}.wasm`);
   assert.equal(c.compiler_emit(BigInt(entry),instructions,output,65536,report),0,prefix);
   const bytes = Number(data().getBigUint64(report + 40,true));
-  assert.equal(bytes,expected.length);
+  assert.equal(bytes,expected.length,`${prefix}: native / cold C emitted length`);
   assert.deepEqual(transport().subarray(output,output + bytes),expected,`${prefix}: native C / cold C-Wasm emission`);
   assert.equal(data().getBigUint64(report,true),BigInt(entry));
   ++count;

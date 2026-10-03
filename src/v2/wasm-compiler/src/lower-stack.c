@@ -35,24 +35,6 @@ int cut_stack_supported(const pl_x86_instruction *instruction)
     return instruction->operation == PL_X86_OPERATION_PUSH && operand->kind == PL_X86_OPERAND_IMMEDIATE;
 }
 
-static void reject_return_target(cut_lowering *cut)
-{
-    cut_get(cut, CUT_LEFT); cut_const(cut, 47u); cut_op(cut, 0x88u);
-    cut_op(cut, 0x50u);
-    cut_get(cut, CUT_LEFT); cut_const(cut, 47u); cut_op(cut, 0x88u);
-    cut_const(cut, 0x1ffffu); cut_op(cut, 0x51u);
-    cut_op(cut, 0x72u); cut_op(cut, 0x45u); /* neither canonical half */
-    cut_op(cut, 0x04u); cut_op(cut, 0x40u);
-    cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
-    cut_get(cut, CUT_LEFT); cut_op(cut, 0x37u); wasm_writer_uleb(cut->writer, 3u);
-    wasm_writer_uleb(cut->writer, offsetof(machine_memory_port, fault_address));
-    cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
-    cut_const(cut, 13u); cut_op(cut, 0x37u); wasm_writer_uleb(cut->writer, 3u);
-    wasm_writer_uleb(cut->writer, offsetof(machine_memory_port, fault_vector));
-    cut_const(cut, machine_result_make(MACHINE_RESULT_FAULT, 13u));
-    cut_op(cut, 0x0fu); cut_op(cut, 0x0bu);
-}
-
 static void pop_flags(cut_lowering *cut, pl_u32 width)
 {
     /* POPF never faults for insufficient I/O privilege: it preserves those
@@ -104,7 +86,7 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (!push) {
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
         if (instruction->operation == PL_X86_OPERATION_RETURN) {
-            reject_return_target(cut);
+            cut_reject_target(cut);
             cut_get(cut, CUT_LEFT); cut_set(cut, CUT_NEXT);
         }
         if (instruction->operation == PL_X86_OPERATION_POP_FLAGS) pop_flags(cut, instruction->operand_width);
