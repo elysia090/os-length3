@@ -1,5 +1,14 @@
 # Compiler boundary checkpoint — 2026-10-02
 
+Current register-summary coverage (2026-10-03): `summary-fixture-check` emits
+75 ordinary linked -> optimized -> proof-verified fixtures. Native execution
+and direct/C-dispatch Wasm comparisons are separately reproduced with
+`data/oracle/prepare-summary-cuts.sh`. The decoder's immutable-profile view
+closes legacy F3 BSF/BSR without changing native superset semantics. Prefixed
+native twins and undefined zero destinations are explicitly marked in receipts;
+they are not hardware F3 observations or Linux/PID 1 acceptance. See
+[the oracle scope](../../../../data/oracle/README.md).
+
 Build through `make -C src/v2 wasm-compiler` so the ordinary ELF reader,
 support library, public cold x86 decoder and machine ABI providers finish before
 the product links. `make -C src/v2/wasm-compiler check` checks rejection and real

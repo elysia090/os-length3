@@ -60,7 +60,7 @@ static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *r
     int rcx_written = 0;
     for (pl_u64 i = 0u; i < report->source_instructions; ++i) {
         pl_x86_instruction instruction;
-        if (pl_x86_decode(image, rip, &instruction)) return 0;
+        if (pl_x86_decode_profile(image, rip, &instruction)) return 0;
         switch (instruction.operation) {
         case PL_X86_OPERATION_SHIFT: {
             const pl_x86_operand *count = &instruction.operands[1];
@@ -98,6 +98,10 @@ static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *r
         case PL_X86_OPERATION_BIT_TEST:
             mask = (mask | 1u) & ~0x894ull; /* CF defined, ZF unchanged; OF/SF/AF/PF undefined. */
             break;
+        case PL_X86_OPERATION_BIT_SUMMARY:
+            if (instruction.condition<2u) mask=(mask|0x40u)&~0x895ull;
+            else if (instruction.condition==4u) mask|=0x8d5u;
+            break;
         case PL_X86_OPERATION_MULTIPLY_SIGNED:
             mask = (mask | 0x801u) & ~0xd4ull; /* Only CF/OF are defined. */
             break;
@@ -121,6 +125,7 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
 {
     void *mapping = MAP_FAILED;
     size_t mapping_bytes = 0u;
+    pl_x86_map source_map = { 0 };
     for (pl_u32 i = 0u; i < elf->program_count; ++i) {
         pl_elf_segment segment;
         if (pl_elf_program(elf, i, &segment)) return 0;
@@ -140,6 +145,8 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
         if (mapping == MAP_FAILED) { perror("oracle mmap"); return 0; }
         memcpy((pl_u8 *)mapping + prefix_bytes, elf->bytes + segment.file_offset,
                (size_t)segment.file_bytes);
+        source_map = (pl_x86_map){ elf->bytes + segment.file_offset,
+            segment.virtual_address, segment.file_bytes, segment.memory_bytes, 5u, 1u };
         if (report->boundary != WASM_CUT_CONTROL) {
             if (report->continuation < base || report->continuation - base >= rounded) {
                 munmap(mapping, mapping_bytes); return 0;
@@ -176,14 +183,38 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
     pl_u64 flags_mask = ~0ull;
     /* Flags have a per-input definedness mask. Count zero is fully preserved;
      * excluding AF/OF globally would hide precisely that dependency bug. */
-    pl_x86_map map = { (pl_u8 *)mapping, (pl_u64)(uintptr_t)mapping,
-                      mapping_bytes, mapping_bytes, 5u, 1u };
-    pl_x86_image image = { &map, 1u, 0u, report->entry };
-    pl_x86_instruction carry = { 0 }, multiply = { 0 };
+    /* Definedness and lowering use the unchanged certified source, not the
+     * terminal observer byte or an ISA-equivalent native prefix twin. */
+    pl_x86_image image = { &source_map, 1u, 0u, report->entry };
+    pl_x86_instruction carry = { 0 }, multiply = { 0 }, summary = { 0 };
+    pl_u32 legacy_prefix_twin = 0u;
     for (pl_u64 rip = report->entry, i = 0u; i < report->source_instructions; ++i) {
         pl_x86_instruction instruction;
-        if (pl_x86_decode(&image,rip,&instruction)) {
+        if (pl_x86_decode_profile(&image,rip,&instruction)) {
             fclose(cases); fclose(meta); fclose(masks); munmap(mapping,mapping_bytes); return 0;
+        }
+        if (instruction.operation==PL_X86_OPERATION_BIT_SUMMARY) {
+            summary=instruction;
+            if (instruction.condition<2u) {
+                for (pl_u32 at=0u;at<instruction.length && instruction.source[at]!=0x0fu;++at)
+                if (instruction.source[at]==0xf3u) {
+                    /* Host supersets (and some TCG CPUs even with feature
+                     * bits clear) execute TZCNT/LZCNT here. Compare with the
+                     * architecturally equivalent unprefixed legacy scan.
+                     * The test-only leading NOP preserves all source/next
+                     * coordinates; product/source-page bytes stay untouched.
+                     * This is not a native observation of the F3 encoding. */
+                    if (mprotect(mapping,mapping_bytes,PROT_READ|PROT_WRITE)) {
+                        fclose(cases); fclose(meta); fclose(masks); munmap(mapping,mapping_bytes); return 0;
+                    }
+                    *((pl_u8 *)(uintptr_t)instruction.rip+at)=0x90u;
+                    if (mprotect(mapping,mapping_bytes,PROT_READ|PROT_EXEC)) {
+                        fclose(cases); fclose(meta); fclose(masks); munmap(mapping,mapping_bytes); return 0;
+                    }
+                    legacy_prefix_twin=1u;
+                }
+            }
+            break;
         }
         if (instruction.operation == PL_X86_OPERATION_ADD_CARRY
                 || instruction.operation == PL_X86_OPERATION_SUBTRACT_BORROW) {
@@ -212,11 +243,20 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
             state.registers[reg] = value; record[reg] = value;
         }
         /* Include every count in both masking domains, not only random CL. */
-        if (i < 128u && !carry.length && !multiply.length) {
+        if (i < 128u && !carry.length && !multiply.length && !summary.length) {
             state.registers[1] = (state.registers[1] & ~255ull) | i;
             record[1] = state.registers[1];
         }
         state.rflags = 0x202u | (random_word(&seed) & 0xcd5u);
+        if (summary.length && i<256u) {
+            pl_u32 width=summary.operands[1].bits, reg=summary.operands[1].value.reg.index;
+            pl_u64 mask=~0ull>>(64u-width);
+            pl_u32 edge=(i/2u)%(width+3u);
+            pl_u64 value=edge==0u ? 0u : edge<=width ? 1ull<<(edge-1u)
+                : edge==width+1u ? mask : mask>>1u;
+            state.registers[reg]=(state.registers[reg]&~mask)|value;
+            record[reg]=state.registers[reg];
+        }
         if (i < 256u && multiply.length) {
             pl_u32 width = multiply.operands[0].bits;
             pl_u64 sign = 1ull << (width - 1u), maximum = width == 64u ? ~0ull : (1ull << width) - 1u;
@@ -275,11 +315,15 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
         "{\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,"
         "\"retiredOffset\":%zu,\"entry\":\"%llu\",\"instructions\":%llu,"
         "\"flagsMask\":\"%llu\",\"writtenRegisters\":%u,\"sourceBytes\":%llu,"
-        "\"moduleBytes\":%llu,\"boundary\":%u}\n",
+        "\"moduleBytes\":%llu,\"boundary\":%u,"
+        "\"summary\":{\"source\":%u,\"destination\":%u,\"width\":%u,\"undefinedZeroDestination\":%u,\"nativeLegacyPrefixTwin\":%u}}\n",
         sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
         offsetof(machine_state, retired), report->entry, report->source_instructions,
         flags_mask, report->written_registers, report->source_bytes, report->module_bytes,
-        report->boundary) < 0) okay = 0;
+        report->boundary,summary.operands[1].value.reg.index,summary.operands[0].value.reg.index,
+        summary.length ? summary.operands[1].bits : 0u,
+        (unsigned)(summary.length && summary.condition<2u && report->source_instructions==1u),
+        legacy_prefix_twin) < 0) okay = 0;
     if (fclose(cases)) okay = 0;
     if (fclose(meta)) okay = 0;
     if (fclose(masks)) okay = 0;

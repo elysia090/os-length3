@@ -14,7 +14,7 @@ static int flag_dependencies(cut_plan *plan)
         --rank;
         pl_u32 offset = plan->flag_frontier[rank];
         pl_x86_instruction instruction;
-        if (pl_x86_decode(&plan->image, plan->report.entry + offset, &instruction))
+        if (pl_x86_decode_profile(&plan->image, plan->report.entry + offset, &instruction))
             return WASM_COMPILER_ERROR_GRAMMAR;
         pl_u32 wanted = live & cut_flag_write_mask(&instruction);
         plan->flag_frontier[rank] = offset | (wanted << 16u);
@@ -57,7 +57,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             break;
         }
         pl_x86_instruction instruction;
-        if (pl_x86_decode(&plan->image, rip, &instruction)) {
+        if (pl_x86_decode_profile(&plan->image, rip, &instruction)) {
             if (!i) return WASM_COMPILER_ERROR_GRAMMAR;
             plan->report.boundary = WASM_CUT_FAULT;
             plan->report.boundary_operation = PL_X86_OPERATION_FAULT;
@@ -188,7 +188,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_op(&cut, 0x83u); cut_op(&cut, 0x50u); cut_op(&cut, 0x45u); return_if(&cut);
     for (pl_u32 i = 0u; i < plan->report.source_instructions; ++i) {
         pl_x86_instruction instruction;
-        if (pl_x86_decode(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
+        if (pl_x86_decode_profile(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
         cut.wanted_flags = plan->flag_frontier[i] >> 16u;
         if (plan->system_cut) cut_lower_system(&cut, &instruction);
         else if (plan->indirect_cut) cut_lower_indirect(&cut, &instruction);

@@ -39,6 +39,10 @@ $(BUILD)/profile-check: check/profile.c include/x86/profile.h | $(BUILD)
 $(BUILD)/kernel-profile-check: check/kernel-profile.c include/x86/profile.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
 
+$(BUILD)/decode-profile-check: check/decode-profile.c $(BUILD)/libx86.a | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) $< \
+		$(BUILD)/libx86.a ../support/build/libsupport.a -o $@
+
 $(BUILD)/code-map-check: check/code-map.c $(BUILD)/libx86.a | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) $< \
 		$(BUILD)/libx86.a ../support/build/libsupport.a -o $@
@@ -51,10 +55,11 @@ $(BUILD)/transfer-check: check/transfer.c $(BUILD)/libx86.a | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) $< \
 		$(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 
-check: all $(BUILD)/profile-check $(BUILD)/kernel-profile-check $(BUILD)/code-map-check \
+check: all $(BUILD)/profile-check $(BUILD)/kernel-profile-check $(BUILD)/decode-profile-check $(BUILD)/code-map-check \
 	$(BUILD)/relocation-check $(BUILD)/transfer-check
 	$(BUILD)/profile-check
 	$(BUILD)/kernel-profile-check
+	$(BUILD)/decode-profile-check
 	$(BUILD)/code-map-check
 	$(BUILD)/relocation-check
 	$(BUILD)/transfer-check

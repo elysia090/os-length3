@@ -12,12 +12,12 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
-	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-repeat.c src/lower-branch.c
+	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-repeat.c src/lower-branch.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
 
-.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
+.PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 
 # Independent cold compiler memory/stack; never the VM's runtime decoder.
@@ -232,7 +232,19 @@ multiply-fixture-check: $(BUILD)/cut-check fixture-tools
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done; done
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
+summary-fixture-check: $(BUILD)/cut-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	for kind in 0 1 2 3 4; do for width in 16 32 64; do for rank in 0 1 2 3 4; do \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
+		-DSUMMARY_KIND=$$kind -DSUMMARY_WIDTH=$$width -DSUMMARY_CASE=$$rank \
+		check/summary-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	limit=64; if [ $$rank = 2 ]; then limit=1; fi; \
+	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut" $$limit; \
+	done; done; done
+
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
 	$(BUILD)/admission-check
 	$(BUILD)/branch-check
 	$(BUILD)/call-check

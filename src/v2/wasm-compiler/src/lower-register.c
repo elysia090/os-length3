@@ -77,6 +77,8 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
         return instruction->condition < 2u ? 1u
             : instruction->condition == 3u || instruction->condition == 4u ? 0x400u : 0u;
     case PL_X86_OPERATION_BIT_TEST: return 1u;
+    case PL_X86_OPERATION_BIT_SUMMARY:
+        return instruction->condition<2u ? 0x40u : instruction->condition==4u ? 0x8d5u : 0u;
     case PL_X86_OPERATION_MULTIPLY_SIGNED: return cut_multiply_supported(instruction) ? 0x801u : 0u;
     default: return 0u;
     }
@@ -136,6 +138,10 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_DECREMENT: return count == 1u;
     case PL_X86_OPERATION_SHIFT: return cut_shift_supported(instruction);
     case PL_X86_OPERATION_MULTIPLY_SIGNED: return cut_multiply_supported(instruction);
+    case PL_X86_OPERATION_BIT_SUMMARY:
+        return count==2u && (instruction->condition<2u || instruction->condition==4u)
+            && operands[0].bits>=16u && operands[1].kind==PL_X86_OPERAND_REGISTER
+            && cut_gpr(&operands[1].value.reg) && operands[0].bits==operands[1].bits;
     case PL_X86_OPERATION_BIT_TEST:
         return count == 2u && instruction->condition < 4u && operands[0].bits >= 16u
             && source_operand(&operands[1])
@@ -327,6 +333,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     }
     if (operation == PL_X86_OPERATION_SHIFT) { cut_lower_shift(cut, instruction); return; }
     if (operation == PL_X86_OPERATION_MULTIPLY_SIGNED) { cut_lower_multiply(cut, instruction); return; }
+    if (operation == PL_X86_OPERATION_BIT_SUMMARY) { cut_lower_summary(cut,instruction); return; }
     if (operation == PL_X86_OPERATION_BIT_TEST) {
         pl_u32 width = operands[0].bits;
         if (!instruction->condition && !(cut->wanted_flags & 1u)) return;

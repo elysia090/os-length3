@@ -27,6 +27,24 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    /* Count encodings are legacy scans in the immutable no-BMI1/LZCNT
+     * profile. POPCNT has its own enabled feature, not either extension. */
+    options.maximum_source_instructions=1u;
+    for (pl_u32 kind=0u;kind<5u;++kind)
+    for (pl_u32 width=16u;width<=64u;width*=2u) {
+        pl_u32 at=0u;
+        memset(pages,0x90,sizeof pages);
+        if (kind>=2u) pages[at++]=0xf3u;
+        if (width==16u) pages[at++]=0x66u;
+        if (width==64u) pages[at++]=0x48u;
+        pages[at++]=0x0fu; pages[at++]=kind==4u ? 0xb8u : (kind&1u) ? 0xbdu : 0xbcu;
+        pages[at++]=0xc7u;
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_instructions==1u && report.source_bytes==at
+            && !report.memory_bytes && report.written_registers==1u && report.flags_written);
+    }
+    options.maximum_source_instructions=1024u;
     /* Memory register indexes name a signed bit-string coordinate, unlike
      * immediate indexes. Cover every family/width/address-size entrance. */
     static const pl_u8 bit_opcodes[] = {0xa3u,0xabu,0xb3u,0xbbu};

@@ -7,10 +7,11 @@ const directory = process.argv[2];
 if (!directory) throw new Error('usage: node check-wasm-cuts.mjs RECORD-DIRECTORY');
 const files = (await readdir(directory)).filter(name => name.endsWith('.json')).sort();
 assert(files.length > 0, 'no actual native oracle records');
-let comparisons = 0;
+let comparisons = 0, legacyTwinModules = 0, zeroRepresentatives = 0;
 for (const file of files) {
   const prefix = path.join(directory, file.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
+  if (meta.summary?.nativeLegacyPrefixTwin) ++legacyTwinModules;
   if (file === 'composed.json')
     assert(meta.moduleBytes <= 400, 'dead intermediate flags reintroduced into the composed cut');
   if (file === 'special-12.json')
@@ -50,6 +51,14 @@ for (const file of files) {
     const expectedView = new DataView(expected.buffer, expected.byteOffset, expected.byteLength);
     for (let reg = 0; reg < 16; ++reg)
       expectedView.setBigUint64(offset + reg * 8, word(17 + reg), true);
+    // Compare every defined native output. A zero-source legacy scan's
+    // destination is undefined; separately enforce the documented incoming
+    // whole-parent representative instead of claiming it as a hardware value.
+    if (meta.summary?.undefinedZeroDestination
+        && !(word(meta.summary.source) & ((1n<<BigInt(meta.summary.width))-1n))) {
+      expectedView.setBigUint64(offset+meta.summary.destination*8,word(meta.summary.destination),true);
+      ++zeroRepresentatives;
+    }
     expectedView.setBigUint64(offset + meta.ripOffset, word(34), true);
     expectedView.setBigUint64(offset + meta.retiredOffset,
       BigInt.asUintN(64, 0xfffffffffffffffen + BigInt(meta.instructions)), true);
@@ -84,4 +93,4 @@ for (const file of files) {
   assert.equal(instance.exports.cut(0), 6n, `${file}: wrong RIP`);
   assert.deepEqual(contents, snapshot);
 }
-console.log(`Generated Wasm/native x86: green (${files.length} modules, ${comparisons} comparisons; not Linux/browser boot)`);
+console.log(`Generated Wasm/native x86: green (${files.length} modules, ${comparisons} comparisons; ${legacyTwinModules} legacy-prefix native twins, ${zeroRepresentatives} chosen undefined zero destinations; not Linux/browser boot)`);

@@ -514,6 +514,11 @@ int pl_x86_image_materialize(
  * not an absent block. */
 int pl_x86_decode(const pl_x86_image *image, pl_u64 rip,
                   pl_x86_instruction *out);
+/* Same decoder, with reused encodings bound to the immutable CPU profile.
+ * Native post-link input retains extension semantics on superset CPUs; this
+ * view is for execution under the exact published CPUID words. */
+int pl_x86_decode_profile(const pl_x86_image *image, pl_u64 rip,
+                          pl_x86_instruction *out);
 
 int pl_x86_frontend_open(const pl_x86_image *image,
                          pl_x86_frontend *out);

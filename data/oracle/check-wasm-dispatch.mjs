@@ -7,12 +7,13 @@ if (!providerFile || !directory)
   throw new Error('usage: node check-wasm-dispatch.mjs VM.WASM PURE-NATIVE-RECORD-DIRECTORY');
 const provider = await WebAssembly.compile(await readFile(providerFile));
 assert.deepEqual(WebAssembly.Module.imports(provider), [{ module: 'machine', name: 'memory', kind: 'memory' }]);
-let comparisons = 0;
+let comparisons = 0, legacyTwinModules = 0, zeroRepresentatives = 0;
 const names = (await readdir(directory)).filter(name => name.endsWith('.json')).sort();
 assert(names.length > 0);
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
+  if (meta.summary?.nativeLegacyPrefixTwin) ++legacyTwinModules;
   const cases = await readFile(`${prefix}.cases`);
   assert.equal(cases.length, 512 * 35 * 8);
   const records = new DataView(cases.buffer, cases.byteOffset, cases.byteLength);
@@ -64,6 +65,11 @@ for (const name of names) {
     assert.equal(vm.vm_run(port, 9n, 1), 1n, `${name}: C table/native row ${row}`);
     const expected = new DataView(saved.buffer, saved.byteOffset, saved.byteLength);
     for (let reg = 0; reg < 16; ++reg) expected.setBigUint64(reg * 8, word(17 + reg), true);
+    if (meta.summary?.undefinedZeroDestination
+        && !(word(meta.summary.source) & ((1n<<BigInt(meta.summary.width))-1n))) {
+      expected.setBigUint64(meta.summary.destination*8,word(meta.summary.destination),true);
+      ++zeroRepresentatives;
+    }
     expected.setBigUint64(384, word(34), true); expected.setBigUint64(1128, 42n + BigInt(meta.instructions), true);
     const flags = view.getBigUint64(state + 392, true);
     const mask = masks ? masks.readBigUInt64LE(row * 8) : BigInt(meta.flagsMask);
@@ -97,4 +103,4 @@ for (const name of names) {
   assert.equal(vm.vm_run(port, 9n, 1), 5n); assert.equal(vm.vm_completed(), 0);
   vm.vm_close(); table.set(slot, null);
 }
-console.log(`C compiled-table dispatcher/native: green (${names.length} modules, ${comparisons} comparisons; not Linux boot)`);
+console.log(`C compiled-table dispatcher/native: green (${names.length} modules, ${comparisons} comparisons; ${legacyTwinModules} legacy-prefix native twins, ${zeroRepresentatives} chosen undefined zero destinations; not Linux boot)`);

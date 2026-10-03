@@ -5000,7 +5000,7 @@ static void classify_architectural_barriers(pl_x86_instruction *out)
 }
 
 static int decode_validated(const pl_x86_image *image, pl_u64 rip,
-                            pl_x86_instruction *out)
+                            pl_x86_instruction *out, int fixed_profile)
 {
     zero_bytes(out, sizeof *out);
     out->rip = rip;
@@ -5072,6 +5072,16 @@ static int decode_validated(const pl_x86_image *image, pl_u64 rip,
     ZyanStatus decoded = ZydisDecoderInit(
         &decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
     if (!ZYAN_SUCCESS(decoded)) return PL_ERROR_X86;
+    if (fixed_profile) {
+        /* These prefixes reuse legacy scans rather than faulting when their
+         * extension is absent. Bind before operand/flag classification, not
+         * by relabeling a count row after its semantics were decoded. */
+        if (!ZYAN_SUCCESS(ZydisDecoderEnableMode(&decoder,ZYDIS_DECODER_MODE_TZCNT,
+                PL_X86_CPUID_7_0_EBX&(1u<<3u) ? ZYAN_TRUE : ZYAN_FALSE))
+                || !ZYAN_SUCCESS(ZydisDecoderEnableMode(&decoder,ZYDIS_DECODER_MODE_LZCNT,
+                    PL_X86_CPUID_80000001_ECX&(1u<<5u) ? ZYAN_TRUE : ZYAN_FALSE)))
+            return PL_ERROR_X86;
+    }
     decoded = ZydisDecoderDecodeFull(
         &decoder, bytes, available, &instruction, operands);
     if (!ZYAN_SUCCESS(decoded)) {
@@ -5177,7 +5187,15 @@ int pl_x86_decode(const pl_x86_image *image, pl_u64 rip,
 {
     if (!image || !out) return PL_ERROR_X86;
     int status = pl_x86_image_validate(image);
-    return status ? status : decode_validated(image, rip, out);
+    return status ? status : decode_validated(image, rip, out, 0);
+}
+
+int pl_x86_decode_profile(const pl_x86_image *image, pl_u64 rip,
+                          pl_x86_instruction *out)
+{
+    if (!image || !out) return PL_ERROR_X86;
+    int status=pl_x86_image_validate(image);
+    return status ? status : decode_validated(image,rip,out,1);
 }
 
 int pl_x86_frontend_open(const pl_x86_image *image,
@@ -5209,7 +5227,7 @@ int pl_x86_frontend_decode(const pl_x86_frontend *frontend, pl_u64 rip,
         *out = cache->cache_instruction[slot];
         return 0;
     }
-    int status = decode_validated(frontend->image, rip, out);
+    int status = decode_validated(frontend->image, rip, out, 0);
     cache->cache_rip[slot] = rip;
     cache->cache_instruction[slot] = *out;
     cache->cache_valid[slot] = 1u;
@@ -5520,7 +5538,7 @@ int pl_x86_catalog_image(const pl_x86_image *image, pl_x86_visit visit,
         for (pl_u64 offset = 0u; offset < map->memory_bytes; ++offset) {
             pl_x86_instruction instruction;
             status = decode_validated(
-                image, map->address + offset, &instruction);
+                image, map->address + offset, &instruction, 0);
             if (status) return status;
             ++out->coordinates;
             switch (instruction.status) {

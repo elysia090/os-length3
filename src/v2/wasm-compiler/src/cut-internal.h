@@ -77,6 +77,7 @@ int cut_shift_supported(const pl_x86_instruction *instruction);
 void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_multiply_supported(const pl_x86_instruction *instruction);
 void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction);
+void cut_lower_summary(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_divide_supported(const pl_x86_instruction *instruction);
 void cut_lower_divide(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction);

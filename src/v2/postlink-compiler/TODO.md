@@ -194,6 +194,21 @@ lowering the corresponding pure summary. Do not silently publish TZCNT flags
 or widen CPU features. PID 1/shell and the full product goal remain red.
 See [current evidence](../vm/check/browser/evidence/2026-10-03-memory-index.md).
 
+Latest checkpoint closes profile-bound register BSF/BSR and POPCNT through
+masked SSA and Wasm ctz/clz/popcnt. The decoder implementation remains single;
+native post-link retains superset semantics, while formation/flag analysis/emit
+all use the immutable-profile view. 24 decoder and 15 pure entrance cases
+pass; 75 ordinary post-linked forms pass 38,400 comparisons in direct Wasm
+and separately C dispatch. Thirty F3 modules use explicit unprefixed native
+twins because clear CPUID did not make the TCG oracle execute legacy scans;
+312 zero-source destination checks enforce a chosen undefined representative.
+Full checks, selected decoder/lowering ASan/UBSan, 508 native/cold emissions
+and all 20 source-admission regressions pass. Actual browser: 129,396,286
+retired / 64,576,209 admissions, unchanged complete decompression output.
+Next -102 is `66 c1 c0 08` (ROL AX,8) at `0xffffffff8103acc0`.
+PID 1/shell and the full product goal remain red.
+See [current evidence](../vm/check/browser/evidence/2026-10-03-summary.md).
+
 Next, in order:
 
 1. Actual browser decompression is now completely observed: all 14,622,864
@@ -223,14 +238,12 @@ Next, in order:
    described above. Memory unary and demand-driven first-instruction tails are
    now closed as well, followed by scalar memory CMPXCHG, memory SETcc and
    ordinary signed register-index memory BT/BTS/BTR/BTC.
-   The next real red is `f3 48 0f bc c9` at `0xffffffff813e188f`. The shared
-   decoder currently enables Zydis's default TZCNT/LZCNT modes although the
-   normative profile publishes neither BMI1 nor LZCNT. First make the general
-   decoder obey those feature-dependent legacy BSF/BSR encodings, with red
-   profile tests; then close common pure scan/summary SSA, including all
-   widths, aliases, zero-source/undefined-destination behavior, ZF consumers
-   and parent publication. Confirm the oracle's actual CPU feature set instead
-   of comparing TZCNT against a BMI1-enabled host and claiming legacy semantics.
+   Profile-bound legacy scan/count semantics are now closed as described above.
+   The next real red is `66 c1 c0 08` (ROL AX,8) at `0xffffffff8103acc0`.
+   Close general ROL/ROR width/count/alias and CF/OF semantics, preserving other
+   flags and predecessors when count is zero. Distinguish the masked flag count
+   from modulo-width value rotation, including a nonzero full-width turn.
+   Make entrance and actual native comparison tests red before lowering.
    Keep the profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.

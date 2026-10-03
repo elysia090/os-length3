@@ -416,6 +416,25 @@ including signed BT/BTS source owners reached from an unmapped original base
 and equal-byte modification fences. Native fault and sanitizer scopes remain
 explicit in the evidence; component green is not Linux boot.
 
+The register summary oracle uses
+`prepare-summary-cuts.sh NEW-DIRECTORY`, then `check-wasm-cuts.mjs NEW-DIRECTORY`
+and `check-wasm-dispatch.mjs VM.WASM NEW-DIRECTORY`. The 75 fixtures cover
+BSF/BSR, their fixed-profile F3 legacy forms and POPCNT, all three widths,
+self/extended aliases and ZF consumers before later kills. The fixed CPU has
+no BMI1/LZCNT; native post-link analysis retains its separate superset-CPU
+contract through the same decoder implementation. All Wasm compilation passes
+use the profile-bound view, not a post-decode opcode rename.
+
+The test-only observer retains the immutable certified source for definedness
+and the delivered source page. For prefixed legacy forms it executes a leading
+NOP plus the unprefixed scan in its private native mapping, preserving next
+coordinates. A TCG CPU may execute TZCNT despite clear BMI1 CPUID, and physical
+host supersets can also do so: those results cannot attest the legacy encoding.
+`nativeLegacyPrefixTwin` marks this distinct oracle scope. Zero-source scan
+destinations and undefined flags are not asserted as defined hardware values;
+the drivers separately test the chosen whole-parent destination representative.
+No such rewrite, CPU feature change or interpreter exists in product execution.
+
 This division avoids rebuilding QEMU while preserving the final route:
 
 ```text

@@ -787,6 +787,44 @@ Next refusal: `f3 48 0f bc c9` at `0xffffffff813e188f`. The fixed CPUID
 contract has no BMI1/LZCNT, so close its legacy scan semantics without widening
 the CPU profile. PID 1/shell and the full product goal remain red.
 
+### Profile-bound scan/count semantics
+
+The x86 decoder implementation remains single. Native post-link analysis keeps
+its extension-aware view; the browser compiler's formation, reverse flag
+analysis and emission all use `pl_x86_decode_profile`, bound to the unchanged
+CPUID contract. The profile does not advertise BMI1 or LZCNT. Their reused F3
+encodings therefore mean BSF/BSR here, not a fabricated #UD or TZCNT/LZCNT.
+Native input on a superset CPU must not be narrowed to this browser profile.
+
+Common register BSF/BSR and POPCNT lower to masked SSA plus Wasm ctz/clz/popcnt,
+without an opcode callback or a materialized bit scan. Source aliases are
+captured before the destination write. Nonzero scans publish the width-correct
+index; zero scans retain the incoming whole-parent destination as the chosen
+undefined representative. Defined ZF is compared separately. POPCNT defines
+all six arithmetic flags, including ZF from the input, not from a guessed
+legacy scan. Memory-source summaries remain an explicit unimplemented entrance.
+
+24 shared-decoder cases preserve both CPU views; 15 pure entrances were red,
+then green. 75 ordinary post-linked forms pass 38,400 comparisons in direct
+Wasm and separately C dispatch, plus 508 native/cold byte-identical emissions.
+Thirty prefixed forms use an unprefixed native legacy twin: the reference TCG
+CPU executed count semantics despite clear feature bits, so CPUID alone cannot
+attest its F3 behavior. The unchanged certified bytes, explicit CPU-profile
+classification and native twin execution are distinct evidence. 312 zero-source
+destination checks enforce the selected representative, not a defined hardware
+result. Full product checks, selected decoder/lowering ASan/UBSan and the 20
+actual cold source-admission regressions pass; not whole-TCB or Linux boot proof.
+
+The encoding contracts are specified in
+[Intel SDM Volume 2A (LZCNT)](https://cdrdv2-public.intel.com/812383/253666-sdm-vol-2a.pdf)
+and [Volume 2B (TZCNT)](https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf).
+
+[Actual browser evidence](../vm/check/browser/evidence/2026-10-03-summary.md):
+the preceding BSF now retires, reaching 129,396,286 instructions / 64,576,209
+admissions, with unchanged complete decompression output. Next refusal is
+`66 c1 c0 08` (ROL AX,8) at `0xffffffff8103acc0`. PID 1/shell and the full
+product goal remain red. The observation is not cold-ready performance.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)
