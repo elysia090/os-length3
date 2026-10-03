@@ -58,6 +58,42 @@ must never be reconstructed as initial zero RAM after execution.
 
 ## Independent native oracles
 
+### Address-only page invalidation
+
+The common cold compiler lowers the already-typed INVLPG descriptor. The
+current C MMU has no retained TLB or paging-structure cache, so invalidation
+has no cache state to mutate; privilege, precise cut and retirement remain.
+This relies on fresh translation at **every** payload access and compiled
+entry fetch, including global/large pages. Introducing a retained translation
+cache requires changing that compiler/MMU contract together. Source/module
+caches are not translation caches. There is no kernel-coordinate opcode skip.
+
+In the reference build guest (oracle/build only):
+
+```sh
+make -C src/v2/wasm-compiler build/invalidate-check
+mkdir NEW-DIRECTORY
+src/v2/wasm-compiler/build/invalidate-check NEW-DIRECTORY
+bash data/oracle/prepare-invalidate.sh NEW-DIRECTORY
+```
+
+The last command observes all 84 exact source forms at real native CPL3 and
+requires a precise #GP(0). The assembled system fixture observes the same
+forms at QEMU TCG CPL0, including absent/noncanonical addresses, segment
+prefixes and preserved flags. It is an independent system oracle, never a
+product execution backend. After copying the fixtures to Windows:
+
+```text
+node data/oracle/check-invalidate-system.mjs QEMU SYSTEM.ELF FIXTURE-DIRECTORY NEW-LOG
+node data/oracle/check-invalidate.mjs VM.WASM FIXTURE-DIRECTORY
+```
+
+The second command exercises the emitted cuts and actual C-Wasm MMU/dispatcher:
+privilege/RF/AC/address/reservation cases, guest PTE remaps, A/D effects and
+precise NX/non-present entry fetches despite a retained module. It is not a
+native hardware TLB oracle, Linux boot or full exception-entry proof. General
+large-page/global remaps and permission changes are also in `vm/check/mmu.c`.
+
 The product does not contain QEMU, KVM, Remill or Intel XED. These pinned
 upstreams are development inputs used to prove the standalone C post-link
 compiler. They never become a runtime fallback, a delivery object or part of

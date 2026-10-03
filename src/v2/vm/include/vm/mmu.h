@@ -29,6 +29,11 @@ typedef struct {
  * and CR2 publication use the separate exception boundary (currently only
  * CPL0, long-mode, IST=0). General IRQ/TSS/IST/double-fault handling and a
  * retained architectural TLB remain separate work. */
+/* In particular INVLPG targets the empty translation-cache set in this ABI.
+ * Compiled entry fetch and every payload access must walk current tables,
+ * including PGE/global and large-page cases. A future retained TLB or walk
+ * cache must change the compiler's invalidation lowering together with this
+ * contract; the physical-owner/source-module caches are not substitutes. */
 machine_result vm_mmu_access(vm_memory *physical, pl_u32 port_offset,
                              const vm_mmu_context *context, pl_u64 address,
                              pl_u32 bytes, pl_u32 access, pl_u64 value);

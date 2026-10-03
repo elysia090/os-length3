@@ -5,6 +5,23 @@
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if (cut_divide_supported(instruction)) return CUT_SYSTEM_DIVIDE;
+    if (instruction->status==PL_X86_DECODE_VALID
+            && instruction->machine_operation==PL_X86_MACHINE_INVALIDATE_PAGE
+            && !instruction->machine_argument && instruction->visible_operand_count==1u
+            && instruction->operands[0].kind==PL_X86_OPERAND_MEMORY
+            && (instruction->flow==PL_X86_FLOW_NEXT || instruction->flow==PL_X86_FLOW_SYSTEM)
+            && (instruction->address_width==32u || instruction->address_width==64u)
+            && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                                     |PL_X86_INSTRUCTION_TRAP_AFTER))) {
+        const pl_x86_memory *memory=&instruction->operands[0].value.memory;
+        if ((memory->segment.class_id==PL_X86_REGISTER_NONE
+                || (memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index<6u))
+                && (memory->base.class_id==PL_X86_REGISTER_NONE
+                    || memory->base.class_id==PL_X86_REGISTER_IP || cut_gpr(&memory->base))
+                && (memory->index.class_id==PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
+                && (!memory->scale || memory->scale==1u || memory->scale==2u
+                    || memory->scale==4u || memory->scale==8u)) return CUT_SYSTEM_INVALIDATE_PAGE;
+    }
     if (cut_selector_read_supported(instruction)
             && instruction->operands[0].kind==PL_X86_OPERAND_REGISTER
             && !(instruction->flags&(PL_X86_INSTRUCTION_READS_MEMORY
@@ -113,6 +130,20 @@ static void port_store(cut_lowering *cut, pl_u32 offset, pl_u32 bytes)
     cut_op(cut, bytes == 8u ? 0x37u : 0x36u);
     wasm_writer_uleb(cut->writer, bytes == 8u ? 3u : 2u);
     wasm_writer_uleb(cut->writer, offset);
+}
+static void require_cpl0(cut_lowering *cut)
+{
+    cut_get(cut,CUT_FLAGS); cut_const(cut,0x20000u); cut_op(cut,0x83u);
+    cut_op(cut,0x50u); cut_op(cut,0x45u);
+    cut_op(cut,0x04u); cut_op(cut,0x40u);
+    cut_const(cut,MACHINE_RESULT_ENTRY_MAP); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+    cut_load(cut,offsetof(machine_state,system)+MACHINE_SYSTEM_CS*8u);
+    cut_const(cut,3u); cut_op(cut,0x83u); cut_op(cut,0x50u); cut_op(cut,0x45u);
+    cut_op(cut,0x04u); cut_op(cut,0x40u);
+    cut_load(cut,offsetof(machine_state,rip)); port_store(cut,offsetof(machine_memory_port,fault_address),8u);
+    cut_const(cut,13u); port_store(cut,offsetof(machine_memory_port,fault_vector),4u);
+    cut_const(cut,0u); port_store(cut,offsetof(machine_memory_port,fault_error),4u);
+    cut_const(cut,machine_result_make(MACHINE_RESULT_FAULT,13u)); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
 }
 static void cpuid_result(cut_lowering *cut, pl_x86_cpuid_result result)
 {
@@ -242,6 +273,18 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (instruction->machine_operation == PL_X86_MACHINE_CPUID) {
         lower_cpuid(cut); return;
     }
+    if (instruction->machine_operation==PL_X86_MACHINE_INVALIDATE_PAGE) {
+        require_cpl0(cut);
+        /* The current machine ABI retains neither TLB nor paging-structure
+         * cache entries: every access and compiled entry fetch walks current
+         * guest tables. Invalidating the empty set has no state effect.
+         * This is an address-only instruction, never a payload read/#PF;
+         * a noncanonical address is also a successful empty invalidation.
+         * Introducing translation caching requires replacing this lowering
+         * and the corresponding MMU/fetch contract together. The privilege
+         * fault, instruction boundary and common retirement remain intact. */
+        return;
+    }
     if (cut->has_control_write) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->operands[0].value.reg.index);
@@ -250,17 +293,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         return;
     }
     if (instruction->machine_operation == PL_X86_MACHINE_READ_CONTROL) {
-        cut_get(cut,CUT_FLAGS); cut_const(cut,0x20000u); cut_op(cut,0x83u);
-        cut_op(cut,0x50u); cut_op(cut,0x45u);
-        cut_op(cut,0x04u); cut_op(cut,0x40u);
-        cut_const(cut,MACHINE_RESULT_ENTRY_MAP); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
-        cut_load(cut,offsetof(machine_state,system) + MACHINE_SYSTEM_CS * 8u);
-        cut_const(cut,3u); cut_op(cut,0x83u); cut_op(cut,0x50u); cut_op(cut,0x45u);
-        cut_op(cut,0x04u); cut_op(cut,0x40u);
-        cut_load(cut,offsetof(machine_state,rip)); port_store(cut,offsetof(machine_memory_port,fault_address),8u);
-        cut_const(cut,13u); port_store(cut,offsetof(machine_memory_port,fault_vector),4u);
-        cut_const(cut,0u); port_store(cut,offsetof(machine_memory_port,fault_error),4u);
-        cut_const(cut,machine_result_make(MACHINE_RESULT_FAULT,13u)); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+        require_cpl0(cut);
         pl_u32 rank = instruction->operands[1].value.reg.index;
         pl_u32 offset = rank == 0u ? offsetof(machine_state,cr0)
             : rank == 3u ? offsetof(machine_state,cr3) : rank == 4u ? offsetof(machine_state,cr4)

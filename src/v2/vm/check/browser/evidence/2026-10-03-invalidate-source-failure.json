@@ -1,0 +1,109 @@
+{
+  "format": "browser-bzimage-startup-v1",
+  "status": "fail",
+  "linuxBoot": "not-achieved",
+  "error": "startup: -1 != 0",
+  "stack": "Error: startup: -1 != 0\n    at assert (http://127.0.0.1:8080/src/v2/vm/check/browser/startup-check.mjs:17:77)\n    at assert.equal (http://127.0.0.1:8080/src/v2/vm/check/browser/startup-check.mjs:18:25)\n    at supplyPhysical (http://127.0.0.1:8080/src/v2/vm/check/browser/startup-check.mjs:118:12)\n    at step (http://127.0.0.1:8080/src/v2/vm/check/browser/startup-check.mjs:345:63)\n    at async checkStartup (http://127.0.0.1:8080/src/v2/vm/check/browser/startup-check.mjs:464:17)\n    at async self.onmessage (http://127.0.0.1:8080/src/v2/vm/check/browser/startup-worker.mjs:24:20)",
+  "diagnostic": {
+    "retired": 130173378,
+    "admissions": 64985059,
+    "entry": "0xffffffff812357cb",
+    "cpu": {
+      "registers": [
+        "0xffffffffff200000",
+        "0x4",
+        "0x10",
+        "0x80000000",
+        "0xffffffff81a03e70",
+        "0xffffffffff200000",
+        "0xffffffffff200000",
+        "0xffffffff81a03e78",
+        "0x0",
+        "0xffffffff81a93fa8",
+        "0xbffffffffffff000",
+        "0x3ffffffffffff000",
+        "0x0",
+        "0x0",
+        "0x0",
+        "0x1000"
+      ],
+      "flags": "0x2",
+      "cr0": "0x80050033",
+      "cr3": "0x1b1d000",
+      "cr4": "0xb0",
+      "efer": "0xd01"
+    },
+    "request": {
+      "address": "0xf0000",
+      "bytes": 4,
+      "access": 17
+    },
+    "trace": [
+      {
+        "entry": "0xffffffff812357b2",
+        "instructions": 2,
+        "next": "0xffffffff812357b8",
+        "result": "1",
+        "rax": "0xffffffffff200000",
+        "rcx": "0xf",
+        "rdx": "0x10",
+        "rdi": "0xffffffff81a03e78",
+        "flags": "0x46"
+      },
+      {
+        "entry": "0xffffffff812357b8",
+        "instructions": 2,
+        "next": "0xffffffff812357be",
+        "result": "1",
+        "rax": "0xffffffffff200000",
+        "rcx": "0xf",
+        "rdx": "0x10",
+        "rdi": "0xffffffff81a03e78",
+        "flags": "0x16"
+      },
+      {
+        "entry": "0xffffffff812357be",
+        "instructions": 2,
+        "next": "0xffffffff812357c4",
+        "result": "1",
+        "rax": "0xffffffffff200000",
+        "rcx": "0xf",
+        "rdx": "0x10",
+        "rdi": "0xffffffff81a03e78",
+        "flags": "0x46"
+      },
+      {
+        "entry": "0xffffffff812357c4",
+        "instructions": 2,
+        "next": "0xffffffff812357cb",
+        "result": "1",
+        "rax": "0xffffffffff200000",
+        "rcx": "0x4",
+        "rdx": "0x10",
+        "rdi": "0xffffffff81a03e78",
+        "flags": "0x2"
+      }
+    ],
+    "residentPages": 3694,
+    "memoryBytes": 15728640,
+    "sourceReuse": {
+      "hits": 64395389,
+      "misses": 589670
+    },
+    "decompressedOutput": {
+      "entry": "0x1e23d31",
+      "comparedBytes": 14622864,
+      "pages": 3571,
+      "sha256": "6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9",
+      "gzipCrc32": 380732796,
+      "oracle": "independent gzip CRC/ISIZE verified; exact per-page SHA-256 comparison before ELF PT_LOAD moves",
+      "guestCrc": "PREBOOT uses raw inflate; this is independent output validation, not a guest CRC check"
+    },
+    "linuxEntry": {
+      "entry": "0x14015e4",
+      "instructions": 5,
+      "nextRip": "0x14015f7",
+      "retired": 129057478
+    }
+  }
+}

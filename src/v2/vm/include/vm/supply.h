@@ -4,6 +4,8 @@
 #include <vm/boot.h>
 #include <vm/memory.h>
 
+enum { VM_SUPPLY_SOURCE_UNMAPPED = -4 };
+
 typedef struct {
     pl_u64 generation, address, source_offset;
     pl_u32 target_offset, source_bytes, source_kind, rights;
@@ -27,7 +29,10 @@ void vm_supply_capture(vm_page_supply *supply, const vm_memory *memory,
  * deferred/fault row, cannot be replaced. No eviction is allowed by this API.
  * Source extents must be authenticated by Artifact/Storage before commit;
  * this lifecycle gate is not a digest, AEAD, dirty-state or SMP proof.
- * Returns -2 for descriptor capacity, -3 for payload extent, -1 otherwise. */
+ * Returns -2 for descriptor capacity, -3 for payload extent, -4 for a valid
+ * physical request outside the initial boot source map, -1 for invalid/stale
+ * input. -4 never publishes bytes/a ticket or manufactures a guest fault;
+ * firmware/device admission is a separate machine contract, not zero RAM. */
 int vm_supply_prepare(vm_page_supply *supply, vm_memory *memory, const vm_boot *boot,
                        const machine_state *state, pl_u32 port, vm_page_request *request);
 int vm_supply_commit(vm_page_supply *supply, vm_memory *memory,

@@ -30,6 +30,6 @@ self.onmessage = async ({data}) => {
       sourceReceipt:new TextDecoder().decode(await read('source.sha256')).trim().split('\n')});
   } catch (error) {
     self.postMessage({format:'browser-bzimage-startup-v1',status:'fail',linuxBoot:'not-achieved',
-      error:error.message});
+      error:error.message,stack:error.stack,diagnostic:error.diagnostic});
   }
 };

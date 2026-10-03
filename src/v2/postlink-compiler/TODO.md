@@ -256,18 +256,31 @@ Next, in order:
    36 register / 39 memory forms pass native/C-dispatch/C-MMU and independent
    guest-selector model comparisons. Full checks, selected lowering sanitizers,
    693 cold emissions and the 20 source-owner regressions pass.
-   Latest real browser: 130,172,569 retired / 64,984,606 admissions; eight #PFs
+   Common INVLPG now closes through the tested absence of TLB/walk caches,
+   preserving its privilege fault, precise cut and normal retirement. 84
+   entrances were red first; 11,424 direct model cases, 84 native CPL3 #GPs,
+   1,008 QEMU TCG CPL0 observations and 66 C-Wasm MMU/fetch cases pass. 256
+   large-page/PGE/global remap rounds supplement the old MMU permission matrix.
+   Full checks, all C VM core sanitizers, selected lowering sanitizers, 777 cold
+   emissions and all 20 source-owner checks pass. A retained translation cache
+   would require changing both this lowering and the MMU contract.
+   Latest real browser: 130,173,378 retired / 64,985,059 admissions; eight #PFs
    and six #GPs enter Linux handlers, unchanged complete decompression output.
-   The next real -102 is `0f 01 3f` (INVLPG [rdi]) at `0xffffffff8104a503`.
-   First prove which translation state the C MMU actually retains, then close
-   the architectural effect and privilege/fault rules with general red witnesses.
-   Do not skip it, use a coordinate-specific no-op, or confuse compiled-source
-   and engine caches with a TLB. Native source/profile and ownership stay fixed.
+   The next boundary is physical read `0xf0000` (4 bytes/access 17) at
+   `0xffffffff812357cb`, not an opcode refusal. Supply now reports -4 for a
+   valid request outside the boot source map, distinct from invalid/stale -1;
+   it publishes no page/bytes/ticket/fault. This witness was red first, and
+   36 actual C-Wasm read/write/RMW/width cases pass. Define immutable firmware,
+   reserved/device coordinates and write/lifetime rules before supplying the
+   scan range. Never treat it as zero RAM, patch DMI/ACPI or import QEMU runtime.
+   The exact locked DMI source corroborates the F0000 scan; the old linked
+   System.map is not the optimized address authority. Native source/profile
+   and physical ownership stay fixed.
    Keep the profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (53.3 s), VM execution (31.8 s) and source/MMU admission
-   (20.5 s) exceed cold construction (9.2 s) in the latest observation. Analyze exact
+   Engine replacement (52.4 s), VM execution (31.7 s) and source/MMU admission
+   (20.4 s) exceed cold construction (9.0 s) in the latest observation. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Preserve demand-only crossing
@@ -293,7 +306,7 @@ page-hash list, never decompressed bytes fed into guest memory or execution.
 Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-selector.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-invalidate.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

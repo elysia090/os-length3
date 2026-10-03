@@ -59,7 +59,7 @@ int vm_supply_prepare(vm_page_supply *supply, vm_memory *memory, const vm_boot *
     if (memory->next_offset + 4096u > memory->byte_count) return -3;
     vm_boot_source source;
     int kind = vm_boot_page(boot,page,memory->bytes + memory->next_offset,&source);
-    if (kind < 0) return -1;
+    if (kind < 0) return VM_SUPPLY_SOURCE_UNMAPPED;
     supply->prepared = (vm_page_request){memory->generation,page,source.offset,
         (pl_u32)memory->next_offset,source.bytes,(pl_u32)kind,3u,++supply->sequence};
     *request = supply->prepared;

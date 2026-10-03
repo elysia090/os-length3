@@ -78,6 +78,9 @@ $(BUILD)/fetch-fixture.elf: check/fetch-fixture.S | $(BUILD)
 $(BUILD)/code-cut-check: check/code-cut.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+$(BUILD)/invalidate-check: check/invalidate.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
 $(BUILD)/flags-check: check/flags.c check/native-flags.S | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) check/flags.c check/native-flags.S -o $@
 
@@ -263,7 +266,7 @@ summary-fixture-check: $(BUILD)/cut-check fixture-tools
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut" $$limit; \
 	done; done; done
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/flags-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/invalidate-check $(BUILD)/flags-check
 	$(BUILD)/admission-check
 	$(BUILD)/branch-check
 	$(BUILD)/call-check
@@ -272,6 +275,7 @@ check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check select
 	$(BUILD)/divide-check
 	$(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf
 	$(BUILD)/code-cut-check
+	$(BUILD)/invalidate-check
 	$(BUILD)/flags-check
 	bash ../../../data/oracle/check-wasm-cli.sh $(BUILD)/wasm-compiler
 	@! grep -REn '#include <postlink/|machine-artifact|STEP|Pyodide|Python' include src

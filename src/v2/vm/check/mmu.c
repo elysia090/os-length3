@@ -176,6 +176,33 @@ int main(void)
     EXPECT(memcmp(saved, arena, sizeof arena) == 0);
     cpu = context(); cpu.cr4 |= 128u; put(entries[3], get(entries[3]) | 256u);
     EXPECT(access(&cpu, base, 8u, 1u, 0u) == 0u); /* PGE/global, no cached TLB. */
+    /* No large-page or global translation may survive a table mutation.
+     * INVLPG has an empty target set only while every access/fetch rewalks.
+     * Resident physical owners are retained; they are not TLB entries. */
+    for (pl_u32 pge=0u;pge<2u;++pge)
+    for (pl_u32 global=0u;global<2u;++global) {
+        reset(base); cpu=context(); cpu.cr4|=(pl_u64)pge<<7u;
+        pages[5].address=0x208000u;
+        EXPECT(vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,6u,branches,9u)==0);
+        put(28672u,0x1111u); put(32768u,0x2222u);
+        for (pl_u32 iteration=0u;iteration<64u;++iteration) {
+            pl_u64 leaf=(iteration&1u ? 0x200000u : 0u)|0x83u|((pl_u64)global<<8u);
+            put(entries[2],leaf);
+            EXPECT(access(&cpu,base+0x8000u,8u,1u,0u)==0u);
+            EXPECT(get(port+8u)==(iteration&1u ? 0x2222u : 0x1111u));
+            EXPECT((get(entries[2])&96u)==32u);
+            EXPECT(vm_mmu_code_page(&memory,port,&cpu,base+0x8000u,&code)==0u);
+            EXPECT(code.offset==(iteration&1u ? 32768u : 28672u));
+            EXPECT(access(&cpu,base+0x8008u,8u,2u,iteration)==0u);
+            EXPECT((get(entries[2])&96u)==96u);
+            put(entries[2],leaf&~2ull);
+            expect_fault(access(&cpu,base+0x8008u,8u,2u,0u),base+0x8008u,14u,3u);
+            put(entries[2],leaf|(1ull<<63u));
+            expect_fault(vm_mmu_code_page(&memory,port,&cpu,base+0x8000u,&code),base+0x8000u,14u,17u);
+            put(entries[2],0u);
+            expect_fault(access(&cpu,base+0x8000u,8u,1u,0u),base+0x8000u,14u,0u);
+        }
+    }
     cpu = context(); put(port, 8u); memcpy(saved, arena, sizeof arena);
     EXPECT(access(&cpu, base, 8u, 2u, 0u) == MACHINE_RESULT_STALE_GENERATION);
     EXPECT(memcmp(saved, arena, sizeof arena) == 0);

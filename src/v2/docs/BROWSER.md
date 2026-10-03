@@ -861,6 +861,28 @@ decompression output. Next -102 is INVLPG [rdi] (`0f 01 3f`) at
 owner and privilege rules; do not call it a kernel-specific no-op. PID 1/shell,
 production authentication and the full development/storage/network goal are red.
 
+### Common address-only invalidation checkpoint
+
+[Current evidence](../vm/check/browser/evidence/2026-10-03-invalidate.md) derives
+INVLPG from the existing empty TLB/walk-cache state, not a kernel-coordinate
+no-op. Its privilege/fault/cut remains; effective-address calculation and
+payload accesses disappear. 84 entrances were red first. Actual native CPL3,
+QEMU TCG CPL0, complete state models, C-Wasm MMU/dispatch and large-page/global
+remap witnesses pass. Full checks, all C VM core sanitizers, selected lowering
+sanitizers, 777 native/cold emissions and source-owner checks are green.
+
+Actual browser: 130,173,378 retired / 64,985,059 admissions, unchanged full
+decompression output. Next is a physical-source gate, not an opcode refusal:
+`0xf0000` four-byte READ/PHYSICAL_REQUEST at `0xffffffff812357cb`. A valid
+request outside the initial source map now returns -4 without inventing RAM,
+firmware bytes, a ticket or #PF. The diagnostic preserves a bounded failure
+context before disposal. The locked Linux DMI source corroborates a legacy
+firmware scan; old linked symbol coordinates cannot identify the optimized
+caller's RIP. Define immutable firmware/device regions and policy next, through
+the C-owned physical boundary. Do not patch the guest or use a runtime oracle.
+Native distribution/profile and human UI remain unchanged. PID 1/shell,
+production authentication and full development/storage/network goals are red.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

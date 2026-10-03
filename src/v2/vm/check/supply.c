@@ -36,6 +36,15 @@ int main(void)
     EXPECT(vm_supply_commit(&supply,&memory,&state,0u,1u) == -1);
     pending(&supply,&memory,&state,0x100000u);
     EXPECT(vm_supply_prepare(&supply,&memory,&boot,&state,0u,&request) == -1 && arena[4096] == 0x5au);
+    /* A valid physical request outside the boot source map is not stale
+     * input, zero RAM, a guest #PF or permission to fabricate firmware. */
+    pending(&supply,&memory,&state,0xf0000u);
+    memset(&request,0xa5,sizeof request); sentinel=request;
+    memset(arena+8192u,0xa5,4096u);
+    EXPECT(vm_supply_prepare(&supply,&memory,&boot,&state,0u,&request) == VM_SUPPLY_SOURCE_UNMAPPED);
+    EXPECT(!memcmp(&request,&sentinel,sizeof request) && supply.sequence==1u && !supply.prepared.ticket);
+    for (pl_u32 at=8192u;at<12288u;++at) EXPECT(arena[at]==0xa5u);
+    EXPECT(memory.page_count==1u && vm_memory_load(arena+24u,8u)==0u);
     pending(&supply,&memory,&state,0x200000u); memory.byte_count = 8192u;
     EXPECT(vm_supply_prepare(&supply,&memory,&boot,&state,0u,&request) == -3);
     memory.byte_count = sizeof arena;

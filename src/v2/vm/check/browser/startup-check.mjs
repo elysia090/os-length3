@@ -115,6 +115,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         memoryBytes:memory.buffer.byteLength,maximumMemoryBytes:maximumMemoryPages * 65536};
       return false;
     }
+    if (status === -4) {
+      resourceGate={kind:'physical-source',status,
+        requestAddress:`0x${view.getBigUint64(port+32,true).toString(16)}`,
+        requestBytes:view.getUint32(port+40,true),requestAccess:view.getUint32(port+44,true),
+        contract:'outside initial boot source map; firmware/device contract required, not zero RAM'};
+      return false;
+    }
     assert.equal(status,0);
     const ticket = view.getBigUint64(pageRequest + 40,true);
     const offset = view.getUint32(pageRequest + 24,true);
@@ -497,6 +504,21 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs},trace,relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
       memoryBytes:memory.buffer.byteLength,coldMemoryBytes:compilerMemory.buffer.byteLength};
+  } catch (error) {
+    // Preserve a bounded last state before disposal. An assertion failure is
+    // not an unsupported opcode, quota stop, page fault or successful boot.
+    error.diagnostic={retired,admissions,entry:`0x${rip().toString(16)}`,
+      cpu:{registers:Array.from({length:16},(_,i)=>`0x${view.getBigUint64(base+i*8,true).toString(16)}`),
+        flags:`0x${view.getBigUint64(base+392,true).toString(16)}`,
+        cr0:`0x${view.getBigUint64(base+400,true).toString(16)}`,
+        cr3:`0x${view.getBigUint64(base+408,true).toString(16)}`,
+        cr4:`0x${view.getBigUint64(base+416,true).toString(16)}`,
+        efer:`0x${view.getBigUint64(base+424,true).toString(16)}`},
+      request:{address:`0x${view.getBigUint64(port+32,true).toString(16)}`,
+        bytes:view.getUint32(port+40,true),access:view.getUint32(port+44,true)},
+      trace:trace.slice(-4),residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
+      sourceReuse:{hits:sourceHits,misses:sourceMisses},decompressedOutput,linuxEntry};
+    throw error;
   } finally {
     for (const slot of installedSlots) table.set(slot,null);
     engines.close(); cc.compiler_close(); vm.vm_close();
