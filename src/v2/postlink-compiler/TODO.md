@@ -1,5 +1,18 @@
 # Remaining work — 2026-10-04
 
+Current browser checkpoint: common MOV DR reads/writes pass Linux DR7/DR6
+initialization. 3,072 red entrances are green, with 9,344 C models, 227,328
+C-Wasm comparisons / 768 dispatcher runs, 592 QEMU TCG observations / 160
+fault matches and 973 fresh native/cold emissions. Full checks and selected
+sanitizers pass. GD produces a pending #DB; its delivery remains explicit.
+Active DR7 address breakpoints refuse before fetch/call, never silently run.
+Actual browser: 136,916,237 retired / 69,219,910 admissions, unchanged complete
+decompression, then -102 memory-source BSR EDX,[RBP+0x18] at
+0xffffffff811223a7. PID 1/shell and the full goal remain red. Next: join memory
+scan/count semantics to the existing pure summary and precise C-MMU read,
+including faults, zero input and parent publication. See
+[current evidence](../vm/check/browser/evidence/2026-10-04-debug-registers.md).
+
 ## Immediate delivery and next product goal — 2026-10-02
 
 The public download/product name is `os-length3-linux`. Older `qm-linux`

@@ -57,6 +57,9 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             || maximum_cuts > VM_EXECUTION_MAX_QUANTUM)
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     for (pl_u32 i = 0u; i < maximum_cuts; ++i) {
+        /* Address breakpoint faults/traps are not yet owned. Refuse before
+         * a fetch or call, including after a previous cut enabled DR7. */
+        if (state->system[MACHINE_SYSTEM_DR0+7u]&255u) return MACHINE_RESULT_ENTRY_MAP;
         int resuming = execution->continuation.slot != 0u;
         if (!generation || (resuming ? execution->continuation_generation : execution->generation) != generation)
             return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);

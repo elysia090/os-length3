@@ -6,6 +6,21 @@ int cut_system_supported(const pl_x86_instruction *instruction)
 {
     int io = cut_io_supported(instruction);
     if (io) return io;
+    if (instruction->status==PL_X86_DECODE_VALID
+            && instruction->machine_operation==PL_X86_MACHINE_DEBUG_REGISTER
+            && instruction->visible_operand_count==2u
+            && (instruction->flow==PL_X86_FLOW_NEXT || instruction->flow==PL_X86_FLOW_SYSTEM)
+            && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                                     |PL_X86_INSTRUCTION_TRAP_AFTER))) {
+        pl_u32 write=(pl_u32)(instruction->machine_argument&1u);
+        const pl_x86_operand *debug=&instruction->operands[write ? 0u : 1u];
+        const pl_x86_operand *reg=&instruction->operands[write ? 1u : 0u];
+        if (debug->kind==PL_X86_OPERAND_REGISTER && debug->value.reg.class_id==PL_X86_REGISTER_DEBUG
+                && debug->value.reg.index<8u && reg->kind==PL_X86_OPERAND_REGISTER
+                && cut_gpr(&reg->value.reg) && reg->value.reg.bits==64u
+                && instruction->machine_argument==(write|((pl_u64)debug->value.reg.index<<8u)
+                    |((pl_u64)reg->value.reg.index<<16u))) return CUT_SYSTEM_DEBUG;
+    }
     if (cut_divide_supported(instruction)
             && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER) return CUT_SYSTEM_DIVIDE;
     if (instruction->status==PL_X86_DECODE_VALID
@@ -312,6 +327,20 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
             cut_set(cut,CUT_VALUE); cut_get(cut,CUT_VALUE); cut_mask(cut,32u); cut_set(cut,1u);
             cut_get(cut,CUT_VALUE); cut_const(cut,32u); cut_op(cut,0x88u); cut_set(cut,3u);
             cut->loaded |= 5u; cut->report.written_registers |= 5u;
+        }
+        return;
+    }
+    if (cut->has_debug) {
+        pl_u32 write=(pl_u32)(instruction->machine_argument&1u);
+        cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,write);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,(instruction->machine_argument>>8u)&255u);
+        if (write) cut_read_operand(cut,&instruction->operands[1],64u);
+        else cut_const(cut,0u);
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        if (!write) {
+            cut_access_value(cut); cut_set(cut,CUT_VALUE);
+            cut_write_register(cut,&instruction->operands[0].value.reg);
         }
         return;
     }

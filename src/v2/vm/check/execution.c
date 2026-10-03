@@ -47,6 +47,12 @@ static void reset(void)
 }
 int main(void)
 {
+    for (pl_u32 bit=0u;bit<8u;++bit) {
+        reset(); state.system[MACHINE_SYSTEM_DR0+7u]=1ull<<bit;
+        EXPECT(run(9u,1u)==6u && !calls && !fetches && !state.retired);
+        yielding=1u; execution.continuation=rows[0]; execution.continuation_generation=9u;
+        EXPECT(run(9u,1u)==6u && !calls && !fetches && !state.retired);
+    }
     reset(); execution.segments = &segments; segments.mov_ss_shadow = 1u;
     rows[0].source_bytes = rows[0].source_instructions = 2u;
     EXPECT(run(9u,1u) == 6u && !calls && !fetches && segments.mov_ss_shadow == 1u);

@@ -156,6 +156,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.has_interrupt_return = plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN;
     cut.has_control_write = plan->system_cut == CUT_SYSTEM_CONTROL_WRITE;
     cut.has_msr = plan->system_cut == CUT_SYSTEM_MSR;
+    cut.has_debug = plan->system_cut == CUT_SYSTEM_DEBUG;
     cut.has_repeat = plan->repeat_cut;
     wasm_writer_uleb(writer, 1u);
     wasm_writer_uleb(writer, cut.has_repeat ? CUT_REPEAT_LOCALS
@@ -186,6 +187,9 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         cut_const(&cut, sizeof(machine_memory_port)); cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
         cut_op(&cut, 0x71u); return_if(&cut);
     }
+    cut_load(&cut,offsetof(machine_state,system)+(MACHINE_SYSTEM_DR0+7u)*8u);
+    cut_const(&cut,255u); cut_op(&cut,0x83u); cut_op(&cut,0x50u); cut_op(&cut,0x45u);
+    return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rip));
     cut_const(&cut, rip); cut_op(&cut, 0x52u); return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rflags)); cut_set(&cut, CUT_FLAGS);

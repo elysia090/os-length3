@@ -7,6 +7,7 @@
 #include <vm/control.h>
 #include <vm/registers.h>
 #include <vm/msr.h>
+#include <vm/debug.h>
 #include <vm/io.h>
 #include <vm/supply.h>
 #include <vm/exception.h>
@@ -510,6 +511,17 @@ machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
      * silently continue under the previous proof after a successful write. */
     if (!result) execution.generation = 0u;
     return result;
+}
+
+machine_result vm_debug(pl_u32 port, pl_u32 write, pl_u32 rank, pl_u64 value)
+{
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply);
+    vm_memory_abort(&resident);
+    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    return vm_debug_transfer(&resident,port-arena_base,
+        (machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
+        write,rank,value);
 }
 
 machine_result vm_msr(pl_u32 port, pl_u32 operation, pl_u32 key, pl_u64 value)

@@ -28,6 +28,35 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    /* MOV DR ignores operand size and ModRM.mod, but never REX.R/LOCK.
+     * All source/destination registers use the same precise C boundary. */
+    options.maximum_source_instructions=1u;
+    for (pl_u32 write=0u;write<2u;++write)
+    for (pl_u32 debug=0u;debug<8u;++debug)
+    for (pl_u32 reg=0u;reg<16u;++reg)
+    for (pl_u32 prefix=0u;prefix<3u;++prefix)
+    for (pl_u32 mod=0u;mod<4u;++mod) {
+        pl_u32 at=0u; memset(pages,0x90,sizeof pages);
+        if (prefix==1u) pages[at++]=0x66u;
+        if (prefix==2u || reg>=8u) pages[at++]=(pl_u8)(0x40u|(prefix==2u ? 8u : 0u)|(reg>=8u));
+        pages[at++]=0x0fu; pages[at++]=(pl_u8)(write ? 0x23u : 0x21u);
+        pages[at++]=(pl_u8)((mod<<6u)|(debug<<3u)|(reg&7u));
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_bytes==at && report.source_instructions==1u
+            && report.boundary==WASM_CUT_SYSTEM && !report.flags_written && !report.memory_bytes
+            && report.read_registers==(write ? 1u<<reg : 0u)
+            && report.written_registers==(write ? 0u : 1u<<reg));
+        if (!status && argc==2 && mod==3u) {
+            char file[4096], json[256];
+            int n=snprintf(file,sizeof file,"%s/debug-%u-%u-%u-%u",argv[1],write,debug,reg,prefix);
+            if (n<=0 || (size_t)n>=sizeof file) return 1;
+            n=snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"write\":%u,\"debug\":%u,\"reg\":%u,\"prefix\":%u,\"sourceBytes\":%u}\n",write,debug,reg,prefix,at);
+            if (n<=0 || (size_t)n>=sizeof json || write_record(file,"json",json,(size_t)n)
+                || write_record(file,"wasm",output,(size_t)bytes)
+                || write_record(file,"source-page",pages,4096u)) return 1;
+        }
+    }
     /* Count encodings are legacy scans in the immutable no-BMI1/LZCNT
      * profile. POPCNT has its own enabled feature, not either extension. */
     options.maximum_source_instructions=1u;

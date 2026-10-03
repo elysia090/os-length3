@@ -123,6 +123,10 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',3,'m','s','r',0,0
     };
+    static const pl_u8 debug_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',5,'d','e','b','u','g',0,0
+    };
     static const pl_u8 io_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',2,'i','o',0,0
@@ -146,9 +150,11 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         else raw(writer,time_imports,sizeof time_imports);
         section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
         section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary == 8) {
+    } else if (boundary == 8 || boundary==12) {
         section(writer,1u,sizeof msr_type); raw(writer,msr_type,sizeof msr_type);
-        section(writer,2u,sizeof msr_imports); raw(writer,msr_imports,sizeof msr_imports);
+        section(writer,2u,boundary==12 ? sizeof debug_imports : sizeof msr_imports);
+        if (boundary==12) raw(writer,debug_imports,sizeof debug_imports);
+        else raw(writer,msr_imports,sizeof msr_imports);
         section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
         section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
     } else if (boundary == 7) {
@@ -203,6 +209,7 @@ static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
     if (plan->repeat_cut || (report->memory_bytes && (plan->indirect_cut
             || report->boundary_operation == PL_X86_OPERATION_POP))) return 1;
     if (plan->system_cut == CUT_SYSTEM_MSR) return 8;
+    if (plan->system_cut == CUT_SYSTEM_DEBUG) return 12;
     if (plan->system_cut == CUT_SYSTEM_IO) return 9;
     if (plan->system_cut == CUT_SYSTEM_TIME) return 10;
     if (plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN) return 7;
