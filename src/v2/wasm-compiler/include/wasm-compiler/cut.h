@@ -73,7 +73,7 @@ typedef struct {
  * target #GP retains that payload store, with CPU/RSP/RIP/retirement unchanged.
  * A failed target read or stack transaction prevents the target check. The
  * next target fetch is a separate admission after successful CALL retirement.
- * Memory ADD/SUB/AND/OR/XOR uses machine.reserve/commit with pinned physical
+ * Memory ADD/ADC/SUB/SBB/AND/OR/XOR uses machine.reserve/commit with pinned physical
  * fragments; generated Wasm computes arithmetic, not a C opcode callback.
  * Memory CMP/TEST uses a READ-only machine.access followed by shared ALU/flags
  * lowering, with no payload/GPR write and no flag commit before read success.

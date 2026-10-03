@@ -1,0 +1,47 @@
+{
+  "format": "c-wasm-memory-carry-native-v1",
+  "status": "pass",
+  "redEntrances": 48,
+  "parity": 132,
+  "nativeComparisons": 67584,
+  "protectionFaults": 59392,
+  "rfChecks": 126976,
+  "dispatchComparisons": 126976,
+  "waits": 264,
+  "retries": 264,
+  "readableWriteFaults": 18944,
+  "oracle": "actual x86 user-mode execution in reference QEMU TCG build VM, not physical hardware",
+  "linuxBoot": "not-tested",
+  "exceptionDelivery": "not-tested",
+  "verification": {
+    "fullProductCheck": "pass, no warnings",
+    "selectedCompilerLoweringObserverASanUBSan": "pass",
+    "sanitizerFixtures": 52,
+    "sanitizerScope": "compiler/lowering/native observer instrumented; linked decoder, support and proof archives normal builds",
+    "coldNativeByteIdenticalEmissions": 1212,
+    "memoryDivisionRegression": "72 modules pass, previous counts unchanged",
+    "unaryRmwRegression": {
+      "modules": 22,
+      "nativeComparisons": 11264,
+      "protectionFaults": 10240,
+      "dispatchComparisons": 21504,
+      "waits": 44,
+      "retries": 44,
+      "readableWriteFaults": 5120
+    }
+  },
+  "compiler": {
+    "bytes": 425695,
+    "sha256": "fd1d66211929e75bd0b2c278392da22d4df386999c6072962a307fd56997d9de"
+  },
+  "vm": {
+    "bytes": 36584,
+    "sha256": "105c3be7eb19171c65b39f15922a5f9de6a1bc1849601a5521e701097fb08891"
+  },
+  "sourceBundle": {
+    "publication": "1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195",
+    "bytes": 63219311,
+    "sha256": "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc",
+    "changed": false
+  }
+}

@@ -1,4 +1,4 @@
-# Remaining work — 2026-10-03
+# Remaining work — 2026-10-04
 
 ## Immediate delivery and next product goal — 2026-10-02
 
@@ -316,9 +316,16 @@ Next, in order:
    C-MMU/dispatch/wait/retry/RF/refusal checks, full checks, selected sanitizers
    and 1,080 cold emissions pass. Actual browser advances to 136,129,036
    retired / 68,707,852 admissions. Next is `83 54 24 70 00`, ADC dword
-   [RSP+0x70],0, at 0xffffffff81203942. Close general memory ADC/SBB using
-   the existing carry SSA and precise reserve/commit, not a coordinate-specific
-   increment. See [its evidence](../vm/check/browser/evidence/2026-10-03-memory-divide.md).
+   [RSP+0x70],0, at 0xffffffff81203942. This general memory ADC/SBB entrance
+   is now closed through shared carry SSA and precise reserve/commit: 132
+   native/cold modules / 67,584 CPU/RAM observations / 59,392 protection faults,
+   separate C dispatch, RF, 264 waits/retries and 18,944 independently readable
+   write-fault witnesses pass. Full checks, selected 52-fixture sanitizers and
+   1,212 cold emissions pass. Actual browser reaches 136,209,125 retired /
+   68,765,994 admissions. Next -102 is `0f 01 44 24 0e`, SGDT [RSP+0xe], at
+   0xffffffff8103af89. Derive SGDT/SIDT through the existing GDTR/IDTR owner,
+   complete C-MMU write preflight and UMIP privilege/fault witnesses, not a
+   fixed kernel descriptor. See [current evidence](../vm/check/browser/evidence/2026-10-04-memory-carry.md).
    Do not treat the
    bounded 128/64 divider as a global work/span-minimum proof. Memory division
    is now compiled through the same arithmetic after a C read. Boot/PID 1/shell remain unmet.
@@ -326,9 +333,11 @@ Next, in order:
    Keep the CPU profile/native bundle unchanged and precise C-MMU ownership intact.
    Do not patch the guest, change CPU signature or add kernel-coordinate code.
    PID 1/shell are still not achieved. Prior MSR/LEAVE evidence stays historical.
-   Engine replacement (97.1 s), VM execution (35.3 s) and source/MMU admission
-   (22.5 s) exceed cold construction (16.7 s) in the latest uncontrolled
-   observation. Analyze exact
+   Engine replacement (174.4 s), VM execution (40.5 s) and source/MMU admission
+   (24.4 s) dominate the latest uncontrolled observation. Other checks overlapped;
+   these are not a controlled speed comparison or cold-ready measurement.
+   Engine reuse reports zero hits / 1,211,568 compilations, despite bounded
+   64-module residency. Analyze exact
    instance/topology sharing and C-owned multi-cut dispatch rather than grow
    an unbounded cache or skip validation. Use the current C-owned source
    admission, never a JavaScript source cache. Preserve demand-only crossing

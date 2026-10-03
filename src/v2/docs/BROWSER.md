@@ -1009,6 +1009,23 @@ memory ADC dword [RSP+0x70],0 at `0xffffffff81203942`. Full decompression,
 native bundle, CPU profile and zero manual branches remain unchanged.
 Linux/PID 1/shell and the full workspace/network product gates remain red.
 
+## Precise memory carry arithmetic — 2026-10-04
+
+[The native/C-MMU/C-dispatch and actual browser receipt](../vm/check/browser/evidence/2026-10-04-memory-carry.md)
+connects ordinary memory ADC/SBB to the existing carry SSA after a precise
+read/reservation. Forty-eight entrances were red first. 132 ordinary post-linked
+modules / 67,584 native comparisons / 59,392 protection-fault frames,
+126,976 RF and separate C-dispatch comparisons, 264 waits/retries and 18,944
+independently readable write-fault witnesses pass. Full checks, selected
+52-fixture sanitizers and 1,212 native/cold emissions remain green.
+LOCK/SMP ADC/SBB and FS/GS addressing still refuse rather than silently weaken.
+
+Actual browser: 136,209,125 retired / 68,765,994 admissions, zero manual branch
+entries and unchanged full decompression/delivery. Next -102 is SGDT [RSP+0xe]
+(`0f 01 44 24 0e`) at `0xffffffff8103af89`. Connect common descriptor stores
+to the existing table owner and complete C-MMU write preflight, not a Linux
+constant. PID 1/shell and the full development/storage/network goal stay red.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

@@ -18,6 +18,7 @@ const names = (await readdir(directory)).filter(name => /^memory-\d+\.json$/.tes
 assert(names.length > 0);
 let comparisons = 0, hardwareFaults = 0, resumeFlagChecks = 0, selectorModels = 0;
 let dispatchComparisons = 0;
+let residencyWaits=0, residencyRetries=0, readableWriteFaults=0;
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
@@ -40,7 +41,7 @@ for (const name of names) {
   const source = dispatch ? await readFile(`${prefix}.source-page`) : null;
   const slot = dispatch ? vm.__indirect_function_table.grow(1) : 0;
   if (dispatch) {
-    assert.equal(meta.access & 3, 1, 'dispatch mode is for read-only memory cuts');
+    assert(meta.access & 1, 'dispatch mode accepts READ and precise RMW cuts');
     assert.equal(source.length, 4096);
     vm.__indirect_function_table.set(slot, instance.exports.cut);
   }
@@ -82,7 +83,7 @@ for (const name of names) {
     const offset = Number(address & 4095n) + rank;
     return offset < 4096 ? firstPage + offset : nextPage + offset - 4096;
   }
-  function compareDispatch(expectedState, result) {
+  function compareDispatch(expectedState, result, expectedArena, operandAddress) {
     const view = new DataView(memory.buffer), entry = BigInt(meta.entry);
     // Add only missing code-path page tables. Shared prefix/table/leaf owners
     // are kept, including RIP-relative loads from the executable payload.
@@ -127,13 +128,24 @@ for (const name of names) {
     view.setBigUint64(rowAt,entry,true); view.setUint32(rowAt+8,meta.sourceBytes,true);
     view.setUint32(rowAt+12,1,true); view.setUint32(rowAt+16,slot,true); view.setUint32(rowAt+20,0,true);
     assert.equal(vm.vm_bind_execution(rowAt,1,9n),0);
-    const first = Buffer.from(memory.buffer,firstPage,4096).slice();
-    const next = Buffer.from(memory.buffer,nextPage,4096).slice();
-    assert.equal(vm.vm_run(port,9n,1),result);
+    const first = Buffer.from(new Uint8Array(memory.buffer,firstPage,4096));
+    const next = Buffer.from(new Uint8Array(memory.buffer,nextPage,4096));
+    if (result===1n && (meta.access&2)) {
+      for (let i=0;i<meta.bytes;++i) {
+        const at=payloadAt(operandAddress,i), value=expectedArena[at-base];
+        if (at<firstPage+4096) first[at-firstPage]=value;
+        else next[at-nextPage]=value;
+      }
+    }
+    // The successful RAM commit retires this instruction, then revokes the
+    // current execution admission. STALE asks for the next admission; it is
+    // not permission to replay the completed RMW or lose its retirement.
+    const executionResult=result===1n && (meta.access&2) ? 5n : result;
+    assert.equal(vm.vm_run(port,9n,1),executionResult);
     assert.deepEqual(Buffer.from(memory.buffer,state,meta.stateBytes),expectedState,
       `${name}: C-dispatch complete native CPU`);
-    assert.deepEqual(Buffer.from(memory.buffer,firstPage,4096),first,'read-only cut keeps first payload');
-    assert.deepEqual(Buffer.from(memory.buffer,nextPage,4096),next,'read-only cut keeps next payload');
+    assert.deepEqual(Buffer.from(memory.buffer,firstPage,4096),first,'only native operand bytes may change in first page');
+    assert.deepEqual(Buffer.from(memory.buffer,nextPage,4096),next,'only native operand bytes may change in next page');
     assert.equal(vm.vm_completed(),result === 1n ? 1 : 0);
     assert.equal(vm.vm_source_retired(),result === 1n ? 1n : 0n);
     ++dispatchComparisons;
@@ -167,14 +179,33 @@ for (const name of names) {
       expectedView.setBigUint64(port - base + 8,
         word(36) & ((1n << BigInt(meta.bytes * 8)) - 1n), true);
     }
-    const savedDirectory = Buffer.from(memory.buffer, directoryOffset, 192).slice();
+    const savedDirectory = Buffer.from(new Uint8Array(memory.buffer, directoryOffset, 192));
     assert.equal(instance.exports.cut(state, port), 1n);
     assert.deepEqual(arena(), expected, `${name}: native/C-Wasm row ${row}`);
     assert.deepEqual(Buffer.from(memory.buffer, directoryOffset, 192), savedDirectory);
     ++comparisons;
     if (dispatch) {
       arena().set(initial);
-      compareDispatch(expected.subarray(0,meta.stateBytes),1n);
+      compareDispatch(expected.subarray(0,meta.stateBytes),1n,expected,address);
+    }
+    if (row===0 || row===256) {
+      // Demand the last physical fragment without publishing a partial read,
+      // write, carry/flags or CPU state. Resume the identical native input.
+      arena().set(initial); tables(view,address);
+      const offset=Number(address&4095n), split=offset+meta.bytes>4096;
+      const rank=split ? 5 : 4, physical=split ? 0x9000n : 0x8000n;
+      page(view,rank,physical,0,3,3); open();
+      const pending=Buffer.from(arena()), p=new DataView(pending.buffer,pending.byteOffset,pending.byteLength);
+      p.setBigUint64(port-base+32,physical+BigInt(split ? 0 : offset),true);
+      p.setUint32(port-base+40,split ? meta.bytes-(4096-offset) : meta.bytes,true);
+      p.setUint32(port-base+44,(meta.access&3)|16,true);
+      assert.equal(instance.exports.cut(state,port),2n);
+      assert.deepEqual(arena(),pending,'unresident fragment cannot partially publish'); ++residencyWaits;
+      page(view,rank,physical,(rank===5 ? nextPage : firstPage)-base); open();
+      const resumed=Buffer.from(expected);
+      pending.copy(resumed,port-base+32,port-base+32,port-base+48);
+      assert.equal(instance.exports.cut(state,port),1n);
+      assert.deepEqual(arena(),resumed,'exact input retires only once after supply'); ++residencyRetries;
     }
 
     if (meta.selector?.enabled) {
@@ -239,8 +270,15 @@ for (const name of names) {
       view.setBigUint64(state + meta.flagsOffset,observed(16),true);
       view.setBigUint64(state + 432 + 7 * 8,0x13n,true); // Same user-mode #PF bits as hardware.
       const failedLeaf = leaf + Number((observed(35) >> 12n) - (address >> 12n)) * 8;
-      view.setBigUint64(failedLeaf,observed(37) & 1n ? 0x8063n : 0n,true);
+      // Keep the original physical owner and USER=1, but clear WRITABLE.
+      // USER=0 would make even a READ fault and miss the RMW write preflight.
+      const protectedPhysical=view.getBigUint64(failedLeaf,true)&~4095n;
+      view.setBigUint64(failedLeaf,observed(37)&1n ? protectedPhysical|0x65n : 0n,true);
       open();
+      if ((observed(37)&3n)===3n) {
+        assert.equal(vm.vm_access(port,address,meta.bytes,(meta.access&4)|1,0n),0n,
+          'the native write-protected operand must remain readable'); ++readableWriteFaults;
+      }
       const expectedFault = Buffer.from(arena());
       const e = new DataView(expectedFault.buffer,expectedFault.byteOffset,expectedFault.byteLength);
       for (let reg = 0; reg < 16; ++reg) e.setBigUint64(reg * 8,observed(17 + reg),true);
@@ -263,7 +301,7 @@ for (const name of names) {
       assert.equal(instance.exports.cut(state,port),(observed(36) << 3n) | 3n);
       assert.deepEqual(arena(),rfFault,`${name}: failed access preserves RF, row ${row}`);
       ++resumeFlagChecks;
-      if (dispatch) compareDispatch(rfFault.subarray(0,meta.stateBytes),(observed(36) << 3n) | 3n);
+      if (dispatch) compareDispatch(rfFault.subarray(0,meta.stateBytes),(observed(36) << 3n) | 3n,rfFault,address);
     }
   }
   // Force a split write into noncontiguous resident pages, then a second-page
@@ -303,4 +341,4 @@ for (const name of names) {
   assert.equal(vm.vm_access(port, address, 8, 1, 0n), 6n);
   if (dispatch) vm.__indirect_function_table.set(slot,null);
 }
-console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks, ${selectorModels} guest selector models, ${dispatchComparisons} separate C-dispatch comparisons; exception entry/Linux boot not tested)`);
+console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks, ${selectorModels} guest selector models, ${dispatchComparisons} separate C-dispatch comparisons, ${residencyWaits} waits/${residencyRetries} retries, ${readableWriteFaults} readable write faults; exception entry/Linux boot not tested)`);

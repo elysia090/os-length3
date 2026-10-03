@@ -2,7 +2,8 @@
 
 static int binary_arithmetic(pl_u32 operation)
 {
-    return operation == PL_X86_OPERATION_ADD || operation == PL_X86_OPERATION_SUBTRACT
+    return operation == PL_X86_OPERATION_ADD || operation == PL_X86_OPERATION_ADD_CARRY
+        || operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_SUBTRACT_BORROW
         || operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_OR
         || operation == PL_X86_OPERATION_XOR;
 }
@@ -35,16 +36,27 @@ static void unary_value(cut_lowering *cut, pl_u32 operation, pl_u32 width)
 
 static void arithmetic(cut_lowering *cut, pl_u32 operation, pl_u32 width)
 {
+    int carry=operation==PL_X86_OPERATION_ADD_CARRY || operation==PL_X86_OPERATION_SUBTRACT_BORROW;
+    int subtract=operation==PL_X86_OPERATION_SUBTRACT || operation==PL_X86_OPERATION_COMPARE
+        || operation==PL_X86_OPERATION_SUBTRACT_BORROW;
+    if (carry) {
+        /* Keep original a,b,c for the common flag equations. In particular,
+         * pre-folding b+c modulo width would lose carry when b is all ones.
+         * No host event/guest writer can intervene in this synchronous cut. */
+        cut_get(cut,CUT_FLAGS); cut_const(cut,1u); cut_op(cut,0x83u); cut_set(cut,CUT_NEXT);
+    }
     cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT);
-    cut_op(cut,operation == PL_X86_OPERATION_ADD ? 0x7cu
-        : operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_COMPARE ? 0x7du
+    cut_op(cut,operation == PL_X86_OPERATION_ADD || operation == PL_X86_OPERATION_ADD_CARRY ? 0x7cu
+        : subtract ? 0x7du
         : operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_TEST ? 0x83u
         : operation == PL_X86_OPERATION_OR ? 0x84u : 0x85u);
+    if (carry) { cut_get(cut,CUT_NEXT); cut_op(cut,subtract ? 0x7du : 0x7cu); }
     cut_mask(cut,width); cut_set(cut,CUT_VALUE);
     cut_arithmetic_flags(cut,width,
-        operation == PL_X86_OPERATION_SUBTRACT || operation == PL_X86_OPERATION_COMPARE,
+        subtract,
         operation == PL_X86_OPERATION_AND || operation == PL_X86_OPERATION_OR
-            || operation == PL_X86_OPERATION_XOR || operation == PL_X86_OPERATION_TEST,0);
+            || operation == PL_X86_OPERATION_XOR || operation == PL_X86_OPERATION_TEST,
+        carry ? CUT_CARRY_INPUT : CUT_CARRY_NORMAL);
 }
 
 static void bit_value(cut_lowering *cut,const pl_x86_instruction *instruction)

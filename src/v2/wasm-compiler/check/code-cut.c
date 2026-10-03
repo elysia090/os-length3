@@ -31,6 +31,27 @@ int main(int argc, char **argv)
     /* Count encodings are legacy scans in the immutable no-BMI1/LZCNT
      * profile. POPCNT has its own enabled feature, not either extension. */
     options.maximum_source_instructions=1u;
+    /* Carry is an incoming dependency for both a precise load and RMW.
+     * Immediate zero still performs a read and an unconditional write. */
+    for (pl_u32 subtract=0u;subtract<2u;++subtract)
+    for (pl_u32 width=8u;width<=64u;width*=2u)
+    for (pl_u32 address32=0u;address32<2u;++address32)
+    for (pl_u32 shape=0u;shape<3u;++shape) {
+        pl_u32 at=0u; memset(pages,0x90,sizeof pages);
+        if (address32) pages[at++]=0x67u;
+        if (width==16u) pages[at++]=0x66u;
+        if (width==64u) pages[at++]=0x48u;
+        pages[at++]=(pl_u8)(shape==2u ? (width==8u ? 0x80u : 0x83u)
+            : 0x10u+subtract*8u+(width==8u ? 0u : 1u)+(shape==0u ? 2u : 0u));
+        pages[at++]=(pl_u8)(shape==2u ? 0x17u+subtract*8u : 7u);
+        if (shape==2u) pages[at++]=0u;
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if (!status) EXPECT(report.source_bytes==at && report.source_instructions==1u
+            && report.boundary==WASM_CUT_MEMORY && report.memory_bytes==width/8u
+            && report.memory_access==(shape==0u ? 1u : 3u) && report.flags_written
+            && report.written_registers==(shape==0u ? 1u : 0u));
+    }
     /* Selector reads are not descriptor loads. Register destinations use
      * their own width; even a REX.W memory form stores only two bytes. */
     for (pl_u32 segment=0u;segment<6u;++segment)
@@ -465,7 +486,7 @@ int main(int argc, char **argv)
         && report.memory_access == 1u && report.written_registers == 1u && !report.flags_written);
     static const pl_u8 rejected_carry_loads[][5] = {
         {0xf0u,0x19u,0xc0u,0x90u,0x90u}, /* LOCK register SBB is invalid. */
-        {0x48u,0x19u,0x00u,0x90u,0x90u}, /* Memory carry needs precise RMW semantics. */
+        {0xf0u,0x48u,0x19u,0x00u,0x90u}, /* LOCK RMW still requires an explicit atomic descriptor. */
         {0x64u,0x48u,0x0fu,0x44u,0x00u}, /* An FS-base source is not ordinary DS. */
         {0xf0u,0x48u,0x0fu,0x44u,0x00u}, /* CMOV does not accept LOCK. */
     };

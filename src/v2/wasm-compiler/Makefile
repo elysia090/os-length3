@@ -218,6 +218,21 @@ carry-fixture-check: $(BUILD)/cut-check fixture-tools
 	$(BUILD)/cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done; done; done
 
+memory-carry-fixture-check: $(BUILD)/memory-cut-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	for opcode in adc sbb; do for width in 8 16 32 64; do for rank in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17; do \
+	if [ $$width != 8 ] && { [ $$rank = 12 ] || [ $$rank = 13 ]; }; then continue; fi; \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
+		-DMEMORY_CARRY=$$opcode -DMEMORY_WIDTH=$$width -DMEMORY_CARRY_CASE=$$rank \
+		check/memory-carry-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/memory"; \
+	done; done; done
+
+.PHONY: memory-carry-fixture-check
+check: memory-carry-fixture-check
+
 memory-cmov-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
 	for opcode in cmovo cmovno cmovb cmovae cmove cmovne cmovbe cmova cmovs cmovns cmovp cmovnp cmovl cmovge cmovle cmovg; do \
