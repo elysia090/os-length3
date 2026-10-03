@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include <machine/memory.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,11 +196,28 @@ int main(int argc, char **argv)
                 || write_record(prefix,"source-page",pages,4096u)) return 1;
         }
     }
-    // Signed two/three-operand register multiplication is pure. Implicit
-    // double-width, memory and LOCK forms remain explicit grammar refusals.
+    // Memory input uses the same product SSA after one precise C load.
+    // Immediate zero still reads/faults; aliased RDI is not published early.
+    static const pl_u8 memory_multiply[][8] = {
+        {0x48u,0x6bu,0x05u,0x64u,0x1fu,0x75u,0x00u,0x18u},
+        {0x48u,0x0fu,0xafu,0x3fu,0x90u,0x90u,0x90u,0x90u},
+        {0x6bu,0x07u,0x00u,0x90u,0x90u,0x90u,0x90u,0x90u},
+    };
+    options.maximum_source_instructions = 1u;
+    for (pl_u32 rank=0u;rank<3u;++rank) {
+        memcpy(pages,memory_multiply[rank],sizeof memory_multiply[rank]);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions==1u && report.source_bytes==(rank==0u ? 8u : rank==1u ? 4u : 3u)
+            && report.boundary==WASM_CUT_MEMORY && report.flags_written
+            && report.memory_bytes==(rank==2u ? 4u : 8u) && report.memory_access==MACHINE_MEMORY_READ);
+        EXPECT(report.written_registers==(rank==1u ? 128u : 1u));
+        EXPECT(report.read_registers==(rank==0u ? 0u : 128u));
+    }
+    // Implicit double-width, FS and LOCK forms still explicitly refuse.
     static const pl_u8 multiply_rejected[][5] = {
         {0xf7u,0xe8u,0x90u,0x90u,0x90u},
-        {0x0fu,0xafu,0x00u,0x90u,0x90u},
+        {0xf7u,0x28u,0x90u,0x90u,0x90u},
+        {0x64u,0x0fu,0xafu,0x07u,0x90u},
         {0xf0u,0x0fu,0xafu,0xc7u,0x90u},
     };
     options.maximum_source_instructions = 1u;

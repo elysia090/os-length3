@@ -5,9 +5,11 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import {seedNativeSelector} from './selector-observation.mjs';
 
-const [providerFile, directory] = process.argv.slice(2);
+const [providerFile, directory, mode] = process.argv.slice(2);
 if (!providerFile || !directory)
-  throw new Error('usage: node check-wasm-provider.mjs VM.WASM NATIVE-RECORD-DIRECTORY');
+  throw new Error('usage: node check-wasm-provider.mjs VM.WASM NATIVE-RECORD-DIRECTORY [--dispatch]');
+assert(mode === undefined || mode === '--dispatch', 'unknown check mode');
+const dispatch = mode === '--dispatch';
 const provider = await WebAssembly.compile(await readFile(providerFile));
 assert.deepEqual(WebAssembly.Module.imports(provider), [
   { module: 'machine', name: 'memory', kind: 'memory' },
@@ -15,6 +17,7 @@ assert.deepEqual(WebAssembly.Module.imports(provider), [
 const names = (await readdir(directory)).filter(name => /^memory-\d+\.json$/.test(name)).sort();
 assert(names.length > 0);
 let comparisons = 0, hardwareFaults = 0, resumeFlagChecks = 0, selectorModels = 0;
+let dispatchComparisons = 0;
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
@@ -34,6 +37,13 @@ for (const name of names) {
     return null;
   });
   if (faultRecords) assert.equal(faultRecords.length,512 * 38 * 8);
+  const source = dispatch ? await readFile(`${prefix}.source-page`) : null;
+  const slot = dispatch ? vm.__indirect_function_table.grow(1) : 0;
+  if (dispatch) {
+    assert.equal(meta.access & 3, 1, 'dispatch mode is for read-only memory cuts');
+    assert.equal(source.length, 4096);
+    vm.__indirect_function_table.set(slot, instance.exports.cut);
+  }
   function page(view, rank, address, offset, rights = 3, kind = 1, error = 0) {
     const at = directoryOffset + rank * 32;
     view.setBigUint64(at, address, true);
@@ -72,6 +82,62 @@ for (const name of names) {
     const offset = Number(address & 4095n) + rank;
     return offset < 4096 ? firstPage + offset : nextPage + offset - 4096;
   }
+  function compareDispatch(expectedState, result) {
+    const view = new DataView(memory.buffer), entry = BigInt(meta.entry);
+    // Add only missing code-path page tables. Shared prefix/table/leaf owners
+    // are kept, including RIP-relative loads from the executable payload.
+    const codePage = base + 57344, tablePage = base + 65536;
+    page(view, 6, 0x10000n, codePage - base);
+    for (let i = 0; i < 3; ++i) {
+      page(view, 7 + i, BigInt(0x11000 + i * 4096), tablePage + i * 4096 - base);
+      new Uint8Array(memory.buffer, tablePage + i * 4096, 4096).fill(0);
+    }
+    function resident(physical) {
+      for (let rank = 0; rank < 10; ++rank) {
+        const at = directoryOffset + rank * 32;
+        if (view.getBigUint64(at, true) === physical)
+          return base + view.getUint32(at + 8, true);
+      }
+      assert.fail('test page-table owner must be resident');
+    }
+    let table = resident(0x1000n), allocated = 0, destination;
+    for (const shift of [39n,30n,21n,12n]) {
+      const at = table + Number(entry >> shift & 511n) * 8;
+      let pte = view.getBigUint64(at, true);
+      if (shift === 12n) {
+        if (!(pte & 1n)) { pte = 0x10067n; view.setBigUint64(at,pte,true); }
+        destination = resident(pte & 0x000ffffffffff000n);
+      } else {
+        if (!(pte & 1n)) {
+          assert(allocated < 3);
+          pte = BigInt(0x11000 + allocated++ * 4096) | 103n;
+          view.setBigUint64(at,pte,true);
+        }
+        table = resident(pte & 0x000ffffffffff000n);
+      }
+    }
+    // The native compiler has already attested these bytes. This test does
+    // not claim production source/module authentication or Linux boot.
+    const offset = Number(entry & 4095n);
+    assert(offset + meta.sourceBytes <= 4096);
+    Buffer.from(memory.buffer).set(source.subarray(offset,offset + meta.sourceBytes),destination + offset);
+    assert.equal(vm.vm_open(base,memory.buffer.byteLength-base,4096,directoryOffset,10,10,directoryOffset+1024,9n),0);
+    assert.equal(vm.vm_bind_state(state),0);
+    const rowAt = directoryOffset + 512;
+    view.setBigUint64(rowAt,entry,true); view.setUint32(rowAt+8,meta.sourceBytes,true);
+    view.setUint32(rowAt+12,1,true); view.setUint32(rowAt+16,slot,true); view.setUint32(rowAt+20,0,true);
+    assert.equal(vm.vm_bind_execution(rowAt,1,9n),0);
+    const first = Buffer.from(memory.buffer,firstPage,4096).slice();
+    const next = Buffer.from(memory.buffer,nextPage,4096).slice();
+    assert.equal(vm.vm_run(port,9n,1),result);
+    assert.deepEqual(Buffer.from(memory.buffer,state,meta.stateBytes),expectedState,
+      `${name}: C-dispatch complete native CPU`);
+    assert.deepEqual(Buffer.from(memory.buffer,firstPage,4096),first,'read-only cut keeps first payload');
+    assert.deepEqual(Buffer.from(memory.buffer,nextPage,4096),next,'read-only cut keeps next payload');
+    assert.equal(vm.vm_completed(),result === 1n ? 1 : 0);
+    assert.equal(vm.vm_source_retired(),result === 1n ? 1n : 0n);
+    ++dispatchComparisons;
+  }
   for (let row = 0; row < 512; ++row) {
     if (row === 256) memory.grow(1);
     arena().fill(0xa5);
@@ -106,6 +172,10 @@ for (const name of names) {
     assert.deepEqual(arena(), expected, `${name}: native/C-Wasm row ${row}`);
     assert.deepEqual(Buffer.from(memory.buffer, directoryOffset, 192), savedDirectory);
     ++comparisons;
+    if (dispatch) {
+      arena().set(initial);
+      compareDispatch(expected.subarray(0,meta.stateBytes),1n);
+    }
 
     if (meta.selector?.enabled) {
       // Change the guest's selector, not the oracle process's descriptor.
@@ -193,6 +263,7 @@ for (const name of names) {
       assert.equal(instance.exports.cut(state,port),(observed(36) << 3n) | 3n);
       assert.deepEqual(arena(),rfFault,`${name}: failed access preserves RF, row ${row}`);
       ++resumeFlagChecks;
+      if (dispatch) compareDispatch(rfFault.subarray(0,meta.stateBytes),(observed(36) << 3n) | 3n);
     }
   }
   // Force a split write into noncontiguous resident pages, then a second-page
@@ -230,5 +301,6 @@ for (const name of names) {
   assert.equal(vm.vm_access(directoryOffset, address, 8, 2, 0n), 6n);
   assert.equal(vm.vm_open(base,memory.buffer.byteLength,4096,directoryOffset,6,6,directoryOffset + 1024,9n), -1);
   assert.equal(vm.vm_access(port, address, 8, 1, 0n), 6n);
+  if (dispatch) vm.__indirect_function_table.set(slot,null);
 }
-console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks, ${selectorModels} guest selector models; exception entry/dispatch/Linux boot not tested)`);
+console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks, ${selectorModels} guest selector models, ${dispatchComparisons} separate C-dispatch comparisons; exception entry/Linux boot not tested)`);

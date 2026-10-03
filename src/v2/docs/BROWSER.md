@@ -939,6 +939,23 @@ authenticated production workspace/network use and cold shell 3 seconds remain
 unachieved. Full checks, VM core/selected lowering sanitizers, 827 cold emissions
 and previous memory POP direct/dispatch comparisons pass.
 
+## Memory-input multiply — 2026-10-03
+
+[The native/C-MMU/C-dispatch receipt](../vm/check/browser/evidence/2026-10-03-memory-multiply.md)
+closes two/three-operand memory IMUL using the same register product/overflow
+SSA after a precise read. Even an immediate zero retains its faulting load.
+All 16/32/64 operand and 32/64 address widths, aliasing and native #PF frames
+pass: 29,184 successes / 28,160 faults / 57,344 separate C-dispatch comparisons.
+Full checks, selected sanitizers, the register emitter and 916 cold emissions
+remain green. No multiplication opcode crosses a host or memory callback.
+
+Actual browser reaches 134,840,258 retired / 67,826,812 admissions with unchanged
+decompression/delivery and zero manual branch entries. Next is `48 f7 ff`,
+64-bit IDIV RDI at `0xffffffff81413f53`: the common register division path
+still excludes 128/64 dividends. Extend that path with precise #DE, not a
+kernel-specific shortcut. Linux/PID 1/shell, workspace/network acceptance and
+cold shell 3 seconds remain unachieved.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

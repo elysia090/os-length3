@@ -378,6 +378,57 @@ _start:
     bts dword ptr [r12+r9*8+7], r9d
 #elif MEMORY_CASE == 223
     btc qword ptr ss:[rdi], r11
+#elif MEMORY_CASE >= 224 && MEMORY_CASE <= 271
+#if (MEMORY_CASE-224)%6 < 3
+#define ADDRESS [rdi]
+#else
+#define ADDRESS [edi]
+#endif
+#if (MEMORY_CASE-224)%3 == 0
+#define DEST ax
+#define SOURCE word ptr ADDRESS
+#elif (MEMORY_CASE-224)%3 == 1
+#define DEST eax
+#define SOURCE dword ptr ADDRESS
+#else
+#define DEST rax
+#define SOURCE qword ptr ADDRESS
+#endif
+#if (MEMORY_CASE-224)/6 == 0
+    imul DEST, SOURCE
+#elif (MEMORY_CASE-224)/6 == 1
+    imul DEST, SOURCE, 24
+#elif (MEMORY_CASE-224)/6 == 2
+    imul DEST, SOURCE, -128
+#elif (MEMORY_CASE-224)/6 == 3
+    imul DEST, SOURCE, 128
+#elif (MEMORY_CASE-224)/6 == 4
+    imul DEST, SOURCE, 0
+#elif (MEMORY_CASE-224)/6 == 5
+    imul DEST, SOURCE, 1
+#elif (MEMORY_CASE-224)/6 == 6
+    imul DEST, SOURCE, -32768
+#else
+    imul DEST, SOURCE, 32767
+#endif
+#elif MEMORY_CASE == 272
+    imul rdi, qword ptr [rdi]
+#elif MEMORY_CASE == 273
+    imul edi, dword ptr [edi]
+#elif MEMORY_CASE == 274
+    imul di, word ptr [rdi]
+#elif MEMORY_CASE == 275
+    imul rbp, qword ptr [rbp]
+#elif MEMORY_CASE == 276
+    imul r12, qword ptr [r12]
+#elif MEMORY_CASE == 277
+    imul r9, qword ptr [rdi+r9*8+7]
+#elif MEMORY_CASE == 278
+    imul rax, qword ptr [rip+512], 24
+#elif MEMORY_CASE == 279
+    imul r10d, dword ptr [rip+512], -128
+#elif MEMORY_CASE == 280
+    imul cx, word ptr ss:[rdi+r11*2+7], -128
 #else
 #error unsupported case
 #endif

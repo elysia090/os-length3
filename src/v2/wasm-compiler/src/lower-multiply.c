@@ -7,7 +7,8 @@ int cut_multiply_supported(const pl_x86_instruction *instruction)
     if (instruction->operation != PL_X86_OPERATION_MULTIPLY_SIGNED
             || (count != 2u && count != 3u) || (width != 16u && width != 32u && width != 64u)
             || operands[0].kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&operands[0].value.reg)
-            || operands[1].kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&operands[1].value.reg)
+            || (operands[1].kind != PL_X86_OPERAND_MEMORY
+                && (operands[1].kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&operands[1].value.reg)))
             || operands[1].bits != width) return 0;
     return count == 2u || operands[2].kind == PL_X86_OPERAND_IMMEDIATE;
 }
@@ -50,13 +51,8 @@ static void signed_high(cut_lowering *cut)
     cut_get(cut,CUT_LEFT); cut_op(cut,0x83u); cut_op(cut,0x7du);
 }
 
-void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction)
+void cut_multiply_value(cut_lowering *cut, pl_u32 width)
 {
-    const pl_x86_operand *operands = instruction->operands;
-    pl_u32 count = instruction->visible_operand_count, width = operands[0].bits;
-    // Read both sources before publishing any aliased or narrow destination.
-    cut_read_operand(cut,&operands[count == 2u ? 0u : 1u],width); cut_set(cut,CUT_LEFT);
-    cut_read_operand(cut,&operands[count - 1u],width); cut_set(cut,CUT_RIGHT);
     cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x7eu);
     cut_mask(cut,width); cut_set(cut,CUT_VALUE);
     pl_u32 wanted = cut->wanted_flags & 0x801u;
@@ -75,5 +71,15 @@ void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction
         cut_const(cut,wanted); cut_op(cut,0x7eu); cut_op(cut,0x84u);
         cut_set(cut,CUT_FLAGS); cut->report.flags_written = 1u;
     }
+}
+
+void cut_lower_multiply(cut_lowering *cut, const pl_x86_instruction *instruction)
+{
+    const pl_x86_operand *operands = instruction->operands;
+    pl_u32 count = instruction->visible_operand_count, width = operands[0].bits;
+    // Read both sources before publishing any aliased or narrow destination.
+    cut_read_operand(cut,&operands[count == 2u ? 0u : 1u],width); cut_set(cut,CUT_LEFT);
+    cut_read_operand(cut,&operands[count - 1u],width); cut_set(cut,CUT_RIGHT);
+    cut_multiply_value(cut,width);
     cut_write_register(cut,&operands[0].value.reg);
 }

@@ -109,10 +109,12 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     int selector = cut_selector_read_supported(instruction);
+    int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED;
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
             || (instruction->machine_operation != PL_X86_MACHINE_NONE
                 && !selector && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
-            || instruction->visible_operand_count != (unary || set ? 1u : 2u)
+            || (multiply ? !cut_multiply_supported(instruction)
+                : instruction->visible_operand_count != (unary || set ? 1u : 2u))
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
                 && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || instruction->flags & (PL_X86_INSTRUCTION_PRIVILEGED
@@ -156,7 +158,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || (!selector && !cut_gpr(&operands[1].value.reg))))) return 0;
     } else if (!first && ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation)
-                 && !conditional
+                 && !conditional && !multiply
                  && instruction->operation != PL_X86_OPERATION_MOVE_ZERO_EXTEND
                  && instruction->operation != PL_X86_OPERATION_MOVE_SIGN_EXTEND)
             || operands[0].kind != PL_X86_OPERAND_REGISTER
@@ -186,6 +188,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     int store = first && !observe;
     int rmw = store && instruction->operation != PL_X86_OPERATION_MOVE && !set;
     int load_arithmetic = !first && binary_arithmetic(instruction->operation);
+    int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED;
     const pl_x86_operand *memory = &operands[first ? 0u : 1u];
     cut_effective_address(cut, instruction, &memory->value.memory);
     cut_set(cut, CUT_ADDRESS);
@@ -201,7 +204,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (memory->value.memory.segment.class_id == PL_X86_REGISTER_SEGMENT
             && memory->value.memory.segment.index == 2u)
         cut->report.memory_access |= MACHINE_MEMORY_STACK;
-    if (load_arithmetic) {
+    if (load_arithmetic || (multiply && instruction->visible_operand_count == 2u)) {
         // Capture the destination before loading through its aliased address.
         // A failed C read leaves both the parent register and flags untouched.
         cut_read_operand(cut,&operands[0],memory->bits); cut_set(cut,CUT_LEFT);
@@ -256,6 +259,16 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
             cut_set(cut,CUT_VALUE);
         } else if (load_arithmetic) {
             cut_set(cut,CUT_RIGHT); arithmetic(cut,instruction->operation,memory->bits);
+        } else if (multiply) {
+            /* EA and the old two-operand destination are local before the
+             * precise load. Even IMUL by zero must fault/wait on that load.
+             * One shared product/overflow SSA serves register and memory
+             * sources; no multiply opcode crosses the memory boundary. */
+            cut_set(cut,instruction->visible_operand_count == 2u ? CUT_RIGHT : CUT_LEFT);
+            if (instruction->visible_operand_count == 3u) {
+                cut_read_operand(cut,&operands[2],memory->bits); cut_set(cut,CUT_RIGHT);
+            }
+            cut_multiply_value(cut,memory->bits);
         } else {
             if (instruction->operation == PL_X86_OPERATION_MOVE_SIGN_EXTEND) {
                 cut_const(cut, 64u - memory->bits); cut_op(cut, 0x86u);

@@ -144,6 +144,7 @@ int main(int argc, char **argv)
         || instruction.operation == PL_X86_OPERATION_NEGATE
         || instruction.operation == PL_X86_OPERATION_COMPLEMENT;
     int exchange = instruction.operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
+    int multiply = instruction.operation == PL_X86_OPERATION_MULTIPLY_SIGNED;
     int set = instruction.operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int selector = instruction.machine_operation == PL_X86_MACHINE_READ_SELECTOR;
     pl_u64 selectors[6]; native_selectors(selectors);
@@ -168,7 +169,7 @@ int main(int argc, char **argv)
                 && mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
     }
     if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
-            || instruction.operation == PL_X86_OPERATION_BIT_TEST || precise_write)) {
+            || instruction.operation == PL_X86_OPERATION_BIT_TEST || multiply || precise_write)) {
         struct sigaction action = {.sa_sigaction=memory_exception,.sa_flags=SA_SIGINFO};
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
@@ -221,6 +222,19 @@ int main(int argc, char **argv)
             }
             if (instruction.address_width == 32u) state.registers[base_register] |= 0xdeadbeef00000000ull;
         } else address = instruction.fallthrough + (pl_u64)operand->displacement + word_offset;
+        if (multiply && !relative && row < 256u) {
+            pl_u32 width = report.memory_bytes*8u, destination=instruction.operands[0].value.reg.index;
+            pl_u64 sign = 1ull << (width-1u), mask = ~0ull >> (64u-width);
+            const pl_u64 edges[] = {0u,1u,mask,mask-1u,sign,sign-1u,sign+1u,127u,128u,
+                255u,256u,0xffffffffu,0x100000000ull,0x80000000u,0x8000000000000000ull,~0ull};
+            pl_u64 value=edges[row%16u]&mask;
+            if (instruction.visible_operand_count==2u
+                    && !(operand->base.class_id==PL_X86_REGISTER_GPR && operand->base.index==destination)
+                    && !(operand->index.class_id==PL_X86_REGISTER_GPR && operand->index.index==destination))
+                state.registers[destination]=(state.registers[destination]&~mask)|(edges[(row/16u)%16u]&mask);
+            for (pl_u32 i=0u;i<report.memory_bytes;++i)
+                ((pl_u8 *)(uintptr_t)address)[i]=(pl_u8)(value >> (8u*i));
+        }
         if (indexed_bit && row<128u) {
             pl_u64 value=row&1u ? (~0ull >> (64u-report.memory_bytes*8u)) : 0u;
             for (pl_u32 i=0u;i<report.memory_bytes;++i)
@@ -265,6 +279,13 @@ int main(int argc, char **argv)
              * Validate all other flags before choosing the incoming values. */
             if ((record[33]^record[16])&~0x895ull) goto finish;
             record[33]=(record[33]&1u)|(record[16]&~1ull);
+        }
+        if (multiply) {
+            /* CF/OF are the native oracle. SF/ZF/AF/PF are undefined, not
+             * required native outputs; choose their incoming representative.
+             * Every other flag must match before that choice is made. */
+            if ((record[33]^record[16])&~0x8d5ull) goto finish;
+            record[33]=(record[33]&~0xd4ull)|(record[16]&0xd4u);
         }
         record[37] = read_word((const pl_u8 *)(uintptr_t)address);
         if (instruction.operation == PL_X86_OPERATION_COMPLEMENT && record[33] != record[16]) goto finish;
