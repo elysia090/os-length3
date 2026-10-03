@@ -49,7 +49,7 @@ int main(void)
     EXPECT(probe(0x400080u,1024u) == 0 && row.slot == slot && row.source_bytes == 7u);
     /* Actual RAM writes, including reservation commit, must notify before
      * changing an aliased physical payload. Direct helper calls are not enough. */
-    static pl_u8 ram[16384]; vm_memory memory;
+    static _Alignas(8) pl_u8 ram[16384]; vm_memory memory;
     vm_memory_page physical[1] = {{0x400000u,8192u,3u,VM_MEMORY_RAM,0u,0u}};
     EXPECT(!vm_memory_open(&memory,ram,sizeof ram,4096u,physical,1u,1u,0,9u));
     memory.before_write = vm_sources_write; memory.write_owner = &sources;

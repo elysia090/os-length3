@@ -18,7 +18,7 @@ const assert = (value,message = 'startup assertion') => { if (!value) throw new 
 assert.equal = (a,b) => assert(a === b,`startup: ${String(a)} != ${String(b)}`);
 assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'startup imports');
 
-export async function checkStartup(reader,providerBytes,compilerBytes,readExtent) {
+export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,{extended = false} = {}) {
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header'), command = await read('boot.command');
   const kernel = await read('boot.kernel-page'), last = await read('boot.kernel-last-page');
@@ -27,7 +27,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const kernelBytes = header.readUInt32LE(0x1f4) * 16;
   const idtPage = await read('call.extra-page'), cmdlinePage = await read('cmdline.extra-page');
   const optionPage = await read('option.extra-page');
-  const memory = new WebAssembly.Memory({initial:8,maximum:128});
+  const maximumMemoryPages = extended ? 512 : 128;
+  const memory = new WebAssembly.Memory({initial:extended ? 16 : 8,maximum:maximumMemoryPages});
   const provider = await WebAssembly.compile(providerBytes);
   assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
   const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
@@ -42,7 +43,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const compilerReport = compilerOutput + 65536;
   let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
   const input = vm.vm_arena_min(), rows = input + 8192, directoryOffset = input + 12288;
-  const capacity = 4096, branches = directoryOffset + capacity * 32;
+  const capacity = extended ? 8192 : 4096, branches = directoryOffset + capacity * 32;
   const base = (branches + (capacity - 1) * 16 + 4095) & ~4095;
   const port = base + 2048, segments = base + 1408, codeView = base + 2112, pageRequest = base + 2176;
   const codeOffset = base + 32768, gdtOffset = base + 45056, stackOffset = base + 49152;
@@ -88,6 +89,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let admissions = 0, retired = 0, emittedBytes = 0, copiedCodeBytes = 0;
   const exceptions = [];
   let sourceHits = 0, sourceMisses = 0, admissionMs = 0;
+  let resourceGate;
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
@@ -100,9 +102,14 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const rip = () => view.getBigUint64(base + 384,true);
   async function supplyPhysical() {
     let status = vm.vm_page_prepare(port,pageRequest);
-    if (status === -3 && memory.buffer.byteLength < 128 * 65536) {
+    if (status === -3 && vm.vm_page_count() < capacity && memory.buffer.byteLength < maximumMemoryPages * 65536) {
       memory.grow(8); data = new Bytes(memory.buffer); view = new DataView(memory.buffer);
       assert.equal(vm.vm_grow(),0); status = vm.vm_page_prepare(port,pageRequest);
+    }
+    if (status === -3) {
+      resourceGate = {kind:'resident-quota',residentPages:vm.vm_page_count(),capacity,
+        memoryBytes:memory.buffer.byteLength,maximumMemoryBytes:maximumMemoryPages * 65536};
+      return false;
     }
     assert.equal(status,0);
     const ticket = view.getBigUint64(pageRequest + 40,true);
@@ -117,6 +124,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       data.set(extent,offset); data.fill(0,offset + bytes,offset + 4096); sourceExtentBytes += bytes;
     } else { assert(kind === 0 || kind === 1,'known initial page kind'); assert.equal(bytes,0); }
     assert.equal(vm.vm_page_commit(port,ticket),0); ++pageSupplies;
+    return true;
   }
   async function deliverFault(result,entry) {
     if ((result & 7n) !== 3n) return null;
@@ -127,7 +135,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       const start = performance.now(); deliveryResult = vm.vm_fault(port);
       executionMs += performance.now() - start;
       if (deliveryResult !== 2n) break;
-      const beforeSupply = performance.now(); await supplyPhysical(); supplyMs += performance.now() - beforeSupply;
+      const beforeSupply = performance.now(); const supplied = await supplyPhysical();
+      supplyMs += performance.now() - beforeSupply;
+      if (!supplied) return {entry:`0x${entry.toString(16)}`,deliveryResult:String(deliveryResult),...resourceGate};
     }
     event.deliveryResult = String(deliveryResult); event.nextRip = `0x${rip().toString(16)}`;
     event.cr2 = `0x${view.getBigUint64(base + 432,true).toString(16)}`;
@@ -195,7 +205,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     let projection = vm.vm_source_query(port,entry,limit,codeView,rows);
     admissionMs += performance.now() - beforeAdmission;
     for (let waits = 0; projection === 2n && waits < 4; ++waits) {
-      const start = performance.now(); await supplyPhysical(); supplyMs += performance.now() - start;
+      const start = performance.now(); const supplied = await supplyPhysical(); supplyMs += performance.now() - start;
+      if (!supplied) return {...resourceGate,entry:`0x${entry.toString(16)}`};
       beforeAdmission = performance.now();
       projection = vm.vm_source_query(port,entry,limit,codeView,rows);
       admissionMs += performance.now() - beforeAdmission;
@@ -224,7 +235,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       coldMs += performance.now() - started;
       if (status) {
         assert(cold.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),'refusal cannot publish');
-        return {kind:'compile',status,entry:`0x${entry.toString(16)}`};
+        const available = Math.min(15,4096 - Number(entry & 4095n));
+        return {kind:'compile',status,entry:`0x${entry.toString(16)}`,
+          source:Array.from(data.subarray(offset + Number(entry & 4095n),offset + Number(entry & 4095n) + available)),
+          sourceAvailable:available,
+          cpu:{registers:Array.from({length:16},(_,i) => `0x${view.getBigUint64(base + i*8,true).toString(16)}`),
+            flags:`0x${view.getBigUint64(base + 392,true).toString(16)}`,
+            cr3:`0x${view.getBigUint64(base + 408,true).toString(16)}`}};
       }
       const length = Number(report.getBigUint64(compilerReport + 40,true));
       const sourceBytes = Number(report.getBigUint64(compilerReport + 32,true));
@@ -257,7 +274,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         assert.equal(firstRepeatWait.address,'0x1e283f8');
         assert.equal(firstRepeatWait.bytes,8); assert.equal(firstRepeatWait.access,18);
       }
-      const start = performance.now(); await supplyPhysical(); supplyMs += performance.now() - start;
+      const start = performance.now(); const supplied = await supplyPhysical(); supplyMs += performance.now() - start;
+      if (!supplied) return {...resourceGate,entry:`0x${entry.toString(16)}`};
     }
     const done = Number(vm.vm_source_retired());
     trace.push({entry:`0x${entry.toString(16)}`,instructions:done,next:`0x${rip().toString(16)}`,result:String(result),
@@ -366,7 +384,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     let stopped;
     // Real scalar startup loops can retire far more than a tiny probe quota.
     // These are diagnostic limits, never synthetic execution completion.
-    const maximumAdmissions = 1000000, maximumRetired = 2000000;
+    const maximumAdmissions = extended ? 50000000 : 1000000;
+    const maximumRetired = extended ? 100000000 : 2000000;
     while (admissions < maximumAdmissions && retired < maximumRetired) {
       stopped = await step(view.getUint32(segments + 4,true) ? 1 : 1024);
       if (stopped) break;

@@ -1,7 +1,7 @@
 import {checkStartup} from './startup-check.mjs';
 import {diagnosticExtents} from './extent-reader.mjs';
 
-self.onmessage = async () => {
+self.onmessage = async ({data}) => {
   try {
     const manifest = await (await fetch('./generated-startup/manifest.json')).json();
     if (manifest.format !== 'bzimage-startup-diagnostic-v1') throw new Error('diagnostic manifest format');
@@ -21,7 +21,8 @@ self.onmessage = async () => {
       return cache.get(name);
     };
     const transport = diagnosticExtents(manifest.objects,new URL('./generated-startup/',import.meta.url));
-    const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'),transport.read);
+    const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'),transport.read,
+      {extended:data?.extended === true});
     self.postMessage({...result,secureContext:self.isSecureContext,isolated:self.crossOriginIsolated,
       fixtureIntegrity:'local diagnostic SHA-256; not signed production admission',
       objectTransport:transport.stats,

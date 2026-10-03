@@ -11,4 +11,5 @@ worker.onerror = event => {
   document.title = 'bzImage startup: fail';
   worker.terminate();
 };
-worker.postMessage({});
+// Explicit long diagnostic only; the default boundary regression stays small.
+worker.postMessage({extended:new URL(location.href).searchParams.get('budget') === 'extended'});

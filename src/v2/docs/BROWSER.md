@@ -620,6 +620,25 @@ Next widen actual startup/decompression, preserving explicit budgets and the
 full product goal. Crossing-first-instruction admission and production storage
 remain open; a reusable one-page cut is not whole-machine closure.
 
+### Extended actual decompression checkpoint
+
+The [extended receipt and inventory](../vm/check/browser/evidence/2026-10-03-decompression.md)
+reach 100,000,000 retirements / 49,451,059 admissions, with four guest #PF
+handlers returning via IRETQ. Output R10 reaches `0x17be190`; the next stop is
+the explicit diagnostic quota, not Linux boot or a complete CRC/output proof.
+The default small diagnostic remains unchanged; `?budget=extended` deliberately
+selects the larger budget, 8,192 slots and at most 32 MiB memory. Actual VM
+memory is 12,058,624 bytes / 2,788 pages; fetch remains 47 exact ranges.
+Capacity refusal reports a resident quota separately from guest #PF or compile
+refusal. Native release and human UI remain unchanged.
+
+The largest recorded bucket is now engine replacement, then VM execution and
+source/MMU admission. Analyze exact instance/topology reuse and C-owned
+multi-cut dispatch while preserving precise fault/A/D/source alias semantics,
+not an unbounded cache or a decoder in JavaScript. Finish decompression and
+validate its full output before calling Linux entry green. The complete
+development/storage/network goal and cold-shell three seconds remain open.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

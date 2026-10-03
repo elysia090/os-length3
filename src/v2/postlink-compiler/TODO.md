@@ -124,9 +124,15 @@ observations are not cold-shell latency. No native release/human UI changed.
 
 Next, in order:
 
-1. Continue actual startup/decompression with a larger explicit diagnostic
-   budget; use the current C-owned source admission, not repeated construction
-   or a JavaScript source cache. Add crossing-first-instruction supply while
+1. Extended actual browser decompression now reaches 100,000,000 retirements /
+   49,451,059 admissions; four guest #PF handlers return and output R10 reaches
+   0x17be190. The stop is an explicit quota, not boot or complete output/CRC
+   validation. Finish and validate the decompressor, then reach Linux entry.
+   Engine replacement (27.4 s), VM execution (23.1 s) and source/MMU admission
+   (14.9 s) exceed cold construction (4.7 s) in this observation. Analyze exact
+   instance/topology sharing and C-owned multi-cut dispatch rather than grow
+   an unbounded cache or skip validation. Use the current C-owned source
+   admission, never a JavaScript source cache. Add crossing-first-instruction supply while
    preserving precise fetch ordering. Preserve source/compiler/engine lifetime
    and alias invalidation; concurrent admission/remap is not implemented.
 2. Expand exception/IRET fault-priority and privilege/TSS/IST coverage as actual
@@ -139,13 +145,14 @@ Next, in order:
    Whole-image `-104`, boot, cold shell and production admission remain red.
 
 Physical supply remains one unsorted C index, never VM reopen/reset or a JS
-MMU. Browser: 1,536 page supplies / 1,549 resident pages, 47 HTTP 206 ranges,
-65,536-byte diagnostic chunk cache, 6,815,744 VM memory / 1 MiB cold memory.
-The 1,000,000-admission / 2,000,000-retirement bound is an explicit diagnostic
-quota; exhaustion is not boot success. Local chunk SHA-256 does not establish
+MMU. Extended browser: 2,775 page supplies / 2,788 resident pages, 47 HTTP 206
+ranges, 65,536-byte chunk cache, 12,058,624 VM memory / 1 MiB cold memory.
+The default 1,000,000-admission / 2,000,000-retirement diagnostic stays small;
+`?budget=extended` selects 50,000,000 / 100,000,000 and at most 32 MiB memory.
+Quota/capacity exhaustion is not boot success. Local chunk SHA-256 does not establish
 signed-root/AEAD/ECC admission. Dirty eviction/recovery and general concurrent
 admission remain open. See
-[the current evidence](../vm/check/browser/evidence/2026-10-03-source-admission.md)
+[the current evidence](../vm/check/browser/evidence/2026-10-03-decompression.md)
 and the historical condition/flags/REP/JMP receipts linked from BROWSER.md.
 
 Follow [BROWSER.md](../docs/BROWSER.md). The new blocker is actual backend

@@ -16,8 +16,10 @@ would be unsound.
 
 Under the existing serialized, pinned compiler/engine owner, a saved generated
 function remains valid for the same `(entry, compile limit, compiler/profile,
-physical source extent)` precisely while its consumed source bytes cannot have
-changed. The compiler's exact source extent is a valid executable prefix; bytes
+physical source extent)` when its consumed source bytes cannot have changed.
+This is a sufficient structural witness, not a necessary-and-sufficient
+semantic quotient: equal-value writes or equal bytes in another physical owner
+can conservatively miss. The compiler's exact source extent is a valid executable prefix; bytes
 after its boundary are not part of that prefix's semantics. A different later
 successor may change future grouping, not the already accepted prefix. No
 lookahead-dependent omitted flag definition may enter this acceptance contract.
