@@ -2,10 +2,12 @@
 // Every request must first succeed in the C compiler. Exact emitted bytes are
 // the reuse witness; source writes and changed compilation limits cannot reuse
 // a different body under the same key. Imports belong to one Worker lifetime.
+// The bounded owner is used in the execution Worker, not the UI thread.
 export class CompiledModules {
   constructor(imports,{maximumEntries = 64,maximumBytes = 262144,maximumModuleBytes = 65536} = {}) {
     for (const value of [maximumEntries,maximumBytes,maximumModuleBytes])
       if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError('positive bounded module quota');
+    if (maximumModuleBytes > 65536) throw new RangeError('small emitted module quota');
     this.imports = Object.fromEntries(Object.entries(imports)
       .map(([module,values]) => [module,Object.freeze({...values})]));
     this.maximumEntries = maximumEntries;
@@ -30,9 +32,14 @@ export class CompiledModules {
     }
     // The caller's cold-emission arena is reused on the next request.
     const owned = Uint8Array.from(bytes);
-    const module = await WebAssembly.compile(owned);
+    // Keep an explicit cancellation/publication boundary, but do not enqueue
+    // engine jobs for a tiny body whose bytes are already resident and whose
+    // sole caller must wait before executing it. Larger initial provider and
+    // compiler modules use their separate asynchronous loaders.
+    await Promise.resolve();
     if (this.closed) throw new Error('module owner closed during compilation');
-    const instance = await WebAssembly.instantiate(module,this.imports);
+    const module = new WebAssembly.Module(owned);
+    const instance = new WebAssembly.Instance(module,this.imports);
     if (this.closed) throw new Error('module owner closed during compilation');
     ++this.compilations;
     // Request-time reason, counted only after successful construction. An

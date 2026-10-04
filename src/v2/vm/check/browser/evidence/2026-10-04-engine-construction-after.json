@@ -1,0 +1,154 @@
+{
+  "format": "bounded-engine-construction-v1",
+  "status": "pass",
+  "linuxBoot": "not-tested",
+  "emissions": 768,
+  "comparisons": 2304,
+  "moduleBytes": {
+    "minimum": 238,
+    "maximum": 238
+  },
+  "totalsMs": {
+    "asynchronous": 79.29999899864197,
+    "inline": 29.700000524520874,
+    "boundedOwner": 32.60000026226044
+  },
+  "coldFirstMs": {
+    "asynchronous": 41.79999923706055,
+    "inline": 18.90000033378601,
+    "boundedOwner": 18.800000309944153
+  },
+  "samples": [
+    {
+      "round": 0,
+      "method": "asynchronous",
+      "position": 0,
+      "modules": 128,
+      "milliseconds": 19.499999523162842
+    },
+    {
+      "round": 0,
+      "method": "inline",
+      "position": 1,
+      "modules": 128,
+      "milliseconds": 2.6999998092651367
+    },
+    {
+      "round": 0,
+      "method": "boundedOwner",
+      "position": 2,
+      "modules": 128,
+      "milliseconds": 2.700000047683716
+    },
+    {
+      "round": 1,
+      "method": "inline",
+      "position": 0,
+      "modules": 128,
+      "milliseconds": 10.700000286102295
+    },
+    {
+      "round": 1,
+      "method": "boundedOwner",
+      "position": 1,
+      "modules": 128,
+      "milliseconds": 5.200000166893005
+    },
+    {
+      "round": 1,
+      "method": "asynchronous",
+      "position": 2,
+      "modules": 128,
+      "milliseconds": 10.200000047683716
+    },
+    {
+      "round": 2,
+      "method": "boundedOwner",
+      "position": 0,
+      "modules": 128,
+      "milliseconds": 9.300000071525574
+    },
+    {
+      "round": 2,
+      "method": "asynchronous",
+      "position": 1,
+      "modules": 128,
+      "milliseconds": 9.799999833106995
+    },
+    {
+      "round": 2,
+      "method": "inline",
+      "position": 2,
+      "modules": 128,
+      "milliseconds": 3.200000047683716
+    },
+    {
+      "round": 3,
+      "method": "asynchronous",
+      "position": 0,
+      "modules": 128,
+      "milliseconds": 22.299999713897705
+    },
+    {
+      "round": 3,
+      "method": "inline",
+      "position": 1,
+      "modules": 128,
+      "milliseconds": 2.2000001668930054
+    },
+    {
+      "round": 3,
+      "method": "boundedOwner",
+      "position": 2,
+      "modules": 128,
+      "milliseconds": 3.0999999046325684
+    },
+    {
+      "round": 4,
+      "method": "inline",
+      "position": 0,
+      "modules": 128,
+      "milliseconds": 8.200000047683716
+    },
+    {
+      "round": 4,
+      "method": "boundedOwner",
+      "position": 1,
+      "modules": 128,
+      "milliseconds": 2.7999998331069946
+    },
+    {
+      "round": 4,
+      "method": "asynchronous",
+      "position": 2,
+      "modules": 128,
+      "milliseconds": 8.600000023841858
+    },
+    {
+      "round": 5,
+      "method": "boundedOwner",
+      "position": 0,
+      "modules": 128,
+      "milliseconds": 9.500000238418579
+    },
+    {
+      "round": 5,
+      "method": "asynchronous",
+      "position": 1,
+      "modules": 128,
+      "milliseconds": 8.899999856948853
+    },
+    {
+      "round": 5,
+      "method": "inline",
+      "position": 2,
+      "modules": 128,
+      "milliseconds": 2.7000001668930054
+    }
+  ],
+  "scope": "rotating fresh-first tiny cold-C MOV emissions; full 1256-byte CPU models, not a native ISA oracle or Linux speedup",
+  "secureContext": true,
+  "isolated": false,
+  "compilerSha256": "143d5b4cb0de386e6938212504082ea87dd45ac67f733d6716a2b9f2f059765f",
+  "fixtureIntegrity": "local diagnostic SHA-256, not signed release admission"
+}

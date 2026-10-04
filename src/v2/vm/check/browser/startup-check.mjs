@@ -2,6 +2,7 @@
 // JavaScript transports bounded pages/metadata; it does not decode or execute
 // guest instructions, resolve guest branches, or implement guest exceptions.
 import {CompiledModules} from '../../../web/compiled-modules.mjs';
+import {CutTrace} from './cut-trace.mjs';
 class Bytes extends Uint8Array {
   constructor(value,offset,length) {
     super(value,offset,length);
@@ -20,6 +21,7 @@ assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'star
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
     {extended = false,onProgress = () => {},decompression,utcSeconds = BigInt(Math.floor(Date.now()/1000))} = {}) {
+  const startedAt=performance.now();
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header'), command = await read('boot.command');
   const kernel = await read('boot.kernel-page'), last = await read('boot.kernel-last-page');
@@ -110,7 +112,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let decompressedOutput, linuxEntry;
   const decompressionEntry = decompression ? BigInt(decompression.observationRip) : 0n;
   const linuxEntryAddress = decompression ? BigInt(decompression.elfEntry) : 0n;
-  const trace = [];
+  const trace = new CutTrace();
   const relocationTrace = [];
   const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
   const rip = () => view.getBigUint64(base + 384,true);
@@ -125,7 +127,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
       console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
       sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity},engineReuse:engines.stats(),
-      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs}});
+      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
+        elapsedCheck:performance.now()-startedAt}});
   }
   async function supplyPhysical() {
     let status = vm.vm_page_prepare(port,pageRequest);
@@ -435,21 +438,15 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       if (!supplied) return {...resourceGate,entry:`0x${entry.toString(16)}`};
     }
     const done = Number(vm.vm_source_retired());
-    trace.push({entry:`0x${entry.toString(16)}`,instructions:done,next:`0x${rip().toString(16)}`,result:String(result),
-      rax:`0x${view.getBigUint64(base,true).toString(16)}`,
-      rcx:`0x${view.getBigUint64(base + 8,true).toString(16)}`,
-      rdx:`0x${view.getBigUint64(base + 16,true).toString(16)}`,
-      rdi:`0x${view.getBigUint64(base + 56,true).toString(16)}`,
-      flags:`0x${view.getBigUint64(base + 392,true).toString(16)}`});
+    trace.append(entry,done,rip(),result,view,base);
     if (entry === 0x10002a1n) {
       assert.equal(rip(),relocated + 0x2ded00n,'independent shipped relocation trampoline destination');
       assert.equal(view.getBigUint64(base,true),rip());
     }
     if (retired >= 384 && relocationTrace.length < 16)
-      relocationTrace.push({...trace.at(-1),source:Array.from(data.subarray(offset + Number(entry - address),
+      relocationTrace.push({...trace.read(1)[0],source:Array.from(data.subarray(offset + Number(entry - address),
         offset + Number(entry - address) + Math.min(sourceBytes,24))),
         rax:`0x${view.getBigUint64(base,true).toString(16)}`,rsp:`0x${view.getBigUint64(base + 32,true).toString(16)}`});
-    if (trace.length > 16) trace.shift();
     if (result !== 1n && result !== 5n) {
       const delivery = await deliverFault(result,entry);
       if (delivery) {
@@ -588,7 +585,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes,engineReuse:engines.stats(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
-      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs},trace,relocationTrace,
+      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
+        elapsedCheck:performance.now()-startedAt},trace:trace.read(),relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
       memoryBytes:memory.buffer.byteLength,coldMemoryBytes:compilerMemory.buffer.byteLength};
   } catch (error) {
@@ -603,7 +601,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         efer:`0x${view.getBigUint64(base+424,true).toString(16)}`},
       request:{address:`0x${view.getBigUint64(port+32,true).toString(16)}`,
         bytes:view.getUint32(port+40,true),access:view.getUint32(port+44,true)},
-      trace:trace.slice(-4),residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
+      trace:trace.read(4),residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
       console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
       sourceReuse:{hits:sourceHits,misses:sourceMisses},decompressedOutput,linuxEntry};
     throw error;

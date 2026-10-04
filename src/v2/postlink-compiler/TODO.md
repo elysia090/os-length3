@@ -10,9 +10,22 @@ General LDMXCSR/STMXCSR lowering now passes 4,096 unchanged independent native
 records, 16 byte-identical cold emissions, direct/C-dispatch/RF/fault models,
 product checks and scoped compiler ASan/UBSan. The new real-browser Worker
 uses that compiler and the verified source-lifetime VM with the same shipped
-kernel and hidden-segment witness. At 126,000,538 retirements it is still
-running before the preceding gate; PID 1/shell remains unachieved. See
+kernel and hidden-segment witness. At 147,060,462 retirements it is still
+running in early Linux initialization; acceptance of the preceding MXCSR
+gate and PID 1/shell remain unverified. See
 [MXCSR evidence](../vm/check/browser/evidence/2026-10-04-mxcsr.md).
+Host construction dominates its measured phase costs. The bounded emitted
+owner now uses inline tiny Module/Instance construction at the same exact-byte
+and cancellation boundary, with unchanged quotas. Browser comparison gives
+71.2 -> 32.6 ms overall / 36.0 -> 18.8 ms fresh-first for fixed 238-byte C
+emissions; it is not a Linux boot speedup. The native MXCSR fault matrix stays
+green through this owner. Startup observations use a 1,056-byte word ring,
+with unchanged default architectural/source/final-trace observations. Keep the
+old Worker; the same bundle is being checked independently on the updated
+owner. The saved new Worker observation is 135,060,457 retirements /
+67,974,085 admissions at 0xffffffff81414d13, still running with no console
+bytes or shell acceptance. Concurrent Workers are not a cold-latency benchmark. See
+[construction evidence](../vm/check/browser/evidence/2026-10-04-engine-construction.md).
 An intermittent native CALL oracle red is reproduced and remains open; its
 expectation is not weakened and CALL lowering is unchanged.
 

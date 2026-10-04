@@ -72,6 +72,18 @@ assert.equal((await other.get(1n,emitted(0))).exports.get(),43,'Worker owners ne
 const mutableImports = {machine:{memory}}, pinned = new CompiledModules(mutableImports);
 mutableImports.machine.memory = otherMemory;
 assert.equal((await pinned.get(1n,emitted(0))).exports.get(),17,'imports are bound at owner construction');
+// These tiny bounded modules are already available inside the single-owner
+// execution Worker. Scheduling asynchronous engine work must not be part of
+// each cold admission; the large provider/compiler loaders are independent.
+const scheduledCompile=WebAssembly.compile;
+let scheduled=0;
+WebAssembly.compile=async()=>{++scheduled;throw new Error('unexpected scheduled tiny compilation');};
+try {
+  const inlineOwner=new CompiledModules({machine:{memory}});
+  assert.equal((await inlineOwner.get(9n,emitted(0))).exports.get(),17);
+  assert.equal(scheduled,0,'bounded owner uses no asynchronous compilation job');
+  inlineOwner.close();
+} finally {WebAssembly.compile=scheduledCompile;}
 const duplicate = new CompiledModules({machine:{memory}});
 await Promise.all([duplicate.get(1n,emitted(0)),duplicate.get(1n,emitted(4))]);
 assert.equal(duplicate.stats().entries,1); assert.equal(duplicate.stats().retainedModuleBytes,emitted(0).length);
@@ -80,7 +92,23 @@ assert.equal(duplicate.stats().changedBodyCompilations,0);assert.equal(duplicate
 assert.equal((await duplicate.get(1n,emitted(4))).exports.get(),37,'duplicate pending work keeps exact accounting/body');
 const pending = other.get(2n,emitted(4)); other.close();
 await assert.rejects(pending,/owner closed/); assert.equal(other.stats().entries,0);
+const originalModule=WebAssembly.Module,cancelledOwner=new CompiledModules({machine:{memory}});
+let cancelledConstruction=0;
+WebAssembly.Module=function(bytes){++cancelledConstruction;return new originalModule(bytes);};
+try {
+  const cancelled=cancelledOwner.get(1n,emitted(0));cancelledOwner.close();
+  await assert.rejects(cancelled,/owner closed/);
+  assert.equal(cancelledConstruction,0,'pending close precedes actual engine construction');
+} finally {WebAssembly.Module=originalModule;}
+const arenaOwner=new CompiledModules({machine:{memory}}),arena=emitted(0);
+const snapshotted=arenaOwner.get(1n,arena);arena.fill(0);
+assert.equal((await snapshotted).exports.get(),17,'copy precedes cancellation yield and caller-arena reuse');
+const badLink=new CompiledModules({machine:{}}),badLinkBefore=badLink.stats();
+await assert.rejects(badLink.get(1n,emitted(0)),WebAssembly.LinkError);
+assert.deepEqual(badLink.stats(),badLinkBefore,'link failure never publishes a witness');
+assert.throws(()=>new CompiledModules({}, {maximumModuleBytes:65537}),RangeError);
+arenaOwner.close();badLink.close();
 cache.close(); tiny.close(); pinned.close(); duplicate.close();
 await assert.rejects(cache.get(1n,emitted(0)),/owner closed/);
 assert.equal(cache.stats().retainedModuleBytes,0);
-console.log('Bounded emitted-Wasm engine reuse: green (exact body, changed body, arena reuse, LRU/byte quotas, 2 hot/cold streams: 33 compilations + 32 hits each, grow, invalid emission, independent owners, pending close; not Linux boot)');
+console.log('Bounded emitted-Wasm engine reuse: green (inline tiny construction, exact body, changed body, arena reuse before cancellation, LRU/byte quotas, 2 hot/cold streams: 33 compilations + 32 hits each, grow, invalid emission/link, independent owners, pending close; not Linux boot)');

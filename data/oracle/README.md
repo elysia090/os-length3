@@ -678,3 +678,21 @@ priority, residency waits, RF and poisoned unrelated-state preservation are
 explicit models, not physical-CPU or complete SIMD arithmetic observations.
 Existing AC/TF and FS/GS admission refusals remain explicit, with no silent
 successful retirement. See [MXCSR evidence](../../src/v2/vm/check/browser/evidence/2026-10-04-mxcsr.md).
+
+### Bounded host construction and numeric trace
+
+`node data/oracle/check-compiled-modules.mjs` checks exact-byte engine reuse,
+unchanged quotas/import lifetime, inline tiny construction and cancellation
+before any engine construction. Only the <=64 KiB emitted-body owner is
+synchronous inside the execution Worker; large initial loaders remain async.
+`check-mxcsr.mjs` also uses this owner for the unchanged native/fault matrix.
+
+Run `node data/oracle/check-engine-construction.mjs COMPILER.wasm`, or open
+`src/v2/vm/check/browser/engine-construction.html` with the existing authenticated
+diagnostic compiler manifest. This compares 768 actual cold-C emissions with
+rotating fresh-first method order and 2,304 whole-CPU preservation models.
+All positions are reported; this is not an ISA oracle, timing CI gate, or
+Linux/shell speedup claim. `node data/oracle/check-cut-trace.mjs` compares the
+fixed 1,056-byte numeric observer with an independent eager-object reference.
+No formatted history is materialized per cut. See
+[measurements and scope](../../src/v2/vm/check/browser/evidence/2026-10-04-engine-construction.md).

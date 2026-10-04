@@ -3,11 +3,13 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {CompiledModules} from '../../src/v2/web/compiled-modules.mjs';
 const [providerFile,compilerFile,directory,beforeDirectory]=process.argv.slice(2);
 if(!directory)throw new Error('usage: check-mxcsr.mjs VM.wasm COMPILER.wasm NATIVE-DIRECTORY [OBSERVE-ONLY-DIRECTORY]');
 const memory=new WebAssembly.Memory({initial:8}),cm=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(providerFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
+const engines=new CompiledModules({machine:{memory,access:vm.vm_access}});
 const cold=Buffer.from(cm.buffer),cv=new DataView(cm.buffer),input=cc.compiler_arena_min();
 const output=input+8192,report=output+65536,data=Buffer.from(memory.buffer),v=new DataView(memory.buffer);
 const dir=vm.vm_arena_min(),rows=dir+512,base=dir+4096,port=base+2048,segments=base+1408;
@@ -72,7 +74,7 @@ try {
     const module=await WebAssembly.compile(emitted);
     assert.deepEqual(WebAssembly.Module.imports(module),[{module:'machine',name:'memory',kind:'memory'},
       {module:'machine',name:'access',kind:'function'}]);
-    const cut=(await WebAssembly.instantiate(module,{machine:{memory,access:vm.vm_access}})).exports.cut;
+    const cut=(await engines.get(entry,emitted)).exports.cut;
     vm.__indirect_function_table.set(slot,cut);
     for(let row=0;row<meta.native;++row) {
       const r=records.subarray(row*stride,(row+1)*stride);
@@ -128,7 +130,7 @@ try {
     reset(source,meta,first,0);put(port,8);
     assert.equal(vm.vm_run(port,9n,1),5n);assert(cpu().equals(first.subarray(0,1256)));++refusals;
   }
-} finally {vm.__indirect_function_table.set(slot,null);vm.vm_close();}
+} finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}
 console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
   directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
   controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,unrelatedFieldPreservationModels:preservation,
