@@ -96,6 +96,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 if (indirect) plan->report.memory_bytes = instruction.operation == PL_X86_OPERATION_CALL
                     || instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
                 else if (system==CUT_SYSTEM_FXSAVE) plan->report.memory_bytes=512u;
+                else if (system==CUT_SYSTEM_MXCSR) plan->report.memory_bytes=4u;
                 else if (system==CUT_SYSTEM_SEGMENT
                         && instruction.machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
                         && instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)

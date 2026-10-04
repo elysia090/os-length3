@@ -107,6 +107,7 @@ enum pl_x86_scalar_float_operation {
 };
 
 enum pl_x86_vector_operation {
+    PL_X86_VECTOR_MXCSR = 28u,
     /* MOVHLPS and MOVLHPS are the same physical transfer with opposite lane
      * coordinates.  Bit 32 selects high<-low instead of low<-high. */
     PL_X86_VECTOR_MOVE_LANE = 29u,

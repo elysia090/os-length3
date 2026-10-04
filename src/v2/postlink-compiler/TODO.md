@@ -1,11 +1,18 @@
 # Remaining work — 2026-10-04
 
-Actual latest browser gate: `ldmxcsr 12(%rsp)` (`0f ae 54 24 0c`) at
+Preceding completed browser gate: `ldmxcsr 12(%rsp)` (`0f ae 54 24 0c`) at
 0xffffffff81034e31, common grammar -102. The same SHLD/SHRD Worker ended
 normally at 174,000,486 retirements / 96,787,852 admissions. Complete
 14,622,864-byte decompression remains identical; timer/futex/NETLINK
 initialization is not PID 1/shell/network acceptance. The new bounded source
 lifetime VM is verified separately, not substituted into that receipt.
+General LDMXCSR/STMXCSR lowering now passes 4,096 unchanged independent native
+records, 16 byte-identical cold emissions, direct/C-dispatch/RF/fault models,
+product checks and scoped compiler ASan/UBSan. The new real-browser Worker
+uses that compiler and the verified source-lifetime VM with the same shipped
+kernel and hidden-segment witness. At 126,000,538 retirements it is still
+running before the preceding gate; PID 1/shell remains unachieved. See
+[MXCSR evidence](../vm/check/browser/evidence/2026-10-04-mxcsr.md).
 An intermittent native CALL oracle red is reproduced and remains open; its
 expectation is not weakened and CALL lowering is unchanged.
 
@@ -120,13 +127,12 @@ registration, not PID 1/shell or usable network. See
 
 Next, in order:
 
-1. The preceding browser Worker has terminated normally: close general
-   LDMXCSR/STMXCSR admission/value, reserved-bit and precise fault behavior
-   with independent native observations and shared lowering, not an opcode
-   skip or Linux-function case. Stage the verified source-lifetime VM plus
-   the verified new compiler with the same shipped kernel/segment witness,
-   then profile bounded engine reason counters. Never replace an in-progress
-   Worker on an observation timeout.
+1. Observe the in-progress new real-browser Worker beyond the preceding
+   LDMXCSR gate. Use its bounded absent-key/changed-body/eviction counters
+   to identify actual engine fixed costs, not inferred cold/boot speedups.
+   Close its next general ISA/MMU/device red with independent observations
+   and shared C lowering, never an opcode skip or Linux-function case.
+   Never replace an in-progress Worker on an observation timeout.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -148,13 +154,13 @@ is 26.73 GB cumulative, not simultaneous RAM. Exact-byte hits now refresh
 bounded engine demand lifetime; hot/cold component tests were red then green
 at unchanged quotas. This is not a measured browser speedup. Profile absent/
 evicted bodies versus changed emissions before altering physical identity or
-claiming construction eliminated. The latest run still constructs 4,148,301
+claiming construction eliminated. An earlier running receipt constructed 4,148,301
 engines with 2,363,249 exact-byte hits. Diagnostic progress is read-only.
 Cold shell 3 seconds remains unmet.
-The latest partial run still has 9,441,889 engine constructions / 2,503,869
+An intermediate receipt from the now-completed preceding Worker has 9,441,889 engine constructions / 2,503,869
 exact-byte hits; engine 844,460.6 ms dominates cold emission 142,221.8,
-C execution 75,995.2, admission 34,927.8 and supply 247.3. It is still
-running, not a completed latency result. Three bounded counters for absent
+C execution 75,995.2, admission 34,927.8 and supply 247.3. That was a running
+observation, not a completed latency result. Three bounded counters for absent
 keys, changed bodies and quota eviction are component-tested, but were added
 after this Worker loaded and are not actual measurements from it. Measure
 them only in a fresh run; the previous Worker has now terminated normally.

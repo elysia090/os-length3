@@ -3797,7 +3797,7 @@ static void classify_machine_operation(
             break;
         pl_u32 store = source->mnemonic == ZYDIS_MNEMONIC_STMXCSR;
         out->machine_operation = PL_X86_MACHINE_VECTOR;
-        out->machine_argument = 28u
+        out->machine_argument = PL_X86_VECTOR_MXCSR
             | ((pl_u64)!store << 24u)
             | ((pl_u64)store << 25u);
         out->flags |= PL_X86_INSTRUCTION_MAY_TRAP

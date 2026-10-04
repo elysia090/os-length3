@@ -39,6 +39,7 @@ try {
       'src/v2/wasm-compiler/src/lower-summary.c',
       'src/v2/wasm-compiler/src/lower-paired-exchange.c',
       'src/v2/wasm-compiler/src/lower-fxsave.c',
+      'src/v2/wasm-compiler/src/lower-mxcsr.c',
       'src/v2/wasm-compiler/src/lower-divide.c',
       'src/v2/wasm-compiler/src/lower-io.c',
       'src/v2/wasm-compiler/src/lower-repeat.c',

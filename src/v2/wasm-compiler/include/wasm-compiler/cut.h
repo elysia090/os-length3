@@ -109,6 +109,14 @@ typedef struct {
  * before mutation; otherwise control/status/tag/opcode/IP/DP are initialized.
  * Physical x87 data payload, XMM and MXCSR remain unchanged. Pending x87
  * exceptions do not fault this no-wait instruction; FWAIT/FINIT is separate.
+ * LDMXCSR/STMXCSR are one-instruction system cuts using the existing C
+ * machine.access boundary for an exact four-byte transfer. CR0.EM or
+ * CR4.OSFXSR=0 gives #UD before CR0.TS gives #NM, both before the operand.
+ * A complete read precedes the DAZ-capable profile's reserved-bit #GP.
+ * LDMXCSR publishes only its narrow MXCSR field after every check succeeds;
+ * installing unmasked status bits alone does not raise a SIMD exception.
+ * Both retain the existing explicit AC/TF context refusal. They are not a
+ * SIMD arithmetic, VEX or arbitrary exception/debug closure claim.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * It also stops before a later instruction that crosses/starts another fetch

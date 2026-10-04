@@ -656,3 +656,25 @@ for actual C-Wasm compilation/table execution: 512 cold NOPs and 512 hot
 CLC executions compare complete CPU state at unchanged slot quota, alongside
 the existing source-write/alias/fault/grow/rebind matrix. These tests do not
 measure browser speedup, signed supply or Linux boot.
+
+### Common MXCSR transfers
+
+```sh
+make -C src/v2/wasm-compiler mxcsr-check
+mkdir NEW-DIRECTORY
+src/v2/wasm-compiler/build/mxcsr-check NEW-DIRECTORY
+node data/oracle/check-mxcsr.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY
+# Run before implementation to separate observations from the compiler:
+src/v2/wasm-compiler/build/mxcsr-check OTHER-NEW-DIRECTORY --observe
+node data/oracle/check-mxcsr.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY OTHER-NEW-DIRECTORY
+```
+
+LDMXCSR/STMXCSR share one exact four-byte C MMU transfer boundary and common
+generated code. Native records observe MXCSR, GPRs, flags, whole neighboring
+payload and actual operand/invalid-value fault frames. They cover every
+reserved bit and both sides of crossing-page permission checks. Cold-C
+emission is compared byte-for-byte before actual C table execution. CR0/CR4
+priority, residency waits, RF and poisoned unrelated-state preservation are
+explicit models, not physical-CPU or complete SIMD arithmetic observations.
+Existing AC/TF and FS/GS admission refusals remain explicit, with no silent
+successful retirement. See [MXCSR evidence](../../src/v2/vm/check/browser/evidence/2026-10-04-mxcsr.md).

@@ -17,6 +17,15 @@ SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 SOURCES += src/lower-paired-exchange.c
 SOURCES += src/lower-fxsave.c
 SOURCES += src/lower-double-shift.c
+SOURCES += src/lower-mxcsr.c
+
+.PHONY: mxcsr-check
+check: mxcsr-check
+mxcsr-check: $(BUILD)/mxcsr-check
+	$(BUILD)/mxcsr-check
+
+$(BUILD)/mxcsr-check: check/mxcsr.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/mxcsr.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: software-interrupt-check
 check: software-interrupt-check
