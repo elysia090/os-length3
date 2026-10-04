@@ -2,14 +2,14 @@
 import assert from 'node:assert/strict';
 const result = {textContent:''};
 const saved = Object.fromEntries(['document','location','Worker'].map(key => [key,Object.getOwnPropertyDescriptor(globalThis,key)]));
-let worker;
+let worker, expectedMessage={extended:true};
 try {
   globalThis.document = {getElementById:name => {assert.equal(name,'result'); return result;}};
   globalThis.location = {href:'http://localhost/startup.html?budget=extended'};
   globalThis.Worker = class {
     constructor(url,options) { assert.equal(url,'./startup-worker.mjs'); assert.equal(options.type,'module'); this.stops = 0; worker = this; }
     terminate() { ++this.stops; }
-    postMessage(message) { assert.deepEqual(message,{extended:true}); }
+    postMessage(message) { assert.deepEqual(message,expectedMessage); }
   };
   await import('../../src/v2/vm/check/browser/startup.mjs');
   for (const retired of [10000000,20000000]) {
@@ -20,6 +20,10 @@ try {
   worker.onmessage({data:{status:'pass',linuxBoot:'not-achieved',nextGate:{kind:'compile',status:-102}}});
   assert.equal(worker.stops,1); assert.equal(document.title,'bzImage startup: pass');
   assert.equal(JSON.parse(result.textContent).linuxBoot,'not-achieved');
+  globalThis.location={href:'http://localhost/startup.html?budget=extended&fixture=generated-startup-image-1004'};
+  expectedMessage={extended:true,fixture:'generated-startup-image-1004'};
+  await import('../../src/v2/vm/check/browser/startup.mjs?independent-fixture-test');
+  assert.equal(worker.stops,0,'fresh explicitly selected fixture does not reuse/stop a prior Worker');
 } finally {
   for (const [key,descriptor] of Object.entries(saved)) {
     if (descriptor) Object.defineProperty(globalThis,key,descriptor); else delete globalThis[key];

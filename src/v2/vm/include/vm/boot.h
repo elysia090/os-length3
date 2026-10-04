@@ -6,7 +6,7 @@
 
 enum vm_boot_page_kind {
     VM_BOOT_ZERO = 0, VM_BOOT_METADATA, VM_BOOT_KERNEL, VM_BOOT_INITRAMFS,
-    VM_BOOT_ROM,
+    VM_BOOT_ROM, VM_BOOT_IMAGE,
 };
 typedef struct {
     const pl_u8 *header;
@@ -20,6 +20,8 @@ typedef struct {
     pl_u64 kernel_reservation;
     pl_u64 initramfs_bytes;
     pl_u64 initramfs_address;
+    pl_u64 image_address;
+    pl_u64 image_bytes;
 } vm_boot;
 typedef struct {
     pl_u64 offset; /* authenticated object's coordinate, not a URL */
@@ -35,6 +37,17 @@ typedef struct {
 int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
                   pl_u64 image_bytes, pl_u64 initramfs_bytes, pl_u64 ram_bytes,
                   const pl_u8 *command, pl_u32 command_bytes);
+/* Attach one authenticated immutable image before any boot projection. Its
+ * page-aligned physical extent is outside ordinary RAM, below 1 GiB and at
+ * most 256 MiB. E820 reserves its rounded extent; Linux owns the device and
+ * filesystem interpretation. No payload is borrowed or materialized here.
+ * Immutability describes the source object, not the guest bus: the supplied
+ * page is writable private RAM/COW, as with a physical phram image loader.
+ * Linux's read-only lower mount controls filesystem writes, not this loader.
+ * Invalid attachment clears the previous image, not the kernel boot plan.
+ * The serialized caller pins this plan after projection; the Wasm loader
+ * rejects attachment once any page/state has been projected or RAM opened. */
+int vm_boot_attach_image(vm_boot *boot, pl_u64 address, pl_u64 bytes);
 /* For ZERO/METADATA/ROM, write exactly one page. For source pages, return a bounded
  * object extent without touching target: the caller authenticates/copies that
  * extent and zeroes only its final padding. Never reconstruct the whole image.

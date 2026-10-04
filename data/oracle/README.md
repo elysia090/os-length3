@@ -187,6 +187,36 @@ rejects materializing `/usr` in the tmpfs upper during the development witness.
 Cold readiness is measured at the actual service transition's
 `interactive-ready` marker, before paced UART command transmission.
 The full mode remains a publication gate, not an isolated-shell release claim.
+
+The C boot loader can now attach that same immutable source image before
+projecting any pages/state: `vm_boot_image(address,bytes)`. It reserves the
+rounded physical extent outside ordinary RAM and returns bounded image-kind
+5 source coordinates through the existing page ticket. Admitted pages are
+private writable RAM, not a second VFS or silently discarded phram writes;
+Linux owns the read-only mount/OverlayFS. Test with:
+
+```text
+node data/oracle/check-boot-image.mjs VM.WASM SHIPPED-BZIMAGE SHIPPED-INITRAMFS SYSTEM-SQUASHFS
+node data/oracle/check-wasm-startup.mjs VM.WASM COMPILER.WASM PREFIX-DIRECTORY --segments=INDEPENDENT-SEGMENTS --image=SYSTEM-SQUASHFS
+```
+
+`--extended --progress` adds a bounded longer independent Node diagnostic and
+compact JSON progress on stderr; final JSON stays on stdout. This is not a
+retained-browser observation. Duplicate/unknown/empty flags fail before I/O.
+Always propagate the Node exit status when capturing its output through a
+shell pipeline; a successful final pipe command does not certify the probe.
+
+`prepare-browser-startup.mjs VM.WASM COMPILER.WASM PREFIX-DIRECTORY SEGMENTS
+SYSTEM-SQUASHFS NEW-OUTPUT-DIRECTORY` stages the image with a bounded 64-KiB
+hash buffer. Image staging refuses an existing destination and requires the
+explicit new directory. A diagnostic folder named `generated-startup-NAME`
+can later be selected with `startup.html?fixture=generated-startup-NAME`;
+only those same-origin diagnostic names are accepted. Do not restage/reload a
+retained running Worker. The local hash manifest is not production signed
+admission, and page/extent checks never certify a Linux root mount or shell.
+Current [evidence and remaining SIMD gate](../../src/v2/vm/check/browser/evidence/2026-10-04-boot-image.md)
+distinguish independent Node receipts from browser acceptance.
+
 Use a full candidate installed root to build that test image; the image is
 oracle scratch, not a second published distribution or another execution route.
 If the linked baseline is red too, first fix that baseline before attributing

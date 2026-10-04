@@ -37,6 +37,7 @@ static vm_uart uart;
 static vm_post post;
 static vm_console console_owner;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
+static pl_u32 boot_projected;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result pending_boundary(pl_u32 port);
 static machine_result call_entry(void *pointer, pl_u32 slot);
@@ -75,6 +76,7 @@ void vm_close(void)
     segments_offset = 0u;
     boot = (vm_boot){ 0 };
     boot_header = boot_header_bytes = boot_command = 0u;
+    boot_projected = 0u;
     vm_execution_close(&execution);
 }
 
@@ -107,25 +109,37 @@ int vm_boot_prepare(pl_u32 header, pl_u32 header_bytes, pl_u64 image_bytes,
     return 0;
 }
 
+int vm_boot_image(pl_u64 address, pl_u64 bytes)
+{
+    if (resident.generation || boot_projected) return -1;
+    return vm_boot_attach_image(&boot,address,bytes);
+}
+
 int vm_boot_project(pl_u64 address, pl_u32 target, pl_u32 source)
 {
     if ((target & 4095u) || (source & 7u) || !boot_output(target, 4096u)
             || !boot_output(source, sizeof(vm_boot_source))
             || !separate(target, 4096u, source, sizeof(vm_boot_source))) return -1;
-    return vm_boot_page(&boot, address, (pl_u8 *)(uintptr_t)target,
-                         (vm_boot_source *)(uintptr_t)source);
+    int result = vm_boot_page(&boot, address, (pl_u8 *)(uintptr_t)target,
+                              (vm_boot_source *)(uintptr_t)source);
+    if (result >= 0) boot_projected = 1u;
+    return result;
 }
 
 int vm_boot_initial_state(pl_u32 state)
 {
     if ((state & 7u) || !boot_output(state, sizeof(machine_state))) return -1;
-    return vm_boot_state(&boot, (machine_state *)(uintptr_t)state);
+    int result = vm_boot_state(&boot, (machine_state *)(uintptr_t)state);
+    if (!result) boot_projected = 1u;
+    return result;
 }
 
 int vm_boot_initial_segments(pl_u32 segments)
 {
     if ((segments & 7u) || !boot_output(segments,sizeof(machine_segments))) return -1;
-    return vm_boot_segments(&boot,(machine_segments *)(uintptr_t)segments);
+    int result = vm_boot_segments(&boot,(machine_segments *)(uintptr_t)segments);
+    if (!result) boot_projected = 1u;
+    return result;
 }
 
 /* A borrowed directory occupies supervisor memory below the guest arena.

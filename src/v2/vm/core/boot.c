@@ -37,8 +37,22 @@ int vm_boot_open(vm_boot *boot, const pl_u8 *header, pl_u32 header_bytes,
     if (initramfs > ram_bytes || initramfs_bytes > ram_bytes - initramfs
             || initramfs + initramfs_bytes - 1u > vm_memory_load(header + 0x22cu, 4u))
         return -1;
-    *boot = (vm_boot){ header, command, end, command_bytes, ram_bytes,
-                      offset, bytes, address, reservation, initramfs_bytes, initramfs };
+    *boot = (vm_boot){ .header = header, .command = command, .header_end = end,
+        .command_bytes = command_bytes, .ram_bytes = ram_bytes,
+        .kernel_offset = offset, .kernel_bytes = bytes, .kernel_address = address,
+        .kernel_reservation = reservation, .initramfs_bytes = initramfs_bytes,
+        .initramfs_address = initramfs };
+    return 0;
+}
+
+int vm_boot_attach_image(vm_boot *boot, pl_u64 address, pl_u64 bytes)
+{
+    if (!boot) return -1;
+    boot->image_address = boot->image_bytes = 0u;
+    if (!boot->header || !bytes || bytes > 0x10000000u || (address & 4095u)
+            || address < boot->ram_bytes || address >= 0x40000000u
+            || bytes > 0x40000000u - address) return -1;
+    boot->image_address = address; boot->image_bytes = bytes;
     return 0;
 }
 
@@ -53,8 +67,16 @@ int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
                   vm_boot_source *source)
 {
     if (!boot || !boot->header || !target || !source || (address & 4095u)
-            || address >= boot->ram_bytes || (address >= 0xa0000u && address < 0xc0000u))
+            || (address >= 0xa0000u && address < 0xc0000u))
         return -1;
+    if (boot->image_bytes && address >= boot->image_address
+            && address - boot->image_address < boot->image_bytes) {
+        pl_u64 offset = address - boot->image_address;
+        pl_u64 bytes = boot->image_bytes - offset;
+        *source = (vm_boot_source){offset, (pl_u32)(bytes < 4096u ? bytes : 4096u), VM_BOOT_IMAGE};
+        return VM_BOOT_IMAGE;
+    }
+    if (address >= boot->ram_bytes) return -1;
     if (address >= 0xc0000u && address < 0x100000u) {
         /* Erased ROM is this direct-entry machine's explicit firmware policy,
          * not a value inferred from E820 or a missing artifact/cache page. */
@@ -79,7 +101,7 @@ int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
     if (address == PARAMS) {
         for (pl_u32 i = 0x1f1u; i < boot->header_end; ++i) target[i] = boot->header[i];
         target[0x210u] = 0xffu; /* Unregistered loader; no real-mode setup. */
-        target[0x1e8u] = 3u;
+        target[0x1e8u] = (pl_u8)(boot->image_bytes ? 4u : 3u);
         vm_memory_store(target + 0x214u, boot->kernel_address, 4u);
         vm_memory_store(target + 0x218u, boot->initramfs_address, 4u);
         vm_memory_store(target + 0x21cu, boot->initramfs_bytes, 4u);
@@ -94,6 +116,8 @@ int vm_boot_page(const vm_boot *boot, pl_u64 address, pl_u8 *target,
         e820(target, 0u, 0u, 0xa0000u, 1u);
         e820(target, 1u, 0xa0000u, 0x60000u, 2u);
         e820(target, 2u, 0x100000u, boot->ram_bytes - 0x100000u, 1u);
+        if (boot->image_bytes)
+            e820(target, 3u, boot->image_address, (boot->image_bytes + 4095u) & ~4095ull, 2u);
     } else if (address == COMMAND) {
         for (pl_u32 i = 0u; i < boot->command_bytes; ++i) target[i] = boot->command[i];
     } else if (address == GDT) {

@@ -1,0 +1,13 @@
+{
+  "format": "c-boot-image-probe-v1",
+  "status": "pass",
+  "linuxBoot": "not-tested",
+  "imageBytes": 89878528,
+  "physicalAddress": "0x30000000",
+  "projectedPages": 66,
+  "sourceBytes": 278528,
+  "residentImagePages": 2,
+  "pageTablePages": 3,
+  "memoryBytes": 524288,
+  "filesystemInterpreter": "guest Linux, not tested by this page probe"
+}

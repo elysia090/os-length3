@@ -1,14 +1,29 @@
-import {readFile,open} from 'node:fs/promises';
+import {readFile,open,stat} from 'node:fs/promises';
 import path from 'node:path';
 import {checkStartup} from '../../src/v2/vm/check/browser/startup-check.mjs';
 import {decompressionOracle} from './decompression-oracle.mjs';
 
-const [providerFile,compilerFile,directory] = process.argv.slice(2);
-if (!directory) throw new Error('usage: check-wasm-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX-DIRECTORY');
+const [providerFile,compilerFile,directory,...flags] = process.argv.slice(2);
+if (!directory || flags.some(flag=>!['--extended','--progress'].includes(flag)
+      && !flag.startsWith('--segments=') && !flag.startsWith('--image='))
+    || new Set(flags).size!==flags.length
+    || ['--segments=','--image='].some(prefix=>flags.filter(flag=>flag.startsWith(prefix)).length>1))
+  throw new Error('usage: check-wasm-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX-DIRECTORY [--extended] [--progress] [--segments=INDEPENDENT-SEGMENT-FIXTURE] [--image=IMMUTABLE-SYSTEM-IMAGE]');
+const segmentFile=flags.find(flag=>flag.startsWith('--segments='))?.slice('--segments='.length);
+const imageFile=flags.find(flag=>flag.startsWith('--image='))?.slice('--image='.length);
+if (segmentFile==='' || imageFile==='') throw new Error('empty independent fixture path');
+const immutableImage=imageFile ? {address:'0x30000000',bytes:(await stat(imageFile)).size} : undefined;
+const onProgress=flags.includes('--progress') ? progress=>console.error(JSON.stringify({
+  status:progress.status,retired:progress.retired,admissions:progress.admissions,nextRip:progress.nextRip,
+  residentPages:progress.residentPages,memoryBytes:progress.memoryBytes,consoleBytes:progress.console?.acceptedBytes,
+  engineReuse:progress.engineReuse,compilerOutput:progress.compilerOutput,timingMs:progress.timingMs,
+})) : undefined;
 async function extent(kind,offset,bytes) {
-  const name = kind === 2 ? 'boot.kernel-object' : kind === 3 ? 'boot.initramfs-object' : null;
-  if (!name || offset < 0 || bytes < 1 || bytes > 4096) throw new Error('C extent shape');
-  const file = await open(path.join(directory,name),'r');
+  const fileName = kind === 2 ? path.join(directory,'boot.kernel-object')
+    : kind === 3 ? path.join(directory,'boot.initramfs-object') : kind===5 ? imageFile : null;
+  if (!fileName || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(bytes)
+      || bytes < 1 || bytes > 4096) throw new Error('C extent shape');
+  const file = await open(fileName,'r');
   try {
     const result = Buffer.alloc(bytes);
     const {bytesRead} = await file.read(result,0,bytes,offset);
@@ -16,7 +31,8 @@ async function extent(kind,offset,bytes) {
     return result;
   } finally { await file.close(); }
 }
-console.log(JSON.stringify(await checkStartup(name => readFile(path.join(directory,name)),
+console.log(JSON.stringify(await checkStartup(name => readFile(name==='boot.segments' && segmentFile
+    ? segmentFile : path.join(directory,name)),
   await readFile(providerFile),await readFile(compilerFile),extent,
-  {extended:process.argv.includes('--extended'),
+  {extended:flags.includes('--extended'),onProgress,immutableImage,
     decompression:decompressionOracle(await readFile(path.join(directory,'boot.kernel-object')))}),null,2));

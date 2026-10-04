@@ -21,10 +21,18 @@ assert.equal = (a,b) => assert(a === b,`startup: ${String(a)} != ${String(b)}`);
 assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'startup imports');
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
-    {extended = false,onProgress = () => {},decompression,utcSeconds = BigInt(Math.floor(Date.now()/1000))} = {}) {
+    {extended = false,onProgress = () => {},decompression,immutableImage,
+      utcSeconds = BigInt(Math.floor(Date.now()/1000))} = {}) {
   const startedAt=performance.now();
   const read = async name => new Bytes(await reader(name));
-  const header = await read('boot.header'), command = await read('boot.command');
+  const header = await read('boot.header');
+  let command = await read('boot.command');
+  if (immutableImage) {
+    assert(Number.isSafeInteger(immutableImage.bytes) && immutableImage.bytes>0
+      && immutableImage.bytes<=0x10000000 && immutableImage.address==='0x30000000','immutable physical image descriptor');
+    const extent=`0x${immutableImage.bytes.toString(16)}`, address=immutableImage.address;
+    command=new Bytes(new TextEncoder().encode(`${new TextDecoder().decode(command)} memmap=${extent}$${address} phram.phram=system,${address},${extent}`));
+  }
   const kernel = await read('boot.kernel-page'), last = await read('boot.kernel-last-page');
   const stateBytes = await read('boot.state'), segmentBytes = await read('boot.segments');
   const meta = JSON.parse(new TextDecoder().decode(await read('boot.json')));
@@ -64,6 +72,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   data.set(header,input); data.set(command,input + 4096);
   assert.equal(vm.vm_boot_prepare(input,header.length,BigInt(meta.imageBytes),
     BigInt(meta.initramfsBytes),BigInt(meta.ramBytes),input + 4096,command.length),0);
+  if (immutableImage)
+    assert.equal(vm.vm_boot_image(BigInt(immutableImage.address),BigInt(immutableImage.bytes)),0);
   for (let i = 0; i < 6; ++i)
     assert.equal(vm.vm_boot_project(BigInt((i + 1) * 4096),base + (i + 2) * 4096,rows),1);
   assert.equal(vm.vm_boot_project(gdt,gdtOffset,rows),2);
@@ -107,6 +117,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const consoleOutput=new Uint8Array(16384);
   let consoleBytes=0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
+  let relocationRegisterCheckpoint;
   let firstRepeatWait;
   let bssInitialState, bssInitialSegments, bssComparedBytes = 0;
   let memsetInput, memsetComparedBytes = 0, memsetReturns = 0;
@@ -157,7 +168,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     const kind = view.getUint32(pageRequest + 32,true), bytes = view.getUint32(pageRequest + 28,true);
     assert.equal(view.getBigUint64(pageRequest,true),9n);
     assert(offset >= base + 4096 && offset + 4096 <= data.length,'C-chosen virgin payload slot');
-    if (kind === 2 || kind === 3) {
+    if (kind === 2 || kind === 3 || kind === 5) {
       assert(typeof readExtent === 'function','authenticated bounded extent reader');
       const extent = await readExtent(kind,Number(view.getBigUint64(pageRequest + 16,true)),bytes);
       assert.equal(extent.length,bytes); assert(bytes > 0 && bytes <= 4096);
@@ -192,7 +203,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     return event;
   }
   function relocationInputs() {
-    assert.equal(retired,378); assert.equal(rip(),0x1000281n);
+    // The unchanged command retains its independent fixed 378-instruction
+    // witness. Image attachment extends the actual command: its parser work
+    // is not certified by that old count. The REP/BSS checks below instead
+    // preserve the observed incoming count and assert their exact +1/+13
+    // transitions, complete CPU/cache state and every transferred byte.
+    if (!immutableImage) assert.equal(retired,378);
+    relocationRegisterCheckpoint=retired; assert.equal(rip(),0x1000281n);
     assert.equal(view.getBigUint64(base + 416,true),32n);
     assert.equal(view.getBigUint64(base + 32,true),stack);
     assert.equal(view.getBigUint64(base + 392,true),0x402n);
@@ -238,7 +255,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     const expected = new Bytes(repeatInitialState);
     expected.writeBigUInt64LE(0n,8); expected.writeBigUInt64LE(0xfffff8n,48);
     expected.writeBigUInt64LE(relocated - 8n,56); expected.writeBigUInt64LE(0x1000284n,384);
-    expected.writeBigUInt64LE(379n,1128);
+    expected.writeBigUInt64LE(repeatInitialState.readBigUInt64LE(1128)+1n,1128);
     assert(data.subarray(base,base + expected.length).equals(expected),'complete REP CPU observation');
     assert(data.subarray(segments,segments + segmentBytes.length).equals(repeatInitialSegments),'REP hidden-cache observation');
     // Independent diagnostic observation, not guest execution or a JS MMU.
@@ -303,7 +320,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     }
     if (entry === 0x1000281n && !repeatInitialState) relocationInputs();
     if (entry === relocated + 0x2ded17n && !bssInitialState) {
-      assert.equal(retired,391);
+      assert.equal(retired,relocationRegisterCheckpoint+13);
       assert.equal(view.getBigUint64(base,true),0n);
       assert.equal(view.getBigUint64(base + 56,true),relocated + 0x2e6400n);
       assert.equal(view.getBigUint64(base + 8,true),(0x2fe560n - 0x2e6400n) / 8n);
@@ -443,7 +460,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       assert.equal(rip(),relocated + 0x2ded00n,'independent shipped relocation trampoline destination');
       assert.equal(view.getBigUint64(base,true),rip());
     }
-    if (retired >= 384 && relocationTrace.length < 16)
+    if (relocationRegisterCheckpoint!==undefined && retired >= relocationRegisterCheckpoint+6 && relocationTrace.length < 16)
       relocationTrace.push({...trace.read(1)[0],source:Array.from(data.subarray(offset + Number(entry - address),
         offset + Number(entry - address) + Math.min(sourceBytes,24))),
         rax:`0x${view.getBigUint64(base,true).toString(16)}`,rsp:`0x${view.getBigUint64(base + 32,true).toString(16)}`});
@@ -487,7 +504,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     if (entry === relocated + 0x2ded17n) {
       const expected = new Bytes(bssInitialState);
       expected.writeBigUInt64LE(0n,8); expected.writeBigUInt64LE(relocated + 0x2fe560n,56);
-      expected.writeBigUInt64LE(entry + 3n,384); expected.writeBigUInt64LE(392n,1128);
+      expected.writeBigUInt64LE(entry + 3n,384);
+      expected.writeBigUInt64LE(bssInitialState.readBigUInt64LE(1128)+1n,1128);
       assert(data.subarray(base,base + expected.length).equals(expected),'complete BSS REP CPU observation');
       assert(data.subarray(segments,segments + segmentBytes.length).equals(bssInitialSegments),'BSS REP cache observation');
       const end = relocated + 0x2fe560n;
@@ -568,7 +586,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     return {format:'browser-bzimage-startup-v1',status:'pass',linuxBoot:'not-achieved',
       decompressedOutput,linuxEntry,
       retired,modules:engines.stats().compilations,admissions,liveSlots:installedSlots.size,manualBranchEntries:0,
-      independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
+      independentStateCheckpoint:86,relocationRegisterCheckpoint,
+      commandWitness:immutableImage?'fixed 86-instruction prefix; variable command parser count observed, not independently certified':'fixed 86/378-instruction witnesses',
+      immutableImage,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
       firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,boundaryClockEvents,deferredClockPolls,externalInterrupts,

@@ -33,3 +33,19 @@ for (const fault of ['corruption','status','short','oversize']) {
   assert.equal(bad.stats.fetches,2);
 }
 console.log('bounded extent transport: green (exact Range; shared chunk; cross-chunk; corrupt/short/oversized/200 refusal; bounded cache)');
+// Image-kind admission uses the same exact range/chunk owner, not a second
+// filesystem reader. Switching source kind must not hit the prior chunk.
+const images=diagnosticExtents({2:row,5:{...row,name:'boot.system-object'}},new URL('http://127.0.0.1/'),
+  (url,options)=>{
+    assert(['/boot.kernel-object','/boot.system-object'].includes(url.pathname));
+    return fetcher(new URL('http://127.0.0.1/boot.kernel-object'),options);
+  });
+assert.deepEqual(await images.read(2,4096,4096),bytes.slice(4096,8192));
+assert.deepEqual(await images.read(5,4096,4096),bytes.slice(4096,8192));
+assert.equal(images.stats.fetches,2);
+assert.deepEqual(await images.read(5,8192,4096),bytes.slice(8192,12288));
+assert.equal(images.stats.fetches,2);
+assert.deepEqual(await images.read(5,65530,20),bytes.slice(65530,65550));
+assert.equal(images.stats.cacheHighWaterBytes,65536);
+await assert.rejects(images.read(5,99999,2),/invalid C/);
+console.log('Immutable image uses the same bounded authenticated transport: green (kind isolation, shared chunk, cross-chunk, extent refusal)');

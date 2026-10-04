@@ -1,5 +1,29 @@
 # Remaining work — 2026-10-04
 
+Latest **independent Node** extended startup ends at common grammar -102 for
+`movdqu (%rdi),%xmm0` (`f3 0f 6f 07`), 0xffffffff81204da1, after
+160,120,102 retirements / 86,094,605 admissions. Complete decompression agrees;
+NETLINK registration is not PID 1/shell. Retained-browser status remains
+unobservable under URL policy; no Worker is restarted. The next common ISA
+task is precise legacy 128-bit SIMD transfers, with complete native/fault/CPU
+comparisons, not a VM opcode handler or skipped instruction.
+
+The C loader now attaches the same-bundle immutable root image at the native
+phram coordinate, retaining only base/length and using the existing bounded
+page ticket. 100,000 extent pairs, full Linux VM core checks, scoped sanitizers
+and real C-Wasm MMU/image-source checks pass. Private resident RAM writes do
+not change the source image; Linux owns read-only mount and OverlayFS.
+Actual Linux mounting this image, dirty persistence and browser acceptance
+are still open. See [root-image evidence](../vm/check/browser/evidence/2026-10-04-boot-image.md).
+The Windows RTC test now explicitly fails its unsupported libc year-9999
+oracle rather than dereferencing NULL; those cases are not skipped.
+
+Remaining measured fixed cost is repeated cold/host engine construction:
+14,528,050 constructions / 14,527,298 quota evictions in that independent
+run, with only 261,930 retained bytes. These measurements do not prove cold
+latency or topology/work/span minimality. The strict native CALL red remains
+open independently of the startup progress.
+
 Preceding completed browser gate: `ldmxcsr 12(%rsp)` (`0f ae 54 24 0c`) at
 0xffffffff81034e31, common grammar -102. The same SHLD/SHRD Worker ended
 normally at 174,000,486 retirements / 96,787,852 admissions. Complete

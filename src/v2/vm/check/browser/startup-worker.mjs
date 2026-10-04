@@ -3,14 +3,22 @@ import {diagnosticExtents} from './extent-reader.mjs';
 
 self.onmessage = async ({data}) => {
   try {
-    const manifest = await (await fetch('./generated-startup/manifest.json')).json();
+    const fixture=data?.fixture ?? 'generated-startup';
+    if (typeof fixture!=='string' || fixture.length>80 || !/^generated-startup(?:-[a-z0-9-]+)?$/.test(fixture))
+      throw new Error('diagnostic fixture directory');
+    const root=new URL(`./${fixture}/`,import.meta.url);
+    const response=await fetch(new URL('manifest.json',root));
+    if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
+    const manifest = await response.json();
     if (manifest.format !== 'bzimage-startup-diagnostic-v1') throw new Error('diagnostic manifest format');
+    if (manifest.immutableImage && manifest.objects?.[5]?.bytes!==manifest.immutableImage.bytes)
+      throw new Error('immutable image descriptor/object mismatch');
     const cache = new Map();
     const read = async name => {
       const row = manifest.files[name];
       if (!row || !/^[a-z0-9.-]+$/.test(name)) throw new Error('undeclared diagnostic fixture');
       if (!cache.has(name)) cache.set(name,(async () => {
-        const response = await fetch(`./generated-startup/${name}`);
+        const response = await fetch(new URL(name,root));
         if (!response.ok) throw new Error(`fixture HTTP ${response.status}: ${name}`);
         const bytes = new Uint8Array(await response.arrayBuffer());
         const digest = new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
@@ -20,9 +28,10 @@ self.onmessage = async ({data}) => {
       })());
       return cache.get(name);
     };
-    const transport = diagnosticExtents(manifest.objects,new URL('./generated-startup/',import.meta.url));
+    const transport = diagnosticExtents(manifest.objects,root);
     const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'),transport.read,
       {extended:data?.extended === true,onProgress:progress => self.postMessage(progress),
+        immutableImage:manifest.immutableImage,
         decompression:JSON.parse(new TextDecoder().decode(await read('boot.decompression.json')))});
     self.postMessage({...result,secureContext:self.isSecureContext,isolated:self.crossOriginIsolated,
       fixtureIntegrity:'local diagnostic SHA-256; not signed production admission',

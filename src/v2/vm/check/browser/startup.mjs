@@ -12,4 +12,5 @@ worker.onerror = event => {
   worker.terminate();
 };
 // Explicit long diagnostic only; the default boundary regression stays small.
-worker.postMessage({extended:new URL(location.href).searchParams.get('budget') === 'extended'});
+const parameters=new URL(location.href).searchParams, fixture=parameters.get('fixture');
+worker.postMessage({extended:parameters.get('budget') === 'extended',...(fixture!==null?{fixture}:{})});

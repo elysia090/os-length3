@@ -24,7 +24,12 @@ static void compare_calendar(pl_u64 seconds, unsigned mode)
 {
     vm_rtc r; open_rtc(&r,seconds);
     write_register(&r,0u,11u,mode);
-    time_t input=(time_t)seconds; struct tm expected=*gmtime(&input);
+    time_t input=(time_t)seconds; const struct tm *converted=gmtime(&input);
+    if (!converted) {
+        fprintf(stderr,"rtc: libc calendar cannot represent %llu seconds\n",(unsigned long long)seconds);
+        ++failures; return;
+    }
+    struct tm expected=*converted;
     unsigned year=(unsigned)expected.tm_year+1900u;
     EXPECT(read_register(&r,0u,0u)==encoded((unsigned)expected.tm_sec,mode));
     EXPECT(read_register(&r,0u,2u)==encoded((unsigned)expected.tm_min,mode));
@@ -42,7 +47,12 @@ static void compare_calendar(pl_u64 seconds, unsigned mode)
     write_register(&r,0u,7u,encoded((unsigned)expected.tm_mday,mode));
     EXPECT(r.seconds==seconds);
     if (seconds<=VM_RTC_MAX_SECONDS-86400u) {
-        time_t following=(time_t)(seconds+86400u); struct tm tomorrow=*gmtime(&following);
+        time_t following=(time_t)(seconds+86400u); converted=gmtime(&following);
+        if (!converted) {
+            fprintf(stderr,"rtc: libc following calendar cannot represent %llu seconds\n",(unsigned long long)following);
+            ++failures; return;
+        }
+        struct tm tomorrow=*converted;
         if (tomorrow.tm_mon!=expected.tm_mon) {
             pl_u32 value=encoded((unsigned)expected.tm_mday+1u,mode); vm_rtc before=r;
             EXPECT(vm_rtc_transfer(&r,0u,0x71u,1u,&value)==-1 && !memcmp(&r,&before,sizeof r));
