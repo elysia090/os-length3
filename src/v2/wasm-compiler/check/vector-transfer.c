@@ -2,6 +2,7 @@
 #include <wasm-compiler/cut.h>
 #include <machine/state.h>
 #include <machine/memory.h>
+#include <x86/decode.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <stdint.h>
@@ -64,18 +65,33 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
 /* Six ordinary families have load/store/register forms. MOVNTPS/MOVNTPD
  * have memory-store forms only. Twelve MOVDQU forms vary address topology.
  * Eight PADDQ forms and twelve logical families use the same precise operand
- * boundary, with distinct-register/alias and six memory address topologies. */
+ * boundary, with distinct-register/alias and six memory address topologies.
+ * Twelve unpack encodings add the same forms, including ignored source halves. */
+enum { VECTOR_FORMS=232u };
+static pl_u32 unpack_width(pl_u32 form)
+{
+    static const pl_u32 widths[]={8u,16u,32u,64u,8u,16u,32u,64u,32u,32u,64u,64u};
+    return form<136u?0u:widths[(form-136u)/8u];
+}
+static pl_u32 unpack_high(pl_u32 form)
+{
+    pl_u32 family=form<136u?0u:(form-136u)/8u;
+    return (family>=4u && family<8u) || family==9u || family==11u;
+}
 static pl_u32 encoding(pl_u32 form,pl_u32 *kind,pl_u32 *store,pl_u32 *reg,pl_u32 *aligned)
 {
     if(form>=32u) {
         pl_u32 local=(form-32u)%8u,family=form<40u?0u:1u+(form-40u)/8u;
         static const pl_u8 opcodes[]={0xd4u,0xefu,0xdbu,0xebu,0xdfu,
             0x57u,0x54u,0x56u,0x55u,0x57u,0x54u,0x56u,0x55u};
+        static const pl_u8 unpack[]={0x60u,0x61u,0x62u,0x6cu,0x68u,0x69u,0x6au,0x6du,
+            0x14u,0x15u,0x14u,0x15u};
+        int is_unpack=form>=136u;if(is_unpack)family=(form-136u)/8u;
         *kind=local<2u?0u:local-1u;*store=0u;*reg=local<2u;*aligned=!*reg;
         pl_u32 at=0u;if(*kind==1u)source[at++]=0x67u;
-        if(family<5u || family>=9u)source[at++]=0x66u;
+        if(is_unpack?(family<8u || family>=10u):(family<5u || family>=9u))source[at++]=0x66u;
         source[at++]=(pl_u8)(*reg || *kind==3u?0x45u:0x44u);
-        source[at++]=0x0fu;source[at++]=opcodes[family];
+        source[at++]=0x0fu;source[at++]=is_unpack?unpack[family]:opcodes[family];
         if(*reg)source[at++]=(pl_u8)(local?0xc9u:0xcbu);
         else if(*kind==1u)source[at++]=0x0fu;
         else if(*kind==2u) {source[at++]=0x4cu;source[at++]=0x24u;source[at++]=12u;}
@@ -111,7 +127,7 @@ static int admission(void)
 {
     pl_u8 page[4096]; pl_x86_map map={page,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
     pl_x86_image image={&map,1u,0u,map.address}; wasm_cut_options options={map.address,8u,sizeof module};
-    for(pl_u32 form=0u;form<136u;++form) {
+    for(pl_u32 form=0u;form<VECTOR_FORMS;++form) {
         pl_u32 kind,store,reg,aligned;
         memset(source,0x90,sizeof source);pl_u32 size=encoding(form,&kind,&store,&reg,&aligned);
         memset(page,0x90,sizeof page);memcpy(page+1u,source,size);
@@ -126,7 +142,10 @@ static int admission(void)
     }
     static const pl_u8 invalid[][6]={{0xf0u,0xf3u,0x0fu,0x6fu,0x07u},
         {0xc5u,0xfau,0x6fu,0x07u},{0x64u,0xf3u,0x0fu,0x6fu,0x07u},
-        {0x65u,0xf3u,0x0fu,0x7fu,0x07u},{0x0fu,0x6fu,0x07u}};
+        {0x65u,0xf3u,0x0fu,0x7fu,0x07u},{0x0fu,0x6fu,0x07u},
+        {0x0fu,0x60u,0xc1u},{0xc5u,0xf9u,0x62u,0xc1u},
+        {0xf0u,0x66u,0x0fu,0x62u,0xc1u},{0x64u,0x66u,0x0fu,0x62u,0x07u},
+        {0x65u,0x66u,0x0fu,0x6du,0x07u}};
     for(pl_u32 i=0u;i<sizeof invalid/sizeof invalid[0];++i) {
         memset(page,0x90,sizeof page);memcpy(page,invalid[i],sizeof invalid[i]);
         memset(module,0xa5,sizeof module);wasm_cut_report report;memset(&report,0xa5,sizeof report);
@@ -153,7 +172,7 @@ int main(int argc,char **argv)
         MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
     if(code==MAP_FAILED || ram==MAP_FAILED)return 1;
     pl_u64 seed=0x2352250940811235ull;int status=1;pl_u32 observations=0u,faults=0u;
-    for(pl_u32 form=0u;form<136u;++form) {
+    for(pl_u32 form=0u;form<VECTOR_FORMS;++form) {
         pl_u32 kind,store,reg,aligned;
         memset(source,0x90,sizeof source);pl_u32 size=encoding(form,&kind,&store,&reg,&aligned);
         pl_x86_map map={source,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
@@ -165,7 +184,10 @@ int main(int argc,char **argv)
                     || report.memory_bytes!=(reg?0u:16u) || report.boundary!=WASM_CUT_SYSTEM
                     || report.written_registers || report.flags_written
                     || (report.memory_access&3u)!=(reg?0u:store?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ)) {
-                fprintf(stderr,"vector %u red: compiler=%d\n",form,result);goto finish;
+                pl_x86_instruction decoded={0};int decode=pl_x86_decode_profile(&image,map.address,&decoded);
+                fprintf(stderr,"vector %u red: compiler=%d decode=%d argument=%llx operand-bits=%u/%u register-bits=%u/%u\n",
+                    form,result,decode,(unsigned long long)decoded.machine_argument,decoded.operands[0].bits,
+                    decoded.operands[1].bits,decoded.operands[0].value.reg.bits,decoded.operands[1].value.reg.bits);goto finish;
             }
         }
         for(pl_u32 row=0u;row<128u;++row) {
@@ -233,21 +255,37 @@ int main(int argc,char **argv)
                 pl_u64 low=store?state->xmm[18u]:reg?state->xmm[alias?18u:22u]:record->old_low;
                 pl_u64 high=store?state->xmm[19u]:reg?state->xmm[alias?19u:23u]:record->old_high;
                 if(form>=32u && form<40u) {low+=state->xmm[18u];high+=state->xmm[19u];}
-                else if(form>=40u) {
+                else if(form>=40u && form<136u) {
                     pl_u32 logic=(form-40u)/8u%4u;
                     pl_u64 a=state->xmm[18u],b=state->xmm[19u];
                     low=logic==0u?a^low:logic==1u?a&low:logic==2u?a|low:~a&low;
                     high=logic==0u?b^high:logic==1u?b&high:logic==2u?b|high:~b&high;
+                }
+                else if(form>=136u) {
+                    /* Independent element-by-element oracle, not the lowered
+                     * word-spreading network. All shifts stay below 64 bits. */
+                    pl_u32 width=unpack_width(form),upper=unpack_high(form);
+                    pl_u64 a=state->xmm[18u+upper],b=upper?high:low;
+                    pl_u64 mask=width==64u?~0ull:(1ull<<width)-1u;
+                    low=0u;high=0u;
+                    for(pl_u32 i=0u;i<64u/width;++i) {
+                        pl_u32 position=i*width*2u;
+                        pl_u64 *left=position<64u?&low:&high;
+                        pl_u64 *right=position+width<64u?&low:&high;
+                        *left|=((a>>(i*width))&mask)<<(position&63u);
+                        *right|=((b>>(i*width))&mask)<<((position+width)&63u);
+                    }
                 }
                 if((store?record->new_low:record->after.xmm[18u])!=low
                         || (store?record->new_high:record->after.xmm[19u])!=high)goto finish;
             }
             ++observations;
         }
-        char json[320];int n=snprintf(json,sizeof json,
-            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u}\n",
+        char json[384];int n=snprintf(json,sizeof json,
+            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u}\n",
             size,sizeof(machine_state),sizeof(observation),kind,store,reg,aligned,
-            (pl_u32)(form>=32u && form<40u),form>=40u?1u+(form-40u)/8u%4u:0u);
+            (pl_u32)(form>=32u && form<40u),form>=40u && form<136u?1u+(form-40u)/8u%4u:0u,
+            unpack_width(form),unpack_high(form));
         if(n<1 || (size_t)n>=sizeof json || save(directory,form,"json",json,(size_t)n)
             || save(directory,form,"source-page",source,sizeof source) || save(directory,form,"cases",records,sizeof records)
             || (!observe_only && save(directory,form,"wasm",module,(size_t)emitted)))goto finish;
@@ -258,7 +296,7 @@ finish:
     if(munmap(code,4096u) || munmap(ram,8192u))status=1;
     if(sigaction(SIGSEGV,&old_segv,NULL) || sigaction(SIGBUS,&old_bus,NULL) || sigaction(SIGILL,&old_ill,NULL)
             || sigaltstack(&old_stack,NULL))status=1;
-    if(!status)printf("vector transfers/additions/logic: %u actual x86 CPU/RAM observations, %u fault frames%s; CR0/CR4 require separate models\n",
+    if(!status)printf("vector transfers/additions/logic/unpack: %u actual x86 CPU/RAM observations, %u fault frames%s; CR0/CR4 require separate models\n",
         observations,faults,observe_only?"; lowering not tested":"");
     return status;
 }

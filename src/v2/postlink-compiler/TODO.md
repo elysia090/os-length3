@@ -1,16 +1,27 @@
 # Remaining work — 2026-10-05
 
-Current actual gate: PUNPCKLDQ, `66 0f 62 e5`, 0xffffffff81204e1e. The
-independent final-logic startup passes PXOR and reaches 164,007,553
+Current actual gate: PUNPCKLDQ, `66 0f 62 e5`, 0xffffffff81204e1e. General
+unpack now passes 29,696 unchanged native observations, 232 exact emissions,
+full C-MMU/dispatcher fault/wait/control/alias comparisons, full compiler
+checks and scoped sanitizers. Selected-word SSA avoids unused XMM halves;
+self-alias shares the spreading network. The memory provider still reads a
+complete pair; a live-projection frontier needs its own fault proof.
+The initial correct unpack compiler is running on the same bundle, before
+the extra alias substitution; do not restart or label it as the final run.
+Next: observe that run's actual gate, validate the final compiler on the
+same bundle, and reduce source/engine reconstruction under bounded admission.
+See [unpack and completed cohort evidence](../vm/check/browser/evidence/2026-10-05-vector-unpack.md).
+The completed cohort run ends at the same unpack gate with 160,653,998
+retirements / 86,601,736 admissions and 14,944,237 engine constructions.
+The preceding final-logic startup passes PXOR and reaches 164,007,553
 retirements / 88,892,508 admissions; complete decompression agrees. PID 1,
-release-root mount and shell remain unverified. Next is general unpack
-lowering, with native/fault/alias reds first. See
+release-root mount and shell remain unverified. See
 [logic and actual gate](../vm/check/browser/evidence/2026-10-05-vector-logic.md).
 An engine lifetime leak is also corrected: C-approved installed-body demand
 reaches the bounded owner, once per slot after a cold miss. Per-hit host Map
-churn is rejected. Default architecture/trace remains unchanged; there is no
-Linux construction-count or speedup claim yet. Measure the larger working
-set under unchanged quotas. See
+churn is rejected. Default architecture/trace remains unchanged. The completed
+larger working-set run still shows engine construction as dominant; changed
+calibration/retired work does not establish speedup. See
 [demand boundary](../vm/check/browser/evidence/2026-10-05-engine-demand.md).
 Browser/PID 1/development tools/storage/network success conditions remain
 open; historical checkpoints below do not supersede this gate.

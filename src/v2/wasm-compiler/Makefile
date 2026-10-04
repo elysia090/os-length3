@@ -24,6 +24,7 @@ SOURCES += src/lower-fxsave.c
 SOURCES += src/lower-double-shift.c
 SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
+SOURCES += src/lower-vector-unpack.c
 SOURCES += src/lower-vector-scalar.c
 
 .PHONY: vector-scalar-check

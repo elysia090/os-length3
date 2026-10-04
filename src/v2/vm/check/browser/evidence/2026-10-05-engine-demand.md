@@ -43,7 +43,13 @@ UTC/clock sampling, cache policy metadata and times differ. Retained bytes
 are 261,982 vs 262,037 under the same 262,144-byte limit. Diagnostic elapsed
 is 2,199.8 ms. This short prefix does **not** demonstrate fewer Linux engine
 constructions or cold-shell speedup; the larger working-set measurement
-still needs an independent same-bundle run.
+now has an independent same-bundle run. It reaches the same PUNPCKLDQ gate:
+160,653,998 retirements / 86,601,736 admissions, 14,944,237 constructions,
+14,943,493 evictions, 1,614,618 validated cohort demands and 262,139 retained
+bytes. Complete decompression agrees and copied code bytes remain zero.
+Engine construction is still dominant. Calibration/retired work differ from
+the preceding run, so these counts/times do not establish a Linux speedup.
+See [receipt and next common gate](2026-10-05-vector-unpack.md).
 
 Latest completed logic startup predates this cohort change and stops at
 PUNPCKLDQ after actually passing PXOR. See

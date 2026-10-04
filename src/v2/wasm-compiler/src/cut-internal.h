@@ -83,6 +83,9 @@ int cut_mxcsr_supported(const pl_x86_instruction *instruction);
 void cut_lower_mxcsr(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_vector_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction);
+/* Element width, with bit 7 selecting the old high 64-bit word; zero rejects. */
+pl_u32 cut_vector_unpack_shape(const pl_x86_instruction *instruction);
+void cut_lower_vector_unpack(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape);
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_sse_guard(cut_lowering *cut);

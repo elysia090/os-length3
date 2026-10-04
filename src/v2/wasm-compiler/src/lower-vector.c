@@ -1,8 +1,9 @@
 #include "cut-internal.h"
 
-static int xmm(const pl_x86_operand *operand)
+static int xmm(const pl_x86_operand *operand, int selected_half)
 {
-    return operand->kind==PL_X86_OPERAND_REGISTER && operand->bits==128u
+    return operand->kind==PL_X86_OPERAND_REGISTER
+        && (operand->bits==128u || (selected_half && operand->bits==64u))
         && operand->value.reg.class_id==PL_X86_REGISTER_VECTOR
         && operand->value.reg.bits==128u && operand->value.reg.index<16u
         && !operand->value.reg.flags;
@@ -17,12 +18,14 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     const pl_x86_operand *target=&instruction->operands[0],*source=&instruction->operands[1];
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
     pl_u64 operation=instruction->machine_argument>>32u;
-    int packed=kind==10u && (operation==15u || operation==12u);
+    pl_u32 unpack=cut_vector_unpack_shape(instruction);
+    int packed=kind==10u && (operation==15u || operation==12u || unpack);
     int logic=(kind>=1u && kind<=3u) || kind==24u;
     if(kind && !packed && !logic)return 0;
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
     if((read && write) || (kind && write))return 0;
-    if((read?source->bits!=128u:!xmm(source)) || (write?target->bits!=128u:!xmm(target)))return 0;
+    if((read?source->bits!=128u:!xmm(source,!!unpack))
+            || (write?target->bits!=128u:!xmm(target,0)))return 0;
     const pl_x86_operand *memory=write?target:source;
     if((read || write) && ((instruction->address_width!=32u && instruction->address_width!=64u)
             || !cut_memory_address_supported(instruction,&memory->value.memory)))return 0;
@@ -97,6 +100,8 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
         cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,cut->report.memory_access);
         cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,0u);cut_access_status(cut);
     }
+    pl_u32 unpack=cut_vector_unpack_shape(instruction);
+    if(unpack) {cut_lower_vector_unpack(cut,instruction,unpack);return;}
     if(read) {
         cut_access_value(cut);cut_set(cut,CUT_LEFT);
         cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);

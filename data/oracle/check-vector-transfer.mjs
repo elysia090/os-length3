@@ -1,5 +1,5 @@
 // Independent native x86 -> common cold compiler -> real C MMU/dispatcher.
-// Precise transfers, PADDQ and bitwise logic, not FP arithmetic or Linux boot.
+// Precise transfers, PADDQ, bitwise logic and unpack, not FP arithmetic or Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -66,7 +66,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<136;++form) {
+  for(let form=0;form<232;++form) {
     const prefix=path.join(directory,`vector-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
@@ -119,6 +119,15 @@ try {
       if(meta.add)for(const offset of [272,280])
         wanted.state.writeBigUInt64LE(BigInt.asUintN(64,wanted.state.readBigUInt64LE(offset)*2n),offset);
       if(meta.logic===1 || meta.logic===4)for(const offset of [272,280])wanted.state.writeBigUInt64LE(0n,offset);
+      if(meta.unpackWidth) {
+        // Byte-copy interleaving reference, independent of the emitted masks.
+        const selected=272+meta.unpackHigh*8,old=Buffer.from(wanted.state.subarray(selected,selected+8));
+        const width=meta.unpackWidth/8;
+        for(let i=0;i<8/width;++i)for(let byte=0;byte<width;++byte) {
+          wanted.state[272+2*i*width+byte]=old[i*width+byte];
+          wanted.state[272+(2*i+1)*width+byte]=old[i*width+byte];
+        }
+      }
       vm.__indirect_function_table.set(slot,same);compare(same,wanted,`${form}: alias`,dispatch);++aliases;
       vm.__indirect_function_table.set(slot,cut);
     }
@@ -151,6 +160,10 @@ try {
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204da1n,8,output,65536,report),0);
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),16);
+  cold.fill(0x90,input,input+4096);cold.set([0x66,0x0f,0x62,0xe5],input+0xe1e);
+  assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
+  assert.equal(cc.compiler_emit(0xffffffff81204e1en,8,output,65536,report),0);
+  assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
   // Next independently observed shipped gate: high-register PADDQ.
   cold.fill(0x90,input,input+4096);cold.set([0x66,0x45,0x0f,0xd4,0xf7],input+0xdda);
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
@@ -163,7 +176,7 @@ try {
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
     controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,
-    shippedGates:'MOVDQU, PADDQ and PXOR common C compilation accepted; not executed by this fixture',
+    shippedGates:'MOVDQU, PADDQ, PXOR and PUNPCKLDQ common C compilation accepted; not executed by this fixture',
     oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or FP arithmetic',
     linuxBoot:'not-tested'}));
 } finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}
