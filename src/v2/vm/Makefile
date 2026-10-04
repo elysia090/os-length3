@@ -19,7 +19,7 @@ WASM_FLAGS += -Wl,--export=vm_debug
 WASM_FLAGS += -Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit
 WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_extend,--export=vm_source_publish,--export=vm_sources_reset
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
-SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/source.c core/clock.c core/pit.c core/io.c
+SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/source.c core/clock.c core/pit.c core/pic.c core/io.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
@@ -28,6 +28,7 @@ all: $(BUILD)/libvm.a
 
 $(BUILD)/vm.wasm: core/clock.c core/pit.c core/io.c include/vm/clock.h include/vm/pit.h include/vm/io.h ../machine-abi/include/machine/io.h
 $(BUILD)/vm.wasm: core/debug.c include/vm/debug.h
+$(BUILD)/vm.wasm: core/pic.c include/vm/pic.h
 
 # The provider shares ordinary machine memory with generated functions. It has
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
@@ -38,7 +39,7 @@ $(BUILD)/vm.wasm: wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.
 	../machine-abi/include/machine/state.h ../machine-abi/include/machine/memory.h \
 	include/vm/segments.h include/vm/tables.h include/vm/control.h include/vm/registers.h ../machine-abi/include/machine/segments.h \
 	../machine-abi/include/machine/result.h ../machine-abi/include/machine/entry.h | $(BUILD)
-	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/source.c core/clock.c core/pit.c core/io.c -o $@
+	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/source.c core/clock.c core/pit.c core/pic.c core/io.c -o $@
 
 $(BUILD):
 	mkdir -p $@
@@ -117,7 +118,10 @@ debug-check: $(BUILD)/debug-check
 $(BUILD)/io-check: check/io.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
-check: $(BUILD)/io-check
+$(BUILD)/pic-check: check/pic.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+check: $(BUILD)/io-check $(BUILD)/pic-check
 
 check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/page-index-check $(BUILD)/supply-check $(BUILD)/mmu-check $(BUILD)/boot-check $(BUILD)/rom-check $(BUILD)/execution-check $(BUILD)/segments-check $(BUILD)/registers-check $(BUILD)/exception-check $(BUILD)/source-check $(BUILD)/msr-check
 	$(BUILD)/resource-check
@@ -134,6 +138,7 @@ check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/page-index-che
 	$(BUILD)/source-check
 	$(BUILD)/msr-check
 	$(BUILD)/io-check
+	$(BUILD)/pic-check
 	@! grep -REn '#include <(x86|optimized-x86|postlink|wasm-compiler)/|Pyodide|Python|STEP' include core
 
 clean:

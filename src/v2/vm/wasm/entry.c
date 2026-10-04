@@ -30,6 +30,7 @@ static vm_table_frontier table_frontier;
 static vm_sources sources;
 static vm_clock clock_owner;
 static vm_pit pit;
+static vm_pic pic;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result call_entry(void *pointer, pl_u32 slot);
@@ -52,7 +53,7 @@ pl_u32 vm_arena_min(void)
 void vm_close(void)
 {
     table_frontier=(vm_table_frontier){0};
-    vm_clock_close(&clock_owner); vm_pit_reset(&pit);
+    vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
     vm_sources_open(&sources,0u,vm_slot_min());
     vm_supply_reset(&supply);
     delivery = (vm_fault_delivery){0};
@@ -456,7 +457,7 @@ machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 val
     resident.write_touched = 0u;
     machine_result result = vm_io_transfer(&resident,port - arena_base,
         (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
-        &clock_owner,&pit,coordinate,transfer,value);
+        &clock_owner,&pit,&pic,coordinate,transfer,value);
     if (resident.write_touched) execution.generation = 0u;
     return result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CLOCK)
         ? result : memory_result(port,result);

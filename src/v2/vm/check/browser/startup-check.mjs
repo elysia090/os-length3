@@ -390,6 +390,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     }
     if (result !== 1n && result !== 5n)
       return {kind:'execution',result:String(result),entry:`0x${entry.toString(16)}`,
+        source:Array.from(data.subarray(offset+Number(entry-address),
+          offset+Number(entry-address)+Math.min(sourceBytes,24))),sourceBytes,
         completed:vm.vm_completed(),sourceRetired:done,
         faultAddress:`0x${view.getBigUint64(port + 16,true).toString(16)}`,
         faultVector:view.getUint32(port + 24,true),faultError:view.getUint32(port + 28,true),

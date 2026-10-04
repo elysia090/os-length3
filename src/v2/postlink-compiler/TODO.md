@@ -10,12 +10,16 @@ sanitizers pass. Previous scan/count and debug-register checkpoints remain green
 Memory XADD/XCHG now shares arithmetic SSA and the precise reservation/commit:
 76 modules / 38,912 CPU/RAM and 37,888 protection comparisons pass, with RF,
 dispatcher, wait/retry and selected sanitizer checks. Product checks pass.
-Actual browser: 137,134,563 retired / 69,357,027 admissions, unchanged complete
-decompression, then ENTRY_MAP for OUT AL,A1 at 0xffffffff81030a33. PID 1/shell
-and the full goal remain red. Next: C-owned 8259 PIC I/O/device state, then boot.
+The C-owned 8259 PIC now passes 16,782 independent QEMU-device observations,
+147,456 priority/mask grants, 6,658 compiled CPU/segment checks and all product /
+C VM sanitizer tests. Device IRQ-to-CPU delivery remains incomplete.
+Actual browser: 137,259,081 retired / 69,428,504 admissions, unchanged complete
+decompression, then ENTRY_MAP for OUT AL,70 at 0xffffffff81033f2e. PID 1/shell
+and the full goal remain red. Next: C-owned CMOS/RTC with explicit time/event
+ownership, then browser boot. Native bundle and human UI remain unchanged.
 Engine reuse is still zero despite source
 cache hits; that fixed cost is recorded, not relabeled as a speedup. See
-[current evidence](../vm/check/browser/evidence/2026-10-04-memory-transfer.md).
+[current evidence](../vm/check/browser/evidence/2026-10-04-pic.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

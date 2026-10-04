@@ -1,0 +1,801 @@
+{
+  "format": "browser-bzimage-startup-v1",
+  "status": "pass",
+  "linuxBoot": "not-achieved",
+  "decompressedOutput": {
+    "entry": "0x1e23d31",
+    "comparedBytes": 14622864,
+    "pages": 3571,
+    "sha256": "6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9",
+    "gzipCrc32": 380732796,
+    "oracle": "independent gzip CRC/ISIZE verified; exact per-page SHA-256 comparison before ELF PT_LOAD moves",
+    "guestCrc": "PREBOOT uses raw inflate; this is independent output validation, not a guest CRC check"
+  },
+  "linuxEntry": {
+    "entry": "0x14015e4",
+    "instructions": 5,
+    "nextRip": "0x14015f7",
+    "retired": 129057478
+  },
+  "retired": 137259081,
+  "modules": 1375616,
+  "admissions": 69428504,
+  "liveSlots": 64,
+  "manualBranchEntries": 0,
+  "independentStateCheckpoint": 86,
+  "relocationRegisterCheckpoint": 378,
+  "nextRip": "0xffffffff81033f2e",
+  "nextGate": {
+    "kind": "execution",
+    "result": "6",
+    "entry": "0xffffffff81033f2e",
+    "source": [
+      230,
+      112
+    ],
+    "sourceBytes": 2,
+    "completed": 0,
+    "sourceRetired": 0,
+    "faultAddress": "0xffffffff8103ae31",
+    "faultVector": 13,
+    "faultError": 0,
+    "cpu": {
+      "registers": [
+        "0x0",
+        "0x0",
+        "0xffffffff81a03e28",
+        "0x0",
+        "0xffffffff81a03de0",
+        "0x0",
+        "0x3e8",
+        "0x0",
+        "0xffffea0000000000",
+        "0x86",
+        "0x4",
+        "0xdead000000000122",
+        "0x46",
+        "0x0",
+        "0x3e8",
+        "0xffffffff81294e6c"
+      ],
+      "cr0": "0x80050033",
+      "cr3": "0x1a2a000",
+      "cr4": "0xb0",
+      "efer": "0xd01"
+    },
+    "requestAddress": "0x206f000",
+    "requestBytes": 4,
+    "requestAccess": 18
+  },
+  "exceptions": [
+    {
+      "entry": "0x1e218e5",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1400000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1400000"
+    },
+    {
+      "entry": "0x1e21913",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1600000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1600000"
+    },
+    {
+      "entry": "0x1e21a40",
+      "vector": 14,
+      "error": 2,
+      "address": "0x1800000",
+      "deliveryResult": "0",
+      "nextRip": "0x1e25cc0",
+      "cr2": "0x1800000"
+    },
+    {
+      "entry": "0xffffffff814017e2",
+      "vector": 14,
+      "error": 0,
+      "address": "0xffff888000001000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016b6",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff810414b1",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff810414b1",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff810414be",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff810414be",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff81041474",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff81041474",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888000001000"
+    },
+    {
+      "entry": "0xffffffff813ca4f6",
+      "vector": 14,
+      "error": 0,
+      "address": "0xffff888001e62000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016b6",
+      "cr2": "0xffff888001e62000"
+    },
+    {
+      "entry": "0xffffffff8103d5ef",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8103d5ef",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888001e62000"
+    },
+    {
+      "entry": "0xffffffff8103d5ff",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8103d5ff",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888001e62000"
+    },
+    {
+      "entry": "0xffffffff81041474",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff81041474",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888001e62000"
+    },
+    {
+      "entry": "0xffffffff8140ff55",
+      "vector": 14,
+      "error": 0,
+      "address": "0xffff888001b1dff8",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016b6",
+      "cr2": "0xffff888001b1dff8"
+    },
+    {
+      "entry": "0xffffffff8140c03f",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8140c03f",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff814016ad",
+      "cr2": "0xffff888001b1dff8"
+    },
+    {
+      "entry": "0xffffffff8103ae1b",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8103ae1b",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff81000937",
+      "cr2": "0xffff888001b1dff8"
+    },
+    {
+      "entry": "0xffffffff8103ae26",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8103ae26",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff81000937",
+      "cr2": "0xffff888001b1dff8"
+    },
+    {
+      "entry": "0xffffffff8103ae31",
+      "vector": 13,
+      "error": 0,
+      "address": "0xffffffff8103ae31",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff81000937",
+      "cr2": "0xffff888001b1dff8"
+    }
+  ],
+  "repeatAdmission": "completed through one pinned module; all copied bytes checked through C-MMU views",
+  "firstRepeatWait": {
+    "address": "0x1e283f8",
+    "bytes": 8,
+    "access": 18
+  },
+  "pageSupplies": 4445,
+  "sourceExtentBytes": 3046912,
+  "quantumYields": 7732,
+  "clockEvents": 14,
+  "clockContract": "sampled active C execution nanoseconds; virtual TSC 1 GHz, PIT 1193182 Hz; compilation/delivery paused",
+  "repeatComparedBytes": 3040256,
+  "bssComparedBytes": 98656,
+  "memsetComparedBytes": 131104,
+  "memsetReturns": 3,
+  "residentPages": 4458,
+  "descriptorCapacity": 8192,
+  "descriptorBytes": 393200,
+  "guestExecution": "C-Wasm table dispatcher/MMU",
+  "coldCompilation": "C-Wasm decoder/planner/emitter",
+  "guestMemoryCallback": "C-Wasm, not JavaScript",
+  "sourceProjection": "C-MMU borrowed page, no JS virtual-to-physical mapping",
+  "emittedBytes": 480079694,
+  "copiedCodeBytes": 5635506176,
+  "engineReuse": {
+    "compilations": 1375616,
+    "hits": 0,
+    "entries": 64,
+    "retainedModuleBytes": 22224,
+    "maximumEntries": 64,
+    "maximumBytes": 262144
+  },
+  "sourceReuse": {
+    "hits": 68052888,
+    "misses": 1375616,
+    "capacity": 64,
+    "metadataBytes": 6752,
+    "sourcePayloadBytes": 0
+  },
+  "timingMs": {
+    "cold": 20188.499996066093,
+    "engine": 120950.50000059605,
+    "execution": 37393.099970936775,
+    "supply": 202.3999993801117,
+    "admission": 23482.099994063377
+  },
+  "trace": [
+    {
+      "entry": "0xffffffff81294eeb",
+      "instructions": 1,
+      "next": "0xffffffff81294eed",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x86"
+    },
+    {
+      "entry": "0xffffffff81294eed",
+      "instructions": 1,
+      "next": "0xffffffff81294eef",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x86"
+    },
+    {
+      "entry": "0xffffffff81294eef",
+      "instructions": 1,
+      "next": "0xffffffff81294ef0",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x86"
+    },
+    {
+      "entry": "0xffffffff81294ef0",
+      "instructions": 1,
+      "next": "0xffffffff81294ef1",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x86"
+    },
+    {
+      "entry": "0xffffffff81294ef1",
+      "instructions": 1,
+      "next": "0xffffffff81294ef5",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x96"
+    },
+    {
+      "entry": "0xffffffff81294ef5",
+      "instructions": 1,
+      "next": "0xffffffff81294ef9",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x96"
+    },
+    {
+      "entry": "0xffffffff81294ef9",
+      "instructions": 2,
+      "next": "0xffffffff81294f01",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x6"
+    },
+    {
+      "entry": "0xffffffff81294f01",
+      "instructions": 4,
+      "next": "0xffffffff81294f0b",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81294f0b",
+      "instructions": 1,
+      "next": "0xffffffff81294f0c",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81294f0c",
+      "instructions": 1,
+      "next": "0xffffffff81294f0e",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81294f0e",
+      "instructions": 1,
+      "next": "0xffffffff81294f0f",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81294f0f",
+      "instructions": 1,
+      "next": "0xffffffff81294f15",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0xffffffff81294e6c",
+      "flags": "0x82"
+    },
+    {
+      "entry": "0xffffffff81294f15",
+      "instructions": 1,
+      "next": "0xffffffff81294f17",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81294f17",
+      "instructions": 1,
+      "next": "0xffffffff81033f2c",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81033f2c",
+      "instructions": 1,
+      "next": "0xffffffff81033f2e",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81033f2e",
+      "instructions": 0,
+      "next": "0xffffffff81033f2e",
+      "result": "6",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0xffffffff81a03e28",
+      "rdi": "0x0",
+      "flags": "0x46"
+    }
+  ],
+  "relocationTrace": [
+    {
+      "entry": "0x100029a",
+      "instructions": 1,
+      "next": "0x10002a1",
+      "result": "1",
+      "rax": "0x1e20d00",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1b41ff8",
+      "flags": "0x2",
+      "source": [
+        72,
+        141,
+        131,
+        0,
+        237,
+        45,
+        0
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x10002a1",
+      "instructions": 1,
+      "next": "0x1e20d00",
+      "result": "1",
+      "rax": "0x1e20d00",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1b41ff8",
+      "flags": "0x2",
+      "source": [
+        255,
+        224
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x1e20d00",
+      "instructions": 5,
+      "next": "0x1e20d17",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x302c",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e28400",
+      "flags": "0x2",
+      "source": [
+        49,
+        192,
+        72,
+        141,
+        61,
+        247,
+        118,
+        0,
+        0,
+        72,
+        141,
+        13,
+        80,
+        248,
+        1,
+        0,
+        72,
+        41,
+        249,
+        72,
+        193,
+        233,
+        3
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x1e20d17",
+      "instructions": 1,
+      "next": "0x1e20d1a",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        243,
+        72,
+        171
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x1e20d1a",
+      "instructions": 1,
+      "next": "0x1e25bd0",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        232,
+        177,
+        78,
+        0,
+        0
+      ],
+      "rsp": "0x1e2c3f8"
+    },
+    {
+      "entry": "0x1e25bd0",
+      "instructions": 1,
+      "next": "0x1e25bd1",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        85
+      ],
+      "rsp": "0x1e2c3f0"
+    },
+    {
+      "entry": "0x1e25bd1",
+      "instructions": 3,
+      "next": "0x1e25bdf",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x46",
+      "source": [
+        49,
+        246,
+        72,
+        141,
+        5,
+        118,
+        36,
+        0,
+        0,
+        186,
+        16,
+        0,
+        0,
+        0
+      ],
+      "rsp": "0x1e2c3f0"
+    },
+    {
+      "entry": "0x1e25bdf",
+      "instructions": 1,
+      "next": "0x1e25be0",
+      "result": "5",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x46",
+      "source": [
+        83
+      ],
+      "rsp": "0x1e2c3e8"
+    },
+    {
+      "entry": "0x1e25be0",
+      "instructions": 2,
+      "next": "0x1e25beb",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        72,
+        141,
+        29,
+        217,
+        0,
+        0,
+        0,
+        72,
+        131,
+        236,
+        24
+      ],
+      "rsp": "0x1e2c3d0"
+    },
+    {
+      "entry": "0x1e25beb",
+      "instructions": 1,
+      "next": "0x1e25bf2",
+      "result": "5",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        72,
+        137,
+        5,
+        80,
+        36,
+        0,
+        0
+      ],
+      "rsp": "0x1e2c3d0"
+    },
+    {
+      "entry": "0x1e25bf2",
+      "instructions": 1,
+      "next": "0x1e25bf5",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x2",
+      "source": [
+        72,
+        137,
+        231
+      ],
+      "rsp": "0x1e2c3d0"
+    },
+    {
+      "entry": "0x1e25bf5",
+      "instructions": 1,
+      "next": "0x1e24700",
+      "result": "5",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x2",
+      "source": [
+        232,
+        6,
+        235,
+        255,
+        255
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e24700",
+      "instructions": 5,
+      "next": "0x1e2470f",
+      "result": "1",
+      "rax": "0x1e2c3d0",
+      "rcx": "0x10",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x2",
+      "source": [
+        72,
+        137,
+        209,
+        72,
+        137,
+        248,
+        72,
+        141,
+        20,
+        23,
+        72,
+        133,
+        201,
+        116,
+        49
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e2470f",
+      "instructions": 4,
+      "next": "0x1e24730",
+      "result": "1",
+      "rax": "0x1e2c3d0",
+      "rcx": "0x0",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x46",
+      "source": [
+        72,
+        137,
+        209,
+        72,
+        41,
+        249,
+        131,
+        225,
+        1,
+        116,
+        22
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e24730",
+      "instructions": 1,
+      "next": "0x1e24733",
+      "result": "5",
+      "rax": "0x1e2c3d0",
+      "rcx": "0x0",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x46",
+      "source": [
+        64,
+        136,
+        48
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e24733",
+      "instructions": 1,
+      "next": "0x1e24737",
+      "result": "1",
+      "rax": "0x1e2c3d2",
+      "rcx": "0x0",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x6",
+      "source": [
+        72,
+        131,
+        192,
+        2
+      ],
+      "rsp": "0x1e2c3c8"
+    }
+  ],
+  "providerBytes": 43929,
+  "compilerBytes": 430665,
+  "memoryBytes": 18874368,
+  "coldMemoryBytes": 1048576,
+  "secureContext": true,
+  "isolated": false,
+  "fixtureIntegrity": "local diagnostic SHA-256; not signed production admission",
+  "objectTransport": {
+    "fetches": 49,
+    "fetchedBytes": 3154432,
+    "requestedBytes": 3046912,
+    "cacheHighWaterBytes": 65536,
+    "cachedBytes": 32256
+  },
+  "sourceReceipt": [
+    "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc  native-bundle",
+    "21771c757255406ce090faa6c5108b72618f794c8e46379a4a3d50dc21364e67  root/boot/kernel",
+    "90ad6681efc64bbbf5d10b92ac3aa62cc12eafc6dc88b790cec055a4bffb4ff1  root/boot/initramfs",
+    "62a1aa4720607ec8c3ec38c50041cc7ff3dae9e29ebd335b589283c8e0381212  root/bin/busybox"
+  ]
+}

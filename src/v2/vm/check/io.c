@@ -9,6 +9,7 @@ static machine_state state;
 static machine_segments segments;
 static vm_clock clock_owner;
 static vm_pit pit;
+static vm_pic pic;
 static unsigned failures, permissions;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr,"io: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value, pl_u32 size)
@@ -33,10 +34,10 @@ static void reset(pl_u32 cpl, pl_u32 iopl)
     segments.cache[MACHINE_SEGMENT_CS].attributes=0xa09bu;
     segments.cache[MACHINE_SEGMENT_TR]=(machine_segment_cache){0x400000u,8191u,0x008bu};
     put(28672u+102u,104u,2u);
-    vm_clock_close(&clock_owner); vm_pit_reset(&pit);
+    vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
 }
 static machine_result io(pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
-{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,coordinate,transfer,value); }
+{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,&pic,coordinate,transfer,value); }
 static machine_result time_read(void)
 { return vm_time_read(&memory,0u,&state,&segments,&clock_owner); }
 static pl_u64 ticket(void) { return get(32u); }
@@ -123,6 +124,29 @@ int main(void)
     transfer(101000000u,0x42u,0u,0u); EXPECT(get(8u)==0x30u);
     transfer(102000000u,0x42u,0u,0u); EXPECT(!get(8u));
     transfer(103000000u,0x42u,0u,0u); EXPECT(!get(8u));
-    if (!failures) printf("C IO/clock/PIT: %u permission cases and event/fault/edge checks green (not Linux boot)\n",permissions);
+    reset(0u,0u);
+    EXPECT(!io(0xa1u,0x101u,0xffffffffu) && !clock_owner.stage);
+    EXPECT(!io(0xa1u,1u,0u) && get(8u)==255u && !clock_owner.stage);
+    for (pl_u32 cpl=0u;cpl<4u;++cpl) for (pl_u32 iopl=0u;iopl<4u;++iopl)
+    for (pl_u32 width=1u;width<=4u;width*=2u) for (pl_u32 bit=0u;bit<16u;++bit)
+    for (pl_u32 index=0u;index<6u;++index) {
+        const pl_u32 coordinates[]={0x20u,0x21u,0xa0u,0xa1u,0x4d0u,0x4d1u};
+        reset(cpl,iopl); pl_u32 coordinate=coordinates[index];
+        put(28672u+104u+(coordinate>>3u),1u<<bit,2u);
+        machine_state before=state; vm_pic hidden=pic;
+        int denied=cpl>iopl && ((1u<<bit) & (((1u<<width)-1u) << (coordinate&7u)));
+        EXPECT(io(coordinate,width|MACHINE_IO_WRITE,255u)==(denied ? 107u : width==1u ? 0u : 6u));
+        EXPECT(!memcmp(&state,&before,sizeof state) && !clock_owner.stage);
+        if (denied || width!=1u) EXPECT(!memcmp(&pic,&hidden,sizeof pic));
+        ++permissions;
+    }
+    reset(0u,0u); EXPECT(time_read()==18u); vm_pic hidden=pic;
+    EXPECT(io(0xa1u,0x101u,255u)==6u && !memcmp(&hidden,&pic,sizeof pic));
+    EXPECT(clock_owner.stage==1u); /* unrelated PIC access cannot steal a ticket */
+    reset(0u,0u); put(0u,8u,8u); hidden=pic;
+    EXPECT(io(0xa1u,0x101u,255u)==5u && !memcmp(&hidden,&pic,sizeof pic));
+    reset(0u,0u); state.rflags|=0x100u; hidden=pic;
+    EXPECT(io(0xa1u,0x101u,255u)==6u && !memcmp(&hidden,&pic,sizeof pic));
+    if (!failures) printf("C IO/clock/PIT/PIC: %u permission cases and event/fault/edge checks green (not Linux boot)\n",permissions);
     return failures ? 1 : 0;
 }
