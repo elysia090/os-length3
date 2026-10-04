@@ -1581,7 +1581,7 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_FNINIT:
         if (!out->visible_operand_count) {
             out->machine_operation = PL_X86_MACHINE_X87;
-            out->machine_argument = 44u;
+            out->machine_argument = PL_X86_X87_INITIALIZE;
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
                         | PL_X86_INSTRUCTION_PRECISE_CUT
                         | PL_X86_INSTRUCTION_BARRIER;

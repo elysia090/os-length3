@@ -7,6 +7,13 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     int io = cut_io_supported(instruction);
     if (io) return io;
     if (instruction->status==PL_X86_DECODE_VALID
+            && instruction->machine_operation==PL_X86_MACHINE_X87
+            && instruction->machine_argument==PL_X86_X87_INITIALIZE
+            && !instruction->visible_operand_count
+            && (instruction->flow==PL_X86_FLOW_NEXT || instruction->flow==PL_X86_FLOW_SYSTEM)
+            && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                |PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_X87_INIT;
+    if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_DEBUG_REGISTER
             && instruction->visible_operand_count==2u
             && (instruction->flow==PL_X86_FLOW_NEXT || instruction->flow==PL_X86_FLOW_SYSTEM)
@@ -293,6 +300,29 @@ static void lower_cpuid(cut_lowering *cut)
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     if (cut_io_supported(instruction)) { cut_lower_io(cut,instruction); return; }
+    if (instruction->machine_operation==PL_X86_MACHINE_X87
+            && instruction->machine_argument==PL_X86_X87_INITIALIZE) {
+        /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.
+         * CR0.EM/TS still cause precise #NM before any FPU state publication. */
+        cut_load(cut,offsetof(machine_state,cr0)); cut_const(cut,12u); cut_op(cut,0x83u);
+        cut_op(cut,0x50u); cut_op(cut,0x45u); cut_op(cut,0x04u); cut_op(cut,0x40u);
+        cut_load(cut,offsetof(machine_state,rip)); port_store(cut,offsetof(machine_memory_port,fault_address),8u);
+        cut_const(cut,7u); port_store(cut,offsetof(machine_memory_port,fault_vector),4u);
+        cut_const(cut,0u); port_store(cut,offsetof(machine_memory_port,fault_error),4u);
+        cut_const(cut,machine_result_make(MACHINE_RESULT_FAULT,7u)); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+        _Static_assert(offsetof(machine_state,x87_status)==offsetof(machine_state,x87_control)+2u
+            && offsetof(machine_state,x87_tag)==offsetof(machine_state,x87_control)+4u
+            && offsetof(machine_state,x87_opcode)==offsetof(machine_state,x87_control)+6u,
+            "adjacent x87 control/status/tag/opcode words");
+        /* Three stores, no scratch state: physical data registers are left
+         * unchanged and tagged empty. XMM and MXCSR are not reset by FNINIT. */
+        cut_const(cut,0x0000ffff0000037full); cut_set(cut,CUT_VALUE);
+        cut_store(cut,offsetof(machine_state,x87_control),CUT_VALUE);
+        cut_const(cut,0u); cut_set(cut,CUT_VALUE);
+        cut_store(cut,offsetof(machine_state,x87_ip),CUT_VALUE);
+        cut_store(cut,offsetof(machine_state,x87_dp),CUT_VALUE);
+        return;
+    }
     if (cut_divide_supported(instruction)
             && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER) {
         cut_lower_divide(cut,instruction); return;

@@ -138,6 +138,14 @@ check: byte-swap-check
 byte-swap-check: $(BUILD)/byte-swap-check
 	$(BUILD)/byte-swap-check
 
+$(BUILD)/x87-init-check: check/x87-init.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -mno-red-zone check/x87-init.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: x87-init-check
+check: x87-init-check
+x87-init-check: $(BUILD)/x87-init-check
+	$(BUILD)/x87-init-check
+
 $(BUILD)/divide-check: check/divide.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/divide.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@

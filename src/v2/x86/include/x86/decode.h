@@ -165,6 +165,7 @@ enum pl_x86_packed_integer_operation {
 };
 
 enum pl_x86_x87_operation {
+    PL_X86_X87_INITIALIZE = 44u,
     /* MMX aliases the x87 register file.  Immediate packed shifts still use
      * one explicit descriptor rather than an instruction-byte interpreter. */
     PL_X86_X87_PACKED_SHIFT_IMMEDIATE = 59u,

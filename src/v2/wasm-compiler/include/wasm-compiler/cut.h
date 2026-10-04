@@ -101,6 +101,10 @@ typedef struct {
  * control registers uses machine.control (private port, rank, value): the C
  * boundary enforces the fixed CPU profile and complete write legality before
  * publishing state, and revokes executable context even for equal-value writes.
+ * FNINIT is a no-wait one-instruction system cut: CR0.EM or TS publishes #NM
+ * before mutation; otherwise control/status/tag/opcode/IP/DP are initialized.
+ * Physical x87 data payload, XMM and MXCSR remain unchanged. Pending x87
+ * exceptions do not fault this no-wait instruction; FWAIT/FINIT is separate.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * It also stops before a later instruction that crosses/starts another fetch

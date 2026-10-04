@@ -25,16 +25,25 @@ duplicate and native C/sanitizer checks pass. No kernel counter or instruction
 is modified. Actual browser passes the old counter-wait quota and reaches
 delay-loop calibration / CPU initialization: 138,929,830 retired,
 70,626,112 admissions, 5,388 Linux console bytes and 468 external IRQs.
-Complete 14,622,864-byte decompression stays identical. The next compiler
-refusal is FNINIT (`DB E3`) at 0xffffffff81034ca3. HLT wake still needs work.
+Complete 14,622,864-byte decompression stays identical.
+
+FNINIT is now a common precise cut: three x87 metadata stores, no payload
+copy/reset or new VM import, with CR0.EM/TS #NM before mutation. Eight
+native/cold byte-identical forms pass 2,048 direct and 2,048 dispatch full
+CPU records, 96 #NM models, prefix/refusal/RF checks and compiler sanitizers.
+Actual browser passes FNINIT and reaches FXSAVE (`0F AE 05 1A DE 75 00`)
+at 0xffffffff8140513f: 139,153,866 retired / 70,786,891 admissions,
+5,388 Linux console bytes and 627 IRQs. HLT wake still needs work.
 PID 1/shell and the full
 goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Admit FNINIT through the common compiler with precise CR0.EM/TS #NM,
-   existing x87-state initialization and no XMM/MXCSR/register-payload changes.
-   Do not replace it with a no-op or a Linux-function special case.
+1. Admit FXSAVE through the common compiler/MMU: exact 512-byte architectural
+   image/layout and untouched reserved/software bytes, CR0/context/alignment
+   faults, cross-page residency/fault order and pinned retry. No JS bulk copy,
+   opcode skip or Linux-function special case. Close related FPU-memory cuts
+   only with independent native/model observations.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -47,7 +56,7 @@ stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
 engine construction and admission (22,509.3 ms) now dominate; cold emission
 and 7.47 GB cumulative source copying remain material. This is not shell time.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-boundary-clock.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-x87-init.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 
