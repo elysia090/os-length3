@@ -34,6 +34,7 @@ static vm_pit pit;
 static vm_pic pic;
 static vm_rtc rtc;
 static vm_uart uart;
+static vm_console console_owner;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result pending_boundary(pl_u32 port);
@@ -58,6 +59,7 @@ void vm_close(void)
 {
     table_frontier=(vm_table_frontier){0};
     vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
+    vm_console_close(&console_owner);
     vm_rtc_reset(&rtc);
     vm_uart_reset(&uart);
     vm_sources_open(&sources,0u,vm_slot_min());
@@ -176,6 +178,7 @@ int vm_bind_state(pl_u32 state)
 {
     table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
+    vm_console_abort(&console_owner);
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
@@ -194,6 +197,7 @@ int vm_bind_segments(pl_u32 segments)
 {
     table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
+    vm_console_abort(&console_owner);
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     delivery = (vm_fault_delivery){0};
     vm_supply_reset(&supply);
@@ -456,10 +460,12 @@ machine_result vm_commit_pair(pl_u32 port, pl_u64 low, pl_u64 high)
 }
 void vm_abort(void)
 {
-    /* Ordinary RMW cancellation cannot undo a completed descriptor store or
-     * cancel its prepared page supply. Close/rebind ends that continuation. */
-    if (table_frontier.stage) return;
+    /* Ordinary RMW cancellation cannot undo a descriptor store or console
+     * admission, nor cancel their pinned continuation. Close/rebind fences
+     * pending transport; already published external output is not undone. */
+    if (table_frontier.stage || vm_console_pending(&console_owner)) return;
     vm_memory_abort(&resident); vm_supply_reset(&supply); vm_clock_abort(&clock_owner);
+    vm_console_abort(&console_owner);
 }
 
 machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
@@ -470,9 +476,10 @@ machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 val
     resident.write_touched = 0u;
     machine_result result = vm_io_transfer(&resident,port - arena_base,
         (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
-        &clock_owner,&pit,&pic,&rtc,&uart,coordinate,transfer,value);
+        &clock_owner,&pit,&pic,&rtc,&uart,&console_owner,coordinate,transfer,value);
     if (resident.write_touched) execution.generation = 0u;
     return result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CLOCK)
+        || result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CONSOLE)
         ? result : memory_result(port,result);
 }
 machine_result vm_time(pl_u32 port)
@@ -481,11 +488,21 @@ machine_result vm_time(pl_u32 port)
     vm_supply_reset(&supply);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     return vm_time_read(&resident,port - arena_base,(const machine_state *)(uintptr_t)state_offset,
-        (const machine_segments *)(uintptr_t)segments_offset,&clock_owner);
+        (const machine_segments *)(uintptr_t)segments_offset,&clock_owner,&console_owner);
+}
+/* Supervisor-only output sink admission. An exact duplicate is not another
+ * byte. The sink reserves capacity first and publishes only on return 1. */
+int vm_console_commit(pl_u32 port,pl_u64 generation,pl_u64 ticket,pl_u32 byte)
+{
+    if(!private_port(port) || delivery.stage || table_frontier.stage || clock_owner.stage
+            || generation!=resident.generation || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation)
+        return -1;
+    return vm_console_reply(&console_owner,generation,port-arena_base,
+        (const machine_state *)(uintptr_t)state_offset,ticket,byte);
 }
 int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanoseconds)
 {
-    if (!private_port(port) || delivery.stage || table_frontier.stage || generation != resident.generation
+    if (!private_port(port) || delivery.stage || table_frontier.stage || vm_console_pending(&console_owner) || generation != resident.generation
             || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) != generation) return -1;
     if (rtc.seeded && !vm_rtc_can_advance(&rtc,nanoseconds)) return -1;
     int result=vm_clock_reply(&clock_owner,generation,port - arena_base,
@@ -627,7 +644,7 @@ machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 
 int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
 {
-    if (delivery.stage || table_frontier.stage) return -1;
+    if (delivery.stage || table_frontier.stage || vm_console_pending(&console_owner)) return -1;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     vm_execution_close(&execution);
@@ -657,7 +674,8 @@ static machine_result interrupt_boundary(pl_u32 port)
 }
 static machine_result pending_boundary(pl_u32 port)
 {
-    if (table_frontier.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (table_frontier.stage || !private_port(port)
+            || (vm_console_pending(&console_owner) && !execution.continuation.slot)) return MACHINE_RESULT_ENTRY_MAP;
     if (delivery.stage) return delivery.external ? interrupt_boundary(port) : MACHINE_RESULT_ENTRY_MAP;
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
     if (!execution.continuation.slot && (state->rflags&0x200u) && vm_pic_pending(&pic)

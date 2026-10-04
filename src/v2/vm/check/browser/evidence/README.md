@@ -1,11 +1,11 @@
 # Browser boundary observations
 
-Latest: [C-owned UART registers](2026-10-04-uart.md) and its
-[actual browser JSON](2026-10-04-uart-browser.json). The unchanged shipped bundle
-retires 137,332,623 source instructions through cold C compilation and the C VM,
-passes UART IER, then refuses external UART TX at port 0x3f8, byte 0x5b.
-Complete kernel decompression passes; PID 1/shell remain red. Zero console
-bytes and external IRQ entries are observed in this Linux run;
+Latest: [C-owned console acceptance and bounded engine identity](2026-10-04-console.md)
+and its [actual browser JSON](2026-10-04-console-browser.json). The unchanged
+bundle retires 137,904,185 source instructions and emits 4,532 real Linux UART
+bytes, through ttyS0 enablement, then refuses PIT mode 2 at port 0x43.
+Complete decompression passes; PID 1/shell remain red. Zero external IRQ entries
+are observed. The separate slot-key receipt retains its own VM build/time;
 independent event/provider comparisons are separately scoped in the evidence.
 The older observations below retain their original build and scope.
 

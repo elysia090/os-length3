@@ -6,15 +6,18 @@ function-table execution. The separate compiler lowers x86; the VM does not
 decode/interpret instructions. Linux boot, exception entry and virtio devices
 remain incomplete. `wasm/entry.c` is the freestanding wrapper of this C core.
 
-The [current browser receipt](browser/evidence/2026-10-04-uart.md) retires
-137,332,623 exact shipped source instructions through cold C compilation and C execution,
+The [current browser receipt](browser/evidence/2026-10-04-console.md) retires
+137,904,185 exact shipped source instructions through cold C compilation and C execution,
 with unchanged complete decompression and C-owned PIC/RTC, not a booted Linux.
 CLI/STI now shares the C privilege/IF/shadow owner. CPL0/IST0 PIC interrupt
 entry uses the bounded C event frontier across physical page waits; complete
 interrupt/debug/privilege delivery remains incomplete. The next actual-browser
-gate is external UART OUT port 0x3f8, byte 0x5b. Common C register/FIFO/loopback
-state passes independent register and generated-provider tests; console sink
-ownership remains open. Independent event tests are not Linux boot.
+gate is PIT mode 2 at port 0x43, byte 0x34. Common C UART registers and the
+48-byte console acceptance frontier pass independent device/serial-file and
+generated-provider tests. 4,532 actual Linux output bytes include ttyS0 enablement;
+they are not a shell. Bounded engine candidate identity is now separate from
+placement, retaining exact newly emitted-byte checks. Independent event tests
+are not Linux boot.
 The borrowed-code view has native non-identity/2 MiB/NX/stale
 checks and 20 actual C-Wasm export cases, including private-output aliases,
 compatibility-mode rejection, A-bit source aliasing and post-growth borrowing.

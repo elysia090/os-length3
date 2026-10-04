@@ -1,33 +1,38 @@
 # Remaining work — 2026-10-04
 
-Current browser checkpoint: common C COM1 UART registers use 40 bytes of
-bounded state, derived status/IRQ, FIFO/loopback and one timeout deadline.
-Independent QEMU register comparisons (2,521) and cold-generated C-Wasm
-CPU/segment checks (6,186) pass. External TX and break transport remain
-explicitly refused before device/CPU mutation; no console byte is discarded.
-All product checks and C VM core sanitizers pass. Previous CLI/STI inhibition,
-C PIC entry, precise faults and source-admission regressions remain green;
-complete CPL/IST/debug/APIC/secondary escalation is still incomplete.
+Current browser checkpoint: C UART uses a 48-byte console byte/ticket frontier.
+External output is accepted once by a bounded sink before device commit and
+source retirement. Duplicate/stale/rebind/overflow, pinned source and STI
+inhibition checks pass. 7,466 generated CPU/segment comparisons, all 256 byte
+values and independent QEMU serial-file bytes agree. Full product checks and
+C VM core sanitizers pass; previous privilege/IRQ/fault/source checks stay green.
+Complete CPL/IST/debug/APIC/secondary escalation remains incomplete.
 
-Actual browser: 137,332,623 retired / 69,470,572 admissions, unchanged complete
-14,622,864-byte decompression; UART IER passed, then external UART OUT DX,AL
-at 0xffffffff812638a6, port 0x3f8, byte 0x5b. This run observed zero external IRQ entries,
+Actual browser: 137,904,185 retired / 69,910,548 admissions, unchanged complete
+14,622,864-byte decompression; 4,532 real Linux UART bytes include banner,
+memory initialization and ttyS0 enablement. Next refusal: OUT 0x43,AL, byte
+0x34 at 0xffffffff812959aa (PIT channel 0 mode 2). Zero external IRQ entries,
 so independent event tests are not IRQ use in Linux. PID 1/shell and the full
 goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Implement/test bounded C console event ownership for the external UART byte; no
-   constant successful IN/OUT, Linux console shortcut or JS port interpreter.
+1. Implement/test common binary PIT mode 2 and C IRQ0 routing through the
+   existing PIC/event frontier. No constant successful IN/OUT, timer skip,
+   Linux shortcut or JS port interpreter. Exact fault and shadow behavior stay.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
    HTTPS/service use, preserving Linux as the only syscall/VFS/net authority.
 
-Measured engine construction is the largest phase (118,092.6 ms); bounded
-engine reuse is still zero despite 68,072,329 source-cache hits. This fixed cost
-is recorded, not relabeled as a speedup. Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-uart.md).
+Engine candidate identity is separate from source placement: exact newly
+emitted bytes permit 1,573,491 hits, construction 1,823,976 -> 250,466 and
+engine phase 153,360.5 -> 33,796.7 ms in two actual runs. Emitted-witness cap
+stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
+engine construction and admission (22,509.3 ms) now dominate; cold emission
+and 7.47 GB cumulative source copying remain material. This is not shell time.
+Cold shell 3 seconds remains unmet.
+See [current evidence](../vm/check/browser/evidence/2026-10-04-console.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

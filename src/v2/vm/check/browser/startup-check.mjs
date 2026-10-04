@@ -41,7 +41,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
     reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
-    io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}});
+    io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}},
+    {maximumEntries:1024,maximumBytes:262144});
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;
   const compilerReport = compilerOutput + 65536;
   let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
@@ -97,6 +98,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
   let clockEvents = 0;
+  const consoleOutput=new Uint8Array(16384);
+  let consoleBytes=0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
   let firstRepeatWait;
   let bssInitialState, bssInitialSegments, bssComparedBytes = 0;
@@ -344,7 +347,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       const instructions = Number(report.getBigUint64(compilerReport + 24,true));
       assert(length > 0 && length <= 65536 && instructions > 0 && instructions <= limit);
       const beforeEngine = performance.now();
-      const instance = await engines.get(slot,cold.subarray(compilerOutput,compilerOutput + length));
+      // The source owner's rotating slot is placement, not executable
+      // identity. Keep a bounded engine candidate per C-selected coordinate;
+      // CompiledModules still requires exact newly emitted bytes to reuse it.
+      const instance = await engines.get(entry,cold.subarray(compilerOutput,compilerOutput + length));
       engineMs += performance.now() - beforeEngine; emittedBytes += length;
       table.set(slot,instance.exports.cut); installedSlots.add(slot);
       beforeAdmission = performance.now();
@@ -360,10 +366,22 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       const beforeExecution = performance.now();
       result = vm.vm_run(port,generation,1);
       executionMs += performance.now() - beforeExecution;
-      if (result !== 2n && result !== 10n && result !== 18n) break;
+      if (result !== 2n && result !== 10n && result !== 18n && result !== 26n) break;
       assert.equal(vm.vm_completed(),0); assert.equal(vm.vm_source_retired(),0n);
       assert.equal(rip(),entry); assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
       if (result === 10n) { ++quantumYields; continue; }
+      if(result===26n){
+        assert.equal(view.getUint32(port+40,true),1);assert.equal(view.getUint32(port+44,true),0x200);
+        const byte=Number(view.getBigUint64(port+8,true)),ticket=view.getBigUint64(port+32,true);
+        assert(byte>=0 && byte<=255);
+        // Reserve bounded observation capacity BEFORE transport acceptance.
+        // This is a local byte sink, not a JS UART or Linux console model.
+        if(consoleBytes===consoleOutput.length)return {kind:'console-capacity',result:'26',
+          entry:`0x${entry.toString(16)}`,acceptedBytes:consoleBytes,capacity:consoleOutput.length};
+        assert.equal(vm.vm_console_commit(port,generation,ticket,byte),1);
+        consoleOutput[consoleBytes++]=byte;
+        assert.equal(vm.vm_console_commit(port,generation,ticket,byte),0);continue;
+      }
       if (result === 18n) {
         assert.equal(view.getUint32(port + 40,true),0);
         assert.equal(view.getUint32(port + 44,true),0x100);
@@ -516,6 +534,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
           retired,admissions,nextRip:`0x${rip().toString(16)}`,maximumAdmissions,maximumRetired,
           outputRegister:`0x${view.getBigUint64(base + 80,true).toString(16)}`,
           residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
+          console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
           sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity},
           timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs}});
       }
@@ -534,6 +553,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
       firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,externalInterrupts,
+      console:{acceptedBytes:consoleBytes,capacity:consoleOutput.length,
+        text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes)),
+        ownership:'bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation'},
       rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
       clockContract:'sampled active C execution nanoseconds; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused',
       repeatComparedBytes,bssComparedBytes,
@@ -559,6 +581,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       request:{address:`0x${view.getBigUint64(port+32,true).toString(16)}`,
         bytes:view.getUint32(port+40,true),access:view.getUint32(port+44,true)},
       trace:trace.slice(-4),residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
+      console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
       sourceReuse:{hits:sourceHits,misses:sourceMisses},decompressedOutput,linuxEntry};
     throw error;
   } finally {

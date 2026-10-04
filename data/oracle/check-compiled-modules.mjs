@@ -27,6 +27,17 @@ assert.equal((await cache.get(1n,emitted(4))).exports.get(),37,'same memory obje
 const before = cache.stats();
 await assert.rejects(cache.get(1n,new Uint8Array(1)),WebAssembly.CompileError);
 assert.deepEqual(cache.stats(),before,'invalid emission cannot publish or remove a valid entry');
+// Placement changes independently of the C-approved executable coordinate.
+// Slot reuse must not turn an unchanged body into fresh engine construction.
+const coordinateOwner=new CompiledModules({machine:{memory}},{maximumEntries:2,maximumBytes:256});
+const table=new WebAssembly.Table({element:'anyfunc',initial:3});
+const a=await coordinateOwner.get(0x400000n,emitted(0));table.set(1,a.exports.get);
+const b=await coordinateOwner.get(0x400001n,emitted(4));table.set(1,b.exports.get);
+const moved=await coordinateOwner.get(0x400000n,emitted(0));table.set(2,moved.exports.get);
+assert.equal(moved,a);assert.equal(table.get(1)(),37);assert.equal(table.get(2)(),17);
+assert.equal(coordinateOwner.stats().compilations,2);assert.equal(coordinateOwner.stats().hits,1);
+assert.notEqual(await coordinateOwner.get(0x400000n,emitted(4)),a,'same coordinate is not an equivalence proof');
+table.set(1,null);table.set(2,null);coordinateOwner.close();
 const tiny = new CompiledModules({machine:{memory}},{maximumEntries:8,maximumBytes:emitted(0).length});
 await tiny.get(1,emitted(0)); await tiny.get(2,emitted(4));
 assert.equal(tiny.stats().entries,1,'byte quota independent of entry quota');

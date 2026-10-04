@@ -25,7 +25,8 @@ static machine_result call(void *owner, pl_u32 slot)
     if (yielding) {
         if (revoke) execution.generation = 0u;
         return machine_result_make(MACHINE_RESULT_BARRIER,
-            yielding == 1u ? MACHINE_BARRIER_QUANTUM : yielding == 3u ? MACHINE_BARRIER_CLOCK : MACHINE_BARRIER_RESOURCE);
+            yielding == 1u ? MACHINE_BARRIER_QUANTUM : yielding == 3u ? MACHINE_BARRIER_CLOCK
+            : yielding == 4u ? MACHINE_BARRIER_CONSOLE : MACHINE_BARRIER_RESOURCE);
     }
     state.rip = slot == 1u ? rows[1].entry : rows[0].entry;
     ++state.retired;
@@ -92,6 +93,10 @@ int main(void)
     EXPECT(run(9u,1u) == 18u && calls == 2u && fetches == 1u && !state.retired);
     yielding = 0u;
     EXPECT(run(9u,1u) == 1u && calls == 3u && fetches == 1u && state.retired == 1u);
+    reset(); yielding=4u; execution.segments=&segments;segments.interrupt_shadow=MACHINE_SHADOW_STI;
+    EXPECT(run(9u,1u)==26u && calls==1u && fetches==1u && !state.retired && segments.interrupt_shadow==MACHINE_SHADOW_STI);
+    rows[0].slot=2u;EXPECT(run(9u,1u)==26u && calls==2u && fetches==1u && called_slot==1u);
+    yielding=0u;EXPECT(run(9u,1u)==1u && calls==3u && fetches==1u && state.retired==1u && !segments.interrupt_shadow);
     reset(); yielding = 2u;
     EXPECT(run(9u,1u) == 2u);
     call_fault = 1u;

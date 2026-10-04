@@ -12,6 +12,7 @@ static vm_pit pit;
 static vm_pic pic;
 static vm_rtc rtc;
 static vm_uart uart;
+static vm_console console_owner;
 static unsigned failures, permissions;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr,"io: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value, pl_u32 size)
@@ -39,11 +40,12 @@ static void reset(pl_u32 cpl, pl_u32 iopl)
     vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
     vm_rtc_reset(&rtc);
     vm_uart_reset(&uart);
+    vm_console_close(&console_owner);
 }
 static machine_result io(pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
-{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,&uart,coordinate,transfer,value); }
+{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,&uart,&console_owner,coordinate,transfer,value); }
 static machine_result time_read(void)
-{ return vm_time_read(&memory,0u,&state,&segments,&clock_owner); }
+{ return vm_time_read(&memory,0u,&state,&segments,&clock_owner,&console_owner); }
 static pl_u64 ticket(void) { return get(32u); }
 static void reply(pl_u64 ns)
 { EXPECT(!vm_clock_reply(&clock_owner,9u,0u,&state,ticket(),ns)); }
@@ -98,7 +100,13 @@ int main(void)
         ++permissions;
     }
     reset(0u,0u);vm_uart old_uart=uart;
-    EXPECT(io(0x3f8u,0x101u,65u)==6u && !memcmp(&uart,&old_uart,sizeof uart));
+    EXPECT(io(0x3f8u,0x101u,65u)==26u && !memcmp(&uart,&old_uart,sizeof uart));
+    EXPECT(time_read()==6u && !clock_owner.stage);
+    EXPECT(io(0x3f9u,1u,0u)==6u && !memcmp(&uart,&old_uart,sizeof uart));
+    EXPECT(get(8u)==65u && get(40u)==(1ull|((pl_u64)MACHINE_CONSOLE_WRITE_REQUEST<<32u)));
+    EXPECT(vm_console_reply(&console_owner,9u,0u,&state,ticket(),65u)==1);
+    EXPECT(vm_console_reply(&console_owner,9u,0u,&state,ticket(),65u)==0);
+    EXPECT(!io(0x3f8u,0x101u,65u) && uart.thre_pending && !vm_console_pending(&console_owner));
     EXPECT(io(0x43u,0x101u,0xb4u)==6u && !clock_owner.stage);
     EXPECT(io(0x43u,0x101u,0xb1u)==6u && !clock_owner.stage);
     reset(0u,0u); EXPECT(time_read()==18u); pl_u64 first=ticket();

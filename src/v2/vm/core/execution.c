@@ -97,7 +97,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
         pl_u32 source_instructions = row->source_instructions;
         result = call(owner, row->slot);
         if (machine_result_kind(result) == MACHINE_RESULT_BARRIER
-                && machine_result_payload(result) <= MACHINE_BARRIER_CLOCK
+                && machine_result_payload(result) <= MACHINE_BARRIER_CONSOLE
                 && source_instructions == 1u && state->rip == row->entry) {
             execution->continuation = *row; execution->continuation_generation = generation;
             return result;

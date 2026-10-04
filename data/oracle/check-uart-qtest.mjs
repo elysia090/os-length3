@@ -40,7 +40,7 @@ await withQtestDevice(qemu,['-serial','null'],async({qmp,command})=>{
   console.log(JSON.stringify({format:'uart-qtest-independent-device-v1',status:'pass',operations:ops.length,
     comparisons,qemu:(await qmp('query-version')).qemu,cpuExecution:'paused',
     clock:'frozen; sampled timeout tested separately, not independent wire timing',
-    sink:'null backend explicitly accepted in test only; product external transmission remains refused',
+    sink:'null backend explicitly accepted in test only; product must own and acknowledge each external transmission',
     profile:'COM1 16550A register/FIFO/loopback; fixed modem inputs, no break-line or modem-delta transport',
     linuxBoot:'not-tested'},null,2));
 });
