@@ -56,10 +56,18 @@ machine_result vm_mmu_reserve_record_access(vm_memory *physical, pl_u32 port_off
                                             const vm_mmu_context *context, pl_u64 address,
                                             pl_u32 bytes, pl_u32 access, pl_u8 *target);
 /* Privileged C caller only: target is a disjoint private buffer of bytes
- * (1..16), never a guest/state/directory pointer. Not a generated-code import. */
+ * (1..16), never a guest/state/directory pointer. READ[|STACK|ALIGNED16];
+ * ALIGNED16 requires exactly 16 bytes. The C read_pair adapter publishes
+ * the two private words only after success; no output survives fault/wait. */
 machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,
                                   const vm_mmu_context *context, pl_u64 address,
                                   pl_u32 bytes, pl_u32 access, pl_u8 *target);
+/* Same preflight for exactly sixteen bytes: substitute pinned fragments into
+ * pair-port value/high directly. No record buffer or RMW reservation; the
+ * pair extent must be private/reserved and disjoint from CPU/directory. */
+machine_result vm_mmu_read_pair(vm_memory *physical, pl_u32 port_offset,
+                                const vm_mmu_context *context, pl_u64 address,
+                                pl_u32 bytes, pl_u32 access);
 /* Preflight WRITE[|STACK|ALIGNED16] over 1..512 bytes, pin at most two
  * physical fragments, without reading or copying payload. Canonical range,
  * alignment and all page permissions precede the first output store.

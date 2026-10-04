@@ -469,6 +469,18 @@ machine_result vm_write_end(pl_u32 port)
     }
     return vm_memory_write_end(&resident,port-arena_base);
 }
+machine_result vm_read_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
+{
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply);vm_memory_abort(&resident);
+    if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))
+            || bytes!=16u || (access & ~39u) || (access & 3u)!=MACHINE_MEMORY_READ)
+        return MACHINE_RESULT_ENTRY_MAP;
+    vm_mmu_context context=cpu_context();resident.write_touched=0u;
+    machine_result result=vm_mmu_read_pair(&resident,port-arena_base,&context,address,bytes,access);
+    if (resident.write_touched) execution.generation=0u;
+    return memory_result(port,result);
+}
 machine_result vm_reserve_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;

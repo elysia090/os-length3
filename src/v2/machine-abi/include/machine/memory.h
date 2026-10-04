@@ -44,6 +44,14 @@ typedef struct {
 _Static_assert(sizeof(machine_memory_pair_port) == 56u, "pair port ABI extent");
 _Static_assert(offsetof(machine_memory_pair_port, high) == 48u, "pair high word ABI");
 
+/* machine.read_pair(port,address,16,READ[|STACK|ALIGNED16]) -> result:
+ * complete read-only preflight publishes scalar.value/high only on success.
+ * Unaligned records may cross two pages; faults/waits leave both words and
+ * CPU/payload unchanged. There is no retained RMW reservation or opcode.
+ * The same private pair-port extent applies to generated register SIMD cuts
+ * only when they have a memory operand; register-only cuts use the scalar
+ * fault port. Architectural paging A/D effects are not rolled back. */
+
 /* machine.reserve_pair(port,address,16,READ|WRITE[|STACK]) -> result:
  * validates a 16-byte aligned range, supplies scalar.value/high and retains
  * its single reservation. machine.commit_pair(port,low,high) -> result:

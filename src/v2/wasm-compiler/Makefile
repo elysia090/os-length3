@@ -18,6 +18,14 @@ SOURCES += src/lower-paired-exchange.c
 SOURCES += src/lower-fxsave.c
 SOURCES += src/lower-double-shift.c
 SOURCES += src/lower-mxcsr.c
+SOURCES += src/lower-vector.c
+
+.PHONY: vector-transfer-check
+check: vector-transfer-check
+vector-transfer-check: $(BUILD)/vector-transfer-check
+	$(BUILD)/vector-transfer-check
+$(BUILD)/vector-transfer-check: check/vector-transfer.c check/native-vector.S check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/vector-transfer.c check/native-vector.S check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: mxcsr-check
 check: mxcsr-check

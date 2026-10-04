@@ -51,6 +51,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
     reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,
+    read_pair:vm.vm_read_pair,
     write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,write_end:vm.vm_write_end,
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
     software_interrupt:vm.vm_software_interrupt,

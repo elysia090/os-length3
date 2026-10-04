@@ -1,4 +1,22 @@
-# Remaining work — 2026-10-04
+# Remaining work — 2026-10-05
+
+Latest independent root-image startup crosses MOVDQU/MOVDQA and ends at
+common grammar -102 for `movd %ecx,%xmm15` (`66 44 0f 6e f9`),
+0xffffffff81204dc2: 160,961,519 retirements / 86,837,554 admissions.
+Decompression remains identical; PID 1, release-root mount and shell remain
+unverified. No retained browser Worker is restarted or observed through a
+policy workaround. Next: general MOVD/MOVQ scalar transfer, native reds first.
+
+Legacy 128-bit transfers now pass 4,096 unchanged native CPU/RAM observations,
+32 exact cold emissions and precise fault/wait/control/alias comparisons.
+The final generic C pair read has no 16-byte intermediate output image;
+full Linux VM/compiler checks, scoped sanitizers, MXCSR and image regressions
+pass. The one-million-admission checkpoint keeps 31 non-size observations.
+Added code increases VM/compiler sizes; no boot speedup or distribution-size
+reduction is claimed. See [SIMD evidence](../vm/check/browser/evidence/2026-10-05-vector.md).
+The new measured maximum remains 15,186,213 engine constructions and
+15,185,466 quota evictions. The strict CALL and Windows RTC oracle reds remain
+open. The following entries are historical checkpoints, not current acceptance.
 
 Latest **independent Node** extended startup ends at common grammar -102 for
 `movdqu (%rdi),%xmm0` (`f3 0f 6f 07`), 0xffffffff81204da1, after

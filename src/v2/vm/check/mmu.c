@@ -51,6 +51,58 @@ static void expect_fault(machine_result result, pl_u64 address, pl_u32 vector, p
 
 int main(void)
 {
+    /* Read-only 128-bit operands have the same complete preflight, without
+     * the aligned RMW pair's write rights or retained reservation. */
+    for (pl_u32 mode=0u;mode<8u;++mode) {
+        vm_mmu_context cpu=context();reset(base);
+        pl_u8 record[16];memset(record,0xa5,sizeof record);
+        pl_u64 address=base+(mode==0u?1u:mode>=2u && mode<=4u?4088u:0u);
+        pl_u32 flags=1u|(mode==0u || mode==5u || mode==6u?VM_MMU_ALIGNED16:0u);
+        if(mode<2u)put(entries[3],0u);
+        if(mode==2u)put(entries[3]+8u,0u);
+        if(mode==3u)pages[5].kind=VM_MEMORY_DEFERRED;
+        if(mode==5u)put(entries[3],0x8005u);
+        if(mode==7u)put(port,8u);
+        for(pl_u32 i=0u;i<8192u;++i)arena[28672u+i]=(pl_u8)(i*37u);
+        memcpy(saved,arena,sizeof arena);
+        machine_result result=vm_mmu_read_record(&memory,port,&cpu,address,mode==6u?8u:16u,flags,record);
+        if(mode==0u)expect_fault(result,address,13u,0u);
+        else if(mode==1u)expect_fault(result,address,14u,0u);
+        else if(mode==2u)expect_fault(result,base+4096u,14u,0u);
+        else if(mode==3u)EXPECT(result==MACHINE_RESULT_BARRIER);
+        else if(mode==6u)EXPECT(result==MACHINE_RESULT_ENTRY_MAP);
+        else if(mode==7u)EXPECT(result==MACHINE_RESULT_STALE_GENERATION);
+        else {EXPECT(!result);EXPECT(!memcmp(record,arena+28672u+(pl_u32)(address-base),16u));}
+        if(result)for(pl_u32 i=0u;i<16u;++i)EXPECT(record[i]==0xa5u);
+        EXPECT(!memory.reservation.parts && !memcmp(saved+28672u,arena+28672u,8192u));
+        if(mode==0u || mode==6u || mode==7u)EXPECT(!memcmp(saved+8192u,arena+8192u,16384u));
+    }
+    /* Every possible crossing split derives the same two words without a
+     * temporary payload. Poisoned outputs survive a late fault/wait. */
+    for (pl_u32 split=0u;split<16u;++split)for(pl_u32 mode=0u;mode<4u;++mode) {
+        vm_mmu_context cpu=context();reset(base);
+        pl_u64 address=base+4096u-split;
+        for(pl_u32 i=0u;i<8192u;++i)arena[28672u+i]=(pl_u8)(i*91u+split);
+        put(port+8u,0x198abf6523e78621ull);put(port+48u,0x814fe24657319856ull);
+        if(mode==1u)put(entries[3]+8u,0u);
+        if(mode==2u)pages[5].kind=VM_MEMORY_DEFERRED;
+        if(mode==3u)put(port,8u);
+        memcpy(saved,arena,sizeof arena);
+        machine_result result=vm_mmu_read_pair(&memory,port,&cpu,address,16u,1u);
+        if(mode==1u)expect_fault(result,base+4096u,14u,0u);
+        else if(mode==2u)EXPECT(result==MACHINE_RESULT_BARRIER);
+        else if(mode==3u)EXPECT(result==MACHINE_RESULT_STALE_GENERATION);
+        else {
+            EXPECT(!result);pl_u64 low=0u,high=0u;
+            for(pl_u32 i=0u;i<8u;++i) {
+                low|=(pl_u64)arena[32768u-split+i]<<(i*8u);
+                high|=(pl_u64)arena[32776u-split+i]<<(i*8u);
+            }
+            EXPECT(get(port+8u)==low && get(port+48u)==high);
+        }
+        if(result)EXPECT(get(port+8u)==0x198abf6523e78621ull && get(port+48u)==0x814fe24657319856ull);
+        EXPECT(!memory.reservation.parts && !memcmp(saved+28672u,arena+28672u,8192u));
+    }
     /* A wide record is one reservation, not two visible scalar transfers.
      * Misalignment wins over absent/readonly pages, before a walk sets A/D.
      * A failed reserve leaves the private sixteen-byte output unchanged. */

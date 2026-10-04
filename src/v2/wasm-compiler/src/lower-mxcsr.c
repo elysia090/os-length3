@@ -36,12 +36,7 @@ void cut_lower_mxcsr(cut_lowering *cut,const pl_x86_instruction *instruction)
     const pl_x86_memory *address=&instruction->operands[0].value.memory;
     /* SSE is fixed by the CPU profile. #UD precedes #NM and operand access;
      * OSFXSR=0 is not the implementation-dependent FXSAVE case. */
-    cut_load(cut,offsetof(machine_state,cr0));cut_const(cut,4u);cut_op(cut,0x83u);
-    cut_op(cut,0x50u);cut_op(cut,0x45u);
-    cut_load(cut,offsetof(machine_state,cr4));cut_const(cut,512u);cut_op(cut,0x83u);
-    cut_op(cut,0x50u);cut_op(cut,0x72u);fault_if(cut,6u);
-    cut_load(cut,offsetof(machine_state,cr0));cut_const(cut,8u);cut_op(cut,0x83u);
-    cut_op(cut,0x50u);cut_op(cut,0x45u);fault_if(cut,7u);
+    cut_sse_guard(cut);
     cut_effective_address(cut,instruction,address);cut_set(cut,CUT_ADDRESS);
     cut->report.memory_access=store?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
     if(address->segment.class_id==PL_X86_REGISTER_SEGMENT && address->segment.index==2u)
