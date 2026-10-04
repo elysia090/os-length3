@@ -38,20 +38,27 @@ full CPU/output comparisons, 220 fault models, 32 wait/retry observations,
 core ASan/UBSan and scoped compiler sanitizers pass. Native observations use
 the independent reference build VM, not a physical-CPU exception guarantee.
 
-Actual browser passes FXSAVE and prints `x86/fpu: x87 FPU will use FXSAVE`.
-The new common-compiler gate is INT3 (`CC`) at 0xffffffff8140449f:
-138,912,896 retired / 70,605,054 admissions, 5,437 Linux console bytes,
-445 IRQs. Counts differ with clock calibration and are not a boot percentage
-or speed comparison. HLT wake still needs work. PID 1/shell and the full
-goal remain red. Native bundle and human UI remain unchanged.
+Actual browser passes FXSAVE and INT3, entering Linux's own vector-3 handler
+at 0xffffffff810009a0. Software trap delivery now shares the 168-byte C
+frame frontier: next RIP/RF=0/no error code, one retirement only after
+successful delivery, original CPU on wait/fault, no completed-store replay.
+All 128 independent system frames/IRETQ/RF cases include 32 previously
+excluded #BP observations. Eight native/cold emission forms, 1,024 full
+CPU/frame models, 64 waits/retries, 96 delivery faults and 56 entry refusals
+pass, with full product/VM sanitizer and scoped compiler sanitizer checks.
+The next common-compiler gate is `pushq 40(%rsp)` (`ff 74 24 28`) at
+0xffffffff810009ad: 139,017,616 retired / 70,678,949 admissions, 5,437 Linux
+console bytes, 509 IRQs. Counts differ with clock calibration and are not a
+boot percentage or speed comparison. HLT wake still needs work. PID 1/shell
+and the full goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Admit INT3 through the common compiler and #BP delivery: distinguish trap
-   continuation/retirement/stacked flags from a fault, validate independent
-   native/system observations, then enter Linux's own vector-3 handler. No
-   opcode skip, forced return, instruction-counter patch or Linux-function
-   special case. Other FPU-memory cuts need independent observations too.
+1. Admit memory-source PUSH through ordered read/stack-write SSA: the source
+   observes old RSP before decrement; source/destination faults and residency
+   waits publish no CPU/retirement. Validate independent native observations
+   and retries through the same C MMU, then continue the actual #BP handler.
+   No opcode skip, forced return, counter patch or Linux-function special case.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -64,7 +71,7 @@ stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
 engine construction and admission (22,509.3 ms) now dominate; cold emission
 and 7.47 GB cumulative source copying remain material. This is not shell time.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-fxsave.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-software-interrupt.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

@@ -17,6 +17,13 @@ SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 SOURCES += src/lower-paired-exchange.c
 SOURCES += src/lower-fxsave.c
 
+.PHONY: software-interrupt-check
+check: software-interrupt-check
+software-interrupt-check: $(BUILD)/software-interrupt-check
+	$(BUILD)/software-interrupt-check
+$(BUILD)/software-interrupt-check: check/software-interrupt.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
 .PHONY: fxsave-check
 check: fxsave-check
 fxsave-check: $(BUILD)/fxsave-check $(BUILD)/fxsave-observe

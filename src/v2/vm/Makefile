@@ -16,6 +16,7 @@ WASM_FLAGS += -Wl,--export=vm_reserve_pair,--export=vm_commit_pair
 WASM_FLAGS += -Wl,--export=vm_write_begin,--export=vm_write_word,--export=vm_write_end
 WASM_FLAGS += -Wl,--export=vm_control,--export=vm_code,--export=vm_grow,--export=vm_page_prepare,--export=vm_page_commit,--export=vm_page_count
 WASM_FLAGS += -Wl,--export=vm_fault,--export=vm_iret,--export=vm_msr
+WASM_FLAGS += -Wl,--export=vm_software_interrupt
 WASM_FLAGS += -Wl,--export=vm_debug
 WASM_FLAGS += -Wl,--export=vm_flag,--export=vm_boundary
 WASM_FLAGS += -Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit,--export=vm_rtc_start,--export=vm_console_commit

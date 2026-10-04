@@ -39,26 +39,26 @@ static void reset(pl_u64 rsp, pl_u64 rip, pl_u64 flags, pl_u32 vector, pl_u32 ga
 }
 static void check_case(const pl_u64 *row)
 {
-    pl_u32 kind=(pl_u32)row[0]>>5u, vector=kind==0u?14u:kind==1u?6u:13u;
-    if(kind==3u)return; /* INT3 is a trap, not the pending-fault API. */
-    pl_u32 gate=0x8eu+((pl_u32)row[0]>>4u&1u), first=kind==1u?0u:1u;
+    pl_u32 kind=(pl_u32)row[0]>>5u, vector=kind==0u?14u:kind==1u?6u:kind==3u?3u:13u;
+    pl_u32 gate=0x8eu+((pl_u32)row[0]>>4u&1u), first=kind==1u||kind==3u?0u:1u;
     pl_u64 rip=row[6u+first];
-    reset(row[1],rip,row[2],vector,gate);
-    EXPECT(!vm_fault_enter(&memory,0u,&cpu,&segments,&delivery));
+    reset(row[1],rip-(kind==3u?1u:0u),row[2],vector,gate);
+    EXPECT(!(kind==3u ? vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,rip)
+                       : vm_fault_enter(&memory,0u,&cpu,&segments,&delivery)));
     EXPECT(cpu.registers[4]==row[3] && cpu.rflags==row[4]);
     EXPECT(cpu.rip==0x9000u && cpu.system[MACHINE_SYSTEM_CS]==8u && cpu.retired==123u);
     EXPECT(cpu.system[MACHINE_SYSTEM_CR2]==row[12]);
-    pl_u32 words=kind==1u?5u:6u;
+    pl_u32 words=first?6u:5u;
     for(pl_u32 i=0u;i<words;++i)EXPECT(get(stack_offset(cpu.registers[4])+i*8u)==row[6u+i]);
     if(first)cpu.registers[4]+=8u;
     /* The oracle's #UD/#GP handler advances RIP; #PF retries the same store. */
-    if(kind)put(stack_offset(cpu.registers[4]),rip+2u);
+    if(kind==1u||kind==2u)put(stack_offset(cpu.registers[4]),rip+2u);
     EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
-    EXPECT(cpu.registers[4]==row[14] && cpu.rflags==(row[13]|0x10000u));
+    EXPECT(cpu.registers[4]==row[14] && cpu.rflags==(row[13]|(kind==3u?0u:0x10000u)));
     /* A successful ordinary instruction clears restored RF; IRETQ itself
      * does not. The system oracle records after its retried/skipped cut. */
     EXPECT((cpu.rflags&~0x10000ull)==row[13]);
-    EXPECT(cpu.rip==rip+(kind?2u:0u) && cpu.retired==123u);
+    EXPECT(cpu.rip==rip+((kind==1u||kind==2u)?2u:0u) && cpu.retired==123u);
     ++cases;
 }
 int main(int argc,char **argv)
@@ -73,7 +73,7 @@ int main(int argc,char **argv)
             if (i!=15u) { fclose(input);return 2; }
             check_case(row); ++rows;
         }
-        fclose(input);EXPECT(rows==128u && cases==96u);
+        fclose(input);EXPECT(rows==128u && cases==128u);
     }else{
         /* Kernel-shaped successful entry/return and exact pending failures. */
         for(pl_u32 gate=0x8eu;gate<=0x8fu;++gate)for(pl_u32 alignment=0u;alignment<16u;++alignment){
@@ -134,7 +134,7 @@ int main(int argc,char **argv)
         EXPECT(!vm_pic_set_irq(&pic,0u,1u));
         pages[4].kind=VM_MEMORY_DEFERRED;
         EXPECT(vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic)==2u);
-        EXPECT(delivery.external && delivery.stage==1u && delivery.words==5u);
+        EXPECT(delivery.kind==VM_EVENT_INTERRUPT && delivery.stage==1u && delivery.words==5u);
         EXPECT(pic.chip[0].service==1u && !(pic.chip[0].request&1u));
         vm_pic accepted=pic;
         EXPECT(vm_fault_enter(&memory,0u,&cpu,&segments,&delivery)==6u && delivery.stage==1u);
@@ -161,14 +161,57 @@ int main(int argc,char **argv)
     EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));value=1u;
     EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));EXPECT(!vm_pic_set_irq(&pic,0u,1u));
     EXPECT(vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic)==2u);
-    EXPECT(delivery.external && delivery.stage==4u && delivery.pushed==2u);
+    EXPECT(delivery.kind==VM_EVENT_INTERRUPT && delivery.stage==4u && delivery.pushed==2u);
     EXPECT(get(20480u)==before.registers[4] && cpu.rip==before.rip && cpu.registers[4]==before.registers[4]);
     vm_pic accepted=pic;
     EXPECT(!vm_memory_append(&memory,0x107000u,(pl_u32)memory.next_offset,3u));
     EXPECT(!vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic));
     EXPECT(!memcmp(&pic,&accepted,sizeof pic) && !delivery.stage && cpu.rip==0x9000u);
     EXPECT(cpu.registers[4]==0x107fe8u && cpu.retired==123u);
+    unsigned software=0u;
+    for(pl_u32 gate=0x8eu;gate<=0x8fu;++gate)for(pl_u32 alignment=0u;alignment<16u;++alignment)
+    for(pl_u32 rf=0u;rf<2u;++rf) {
+        reset(0x108f00u-alignment,0x1000204u,0x603u|((pl_u64)rf<<16u),3u,gate);
+        EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,before.rip+1u));
+        EXPECT(cpu.retired==123u && cpu.rip==0x9000u && !delivery.stage);
+        EXPECT(cpu.registers[4]==((before.registers[4]&~15ull)-40u));
+        EXPECT(get(stack_offset(cpu.registers[4]))==before.rip+1u);
+        EXPECT(get(stack_offset(cpu.registers[4])+16u)==(before.rflags&~0x10000ull));
+        EXPECT(cpu.rflags==(gate==0x8eu?0x403u:0x603u));
+        EXPECT(cpu.system[MACHINE_SYSTEM_CR2]==before.system[MACHINE_SYSTEM_CR2]);
+        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
+        EXPECT(cpu.rip==before.rip+1u && cpu.registers[4]==before.registers[4] && cpu.rflags==0x603u);
+        ++software;
+    }
+    /* Descriptor or frame failure still belongs to the source instruction;
+     * it has not been retired or replaced with a successful #BP continuation. */
+    for(pl_u32 mode=0u;mode<8u;++mode) {
+        reset(0x108f00u,0x1000204u,0x10603u,3u,0x8fu);
+        if(mode==0u)cpu.system[MACHINE_SYSTEM_IDTR_LIMIT]=47u;
+        if(mode==1u)arena[20480u+3u*16u+5u]&=0x7fu;
+        if(mode==2u)arena[20480u+3u*16u+5u]=0x8du;
+        if(mode==3u)put(20480u+3u*16u,0x9000u|24ull<<16u|0x8full<<40u);
+        if(mode==4u)put(16384u+8u,0x00af1b000000ffffull);
+        if(mode==5u)cpu.registers[4]=0x800000000000ull;
+        if(mode==6u)arena[20480u+3u*16u+4u]=1u;
+        if(mode==7u)cpu.system[MACHINE_SYSTEM_CS]=11u;
+        before=cpu;
+        EXPECT(vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,before.rip+1u)!=0u);
+        EXPECT(!memcmp(&before,&cpu,sizeof cpu) && !delivery.stage);
+    }
+    reset(0x108010u,0x1000204u,0x10603u,3u,0x8fu);
+    put(20480u,get(20480u+48u));cpu.system[MACHINE_SYSTEM_IDTR_BASE]=0x4fd0u;
+    pages[5].offset=20480u;
+    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,7u,branches,9u));before=cpu;
+    EXPECT(vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,before.rip+1u)==2u);
+    EXPECT(delivery.kind==VM_EVENT_SOFTWARE && delivery.stage==4u && delivery.pushed==2u);
+    EXPECT(!memcmp(&before,&cpu,sizeof cpu) && get(20480u)==before.registers[4]);
+    EXPECT(vm_fault_enter(&memory,0u,&cpu,&segments,&delivery)==6u && delivery.pushed==2u);
+    EXPECT(!vm_memory_append(&memory,0x107000u,(pl_u32)memory.next_offset,3u));
+    EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,before.rip+1u));
+    EXPECT(!delivery.stage && cpu.rip==0x9000u && cpu.registers[4]==0x107fe8u && cpu.retired==123u);
+    EXPECT(get((pl_u32)memory.next_offset-4096u+4072u)==before.rip+1u);
     if(failures)return 1;
-    printf("Long-mode CPL0 fault/IRETQ: %u cases; PIC IRQ/retry/return: %u; TSS/IST/outer/secondary escalation NOT tested\n",cases,interrupts);
+    printf("Long-mode CPL0 fault/trap/IRETQ: %u cases; PIC IRQ/retry/return: %u; software #BP models: %u; TSS/IST/outer/secondary escalation NOT tested\n",cases,interrupts,software);
     return 0;
 }

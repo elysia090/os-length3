@@ -2,6 +2,8 @@
 #define VM_EXCEPTION_H
 #include <vm/segments.h>
 #include <vm/pic.h>
+#include <machine/exception.h>
+enum vm_event_kind { VM_EVENT_FAULT, VM_EVENT_INTERRUPT, VM_EVENT_SOFTWARE };
 
 /* One serialized architectural event, not a CPU snapshot. Completed frame
  * stores must not be replayed after a residency wait: they can alias the IDT,
@@ -10,7 +12,7 @@
 typedef struct {
     pl_u64 generation, context[5], frame[6], target, stack, descriptor_address;
     machine_segment_cache code;
-    pl_u32 stage, pushed, words, selector, gate_type, descriptor_access, external;
+    pl_u32 stage, pushed, words, selector, gate_type, descriptor_access, kind;
 } vm_fault_delivery;
 _Static_assert(sizeof(vm_fault_delivery) == 168u, "bounded event frontier extent");
 
@@ -34,6 +36,15 @@ machine_result vm_fault_enter(vm_memory *physical, pl_u32 port_offset,
  * unsupported stack/privilege changes. Success does not retire an instruction. */
 machine_result vm_interrupt_enter(vm_memory *physical, pl_u32 port_offset,
     machine_state *state, machine_segments *segments, vm_fault_delivery *delivery, vm_pic *pic);
+
+/* Synchronous software exception delivery, currently #BP at CPL0/IST0.
+ * next_rip is the architectural return coordinate, not a handler address.
+ * RF is saved as zero; no error code is pushed. Delivery failure/wait leaves
+ * the source RIP/retirement unchanged; the caller retires after success.
+ * Retry must use the same vector/return coordinate and serialized frontier. */
+machine_result vm_software_interrupt_enter(vm_memory *physical, pl_u32 port_offset,
+    machine_state *state, machine_segments *segments, vm_fault_delivery *delivery,
+    pl_u32 vector, pl_u64 next_rip);
 
 /* IRETQ to CPL0 64-bit code, including unconditional SS:RSP restoration.
  * Outer returns, compatibility targets and CET refuse admission. Caller must

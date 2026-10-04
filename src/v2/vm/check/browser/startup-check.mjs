@@ -42,6 +42,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,
     write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,write_end:vm.vm_write_end,
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
+    software_interrupt:vm.vm_software_interrupt,
     io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}},
     {maximumEntries:1024,maximumBytes:262144});
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;

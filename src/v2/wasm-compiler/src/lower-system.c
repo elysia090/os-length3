@@ -2,11 +2,20 @@
 #include "cut-internal.h"
 #include <x86/profile.h>
 #include <machine/msr.h>
+#include <machine/exception.h>
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     int io = cut_io_supported(instruction);
     if (io) return io;
     if (cut_fxsave_supported(instruction)) return CUT_SYSTEM_FXSAVE;
+    if (instruction->status==PL_X86_DECODE_VALID
+            && instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT
+            && instruction->machine_argument==MACHINE_EXCEPTION_BREAKPOINT
+            && instruction->trap_vector==MACHINE_EXCEPTION_BREAKPOINT
+            && !instruction->visible_operand_count && instruction->flow==PL_X86_FLOW_FAULT
+            && (instruction->flags&PL_X86_INSTRUCTION_TRAP_AFTER)
+            && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED)))
+        return CUT_SYSTEM_SOFTWARE_INTERRUPT;
     if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_X87
             && instruction->machine_argument==PL_X86_X87_INITIALIZE
@@ -300,6 +309,18 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT) {
+        /* C owns descriptor checks and the pinned frame; retirement follows
+         * successful delivery. A wait or delivery fault keeps the source RIP. */
+        cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
+        cut_const(cut,instruction->fallthrough);
+        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
+        cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);
+        cut->report.flags_written=1u;
+        return;
+    }
     if (cut_io_supported(instruction)) { cut_lower_io(cut,instruction); return; }
     if (cut_fxsave_supported(instruction)) { cut_lower_fxsave(cut,instruction); return; }
     if (instruction->machine_operation==PL_X86_MACHINE_X87

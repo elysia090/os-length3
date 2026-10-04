@@ -110,7 +110,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->report.boundary = WASM_CUT_CONTROL;
                     plan->report.branch_target = instruction.target;
                 }
-                if (system == CUT_SYSTEM_FAR_RETURN || system == CUT_SYSTEM_INTERRUPT_RETURN)
+                if (system == CUT_SYSTEM_FAR_RETURN || system == CUT_SYSTEM_INTERRUPT_RETURN
+                        || system == CUT_SYSTEM_SOFTWARE_INTERRUPT)
                     plan->report.boundary = WASM_CUT_CONTROL;
                 rip = instruction.fallthrough;
             }

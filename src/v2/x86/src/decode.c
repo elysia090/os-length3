@@ -2158,6 +2158,10 @@ static void classify_machine_operation(
             out->machine_argument = out->operands[0].value.immediate;
         }
         break;
+    case ZYDIS_MNEMONIC_INT3:
+        out->machine_operation = PL_X86_MACHINE_SOFTWARE_INTERRUPT;
+        out->machine_argument = 3u;
+        break;
     case ZYDIS_MNEMONIC_FWAIT:
         out->machine_operation = PL_X86_MACHINE_X87;
         out->machine_argument = 0u;

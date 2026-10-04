@@ -612,11 +612,25 @@ machine_result vm_fault(pl_u32 port)
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (!segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (!segments_offset || !private_port(port)
+            || (delivery.stage && delivery.kind!=VM_EVENT_FAULT)) return MACHINE_RESULT_ENTRY_MAP;
     vm_execution_close(&execution);
     resident.write_touched = 0u;
     machine_result result = vm_fault_enter(&resident,port - arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,&delivery);
+    return memory_result(port,result);
+}
+/* Generic software-exception boundary; no opcode or handler address enters
+ * the VM. The emitted caller publishes retirement after successful delivery. */
+machine_result vm_software_interrupt(pl_u32 port, pl_u32 vector, pl_u64 next_rip)
+{
+    if (table_frontier.stage || !segments_offset || !private_port(port)
+            || (delivery.stage && delivery.kind!=VM_EVENT_SOFTWARE)) return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply); vm_memory_abort(&resident); resident.write_touched=0u;
+    machine_result result=vm_software_interrupt_enter(&resident,port-arena_base,
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,
+        &delivery,vector,next_rip);
+    if (!result || resident.write_touched) execution.generation=0u;
     return memory_result(port,result);
 }
 machine_result vm_iret(pl_u32 port)
@@ -729,7 +743,10 @@ static machine_result pending_boundary(pl_u32 port)
 {
     if (table_frontier.stage || clock_boundary_pending() || !private_port(port)
             || (vm_console_pending(&console_owner) && !execution.continuation.slot)) return MACHINE_RESULT_ENTRY_MAP;
-    if (delivery.stage) return delivery.external ? interrupt_boundary(port) : MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage) {
+        if (delivery.kind==VM_EVENT_INTERRUPT) return interrupt_boundary(port);
+        return delivery.kind==VM_EVENT_SOFTWARE && execution.continuation.slot ? 0u : MACHINE_RESULT_ENTRY_MAP;
+    }
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
     if (!execution.continuation.slot && (state->rflags&0x200u) && vm_pic_pending(&pic)
             && (!segments_offset || !((const machine_segments *)(uintptr_t)segments_offset)->interrupt_shadow))
