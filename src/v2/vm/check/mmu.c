@@ -51,6 +51,65 @@ static void expect_fault(machine_result result, pl_u64 address, pl_u32 vector, p
 
 int main(void)
 {
+    /* A wide record is one reservation, not two visible scalar transfers.
+     * Misalignment wins over absent/readonly pages, before a walk sets A/D.
+     * A failed reserve leaves the private sixteen-byte output unchanged. */
+    for (pl_u32 mode=0u;mode<8u;++mode) {
+        vm_mmu_context pair_cpu=context(); reset(base);
+        pl_u8 record[16],original[16]; memset(record,0xa5,sizeof record); memcpy(original,record,sizeof record);
+        pl_u64 address=base+(mode<3u ? 1u : mode==3u ? 4088u : 0u);
+        if (mode==1u || mode==3u) put(entries[3],0u);
+        if (mode==2u) put(entries[3],0x8005u);
+        if (mode==4u) pages[4].kind=VM_MEMORY_DEFERRED;
+        if (mode==5u) put(port,8u);
+        if (mode==6u) pair_cpu.cr4|=1ull<<12u;
+        memcpy(saved,arena,sizeof arena);
+        machine_result pair=vm_mmu_reserve_record_access(&memory,port,&pair_cpu,address,16u,
+            MACHINE_MEMORY_READ|MACHINE_MEMORY_WRITE|VM_MMU_ALIGNED16,record);
+        if (mode<4u) {
+            expect_fault(pair,address,13u,0u);
+            memcpy(saved+port+16u,arena+port+16u,16u);
+            EXPECT(!memcmp(saved,arena,sizeof arena));
+        } else if (mode==4u) EXPECT(pair==MACHINE_RESULT_BARRIER);
+        else if (mode==5u) EXPECT(pair==MACHINE_RESULT_STALE_GENERATION);
+        else if (mode==6u) EXPECT(pair==MACHINE_RESULT_ENTRY_MAP);
+        else {
+            EXPECT(!pair && memory.reservation.parts==1u && memory.reservation.lengths[0]==16u);
+            memset(record,0x7e,sizeof record);
+            EXPECT(!vm_memory_commit_record(&memory,port,record,16u));
+            EXPECT(!memcmp(arena+28672u,record,16u));
+            EXPECT(vm_memory_commit_record(&memory,port,original,16u)==MACHINE_RESULT_ENTRY_MAP);
+        }
+        if (mode<7u) {
+            EXPECT(!memcmp(record,original,sizeof record));
+            EXPECT(!memory.reservation.parts);
+            EXPECT(vm_memory_commit_record(&memory,port,record,16u)==(mode==5u ? MACHINE_RESULT_STALE_GENERATION : MACHINE_RESULT_ENTRY_MAP));
+        }
+    }
+    for (pl_u32 stack=0u;stack<2u;++stack) {
+        vm_mmu_context pair_cpu=context(); reset(base); pl_u8 record[16]; memset(record,0xa5,sizeof record);
+        pl_u64 address=0x800000000000ull;
+        expect_fault(vm_mmu_reserve_record_access(&memory,port,&pair_cpu,address,16u,
+            3u|VM_MMU_ALIGNED16|(stack ? MACHINE_MEMORY_STACK : 0u),record),address,stack ? 12u : 13u,0u);
+        for (pl_u32 i=0u;i<16u;++i) EXPECT(record[i]==0xa5u);
+    }
+    /* General private records may cross pages; only the aligned public pair
+     * import forbids that geometry. No first fragment may become visible if
+     * the second page faults or waits; successful commit consumes both once. */
+    for (pl_u32 mode=0u;mode<3u;++mode) {
+        vm_mmu_context pair_cpu=context(); reset(base); pl_u8 record[16]; memset(record,0xa5,sizeof record);
+        if (!mode) put(entries[3]+8u,0u);
+        if (mode==1u) pages[5].kind=VM_MEMORY_DEFERRED;
+        machine_result pair=vm_mmu_reserve_record_access(&memory,port,&pair_cpu,base+4088u,16u,7u,record);
+        if (!mode) expect_fault(pair,base+4096u,14u,2u);
+        else if (mode==1u) EXPECT(pair==MACHINE_RESULT_BARRIER);
+        else {
+            EXPECT(!pair && memory.reservation.parts==2u);
+            memset(record,0x7e,sizeof record); EXPECT(!vm_memory_commit_record(&memory,port,record,16u));
+            EXPECT(!memcmp(arena+28672u+4088u,record,8u) && !memcmp(arena+32768u,record+8u,8u));
+        }
+        if (mode<2u) { for (pl_u32 i=0u;i<16u;++i) EXPECT(record[i]==0xa5u); EXPECT(!memory.reservation.parts); }
+    }
     /* An executable linear page is not a physical RAM offset. Borrow the
      * C-translated, non-identity page; never mutate output on a rejected view. */
     vm_mmu_context code_cpu = context(); reset(base);

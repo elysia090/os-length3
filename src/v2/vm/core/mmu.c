@@ -120,7 +120,8 @@ static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
             || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > memory->reserved_bytes
             || !bytes || bytes > 16u || !ready
-            || (access & ~15u) || !(access & 3u)
+            || (access & ~47u) || !(access & 3u)
+            || ((access & VM_MMU_ALIGNED16) && bytes != 16u)
             || ((access & VM_MMU_EXECUTE) && (access & (MACHINE_MEMORY_WRITE | MACHINE_MEMORY_STACK))))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     pl_u8 *port = memory->bytes + port_offset;
@@ -130,6 +131,8 @@ static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
             || address > ~0ull - (bytes - 1u)
             || ((address + bytes - 1u) >> 47u != 0u && (address + bytes - 1u) >> 47u != 0x1ffffu))
         return exception(port, address, access & MACHINE_MEMORY_STACK ? 12u : 13u, 0u);
+    if ((access & VM_MMU_ALIGNED16) && (address & 15u))
+        return exception(port,address,13u,0u);
     *ready = (vm_memory_reservation){ .generation = memory->generation, .port = port_offset };
     pl_u32 consumed = 0u;
     while (consumed < bytes) {
@@ -206,11 +209,16 @@ machine_result vm_mmu_reserve(vm_memory *memory, pl_u32 port_offset,
 machine_result vm_mmu_reserve_record(vm_memory *memory, pl_u32 port_offset,
                                      const vm_mmu_context *context, pl_u64 address,
                                      pl_u32 bytes, pl_u8 *target)
+{ return vm_mmu_reserve_record_access(memory,port_offset,context,address,bytes,3u,target); }
+
+machine_result vm_mmu_reserve_record_access(vm_memory *memory, pl_u32 port_offset,
+                                            const vm_mmu_context *context, pl_u64 address,
+                                            pl_u32 bytes, pl_u32 access, pl_u8 *target)
 {
     vm_memory_abort(memory);
-    if (!target) return MACHINE_RESULT_ENTRY_MAP;
+    if (!target || (access & ~39u) || (access & 3u)!=3u) return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation ready;
-    machine_result status=preflight(memory,port_offset,context,address,bytes,3u,&ready);
+    machine_result status=preflight(memory,port_offset,context,address,bytes,access,&ready);
     if (status) return status;
     pl_u32 consumed=0u;
     for (pl_u32 i=0u;i<ready.parts;++i)

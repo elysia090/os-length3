@@ -74,6 +74,7 @@ static int canonical(pl_u64 address)
 
 pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
 {
+    if (cut_paired_exchange_supported(instruction)) return 0x40u;
     switch (instruction->operation) {
     case PL_X86_OPERATION_ADD:
     case PL_X86_OPERATION_ADD_CARRY:

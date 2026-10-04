@@ -1,4 +1,4 @@
-/* Scalar RAM transaction boundary; guest addresses never become host pointers. */
+/* Bounded RAM transaction boundary; guest addresses never become host pointers. */
 #ifndef MACHINE_MEMORY_H
 #define MACHINE_MEMORY_H
 #include <support/types.h>
@@ -31,6 +31,22 @@ _Static_assert(sizeof(machine_memory_port) == 48u, "memory port ABI extent");
 _Static_assert(offsetof(machine_memory_port, value) == 8u, "memory value ABI");
 _Static_assert(offsetof(machine_memory_port, fault_address) == 16u, "memory fault ABI");
 _Static_assert(offsetof(machine_memory_port, request_address) == 32u, "memory request ABI");
+
+/* A double-word reservation extends, never aliases, the scalar fault/request
+ * fields. Both words are private outputs of one complete read/write preflight.
+ * Nothing is published on a fault or wait. The lane is serialized and pinned
+ * through commit; this is not a shared-memory/SMP atomicity contract. */
+typedef struct {
+    machine_memory_port scalar;
+    pl_u64 high;
+} machine_memory_pair_port;
+_Static_assert(sizeof(machine_memory_pair_port) == 56u, "pair port ABI extent");
+_Static_assert(offsetof(machine_memory_pair_port, high) == 48u, "pair high word ABI");
+
+/* machine.reserve_pair(port,address,16,READ|WRITE[|STACK]) -> result:
+ * validates a 16-byte aligned range, supplies scalar.value/high and retains
+ * its single reservation. machine.commit_pair(port,low,high) -> result:
+ * consumes that entire reservation once. Neither import receives an opcode. */
 
 /* Generated memory cuts import machine.access:
  * (i32 port, i64 linear_address, i32 bytes, i32 access, i64 value) -> i64 result.

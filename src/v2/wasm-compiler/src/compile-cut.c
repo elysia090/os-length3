@@ -91,6 +91,15 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     };
     static const pl_u8 rmw_functions[] = { 1,2 };
     static const pl_u8 rmw_exports[] = { 1,3,'c','u','t',0,2 };
+    static const pl_u8 pair_type[] = {
+        3,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
+        0x60,3,0x7f,0x7e,0x7e,1,0x7e, 0x60,2,0x7f,0x7f,1,0x7e
+    };
+    static const pl_u8 pair_imports[] = {
+        3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',12,'r','e','s','e','r','v','e','_','p','a','i','r',0,0,
+        7,'m','a','c','h','i','n','e',11,'c','o','m','m','i','t','_','p','a','i','r',0,1
+    };
     static const pl_u8 table_type[] = {
         2,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e, 0x60,2,0x7f,0x7f,1,0x7e
     };
@@ -136,7 +145,12 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         7,'m','a','c','h','i','n','e',4,'t','i','m','e',0,0
     };
     raw(writer, header, sizeof header);
-    if (boundary==11) {
+    if (boundary==13) {
+        section(writer,1u,sizeof pair_type); raw(writer,pair_type,sizeof pair_type);
+        section(writer,2u,sizeof pair_imports); raw(writer,pair_imports,sizeof pair_imports);
+        section(writer,3u,sizeof rmw_functions); raw(writer,rmw_functions,sizeof rmw_functions);
+        section(writer,7u,sizeof rmw_exports); raw(writer,rmw_exports,sizeof rmw_exports);
+    } else if (boundary==11) {
         section(writer,1u,sizeof loaded_segment_type); raw(writer,loaded_segment_type,sizeof loaded_segment_type);
         section(writer,2u,sizeof loaded_segment_imports); raw(writer,loaded_segment_imports,sizeof loaded_segment_imports);
         section(writer,3u,sizeof rmw_functions); raw(writer,rmw_functions,sizeof rmw_functions);
@@ -217,6 +231,7 @@ static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
     if (plan->system_cut == CUT_SYSTEM_FAR_RETURN) return 5;
     if (plan->system_cut == CUT_SYSTEM_TABLE) return 4;
     if (plan->system_cut == CUT_SYSTEM_SEGMENT) return report->memory_bytes ? 11 : 2;
+    if (report->memory_bytes==16u && (report->memory_access & 3u)==3u) return 13;
     return (report->memory_access & 3u) == 3u ? 3 : report->memory_bytes != 0u;
 }
 

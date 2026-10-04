@@ -13,6 +13,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-repeat.c src/lower-branch.c
+SOURCES += src/lower-paired-exchange.c
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
@@ -143,6 +144,21 @@ $(BUILD)/memory-divide-check: check/memory-divide.c check/native-stack.S $(BUILD
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 check: $(BUILD)/memory-divide-check
+
+$(BUILD)/paired-exchange-check: check/paired-exchange.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/paired-exchange.c check/native-stack.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: paired-exchange-check
+check: paired-exchange-check
+paired-exchange-check: $(BUILD)/paired-exchange-check
+	$(BUILD)/paired-exchange-check
+
+.PHONY: paired-exchange-fixture-check
+check: paired-exchange-fixture-check
+paired-exchange-fixture-check: all $(BUILD)/paired-exchange-check fixture-tools
+	@task_output=$$(mktemp -d); rmdir "$$task_output"; \
+		bash ../../../data/oracle/prepare-paired-exchange-cuts.sh "$$task_output" --built
 
 cut-check: all $(BUILD)/cut-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to the post-linked cut fixture\n' >&2; exit 2; }

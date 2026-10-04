@@ -175,7 +175,8 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u);
         cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        cut_const(&cut, sizeof(machine_memory_port)); cut_op(&cut, 0x7cu);
+        pl_u32 port_bytes=plan->report.memory_bytes==16u ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
+        cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu);
         cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
         cut_const(&cut, 65536u); cut_op(&cut, 0x7eu); cut_op(&cut, 0x56u); return_if(&cut);
         /* Both ranges have been validated with non-wrapping i64 arithmetic. */
@@ -184,7 +185,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
         cut_get(&cut, 0u); cut_op(&cut, 0xadu);
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        cut_const(&cut, sizeof(machine_memory_port)); cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
+        cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu); cut_op(&cut, 0x54u);
         cut_op(&cut, 0x71u); return_if(&cut);
     }
     cut_load(&cut,offsetof(machine_state,system)+(MACHINE_SYSTEM_DR0+7u)*8u);

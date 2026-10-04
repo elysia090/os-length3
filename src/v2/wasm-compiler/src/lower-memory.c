@@ -117,6 +117,7 @@ static void exchange_value(cut_lowering *cut,pl_u32 width)
 
 int cut_memory_supported(const pl_x86_instruction *instruction)
 {
+    if (cut_paired_exchange_supported(instruction)) return 1;
     int unary = unary_arithmetic(instruction->operation);
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
@@ -183,6 +184,11 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
             || operands[0].kind != PL_X86_OPERAND_REGISTER
             || !cut_gpr(&operands[0].value.reg))) return 0;
     const pl_x86_memory *address = &memory->value.memory;
+    return cut_memory_address_supported(instruction,address);
+}
+
+int cut_memory_address_supported(const pl_x86_instruction *instruction,const pl_x86_memory *address)
+{
     return (address->segment.class_id == PL_X86_REGISTER_NONE
             || (address->segment.class_id == PL_X86_REGISTER_SEGMENT && address->segment.index < 4u))
         && (address->base.class_id == PL_X86_REGISTER_NONE
@@ -196,6 +202,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
 
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (cut_paired_exchange_supported(instruction)) { cut_lower_paired_exchange(cut,instruction); return; }
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
     int unary = unary_arithmetic(instruction->operation);

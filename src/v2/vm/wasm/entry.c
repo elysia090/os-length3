@@ -406,6 +406,40 @@ machine_result vm_commit(pl_u32 port, pl_u64 value)
     if (resident.write_touched) execution.generation = 0u;
     return result;
 }
+machine_result vm_reserve_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
+{
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply); vm_memory_abort(&resident);
+    if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))
+            || bytes!=16u || (access & ~7u) || (access & 3u)!=3u) return MACHINE_RESULT_ENTRY_MAP;
+    pl_u8 record[16]; vm_mmu_context context=cpu_context();
+    resident.write_touched=0u;
+    machine_result result=vm_mmu_reserve_record_access(&resident,port-arena_base,&context,
+        address,16u,access | VM_MMU_ALIGNED16,record);
+    if (!result) {
+        pl_u8 *output=(pl_u8 *)(uintptr_t)port;
+        for (pl_u32 i=0u;i<8u;++i) {
+            output[offsetof(machine_memory_port,value)+i]=record[i];
+            output[offsetof(machine_memory_pair_port,high)+i]=record[8u+i];
+        }
+    }
+    if (resident.write_touched) execution.generation=0u;
+    return memory_result(port,result);
+}
+machine_result vm_commit_pair(pl_u32 port, pl_u64 low, pl_u64 high)
+{
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply);
+    if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))) {
+        vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP;
+    }
+    pl_u8 record[16];
+    for (pl_u32 i=0u;i<8u;++i) { record[i]=(pl_u8)(low>>(i*8u)); record[8u+i]=(pl_u8)(high>>(i*8u)); }
+    resident.write_touched=0u;
+    machine_result result=vm_memory_commit_record(&resident,port-arena_base,record,16u);
+    if (resident.write_touched) execution.generation=0u;
+    return result;
+}
 void vm_abort(void)
 {
     /* Ordinary RMW cancellation cannot undo a completed descriptor store or

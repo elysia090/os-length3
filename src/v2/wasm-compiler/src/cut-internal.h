@@ -57,6 +57,9 @@ void cut_condition(cut_lowering *cut, pl_u32 condition);
 void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruction,
                             const pl_x86_memory *memory);
 int cut_memory_supported(const pl_x86_instruction *instruction);
+int cut_memory_address_supported(const pl_x86_instruction *instruction,const pl_x86_memory *address);
+int cut_paired_exchange_supported(const pl_x86_instruction *instruction);
+void cut_lower_paired_exchange(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_access(cut_lowering *cut);
 void cut_access_value(cut_lowering *cut);

@@ -1,20 +1,18 @@
 # Remaining work — 2026-10-04
 
-Current browser checkpoint: common memory BSF/BSR/POPCNT joins the existing
-register-summary SSA after one precise C-MMU read. All 180 red entrances are
-green; 135 modules / 69,120 CPU/RAM comparisons / 61,440 protection comparisons,
-130,560 separate dispatcher comparisons and 1,108 native/cold emissions pass.
-Full parallel product checks and selected sanitizers pass. Generic tests now
-seed disabled DR7 explicitly; JMP RF success/fault semantics are no longer
-hidden by poisoned debug state. The previous common MOV DR checkpoint remains
-green; #DB delivery and active address breakpoints remain explicitly incomplete.
-Actual browser: 136,921,258 retired / 69,222,947 admissions, unchanged complete
-decompression, then -102 CMPXCHG16B [R13+0x20] at 0xffffffff8111de16.
-PID 1/shell and the full goal remain red. Next: close common double-width
-compare/exchange with exact alignment, fault ordering and single-owner atomicity,
-not scalarized visible transactions. Engine reuse is still zero despite source
+Current browser checkpoint: common CMPXCHG8B/16B uses compiled compare/publish
+SSA after one complete C-MMU record reservation. 72 forms / 18,432 native CPU/RAM
+and 18,432 protection/alignment comparisons, 56,192 dispatcher comparisons,
+36,864 RF checks, 896 waits/retries and 216 revocation checks pass. The 72 ordinary
+post-linked ELF/proof fixtures emit identical modules. Product checks and selected
+sanitizers pass. Previous scan/count and debug-register checkpoints remain green;
+#DB delivery and active address breakpoints remain explicitly incomplete.
+Actual browser: 137,071,982 retired / 69,316,535 admissions, unchanged complete
+decompression, then -102 memory XADD at 0xffffffff81050643. PID 1/shell and the
+full goal remain red. Next: join common memory XADD/XCHG to existing arithmetic
+SSA and the precise reservation/commit. Engine reuse is still zero despite source
 cache hits; that fixed cost is recorded, not relabeled as a speedup. See
-[current evidence](../vm/check/browser/evidence/2026-10-04-memory-summary.md).
+[current evidence](../vm/check/browser/evidence/2026-10-04-paired-exchange.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

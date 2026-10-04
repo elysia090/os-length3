@@ -39,6 +39,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory:compilerMemory}})).exports;
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
+    reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,
     io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}});
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;

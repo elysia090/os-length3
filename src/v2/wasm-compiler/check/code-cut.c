@@ -628,8 +628,8 @@ int main(int argc, char **argv)
     static const pl_u8 exchange_rejected[][6] = {
         {0xf0u,0x48u,0x0fu,0xb1u,0xcfu,0x90u}, /* LOCK register destination is invalid. */
         {0x64u,0x48u,0x0fu,0xb1u,0x0fu,0x90u}, /* Missing FS base. */
-        {0x48u,0x0fu,0xc7u,0x0fu,0x90u,0x90u}, /* CMPXCHG16B is a distinct pair/align contract. */
-        {0x0fu,0xc7u,0x0fu,0x90u,0x90u,0x90u}, /* CMPXCHG8B is not scalar CMPXCHG. */
+        {0x64u,0x48u,0x0fu,0xc7u,0x0fu,0x90u}, /* Wide pair still requires an owned FS base. */
+        {0x48u,0x0fu,0xc7u,0xcfu,0x90u,0x90u}, /* Pair destination must be memory. */
     };
     for (pl_u32 i=0u;i<sizeof exchange_rejected/sizeof exchange_rejected[0];++i) {
         memset(pages,0x90,sizeof pages); memcpy(pages,exchange_rejected[i],sizeof exchange_rejected[0]);

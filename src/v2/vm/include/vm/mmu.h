@@ -6,6 +6,7 @@
 enum vm_mmu_access {
     VM_MMU_EXECUTE = 8u,
     VM_MMU_PHYSICAL_REQUEST = 16u,
+    VM_MMU_ALIGNED16 = 32u,
 };
 typedef struct {
     pl_u64 cr0, cr3, cr4, efer;
@@ -48,6 +49,12 @@ machine_result vm_mmu_reserve(vm_memory *physical, pl_u32 port_offset,
 machine_result vm_mmu_reserve_record(vm_memory *physical, pl_u32 port_offset,
                                      const vm_mmu_context *context, pl_u64 address,
                                      pl_u32 bytes, pl_u8 *target);
+/* Same bounded private record, with READ|WRITE[|STACK|ALIGNED16]. Alignment
+ * faults precede page translation; ALIGNED16 is valid only for a 16-byte
+ * record. The byte-range canonicality check retains #SS for stack operands. */
+machine_result vm_mmu_reserve_record_access(vm_memory *physical, pl_u32 port_offset,
+                                            const vm_mmu_context *context, pl_u64 address,
+                                            pl_u32 bytes, pl_u32 access, pl_u8 *target);
 /* Privileged C caller only: target is a disjoint private buffer of bytes
  * (1..16), never a guest/state/directory pointer. Not a generated-code import. */
 machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,
