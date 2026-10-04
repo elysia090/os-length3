@@ -146,6 +146,14 @@ $(BUILD)/pop-memory-check: check/pop-memory.c check/native-stack.S $(BUILD)/libw
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/pop-memory.c check/native-stack.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+$(BUILD)/push-memory-check: check/push-memory.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/push-memory.c check/native-stack.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: push-memory-check
+push-memory-check: $(BUILD)/push-memory-check
+	$(BUILD)/push-memory-check
+
 $(BUILD)/extend-check: check/extend.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/extend.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
@@ -389,12 +397,13 @@ memory-summary-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
 	bash ../../../data/oracle/prepare-memory-summary-cuts.sh "$$scratch/records" --built
 
-check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/invalidate-check $(BUILD)/flags-check $(BUILD)/pop-memory-check
+check: all $(BUILD)/admission-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check $(BUILD)/branch-check $(BUILD)/call-check $(BUILD)/leave-check $(BUILD)/extend-check $(BUILD)/divide-check $(BUILD)/fetch-cut-check $(BUILD)/fetch-fixture.elf $(BUILD)/code-cut-check $(BUILD)/invalidate-check $(BUILD)/flags-check $(BUILD)/pop-memory-check $(BUILD)/push-memory-check
 	$(BUILD)/admission-check
 	$(BUILD)/branch-check
 	$(BUILD)/call-check
 	$(BUILD)/leave-check
 	$(BUILD)/pop-memory-check
+	$(BUILD)/push-memory-check
 	$(BUILD)/extend-check
 	$(BUILD)/divide-check
 	$(BUILD)/implicit-multiply-check

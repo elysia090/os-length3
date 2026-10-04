@@ -21,7 +21,7 @@ int cut_stack_supported(const pl_x86_instruction *instruction)
             && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
             && instruction->machine_operation == (instruction->operation == PL_X86_OPERATION_POP_FLAGS
                 ? PL_X86_MACHINE_POP_FLAGS : PL_X86_MACHINE_NONE);
-    if (instruction->operation == PL_X86_OPERATION_POP && count == 1u
+    if ((instruction->operation == PL_X86_OPERATION_POP || instruction->operation == PL_X86_OPERATION_PUSH) && count == 1u
             && operand->kind == PL_X86_OPERAND_MEMORY) {
         const pl_x86_memory *memory = &operand->value.memory;
         return instruction->flow == PL_X86_FLOW_NEXT
@@ -29,13 +29,7 @@ int cut_stack_supported(const pl_x86_instruction *instruction)
             && (instruction->operand_width == 16u || instruction->operand_width == 64u)
             && operand->bits == instruction->operand_width
             && (instruction->address_width == 32u || instruction->address_width == 64u)
-            && (memory->segment.class_id == PL_X86_REGISTER_NONE
-                || (memory->segment.class_id == PL_X86_REGISTER_SEGMENT && memory->segment.index < 4u))
-            && (memory->base.class_id == PL_X86_REGISTER_NONE
-                || memory->base.class_id == PL_X86_REGISTER_IP || cut_gpr(&memory->base))
-            && (memory->index.class_id == PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
-            && (!memory->scale || memory->scale == 1u || memory->scale == 2u
-                || memory->scale == 4u || memory->scale == 8u);
+            && cut_memory_address_supported(instruction,memory);
     }
     if (instruction->operand_width != 64u || instruction->machine_operation != PL_X86_MACHINE_NONE) return 0;
     if (instruction->operation == PL_X86_OPERATION_CALL)
@@ -92,6 +86,8 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
     int push = instruction->operation == PL_X86_OPERATION_PUSH
             || instruction->operation == PL_X86_OPERATION_PUSH_FLAGS
             || instruction->operation == PL_X86_OPERATION_CALL;
+    int memory_push=instruction->operation == PL_X86_OPERATION_PUSH
+        && instruction->operands[0].kind == PL_X86_OPERAND_MEMORY;
     pl_u32 bytes = instruction->operand_width / 8u;
     /* Stack-address size is always 64 in long mode, including 67 LEAVE and
      * 66 LEAVE. Only the popped BP operand narrows. Do not publish the
@@ -100,7 +96,22 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut_read_operand(cut, leave ? &rbp : &rsp, 64u);
     if (push) { cut_const(cut, bytes); cut_op(cut, 0x7du); }
     cut_set(cut, CUT_ADDRESS);
-    if (instruction->operation == PL_X86_OPERATION_CALL) cut_const(cut, instruction->fallthrough);
+    if (memory_push) {
+        /* The source uses old RSP, even when it aliases the new stack word.
+         * Keep the destination coordinate local; read faults/waits precede
+         * any stack store, RSP publication or retirement. Address truncation
+         * applies only to the explicit source, never to the implicit stack. */
+        const pl_x86_memory *memory=&instruction->operands[0].value.memory;
+        cut_get(cut,CUT_ADDRESS); cut_set(cut,CUT_LEFT);
+        cut_effective_address(cut,instruction,memory); cut_set(cut,CUT_ADDRESS);
+        cut_const(cut,0u); cut_set(cut,CUT_VALUE);
+        cut->report.memory_bytes=bytes; cut->report.memory_access=MACHINE_MEMORY_READ;
+        if (memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index==2u)
+            cut->report.memory_access|=MACHINE_MEMORY_STACK;
+        cut_access(cut); cut_access_value(cut);
+        cut_get(cut,CUT_LEFT); cut_set(cut,CUT_ADDRESS);
+    }
+    else if (instruction->operation == PL_X86_OPERATION_CALL) cut_const(cut, instruction->fallthrough);
     else if (instruction->operation == PL_X86_OPERATION_PUSH_FLAGS) {
         cut_get(cut, CUT_FLAGS); cut_const(cut, ~0x30000ull); cut_op(cut, 0x83u);
     }
@@ -110,6 +121,7 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut->report.memory_bytes = bytes;
     cut->report.memory_access = MACHINE_MEMORY_STACK | (push ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ);
     cut_access(cut);
+    if (memory_push) cut->report.memory_access|=MACHINE_MEMORY_READ;
     if (!push) {
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
         if (instruction->operation == PL_X86_OPERATION_RETURN) {

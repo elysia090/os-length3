@@ -46,19 +46,26 @@ All 128 independent system frames/IRETQ/RF cases include 32 previously
 excluded #BP observations. Eight native/cold emission forms, 1,024 full
 CPU/frame models, 64 waits/retries, 96 delivery faults and 56 entry refusals
 pass, with full product/VM sanitizer and scoped compiler sanitizer checks.
-The next common-compiler gate is `pushq 40(%rsp)` (`ff 74 24 28`) at
-0xffffffff810009ad: 139,017,616 retired / 70,678,949 admissions, 5,437 Linux
-console bytes, 509 IRQs. Counts differ with clock calibration and are not a
-boot percentage or speed comparison. HLT wake still needs work. PID 1/shell
-and the full goal remain red. Native bundle and human UI remain unchanged.
+Memory-source PUSH now shares ordered source-read/stack-write SSA through
+the existing C access boundary; it observes old RSP and publishes no CPU
+or retirement before success. 28 native/cold byte-identical forms give
+3,584 full CPU/RAM observations including 1,648 faults, plus 168 waits/retries
+and 18 executable-alias models. Product/scoped compiler sanitizers and fresh
+POP/CALL/LEAVE regressions pass. No VM opcode handler is added; compiler
+growth is 108 bytes. Actual browser passes PUSH and logs early rootfs
+initialization (`VFS: Finished mounting rootfs on nullfs`), not PID 1/shell
+or a mounted release root. The next common gate is `sarq %cl,16(%rsp)`
+(`48 d3 6c 24 10`) at 0xffffffff81086ff7: 144,754,379 retired / 75,002,351
+admissions and 5,717 console bytes. Counts depend on calibration and are
+not percentages or speedups. HLT wake, PID 1/shell and the full goal remain
+red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Admit memory-source PUSH through ordered read/stack-write SSA: the source
-   observes old RSP before decrement; source/destination faults and residency
-   waits publish no CPU/retirement. Validate independent native observations
-   and retries through the same C MMU, then continue the actual #BP handler.
-   No opcode skip, forced return, counter patch or Linux-function special case.
+1. Connect memory shift/rotate to the existing shared pure SSA and C RMW
+   reservation. Test CL/immediate/implicit count, zero-count access/faults,
+   defined flags and unchanged fault/wait CPU before continuing the real
+   SAR boundary. No opcode skip, counter patch or Linux-function special case.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -67,11 +74,13 @@ Next, in order:
 Engine candidate identity is separate from source placement: exact newly
 emitted bytes permit 1,573,491 hits, construction 1,823,976 -> 250,466 and
 engine phase 153,360.5 -> 33,796.7 ms in two actual runs. Emitted-witness cap
-stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
-engine construction and admission (22,509.3 ms) now dominate; cold emission
-and 7.47 GB cumulative source copying remain material. This is not shell time.
+stays 256 KiB; no total engine-RSS cap is claimed. The latest longer browser
+run is dominated by engine construction (379,742.1 ms), cold emission
+(77,025.5), C execution (51,650.9) and admission (27,840.4). Source copying
+is 27.13 GB cumulative, not simultaneous RAM. This is not shell time or a
+speed comparison.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-software-interrupt.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-push-memory.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

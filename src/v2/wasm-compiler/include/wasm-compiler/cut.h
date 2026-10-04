@@ -45,7 +45,7 @@ typedef struct {
  * remain i64. The supervisor owns an aligned, fully resident state reservation
  * and executable admission, including current generation/fetch permissions
  * and event/debug context. This function is not an MMU or code-admission check.
- * RIP mismatch or TF/RF returns ENTRY_MAP without
+ * RIP mismatch or TF returns ENTRY_MAP without
  * mutation. The baseline is long mode without debug single-stepping.
  *
  * A one-instruction RAM cut also imports machine.access (machine/memory.h)
@@ -65,8 +65,12 @@ typedef struct {
  * four-level 4 KiB/2 MiB walk under its pinned CPU/physical-residency context;
  * exception delivery and executable-generation admission are separate gates.
  * 64-bit register/immediate PUSH, register POP, direct/indirect near CALL and RET also
- * use this exact typed transaction. No 16-bit stack or CET context may be
- * admitted by this baseline. Same-CPL 64-bit far RET has a separate typed C
+ * use this exact typed transaction. Memory-source PUSH and memory-destination
+ * POP support 16/64-bit operands with an always-64-bit implicit stack pointer.
+ * Only their explicit operand follows address-size truncation. PUSH reads
+ * using old RSP; POP writes using new RSP. Both publish CPU/retirement only
+ * after their ordered transactions succeed. CET remains unsupported.
+ * Same-CPL 64-bit far RET has a separate typed C
  * descriptor/cache boundary; outer-CPL and compatibility transfers reject.
  * Near indirect CALL reads its target using old RSP/address state, performs
  * the all-fragment stack store, then checks the target's canonicality. A
