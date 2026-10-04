@@ -66,17 +66,23 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
  * have memory-store forms only. Twelve MOVDQU forms vary address topology.
  * Eight PADDQ forms and twelve logical families use the same precise operand
  * boundary, with distinct-register/alias and six memory address topologies.
- * Twelve unpack encodings add the same forms, including ignored source halves. */
-enum { VECTOR_FORMS=232u };
+ * Twelve unpack encodings add the same forms, including ignored source halves.
+ * The three narrower packed additions expose carry isolation and doubling. */
+enum { VECTOR_FORMS=256u };
 static pl_u32 unpack_width(pl_u32 form)
 {
     static const pl_u32 widths[]={8u,16u,32u,64u,8u,16u,32u,64u,32u,32u,64u,64u};
-    return form<136u?0u:widths[(form-136u)/8u];
+    return form<136u || form>=232u?0u:widths[(form-136u)/8u];
 }
 static pl_u32 unpack_high(pl_u32 form)
 {
-    pl_u32 family=form<136u?0u:(form-136u)/8u;
+    pl_u32 family=form<136u || form>=232u?0u:(form-136u)/8u;
     return (family>=4u && family<8u) || family==9u || family==11u;
+}
+static pl_u32 add_width(pl_u32 form)
+{
+    static const pl_u32 widths[]={32u,8u,16u};
+    return form>=232u?widths[(form-232u)/8u]:form>=32u && form<40u?64u:0u;
 }
 static pl_u32 encoding(pl_u32 form,pl_u32 *kind,pl_u32 *store,pl_u32 *reg,pl_u32 *aligned)
 {
@@ -86,12 +92,14 @@ static pl_u32 encoding(pl_u32 form,pl_u32 *kind,pl_u32 *store,pl_u32 *reg,pl_u32
             0x57u,0x54u,0x56u,0x55u,0x57u,0x54u,0x56u,0x55u};
         static const pl_u8 unpack[]={0x60u,0x61u,0x62u,0x6cu,0x68u,0x69u,0x6au,0x6du,
             0x14u,0x15u,0x14u,0x15u};
-        int is_unpack=form>=136u;if(is_unpack)family=(form-136u)/8u;
+        static const pl_u8 add[]={0xfeu,0xfcu,0xfdu};
+        int is_unpack=form>=136u && form<232u,is_add=form>=232u;
+        if(is_unpack)family=(form-136u)/8u;else if(is_add)family=(form-232u)/8u;
         *kind=local<2u?0u:local-1u;*store=0u;*reg=local<2u;*aligned=!*reg;
         pl_u32 at=0u;if(*kind==1u)source[at++]=0x67u;
-        if(is_unpack?(family<8u || family>=10u):(family<5u || family>=9u))source[at++]=0x66u;
+        if(is_add || (is_unpack?(family<8u || family>=10u):(family<5u || family>=9u)))source[at++]=0x66u;
         source[at++]=(pl_u8)(*reg || *kind==3u?0x45u:0x44u);
-        source[at++]=0x0fu;source[at++]=is_unpack?unpack[family]:opcodes[family];
+        source[at++]=0x0fu;source[at++]=is_add?add[family]:is_unpack?unpack[family]:opcodes[family];
         if(*reg)source[at++]=(pl_u8)(local?0xc9u:0xcbu);
         else if(*kind==1u)source[at++]=0x0fu;
         else if(*kind==2u) {source[at++]=0x4cu;source[at++]=0x24u;source[at++]=12u;}
@@ -261,7 +269,7 @@ int main(int argc,char **argv)
                     low=logic==0u?a^low:logic==1u?a&low:logic==2u?a|low:~a&low;
                     high=logic==0u?b^high:logic==1u?b&high:logic==2u?b|high:~b&high;
                 }
-                else if(form>=136u) {
+                else if(form>=136u && form<232u) {
                     /* Independent element-by-element oracle, not the lowered
                      * word-spreading network. All shifts stay below 64 bits. */
                     pl_u32 width=unpack_width(form),upper=unpack_high(form);
@@ -276,16 +284,25 @@ int main(int argc,char **argv)
                         *right|=((b>>(i*width))&mask)<<((position+width)&63u);
                     }
                 }
+                else if(form>=232u) {
+                    pl_u32 width=add_width(form);pl_u64 mask=(1ull<<width)-1u;
+                    pl_u64 source_words[]={low,high};low=0u;high=0u;
+                    for(pl_u32 half=0u;half<2u;++half)for(pl_u32 i=0u;i<64u/width;++i) {
+                        pl_u32 shift=i*width;pl_u64 a=(state->xmm[18u+half]>>shift)&mask;
+                        pl_u64 b=(source_words[half]>>shift)&mask;
+                        *(half?&high:&low)|=((a+b)&mask)<<shift;
+                    }
+                }
                 if((store?record->new_low:record->after.xmm[18u])!=low
                         || (store?record->new_high:record->after.xmm[19u])!=high)goto finish;
             }
             ++observations;
         }
         char json[384];int n=snprintf(json,sizeof json,
-            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u}\n",
+            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u,\"addWidth\":%u}\n",
             size,sizeof(machine_state),sizeof(observation),kind,store,reg,aligned,
             (pl_u32)(form>=32u && form<40u),form>=40u && form<136u?1u+(form-40u)/8u%4u:0u,
-            unpack_width(form),unpack_high(form));
+            unpack_width(form),unpack_high(form),add_width(form));
         if(n<1 || (size_t)n>=sizeof json || save(directory,form,"json",json,(size_t)n)
             || save(directory,form,"source-page",source,sizeof source) || save(directory,form,"cases",records,sizeof records)
             || (!observe_only && save(directory,form,"wasm",module,(size_t)emitted)))goto finish;

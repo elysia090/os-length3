@@ -1,0 +1,3 @@
+Before narrow packed-add lowering:
+vector transfers/additions/logic/unpack: 32768 actual x86 CPU/RAM observations, 14768 fault frames; lowering not tested; CR0/CR4 require separate models
+vector 232 red: compiler=-102 decode=0 argument=b0904 operand-bits=128/128 register-bits=128/128

@@ -1,15 +1,28 @@
 # Remaining work — 2026-10-05
 
-Current actual gate: PUNPCKLDQ, `66 0f 62 e5`, 0xffffffff81204e1e. General
+Current actual gate: PADDD, `66 0f fe c4`, 0xffffffff81204e2a. The
+independent initial-unpack run actually passes unpack and reaches 164,915,078
+retirements / 89,541,416 admissions; complete decompression agrees. General
+PADDB/PADDW/PADDD now pass 32,768 unchanged native observations, 256 exact
+emissions, full C-MMU/dispatcher fault/wait/control/alias checks, 768 carry
+corners, all 65,536 byte input pairs, full compiler checks and scoped
+sanitizers. The final 444,118-byte compiler is running on the same bundle;
+do not restart it or treat fixture pass as actual PADDD/PID 1 execution.
+Next: observe that run's actual gate, close the next common ISA/ABI red and
+reduce dominant engine/source reconstruction with bounded precise admission.
+PID 1, release-root mount, shell/development commands, storage/recovery,
+granted network and browser acceptance remain open; cold shell 3s is unmet.
+See [actual gate and general packed-add evidence](../vm/check/browser/evidence/2026-10-05-vector-add-narrow.md).
+Previous checkpoints below are historical, not current acceptance.
+
+Previous actual gate: PUNPCKLDQ, `66 0f 62 e5`, 0xffffffff81204e1e. General
 unpack now passes 29,696 unchanged native observations, 232 exact emissions,
 full C-MMU/dispatcher fault/wait/control/alias comparisons, full compiler
 checks and scoped sanitizers. Selected-word SSA avoids unused XMM halves;
 self-alias shares the spreading network. The memory provider still reads a
 complete pair; a live-projection frontier needs its own fault proof.
-The initial correct unpack compiler is running on the same bundle, before
-the extra alias substitution; do not restart or label it as the final run.
-Next: observe that run's actual gate, validate the final compiler on the
-same bundle, and reduce source/engine reconstruction under bounded admission.
+The initial correct unpack compiler completed on the same bundle, before
+the extra alias substitution, and passed unpack to reach PADDD.
 See [unpack and completed cohort evidence](../vm/check/browser/evidence/2026-10-05-vector-unpack.md).
 The completed cohort run ends at the same unpack gate with 160,653,998
 retirements / 86,601,736 admissions and 14,944,237 engine constructions.

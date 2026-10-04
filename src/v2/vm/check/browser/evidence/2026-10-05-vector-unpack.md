@@ -83,8 +83,10 @@ The final alias-normalized compiler is 443,354 bytes (+1,043), SHA-256
 The VM, native distribution and human UI are unchanged. An extended
 same-bundle run using the initial correct unpack compiler (443,212 bytes,
 SHA-256 `e6663ce86f1aaa211eb60ba265511fca29c5c184b0cb20a2d8085c0d90878954`)
-is live; it predates only the additional alias substitution and is not
-silently restarted or described as the final compiler run.
+has completed; it predates only the additional alias substitution and is not
+silently restarted or described as the final compiler run. It actually
+passes unpack and reaches PADDD at 0xffffffff81204e2a. See
+[next actual gate and general carry-isolated addition](2026-10-05-vector-add-narrow.md).
 
 The completed cohort run still has 14,944,237 engine constructions,
 14,943,493 quota evictions, 743 entries / 262,139 retained module bytes under

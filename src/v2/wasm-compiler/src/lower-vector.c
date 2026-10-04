@@ -19,9 +19,10 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
     pl_u64 operation=instruction->machine_argument>>32u;
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
-    int packed=kind==10u && (operation==15u || operation==12u || unpack);
+    pl_u32 add=cut_vector_add_width(instruction);
+    int packed=kind==10u && (add || operation==12u || unpack);
     int logic=(kind>=1u && kind<=3u) || kind==24u;
-    if(kind && !packed && !logic)return 0;
+    if(kind && !packed && !logic && !add)return 0;
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
     if((read && write) || (kind && write))return 0;
     if((read?source->bits!=128u:!xmm(source,!!unpack))
@@ -32,7 +33,7 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u64 argument=kind|((pl_u64)(write?0u:target->value.reg.index)<<8u)
         |((pl_u64)(read?0u:source->value.reg.index)<<16u)|((pl_u64)read<<24u)|((pl_u64)write<<25u);
     if(packed)argument|=(operation<<32u)|((pl_u64)read<<26u);
-    else if(logic)argument|=(pl_u64)read<<26u;
+    else if(logic || add)argument|=(pl_u64)read<<26u;
     else if(read || write)argument|=instruction->machine_argument&(1ull<<26u);
     return instruction->machine_argument==argument;
 }
@@ -77,7 +78,7 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     cut_sse_guard(cut);
     /* Equal logical operands normalize to zero or identity. Control faults
      * still precede this pure substitution; no old XMM payload is needed. */
-    if(!read && kind && kind!=10u
+    if(!read && (kind==1u || kind==2u || kind==3u || kind==24u)
             && instruction->operands[0].value.reg.index==instruction->operands[1].value.reg.index) {
         if(kind==1u || kind==24u) {
             pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[0].value.reg.index*16u;
@@ -111,7 +112,9 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
         pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[1].value.reg.index*16u;
         cut_load(cut,offset);cut_set(cut,CUT_LEFT);cut_load(cut,offset+8u);cut_set(cut,CUT_RIGHT);
     }
-    if(kind) {
+    pl_u32 add=cut_vector_add_width(instruction);
+    if(add && add<64u)cut_lower_vector_add(cut,instruction,add);
+    else if(kind) {
         /* Two pure lanes share one precise operand preflight. PADDQ is
          * modulo-2^64 addition; AND-NOT complements the old destination,
          * not the source. Capture both results before any publication. */

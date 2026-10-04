@@ -1,5 +1,5 @@
 // Independent native x86 -> common cold compiler -> real C MMU/dispatcher.
-// Precise transfers, PADDQ, bitwise logic and unpack, not FP arithmetic or Linux boot.
+// Precise transfers, packed add, bitwise logic and unpack, not FP arithmetic or Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -19,7 +19,12 @@ const at=physical=>base+(Number(physical/4096n)+1)*4096;
 const put=(where,x)=>v.setBigUint64(where,BigInt(x),true),u64=(r,i)=>r.readBigUInt64LE(2512+i*8);
 const slot=vm.__indirect_function_table.grow(1),cpu=()=>Buffer.from(data.subarray(base,base+1256));
 const image=()=>Buffer.from(data.subarray(code,payload+8192));
-let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0;
+let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0,carryModels=0,exhaustiveByteModels=0;
+function packedAdd(a,b,width) {
+  const bits=BigInt(width),mask=(1n<<bits)-1n;let value=0n;
+  for(let bit=0n;bit<64n;bit+=bits)value|=(((a>>bit&mask)+(b>>bit&mask))&mask)<<bit;
+  return value;
+}
 function target(where) {
   if(where>=entry&&where+16n<=entry+4096n)return code+Number(where-entry);
   return where>=address&&where+16n<=address+8192n?payload+Number(where-address):-1;
@@ -66,7 +71,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<232;++form) {
+  for(let form=0;form<256;++form) {
     const prefix=path.join(directory,`vector-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
@@ -93,6 +98,42 @@ try {
     }
     // Model-only control faults: a user-mode native oracle cannot write CR0/4.
     const first=records.subarray(0,stride);
+    if(meta.register && meta.addWidth && meta.addWidth<64) {
+      // Whole-word corners expose carry leakage into a neighbouring lane.
+      // These are independent element models, not fabricated native records.
+      const width=BigInt(meta.addWidth),mask=(1n<<width)-1n;
+      const patterns=[0n,~0n,0xaaaaaaaaaaaaaaaan,0x5555555555555555n,
+        mask,(1n<<63n),(1n<<(width-1n))-1n,1n<<(width-1n)];
+      for(const dispatch of [false,true])for(const a of patterns)for(const b of patterns) {
+        reset(source,meta,first,0);const same=(form-32)%8===1;
+        for(const [rank,x]of [[9,a],[11,b]])for(let half=0;half<2;++half)
+          put(base+128+rank*16+half*8,BigInt.asUintN(64,half?~x:x));
+        const wanted={state:cpu(),bytes:image(),result:1n};
+        for(let half=0;half<2;++half) {
+          const left=wanted.state.readBigUInt64LE(272+half*8);
+          const right=wanted.state.readBigUInt64LE((same?272:304)+half*8);
+          wanted.state.writeBigUInt64LE(packedAdd(left,right,meta.addWidth),272+half*8);
+        }
+        wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
+        compare(cut,wanted,`${form}: carry corner`,dispatch);++carryModels;
+      }
+    }
+    if(form===240) {
+      reset(source,meta,first,0);const wanted={state:cpu(),bytes:image(),result:1n};
+      wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
+      const repeat=0x0101010101010101n;
+      // All 65,536 byte input pairs execute the actual emitted register body.
+      // Repeated lanes exercise overflow at every neighbouring byte boundary;
+      // opposite high-word inputs include the complementary carry situation.
+      for(let a=0;a<256;++a)for(let b=0;b<256;++b) {
+        put(base+384,entry);put(base+1128,42n);
+        for(const [offset,x]of [[272,a],[280,255-a],[304,b],[312,255-b]])put(base+offset,BigInt(x)*repeat);
+        wanted.state.writeBigUInt64LE(BigInt((a+b)&255)*repeat,272);
+        wanted.state.writeBigUInt64LE(BigInt((510-a-b)&255)*repeat,280);
+        wanted.state.writeBigUInt64LE(BigInt(b)*repeat,304);wanted.state.writeBigUInt64LE(BigInt(255-b)*repeat,312);
+        compare(cut,wanted,'exhaustive byte add');++exhaustiveByteModels;
+      }
+    }
     for(const dispatch of [false,true])for(const em of [0n,4n])for(const ts of [0n,8n])for(const osfxsr of [0n,512n]) {
       if(!em&&!ts&&osfxsr)continue;
       reset(source,meta,first,0);put(base+400,v.getBigUint64(base+400,true)|em|ts);put(base+416,32n|osfxsr);
@@ -118,6 +159,12 @@ try {
       wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
       if(meta.add)for(const offset of [272,280])
         wanted.state.writeBigUInt64LE(BigInt.asUintN(64,wanted.state.readBigUInt64LE(offset)*2n),offset);
+      if(meta.addWidth && meta.addWidth<64) {
+        for(const offset of [272,280]) {
+          const old=wanted.state.readBigUInt64LE(offset);
+          wanted.state.writeBigUInt64LE(packedAdd(old,old,meta.addWidth),offset);
+        }
+      }
       if(meta.logic===1 || meta.logic===4)for(const offset of [272,280])wanted.state.writeBigUInt64LE(0n,offset);
       if(meta.unpackWidth) {
         // Byte-copy interleaving reference, independent of the emitted masks.
@@ -164,6 +211,10 @@ try {
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204e1en,8,output,65536,report),0);
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
+  cold.fill(0x90,input,input+4096);cold.set([0x66,0x0f,0xfe,0xc4],input+0xe2a);
+  assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
+  assert.equal(cc.compiler_emit(0xffffffff81204e2an,8,output,65536,report),0);
+  assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
   // Next independently observed shipped gate: high-register PADDQ.
   cold.fill(0x90,input,input+4096);cold.set([0x66,0x45,0x0f,0xd4,0xf7],input+0xdda);
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
@@ -175,8 +226,8 @@ try {
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),16);
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
-    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,
-    shippedGates:'MOVDQU, PADDQ, PXOR and PUNPCKLDQ common C compilation accepted; not executed by this fixture',
+    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,
+    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ and PADDD common C compilation accepted; not executed by this fixture',
     oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or FP arithmetic',
     linuxBoot:'not-tested'}));
 } finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}
