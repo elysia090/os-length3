@@ -593,3 +593,25 @@ sets saved RF for ordinary vector-32 IRQs; that one discrepancy is explicitly
 excluded against Intel's boundary rule, with RF=0/1 separately modeled.
 See [the exact scope and browser receipt](../../src/v2/vm/check/browser/evidence/2026-10-04-interrupt.md).
 No IRQ frame test, including this one, establishes Linux/PID 1 acceptance.
+
+### Shared memory shift/rotate SSA
+
+```sh
+make -C src/v2/wasm-compiler memory-shift-check
+mkdir NEW-DIRECTORY
+src/v2/wasm-compiler/build/memory-shift-check NEW-DIRECTORY
+node data/oracle/check-memory-shift.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY
+```
+
+Before lowering, `memory-shift-check NEW-DIRECTORY --observe` executes only
+independent native x86 observations. SHL/SHR/SAR/ROL/ROR share register SSA
+with memory reserve/commit: no operation callback crosses the C MMU boundary.
+All four operand widths, CL/one/immediate counts, count masks, old-register
+address aliases, 32/64-bit addresses, SS, RIP-relative writes, protection and
+split faults are compared. A masked-zero count is not permission to skip
+the memory transaction. Defined flags match the oracle; undefined AF/CF/OF
+have the compiler's explicit zero representative. Separate serialized models
+cover physical-row waits/retries, RF, stale/private ports and executable
+writes. This is not a signed production page-supply or Linux boot test.
+RCL/RCR, LOCK and FS/GS remain explicit compiler refusals with no output
+publication. Pure predecessors end before the memory boundary.

@@ -114,6 +114,19 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const relocationTrace = [];
   const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
   const rip = () => view.getBigUint64(base + 384,true);
+  let reportedRetired=0,reportedAdmissions=0;
+  function reportProgress() {
+    reportedRetired=retired;reportedAdmissions=admissions;
+    // Read-only diagnostics: neither a CPU snapshot nor a source retirement.
+    // Admission/quantum progress also exposes work inside long instructions.
+    onProgress({format:'browser-bzimage-startup-v1',status:'running',linuxBoot:'not-achieved',
+      retired,admissions,nextRip:`0x${rip().toString(16)}`,quantumYields,
+      architecturalRCX:`0x${view.getBigUint64(base+8,true).toString(16)}`,
+      residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
+      console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
+      sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity},engineReuse:engines.stats(),
+      timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs}});
+  }
   async function supplyPhysical() {
     let status = vm.vm_page_prepare(port,pageRequest);
     if (status === -3 && vm.vm_page_count() < capacity && memory.buffer.byteLength < maximumMemoryPages * 65536) {
@@ -392,7 +405,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       if (result !== 2n && result !== 10n && result !== 18n && result !== 26n) break;
       assert.equal(vm.vm_completed(),0); assert.equal(vm.vm_source_retired(),0n);
       assert.equal(rip(),entry); assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
-      if (result === 10n) { ++quantumYields; continue; }
+      if (result === 10n) {
+        ++quantumYields;
+        if(extended && !(quantumYields&255))reportProgress();
+        continue;
+      }
       if(result===26n){
         assert.equal(view.getUint32(port+40,true),1);assert.equal(view.getUint32(port+44,true),0x200);
         const byte=Number(view.getBigUint64(port+8,true)),ticket=view.getBigUint64(port+32,true);
@@ -539,21 +556,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     // These are diagnostic limits, never synthetic execution completion.
     const maximumAdmissions = extended ? 150000000 : 1000000;
     const maximumRetired = extended ? 300000000 : 2000000;
-    let reportedRetired = 0;
     while (admissions < maximumAdmissions && retired < maximumRetired) {
       stopped = await step(view.getUint32(segments + 4,true) ? 1 : 1024);
       if (stopped) break;
-      if (extended && retired - reportedRetired >= 10000000) {
-        reportedRetired = retired;
-        // Observation only: no CPU snapshot, guest mutation or restart.
-        onProgress({format:'browser-bzimage-startup-v1',status:'running',linuxBoot:'not-achieved',
-          retired,admissions,nextRip:`0x${rip().toString(16)}`,maximumAdmissions,maximumRetired,
-          outputRegister:`0x${view.getBigUint64(base + 80,true).toString(16)}`,
-          residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
-          console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
-          sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity},
-          timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs}});
-      }
+      if (extended && (retired-reportedRetired>=1000000 || admissions-reportedAdmissions>=1000000))reportProgress();
     }
     if (!stopped) stopped = {kind:'quota',entry:`0x${rip().toString(16)}`,admissions,retired,
       maximumAdmissions,maximumRetired,

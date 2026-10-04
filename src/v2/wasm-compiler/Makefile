@@ -154,6 +154,15 @@ $(BUILD)/push-memory-check: check/push-memory.c check/native-stack.S $(BUILD)/li
 push-memory-check: $(BUILD)/push-memory-check
 	$(BUILD)/push-memory-check
 
+$(BUILD)/memory-shift-check: check/memory-shift.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/memory-shift.c check/native-stack.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: memory-shift-check
+check: memory-shift-check
+memory-shift-check: $(BUILD)/memory-shift-check
+	$(BUILD)/memory-shift-check
+
 $(BUILD)/extend-check: check/extend.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/extend.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@

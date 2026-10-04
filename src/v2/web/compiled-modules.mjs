@@ -21,6 +21,10 @@ export class CompiledModules {
     const previous = this.entries.get(key);
     if (previous && previous.bytes.length === bytes.length
         && previous.bytes.every((byte,rank) => byte === bytes[rank])) {
+      // Only an exact C-emitted witness refreshes demand lifetime. Cold
+      // construction may evict inactive entries, not a repeatedly used body.
+      // Map insertion order gives bounded LRU without sorting or a new index.
+      this.entries.delete(key); this.entries.set(key,previous);
       ++this.hits; return previous.instance;
     }
     // The caller's cold-emission arena is reused on the next request.

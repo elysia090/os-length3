@@ -20,7 +20,7 @@ source.fill(0); // Caller-arena reuse cannot poison the owned comparison witness
 assert.equal(await cache.get(1n,emitted(4)),replacement);
 await cache.get(2n,emitted(0)); await cache.get(3n,emitted(4));
 assert.equal(cache.stats().entries,2); assert(cache.stats().retainedModuleBytes <= 256);
-assert.notEqual(await cache.get(1n,emitted(4)),replacement,'bounded FIFO eviction');
+assert.notEqual(await cache.get(1n,emitted(4)),replacement,'bounded inactive-entry eviction');
 memory.grow(1);
 new DataView(memory.buffer).setUint32(4,37,true);
 assert.equal((await cache.get(1n,emitted(4))).exports.get(),37,'same memory object after grow');
@@ -42,6 +42,21 @@ const tiny = new CompiledModules({machine:{memory}},{maximumEntries:8,maximumByt
 await tiny.get(1,emitted(0)); await tiny.get(2,emitted(4));
 assert.equal(tiny.stats().entries,1,'byte quota independent of entry quota');
 await assert.rejects(tiny.get(3,new Uint8Array(65537)),RangeError);
+// A repeatedly demanded body must outlive an inactive body under the same
+// entry AND byte quota. Compiler-approved bytes remain the exact witness.
+for(const quota of [{maximumEntries:2,maximumBytes:256},
+                   {maximumEntries:8,maximumBytes:emitted(0).length*2}]) {
+  const hotOwner=new CompiledModules({machine:{memory}},quota);
+  const hot=await hotOwner.get(0,emitted(0));
+  for(let cold=1;cold<=32;++cold) {
+    await hotOwner.get(cold,emitted(4));
+    assert.equal(await hotOwner.get(0,emitted(0)),hot,'hot body survives cold stream without recompilation');
+    assert(hotOwner.stats().entries<=quota.maximumEntries);
+    assert(hotOwner.stats().retainedModuleBytes<=quota.maximumBytes);
+  }
+  assert.equal(hotOwner.stats().compilations,33);assert.equal(hotOwner.stats().hits,32);
+  hotOwner.close();assert.equal(hotOwner.stats().retainedModuleBytes,0);
+}
 const otherMemory = new WebAssembly.Memory({initial:1});
 new DataView(otherMemory.buffer).setUint32(0,43,true);
 const other = new CompiledModules({machine:{memory:otherMemory}});
@@ -58,4 +73,4 @@ await assert.rejects(pending,/owner closed/); assert.equal(other.stats().entries
 cache.close(); tiny.close(); pinned.close(); duplicate.close();
 await assert.rejects(cache.get(1n,emitted(0)),/owner closed/);
 assert.equal(cache.stats().retainedModuleBytes,0);
-console.log('Bounded emitted-Wasm engine reuse: green (exact body, changed body, arena reuse, FIFO/byte quotas, grow, invalid emission, independent owners, pending close; not Linux boot)');
+console.log('Bounded emitted-Wasm engine reuse: green (exact body, changed body, arena reuse, LRU/byte quotas, 2 hot/cold streams: 33 compilations + 32 hits each, grow, invalid emission, independent owners, pending close; not Linux boot)');

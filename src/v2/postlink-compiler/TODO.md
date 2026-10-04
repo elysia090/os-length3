@@ -54,18 +54,34 @@ and 18 executable-alias models. Product/scoped compiler sanitizers and fresh
 POP/CALL/LEAVE regressions pass. No VM opcode handler is added; compiler
 growth is 108 bytes. Actual browser passes PUSH and logs early rootfs
 initialization (`VFS: Finished mounting rootfs on nullfs`), not PID 1/shell
-or a mounted release root. The next common gate is `sarq %cl,16(%rsp)`
+or a mounted release root. That run's next common gate was `sarq %cl,16(%rsp)`
 (`48 d3 6c 24 10`) at 0xffffffff81086ff7: 144,754,379 retired / 75,002,351
 admissions and 5,717 console bytes. Counts depend on calibration and are
 not percentages or speedups. HLT wake, PID 1/shell and the full goal remain
 red. Native bundle and human UI remain unchanged.
 
+Memory SHL/SHR/SAR/ROL/ROR now share the existing register value/flag SSA and
+C-MMU RMW reservation/commit. 340 native/cold byte-identical forms give
+174,080 full CPU/RAM comparisons in direct Wasm and separately C dispatch,
+including 34,240 fault frames and 6,740 masked-zero write faults. 1,360
+waits/retries, 1,700 entry refusals, 20 executable-write models, full product
+checks and scoped compiler ASan/UBSan pass. Undefined flags are masked for
+native equivalence; the compiler's zero representative is checked separately.
+266 register modules remain byte-identical after extracting the shared emitter.
+No VM opcode handler or payload image is added; compiler growth is 171 bytes.
+The actual browser passes memory SAR and stops at `shrdq $32,%rdx,%r11`
+(`49 0f ac d3 20`) at 0xffffffff8108700f: 144,564,477 retired / 74,868,147
+admissions, 5,717 console bytes and 3,422 external IRQs. Full decompression
+remains identical. Early rootfs initialization is not PID 1, a release root
+mount or an offline shell. Native bundle and human UI remain unchanged.
+
 Next, in order:
 
-1. Connect memory shift/rotate to the existing shared pure SSA and C RMW
-   reservation. Test CL/immediate/implicit count, zero-count access/faults,
-   defined flags and unchanged fault/wait CPU before continuing the real
-   SAR boundary. No opcode skip, counter patch or Linux-function special case.
+1. Close common SHRD/SHLD through pure SSA and the same C RMW boundary.
+   First produce independent native red fixtures: immediate/CL counts,
+   16/32/64-bit widths, count zero/one/width edges, undefined-count flags,
+   source/destination/count aliases and unchanged fault/wait CPU. Continue
+   the actual SHRD boundary without opcode skips or Linux-function special cases.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -75,12 +91,16 @@ Engine candidate identity is separate from source placement: exact newly
 emitted bytes permit 1,573,491 hits, construction 1,823,976 -> 250,466 and
 engine phase 153,360.5 -> 33,796.7 ms in two actual runs. Emitted-witness cap
 stays 256 KiB; no total engine-RSS cap is claimed. The latest longer browser
-run is dominated by engine construction (379,742.1 ms), cold emission
-(77,025.5), C execution (51,650.9) and admission (27,840.4). Source copying
-is 27.13 GB cumulative, not simultaneous RAM. This is not shell time or a
-speed comparison.
+run is dominated by engine construction (373,684.7 ms), cold emission
+(73,707.8), C execution (51,371.4) and admission (27,855.5). Source copying
+is 26.73 GB cumulative, not simultaneous RAM. Exact-byte hits now refresh
+bounded engine demand lifetime; hot/cold component tests were red then green
+at unchanged quotas. This is not a measured browser speedup. Profile absent/
+evicted bodies versus changed emissions before altering physical identity or
+claiming construction eliminated. The latest run still constructs 4,148,301
+engines with 2,363,249 exact-byte hits. Diagnostic progress is read-only.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-push-memory.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-memory-shift.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

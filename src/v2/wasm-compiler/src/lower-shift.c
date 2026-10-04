@@ -111,18 +111,17 @@ static void rotate_value(cut_lowering *cut, pl_u32 width, pl_u32 kind)
     rotate_flags(cut,width,kind);
 }
 
-void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction)
+void cut_shift_count(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
-    const pl_x86_operand *operands = instruction->operands;
-    pl_u32 width = operands[0].value.reg.bits, kind = instruction->condition;
-    /* Capture both inputs before a destination such as CL/CH changes RCX. */
-    cut_read_operand(cut, &operands[0], width); cut_set(cut, CUT_LEFT);
-    cut_read_operand(cut, &operands[1], 8u);
-    cut_const(cut, width == 64u ? 63u : 31u); cut_op(cut, 0x83u);
-    cut_set(cut, CUT_RIGHT);
+    cut_read_operand(cut, &instruction->operands[1], 8u);
+    cut_const(cut, instruction->operands[0].bits == 64u ? 63u : 31u); cut_op(cut, 0x83u);
+}
+
+void cut_shift_value(cut_lowering *cut, const pl_x86_instruction *instruction)
+{
+    pl_u32 width = instruction->operands[0].bits, kind = instruction->condition;
     if (kind<2u) {
         rotate_value(cut,width,kind);
-        cut_write_register(cut,&operands[0].value.reg);
         return;
     }
     cut_get(cut, CUT_LEFT);
@@ -134,5 +133,14 @@ void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut_op(cut, kind == 4u ? 0x86u : kind == 5u ? 0x88u : 0x87u);
     cut_mask(cut, width); cut_set(cut, CUT_VALUE);
     flags(cut, width, kind);
+}
+
+void cut_lower_shift(cut_lowering *cut, const pl_x86_instruction *instruction)
+{
+    const pl_x86_operand *operands = instruction->operands;
+    /* Capture both inputs before a destination such as CL/CH changes RCX. */
+    cut_read_operand(cut, &operands[0], operands[0].bits); cut_set(cut, CUT_LEFT);
+    cut_shift_count(cut,instruction); cut_set(cut, CUT_RIGHT);
+    cut_shift_value(cut,instruction);
     cut_write_register(cut, &operands[0].value.reg);
 }
