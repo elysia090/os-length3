@@ -1,5 +1,11 @@
 # Browser boundary observations
 
+Latest: [C-owned RTC / UTC event boundary](2026-10-04-rtc.md) and its
+[actual browser JSON](2026-10-04-rtc-browser.json). The unchanged shipped bundle
+retires 137,289,924 source instructions through cold C compilation and the C VM,
+then refuses STI. Complete kernel decompression passes; PID 1/shell remain red.
+The older observations below retain their original build and scope.
+
 `2026-10-02-ordinary-worker.json` is the result supplied by the user from
 `http://127.0.0.1:8080/src/v2/vm/check/browser/index.html`. It is a manual
 browser observation, not an automated Codex browser run. The browser name,

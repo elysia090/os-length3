@@ -551,3 +551,31 @@ linked x86 -> C postlink compiler -> ordinary optimized x86 ELF
                                           |
                                           +-> Wasm projection -> vm.wasm
 ```
+
+### C-owned RTC and sampled-clock continuation
+
+```sh
+make -C src/v2/vm check
+node data/oracle/check-rtc-qtest.mjs QEMU-SYSTEM-X86_64 src/v2/vm/build/rtc-check
+node data/oracle/check-rtc-provider.mjs VM.WASM COMPILER.WASM
+```
+
+The independent Qtest comparison pauses the oracle CPU and freezes its VM
+clock: it checks indexed registers, NVRAM, BCD/binary and 12/24-hour fields,
+SET, century alias and read-only/read-clear registers, not dynamic IRQ timing.
+`rtc-check` separately compares a Gregorian era with libc and the bounded
+next-alarm expression with a brute-force specification. Neither libc nor
+QEMU is linked into the product. `qtest-device.mjs` is a test-only socket owner.
+
+The compiled-provider test includes full CPU/segment observations, privilege
+faults, sampled-clock ownership, duplicate/stale/cancelled replies and fresh
+machine re-seeding. Eligible IRQs whose CPU delivery is unowned stop before
+the next instruction; masked requests, MOV-SS's inhibited successor and an
+already-started instruction continuation are separately checked.
+Supervisor-only `vm_rtc_start` binds one explicit UTC epoch
+to the current memory record/generation before RTC I/O or time advance. Guest code imports
+only `machine.io`; C owns CMOS state and IRQ8, not a JavaScript port model.
+The default browser diagnostic records its host UTC snapshot and advances
+devices by active C execution time, excluding delivery/compilation pauses.
+This is not authenticated UTC, wall-clock fidelity, a calibrated CPU, hardware
+silicon equivalence, CPU IRQ delivery or a completed Linux boot.

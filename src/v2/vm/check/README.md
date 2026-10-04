@@ -6,9 +6,11 @@ function-table execution. The separate compiler lowers x86; the VM does not
 decode/interpret instructions. Linux boot, exception entry and virtio devices
 remain incomplete. `wasm/entry.c` is the freestanding wrapper of this C core.
 
-The [current browser receipt](browser/evidence/2026-10-03-conditions.md) retires
-351 exact shipped source instructions through cold C compilation and C execution,
-not a booted Linux. The borrowed-code view has native non-identity/2 MiB/NX/stale
+The [current browser receipt](browser/evidence/2026-10-04-rtc.md) retires
+137,289,924 exact shipped source instructions through cold C compilation and C execution,
+with unchanged complete decompression and C-owned PIC/RTC, not a booted Linux.
+The next common compiler refusal is STI; CPU interrupt delivery remains incomplete.
+The borrowed-code view has native non-identity/2 MiB/NX/stale
 checks and 20 actual C-Wasm export cases, including private-output aliases,
 compatibility-mode rejection, A-bit source aliasing and post-growth borrowing.
 Run `node data/oracle/check-code-view.mjs VM.WASM` separately from native C checks.

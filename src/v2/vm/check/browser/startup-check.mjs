@@ -19,7 +19,7 @@ assert.equal = (a,b) => assert(a === b,`startup: ${String(a)} != ${String(b)}`);
 assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'startup imports');
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
-    {extended = false,onProgress = () => {},decompression} = {}) {
+    {extended = false,onProgress = () => {},decompression,utcSeconds = BigInt(Math.floor(Date.now()/1000))} = {}) {
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header'), command = await read('boot.command');
   const kernel = await read('boot.kernel-page'), last = await read('boot.kernel-last-page');
@@ -83,6 +83,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   view.setBigUint64(port,9n,true);
   assert.equal(vm.vm_open(base,data.length - base,4096,directoryOffset,pages.length,capacity,branches,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
+  assert.equal(vm.vm_rtc_start(port,9n,utcSeconds),0);
   // No A/D warmup, candidate RIP list or native prefix modules. C vm_code
   // projects the current translation. This single-owner Worker pins RAM,
   // directory and CPU context across async engine compilation/admission.
@@ -510,7 +511,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
       firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,
-      clockContract:'sampled active C execution nanoseconds; virtual TSC 1 GHz, PIT 1193182 Hz; compilation/delivery paused',
+      rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
+      clockContract:'sampled active C execution nanoseconds; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused',
       repeatComparedBytes,bssComparedBytes,
       memsetComparedBytes,memsetReturns,
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,

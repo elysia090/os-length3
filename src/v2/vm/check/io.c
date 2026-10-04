@@ -10,6 +10,7 @@ static machine_segments segments;
 static vm_clock clock_owner;
 static vm_pit pit;
 static vm_pic pic;
+static vm_rtc rtc;
 static unsigned failures, permissions;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr,"io: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value, pl_u32 size)
@@ -35,9 +36,10 @@ static void reset(pl_u32 cpl, pl_u32 iopl)
     segments.cache[MACHINE_SEGMENT_TR]=(machine_segment_cache){0x400000u,8191u,0x008bu};
     put(28672u+102u,104u,2u);
     vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
+    vm_rtc_reset(&rtc);
 }
 static machine_result io(pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
-{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,&pic,coordinate,transfer,value); }
+{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,coordinate,transfer,value); }
 static machine_result time_read(void)
 { return vm_time_read(&memory,0u,&state,&segments,&clock_owner); }
 static pl_u64 ticket(void) { return get(32u); }
@@ -147,6 +149,25 @@ int main(void)
     EXPECT(io(0xa1u,0x101u,255u)==5u && !memcmp(&hidden,&pic,sizeof pic));
     reset(0u,0u); state.rflags|=0x100u; hidden=pic;
     EXPECT(io(0xa1u,0x101u,255u)==6u && !memcmp(&hidden,&pic,sizeof pic));
+    reset(0u,0u); EXPECT(!io(0x70u,0x101u,0u) && !clock_owner.stage);
+    EXPECT(io(0x71u,1u,0u)==6u && !clock_owner.stage); /* no implicit host UTC */
+    reset(0u,0u); EXPECT(!vm_rtc_seed(&rtc,0u));
+    EXPECT(!io(0x70u,0x101u,0u)); transfer(1000000000u,0x71u,0u,0u);
+    EXPECT(get(8u)==1u && !clock_owner.stage);
+    EXPECT(!io(0x70u,0x101u,12u)); transfer(1000000000u,0x71u,0u,0u);
+    EXPECT(get(8u)==0x50u); transfer(1000000000u,0x71u,0u,0u); EXPECT(!get(8u));
+    for (pl_u32 cpl=0u;cpl<4u;++cpl) for (pl_u32 iopl=0u;iopl<4u;++iopl)
+    for (pl_u32 width=1u;width<=4u;width*=2u) for (pl_u32 bit=0u;bit<16u;++bit)
+    for (pl_u32 coordinate=0x70u;coordinate<=0x71u;++coordinate) {
+        reset(cpl,iopl); EXPECT(!vm_rtc_seed(&rtc,0u));
+        put(28672u+104u+(coordinate>>3u),1u<<bit,2u);
+        machine_state before=state; vm_rtc hidden_rtc=rtc;
+        int denied=cpl>iopl && ((1u<<bit) & (((1u<<width)-1u) << (coordinate&7u)));
+        EXPECT(io(coordinate,width,0u)==(denied ? 107u : width!=1u ? 6u : coordinate==0x70u ? 0u : 18u));
+        EXPECT(!memcmp(&state,&before,sizeof state));
+        if (denied || width!=1u || coordinate==0x71u) EXPECT(!memcmp(&rtc,&hidden_rtc,sizeof rtc));
+        ++permissions;
+    }
     if (!failures) printf("C IO/clock/PIT/PIC: %u permission cases and event/fault/edge checks green (not Linux boot)\n",permissions);
     return failures ? 1 : 0;
 }

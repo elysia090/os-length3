@@ -13,13 +13,23 @@ dispatcher, wait/retry and selected sanitizer checks. Product checks pass.
 The C-owned 8259 PIC now passes 16,782 independent QEMU-device observations,
 147,456 priority/mask grants, 6,658 compiled CPU/segment checks and all product /
 C VM sanitizer tests. Device IRQ-to-CPU delivery remains incomplete.
-Actual browser: 137,259,081 retired / 69,428,504 admissions, unchanged complete
-decompression, then ENTRY_MAP for OUT AL,70 at 0xffffffff81033f2e. PID 1/shell
-and the full goal remain red. Next: C-owned CMOS/RTC with explicit time/event
-ownership, then browser boot. Native bundle and human UI remain unchanged.
+The C RTC now has an explicit, generation-bound UTC seed and sampled-clock
+ownership; normal calendar reads derive one field without clock-time calendar
+materialization. 146,113 independent calendar/inverse comparisons, 960 brute
+alarm matches, 638 independent QEMU register reads, 4,479 generated CPU/segment
+comparisons and all product / C VM sanitizer tests pass. C IRQ8/PIC state is
+verified; CPU interrupt injection is not. An eligible unowned IRQ now stops
+before the next fetch instead of being silently ignored; one inhibited
+successor and in-flight continuation remain precise.
+Actual browser: 137,289,924 retired / 69,445,260 admissions, unchanged complete
+decompression, RTC passed, then compiler refusal -102 for STI (fb) at
+0xffffffff813f8389. PID 1/shell and the full goal remain red. Next: common STI
+privilege/IF/shadow semantics and C interrupt delivery, then browser boot.
+Do not reuse MOV-SS debug inhibition as STI's maskable-interrupt shadow or
+merely set IF while losing a pending event. Native bundle and human UI remain unchanged.
 Engine reuse is still zero despite source
 cache hits; that fixed cost is recorded, not relabeled as a speedup. See
-[current evidence](../vm/check/browser/evidence/2026-10-04-pic.md).
+[current evidence](../vm/check/browser/evidence/2026-10-04-rtc.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 
