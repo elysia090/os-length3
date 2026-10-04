@@ -13,6 +13,7 @@ WASM_FLAGS += -Wl,--export-table,--growable-table,--export=vm_slot_min,--export=
 WASM_FLAGS += -Wl,--export=vm_boot_initial_segments,--export=vm_bind_segments,--export=vm_segment
 WASM_FLAGS += -Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--export=vm_table,--export=vm_return
 WASM_FLAGS += -Wl,--export=vm_reserve_pair,--export=vm_commit_pair
+WASM_FLAGS += -Wl,--export=vm_write_begin,--export=vm_write_word,--export=vm_write_end
 WASM_FLAGS += -Wl,--export=vm_control,--export=vm_code,--export=vm_grow,--export=vm_page_prepare,--export=vm_page_commit,--export=vm_page_count
 WASM_FLAGS += -Wl,--export=vm_fault,--export=vm_iret,--export=vm_msr
 WASM_FLAGS += -Wl,--export=vm_debug
@@ -64,6 +65,14 @@ $(BUILD)/resource-check: check/resource.c $(BUILD)/libvm.a
 
 $(BUILD)/memory-check: check/memory.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+$(BUILD)/write-extent-check: check/write-extent.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+.PHONY: write-extent-check
+check: write-extent-check
+write-extent-check: $(BUILD)/write-extent-check
+	$(BUILD)/write-extent-check
 
 $(BUILD)/page-index-check: check/page-index.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@

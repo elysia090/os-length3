@@ -113,15 +113,16 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
 
 static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
                                  const vm_mmu_context *context, pl_u64 address,
-                                 pl_u32 bytes, pl_u32 access, vm_memory_reservation *ready)
+                                 pl_u32 bytes, pl_u32 access, pl_u32 maximum_bytes,
+                                 vm_memory_reservation *ready)
 {
     vm_memory_abort(memory);
     if (!memory || !memory->bytes || !memory->generation || !context_supported(context)
             || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > memory->reserved_bytes
-            || !bytes || bytes > 16u || !ready
+            || !bytes || bytes > maximum_bytes || !ready
             || (access & ~47u) || !(access & 3u)
-            || ((access & VM_MMU_ALIGNED16) && bytes != 16u)
+            || ((access & VM_MMU_ALIGNED16) && bytes != 16u && maximum_bytes==16u)
             || ((access & VM_MMU_EXECUTE) && (access & (MACHINE_MEMORY_WRITE | MACHINE_MEMORY_STACK))))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     pl_u8 *port = memory->bytes + port_offset;
@@ -162,7 +163,7 @@ machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
             || ((access & 3u) != MACHINE_MEMORY_READ && (access & 3u) != MACHINE_MEMORY_WRITE))
         return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation ready;
-    machine_result status = preflight(memory, port_offset, context, address, bytes, access, &ready);
+    machine_result status = preflight(memory, port_offset, context, address, bytes, access,16u,&ready);
     if (status) return status;
     pl_u32 consumed = 0u;
     if (access & MACHINE_MEMORY_WRITE) {
@@ -193,7 +194,7 @@ machine_result vm_mmu_reserve(vm_memory *memory, pl_u32 port_offset,
     if ((bytes != 1u && bytes != 2u && bytes != 4u && bytes != 8u)
             || (access & ~7u) || (access & 3u) != 3u) return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation ready;
-    machine_result status = preflight(memory, port_offset, context, address, bytes, access, &ready);
+    machine_result status = preflight(memory, port_offset, context, address, bytes, access,16u,&ready);
     if (status) return status;
     pl_u64 value = 0u;
     pl_u32 consumed = 0u;
@@ -218,7 +219,7 @@ machine_result vm_mmu_reserve_record_access(vm_memory *memory, pl_u32 port_offse
     vm_memory_abort(memory);
     if (!target || (access & ~39u) || (access & 3u)!=3u) return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation ready;
-    machine_result status=preflight(memory,port_offset,context,address,bytes,access,&ready);
+    machine_result status=preflight(memory,port_offset,context,address,bytes,access,16u,&ready);
     if (status) return status;
     pl_u32 consumed=0u;
     for (pl_u32 i=0u;i<ready.parts;++i)
@@ -238,7 +239,7 @@ machine_result vm_mmu_read_record(vm_memory *memory, pl_u32 port_offset,
     if (!target || (access & ~7u) || (access & 3u) != MACHINE_MEMORY_READ)
         return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation ready;
-    machine_result status = preflight(memory, port_offset, context, address, bytes, access, &ready);
+    machine_result status = preflight(memory, port_offset, context, address, bytes, access,16u,&ready);
     if (status) return status;
     pl_u32 consumed = 0u;
     for (pl_u32 i = 0u; i < ready.parts; ++i)
@@ -255,11 +256,27 @@ machine_result vm_mmu_code_page(vm_memory *memory, pl_u32 port_offset,
     if (!target) return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation ready;
     machine_result status = preflight(memory,port_offset,context,address,1u,
-                                      (pl_u32)MACHINE_MEMORY_READ | (pl_u32)VM_MMU_EXECUTE,&ready);
+                                      (pl_u32)MACHINE_MEMORY_READ | (pl_u32)VM_MMU_EXECUTE,16u,&ready);
     if (status) return status;
     /* Translation and residency have 4 KiB minimum granularity, including
      * a 2 MiB leaf. The byte's page offset is preserved by the page walk. */
     *target = (vm_code_page){address & ~4095ull,memory->generation,
                             ready.offsets[0] - (pl_u32)(address & 4095u),4096u};
+    return 0u;
+}
+
+machine_result vm_mmu_write_begin(vm_memory *memory, pl_u32 port_offset,
+                                  const vm_mmu_context *context, pl_u64 address,
+                                  pl_u32 bytes, pl_u32 access)
+{
+    vm_memory_abort(memory);
+    if ((access & ~39u) || (access & 3u)!=MACHINE_MEMORY_WRITE)
+        return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result status=preflight(memory,port_offset,context,address,bytes,access,
+                                    VM_MEMORY_MAX_WRITE_BYTES,&ready);
+    if (status) return status;
+    ready.discard|=VM_MEMORY_WRITE_FRONTIER;
+    memory->reservation=ready;
     return 0u;
 }

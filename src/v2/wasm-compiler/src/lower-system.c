@@ -6,6 +6,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
 {
     int io = cut_io_supported(instruction);
     if (io) return io;
+    if (cut_fxsave_supported(instruction)) return CUT_SYSTEM_FXSAVE;
     if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_X87
             && instruction->machine_argument==PL_X86_X87_INITIALIZE
@@ -300,6 +301,7 @@ static void lower_cpuid(cut_lowering *cut)
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     if (cut_io_supported(instruction)) { cut_lower_io(cut,instruction); return; }
+    if (cut_fxsave_supported(instruction)) { cut_lower_fxsave(cut,instruction); return; }
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && instruction->machine_argument==PL_X86_X87_INITIALIZE) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.

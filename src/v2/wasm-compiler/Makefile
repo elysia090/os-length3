@@ -1,5 +1,6 @@
 CC ?= cc
 AR ?= ar
+.DEFAULT_GOAL := all
 CFLAGS ?= -O2
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iinclude -I../support/include -I../optimized-x86/include \
@@ -14,6 +15,19 @@ SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-repeat.c src/lower-branch.c
 SOURCES += src/lower-paired-exchange.c
+SOURCES += src/lower-fxsave.c
+
+.PHONY: fxsave-check
+check: fxsave-check
+fxsave-check: $(BUILD)/fxsave-check $(BUILD)/fxsave-observe
+	$(BUILD)/fxsave-check
+	$(BUILD)/fxsave-observe
+
+$(BUILD)/fxsave-check: check/fxsave.c check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -mno-red-zone check/fxsave.c check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+$(BUILD)/fxsave-observe: check/fxsave-observe.c | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -mno-red-zone $< -o $@
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a

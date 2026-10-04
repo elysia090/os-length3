@@ -63,6 +63,19 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     };
     static const pl_u8 memory_functions[] = { 1,1 };
     static const pl_u8 memory_exports[] = { 1,3,'c','u','t',0,1 };
+    static const pl_u8 write_type[] = {
+        4,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
+        0x60,4,0x7f,0x7f,0x7f,0x7e,1,0x7e,
+        0x60,1,0x7f,1,0x7e,0x60,2,0x7f,0x7f,1,0x7e
+    };
+    static const pl_u8 write_imports[] = {
+        4,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',11,'w','r','i','t','e','_','b','e','g','i','n',0,0,
+        7,'m','a','c','h','i','n','e',10,'w','r','i','t','e','_','w','o','r','d',0,1,
+        7,'m','a','c','h','i','n','e',9,'w','r','i','t','e','_','e','n','d',0,2
+    };
+    static const pl_u8 write_functions[]={1,3};
+    static const pl_u8 write_exports[]={1,3,'c','u','t',0,3};
     static const pl_u8 segment_type[] = {
         2,0x60,3,0x7f,0x7f,0x7f,1,0x7e,
         0x60,2,0x7f,0x7f,1,0x7e
@@ -149,7 +162,12 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         7,'m','a','c','h','i','n','e',14,'i','n','t','e','r','r','u','p','t','_','f','l','a','g',0,0
     };
     raw(writer, header, sizeof header);
-    if (boundary==14) {
+    if (boundary==15) {
+        section(writer,1u,sizeof write_type); raw(writer,write_type,sizeof write_type);
+        section(writer,2u,sizeof write_imports); raw(writer,write_imports,sizeof write_imports);
+        section(writer,3u,sizeof write_functions); raw(writer,write_functions,sizeof write_functions);
+        section(writer,7u,sizeof write_exports); raw(writer,write_exports,sizeof write_exports);
+    } else if (boundary==14) {
         section(writer,1u,sizeof type); raw(writer,type,sizeof type);
         section(writer,2u,sizeof flag_imports); raw(writer,flag_imports,sizeof flag_imports);
         section(writer,3u,sizeof functions); raw(writer,functions,sizeof functions);
@@ -234,6 +252,7 @@ static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
     if (plan->system_cut == CUT_SYSTEM_MSR) return 8;
     if (plan->system_cut == CUT_SYSTEM_INTERRUPT_FLAG) return 14;
     if (plan->system_cut == CUT_SYSTEM_DEBUG) return 12;
+    if (plan->system_cut == CUT_SYSTEM_FXSAVE) return 15;
     if (plan->system_cut == CUT_SYSTEM_IO) return 9;
     if (plan->system_cut == CUT_SYSTEM_TIME) return 10;
     if (plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN) return 7;

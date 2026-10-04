@@ -27,23 +27,31 @@ delay-loop calibration / CPU initialization: 138,929,830 retired,
 70,626,112 admissions, 5,388 Linux console bytes and 468 external IRQs.
 Complete 14,622,864-byte decompression stays identical.
 
-FNINIT is now a common precise cut: three x87 metadata stores, no payload
-copy/reset or new VM import, with CR0.EM/TS #NM before mutation. Eight
-native/cold byte-identical forms pass 2,048 direct and 2,048 dispatch full
-CPU records, 96 #NM models, prefix/refusal/RF checks and compiler sanitizers.
-Actual browser passes FNINIT and reaches FXSAVE (`0F AE 05 1A DE 75 00`)
-at 0xffffffff8140513f: 139,153,866 retired / 70,786,891 admissions,
-5,388 Linux console bytes and 627 IRQs. HLT wake still needs work.
-PID 1/shell and the full
+FNINIT and FXSAVE now pass through common C lowering. FXSAVE uses a generic
+512-byte write extent: preflight at most two physical fragments, then ordered
+word stores through a 40-byte frontier, without a materialized output image.
+Eight native/cold byte-identical forms pass 1,024 direct and 1,024 C-dispatch
+full CPU/output comparisons, 220 fault models, 32 wait/retry observations,
+88 entry refusals and eight OSFXSR profile models. All TOP/tag classes,
+32/64-bit effective addresses, SS, RF and untouched software bytes are checked.
+136,672 sparse-extent word comparisons, full product checks, all linked VM
+core ASan/UBSan and scoped compiler sanitizers pass. Native observations use
+the independent reference build VM, not a physical-CPU exception guarantee.
+
+Actual browser passes FXSAVE and prints `x86/fpu: x87 FPU will use FXSAVE`.
+The new common-compiler gate is INT3 (`CC`) at 0xffffffff8140449f:
+138,912,896 retired / 70,605,054 admissions, 5,437 Linux console bytes,
+445 IRQs. Counts differ with clock calibration and are not a boot percentage
+or speed comparison. HLT wake still needs work. PID 1/shell and the full
 goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Admit FXSAVE through the common compiler/MMU: exact 512-byte architectural
-   image/layout and untouched reserved/software bytes, CR0/context/alignment
-   faults, cross-page residency/fault order and pinned retry. No JS bulk copy,
-   opcode skip or Linux-function special case. Close related FPU-memory cuts
-   only with independent native/model observations.
+1. Admit INT3 through the common compiler and #BP delivery: distinguish trap
+   continuation/retirement/stacked flags from a fault, validate independent
+   native/system observations, then enter Linux's own vector-3 handler. No
+   opcode skip, forced return, instruction-counter patch or Linux-function
+   special case. Other FPU-memory cuts need independent observations too.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -56,7 +64,7 @@ stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
 engine construction and admission (22,509.3 ms) now dominate; cold emission
 and 7.47 GB cumulative source copying remain material. This is not shell time.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-x87-init.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-fxsave.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

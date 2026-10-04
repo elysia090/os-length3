@@ -198,7 +198,8 @@ machine_result vm_memory_commit_record(vm_memory *memory, pl_u32 port_offset,
     if (read_word(memory->bytes + port_offset) != memory->generation)
         return MACHINE_RESULT_STALE_GENERATION;
     if (saved.generation != memory->generation || saved.port != port_offset
-            || !saved.parts || saved.parts > 2u || !value || !bytes || bytes>16u)
+            || !saved.parts || saved.parts > 2u || !value || !bytes || bytes>16u
+            || (saved.discard & VM_MEMORY_WRITE_FRONTIER))
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u32 total=0u;
     for (pl_u32 i=0u;i<saved.parts;++i) {
@@ -230,4 +231,58 @@ machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 va
         bytes+=memory->reservation.lengths[i];
     if (bytes>8u) { vm_memory_abort(memory); return MACHINE_RESULT_ENTRY_MAP; }
     return vm_memory_commit_record(memory,port_offset,record,bytes);
+}
+
+static machine_result write_frontier(vm_memory *memory, pl_u32 port_offset)
+{
+    if (!memory || !memory->bytes || !memory->generation || (port_offset & 7u)
+            || (pl_u64)port_offset+sizeof(machine_memory_port)>memory->reserved_bytes)
+        return MACHINE_RESULT_ENTRY_MAP;
+    if (read_word(memory->bytes+port_offset)!=memory->generation)
+        return MACHINE_RESULT_STALE_GENERATION;
+    const vm_memory_reservation *saved=&memory->reservation;
+    if (saved->generation!=memory->generation || saved->port!=port_offset
+            || !saved->parts || saved->parts>2u || !(saved->discard & VM_MEMORY_WRITE_FRONTIER))
+        return MACHINE_RESULT_ENTRY_MAP;
+    pl_u32 total=0u;
+    for (pl_u32 i=0u;i<saved->parts;++i) {
+        if (!saved->lengths[i] || saved->lengths[i]>VM_MEMORY_MAX_WRITE_BYTES
+                || (pl_u64)saved->offsets[i]+saved->lengths[i]>memory->byte_count)
+            return MACHINE_RESULT_ENTRY_MAP;
+        total+=saved->lengths[i];
+    }
+    return total<=VM_MEMORY_MAX_WRITE_BYTES && saved->cursor<=total ? 0u : MACHINE_RESULT_ENTRY_MAP;
+}
+
+machine_result vm_memory_write_word(vm_memory *memory, pl_u32 port_offset,
+                                    pl_u32 offset, pl_u32 bytes, pl_u64 value)
+{
+    machine_result status=write_frontier(memory,port_offset);
+    if (status) { vm_memory_abort(memory); return status; }
+    vm_memory_reservation *saved=&memory->reservation;
+    pl_u32 total=saved->lengths[0]+(saved->parts==2u ? saved->lengths[1] : 0u);
+    if (!bytes || bytes>8u || offset<saved->cursor || offset>total || bytes>total-offset) {
+        vm_memory_abort(memory); return MACHINE_RESULT_ENTRY_MAP;
+    }
+    pl_u32 at=offset,consumed=0u;
+    for (pl_u32 i=0u;i<saved->parts && consumed<bytes;++i) {
+        if (at>=saved->lengths[i]) { at-=saved->lengths[i]; continue; }
+        pl_u32 length=saved->lengths[i]-at;
+        if (length>bytes-consumed) length=bytes-consumed;
+        if (!(saved->discard & (1u<<i))) {
+            vm_memory_before_write(memory,saved->offsets[i]+at,length);
+            write_word(memory->bytes+saved->offsets[i]+at,value>>(consumed*8u),length);
+            memory->write_touched=1u;
+        }
+        consumed+=length; at=0u;
+    }
+    saved->cursor=offset+bytes;
+    return 0u;
+}
+
+machine_result vm_memory_write_end(vm_memory *memory, pl_u32 port_offset)
+{
+    machine_result status=write_frontier(memory,port_offset);
+    vm_memory_abort(memory);
+    return status;
 }

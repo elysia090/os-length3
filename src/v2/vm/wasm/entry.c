@@ -428,6 +428,33 @@ machine_result vm_commit(pl_u32 port, pl_u64 value)
     if (resident.write_touched) execution.generation = 0u;
     return result;
 }
+machine_result vm_write_begin(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
+{
+    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply); vm_memory_abort(&resident);
+    if (delivery.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    vm_mmu_context context=cpu_context(); resident.write_touched=0u;
+    machine_result result=vm_mmu_write_begin(&resident,port-arena_base,&context,address,bytes,access);
+    if (resident.write_touched) execution.generation=0u;
+    return memory_result(port,result);
+}
+machine_result vm_write_word(pl_u32 port, pl_u32 offset, pl_u32 bytes, pl_u64 value)
+{
+    if (table_frontier.stage || delivery.stage || !private_port(port)) {
+        vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP;
+    }
+    resident.write_touched=0u;
+    machine_result result=vm_memory_write_word(&resident,port-arena_base,offset,bytes,value);
+    if (resident.write_touched) execution.generation=0u;
+    return result;
+}
+machine_result vm_write_end(pl_u32 port)
+{
+    if (table_frontier.stage || delivery.stage || !private_port(port)) {
+        vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP;
+    }
+    return vm_memory_write_end(&resident,port-arena_base);
+}
 machine_result vm_reserve_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;

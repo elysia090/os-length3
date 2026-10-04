@@ -10,6 +10,7 @@ enum machine_memory_access {
     MACHINE_MEMORY_READ = 1u,
     MACHINE_MEMORY_WRITE = 2u,
     MACHINE_MEMORY_STACK = 4u,
+    MACHINE_MEMORY_ALIGNED16 = 32u, /* Ordered extent/pair preflight only. */
 };
 
 /* One private port per serialized execution lane. A fault is a pending CPU
@@ -59,4 +60,15 @@ _Static_assert(offsetof(machine_memory_pair_port, high) == 48u, "pair high word 
  * its address as a guest linear pointer. BARRIER requests admission, never a
  * source-instruction interpreter. No concurrent remap/eviction is permitted
  * during the synchronous call. The provider is C VM code, not a JS syscall. */
+
+/* Bounded ordered record output uses three generic C imports:
+ * write_begin(i32 port,i64 address,i32 bytes,i32 WRITE[|STACK|ALIGNED16]) -> i64
+ * write_word(i32 port,i32 relative_offset,i32 bytes,i64 value) -> i64
+ * write_end(i32 port) -> i64
+ * begin preflights 1..512 bytes, publishing no payload. word writes 1..8
+ * bytes at a nondecreasing, nonoverlapping cursor into pinned physical
+ * fragments; holes are left unchanged. end consumes the frontier. None
+ * receives an opcode, an image pointer or an architectural CPU snapshot.
+ * No yield/remap/event/second vCPU intervenes. CPU retirement follows end;
+ * a host trap closes/aborts before reuse, without undoing completed stores. */
 #endif

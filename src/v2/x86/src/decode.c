@@ -2115,7 +2115,7 @@ static void classify_machine_operation(
             int wide = source->mnemonic == ZYDIS_MNEMONIC_FXSAVE64
                     || source->mnemonic == ZYDIS_MNEMONIC_FXRSTOR64;
             out->machine_operation = PL_X86_MACHINE_X87;
-            out->machine_argument = 51u | ((pl_u64)restore << 40u)
+            out->machine_argument = PL_X86_X87_STATE_IMAGE | ((pl_u64)restore << 40u)
                                   | ((pl_u64)wide << 44u);
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
                         | PL_X86_INSTRUCTION_PRECISE_CUT

@@ -6,7 +6,7 @@
 enum vm_mmu_access {
     VM_MMU_EXECUTE = 8u,
     VM_MMU_PHYSICAL_REQUEST = 16u,
-    VM_MMU_ALIGNED16 = 32u,
+    VM_MMU_ALIGNED16 = MACHINE_MEMORY_ALIGNED16,
 };
 typedef struct {
     pl_u64 cr0, cr3, cr4, efer;
@@ -60,6 +60,14 @@ machine_result vm_mmu_reserve_record_access(vm_memory *physical, pl_u32 port_off
 machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,
                                   const vm_mmu_context *context, pl_u64 address,
                                   pl_u32 bytes, pl_u32 access, pl_u8 *target);
+/* Preflight WRITE[|STACK|ALIGNED16] over 1..512 bytes, pin at most two
+ * physical fragments, without reading or copying payload. Canonical range,
+ * alignment and all page permissions precede the first output store.
+ * Paging A/D updates remain observable even on failure. The same serialized
+ * owner is held until write_end/abort; no yield or remap is permitted. */
+machine_result vm_mmu_write_begin(vm_memory *physical, pl_u32 port_offset,
+                                  const vm_mmu_context *context, pl_u64 address,
+                                  pl_u32 bytes, pl_u32 access);
 /* Privileged, borrowed executable page, not a generated-code import.
  * Translate the exact requested RIP (including its precise fetch fault),
  * then expose its resident 4 KiB fragment without copying payload. offset

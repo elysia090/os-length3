@@ -16,7 +16,11 @@ typedef struct {
     pl_u32 port, parts;
     pl_u32 offsets[2], lengths[2];
     pl_u32 discard; /* Physical ROM fragments; guest paging rights checked first. */
+    pl_u32 cursor; /* Ordered sparse stores; occupies the former tail padding. */
 } vm_memory_reservation;
+
+#define VM_MEMORY_WRITE_FRONTIER 0x80000000u
+#define VM_MEMORY_MAX_WRITE_BYTES 512u
 
 typedef struct {
     pl_u64 address;
@@ -88,4 +92,13 @@ machine_result vm_memory_commit(vm_memory *memory, pl_u32 port_offset, pl_u64 va
  * synchronous owner as scalar commit. Not a generated-code import. */
 machine_result vm_memory_commit_record(vm_memory *memory, pl_u32 port_offset,
                                        const pl_u8 *value, pl_u32 bytes);
+/* Synchronous sparse output into a preflighted bounded extent. No record
+ * image or host pointer crosses the boundary. Each word advances an ordered
+ * cursor; skipped bytes are untouched. Bad/stale calls consume the frontier,
+ * but cannot undo stores already completed. Abort/rebind/close releases it;
+ * a host trap must call abort/close before admitting another operation.
+ * These are trusted compiled stores, not an asynchronous/SMP transaction. */
+machine_result vm_memory_write_word(vm_memory *memory, pl_u32 port_offset,
+                                    pl_u32 offset, pl_u32 bytes, pl_u64 value);
+machine_result vm_memory_write_end(vm_memory *memory, pl_u32 port_offset);
 #endif
