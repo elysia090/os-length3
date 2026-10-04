@@ -7,23 +7,27 @@ static int xmm(const pl_x86_operand *operand)
         && operand->value.reg.bits==128u && operand->value.reg.index<16u
         && !operand->value.reg.flags;
 }
-int cut_vector_transfer_supported(const pl_x86_instruction *instruction)
+int cut_vector_supported(const pl_x86_instruction *instruction)
 {
     if(instruction->status!=PL_X86_DECODE_VALID || instruction->flow!=PL_X86_FLOW_NEXT
             || instruction->machine_operation!=PL_X86_MACHINE_VECTOR
-            || (instruction->machine_argument&255u) || instruction->visible_operand_count!=2u
+            || instruction->visible_operand_count!=2u
             || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
                 |PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
     const pl_x86_operand *target=&instruction->operands[0],*source=&instruction->operands[1];
+    pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
+    int add=kind==10u && (instruction->machine_argument>>32u)==15u;
+    if(kind && !add)return 0;
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
-    if(read && write)return 0;
+    if((read && write) || (add && write))return 0;
     if((read?source->bits!=128u:!xmm(source)) || (write?target->bits!=128u:!xmm(target)))return 0;
     const pl_x86_operand *memory=write?target:source;
     if((read || write) && ((instruction->address_width!=32u && instruction->address_width!=64u)
             || !cut_memory_address_supported(instruction,&memory->value.memory)))return 0;
-    pl_u64 argument=((pl_u64)(write?0u:target->value.reg.index)<<8u)
+    pl_u64 argument=kind|((pl_u64)(write?0u:target->value.reg.index)<<8u)
         |((pl_u64)(read?0u:source->value.reg.index)<<16u)|((pl_u64)read<<24u)|((pl_u64)write<<25u);
-    if(read || write)argument|=instruction->machine_argument&(1ull<<26u);
+    if(add)argument|=(15ull<<32u)|((pl_u64)read<<26u);
+    else if(read || write)argument|=instruction->machine_argument&(1ull<<26u);
     return instruction->machine_argument==argument;
 }
 static void fault_if(cut_lowering *cut,pl_u32 vector)
@@ -58,7 +62,7 @@ static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
     cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,8u);
     cut_get(cut,local);cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,1u);cut_access_status(cut);
 }
-void cut_lower_vector_transfer(cut_lowering *cut,const pl_x86_instruction *instruction)
+void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
     int read=!!(instruction->machine_argument&(1ull<<24u));
     int write=!!(instruction->machine_argument&(1ull<<25u));
@@ -86,6 +90,14 @@ void cut_lower_vector_transfer(cut_lowering *cut,const pl_x86_instruction *instr
     } else {
         pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[1].value.reg.index*16u;
         cut_load(cut,offset);cut_set(cut,CUT_LEFT);cut_load(cut,offset+8u);cut_set(cut,CUT_RIGHT);
+    }
+    if((instruction->machine_argument&255u)==10u) {
+        /* PADDQ is two independent modulo-2^64 additions. Capture both
+         * sources before publication: aliasing doubles each old lane, never
+         * consumes the newly stored low word. There are no arithmetic flags. */
+        pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[0].value.reg.index*16u;
+        cut_load(cut,offset);cut_get(cut,CUT_LEFT);cut_op(cut,0x7cu);cut_set(cut,CUT_LEFT);
+        cut_load(cut,offset+8u);cut_get(cut,CUT_RIGHT);cut_op(cut,0x7cu);cut_set(cut,CUT_RIGHT);
     }
     if(write) {
         write_word(cut,0u,CUT_LEFT);write_word(cut,8u,CUT_RIGHT);

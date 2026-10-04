@@ -63,8 +63,10 @@ No size or boot-speed improvement is claimed from adding ISA coverage.
 
 The exact shipped gate compiles in the fixture, but that alone is not actual
 Linux execution. Extended independent startup with the same kernel, hidden
-segment witness and root image is running. No PID 1/root mount/shell/browser
-success is established here. The diagnostic now records CR0/CR4/EFER/MXCSR
+segment witness and root image completed and actually crosses MOVD, then
+refuses PADDQ. See [the next frontier](2026-10-05-vector-add.md).
+No PID 1/root mount/shell/browser success is established here.
+The diagnostic now records CR0/CR4/EFER/MXCSR
 and XMM at a compilation refusal only. The first new diagnostic was canceled
 before completion to correct two observational field offsets; guest lowering
 and VM semantics were unchanged. Neither retained browser Worker was touched.

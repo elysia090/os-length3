@@ -1,5 +1,5 @@
 // Independent native x86 -> common cold compiler -> real C MMU/dispatcher.
-// A precise transfer/fault test, not SIMD arithmetic or Linux boot.
+// Precise transfers and PADDQ/fault checks, not FP arithmetic or Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -66,7 +66,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<32;++form) {
+  for(let form=0;form<40;++form) {
     const prefix=path.join(directory,`vector-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
@@ -116,6 +116,8 @@ try {
       const same=(await engines.get(entry,cold.subarray(output,output+n))).exports.cut;
       reset(alias,meta,first,0);const wanted={state:cpu(),bytes:image(),result:1n};
       wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
+      if(meta.add)for(const offset of [272,280])
+        wanted.state.writeBigUInt64LE(BigInt.asUintN(64,wanted.state.readBigUInt64LE(offset)*2n),offset);
       vm.__indirect_function_table.set(slot,same);compare(same,wanted,`${form}: alias`,dispatch);++aliases;
       vm.__indirect_function_table.set(slot,cut);
     }
@@ -148,10 +150,15 @@ try {
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204da1n,8,output,65536,report),0);
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),16);
+  // Next independently observed shipped gate: high-register PADDQ.
+  cold.fill(0x90,input,input+4096);cold.set([0x66,0x45,0x0f,0xd4,0xf7],input+0xdda);
+  assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
+  assert.equal(cc.compiler_emit(0xffffffff81204ddan,8,output,65536,report),0);
+  assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
     controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,
-    shippedGate:'common C compilation accepted; not executed by this fixture',
-    oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or SIMD arithmetic',
+    shippedGates:'MOVDQU and PADDQ common C compilation accepted; not executed by this fixture',
+    oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or FP arithmetic',
     linuxBoot:'not-tested'}));
 } finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}

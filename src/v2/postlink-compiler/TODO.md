@@ -1,5 +1,20 @@
 # Remaining work — 2026-10-05
 
+The latest completed independent root-image startup crosses MOVD and ends at
+`paddq %xmm15,%xmm14` (`66 45 0f d4 f7`), 0xffffffff81204dda:
+157,428,081 retirements / 84,241,394 admissions. Complete decompression agrees;
+PID 1, release-root mount and shell remain unverified. Counts vary with
+calibration and do not establish speedup. PADDQ now shares the generic vector
+boundary and passes 5,120 native CPU/RAM observations, 40 exact emissions,
+fault/wait/alias models, final compiler checks and scoped sanitizers.
+MOVD/MOVQ/MXCSR and 31 default startup observations remain unchanged.
+See [actual startup and PADDQ evidence](../vm/check/browser/evidence/2026-10-05-vector-add.md).
+Next: run the final compiler on the same bundle, close the next actual
+common-grammar/fault gate, and reduce repeated source/engine construction
+without bypassing C admission or using an unbounded cache. Browser,
+PID 1, offline development commands, storage/recovery and networking remain
+the success conditions, not probe pass. Entries below are historical.
+
 MOVD/MOVQ scalar transfers now pass 108 exact cold emissions and 6,912
 independent native CPU/RAM observations, with 1,968 fault comparisons and
 precise control/wait/alias checks. Full compiler checks and scoped sanitizers
