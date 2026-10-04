@@ -642,3 +642,17 @@ predecessor flags. LOCK/FS/GS are refused before output publication.
 The C-Wasm comparison checks direct execution, C table dispatch, RF,
 serialized physical-row waits/retries and executable-write revocation. It is
 not an exception-entry, SMP, signed page-supply or Linux boot proof.
+
+### Bounded C source demand lifetime
+
+`make -C src/v2/vm check` covers the serialized C source owner as well as
+its MMU/write boundary. The fixed 64-rank demand list refreshes only after
+complete executable admission: a failed tail does not refresh a crossing
+row. Source writes still revoke exact extents and cancel pending whole-page
+pins. Free ranks precede an oldest-demand replacement. The independent test
+uses scan/timestamps; production uses only byte-sized rank links, not epochs
+or a growing history. Run `check-source-admission.mjs VM.WASM COMPILER.WASM`
+for actual C-Wasm compilation/table execution: 512 cold NOPs and 512 hot
+CLC executions compare complete CPU state at unchanged slot quota, alongside
+the existing source-write/alias/fault/grow/rebind matrix. These tests do not
+measure browser speedup, signed supply or Linux boot.

@@ -1,4 +1,5 @@
 #include <vm/source.h>
+_Static_assert(VM_SOURCE_ROWS == 64u, "one exact rank mask and byte-sized links");
 
 static pl_u32 bucket(pl_u32 offset)
 { return (offset >> 12u) & (VM_SOURCE_WATCH_BUCKETS - 1u); }
@@ -6,10 +7,34 @@ static pl_u32 key(pl_u64 entry, pl_u32 limit)
 { return (pl_u32)(entry ^ (entry >> 8u) ^ limit) & (VM_SOURCE_WATCH_BUCKETS - 1u); }
 static int crosses(const vm_source_row *row)
 { return (row->row.entry & 4095u) + row->row.source_bytes > 4096u; }
+static void unlink_rank(vm_sources *sources, pl_u32 rank)
+{
+    pl_u8 before = sources->previous[rank], after = sources->next[rank];
+    if (before < VM_SOURCE_ROWS) sources->next[before] = after;
+    else sources->oldest = after;
+    if (after < VM_SOURCE_ROWS) sources->previous[after] = before;
+    else sources->newest = before;
+}
+static void append_rank(vm_sources *sources, pl_u32 rank)
+{
+    sources->previous[rank] = sources->newest;
+    sources->next[rank] = VM_SOURCE_ROWS;
+    if (sources->newest < VM_SOURCE_ROWS) sources->next[sources->newest] = (pl_u8)rank;
+    else sources->oldest = (pl_u8)rank;
+    sources->newest = (pl_u8)rank;
+}
+static void demand(vm_sources *sources, pl_u32 rank)
+{
+    if (sources->newest != rank) {
+        unlink_rank(sources,rank);
+        append_rank(sources,rank);
+    }
+}
 static void discard(vm_sources *sources, pl_u32 rank)
 {
     pl_u64 bit = 1ull << rank;
     if (sources->valid & bit) {
+        unlink_rank(sources,rank);
         sources->watch[bucket(sources->rows[rank].offset)] &= ~bit;
         if (crosses(sources->rows + rank))
             sources->watch[bucket(sources->rows[rank].next_offset)] &= ~bit;
@@ -24,7 +49,7 @@ void vm_sources_open(vm_sources *sources, pl_u64 generation, pl_u32 first_slot)
     sources->generation = generation; sources->first_slot = first_slot;
     for (pl_u32 i = 0u; i < VM_SOURCE_WATCH_BUCKETS; ++i)
         sources->watch[i] = sources->lookup[i] = 0u;
-    sources->next_rank = 0u;
+    sources->oldest = sources->newest = VM_SOURCE_ROWS;
 }
 int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
     pl_u64 entry, pl_u32 limit, vm_execution_row *row)
@@ -49,12 +74,15 @@ int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
                 sources->pending = sources->pending_pages = 1u;
                 *row = candidate->row; return 2;
             }
+            demand(sources,i);
             *row = candidate->row; return 0;
         }
         candidates &= candidates - 1u;
     }
-    pl_u32 rank = sources->next_rank;
-    sources->next_rank = (sources->next_rank + 1u) & (VM_SOURCE_ROWS - 1u);
+    /* No demand may keep an invalid row alive. Free ranks precede eviction;
+     * a full owner replaces only its least recently validated demand. */
+    pl_u32 rank = sources->valid == ~0ull ? sources->oldest
+        : (pl_u32)__builtin_ctzll(~sources->valid);
     discard(sources,rank);
     sources->pending_page = *page; sources->pending_entry = entry;
     sources->pending_limit = limit; sources->pending_rank = rank;
@@ -77,6 +105,7 @@ int vm_sources_extend(vm_sources *sources, const vm_code_page *next, vm_executio
     const vm_source_row *candidate = sources->rows + rank;
     if ((sources->valid & (1ull << rank)) && crosses(candidate)
             && candidate->next_offset == next->offset) {
+        demand(sources,rank);
         *row = candidate->row; sources->pending = 0u; return 0;
     }
     discard(sources,rank);
@@ -104,6 +133,7 @@ int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
     if (crossing) sources->watch[bucket(target->next_offset)] |= 1ull << rank;
     sources->lookup[key(target->row.entry,target->limit)] |= 1ull << rank;
     sources->valid |= 1ull << rank;
+    append_rank(sources,rank);
     *row = target->row;
     return 0;
 }

@@ -114,7 +114,7 @@ node data/oracle/prepare-browser-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX
 node data/oracle/check-wasm-startup.mjs VM.WASM COMPILER.WASM src/v2/vm/check/browser/generated-startup
 ```
 
-## Real browser still running — preserve this Worker
+## Earlier running observation — preserved without restart
 
 The same ordinary-memory browser tab was normally reloaded once with this
 compiler and the current segment witness. It has not been restarted again.
@@ -151,3 +151,38 @@ fresh diagnostic after the present live Worker reaches a terminal state.
 Continue the same browser tab/Worker to its next genuine gate or quota;
 do not reload merely because observation is slow. The full Linux/development/
 authenticated-storage/granted-network objective remains active and unachieved.
+
+## Actual terminal acceptance and next common gate
+
+The [terminal visible result](2026-10-04-double-shift-browser.json) completes
+this same Worker normally, without a reload, at 174,000,486 source retirements
+and 96,787,852 admissions. General SHLD/SHRD lowering admits the previous
+frontier and the subsequent real Linux code reaches the new common refusal:
+
+```asm
+# 0xffffffff81034e31: 0f ae 54 24 0c
+ldmxcsr 12(%rsp)
+```
+
+The refusal is common grammar -102; there is no opcode skip or runtime
+interpreter fallback. Next, independently observe general LDMXCSR/STMXCSR
+profile, reserved-bit, memory/fault and CPU-publication semantics before
+changing common lowering. The browser logs timer/futex initialization and
+PF_NETLINK/PF_ROUTE registration, but **not** PID 1, a release root mount,
+offline shell or usable networking. `status: pass` covers this bounded
+diagnostic only; `linuxBoot: not-achieved` remains explicit.
+
+All 14,622,864 decompressed bytes across 3,571 pages still match SHA256
+`6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9`.
+The result contains 6,311 console bytes, 4,673 resident pages and 19,922,944
+C memory bytes. The extent transport remains 49 fetches / 3,154,432 fetched
+bytes / 3,046,912 requested bytes and 65,536 cache high-water bytes. This is
+local diagnostic integrity, not signed production admission or engine RSS.
+
+Engine construction 2,216,683.0 ms dominates cold emission 347,245.3,
+execution 143,665.4, admission 53,927.6 and supply 248.6. There are
+25,229,129 constructions / 2,734,856 exact-body hits; quotas stay unchanged.
+Retirement counts vary with calibration: no boot percentage or speedup is
+inferred. The separate source-lifetime VM candidate and later diagnostic
+counters were **not loaded into this Worker**. Native bundle and human UI
+remain unchanged. Cold shell three seconds and the full goal remain unmet.

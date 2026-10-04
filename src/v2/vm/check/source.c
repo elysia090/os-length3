@@ -40,6 +40,152 @@ static void mmu_alias(void)
 }
 static int probe(pl_u64 entry, pl_u32 limit)
 { return vm_sources_probe(&sources,&page,entry,limit,&row); }
+static void demand_lifetime(void)
+{
+    /* A repeated, still-valid source must outlive inactive cold sources.
+     * This exercises the C owner, not the host emitted-module cache. */
+    vm_sources_open(&sources,9u,3u);
+    EXPECT(probe(page.address,1024u) == 1);
+    EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    const pl_u32 hot_slot = row.slot;
+    pl_u32 hot_misses = 0u, slot_changes = 0u;
+    for (pl_u32 i = 0u; i < 4096u; ++i) {
+        EXPECT(probe(page.address+1u+(i%4095u),1024u) == 1);
+        EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        if (probe(page.address,1024u) != 0) {
+            ++hot_misses;
+            EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        }
+        slot_changes += row.slot != hot_slot;
+    }
+    if (hot_misses) fprintf(stderr,"source: hot source unnecessarily recompiled %u times\n",hot_misses);
+    EXPECT(hot_misses == 0u);
+    EXPECT(slot_changes == 0u);
+    vm_sources_open(&sources,9u,3u);
+}
+typedef struct {
+    pl_u64 entry, stamp;
+    pl_u32 offset, limit;
+    int valid;
+} reference_row;
+static reference_row reference[VM_SOURCE_ROWS];
+static void reference_check(void)
+{
+    pl_u64 valid=0u, seen=0u, stamp=0u;
+    pl_u32 previous=VM_SOURCE_ROWS, rank=sources.oldest, count=0u;
+    for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i) {
+        if (!reference[i].valid) continue;
+        valid |= 1ull<<i;
+        EXPECT(sources.rows[i].row.entry==reference[i].entry);
+        EXPECT(sources.rows[i].offset==reference[i].offset);
+        EXPECT(sources.rows[i].limit==reference[i].limit);
+        EXPECT(sources.rows[i].row.slot==sources.first_slot+i);
+    }
+    EXPECT(sources.valid==valid);
+    /* Independent test-only scan/timestamps. Production uses neither epochs
+     * nor this linear reference algorithm. A cycle cannot hang the test. */
+    while (rank<VM_SOURCE_ROWS && count++<VM_SOURCE_ROWS) {
+        EXPECT(!(seen&(1ull<<rank)) && reference[rank].valid);
+        EXPECT(sources.previous[rank]==previous);
+        EXPECT(reference[rank].stamp>stamp);
+        seen |= 1ull<<rank; stamp=reference[rank].stamp;
+        previous=rank; rank=sources.next[rank];
+    }
+    EXPECT(rank==VM_SOURCE_ROWS && seen==valid && sources.newest==previous);
+    for (pl_u32 b=0u;b<VM_SOURCE_WATCH_BUCKETS;++b) {
+        pl_u64 watch=0u, lookup=0u;
+        for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i) {
+            if (!reference[i].valid) continue;
+            if (((reference[i].offset>>12u)&(VM_SOURCE_WATCH_BUCKETS-1u))==b) watch |= 1ull<<i;
+            if (((pl_u32)(reference[i].entry^(reference[i].entry>>8u)^reference[i].limit)
+                    &(VM_SOURCE_WATCH_BUCKETS-1u))==b) lookup |= 1ull<<i;
+        }
+        EXPECT(sources.watch[b]==watch && sources.lookup[b]==lookup);
+    }
+}
+static void demand_reference(void)
+{
+    pl_u32 random=0x47ac2831u;
+    memset(&sources,0xa5,sizeof sources); /* Reopen does not depend on zeroed inactive links. */
+    vm_sources_open(&sources,9u,3u); memset(reference,0,sizeof reference);
+    for (pl_u32 turn=1u;turn<=20000u;++turn) {
+        random=random*1664525u+1013904223u;
+        pl_u64 entry=page.address+(pl_u64)((random>>8u)&127u)*16u;
+        pl_u32 limit=(random&4u)?1u:1024u, rank=VM_SOURCE_ROWS;
+        page.offset=(random&1u)?8192u:0x102000u; /* Colliding physical watch buckets. */
+        for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i)
+            if (reference[i].valid && reference[i].entry==entry
+                    && reference[i].offset==page.offset && reference[i].limit==limit) rank=i;
+        int hit=rank<VM_SOURCE_ROWS;
+        if (!hit) {
+            for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i)
+                if (!reference[i].valid) { rank=i; break; }
+            if (rank==VM_SOURCE_ROWS) {
+                rank=0u;
+                for (pl_u32 i=1u;i<VM_SOURCE_ROWS;++i)
+                    if (reference[i].stamp<reference[rank].stamp) rank=i;
+            }
+            reference[rank].valid=0;
+        }
+        EXPECT(probe(entry,limit)==(hit?0:1));
+        EXPECT(row.slot==3u+rank);
+        if (!hit) {
+            if ((random&31u)==0u) {
+                /* A failed/cancelled compile owns no valid rank or demand. */
+                vm_sources_write(&sources,page.offset+4000u,1u);
+                EXPECT(vm_sources_publish(&sources,1u,1u,&row)==-1);
+                reference_check(); continue;
+            }
+            EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        }
+        reference[rank]=(reference_row){entry,turn,page.offset,limit,1};
+        if ((random&15u)==2u) {
+            pl_u32 at=page.offset+(pl_u32)(entry-page.address);
+            vm_sources_write(&sources,at,1u);
+            for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i)
+                if (reference[i].valid && reference[i].offset+(pl_u32)(reference[i].entry-page.address)==at)
+                    reference[i].valid=0;
+        }
+        if ((random&255u)==7u) {
+            vm_sources_open(&sources,9u,3u); memset(reference,0,sizeof reference);
+        }
+        reference_check();
+    }
+    page.offset=8192u; vm_sources_open(&sources,9u,3u);
+}
+static void crossing_demand(void)
+{
+    vm_code_page next={page.address+4096u,9u,32768u,4096u};
+    const pl_u64 hot=page.address+4095u;
+    for (pl_u32 accepted=0u;accepted<2u;++accepted) {
+        vm_sources_open(&sources,9u,3u);
+        EXPECT(probe(hot,1024u)==1);
+        EXPECT(vm_sources_extend(&sources,&next,&row)==1);
+        EXPECT(!vm_sources_publish(&sources,2u,1u,&row));
+        const pl_u32 hot_slot=row.slot;
+        for (pl_u32 i=1u;i<VM_SOURCE_ROWS;++i) {
+            EXPECT(probe(page.address+i,1024u)==1);
+            EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        }
+        EXPECT(probe(hot,1024u)==2);
+        vm_code_page tail=next;
+        if (!accepted) tail.generation=10u;
+        EXPECT(vm_sources_extend(&sources,&tail,&row)==(accepted?0:-1));
+        EXPECT(probe(page.address+VM_SOURCE_ROWS,1024u)==1);
+        EXPECT((row.slot==hot_slot)==!accepted);
+        EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        if (accepted) {
+            for (pl_u32 i=0u;i<4096u;++i) {
+                EXPECT(probe(hot,1024u)==2);
+                EXPECT(!vm_sources_extend(&sources,&next,&row) && row.slot==hot_slot);
+                int result=probe(page.address+1u+(i%4094u),1024u);
+                EXPECT(result==0 || result==1);
+                if (result==1) EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+            }
+        }
+    }
+    vm_sources_open(&sources,9u,3u);
+}
 static void crossing(void)
 {
     const pl_u64 entry = page.address+4095u;
@@ -187,8 +333,11 @@ int main(void)
     EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
     vm_sources_write(&sources,0u,0xffffffffu); EXPECT(probe(0x400080u,1u) == 1);
     page.offset = 8192u;
+    demand_lifetime();
+    demand_reference();
+    crossing_demand();
     crossing();
     mmu_alias();
-    if (!failures) puts("source admission: bounded zero-copy source/write frontier green (100000 replacement cases)");
+    if (!failures) puts("source admission: bounded zero-copy source/write frontier green (100000 replacements, 20000 independent LRU/write/reset cases, 4096 hot/cold and crossing demands; no boot speedup claim)");
     return failures != 0;
 }

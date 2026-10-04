@@ -97,7 +97,8 @@ int main(void)
     EXPECT(vm_control_write(&memory,0u,&state,&segments,4u,32u) == MACHINE_RESULT_STALE_GENERATION);
     EXPECT(!memcmp(&state,&before,sizeof state));
     put(0u,9u);
-    memory.reservation = (vm_memory_reservation){9u,0u,1u,{4096u,0u},{8u,0u},0u};
+    memory.reservation = (vm_memory_reservation){.generation=9u,.parts=1u,
+        .offsets={4096u,0u},.lengths={8u,0u}};
     EXPECT(vm_control_write(&memory,0u,&state,&segments,1u,0u) == MACHINE_RESULT_ENTRY_MAP);
     EXPECT(!memory.reservation.parts);
     EXPECT(vm_memory_commit(&memory,0u,42u) == MACHINE_RESULT_ENTRY_MAP);

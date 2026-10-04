@@ -1,6 +1,15 @@
 # Remaining work — 2026-10-04
 
-Current browser checkpoint: binary PIT modes 0/2/6 and IRQ0 use a 128-byte C
+Actual latest browser gate: `ldmxcsr 12(%rsp)` (`0f ae 54 24 0c`) at
+0xffffffff81034e31, common grammar -102. The same SHLD/SHRD Worker ended
+normally at 174,000,486 retirements / 96,787,852 admissions. Complete
+14,622,864-byte decompression remains identical; timer/futex/NETLINK
+initialization is not PID 1/shell/network acceptance. The new bounded source
+lifetime VM is verified separately, not substituted into that receipt.
+An intermittent native CALL oracle red is reproduced and remains open; its
+expectation is not weakened and CALL lowering is unchanged.
+
+Device checkpoint: binary PIT modes 0/2/6 and IRQ0 use a 128-byte C
 owner with O(1) residual-phase advancement; port 0x80 owns a 2-byte POST latch.
 599,808 pulse/reference and 25,728 batch/residual comparisons pass. Paused
 QEMU gives 34,536 register comparisons, not an OUT/null/IRQ timing oracle.
@@ -86,20 +95,48 @@ destinations use the explicit zero representative, not a hardware claim.
 compiler ASan/UBSan pass; prior 340 memory shift/rotate emissions remain
 byte-identical and pass their 174,080 direct/C-dispatch comparisons.
 Compiler growth is 1,578 bytes; VM/native bundle/human UI are unchanged.
-The actual browser Worker is still live at 152,060,467 retirements /
+The earlier saved running browser observation was at 152,060,467 retirements /
 80,429,141 admissions, early rootfs initialization but no PID 1/shell.
 The saved running observation is not a terminal SHRD/next-gate acceptance.
 
+The next bounded C source-owner correction passes a hot/cold red-to-green:
+the previous round-robin owner recompiles a repeated valid hot source 64
+times among 4,096 cold demands. Validated demand now refreshes a fixed
+64-rank list; free ranks precede the oldest demand, with no epochs, copied
+payload, growing history or quota increase. Failed cross-page tail admission
+does not refresh it. 20,000 independent reference/write/reset cases, prior
+100,000 replacement cases, 4,096 crossing demands and 512 cold + 512 hot
+complete C-Wasm CPU dispatch comparisons pass. VM core ASan/UBSan, product
+checks and memory-shift/double-shift/IRQ/trap/REP regressions pass. Metadata
+grows 128 bytes; candidate vm.wasm grows 246 bytes. This is not global
+quotient minimality or a measured browser speedup.
+The same 1,000,000-admission diagnostic has 1,773 rather than 1,967 cold
+requests, but engine constructions remain 1,211. The largest cost is not
+therefore solved. This candidate did NOT replace the preceding browser Worker.
+An intermediate unchanged-Worker receipt is at 166,437,849 retirements /
+91,155,901 admissions, with devtmpfs, timer/futex initialization and NETLINK
+registration, not PID 1/shell or usable network. See
+[source lifetime evidence](../vm/check/browser/evidence/2026-10-04-source-lifetime.md).
+
 Next, in order:
 
-1. Continue the same live extended browser Worker/tab to its next genuine
-   common gate or quota. Do not restart on an observation timeout or replace
-   the shipped kernel. Close the observed ISA/MMU/device gap with an independent
-   red and shared lowering, without opcode skips or Linux-function cases.
+1. The preceding browser Worker has terminated normally: close general
+   LDMXCSR/STMXCSR admission/value, reserved-bit and precise fault behavior
+   with independent native observations and shared lowering, not an opcode
+   skip or Linux-function case. Stage the verified source-lifetime VM plus
+   the verified new compiler with the same shipped kernel/segment witness,
+   then profile bounded engine reason counters. Never replace an in-progress
+   Worker on an observation timeout.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
    HTTPS/service use, preserving Linux as the only syscall/VFS/net authority.
+4. Minimize the independently reproduced CALL oracle red: target #GP sometimes
+   leaves the reference stack word unchanged. Full product runs pass and fail;
+   194 isolated repetitions passed before repeat 195 failed in form 23/row 81.
+   Diagnostics expose inputs/frame/source bytes; do not hide this with a
+   retry-as-success, expectation relaxation, or product semantic change without
+   independent evidence. See the source-lifetime evidence's known-red section.
 
 Engine candidate identity is separate from source placement: exact newly
 emitted bytes permit 1,573,491 hits, construction 1,823,976 -> 250,466 and
@@ -120,7 +157,7 @@ C execution 75,995.2, admission 34,927.8 and supply 247.3. It is still
 running, not a completed latency result. Three bounded counters for absent
 keys, changed bodies and quota eviction are component-tested, but were added
 after this Worker loaded and are not actual measurements from it. Measure
-them only in a later fresh run after the present Worker terminates normally.
+them only in a fresh run; the previous Worker has now terminated normally.
 See [current evidence](../vm/check/browser/evidence/2026-10-04-double-shift.md).
 
 ## Immediate delivery and next product goal — 2026-10-02

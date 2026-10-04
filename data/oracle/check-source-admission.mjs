@@ -263,6 +263,33 @@ for (const [rank,address] of [0x400000n,0x400000n,0x400080n].entries()) {
   assert.deepEqual(data.slice(code+Number(address-0x400000n),code+Number(address-0x400000n)+8),beforeStack);
   put(base+384,0x400000n); assert.equal(query(),rank === 2 ? 0n : 1n);
 }
+// The C source owner, not just the host engine cache, must preserve a hot
+// admitted body under cold traffic. Execute each real compiled cold NOP and
+// hot CLC through the C dispatcher; never trust a slot without its admission.
+put(leaf,0x8067n); put(tailLeaf,0x9067n); data.fill(0x90,code,code+4096); data[code]=0xf8;
+put(base+384,0x400000n); put(base+392,3n);
+assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
+assert.equal(query(),1n); await publish();
+const hotSlot=view.getUint32(rows+16,true);
+let hotDemands=0,coldDemands=0;
+function observeExecution(entry,flags) {
+  put(base+384,entry); put(base+392,3n);
+  const expected=data.slice(base,base+1256), expectedView=new DataView(expected.buffer);
+  expectedView.setBigUint64(384,entry+1n,true); expectedView.setBigUint64(392,flags,true);
+  expectedView.setBigUint64(1128,expectedView.getBigUint64(1128,true)+1n,true);
+  assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  assert.equal(vm.vm_run(port,9n,1),1n); assert.equal(vm.vm_completed(),1);
+  assert.equal(vm.vm_source_retired(),1n);
+  assert.deepEqual(data.slice(base,base+1256),expected,'complete hot/cold CPU publication');
+}
+for(let rank=1;rank<=512;++rank) {
+  const coldEntry=0x400000n+BigInt(rank);
+  assert.equal(query(1,coldEntry),1n); await publish(coldEntry);
+  observeExecution(coldEntry,3n); ++coldDemands;
+  assert.equal(query(),0n,'hot C source survives cold traffic at the unchanged 64-slot quota');
+  assert.equal(view.getUint32(rows+16,true),hotSlot);
+  observeExecution(0x400000n,2n); ++hotDemands;
+}
 for (let i = 0; i < vm.vm_source_capacity(); ++i) table.set(firstSlot+i,null);
 cc.compiler_close(); vm.vm_close();
-console.log(`C source admission: green (${emitted} real cold emissions; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK, SETcc truth values, signed BT/BTS and ordered POP source aliases, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);
+console.log(`C source admission: green (${emitted} real cold emissions, ${coldDemands} cold + ${hotDemands} hot complete CPU dispatch comparisons; single/two-page reuse, demand-only tails, non-contiguous owners, exact writes including both CMPXCHG arms/LOCK, SETcc truth values, signed BT/BTS and ordered POP source aliases, pinned cancellation including A-bit table alias, stale, NX/nonpresent/residency, remap, grow/rebind and private table-slot regression; NOT Linux boot)`);

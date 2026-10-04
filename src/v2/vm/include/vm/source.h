@@ -18,7 +18,9 @@ typedef struct {
     vm_code_page pending_next;
     pl_u64 pending_entry;
     pl_u32 pending_limit, pending_rank, pending, pending_pages;
-    pl_u32 first_slot, next_rank;
+    pl_u32 first_slot;
+    pl_u8 previous[VM_SOURCE_ROWS], next[VM_SOURCE_ROWS];
+    pl_u8 oldest, newest;
 } vm_sources;
 
 /* One serialized compiler/engine owner. Page views must come from executable
@@ -28,6 +30,10 @@ typedef struct {
  * mutating payload. External host mutation/remap/table changes require reset.
  * No concurrent writer, eviction/remap, compiler replacement or untrusted
  * host-supplied compilation attestation is admitted by this API. */
+/* The fixed rank list contains only valid rows. A successful admitted demand
+ * moves one row to its tail; replacement uses a free rank or the oldest row.
+ * Refresh, unlink and victim selection are bounded O(1), without epochs,
+ * copied source payload, growing history, a sort or a quota increase. */
 void vm_sources_open(vm_sources *sources, pl_u64 generation, pl_u32 first_slot);
 /* 0: reusable row, 1: pinned miss, 2: cached crossing requiring tail admission,
  * -1: refusal. Only a demand from the same trusted compiler extends a miss.

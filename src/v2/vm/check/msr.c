@@ -224,7 +224,8 @@ int main(void)
         EXPECT(!memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
     }
     reset(0u); put(0u,8u); machine_state before = state; machine_segments hidden = segments;
-    memory.reservation = (vm_memory_reservation){9u,0u,1u,{4096u,0u},{8u,0u},0u};
+    memory.reservation = (vm_memory_reservation){.generation=9u,.parts=1u,
+        .offsets={4096u,0u},.lengths={8u,0u}};
     EXPECT(vm_msr_transfer(&memory,0u,&state,&segments,1u,MACHINE_MSR_GS_BASE,0u) == MACHINE_RESULT_STALE_GENERATION);
     EXPECT(!memory.reservation.parts && !memcmp(&before,&state,sizeof state) && !memcmp(&hidden,&segments,sizeof hidden));
     if (failures) return 1;

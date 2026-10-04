@@ -153,7 +153,11 @@ int main(int argc, char **argv)
             for (pl_u32 reg=0u;reg<16u;++reg) {
                 pl_u64 actual=trapped ? registers[reg] : native_stack_result[reg];
                 pl_u64 wanted=reg == 4u && !trapped ? state.registers[reg] - 8u : state.registers[reg];
-                if (actual != wanted) goto finish;
+                if (actual != wanted) {
+                    fprintf(stderr,"CALL register form=%u row=%u reg=%u wanted=%llx actual=%llx\n",
+                        form,row,reg,(unsigned long long)wanted,(unsigned long long)actual);
+                    goto finish;
+                }
                 records[row][reg]=state.registers[reg]; records[row][17u + reg]=actual;
             }
             pl_u64 after=stack_word ? word(stack_word) : 0u;
@@ -163,7 +167,20 @@ int main(int argc, char **argv)
             if ((stored && (!stack_word || after != 0x400000u + at))
                     || (!stored && before != after) || (!trapped && native_stack_result[16] != state.rflags)) {
                 fprintf(stderr,"CALL stack publication form=%u row=%u vector=%llu before=%llx after=%llx\n",form,row,
-                    (unsigned long long)vector,(unsigned long long)before,(unsigned long long)after); goto finish;
+                    (unsigned long long)(trapped?vector:0u),(unsigned long long)before,(unsigned long long)after);
+                fprintf(stderr,"CALL inputs phase=%u target=%llx operand=%llx stack=%llx rsp=%llx flags=%llx\n",
+                    phase,(unsigned long long)target,(unsigned long long)operand,
+                    (unsigned long long)stack_address,(unsigned long long)state.registers[4],
+                    (unsigned long long)state.rflags);
+                if (trapped) fprintf(stderr,"CALL frame error=%llx rip=%llx rsp=%llx flags=%llx si_addr=%llx\n",
+                    (unsigned long long)error,(unsigned long long)fault_rip,(unsigned long long)registers[4],
+                    (unsigned long long)flags,(unsigned long long)fault_address);
+                fprintf(stderr,"CALL initial GPRs:");
+                for (pl_u32 i=0u;i<16u;++i) fprintf(stderr," %llx",(unsigned long long)state.registers[i]);
+                fputc('\n',stderr);
+                fprintf(stderr,"CALL bytes:");
+                for (pl_u32 i=0u;i<at;++i) fprintf(stderr," %02x",(unsigned)code[i]);
+                fputc('\n',stderr); goto finish;
             }
             records[row][16]=state.rflags; records[row][33]=state.rflags;
             records[row][34]=trapped ? 0x400000u : target;
