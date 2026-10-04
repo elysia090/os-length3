@@ -156,6 +156,12 @@ Next, in order:
    Diagnostics expose inputs/frame/source bytes; do not hide this with a
    retry-as-success, expectation relaxation, or product semantic change without
    independent evidence. See the source-lifetime evidence's known-red section.
+   The standalone minimizer now reproduces it without any product/compiler:
+   52 untouched stack words among 884,736 WHPX observations, with unchanged
+   GPR/RSP/RIP frames. Explicit TCG retains the payload in 110,592 observations
+   but reports advanced RSP/RIP instead. Do not use that as full equivalence or
+   relax the existing check. Accelerator attribution is corrected; see
+   [independent CALL receipts](../vm/check/browser/evidence/2026-10-04-call-fault.md).
 
 Engine candidate identity is separate from source placement: exact newly
 emitted bytes permit 1,573,491 hits, construction 1,823,976 -> 250,466 and

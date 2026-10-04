@@ -192,5 +192,5 @@ for (let rank=0;rank<96;++rank) {
 vm.__indirect_function_table.set(slot,null); cc.compiler_close(); vm.vm_close();
 assert.equal(nativeComparisons,108,'every native coordinate must be compared');
 console.log(JSON.stringify({format:'c-wasm-descriptor-transfer-v1',status:'pass',parity,models,nativeComparisons,waits,retries,refusals,abortPreservations,
-  oracle:'actual x86 user-mode payload/#PF in reference QEMU TCG build VM; other state/UMIP cases are explicit models',
+  oracle:'actual x86 user-mode payload/#PF in reference build VM; accelerator provenance recorded separately; other state/UMIP cases are explicit models',
   cpuProfile:'unchanged; UMIP models do not advertise or enable that feature',linuxBoot:'not-tested',exceptionDelivery:'not-tested'},null,2));

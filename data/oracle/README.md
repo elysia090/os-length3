@@ -58,6 +58,36 @@ must never be reconstructed as initial zero RAM after execution.
 
 ## Independent native oracles
 
+### Accelerator provenance and near CALL faults — 2026-10-04
+
+Native user-mode fixtures run inside the independent build VM. They do not
+imply a particular accelerator: on this Windows run the active process and
+`temp/bootstrap/execution.json` both specify **WHPX**, with a start time of
+2026-10-02 20:56:13 local. Earlier evidence prose/JSON calling that build VM
+"TCG" is an attribution error, not a changed byte receipt. Explicit system
+observers that launch `-accel tcg` remain TCG observations. Neither backend
+is a product dependency, a universal hardware oracle or an equivalence proof
+by itself. The [CALL evidence](../../src/v2/vm/check/browser/evidence/2026-10-04-call-fault.md)
+records that distinction and retains the strict product red.
+
+The standalone `call-fault-observe.c/.S` has no product/compiler dependency.
+It separately counts stack payload and all-GPR/RSP/RIP/#GP frame outcomes:
+
+```sh
+bash data/oracle/prepare-call-fault.sh NEW-DIRECTORY
+NEW-DIRECTORY/root/init 4096 > NEW-DIRECTORY/native.log
+node data/oracle/observe-call-fault.mjs NEW-DIRECTORY/native.log
+node data/oracle/observe-call-fault.mjs QEMU SHIPPED-KERNEL NEW-DIRECTORY/observer.cpio.gz NEW-TCG-LOG
+```
+
+The last invocation uses an isolated, networkless TCG diagnostic `/init`,
+not the release root, a browser fallback or Linux product acceptance. A receipt
+has `status: observed`, never `pass`: original-frame and advanced-frame outcomes
+are not interchangeable expected states. Permission transitions occur before
+each test, and all tested stack bytes are writable at the actual CALL. Fresh
+outputs are required. The source and exact minimized full-fixture input are
+retained, not hidden by retrying a red until green.
+
 ### Address-only page invalidation
 
 The common cold compiler lowers the already-typed INVLPG descriptor. The

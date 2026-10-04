@@ -199,5 +199,5 @@ try {
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); cc.compiler_close(); }
 console.log(JSON.stringify({format:'c-wasm-memory-division-native-v1',status:'pass',parity,comparisons,successes,divideFaults,pageFaults,
-  dispatchComparisons,rfChecks,waits,retries,refusals,addressFaultModels,oracle:'actual x86 user-mode execution in reference QEMU TCG build VM, not physical hardware',
+  dispatchComparisons,rfChecks,waits,retries,refusals,addressFaultModels,oracle:'actual x86 user-mode execution in reference build VM; accelerator provenance recorded separately, not physical hardware',
   undefinedFlags:'incoming representative, not hardware equality',linuxBoot:'not-tested',exceptionDelivery:'not-tested'},null,2));

@@ -71,8 +71,9 @@ memory-shift and double-shift fixtures still pass 174,080 and 113,664 direct
 comparisons respectively, plus their separately dispatched comparisons,
 fault/wait/RF/alias matrices. The 128 independent exception/IRET observations,
 1,024 software-interrupt models, boundary-clock/IRQ and REP MOVS regressions
-also pass. QEMU TCG is only the native reference/build VM, never the product
-execution path or a physical-hardware guarantee.
+also pass. The native reference/build VM is never the product execution path
+or a physical-hardware guarantee. Its Windows accelerator is WHPX, not TCG;
+see the [provenance correction and independent CALL observations](2026-10-04-call-fault.md).
 
 ```sh
 make -j4 -C src/v2 check
@@ -156,3 +157,8 @@ They describe stack/branch sequencing, but reading them does not prove the
 cause of this intermittent observation, physical-hardware payload behavior
 or that either model should be changed. Minimize it and obtain an independent
 fault/payload oracle before asserting complete CALL equivalence.
+
+The later independent minimization reproduces both payload outcomes without
+using a product compiler. A separate explicit TCG run also reports a different
+RSP/RIP fault boundary. See the [new receipt](2026-10-04-call-fault.md); the
+existing strict product CALL expectation and lowering remain unchanged.

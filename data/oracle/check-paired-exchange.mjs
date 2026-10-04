@@ -181,4 +181,4 @@ try {
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); cc.compiler_close(); }
 console.log(JSON.stringify({format:'c-wasm-paired-exchange-native-v1',status:'pass',parity,elfParity,comparisons,pageFaults,alignmentFaults,
   dispatchComparisons,rfChecks,waits,retries,refusals,reservations,
-  oracle:'actual x86 user-mode execution in reference QEMU TCG build VM, not physical hardware',linuxBoot:'not-tested',smp:'not-tested'},null,2));
+  oracle:'actual x86 user-mode execution in reference build VM; accelerator provenance recorded separately, not physical hardware',linuxBoot:'not-tested',smp:'not-tested'},null,2));
