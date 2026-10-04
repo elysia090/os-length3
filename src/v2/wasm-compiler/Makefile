@@ -7,8 +7,13 @@ INCLUDES = -Iinclude -I../support/include -I../optimized-x86/include \
 	-I../machine-abi/include -I../x86/include
 BUILD ?= build
 WASM_CC ?= clang
+# Disjoint cold static/stack placement in a caller-owned imported memory.
+# Stack follows this module's data, not address zero in another module.
+COLD_STATIC_MIN = 131072
 WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--no-entry,--strip-all -Xlinker --import-memory=machine,memory \
+	-DCOLD_STATIC_MIN=$(COLD_STATIC_MIN) -Wl,--global-base=$(COLD_STATIC_MIN),--no-stack-first \
+	-Wl,--export=compiler_static_min,--export=compiler_open_fragments \
 	-Wl,--export=compiler_arena_min,--export=compiler_report_bytes,--export=compiler_close \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
@@ -68,7 +73,7 @@ PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 .PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 
-# Independent cold compiler memory/stack; never the VM's runtime decoder.
+# Independent cold compiler and private stack; never a runtime decoder.
 ZYDIS = ../x86/third_party/zydis
 COLD_SOURCES = wasm/entry.c wasm/memory.c $(filter-out src/emit-module.c src/emit-dispatch.c,$(SOURCES)) \
 	../x86/src/elf.c ../x86/src/decode.c ../optimized-x86/src/proof.c \

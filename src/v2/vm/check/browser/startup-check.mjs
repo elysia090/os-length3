@@ -40,14 +40,14 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const idtPage = await read('call.extra-page'), cmdlinePage = await read('cmdline.extra-page');
   const optionPage = await read('option.extra-page');
   const maximumMemoryPages = extended ? 512 : 128;
-  const memory = new WebAssembly.Memory({initial:extended ? 16 : 8,maximum:maximumMemoryPages});
+  const memory = new WebAssembly.Memory({initial:16,maximum:maximumMemoryPages});
   const provider = await WebAssembly.compile(providerBytes);
   assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
   const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
-  const compilerMemory = new WebAssembly.Memory({initial:16,maximum:32});
   const compilerModule = await WebAssembly.compile(compilerBytes);
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
-  const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory:compilerMemory}})).exports;
+  const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
+  assert(vm.vm_arena_min()<=cc.compiler_static_min(),'disjoint VM and cold static/stack reservations');
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
     reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,
@@ -57,16 +57,21 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     software_interrupt:vm.vm_software_interrupt,
     io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}},
     {maximumEntries:1024,maximumBytes:262144});
-  const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;
+  const compilerOutput = cc.compiler_arena_min();
   const compilerReport = compilerOutput + 65536;
-  let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
-  const input = vm.vm_arena_min(), rows = input + 8192, directoryOffset = input + 12288;
+  // Compiler output/stack and VM metadata are outside all guest mappings.
+  // Cold input borrows the exact C-MMU resident fragments, never a copy arena.
+  const input = (compilerReport + 80 + 4095) & ~4095;
+  const rows = input + 8192, directoryOffset = input + 12288;
   const capacity = extended ? 8192 : 4096, branches = directoryOffset + capacity * 32;
   const base = (branches + (capacity - 1) * 16 + 4095) & ~4095;
   const port = base + 2048, segments = base + 1408, codeView = base + 2112, pageRequest = base + 2176;
   const codeOffset = base + 32768, gdtOffset = base + 45056, stackOffset = base + 49152;
   const idtCodeOffset = base + 53248, bssOffset = base + 57344;
   const cmdlineCodeOffset = base + 61440, optionOffset = base + 65536;
+  const initialPages=Math.ceil((optionOffset+4096)/65536);
+  if (initialPages>16) memory.grow(initialPages-16);
+  let data = new Bytes(memory.buffer), view = new DataView(memory.buffer);
   const relocated = 0x1000000n + BigInt(header.readUInt32LE(0x260)) - 0x320000n;
   const stack = relocated + 0x2ea400n, gdt = 0x12e6000n;
   assert.equal(stack,0x1e2c400n);
@@ -108,7 +113,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const table = vm.__indirect_function_table, firstSlot = vm.vm_slot_min();
   const sourceCapacity = vm.vm_source_capacity(), installedSlots = new Set();
   table.grow(Math.max(0,firstSlot + sourceCapacity - table.length));
-  let admissions = 0, retired = 0, emittedBytes = 0, copiedCodeBytes = 0;
+  let admissions = 0, retired = 0, emittedBytes = 0, borrowedCodeBytes = 0;
   const exceptions = [];
   let sourceHits = 0, sourceMisses = 0, admissionMs = 0;
   let resourceGate;
@@ -127,8 +132,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const linuxEntryAddress = decompression ? BigInt(decompression.elfEntry) : 0n;
   const trace = new CutTrace();
   const relocationTrace = [];
-  const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
-  const compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport);
+  let cold = data, report = view;
+  const compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport,memory);
   const rip = () => view.getBigUint64(base + 384,true);
   let reportedRetired=0,reportedAdmissions=0;
   function reportProgress() {
@@ -149,6 +154,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     let status = vm.vm_page_prepare(port,pageRequest);
     if (status === -3 && vm.vm_page_count() < capacity && memory.buffer.byteLength < maximumMemoryPages * 65536) {
       memory.grow(8); data = new Bytes(memory.buffer); view = new DataView(memory.buffer);
+      cold=data; report=view; compilerOutputWitness.refresh();
       assert.equal(vm.vm_grow(),0); status = vm.vm_page_prepare(port,pageRequest);
     }
     if (status === -3) {
@@ -365,11 +371,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
           assert.equal(view.getBigUint64(at + 8,true),generation);
           assert.equal(view.getUint32(at + 20,true),4096);
           assert(physical >= base + 4096 && physical + 4096 <= data.length,'C-verified source fragment');
-          cold.set(data.subarray(physical,physical + 4096),compilerInput + page*4096);
-          copiedCodeBytes += 4096;
+          borrowedCodeBytes += 4096;
         }
         const started = performance.now();
-        assert.equal(cc.compiler_open_pages(compilerInput,count,address,generation),0);
+        assert.equal(cc.compiler_open_fragments(view.getUint32(codeView+16,true),
+          count===2 ? view.getUint32(codeView+40,true) : 0,count,address,generation),0);
         const status = compilerOutputWitness.emit(()=>cc.compiler_emit(entry,limit,compilerOutput,65536,compilerReport));
         coldMs += performance.now() - started; return status;
       };
@@ -609,12 +615,14 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
-      emittedBytes,copiedCodeBytes,engineReuse:engines.stats(),compilerOutput:compilerOutputWitness.stats(),
+      emittedBytes,copiedCodeBytes:0,borrowedCodeBytes,engineReuse:engines.stats(),compilerOutput:compilerOutputWitness.stats(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt},trace:trace.read(),relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
-      memoryBytes:memory.buffer.byteLength,coldMemoryBytes:compilerMemory.buffer.byteLength};
+      memoryBytes:memory.buffer.byteLength,coldMemoryBytes:0,
+      compilerReservation:{staticBegin:cc.compiler_static_min(),arenaBegin:compilerOutput,
+        outputBytes:65536,reportBytes:80,vmMetadataBegin:input,guestArenaBegin:base}};
   } catch (error) {
     // Preserve a bounded last state before disposal. An assertion failure is
     // not an unsupported opcode, quota stop, page fault or successful boot.

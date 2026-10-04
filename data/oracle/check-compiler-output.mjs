@@ -46,6 +46,24 @@ assert.throws(()=>publication.emit(()=>{publication.bytes[123]=1;return -105;}),
 for (const fields of [[-1,65536,65536],[0,0,65536],[0,65537,65536],[0,65536,65535],[0,65536,65537]])
   assert.throws(()=>new CompilerOutput(new Uint8Array(131072),...fields),RangeError);
 assert.throws(()=>new CompilerOutput(new Uint8Array(new SharedArrayBuffer(65536+80)),0,65536,65536),RangeError);
+const growMemory=new WebAssembly.Memory({initial:2,maximum:4});
+const growBytes=new Uint8Array(growMemory.buffer);
+assert.throws(()=>new CompilerOutput(growBytes,0,65536,65536,new WebAssembly.Memory({initial:2})),/memory identity/);
+assert.throws(()=>new CompilerOutput(growBytes.subarray(1),0,65536,65536,growMemory),/memory identity/);
+assert.throws(()=>owner.refresh(),/no grow owner/);
+const grown=new CompilerOutput(growBytes,0,65536,65536,growMemory);
+assert.equal(grown.emit(()=>{
+  growBytes.fill(0x25,0,32);new DataView(growMemory.buffer).setBigUint64(65536+40,32n,true);
+  growMemory.grow(1);return 0;
+}),0);
+assert.equal(grown.dirty,32);
+assert(grown.bytes.subarray(0,32).every(byte=>byte===0x25));
+assert.equal(grown.emit(()=>-102),-102);
+assert.equal(grown.stats().clearedModuleBytes,32);
+grown.bytes[60000]=1;const retained=grown.stats();
+growMemory.grow(1);grown.refresh();assert.deepEqual(grown.stats(),retained);
+assert.throws(()=>grown.emit(()=>-102),/refusal must not publish/);
+assert.throws(()=>grown.refresh(),/failed compiler output/);
 
 const memory=new WebAssembly.Memory({initial:32});
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory}})).instance.exports;
@@ -82,5 +100,5 @@ assert.equal(parity,513);assert.equal(refusals,3);
 assert.equal(witness.stats().clearedModuleBytes,actualClears);
 assert.equal(witness.stats().clearedReportBytes,actualReports);
 console.log(JSON.stringify({format:'compiler-output-witness-v1',status:'pass',linuxBoot:'not-tested',
-  fakeWitnessCases:515,realCParity:parity,realCRefusals:refusals,
+  fakeWitnessCases:515,memoryGrowthChecks:2,identityRefusals:2,realCParity:parity,realCRefusals:refusals,
   fullCapacityBytesAvoided:516*capacity-capacity-actualClears,output:witness.stats()},null,2));

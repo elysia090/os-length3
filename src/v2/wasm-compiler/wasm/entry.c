@@ -11,6 +11,7 @@ static pl_u64 source_generation;
 
 _Static_assert(sizeof(wasm_cut_report) == 80u, "cut report transport extent");
 
+pl_u32 compiler_static_min(void) { return COLD_STATIC_MIN; }
 pl_u32 compiler_arena_min(void)
 { return ((pl_u32)(uintptr_t)&__heap_base + 4095u) & ~4095u; }
 pl_u32 compiler_report_bytes(void) { return sizeof(wasm_cut_report); }
@@ -36,20 +37,38 @@ int compiler_open_elf(pl_u32 offset, pl_u32 bytes)
     return status;
 }
 
-int compiler_open_pages(pl_u32 offset, pl_u32 count, pl_u64 address, pl_u64 generation)
+int compiler_open_fragments(pl_u32 first, pl_u32 second, pl_u32 count,
+                            pl_u64 address, pl_u64 generation)
 {
     compiler_close();
     if (!count || count > 2u || !generation || (address & 4095u)
             || address > ~0ull - (pl_u64)count * 4096u
-            || !range(offset,count * 4096u)) return WASM_COMPILER_ERROR_INPUT;
+            || !range(first,4096u) || (count == 2u && !range(second,4096u)))
+        return WASM_COMPILER_ERROR_INPUT;
     for (pl_u32 i = 0u; i < count; ++i)
-        maps[i] = (pl_x86_map){(const pl_u8 *)(uintptr_t)(offset + i * 4096u),
+        maps[i] = (pl_x86_map){(const pl_u8 *)(uintptr_t)(i ? second : first),
                               address + (pl_u64)i * 4096u,4096u,4096u,
                               PL_ELF_FLAG_EXECUTE,generation};
     source = (pl_x86_image){maps,count,0u,address};
     if (pl_x86_image_validate(&source)) { compiler_close(); return WASM_COMPILER_ERROR_INPUT; }
     mode = 2u; source_generation = generation;
     return 0;
+}
+
+/* Contiguous standalone input is the same image admission, not a runtime
+ * fallback. Fragment order is virtual; physical fragments may alias. */
+int compiler_open_pages(pl_u32 offset, pl_u32 count, pl_u64 address, pl_u64 generation)
+{
+    if (count == 2u && (pl_u64)offset + 4096u > UINT32_MAX) {
+        compiler_close(); return WASM_COMPILER_ERROR_INPUT;
+    }
+    return compiler_open_fragments(offset,offset + 4096u,count,address,generation);
+}
+
+static int overlaps(pl_u32 left, pl_u64 left_bytes, const void *right, pl_u64 right_bytes)
+{
+    pl_u64 a = left, b = (pl_u32)(uintptr_t)right;
+    return left_bytes && right_bytes && (a <= b ? b - a < left_bytes : a - b < right_bytes);
 }
 
 /* Report and target are caller-owned disjoint reservations, above C static
@@ -61,7 +80,20 @@ int compiler_emit(pl_u64 entry, pl_u32 maximum_instructions,
                     pl_u32 target, pl_u32 capacity, pl_u32 report_offset)
 {
     if (!mode || !capacity || !range(target,capacity) || (report_offset & 7u)
-            || !range(report_offset,sizeof(wasm_cut_report))) return WASM_COMPILER_ERROR_INPUT;
+            || !range(report_offset,sizeof(wasm_cut_report))
+            || overlaps(target,capacity,(const void *)(uintptr_t)report_offset,sizeof(wasm_cut_report)))
+        return WASM_COMPILER_ERROR_INPUT;
+    /* Check full reservations before planning; a short result must not make
+     * an overlapping output reservation appear to be a valid borrowed view. */
+    if (mode == 1u) {
+        if (overlaps(target,capacity,compiler.image.bytes,compiler.image.length)
+                || overlaps(report_offset,sizeof(wasm_cut_report),compiler.image.bytes,compiler.image.length))
+            return WASM_COMPILER_ERROR_INPUT;
+    } else for (pl_u32 i = 0u; i < source.map_count; ++i) {
+        if (overlaps(target,capacity,maps[i].bytes,maps[i].file_bytes)
+                || overlaps(report_offset,sizeof(wasm_cut_report),maps[i].bytes,maps[i].file_bytes))
+            return WASM_COMPILER_ERROR_INPUT;
+    }
     wasm_cut_options options = {entry,maximum_instructions,capacity};
     wasm_cut_report *report = (wasm_cut_report *)(uintptr_t)report_offset;
     pl_u64 written = 0u;

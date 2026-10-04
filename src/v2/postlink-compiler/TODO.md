@@ -1,5 +1,19 @@
 # Remaining work — 2026-10-05
 
+Latest completed same-bundle startup passes PADDQ and ends at PXOR memory,
+0xffffffff81204dec: 166,527,487 retirements / 90,723,689 admissions. Complete
+decompression agrees; PID 1, release-root mount and shell remain unverified.
+The next general ISA gate is precise vector logic. A real materialization
+leak is removed: C-MMU source fragments are borrowed by the independent C
+compiler in a disjoint private shared Memory layout, with no copied-input
+startup fallback. Native/cold emission, fault, alias, overlap and growth reds
+pass. Default startup preserves architecture/trace and eliminates 7,262,208
+copied bytes; combined allocated Memory falls by 524,288 bytes, not a speedup
+or boot claim. The extended borrowed-source run is in progress. See
+[borrowed source and actual gate evidence](../vm/check/browser/evidence/2026-10-05-compiler-borrow.md).
+Next: general logic lowering, then repeated source/engine construction under
+the same bounded admission contract. Historical checkpoints follow.
+
 The latest completed independent root-image startup crosses MOVD and ends at
 `paddq %xmm15,%xmm14` (`66 45 0f d4 f7`), 0xffffffff81204dda:
 157,428,081 retirements / 84,241,394 admissions. Complete decompression agrees;
