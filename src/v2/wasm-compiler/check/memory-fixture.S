@@ -485,6 +485,66 @@ _start:
     mul qword ptr [rdi+rax*8+7]
 #elif MEMORY_CASE == 326
     imul qword ptr [rdi+rax*8+7]
+#elif MEMORY_CASE >= 327 && MEMORY_CASE <= 390
+#if MEMORY_CASE < 359
+#define TRANSFER xadd
+#else
+#define TRANSFER xchg
+#endif
+#define TRANSFER_RANK ((MEMORY_CASE-327)%32)
+#if TRANSFER_RANK >= 16
+    lock
+#endif
+#if (TRANSFER_RANK/8)%2
+#define TRANSFER_ADDRESS [edi]
+#else
+#define TRANSFER_ADDRESS [rdi]
+#endif
+#if (TRANSFER_RANK/4)%2
+#if TRANSFER_RANK%4 == 0
+    TRANSFER byte ptr TRANSFER_ADDRESS, cl
+#elif TRANSFER_RANK%4 == 1
+    TRANSFER word ptr TRANSFER_ADDRESS, cx
+#elif TRANSFER_RANK%4 == 2
+    TRANSFER dword ptr TRANSFER_ADDRESS, ecx
+#else
+    TRANSFER qword ptr TRANSFER_ADDRESS, rcx
+#endif
+#else
+#if TRANSFER_RANK%4 == 0
+    TRANSFER byte ptr TRANSFER_ADDRESS, al
+#elif TRANSFER_RANK%4 == 1
+    TRANSFER word ptr TRANSFER_ADDRESS, ax
+#elif TRANSFER_RANK%4 == 2
+    TRANSFER dword ptr TRANSFER_ADDRESS, eax
+#else
+    TRANSFER qword ptr TRANSFER_ADDRESS, rax
+#endif
+#endif
+#elif MEMORY_CASE == 391
+    xadd qword ptr [rax], rax
+#elif MEMORY_CASE == 392
+    lock xadd dword ptr [rax], eax
+#elif MEMORY_CASE == 393
+    xadd qword ptr [rdx], rdx
+#elif MEMORY_CASE == 394
+    xadd byte ptr [rax], ah
+#elif MEMORY_CASE == 395
+    xadd qword ptr [rdi+rcx*4+7], rcx
+#elif MEMORY_CASE == 396
+    xadd qword ptr [rip+512], rax
+#elif MEMORY_CASE == 397
+    xchg qword ptr [rax], rax
+#elif MEMORY_CASE == 398
+    xchg dword ptr [rax], eax
+#elif MEMORY_CASE == 399
+    xchg qword ptr [rdx], rdx
+#elif MEMORY_CASE == 400
+    xchg byte ptr [rax], ah
+#elif MEMORY_CASE == 401
+    xchg qword ptr ss:[rdi+r11*2+7], r11
+#elif MEMORY_CASE == 402
+    xchg qword ptr [rip+512], rax
 #else
 #error unsupported case
 #endif

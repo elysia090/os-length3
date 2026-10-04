@@ -121,6 +121,8 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int unary = unary_arithmetic(instruction->operation);
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
+    int transfer = exchange || instruction->operation == PL_X86_OPERATION_EXCHANGE_ADD
+        || instruction->operation == PL_X86_OPERATION_EXCHANGE;
     int selector = cut_selector_read_supported(instruction);
     int summary = instruction->operation == PL_X86_OPERATION_BIT_SUMMARY;
     int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED
@@ -130,11 +132,11 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         || instruction->operation == PL_X86_OPERATION_DIVIDE_UNSIGNED;
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
             || (instruction->machine_operation != PL_X86_MACHINE_NONE
-                && !selector && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
+                && !selector && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || (divide ? !cut_divide_supported(instruction) : multiply ? !cut_multiply_supported(instruction)
                 : instruction->visible_operand_count != (unary || set ? 1u : 2u))
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
-                && !(exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
+                && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || instruction->flags & (PL_X86_INSTRUCTION_PRIVILEGED
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)
             || (instruction->address_width != 32u && instruction->address_width != 64u)) return 0;
@@ -145,15 +147,16 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int conditional = instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE;
     if (summary && (first || (instruction->condition >= 2u && instruction->condition != 4u)
             || operands[0].bits < 16u || operands[0].bits != operands[1].bits)) return 0;
-    if (exchange && (!first || operands[1].kind != PL_X86_OPERAND_REGISTER
+    if (transfer && (!first || operands[1].kind != PL_X86_OPERAND_REGISTER
             || !cut_gpr(&operands[1].value.reg) || operands[0].bits != operands[1].bits)) return 0;
     /* The accepted native descriptor retains this precise transaction as a
      * typed machine effect. This ordinary, non-shared-memory projection has
      * one serialized owner: reserve/commit is synchronous, with no intervening
      * guest writer, event or await. That closes LOCK too, not SMP/shared RAM.
      * Both forms specialize to SSA, never an atomic-op runtime callback. */
-    if (exchange && instruction->machine_operation == PL_X86_MACHINE_ATOMIC
-            && instruction->machine_argument != (2u | ((pl_u64)(operands[1].bits/8u)<<8u)
+    if (transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC
+            && instruction->machine_argument != ((exchange ? 2u : instruction->operation==PL_X86_OPERATION_EXCHANGE_ADD ? 1u : 0u)
+                | ((pl_u64)(operands[1].bits/8u)<<8u)
                 | ((pl_u64)operands[1].value.reg.index<<16u)
                 | ((pl_u64)!!(operands[1].value.reg.flags&PL_X86_REGISTER_HIGH8)<<24u))) return 0;
     if (conditional && (first || instruction->condition >= 16u
@@ -173,7 +176,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
     } else if (first && !unary && !set && !implicit && !divide) {
-        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !exchange)
+        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !transfer)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || (!selector && !cut_gpr(&operands[1].value.reg))))) return 0;
@@ -208,6 +211,8 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     int unary = unary_arithmetic(instruction->operation);
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
+    int transfer = instruction->operation == PL_X86_OPERATION_EXCHANGE_ADD
+        || instruction->operation == PL_X86_OPERATION_EXCHANGE;
     int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
                || instruction->operation == PL_X86_OPERATION_TEST || (bit && !instruction->condition);
@@ -264,6 +269,9 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         if (unary) unary_value(cut,instruction->operation,memory->bits);
         else if (bit) bit_value(cut,instruction);
         else if (exchange) exchange_value(cut,memory->bits);
+        else if (instruction->operation==PL_X86_OPERATION_EXCHANGE) {
+            cut_get(cut,CUT_RIGHT); cut_set(cut,CUT_VALUE); /* unchanged flags */
+        } else if (transfer) arithmetic(cut,PL_X86_OPERATION_ADD,memory->bits);
         else arithmetic(cut,instruction->operation,memory->bits);
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
         cut_get(cut, CUT_VALUE);
@@ -277,6 +285,12 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
             cut_get(cut,CUT_RIGHT); cut_set(cut,CUT_VALUE);
             pl_x86_operand acc = accumulator(memory->bits);
             cut_write_register(cut,&acc.value.reg); cut_op(cut,0x0bu);
+        } else if (transfer) {
+            /* EA and source were captured before reserve. Publish the old
+             * memory into the source parent only after commit succeeds,
+             * even when that register also formed the effective address. */
+            cut_get(cut,CUT_LEFT); cut_set(cut,CUT_VALUE);
+            cut_write_register(cut,&operands[1].value.reg);
         }
     } else cut_access(cut);
     if (!store) {

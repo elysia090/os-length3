@@ -631,6 +631,33 @@ int main(int argc, char **argv)
         {0x64u,0x48u,0x0fu,0xc7u,0x0fu,0x90u}, /* Wide pair still requires an owned FS base. */
         {0x48u,0x0fu,0xc7u,0xcfu,0x90u,0x90u}, /* Pair destination must be memory. */
     };
+    /* All ordinary scalar transfer forms join the same precise RMW owner.
+     * RSP and the EA/source-alias cases must snapshot the parent before any
+     * write; accepting LOCK never grants a second guest-memory owner. */
+    for (pl_u32 family=0u;family<2u;++family)
+    for (pl_u32 locked=0u;locked<2u;++locked)
+    for (pl_u32 width=0u;width<4u;++width)
+    for (pl_u32 reg=0u;reg<16u;++reg) {
+        pl_u8 transfer[8]; pl_u32 count=0u;
+        if (locked) transfer[count++]=0xf0u;
+        if (width==1u) transfer[count++]=0x66u;
+        if (width==3u || reg>=8u || (width==0u && reg>=4u))
+            transfer[count++]=(pl_u8)(0x40u|(width==3u ? 8u : 0u)|(reg>=8u ? 4u : 0u));
+        if (!family) transfer[count++]=0x0fu;
+        transfer[count++]=(pl_u8)((family ? 0x86u : 0xc0u)+(width!=0u));
+        transfer[count++]=(pl_u8)(((reg&7u)<<3u)|7u);
+        memset(pages,0x90,sizeof pages); memcpy(pages,transfer,count);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions==1u && report.source_bytes==count
+            && report.memory_bytes==(1u<<width) && report.memory_access==3u
+            && report.boundary==WASM_CUT_MEMORY && report.written_registers==(1u<<reg)
+            && report.read_registers==((1u<<reg)|0x80u) && !!report.flags_written==!family);
+        /* A pure predecessor cannot borrow this transfer's fault authority. */
+        memmove(pages+2u,pages,count); pages[0]=0x89u; pages[1]=0xc0u;
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_bytes==2u && report.source_instructions==1u
+            && report.boundary==WASM_CUT_MEMORY && !report.memory_bytes);
+    }
     for (pl_u32 i=0u;i<sizeof exchange_rejected/sizeof exchange_rejected[0];++i) {
         memset(pages,0x90,sizeof pages); memcpy(pages,exchange_rejected[i],sizeof exchange_rejected[0]);
         memset(output,0xa5,sizeof output);

@@ -160,6 +160,12 @@ paired-exchange-fixture-check: all $(BUILD)/paired-exchange-check fixture-tools
 	@task_output=$$(mktemp -d); rmdir "$$task_output"; \
 		bash ../../../data/oracle/prepare-paired-exchange-cuts.sh "$$task_output" --built
 
+.PHONY: memory-transfer-fixture-check
+check: memory-transfer-fixture-check
+memory-transfer-fixture-check: all $(BUILD)/memory-cut-check fixture-tools
+	@task_output=$$(mktemp -d); rmdir "$$task_output"; \
+		bash ../../../data/oracle/prepare-memory-transfer-cuts.sh "$$task_output" --built
+
 cut-check: all $(BUILD)/cut-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to the post-linked cut fixture\n' >&2; exit 2; }
 	$(BUILD)/cut-check "$(INPUT)"

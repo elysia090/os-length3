@@ -7,12 +7,15 @@ and 18,432 protection/alignment comparisons, 56,192 dispatcher comparisons,
 post-linked ELF/proof fixtures emit identical modules. Product checks and selected
 sanitizers pass. Previous scan/count and debug-register checkpoints remain green;
 #DB delivery and active address breakpoints remain explicitly incomplete.
-Actual browser: 137,071,982 retired / 69,316,535 admissions, unchanged complete
-decompression, then -102 memory XADD at 0xffffffff81050643. PID 1/shell and the
-full goal remain red. Next: join common memory XADD/XCHG to existing arithmetic
-SSA and the precise reservation/commit. Engine reuse is still zero despite source
+Memory XADD/XCHG now shares arithmetic SSA and the precise reservation/commit:
+76 modules / 38,912 CPU/RAM and 37,888 protection comparisons pass, with RF,
+dispatcher, wait/retry and selected sanitizer checks. Product checks pass.
+Actual browser: 137,134,563 retired / 69,357,027 admissions, unchanged complete
+decompression, then ENTRY_MAP for OUT AL,A1 at 0xffffffff81030a33. PID 1/shell
+and the full goal remain red. Next: C-owned 8259 PIC I/O/device state, then boot.
+Engine reuse is still zero despite source
 cache hits; that fixed cost is recorded, not relabeled as a speedup. See
-[current evidence](../vm/check/browser/evidence/2026-10-04-paired-exchange.md).
+[current evidence](../vm/check/browser/evidence/2026-10-04-memory-transfer.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 
