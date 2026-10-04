@@ -1,5 +1,14 @@
 # Remaining work — 2026-10-05
 
+MOVD/MOVQ scalar transfers now pass 108 exact cold emissions and 6,912
+independent native CPU/RAM observations, with 1,968 fault comparisons and
+precise control/wait/alias checks. Full compiler checks and scoped sanitizers
+pass; 128-bit/MXCSR emissions and 31 default startup observations remain
+unchanged (compiler size excluded). Extended same-bundle root-image startup
+is running independently to determine the next actual gate. This is not
+browser/PID 1/shell acceptance. See
+[scalar transfer evidence](../vm/check/browser/evidence/2026-10-05-vector-scalar.md).
+
 Latest independent root-image startup crosses MOVDQU/MOVDQA and ends at
 common grammar -102 for `movd %ecx,%xmm15` (`66 44 0f 6e f9`),
 0xffffffff81204dc2: 160,961,519 retirements / 86,837,554 admissions.

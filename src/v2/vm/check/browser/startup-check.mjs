@@ -397,7 +397,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
           sourceAvailable:available,
           cpu:{registers:Array.from({length:16},(_,i) => `0x${view.getBigUint64(base + i*8,true).toString(16)}`),
             flags:`0x${view.getBigUint64(base + 392,true).toString(16)}`,
-            cr3:`0x${view.getBigUint64(base + 408,true).toString(16)}`}};
+            cr0:`0x${view.getBigUint64(base + 400,true).toString(16)}`,
+            cr3:`0x${view.getBigUint64(base + 408,true).toString(16)}`,
+            cr4:`0x${view.getBigUint64(base + 416,true).toString(16)}`,
+            efer:`0x${view.getBigUint64(base + 424,true).toString(16)}`,
+            mxcsr:`0x${view.getUint32(base + 612,true).toString(16)}`,
+            xmm:Array.from({length:32},(_,i)=>`0x${view.getBigUint64(base + 128 + i*8,true).toString(16)}`)}};
       }
       const length = Number(report.getBigUint64(compilerReport + 40,true));
       const sourceBytes = Number(report.getBigUint64(compilerReport + 32,true));

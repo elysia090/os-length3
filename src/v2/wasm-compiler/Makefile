@@ -19,6 +19,14 @@ SOURCES += src/lower-fxsave.c
 SOURCES += src/lower-double-shift.c
 SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
+SOURCES += src/lower-vector-scalar.c
+
+.PHONY: vector-scalar-check
+check: vector-scalar-check
+vector-scalar-check: $(BUILD)/vector-scalar-check
+	$(BUILD)/vector-scalar-check
+$(BUILD)/vector-scalar-check: check/vector-scalar.c check/native-vector.S check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/vector-scalar.c check/native-vector.S check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: vector-transfer-check
 check: vector-transfer-check

@@ -10,6 +10,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     if (cut_fxsave_supported(instruction)) return CUT_SYSTEM_FXSAVE;
     if (cut_mxcsr_supported(instruction)) return CUT_SYSTEM_MXCSR;
     if (cut_vector_transfer_supported(instruction)) return CUT_SYSTEM_VECTOR_TRANSFER;
+    if (cut_vector_scalar_supported(instruction)) return CUT_SYSTEM_VECTOR_SCALAR;
     if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT
             && instruction->machine_argument==MACHINE_EXCEPTION_BREAKPOINT
@@ -327,6 +328,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (cut_fxsave_supported(instruction)) { cut_lower_fxsave(cut,instruction); return; }
     if (cut_mxcsr_supported(instruction)) { cut_lower_mxcsr(cut,instruction); return; }
     if (cut_vector_transfer_supported(instruction)) { cut_lower_vector_transfer(cut,instruction); return; }
+    if (cut_vector_scalar_supported(instruction)) { cut_lower_vector_scalar(cut,instruction); return; }
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && instruction->machine_argument==PL_X86_X87_INITIALIZE) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.

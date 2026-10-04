@@ -14,7 +14,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_CPUID, CUT_SYSTEM_INTERRUPT_RETURN, CUT_SYSTEM_MSR, CUT_SYSTEM_DIVIDE,
        CUT_SYSTEM_SELECTOR_READ, CUT_SYSTEM_INVALIDATE_PAGE, CUT_SYSTEM_IO, CUT_SYSTEM_TIME,
        CUT_SYSTEM_DEBUG, CUT_SYSTEM_X87_INIT, CUT_SYSTEM_FXSAVE, CUT_SYSTEM_SOFTWARE_INTERRUPT,
-       CUT_SYSTEM_MXCSR, CUT_SYSTEM_VECTOR_TRANSFER };
+       CUT_SYSTEM_MXCSR, CUT_SYSTEM_VECTOR_TRANSFER, CUT_SYSTEM_VECTOR_SCALAR };
 enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
 typedef struct {
     wasm_writer *writer;
@@ -83,6 +83,8 @@ int cut_mxcsr_supported(const pl_x86_instruction *instruction);
 void cut_lower_mxcsr(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_vector_transfer_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector_transfer(cut_lowering *cut,const pl_x86_instruction *instruction);
+int cut_vector_scalar_supported(const pl_x86_instruction *instruction);
+void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_sse_guard(cut_lowering *cut);
 void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction);
