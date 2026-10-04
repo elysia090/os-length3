@@ -13,6 +13,7 @@ export class CompiledModules {
     this.maximumModuleBytes = maximumModuleBytes;
     this.entries = new Map();
     this.bytes = 0; this.hits = 0; this.compilations = 0; this.closed = false;
+    this.absentKeyCompilations = 0; this.changedBodyCompilations = 0; this.quotaEvictions = 0;
   }
   async get(key,bytes) {
     if (this.closed) throw new Error('module owner closed');
@@ -34,6 +35,9 @@ export class CompiledModules {
     const instance = await WebAssembly.instantiate(module,this.imports);
     if (this.closed) throw new Error('module owner closed during compilation');
     ++this.compilations;
+    // Request-time reason, counted only after successful construction. An
+    // absent key may be new OR evicted: no unbounded history is retained.
+    if (previous) ++this.changedBodyCompilations; else ++this.absentKeyCompilations;
     // Replace any entry installed while compilation was pending, not a stale
     // pre-await reference. This keeps accounting exact even for duplicate work.
     const current = this.entries.get(key);
@@ -41,12 +45,15 @@ export class CompiledModules {
     while (this.entries.size >= this.maximumEntries || this.bytes + owned.length > this.maximumBytes) {
       const first = this.entries.keys().next().value, victim = this.entries.get(first);
       this.bytes -= victim.bytes.length; this.entries.delete(first);
+      ++this.quotaEvictions;
     }
     this.entries.set(key,{bytes:owned,instance}); this.bytes += owned.length;
     return instance;
   }
   stats() {
     return {compilations:this.compilations,hits:this.hits,entries:this.entries.size,
+      absentKeyCompilations:this.absentKeyCompilations,changedBodyCompilations:this.changedBodyCompilations,
+      quotaEvictions:this.quotaEvictions,
       retainedModuleBytes:this.bytes,maximumEntries:this.maximumEntries,maximumBytes:this.maximumBytes};
   }
   close() { this.closed = true; this.entries.clear(); this.bytes = 0; this.imports = null; }

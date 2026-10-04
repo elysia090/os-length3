@@ -16,6 +16,7 @@ SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-repeat.c src/lower-branch.c
 SOURCES += src/lower-paired-exchange.c
 SOURCES += src/lower-fxsave.c
+SOURCES += src/lower-double-shift.c
 
 .PHONY: software-interrupt-check
 check: software-interrupt-check
@@ -162,6 +163,15 @@ $(BUILD)/memory-shift-check: check/memory-shift.c check/native-stack.S $(BUILD)/
 check: memory-shift-check
 memory-shift-check: $(BUILD)/memory-shift-check
 	$(BUILD)/memory-shift-check
+
+$(BUILD)/double-shift-check: check/double-shift.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/double-shift.c check/native-stack.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: double-shift-check
+check: double-shift-check
+double-shift-check: $(BUILD)/double-shift-check
+	$(BUILD)/double-shift-check
 
 $(BUILD)/extend-check: check/extend.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/extend.c check/native-cut.S \

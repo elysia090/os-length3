@@ -85,6 +85,9 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction);
 pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction);
 pl_u32 cut_flag_read_mask(const pl_x86_instruction *instruction);
 int cut_shift_supported(const pl_x86_instruction *instruction);
+int cut_double_shift_supported(const pl_x86_instruction *instruction);
+void cut_double_shift_value(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_double_shift(cut_lowering *cut,const pl_x86_instruction *instruction);
 /* Count leaves one masked i64 on the stack. Value consumes captured
  * CUT_LEFT/CUT_RIGHT and updates CUT_VALUE/live flags, never a CPU store. */
 void cut_shift_count(cut_lowering *cut, const pl_x86_instruction *instruction);

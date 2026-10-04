@@ -28,6 +28,29 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    /* Double shifts share pure value/flag SSA for every GPR binding; the
+     * memory destination alone introduces the existing RMW boundary. */
+    options.maximum_source_instructions=1u;
+    static const pl_u32 double_counts[]={0u,1u,16u,32u,255u};
+    for(pl_u32 right=0u;right<2u;++right)
+    for(pl_u32 width=16u;width<=64u;width*=2u)
+    for(pl_u32 count=0u;count<6u;++count)
+    for(pl_u32 input=0u;input<16u;++input)
+    for(pl_u32 target=0u;target<17u;++target) {
+        pl_u32 at=0u;memset(pages,0x90,sizeof pages);
+        if(width==16u)pages[at++]=0x66u;
+        pl_u32 rex=(width==64u?8u:0u)|(input>=8u?4u:0u)|(target>=8u&&target<16u?1u:0u);
+        if(rex)pages[at++]=(pl_u8)(0x40u|rex);
+        pages[at++]=0x0fu;pages[at++]=(pl_u8)((right?0xacu:0xa4u)+!count);
+        pages[at++]=(pl_u8)((input&7u)<<3u|(target==16u?7u:0xc0u|(target&7u)));
+        if(count)pages[at++]=(pl_u8)double_counts[count-1u];
+        int status=wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
+        EXPECT(!status);
+        if(!status)EXPECT(report.source_instructions==1u && report.source_bytes==at
+            && report.written_registers==(target<16u?1u<<target:0u)
+            && report.memory_bytes==(target==16u?width/8u:0u)
+            && report.boundary==(target==16u?WASM_CUT_MEMORY:WASM_CUT_LIMIT));
+    }
     /* MOV DR ignores operand size and ModRM.mod, but never REX.R/LOCK.
      * All source/destination registers use the same precise C boundary. */
     options.maximum_source_instructions=1u;

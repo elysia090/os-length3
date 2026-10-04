@@ -125,6 +125,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         || instruction->operation == PL_X86_OPERATION_EXCHANGE;
     int selector = cut_selector_read_supported(instruction);
     int shift = instruction->operation == PL_X86_OPERATION_SHIFT;
+    int double_shift=instruction->operation==PL_X86_OPERATION_DOUBLE_SHIFT;
     int summary = instruction->operation == PL_X86_OPERATION_BIT_SUMMARY;
     int multiply = instruction->operation == PL_X86_OPERATION_MULTIPLY_SIGNED
         || instruction->operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED;
@@ -135,7 +136,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
             || (instruction->machine_operation != PL_X86_MACHINE_NONE
                 && !selector && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || (divide ? !cut_divide_supported(instruction) : multiply ? !cut_multiply_supported(instruction)
-                : instruction->visible_operand_count != (unary || set ? 1u : 2u))
+                : instruction->visible_operand_count != (unary || set ? 1u : double_shift ? 3u : 2u))
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
                 && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || instruction->flags & (PL_X86_INSTRUCTION_PRIVILEGED
@@ -145,6 +146,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;
     if ((unary || set) && !first) return 0;
     if (shift && (!first || !cut_shift_supported(instruction))) return 0;
+    if(double_shift && (!first || !cut_double_shift_supported(instruction)))return 0;
     if (set && (instruction->condition >= 16u || operands[0].bits != 8u)) return 0;
     int conditional = instruction->operation == PL_X86_OPERATION_CONDITIONAL_MOVE;
     if (summary && (first || (instruction->condition >= 2u && instruction->condition != 4u)
@@ -178,7 +180,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         if ((other->kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&other->value.reg))
                 && !(first && other->kind == PL_X86_OPERAND_IMMEDIATE)) return 0;
     } else if (first && !unary && !set && !implicit && !divide) {
-        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !transfer && !shift)
+        if ((instruction->operation != PL_X86_OPERATION_MOVE && !binary_arithmetic(instruction->operation) && !bit && !transfer && !shift && !double_shift)
                 || (operands[1].kind != PL_X86_OPERAND_IMMEDIATE
                     && (operands[1].kind != PL_X86_OPERAND_REGISTER
                         || (!selector && !cut_gpr(&operands[1].value.reg))))) return 0;
@@ -217,6 +219,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         || instruction->operation == PL_X86_OPERATION_EXCHANGE;
     int bit = instruction->operation == PL_X86_OPERATION_BIT_TEST;
     int shift = instruction->operation == PL_X86_OPERATION_SHIFT;
+    int double_shift=instruction->operation==PL_X86_OPERATION_DOUBLE_SHIFT;
     int observe = instruction->operation == PL_X86_OPERATION_COMPARE
                || instruction->operation == PL_X86_OPERATION_TEST || (bit && !instruction->condition);
     int implicit = instruction->visible_operand_count == 1u
@@ -232,7 +235,10 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut_effective_address(cut, instruction, &memory->value.memory);
     cut_set(cut, CUT_ADDRESS);
     if (set) { cut_condition(cut,instruction->condition); cut_op(cut,0xadu); }
-    else if (shift) cut_shift_count(cut,instruction);
+    else if (shift || double_shift) {
+        if(double_shift) { cut_read_operand(cut,&operands[1],memory->bits);cut_set(cut,CUT_NEXT); }
+        cut_shift_count(cut,instruction);
+    }
     else if (bit) cut_read_operand(cut,&operands[1],memory->bits);
     else if (store && !unary) cut_read_operand(cut, &operands[1], memory->bits);
     else cut_const(cut, 0u);
@@ -274,6 +280,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         /* A masked-zero count still reserves and commits memory. Faults and
          * waits precede publication; count/value/flags stay in shared SSA. */
         else if (shift) cut_shift_value(cut,instruction);
+        else if(double_shift)cut_double_shift_value(cut,instruction);
         else if (bit) bit_value(cut,instruction);
         else if (exchange) exchange_value(cut,memory->bits);
         else if (instruction->operation==PL_X86_OPERATION_EXCHANGE) {

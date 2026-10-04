@@ -96,6 +96,12 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
                 && !(instruction->operands[1].value.immediate
                      & (instruction->operands[0].bits == 64u ? 63u : 31u))) return 0u;
         return instruction->condition<2u ? 0x801u : 0x8d5u;
+    case PL_X86_OPERATION_DOUBLE_SHIFT:
+        if(!cut_double_shift_supported(instruction))return 0u;
+        if(instruction->operands[2].kind==PL_X86_OPERAND_IMMEDIATE
+            && !(instruction->operands[2].value.immediate
+                & (instruction->operands[0].bits==64u?63u:31u)))return 0u;
+        return 0x8d5u;
     case PL_X86_OPERATION_FLAG_CONTROL:
         return instruction->condition < 2u ? 1u
             : instruction->condition == 3u || instruction->condition == 4u ? 0x400u : 0u;
@@ -112,6 +118,8 @@ pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction)
 {
     if (instruction->operation == PL_X86_OPERATION_SHIFT
             && instruction->operands[1].kind == PL_X86_OPERAND_REGISTER) return 0u;
+    if(instruction->operation==PL_X86_OPERATION_DOUBLE_SHIFT
+        && instruction->operands[2].kind==PL_X86_OPERAND_REGISTER)return 0u;
     return cut_flag_write_mask(instruction);
 }
 
@@ -164,6 +172,7 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_INCREMENT:
     case PL_X86_OPERATION_DECREMENT: return count == 1u;
     case PL_X86_OPERATION_SHIFT: return cut_shift_supported(instruction);
+    case PL_X86_OPERATION_DOUBLE_SHIFT: return cut_double_shift_supported(instruction);
     case PL_X86_OPERATION_MULTIPLY_UNSIGNED:
     case PL_X86_OPERATION_MULTIPLY_SIGNED: return cut_multiply_supported(instruction);
     case PL_X86_OPERATION_BIT_SUMMARY:
@@ -392,6 +401,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         return;
     }
     if (operation == PL_X86_OPERATION_SHIFT) { cut_lower_shift(cut, instruction); return; }
+    if(operation==PL_X86_OPERATION_DOUBLE_SHIFT) { cut_lower_double_shift(cut,instruction);return; }
     if (operation == PL_X86_OPERATION_MULTIPLY_SIGNED || operation == PL_X86_OPERATION_MULTIPLY_UNSIGNED) {
         cut_lower_multiply(cut, instruction); return;
     }

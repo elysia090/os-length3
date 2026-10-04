@@ -21,6 +21,10 @@ assert.equal(await cache.get(1n,emitted(4)),replacement);
 await cache.get(2n,emitted(0)); await cache.get(3n,emitted(4));
 assert.equal(cache.stats().entries,2); assert(cache.stats().retainedModuleBytes <= 256);
 assert.notEqual(await cache.get(1n,emitted(4)),replacement,'bounded inactive-entry eviction');
+assert.equal(cache.stats().compilations,5);
+assert.equal(cache.stats().absentKeyCompilations,4);
+assert.equal(cache.stats().changedBodyCompilations,1);
+assert.equal(cache.stats().quotaEvictions,2);
 memory.grow(1);
 new DataView(memory.buffer).setUint32(4,37,true);
 assert.equal((await cache.get(1n,emitted(4))).exports.get(),37,'same memory object after grow');
@@ -41,6 +45,7 @@ table.set(1,null);table.set(2,null);coordinateOwner.close();
 const tiny = new CompiledModules({machine:{memory}},{maximumEntries:8,maximumBytes:emitted(0).length});
 await tiny.get(1,emitted(0)); await tiny.get(2,emitted(4));
 assert.equal(tiny.stats().entries,1,'byte quota independent of entry quota');
+assert.equal(tiny.stats().absentKeyCompilations,2);assert.equal(tiny.stats().quotaEvictions,1);
 await assert.rejects(tiny.get(3,new Uint8Array(65537)),RangeError);
 // A repeatedly demanded body must outlive an inactive body under the same
 // entry AND byte quota. Compiler-approved bytes remain the exact witness.
@@ -55,6 +60,9 @@ for(const quota of [{maximumEntries:2,maximumBytes:256},
     assert(hotOwner.stats().retainedModuleBytes<=quota.maximumBytes);
   }
   assert.equal(hotOwner.stats().compilations,33);assert.equal(hotOwner.stats().hits,32);
+  assert.equal(hotOwner.stats().absentKeyCompilations,33);
+  assert.equal(hotOwner.stats().changedBodyCompilations,0);
+  assert.equal(hotOwner.stats().quotaEvictions,31);
   hotOwner.close();assert.equal(hotOwner.stats().retainedModuleBytes,0);
 }
 const otherMemory = new WebAssembly.Memory({initial:1});
@@ -67,6 +75,8 @@ assert.equal((await pinned.get(1n,emitted(0))).exports.get(),17,'imports are bou
 const duplicate = new CompiledModules({machine:{memory}});
 await Promise.all([duplicate.get(1n,emitted(0)),duplicate.get(1n,emitted(4))]);
 assert.equal(duplicate.stats().entries,1); assert.equal(duplicate.stats().retainedModuleBytes,emitted(0).length);
+assert.equal(duplicate.stats().absentKeyCompilations,2,'request-time absence, not post-await replacement');
+assert.equal(duplicate.stats().changedBodyCompilations,0);assert.equal(duplicate.stats().quotaEvictions,0);
 assert.equal((await duplicate.get(1n,emitted(4))).exports.get(),37,'duplicate pending work keeps exact accounting/body');
 const pending = other.get(2n,emitted(4)); other.close();
 await assert.rejects(pending,/owner closed/); assert.equal(other.stats().entries,0);

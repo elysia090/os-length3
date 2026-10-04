@@ -615,3 +615,30 @@ cover physical-row waits/retries, RF, stale/private ports and executable
 writes. This is not a signed production page-supply or Linux boot test.
 RCL/RCR, LOCK and FS/GS remain explicit compiler refusals with no output
 publication. Pure predecessors end before the memory boundary.
+
+### Shared double-shift SSA
+
+```sh
+make -C src/v2/wasm-compiler double-shift-check
+mkdir NEW-DIRECTORY
+src/v2/wasm-compiler/build/double-shift-check NEW-DIRECTORY
+node data/oracle/check-double-shift.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY
+# Independent observations without invoking the lowering:
+src/v2/wasm-compiler/build/double-shift-check OTHER-NEW-DIRECTORY --observe
+node data/oracle/check-double-shift.mjs VM.WASM COMPILER.WASM NEW-DIRECTORY OTHER-NEW-DIRECTORY
+```
+
+SHLD/SHRD admit 16/32/64-bit register and memory destinations, GPR source and
+CL/immediate count. The three old inputs are captured before a publication;
+memory alone introduces C reserve/commit. All CL values, width/count edges,
+source/destination/count aliases, flag predecessors and consumers, old RSP,
+address-size truncation, scaled addressing, RIP writes and precise memory
+faults are observed independently. Count zero still checks write permission.
+For a 16-bit masked count greater than 16, only the low destination and
+arithmetic flags are undefined; high parents, every other register, fault
+ordering and memory footprint remain observed. The compiler's separate zero
+representative is enforced, not attributed to hardware. A zero count preserves
+predecessor flags. LOCK/FS/GS are refused before output publication.
+The C-Wasm comparison checks direct execution, C table dispatch, RF,
+serialized physical-row waits/retries and executable-write revocation. It is
+not an exception-entry, SMP, signed page-supply or Linux boot proof.

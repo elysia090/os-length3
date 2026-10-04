@@ -75,13 +75,27 @@ admissions, 5,717 console bytes and 3,422 external IRQs. Full decompression
 remains identical. Early rootfs initialization is not PID 1, a release root
 mount or an offline shell. Native bundle and human UI remain unchanged.
 
+SHRD/SHLD now share general three-input SSA and the same C RMW boundary.
+222 forms pass 113,664 direct and 113,664 C-dispatch CPU/RAM observations,
+11,040 fault frames, 2,284 zero-count write faults, 408 waits/retries,
+990 entry refusals and six executable-write models. All CL counts, immediate
+edges, sixteen value edges, source/destination/count aliases, ADD flag
+predecessors and CF/ZF/OF consumers are covered. 12,516 undefined low
+destinations use the explicit zero representative, not a hardware claim.
+9,792 GPR/count/memory grammar bindings, full product checks and scoped
+compiler ASan/UBSan pass; prior 340 memory shift/rotate emissions remain
+byte-identical and pass their 174,080 direct/C-dispatch comparisons.
+Compiler growth is 1,578 bytes; VM/native bundle/human UI are unchanged.
+The actual browser Worker is still live at 152,060,467 retirements /
+80,429,141 admissions, early rootfs initialization but no PID 1/shell.
+The saved running observation is not a terminal SHRD/next-gate acceptance.
+
 Next, in order:
 
-1. Close common SHRD/SHLD through pure SSA and the same C RMW boundary.
-   First produce independent native red fixtures: immediate/CL counts,
-   16/32/64-bit widths, count zero/one/width edges, undefined-count flags,
-   source/destination/count aliases and unchanged fault/wait CPU. Continue
-   the actual SHRD boundary without opcode skips or Linux-function special cases.
+1. Continue the same live extended browser Worker/tab to its next genuine
+   common gate or quota. Do not restart on an observation timeout or replace
+   the shipped kernel. Close the observed ISA/MMU/device gap with an independent
+   red and shared lowering, without opcode skips or Linux-function cases.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -90,7 +104,7 @@ Next, in order:
 Engine candidate identity is separate from source placement: exact newly
 emitted bytes permit 1,573,491 hits, construction 1,823,976 -> 250,466 and
 engine phase 153,360.5 -> 33,796.7 ms in two actual runs. Emitted-witness cap
-stays 256 KiB; no total engine-RSS cap is claimed. The latest longer browser
+stays 256 KiB; no total engine-RSS cap is claimed. The previous completed browser
 run is dominated by engine construction (373,684.7 ms), cold emission
 (73,707.8), C execution (51,371.4) and admission (27,855.5). Source copying
 is 26.73 GB cumulative, not simultaneous RAM. Exact-byte hits now refresh
@@ -100,7 +114,14 @@ evicted bodies versus changed emissions before altering physical identity or
 claiming construction eliminated. The latest run still constructs 4,148,301
 engines with 2,363,249 exact-byte hits. Diagnostic progress is read-only.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-memory-shift.md).
+The latest partial run still has 9,441,889 engine constructions / 2,503,869
+exact-byte hits; engine 844,460.6 ms dominates cold emission 142,221.8,
+C execution 75,995.2, admission 34,927.8 and supply 247.3. It is still
+running, not a completed latency result. Three bounded counters for absent
+keys, changed bodies and quota eviction are component-tested, but were added
+after this Worker loaded and are not actual measurements from it. Measure
+them only in a later fresh run after the present Worker terminates normally.
+See [current evidence](../vm/check/browser/evidence/2026-10-04-double-shift.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

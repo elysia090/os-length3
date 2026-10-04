@@ -113,7 +113,8 @@ static void rotate_value(cut_lowering *cut, pl_u32 width, pl_u32 kind)
 
 void cut_shift_count(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
-    cut_read_operand(cut, &instruction->operands[1], 8u);
+    pl_u32 count=instruction->operation==PL_X86_OPERATION_DOUBLE_SHIFT?2u:1u;
+    cut_read_operand(cut, &instruction->operands[count], 8u);
     cut_const(cut, instruction->operands[0].bits == 64u ? 63u : 31u); cut_op(cut, 0x83u);
 }
 
