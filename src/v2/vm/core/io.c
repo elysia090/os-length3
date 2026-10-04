@@ -47,7 +47,7 @@ static machine_result permission(vm_memory *physical, pl_u32 port, const machine
 }
 machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
     const machine_state *state, const machine_segments *segments,
-    vm_clock *clock, vm_pit *pit, vm_pic *pic, vm_rtc *rtc,
+    vm_clock *clock, vm_pit *pit, vm_pic *pic, vm_rtc *rtc, vm_uart *uart,
     pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
 {
     machine_result result = context(physical,port,state,segments);
@@ -58,6 +58,13 @@ machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
     result = permission(physical,port,state,segments,coordinate,bytes);
     if (result) return result;
     pl_u32 byte = write ? (pl_u32)value & 255u : 0u;
+    if(bytes==1u && uart && vm_uart_accepts(coordinate)){
+        if(clock->stage || vm_uart_transfer(uart,clock->now,coordinate,write,&byte))
+            return MACHINE_RESULT_ENTRY_MAP;
+        if(pic)vm_pic_set_irq(pic,4u,(pl_u32)vm_uart_irq(uart));
+        if(!write)vm_memory_store(physical->bytes+port+offsetof(machine_memory_port,value),byte,8u);
+        return 0u;
+    }
     if (bytes==1u && vm_pic_accepts(pic,coordinate,write,byte)) {
         /* No external input can intervene in a synchronous register access.
          * Do not consume or overwrite an outstanding sampled-clock ticket. */

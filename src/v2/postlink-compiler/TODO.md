@@ -1,35 +1,33 @@
 # Remaining work — 2026-10-04
 
-Current browser checkpoint: common CLI/STI uses one C privilege/IF/shadow
-owner; the old inline CLI implementation is removed. Segment ABI v2 retains
-the same 136-byte extent and distinguishes MOV-SS from STI inhibition. C
-drains eligible PIC events before source projection/fetch and retains one
-168-byte event frontier through page waits, including self-aliasing frame stores.
-768 generated IF cases, 192 independent PIT/PIC/IDT sequence/frame comparisons,
-96 RTC IRQ entries, stale/extent/priority checks and existing regressions pass.
-The QEMU saved-RF discrepancy is explicitly excluded and separately modeled;
-complete CPL/IST/debug/APIC/secondary escalation remains incomplete.
-All product checks, C VM core sanitizers and selected compiler sanitizers pass.
+Current browser checkpoint: common C COM1 UART registers use 40 bytes of
+bounded state, derived status/IRQ, FIFO/loopback and one timeout deadline.
+Independent QEMU register comparisons (2,521) and cold-generated C-Wasm
+CPU/segment checks (6,186) pass. External TX and break transport remain
+explicitly refused before device/CPU mutation; no console byte is discarded.
+All product checks and C VM core sanitizers pass. Previous CLI/STI inhibition,
+C PIC entry, precise faults and source-admission regressions remain green;
+complete CPL/IST/debug/APIC/secondary escalation is still incomplete.
 
-Actual browser: 137,325,900 retired / 69,466,407 admissions, unchanged complete
-14,622,864-byte decompression; STI passed, then unsupported UART OUT DX,AL
-at 0xffffffff812638a6, port 0x3f9. This run observed zero external IRQ entries,
+Actual browser: 137,332,623 retired / 69,470,572 admissions, unchanged complete
+14,622,864-byte decompression; UART IER passed, then external UART OUT DX,AL
+at 0xffffffff812638a6, port 0x3f8, byte 0x5b. This run observed zero external IRQ entries,
 so independent event tests are not IRQ use in Linux. PID 1/shell and the full
 goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Implement/test the common C UART device and console event ownership; no
+1. Implement/test bounded C console event ownership for the external UART byte; no
    constant successful IN/OUT, Linux console shortcut or JS port interpreter.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
    HTTPS/service use, preserving Linux as the only syscall/VFS/net authority.
 
-Measured engine construction is the largest phase (122,203.5 ms); bounded
-engine reuse is still zero despite 68,071,303 source-cache hits. This fixed cost
+Measured engine construction is the largest phase (118,092.6 ms); bounded
+engine reuse is still zero despite 68,072,329 source-cache hits. This fixed cost
 is recorded, not relabeled as a speedup. Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-interrupt.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-uart.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

@@ -33,6 +33,7 @@ static vm_clock clock_owner;
 static vm_pit pit;
 static vm_pic pic;
 static vm_rtc rtc;
+static vm_uart uart;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result pending_boundary(pl_u32 port);
@@ -58,6 +59,7 @@ void vm_close(void)
     table_frontier=(vm_table_frontier){0};
     vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
     vm_rtc_reset(&rtc);
+    vm_uart_reset(&uart);
     vm_sources_open(&sources,0u,vm_slot_min());
     vm_supply_reset(&supply);
     delivery = (vm_fault_delivery){0};
@@ -468,7 +470,7 @@ machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 val
     resident.write_touched = 0u;
     machine_result result = vm_io_transfer(&resident,port - arena_base,
         (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
-        &clock_owner,&pit,&pic,&rtc,coordinate,transfer,value);
+        &clock_owner,&pit,&pic,&rtc,&uart,coordinate,transfer,value);
     if (resident.write_touched) execution.generation = 0u;
     return result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CLOCK)
         ? result : memory_result(port,result);
@@ -492,6 +494,7 @@ int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanose
         if (vm_rtc_advance(&rtc,nanoseconds)) return -1;
         vm_pic_set_irq(&pic,8u,(pl_u32)vm_rtc_irq(&rtc));
     }
+    if(!result){vm_uart_advance(&uart,nanoseconds);vm_pic_set_irq(&pic,4u,(pl_u32)vm_uart_irq(&uart));}
     return result;
 }
 /* Supervisor-only UTC seed. Guest code receives only the IN/OUT import;

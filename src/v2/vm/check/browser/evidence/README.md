@@ -1,10 +1,11 @@
 # Browser boundary observations
 
-Latest: [C-owned IF/shadow and PIC interrupt entry](2026-10-04-interrupt.md) and its
-[actual browser JSON](2026-10-04-interrupt-browser.json). The unchanged shipped bundle
-retires 137,325,900 source instructions through cold C compilation and the C VM,
-passes STI, then refuses UART OUT port 0x3f9. Complete kernel decompression
-passes; PID 1/shell remain red. This Linux run has zero external IRQ entries;
+Latest: [C-owned UART registers](2026-10-04-uart.md) and its
+[actual browser JSON](2026-10-04-uart-browser.json). The unchanged shipped bundle
+retires 137,332,623 source instructions through cold C compilation and the C VM,
+passes UART IER, then refuses external UART TX at port 0x3f8, byte 0x5b.
+Complete kernel decompression passes; PID 1/shell remain red. Zero console
+bytes and external IRQ entries are observed in this Linux run;
 independent event/provider comparisons are separately scoped in the evidence.
 The older observations below retain their original build and scope.
 
