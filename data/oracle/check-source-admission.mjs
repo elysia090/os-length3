@@ -31,7 +31,7 @@ put(base + 16384 + 16,0x4007); put(base + 20480,0x8007); put(base + 20488,0x9007
 put(port,9); put(base + 384,0x400000); put(base + 392,3);
 put(base + 400,0x80010001); put(base + 408,0x1000); put(base + 416,32); put(base + 424,0xd00);
 put(base + 488,16); put(base + 504,24);
-view.setUint32(segments,1,true); view.setUint32(segments + 36,0xa09b,true);
+view.setUint32(segments,2,true); view.setUint32(segments + 36,0xa09b,true);
 data[code] = 0x90;
 assert.equal(vm.vm_open(base,memory.buffer.byteLength-base,4096,directory,6,6,branches,9n),0);
 assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);

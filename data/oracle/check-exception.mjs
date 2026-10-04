@@ -50,7 +50,7 @@ for(const row of rows){
   put(state+400,0x80010011);put(state+408,0x1000);put(state+416,32);put(state+424,0x500);
   put(state+432,0xabcdef);put(state+448,0x4000);put(state+456,23);
   put(state+464,0x5000);put(state+472,4095);put(state+488,8);put(state+496,16);put(state+1128,123);
-  view.setUint32(segments,1,true);
+  view.setUint32(segments,2,true);
   view.setUint32(segments+8+16+8,0xffffffff,true);view.setUint32(segments+8+16+12,0xa09b,true);
   view.setUint32(segments+8+32+8,0xffffffff,true);view.setUint32(segments+8+32+12,0xc093,true);
   put(port,9);put(port+16,0x400000);view.setUint32(port+24,vector,true);view.setUint32(port+28,vector===14?2:0,true);

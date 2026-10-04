@@ -61,7 +61,7 @@ int main(int argc, char **argv)
     if (!boot.header) goto failed;
     EXPECT(vm_boot_state(&boot, &state) == 0);
     EXPECT(vm_boot_segments(&boot,&segments) == 0);
-    EXPECT(segments.version == MACHINE_SEGMENTS_ABI_VERSION && !segments.mov_ss_shadow);
+    EXPECT(segments.version == MACHINE_SEGMENTS_ABI_VERSION && !segments.interrupt_shadow);
     EXPECT(segments.cache[MACHINE_SEGMENT_CS].attributes == 0xa09bu);
     EXPECT(segments.cache[MACHINE_SEGMENT_SS].attributes == 0xc093u);
     EXPECT(state.rip == boot.kernel_address + 0x200u && state.registers[6] == 0x1000u);

@@ -6,10 +6,13 @@ function-table execution. The separate compiler lowers x86; the VM does not
 decode/interpret instructions. Linux boot, exception entry and virtio devices
 remain incomplete. `wasm/entry.c` is the freestanding wrapper of this C core.
 
-The [current browser receipt](browser/evidence/2026-10-04-rtc.md) retires
-137,289,924 exact shipped source instructions through cold C compilation and C execution,
+The [current browser receipt](browser/evidence/2026-10-04-interrupt.md) retires
+137,325,900 exact shipped source instructions through cold C compilation and C execution,
 with unchanged complete decompression and C-owned PIC/RTC, not a booted Linux.
-The next common compiler refusal is STI; CPU interrupt delivery remains incomplete.
+CLI/STI now shares the C privilege/IF/shadow owner. CPL0/IST0 PIC interrupt
+entry uses the bounded C event frontier across physical page waits; complete
+interrupt/debug/privilege delivery remains incomplete. The next actual-browser
+gate is UART OUT port 0x3f9. Independent event tests are not Linux boot.
 The borrowed-code view has native non-identity/2 MiB/NX/stale
 checks and 20 actual C-Wasm export cases, including private-output aliases,
 compatibility-mode rejection, A-bit source aliasing and post-growth borrowing.

@@ -77,9 +77,9 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             execution->continuation_generation = 0u;
             return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
         }
-        pl_u32 shadow = execution->segments ? execution->segments->mov_ss_shadow : 0u;
+        pl_u32 shadow = execution->segments ? execution->segments->interrupt_shadow : 0u;
         if (execution->segments && (execution->segments->version != MACHINE_SEGMENTS_ABI_VERSION
-                || shadow > 1u || (shadow && row->source_instructions != 1u)))
+                || shadow > MACHINE_SHADOW_STI || (shadow && row->source_instructions != 1u)))
             return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
         machine_result result;
         if (!resuming) {
@@ -104,7 +104,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
         }
         execution->continuation = (vm_execution_row){0}; execution->continuation_generation = 0u;
         if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) return result;
-        if (shadow) execution->segments->mov_ss_shadow = 0u;
+        if (shadow) execution->segments->interrupt_shadow = 0u;
         ++execution->completed;
         execution->retired += source_instructions;
         /* A payload write may revoke inside the compiled function's access

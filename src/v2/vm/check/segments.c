@@ -61,7 +61,7 @@ int main(void)
         } else {
             EXPECT(state.system[MACHINE_SYSTEM_ES + rank] == selector);
             EXPECT(!segments.cache[rank].base && (segments.cache[rank].attributes & MACHINE_SEGMENT_UNUSABLE));
-            EXPECT(segments.mov_ss_shadow == (rank == MACHINE_SEGMENT_SS)); unchanged(rank);
+            EXPECT(segments.interrupt_shadow == (rank == MACHINE_SEGMENT_SS)); unchanged(rank);
         }
         ++cases;
     }

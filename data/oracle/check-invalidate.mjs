@@ -78,7 +78,7 @@ put(pte,0x8007); put(pte+8,0x9107); put(pte+16,0x4007);
 put(port,9); put(base+384,0x400000); put(base+392,2);
 put(base+400,0x80010001); put(base+408,0x1000); put(base+416,0xa0); put(base+424,0xd00);
 put(base+488,8); put(base+56,0x800000000000n);
-view.setUint32(segments,1,true); view.setUint32(segments+36,0xa09b,true);
+view.setUint32(segments,2,true); view.setUint32(segments+36,0xa09b,true);
 const source=await readFile(path.join(directory,'invalidate-0.source-page'));
 bytes.set(source,code);
 put(first,0x1111); put(second,0x2222);

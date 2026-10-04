@@ -7,7 +7,7 @@ static machine_result context(vm_memory *physical, pl_u32 port,
     vm_memory_abort(physical);
     if (!physical || !physical->bytes || !physical->generation || !state || !segments
             || (port & 7u) || (pl_u64)port + sizeof(machine_memory_port) > physical->reserved_bytes
-            || segments->version != MACHINE_SEGMENTS_ABI_VERSION || segments->mov_ss_shadow > 1u
+            || segments->version != MACHINE_SEGMENTS_ABI_VERSION || segments->interrupt_shadow > MACHINE_SHADOW_STI
             || !(segments->cache[MACHINE_SEGMENT_CS].attributes & 0x2000u)
             || (segments->cache[MACHINE_SEGMENT_CS].attributes & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
             || (state->rflags & 0x20100u) || (state->efer & 0x500u) != 0x500u

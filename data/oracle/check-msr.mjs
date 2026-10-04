@@ -45,7 +45,7 @@ for (let rank = 0; rank < 3; ++rank) {
     put(state+16,(value >> 32n) | 0xabcdef0100000000n);
     put(state+384,entry); put(state+392,0x10202); put(state+400,0x80010011); put(state+408,0x1000);
     put(state+416,32); put(state+424,0x500); put(state+488,16|cpl); put(state+1128,42);
-    view.setUint32(segments,1,true); view.setUint32(segments+36,0xa09b,true);
+    view.setUint32(segments,2,true); view.setUint32(segments+36,0xa09b,true);
     put(segments+72,0x123456); put(segments+88,0xffff800012340000n);
     view.setUint32(segments+84,0x10000,true); view.setUint32(segments+100,0xc093,true);
     put(port,9);

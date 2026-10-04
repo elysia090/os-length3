@@ -20,7 +20,7 @@ static void reset(pl_u32 cpl,pl_u32 gd)
     for (pl_u32 i=0u;i<6u;++i) state.system[MACHINE_SYSTEM_DR0+i]=0xa5a5a5a5a5a5a5a5ull+i;
     state.system[MACHINE_SYSTEM_DR0+6u]=0xffff0ff0u;
     state.system[MACHINE_SYSTEM_DR0+7u]=0x400u|(gd ? 0x2000u : 0u);
-    segments=(machine_segments){0}; segments.version=1u;
+    segments=(machine_segments){0}; segments.version=MACHINE_SEGMENTS_ABI_VERSION;
     segments.cache[MACHINE_SEGMENT_CS].attributes=0xa09bu;
 }
 int main(void)

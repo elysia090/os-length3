@@ -47,7 +47,7 @@ for (let index=0;index<rows.length;++index) {
   put(state+592,0xffff0ff0);put(state+600,gd ? 0x2400 : 0x400);
   // Alias words deliberately differ; the canonical DR6/DR7 owner wins.
   put(state+576,0xa5a5a5a5a5a5a5a5n);put(state+584,0xa5a5a5a5a5a5a5a5n);
-  view.setUint32(segments,1,true);view.setUint32(segments+36,0xa09b,true);
+  view.setUint32(segments,2,true);view.setUint32(segments+36,0xa09b,true);
   assert.equal(vm.vm_open(state,bytes.length-state,4096,dir,1,1,dir+1024,9n),0);
   assert.equal(vm.vm_bind_state(state),0);assert.equal(vm.vm_bind_segments(segments),0);
   const expected=Buffer.from(bytes.subarray(state,state+1256));

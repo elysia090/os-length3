@@ -158,7 +158,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
                                        | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_SEGMENT;
     return instruction->status == PL_X86_DECODE_VALID
         && instruction->operation == PL_X86_OPERATION_FLAG_CONTROL
-        && instruction->condition == 5u && !instruction->visible_operand_count
+        && (instruction->condition == 5u || instruction->condition == 6u) && !instruction->visible_operand_count
         && instruction->machine_operation == PL_X86_MACHINE_INTERRUPT_FLAG
         && instruction->flow == PL_X86_FLOW_NEXT
         && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
@@ -434,21 +434,11 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_get(cut,CUT_STATUS); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
         return;
     }
-    /* Virtualized protected-mode flags are outside this admitted baseline. */
-    cut_load(cut, offsetof(machine_state, cr4)); cut_const(cut, 2u); cut_op(cut, 0x83u);
-    cut_get(cut, CUT_FLAGS); cut_const(cut, 0x20000u); cut_op(cut, 0x83u);
-    cut_op(cut, 0x84u); cut_op(cut, 0x50u); cut_op(cut, 0x45u);
-    cut_op(cut, 0x04u); cut_op(cut, 0x40u);
-    cut_const(cut, machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u)); cut_op(cut, 0x0fu); cut_op(cut, 0x0bu);
-    cut_load(cut, offsetof(machine_state, system) + MACHINE_SYSTEM_CS * 8u);
-    cut_const(cut, 3u); cut_op(cut, 0x83u);
-    cut_get(cut, CUT_FLAGS); cut_const(cut, 12u); cut_op(cut, 0x88u);
-    cut_const(cut, 3u); cut_op(cut, 0x83u); cut_op(cut, 0x56u); /* CPL > IOPL */
-    cut_op(cut, 0x04u); cut_op(cut, 0x40u);
-    cut_load(cut, offsetof(machine_state, rip)); port_store(cut, offsetof(machine_memory_port, fault_address), 8u);
-    cut_const(cut, 13u); port_store(cut, offsetof(machine_memory_port, fault_vector), 4u);
-    cut_const(cut, 0u); port_store(cut, offsetof(machine_memory_port, fault_error), 4u);
-    cut_const(cut, machine_result_make(MACHINE_RESULT_FAULT, 13u)); cut_op(cut, 0x0fu); cut_op(cut, 0x0bu);
-    cut_get(cut, CUT_FLAGS); cut_const(cut, ~0x200ull); cut_op(cut, 0x83u); cut_set(cut, CUT_FLAGS);
-    cut->report.flags_written = 1u;
+    /* C owns IF/shadow publication and precise privilege failure. There is
+     * no source opcode import or duplicate segment-state pointer in Wasm. */
+    cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+    cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->condition == 6u);
+    cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+    cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);
+    cut->report.flags_written=1u;
 }

@@ -34,7 +34,7 @@ function reset(source,meta,record) {
   put(base+384,entry); put(base+1128,42); put(base+400,0x80010011); put(base+408,0x1000);
   put(base+416,32); put(base+424,0xd00); put(base+488,19); put(port,9);
   put(port+16,1234); view.setUint32(port+24,13,true); view.setUint32(port+28,99,true);
-  view.setUint32(segments,1,true); view.setUint32(segments+36,0xa0fb,true);
+  view.setUint32(segments,2,true); view.setUint32(segments+36,0xa0fb,true);
   assert.equal(vm.vm_open(base,data.length-base,4096,directoryAt,5,5,directoryAt+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry); view.setUint32(rows+8,meta.sourceBytes,true); view.setUint32(rows+12,1,true);

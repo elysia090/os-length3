@@ -3,7 +3,7 @@
 #define MACHINE_SEGMENTS_H
 #include <support/types.h>
 
-#define MACHINE_SEGMENTS_ABI_VERSION 1u
+#define MACHINE_SEGMENTS_ABI_VERSION 2u
 #define MACHINE_SEGMENT_COUNT 8u
 enum machine_segment_rank {
     MACHINE_SEGMENT_ES, MACHINE_SEGMENT_CS, MACHINE_SEGMENT_SS,
@@ -11,6 +11,10 @@ enum machine_segment_rank {
     MACHINE_SEGMENT_LDTR, MACHINE_SEGMENT_TR,
 };
 #define MACHINE_SEGMENT_UNUSABLE 0x10000u
+/* Mutually exclusive boundary inhibition, not two independent countdowns.
+ * STI blocks maskable interrupts; MOV SS additionally inhibits debug events.
+ * Exact suspend retains the kind, and admission rejects unknown kinds. */
+enum { MACHINE_SHADOW_NONE, MACHINE_SHADOW_MOV_SS, MACHINE_SHADOW_STI };
 
 /* Attributes use the access byte in bits 0..7 and AVL/L/D/G in 12..15.
  * Selectors remain in machine_state.system; FS/GS base lives here, not in
@@ -23,7 +27,7 @@ typedef struct {
 } machine_segment_cache;
 typedef struct {
     pl_u32 version;
-    pl_u32 mov_ss_shadow; /* 0/1: inhibits events at the following boundary. */
+    pl_u32 interrupt_shadow;
     machine_segment_cache cache[MACHINE_SEGMENT_COUNT];
 } machine_segments;
 _Static_assert(sizeof(machine_segments) == 136u, "segment context ABI extent");

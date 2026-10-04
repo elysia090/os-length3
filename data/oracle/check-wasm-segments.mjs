@@ -39,7 +39,7 @@ function reset(cpl,rank,selector) {
   view.setBigUint64(base + 416,32n,true); view.setBigUint64(base + 424,0x500n,true);
   view.setBigUint64(base + 448,0x4000n,true); view.setBigUint64(base + 456,31n,true);
   view.setBigUint64(base + 488,BigInt(16 | cpl),true);
-  view.setUint32(segments,1,true);
+  view.setUint32(segments,2,true);
   view.setUint32(segments + 8 + 16 + 12,0xa09b | (cpl << 5),true);
   for (const segment of [0,2,3,4,5,6,7]) {
     view.setBigUint64(segments + 8 + segment * 16,0xabcdefn,true);

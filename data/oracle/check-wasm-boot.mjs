@@ -59,10 +59,12 @@ async function checkStartup() {
     assert.equal(bytes.length, record.moduleBytes);
     const emitted = await WebAssembly.compile(bytes);
     const imports = [{ module: 'machine', name: 'memory', kind: 'memory' }];
+    if (i === 1) imports.push({module:'machine',name:'interrupt_flag',kind:'function'});
     if (i >= 3 && i <= 7) imports.push({module:'machine',name:'segment',kind:'function'});
     if (i === 9) imports.push({module:'machine',name:'access',kind:'function'});
     assert.deepEqual(WebAssembly.Module.imports(emitted),imports);
-    const instance = await WebAssembly.instantiate(emitted, { machine: { memory,segment:vm.vm_segment,access:vm.vm_access } });
+    const instance = await WebAssembly.instantiate(emitted, { machine: { memory,segment:vm.vm_segment,access:vm.vm_access,
+      interrupt_flag:vm.vm_flag } });
     table.set(firstSlot + i, instance.exports.cut); compiled.push(instance.exports.cut);
     const row = output + i * 24;
     view.setBigUint64(row, next, true); view.setUint32(row + 8, record.sourceBytes, true);

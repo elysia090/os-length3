@@ -43,7 +43,7 @@ for (let index=0;index<rows.length;++index) {
   put(state+16,0xdeadbeef00000000n|(value>>32n)); put(state+8,0xdeadbeef00000000n|row[2]);
   put(state+384,0x400000n); put(state+392,row[11]); put(state+400,0x80010011n);
   put(state+408,0x1000n); put(state+416,32n); put(state+424,0x500n); put(state+488,8n);
-  view.setUint32(hidden,1,true); view.setUint32(hidden+36,0xa09b,true);
+  view.setUint32(hidden,2,true); view.setUint32(hidden+36,0xa09b,true);
   assert.equal(vm.vm_open(state,data.length-state,4096,dir,1,1,dir+1024,9n),0);
   assert.equal(vm.vm_bind_state(state),0); assert.equal(vm.vm_bind_segments(hidden),0);
   const expected=Buffer.from(data.subarray(state,state+1256)), cache=Buffer.from(data.subarray(hidden,hidden+136));

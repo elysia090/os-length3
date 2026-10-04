@@ -5,8 +5,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {decompressionOracle} from './decompression-oracle.mjs';
 
-const [providerFile,compilerFile,directory] = process.argv.slice(2);
-if (!directory) throw new Error('usage: prepare-browser-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX-DIRECTORY');
+const [providerFile,compilerFile,directory,segmentFile] = process.argv.slice(2);
+if (!directory) throw new Error('usage: prepare-browser-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX-DIRECTORY [NATIVE-SEGMENTS]');
 const target = fileURLToPath(new URL('../../src/v2/vm/check/browser/generated-startup/',import.meta.url));
 const files = ['boot.header','boot.command','boot.kernel-page','boot.kernel-last-page',
   'boot.state','boot.segments','boot.json','call.extra-page','cmdline.extra-page','option.extra-page','source.sha256'];
@@ -23,6 +23,7 @@ for (const [kind,name] of [[2,'boot.kernel-object'],[3,'boot.initramfs-object']]
 }
 for (const name of ['vm.wasm','wasm-compiler.wasm',...files]) {
   const source = name === 'vm.wasm' ? providerFile : name === 'wasm-compiler.wasm' ? compilerFile
+    : name === 'boot.segments' && segmentFile ? segmentFile
     : path.join(directory,name);
   const bytes = await readFile(source);
   manifest.files[name] = {bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};

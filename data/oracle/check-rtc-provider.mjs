@@ -23,7 +23,7 @@ function reset(seed=true) {
   for (let r=0;r<16;++r) put(base+r*8,0xabcdef9887650000n+BigInt(r));
   put(base+384,entry); put(base+392,0x10002); put(base+400,0x80010011); put(base+408,0x1000);
   put(base+416,32); put(base+424,0x500); put(base+488,16); put(base+1128,42); put(port,9);
-  view.setUint32(segments,1,true); view.setUint32(segments+36,0xa09b,true);
+  view.setUint32(segments,2,true); view.setUint32(segments+36,0xa09b,true);
   put(segments+120,0x401000); view.setUint32(segments+128,4095,true); view.setUint32(segments+132,0x8b,true);
   view.setUint16(tss+102,104,true);
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,6,6,dir+1024,9n),0);
@@ -116,33 +116,8 @@ await select(12); await run(0x71,false,1,0,0xc0,1001000000n); await run(0x71,fal
 await select(11); await run(0x71,true,1,0x42,0,1002000000n);
 assert.equal(vm.vm_io(port,0xa0,0x101,0x0an),0n); assert.equal(vm.vm_io(port,0xa0,1,0n),0n);
 assert.equal(view.getBigUint64(port+8,true)&1n,1n);
-// Until CPU injection is owned, an eligible PIC request with IF=1 must stop
-// before the next instruction, not silently lose the event. IF=0 device
-// tests above/below do not claim to have handled an interrupt.
-vm.__indirect_function_table.set(slot,await compile([0xe4,0x70]));
-data.fill(0,code,code+4096); data.set([0xe4,0x70],code); put(base+384,entry); put(base+392,0x10202);
-view.setUint32(rows+8,2,true); assert.equal(vm.vm_bind_execution(rows,1,9n),0);
-const interruptBefore=Buffer.from(data.subarray(base,base+1256));
-assert.equal(vm.vm_run(port,9n,1),6n,'unowned eligible IRQ must not be silently ignored');
-assert(data.subarray(base,base+1256).equals(interruptBefore)); assert.equal(vm.vm_completed(),0);
-assert.equal(vm.vm_source_retired(),0n);
-view.setUint32(segments+4,1,true);
-assert.equal(vm.vm_run(port,9n,1),1n,'MOV-SS shadow still admits its one inhibited successor');
-const shadowExpected=Buffer.from(interruptBefore);
-shadowExpected.writeBigUInt64LE(entry+2n,384); shadowExpected.writeBigUInt64LE(shadowExpected.readBigUInt64LE(1128)+1n,1128);
-shadowExpected.writeBigUInt64LE(shadowExpected.readBigUInt64LE(392)&~0x10000n,392);
-shadowExpected.writeBigUInt64LE((shadowExpected.readBigUInt64LE(0)&~255n)|255n,0);
-assert(data.subarray(base,base+1256).equals(shadowExpected)); assert.equal(view.getUint32(segments+4,true),0);
-put(base+384,entry); assert.equal(vm.vm_run(port,9n,1),6n,'the pending PIC event survives the shadow');
-assert.equal(vm.vm_io(port,0x21,0x101,255n),0n);
-const maskedExpected=Buffer.from(data.subarray(base,base+1256));
-assert.equal(vm.vm_run(port,9n,1),1n,'a masked PIC request must not falsely stop execution');
-maskedExpected.writeBigUInt64LE(entry+2n,384);
-maskedExpected.writeBigUInt64LE(maskedExpected.readBigUInt64LE(1128)+1n,1128);
-maskedExpected.writeBigUInt64LE((maskedExpected.readBigUInt64LE(0)&~255n)|255n,0);
-assert(data.subarray(base,base+1256).equals(maskedExpected));
-assert.equal(vm.vm_io(port,0x21,0x101,0n),0n); put(base+384,entry);
-assert.equal(vm.vm_run(port,9n,1),6n,'mask/unmask does not consume the pending PIC request');
+// Complete IRQ frame, inhibition and admission-priority checks are in
+// check-interrupt-provider.mjs, using this actual RTC as the C IRQ8 source.
 await select(11); await run(0x71,true,1,0x92,0,1002000000n); await run(0x71,false,1,0,0x82,2000000000n);
 await select(0); await run(0x71,false,1,0,0x57,2000000000n);
 await run(0x71,true,1,0x15,0,2000000000n); await select(11); await run(0x71,true,1,2,0,2000000000n);
@@ -152,6 +127,10 @@ await select(0); assert.equal(vm.vm_rtc_start(port,9n,0n),-1,'seed after first i
 reset(); await select(7); await run(0x71,true,1,0x32,0,0n,{refuse:true});
 reset(); await select(11); await run(0x71,true,1,1,0,0n,{refuse:true});
 reset(); await select(11); await run(0x71,true,1,0x42); await select(0);
+// The board's reset PIC wiring is not an initialized cascaded controller.
+// Program it before expecting CPU IRQ8 delivery rather than a wiring refusal.
+for (const [p,x] of [[0x20,0x11],[0xa0,0x11],[0x21,32],[0xa1,40],[0x21,4],[0xa1,2],
+  [0x21,1],[0xa1,1],[0x21,0xfb],[0xa1,0xfe]]) assert.equal(vm.vm_io(port,p,0x101,BigInt(x)),0n);
 vm.__indirect_function_table.set(slot,await compile([0xe4,0x71]));
 data.fill(0,code,code+4096); data.set([0xe4,0x71],code); put(base+384,entry); put(base+392,0x10202);
 view.setUint32(rows+8,2,true); assert.equal(vm.vm_bind_execution(rows,1,9n),0);
@@ -165,7 +144,8 @@ continuationExpected.writeBigUInt64LE(continuationExpected.readBigUInt64LE(1128)
 continuationExpected.writeBigUInt64LE(continuationExpected.readBigUInt64LE(392)&~0x10000n,392);
 continuationExpected.writeBigUInt64LE((continuationExpected.readBigUInt64LE(0)&~255n)|0x56n,0);
 assert(data.subarray(base,base+1256).equals(continuationExpected));
-put(base+384,entry); assert.equal(vm.vm_run(port,9n,1),6n,'unowned IRQ stops only at the next instruction boundary');
+put(base+384,entry); assert.equal(vm.vm_run(port,9n,1),107n,'the next IRQ boundary reaches the guest invalid IDT, not the source instruction');
+assert.equal(view.getUint32(port+24,true),13);assert.equal(view.getUint32(port+28,true)&3,3,'IDT/EXT error');
 reset(); await select(0); vm.vm_close(); reset(); await select(0); await run(0x71,false,1,0,0x56);
 reset(); await select(0); assert.equal(vm.vm_io(port,0x71,1,0n),18n);
 const revokedTicket=view.getBigUint64(port+32,true); vm.vm_close(); reset();
@@ -183,6 +163,6 @@ assert.equal(vm.vm_clock_commit(port,9n,staleTicket,0n),0);
 assert.equal(vm.vm_io(port,0x71,1,0n),0n); assert.equal(view.getBigUint64(port+8,true),0x56n);
 vm.__indirect_function_table.set(slot,null); cc.compiler_close(); vm.vm_close();
 console.log(JSON.stringify({format:'compiled-rtc-c-provider-v1',status:'pass',modules:cuts.size,comparisons,faults,
-  waits,refusals,replays,irqBoundaryRefusals:4,shadowSuccessors:1,maskedSuccessors:1,inFlightIrqResumes:1,
-  linuxBoot:'not-tested',irq:'C IRQ8/PIC latch and unowned-event refusal verified; CPU injection not tested',
+  waits,refusals,replays,inFlightIrqResumes:1,invalidIdtInterrupts:1,
+  linuxBoot:'not-tested',irq:'C IRQ8/PIC latch and in-flight instruction resume; complete frames are a separate provider test',
   oracle:'full CPU/segment observations; dynamic C model and independent QEMU registers are separate tests'},null,2));

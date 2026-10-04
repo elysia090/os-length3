@@ -1,5 +1,13 @@
 # Compiler boundary checkpoint — 2026-10-02
 
+Current IF boundary (2026-10-04): common CLI/STI emits one precise
+`machine.interrupt_flag` call. C owns privilege, IF and inhibition; generated
+code owns successful RIP/RF/retirement. The old inline CLI implementation is
+removed. 768 generated cases, 169 native/cold emission comparisons and selected
+compiler sanitizers pass. [Independent system and browser evidence](../../vm/check/browser/evidence/2026-10-04-interrupt.md)
+records the saved-RF oracle discrepancy and incomplete CPL/IST/debug scope.
+The later dated checkpoints below retain their historical observations.
+
 Current register-summary coverage (2026-10-03): `summary-fixture-check` emits
 75 ordinary linked -> optimized -> proof-verified fixtures. Native execution
 and direct/C-dispatch Wasm comparisons are separately reproduced with
@@ -235,8 +243,9 @@ fixtures include overwritten direction/carry definitions and arithmetic
 interleaving; the native trampoline clears host DF only after capturing guest
 flags, as required by the C calling convention. The 82 pure fixtures plus
 the actual shipped BusyBox prefix pass 83 modules / 42,496 comparisons.
-CMC, STI, indirect/far/CET control and full system/SIMD/x87 lowering remain
-unsupported; the CLI subset is described below. Shared fixture tools finish once before parallel test execution;
+At that checkpoint CMC, STI, indirect/far/CET control and full system/SIMD/x87
+lowering were unsupported; newer common coverage is recorded separately.
+Shared fixture tools finish once before parallel test execution;
 concurrent recursive relinking previously reproduced an execution failure.
 
 The actual shipped bzImage also passes C-native/C-Wasm initial page/state
@@ -277,8 +286,8 @@ CLI clears IF for CPL <= IOPL, otherwise publishes #GP(0) without retirement.
 PVI/VM contexts reject without mutation. The 16 privilege combinations are an
 independent specification matrix, not a native CPL0/QEMU fault-entry proof.
 See the [Intel manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).
-STI, memory-source segment loads, control-register/mode transfers, complete
-interrupt/debug delivery and Linux boot are still red. No source instruction
+At that checkpoint STI, memory-source segment loads, control-register/mode
+transfers, complete interrupt/debug delivery and Linux boot were red. No source instruction
 is interpreted or silently skipped.
 
 The current shared C-Wasm path additionally admits memory-destination

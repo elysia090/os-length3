@@ -569,9 +569,9 @@ QEMU is linked into the product. `qtest-device.mjs` is a test-only socket owner.
 
 The compiled-provider test includes full CPU/segment observations, privilege
 faults, sampled-clock ownership, duplicate/stale/cancelled replies and fresh
-machine re-seeding. Eligible IRQs whose CPU delivery is unowned stop before
-the next instruction; masked requests, MOV-SS's inhibited successor and an
-already-started instruction continuation are separately checked.
+machine re-seeding. An already-started sampled instruction finishes before
+the newly pending interrupt boundary. Complete frame/inhibition/priority
+tests use the separate interrupt provider below.
 Supervisor-only `vm_rtc_start` binds one explicit UTC epoch
 to the current memory record/generation before RTC I/O or time advance. Guest code imports
 only `machine.io`; C owns CMOS state and IRQ8, not a JavaScript port model.
@@ -579,3 +579,17 @@ The default browser diagnostic records its host UTC snapshot and advances
 devices by active C execution time, excluding delivery/compilation pauses.
 This is not authenticated UTC, wall-clock fidelity, a calibrated CPU, hardware
 silicon equivalence, CPU IRQ delivery or a completed Linux boot.
+
+### C IF/shadow and independent PIC interrupt entry
+
+`interrupt-check` is the native IF/IOPL/shadow specification matrix, not a
+privileged hardware oracle. `prepare-interrupt.sh OUTPUT` builds an independent
+Multiboot PIT/PIC/IDT fixture. Its debugcon output has 192 records, including
+consecutive STI/MOV-SS inhibition positions, gate types and stack alignment.
+QEMU is only the test oracle, never the product guest execution provider.
+Run `check-interrupt-provider.mjs VM.WASM COMPILER.WASM ROWS.txt` to compare
+generated C-Wasm transfers and C PIC/IDT/IRET entry. Installed QEMU 11.1.0
+sets saved RF for ordinary vector-32 IRQs; that one discrepancy is explicitly
+excluded against Intel's boundary rule, with RF=0/1 separately modeled.
+See [the exact scope and browser receipt](../../src/v2/vm/check/browser/evidence/2026-10-04-interrupt.md).
+No IRQ frame test, including this one, establishes Linux/PID 1 acceptance.

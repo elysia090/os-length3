@@ -43,7 +43,7 @@ for (const file of files) {
     put(state+488,8|cpl);put(state+1128,42);
     for (let rank=0;rank<6;++rank) put(state+544+rank*8,0xa5a5a5a5a5a5a5a5n+BigInt(rank));
     put(state+592,0xffff0ff0);put(state+600,0x400|(gd ? 0x2000 : 0));
-    view.setUint32(segments,1,true);view.setUint32(segments+36,0xa09b,true);put(port,9);
+    view.setUint32(segments,2,true);view.setUint32(segments+36,0xa09b,true);put(port,9);
     assert.equal(vm.vm_open(state,bytes.length-state,4096,dir,5,5,dir+1024,9n),0);
     assert.equal(vm.vm_bind_state(state),0);assert.equal(vm.vm_bind_segments(segments),0);
   }

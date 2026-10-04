@@ -44,7 +44,7 @@ function reset(source,sourceBytes,count,src,dst,df,sample,width,accumulator) {
   view.setBigUint64(base + 400,0x80010011n,true); view.setBigUint64(base + 408,0x1000n,true);
   view.setBigUint64(base + 416,32n,true); view.setBigUint64(base + 424,0xd00n,true);
   view.setBigUint64(base + 488,19n,true); view.setBigUint64(base + 1128,42n,true);
-  view.setBigUint64(port,9n,true); view.setUint32(segments,1,true); view.setUint32(segments + 4,1,true);
+  view.setBigUint64(port,9n,true); view.setUint32(segments,2,true); view.setUint32(segments + 4,1,true);
   assert.equal(vm.vm_open(base,data.length - base,4096,directoryAt,9,9,directoryAt + 1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   view.setBigUint64(rows,entry,true); view.setUint32(rows + 8,sourceBytes,true);

@@ -1,9 +1,11 @@
 # Browser boundary observations
 
-Latest: [C-owned RTC / UTC event boundary](2026-10-04-rtc.md) and its
-[actual browser JSON](2026-10-04-rtc-browser.json). The unchanged shipped bundle
-retires 137,289,924 source instructions through cold C compilation and the C VM,
-then refuses STI. Complete kernel decompression passes; PID 1/shell remain red.
+Latest: [C-owned IF/shadow and PIC interrupt entry](2026-10-04-interrupt.md) and its
+[actual browser JSON](2026-10-04-interrupt-browser.json). The unchanged shipped bundle
+retires 137,325,900 source instructions through cold C compilation and the C VM,
+passes STI, then refuses UART OUT port 0x3f9. Complete kernel decompression
+passes; PID 1/shell remain red. This Linux run has zero external IRQ entries;
+independent event/provider comparisons are separately scoped in the evidence.
 The older observations below retain their original build and scope.
 
 `2026-10-02-ordinary-worker.json` is the result supplied by the user from

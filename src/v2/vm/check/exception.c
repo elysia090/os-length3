@@ -32,7 +32,7 @@ static void reset(pl_u64 rsp, pl_u64 rip, pl_u64 flags, pl_u32 vector, pl_u32 ga
     cpu.system[MACHINE_SYSTEM_GDTR_BASE]=0x4000u;cpu.system[MACHINE_SYSTEM_GDTR_LIMIT]=23u;
     cpu.system[MACHINE_SYSTEM_IDTR_BASE]=0x5000u;cpu.system[MACHINE_SYSTEM_IDTR_LIMIT]=4095u;
     cpu.system[MACHINE_SYSTEM_CR2]=0xabcdefu;
-    segments=(machine_segments){0};segments.version=1u;
+    segments=(machine_segments){0};segments.version=MACHINE_SEGMENTS_ABI_VERSION;
     segments.cache[MACHINE_SEGMENT_CS]=(machine_segment_cache){0u,0xffffffffu,0xa09bu};
     segments.cache[MACHINE_SEGMENT_SS]=(machine_segment_cache){0u,0xffffffffu,0xc093u};
     delivery=(vm_fault_delivery){0};before=cpu;
@@ -124,7 +124,51 @@ int main(int argc,char **argv)
     cpu.registers[4]=0x800000000001ull;before=cpu;
     EXPECT(vm_fault_enter(&memory,0u,&cpu,&segments,&delivery)==99u && !delivery.stage);
     EXPECT(cpu.rip==before.rip && cpu.registers[4]==before.registers[4]);
+    unsigned interrupts=0u;
+    for(pl_u32 vector=0u;vector<256u;vector+=8u)for(pl_u32 rf=0u;rf<2u;++rf) {
+        reset(0x108f03u,0x1000204u,0x603u|(pl_u64)rf<<16u,vector,0x8eu);
+        vm_pic pic;vm_pic_reset(&pic);
+        pl_u32 value=0x13u;EXPECT(!vm_pic_transfer(&pic,0x20u,1u,&value));
+        value=vector;EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));
+        value=1u;EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));
+        EXPECT(!vm_pic_set_irq(&pic,0u,1u));
+        pages[4].kind=VM_MEMORY_DEFERRED;
+        EXPECT(vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic)==2u);
+        EXPECT(delivery.external && delivery.stage==1u && delivery.words==5u);
+        EXPECT(pic.chip[0].service==1u && !(pic.chip[0].request&1u));
+        vm_pic accepted=pic;
+        EXPECT(vm_fault_enter(&memory,0u,&cpu,&segments,&delivery)==6u && delivery.stage==1u);
+        EXPECT(vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic)==2u);
+        EXPECT(!memcmp(&pic,&accepted,sizeof pic));
+        pages[4].kind=VM_MEMORY_RAM;
+        EXPECT(!vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic));
+        EXPECT(!memcmp(&pic,&accepted,sizeof pic) && !delivery.stage);
+        EXPECT(cpu.retired==123u && cpu.system[MACHINE_SYSTEM_CR2]==0xabcdefu);
+        EXPECT(cpu.registers[4]==0x108ed8u);
+        EXPECT(get(stack_offset(cpu.registers[4]))==before.rip);
+        EXPECT(get(stack_offset(cpu.registers[4])+16u)==before.rflags);
+        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
+        EXPECT(cpu.rflags==before.rflags && cpu.registers[4]==before.registers[4]);
+        ++interrupts;
+    }
+    /* IRQ frame stores can alias their already-read IDT gate. A page wait
+     * retains the target and acknowledged PIC without replaying either. */
+    reset(0x108010u,0x1000204u,0x202u,0u,0x8eu);
+    pages[5].offset=20480u;
+    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,7u,branches,9u));
+    vm_pic pic;vm_pic_reset(&pic);pl_u32 value=0x13u;
+    EXPECT(!vm_pic_transfer(&pic,0x20u,1u,&value));value=0u;
+    EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));value=1u;
+    EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));EXPECT(!vm_pic_set_irq(&pic,0u,1u));
+    EXPECT(vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic)==2u);
+    EXPECT(delivery.external && delivery.stage==4u && delivery.pushed==2u);
+    EXPECT(get(20480u)==before.registers[4] && cpu.rip==before.rip && cpu.registers[4]==before.registers[4]);
+    vm_pic accepted=pic;
+    EXPECT(!vm_memory_append(&memory,0x107000u,(pl_u32)memory.next_offset,3u));
+    EXPECT(!vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic));
+    EXPECT(!memcmp(&pic,&accepted,sizeof pic) && !delivery.stage && cpu.rip==0x9000u);
+    EXPECT(cpu.registers[4]==0x107fe8u && cpu.retired==123u);
     if(failures)return 1;
-    printf("Long-mode CPL0 fault/IRETQ: %u cases green; TSS/IST/outer/secondary escalation NOT tested\n",cases);
+    printf("Long-mode CPL0 fault/IRETQ: %u cases; PIC IRQ/retry/return: %u; TSS/IST/outer/secondary escalation NOT tested\n",cases,interrupts);
     return 0;
 }

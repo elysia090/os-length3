@@ -40,7 +40,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
     reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair,
-    table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,
+    table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
     io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}});
   const compilerInput = cc.compiler_arena_min(), compilerOutput = compilerInput + 8192;
   const compilerReport = compilerOutput + 65536;
@@ -230,7 +230,24 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       repeatComparedBytes += bytes;
     }
   }
+  let externalInterrupts=0;
   async function step(limit) {
+    // C drains asynchronous architectural events before source projection;
+    // a pending IRQ has priority over a fault while fetching the next opcode.
+    const interrupted=rip();let boundary=vm.vm_boundary(port,9n);
+    for(let waits=0;boundary===2n && waits<8192;++waits){
+      const start=performance.now(),supplied=await supplyPhysical();supplyMs+=performance.now()-start;
+      if(!supplied)return {...resourceGate,entry:`0x${interrupted.toString(16)}`};
+      boundary=vm.vm_boundary(port,9n);
+    }
+    if(boundary){
+      assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);
+      assert.equal(view.getBigUint64(base+1128,true),BigInt(retired));
+      if(boundary===1n){++externalInterrupts;return null;}
+      const delivered=await deliverFault(boundary,interrupted);
+      if(delivered)return delivered.deliveryResult==='0'?null:{kind:'interrupt-delivery',...delivered};
+      return {kind:'interrupt-boundary',result:String(boundary),entry:`0x${interrupted.toString(16)}`};
+    }
     const entry = rip();
     if (decompression && !decompressedOutput && entry === decompressionEntry) await observeDecompression(entry);
     if (entry === relocated + 0x2e2700n) {
@@ -405,6 +422,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         // authoritative only for a pending architectural fault result.
         requestAddress:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
         requestBytes:view.getUint32(port + 40,true),requestAccess:view.getUint32(port + 44,true)};
+    if (!vm.vm_completed() && !done) {
+      // The C boundary delivered an external interrupt, not a source cut.
+      // The handler's RIP must be admitted normally on the next iteration.
+      assert.equal(result,1n);assert.equal(view.getBigUint64(base+1128,true),BigInt(retired));
+      return null;
+    }
     assert.equal(vm.vm_completed(),1); assert.equal(done,instructions);
     retired += done; assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
     if (decompression && !linuxEntry && entry === linuxEntryAddress) {
@@ -510,7 +533,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
-      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,
+      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,externalInterrupts,
       rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
       clockContract:'sampled active C execution nanoseconds; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused',
       repeatComparedBytes,bssComparedBytes,

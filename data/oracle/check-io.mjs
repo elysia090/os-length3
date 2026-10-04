@@ -31,7 +31,7 @@ function reset(source,meta,cpl,iopl,sample) {
   put(base+384,entry); put(base+392,0x10202|(iopl<<12)); put(base+400,0x80010011);
   put(base+408,0x1000); put(base+416,32|(meta.time && sample&1 ? 4 : 0));
   put(base+424,0x500); put(base+488,16|cpl); put(base+1128,42); put(port,9);
-  view.setUint32(segments,1,true); view.setUint32(segments+36,0xa09b,true);
+  view.setUint32(segments,2,true); view.setUint32(segments+36,0xa09b,true);
   put(segments+120,0x401000); view.setUint32(segments+128,4095,true); view.setUint32(segments+132,0x8b,true);
   view.setUint16(tss+102,104,true); data[tss+104+(0x61>>3)]=sample&1 ? 1<<(0x61&7) : 0;
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,6,6,dir+1024,9n),0);

@@ -28,7 +28,7 @@ static void reset(pl_u32 cpl, pl_u32 offset)
     state.system[MACHINE_SYSTEM_CS]=8u|cpl;
     state.system[MACHINE_SYSTEM_GDTR_BASE]=0x5000u+offset-24u;
     state.system[MACHINE_SYSTEM_GDTR_LIMIT]=39u;
-    segments=(machine_segments){0}; segments.version=1u;
+    segments=(machine_segments){0}; segments.version=MACHINE_SEGMENTS_ABI_VERSION;
     segments.cache[MACHINE_SEGMENT_CS].attributes=0xa09bu;
     segments.cache[MACHINE_SEGMENT_LDTR]=(machine_segment_cache){123u,45u,0x82u};
     segments.cache[MACHINE_SEGMENT_TR]=(machine_segment_cache){567u,89u,0x89u};

@@ -356,6 +356,15 @@ int main(int argc, char **argv)
     EXPECT(!wasm_compiler_measure_code_cut(&source, 9u, &options, &bytes, &report));
     EXPECT(report.source_bytes == 1u && report.source_instructions == 1u);
     EXPECT(report.continuation == source.entry + 1u && report.boundary == WASM_CUT_SYSTEM);
+    /* Both IF transfers are precise imported boundaries, never a pure prefix.
+     * Following source bytes remain outside the one-instruction module. */
+    for(pl_u32 enable=0u;enable<2u;++enable){
+        memset(pages,0x90,sizeof pages);pages[0]=(pl_u8)(0xfau+enable);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_bytes==1u && report.source_instructions==1u
+            && report.boundary==WASM_CUT_SYSTEM && !report.written_registers);
+    }
+    pages[0]=0xfcu;pages[1]=0xfau;
     memcpy(saved, pages, sizeof pages);
     EXPECT(wasm_compiler_measure_code_cut(&source, 9u, &options, &maps[0].generation, 0)
            == WASM_COMPILER_ERROR_INPUT);

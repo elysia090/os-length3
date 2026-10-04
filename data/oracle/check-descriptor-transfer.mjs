@@ -56,7 +56,7 @@ function reset(source,meta,offset,cpl=0,umip=0,protection=0,residentSecond=true,
   put(state+400,0x80010011); put(state+408,0x1000); put(state+416,32|(umip<<11)); put(state+424,0xd00);
   put(state+488,8|cpl); put(state+1128,42); put(state+448,0x0123456789abcdefn); put(state+456,0xfedc);
   put(state+464,0xffff800000123456n); put(state+472,0x4321); put(port,9);
-  dword(segments,1); dword(segments+36,0xa09b|(cpl<<5));
+  dword(segments,2); dword(segments+36,0xa09b|(cpl<<5));
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,residentSecond ? 6 : 5,8,branches,9n),0);
   assert.equal(vm.vm_bind_state(state),0); assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry); dword(rows+8,meta.sourceBytes); dword(rows+12,1); dword(rows+16,slot); dword(rows+20,0);

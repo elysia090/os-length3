@@ -29,7 +29,7 @@ try {
     assert.equal(row[4],controls);
     data.fill(0,state,state+4096); put(state+384,0x400000); put(state+392,0x202); put(state+400,0x80010011);
     put(state+408,0x1000); put(state+416,32); put(state+424,0x500); put(state+488,8); put(port,9);
-    view.setUint32(segments,1,true); view.setUint32(segments+36,0xa09b,true);
+    view.setUint32(segments,2,true); view.setUint32(segments+36,0xa09b,true);
     assert.equal(vm.vm_open(state,data.length-state,4096,directoryAt,1,1,directoryAt+1024,9n),0);
     assert.equal(vm.vm_bind_state(state),0); assert.equal(vm.vm_bind_segments(segments),0);
     if (row[0]) {

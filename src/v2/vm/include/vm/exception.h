@@ -1,6 +1,7 @@
 #ifndef VM_EXCEPTION_H
 #define VM_EXCEPTION_H
 #include <vm/segments.h>
+#include <vm/pic.h>
 
 /* One serialized architectural event, not a CPU snapshot. Completed frame
  * stores must not be replayed after a residency wait: they can alias the IDT,
@@ -9,9 +10,9 @@
 typedef struct {
     pl_u64 generation, context[5], frame[6], target, stack, descriptor_address;
     machine_segment_cache code;
-    pl_u32 stage, pushed, words, selector, gate_type, descriptor_access;
+    pl_u32 stage, pushed, words, selector, gate_type, descriptor_access, external;
 } vm_fault_delivery;
-_Static_assert(sizeof(vm_fault_delivery) == 160u, "bounded event frontier extent");
+_Static_assert(sizeof(vm_fault_delivery) == 168u, "bounded event frontier extent");
 
 /* Deliver a pending processor fault from machine_memory_port through the
  * guest IDT. Currently CPL0 -> CPL0 long-mode interrupt/trap gates, IST=0,
@@ -25,6 +26,14 @@ _Static_assert(sizeof(vm_fault_delivery) == 160u, "bounded event frontier extent
  * has a nonzero stage. Neither this nor residency admission is an IRQ API. */
 machine_result vm_fault_enter(vm_memory *physical, pl_u32 port_offset,
     machine_state *state, machine_segments *segments, vm_fault_delivery *delivery);
+
+/* Pending PIC interrupt at an uninhibited instruction boundary. Acknowledge
+ * is performed once before IDT delivery; residency retries use the same
+ * serialized frontier. No error code is pushed, even for exception vectors.
+ * Current admission remains CPL0 long-mode/IST0, with explicit refusal of
+ * unsupported stack/privilege changes. Success does not retire an instruction. */
+machine_result vm_interrupt_enter(vm_memory *physical, pl_u32 port_offset,
+    machine_state *state, machine_segments *segments, vm_fault_delivery *delivery, vm_pic *pic);
 
 /* IRETQ to CPL0 64-bit code, including unconditional SS:RSP restoration.
  * Outer returns, compatibility targets and CET refuse admission. Caller must

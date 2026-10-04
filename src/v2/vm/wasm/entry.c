@@ -11,6 +11,7 @@
 #include <vm/io.h>
 #include <vm/supply.h>
 #include <vm/exception.h>
+#include <vm/interrupt.h>
 #include <vm/source.h>
 #include <machine/state.h>
 #include "../core/memory-internal.h"
@@ -34,6 +35,7 @@ static vm_pic pic;
 static vm_rtc rtc;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
+static machine_result pending_boundary(pl_u32 port);
 static machine_result call_entry(void *pointer, pl_u32 slot);
 pl_u32 vm_source_capacity(void) { return VM_SOURCE_ROWS; }
 pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
@@ -199,7 +201,7 @@ int vm_bind_segments(pl_u32 segments)
             || (pl_u64)(segments - arena_base) + sizeof(machine_segments) > resident.reserved_bytes
             || !separate(segments,sizeof(machine_segments),state_offset,sizeof(machine_state))) return -1;
     const machine_segments *context = (const machine_segments *)(uintptr_t)segments;
-    if (context->version != MACHINE_SEGMENTS_ABI_VERSION || context->mov_ss_shadow > 1u) return -1;
+    if (context->version != MACHINE_SEGMENTS_ABI_VERSION || context->interrupt_shadow > MACHINE_SHADOW_STI) return -1;
     segments_offset = segments;
     return 0;
 }
@@ -344,9 +346,16 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
             || !separate(view_target,2u*sizeof(vm_code_page),port,sizeof(machine_memory_port))
             || !execution_record(row_target,sizeof(vm_execution_row))) return MACHINE_RESULT_ENTRY_MAP;
     const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
+    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
+    /* The supervisor must drain an eligible event before treating a source
+     * projection fault as a processor fault. Do not invert IRQ/fetch priority. */
+    if ((state->rflags&0x200u) && vm_pic_pending(&pic) && !segments->interrupt_shadow)
+        return MACHINE_RESULT_ENTRY_MAP;
     pl_u32 cs = segments->cache[MACHINE_SEGMENT_CS].attributes;
-    if (!(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
+    if (segments->version!=MACHINE_SEGMENTS_ABI_VERSION || segments->interrupt_shadow>MACHINE_SHADOW_STI
+            || !(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
             || !limit || limit > 1024u) return MACHINE_RESULT_ENTRY_MAP;
+    if (segments->interrupt_shadow) limit=1u;
     vm_code_page page; vm_execution_row row;
     vm_mmu_context context = cpu_context(); resident.write_touched = 0u;
     machine_result result = vm_mmu_code_page(&resident,port - arena_base,&context,entry,&page);
@@ -549,6 +558,13 @@ machine_result vm_iret(pl_u32 port)
     if (!result || resident.write_touched) execution.generation = 0u;
     return memory_result(port,result);
 }
+machine_result vm_flag(pl_u32 port, pl_u32 enable)
+{
+    if (delivery.stage || table_frontier.stage || !segments_offset || !private_port(port))
+        return MACHINE_RESULT_ENTRY_MAP;
+    return vm_interrupt_flag(&resident,port-arena_base,
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,enable);
+}
 
 machine_result vm_control(pl_u32 port, pl_u32 rank, pl_u64 value)
 {
@@ -625,17 +641,44 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
     return status;
 }
 typedef struct { pl_u32 port; } execution_owner;
+static machine_result interrupt_boundary(pl_u32 port)
+{
+    vm_supply_reset(&supply);
+    resident.write_touched=0u;
+    machine_result result=vm_interrupt_enter(&resident,port-arena_base,
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,&delivery,&pic);
+    /* Hardware entry changes control without retiring the interrupted cut.
+     * Its new RIP is admitted afresh, never executed through the old row. */
+    execution.generation=0u;
+    return memory_result(port,result ? result : MACHINE_RESULT_RESOLVE_RIP);
+}
+static machine_result pending_boundary(pl_u32 port)
+{
+    if (table_frontier.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage) return delivery.external ? interrupt_boundary(port) : MACHINE_RESULT_ENTRY_MAP;
+    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
+    if (!execution.continuation.slot && (state->rflags&0x200u) && vm_pic_pending(&pic)
+            && (!segments_offset || !((const machine_segments *)(uintptr_t)segments_offset)->interrupt_shadow))
+        return segments_offset ? interrupt_boundary(port) : MACHINE_RESULT_ENTRY_MAP;
+    return 0u;
+}
+/* Supervisor event admission precedes cold source projection. This is not
+ * available to emitted guest functions and contains no source decoder. */
+machine_result vm_boundary(pl_u32 port, pl_u64 generation)
+{
+    execution.completed=0u;execution.retired=0u;
+    if (!private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (generation!=resident.generation || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation)
+        return MACHINE_RESULT_STALE_GENERATION;
+    return pending_boundary(port);
+}
 static machine_result fetch_entry(void *pointer, pl_u64 address)
 {
     const execution_owner *owner = pointer;
-    /* Maskable delivery is not yet owned. Preserve the PIC request and
-     * refuse at the next instruction boundary instead of losing it. A
-     * suspended instruction resumes without refetch; MOV-SS admits exactly
-     * its inhibited successor, then the core clears that shadow. */
-    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
-    if ((state->rflags&0x200u) && vm_pic_pending(&pic)
-            && (!segments_offset || !((const machine_segments *)(uintptr_t)segments_offset)->mov_ss_shadow))
-        return MACHINE_RESULT_ENTRY_MAP;
+    /* In-flight continuation is handled before this boundary. Events never
+     * replay an admitted instruction or consume its inhibition on a wait. */
+    machine_result boundary=pending_boundary(owner->port);
+    if (boundary) return boundary;
     return vm_access(owner->port, address, 1u,
                        (pl_u32)MACHINE_MEMORY_READ | (pl_u32)VM_MMU_EXECUTE, 0u);
 }
@@ -660,6 +703,11 @@ machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
     execution_owner owner = { port };
     if (vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) != resident.generation)
         return machine_result_make(MACHINE_RESULT_STALE_GENERATION,0u);
+    if (generation!=resident.generation) return MACHINE_RESULT_STALE_GENERATION;
+    if (!maximum_cuts || maximum_cuts>VM_EXECUTION_MAX_QUANTUM || table_frontier.stage)
+        return MACHINE_RESULT_ENTRY_MAP;
+    machine_result boundary=pending_boundary(port);
+    if (boundary) return boundary;
     return vm_execution_run(&execution, (machine_state *)(uintptr_t)state_offset,
                              generation, maximum_cuts, fetch_entry, call_entry, &owner);
 }
