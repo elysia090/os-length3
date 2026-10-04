@@ -1,0 +1,2 @@
+vector transfers/additions/logic: 17408 actual x86 CPU/RAM observations, 7568 fault frames; lowering not tested; CR0/CR4 require separate models
+vector 40 red: compiler=-102

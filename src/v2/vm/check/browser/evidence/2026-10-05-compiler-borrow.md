@@ -75,8 +75,19 @@ bytes under the same growth quantum. This is not an RSS measurement or a
 significant speedup claim: diagnostic elapsed is 2,245.6 vs 2,208.7 ms, with
 cold C 30.1 vs 30.9 ms. Engine churn/topology remains the larger fixed cost.
 
-An independent extended run on the new compiler is in progress; its final
-result must be recorded separately. No retained browser Worker was restarted
+The independent extended borrowed-source run has now completed at the same
+PXOR gate: [separate receipt](2026-10-05-node-startup-borrowed-pxor-red.json),
+158,854,007 retirements / 85,286,564 admissions. All 14,622,864 decompressed
+bytes agree. It borrows 66,443,194,368 source bytes with **zero** copied code
+bytes and no separate cold Memory; allocated Memory is 20,512,768 bytes.
+Engine construction remains dominant: 13,651,494 constructions, 13,650,750
+quota evictions, 743 entries / 261,998 retained bytes. Phase milliseconds:
+cold 138,267.0; engine 339,759.4; execution 79,788.9; admission 21,015.8;
+supply 182.4; elapsed 710,605.5. Variation in calibration/work means comparison
+to the previous run is **not** a speedup. Raw local receipt SHA-256:
+`a7c10087c2fe96e401d3d6e83e764006f2a9ef86d4bf078926217655e24721cc`.
+No PID 1, release-root mount or shell is accepted by this receipt.
+No retained browser Worker was restarted
 or observed through a policy workaround. Native delivery and human UI are
 unchanged. Browser/PID 1/shell, storage/recovery, network, strict CALL and the
 Windows RTC oracle reds remain open; three-second cold shell is unmet.

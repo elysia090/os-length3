@@ -63,15 +63,20 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
 }
 /* Six ordinary families have load/store/register forms. MOVNTPS/MOVNTPD
  * have memory-store forms only. Twelve MOVDQU forms vary address topology.
- * Eight PADDQ forms use the same precise operand boundary and add/alias oracle. */
+ * Eight PADDQ forms and twelve logical families use the same precise operand
+ * boundary, with distinct-register/alias and six memory address topologies. */
 static pl_u32 encoding(pl_u32 form,pl_u32 *kind,pl_u32 *store,pl_u32 *reg,pl_u32 *aligned)
 {
     if(form>=32u) {
-        *kind=form<34u?0u:form-33u;*store=0u;*reg=form<34u;*aligned=!*reg;
+        pl_u32 local=(form-32u)%8u,family=form<40u?0u:1u+(form-40u)/8u;
+        static const pl_u8 opcodes[]={0xd4u,0xefu,0xdbu,0xebu,0xdfu,
+            0x57u,0x54u,0x56u,0x55u,0x57u,0x54u,0x56u,0x55u};
+        *kind=local<2u?0u:local-1u;*store=0u;*reg=local<2u;*aligned=!*reg;
         pl_u32 at=0u;if(*kind==1u)source[at++]=0x67u;
-        source[at++]=0x66u;source[at++]=(pl_u8)(*reg || *kind==3u?0x45u:0x44u);
-        source[at++]=0x0fu;source[at++]=0xd4u;
-        if(*reg)source[at++]=(pl_u8)(form==32u?0xcbu:0xc9u);
+        if(family<5u || family>=9u)source[at++]=0x66u;
+        source[at++]=(pl_u8)(*reg || *kind==3u?0x45u:0x44u);
+        source[at++]=0x0fu;source[at++]=opcodes[family];
+        if(*reg)source[at++]=(pl_u8)(local?0xc9u:0xcbu);
         else if(*kind==1u)source[at++]=0x0fu;
         else if(*kind==2u) {source[at++]=0x4cu;source[at++]=0x24u;source[at++]=12u;}
         else if(*kind==3u) {source[at++]=0x4cu;source[at++]=0x8cu;source[at++]=7u;}
@@ -106,7 +111,7 @@ static int admission(void)
 {
     pl_u8 page[4096]; pl_x86_map map={page,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
     pl_x86_image image={&map,1u,0u,map.address}; wasm_cut_options options={map.address,8u,sizeof module};
-    for(pl_u32 form=0u;form<40u;++form) {
+    for(pl_u32 form=0u;form<136u;++form) {
         pl_u32 kind,store,reg,aligned;
         memset(source,0x90,sizeof source);pl_u32 size=encoding(form,&kind,&store,&reg,&aligned);
         memset(page,0x90,sizeof page);memcpy(page+1u,source,size);
@@ -148,7 +153,7 @@ int main(int argc,char **argv)
         MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
     if(code==MAP_FAILED || ram==MAP_FAILED)return 1;
     pl_u64 seed=0x2352250940811235ull;int status=1;pl_u32 observations=0u,faults=0u;
-    for(pl_u32 form=0u;form<40u;++form) {
+    for(pl_u32 form=0u;form<136u;++form) {
         pl_u32 kind,store,reg,aligned;
         memset(source,0x90,sizeof source);pl_u32 size=encoding(form,&kind,&store,&reg,&aligned);
         pl_x86_map map={source,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
@@ -224,17 +229,25 @@ int main(int argc,char **argv)
                 fprintf(stderr,"vector partial/unrelated RAM write %u/%u\n",form,row);goto finish;
             }
             if(!trapped) {
-                pl_u64 low=store?state->xmm[18u]:reg?state->xmm[form==33u?18u:22u]:record->old_low;
-                pl_u64 high=store?state->xmm[19u]:reg?state->xmm[form==33u?19u:23u]:record->old_high;
-                if(form>=32u) {low+=state->xmm[18u];high+=state->xmm[19u];}
+                int alias=form>=32u && (form-32u)%8u==1u;
+                pl_u64 low=store?state->xmm[18u]:reg?state->xmm[alias?18u:22u]:record->old_low;
+                pl_u64 high=store?state->xmm[19u]:reg?state->xmm[alias?19u:23u]:record->old_high;
+                if(form>=32u && form<40u) {low+=state->xmm[18u];high+=state->xmm[19u];}
+                else if(form>=40u) {
+                    pl_u32 logic=(form-40u)/8u%4u;
+                    pl_u64 a=state->xmm[18u],b=state->xmm[19u];
+                    low=logic==0u?a^low:logic==1u?a&low:logic==2u?a|low:~a&low;
+                    high=logic==0u?b^high:logic==1u?b&high:logic==2u?b|high:~b&high;
+                }
                 if((store?record->new_low:record->after.xmm[18u])!=low
                         || (store?record->new_high:record->after.xmm[19u])!=high)goto finish;
             }
             ++observations;
         }
         char json[320];int n=snprintf(json,sizeof json,
-            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u}\n",
-            size,sizeof(machine_state),sizeof(observation),kind,store,reg,aligned,(pl_u32)(form>=32u));
+            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u}\n",
+            size,sizeof(machine_state),sizeof(observation),kind,store,reg,aligned,
+            (pl_u32)(form>=32u && form<40u),form>=40u?1u+(form-40u)/8u%4u:0u);
         if(n<1 || (size_t)n>=sizeof json || save(directory,form,"json",json,(size_t)n)
             || save(directory,form,"source-page",source,sizeof source) || save(directory,form,"cases",records,sizeof records)
             || (!observe_only && save(directory,form,"wasm",module,(size_t)emitted)))goto finish;
@@ -245,7 +258,7 @@ finish:
     if(munmap(code,4096u) || munmap(ram,8192u))status=1;
     if(sigaction(SIGSEGV,&old_segv,NULL) || sigaction(SIGBUS,&old_bus,NULL) || sigaction(SIGILL,&old_ill,NULL)
             || sigaltstack(&old_stack,NULL))status=1;
-    if(!status)printf("vector transfers/additions: %u actual x86 CPU/RAM observations, %u fault frames%s; CR0/CR4 require separate models\n",
+    if(!status)printf("vector transfers/additions/logic: %u actual x86 CPU/RAM observations, %u fault frames%s; CR0/CR4 require separate models\n",
         observations,faults,observe_only?"; lowering not tested":"");
     return status;
 }
