@@ -18,21 +18,23 @@ Common BSWAP lowering now passes 96 native/cold byte-identical emissions and
 flags, SSA-local input, prefix/refusal and RF checks pass, as do full product
 checks and scoped compiler sanitizers.
 
-Actual browser: 258,087,125 retired / 150,000,000 admissions, unchanged complete
-14,622,864-byte decompression; 4,766 real Linux UART bytes include banner,
-memory initialization and ttyS0 enablement. PIT/POST/BSWAP pass; 16 external
-IRQs are observed. The quota is reached in a pure counter-wait loop at
-0xffffffff81017b12/19: time/PIT only advances on IN/OUT/RDTSC, so more pure
-instructions cannot deliver its next timer IRQ. Independent clock progress
-at a safe C execution boundary is next; HLT wake still needs work.
+Independent supervisor clock samples now reuse the same 88-byte C
+ticket/generation/monotonic owner. 3,200 pure self-loop cuts and 32 boundary
+PIT IRQ/IRET cases pass; private port, stale reply, source pin, rebind/reopen,
+duplicate and native C/sanitizer checks pass. No kernel counter or instruction
+is modified. Actual browser passes the old counter-wait quota and reaches
+delay-loop calibration / CPU initialization: 138,929,830 retired,
+70,626,112 admissions, 5,388 Linux console bytes and 468 external IRQs.
+Complete 14,622,864-byte decompression stays identical. The next compiler
+refusal is FNINIT (`DB E3`) at 0xffffffff81034ca3. HLT wake still needs work.
 PID 1/shell and the full
 goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Add/test supervisor clock events independent of guest IN/OUT/RDTSC,
-   reusing the C ticket/generation/monotonic-time frontier at safe execution
-   boundaries. No Linux counter mutation, wait skip or instruction-count clock.
+1. Admit FNINIT through the common compiler with precise CR0.EM/TS #NM,
+   existing x87-state initialization and no XMM/MXCSR/register-payload changes.
+   Do not replace it with a no-op or a Linux-function special case.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -45,7 +47,7 @@ stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
 engine construction and admission (22,509.3 ms) now dominate; cold emission
 and 7.47 GB cumulative source copying remain material. This is not shell time.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-byte-swap.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-boundary-clock.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

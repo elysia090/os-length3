@@ -98,7 +98,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let resourceGate;
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
-  let clockEvents = 0;
+  let clockEvents = 0, boundaryClockEvents = 0, deferredClockPolls = 0, sampledClockMs = 0;
   const consoleOutput=new Uint8Array(16384);
   let consoleBytes=0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
@@ -235,7 +235,27 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     }
   }
   let externalInterrupts=0;
+  function acceptClock(generation) {
+    assert.equal(view.getUint32(port+40,true),0);
+    assert.equal(view.getUint32(port+44,true),0x100);
+    // Only measured C execution advances this diagnostic clock. Compilation,
+    // delivery and UI stalls are paused; no guest counter is synthesized.
+    assert.equal(vm.vm_clock_commit(port,generation,view.getBigUint64(port+32,true),
+      BigInt(Math.round(executionMs*1000000))),0);
+    sampledClockMs=executionMs; ++clockEvents;
+  }
   async function step(limit) {
+    // A supervisor clock event is not a guest time instruction. C permits it
+    // only between completed cuts, outside pinned fault/page/IO frontiers.
+    if(executionMs-sampledClockMs>=1){
+      const before=rip(), beforeRetired=view.getBigUint64(base+1128,true);
+      const sample=vm.vm_clock_poll(port,machineGeneration);
+      if(sample===18n){
+        acceptClock(machineGeneration);
+        assert.equal(vm.vm_clock_poll(port,machineGeneration),0n); ++boundaryClockEvents;
+      }else{ assert.equal(sample,6n); ++deferredClockPolls; }
+      assert.equal(rip(),before); assert.equal(view.getBigUint64(base+1128,true),beforeRetired);
+    }
     // C drains asynchronous architectural events before source projection;
     // a pending IRQ has priority over a fault while fetching the next opcode.
     const interrupted=rip();let boundary=vm.vm_boundary(port,9n);
@@ -384,14 +404,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         assert.equal(vm.vm_console_commit(port,generation,ticket,byte),0);continue;
       }
       if (result === 18n) {
-        assert.equal(view.getUint32(port + 40,true),0);
-        assert.equal(view.getUint32(port + 44,true),0x100);
-        // This diagnostic clock advances only by measured C execution time,
-        // excluding asynchronous compilation, delivery and Worker/UI stalls.
-        // No instruction-count clock, guest port model or calibration result.
-        assert.equal(vm.vm_clock_commit(port,generation,view.getBigUint64(port + 32,true),
-          BigInt(Math.round(executionMs * 1000000))),0);
-        ++clockEvents; continue;
+        acceptClock(generation); continue;
       }
       if (entry === 0x1000281n && !firstRepeatWait) {
         firstRepeatWait = {address:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
@@ -553,13 +566,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       independentStateCheckpoint:86,relocationRegisterCheckpoint:378,
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
-      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,externalInterrupts,
+      firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,boundaryClockEvents,deferredClockPolls,externalInterrupts,
       postCode:vm.vm_post_read(machineGeneration),
       console:{acceptedBytes:consoleBytes,capacity:consoleOutput.length,
         text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes)),
         ownership:'bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation'},
       rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
-      clockContract:'sampled active C execution nanoseconds; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused',
+      clockContract:'active C execution nanoseconds, guest clock requests plus safe cut-boundary poll each >=1 ms; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused',
       repeatComparedBytes,bssComparedBytes,
       memsetComparedBytes,memsetReturns,
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,

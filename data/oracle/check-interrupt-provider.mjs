@@ -1,4 +1,5 @@
-// Compiler admission is a real red before STI lowering is implemented.
+// Generated interrupt/clock boundaries; model and independent oracle scopes
+// are reported separately. Passing these checks is not Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const [vmFile,compilerFile,systemRows]=process.argv.slice(2);
@@ -12,6 +13,7 @@ assert.equal(cc.compiler_open_pages(input,1,0x9000n,9n),0);
 assert.equal(cc.compiler_emit(0x9000n,1,output,65536,report),0,'STI must compile through the common boundary');
 const memory=new WebAssembly.Memory({initial:8});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
+assert.equal(typeof vm.vm_clock_poll,'function','clock progress must not require a guest time instruction');
 const data=Buffer.from(memory.buffer),v=new DataView(memory.buffer),dir=vm.vm_arena_min();
 const base=dir+4096,segments=base+1408,port=base+2048,rows=dir+512;
 const addresses=[0x1000,0x2000,0x3000,0x4000,0x5000,0x8000,0x9000,0xa000,0xb000];
@@ -89,7 +91,7 @@ function pending(vector=40){
   assert.equal(vm.vm_time(port),0n);
 }
 function gate(vector,type=0x8e){put(payload(4)+vector*16,0x8000n|8n<<16n|BigInt(type)<<40n);}
-function pitPending(){
+function pitProgram(){
   for(const [p,x]of [[0x20,0x11],[0xa0,0x11],[0x21,32],[0xa1,40],[0x21,4],[0xa1,2],
     [0x21,1],[0xa1,1],[0x21,0xfe],[0xa1,0xff],[0x43,0x34],[0x40,4],[0x40,0]])io(p,1,x);
   // Intel mode 2 starts OUT high. Acknowledge that initial edge, then wait
@@ -97,19 +99,46 @@ function pitPending(){
   // must produce the next pending edge even when final OUT is again high.
   io(0x20,1,0x0c);io(0x20,0,0);assert.equal(get(port+8),128n);
   io(0x20,1,0x20);
+}
+function pitPending(){
+  pitProgram();
   assert.equal(vm.vm_time(port),18n);now=34362n; // 41 PIT pulses, ten complete periods.
   assert.equal(vm.vm_clock_commit(port,9n,get(port+32),now),0);assert.equal(vm.vm_time(port),0n);
 }
-let pitIrqEntries=0;
-for(const type of [0x8e,0x8f])for(let align=0;align<16;++align){
-  reset();pitPending();gate(32,type);put(base+32,0xaf00-align);put(base+392,0x10603);await bind([0x90]);
+let pitIrqEntries=0,pitBoundaryEntries=0,pureLoopCuts=0;
+for(const boundaryClock of [false,true])for(const type of [0x8e,0x8f])for(let align=0;align<16;++align){
+  reset();if(boundaryClock)pitProgram();else pitPending();
+  gate(32,type);put(base+32,0xaf00-align);put(base+392,boundaryClock?0x603:0x10603);
+  await bind(boundaryClock?[0xeb,0xfe]:[0x90]);
+  if(boundaryClock){
+    // A compiled pure self-loop never reads time and cannot update PIT by
+    // itself. The supervisor event alone must make a new IRQ eligible.
+    for(let iteration=0;iteration<100;++iteration){
+      assert.equal(vm.vm_run(port,9n,1),1n);assert.equal(vm.vm_completed(),1);
+      assert.equal(get(base+384),0x9000n);++pureLoopCuts;
+    }
+    const cpu=Buffer.from(data.subarray(base,base+1256)),hidden=Buffer.from(data.subarray(segments,segments+136));
+    assert.equal(vm.vm_clock_poll(port,8n),5n);assert.equal(vm.vm_clock_poll(port,9n),18n);
+    const ticket=get(port+32);assert.equal(vm.vm_clock_poll(port,9n),18n);assert.equal(get(port+32),ticket);
+    assert.equal(vm.vm_boundary(port,9n),6n);assert.equal(vm.vm_run(port,9n,1),6n);
+    assert.equal(vm.vm_bind_execution(rows,1,9n),-1);
+    put(base+384,0x9001);assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),-1);put(base+384,0x9000);
+    assert.equal(vm.vm_clock_commit(port,8n,ticket,34362n),-1);
+    assert.equal(vm.vm_clock_commit(port,9n,ticket+1n,34362n),-1);
+    assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),0);
+    assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),0);
+    assert.equal(vm.vm_boundary(port,9n),6n);assert.equal(vm.vm_clock_poll(port,9n),0n);
+    assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),0);
+    assert(data.subarray(base,base+1256).equals(cpu));assert(data.subarray(segments,segments+136).equals(hidden));
+  }
   const before=get(base+1128);assert.equal(vm.vm_run(port,9n,1),1n);
   assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);assert.equal(get(base+1128),before);
   assert.equal(get(base+384),0x8000n);assert.equal(get(base+392),BigInt(type===0x8e?0x403:0x603));
   const rsp=((0xaf00n-BigInt(align))&~15n)-40n,at=payload(7)+Number(rsp&4095n);
   assert.equal(get(base+32),rsp);
-  for(const [i,value]of [0x9000n,8n,0x10603n,0xaf00n-BigInt(align),16n].entries())assert.equal(get(at+i*8),value);
-  assert.equal(vm.vm_iret(port),0n);io(0x20,1,0x20);assert.equal(get(base+384),0x9000n);++pitIrqEntries;
+  for(const [i,value]of [0x9000n,8n,boundaryClock?0x603n:0x10603n,0xaf00n-BigInt(align),16n].entries())assert.equal(get(at+i*8),value);
+  assert.equal(vm.vm_iret(port),0n);io(0x20,1,0x20);assert.equal(get(base+384),0x9000n);
+  if(boundaryClock)++pitBoundaryEntries;else ++pitIrqEntries;
 }
 for(const vector of [0,8,40])for(const type of [0x8e,0x8f])for(let align=0;align<16;++align){
   reset();pending(vector);gate(vector,type);put(base+32,0xaf00-align);put(base+392,0x10603);
@@ -132,6 +161,8 @@ for(const second of [[0xfb],[0xfa],[0x90],[0x8e,0xd0],[0xe4,0x71]]){
   await bind(second);let result=vm.vm_run(port,9n,1);
   if(second[0]===0xe4){
     assert.equal(result,18n);assert.equal(v.getUint32(segments+4,true),2);assert.equal(vm.vm_completed(),0);
+    const cpu=Buffer.from(data.subarray(base,base+1256));
+    assert.equal(vm.vm_clock_poll(port,9n),6n);assert(data.subarray(base,base+1256).equals(cpu));
     assert.equal(vm.vm_clock_commit(port,9n,get(port+32),10000001n),0);
     result=vm.vm_run(port,9n,1);++waits;
   }
@@ -169,6 +200,42 @@ assert.equal(vm.vm_source_publish(2,2,rows),-1);
 // ABI v1 used this same word for a different inhibition contract.
 reset();v.setUint32(segments,1,true);assert.equal(vm.vm_bind_segments(segments),-1);
 v.setUint32(segments,2,true);assert.equal(vm.vm_bind_segments(segments),0);
+// Boundary-clock tickets are supervisor-owned and survive neither rebind nor
+// reopen. Failed admission cannot overwrite the request or mutate the CPU.
+reset();
+const clockCPU=Buffer.from(data.subarray(base,base+1256));
+assert.equal(vm.vm_clock_poll(base,9n),6n);
+assert.equal(vm.vm_clock_poll(port+1,9n),6n);
+assert.equal(vm.vm_clock_poll(port,8n),5n);
+put(port,8);assert.equal(vm.vm_clock_poll(port,9n),5n);put(port,9);
+assert.equal(vm.vm_clock_poll(port,9n),18n);
+const cancelledClock=get(port+32);
+data.fill(0xa5,codeView,codeView+48);data.fill(0xa5,rows,rows+24);
+assert.equal(vm.vm_source_query(port,0x9000n,8,codeView,rows),6n);
+assert(data.subarray(codeView,codeView+48).every(x=>x===0xa5));
+assert(data.subarray(rows,rows+24).every(x=>x===0xa5));
+assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
+assert.equal(vm.vm_clock_commit(port,9n,cancelledClock,1n),-1);
+assert.equal(vm.vm_clock_poll(port,9n),18n);
+const acceptedClock=get(port+32);assert(acceptedClock>cancelledClock);
+assert.equal(vm.vm_clock_commit(port,9n,acceptedClock,1n),0);
+assert.equal(vm.vm_clock_poll(port,9n),0n);
+assert.equal(vm.vm_clock_commit(port,9n,acceptedClock,1n),0);
+assert(data.subarray(base,base+1256).equals(clockCPU));
+assert.equal(vm.vm_bind_segments(segments),0);
+assert.equal(vm.vm_clock_commit(port,9n,acceptedClock,1n),-1,'rebind revokes even an acknowledged clock ticket');
+vm.vm_close();assert.equal(vm.vm_clock_commit(port,9n,acceptedClock,1n),-1);
+reset();assert.equal(vm.vm_clock_poll(port,9n),18n);
+assert(get(port+32)>acceptedClock,'same-generation reopen cannot reuse a ticket');
+assert.equal(vm.vm_clock_commit(port,9n,acceptedClock,1n),-1);
+assert.equal(vm.vm_clock_commit(port,9n,get(port+32),0n),0);
+assert.equal(vm.vm_clock_poll(port,9n),0n);
+reset();data.set([0x90],payload(6));
+assert.equal(vm.vm_source_query(port,0x9000n,1,codeView,rows),1n);
+const pinnedClockCPU=Buffer.from(data.subarray(base,base+1256)),pinnedRequest=Buffer.from(data.subarray(port,port+64));
+assert.equal(vm.vm_clock_poll(port,9n),6n);
+assert(data.subarray(base,base+1256).equals(pinnedClockCPU));
+assert(data.subarray(port,port+64).equals(pinnedRequest));
 let systemComparisons=0,qemuSavedRFDifferences=0;
 if(systemRows){
   const records=(await readFile(systemRows,'utf8')).trim().split('\n').map(line=>line.trim().split(/\s+/).map(x=>BigInt(`0x${x}`)));
@@ -194,7 +261,8 @@ if(systemRows){
     ++systemComparisons;
   }
 }
-console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,pitIrqEntries,waits,refusals,
+console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,pitIrqEntries,pitBoundaryEntries,pureLoopCuts,waits,refusals,
+  clockLifecycle:'private port/generation/source pin/duplicate/cancel/rebind/reopen assertions green',
   admissionPriorityChecks:1,shadowExtentChecks:1,oldAbiRefusals:1,
   systemComparisons,qemuSavedRFDifferences,oracle:systemRows?'QEMU TCG PIT/PIC/shadow/IDT; saved RF difference explicitly excluded; privilege/RF matrix is a model':
     'architectural model only; supply SYSTEM-ROWS.txt for independent system comparison',linuxBoot:'not-tested'},null,2));

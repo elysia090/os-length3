@@ -2,7 +2,7 @@
 #include "memory-internal.h"
 #include <stddef.h>
 void vm_clock_abort(vm_clock *clock)
-{ if (clock) clock->stage = 0u; }
+{ if (clock) { clock->stage = 0u; clock->acknowledged = 0u; } }
 void vm_clock_close(vm_clock *clock)
 {
     if (clock) { pl_u64 issued = clock->issued; *clock = (vm_clock){0}; clock->issued = issued; }
@@ -36,7 +36,8 @@ int vm_clock_reply(vm_clock *clock, pl_u64 generation, pl_u32 port,
 {
     if (!clock || !state || !generation || !ticket) return -1;
     if (!clock->stage)
-        return ticket == clock->acknowledged && generation == clock->acknowledged_generation
+        return ticket == clock->ticket && port == clock->port
+            && ticket == clock->acknowledged && generation == clock->acknowledged_generation
             && nanoseconds == clock->acknowledged_time ? 0 : -1;
     if (generation != clock->generation || port != clock->port || state->rip != clock->rip
             || ticket != clock->ticket || nanoseconds < clock->now) return -1;
@@ -48,4 +49,11 @@ void vm_clock_consume(vm_clock *clock)
 {
     clock->acknowledged = clock->ticket; clock->acknowledged_generation = clock->generation;
     clock->acknowledged_time = clock->now; clock->stage = 0u;
+}
+machine_result vm_clock_boundary_sample(vm_clock *clock, vm_memory *physical,
+    pl_u32 port, const machine_state *state)
+{
+    machine_result result = vm_clock_sample(clock,physical,port,state,VM_CLOCK_BOUNDARY_KEY,0u);
+    if (!result) vm_clock_consume(clock);
+    return result;
 }

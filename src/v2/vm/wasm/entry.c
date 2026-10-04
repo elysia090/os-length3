@@ -40,6 +40,8 @@ static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result pending_boundary(pl_u32 port);
 static machine_result call_entry(void *pointer, pl_u32 slot);
+static int clock_boundary_pending(void)
+{ return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
 pl_u32 vm_source_capacity(void) { return VM_SOURCE_ROWS; }
 pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
 
@@ -349,7 +351,7 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     sources.pending = 0u;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
-    if (delivery.stage || execution.continuation.slot || !segments_offset || !private_port(port)
+    if (delivery.stage || execution.continuation.slot || clock_boundary_pending() || !segments_offset || !private_port(port)
             || !private_record(view_target,2u*sizeof(vm_code_page))
             || !separate(view_target,2u*sizeof(vm_code_page),port,sizeof(machine_memory_port))
             || !execution_record(row_target,sizeof(vm_execution_row))) return MACHINE_RESULT_ENTRY_MAP;
@@ -507,6 +509,19 @@ int vm_console_commit(pl_u32 port,pl_u64 generation,pl_u64 ticket,pl_u32 byte)
     return vm_console_reply(&console_owner,generation,port-arena_base,
         (const machine_state *)(uintptr_t)state_offset,ticket,byte);
 }
+/* Clock delivery is independent of guest IN/OUT/RDTSC. No emitted function
+ * imports this supervisor API, and it cannot interrupt a pinned instruction,
+ * fault/page/console/table frontier, reservation or cold source admission. */
+machine_result vm_clock_poll(pl_u32 port, pl_u64 generation)
+{
+    if (!private_port(port) || delivery.stage || table_frontier.stage || supply.generation
+            || sources.pending || execution.continuation.slot || resident.reservation.parts
+            || vm_console_pending(&console_owner)) return MACHINE_RESULT_ENTRY_MAP;
+    if (generation!=resident.generation || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation)
+        return MACHINE_RESULT_STALE_GENERATION;
+    return vm_clock_boundary_sample(&clock_owner,&resident,port-arena_base,
+        (const machine_state *)(uintptr_t)state_offset);
+}
 int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanoseconds)
 {
     if (!private_port(port) || delivery.stage || table_frontier.stage || vm_console_pending(&console_owner) || generation != resident.generation
@@ -655,7 +670,7 @@ machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 
 int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
 {
-    if (delivery.stage || table_frontier.stage || vm_console_pending(&console_owner)) return -1;
+    if (delivery.stage || table_frontier.stage || clock_boundary_pending() || vm_console_pending(&console_owner)) return -1;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     vm_execution_close(&execution);
@@ -685,7 +700,7 @@ static machine_result interrupt_boundary(pl_u32 port)
 }
 static machine_result pending_boundary(pl_u32 port)
 {
-    if (table_frontier.stage || !private_port(port)
+    if (table_frontier.stage || clock_boundary_pending() || !private_port(port)
             || (vm_console_pending(&console_owner) && !execution.continuation.slot)) return MACHINE_RESULT_ENTRY_MAP;
     if (delivery.stage) return delivery.external ? interrupt_boundary(port) : MACHINE_RESULT_ENTRY_MAP;
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;

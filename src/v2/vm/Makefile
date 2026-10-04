@@ -19,6 +19,7 @@ WASM_FLAGS += -Wl,--export=vm_debug
 WASM_FLAGS += -Wl,--export=vm_flag,--export=vm_boundary
 WASM_FLAGS += -Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit,--export=vm_rtc_start,--export=vm_console_commit
 WASM_FLAGS += -Wl,--export=vm_post_read
+WASM_FLAGS += -Wl,--export=vm_clock_poll
 WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_extend,--export=vm_source_publish,--export=vm_sources_reset
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
@@ -123,6 +124,14 @@ debug-check: $(BUILD)/debug-check
 
 $(BUILD)/io-check: check/io.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+$(BUILD)/clock-check: check/clock.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+.PHONY: clock-check
+check: clock-check
+clock-check: $(BUILD)/clock-check
+	$(BUILD)/clock-check
 
 $(BUILD)/pic-check: check/pic.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
