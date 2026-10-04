@@ -18,6 +18,7 @@ WASM_FLAGS += -Wl,--export=vm_fault,--export=vm_iret,--export=vm_msr
 WASM_FLAGS += -Wl,--export=vm_debug
 WASM_FLAGS += -Wl,--export=vm_flag,--export=vm_boundary
 WASM_FLAGS += -Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit,--export=vm_rtc_start,--export=vm_console_commit
+WASM_FLAGS += -Wl,--export=vm_post_read
 WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_extend,--export=vm_source_publish,--export=vm_sources_reset
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
@@ -126,6 +127,9 @@ $(BUILD)/io-check: check/io.c $(BUILD)/libvm.a
 $(BUILD)/pic-check: check/pic.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
+$(BUILD)/pit-check: check/pit.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
 $(BUILD)/rtc-check: check/rtc.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
@@ -138,7 +142,7 @@ $(BUILD)/uart-check: check/uart.c $(BUILD)/libvm.a
 $(BUILD)/console-check: check/console.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
-check: $(BUILD)/io-check $(BUILD)/pic-check $(BUILD)/rtc-check $(BUILD)/interrupt-check $(BUILD)/uart-check $(BUILD)/console-check
+check: $(BUILD)/io-check $(BUILD)/pic-check $(BUILD)/pit-check $(BUILD)/rtc-check $(BUILD)/interrupt-check $(BUILD)/uart-check $(BUILD)/console-check
 
 check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/page-index-check $(BUILD)/supply-check $(BUILD)/mmu-check $(BUILD)/boot-check $(BUILD)/rom-check $(BUILD)/execution-check $(BUILD)/segments-check $(BUILD)/registers-check $(BUILD)/exception-check $(BUILD)/source-check $(BUILD)/msr-check
 	$(BUILD)/resource-check
@@ -156,6 +160,7 @@ check: all $(BUILD)/resource-check $(BUILD)/memory-check $(BUILD)/page-index-che
 	$(BUILD)/msr-check
 	$(BUILD)/io-check
 	$(BUILD)/pic-check
+	$(BUILD)/pit-check
 	$(BUILD)/rtc-check
 	$(BUILD)/interrupt-check
 	$(BUILD)/uart-check

@@ -1,12 +1,13 @@
 # Browser boundary observations
 
-Latest: [C-owned console acceptance and bounded engine identity](2026-10-04-console.md)
-and its [actual browser JSON](2026-10-04-console-browser.json). The unchanged
-bundle retires 137,904,185 source instructions and emits 4,532 real Linux UART
-bytes, through ttyS0 enablement, then refuses PIT mode 2 at port 0x43.
-Complete decompression passes; PID 1/shell remain red. Zero external IRQ entries
-are observed. The separate slot-key receipt retains its own VM build/time;
-independent event/provider comparisons are separately scoped in the evidence.
+Latest: [C PIT mode 2, IRQ0 and ordered POST](2026-10-04-pit-post.md)
+and its [actual browser JSON](2026-10-04-pit-post-browser.json). The unchanged
+bundle retires 137,905,736 source instructions and emits 4,532 real Linux UART
+bytes, through ttyS0 enablement; PIT/POST pass and one external IRQ is observed.
+The next gate is common BSWAP RDI lowering. Complete decompression passes;
+PID 1/shell remain red. Independent device/event scopes and limitations are
+explicit. [Console/engine identity evidence](2026-10-04-console.md) and the
+separate slot-key receipt retain their own VM builds/times.
 The older observations below retain their original build and scope.
 
 `2026-10-02-ordinary-worker.json` is the result supplied by the user from

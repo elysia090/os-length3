@@ -34,6 +34,7 @@ static vm_pit pit;
 static vm_pic pic;
 static vm_rtc rtc;
 static vm_uart uart;
+static vm_post post;
 static vm_console console_owner;
 static pl_u32 boot_header, boot_header_bytes, boot_command;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
@@ -62,6 +63,7 @@ void vm_close(void)
     vm_console_close(&console_owner);
     vm_rtc_reset(&rtc);
     vm_uart_reset(&uart);
+    post=(vm_post){0};
     vm_sources_open(&sources,0u,vm_slot_min());
     vm_supply_reset(&supply);
     delivery = (vm_fault_delivery){0};
@@ -476,7 +478,7 @@ machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 val
     resident.write_touched = 0u;
     machine_result result = vm_io_transfer(&resident,port - arena_base,
         (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
-        &clock_owner,&pit,&pic,&rtc,&uart,&console_owner,coordinate,transfer,value);
+        &clock_owner,&pit,&pic,&rtc,&uart,&console_owner,&post,coordinate,transfer,value);
     if (resident.write_touched) execution.generation = 0u;
     return result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CLOCK)
         || result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CONSOLE)
@@ -489,6 +491,11 @@ machine_result vm_time(pl_u32 port)
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     return vm_time_read(&resident,port - arena_base,(const machine_state *)(uintptr_t)state_offset,
         (const machine_segments *)(uintptr_t)segments_offset,&clock_owner,&console_owner);
+}
+/* Supervisor diagnostic only, never an import of emitted guest functions. */
+int vm_post_read(pl_u64 generation)
+{
+    return resident.bytes && generation==resident.generation && post.valid ? (int)post.byte : -1;
 }
 /* Supervisor-only output sink admission. An exact duplicate is not another
  * byte. The sink reserves capacity first and publishes only on return 1. */
@@ -505,13 +512,17 @@ int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanose
     if (!private_port(port) || delivery.stage || table_frontier.stage || vm_console_pending(&console_owner) || generation != resident.generation
             || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) != generation) return -1;
     if (rtc.seeded && !vm_rtc_can_advance(&rtc,nanoseconds)) return -1;
+    if (!vm_pit_can_advance(&pit,nanoseconds)) return -1;
     int result=vm_clock_reply(&clock_owner,generation,port - arena_base,
         (const machine_state *)(uintptr_t)state_offset,ticket,nanoseconds);
     if (!result && rtc.seeded) {
         if (vm_rtc_advance(&rtc,nanoseconds)) return -1;
         vm_pic_set_irq(&pic,8u,(pl_u32)vm_rtc_irq(&rtc));
     }
-    if(!result){vm_uart_advance(&uart,nanoseconds);vm_pic_set_irq(&pic,4u,(pl_u32)vm_uart_irq(&uart));}
+    if(!result){
+        if(vm_pit_advance(&pit,nanoseconds,&pic))return -1;
+        vm_uart_advance(&uart,nanoseconds);vm_pic_set_irq(&pic,4u,(pl_u32)vm_uart_irq(&uart));
+    }
     return result;
 }
 /* Supervisor-only UTC seed. Guest code receives only the IN/OUT import;

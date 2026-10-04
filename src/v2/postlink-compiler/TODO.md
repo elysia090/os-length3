@@ -1,6 +1,11 @@
 # Remaining work — 2026-10-04
 
-Current browser checkpoint: C UART uses a 48-byte console byte/ticket frontier.
+Current browser checkpoint: binary PIT modes 0/2/6 and IRQ0 use a 128-byte C
+owner with O(1) residual-phase advancement; port 0x80 owns a 2-byte POST latch.
+599,808 pulse/reference and 25,728 batch/residual comparisons pass. Paused
+QEMU gives 34,536 register comparisons, not an OUT/null/IRQ timing oracle.
+1,868 generated CPU/segment checks and 32 mode-2 IRQ0/IRET frames pass.
+C UART uses a 48-byte console byte/ticket frontier.
 External output is accepted once by a bounded sink before device commit and
 source retirement. Duplicate/stale/rebind/overflow, pinned source and STI
 inhibition checks pass. 7,466 generated CPU/segment comparisons, all 256 byte
@@ -8,18 +13,19 @@ values and independent QEMU serial-file bytes agree. Full product checks and
 C VM core sanitizers pass; previous privilege/IRQ/fault/source checks stay green.
 Complete CPL/IST/debug/APIC/secondary escalation remains incomplete.
 
-Actual browser: 137,904,185 retired / 69,910,548 admissions, unchanged complete
+Actual browser: 137,905,736 retired / 69,911,728 admissions, unchanged complete
 14,622,864-byte decompression; 4,532 real Linux UART bytes include banner,
-memory initialization and ttyS0 enablement. Next refusal: OUT 0x43,AL, byte
-0x34 at 0xffffffff812959aa (PIT channel 0 mode 2). Zero external IRQ entries,
-so independent event tests are not IRQ use in Linux. PID 1/shell and the full
+memory initialization and ttyS0 enablement. PIT/POST pass; one external IRQ
+is observed. Next refusal: compiler grammar/-102 at 0xffffffff81268d07,
+48 0F CF (BSWAP RDI). Asynchronous clock deadline/HLT wake still needs work.
+PID 1/shell and the full
 goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Implement/test common binary PIT mode 2 and C IRQ0 routing through the
-   existing PIC/event frontier. No constant successful IN/OUT, timer skip,
-   Linux shortcut or JS port interpreter. Exact fault and shadow behavior stay.
+1. Add common 32/64-bit BSWAP lowering, keeping flags and parent-register
+   behavior exact, and verify native x86 / cold emission / C dispatch. No
+   Linux shortcut or source skip; unsupported forms remain explicit.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -32,7 +38,7 @@ stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
 engine construction and admission (22,509.3 ms) now dominate; cold emission
 and 7.47 GB cumulative source copying remain material. This is not shell time.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-console.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-pit-post.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

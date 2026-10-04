@@ -89,6 +89,28 @@ function pending(vector=40){
   assert.equal(vm.vm_time(port),0n);
 }
 function gate(vector,type=0x8e){put(payload(4)+vector*16,0x8000n|8n<<16n|BigInt(type)<<40n);}
+function pitPending(){
+  for(const [p,x]of [[0x20,0x11],[0xa0,0x11],[0x21,32],[0xa1,40],[0x21,4],[0xa1,2],
+    [0x21,1],[0xa1,1],[0x21,0xfe],[0xa1,0xff],[0x43,0x34],[0x40,4],[0x40,0]])io(p,1,x);
+  // Intel mode 2 starts OUT high. Acknowledge that initial edge, then wait
+  // through real elapsed periods. The clock reply, not a host IRQ injection,
+  // must produce the next pending edge even when final OUT is again high.
+  io(0x20,1,0x0c);io(0x20,0,0);assert.equal(get(port+8),128n);
+  io(0x20,1,0x20);
+  assert.equal(vm.vm_time(port),18n);now=34362n; // 41 PIT pulses, ten complete periods.
+  assert.equal(vm.vm_clock_commit(port,9n,get(port+32),now),0);assert.equal(vm.vm_time(port),0n);
+}
+let pitIrqEntries=0;
+for(const type of [0x8e,0x8f])for(let align=0;align<16;++align){
+  reset();pitPending();gate(32,type);put(base+32,0xaf00-align);put(base+392,0x10603);await bind([0x90]);
+  const before=get(base+1128);assert.equal(vm.vm_run(port,9n,1),1n);
+  assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);assert.equal(get(base+1128),before);
+  assert.equal(get(base+384),0x8000n);assert.equal(get(base+392),BigInt(type===0x8e?0x403:0x603));
+  const rsp=((0xaf00n-BigInt(align))&~15n)-40n,at=payload(7)+Number(rsp&4095n);
+  assert.equal(get(base+32),rsp);
+  for(const [i,value]of [0x9000n,8n,0x10603n,0xaf00n-BigInt(align),16n].entries())assert.equal(get(at+i*8),value);
+  assert.equal(vm.vm_iret(port),0n);io(0x20,1,0x20);assert.equal(get(base+384),0x9000n);++pitIrqEntries;
+}
 for(const vector of [0,8,40])for(const type of [0x8e,0x8f])for(let align=0;align<16;++align){
   reset();pending(vector);gate(vector,type);put(base+32,0xaf00-align);put(base+392,0x10603);
   await bind([0x90]);const beforeRetired=get(base+1128);
@@ -172,7 +194,7 @@ if(systemRows){
     ++systemComparisons;
   }
 }
-console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,waits,refusals,
+console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,pitIrqEntries,waits,refusals,
   admissionPriorityChecks:1,shadowExtentChecks:1,oldAbiRefusals:1,
   systemComparisons,qemuSavedRFDifferences,oracle:systemRows?'QEMU TCG PIT/PIC/shadow/IDT; saved RF difference explicitly excluded; privilege/RF matrix is a model':
     'architectural model only; supply SYSTEM-ROWS.txt for independent system comparison',linuxBoot:'not-tested'},null,2));

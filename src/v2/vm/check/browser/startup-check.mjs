@@ -81,10 +81,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     view.setUint32(at + 12,3,true); view.setUint32(at + 16,1,true);
     data.fill(0,at + 20,at + 32);
   }
-  view.setBigUint64(port,9n,true);
-  assert.equal(vm.vm_open(base,data.length - base,4096,directoryOffset,pages.length,capacity,branches,9n),0);
+  const machineGeneration=9n;
+  view.setBigUint64(port,machineGeneration,true);
+  assert.equal(vm.vm_open(base,data.length - base,4096,directoryOffset,pages.length,capacity,branches,machineGeneration),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
-  assert.equal(vm.vm_rtc_start(port,9n,utcSeconds),0);
+  assert.equal(vm.vm_rtc_start(port,machineGeneration,utcSeconds),0);
   // No A/D warmup, candidate RIP list or native prefix modules. C vm_code
   // projects the current translation. This single-owner Worker pins RAM,
   // directory and CPU context across async engine compilation/admission.
@@ -291,7 +292,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     }
     const address = view.getBigUint64(codeView,true), generation = view.getBigUint64(codeView + 8,true);
     const offset = view.getUint32(codeView + 16,true), bytes = view.getUint32(codeView + 20,true);
-    assert.equal(address,entry & ~4095n); assert.equal(generation,9n); assert.equal(bytes,4096);
+    assert.equal(address,entry & ~4095n); assert.equal(generation,machineGeneration); assert.equal(bytes,4096);
     assert(offset >= base + 4096 && offset + bytes <= data.length,'C-verified resident view');
     const slot = view.getUint32(rows + 16,true);
     assert(slot >= firstSlot && slot < firstSlot + sourceCapacity,'C-chosen bounded engine slot');
@@ -553,6 +554,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
       firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,externalInterrupts,
+      postCode:vm.vm_post_read(machineGeneration),
       console:{acceptedBytes:consoleBytes,capacity:consoleOutput.length,
         text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes)),
         ownership:'bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation'},

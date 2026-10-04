@@ -13,6 +13,7 @@ static vm_pic pic;
 static vm_rtc rtc;
 static vm_uart uart;
 static vm_console console_owner;
+static vm_post post;
 static unsigned failures, permissions;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr,"io: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value, pl_u32 size)
@@ -41,9 +42,10 @@ static void reset(pl_u32 cpl, pl_u32 iopl)
     vm_rtc_reset(&rtc);
     vm_uart_reset(&uart);
     vm_console_close(&console_owner);
+    post=(vm_post){0};
 }
 static machine_result io(pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
-{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,&uart,&console_owner,coordinate,transfer,value); }
+{ return vm_io_transfer(&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,&uart,&console_owner,&post,coordinate,transfer,value); }
 static machine_result time_read(void)
 { return vm_time_read(&memory,0u,&state,&segments,&clock_owner,&console_owner); }
 static pl_u64 ticket(void) { return get(32u); }
@@ -100,6 +102,18 @@ int main(void)
         ++permissions;
     }
     reset(0u,0u);vm_uart old_uart=uart;
+    for(pl_u32 byte=0u;byte<256u;++byte){
+        machine_state before=state;machine_segments hidden=segments;
+        EXPECT(!io(0x80u,0x101u,0xabcdef00u|byte) && post.valid && post.byte==byte);
+        EXPECT(!memcmp(&state,&before,sizeof state) && !memcmp(&segments,&hidden,sizeof hidden));
+        EXPECT(!clock_owner.now && !clock_owner.stage);
+    }
+    vm_post old_post=post;
+    EXPECT(io(0x80u,1u,0u)==6u && io(0x80u,0x102u,0u)==6u && !memcmp(&post,&old_post,sizeof post));
+    reset(3u,0u);put(28672u+104u+(0x80u>>3u),1u,2u);
+    EXPECT(io(0x80u,0x101u,1u)==107u && !post.valid && !clock_owner.stage);
+    reset(0u,0u);EXPECT(time_read()==18u);EXPECT(io(0x80u,0x101u,1u)==6u && !post.valid);
+    reset(0u,0u);old_uart=uart;
     EXPECT(io(0x3f8u,0x101u,65u)==26u && !memcmp(&uart,&old_uart,sizeof uart));
     EXPECT(time_read()==6u && !clock_owner.stage);
     EXPECT(io(0x3f9u,1u,0u)==6u && !memcmp(&uart,&old_uart,sizeof uart));
@@ -107,7 +121,7 @@ int main(void)
     EXPECT(vm_console_reply(&console_owner,9u,0u,&state,ticket(),65u)==1);
     EXPECT(vm_console_reply(&console_owner,9u,0u,&state,ticket(),65u)==0);
     EXPECT(!io(0x3f8u,0x101u,65u) && uart.thre_pending && !vm_console_pending(&console_owner));
-    EXPECT(io(0x43u,0x101u,0xb4u)==6u && !clock_owner.stage);
+    EXPECT(io(0x43u,0x101u,0xb6u)==6u && !clock_owner.stage);
     EXPECT(io(0x43u,0x101u,0xb1u)==6u && !clock_owner.stage);
     reset(0u,0u); EXPECT(time_read()==18u); pl_u64 first=ticket();
     EXPECT(get(40u)==((pl_u64)MACHINE_CLOCK_REQUEST<<32u));
