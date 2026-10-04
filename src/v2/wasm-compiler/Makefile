@@ -129,6 +129,15 @@ $(BUILD)/extend-check: check/extend.c check/native-cut.S $(BUILD)/libwasm-compil
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/extend.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+$(BUILD)/byte-swap-check: check/byte-swap.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/byte-swap.c check/native-cut.S \
+		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: byte-swap-check
+check: byte-swap-check
+byte-swap-check: $(BUILD)/byte-swap-check
+	$(BUILD)/byte-swap-check
+
 $(BUILD)/divide-check: check/divide.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/divide.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@

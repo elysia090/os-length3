@@ -13,19 +13,26 @@ values and independent QEMU serial-file bytes agree. Full product checks and
 C VM core sanitizers pass; previous privilege/IRQ/fault/source checks stay green.
 Complete CPL/IST/debug/APIC/secondary escalation remains incomplete.
 
-Actual browser: 137,905,736 retired / 69,911,728 admissions, unchanged complete
-14,622,864-byte decompression; 4,532 real Linux UART bytes include banner,
-memory initialization and ttyS0 enablement. PIT/POST pass; one external IRQ
-is observed. Next refusal: compiler grammar/-102 at 0xffffffff81268d07,
-48 0F CF (BSWAP RDI). Asynchronous clock deadline/HLT wake still needs work.
+Common BSWAP lowering now passes 96 native/cold byte-identical emissions and
+49,152 direct plus 49,152 C-dispatched full CPU comparisons. All sizes/GPRs,
+flags, SSA-local input, prefix/refusal and RF checks pass, as do full product
+checks and scoped compiler sanitizers.
+
+Actual browser: 258,087,125 retired / 150,000,000 admissions, unchanged complete
+14,622,864-byte decompression; 4,766 real Linux UART bytes include banner,
+memory initialization and ttyS0 enablement. PIT/POST/BSWAP pass; 16 external
+IRQs are observed. The quota is reached in a pure counter-wait loop at
+0xffffffff81017b12/19: time/PIT only advances on IN/OUT/RDTSC, so more pure
+instructions cannot deliver its next timer IRQ. Independent clock progress
+at a safe C execution boundary is next; HLT wake still needs work.
 PID 1/shell and the full
 goal remain red. Native bundle and human UI remain unchanged.
 
 Next, in order:
 
-1. Add common 32/64-bit BSWAP lowering, keeping flags and parent-register
-   behavior exact, and verify native x86 / cold emission / C dispatch. No
-   Linux shortcut or source skip; unsupported forms remain explicit.
+1. Add/test supervisor clock events independent of guest IN/OUT/RDTSC,
+   reusing the C ticket/generation/monotonic-time frontier at safe execution
+   boundaries. No Linux counter mutation, wait skip or instruction-count clock.
 2. Continue the same shipped bzImage through common ISA/MMU/device admission
    to actual PID 1/shell, then C compile/run, make -j4, local Git and apk.
 3. Complete authenticated delivery/workspace recovery and granted virtual-NIC
@@ -38,7 +45,7 @@ stays 256 KiB; no total engine-RSS cap is claimed. C execution (34,329.4 ms),
 engine construction and admission (22,509.3 ms) now dominate; cold emission
 and 7.47 GB cumulative source copying remain material. This is not shell time.
 Cold shell 3 seconds remains unmet.
-See [current evidence](../vm/check/browser/evidence/2026-10-04-pit-post.md).
+See [current evidence](../vm/check/browser/evidence/2026-10-04-byte-swap.md).
 
 ## Immediate delivery and next product goal — 2026-10-02
 

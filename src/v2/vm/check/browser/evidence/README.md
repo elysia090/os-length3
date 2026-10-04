@@ -1,6 +1,12 @@
 # Browser boundary observations
 
-Latest: [C PIT mode 2, IRQ0 and ordered POST](2026-10-04-pit-post.md)
+Latest: [common BSWAP and independent clock boundary red](2026-10-04-byte-swap.md)
+with [actual browser JSON](2026-10-04-byte-swap-browser.json). BSWAP passes;
+258,087,125 instructions / 16 external IRQs / 4,766 console bytes reach a
+quota in a pure counter-wait loop, not PID 1/shell. The next missing boundary
+is timer progress independent of guest IN/OUT/RDTSC, never a kernel wait skip.
+
+Previous: [C PIT mode 2, IRQ0 and ordered POST](2026-10-04-pit-post.md)
 and its [actual browser JSON](2026-10-04-pit-post-browser.json). The unchanged
 bundle retires 137,905,736 source instructions and emits 4,532 real Linux UART
 bytes, through ttyS0 enablement; PIT/POST pass and one external IRQ is observed.

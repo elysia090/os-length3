@@ -156,6 +156,9 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     if (instruction->flow != PL_X86_FLOW_NEXT || !count
             || operands[0].kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&operands[0].value.reg)) return 0;
     switch (instruction->operation) {
+    case PL_X86_OPERATION_BYTE_SWAP:
+        return count == 1u && (operands[0].bits == 32u || operands[0].bits == 64u)
+            && operands[0].bits == operands[0].value.reg.bits && !operands[0].value.reg.flags;
     case PL_X86_OPERATION_COMPLEMENT:
     case PL_X86_OPERATION_NEGATE:
     case PL_X86_OPERATION_INCREMENT:
@@ -340,11 +343,36 @@ void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruct
     cut_mask(cut, instruction->address_width);
 }
 
+static void swap_groups(cut_lowering *cut, pl_u64 mask, pl_u32 shift)
+{
+    cut_get(cut, CUT_LEFT); cut_const(cut, mask); cut_op(cut, 0x83u);
+    cut_const(cut, shift); cut_op(cut, 0x86u);
+    cut_get(cut, CUT_LEFT); cut_const(cut, shift); cut_op(cut, 0x88u);
+    cut_const(cut, mask); cut_op(cut, 0x83u); cut_op(cut, 0x84u);
+    cut_set(cut, CUT_LEFT);
+}
+
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     const pl_x86_operand *operands = instruction->operands;
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
+    if (operation == PL_X86_OPERATION_BYTE_SWAP) {
+        pl_u32 width = operands[0].bits;
+        /* Adjacent-byte and halfword permutations followed by a half rotation.
+         * The current slice value is used; no entry-state reload or flag write.
+         * A 32-bit rotation also defines the zero upper half of the parent. */
+        read_register(cut, &operands[0].value.reg); cut_set(cut, CUT_LEFT);
+        swap_groups(cut, width == 32u ? 0x00ff00ffull : 0x00ff00ff00ff00ffull, 8u);
+        if (width == 64u) swap_groups(cut, 0x0000ffff0000ffffull, 16u);
+        cut_get(cut, CUT_LEFT);
+        if (width == 32u) {
+            cut_op(cut, 0xa7u); cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, 16u);
+            cut_op(cut, 0x77u); cut_op(cut, 0xadu); /* i32.rotl, i64.extend_i32_u */
+        } else { cut_const(cut, 32u); cut_op(cut, 0x89u); }
+        cut_set(cut, CUT_VALUE); cut_write_register(cut, &operands[0].value.reg);
+        return;
+    }
     if (operation == PL_X86_OPERATION_ACCUMULATOR_EXTEND
             || operation == PL_X86_OPERATION_HIGH_EXTEND) {
         pl_u32 width = instruction->operand_width;
