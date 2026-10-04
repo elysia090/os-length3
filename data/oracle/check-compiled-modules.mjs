@@ -66,6 +66,28 @@ for(const quota of [{maximumEntries:2,maximumBytes:256},
   hotOwner.close();assert.equal(hotOwner.stats().retainedModuleBytes,0);
 }
 const otherMemory = new WebAssembly.Memory({initial:1});
+// Real C source hits use an already installed instance, without cold output.
+// That demand must reach the engine lifetime owner too, not just its cold LRU.
+for(const quota of [{maximumEntries:2,maximumBytes:256},
+                   {maximumEntries:8,maximumBytes:emitted(0).length*2}]) {
+  const owner=new CompiledModules({machine:{memory}},quota);
+  const hot=await owner.get(0,emitted(0));
+  for(let cold=1;cold<=32;++cold) {
+    await owner.get(cold,emitted(4));
+    assert.equal(owner.demand(0,hot),true,'installed hot body stays live without re-emission');
+  }
+  assert.equal(await owner.get(0,emitted(0)),hot);
+  assert.equal(owner.stats().compilations,33);
+  assert.equal(owner.stats().validatedDemands,32);
+  const unchanged=owner.stats();
+  assert.equal(owner.demand(0,first),false,'foreign/stale instance is not a demand witness');
+  assert.equal(owner.demand(-1,hot),false,'evicted/absent key is not resurrected');
+  assert.deepEqual(owner.stats(),unchanged);
+  const changed=await owner.get(0,emitted(4));
+  assert.notEqual(changed,hot);assert.equal(owner.demand(0,hot),false);
+  assert.equal(owner.demand(0,changed),true);
+  owner.close();assert.throws(()=>owner.demand(0,changed),/owner closed/);
+}
 new DataView(otherMemory.buffer).setUint32(0,43,true);
 const other = new CompiledModules({machine:{memory:otherMemory}});
 assert.equal((await other.get(1n,emitted(0))).exports.get(),43,'Worker owners never share imported memories');

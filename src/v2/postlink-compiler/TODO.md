@@ -1,5 +1,20 @@
 # Remaining work — 2026-10-05
 
+Current actual gate: PUNPCKLDQ, `66 0f 62 e5`, 0xffffffff81204e1e. The
+independent final-logic startup passes PXOR and reaches 164,007,553
+retirements / 88,892,508 admissions; complete decompression agrees. PID 1,
+release-root mount and shell remain unverified. Next is general unpack
+lowering, with native/fault/alias reds first. See
+[logic and actual gate](../vm/check/browser/evidence/2026-10-05-vector-logic.md).
+An engine lifetime leak is also corrected: C-approved installed-body demand
+reaches the bounded owner, once per slot after a cold miss. Per-hit host Map
+churn is rejected. Default architecture/trace remains unchanged; there is no
+Linux construction-count or speedup claim yet. Measure the larger working
+set under unchanged quotas. See
+[demand boundary](../vm/check/browser/evidence/2026-10-05-engine-demand.md).
+Browser/PID 1/development tools/storage/network success conditions remain
+open; historical checkpoints below do not supersede this gate.
+
 Latest completed borrowed-source same-bundle startup passes PADDQ and ends at
 PXOR memory, 0xffffffff81204dec: 158,854,007 retirements / 85,286,564 admissions.
 It borrows 66,443,194,368 source bytes without a payload copy. Complete

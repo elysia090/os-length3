@@ -67,10 +67,18 @@ UTC/clock sampling and diagnostic times change from the borrowed checkpoint.
 
 The compiler is 442,311 bytes, +433 over the 441,878-byte borrowed compiler;
 SHA-256 `8c60d2223a9c29e99fdc78d1ac6b199f5a79b52763bbcbcb97dd70ca4c0767ea`.
-The VM and native distribution are unchanged. Exact shipped PXOR emits in
-the fixture. An independent extended same-bundle run is now in progress on
-this final compiler; this document does not claim the fixture executed that
-Linux instruction. Browser policy prevents a current real-browser acceptance
+The VM and native distribution are unchanged. The independent extended
+same-bundle run has completed and actually passes PXOR. Its
+[separate receipt](2026-10-05-node-startup-unpack-red.json) ends at -102 for
+`66 0f 62 e5` (`punpckldq %xmm5,%xmm4`), 0xffffffff81204e1e, after
+164,007,553 retirements / 88,892,508 admissions. Complete decompression
+remains identical; 7,129 console bytes reach NETLINK, not PID 1 or shell.
+Raw local receipt SHA-256:
+`10ae04f3ab4fd86d4a4918885087238bb7d0e563a42953810061a02d849738a5`.
+Engine construction remains the maximum: 17,028,755 constructions,
+17,028,011 evictions, 742 entries / 261,810 retained bytes. The run predates
+the later engine-demand cohort change. Calibration/work variation is not a
+speedup claim. Browser policy prevents a current real-browser acceptance
 check and no workaround is used. PID 1, release-root mount, shell/development
 tools, authenticated storage/recovery and granted network remain open.
 Three-second cold shell, region/topology closure and engine churn remain

@@ -1,5 +1,5 @@
 // Cache engine instances, not source instructions or guest-machine decisions.
-// Every request must first succeed in the C compiler. Exact emitted bytes are
+// Every new body must first succeed in the C compiler. Exact emitted bytes are
 // the reuse witness; source writes and changed compilation limits cannot reuse
 // a different body under the same key. Imports belong to one Worker lifetime.
 // The bounded owner is used in the execution Worker, not the UI thread.
@@ -16,6 +16,20 @@ export class CompiledModules {
     this.entries = new Map();
     this.bytes = 0; this.hits = 0; this.compilations = 0; this.closed = false;
     this.absentKeyCompilations = 0; this.changedBodyCompilations = 0; this.quotaEvictions = 0;
+    this.validatedDemands = 0; this.newestInstance = null;
+  }
+  demand(key,instance) {
+    if (this.closed) throw new Error('module owner closed');
+    const entry=this.entries.get(key);
+    if (!entry || entry.instance!==instance) return false;
+    // The serialized caller has separately revalidated its installed C source
+    // lease. This is only a lifetime hint for the SAME opaque instance, never
+    // admission or a new-body equivalence witness. Missing/stale/other-owner
+    // handles cannot resurrect a discarded byte witness or select guest code.
+    if (this.newestInstance!==instance) {
+      this.entries.delete(key); this.entries.set(key,entry); this.newestInstance=instance;
+    }
+    ++this.validatedDemands; return true;
   }
   async get(key,bytes) {
     if (this.closed) throw new Error('module owner closed');
@@ -28,6 +42,7 @@ export class CompiledModules {
       // construction may evict inactive entries, not a repeatedly used body.
       // Map insertion order gives bounded LRU without sorting or a new index.
       this.entries.delete(key); this.entries.set(key,previous);
+      this.newestInstance=previous.instance;
       ++this.hits; return previous.instance;
     }
     // The caller's cold-emission arena is reused on the next request.
@@ -55,13 +70,14 @@ export class CompiledModules {
       ++this.quotaEvictions;
     }
     this.entries.set(key,{bytes:owned,instance}); this.bytes += owned.length;
+    this.newestInstance=instance;
     return instance;
   }
   stats() {
     return {compilations:this.compilations,hits:this.hits,entries:this.entries.size,
       absentKeyCompilations:this.absentKeyCompilations,changedBodyCompilations:this.changedBodyCompilations,
-      quotaEvictions:this.quotaEvictions,
+      quotaEvictions:this.quotaEvictions,validatedDemands:this.validatedDemands,
       retainedModuleBytes:this.bytes,maximumEntries:this.maximumEntries,maximumBytes:this.maximumBytes};
   }
-  close() { this.closed = true; this.entries.clear(); this.bytes = 0; this.imports = null; }
+  close() { this.closed = true; this.entries.clear(); this.bytes = 0; this.imports = null; this.newestInstance=null; }
 }

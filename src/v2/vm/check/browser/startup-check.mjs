@@ -111,7 +111,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   // projects the current translation. This single-owner Worker pins RAM,
   // directory and CPU context across async engine compilation/admission.
   const table = vm.__indirect_function_table, firstSlot = vm.vm_slot_min();
-  const sourceCapacity = vm.vm_source_capacity(), installedSlots = new Set();
+  const sourceCapacity = vm.vm_source_capacity(), installedSlots = new Map();
+  const demandedAfterMiss=new Uint32Array(sourceCapacity);
   table.grow(Math.max(0,firstSlot + sourceCapacity - table.length));
   let admissions = 0, retired = 0, emittedBytes = 0, borrowedCodeBytes = 0;
   const exceptions = [];
@@ -420,11 +421,21 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       // CompiledModules still requires exact newly emitted bytes to reuse it.
       const instance = await engines.get(entry,cold.subarray(compilerOutput,compilerOutput + length));
       engineMs += performance.now() - beforeEngine; emittedBytes += length;
-      table.set(slot,instance.exports.cut); installedSlots.add(slot);
+      table.set(slot,instance.exports.cut); installedSlots.set(slot,instance);
       beforeAdmission = performance.now();
       assert.equal(vm.vm_source_publish(sourceBytes,instructions,rows),0);
       admissionMs += performance.now() - beforeAdmission;
-    } else { ++sourceHits; assert(installedSlots.has(slot),'C hit requires its installed engine handle'); }
+    } else {
+      ++sourceHits; assert(installedSlots.has(slot),'C hit requires its installed engine handle');
+      // Retained engine membership can change only at a cold admission. One
+      // validated demand per slot afterwards keeps a hot cohort newer than
+      // inactive bodies without host Map churn on every guest cut. Order
+      // within that cohort is not an architectural fact or an exact LRU claim.
+      const rank=slot-firstSlot;
+      if(demandedAfterMiss[rank]!==sourceMisses) {
+        engines.demand(entry,installedSlots.get(slot)); demandedAfterMiss[rank]=sourceMisses;
+      }
+    }
     const sourceBytes = view.getUint32(rows + 8,true), instructions = view.getUint32(rows + 12,true);
     assert.equal(view.getBigUint64(rows,true),entry);
     assert(instructions > 0 && instructions <= limit);
@@ -640,7 +651,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       sourceReuse:{hits:sourceHits,misses:sourceMisses},decompressedOutput,linuxEntry};
     throw error;
   } finally {
-    for (const slot of installedSlots) table.set(slot,null);
+    for (const slot of installedSlots.keys()) table.set(slot,null);
     engines.close(); cc.compiler_close(); vm.vm_close();
   }
 }
