@@ -28,6 +28,15 @@ bytes or shell acceptance. Concurrent Workers are not a cold-latency benchmark. 
 [construction evidence](../vm/check/browser/evidence/2026-10-04-engine-construction.md).
 An intermittent native CALL oracle red is reproduced and remains open; its
 expectation is not weakened and CALL lowering is unchanged.
+The independent CALL minimizer now reproduces mixed post-fault payloads outside
+the compiler and corrects the build-VM accelerator attribution to WHPX.
+The cold output witness removes per-emission full-capacity poisoning while
+retaining complete refusal checks: the independent one-million-admission
+checkpoint keeps 32 architecture/source/trace/resource observations unchanged
+and reduces diagnostic poison stores 116,337,168 -> 827,056 bytes (initialization
+included). This is not browser speedup or PID 1/shell acceptance. The browser
+URL policy prevented this turn's retained-tab observation; neither Worker was
+reloaded or declared stopped. See [output witness](../vm/check/browser/evidence/2026-10-04-compiler-output.md).
 
 Device checkpoint: binary PIT modes 0/2/6 and IRQ0 use a 128-byte C
 owner with O(1) residual-phase advancement; port 0x80 owns a 2-byte POST latch.

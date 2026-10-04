@@ -88,6 +88,29 @@ each test, and all tested stack bytes are writable at the actual CALL. Fresh
 outputs are required. The source and exact minimized full-fixture input are
 retained, not hidden by retrying a red until green.
 
+### Cold output witness without per-cut capacity poisoning
+
+The startup diagnostic's `CompilerOutput` initializes its 64 KiB output and
+80-byte report once. After success it poisons only the preceding declared
+module prefix plus the fixed report. A refusal still compares **all** 64 KiB
+and the report; an illegal write outside a successful declared prefix now
+survives and is detected on refusal instead of being erased by full poisoning.
+This is diagnostic host work, not a guest opcode, compiler shortcut or relaxed
+ISA expectation. The C compiler, emitted bytes and execution quotas are unchanged.
+
+```text
+node data/oracle/check-compiler-output.mjs COMPILER.WASM
+node data/oracle/check-wasm-startup.mjs VM.WASM COMPILER.WASM BOOT-FIXTURE-DIRECTORY
+```
+
+The component requires exact full-capacity/report parity on 513 real C emissions
+and three refusals, including genuine one-page tail refusal -> two-page supply.
+It separately exposes undeclared tail publication, partial refusal output,
+invalid length, host-trap reuse, shared memory and invalid reservations.
+The [fixed-work receipt](../../src/v2/vm/check/browser/evidence/2026-10-04-compiler-output.md)
+counts initialization and steady-state stores separately. Reduced poison traffic
+does not mean reduced artifact size, engine RSS, x86 work/span or cold-shell time.
+
 ### Address-only page invalidation
 
 The common cold compiler lowers the already-typed INVLPG descriptor. The

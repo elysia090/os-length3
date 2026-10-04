@@ -3,6 +3,7 @@
 // guest instructions, resolve guest branches, or implement guest exceptions.
 import {CompiledModules} from '../../../web/compiled-modules.mjs';
 import {CutTrace} from './cut-trace.mjs';
+import {CompilerOutput} from './compiler-output.mjs';
 class Bytes extends Uint8Array {
   constructor(value,offset,length) {
     super(value,offset,length);
@@ -115,6 +116,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const trace = new CutTrace();
   const relocationTrace = [];
   const cold = new Bytes(compilerMemory.buffer), report = new DataView(compilerMemory.buffer);
+  const compilerOutputWitness=new CompilerOutput(cold,compilerOutput,65536,compilerReport);
   const rip = () => view.getBigUint64(base + 384,true);
   let reportedRetired=0,reportedAdmissions=0;
   function reportProgress() {
@@ -127,6 +129,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
       console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
       sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity},engineReuse:engines.stats(),
+      compilerOutput:compilerOutputWitness.stats(),
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt}});
   }
@@ -349,14 +352,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         }
         const started = performance.now();
         assert.equal(cc.compiler_open_pages(compilerInput,count,address,generation),0);
-        cold.fill(0xa5,compilerOutput,compilerReport + 80);
-        const status = cc.compiler_emit(entry,limit,compilerOutput,65536,compilerReport);
+        const status = compilerOutputWitness.emit(()=>cc.compiler_emit(entry,limit,compilerOutput,65536,compilerReport));
         coldMs += performance.now() - started; return status;
       };
       let status = construct();
       if (status === -105) {
         assert.equal(view.getUint32(codeView + 44,true),0,'only the first truncated instruction requests a tail');
-        assert(cold.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),'fetch request cannot publish');
         let following = vm.vm_source_extend(port,codeView,rows);
         for (let waits=0;following === 2n && waits<4;++waits) {
           const start=performance.now(), supplied=await supplyPhysical(); supplyMs += performance.now()-start;
@@ -372,7 +373,6 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         status = construct();
       }
       if (status) {
-        assert(cold.subarray(compilerOutput,compilerReport + 80).every(byte => byte === 0xa5),'refusal cannot publish');
         const available = Math.min(15,4096 - Number(entry & 4095n));
         return {kind:'compile',status,entry:`0x${entry.toString(16)}`,
           source:Array.from(data.subarray(offset + Number(entry & 4095n),offset + Number(entry & 4095n) + available)),
@@ -583,7 +583,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
-      emittedBytes,copiedCodeBytes,engineReuse:engines.stats(),
+      emittedBytes,copiedCodeBytes,engineReuse:engines.stats(),compilerOutput:compilerOutputWitness.stats(),
       sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt},trace:trace.read(),relocationTrace,
