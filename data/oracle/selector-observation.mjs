@@ -10,6 +10,7 @@ export function seedNativeSelector(view, base, meta) {
     BigInt(selector.native[selector.rank]), true);
 }
 export function checkSelectorModel(cut, memory, meta) {
+  assert.equal(cut.length,3,'ABI-2 fixture required');
   if (!meta.selector?.enabled) return 0;
   assert.equal(meta.instructions, 1);
   const {offset, rank, width, destination} = meta.selector;

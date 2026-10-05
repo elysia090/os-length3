@@ -4,6 +4,7 @@
 import {CompiledModules} from '../../../web/compiled-modules.mjs';
 import {CutTrace} from './cut-trace.mjs';
 import {CompilerOutput} from './compiler-output.mjs';
+import {equal} from './assertion.mjs';
 class Bytes extends Uint8Array {
   constructor(value,offset,length) {
     super(value,offset,length);
@@ -17,7 +18,7 @@ class Bytes extends Uint8Array {
   writeUInt32LE(value,at) { this.view.setUint32(at,value,true); }
 }
 const assert = (value,message = 'startup assertion') => { if (!value) throw new Error(message); };
-assert.equal = (a,b) => assert(a === b,`startup: ${String(a)} != ${String(b)}`);
+assert.equal = equal;
 assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'startup imports');
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,

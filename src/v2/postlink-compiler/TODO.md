@@ -1,13 +1,25 @@
 # Remaining work — 2026-10-05
 
-Current actual full-bundle gate: diagnostic quota, not LFENCE or a new
-unsupported instruction. The completed fence compiler reaches PF_INET/TCP/UDP
-and PF_UNIX/PF_LOCAL, 247,565,228 retirements / 150,000,000 admissions, at
-0xffffffff81086f0e. Kernel decompression agrees. PID 1, release-root mount,
-shell and real-browser acceptance remain unachieved; cold shell 3s is unmet.
-See [completed measurement](../vm/check/browser/evidence/2026-10-05-node-startup-fence-quota.json).
+Current actual full-bundle gate: C virtual-I/O execution refusal at
+`IN AL, 0x87` (`e4 87`), RIP `0xffffffff81405c2b`, result 6. ABI 2 reaches
+PF_INET/TCP/UDP, PF_UNIX/PF_LOCAL and RTC fallback device registration at
+167,850,980 retirements / 91,763,661 admissions. Kernel decompression agrees.
+The instruction is decoded/emitted; it retires zero instructions at the gate.
+The receipt's fault/clock fields can be stale and are not evidence of a new
+#GP at that instruction. PID 1, release-root mount, shell and real-browser
+acceptance remain unachieved; cold shell 3s is unmet.
+See [completed ABI-2 measurement](../vm/check/browser/evidence/2026-10-05-node-startup-binding-io-red.json).
 
-Measured old maximum term: 73,441,447 engine constructions / 1,985,421 ms,
+Measured ABI-2 maximum term: 13,420,224 engine constructions / 389,496 ms,
+cold C emission 182,357 ms, execution 81,753 ms, admission 23,367 ms and
+extent supply 198 ms; total diagnostic 830,017 ms. There are 756 live engine
+entries / 261,975 witness bytes, 13,419,468 evictions and 8,699,571 hits under
+unchanged quotas. Source-owner misses are 22,119,795 / hits 69,643,866. This
+run has different retired work and clock calibration from the old quota run:
+its elapsed time is not a speedup ratio. Allocated Memory is 21,037,056 bytes,
+not RSS. The later diagnostic lazy-message change was not loaded in this run.
+
+Historical pre-ABI-2 maximum term: 73,441,447 engine constructions / 1,985,421 ms,
 followed by cold C emission 674,917 ms and execution 358,598 ms. Source owner
 has 78,722,815 misses, capacity 64, metadata 6,880 bytes and no payload copy.
 Allocated linear Memory is 21,037,056 bytes; RSS is not measured.
@@ -30,11 +42,11 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Run that exact bundle/segments/root-image with ABI 2 and unchanged full
-   limits/quotas. Measure constructors, cold/source reconstruction, execution,
-   elapsed time and resident/allocated Memory separately; no boot claim from
-   a fixture or a quota exit.
-2. Close the next actual common ISA/MMU/machine-ABI red, if one appears.
+1. Derive the port-87h platform semantics from primary hardware/Linux sources,
+   make the virtual-I/O red explicit and close it in the C machine provider.
+   Do not skip the instruction or manufacture a successful transfer.
+   Rerun the unchanged bundle/segments/root image after the general checks.
+2. Close the next actual common ISA/MMU/machine-ABI red when it appears.
    Strict independent CALL fault-payload/provenance red remains open; no
    expectation was weakened to merge it with the passing ordinary CALL set.
 3. From the completed ABI-2 profile, remove remaining source/descriptor

@@ -27,6 +27,7 @@ for (const file of files) {
   assert.deepEqual(WebAssembly.Module.exports(module), [{ name: 'cut', kind: 'function' }]);
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 4 });
   const instance = await WebAssembly.instantiate(module, { machine: { memory } });
+  assert.equal(instance.exports.cut.length,3,'ABI-2 fixture required; regenerate, never adapt old modules');
   const cases = await readFile(`${prefix}.cases`);
   const records = new DataView(cases.buffer, cases.byteOffset, cases.byteLength);
   const masks = await readFile(`${prefix}.flags-masks`).catch(error => {

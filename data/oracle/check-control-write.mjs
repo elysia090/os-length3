@@ -19,6 +19,7 @@ for (const name of names) {
   const memory = new WebAssembly.Memory({initial:8});
   const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
   const cut = (await WebAssembly.instantiate(module,{machine:{memory,control:vm.vm_control}})).exports.cut;
+  assert.equal(cut.length,3,'ABI-2 fixture required');
   const view = new DataView(memory.buffer), bytes = Buffer.from(memory.buffer);
   const directoryOffset = vm.vm_arena_min(), rows = directoryOffset + 512;
   const state = directoryOffset + 4096, segments = state + 1408, port = state + 2048;

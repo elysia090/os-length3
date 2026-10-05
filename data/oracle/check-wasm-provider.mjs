@@ -30,6 +30,7 @@ for (const name of names) {
     machine: { memory, access: vm.vm_access, reserve: vm.vm_reserve, commit: vm.vm_commit },
   });
   const directoryOffset = vm.vm_arena_min(), base = directoryOffset + 4096;
+  assert.equal(vm.vm_entry_abi(),2);assert.equal(instance.exports.cut.length,3,'ABI-2 native emission required');
   const state = base, port = base + 2048, firstPage = base + 28672, nextPage = base + 40960;
   const cases = await readFile(`${prefix}.cases`);
   assert.equal(cases.length, 512 * 38 * 8);

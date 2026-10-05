@@ -21,6 +21,7 @@ for (const file of files) {
   const memory=new WebAssembly.Memory({initial:8});
   const vm=(await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
   const cut=(await WebAssembly.instantiate(module,{machine:{memory,debug:vm.vm_debug}})).exports.cut;
+  assert.equal(cut.length,3,'ABI-2 fixture required');
   const view=new DataView(memory.buffer),bytes=Buffer.from(memory.buffer);
   const dir=vm.vm_arena_min(),rows=dir+512,state=dir+4096,segments=state+1408,port=state+2048;
   const put=(at,v)=>view.setBigUint64(at,BigInt(v),true);

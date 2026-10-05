@@ -14,6 +14,7 @@ for (const name of names) {
   assert.deepEqual(WebAssembly.Module.imports(module),[{module:'machine',name:'memory',kind:'memory'}]);
   const memory = new WebAssembly.Memory({initial:2});
   const cut = (await WebAssembly.instantiate(module,{machine:{memory}})).exports.cut;
+  assert.equal(cut.length,3,'ABI-2 fixture required');
   const bytes = Buffer.from(memory.buffer), view = new DataView(memory.buffer);
   const state = 4096, port = 8192;
   for (let cpl = 0; cpl < 4; ++cpl) for (let sample = 0; sample < 16; ++sample) {

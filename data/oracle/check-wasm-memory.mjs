@@ -43,6 +43,7 @@ for (const name of names) {
     },
   } });
   const cases = await readFile(`${prefix}.cases`);
+  assert.equal(instance.exports.cut.length,3,'ABI-2 fixture required; regenerate, never adapt old modules');
   assert.equal(cases.length, 512 * 38 * 8);
   const records = new DataView(cases.buffer, cases.byteOffset, cases.byteLength);
   for (let row = 0; row < 512; ++row) {

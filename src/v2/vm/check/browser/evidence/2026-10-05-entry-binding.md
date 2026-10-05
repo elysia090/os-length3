@@ -107,8 +107,26 @@ zero copied source payload. Allocated linear Memory is 21,037,056 bytes, not
 process RSS. Source reconstruction remains a candidate after template sharing;
 raising quotas is not the demonstrated normalization.
 
-The unchanged published bundle, independent segments, root image and full
-diagnostic limits must be rerun with ABI 2 before claiming a Linux improvement.
+The [completed ABI-2 full run](2026-10-05-node-startup-binding-io-red.json),
+launched from checkpoint `bea73ae`, keeps the same published bundle, independent
+segments, root image and full diagnostic quotas. It reaches 167,850,980
+retirements / 91,763,661 admissions and RTC fallback device registration after
+PF_INET/TCP/UDP and PF_UNIX/PF_LOCAL. Its next gate is result 6 at
+`0xffffffff81405c2b`, `e4 87` (`IN AL, 0x87`), with zero retirement: virtual-I/O
+provider refusal, not decoder failure. The stored fault/clock fields are not
+reset by every refusal and must not be treated as a new #GP/clock event here.
+Raw receipt SHA-256:
+`1333800fccb9f8fd25c4294e72667733bd8a696be89fa9bfc70b7483586f6f8c`.
+
+It constructs 13,420,224 engines (8,699,571 hits, 13,419,468 evictions), with
+756 live entries / 261,975 witness bytes under the same quotas. Cold emission
+takes 182,356.81 ms, engine construction 389,496.28 ms, execution 81,753.45 ms,
+admission 23,366.79 ms, supply 197.93 ms and the check 830,017.49 ms. Source
+owner has 69,643,866 hits / 22,119,795 misses with unchanged 64-row/6,880-byte
+metadata and no source payload copy. Allocated linear Memory is 21,037,056
+bytes, not RSS. Different stopped work and clock calibration make the old
+quota run unsuitable as a full-run speedup denominator.
+
 PID 1, root mount/shell/development commands, storage/recovery, granted network,
 real browser acceptance and cold shell within three seconds remain open.
 
@@ -129,3 +147,30 @@ node data/oracle/check-wasm-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX-DIR 
 Fresh native fixtures use the current C compiler. Old emitted ABI-1 binaries
 are immutable historical evidence, never repaired into an execution fallback.
 No retained browser Worker or staged browser binary was replaced by this work.
+
+## Diagnostic success-path materialization
+
+The ABI-2 extended run was launched from checkpoint `bea73ae` with unchanged
+full limits and input bytes. It remains a separate immutable-code measurement;
+the following diagnostic-only change is not retroactively attributed to it.
+
+An independent Node CPU sample of the matched short prefix assigns 17.85%
+of sampled time to `assert.equal`: successful comparisons eagerly stringify
+both operands for a message that is never observed. Substitution retains
+strict `===` identity and moves the identical conversion/message into the
+failure arm. No guest execution, clock sampling or invariant check changes.
+The utility test checks primitive/identity/NaN/type distinctions, zero string
+conversions on success, exact failure messages and propagated conversion errors.
+
+The [before/after sample](2026-10-05-startup-diagnostics.json) preserves 48
+non-clock/non-timing top-level observations, including 1,616,430 retirements,
+the exact state/trace, byte/population counters and 905 constructions. Its
+diagnostic elapsed time is 2,364.47 -> 1,874.80 ms. This is one prefix sample
+with concurrent host load, not a statistical native/Linux performance claim
+and not evidence that PID 1 or cold shell has been reached. The actual guest
+execution timer is approximately unchanged (451.00 -> 453.79 ms).
+
+Direct-call oracles now explicitly reject old entry signatures where no C
+table call would otherwise expose the mismatch: JavaScript ignores surplus
+arguments, so passing three arguments alone is not an ABI rejection check.
+Native emitted fixtures must be regenerated, not made compatible by a wrapper.
