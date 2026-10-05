@@ -70,7 +70,16 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
                 execution->continuation_generation = 0u;
                 return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
             }
-        const vm_execution_row *row = resuming ? &execution->continuation : find(execution, state->rip);
+        const vm_execution_row *row;
+        machine_result result;
+        if (resuming) row = &execution->continuation;
+        else if (execution->select) {
+            row = 0;
+            result = execution->select(owner,state->rip,&row);
+            if (result) return result;
+            if (execution->generation != generation) return MACHINE_RESULT_STALE_GENERATION;
+            if (!row) return MACHINE_RESULT_RESOLVE_RIP;
+        } else row = find(execution,state->rip);
         if (!row) return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
         if (state->rip != row->entry) {
             execution->generation = 0u; execution->continuation = (vm_execution_row){0};
@@ -81,8 +90,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
         if (execution->segments && (execution->segments->version != MACHINE_SEGMENTS_ABI_VERSION
                 || shadow > MACHINE_SHADOW_STI || (shadow && row->source_instructions != 1u)))
             return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
-        machine_result result;
-        if (!resuming) {
+        if (!resuming && !execution->select) {
             result = fetch(owner, row->entry);
             if (result) return result;
             if (execution->generation != generation)

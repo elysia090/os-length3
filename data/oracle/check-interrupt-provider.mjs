@@ -192,6 +192,43 @@ assert.equal(vm.vm_boundary(port,9n),1n);assert.equal(vm.vm_completed(),0);
 assert.equal(vm.vm_source_retired(),0n);assert.equal(get(base+384),0x8000n);
 assert.equal(get(payload(7)+0xed8),0x400000n,'IRQ saves the unfetched source RIP');
 assert.equal(vm.vm_boundary(port,9n),0n);
+// A source-owned cohort retires STI and its inhibited successor in C. The
+// successor jumps to an unmapped RIP: the now eligible IRQ MUST precede
+// both cache selection and the otherwise faulting opcode fetch.
+let ownedCohortIrqs=0;
+for(const oldShadow of [0,1,2]){
+  reset();v.setUint32(segments+4,oldShadow,true);
+  const start=0x9000n,program=[0xfb,0xe9,0xfa,0x6f,0x3f,0];
+  data.set(program,payload(6));
+  const first=vm.vm_slot_min(),sourceCapacity=vm.vm_source_capacity();
+  vm.__indirect_function_table.grow(Math.max(0,first+sourceCapacity-vm.__indirect_function_table.length));
+  for(const [offset,length]of [[0,1],[1,5]]){
+    const at=start+BigInt(offset);
+    assert.equal(vm.vm_source_query(port,at,1,codeView,rows),1n);
+    const ownedSlot=v.getUint32(rows+16,true),borrowed=v.getUint32(codeView+16,true);
+    bytes.set(data.subarray(borrowed,borrowed+4096),input);
+    assert.equal(cc.compiler_open_pages(input,1,start,9n),0);
+    assert.equal(cc.compiler_emit(at,1,output,65536,report),0);
+    assert.equal(view.getBigUint64(report+32,true),BigInt(length));
+    const cut=(await WebAssembly.instantiate(bytes.slice(output,output+Number(view.getBigUint64(report+40,true))),
+      {machine:{memory,interrupt_flag:vm.vm_flag}})).instance.exports.cut;
+    vm.__indirect_function_table.set(ownedSlot,cut);assert.equal(vm.vm_source_publish(length,1,rows),0);
+  }
+  pending();gate(40);
+  assert.equal(vm.vm_source_query(port,start,1,codeView,rows),0n);
+  assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  assert.equal(vm.vm_run(port,9n,99),1n);
+  const done=oldShadow?1:2,savedRip=oldShadow?0x9001n:0x400000n;
+  assert.equal(vm.vm_completed(),done);assert.equal(vm.vm_source_retired(),BigInt(done));
+  assert.equal(get(base+1128),123n+BigInt(done));assert.equal(get(base+384),0x8000n);
+  assert.equal(get(base+392),2n);assert.equal(v.getUint32(segments+4,true),0);
+  assert.equal(get(base+32),0xaed8n);
+  for(const [index,value]of [savedRip,8n,0x202n,0xaf00n,16n].entries())
+    assert.equal(get(payload(7)+0xed8+index*8),value);
+  assert.notEqual(v.getUint32(port+24,true),14,'no opcode #PF ahead of the IRQ');
+  for(let rank=0;rank<sourceCapacity;++rank)vm.__indirect_function_table.set(first+rank,null);
+  ++ownedCohortIrqs;
+}
 // C clamps an inhibited source to one instruction, even if the supervisor
 // requests a larger block. The source cache cannot bypass that constraint.
 reset();v.setUint32(segments+4,2,true);data.set([0x90,0x90],payload(6));
@@ -262,6 +299,7 @@ if(systemRows){
   }
 }
 console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,pitIrqEntries,pitBoundaryEntries,pureLoopCuts,waits,refusals,
+  ownedCohortIrqs,
   clockLifecycle:'private port/generation/source pin/duplicate/cancel/rebind/reopen assertions green',
   admissionPriorityChecks:1,shadowExtentChecks:1,oldAbiRefusals:1,
   systemComparisons,qemuSavedRFDifferences,oracle:systemRows?'QEMU TCG PIT/PIC/shadow/IDT; saved RF difference explicitly excluded; privilege/RF matrix is a model':

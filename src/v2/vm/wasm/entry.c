@@ -25,6 +25,7 @@ static pl_u32 state_offset;
 static pl_u32 segments_offset;
 static vm_boot boot;
 static vm_execution execution;
+static pl_u32 source_limit;
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
 static vm_table_frontier table_frontier;
@@ -41,6 +42,7 @@ static pl_u32 boot_projected;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result pending_boundary(pl_u32 port);
 static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding);
+static machine_result source_entry(void *pointer, pl_u64 address, const vm_execution_row **row);
 static int clock_boundary_pending(void)
 { return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
 pl_u32 vm_source_capacity(void) { return VM_SOURCE_ROWS; }
@@ -52,7 +54,9 @@ pl_u32 vm_slot_min(void)
     pl_u32 fetch = (pl_u32)(uintptr_t)fetch_entry, call = (pl_u32)(uintptr_t)call_entry;
     pl_u32 write = (pl_u32)(uintptr_t)vm_sources_write;
     pl_u32 last = fetch > call ? fetch : call;
-    return (last > write ? last : write) + 1u;
+    if (last < write) last = write;
+    pl_u32 select = (pl_u32)(uintptr_t)source_entry;
+    return (last > select ? last : select) + 1u;
 }
 
 pl_u32 vm_arena_min(void)
@@ -79,6 +83,7 @@ void vm_close(void)
     boot_header = boot_header_bytes = boot_command = 0u;
     boot_projected = 0u;
     vm_execution_close(&execution);
+    source_limit = 0u;
 }
 
 static int range(pl_u32 offset, pl_u32 bytes)
@@ -742,6 +747,7 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     vm_execution_close(&execution);
+    source_limit = 0u;
     pl_u64 bytes = (pl_u64)count * sizeof(vm_execution_row);
     if (!state_offset || !count || count > VM_EXECUTION_MAX_ROWS
             || !generation || generation != resident.generation
@@ -752,9 +758,63 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
     int status = vm_execution_open(&execution, (const vm_execution_row *)(uintptr_t)rows,
                               count, generation, (const machine_state *)(uintptr_t)state_offset);
     if (!status && segments_offset) execution.segments = (machine_segments *)(uintptr_t)segments_offset;
+    /* A published source rank is already the immutable metadata owner. Do
+     * not copy/sort its cohort into another directory. Flat trusted test
+     * directories use this same dispatcher; they are not ISA fallbacks. */
+    if (!status && count==1u && sources.valid && directory_rows->slot>=sources.first_slot
+            && directory_rows->slot-sources.first_slot<VM_SOURCE_ROWS) {
+        pl_u32 rank=directory_rows->slot-sources.first_slot;
+        const vm_source_row *owned=sources.rows+rank;
+        if (sources.generation!=generation || !(sources.valid & (1ull<<rank))
+                || directory_rows->entry!=owned->row.entry
+                || directory_rows->source_bytes!=owned->row.source_bytes
+                || directory_rows->source_instructions!=owned->row.source_instructions) {
+            vm_execution_close(&execution); return -1;
+        }
+        source_limit=owned->limit;
+        execution.rows=&owned->row;
+        execution.select=source_entry;
+    }
     return status;
 }
 typedef struct { pl_u32 port; } execution_owner;
+/* This is a row/fetch owner for the existing dispatcher, not another engine.
+ * The original execution context is never reopened between warm cuts. Each
+ * lookup borrows current executable MMU pages and matches exact physical
+ * offsets; a missing identity yields to the cold compiler without eviction.
+ * Only a known crossing instruction admits a tail. The ordinary C write
+ * observer, IRQ boundary and latched-instruction owner remain authoritative. */
+static machine_result source_entry(void *pointer, pl_u64 address, const vm_execution_row **row)
+{
+    const execution_owner *owner=pointer;
+    machine_result result=pending_boundary(owner->port);
+    if (result) return result;
+    if (!segments_offset) return MACHINE_RESULT_ENTRY_MAP;
+    const machine_segments *segments=(const machine_segments *)(uintptr_t)segments_offset;
+    pl_u32 cs=segments->cache[MACHINE_SEGMENT_CS].attributes;
+    if (segments->version!=MACHINE_SEGMENTS_ABI_VERSION || segments->interrupt_shadow>MACHINE_SHADOW_STI
+            || !(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))) return MACHINE_RESULT_ENTRY_MAP;
+    pl_u32 limit=segments->interrupt_shadow ? 1u : source_limit;
+    vm_code_page first,next;
+    vm_mmu_context context=cpu_context();
+    vm_supply_reset(&supply); vm_memory_abort(&resident); resident.write_touched=0u;
+    result=vm_mmu_code_page(&resident,owner->port-arena_base,&context,address,&first);
+    if (resident.write_touched) execution.generation=0u;
+    if (result) return memory_result(owner->port,result);
+    if (execution.generation!=resident.generation) return MACHINE_RESULT_STALE_GENERATION;
+    int status=vm_sources_reuse(&sources,&first,0,address,limit,row);
+    if (status==2) {
+        resident.write_touched=0u;
+        result=vm_mmu_code_page(&resident,owner->port-arena_base,&context,first.address+4096u,&next);
+        if (resident.write_touched) execution.generation=0u;
+        if (result) return memory_result(owner->port,result);
+        if (execution.generation!=resident.generation) return MACHINE_RESULT_STALE_GENERATION;
+        status=vm_sources_reuse(&sources,&first,&next,address,limit,row);
+    }
+    if (status<0) return MACHINE_RESULT_ENTRY_MAP;
+    if (status==1) *row=0; /* Exact prefix yield; no eviction or cold reservation. */
+    return 0u;
+}
 static machine_result interrupt_boundary(pl_u32 port)
 {
     vm_supply_reset(&supply);

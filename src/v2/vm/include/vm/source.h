@@ -41,6 +41,16 @@ void vm_sources_open(vm_sources *sources, pl_u64 generation, pl_u32 first_slot);
  * an ISA fallback. Output remains untouched on refusal. */
 int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
     pl_u64 entry, pl_u32 limit, vm_execution_row *row);
+/* Hit-only warm admission: 0 lends an owned row after complete physical
+ * validation and refreshes its demand, 1 is an unchanged cold miss, 2 lends
+ * only a crossing candidate whose tail still requires C-MMU admission.
+ * Recheck with next after that admission; a remapped tail returns 1, not
+ * authority to execute. -1 refuses. Miss/refusal never evicts, reserves,
+ * cancels a pending compile, copies a row or changes output. The borrower
+ * serializes writes and cannot retain a pointer beyond the current cut. */
+int vm_sources_reuse(vm_sources *sources, const vm_code_page *page,
+    const vm_code_page *next, pl_u64 entry, pl_u32 limit,
+    const vm_execution_row **row);
 /* The trusted compiler reports its exact successfully emitted source span.
  * A crossing FIRST instruction has at most 15 bytes and two physical owners.
  * Publish only after installing that compiled function in the reserved slot.

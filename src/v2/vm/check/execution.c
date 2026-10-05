@@ -8,6 +8,7 @@ static vm_execution_row rows[2];
 static pl_u32 calls, fetches, stop, revoke, revoke_fetch, load_ss, call_fault;
 static pl_u32 yielding, called_slot;
 static pl_u64 fetched[2], called_entry;
+static pl_u32 selections, miss_selection, change_context, debug_after_call;
 static int failures;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static machine_result fetch(void *owner, pl_u64 address)
@@ -34,14 +35,25 @@ static machine_result call(void *owner, pl_u32 slot, pl_u64 entry)
     ++state.retired;
     if (revoke) execution.generation = 0u;
     if (load_ss) segments.interrupt_shadow = 1u;
+    if (change_context && calls==1u) ++state.cr3;
+    if (debug_after_call && calls==1u) state.system[MACHINE_SYSTEM_DR0+7u]=1u;
     return machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u);
 }
 static machine_result run(pl_u64 generation, pl_u32 budget)
 { return vm_execution_run(&execution, &state, generation, budget, fetch, call, 0); }
+static machine_result select_row(void *owner,pl_u64 rip,const vm_execution_row **row)
+{
+    ++selections;
+    if (selections==miss_selection) return 0u;
+    machine_result result=fetch(owner,rip);
+    if (!result) *row=rip==rows[0].entry ? rows : rows+1u;
+    return result;
+}
 static void reset(void)
 {
     memset(&state, 0, sizeof state); calls = fetches = stop = revoke = revoke_fetch = 0u;
     load_ss = call_fault = yielding = called_slot = 0u; segments = (machine_segments){0};
+    selections=miss_selection=change_context=debug_after_call=0u;
     segments.version = MACHINE_SEGMENTS_ABI_VERSION;
     rows[0] = (vm_execution_row){ 0x400000u, 1u, 1u, 1u, 0u };
     rows[1] = (vm_execution_row){ 0x400001u, 1u, 1u, 2u, 0u };
@@ -50,6 +62,36 @@ static void reset(void)
 }
 int main(void)
 {
+    /* A borrowed source owner uses exactly the same precise-fault/latch/
+     * context dispatcher. It performs fetch admission once, not twice. */
+    for(pl_u32 budget=1u;budget<=4096u;budget*=2u){
+        reset();execution.select=select_row;
+        EXPECT(run(9u,budget)==1u && calls==budget && fetches==budget && selections==budget);
+        EXPECT(execution.completed==budget && execution.retired==budget && state.retired==budget);
+    }
+    reset();execution.select=select_row;miss_selection=2u;
+    EXPECT(run(9u,99u)==1u && calls==1u && fetches==1u && selections==2u);
+    EXPECT(execution.completed==1u && execution.retired==1u && state.rip==rows[1].entry);
+    reset();execution.select=select_row;miss_selection=1u;
+    EXPECT(run(9u,99u)==1u && !calls && !fetches && !execution.completed && !state.retired);
+    reset();execution.select=select_row;stop=2u;
+    EXPECT(run(9u,99u)==115u && calls==1u && fetches==2u && execution.completed==1u);
+    reset();execution.select=select_row;revoke_fetch=1u;
+    EXPECT(run(9u,99u)==5u && !calls && fetches==1u);
+    reset();execution.select=select_row;revoke=1u;
+    EXPECT(run(9u,99u)==5u && calls==1u && selections==1u && execution.completed==1u);
+    reset();execution.select=select_row;change_context=1u;
+    EXPECT(run(9u,99u)==5u && calls==1u && selections==1u && execution.completed==1u);
+    reset();execution.select=select_row;debug_after_call=1u;
+    EXPECT(run(9u,99u)==6u && calls==1u && selections==1u && execution.completed==1u);
+    for(pl_u32 barrier=1u;barrier<=4u;++barrier){
+        reset();execution.select=select_row;yielding=barrier;
+        machine_result result=barrier==1u ? 10u : barrier==2u ? 2u : barrier==3u ? 18u : 26u;
+        EXPECT(run(9u,99u)==result && calls==1u && selections==1u && fetches==1u);
+        rows[0].entry+=32u;rows[0].slot=2u;
+        EXPECT(run(9u,99u)==result && calls==2u && selections==1u && fetches==1u);
+        EXPECT(called_entry==0x400000u && called_slot==1u && !execution.completed);
+    }
     for (pl_u32 bit=0u;bit<8u;++bit) {
         reset(); state.system[MACHINE_SYSTEM_DR0+7u]=1ull<<bit;
         EXPECT(run(9u,1u)==6u && !calls && !fetches && !state.retired);

@@ -54,9 +54,13 @@ Next obligations, in order:
 3. From the completed profile, remove remaining source/descriptor
    reconstruction work using exact physical admission/lifetime invariants,
    not cache-quota inflation or an unproved coordinate/hash alias.
-   A new behavioral red warms three actual source rows, binds the first,
-   requests 99 cuts and gets result 6 after one. Derive/test a C-owned warm
-   cohort before changing the per-admission one-row/one-cut diagnostic;
+   The three-source-row/99-cut red is green in the existing C dispatcher,
+   borrowing original metadata with current physical/MMU admission. Fixed
+   65,536-retirement boundary samples have median 21.391 -> 7.615 ms, not
+   Linux/browser speedup. See [scope](../vm/check/browser/evidence/2026-10-05-source-cohort.md).
+   Before enabling bounded warm quanta, generalize the diagnostic's committed
+   prefix counts, actual later fault entry/source, engine demand hints and
+   proof observation stops; do not merely replace its one-cut budget.
    source permissions, context/write revocation, fault/IRQ/shadow priority
    and pinned continuations cannot be dropped. This is a candidate, not an
    already measured Linux speedup. Host working set and linear Memory differ.

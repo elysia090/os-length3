@@ -15,6 +15,12 @@ typedef struct {
     pl_u32 reserved;
 } vm_execution_row;
 _Static_assert(sizeof(vm_execution_row) == 24u, "compiled directory row");
+/* An optional serialized row owner admits the current RIP through executable
+ * MMU/source identity before lending one immutable row. Zero + NULL is a
+ * bounded cold miss, not permission to interpret/reconstruct an instruction.
+ * It must report precise fetch faults and observe writes before mutation. */
+typedef machine_result (*vm_execution_select)(void *owner, pl_u64 rip,
+    const vm_execution_row **row);
 
 typedef struct {
     const vm_execution_row *rows;
@@ -26,6 +32,7 @@ typedef struct {
     machine_segments *segments; /* Optional only for register-only fixtures. */
     vm_execution_row continuation; /* One latched instruction, not a CPU frame. */
     pl_u64 continuation_generation;
+    vm_execution_select select;
 } vm_execution;
 typedef machine_result (*vm_execution_fetch)(void *owner, pl_u64 address);
 typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot, pl_u64 entry);
@@ -49,7 +56,9 @@ void vm_execution_close(vm_execution *execution);
  * same-page span needs one permission/residency check, a crossing instruction
  * checks the first byte of the second page too. Prefix cuts must end BEFORE
  * any crossing instruction, so a later fetch fault cannot suppress retirement.
- * An absent row yields ENTRY_MAP(entry RIP remains in state), never fallback.
+ * An absent explicit-directory row yields ENTRY_MAP, never fallback. A
+ * source-owned cold miss returns RESOLVE_RIP with the exact completed prefix;
+ * the trusted compiler may admit it later. No row/page directory is copied.
  * Budget exhaustion yields RESOLVE_RIP/0 with completed/retired counters.
  * Revoke after a successful writing cut stops before the following cut.
  * Exceptions are pending, not delivered. This is not a complete machine. */

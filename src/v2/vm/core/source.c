@@ -51,33 +51,64 @@ void vm_sources_open(vm_sources *sources, pl_u64 generation, pl_u32 first_slot)
         sources->watch[i] = sources->lookup[i] = 0u;
     sources->oldest = sources->newest = VM_SOURCE_ROWS;
 }
+static int page_valid(const vm_sources *sources, const vm_code_page *page,
+    pl_u64 entry, pl_u32 limit)
+{
+    return sources && page && sources->generation && page->generation == sources->generation
+            && sources->first_slot && sources->first_slot <= VM_EXECUTION_MAX_ROWS - VM_SOURCE_ROWS + 1u
+            && limit && limit <= 1024u && page->bytes == 4096u && !(page->address & 4095u)
+            && !(page->offset & 4095u) && (pl_u64)page->offset + 4096u <= 0x100000000ull
+            && entry >= page->address && entry - page->address < 4096u
+            && (entry >> 47u == 0u || entry >> 47u == 0x1ffffu);
+}
+static pl_u32 match(const vm_sources *sources, const vm_code_page *page,
+    pl_u64 entry, pl_u32 limit)
+{
+    pl_u64 candidates = sources->lookup[key(entry,limit)] & sources->valid;
+    while (candidates) {
+        pl_u32 rank = (pl_u32)__builtin_ctzll(candidates);
+        const vm_source_row *candidate = sources->rows + rank;
+        if (candidate->row.entry == entry && candidate->offset == page->offset
+                && candidate->limit == limit) return rank;
+        candidates &= candidates - 1u;
+    }
+    return VM_SOURCE_ROWS;
+}
+int vm_sources_reuse(vm_sources *sources, const vm_code_page *page,
+    const vm_code_page *next, pl_u64 entry, pl_u32 limit,
+    const vm_execution_row **row)
+{
+    if (!row || !page_valid(sources,page,entry,limit)) return -1;
+    pl_u32 rank = match(sources,page,entry,limit);
+    if (rank == VM_SOURCE_ROWS) return 1;
+    const vm_source_row *candidate = sources->rows + rank;
+    if (crosses(candidate)) {
+        if (!next) { *row = &candidate->row; return 2; }
+        if (page->address > ~0ull-4096u || next->address != page->address+4096u
+                || !page_valid(sources,next,next->address,limit)) return -1;
+        if (candidate->next_offset != next->offset) return 1;
+    }
+    demand(sources,rank);
+    *row = &candidate->row;
+    return 0;
+}
 int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
     pl_u64 entry, pl_u32 limit, vm_execution_row *row)
 {
     if (!sources) return -1;
     sources->pending = 0u;
-    if (!page || !row || !sources->generation || page->generation != sources->generation
-            || !sources->first_slot || sources->first_slot > VM_EXECUTION_MAX_ROWS - VM_SOURCE_ROWS + 1u
-            || !limit || limit > 1024u || page->bytes != 4096u || (page->address & 4095u)
-            || (page->offset & 4095u) || (pl_u64)page->offset + 4096u > 0x100000000ull
-            || entry < page->address || entry - page->address >= 4096u
-            || !(entry >> 47u == 0u || entry >> 47u == 0x1ffffu)) return -1;
-    pl_u64 candidates = sources->lookup[key(entry,limit)] & sources->valid;
-    while (candidates) {
-        pl_u32 i = (pl_u32)__builtin_ctzll(candidates);
-        const vm_source_row *candidate = sources->rows + i;
-        if ((sources->valid & (1ull << i)) && candidate->row.entry == entry
-                && candidate->offset == page->offset && candidate->limit == limit) {
-            if (crosses(candidate)) {
-                sources->pending_page = *page; sources->pending_entry = entry;
-                sources->pending_limit = limit; sources->pending_rank = i;
-                sources->pending = sources->pending_pages = 1u;
-                *row = candidate->row; return 2;
-            }
-            demand(sources,i);
-            *row = candidate->row; return 0;
+    if (!row || !page_valid(sources,page,entry,limit)) return -1;
+    pl_u32 hit = match(sources,page,entry,limit);
+    if (hit < VM_SOURCE_ROWS) {
+        const vm_source_row *candidate = sources->rows + hit;
+        if (crosses(candidate)) {
+            sources->pending_page = *page; sources->pending_entry = entry;
+            sources->pending_limit = limit; sources->pending_rank = hit;
+            sources->pending = sources->pending_pages = 1u;
+            *row = candidate->row; return 2;
         }
-        candidates &= candidates - 1u;
+        demand(sources,hit);
+        *row = candidate->row; return 0;
     }
     /* No demand may keep an invalid row alive. Free ranks precede eviction;
      * a full owner replaces only its least recently validated demand. */

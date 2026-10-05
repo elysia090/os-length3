@@ -8,6 +8,12 @@ renamed, not kept as a second implementation. See
 [DMA contract](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-dma.md) and
 [serial absence](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-serial.md).
 
+`check-source-cohort.mjs VM.WASM COMPILER.WASM` proves source-owned warm
+quanta through actual C-MMU/table execution and measures a paired fixed
+65,536-retirement boundary workload. It tests partial prefixes, fault/remap/
+write/shadow/context and later-cut console/growth continuation, not Linux
+speedup. See [derivation and limits](../../src/v2/vm/check/browser/evidence/2026-10-05-source-cohort.md).
+
 ## C-Wasm browser boundary — 2026-10-02
 
 `powershell -File data/oracle/wasm-tools.ps1` pins official wasi-sdk-34's

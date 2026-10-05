@@ -253,6 +253,56 @@ static void crossing(void)
     }
     vm_sources_open(&sources,9u,3u);
 }
+static void warm_reuse(void)
+{
+    vm_sources snapshot;
+    const vm_execution_row *borrowed=&row;
+    const pl_u64 entry=page.address+4095u;
+    vm_code_page next={page.address+4096u,9u,32768u,4096u};
+    vm_sources_open(&sources,9u,3u);
+    EXPECT(probe(entry,1024u)==1 && vm_sources_extend(&sources,&next,&row)==1);
+    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    const pl_u32 rank=row.slot-sources.first_slot;
+    /* Keep a distinct pinned cold compile alive. Warm miss/refusal and
+     * partial crossing validation cannot evict or cancel that transaction. */
+    EXPECT(probe(page.address,1024u)==1);snapshot=sources;
+    EXPECT(vm_sources_reuse(&sources,&page,0,entry,1024u,&borrowed)==2);
+    EXPECT(borrowed==&sources.rows[rank].row && !memcmp(&sources,&snapshot,sizeof sources));
+    borrowed=&row;
+    EXPECT(vm_sources_reuse(&sources,&page,0,page.address+7u,1024u,&borrowed)==1);
+    EXPECT(borrowed==&row && !memcmp(&sources,&snapshot,sizeof sources));
+    vm_code_page wrong=next;wrong.offset+=4096u;
+    EXPECT(vm_sources_reuse(&sources,&page,&wrong,entry,1024u,&borrowed)==1);
+    EXPECT(borrowed==&row && !memcmp(&sources,&snapshot,sizeof sources));
+    wrong=next;wrong.generation=10u;
+    EXPECT(vm_sources_reuse(&sources,&page,&wrong,entry,1024u,&borrowed)==-1);
+    EXPECT(borrowed==&row && !memcmp(&sources,&snapshot,sizeof sources));
+    wrong=page;wrong.offset++;
+    EXPECT(vm_sources_reuse(&sources,&wrong,0,entry,1024u,&borrowed)==-1);
+    EXPECT(borrowed==&row && !memcmp(&sources,&snapshot,sizeof sources));
+    EXPECT(!vm_sources_reuse(&sources,&page,&next,entry,1024u,&borrowed));
+    EXPECT(borrowed==&sources.rows[rank].row && sources.pending
+        && sources.pending_rank==snapshot.pending_rank);
+    EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    /* Two colliding index/watch buckets, same VA/limit, different physical
+     * owners: neither hash nor the first matching virtual key is identity. */
+    for(pl_u32 owner=0u;owner<2u;++owner){
+        page.offset=owner ? 0x102000u : 8192u;
+        EXPECT(probe(page.address+80u,1024u)==1);
+        EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    }
+    for(pl_u32 turn=0u;turn<4096u;++turn){
+        page.offset=(turn&1u) ? 0x102000u : 8192u;
+        EXPECT(!vm_sources_reuse(&sources,&page,0,page.address+80u,1024u,&borrowed));
+        EXPECT(borrowed->entry==page.address+80u);
+        EXPECT(sources.rows[borrowed->slot-sources.first_slot].offset==page.offset);
+        EXPECT(sources.newest==borrowed->slot-sources.first_slot);
+    }
+    vm_sources_write(&sources,page.offset+80u,1u);snapshot=sources;borrowed=&row;
+    EXPECT(vm_sources_reuse(&sources,&page,0,page.address+80u,1024u,&borrowed)==1);
+    EXPECT(borrowed==&row && !memcmp(&sources,&snapshot,sizeof sources));
+    page.offset=8192u;vm_sources_open(&sources,9u,3u);
+}
 int main(void)
 {
     vm_sources_open(&sources,9u,3u);
@@ -337,6 +387,7 @@ int main(void)
     demand_reference();
     crossing_demand();
     crossing();
+    warm_reuse();
     mmu_alias();
     if (!failures) puts("source admission: bounded zero-copy source/write frontier green (100000 replacements, 20000 independent LRU/write/reset cases, 4096 hot/cold and crossing demands; no boot speedup claim)");
     return failures != 0;
