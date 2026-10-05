@@ -11,6 +11,8 @@ static pl_u32 mode;
 static pl_u64 source_generation;
 
 _Static_assert(sizeof(wasm_cut_report) == 80u, "cut report transport extent");
+_Static_assert(__builtin_offsetof(wasm_cut_report, operand_binding) == 76u,
+    "scalar binding fills the old report tail padding");
 
 pl_u32 compiler_static_min(void) { return COLD_STATIC_MIN; }
 pl_u32 compiler_arena_min(void)

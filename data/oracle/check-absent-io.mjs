@@ -8,7 +8,7 @@ const memory=new WebAssembly.Memory({initial:16,maximum:18});
 const coldMemory=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
-assert.equal(vm.vm_entry_abi(),2);assert.equal(cc.compiler_entry_abi(),2);
+assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
 let data=Buffer.from(memory.buffer),view=new DataView(memory.buffer);
 const cold=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer);
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;
@@ -56,7 +56,7 @@ function reset(entry,source,coordinate,cpl=0,iopl=0,deny=false){
   assert.equal(vm.vm_open(base,data.length-base,4096,directory,9,9,directory+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry);view.setUint32(rows+8,source.length,true);view.setUint32(rows+12,1,true);
-  view.setUint32(rows+16,slot,true);view.setUint32(rows+20,0,true);
+  view.setUint32(rows+16,slot,true);view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   return {codePte,tss};
 }
@@ -67,7 +67,7 @@ async function emit(entry,source){
   assert.equal(cv.getBigUint64(report+32,true),BigInt(source.length));
   const bytes=Buffer.from(cold.subarray(output,output+Number(cv.getBigUint64(report+40,true))));
   const cut=(await WebAssembly.instantiate(bytes,{machine:{memory,io:vm.vm_io}})).instance.exports.cut;
-  assert.equal(cut.length,3);vm.__indirect_function_table.set(slot,cut);++emissions;return cut;
+  assert.equal(cut.length,4);vm.__indirect_function_table.set(slot,cut);++emissions;return cut;
 }
 try{
   const entry=0x400000n;
@@ -98,7 +98,7 @@ try{
       ++comparisons;
     }
     reset(entry,source,coordinate);let before=cpu();
-    assert.equal(cut(base,port,entry+1n),6n);assert(cpu().equals(before));++bindingRefusals;
+    assert.equal(cut(base,port,entry+1n,0),6n);assert(cpu().equals(before));++bindingRefusals;
     const {codePte}=reset(entry,source,coordinate);before=cpu();put(codePte,0);
     assert.equal(vm.vm_run(port,9n,1),115n);assert(cpu().equals(before));
     assert.equal(view.getBigUint64(port+16,true),entry);assert.equal(view.getUint32(port+24,true),14);++fetchFaults;

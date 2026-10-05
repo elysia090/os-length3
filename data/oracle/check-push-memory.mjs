@@ -54,7 +54,7 @@ function reset(source,meta,record,row) {
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,16,16,dir+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry);v.setUint32(rows+8,meta.sourceBytes,true);v.setUint32(rows+12,1,true);
-  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,0,true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,cv.getUint32(report+76,true),true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 function expected(record,meta) {
   const state=cpu(),image=payload(),vector=u64(record,35);
@@ -97,11 +97,11 @@ try {
         assert.equal(v.getBigUint64(port+16,true),u64(record,37),`${form}/${row}: fault coordinate`);++faults;
       }
       reset(source,meta,record,row);const hidden=Buffer.from(data.subarray(segments,segments+136));
-      assert.equal(cut(base,port,entry),wanted.result);assert(cpu().equals(wanted.state));assert(payload().equals(wanted.image));
+      assert.equal(cut(base,port,entry,v.getUint32(rows+20,true)),wanted.result);assert(cpu().equals(wanted.state));assert(payload().equals(wanted.image));
       assert(data.subarray(segments,segments+136).equals(hidden));++directComparisons;
       reset(source,meta,record,row);put(base+392,u64(record,16)|0x10000n);
       const rfState=Buffer.from(wanted.state);if(vector)rfState.writeBigUInt64LE(u64(record,16)|0x10000n,392);
-      assert.equal(cut(base,port,entry),wanted.result);assert(cpu().equals(rfState));assert(payload().equals(wanted.image));++rf;
+      assert.equal(cut(base,port,entry,v.getUint32(rows+20,true)),wanted.result);assert(cpu().equals(rfState));assert(payload().equals(wanted.image));++rf;
     }
     const first=native.subarray(0,stride);
     for(const failure of ['TF','AC','alias','wrap','stale']) {
@@ -109,7 +109,7 @@ try {
       if(failure==='TF'||failure==='AC')put(base+392,0x202n|(failure==='TF'?256n:262144n));
       if(failure==='stale')put(port,8);
       const before=cpu(),image=payload();
-      assert.equal(cut(base,failure==='alias'?base:failure==='wrap'?0xfffffff8:port,entry),failure==='stale'?5n:6n);
+      assert.equal(cut(base,failure==='alias'?base:failure==='wrap'?0xfffffff8:port,entry,v.getUint32(rows+20,true)),failure==='stale'?5n:6n);
       assert(cpu().equals(before));assert(payload().equals(image));++refusals;
     }
     for(const dispatch of [false,true])for(const missing of ['source','stack-first','stack-second']) {
@@ -121,13 +121,13 @@ try {
       const address=missing==='source'?u64(record,40):u64(record,38)+(missing==='stack-second'?BigInt(meta.bytes-1):0n);
       const page=physical(address),index=Number(page/4096n)-1;
       v.setUint32(dir+index*32+16,3,true);const before=cpu(),image=payload();
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),2n,`${form}/${missing}: wait`);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),2n,`${form}/${missing}: wait`);
       assert(cpu().equals(before));assert(payload().equals(image));
       assert.equal(v.getBigUint64(port+32,true)&~4095n,page);assert(v.getUint32(port+44,true)&16);
       if(dispatch){assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);}++waits;
       // Supply the exact deferred physical row; do not repair a guest PTE.
       v.setUint32(dir+index*32+16,1,true);
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch?5n:1n);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),dispatch?5n:1n);
       assert(cpu().equals(wanted.state));assert(payload().equals(wanted.image));++retries;
     }
     if(meta.kind===1 || meta.kind===2 || meta.kind===3 || meta.kind===4) {

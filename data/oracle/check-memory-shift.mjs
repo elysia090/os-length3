@@ -61,7 +61,7 @@ function reset(source,meta,record,row) {
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,16,16,dir+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry);v.setUint32(rows+8,meta.sourceBytes,true);v.setUint32(rows+12,1,true);
-  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,0,true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,cv.getUint32(report+76,true),true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 function expected(record,meta) {
   const state=cpu(),image=payload(),vector=u64(record,35);
@@ -80,7 +80,7 @@ function physical(address) {
   return BigInt(10+2*owner)*4096n+(address-addresses[owner]&~4095n);
 }
 function compare(cut,wanted,label,dispatch=false) {
-  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch&&wanted.result===1n?5n:wanted.result,label);
+  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),dispatch&&wanted.result===1n?5n:wanted.result,label);
   if(!cpu().equals(wanted.state)) {
     const differences=[];
     for(let i=0;i<1256;++i)if(data[base+i]!==wanted.state[i])differences.push([i,data[base+i],wanted.state[i]]);
@@ -134,7 +134,7 @@ try {
       if(failure==='TF'||failure==='AC')put(base+392,0x202n|(failure==='TF'?256n:262144n));
       if(failure==='stale')put(port,8);
       const before=cpu(),image=payload();
-      assert.equal(cut(base,failure==='alias'?base:failure==='wrap'?0xfffffff8:port,entry),failure==='stale'?5n:6n);
+      assert.equal(cut(base,failure==='alias'?base:failure==='wrap'?0xfffffff8:port,entry,v.getUint32(rows+20,true)),failure==='stale'?5n:6n);
       assert(cpu().equals(before));assert(payload().equals(image));++refusals;
     }
     for(const dispatch of [false,true])for(const missing of ['first','second']) {
@@ -142,7 +142,7 @@ try {
       assert.equal(u64(record,35),0n);reset(source,meta,record,row);const wanted=expected(record,meta);
       const address=u64(record,38)+(missing==='second'?BigInt(meta.bytes-1):0n),page=physical(address),index=Number(page/4096n)-1;
       v.setUint32(dir+index*32+16,3,true);const before=cpu(),image=payload();
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),2n,`${form}/${missing}: wait`);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),2n,`${form}/${missing}: wait`);
       assert(cpu().equals(before));assert(payload().equals(image));
       assert.equal(v.getBigUint64(port+32,true)&~4095n,page);assert(v.getUint32(port+44,true)&16);++waits;
       // Serialized model promotes the exact deferred physical row, not a repaired PTE.

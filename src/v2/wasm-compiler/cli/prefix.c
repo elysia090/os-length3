@@ -92,10 +92,10 @@ int cli_prefix(const char *input_path, const char *prefix, int pages,
         }
         char json[768];
         int n = snprintf(json,sizeof json,
-                "{\"entry\":\"%llu\",\"continuation\":\"%llu\",\"branchTarget\":\"%llu\","
+                "{\"operandBinding\":%u,\"entry\":\"%llu\",\"continuation\":\"%llu\",\"branchTarget\":\"%llu\","
                 "\"sourceBytes\":%llu,\"instructions\":%llu,\"boundary\":%u,"
                 "\"moduleBytes\":%llu,\"closed\":false}\n",
-                report.entry,report.continuation,report.branch_target,report.source_bytes,
+                report.operand_binding,report.entry,report.continuation,report.branch_target,report.source_bytes,
                 report.source_instructions,report.boundary,bytes);
         if (n <= 0 || (size_t)n >= sizeof json || !path(name,prefix,modules,"wasm")
                 || !record(name,output,(size_t)bytes)) goto failure;
@@ -105,9 +105,9 @@ int cli_prefix(const char *input_path, const char *prefix, int pages,
         }
         ++modules;
         if (fprintf(manifest,"%s{\"rank\":%u,\"entry\":\"%llu\",\"continuation\":\"%llu\","
-                "\"sourceBytes\":%llu,\"instructions\":%llu,\"moduleBytes\":%llu}",
+                "\"sourceBytes\":%llu,\"instructions\":%llu,\"moduleBytes\":%llu,\"operandBinding\":%u}",
                 modules == 1u ? "" : ",",modules - 1u,report.entry,report.continuation,
-                report.source_bytes,report.source_instructions,bytes) < 0) goto failure;
+                report.source_bytes,report.source_instructions,bytes,report.operand_binding) < 0) goto failure;
         instructions += report.source_instructions; emitted_bytes += bytes;
         options.entry = report.continuation;
         /* A transfer's fallthrough is not an execution trace. Do not guess

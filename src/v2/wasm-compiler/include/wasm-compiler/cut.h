@@ -36,11 +36,15 @@ typedef struct {
     pl_u32 boundary_operation;
     pl_u32 memory_bytes;
     pl_u32 memory_access;
+    pl_u32 operand_binding;
 } wasm_cut_report;
 
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
- * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry)
- * -> i64 machine_result (machine-entry ABI 2).
+ * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry,
+ *     i32 operand_binding) -> i64 machine_result (machine-entry ABI 3).
+ * The trusted compiler reports a signed disp32 binding for an isolated
+ * IP-relative memory operand; otherwise zero. The serialized caller must
+ * preserve it by value through admission and any pinned continuation.
  * Pure cuts ignore the port; all generated cuts share machine/entry.h's table
  * type. Architectural addresses
  * remain i64. The supervisor owns an aligned, fully resident state reservation

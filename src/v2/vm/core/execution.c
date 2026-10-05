@@ -25,7 +25,7 @@ int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
         if (!canonical(row->entry) || !row->source_bytes || row->source_bytes > 4096u
                 || !row->source_instructions || row->source_instructions > 1024u
                 || row->source_instructions > row->source_bytes || !row->slot
-                || row->slot > VM_EXECUTION_MAX_ROWS || row->reserved
+                || row->slot > VM_EXECUTION_MAX_ROWS
                 || row->entry > ~0ull - (row->source_bytes - 1u)
                 || !canonical(row->entry + row->source_bytes - 1u)
                 || (i && rows[i - 1u].entry >= row->entry)) return -1;
@@ -103,7 +103,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             }
         }
         pl_u32 source_instructions = row->source_instructions;
-        result = call(owner, row->slot, row->entry);
+        result = call(owner, row->slot, row->entry, row->operand_binding);
         if (machine_result_kind(result) == MACHINE_RESULT_BARRIER
                 && machine_result_payload(result) <= MACHINE_BARRIER_CONSOLE
                 && source_instructions == 1u && state->rip == row->entry) {

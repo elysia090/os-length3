@@ -11,7 +11,7 @@ if(!compilerFile || flags.some(flag=>flag!=='--observe') || flags.length>1)
 const binary=await readFile(compilerFile);
 const memory=new WebAssembly.Memory({initial:32,maximum:34});
 const cc=(await WebAssembly.instantiate(binary,{machine:{memory}})).instance.exports;
-assert.equal(cc.compiler_entry_abi(),2,'explicit typed coordinate ABI, no two-argument fallback');
+assert.equal(cc.compiler_entry_abi(),3,'explicit typed coordinate ABI, no two-argument fallback');
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;
 const state=(report+80+4095)&~4095,windowBytes=4096,stateBytes=1256;
 assert(state+windowBytes<=memory.buffer.byteLength,'disjoint state window');
@@ -67,7 +67,7 @@ try {
       for(let row=0;row<8;++row) {
         seed(entry,row);
         const outside=Buffer.from(data.subarray(state+stateBytes,state+windowBytes));
-        assert.equal(cut(state,-1,entry),1n);
+        assert.equal(cut(state,-1,entry,0),1n);
         assert.equal(view.getBigUint64(state+1128,true),42n);
         assert.equal(view.getBigUint64(state+392,true)&0x10000n,0n);
         assert(data.subarray(state+stateBytes,state+windowBytes).equals(outside),'no state-window overrun');
@@ -78,7 +78,7 @@ try {
       }
       seed(entry+1n,0);
       const before=Buffer.from(data.subarray(state,state+windowBytes));
-      assert.equal(cut(state,-1,entry),6n,'coordinate mismatch must retain its entry refusal');
+      assert.equal(cut(state,-1,entry,0),6n,'coordinate mismatch must retain its entry refusal');
       assert(data.subarray(state,state+windowBytes).equals(before));++entryRefusals;
     }
     // Exact bytes only. This digest measures identity; it does not strip
@@ -89,7 +89,7 @@ try {
   }
   memory.grow(1);data=Buffer.from(memory.buffer);view=new DataView(memory.buffer);
   seed(addresses[0],0);
-  assert.equal(templates[0].cut(state,-1,addresses[0]),1n,'same existing instance after memory growth');
+  assert.equal(templates[0].cut(state,-1,addresses[0],0),1n,'same existing instance after memory growth');
   const coldSamples=4096,coldConstruction={samples:coldSamples,emissionMs:0,moduleMs:0,instanceMs:0};
   data.fill(0x90,input,input+4096);
   for(let rank=0;rank<coldSamples;++rank) {

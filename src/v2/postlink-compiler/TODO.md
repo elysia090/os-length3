@@ -1,21 +1,39 @@
 # Remaining work — 2026-10-05
 
-Current actual full-bundle stop: the 150,000,000-admission quota at
-247,245,398 retirements, RIP `0xffffffff810a7faa`. The unchanged bundle passes
+Current actual full-bundle stop: the warm-64 150,000,000-admission quota at
+255,274,658 retirements, RIP `0xffffffff8109b342`. The unchanged bundle passes
 the secondary-UART 2F9h refusal, registers the phram system device / IPv6 /
 PF_PACKET and reports microcode status. Full kernel decompression agrees.
 This is not an unsupported-opcode red. PID 1, release-root mount, shell and
 real-browser acceptance remain unachieved; cold shell 3s is unmet.
-See [completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-serial-quota.json).
+See [completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-warm-quota.json).
 
-Measured maximum term: 52,860,225 engine constructions / 1,502,576 ms,
-cold C emission 644,489 ms, execution 252,847 ms, admission 43,583 ms and
-extent supply 744 ms; total diagnostic 2,676,904 ms. There are 765 live engine
-entries / 261,827 witness bytes, 52,859,460 evictions and 25,644,448 hits under
-unchanged quotas. Source-owner misses are 78,504,673 / hits 71,495,327. This
-run has different retired work and clock calibration from prior runs:
+Measured maximum term: 57,114,117 engine constructions / 1,623,498 ms,
+cold C emission 705,074 ms, execution 276,196 ms, admission 43,587 ms and
+extent supply 833 ms; total diagnostic 2,936,145 ms. There are 754 live engine
+entries / 262,015 witness bytes, 57,113,363 evictions and 27,125,109 hits under
+unchanged quotas. Source-owner misses are 84,239,226 / hits 65,760,774. This
+run has 91,496,390 actual warm completions, but different retired work and clock calibration from prior runs:
 its elapsed time is not a speedup ratio. Allocated Memory is 22,085,632 bytes,
-not RSS. The diagnostic lazy-message change is loaded in this run.
+not RSS. The disjoint-write and operand-binding candidates were NOT loaded in this run.
+
+The next exact body-sharing red is green through machine-entry ABI 3.
+Matched release hot RIP-relative loads/stores had twelve bodies / 4,122 bytes;
+they now have two / 685 bytes, with cold signed displacement bound by value in
+the existing 24-byte C source row and 80-byte report. Metadata is still 6,880
+bytes / 64 rows. Fresh native/C-Wasm comparison of 79 modules, signed/EIP/
+fault/source-write/latch/type models, full C/CLI checks and scoped sanitizers
+pass. Native bundle and human UI unchanged. No global minimum or boot speedup
+is inferred from this controlled red. See
+[derivation, costs and receipts](../vm/check/browser/evidence/2026-10-05-operand-binding.md).
+
+The fresh entry-ABI sweep also turned the descriptor-store continuation gate
+red: the 67,128-byte VM refused its own latched table frontier after page supply.
+The corrected 67,133-byte VM allows only that saved compiled entry to resume;
+36 unlatched fences, 216 retry/latch cases and generation/quantum refusals pass.
+Native entry/body/MMU, segment trace, source/cohort and IRQ regressions pass;
+no expectations were weakened. See
+[red/green receipt](../vm/check/browser/evidence/2026-10-05-table-continuation.json).
 
 Historical pre-ABI-2 maximum term: 73,441,447 engine constructions / 1,985,421 ms,
 followed by cold C emission 674,917 ms and execution 358,598 ms. Source owner
@@ -40,21 +58,13 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Finish the unchanged bundle/segments/root-image warm-64 full run using
-   the fresh 66,258-byte VM and existing ABI-2 compiler. Warm quanta are
-   enabled only after independently checked decompression AND Linux entry.
-   Complete committed-prefix accounting, actual later fault/physical source,
-   IRQ/console continuation and exact C demand mask are implemented. The
-   old 16-bit trace overflow was red and is green with fixed 32-bit counts.
-   The short prefix requests 64 but has ZERO warmRuns (before Linux entry).
-   Actual warm Linux activation, speedup or PID 1 is not established by it.
-   See [derivation and validation](../vm/check/browser/evidence/2026-10-05-warm-startup.md).
-   The next 67,106-byte candidate additionally retains proved-disjoint physical
-   writes through fresh C successor admission. Scalar/RMW/vector loops, next
-   PTE nonpresent/NX/remap, code aliases and latches are green. Fixed data-loop
-   calls 4,096 -> 64, median 2.226 -> 0.666 ms; not Linux/native speedup.
-   It is NOT loaded into the frozen warm-64 run or retained browser Workers.
-   See [exact frontier and scope](../vm/check/browser/evidence/2026-10-05-disjoint-write.md).
+1. Run the unchanged bundle/segments/root-image warm-64 full check using frozen
+   corrected ABI-3 VM/compiler binaries (67,133 / 447,154 bytes), including proved-disjoint
+   writes and exact operand binding. The short prefix still agrees at 1,617,931
+   retirements / 1,000,000 admissions, with 876 engine constructions; it is
+   before Linux entry and has ZERO warm runs. Record the actual new gate and
+   dominant counts, not an elapsed-time ratio across clock-calibrated runs.
+   No retained browser Worker or staged Wasm is replaced.
 2. Close the next actual common ISA/MMU/machine-ABI red when it appears.
    Strict independent CALL fault-payload/provenance red remains open; no
    expectation was weakened to merge it with the passing ordinary CALL set.

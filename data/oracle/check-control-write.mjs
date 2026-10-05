@@ -19,7 +19,7 @@ for (const name of names) {
   const memory = new WebAssembly.Memory({initial:8});
   const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
   const cut = (await WebAssembly.instantiate(module,{machine:{memory,control:vm.vm_control}})).exports.cut;
-  assert.equal(cut.length,3,'ABI-2 fixture required');
+  assert.equal(cut.length,4,'ABI-3 fixture required');
   const view = new DataView(memory.buffer), bytes = Buffer.from(memory.buffer);
   const directoryOffset = vm.vm_arena_min(), rows = directoryOffset + 512;
   const state = directoryOffset + 4096, segments = state + 1408, port = state + 2048;
@@ -74,7 +74,7 @@ for (const name of names) {
       expected.writeBigUInt64LE(0x202n,392);
       expected.writeBigUInt64LE(entry + BigInt(meta.sourceBytes),384); expected.writeBigUInt64LE(43n,1128);
     }
-    assert.equal(cut(state,port,entry),invalid ? 107n : 1n,`${name}: value ${value.toString(16)} CPL ${cpl}`);
+    assert.equal(cut(state,port,entry,0),invalid ? 107n : 1n,`${name}: value ${value.toString(16)} CPL ${cpl}`);
     assert.deepEqual(bytes.subarray(state,state + 1256),expected); assert.deepEqual(bytes.subarray(segments,segments + 136),hidden);
     if (invalid) {
       assert.equal(view.getBigUint64(port + 16,true),entry);
@@ -90,15 +90,15 @@ for (const name of names) {
   assert.equal(vm.vm_run(port,9n,1),5n); assert.equal(vm.vm_completed(),0);
   reset(0,32n); view.setBigUint64(port,8n,true);
   let before = Buffer.from(bytes.subarray(state,state + 1256));
-  assert.equal(cut(state,port,entry),5n); assert.deepEqual(bytes.subarray(state,state + 1256),before);
+  assert.equal(cut(state,port,entry,0),5n); assert.deepEqual(bytes.subarray(state,state + 1256),before);
   for (const badPort of [state,segments,port + 1,0xfffffff8]) {
     reset(0,32n); before = Buffer.from(bytes.subarray(state,state + 1256));
-    assert.equal(cut(state,badPort,entry),6n); assert.deepEqual(bytes.subarray(state,state + 1256),before);
+    assert.equal(cut(state,badPort,entry,0),6n); assert.deepEqual(bytes.subarray(state,state + 1256),before);
   }
   for (const flag of [0x100n,0x20000n]) {
     reset(0,32n); view.setBigUint64(state + 392,flag | 2n,true);
     before = Buffer.from(bytes.subarray(state,state + 1256));
-    assert.equal(cut(state,port,entry),6n); assert.deepEqual(bytes.subarray(state,state + 1256),before);
+    assert.equal(cut(state,port,entry,0),6n); assert.deepEqual(bytes.subarray(state,state + 1256),before);
   }
   // A failed control write consumes a preceding RMW reservation as well.
   reset(0,32n); assert.equal(vm.vm_reserve(port,entry,8,3),0n);

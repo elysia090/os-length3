@@ -28,6 +28,8 @@ self.onmessage = async ({ data: { generation } }) => {
       { module: 'machine', name: 'memory', kind: 'memory' },
     ]), 'C provider must not import host guest-memory semantics');
     const meta = JSON.parse(new TextDecoder().decode(metaBytes)), records = new DataView(caseBytes);
+    expect(Number.isInteger(meta.operandBinding) && meta.operandBinding>=0
+      && meta.operandBinding<=0xffffffff,'explicit cold scalar binding');
     expect(meta.bytes === 8 && meta.access === 1 && meta.sourceBytes > 0
       && codePage.byteLength === 4096 && caseBytes.byteLength === 512 * 38 * 8, 'native record extent');
     let generated;
@@ -40,12 +42,15 @@ self.onmessage = async ({ data: { generation } }) => {
       // overwrite the VM's static data. Only the derived module escapes.
       const coldMemory = new WebAssembly.Memory({initial:16,maximum:32});
       const compiler = (await WebAssembly.instantiate(compilerModule,{machine:{memory:coldMemory}})).exports;
+      expect(compiler.compiler_entry_abi()===3,'regenerate old compiler/fixtures, not an ABI adapter');
       const input = compiler.compiler_arena_min(), output = input + 8192, report = output + 65536;
       expect(report + compiler.compiler_report_bytes() <= coldMemory.buffer.byteLength,'bounded cold arena');
       new Uint8Array(coldMemory.buffer,input,4096).set(new Uint8Array(codePage));
       expect(compiler.compiler_open_pages(input,1,BigInt(meta.entry) & ~4095n,9n) === 0,'cold borrowed code admission');
       expect(compiler.compiler_emit(BigInt(meta.entry),1,output,65536,report) === 0,'C-Wasm cut construction');
       const bytes = Number(new DataView(coldMemory.buffer).getBigUint64(report + 40,true));
+      expect(new DataView(coldMemory.buffer).getUint32(report+76,true)===meta.operandBinding,
+        'native / cold-Wasm operand attestation');
       generated = new Uint8Array(coldMemory.buffer,output,bytes).slice();
       const expected = new Uint8Array(referenceCut);
       expect(generated.length === expected.length && generated.every((byte,rank) => byte === expected[rank]),
@@ -56,6 +61,7 @@ self.onmessage = async ({ data: { generation } }) => {
     const memory = new WebAssembly.Memory({ initial: 8, maximum: 16 });
     const vm = (await WebAssembly.instantiate(provider, { machine: { memory } })).exports;
     const instance = await WebAssembly.instantiate(cut, { machine: { memory, access: vm.vm_access } });
+    expect(vm.vm_entry_abi()===3 && instance.exports.cut.length===4,'uniform typed table');
     const directory = vm.vm_arena_min(), base = directory + 4096, port = base + 2048;
     const cutRow = directory + 512, entry = BigInt(meta.entry);
     const table = vm.__indirect_function_table, slot = table.grow(1);
@@ -99,7 +105,7 @@ self.onmessage = async ({ data: { generation } }) => {
       page(view, 7, 0x8000n, 28672); page(view, 8, 0x9000n, 40960);
       page(view, 9, 0xa000n, 49152); arena.set(new Uint8Array(codePage), 49152);
       view.setBigUint64(cutRow, entry, true); view.setUint32(cutRow + 8, meta.sourceBytes, true);
-      view.setUint32(cutRow + 12, 1, true); view.setUint32(cutRow + 16, slot, true); view.setUint32(cutRow + 20, 0, true);
+      view.setUint32(cutRow + 12, 1, true); view.setUint32(cutRow + 16, slot, true); view.setUint32(cutRow + 20, meta.operandBinding, true);
       for (let i = 0; i < 8; ++i) {
         const offset = Number(address & 4095n) + i;
         view.setUint8(base + (offset < 4096 ? 28672 + offset : 40960 + offset - 4096),

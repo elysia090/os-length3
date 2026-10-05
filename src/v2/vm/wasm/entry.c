@@ -44,7 +44,7 @@ static pl_u32 boot_header, boot_header_bytes, boot_command;
 static pl_u32 boot_projected;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result pending_boundary(pl_u32 port);
-static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding);
+static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding, pl_u32 operand_binding);
 static machine_result source_entry(void *pointer, pl_u64 address, const vm_execution_row **row);
 static int clock_boundary_pending(void)
 { return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
@@ -431,14 +431,15 @@ machine_result vm_source_extend(pl_u32 port, pl_u32 view_target, pl_u32 row_targ
             || !execution_record(row_target,sizeof(vm_execution_row))) return MACHINE_RESULT_ENTRY_MAP;
     return source_tail(port,view_target,row_target);
 }
-int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 row_target)
+int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 operand_binding, pl_u32 row_target)
 {
     run_source_rank=VM_SOURCE_ROWS;
     if (delivery.stage || table_frontier.stage || execution.continuation.slot
             || !execution_record(row_target,sizeof(vm_execution_row))) {
         sources.pending = 0u; return -1;
     }
-    return vm_sources_publish(&sources,bytes,instructions,(vm_execution_row *)(uintptr_t)row_target);
+    return vm_sources_publish(&sources,bytes,instructions,operand_binding,
+        (vm_execution_row *)(uintptr_t)row_target);
 }
 int vm_sources_reset(void)
 {
@@ -797,7 +798,8 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
         if (sources.generation!=generation || !(sources.valid & (1ull<<rank))
                 || directory_rows->entry!=owned->row.entry
                 || directory_rows->source_bytes!=owned->row.source_bytes
-                || directory_rows->source_instructions!=owned->row.source_instructions) {
+                || directory_rows->source_instructions!=owned->row.source_instructions
+                || directory_rows->operand_binding!=owned->row.operand_binding) {
             vm_execution_close(&execution); return -1;
         }
         source_limit=owned->limit;
@@ -864,7 +866,9 @@ static machine_result interrupt_boundary(pl_u32 port)
 }
 static machine_result pending_boundary(pl_u32 port)
 {
-    if (table_frontier.stage || clock_boundary_pending() || !private_port(port)
+    /* A partial descriptor store may only resume its latched compiled entry.
+     * Fresh source admission remains fenced; events cannot interpose here. */
+    if ((table_frontier.stage && !execution.continuation.slot) || clock_boundary_pending() || !private_port(port)
             || (vm_console_pending(&console_owner) && !execution.continuation.slot)) return MACHINE_RESULT_ENTRY_MAP;
     if (delivery.stage) {
         if (delivery.kind==VM_EVENT_INTERRUPT) return interrupt_boundary(port);
@@ -896,7 +900,7 @@ static machine_result fetch_entry(void *pointer, pl_u64 address)
     return vm_access(owner->port, address, 1u,
                        (pl_u32)MACHINE_MEMORY_READ | (pl_u32)VM_MMU_EXECUTE, 0u);
 }
-static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding)
+static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding, pl_u32 operand_binding)
 {
     const execution_owner *owner = pointer;
     /* Wasm C function pointers are table indices. All admitted functions have
@@ -904,7 +908,7 @@ static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding)
      * never an x86 instruction fallback. Slots stay pinned during vm_run. */
     machine_entry entry = (machine_entry)(uintptr_t)slot;
     vm_memory_abort(&resident);
-    machine_result result = entry(state_offset, owner->port, binding);
+    machine_result result = entry(state_offset, owner->port, binding, operand_binding);
     vm_memory_abort(&resident);
     return result;
 }
@@ -920,7 +924,7 @@ machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
     if (vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) != resident.generation)
         return machine_result_make(MACHINE_RESULT_STALE_GENERATION,0u);
     if (generation!=resident.generation) return MACHINE_RESULT_STALE_GENERATION;
-    if (!maximum_cuts || maximum_cuts>VM_EXECUTION_MAX_QUANTUM || table_frontier.stage)
+    if (!maximum_cuts || maximum_cuts>VM_EXECUTION_MAX_QUANTUM)
         return MACHINE_RESULT_ENTRY_MAP;
     machine_result boundary=pending_boundary(port);
     if (boundary) return boundary;

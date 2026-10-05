@@ -213,7 +213,7 @@ for(const oldShadow of [0,1,2]){
     assert.equal(view.getBigUint64(report+32,true),BigInt(length));
     const cut=(await WebAssembly.instantiate(bytes.slice(output,output+Number(view.getBigUint64(report+40,true))),
       {machine:{memory,interrupt_flag:vm.vm_flag}})).instance.exports.cut;
-    vm.__indirect_function_table.set(ownedSlot,cut);assert.equal(vm.vm_source_publish(length,1,rows),0);
+    vm.__indirect_function_table.set(ownedSlot,cut);assert.equal(vm.vm_source_publish(length,1,view.getUint32(report+76,true),rows),0);
   }
   pending();gate(40);
   assert.equal(vm.vm_source_query(port,start,1,codeView,rows),0n);
@@ -239,7 +239,7 @@ for(const oldShadow of [0,1,2]){
 // requests a larger block. The source cache cannot bypass that constraint.
 reset();v.setUint32(segments+4,2,true);data.set([0x90,0x90],payload(6));
 assert.equal(vm.vm_source_query(port,0x9000n,8,codeView,rows),1n);
-assert.equal(vm.vm_source_publish(2,2,rows),-1);
+assert.equal(vm.vm_source_publish(2,2,0,rows),-1);
 // ABI v1 used this same word for a different inhibition contract.
 reset();v.setUint32(segments,1,true);assert.equal(vm.vm_bind_segments(segments),-1);
 v.setUint32(segments,2,true);assert.equal(vm.vm_bind_segments(segments),0);

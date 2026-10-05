@@ -45,11 +45,11 @@ function reset(source,meta,{cpl=0,selector=24,low=0x1234n|BigInt(meta.task ? 0x8
   put(state+384,entry); put(state+392,flags); put(state+400,0x80010011); put(state+408,0x1000);
   put(state+416,32); put(state+424,0xd00); put(state+488,8|cpl); put(state+1128,42);
   put(state+448,entry+BigInt(offset-24)); put(state+456,limit); put(port,9);
-  dw(hidden,1); dw(hidden+36,0xa09b|(cpl<<5));
+  dw(hidden,2); dw(hidden+36,0xa09b|(cpl<<5));
   for (const rank of [6,7]) { put(hidden+8+rank*16,0xabcdef); dw(hidden+16+rank*16,123); dw(hidden+20+rank*16,0x10000); }
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,resident ? 6 : 5,8,branches,9n),0);
   assert.equal(vm.vm_bind_state(state),0); assert.equal(vm.vm_bind_segments(hidden),0);
-  put(rows,entry); dw(rows+8,meta.sourceBytes); dw(rows+12,1); dw(rows+16,slot); dw(rows+20,0);
+  put(rows,entry); dw(rows+8,meta.sourceBytes); dw(rows+12,1); dw(rows+16,slot); dw(rows+20,meta.operandBinding);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 function compare(meta,selector,vector,error,offset=1024) {
@@ -81,6 +81,7 @@ for (let index=0;index<144;++index) {
   cold.set(source,ci); assert.equal(cc.compiler_open_pages(ci,1,entry,9n),0);
   assert.equal(cc.compiler_emit(entry,1,co,65536,cr),0); assert.equal(cv.getBigUint64(cr+40,true),BigInt(code.length));
   assert(cold.subarray(co,co+code.length).equals(code)); ++parity;
+  meta.operandBinding=cv.getUint32(cr+76,true);
   const module=await WebAssembly.compile(code);
   assert.deepEqual(WebAssembly.Module.imports(module),[{module:'machine',name:'memory',kind:'memory'},
     ...(meta.memory ? [{module:'machine',name:'access',kind:'function'}] : []),{module:'machine',name:'segment',kind:'function'}]);

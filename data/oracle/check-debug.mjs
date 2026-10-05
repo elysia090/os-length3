@@ -21,7 +21,7 @@ for (const file of files) {
   const memory=new WebAssembly.Memory({initial:8});
   const vm=(await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
   const cut=(await WebAssembly.instantiate(module,{machine:{memory,debug:vm.vm_debug}})).exports.cut;
-  assert.equal(cut.length,3,'ABI-2 fixture required');
+  assert.equal(cut.length,4,'ABI-3 fixture required');
   const view=new DataView(memory.buffer),bytes=Buffer.from(memory.buffer);
   const dir=vm.vm_arena_min(),rows=dir+512,state=dir+4096,segments=state+1408,port=state+2048;
   const put=(at,v)=>view.setBigUint64(at,BigInt(v),true);
@@ -62,7 +62,7 @@ for (const file of files) {
       expected.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);
       expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(43n,1128);
     }
-    assert.equal(cut(state,port,entry),vector ? BigInt(vector*8+3) : 1n,`${file} CPL${cpl} GD${gd} ${value.toString(16)}`);
+    assert.equal(cut(state,port,entry,0),vector ? BigInt(vector*8+3) : 1n,`${file} CPL${cpl} GD${gd} ${value.toString(16)}`);
     assert.deepEqual(bytes.subarray(state,state+1256),expected);
     assert.deepEqual(bytes.subarray(segments,segments+136),hidden);
     if (vector) {assert.equal(view.getUint32(port+24,true),vector);assert.equal(view.getUint32(port+28,true),0);}
@@ -73,16 +73,16 @@ for (const file of files) {
   for (let bit=0;bit<8;++bit) {
     reset(0,0,0n);put(state+600,1n<<BigInt(bit));
     const before=Buffer.from(bytes.subarray(state,state+4096));
-    assert.equal(cut(state,port,entry),6n);assert.deepEqual(bytes.subarray(state,state+4096),before);
+    assert.equal(cut(state,port,entry,0),6n);assert.deepEqual(bytes.subarray(state,state+4096),before);
     assert.equal(vm.vm_bind_execution(rows,1,9n),0);assert.equal(vm.vm_run(port,9n,1),6n);
     assert.equal(vm.vm_completed(),0);assert.deepEqual(bytes.subarray(state,state+4096),before);++refusals;
   }
   for (const badPort of [state,segments,port+1,0xfffffff8]) {
     reset(0,0,0n);const before=Buffer.from(bytes.subarray(state,state+4096));
-    assert.equal(cut(state,badPort,entry),6n);assert.deepEqual(bytes.subarray(state,state+4096),before);++refusals;
+    assert.equal(cut(state,badPort,entry,0),6n);assert.deepEqual(bytes.subarray(state,state+4096),before);++refusals;
   }
   reset(0,0,0n);put(port,8);const before=Buffer.from(bytes.subarray(state,state+4096));
-  assert.equal(cut(state,port,entry),5n);assert.deepEqual(bytes.subarray(state,state+4096),before);++refusals;
+  assert.equal(cut(state,port,entry,0),5n);assert.deepEqual(bytes.subarray(state,state+4096),before);++refusals;
   reset(0,0,0n);assert.equal(vm.vm_reserve(port,entry,8,3),0n);
   assert.equal(vm.vm_debug(port,2,0,0n),6n);assert.equal(vm.vm_commit(port,0n),6n);++refusals;
 }

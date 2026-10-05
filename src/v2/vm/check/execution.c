@@ -6,7 +6,7 @@ static machine_state state;
 static machine_segments segments;
 static vm_execution_row rows[2];
 static pl_u32 calls, fetches, stop, revoke, revoke_fetch, load_ss, call_fault;
-static pl_u32 yielding, called_slot;
+static pl_u32 yielding, called_slot, called_operand;
 static pl_u64 fetched[2], called_entry;
 static pl_u32 selections, miss_selection, change_context, debug_after_call;
 static int failures;
@@ -18,11 +18,12 @@ static machine_result fetch(void *owner, pl_u64 address)
     if (revoke_fetch) execution.generation = 0u;
     return fetches == stop ? machine_result_make(MACHINE_RESULT_FAULT, 14u) : 0u;
 }
-static machine_result call(void *owner, pl_u32 slot, pl_u64 entry)
+static machine_result call(void *owner, pl_u32 slot, pl_u64 entry, pl_u32 operand_binding)
 {
     (void)owner; ++calls;
     called_slot = slot;
     called_entry = entry;
+    called_operand = operand_binding;
     EXPECT(entry == state.rip);
     if (call_fault) return 107u;
     if (yielding) {
@@ -118,18 +119,20 @@ int main(void)
     EXPECT(execution.completed == 1u && execution.retired == 1u);
     EXPECT(run(9u, 2u) == 5u && calls == 1u);
     reset(); yielding = revoke = 1u; execution.segments = &segments; segments.interrupt_shadow = 1u;
+    rows[0].operand_binding = 0x80000001u;
     EXPECT(run(9u,1u) == 10u && fetches == 1u && calls == 1u);
     EXPECT(!execution.completed && !execution.retired && !state.retired && segments.interrupt_shadow == 1u);
     /* Source bytes/borrowed rows may have changed by this instruction's own
      * stores. Its latched slot, not a fresh fetch/row lookup, must resume. */
     rows[0].slot = 2u;
     rows[0].entry = 0x400020u;
+    rows[0].operand_binding = 1u;
     EXPECT(run(8u,1u) == 5u && calls == 1u);
     EXPECT(run(9u,1u) == 10u && fetches == 1u && calls == 2u && called_slot == 1u);
-    EXPECT(called_entry == 0x400000u);
+    EXPECT(called_entry == 0x400000u && called_operand == 0x80000001u);
     yielding = 0u;
     EXPECT(run(9u,1u) == 5u && calls == 3u && fetches == 1u && state.retired == 1u);
-    EXPECT(called_entry == 0x400000u);
+    EXPECT(called_entry == 0x400000u && called_operand == 0x80000001u);
     EXPECT(execution.completed == 1u && execution.retired == 1u && !segments.interrupt_shadow);
     EXPECT(run(9u,1u) == 5u && calls == 3u);
     reset(); yielding = 2u;
@@ -187,9 +190,9 @@ int main(void)
     EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);
     EXPECT(run(9u, 1u) == 5u && !calls);
     for (pl_u32 i = 0u; i < 100000u; ++i) {
-        reset(); rows[i & 1u].reserved = 1u;
-        EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);
-        EXPECT(!execution.generation && !execution.rows);
+        reset(); rows[0].operand_binding = i * 42949u;
+        EXPECT(!vm_execution_open(&execution, rows, 2u, 9u, &state));
+        EXPECT(run(9u,1u)==1u && called_operand==i * 42949u);
     }
     reset(); rows[1].entry = rows[0].entry;
     EXPECT(vm_execution_open(&execution, rows, 2u, 9u, &state) == -1);

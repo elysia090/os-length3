@@ -116,7 +116,8 @@ the continuation or whole ELF is covered. All source meaning comes from
 ordinary PF_X segments; no proof count is mistaken for a block table. The new
 `x86` dependency is cold compiler machinery only. The generated module imports
 one ordinary wasm32 `machine.memory` and exports
-`cut(i32 state, i32 port, i64 admitted_entry) -> i64` (machine-entry ABI 2); it imports
+`cut(i32 state, i32 port, i64 admitted_entry, i32 operand_binding) -> i64`
+(machine-entry ABI 3); it imports
 no source reader, host function or decoder. Architectural addresses stay i64.
 
 Supported transfers in this checkpoint are register/immediate MOV, MOVZX/SX,

@@ -7,7 +7,7 @@ if(!compilerFile)throw new Error('usage: check-source-cohort.mjs VM.WASM COMPILE
 const memory=new WebAssembly.Memory({initial:16,maximum:18}),coldMemory=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
-assert.equal(vm.vm_entry_abi(),2);assert.equal(cc.compiler_entry_abi(),2);
+assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
 let data=Buffer.from(memory.buffer),view=new DataView(memory.buffer);
 const cold=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer);
 const input=cc.compiler_arena_min(),output=input+8192,receipt=output+65536;
@@ -99,8 +99,8 @@ async function prime(selected=parts,limit=1024,start=entry){
       io:vm.vm_io,reserve:vm.vm_reserve,commit:vm.vm_commit,interrupt_flag:vm.vm_flag,
       read_pair:vm.vm_read_pair,write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,
       write_end:vm.vm_write_end,reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair}})).instance.exports.cut;
-    assert.equal(cut.length,3);table.set(slot,cut);
-    assert.equal(vm.vm_source_publish(part.bytes,1,rows),0);++emissions;
+    assert.equal(cut.length,4);table.set(slot,cut);
+    assert.equal(vm.vm_source_publish(part.bytes,1,cv.getUint32(receipt+76,true),rows),0);++emissions;
   }
   assert.equal(vm.vm_source_query(port,start,limit,codeView,rows),0n);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);

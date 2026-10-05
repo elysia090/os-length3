@@ -49,7 +49,7 @@ function reset(source,meta,record,{mode,mask=0,rf=0n,unaligned=false,noncanonica
   assert.equal(vm.vm_open(base,data.length-base,4096,directoryAt,8,8,directoryAt+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry); view.setUint32(rows+8,meta.sourceBytes,true); view.setUint32(rows+12,1,true);
-  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,0,true);
+  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   return imageOffset;
 }
@@ -74,7 +74,7 @@ try {
       for(const dispatch of [false,true])for(const rf of [0n,0x10000n]) {
         const at=reset(source,meta,record,{rf}),oldPayload=Buffer.from(data.subarray(payload,payload+8192));
         const expectedPayload=Buffer.from(oldPayload); record.copy(expectedPayload,at,3024,3536);
-        assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch?5n:1n,`${form}/${row}: execute`);
+        assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,view.getUint32(rows+20,true)),dispatch?5n:1n,`${form}/${row}: execute`);
         if(dispatch){assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);}
         assert(cpu().equals(expected),`${form}/${row}: complete CPU`);
         assert(data.subarray(payload,payload+8192).equals(expectedPayload),`${form}/${row}: whole output/neighbor bytes`);
@@ -89,13 +89,13 @@ try {
       ...form===3?[]:[{mode:'absent',noncanonical:true,vector:form===2?12:13,error:0}],
     ]) {
       reset(source,meta,record,{...scenario,rf}); const before=cpu(),oldPayload=Buffer.from(data.subarray(payload,payload+8192));
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),(BigInt(scenario.vector)<<3n)|3n,`${form}: ${JSON.stringify(scenario)}`);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,view.getUint32(rows+20,true)),(BigInt(scenario.vector)<<3n)|3n,`${form}: ${JSON.stringify(scenario)}`);
       assert(cpu().equals(before)); assert(data.subarray(payload,payload+8192).equals(oldPayload));
       assert.equal(view.getUint32(port+24,true),scenario.vector); assert.equal(view.getUint32(port+28,true),scenario.error); ++faults;
     }
     for(const dispatch of [false,true]) {
       reset(source,meta,record,{mode:'deferred'}); const before=cpu(),oldPayload=Buffer.from(data.subarray(payload,payload+8192));
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),2n);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,view.getUint32(rows+20,true)),2n);
       assert(cpu().equals(before)); assert(data.subarray(payload,payload+8192).equals(oldPayload));
       assert.equal(view.getBigUint64(port+32,true),0xa000n); ++waits;
       // Supply this exact deferred physical descriptor, not repair guest PTEs.
@@ -105,7 +105,7 @@ try {
       const at=Number(record.readBigUInt64LE(addressReg*8)-BigInt(meta.address))
         +(form===6?16:form===7?80:0);
       record.copy(expectedPayload,at,3024,3536);
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch?5n:1n);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,view.getUint32(rows+20,true)),dispatch?5n:1n);
       if(dispatch){assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);}
       assert(cpu().equals(record.subarray(1256,2512)));
       assert(data.subarray(payload,payload+8192).equals(expectedPayload)); ++waits;
@@ -114,11 +114,11 @@ try {
     }
     for(const badPort of [port+1,base,base+8,base+1248,data.length-24,-1]) {
       reset(source,meta,record); const before=cpu(),oldPayload=Buffer.from(data.subarray(payload,payload+8192));
-      assert.equal(cut(base,badPort,entry),6n); assert(cpu().equals(before));
+      assert.equal(cut(base,badPort,entry,view.getUint32(rows+20,true)),6n); assert(cpu().equals(before));
       assert(data.subarray(payload,payload+8192).equals(oldPayload)); ++refusals;
     }
     for(const badState of [base+1,0xfffffff8,data.length-1248]) {
-      reset(source,meta,record); const before=cpu(); assert.equal(cut(badState,port,entry),6n);
+      reset(source,meta,record); const before=cpu(); assert.equal(cut(badState,port,entry,view.getUint32(rows+20,true)),6n);
       assert(cpu().equals(before)); ++refusals;
     }
     // OSFXSR=0 is implementation dependent for the SIMD portion. This fixed
@@ -127,7 +127,7 @@ try {
     const expected=Buffer.from(record.subarray(1256,2512)); expected.writeBigUInt64LE(32n,416);
     const expectedPayload=Buffer.from(data.subarray(payload,payload+8192));
     record.copy(expectedPayload,at,3024,3536);
-    assert.equal(cut(base,port,entry),1n);
+    assert.equal(cut(base,port,entry,view.getUint32(rows+20,true)),1n);
     assert(cpu().equals(expected)); assert(data.subarray(payload,payload+8192).equals(expectedPayload));
     ++profileModels;
   }

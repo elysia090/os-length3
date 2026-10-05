@@ -26,15 +26,15 @@ static void mmu_alias(void)
     EXPECT(!vm_mmu_code_page(&memory,0u,&cpu,0x400008u,&code));
     EXPECT(code.offset == 8192u); /* Guest code physically aliases its PML4. */
     EXPECT(vm_sources_probe(&sources,&code,0x400008u,1u,&row) == 1);
-    EXPECT(!vm_sources_publish(&sources,8u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,8u,1u,0u,&row));
     /* A on another virtual path touches that source before a later #PF. */
     EXPECT(machine_result_kind(vm_mmu_access(&memory,0u,&cpu,0x8000001000ull,1u,9u,0u)) == MACHINE_RESULT_FAULT);
     EXPECT(vm_sources_probe(&sources,&code,0x400008u,1u,&row) == 1);
-    EXPECT(!vm_sources_publish(&sources,8u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,8u,1u,0u,&row));
     EXPECT(!vm_mmu_reserve(&memory,0u,&cpu,0x400008u,8u,3u));
     EXPECT(!vm_memory_commit(&memory,0u,0x2007u));
     EXPECT(vm_sources_probe(&sources,&code,0x400008u,1u,&row) == 1);
-    EXPECT(!vm_sources_publish(&sources,8u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,8u,1u,0u,&row));
     EXPECT(!vm_mmu_access(&memory,0u,&cpu,0x400008u,1u,2u,7u));
     EXPECT(vm_sources_probe(&sources,&code,0x400008u,1u,&row) == 1);
 }
@@ -46,21 +46,38 @@ static void demand_lifetime(void)
      * This exercises the C owner, not the host emitted-module cache. */
     vm_sources_open(&sources,9u,3u);
     EXPECT(probe(page.address,1024u) == 1);
-    EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
     const pl_u32 hot_slot = row.slot;
     pl_u32 hot_misses = 0u, slot_changes = 0u;
     for (pl_u32 i = 0u; i < 4096u; ++i) {
         EXPECT(probe(page.address+1u+(i%4095u),1024u) == 1);
-        EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
         if (probe(page.address,1024u) != 0) {
             ++hot_misses;
-            EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+            EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
         }
         slot_changes += row.slot != hot_slot;
     }
     if (hot_misses) fprintf(stderr,"source: hot source unnecessarily recompiled %u times\n",hot_misses);
     EXPECT(hot_misses == 0u);
     EXPECT(slot_changes == 0u);
+    vm_sources_open(&sources,9u,3u);
+}
+static void operand_binding(void)
+{
+    for (pl_u32 i=0u; i<65536u; ++i) {
+        vm_sources_open(&sources,9u,3u);
+        pl_u32 binding=i*65537u;
+        EXPECT(probe(page.address,1u)==1);
+        EXPECT(!vm_sources_publish(&sources,7u,1u,binding,&row));
+        EXPECT(row.operand_binding==binding);
+        EXPECT(probe(page.address,1u)==0 && row.operand_binding==binding);
+        const vm_execution_row *borrowed=0;
+        EXPECT(!vm_sources_reuse(&sources,&page,0,page.address,1u,&borrowed));
+        EXPECT(borrowed && borrowed->operand_binding==binding);
+        vm_sources_write(&sources,page.offset,1u);
+        EXPECT(vm_sources_reuse(&sources,&page,0,page.address,1u,&borrowed)==1);
+    }
     vm_sources_open(&sources,9u,3u);
 }
 typedef struct {
@@ -133,10 +150,10 @@ static void demand_reference(void)
             if ((random&31u)==0u) {
                 /* A failed/cancelled compile owns no valid rank or demand. */
                 vm_sources_write(&sources,page.offset+4000u,1u);
-                EXPECT(vm_sources_publish(&sources,1u,1u,&row)==-1);
+                EXPECT(vm_sources_publish(&sources,1u,1u,0u,&row)==-1);
                 reference_check(); continue;
             }
-            EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+            EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
         }
         reference[rank]=(reference_row){entry,turn,page.offset,limit,1};
         if ((random&15u)==2u) {
@@ -161,11 +178,11 @@ static void crossing_demand(void)
         vm_sources_open(&sources,9u,3u);
         EXPECT(probe(hot,1024u)==1);
         EXPECT(vm_sources_extend(&sources,&next,&row)==1);
-        EXPECT(!vm_sources_publish(&sources,2u,1u,&row));
+        EXPECT(!vm_sources_publish(&sources,2u,1u,0u,&row));
         const pl_u32 hot_slot=row.slot;
         for (pl_u32 i=1u;i<VM_SOURCE_ROWS;++i) {
             EXPECT(probe(page.address+i,1024u)==1);
-            EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+            EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
         }
         EXPECT(probe(hot,1024u)==2);
         vm_code_page tail=next;
@@ -173,14 +190,14 @@ static void crossing_demand(void)
         EXPECT(vm_sources_extend(&sources,&tail,&row)==(accepted?0:-1));
         EXPECT(probe(page.address+VM_SOURCE_ROWS,1024u)==1);
         EXPECT((row.slot==hot_slot)==!accepted);
-        EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
         if (accepted) {
             for (pl_u32 i=0u;i<4096u;++i) {
                 EXPECT(probe(hot,1024u)==2);
                 EXPECT(!vm_sources_extend(&sources,&next,&row) && row.slot==hot_slot);
                 int result=probe(page.address+1u+(i%4094u),1024u);
                 EXPECT(result==0 || result==1);
-                if (result==1) EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+                if (result==1) EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
             }
         }
     }
@@ -192,10 +209,10 @@ static void crossing(void)
     vm_code_page next = {page.address+4096u,9u,32768u,4096u};
     vm_sources_open(&sources,9u,3u);
     EXPECT(probe(entry,1024u) == 1);
-    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,3u,1u,0u,&row) == -1);
     EXPECT(probe(entry,1024u) == 1);
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
-    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     pl_u32 slot = row.slot;
     EXPECT(probe(entry,1024u) == 2);
     EXPECT(!vm_sources_extend(&sources,&next,&row));
@@ -208,43 +225,43 @@ static void crossing(void)
     vm_sources_write(&sources,next.offset+1u,1u);
     EXPECT(probe(entry,1024u) == 1);
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
-    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     vm_sources_write(&sources,page.offset+4095u,1u);
     EXPECT(probe(entry,1024u) == 1);
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
     vm_sources_write(&sources,next.offset+100u,1u);
-    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,3u,1u,0u,&row) == -1);
     EXPECT(probe(entry,1024u) == 1);
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
     vm_sources_write(&sources,page.offset+100u,1u);
-    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,3u,1u,0u,&row) == -1);
     /* Source generation and mapping changes cannot reuse an old tail. */
     EXPECT(probe(entry,1024u) == 1);
     vm_code_page wrong = next; wrong.generation = 10u;
     memset(&row,0xa5,sizeof row); vm_execution_row saved = row;
     EXPECT(vm_sources_extend(&sources,&wrong,&row) == -1);
     EXPECT(!memcmp(&row,&saved,sizeof row));
-    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,3u,1u,0u,&row) == -1);
     EXPECT(probe(entry,1024u) == 1);
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
-    EXPECT(vm_sources_publish(&sources,16u,1u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,16u,1u,0u,&row) == -1);
     EXPECT(probe(entry,1024u) == 1);
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
-    EXPECT(vm_sources_publish(&sources,3u,2u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,3u,2u,0u,&row) == -1);
     EXPECT(probe(entry,1024u) == 1);
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
-    EXPECT(!vm_sources_publish(&sources,15u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,15u,1u,0u,&row));
     EXPECT(probe(entry,1024u) == 2);
     next.offset = 36864u;
     EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
-    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     /* Collision and physical alias owners must also revoke both extents. */
     for (pl_u32 alias=0u;alias<2u;++alias) {
         next.offset = page.offset+(alias ? 0u : VM_SOURCE_WATCH_BUCKETS*4096u);
         vm_sources_open(&sources,9u,3u);
         EXPECT(probe(entry,1024u) == 1);
         EXPECT(vm_sources_extend(&sources,&next,&row) == 1);
-        EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+        EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
         vm_sources_write(&sources,next.offset+2u,1u);
         EXPECT(probe(entry,1024u) == 2);
         EXPECT(!vm_sources_extend(&sources,&next,&row));
@@ -261,7 +278,7 @@ static void warm_reuse(void)
     vm_code_page next={page.address+4096u,9u,32768u,4096u};
     vm_sources_open(&sources,9u,3u);
     EXPECT(probe(entry,1024u)==1 && vm_sources_extend(&sources,&next,&row)==1);
-    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     const pl_u32 rank=row.slot-sources.first_slot;
     /* Keep a distinct pinned cold compile alive. Warm miss/refusal and
      * partial crossing validation cannot evict or cancel that transaction. */
@@ -283,13 +300,13 @@ static void warm_reuse(void)
     EXPECT(!vm_sources_reuse(&sources,&page,&next,entry,1024u,&borrowed));
     EXPECT(borrowed==&sources.rows[rank].row && sources.pending
         && sources.pending_rank==snapshot.pending_rank);
-    EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
     /* Two colliding index/watch buckets, same VA/limit, different physical
      * owners: neither hash nor the first matching virtual key is identity. */
     for(pl_u32 owner=0u;owner<2u;++owner){
         page.offset=owner ? 0x102000u : 8192u;
         EXPECT(probe(page.address+80u,1024u)==1);
-        EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+        EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
     }
     for(pl_u32 turn=0u;turn<4096u;++turn){
         page.offset=(turn&1u) ? 0x102000u : 8192u;
@@ -307,7 +324,7 @@ int main(void)
 {
     vm_sources_open(&sources,9u,3u);
     EXPECT(probe(0x400080u,1024u) == 1);
-    EXPECT(!vm_sources_publish(&sources,7u,2u,&row));
+    EXPECT(!vm_sources_publish(&sources,7u,2u,0u,&row));
     pl_u32 slot = row.slot;
     EXPECT(probe(0x400080u,1024u) == 0 && row.slot == slot && row.source_bytes == 7u);
     /* Actual RAM writes, including reservation commit, must notify before
@@ -319,71 +336,72 @@ int main(void)
     memcpy(ram,&page.generation,8u);
     EXPECT(!vm_memory_access(&memory,0u,0x400086u,1u,MACHINE_MEMORY_WRITE,1u));
     EXPECT(probe(0x400080u,1024u) == 1);
-    EXPECT(!vm_sources_publish(&sources,7u,2u,&row));
+    EXPECT(!vm_sources_publish(&sources,7u,2u,0u,&row));
     /* The source is not copied. Writes outside its exact extent do not revoke. */
     vm_sources_write(&sources,8192u + 127u,1u);
     vm_sources_write(&sources,8192u + 135u,8u);
     EXPECT(probe(0x400080u,1024u) == 0);
     vm_sources_write(&sources,8192u + 134u,1u);
     EXPECT(probe(0x400080u,1024u) == 1);
-    EXPECT(!vm_sources_publish(&sources,7u,2u,&row));
+    EXPECT(!vm_sources_publish(&sources,7u,2u,0u,&row));
     /* A page-table alias uses the same physical write observer. */
     vm_sources_write(&sources,8192u + 128u,8u);
     EXPECT(probe(0x400080u,1024u) == 1);
     /* Compile/instantiate may await. Any source-page write cancels the pin. */
     vm_sources_write(&sources,8192u + 512u,1u);
-    EXPECT(vm_sources_publish(&sources,7u,2u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,7u,2u,0u,&row) == -1);
     EXPECT(probe(0x400080u,1024u) == 1);
     vm_sources_write(&sources,12288u,8u);
-    EXPECT(!vm_sources_publish(&sources,7u,2u,&row));
+    EXPECT(!vm_sources_publish(&sources,7u,2u,0u,&row));
     EXPECT(probe(0x400080u,1u) == 1);
-    EXPECT(vm_sources_publish(&sources,7u,2u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,7u,2u,0u,&row) == -1);
     EXPECT(probe(0x400080u,1u) == 1);
-    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     EXPECT(probe(0x400080u,1u) == 0);
     page.offset = 12288u;
     EXPECT(probe(0x400080u,1u) == 1); /* Identical VA, different physical owner. */
-    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     page.generation = 10u;
     memset(&row,0xa5,sizeof row); vm_execution_row saved = row;
     EXPECT(probe(0x400080u,1u) == -1 && !memcmp(&row,&saved,sizeof row));
-    EXPECT(vm_sources_publish(&sources,3u,1u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,3u,1u,0u,&row) == -1);
     page.generation = 9u; page.offset = 8192u;
     EXPECT(probe(0x401000u,1u) == -1);
     EXPECT(probe(0x400fffu,1u) == 1);
-    EXPECT(vm_sources_publish(&sources,2u,1u,&row) == -1);
+    EXPECT(vm_sources_publish(&sources,2u,1u,0u,&row) == -1);
     EXPECT(probe(0x400fffu,1u) == 1);
-    EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
     EXPECT(probe(0x400fffu,1u) == 0);
     vm_sources_write(&sources,8192u + 4095u,2u);
     EXPECT(probe(0x400fffu,1u) == 1);
-    EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
     vm_sources_open(&sources,9u,3u); /* Same generation reset must still revoke. */
     EXPECT(probe(0x400fffu,1u) == 1);
-    EXPECT(!vm_sources_publish(&sources,1u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
     /* Many collision/replacement/write cases, always bounded at 64 rows. */
     for (pl_u32 i = 0u; i < 100000u; ++i) {
         pl_u64 at = 0x400000u + (i * 17u % 4090u);
         int result = probe(at,1024u);
         EXPECT(result == 0 || result == 1);
-        if (result == 1) EXPECT(!vm_sources_publish(&sources,6u,2u,&row));
+        if (result == 1) EXPECT(!vm_sources_publish(&sources,6u,2u,0u,&row));
         EXPECT(probe(at,1024u) == 0);
         EXPECT(row.slot >= 3u && row.slot < 3u + VM_SOURCE_ROWS);
         vm_sources_write(&sources,8192u + (pl_u32)(at & 4095u) + 5u,1u);
         EXPECT(probe(at,1024u) == 1);
-        EXPECT(!vm_sources_publish(&sources,6u,2u,&row));
+        EXPECT(!vm_sources_publish(&sources,6u,2u,0u,&row));
     }
     vm_sources_open(&sources,0u,3u); EXPECT(probe(0x400000u,1u) == -1);
     vm_sources_open(&sources,9u,VM_EXECUTION_MAX_ROWS); EXPECT(probe(0x400000u,1u) == -1);
     vm_sources_open(&sources,9u,3u); page.offset = 0x102000u;
-    EXPECT(probe(0x400080u,1u) == 1); EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(probe(0x400080u,1u) == 1); EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     vm_sources_write(&sources,8192u+128u,1u); /* Same watch bucket, different physical page. */
     EXPECT(probe(0x400080u,1u) == 0);
     vm_sources_write(&sources,0x102080u,1u); EXPECT(probe(0x400080u,1u) == 1);
-    EXPECT(!vm_sources_publish(&sources,3u,1u,&row));
+    EXPECT(!vm_sources_publish(&sources,3u,1u,0u,&row));
     vm_sources_write(&sources,0u,0xffffffffu); EXPECT(probe(0x400080u,1u) == 1);
     page.offset = 8192u;
     demand_lifetime();
+    operand_binding();
     demand_reference();
     crossing_demand();
     crossing();

@@ -87,7 +87,7 @@ for (let rank = 0; rank < 3; ++rank) {
       expected.writeBigUInt64LE(0x202n,392); expected.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);
       expected.writeBigUInt64LE(43n,1128);
     }
-    assert.equal(cut(state,port,entry),invalid ? 107n : 1n,`${rank} key ${key.toString(16)} value ${value.toString(16)} CPL ${cpl}`);
+    assert.equal(cut(state,port,entry,0),invalid ? 107n : 1n,`${rank} key ${key.toString(16)} value ${value.toString(16)} CPL ${cpl}`);
     assert.deepEqual(bytes.subarray(state,state+1256),expected); assert.deepEqual(bytes.subarray(segments,segments+136),hidden);
     if (invalid) {
       assert.equal(view.getBigUint64(port+16,true),entry); assert.equal(view.getUint32(port+24,true),13);
@@ -100,15 +100,15 @@ for (let rank = 0; rank < 3; ++rank) {
   assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n); ++dispatches;
   for (const badPort of [state,segments,port+1,0xfffffff8]) {
     reset(0,keys[2],0n); const before = Buffer.from(bytes.subarray(state,state+4096));
-    assert.equal(cut(state,badPort,entry),6n); assert.deepEqual(bytes.subarray(state,state+4096),before);
+    assert.equal(cut(state,badPort,entry,0),6n); assert.deepEqual(bytes.subarray(state,state+4096),before);
   }
   reset(0,keys[2],0n); put(port,8); const before = Buffer.from(bytes.subarray(state,state+4096));
-  assert.equal(cut(state,port,entry),5n); assert.deepEqual(bytes.subarray(state,state+4096),before);
+  assert.equal(cut(state,port,entry,0),5n); assert.deepEqual(bytes.subarray(state,state+4096),before);
   reset(0,keys[2],0n); assert.equal(vm.vm_reserve(port,entry,8,3),0n);
   assert.equal(vm.vm_msr(port,0,0xffffffff,0n),107n); assert.equal(vm.vm_commit(port,0n),6n);
   if (rank !== 2) for (const key of [0x10]) {
     reset(0,key,0n); const before = Buffer.from(bytes.subarray(state,state+4096));
-    assert.equal(cut(state,port,entry),6n); assert.deepEqual(bytes.subarray(state,state+4096),before);
+    assert.equal(cut(state,port,entry,0),6n); assert.deepEqual(bytes.subarray(state,state+4096),before);
     assert.equal(view.getUint32(port+24,true),0,'known but unimplemented is not an invented exception');
   }
   if (rank !== 2) {
@@ -128,7 +128,7 @@ for (let rank = 0; rank < 3; ++rank) {
         expected.writeBigUInt64LE(0x202n,392); expected.writeBigUInt64LE(entry+2n,384);
         expected.writeBigUInt64LE(43n,1128);
       }
-      assert.equal(cut(state,port,entry),cpl ? 107n : 1n); assert.deepEqual(bytes.subarray(state,state+1256),expected);
+      assert.equal(cut(state,port,entry,0),cpl ? 107n : 1n); assert.deepEqual(bytes.subarray(state,state+1256),expected);
       assert.deepEqual(bytes.subarray(segments,segments+136),hidden); ++comparisons;
     }
     reset(0,0x1a0,0x1801n); assert.equal(vm.vm_bind_execution(rows,1,9n),0);
@@ -137,7 +137,7 @@ for (let rank = 0; rank < 3; ++rank) {
     if (!rank) for (let bit=0;bit<64;++bit) {
       if ([0,22,34].includes(bit)) continue;
       reset(0,0x1a0,0x1801n^(1n<<BigInt(bit))); const before=Buffer.from(bytes.subarray(state,state+4096));
-      assert.equal(cut(state,port,entry),bit === 11 || bit === 12 ? 6n : 107n);
+      assert.equal(cut(state,port,entry,0),bit === 11 || bit === 12 ? 6n : 107n);
       assert.deepEqual(bytes.subarray(state,state+1256),before.subarray(0,1256));
       assert.deepEqual(bytes.subarray(segments,segments+136),before.subarray(1408,1544));
       if (bit === 11 || bit === 12) assert.equal(view.getUint32(port+24,true),0);

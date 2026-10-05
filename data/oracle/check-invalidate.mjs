@@ -16,7 +16,7 @@ for (const name of names) {
   assert.deepEqual(WebAssembly.Module.imports(module),[{module:'machine',name:'memory',kind:'memory'}]);
   const memory=new WebAssembly.Memory({initial:2});
   const cut=(await WebAssembly.instantiate(module,{machine:{memory}})).exports.cut;
-  assert.equal(cut.length,3,'ABI-2 fixture required');
+  assert.equal(cut.length,4,'ABI-3 fixture required');
   const bytes=Buffer.from(memory.buffer), view=new DataView(memory.buffer), state=4096, port=8192;
   for (let cpl=0;cpl<4;++cpl) for (let sample=0;sample<32;++sample) {
     bytes.fill(0x93,state,state+1256); bytes.fill(0xa5,port,port+48);
@@ -33,11 +33,11 @@ for (const name of names) {
     const expected=Buffer.from(bytes.subarray(state,state+1256));
     const expectedPort=Buffer.from(bytes.subarray(port,port+48));
     if (cpl) {
-      assert.equal(cut(state,port,BigInt(meta.entry)),107n);
+      assert.equal(cut(state,port,BigInt(meta.entry),0),107n);
       expectedPort.writeBigUInt64LE(BigInt(meta.entry),16);
       expectedPort.writeUInt32LE(13,24); expectedPort.writeUInt32LE(0,28);
     } else {
-      assert.equal(cut(state,port,BigInt(meta.entry)),1n);
+      assert.equal(cut(state,port,BigInt(meta.entry),0),1n);
       expected.writeBigUInt64LE(BigInt(meta.entry)+BigInt(meta.sourceBytes),384);
       expected.writeBigUInt64LE(flags&~0x10000n,392);
       expected.writeBigUInt64LE(43n,1128);
@@ -49,14 +49,14 @@ for (const name of names) {
     view.setBigUint64(state+384,BigInt(meta.entry),true);
     view.setBigUint64(state+392,2n|flag,true);
     const before=Buffer.from(bytes);
-    assert.equal(cut(state,port,BigInt(meta.entry)),6n); assert(bytes.equals(before)); ++models;
+    assert.equal(cut(state,port,BigInt(meta.entry),0),6n); assert(bytes.equals(before)); ++models;
   }
   for (const [s,p] of [[state+1,port],[state,state],[state,state+8],[state,port+1],
     [0xfffffff8,port],[state,0xfffffff8]]) {
     view.setBigUint64(state+384,BigInt(meta.entry),true);
     view.setBigUint64(state+392,2n,true);
     const before=Buffer.from(bytes);
-    assert.equal(cut(s,p,BigInt(meta.entry)),6n); assert(bytes.equals(before)); ++models;
+    assert.equal(cut(s,p,BigInt(meta.entry),0),6n); assert(bytes.equals(before)); ++models;
   }
 }
 // Every actual compiled entry still goes through the C walk. Global pages
@@ -102,7 +102,7 @@ for (let iteration=0;iteration<64;++iteration) {
   assert.equal(vm.vm_access(port,0x402008n,8,2,target),0n); // guest write to PTE alias
   put(base+384,0x400000); put(base+392,0x10002);
   const ram=Buffer.from(bytes.subarray(base+8192,base+36864));
-  assert.equal(cut(base,port,0x400000n),1n);
+  assert.equal(cut(base,port,0x400000n,0),1n);
   assert(bytes.subarray(base+8192,base+36864).equals(ram),'INVLPG cannot read or set A/D');
   assert.equal(vm.vm_access(port,0x401000n,8,1,0n),0n);
   assert.equal(view.getBigUint64(port+8,true),iteration&1 ? 0x2222n : 0x1111n);

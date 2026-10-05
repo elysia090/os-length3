@@ -10,7 +10,7 @@ export function seedNativeSelector(view, base, meta) {
     BigInt(selector.native[selector.rank]), true);
 }
 export function checkSelectorModel(cut, memory, meta) {
-  assert.equal(cut.length,3,'ABI-2 fixture required');
+  assert.equal(cut.length,4,'ABI-3 fixture required');
   if (!meta.selector?.enabled) return 0;
   assert.equal(meta.instructions, 1);
   const {offset, rank, width, destination} = meta.selector;
@@ -35,7 +35,7 @@ export function checkSelectorModel(cut, memory, meta) {
     next.setBigUint64(meta.ripOffset, BigInt(meta.entry) + BigInt(meta.sourceBytes), true);
     next.setBigUint64(meta.flagsOffset, flags & ~0x10000n, true);
     next.setBigUint64(meta.retiredOffset, 43n, true);
-    assert.equal(cut(0,0,BigInt(meta.entry)), 1n);
+    assert.equal(cut(0,0,BigInt(meta.entry),0), 1n);
     assert.deepEqual(contents, expected, `guest selector model row ${row}`);
     ++comparisons;
   }

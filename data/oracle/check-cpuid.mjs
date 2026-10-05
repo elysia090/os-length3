@@ -91,7 +91,7 @@ try {
     expected.writeBigUInt64LE(flags & ~0x10000n,392);
     // Direct generated function has no VM/JS operation imports and ignores
     // its port argument. Compare its COMPLETE CPU record with the table.
-    assert.equal(cut(base,0,entry),1n);
+    assert.equal(cut(base,0,entry,0),1n);
     assert(data.subarray(base,base + 1256).equals(expected),`leaf ${leaf.toString(16)} controls ${controls} CPL ${cpl}`);
     data.set(before,base);
     assert.equal(vm.vm_open(base,data.length - base,4096,directoryAt,5,5,directoryAt + 1024,9n),0);
@@ -104,7 +104,7 @@ try {
     for (const flag of [0x100n]) {
       data.set(before,base); view.setBigUint64(base + 392,flags | flag,true);
       const saved = Buffer.from(data.subarray(base,base + 1256));
-      assert.equal(cut(base,0,entry),6n); assert(data.subarray(base,base + 1256).equals(saved)); ++rejected;
+      assert.equal(cut(base,0,entry,0),6n); assert(data.subarray(base,base + 1256).equals(saved)); ++rejected;
     }
   }
   // A corrupt persisted owner layout must not be interpreted as valid CPU
@@ -125,7 +125,7 @@ try {
       view.setBigUint64(base + 880,0x400001801n,true); view.setBigUint64(base + 424,0xd00n,true);
     }
     const before = Buffer.from(data.subarray(base,base + 1256));
-    assert.equal(cut(base,0,entry),6n,corruption); assert(data.subarray(base,base + 1256).equals(before)); ++rejected;
+    assert.equal(cut(base,0,entry,0),6n,corruption); assert(data.subarray(base,base + 1256).equals(before)); ++rejected;
   }
   // The new syscall ranks must have the same resume invariant in generated
   // CPUID and the C MSR owner. CSTAR's unused full-width value is admissible.
@@ -141,7 +141,7 @@ try {
     if (corruption==='LSTAR') view.setBigUint64(base+896,1n<<47n,true);
     if (corruption==='FMASK') view.setBigUint64(base+912,1n<<32n,true);
     const before=Buffer.from(data.subarray(base,base+1256));
-    assert.equal(cut(base,0,entry),6n,corruption); assert(data.subarray(base,base+1256).equals(before));
+    assert.equal(cut(base,0,entry,0),6n,corruption); assert(data.subarray(base,base+1256).equals(before));
     ++rejected;
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); }

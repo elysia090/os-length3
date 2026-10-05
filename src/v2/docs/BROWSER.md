@@ -1,5 +1,15 @@
 # Browser projection of OS Length3 Linux
 
+Current measured state (2026-10-05): the unchanged bundle reaches Linux
+initialization but not PID 1/root mount/shell. The completed warm run stops at
+its admission quota, not an unsupported opcode; repeated engine construction
+is its largest measured term. Machine-entry ABI 3 shares exact IP-relative
+bodies through scalar attestations and retains cross-page table continuations.
+See [current evidence and counted scope](../vm/check/browser/evidence/2026-10-05-operand-binding.md)
+and [remaining obligations](../postlink-compiler/TODO.md). Node/native/model
+passes are not real-browser acceptance. Retained browser Workers and staged
+assets are not replaced by these independent checks.
+
 ## Fixed input and success condition
 
 The input is the published native candidate, not the historical machine pack:
@@ -345,14 +355,17 @@ bzImage-startup checks use Node as a Wasm engine, separately from that actual
 browser observation. Build with `data/oracle/wasm-tools.ps1`; this pins a
 scope-local official SDK and adds no WASI/runtime or distribution dependency.
 
-The compiled table now has one ABI-2
-`cut(i32 state, i32 port, i64 admitted_entry) -> i64` type, for pure,
-memory, stack and system cuts. The exact C-admitted row supplies the last
-argument by value; an in-flight instruction retains its original row. Decoder
+The compiled table now has one ABI-3
+`cut(i32 state, i32 port, i64 admitted_entry, i32 operand_binding) -> i64` type, for pure,
+memory, stack and system cuts. The exact C-admitted row supplies both bindings
+by value; an in-flight instruction retains its original row. Decoder
 coordinates become offsets from that binding, never guessed relative literals
 or guest pointers. The full RIP check remains. Exact template bytes may share
 one bounded engine instance, but source admission remains per coordinate.
-The VM/compiler report ABI 2; old two-argument table types trap, without an
+The cold compiler also reports the signed disp32 bit pattern for an isolated
+IP-relative memory operand. C owns it in the original 24-byte row, including
+through a pinned continuation; execution never rereads source bytes for it.
+The VM/compiler report ABI 3; old two- and three-argument table types trap, without an
 execution adapter. A bounded C dispatcher borrows sorted
 coordinate rows, checks executable pages through the C MMU, calls the generated
 function table and returns on budget/fault/miss/revocation. No JS cut loop or

@@ -26,7 +26,7 @@ function open(meta) {
   assert.equal(vm.vm_open(base,arenaBytes,4096,directoryAt,10,10,directoryAt+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);
   put(rows,entry); view.setUint32(rows+8,meta.sourceBytes,true); view.setUint32(rows+12,1,true);
-  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,0,true);
+  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 function setup(source,meta,record) {
@@ -91,7 +91,7 @@ function compare(cut,meta,expected,result,label,dispatch=false) {
     expected=Buffer.from(expected);
     expected.writeBigUInt64LE(BigInt(meta.fetchByte),port-base+8);
   }
-  assert.equal(dispatch ? vm.vm_run(port,9n,1) : cut(base,port,entry),result,label);
+  assert.equal(dispatch ? vm.vm_run(port,9n,1) : cut(base,port,entry,view.getUint32(rows+20,true)),result,label);
   if (!arena().equals(expected)) {
     const differences=[];
     for (let i=0;i<arenaBytes && differences.length<16;++i)
@@ -192,7 +192,7 @@ try {
       if (failure==='stale') put(port,8);
       if (failure==='closed') vm.vm_close();
       const before=Buffer.from(arena());
-      assert.equal(cut(base,failure==='alias' ? base : failure==='unaligned' ? port+1 : failure==='bounds' ? 0xfffffff8 : port,entry),
+      assert.equal(cut(base,failure==='alias' ? base : failure==='unaligned' ? port+1 : failure==='bounds' ? 0xfffffff8 : port,entry,view.getUint32(rows+20,true)),
         failure==='stale' ? 5n : 6n);
       assert(arena().equals(before)); ++refusals;
     }

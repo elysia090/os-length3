@@ -385,13 +385,13 @@ int main(int argc, char **argv)
             if (fwrite(observed,sizeof observed,1u,faults) != 1u) okay = 0;
         }
     }
-    if (fprintf(meta, "{\"entry\":%llu,\"prefixEntry\":%llu,\"moduleBytes\":%llu,\"sourceBytes\":%llu,\"bytes\":%u,\"access\":%u,"
+    if (fprintf(meta, "{\"operandBinding\":%u,\"entry\":%llu,\"prefixEntry\":%llu,\"moduleBytes\":%llu,\"sourceBytes\":%llu,\"bytes\":%u,\"access\":%u,"
                 "\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,\"retiredOffset\":%zu,"
                 "\"selector\":{\"enabled\":%u,\"offset\":%zu,\"rank\":%u,"
                 "\"native\":[\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\"]},"
                 "\"summary\":{\"enabled\":%u,\"scan\":%u,\"destination\":%u,\"width\":%u,"
                 "\"nativeLegacyPrefixTwin\":%u,\"nativeFaultOffset\":%u}}\n",
-                report.entry, elf.entry, report.module_bytes, report.source_bytes, report.memory_bytes, report.memory_access,
+                report.operand_binding, report.entry, elf.entry, report.module_bytes, report.source_bytes, report.memory_bytes, report.memory_access,
                 sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
                 offsetof(machine_state, retired),(unsigned)selector,
                 offsetof(machine_state,system)+MACHINE_SYSTEM_ES*8u,instruction.operands[1].value.reg.index,

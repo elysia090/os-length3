@@ -41,7 +41,7 @@ function reset(source,meta,r,row) {
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,12,12,dir+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry);v.setUint32(rows+8,meta.sourceBytes,true);v.setUint32(rows+12,1,true);
-  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,0,true);
+  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 function expected(r,meta,rf=0n) {
@@ -51,7 +51,7 @@ function expected(r,meta,rf=0n) {
   return {state,bytes,result:vector?vector<<3n|3n:1n,write:!!meta.store&&!vector};
 }
 function compare(cut,wanted,label,dispatch=false) {
-  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch&&wanted.write?5n:wanted.result,label);
+  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),dispatch&&wanted.write?5n:wanted.result,label);
   if(!cpu().equals(wanted.state)) {
     const delta=[];for(let i=0;i<1256;++i)if(data[base+i]!==wanted.state[i])delta.push([i,data[base+i],wanted.state[i]]);
     assert.fail(`${label}: full CPU ${JSON.stringify(delta.slice(0,16))}`);
@@ -102,7 +102,7 @@ try {
     const r=records.subarray(stride,2*stride); // readable, valid cross-page operand
     for(const dispatch of meta.kind===5?[]:[false,true]) {
       reset(source,meta,r,1);v.setUint32(dir+10*32+16,3,true);
-      const before=cpu(),bytes=image();assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),2n);
+      const before=cpu(),bytes=image();assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),2n);
       assert(cpu().equals(before));assert(image().equals(bytes));assert.equal(v.getBigUint64(port+32,true),0xb000n);++waits;
       v.setUint32(dir+10*32+16,1,true);
       compare(cut,expected(r,meta),`${form}: supplied same physical page`,dispatch);++waits;
@@ -117,11 +117,11 @@ try {
       compare(cut,wanted,`${form}: unrelated field preservation`,dispatch);++preservation;
     }
     for(const badPort of [port+1,base,base+8,base+1248,data.length-24,-1]) {
-      reset(source,meta,first,0);compare((state)=>cut(state,badPort,entry),{state:cpu(),bytes:image(),result:6n},`${form}: private port`);++refusals;
+      reset(source,meta,first,0);compare((state)=>cut(state,badPort,entry,v.getUint32(rows+20,true)),{state:cpu(),bytes:image(),result:6n},`${form}: private port`);++refusals;
     }
     for(const badState of [base+1,0xfffffff8,data.length-1248]) {
       reset(source,meta,first,0);const before=cpu(),bytes=image();
-      assert.equal(cut(badState,port,entry),6n);assert(cpu().equals(before));assert(image().equals(bytes));++refusals;
+      assert.equal(cut(badState,port,entry,v.getUint32(rows+20,true)),6n);assert(cpu().equals(before));assert(image().equals(bytes));++refusals;
     }
     for(const dispatch of [false,true])for(const flag of [0x100n,0x40000n]) {
       reset(source,meta,first,0);put(base+392,v.getBigUint64(base+392,true)|flag);

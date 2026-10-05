@@ -14,7 +14,7 @@ for (const name of names) {
   assert.deepEqual(WebAssembly.Module.imports(module),[{module:'machine',name:'memory',kind:'memory'}]);
   const memory = new WebAssembly.Memory({initial:2});
   const cut = (await WebAssembly.instantiate(module,{machine:{memory}})).exports.cut;
-  assert.equal(cut.length,3,'ABI-2 fixture required');
+  assert.equal(cut.length,4,'ABI-3 fixture required');
   const bytes = Buffer.from(memory.buffer), view = new DataView(memory.buffer);
   const state = 4096, port = 8192;
   for (let cpl = 0; cpl < 4; ++cpl) for (let sample = 0; sample < 16; ++sample) {
@@ -28,11 +28,11 @@ for (const name of names) {
     view.setBigUint64(state + 488,16n | BigInt(cpl),true); view.setBigUint64(state + 1128,42n,true);
     const expected = Buffer.from(bytes.subarray(state,state + 1256));
     if (cpl) {
-      assert.equal(cut(state,port,BigInt(meta.entry)),107n);
+      assert.equal(cut(state,port,BigInt(meta.entry),0),107n);
       assert.equal(view.getBigUint64(port + 16,true),BigInt(meta.entry));
       assert.equal(view.getUint32(port + 24,true),13); assert.equal(view.getUint32(port + 28,true),0);
     } else {
-      assert.equal(cut(state,port,BigInt(meta.entry)),1n);
+      assert.equal(cut(state,port,BigInt(meta.entry),0),1n);
       expected.writeBigUInt64LE(value,meta.reg * 8);
       expected.writeBigUInt64LE(flags & ~0x10000n,392);
       expected.writeBigUInt64LE(BigInt(meta.entry) + BigInt(meta.sourceBytes),384);
@@ -45,7 +45,7 @@ for (const name of names) {
     view.setBigUint64(state + 392,2n | flag,true);
     view.setBigUint64(state + 488,16n,true);
     const before = Buffer.from(bytes.subarray(state,state + 1256));
-    assert.equal(cut(state,port,BigInt(meta.entry)),6n);
+    assert.equal(cut(state,port,BigInt(meta.entry),0),6n);
     assert(bytes.subarray(state,state + 1256).equals(before)); ++cases;
   }
 }

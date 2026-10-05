@@ -69,7 +69,8 @@ async function checkStartup() {
     const row = output + i * 24;
     view.setBigUint64(row, next, true); view.setUint32(row + 8, record.sourceBytes, true);
     view.setUint32(row + 12, record.instructions, true); view.setUint32(row + 16, firstSlot + i, true);
-    view.setUint32(row + 20, 0, true);
+    assert(Number.isInteger(record.operandBinding) && record.operandBinding>=0 && record.operandBinding<=0xffffffff);
+    view.setUint32(row + 20, record.operandBinding, true);
     next = BigInt(record.continuation); instructions += record.instructions;
   }
   assert.equal(instructions,14); assert.equal(next,BigInt(meta.entry) + 0x32n);

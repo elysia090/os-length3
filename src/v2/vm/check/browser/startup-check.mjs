@@ -50,7 +50,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const compilerModule = await WebAssembly.compile(compilerBytes);
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
-  assert.equal(vm.vm_entry_abi(),2);assert.equal(cc.compiler_entry_abi(),2);
+  assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
   for(const name of ['vm_source_demands','vm_source_admissions','vm_run_interrupted','vm_run_source'])
     assert.equal(typeof vm[name],'function','C warm admission observations required');
   assert(vm.vm_arena_min()<=cc.compiler_static_min(),'disjoint VM and cold static/stack reservations');
@@ -450,7 +450,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       engineMs += performance.now() - beforeEngine; emittedBytes += length;
       table.set(slot,instance.exports.cut); installedSlots.set(slot,instance);
       beforeAdmission = performance.now();
-      assert.equal(vm.vm_source_publish(sourceBytes,instructions,rows),0);
+      assert.equal(vm.vm_source_publish(sourceBytes,instructions,report.getUint32(compilerReport+76,true),rows),0);
       admissionMs += performance.now() - beforeAdmission;
     } else {
       ++sourceHits; assert(installedSlots.has(slot),'C hit requires its installed engine handle');

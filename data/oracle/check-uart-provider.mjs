@@ -46,7 +46,7 @@ async function run(coordinate,width,write,value,wanted,{cpl=0,iopl=0,bit=-1,refu
   put(base+384,entry);put(base+392,0x10443|(iopl<<12));put(base+488,16|cpl);
   data.fill(0,tss+104,tss+4096);if(bit>=0)v.setUint16(tss+104+(coordinate>>3),1<<bit,true);
   put(rows,entry);v.setUint32(rows+8,bytes.length,true);v.setUint32(rows+12,1,true);
-  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,0,true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,cv.getUint32(report+76,true),true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   const expected=Buffer.from(data.subarray(base,base+1256)),hidden=Buffer.from(data.subarray(segments,segments+136));
   const denied=cpl>iopl && bit>=0 && ((1<<bit)&(((1<<width)-1)<<(coordinate&7)));
   const result=denied?107n:width!==1||refuse?6n:external?26n:1n;

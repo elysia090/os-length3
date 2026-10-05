@@ -33,6 +33,7 @@ typedef struct {
     pl_u32 has_debug;
     pl_u32 has_repeat;
     pl_u32 vector_local;
+    pl_u32 has_operand_binding;
 } cut_lowering;
 typedef struct {
     pl_x86_map maps[64];
@@ -44,6 +45,7 @@ typedef struct {
     pl_u32 system_cut;
     pl_u32 repeat_cut;
     pl_u32 indirect_cut;
+    pl_u32 has_operand_binding;
 } cut_plan;
 void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);

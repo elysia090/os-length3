@@ -8,7 +8,7 @@ const memory=new WebAssembly.Memory({initial:32,maximum:34});
 const coldMemory=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
-assert.equal(vm.vm_entry_abi(),2);assert.equal(cc.compiler_entry_abi(),2);
+assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
 let data=Buffer.from(memory.buffer),view=new DataView(memory.buffer);
 const cold=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer);
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;
@@ -70,7 +70,7 @@ function reset(entry,example) {
   assert.equal(vm.vm_open(base,data.length-base,4096,directory,9,9,directory+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry);view.setUint32(rows+8,example.source.length,true);view.setUint32(rows+12,1,true);
-  view.setUint32(rows+16,slot,true);view.setUint32(rows+20,0,true);
+  view.setUint32(rows+16,slot,true);view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   return {codePte,code,ram};
 }
@@ -105,7 +105,7 @@ try {
       assert.equal(vm.vm_source_retired(),1n);++dispatchComparisons;
       reset(entry,example);
       const before=Buffer.from(data.subarray(base,base+4096));
-      assert.equal(cut(base,port,entry+1n),6n,'wrong independent binding refuses before mutation');
+      assert.equal(cut(base,port,entry+1n,cv.getUint32(report+76,true)),6n,'wrong independent binding refuses before mutation');
       assert(data.subarray(base,base+4096).equals(before));++entryRefusals;
       const {codePte}=reset(entry,example);put(codePte,0);
       const old=cpu();assert.equal(vm.vm_run(port,9n,1),115n);
@@ -119,15 +119,19 @@ try {
       }
     }
   }
-  // Deliberately old (i32,i32)->i64 toy. A typed C indirect call must trap
+  // Deliberately old two- and three-argument toys. A typed C indirect call must trap
   // before its observable store; no adapter can repair it into an accepted cut.
   const oldModule=Uint8Array.from([0,97,115,109,1,0,0,0,1,7,1,96,2,127,127,1,126,
     2,19,1,7,109,97,99,104,105,110,101,6,109,101,109,111,114,121,2,0,2,
     3,2,1,0,7,7,1,3,99,117,116,0,0,10,14,1,12,0,32,0,66,227,0,55,3,0,66,1,11]);
-  const oldCut=(await WebAssembly.instantiate(oldModule,{machine:{memory}})).instance.exports.cut;
-  reset(addresses[0],examples[0]);vm.__indirect_function_table.set(slot,oldCut);
-  const before=cpu();assert.throws(()=>vm.vm_run(port,9n,1),WebAssembly.RuntimeError);
-  assert(cpu().equals(before));assert.equal(vm.vm_source_retired(),0n);++legacyTypeRefusals;
+  const oldThree=Uint8Array.from([...oldModule.subarray(0,8),1,8,1,96,3,127,127,126,1,126,
+    ...oldModule.subarray(17)]);
+  for(const bytes of [oldModule,oldThree]){
+    const oldCut=(await WebAssembly.instantiate(bytes,{machine:{memory}})).instance.exports.cut;
+    reset(addresses[0],examples[0]);vm.__indirect_function_table.set(slot,oldCut);
+    const before=cpu();assert.throws(()=>vm.vm_run(port,9n,1),WebAssembly.RuntimeError);
+    assert(cpu().equals(before));assert.equal(vm.vm_source_retired(),0n);++legacyTypeRefusals;
+  }
 }finally{vm.__indirect_function_table.set(slot,null);vm.vm_close();cc.compiler_close();}
 console.log(JSON.stringify({format:'c-wasm-entry-binding-v2',status:'pass',templates,dispatchComparisons,
   entryRefusals,divideFaults,fetchFaults,continuations,legacyTypeRefusals,

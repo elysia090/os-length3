@@ -92,6 +92,24 @@ Use fresh native-emitted fixtures with the current compiler: stored ABI-1
 modules are not adapted into ABI-2 validation. See
 [ABI-2 evidence](../../src/v2/vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
+The current table type is ABI 3, adding a latched signed operand binding without
+growing the row/report. `check-cut-operand-sharing.mjs COMPILER.WASM BZIMAGE`
+checks the matched release hot load/store bodies (use `--observe` only for a
+frozen historical red). `check-operand-binding.mjs VM.WASM COMPILER.WASM
+[FRESH-NATIVE-RECORDS]` checks C source/MMU/frontiers and exact native emissions.
+`prepare-operand-cuts.sh NEW-OUTPUT COMPILER-BUILD` requires an explicit fresh
+native build. Neither probe establishes Linux boot or browser acceptance.
+See [scope and receipts](../../src/v2/vm/check/browser/evidence/2026-10-05-operand-binding.md).
+
+`prepare-entry-cuts.sh NEW-OUTPUT COMPILER-BUILD` regenerates native PUSH/POP,
+ordinary CALL/JMP, table, FXSAVE and vector/scalar/segment fixtures using an
+explicit current compiler build. `check-descriptor-transfer.mjs` includes
+cross-page latched resumption, rejected generations/quanta, mutable-row
+retargeting and unlatched fences. It fails with the frozen pre-fix VM and
+passes without replay after the table-continuation gate correction. These
+fixtures are tests, not release objects; known system-oracle discrepancies
+and strict independent CALL provenance reds are not waived by ordinary tests.
+
 ### Serialized memory-order cuts — 2026-10-05
 
 `src/v2/wasm-compiler/check/memory-order.c` records GPR/flags/FPU preservation

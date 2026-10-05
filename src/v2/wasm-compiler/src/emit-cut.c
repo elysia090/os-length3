@@ -50,6 +50,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->system_cut = 0u;
     plan->repeat_cut = 0u;
     plan->indirect_cut = 0u;
+    plan->has_operand_binding = 0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -92,6 +93,26 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->indirect_cut = (pl_u32)indirect;
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
+                /* Isolated explicit IP-relative addressing has exactly one
+                 * disp32. Keep its value in the attestation, not the body.
+                 * Pure multi-instruction slices retain their literal values. */
+                for (pl_u32 operand = 0u; operand < instruction.visible_operand_count; ++operand) {
+                    const pl_x86_operand *value = instruction.operands + operand;
+                    if (value->kind != PL_X86_OPERAND_MEMORY) continue;
+                    const pl_x86_memory *address = &value->value.memory;
+                    if (address->base.class_id == PL_X86_REGISTER_IP
+                            && address->index.class_id != PL_X86_REGISTER_GPR
+                            && (instruction.address_width == 32u || instruction.address_width == 64u)
+                            && address->displacement >= -2147483647ll - 1ll
+                            && address->displacement <= 2147483647ll) {
+                        ++plan->has_operand_binding;
+                        plan->report.operand_binding = (pl_u32)address->displacement;
+                    }
+                }
+                if (plan->has_operand_binding != 1u) {
+                    plan->has_operand_binding = 0u;
+                    plan->report.operand_binding = 0u;
+                }
                 plan->flag_frontier[0] = 0u;
                 if (indirect) plan->report.memory_bytes = instruction.operation == PL_X86_OPERATION_CALL
                     || instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
@@ -155,6 +176,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     pl_u64 rip = plan->report.entry;
     cut.writer = writer;
     cut.report = plan->report;
+    cut.has_operand_binding = plan->has_operand_binding;
     cut.has_memory = plan->report.memory_bytes != 0u;
     cut.has_port = cut.has_memory || plan->indirect_cut || (plan->system_cut
         && plan->system_cut != CUT_SYSTEM_CPUID && plan->system_cut != CUT_SYSTEM_SELECTOR_READ
@@ -175,7 +197,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
             && instruction.operands[2].value.immediate!=0xe4u;
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
-    cut.vector_local=locals+3u; /* State, port and admitted entry precede locals. */
+    cut.vector_local = locals + 4u; /* Four typed bindings precede locals. */
     wasm_writer_uleb(writer, permutation_local?2u:1u);
     wasm_writer_uleb(writer, locals);
     wasm_writer_byte(writer, 0x7eu);

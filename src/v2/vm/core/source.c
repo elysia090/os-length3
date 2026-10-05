@@ -145,7 +145,7 @@ int vm_sources_extend(vm_sources *sources, const vm_code_page *next, vm_executio
     return 1;
 }
 int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
-    vm_execution_row *row)
+    pl_u32 operand_binding, vm_execution_row *row)
 {
     if (!sources || !sources->pending) return -1;
     sources->pending = 0u;
@@ -157,7 +157,8 @@ int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
             || sources->pending_next.generation != sources->generation)) return -1;
     pl_u32 rank = sources->pending_rank;
     vm_source_row *target = sources->rows + rank;
-    target->row = (vm_execution_row){sources->pending_entry,bytes,instructions,sources->first_slot + rank,0u};
+    target->row = (vm_execution_row){sources->pending_entry,bytes,instructions,
+        sources->first_slot + rank,operand_binding};
     target->offset = sources->pending_page.offset; target->limit = sources->pending_limit;
     target->next_offset = crossing ? sources->pending_next.offset : 0u;
     sources->watch[bucket(target->offset)] |= 1ull << rank;

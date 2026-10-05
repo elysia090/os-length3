@@ -201,7 +201,7 @@ try {
       if (refusal === 'stale') view.setBigUint64(port,8n,true);
       const before = Buffer.from(data.subarray(base,base + 1256)), payload = Buffer.from(data.subarray(ram,ram + 16384));
       const argument = refusal === 'alias' ? base : refusal === 'wrap' ? 0xfffffff8 : port;
-      assert.equal(cut(base,argument,entry),refusal === 'stale' ? 5n : 6n,refusal);
+      assert.equal(cut(base,argument,entry,0),refusal === 'stale' ? 5n : 6n,refusal);
       assert(data.subarray(base,base + 1256).equals(before)); assert(data.subarray(ram,ram + 16384).equals(payload)); ++stale;
     }
     if (width === 8) {

@@ -47,7 +47,7 @@ static pl_u32 uleb_bytes(pl_u64 value)
 static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
 {
     static const pl_u8 header[] = { 0,0x61,0x73,0x6d,1,0,0,0 };
-    static const pl_u8 type[] = { 1,0x60,3,0x7f,0x7f,0x7e,1,0x7e };
+    static const pl_u8 type[] = { 1,0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e };
     static const pl_u8 imports[] = {
         1,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1
     };
@@ -55,7 +55,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     static const pl_u8 exports[] = { 1,3,'c','u','t',0,0 };
     static const pl_u8 memory_type[] = {
         2,0x60,5,0x7f,0x7e,0x7f,0x7f,0x7e,1,0x7e,
-        0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 memory_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -66,7 +66,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     static const pl_u8 write_type[] = {
         4,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
         0x60,4,0x7f,0x7f,0x7f,0x7e,1,0x7e,
-        0x60,1,0x7f,1,0x7e,0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        0x60,1,0x7f,1,0x7e,0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 write_imports[] = {
         4,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -78,7 +78,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     static const pl_u8 write_exports[]={1,3,'c','u','t',0,3};
     static const pl_u8 segment_type[] = {
         2,0x60,3,0x7f,0x7f,0x7f,1,0x7e,
-        0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 segment_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -86,7 +86,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     };
     static const pl_u8 loaded_segment_type[] = {
         3,0x60,5,0x7f,0x7e,0x7f,0x7f,0x7e,1,0x7e,
-        0x60,3,0x7f,0x7f,0x7f,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        0x60,3,0x7f,0x7f,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 loaded_segment_imports[] = {
         3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -95,7 +95,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     };
     static const pl_u8 rmw_type[] = {
         3,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
-        0x60,2,0x7f,0x7e,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        0x60,2,0x7f,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 rmw_imports[] = {
         3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -106,7 +106,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
     static const pl_u8 rmw_exports[] = { 1,3,'c','u','t',0,2 };
     static const pl_u8 pair_type[] = {
         3,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
-        0x60,3,0x7f,0x7e,0x7e,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        0x60,3,0x7f,0x7e,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 pair_imports[] = {
         3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -114,7 +114,7 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         7,'m','a','c','h','i','n','e',11,'c','o','m','m','i','t','_','p','a','i','r',0,1
     };
     static const pl_u8 table_type[] = {
-        2,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        2,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 table_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -129,21 +129,21 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         7,'m','a','c','h','i','n','e',10,'f','a','r','_','r','e','t','u','r','n',0,0
     };
     static const pl_u8 control_type[] = {
-        2,0x60,3,0x7f,0x7f,0x7e,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        2,0x60,3,0x7f,0x7f,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 control_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',7,'c','o','n','t','r','o','l',0,0
     };
     static const pl_u8 interrupt_type[] = {
-        2,0x60,1,0x7f,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        2,0x60,1,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 interrupt_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',4,'i','r','e','t',0,0
     };
     static const pl_u8 msr_type[] = {
-        2,0x60,4,0x7f,0x7f,0x7f,0x7e,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        2,0x60,4,0x7f,0x7f,0x7f,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 msr_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
@@ -166,10 +166,10 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         7,'m','a','c','h','i','n','e',14,'i','n','t','e','r','r','u','p','t','_','f','l','a','g',0,0
     };
     static const pl_u8 two_word_type[] = {
-        2,0x60,2,0x7f,0x7f,1,0x7e, 0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        2,0x60,2,0x7f,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 software_type[] = {
-        2,0x60,3,0x7f,0x7f,0x7e,1,0x7e,0x60,3,0x7f,0x7f,0x7e,1,0x7e
+        2,0x60,3,0x7f,0x7f,0x7e,1,0x7e,0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
     };
     static const pl_u8 software_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,

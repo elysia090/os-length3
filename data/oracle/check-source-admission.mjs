@@ -58,7 +58,7 @@ async function publish(entry = 0x400000n) {
   });
   table.set(slot,instance.instance.exports.cut);
   assert.equal(vm.vm_source_publish(Number(report.getBigUint64(receipt + 32,true)),
-    Number(report.getBigUint64(receipt + 24,true)),rows),0); ++emitted;
+    Number(report.getBigUint64(receipt + 24,true)),report.getUint32(receipt+76,true),rows),0); ++emitted;
 }
 function run() {
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
@@ -74,7 +74,7 @@ assert.equal(query(),0n); run();
 assert.equal(vm.vm_access(port,0x400000n,1,2,0x90n),0n);
 assert.equal(query(),1n); // Even equal-value source stores revoke.
 assert.equal(vm.vm_access(port,0x400100n,1,2,1n),0n);
-assert.equal(vm.vm_source_publish(1,1,rows),-1); // Unknown compile span was pinned page-wide.
+assert.equal(vm.vm_source_publish(1,1,0,rows),-1); // Unknown compile span was pinned page-wide.
 assert.equal(query(),1n); await publish();
 assert.equal(vm.vm_access(port,0x400000n,1,2,0xf8n),0n);
 assert.equal(query(),1n); await publish(); run();
@@ -151,7 +151,7 @@ assert.equal(vm.vm_access(port,0x401002n,1,2,0x90n),0n); assert.equal(query(1,en
 assert.equal(vm.vm_access(port,0x401001n,1,2,0xc0n),0n); assert.equal(query(1,entry),1n);
 assert.equal(vm.vm_source_extend(port,codeView,rows),1n);
 assert.equal(vm.vm_access(port,0x401080n,1,2,1n),0n);
-assert.equal(vm.vm_source_publish(3,1,rows),-1);
+assert.equal(vm.vm_source_publish(3,1,0,rows),-1);
 assert.equal(query(1,entry),1n); assert.equal(vm.vm_source_extend(port,codeView,rows),1n);
 await publish(entry);
 assert.equal(vm.vm_access(port,entry,1,2,0x48n),0n); assert.equal(query(1,entry),1n);
@@ -185,7 +185,7 @@ data.fill(0xa5,codeView,codeView+48); data.fill(0xa5,rows,rows+24);
 assert.equal(vm.vm_source_extend(port,codeView,rows),5n);
 assert(data.subarray(codeView,codeView+48).every(x => x===0xa5));
 assert(data.subarray(rows,rows+24).every(x => x===0xa5));
-assert.equal(vm.vm_source_publish(3,1,rows),-1);
+assert.equal(vm.vm_source_publish(3,1,0,rows),-1);
 assert.equal(query(1,entry),1n);
 assert.equal(vm.vm_source_extend(port,codeView,rows),1n);
 assert.equal(view.getUint32(codeView+16,true),base+20480);

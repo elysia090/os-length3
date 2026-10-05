@@ -1,0 +1,73 @@
+{
+  "format": "cut-operand-sharing-v1",
+  "status": "pass",
+  "linuxBoot": "not-tested",
+  "kernelSha256": "21771c757255406ce090faa6c5108b72618f794c8e46379a4a3d50dc21364e67",
+  "decompressedElfSha256": "6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9",
+  "compilerBytes": 447154,
+  "compilerSha256": "f148b656eca2538a8ce99195563cdb2a088a361de39b9d72eac5c566fc88d4b1",
+  "entryABI": 3,
+  "families": [
+    {
+      "name": "load",
+      "sourceCoordinates": 6,
+      "distinctExactModules": 1,
+      "moduleBytes": [
+        348,
+        348,
+        348,
+        348,
+        348,
+        348
+      ],
+      "bindings": [
+        10509804,
+        10509798,
+        10509792,
+        10509786,
+        10509780,
+        10509774
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "store",
+      "sourceCoordinates": 6,
+      "distinctExactModules": 1,
+      "moduleBytes": [
+        337,
+        337,
+        337,
+        337,
+        337,
+        337
+      ],
+      "bindings": [
+        10509853,
+        10509847,
+        10509841,
+        10509835,
+        10509829,
+        10509823
+      ],
+      "desiredTopologyCount": 1
+    }
+  ],
+  "construction": {
+    "samples": 4096,
+    "elapsedMs": 9.147599999999997,
+    "engine": {
+      "compilations": 2,
+      "hits": 4094,
+      "entries": 2,
+      "quotaEvictions": 0,
+      "validatedDemands": 0,
+      "retainedModuleBytes": 685,
+      "maximumEntries": 1024,
+      "maximumBytes": 262144
+    },
+    "scope": "matched 12 immutable hot load/store emissions; bounded constructor only, no guest execution or Linux/browser timing"
+  },
+  "unmetFamilies": 0,
+  "scope": "exact cold C body identity, matched immutable release ELF; no runtime admission or native ISA proof"
+}

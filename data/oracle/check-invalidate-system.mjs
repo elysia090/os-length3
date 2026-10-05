@@ -37,7 +37,7 @@ for (let rank=0;rank<84;++rank) {
     view.setBigUint64(state+384,BigInt(meta.entry),true); view.setBigUint64(state+392,row[2],true);
     view.setBigUint64(state+488,8n,true); view.setBigUint64(state+1128,42n,true);
     const expected=Buffer.from(bytes.subarray(state,state+1256)), beforePort=Buffer.from(bytes.subarray(port,port+48));
-    assert.equal(cut(state,port,BigInt(meta.entry)),1n); expected.writeBigUInt64LE(BigInt(meta.entry)+BigInt(meta.sourceBytes),384);
+    assert.equal(cut(state,port,BigInt(meta.entry),0),1n); expected.writeBigUInt64LE(BigInt(meta.entry)+BigInt(meta.sourceBytes),384);
     expected.writeBigUInt64LE(43n,1128); expected.writeBigUInt64LE(row[3]&~0x10000n,392);
     assert(bytes.subarray(state,state+1256).equals(expected)); assert(bytes.subarray(port,port+48).equals(beforePort));
     ++comparisons;

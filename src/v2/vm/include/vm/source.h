@@ -51,12 +51,13 @@ int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
 int vm_sources_reuse(vm_sources *sources, const vm_code_page *page,
     const vm_code_page *next, pl_u64 entry, pl_u32 limit,
     const vm_execution_row **row);
-/* The trusted compiler reports its exact successfully emitted source span.
+/* The trusted compiler reports its exact successfully emitted source span
+ * and scalar operand binding, including zero. Neither is decoded here.
  * A crossing FIRST instruction has at most 15 bytes and two physical owners.
  * Publish only after installing that compiled function in the reserved slot.
  * A pending source mutation cancels publication even if bytes changed back. */
 int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
-    vm_execution_row *row);
+    pl_u32 operand_binding, vm_execution_row *row);
 /* Extend a pinned miss or validate the cached tail from executable C-MMU
  * admission. 0: complete hit, 1: pinned two-page miss, -1: refusal. */
 int vm_sources_extend(vm_sources *sources, const vm_code_page *next,

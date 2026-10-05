@@ -57,7 +57,7 @@ async function run(coordinate,write,width,value,expectedByte=0,ns=0n,{cpl=0,iopl
   put(base+16,0xabcdef9800000000n|BigInt(coordinate)); put(base+488,16|cpl); put(base+392,0x10002|(iopl<<12));
   data.fill(0,tss+104,tss+4096); if (bit>=0) view.setUint16(tss+104+(coordinate>>3),1<<bit,true);
   put(rows,entry); view.setUint32(rows+8,bytes.length,true); view.setUint32(rows+12,1,true);
-  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,0,true);
+  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   const expected=Buffer.from(data.subarray(base,base+1256)),hidden=Buffer.from(data.subarray(segments,segments+136));
   const denied=cpl>iopl && bit>=0 && ((1<<bit)&(((1<<width)-1)<<(coordinate&7)));

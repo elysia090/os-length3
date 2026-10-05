@@ -37,7 +37,7 @@ function reset(source,meta,cpl,iopl,sample) {
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,6,6,dir+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry); view.setUint32(rows+8,meta.sourceBytes,true); view.setUint32(rows+12,1,true);
-  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,0,true);
+  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 for (let rank=0;rank<26;++rank) {

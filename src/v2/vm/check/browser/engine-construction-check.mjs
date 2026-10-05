@@ -18,7 +18,7 @@ export async function checkEngineConstruction(compilerBytes) {
     const expected=payload.slice(state,state+1256),ev=new DataView(expected.buffer);
     ev.setBigUint64(0,BigInt(value),true);ev.setBigUint64(384,entry+5n,true);
     ev.setBigUint64(392,2n,true);ev.setBigUint64(1128,18n,true);
-    ensure(instance.exports.cut(state,port,entry)===1n,'generated MOV result');
+    ensure(instance.exports.cut(state,port,entry,0)===1n,'generated MOV result');
     ensure(same(payload.subarray(state,state+1256),expected),'whole generated MOV CPU preservation');
     ++comparisons;
   }

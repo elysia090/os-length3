@@ -28,7 +28,7 @@ for (let table=0;table<2;++table) for (let prefix=0;prefix<3;++prefix)
 for (let address32=0;address32<2;++address32) for (const offset of [4085,4086,4094])
 for (let protection=0;protection<3;++protection)
   assert(nativeKeys.has([table,prefix,address32,offset,protection].join(':')));
-let parity=0, models=0, nativeComparisons=0, waits=0, retries=0, refusals=0, abortPreservations=0;
+let parity=0, models=0, nativeComparisons=0, waits=0, retries=0, refusals=0, abortPreservations=0, unlatchedFences=0;
 function header() {
   data.fill(0,input,input+8192); data[input+0x1f1]=31; data[input+0x200]=0xeb; data[input+0x201]=0x6a;
   view.setUint16(input+0x1fe,0xaa55,true); dword(input+0x202,0x53726448); view.setUint16(input+0x206,0x20f,true);
@@ -59,7 +59,7 @@ function reset(source,meta,offset,cpl=0,umip=0,protection=0,residentSecond=true,
   dword(segments,2); dword(segments+36,0xa09b|(cpl<<5));
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,residentSecond ? 6 : 5,8,branches,9n),0);
   assert.equal(vm.vm_bind_state(state),0); assert.equal(vm.vm_bind_segments(segments),0);
-  put(rows,entry); dword(rows+8,meta.sourceBytes); dword(rows+12,1); dword(rows+16,slot); dword(rows+20,0);
+  put(rows,entry); dword(rows+8,meta.sourceBytes); dword(rows+12,1); dword(rows+16,slot); dword(rows+20,cv.getUint32(report+76,true));
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   return address;
 }
@@ -123,7 +123,7 @@ for (let rank=0;rank<96;++rank) {
     reset(source,meta,row.offset,3,0,row.protection);
     const record=Buffer.from(row.descriptor), at=state+448+meta.table*16;
     put(at,record.readBigUInt64LE(2)); put(at+8,record.readUInt16LE(0));
-    assert.equal(cut(state,port,entry),row.vector ? 115n : 1n);
+    assert.equal(cut(state,port,entry,view.getUint32(rows+20,true)),row.vector ? 115n : 1n);
     assert.deepEqual(data.subarray(first+row.offset-3,first+row.offset+13),Buffer.from(row.payload));
     if (row.vector) {
       assert.equal(view.getUint32(port+24,true),row.vector); assert.equal(view.getUint32(port+28,true),row.error);
@@ -144,6 +144,15 @@ for (let rank=0;rank<96;++rank) {
     assert.equal(vm.vm_page_prepare(port,request),0);
     const ticket=view.getBigUint64(request+40,true), target=view.getUint32(request+24,true);
     assert.equal(view.getBigUint64(request+8,true),0x9000n); assert.equal(target,second);
+    const pinnedRow=Buffer.from(data.subarray(rows,rows+24));
+    for (const [rejected,wanted] of [[()=>vm.vm_run(port,8n,1),5n],
+      [()=>vm.vm_run(port,9n,0),6n],[()=>vm.vm_run(port,9n,65537),6n]]) {
+      const pending=Buffer.from(data.subarray(base,base+4096));
+      assert.equal(rejected(),wanted);
+      assert.deepEqual(data.subarray(base,base+4096),pending);
+      assert.equal(vm.vm_page_prepare(port,request),0);
+      assert.equal(view.getBigUint64(request+40,true),ticket); ++refusals;
+    }
     if (meta.store) {
       // Refusal must preserve the prepared supply ticket and table frontier,
       // not just the visible CPU. None of these can advance another guest cut.
@@ -173,8 +182,12 @@ for (let rank=0;rank<96;++rank) {
     // Make the first page read-only after the first store. Replaying that
     // limit would #PF; continuing just the captured base must still succeed.
     if (limitCommitted && offset===4094) put(base+20480,0x8065);
+    // The continuation owns the old entry, slot and operand by value. Mutable
+    // supervisor row storage cannot redirect a partially committed instruction.
+    put(rows,entry+1n); dword(rows+16,1024); dword(rows+20,0x80000001);
     assert.equal(vm.vm_page_commit(port,ticket),0); assert.equal(vm.vm_page_commit(port,ticket),-1); ++refusals;
     assert.equal(vm.vm_run(port,9n,1),meta.store ? 5n : 1n);
+    data.set(pinnedRow,rows);
     if (!meta.store) {
       expected.writeBigUInt64LE(0xa5a5a5a5a5a5a5a5n,448+meta.table*16);
       expected.writeBigUInt64LE(0xa5a5n,456+meta.table*16);
@@ -184,13 +197,31 @@ for (let rank=0;rank<96;++rank) {
     assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n); ++retries;
   }
   reset(source,meta,64);
+  if (meta.store && meta.shape!==3) {
+    // A direct host call has no execution continuation. A partial table write
+    // must not make an unrelated dispatcher/event boundary runnable.
+    reset(source,meta,4094,0,0,0,false);
+    const expected=cpu(true,meta), record=descriptor(meta), binding=view.getUint32(rows+20,true);
+    assert.equal(cut(state,port,entry,binding),2n);
+    const pending=Buffer.from(data.subarray(base,base+4096));
+    assert.equal(vm.vm_boundary(port,9n),6n); assert.equal(vm.vm_run(port,9n,1),6n);
+    assert.deepEqual(data.subarray(base,base+4096),pending);
+    assert.equal(vm.vm_page_prepare(port,request),0);
+    const ticket=view.getBigUint64(request+40,true), target=view.getUint32(request+24,true);
+    data.fill(0xa5,target,target+4096); put(base+20480,0x8065);
+    assert.equal(vm.vm_page_commit(port,ticket),0);
+    assert.equal(cut(state,port,entry,binding),1n);
+    assert.deepEqual(data.subarray(state,state+1256),expected);
+    assert.deepEqual(data.subarray(first+4094,first+4104),record); ++unlatchedFences;
+    reset(source,meta,64);
+  }
   for (const flag of [0x100n,0x40000n]) {
     put(state+392,2n|flag); const before=Buffer.from(data.subarray(state,state+4096));
-    assert.equal(cut(state,port,entry),6n); assert.deepEqual(data.subarray(state,state+4096),before); ++refusals;
+    assert.equal(cut(state,port,entry,view.getUint32(rows+20,true)),6n); assert.deepEqual(data.subarray(state,state+4096),before); ++refusals;
   }
 }
 vm.__indirect_function_table.set(slot,null); cc.compiler_close(); vm.vm_close();
 assert.equal(nativeComparisons,108,'every native coordinate must be compared');
-console.log(JSON.stringify({format:'c-wasm-descriptor-transfer-v1',status:'pass',parity,models,nativeComparisons,waits,retries,refusals,abortPreservations,
+console.log(JSON.stringify({format:'c-wasm-descriptor-transfer-v1',status:'pass',parity,models,nativeComparisons,waits,retries,refusals,abortPreservations,unlatchedFences,
   oracle:'actual x86 user-mode payload/#PF in reference build VM; accelerator provenance recorded separately; other state/UMIP cases are explicit models',
   cpuProfile:'unchanged; UMIP models do not advertise or enable that feature',linuxBoot:'not-tested',exceptionDelivery:'not-tested'},null,2));

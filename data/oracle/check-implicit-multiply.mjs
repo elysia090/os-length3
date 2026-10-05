@@ -36,7 +36,7 @@ function reset(source,meta,record) {
   assert.equal(vm.vm_open(base,data.length-base,4096,directoryAt,5,5,directoryAt+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   put(rows,entry); view.setUint32(rows+8,meta.sourceBytes,true); view.setUint32(rows+12,meta.instructions,true);
-  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,0,true);
+  view.setUint32(rows+16,slot,true); view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 try {
@@ -65,7 +65,7 @@ try {
       assert(data.subarray(base,base+1256).equals(expected),`${form}/${row}: complete CPU`);
       assert(data.subarray(code,code+4096).equals(payload));
       assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),BigInt(meta.instructions)); ++comparisons;
-      reset(source,meta,record); assert.equal(cut(base,port,entry),1n);
+      reset(source,meta,record); assert.equal(cut(base,port,entry,view.getUint32(rows+20,true)),1n);
       assert(data.subarray(base,base+1256).equals(expected)); ++directComparisons;
       reset(source,meta,record); put(base+392,u64(record,16)|0x10000n);
       assert.equal(vm.vm_run(port,9n,1),1n); assert(data.subarray(base,base+1256).equals(expected)); ++rfComparisons;
@@ -78,7 +78,7 @@ try {
       if (failure === 'stale') put(port,8);
       const before = Buffer.from(data);
       assert.equal(failure === 'stale' ? vm.vm_run(port,9n,1)
-        : cut(failure === 'unaligned' ? base+1 : failure === 'bounds' ? data.length-8 : base,port,entry),
+        : cut(failure === 'unaligned' ? base+1 : failure === 'bounds' ? data.length-8 : base,port,entry,view.getUint32(rows+20,true)),
         failure === 'stale' ? 5n : 6n);
       assert(data.subarray(base,base+1256).equals(before.subarray(base,base+1256))); ++refusals;
     }

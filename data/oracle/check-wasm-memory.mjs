@@ -13,6 +13,7 @@ let comparisons = 0;
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
+  assert(Number.isInteger(meta.operandBinding) && meta.operandBinding>=0 && meta.operandBinding<=0xffffffff);
   const module = await WebAssembly.compile(await readFile(`${prefix}.wasm`));
   assert.deepEqual(WebAssembly.Module.imports(module), [
     { module: 'machine', name: 'memory', kind: 'memory' },
@@ -43,7 +44,7 @@ for (const name of names) {
     },
   } });
   const cases = await readFile(`${prefix}.cases`);
-  assert.equal(instance.exports.cut.length,3,'ABI-2 fixture required; regenerate, never adapt old modules');
+  assert.equal(instance.exports.cut.length,4,'ABI-3 fixture required; regenerate, never adapt old modules');
   assert.equal(cases.length, 512 * 38 * 8);
   const records = new DataView(cases.buffer, cases.byteOffset, cases.byteLength);
   for (let row = 0; row < 512; ++row) {
@@ -70,7 +71,7 @@ for (const name of names) {
     if (meta.access & 2) expectedView.setBigUint64(payload, word(37), true);
     else expectedView.setBigUint64(port + 8, word(36) & ((1n << BigInt(meta.bytes * 8)) - 1n), true);
     currentResult = 0n; calls = 0;
-    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 1n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry),meta.operandBinding), 1n);
     assert.equal(calls, 1, 'one typed C boundary, no per-byte host calls');
     assert.deepEqual(all, expected, `${name}: native memory/register row ${row}`);
     ++comparisons;
@@ -78,13 +79,13 @@ for (const name of names) {
     // after a successful access. It is not a debug-entry refusal like TF.
     all.set(initial); view.setBigUint64(meta.flagsOffset,word(16)|0x10000n,true);
     currentResult=0n; calls=0;
-    assert.equal(instance.exports.cut(state,port,BigInt(meta.entry)),1n); assert.equal(calls,1);
+    assert.equal(instance.exports.cut(state,port,BigInt(meta.entry),meta.operandBinding),1n); assert.equal(calls,1);
     assert.deepEqual(all,expected,`${name}: successful memory RF clear`);
     for (const result of [2n, (14n << 3n) | 3n, 5n, 6n]) {
       all.set(initial);
       currentResult = result; calls = 0;
       const saved = Buffer.from(all);
-      assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), result);
+      assert.equal(instance.exports.cut(state, port,BigInt(meta.entry),meta.operandBinding), result);
       assert.equal(calls, 1);
       assert.deepEqual(all, saved, `${name}: failure must not retire/partially commit`);
     }
@@ -94,19 +95,19 @@ for (const name of names) {
   view.setBigUint64(meta.flagsOffset, 0x202n, true);
   for (const invalidPort of [1, -1, 0, 8, meta.stateBytes - 8, all.length - 24, all.length]) {
     calls = 0; const saved = Buffer.from(all);
-    assert.equal(instance.exports.cut(0, invalidPort,BigInt(meta.entry)), 6n, `${name}: invalid/aliased port`);
+    assert.equal(instance.exports.cut(0, invalidPort,BigInt(meta.entry),meta.operandBinding), 6n, `${name}: invalid/aliased port`);
     assert.equal(calls, 0);
     assert.deepEqual(all, saved);
   }
   for (const invalidState of [1, -1, all.length - meta.stateBytes + 8]) {
     calls = 0; const saved = Buffer.from(all);
-    assert.equal(instance.exports.cut(invalidState, port,BigInt(meta.entry)), 6n);
+    assert.equal(instance.exports.cut(invalidState, port,BigInt(meta.entry),meta.operandBinding), 6n);
     assert.equal(calls, 0); assert.deepEqual(all, saved);
   }
   for (const flags of [0x302n, 0x10302n, 0x40202n]) {
     view.setBigUint64(meta.flagsOffset, flags, true); calls = 0;
     const saved = Buffer.from(all);
-    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 6n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry),meta.operandBinding), 6n);
     assert.equal(calls, 0); assert.deepEqual(all, saved);
   }
   if (meta.prefixEntry !== meta.entry) {
@@ -127,10 +128,10 @@ for (const name of names) {
     expectedView.setBigUint64(meta.ripOffset, BigInt(meta.entry), true);
     expectedView.setBigUint64(meta.retiredOffset, 101n, true);
     calls = 0;
-    assert.equal(preceding.exports.cut(state,0,BigInt(meta.prefixEntry)), 1n);
+    assert.equal(preceding.exports.cut(state,0,BigInt(meta.prefixEntry),meta.operandBinding), 1n);
     assert.equal(calls, 0); assert.deepEqual(all, expected);
     currentResult = 2n;
-    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 2n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry),meta.operandBinding), 2n);
     assert.equal(calls, 1);
     assert.deepEqual(all, expected, 'failed memory instruction preserves already committed pure prefix');
   }

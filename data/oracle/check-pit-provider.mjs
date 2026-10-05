@@ -47,7 +47,7 @@ async function transfer(coordinate,write,byte,tick,wanted=0,{width=1,cpl=0,iopl=
   data.fill(0,tss+104,tss+4096);if(deny)data[tss+104+(coordinate>>3)]=1<<(coordinate&7);
   v.setUint32(segments+4,2,true);
   put(rows,entry);v.setUint32(rows+8,bytes.length,true);v.setUint32(rows+12,1,true);
-  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,0,true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,cv.getUint32(report+76,true),true);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   const expected=Buffer.from(data.subarray(base,base+1256)),hidden=Buffer.from(data.subarray(segments,segments+136));
   const denied=cpl>iopl&&deny,result=denied?107n:width!==1||refuse?6n:synchronous?1n:18n;
   assert.equal(vm.vm_run(port,9n,1),result,`${coordinate.toString(16)} ${write} ${byte}`);
