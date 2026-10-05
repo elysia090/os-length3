@@ -16,6 +16,13 @@ work, oversized counts publish one zero vector and other counts use one vector
 shift. All 256 counts and precise CPU/RAM/control boundaries pass. See
 [the derivation and actual PSRLD gate](../../vm/check/browser/evidence/2026-10-05-vector-shift.md).
 
+Source-only PSHUFD/PSHUFHW/PSHUFLW immediate permutations now substitute
+static coordinates into one deterministic vector shuffle. Identity alias
+removes XMM work, not precise control/retirement or memory operand faults.
+384 exact emissions / 49,152 unchanged native records, all controls and
+operand topologies, full precise comparisons and scoped sanitizers pass.
+See [derivation and current actual gate](../../vm/check/browser/evidence/2026-10-05-vector-permutation.md).
+
 Current IF boundary (2026-10-04): common CLI/STI emits one precise
 `machine.interrupt_flag` call. C owns privilege, IF and inhibition; generated
 code owns successful RIP/RF/retirement. The old inline CLI implementation is

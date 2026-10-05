@@ -19,7 +19,7 @@ const at=physical=>base+(Number(physical/4096n)+1)*4096;
 const put=(where,x)=>v.setBigUint64(where,BigInt(x),true),u64=(r,i)=>r.readBigUInt64LE(2512+i*8);
 const slot=vm.__indirect_function_table.grow(1),cpu=()=>Buffer.from(data.subarray(base,base+1256));
 const image=()=>Buffer.from(data.subarray(code,payload+8192));
-let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0,carryModels=0,exhaustiveByteModels=0,shuffleSelectorModels=0,simdRefusalModels=0,immediateShiftModels=0;
+let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0,carryModels=0,exhaustiveByteModels=0,shuffleSelectorModels=0,simdRefusalModels=0,immediateShiftModels=0,immediatePermutationModels=0,identityFaultModels=0;
 function packedAdd(a,b,width) {
   const bits=BigInt(width),mask=(1n<<bits)-1n;let value=0n;
   for(let bit=0n;bit<64n;bit+=bits)value|=(((a>>bit&mask)+(b>>bit&mask))&mask)<<bit;
@@ -36,6 +36,16 @@ function logicalShift(value,width,count,left) {
   for(let at=0n;at<64n;at+=bits) {
     const lane=value>>at&mask;
     result|=(left?lane<<BigInt(count)&mask:lane>>BigInt(count))<<at;
+  }
+  return result;
+}
+function permutation(values,width,high,control) {
+  // Independent per-element loads/copies; not the emitted byte-coordinate map.
+  const result=Buffer.from(values),bytes=width/8,start=high?8:0;
+  for(let lane=0;lane<4;++lane) {
+    const selected=(control>>(lane*2))&3;
+    if(width===32)result.writeUInt32LE(values.readUInt32LE(selected*4),lane*4);
+    else result.writeUInt16LE(values.readUInt16LE(start+selected*2),start+lane*bytes);
   }
   return result;
 }
@@ -85,7 +95,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<360;++form) {
+  for(let form=0;form<384;++form) {
     const prefix=path.join(directory,`vector-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
@@ -110,6 +120,13 @@ try {
         assert(emitted.includes(load)&&emitted.includes(store));assert(emitted.includes(Buffer.from([0xfd,opcode,1])));
         assert(emitted.length<=385,'one vector shift, not scalar lane expansion');
       }
+    }
+    if(meta.permutationWidth) {
+      const coordinates=Array.from({length:16},(_,i)=>i),bytes=meta.permutationWidth/8,start=meta.permutationHigh?8:0;
+      for(let lane=0;lane<4;++lane)for(let byte=0;byte<bytes;++byte)
+        coordinates[start+lane*bytes+byte]=start+bytes*((meta.permutationControl>>(2*lane))&3)+byte;
+      assert(emitted.includes(Buffer.from([0xfd,0x0d,...coordinates,0xfd,0x0b])),`${form}: one static permutation/publication`);
+      assert(emitted.length<=(meta.register?410:495),'no scalar lane expansion');
     }
     const imports=[{module:'machine',name:'memory',kind:'memory'}];
     if(!meta.register)for(const name of meta.store?['write_begin','write_word','write_end']:['read_pair'])imports.push({module:'machine',name,kind:'function'});
@@ -143,6 +160,36 @@ try {
     }
     // Model-only control faults: a user-mode native oracle cannot write CR0/4.
     const first=records.subarray(0,stride);
+    if(meta.permutationWidth) {
+      for(let control=0;control<256;++control) {
+        const selected=Buffer.from(source);selected[meta.sourceBytes-1]=control;
+        cold.set(selected,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
+        assert.equal(cc.compiler_emit(entry,1,output,65536,report),0);
+        const length=Number(cv.getBigUint64(report+40,true)),body=Buffer.from(cold.subarray(output,output+length));
+        const transformed=(await engines.get(entry,body)).exports.cut;vm.__indirect_function_table.set(slot,transformed);
+        if(control===0xe4) {
+          assert(!body.includes(Buffer.from([0xfd,0x0d])),'identity has no pure permutation');
+          if(meta.register&&(form-360)%8===1) {
+            assert(length<=365,'identity alias has no payload read/publication');
+            assert(!body.includes(Buffer.from([0xfd,0x00]))&&!body.includes(Buffer.from([0xfd,0x0b])));
+          }
+        }
+        for(const dispatch of [false,true])for(const pattern of [0,1]) {
+          reset(selected,meta,first,0);const same=meta.register&&(form-360)%8===1;
+          const where=meta.register?base+(same?272:304):target(u64(first,0));
+          for(let byte=0;byte<16;++byte)data[where+byte]=pattern?255-byte*13:byte*7+3;
+          const wanted={state:cpu(),bytes:image(),result:1n};
+          permutation(Buffer.from(data.subarray(where,where+16)),meta.permutationWidth,meta.permutationHigh,control).copy(wanted.state,272);
+          wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
+          compare(transformed,wanted,`${form}: every permutation immediate ${control}/${pattern}`,dispatch);++immediatePermutationModels;
+        }
+        if(control===0xe4&&!meta.register&&meta.kind!==4)for(const dispatch of [false,true])for(const row of [3,5,6,9]) {
+          const r=records.subarray(row*stride,(row+1)*stride);assert(u64(r,5));
+          reset(selected,meta,r,row);compare(transformed,expected(r,meta),`${form}: identity still faults/${row}`,dispatch);++identityFaultModels;
+        }
+      }
+      vm.__indirect_function_table.set(slot,cut);
+    }
     if(meta.shiftWidth && (form-264)%16===0) {
       const patterns=[0n,~0n,0x0123456789abcdefn,0x8000000100018000n];
       for(let count=0;count<256;++count) {
@@ -229,7 +276,7 @@ try {
     }
     if(meta.register && !meta.shiftWidth)for(const dispatch of [false,true]) {
       // Deliberate source/target alias: full input is captured before output.
-      const alias=Buffer.from(source);alias[meta.sourceBytes-1]=0xc9;
+      const alias=Buffer.from(source);alias[meta.sourceBytes-(meta.permutationWidth?2:1)]=0xc9;
       cold.set(alias,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
       assert.equal(cc.compiler_emit(entry,1,output,65536,report),0);
       const n=Number(cv.getBigUint64(report+40,true));
@@ -258,6 +305,8 @@ try {
         const old=Buffer.from(wanted.state.subarray(272,288));
         byteShuffle(old,old).copy(wanted.state,272);
       }
+      if(meta.permutationWidth)
+        permutation(Buffer.from(wanted.state.subarray(272,288)),meta.permutationWidth,meta.permutationHigh,meta.permutationControl).copy(wanted.state,272);
       vm.__indirect_function_table.set(slot,same);compare(same,wanted,`${form}: alias`,dispatch);++aliases;
       vm.__indirect_function_table.set(slot,cut);
     }
@@ -294,6 +343,10 @@ try {
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204e1en,8,output,65536,report),0);
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
+  cold.fill(0x90,input,input+4096);cold.set([0x66,0x0f,0x70,0xc0,0x93],input+0xeb8);
+  assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
+  assert.equal(cc.compiler_emit(0xffffffff81204eb8n,8,output,65536,report),0);
+  assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
   cold.fill(0x90,input,input+4096);cold.set([0x66,0x41,0x0f,0x38,0x00,0xdc],input+0xe36);
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204e36n,8,output,65536,report),0);
@@ -317,8 +370,8 @@ try {
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),16);
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
-    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,shuffleSelectorModels,simdRefusalModels,immediateShiftModels,
-    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ, PADDD, PSHUFB and PSRLD common C compilation accepted; not executed by this fixture',
+    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,shuffleSelectorModels,simdRefusalModels,immediateShiftModels,immediatePermutationModels,identityFaultModels,
+    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ, PADDD, PSHUFB, PSRLD and PSHUFD common C compilation accepted; not executed by this fixture',
     oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or FP arithmetic',
     linuxBoot:'not-tested'}));
 } finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}

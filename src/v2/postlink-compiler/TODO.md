@@ -8,8 +8,15 @@ agrees. This remains independent Node evidence, not browser/PID 1/shell.
 engine 417,747.825 ms, cold compiler 157,391.655 ms, execution 92,629.999 ms.
 Allocated linear Memory is 20,512,768 bytes; RSS is not measured. Counts vary
 with calibration and are not a speedup claim. The same bundle/UI are unchanged.
-Next: general admitted-immediate vector permutation, then bounded precise
-engine/source reconstruction. See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-pshufd-red.json).
+General PSHUFD/PSHUFHW/PSHUFLW now use one static vector-coordinate operation,
+with identity substitution and unchanged full memory fault frontier. 384 exact
+emissions, 49,152 unchanged native observations, all 256 controls/all operand
+forms, precise control/fault/wait checks, full compiler/CLI checks and scoped
+sanitizers pass. The final 446,341-byte compiler is running on the same bundle;
+observe its actual next gate without restarting it. Fixture pass is not boot.
+Next: actual common ISA/ABI gate and bounded precise engine/source
+reconstruction. See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-pshufd-red.json)
+and [general permutation evidence](../vm/check/browser/evidence/2026-10-05-vector-permutation.md).
 
 Previous actual gate: immediate PSRLD, `66 0f 72 d1 0c`, 0xffffffff81204e49.
 The final byte-shuffle compiler actually passes PSHUFB and reaches 161,593,710

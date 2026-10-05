@@ -166,10 +166,19 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.has_msr = plan->system_cut == CUT_SYSTEM_MSR;
     cut.has_debug = plan->system_cut == CUT_SYSTEM_DEBUG;
     cut.has_repeat = plan->repeat_cut;
-    wasm_writer_uleb(writer, 1u);
-    wasm_writer_uleb(writer, cut.has_repeat ? CUT_REPEAT_LOCALS
-                           : cut.has_port ? CUT_MEMORY_LOCALS : CUT_LOCAL_COUNT);
+    pl_u32 permutation_local=0u;
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER) {
+        pl_x86_instruction instruction;
+        if(pl_x86_decode_profile(&plan->image,rip,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
+        permutation_local=cut_vector_permutation_shape(&instruction)
+            && instruction.operands[2].value.immediate!=0xe4u;
+    }
+    pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    cut.vector_local=locals+2u; /* The two parameters precede ordinary locals. */
+    wasm_writer_uleb(writer, permutation_local?2u:1u);
+    wasm_writer_uleb(writer, locals);
     wasm_writer_byte(writer, 0x7eu);
+    if(permutation_local) {wasm_writer_uleb(writer,1u);wasm_writer_byte(writer,0x7bu);}
     cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
     cut_op(&cut, 0x71u); return_if(&cut);
     /* Validate the whole state reservation before any access. i64 arithmetic

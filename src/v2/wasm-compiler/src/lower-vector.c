@@ -12,10 +12,12 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
 {
     if(instruction->status!=PL_X86_DECODE_VALID || instruction->flow!=PL_X86_FLOW_NEXT
             || instruction->machine_operation!=PL_X86_MACHINE_VECTOR
-            || instruction->visible_operand_count!=2u
+            || (instruction->visible_operand_count!=2u && instruction->visible_operand_count!=3u)
             || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
                 |PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
     const pl_x86_operand *target=&instruction->operands[0],*source=&instruction->operands[1];
+    pl_u32 permutation=cut_vector_permutation_shape(instruction);
+    if(!permutation && instruction->visible_operand_count!=2u)return 0;
     if(cut_vector_shift_shape(instruction))return xmm(target,0);
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
     pl_u64 operation=instruction->machine_argument>>32u;
@@ -24,7 +26,7 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     int packed=kind==10u && (add || operation==12u || unpack);
     int logic=(kind>=1u && kind<=3u) || kind==24u;
     int shuffle=kind==61u;
-    if(kind && !packed && !logic && !add && !shuffle)return 0;
+    if(kind && !packed && !logic && !add && !shuffle && !permutation)return 0;
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
     if((read && write) || (kind && write))return 0;
     if((read?source->bits!=128u:!xmm(source,!!unpack))
@@ -35,8 +37,9 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u64 argument=kind|((pl_u64)(write?0u:target->value.reg.index)<<8u)
         |((pl_u64)(read?0u:source->value.reg.index)<<16u)|((pl_u64)read<<24u)|((pl_u64)write<<25u);
     if(packed)argument|=(operation<<32u)|((pl_u64)read<<26u);
-    else if(logic || add || shuffle)argument|=(pl_u64)read<<26u;
+    else if(logic || add || shuffle || permutation)argument|=(pl_u64)read<<26u;
     else if(read || write)argument|=instruction->machine_argument&(1ull<<26u);
+    if(permutation)argument|=instruction->operands[2].value.immediate<<32u;
     return instruction->machine_argument==argument;
 }
 static void fault_if(cut_lowering *cut,pl_u32 vector)
@@ -80,6 +83,9 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     cut_sse_guard(cut);
     pl_u32 shift=cut_vector_shift_shape(instruction);
     if(shift) {cut_lower_vector_shift(cut,instruction,shift);return;}
+    pl_u32 permutation=cut_vector_permutation_shape(instruction);
+    if(permutation && !read && instruction->operands[2].value.immediate==0xe4u
+            && instruction->operands[0].value.reg.index==instruction->operands[1].value.reg.index)return;
     /* Equal logical operands normalize to zero or identity. Control faults
      * still precede this pure substitution; no old XMM payload is needed. */
     if(!read && (kind==1u || kind==2u || kind==3u || kind==24u)
@@ -106,6 +112,7 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
         cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,0u);cut_access_status(cut);
     }
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
+    if(permutation) {cut_lower_vector_permutation(cut,instruction,permutation);return;}
     if(unpack) {cut_lower_vector_unpack(cut,instruction,unpack);return;}
     if(kind==61u) {cut_lower_vector_shuffle(cut,instruction);return;}
     if(read) {
