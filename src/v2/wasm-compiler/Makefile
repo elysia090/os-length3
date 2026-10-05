@@ -37,6 +37,12 @@ SOURCES += src/lower-vector-scalar.c
 .PHONY: direct-call-check
 .PHONY: string-element-check
 .PHONY: segment-memory-check
+.PHONY: exchange-check
+check: exchange-check
+exchange-check: $(BUILD)/exchange-check
+	$(BUILD)/exchange-check
+$(BUILD)/exchange-check: check/exchange.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/exchange.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 $(BUILD)/vector-scalar-check $(BUILD)/vector-transfer-check $(BUILD)/mxcsr-check \
 $(BUILD)/memory-divide-check $(BUILD)/paired-exchange-check $(BUILD)/memory-shift-check \
 $(BUILD)/double-shift-check $(BUILD)/push-memory-check $(BUILD)/pop-memory-check \

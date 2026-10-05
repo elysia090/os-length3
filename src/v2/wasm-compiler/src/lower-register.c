@@ -182,6 +182,11 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_BYTE_SWAP:
         return count == 1u && (operands[0].bits == 32u || operands[0].bits == 64u)
             && operands[0].bits == operands[0].value.reg.bits && !operands[0].value.reg.flags;
+    case PL_X86_OPERATION_EXCHANGE:
+        return count==2u && operands[1].kind==PL_X86_OPERAND_REGISTER
+            && cut_gpr(&operands[1].value.reg) && operands[0].bits==operands[1].bits
+            && operands[0].bits==operands[0].value.reg.bits
+            && operands[1].bits==operands[1].value.reg.bits;
     case PL_X86_OPERATION_COMPLEMENT:
     case PL_X86_OPERATION_NEGATE:
     case PL_X86_OPERATION_INCREMENT:
@@ -385,6 +390,18 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     const pl_x86_operand *operands = instruction->operands;
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
+    if (operation == PL_X86_OPERATION_EXCHANGE) {
+        /* Simultaneous substitution, not three arithmetic operations. Capture
+         * both current SSA values before either partial-parent write. AL/AH
+         * then preserve the other's newly substituted field; 32-bit writes
+         * define a zero upper half even for a self exchange. No flag change. */
+        read_register(cut,&operands[0].value.reg); cut_set(cut,CUT_LEFT);
+        read_register(cut,&operands[1].value.reg); cut_set(cut,CUT_VALUE);
+        cut_write_register(cut,&operands[0].value.reg);
+        cut_get(cut,CUT_LEFT); cut_set(cut,CUT_VALUE);
+        cut_write_register(cut,&operands[1].value.reg);
+        return;
+    }
     if (operation == PL_X86_OPERATION_BYTE_SWAP) {
         pl_u32 width = operands[0].bits;
         /* Adjacent-byte and halfword permutations followed by a half rotation.

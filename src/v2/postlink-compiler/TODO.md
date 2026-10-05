@@ -1,5 +1,12 @@
 # Remaining work — 2026-10-06
 
+Register XCHG is separately locally green: 186 fresh native/cold emission
+parity checks, 11,904 native x86 GPR/flags rows, 11,904 direct + 11,904 C-dispatch
+comparisons, 1,088 complete-state substitution models including RSP/high-byte
+aliases, full native compiler/CLI and scoped sanitizers. Compiler 452,445 bytes,
+VM unchanged at 70,499. It is not loaded in the completed FS rerun below.
+See [simultaneous substitution and scope](../vm/check/browser/evidence/2026-10-06-register-exchange.md).
+
 FS/GS common addressing is locally green: 1,024 native x86 observations,
 1,024 direct + 1,024 C-dispatch comparisons, 24 fresh native/cold byte-parity
 emissions, 240 twenty-family address models and 160 C page-wait resumes.
@@ -8,10 +15,16 @@ publication passes. Signed `i32.const` encoding, all native VM/compiler/CLI
 checks, scoped ASan/UBSan and freshly emitted REP regressions pass.
 Frozen VM/compiler are 70,499 / 452,168 bytes. See
 [substitution, evidence and limits](../vm/check/browser/evidence/2026-10-06-segment-memory.md).
-The unchanged-bundle independent Node rerun is active (PID 13684,
-`temp/segment-1006/frozen`, warmCuts=64, unchanged quotas). It is not a
-browser run; no retained Worker or staged asset is replaced. Do not describe
-the local TLS green as successful PID 1, root mount or shell.
+The `f30ac99` unchanged-bundle independent Node rerun completed: FS TLS
+passes; the next -102 is `48 93` (XCHG RAX,RBX), RIP `0x7f60ac407401`,
+after 180,839,787 retirements / 93,108,138 admissions. Engine construction
+250,159 ms still exceeds cold emission 217,728 ms and C execution 67,109 ms;
+total 673,905 ms. There are 6,272,897 constructions / 6,272,151 evictions,
+746 live bodies / 262,093 witness bytes under unchanged quotas. See the
+[completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-exchange-red.json).
+PID 13684 completed. This is not a browser run and different retired work/
+clock calibration is not a paired speedup. No retained Worker/staged asset
+was replaced. PID 1, root mount and shell remain unachieved.
 
 Latest completed same-bundle gate (`36eb952`): non-REP MOVSB passes. The next
 common compiler refusal is FS TLS load `64 48 8b 04 25 00 00 00 00`
@@ -24,9 +37,10 @@ do not establish an elapsed-ratio speedup. See the
 [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
 PID 21444 completed; no retained browser Worker or staged asset was replaced.
 
-Immediate order: obtain that frozen rerun's completed receipt, then make its
-next actual common ISA/MMU/machine-ABI gate red and close it without a host
-interpreter. FS/GS effective-offset -> linear-address normalization now uses
+Immediate order: freeze the register-XCHG candidate and rerun the unchanged
+bundle, then make its next actual gate red. XCHG widths/aliases/current SSA
+values now close in the common pure lowering without a host interpreter.
+FS/GS effective-offset -> linear-address normalization now uses
 the same C-owned boundary across scalar, reservation, vector, ordered record
 and string consumers. Address-size truncation precedes the full-width base
 addition; LEA remains base-free. The old frozen compiler still fails the exact

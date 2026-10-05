@@ -1,13 +1,25 @@
 # Browser projection of OS Length3 Linux
 
+Next local candidate: register XCHG is simultaneous SSA substitution, with
+186 native/cold parity emissions and 11,904 native x86 rows agreeing in direct
+and C-dispatch execution. Full native checks/scoped sanitizers and 1,088
+RSP/high-byte models pass; compiler 452,445 bytes, VM unchanged. This is not
+loaded in the completed FS run below. See
+[exchange normal form and scope](../vm/check/browser/evidence/2026-10-06-register-exchange.md).
+
 Local candidate (2026-10-06): the general C-owned FS/GS address boundary
 matches 1,024 native x86 observations in both direct and C-dispatch execution.
 Twenty-family address substitution, actual C page-wait/latch/MSR fences,
 full native VM/compiler/CLI, scoped sanitizers and fresh REP regressions pass.
-Candidate VM/compiler 70,499 / 452,168 bytes are frozen for the independent
-same-bundle Node rerun (PID 13684, warmCuts=64, unchanged quotas). See
+Candidate VM/compiler 70,499 / 452,168 bytes were frozen for the completed
+independent same-bundle Node rerun (warmCuts=64, unchanged quotas). FS TLS
+passes; the next actual -102 is `48 93` (XCHG RAX,RBX) at `0x7f60ac407401`,
+180,839,787 retirements / 93,108,138 admissions. Engine construction remains
+largest at 250,159 ms, cold emission 217,728 ms, execution 67,109 ms, total
+673,905 ms. This is not a paired speedup across different work/clock calibration.
+See [actual completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-exchange-red.json) and
 [normalization and counted scope](../vm/check/browser/evidence/2026-10-06-segment-memory.md).
-The completed full measurement is still the FS red below; local green is not
+PID 13684 completed. The FS red below is historical; the local green is not
 PID 1, root mount, shell/tooling or browser acceptance. Retained browser
 Workers/staged assets and the native publication/UI remain unchanged.
 
