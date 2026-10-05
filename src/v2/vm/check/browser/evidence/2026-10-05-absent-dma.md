@@ -47,11 +47,16 @@ its first valid byte read. After the change:
 * Native C: 12,288 absent-device transfers plus the unchanged 7,680 permission
   cases, TSS crossing-page residency/#PF, TF, generation, pending clock/console
   and unknown-neighbor checks pass.
-* [C-Wasm check](2026-10-05-absent-dma.json): 209 emissions, 6,145 complete-CPU
+* [C-Wasm check](2026-10-05-absent-dma.json): 225 emissions, 6,145 complete-CPU
   comparisons, 1,665 retirements, 1,152 permission faults, 3,328 width refusals.
   Source #PF/stale generation/wrong binding/pending clock each pass 192 cases;
   unknown neighbors pass 16. Immediate/DX, IN/OUT, address prefixes, all widths,
   CPL/IOPL pairs, memory growth and the exact stopped coordinate are tested.
+  In addition, 2,048 two-instruction OUT/IN sequences cover every byte at every
+  port without reopening the machine between transfers; all 4,096 source
+  retirements and complete CPU updates agree. Native C also tests these
+  write/read sequences while preserving a distinct POST-80h latch. A reset
+  between writes and reads cannot hide a phantom DMA register in these tests.
 * Fresh native-C I/O/RDTSC emissions: 26 exact cold/native parity cases and
   3,328 C-Wasm permission/event comparisons pass.
 * Full VM C check, scoped I/O ASan/UBSan and the admitted-coordinate C-MMU
@@ -64,6 +69,32 @@ VM: 63,165 bytes (+80), SHA-256
 Compiler unchanged: 446,940 bytes, SHA-256
 `ca7788b12f97b52cf3c44d13923d7edc66217c7c6a69141f5ad357496c7bd245`.
 Native bundle/UI/retained browser Workers/staged binaries are unchanged.
+
+## Independent full-bundle run and remaining fixed fees
+
+The unchanged bundle/segments/root-image run started from `ff8a329` is still
+running. Its [bounded observation](2026-10-05-node-startup-dma-running.json)
+is not a final gate, boot percentage, PID 1 or speedup comparison. The
+diagnostic lazy-message change is loaded in this run, unlike `bea73ae`.
+Sequence-test additions affect no loaded execution binary or checker.
+
+An independent Windows process sample at 2026-10-05T06:50:53Z reports working
+set 324,075,520 bytes, peak working set 361,758,720 bytes and private bytes
+331,444,224. The 14,519,304,192-byte virtual reservation is not resident RAM.
+These are host-process quantities, not browser measurements; the nearest
+progress sample then has 21,037,056 allocated linear-Memory bytes. The later
+running observation has a larger linear Memory; the two samples are not
+simultaneous or claimed to be final peaks. The 256 KiB witness
+quota is not a bound on engine-generated code, heap or process working set.
+
+Inspection exposes another fixed-fee candidate: `startup-check.mjs` binds one
+execution row and calls `vm_run(..., 1)` for every admission. The C dispatcher
+already has a multi-row/quantum API, but that alone does not prove a source-
+owned warm cohort. Any such normalization must keep exact source/permission/
+generation admission, context changes, write revocation, cross-page fetch,
+precise fault retirement, IRQ/shadow priority and latched event continuations
+in C. It must not become a JS branch interpreter or bypass an admission.
+No warm-cohort speedup is established by this inspection.
 
 ```sh
 make -C src/v2/vm check

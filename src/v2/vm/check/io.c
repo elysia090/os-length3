@@ -122,6 +122,12 @@ int main(void)
     const pl_u32 unknown_ports[]={0x84u,0x85u,0x86u,0x88u,0x8cu,0x8du,0x8eu,0x97u};
     for(pl_u32 rank=0u;rank<8u;++rank)for(pl_u32 write=0u;write<2u;++write)
         EXPECT(io(unknown_ports[rank],1u|(write ? MACHINE_IO_WRITE : 0u),0u)==6u);
+    reset(0u,0u);EXPECT(!io(0x80u,0x101u,0x52u));
+    for(pl_u32 rank=0u;rank<8u;++rank)for(pl_u32 value=0u;value<256u;++value){
+        EXPECT(!io(absent_ports[rank],0x101u,value));
+        EXPECT(!io(absent_ports[rank],1u,0u) && get(8u)==255u);
+        EXPECT(post.valid && post.byte==0x52u && !clock_owner.stage && !clock_owner.now);
+    }
     reset(0u,0u);
     for (pl_u32 coordinate=0u;coordinate<65536u;coordinate+=127u)
         if(!vm_uart_accepts(coordinate))EXPECT(io(coordinate,1u,0u)==6u && !clock_owner.stage);

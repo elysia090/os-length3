@@ -1,7 +1,7 @@
 {
   "format": "c-wasm-absent-isa-dma-v1",
   "status": "pass",
-  "emissions": 209,
+  "emissions": 225,
   "comparisons": 6145,
   "retirements": 1665,
   "permissionFaults": 1152,
@@ -11,6 +11,7 @@
   "bindingRefusals": 192,
   "pendingRefusals": 192,
   "unknownRefusals": 16,
+  "writeReadSequences": 2048,
   "oracle": "fixed-platform absent page-port contract and x86 permission/frontier models; no system-mode hardware comparison",
   "browserAcceptance": "not-tested",
   "linuxBoot": "not-tested"

@@ -42,7 +42,7 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Rerun the unchanged bundle/segments/root image with the C absent-ISA-DMA
+1. Complete the running unchanged bundle/segments/root-image test with the C absent-ISA-DMA
    platform contract. The port-87h red is green in general C/native/C-Wasm
    checks, not yet a new full-bundle observation. Unknown ports still refuse.
    See [derivation and validation](../vm/check/browser/evidence/2026-10-05-absent-dma.md).
@@ -52,6 +52,11 @@ Next obligations, in order:
 3. From the completed ABI-2 profile, remove remaining source/descriptor
    reconstruction work using exact physical admission/lifetime invariants,
    not cache-quota inflation or an unproved coordinate/hash alias.
+   Inspection also identifies per-admission one-row bind/one-cut return in
+   the startup diagnostic. Derive/test a C-owned warm cohort before batching;
+   source permissions, context/write revocation, fault/IRQ/shadow priority
+   and pinned continuations cannot be dropped. This is a candidate, not an
+   already measured Linux speedup. Host working set and linear Memory differ.
 4. Actual PID 1 -> immutable release-root mount -> offline shell/C compile/run/
    make/Git/apk; then authenticated workspace recovery and grant-based NIC.
    Independent Node evidence is not real-browser acceptance. Retained browser

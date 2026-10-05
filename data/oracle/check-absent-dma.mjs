@@ -21,6 +21,7 @@ const put=(at,x)=>view.setBigUint64(at,BigInt.asUintN(64,BigInt(x)),true);
 const cpu=()=>Buffer.from(data.subarray(base,base+1256));
 let emissions=0,comparisons=0,retirements=0,permissionFaults=0,widthRefusals=0;
 let fetchFaults=0,staleRefusals=0,bindingRefusals=0,pendingRefusals=0,unknownRefusals=0;
+let writeReadSequences=0;
 function reset(entry,source,coordinate,cpl=0,iopl=0,deny=false){
   vm.vm_close();data.fill(0,base);
   for(let rank=0;rank<9;++rank){
@@ -113,12 +114,33 @@ try{
   expected.writeBigUInt64LE((expected.readBigUInt64LE(0)&~255n)|255n,0);
   expected.writeBigUInt64LE(actualEntry+2n,384);expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(42n,1128);
   assert.equal(vm.vm_run(port,9n,1),1n);assert(cpu().equals(expected));++comparisons;++retirements;
+  // OUT then IN without reopen: discarded writes must not create a latch.
+  // Both rows are compiled normally and receive separate admitted coordinates.
+  const readSlot=vm.__indirect_function_table.grow(1);
+  try{
+    for(const coordinate of ports){
+      const out=[0xe6,coordinate],ins=[0xe4,coordinate],source=[...out,...ins];
+      const outCut=await emit(entry,out),inCut=await emit(entry+2n,ins);
+      vm.__indirect_function_table.set(slot,outCut);vm.__indirect_function_table.set(readSlot,inCut);
+      for(let value=0;value<256;++value){
+        reset(entry,source,coordinate);put(base,0xfeedabcd98765400n|BigInt(value));
+        view.setUint32(rows+8,2,true);put(rows+24,entry+2n);
+        view.setUint32(rows+32,2,true);view.setUint32(rows+36,1,true);
+        view.setUint32(rows+40,readSlot,true);view.setUint32(rows+44,0,true);
+        assert.equal(vm.vm_bind_execution(rows,2,9n),0);
+        const expected=cpu();expected.writeBigUInt64LE(0xfeedabcd987654ffn,0);
+        expected.writeBigUInt64LE(entry+4n,384);expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(43n,1128);
+        assert.equal(vm.vm_run(port,9n,2),1n);assert(cpu().equals(expected));
+        assert.equal(vm.vm_completed(),2);assert.equal(vm.vm_source_retired(),2n);++writeReadSequences;
+      }
+    }
+  }finally{vm.__indirect_function_table.set(readSlot,null);}
   for(const coordinate of [0x84,0x85,0x86,0x88,0x8c,0x8d,0x8e,0x97])for(const write of [false,true]){
     const source=[write?0xe6:0xe4,coordinate];await emit(entry,source);reset(entry,source,coordinate);
     const before=cpu();assert.equal(vm.vm_run(port,9n,1),6n);assert(cpu().equals(before));++unknownRefusals;
   }
 }finally{vm.__indirect_function_table.set(slot,null);vm.vm_close();cc.compiler_close();}
 console.log(JSON.stringify({format:'c-wasm-absent-isa-dma-v1',status:'pass',emissions,comparisons,
-  retirements,permissionFaults,widthRefusals,fetchFaults,staleRefusals,bindingRefusals,pendingRefusals,unknownRefusals,
+  retirements,permissionFaults,widthRefusals,fetchFaults,staleRefusals,bindingRefusals,pendingRefusals,unknownRefusals,writeReadSequences,
   oracle:'fixed-platform absent page-port contract and x86 permission/frontier models; no system-mode hardware comparison',
   browserAcceptance:'not-tested',linuxBoot:'not-tested'},null,2));
