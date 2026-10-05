@@ -88,6 +88,20 @@ each test, and all tested stack bytes are writable at the actual CALL. Fresh
 outputs are required. The source and exact minimized full-fixture input are
 retained, not hidden by retrying a red until green.
 
+For an independent Windows-native observation, outside that build VM:
+
+```sh
+gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror data/oracle/call-fault-windows.c data/oracle/call-fault-windows.S -o NEW-DIRECTORY/call-fault-windows.exe
+NEW-DIRECTORY/call-fault-windows.exe 4096 > NEW-DIRECTORY/windows.log
+node data/oracle/observe-call-fault-windows.mjs NEW-DIRECTORY/windows.log
+```
+
+This uses Win32 vectored exception contexts, not a claimed architectural
+exception vector or bare-metal CPU oracle. CPUID provenance is retained.
+Recovery does not retry the faulting CALL. The parser requires all 216 groups
+and their complete totals; mixed payloads remain observations, never an
+equivalence pass. See [Windows evidence](../../src/v2/vm/check/browser/evidence/2026-10-05-call-fault-windows.md).
+
 ### Cold output witness without per-cut capacity poisoning
 
 The startup diagnostic's `CompilerOutput` initializes its 64 KiB output and

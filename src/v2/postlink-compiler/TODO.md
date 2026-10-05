@@ -1,6 +1,20 @@
 # Remaining work — 2026-10-05
 
-Current actual gate: PSHUFD, `66 0f 70 c0 93`, 0xffffffff81204eb8.
+Current actual gate: LFENCE, `0f ae e8`, 0xffffffff810332c7.
+Final permutation startup actually passes PSHUFD and reaches 165,880,678
+retirements / 90,288,812 admissions. Complete decompression agrees; PID 1,
+release-root mount/shell and real-browser acceptance are not achieved.
+Engine construction remains dominant (18,346,806 constructions, 474,845.138 ms).
+Next: general LFENCE/MFENCE/SFENCE under the explicit single-owner ordinary
+Memory execution contract, then bounded engine/source reconstruction.
+See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-lfence-red.json).
+
+Previous actual gate: PSHUFD, `66 0f 70 c0 93`, 0xffffffff81204eb8.
+Independent Windows-native CALL diagnosis also reproduces mixed payloads:
+426 untouched words / 884,736 calls outside the build guest. CPUID still
+reports Hyper-V, and Win32 context is not an architectural vector proof.
+Strict expectations/lowering remain unchanged and red. See
+[independent receipt](../vm/check/browser/evidence/2026-10-05-call-fault-windows.md).
 The completed final immediate-shift compiler actually passes PSRLD/PSLLD and
 reaches 162,281,231 retirements / 87,825,289 admissions; complete decompression
 agrees. This remains independent Node evidence, not browser/PID 1/shell.
@@ -12,8 +26,8 @@ General PSHUFD/PSHUFHW/PSHUFLW now use one static vector-coordinate operation,
 with identity substitution and unchanged full memory fault frontier. 384 exact
 emissions, 49,152 unchanged native observations, all 256 controls/all operand
 forms, precise control/fault/wait checks, full compiler/CLI checks and scoped
-sanitizers pass. The final 446,341-byte compiler is running on the same bundle;
-observe its actual next gate without restarting it. Fixture pass is not boot.
+sanitizers pass. The final 446,341-byte compiler completed on the same bundle,
+actually passed PSHUFD and reached LFENCE. Fixture pass is not boot.
 Next: actual common ISA/ABI gate and bounded precise engine/source
 reconstruction. See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-pshufd-red.json)
 and [general permutation evidence](../vm/check/browser/evidence/2026-10-05-vector-permutation.md).

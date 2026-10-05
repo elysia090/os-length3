@@ -1,5 +1,10 @@
 # Independent near CALL fault observations — 2026-10-04
 
+Later independent Windows-native receipt:
+[2026-10-05](2026-10-05-call-fault-windows.md), 426 untouched words among
+884,736 calls outside the build guest. CPUID reports Hyper-V; not bare hardware
+or allowed-effect proof. Product lowering/strict expectations stay unchanged.
+
 ## Product red and oracle provenance
 
 The active Windows build VM was independently inspected without restarting

@@ -83,9 +83,18 @@ Compiler: 446,341 bytes (+882), SHA-256
 `a4643f9d9a744e6b65d69aba53cc027e9fa99c2afa161a37f40216e1d40210f8`.
 VM: unchanged 63,052 bytes, SHA-256
 `a0bb464e8f4d3bd47e9dbc12fe84ac111cb9e9ad9a52d190be67a3f615cb814c`.
-The final compiler is running on the same shipped bundle with independent
-segment/root-image fixtures. Do not restart it or treat fixture acceptance as
-actual PSHUFD/PID 1 execution. Native release and human UI remain unchanged.
+The final compiler completed on the same shipped bundle with independent
+segment/root-image fixtures and actually passed PSHUFD. It reaches LFENCE
+(`0f ae e8`), 0xffffffff810332c7, at 165,880,678 retirements / 90,288,812
+admissions: [actual receipt](2026-10-05-node-startup-lfence-red.json).
+All decompressed bytes still agree. Raw local receipt SHA-256
+`ffffa1be67e0bb50a15cf6009be61534f427b4ec26882389207b06a43f4570db`.
+18,346,806 constructions / 18,346,055 evictions retain 749 entries /
+261,929 bytes under unchanged quota. Measured ms: engine 474,845.138,
+cold 181,755.533, execution 101,532.932, admission 22,911.210, supply 203.066,
+elapsed 932,384.181. Calibration/work differ, so this is not a speedup claim.
+Allocated linear Memory is 20,512,768 bytes, not RSS. PID 1, release-root mount
+and shell are not achieved. Native release and human UI remain unchanged.
 Reproduce via the fresh-directory native/cold/Node/startup commands in the
 [preceding checkpoint](2026-10-05-vector-shuffle.md).
 Complete browser boot/PID 1, release-root mount, offline development commands,
