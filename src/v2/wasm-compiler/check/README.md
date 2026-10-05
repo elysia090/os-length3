@@ -1,5 +1,13 @@
 # Compiler boundary checkpoint — 2026-10-02
 
+Current ordering checkpoint (2026-10-05): general LFENCE/MFENCE/SFENCE retain
+their precise system cuts but have no value payload under the synchronous,
+single-owner ordinary-Memory contract. 120 exact emissions, 7,680 unchanged
+native observations, full direct/C-dispatch CPU comparisons, actual C-MMU
+ordering/fetch/wait/crossing checks and scoped sanitizers pass. Shared Memory
+rejects at link time. Native SMP ordering and host speculation security are
+not claimed. See [derivation and precise scope](../../vm/check/browser/evidence/2026-10-05-memory-order.md).
+
 Current vector checkpoint (2026-10-05): legacy PSHUFB emits one deterministic
 Wasm vector AND/swizzle network after the existing precise SSE/memory frontier.
 Standard Wasm SIMD is now an explicit projection requirement; absent support

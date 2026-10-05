@@ -3,8 +3,24 @@
 #include <x86/profile.h>
 #include <machine/msr.h>
 #include <machine/exception.h>
+static int memory_order_supported(const pl_x86_instruction *instruction)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    return instruction->status==PL_X86_DECODE_VALID
+        && instruction->encoding==PL_X86_ENCODING_LEGACY
+        && instruction->machine_operation==PL_X86_MACHINE_MEMORY_ORDER
+        && (instruction->machine_argument==0u || instruction->machine_argument==1u
+            || instruction->machine_argument==5u)
+        && !instruction->visible_operand_count
+        && (instruction->flow==PL_X86_FLOW_NEXT || instruction->flow==PL_X86_FLOW_SYSTEM)
+        && (instruction->flags&required)==required
+        && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY
+            |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER));
+}
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if(memory_order_supported(instruction))return CUT_SYSTEM_MEMORY_ORDER;
     int io = cut_io_supported(instruction);
     if (io) return io;
     if (cut_fxsave_supported(instruction)) return CUT_SYSTEM_FXSAVE;
@@ -329,6 +345,19 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (cut_mxcsr_supported(instruction)) { cut_lower_mxcsr(cut,instruction); return; }
     if (cut_vector_supported(instruction)) { cut_lower_vector(cut,instruction); return; }
     if (cut_vector_scalar_supported(instruction)) { cut_lower_vector_scalar(cut,instruction); return; }
+    if(memory_order_supported(instruction)) {
+        _Static_assert((PL_X86_CPUID_1_EDX&((1u<<25u)|(1u<<26u)))==((1u<<25u)|(1u<<26u)),
+            "fences require the fixed SSE/SSE2 CPU contract");
+        /* At a serialized cut boundary, all preceding synchronous C accesses
+         * have completed; there is no store buffer, outstanding guest load or
+         * other RAM owner. The required ordering relation already holds.
+         * Its value-state action is identity, not an opcode callback or host
+         * atomic fence. Keep the separate cut, admission, RF and retirement.
+         * CR0.EM/TS and CR4.OSFXSR do not disable these instructions. Adding
+         * shared RAM, async accesses or another vCPU changes this contract
+         * and requires a different lowering before admitting that projection. */
+        return;
+    }
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && instruction->machine_argument==PL_X86_X87_INITIALIZE) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.

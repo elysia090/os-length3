@@ -31,6 +31,14 @@ SOURCES += src/lower-vector-permutation.c
 SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 
+.PHONY: memory-order-check
+check: memory-order-check
+memory-order-check: $(BUILD)/memory-order-check
+	$(BUILD)/memory-order-check
+
+$(BUILD)/memory-order-check: check/memory-order.c check/native-vector.S check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/memory-order.c check/native-vector.S check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
 .PHONY: vector-scalar-check
 check: vector-scalar-check
 vector-scalar-check: $(BUILD)/vector-scalar-check

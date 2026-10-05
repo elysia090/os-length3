@@ -157,7 +157,8 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut.report = plan->report;
     cut.has_memory = plan->report.memory_bytes != 0u;
     cut.has_port = cut.has_memory || plan->indirect_cut || (plan->system_cut
-        && plan->system_cut != CUT_SYSTEM_CPUID && plan->system_cut != CUT_SYSTEM_SELECTOR_READ);
+        && plan->system_cut != CUT_SYSTEM_CPUID && plan->system_cut != CUT_SYSTEM_SELECTOR_READ
+        && plan->system_cut != CUT_SYSTEM_MEMORY_ORDER);
     cut.has_segment = plan->system_cut == CUT_SYSTEM_SEGMENT;
     cut.has_table = plan->system_cut == CUT_SYSTEM_TABLE;
     cut.has_far_return = plan->system_cut == CUT_SYSTEM_FAR_RETURN;

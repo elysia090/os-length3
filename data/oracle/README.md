@@ -58,6 +58,16 @@ must never be reconstructed as initial zero RAM after execution.
 
 ## Independent native oracles
 
+### Serialized memory-order cuts — 2026-10-05
+
+`src/v2/wasm-compiler/check/memory-order.c` records GPR/flags/FPU preservation
+on native x86 before and after lowering, with `--observe` available before
+compiler support. `check-memory-order.mjs VM.WASM COMPILER.WASM EMITTED-DIR
+OBSERVED-DIR` requires byte-identical independent observations, exact cold-C
+emission, real C-MMU/dispatcher execution, shared-Memory refusal and crossing
+fetch/growth checks. Concurrent memory ordering is not inferred from a native
+value-state fixture. See [the empty-frontier derivation](../../src/v2/vm/check/browser/evidence/2026-10-05-memory-order.md).
+
 ### Accelerator provenance and near CALL faults — 2026-10-04
 
 Native user-mode fixtures run inside the independent build VM. They do not

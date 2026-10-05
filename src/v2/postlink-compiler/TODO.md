@@ -5,9 +5,17 @@ Final permutation startup actually passes PSHUFD and reaches 165,880,678
 retirements / 90,288,812 admissions. Complete decompression agrees; PID 1,
 release-root mount/shell and real-browser acceptance are not achieved.
 Engine construction remains dominant (18,346,806 constructions, 474,845.138 ms).
-Next: general LFENCE/MFENCE/SFENCE under the explicit single-owner ordinary
-Memory execution contract, then bounded engine/source reconstruction.
+Next: complete the startup with general LFENCE/MFENCE/SFENCE under the explicit
+single-owner ordinary Memory contract, then bounded engine/source reconstruction.
 See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-lfence-red.json).
+
+General LFENCE/MFENCE/SFENCE now have an empty value-state frontier under that
+contract, with a separate precise cut and ordinary-Memory link enforcement.
+120 exact emissions, 7,680 unchanged native observations, 30,720 full-state
+comparisons, real C-MMU ordering/fetch/wait checks and scoped sanitizers pass.
+The final 446,566-byte compiler is running independently on the same bundle
+to determine the next actual gate. No PID 1/browser/speedup claim follows from
+the fixtures. See [derivation and checks](../vm/check/browser/evidence/2026-10-05-memory-order.md).
 
 Previous actual gate: PSHUFD, `66 0f 70 c0 93`, 0xffffffff81204eb8.
 Independent Windows-native CALL diagnosis also reproduces mixed payloads:

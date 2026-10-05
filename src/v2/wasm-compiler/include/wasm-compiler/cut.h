@@ -124,6 +124,15 @@ typedef struct {
  * alternative. Relaxed SIMD is never required. Selector bits and oversized
  * x86 shift counts are normalized before emission; identity/zero substitution
  * does not remove the preceding precise control frontier or retirement.
+ * LFENCE/MFENCE/SFENCE remain separate one-instruction system cuts. Under
+ * this ordinary (non-shared) Memory, single serialized owner and synchronous
+ * C access contract, the outstanding memory frontier is empty at every cut
+ * return. No value-state payload or guest-memory import is required; entry,
+ * RF clearing and retirement still apply. CR0.EM/TS and CR4.OSFXSR do not
+ * disable fences under the fixed SSE/SSE2 CPU profile. Cache-management and
+ * SERIALIZE instructions are not admitted by this rule. This is neither an
+ * SMP/async/shared-Memory lowering nor a host speculative-side-channel
+ * mitigation guarantee. Such projections must replace this ordering contract.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * It also stops before a later instruction that crosses/starts another fetch
