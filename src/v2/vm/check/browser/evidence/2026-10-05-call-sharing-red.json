@@ -1,0 +1,50 @@
+{
+  "format": "cold-direct-call-sharing-v1",
+  "status": "red",
+  "compilerBytes": 451602,
+  "compilerSha256": "5744d1b026f7d5538a088707481e224582d6535371bb6821fc6f36a8e83bce44",
+  "entryABI": 3,
+  "emissions": 81,
+  "comparisons": 324,
+  "faults": 162,
+  "entryRefusals": 81,
+  "bindingMismatches": 72,
+  "families": [
+    {
+      "prefix": [],
+      "emissions": 27,
+      "distinctExactBodies": 9,
+      "desiredBodies": 1
+    },
+    {
+      "prefix": [
+        103
+      ],
+      "emissions": 27,
+      "distinctExactBodies": 9,
+      "desiredBodies": 1
+    },
+    {
+      "prefix": [
+        72
+      ],
+      "emissions": 27,
+      "distinctExactBodies": 9,
+      "desiredBodies": 1
+    }
+  ],
+  "distinctExactBodies": 18,
+  "witnessBytes": 6344,
+  "engineReuse": {
+    "compilations": 18,
+    "hits": 4078,
+    "entries": 18,
+    "quotaEvictions": 0,
+    "validatedDemands": 0,
+    "retainedModuleBytes": 6344,
+    "maximumEntries": 1024,
+    "maximumBytes": 262144
+  },
+  "scope": "synthetic canonical direct CALL grid; no noncanonical-target CALL-fault equivalence claim",
+  "linuxBoot": "not-tested"
+}

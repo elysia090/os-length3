@@ -111,9 +111,9 @@ int main(int argc, char **argv)
     }
     if (fprintf(meta, "{\"entry\":%llu,\"prefixEntry\":%llu,\"bytes\":8,\"access\":%u,"
                      "\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,\"retiredOffset\":%zu,"
-                     "\"returning\":%s}\n", report.entry, elf.entry, report.memory_access,
+                     "\"operandBinding\":%u,\"returning\":%s}\n", report.entry, elf.entry, report.memory_access,
                      sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
-                     offsetof(machine_state, retired), returning ? "true" : "false") < 0) goto finish;
+                     offsetof(machine_state, retired), report.operand_binding, returning ? "true" : "false") < 0) goto finish;
     result = 0;
 finish:
     if (input && fclose(input)) result = 1;

@@ -119,6 +119,17 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->operand_binding_kind = CUT_BIND_NONE;
                     plan->report.operand_binding = 0u;
                 }
+                if (stack && instruction.operation==PL_X86_OPERATION_CALL
+                        && (instruction.flags&PL_X86_INSTRUCTION_DIRECT_TARGET)) {
+                    /* The implicit return-address store depends on entry and
+                     * source length, not on the one direct destination.
+                     * The latter is an existing signed rel32 attestation. */
+                    pl_u64 displacement=instruction.target-instruction.fallthrough;
+                    if(displacement<=0x7fffffffull || displacement>=0xffffffff80000000ull) {
+                        plan->operand_binding_kind=CUT_BIND_CONTROL_DISPLACEMENT;
+                        plan->report.operand_binding=(pl_u32)displacement;
+                    }
+                }
                 plan->flag_frontier[0] = 0u;
                 if (indirect) plan->report.memory_bytes = instruction.operation == PL_X86_OPERATION_CALL
                     || instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
@@ -172,7 +183,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
              * unsigned coordinates to avoid signed overflow at high entries. */
             pl_u64 displacement = instruction.target - instruction.fallthrough;
             if (displacement <= 0x7fffffffull || displacement >= 0xffffffff80000000ull) {
-                plan->operand_binding_kind = CUT_BIND_BRANCH_DISPLACEMENT;
+                plan->operand_binding_kind = CUT_BIND_CONTROL_DISPLACEMENT;
                 plan->report.operand_binding = (pl_u32)displacement;
             }
             break;

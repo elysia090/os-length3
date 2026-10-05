@@ -160,6 +160,11 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
         } else cut_write_register(cut, &instruction->operands[0].value.reg);
     } else if (instruction->operation == PL_X86_OPERATION_CALL
             && instruction->flags & PL_X86_INSTRUCTION_DIRECT_TARGET) {
-        cut_coordinate(cut, instruction->target); cut_set(cut, CUT_NEXT);
+        if(cut->operand_binding_kind==CUT_BIND_CONTROL_DISPLACEMENT) {
+            cut_coordinate(cut,instruction->fallthrough);
+            cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,3u);
+            cut_op(cut,0xacu);cut_op(cut,0x7cu);
+        }else cut_coordinate(cut,instruction->target);
+        cut_set(cut,CUT_NEXT);
     }
 }

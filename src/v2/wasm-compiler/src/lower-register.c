@@ -465,7 +465,7 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         return;
     }
     if (operation == PL_X86_OPERATION_BRANCH) {
-        if (cut->operand_binding_kind == CUT_BIND_BRANCH_DISPLACEMENT) {
+        if (cut->operand_binding_kind == CUT_BIND_CONTROL_DISPLACEMENT) {
             cut_coordinate(cut, instruction->fallthrough);
             cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 3u);
             cut_op(cut, 0xacu); cut_op(cut, 0x7cu);

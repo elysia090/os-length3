@@ -87,8 +87,13 @@ Native `make check` for VM and compiler/CLI passes with no new warnings.
 VM scoped GCC ASan/UBSan: 1,024 whole-state models, 736 faults, 16 unchanged
 refusals. Existing IRET (484 dispatch/352 hardware), TSS faults (208 hardware),
 IRQ (768 transfers), source cohorts and FXRSTOR (2,304 generated comparisons)
-remain green. Node prefix retains all 86 independent initial-state and
-378 relocation checks; its quota stop is not Linux boot acceptance.
+remain green. The compiler's new transfer emitter also passes scoped GCC
+ASan/UBSan; its provider libraries are the normal separately built libraries.
+Node prefix retains the fixed 86-instruction initial-state witness and complete
+relocation/REP state checks. With the immutable image attached its observed
+relocation checkpoint is 1,264, not the historical fixed 378 count; the
+expanded command parser count is not independently certified. Its quota stop
+is not Linux boot acceptance.
 
 TCG is **not** declared equivalent: its strict fixture expectation fails
 (48 #GP rather than 16 #GP/32 returns). [Raw TCG rows](2026-10-05-system-transfer-tcg.txt),
@@ -122,6 +127,13 @@ is not process RSS. These are Node diagnostics, not a browser/network measure.
 Freeze the candidate and measure the same published bundle, same independent
 boot segments/image, warmCuts=64 and unchanged quotas. Follow the next actual
 fault/grammar gate; do not infer successful PID1 from this component green.
+The frozen independent Node job (old PID 24256, checkpoint f1cd38c) has
+completed with these hashes. It passes SYSCALL and reaches unprefixed MOVSB
+compiler -102 at 187,420,592 retirements / 97,917,652 admissions. See the
+[completed receipt](2026-10-05-node-startup-movs-red.json). Engine construction
+still dominates at 335,947 ms, cold emission 265,998 ms, C execution 79,089 ms,
+elapsed diagnostic 840,292 ms. Different work/clock calibration is not a
+paired speedup ratio; the CALL candidate is not loaded in this receipt.
 Real-browser acceptance, root mount, shell, tooling, storage/NIC/HTTPS and
 the three-second cold prompt remain open. Retained browser Workers/assets
 have not been replaced by these independent Node/native checks.

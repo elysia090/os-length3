@@ -34,6 +34,12 @@ SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 
 .PHONY: memory-order-check
+.PHONY: direct-call-check
+check: direct-call-check
+direct-call-check: $(BUILD)/direct-call-check
+	$(BUILD)/direct-call-check
+$(BUILD)/direct-call-check: check/direct-call.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/direct-call.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: system-check
 check: system-check
 system-check: $(BUILD)/system-check

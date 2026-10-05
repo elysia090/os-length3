@@ -1,6 +1,30 @@
 # Remaining work — 2026-10-05
 
-Latest completed actual same-bundle gate (`be64020`): TSS user-fetch fault
+Latest completed actual same-bundle gate (`f1cd38c`): user SYSCALL passes;
+unprefixed MOVSB `a4` at `0x7f997650c1f2` reaches compiler -102 after
+187,420,592 retirements / 97,917,652 admissions. Frozen VM/compiler are
+69,903 / 451,602 bytes. Engine 9,013,853 constructions / 335,947 ms dominates
+cold emission 265,998 ms and C execution 79,089 ms; total 840,292 ms.
+See the [completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-movs-red.json).
+Different retired work/clock calibration is not a speedup ratio.
+
+Direct CALL sharing is locally green: the existing scalar binding replaces
+embedded destination displacement without VM/ABI/row/report growth.
+Synthetic witnesses are 18 -> 2 bodies / 6,344 -> 710 bytes; 30 fresh native
+compiler parity checks, 7,680 direct/C-dispatch comparisons, full native
+compiler/CLI and scoped sanitizers pass. Compiler is 451,755 bytes.
+See [derivation and counted scope](../vm/check/browser/evidence/2026-10-05-call-binding.md).
+
+Immediate order: turn the exact non-REP MOVSB gate red under the common
+compiler, then close the general string-element semantics with native
+fault/success observations and C-MMU waits. Re-run the unchanged bundle with
+CALL sharing and that correction, warmCuts=64 and unchanged quotas.
+PID 1, immutable-root mount, shell/tooling, real-browser acceptance and
+cold shell 3s remain unachieved. Old PID 24256 has completed.
+
+## Earlier checkpoints
+
+Earlier completed actual same-bundle gate (`be64020`): TSS user-fetch fault
 delivery has passed; user SYSCALL `0f05` at `0x7f2f8acfa0a0` reaches compiler
 -102 after 194,722,641 retirements / 103,148,627 admissions. Frozen VM/compiler
 are 68,451 / 450,892 bytes. Engine 10,222,289 constructions / 384,729 ms still
@@ -18,14 +42,10 @@ VM/compiler are 69,903 / 451,602 bytes; generated bodies 288 / 285 bytes.
 Native publication/UI, entry ABI, source metadata and quotas are unchanged.
 See [frontier, actual evidence and limits](../vm/check/browser/evidence/2026-10-05-system-transfer.md).
 
-Immediate order: freeze this candidate and run the same bundle/segments/image
-with warmCuts=64 and unchanged quotas. Inspect the next actual execution gate
-and maximum measured term; do not conflate local oracle checks with that run.
+That f1cd38c job has completed and passed SYSCALL; its next exact gate is above.
 PID 1, immutable release-root mount, shell/tooling and browser acceptance remain
 unachieved. IST/invalid-TSS/secondary escalation and strict CALL provenance
 remain explicit obligations, not silently accepted fallback.
-
-## Earlier checkpoints
 
 Earlier completed actual same-bundle gate (`775fe27`): IRETQ execution refusal 6,
 `48 cf`, RIP `0xffffffff81000b7e`, after 214,809,102 retirements / 117,257,400
