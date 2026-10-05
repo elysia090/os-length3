@@ -19,7 +19,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 WASM_FLAGS += -Wl,--export=compiler_entry_abi
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
-	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-repeat.c src/lower-branch.c
+	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-string.c src/lower-branch.c
 SOURCES += src/lower-paired-exchange.c
 SOURCES += src/lower-fxsave.c
 SOURCES += src/lower-fxrstor.c
@@ -35,6 +35,12 @@ SOURCES += src/lower-vector-scalar.c
 
 .PHONY: memory-order-check
 .PHONY: direct-call-check
+.PHONY: string-element-check
+check: string-element-check
+string-element-check: $(BUILD)/string-element-check
+	$(BUILD)/string-element-check
+$(BUILD)/string-element-check: check/string-element.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/string-element.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: direct-call-check
 direct-call-check: $(BUILD)/direct-call-check
 	$(BUILD)/direct-call-check
@@ -133,8 +139,9 @@ $(BUILD)/%.o: src/%.c | $(BUILD)
 
 -include $(OBJECTS:.o=.d)
 
-$(BUILD)/libwasm-compiler.a: $(OBJECTS)
-	$(AR) rcs $@ $^
+$(BUILD)/libwasm-compiler.a: $(OBJECTS) Makefile
+	$(RM) $@
+	$(AR) rcs $@ $(OBJECTS)
 
 $(BUILD)/wasm-compiler: cli/main.c cli/io.c cli/prefix.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/main.c cli/io.c cli/prefix.c \

@@ -18,6 +18,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_MEMORY_ORDER, CUT_SYSTEM_FXRSTOR, CUT_SYSTEM_PRIVILEGE_TRANSFER };
 enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
 enum { CUT_BIND_NONE, CUT_BIND_MEMORY_DISPLACEMENT, CUT_BIND_CONTROL_DISPLACEMENT };
+enum { CUT_STRING_NONE, CUT_STRING_SINGLE, CUT_STRING_REPEAT };
 typedef struct {
     wasm_writer *writer;
     wasm_cut_report report;
@@ -44,7 +45,7 @@ typedef struct {
      * No decoded instruction or architectural predecessor frame is retained. */
     pl_u32 flag_frontier[WASM_CUT_MAX_INSTRUCTIONS];
     pl_u32 system_cut;
-    pl_u32 repeat_cut;
+    pl_u32 string_cut;
     pl_u32 indirect_cut;
     pl_u32 operand_binding_kind;
 } cut_plan;
@@ -79,8 +80,8 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_indirect_supported(const pl_x86_instruction *instruction);
 void cut_lower_indirect(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_reject_target(cut_lowering *cut);
-int cut_repeat_supported(const pl_x86_instruction *instruction);
-void cut_lower_repeat(cut_lowering *cut, const pl_x86_instruction *instruction);
+int cut_string_supported(const pl_x86_instruction *instruction);
+void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_repeat_frontier(cut_lowering *cut);
 int cut_system_supported(const pl_x86_instruction *instruction);
 int cut_io_supported(const pl_x86_instruction *instruction);

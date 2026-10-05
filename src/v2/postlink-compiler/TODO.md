@@ -15,9 +15,14 @@ compiler parity checks, 7,680 direct/C-dispatch comparisons, full native
 compiler/CLI and scoped sanitizers pass. Compiler is 451,755 bytes.
 See [derivation and counted scope](../vm/check/browser/evidence/2026-10-05-call-binding.md).
 
-Immediate order: turn the exact non-REP MOVSB gate red under the common
-compiler, then close the general string-element semantics with native
-fault/success observations and C-MMU waits. Re-run the unchanged bundle with
+The exact non-REP MOVSB gate is now locally green through the same string
+element/C-MMU path. 256 native success / 992 fault receipts, 1,248 direct +
+1,248 C-dispatch comparisons, 16 native/cold emission parity checks and 24
+actual C supply/latch resumes pass. REP and full compiler/CLI/scoped sanitizer
+regressions pass. Compiler is 452,030 bytes, VM unchanged.
+See [normal form and counted scope](../vm/check/browser/evidence/2026-10-05-string-element.md).
+
+Immediate order: re-run the unchanged bundle with
 CALL sharing and that correction, warmCuts=64 and unchanged quotas.
 PID 1, immutable-root mount, shell/tooling, real-browser acceptance and
 cold shell 3s remain unachieved. Old PID 24256 has completed.

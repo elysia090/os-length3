@@ -289,7 +289,7 @@ static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
 {
     /* CALL target/stack, PUSH source/stack and POP stack/destination are
      * ordered transfers, not an RMW reservation on a single operand. */
-    if (plan->repeat_cut || (report->memory_bytes && (plan->indirect_cut
+    if (plan->string_cut || (report->memory_bytes && (plan->indirect_cut
             || report->boundary_operation == PL_X86_OPERATION_POP
             || report->boundary_operation == PL_X86_OPERATION_PUSH))) return 1;
     if (plan->system_cut == CUT_SYSTEM_MSR) return 8;

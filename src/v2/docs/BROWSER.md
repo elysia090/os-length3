@@ -1,6 +1,20 @@
 # Browser projection of OS Length3 Linux
 
-Current measured state (2026-10-05): completed `be64020` passes the TSS user
+Current measured state (2026-10-05): completed `f1cd38c` passes user SYSCALL
+and reaches unprefixed MOVSB `a4` at `0x7f997650c1f2`, compiler -102, after
+187,420,592 retirements / 97,917,652 admissions. Loaded VM/compiler are
+69,903 / 451,602 bytes. Engine construction is still the maximum term:
+335,947 ms versus cold emission 265,998 ms and C execution 79,089 ms.
+Different work/clock calibration is not a paired speedup.
+See the [completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-movs-red.json).
+Direct CALL sharing and non-REP string elements are separately green through
+fresh native/C-MMU oracles, not loaded in that job. Candidate compiler is
+452,030 bytes, VM unchanged. See
+[CALL binding](../vm/check/browser/evidence/2026-10-05-call-binding.md) and
+[string-element normal form](../vm/check/browser/evidence/2026-10-05-string-element.md).
+PID 1/root mount/shell/real-browser remain unachieved; cold shell 3s is unmet.
+
+Earlier measured state: completed `be64020` passes the TSS user
 fetch-fault boundary and reaches actual user SYSCALL `0x7f2f8acfa0a0`, compiler
 -102, after 194,722,641 retirements / 103,148,627 admissions. Loaded VM/compiler
 are 68,451 / 450,892 bytes. Engine construction remains the maximum measured
