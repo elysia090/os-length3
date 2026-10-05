@@ -26,6 +26,7 @@ SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/lower-vector-arithmetic.c
+SOURCES += src/lower-vector-shuffle.c
 SOURCES += src/lower-vector-scalar.c
 
 .PHONY: vector-scalar-check

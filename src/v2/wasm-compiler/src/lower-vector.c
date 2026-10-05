@@ -22,7 +22,8 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u32 add=cut_vector_add_width(instruction);
     int packed=kind==10u && (add || operation==12u || unpack);
     int logic=(kind>=1u && kind<=3u) || kind==24u;
-    if(kind && !packed && !logic && !add)return 0;
+    int shuffle=kind==61u;
+    if(kind && !packed && !logic && !add && !shuffle)return 0;
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
     if((read && write) || (kind && write))return 0;
     if((read?source->bits!=128u:!xmm(source,!!unpack))
@@ -33,7 +34,7 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u64 argument=kind|((pl_u64)(write?0u:target->value.reg.index)<<8u)
         |((pl_u64)(read?0u:source->value.reg.index)<<16u)|((pl_u64)read<<24u)|((pl_u64)write<<25u);
     if(packed)argument|=(operation<<32u)|((pl_u64)read<<26u);
-    else if(logic || add)argument|=(pl_u64)read<<26u;
+    else if(logic || add || shuffle)argument|=(pl_u64)read<<26u;
     else if(read || write)argument|=instruction->machine_argument&(1ull<<26u);
     return instruction->machine_argument==argument;
 }
@@ -53,7 +54,7 @@ static void fault_if(cut_lowering *cut,pl_u32 vector)
 }
 void cut_sse_guard(cut_lowering *cut)
 {
-    /* Fixed SSE/SSE2 profile: #UD before #NM before operand access, for
+    /* Fixed SSE through SSSE3 profile: #UD before #NM before operand access, for
      * register transfers too. No host FP state or mnemonic callback. */
     cut_load(cut,offsetof(machine_state,cr0));cut_const(cut,4u);cut_op(cut,0x83u);
     cut_op(cut,0x50u);cut_op(cut,0x45u);
@@ -103,6 +104,7 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     }
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
     if(unpack) {cut_lower_vector_unpack(cut,instruction,unpack);return;}
+    if(kind==61u) {cut_lower_vector_shuffle(cut,instruction);return;}
     if(read) {
         cut_access_value(cut);cut_set(cut,CUT_LEFT);
         cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);

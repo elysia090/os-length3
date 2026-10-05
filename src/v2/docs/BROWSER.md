@@ -218,10 +218,16 @@ launch script or imply the native root bundle already supplies a public gateway.
 | Browser fetch is not a guest socket | Keep Linux's stack and virtual NIC. Add an explicitly granted WebTransport gateway after offline boot. CORS, CSP and secure-context failures are deployment errors, never a reason to implement guest HTTPS in JS. |
 | Timer/background throttling is not guest CPU time | Yield by bounded cuts, report host suspension, and inject clock/interrupt events through the machine ABI. Do not promise an exact background schedule or pretend a terminated Worker retained a live process. |
 
-SIMD, multiple memories, shared memory, OPFS and memory64 are optional measured
-capabilities. The x86 CPU contract still comes from `x86/profile.h`; a browser's
-host CPU or SIMD availability must not change guest CPUID, flags, faults,
-floating-point rounding/NaNs or memory ordering.
+Standard WebAssembly SIMD is required by the current generated-code projection:
+legacy PSHUFB lowers to deterministic vector AND/swizzle, not sixteen scalar
+lanes. Missing SIMD must refuse module construction explicitly; it must not
+select an interpreter, a scalar fallback or a smaller guest CPU profile.
+Relaxed SIMD is not used. Multiple memories, shared memory, OPFS and memory64
+remain optional measured capabilities. The x86 CPU contract still comes from
+`x86/profile.h`; host CPU or SIMD availability must not change guest CPUID,
+flags, faults, floating-point rounding/NaNs or memory ordering. This projection
+requirement does not change the native distribution's dependencies. See the
+[PSHUFB derivation and scoped evidence](../vm/check/browser/evidence/2026-10-05-vector-shuffle.md).
 
 `suspend` retains dirty guest RAM (including anonymous heap and stacks), vCPU,
 MMU-relevant cut, device/virtqueue/interrupt/timer state and generation, while

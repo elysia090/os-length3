@@ -75,10 +75,15 @@ same C-source/engine/resident observations.
 
 The final compiler is 444,118 bytes (+764 from final unpack), SHA-256
 `95b4630185a52e8b67c9f4b5037cfd72f551dc12adefa415b9a7668c7bda65a4`.
-The unchanged 63,052-byte VM and this compiler are now running independently
-on the same native bundle, with the independent segment and root-image
-fixtures. Do not overwrite/restart that live run or treat fixture pass as
-actual PADDD/PID 1 execution. Native delivery and human UI are unchanged.
+The unchanged 63,052-byte VM and this compiler completed the independent
+same-bundle run, with the independent segment and root-image fixtures:
+[actual PSHUFB gate](2026-10-05-node-startup-pshufb-red.json), 162,943,231
+retirements / 88,109,844 admissions, after passing PADDD. The next common
+grammar -102 is `66 41 0f 38 00 dc` (`pshufb %xmm12,%xmm3`) at
+0xffffffff81204e36. Complete decompression agrees. Raw local receipt SHA-256:
+`0f86f609af239000da2456f8313c33126732cfb7119627fc4fe24ce8b7870ba5`.
+The run is not PID 1/shell or browser acceptance. Native delivery and human
+UI are unchanged.
 
 In the completed unpack startup, engine reconstruction still dominates:
 17,597,568 constructions / 17,596,821 evictions, 745 entries / 261,966 bytes.

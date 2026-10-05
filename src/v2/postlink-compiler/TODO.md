@@ -1,18 +1,25 @@
 # Remaining work — 2026-10-05
 
-Current actual gate: PADDD, `66 0f fe c4`, 0xffffffff81204e2a. The
-independent initial-unpack run actually passes unpack and reaches 164,915,078
-retirements / 89,541,416 admissions; complete decompression agrees. General
+Current actual gate: PSHUFB, `66 41 0f 38 00 dc`, 0xffffffff81204e36. The
+final packed-add compiler actually passes PADDD and reaches 162,943,231
+retirements / 88,109,844 admissions; complete decompression agrees. General
 PADDB/PADDW/PADDD now pass 32,768 unchanged native observations, 256 exact
 emissions, full C-MMU/dispatcher fault/wait/control/alias checks, 768 carry
 corners, all 65,536 byte input pairs, full compiler checks and scoped
-sanitizers. The final 444,118-byte compiler is running on the same bundle;
-do not restart it or treat fixture pass as actual PADDD/PID 1 execution.
+sanitizers. The final 444,118-byte compiler has completed that same-bundle
+run. This is not PID 1 or shell acceptance.
+General PSHUFB now passes 33,792 unchanged native observations, 264 exact
+emissions, all selector bits and full precise fault/wait/alias comparisons.
+It emits deterministic vector AND/swizzle without a sixteen-byte intermediate
+image or scalar fallback; standard Wasm SIMD is an explicit projection
+requirement. The final 444,763-byte compiler is running independently on the
+same bundle. Do not restart it or relabel fixture pass as actual boot.
 Next: observe that run's actual gate, close the next common ISA/ABI red and
 reduce dominant engine/source reconstruction with bounded precise admission.
 PID 1, release-root mount, shell/development commands, storage/recovery,
 granted network and browser acceptance remain open; cold shell 3s is unmet.
 See [actual gate and general packed-add evidence](../vm/check/browser/evidence/2026-10-05-vector-add-narrow.md).
+See [general byte-shuffle derivation and checks](../vm/check/browser/evidence/2026-10-05-vector-shuffle.md).
 Previous checkpoints below are historical, not current acceptance.
 
 Previous actual gate: PUNPCKLDQ, `66 0f 62 e5`, 0xffffffff81204e1e. General

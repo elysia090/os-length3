@@ -1,5 +1,14 @@
 # Compiler boundary checkpoint — 2026-10-02
 
+Current vector checkpoint (2026-10-05): legacy PSHUFB emits one deterministic
+Wasm vector AND/swizzle network after the existing precise SSE/memory frontier.
+Standard Wasm SIMD is now an explicit projection requirement; absent support
+propagates an engine refusal, never a scalar/interpreter execution alternative.
+264 exact native/cold emissions, 33,792 unchanged native records, full
+C-MMU/direct/dispatcher comparisons, all selectors and scoped sanitizers pass.
+These checks are not browser/PID 1 or whole-image acceptance. See
+[derivation, red and reproducible scope](../../vm/check/browser/evidence/2026-10-05-vector-shuffle.md).
+
 Current IF boundary (2026-10-04): common CLI/STI emits one precise
 `machine.interrupt_flag` call. C owns privilege, IF and inhibition; generated
 code owns successful RIP/RF/retirement. The old inline CLI implementation is

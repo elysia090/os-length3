@@ -1,5 +1,5 @@
 // Independent native x86 -> common cold compiler -> real C MMU/dispatcher.
-// Precise transfers, packed add, bitwise logic and unpack, not FP arithmetic or Linux boot.
+// Precise transfers, packed add, bitwise logic, unpack and shuffle, not FP arithmetic or Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -19,11 +19,16 @@ const at=physical=>base+(Number(physical/4096n)+1)*4096;
 const put=(where,x)=>v.setBigUint64(where,BigInt(x),true),u64=(r,i)=>r.readBigUInt64LE(2512+i*8);
 const slot=vm.__indirect_function_table.grow(1),cpu=()=>Buffer.from(data.subarray(base,base+1256));
 const image=()=>Buffer.from(data.subarray(code,payload+8192));
-let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0,carryModels=0,exhaustiveByteModels=0;
+let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0,carryModels=0,exhaustiveByteModels=0,shuffleSelectorModels=0,simdRefusalModels=0;
 function packedAdd(a,b,width) {
   const bits=BigInt(width),mask=(1n<<bits)-1n;let value=0n;
   for(let bit=0n;bit<64n;bit+=bits)value|=(((a>>bit&mask)+(b>>bit&mask))&mask)<<bit;
   return value;
+}
+function byteShuffle(values,selectors) {
+  const result=Buffer.alloc(16);
+  for(let lane=0;lane<16;++lane)result[lane]=selectors[lane]&128?0:values[selectors[lane]&15];
+  return result;
 }
 function target(where) {
   if(where>=entry&&where+16n<=entry+4096n)return code+Number(where-entry);
@@ -71,7 +76,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<256;++form) {
+  for(let form=0;form<264;++form) {
     const prefix=path.join(directory,`vector-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
@@ -80,10 +85,28 @@ try {
     assert.equal(cc.compiler_emit(entry,8,output,65536,report),0);
     assert.equal(cv.getBigUint64(report+40,true),BigInt(emitted.length));assert(cold.subarray(output,output+emitted.length).equals(emitted));++parity;
     const module=await WebAssembly.compile(emitted);
+    if(meta.shuffle) {
+      const network=Buffer.from([0xfd,0x0c,...Array(16).fill(0x8f),0xfd,0x4e,0xfd,0x0e,0xfd,0x0b]);
+      assert(emitted.includes(network),`${form}: one vector AND/swizzle/publication, not sixteen scalar slices`);
+    }
     const imports=[{module:'machine',name:'memory',kind:'memory'}];
     if(!meta.register)for(const name of meta.store?['write_begin','write_word','write_end']:['read_pair'])imports.push({module:'machine',name,kind:'function'});
     assert.deepEqual(WebAssembly.Module.imports(module),imports);
     const cut=(await engines.get(entry,emitted)).exports.cut;vm.__indirect_function_table.set(slot,cut);
+    if(form===256) {
+      // Model an engine without this required feature at its normal module
+      // construction boundary. It must propagate refusal, publish nothing and
+      // never select a scalar/interpreter/native alternative. Not a browser test.
+      const original=WebAssembly.Module,owner=new CompiledModules({machine:{memory}});
+      const before=owner.stats(),state=cpu(),bytes=image(),installed=vm.__indirect_function_table.get(slot);
+      let constructions=0;
+      WebAssembly.Module=function(){++constructions;throw new WebAssembly.CompileError('required SIMD unavailable');};
+      try {await assert.rejects(owner.get(entry,emitted),/required SIMD unavailable/);}
+      finally {WebAssembly.Module=original;}
+      assert.equal(constructions,1);assert.deepEqual(owner.stats(),before);
+      assert(cpu().equals(state));assert(image().equals(bytes));assert.equal(vm.__indirect_function_table.get(slot),installed);
+      owner.close();++simdRefusalModels;
+    }
     for(let row=0;row<meta.native;++row) {
       const r=records.subarray(row*stride,(row+1)*stride);
       for(const dispatch of [false,true])for(const rf of [0n,0x10000n]) {
@@ -98,6 +121,21 @@ try {
     }
     // Model-only control faults: a user-mode native oracle cannot write CR0/4.
     const first=records.subarray(0,stride);
+    if(meta.shuffle && meta.register) {
+      // Every selector byte at every output lane, both distinct and aliased.
+      // Distinct payloads make all sixteen source positions distinguishable;
+      // self-alias must use the complete OLD vector, not partial stores.
+      const same=(form-32)%8===1;
+      for(const dispatch of [false,true])for(let selector=0;selector<256;++selector)for(let lane=0;lane<16;++lane) {
+        reset(source,meta,first,0);
+        for(let i=0;i<16;++i){data[base+272+i]=(i*13+17)&255;data[base+304+i]=i;}
+        data[base+(same?272:304)+lane]=selector;
+        const wanted={state:cpu(),bytes:image(),result:1n};
+        byteShuffle(wanted.state.subarray(272,288),wanted.state.subarray(same?272:304,same?288:320)).copy(wanted.state,272);
+        wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
+        compare(cut,wanted,`${form}: all byte selectors/${selector}/${lane}`,dispatch);++shuffleSelectorModels;
+      }
+    }
     if(meta.register && meta.addWidth && meta.addWidth<64) {
       // Whole-word corners expose carry leakage into a neighbouring lane.
       // These are independent element models, not fabricated native records.
@@ -175,6 +213,10 @@ try {
           wanted.state[272+(2*i+1)*width+byte]=old[i*width+byte];
         }
       }
+      if(meta.shuffle) {
+        const old=Buffer.from(wanted.state.subarray(272,288));
+        byteShuffle(old,old).copy(wanted.state,272);
+      }
       vm.__indirect_function_table.set(slot,same);compare(same,wanted,`${form}: alias`,dispatch);++aliases;
       vm.__indirect_function_table.set(slot,cut);
     }
@@ -211,6 +253,10 @@ try {
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204e1en,8,output,65536,report),0);
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
+  cold.fill(0x90,input,input+4096);cold.set([0x66,0x41,0x0f,0x38,0x00,0xdc],input+0xe36);
+  assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
+  assert.equal(cc.compiler_emit(0xffffffff81204e36n,8,output,65536,report),0);
+  assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
   cold.fill(0x90,input,input+4096);cold.set([0x66,0x0f,0xfe,0xc4],input+0xe2a);
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204e2an,8,output,65536,report),0);
@@ -226,8 +272,8 @@ try {
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),16);
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
-    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,
-    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ and PADDD common C compilation accepted; not executed by this fixture',
+    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,shuffleSelectorModels,simdRefusalModels,
+    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ, PADDD and PSHUFB common C compilation accepted; not executed by this fixture',
     oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or FP arithmetic',
     linuxBoot:'not-tested'}));
 } finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}

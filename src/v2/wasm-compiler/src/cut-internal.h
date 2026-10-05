@@ -88,6 +88,7 @@ pl_u32 cut_vector_unpack_shape(const pl_x86_instruction *instruction);
 void cut_lower_vector_unpack(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape);
 pl_u32 cut_vector_add_width(const pl_x86_instruction *instruction);
 void cut_lower_vector_add(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 width);
+void cut_lower_vector_shuffle(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_sse_guard(cut_lowering *cut);
