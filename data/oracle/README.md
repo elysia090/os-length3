@@ -1,5 +1,10 @@
 # x86 semantic oracles
 
+`check-absent-dma.mjs VM.WASM COMPILER.WASM` checks the fixed platform's eight
+explicit absent ISA-DMA page ports through actual cold C emission and C table/
+MMU execution. It does not implement a DMA engine or accept arbitrary unknown
+I/O. See [contract, red and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-dma.md).
+
 ## C-Wasm browser boundary — 2026-10-02
 
 `powershell -File data/oracle/wasm-tools.ps1` pins official wasi-sdk-34's

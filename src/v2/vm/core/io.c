@@ -60,6 +60,15 @@ machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
     result = permission(physical,port,state,segments,coordinate,bytes);
     if (result) return result;
     pl_u32 byte = write ? (pl_u32)value & 255u : 0u;
+    /* No ISA DMA controller is wired into this machine. Only its removed
+     * page ports have the specified byte-wide floating-bus response. Unknown
+     * ports and unsupported widths still refuse; writes create no register. */
+    if (bytes==1u && (coordinate & ~15u)==0x80u
+            && ((0x8e8eu >> (coordinate & 15u)) & 1u)) {
+        if (clock->stage) return MACHINE_RESULT_ENTRY_MAP;
+        if (!write) vm_memory_store(physical->bytes+port+offsetof(machine_memory_port,value),255u,8u);
+        return 0u;
+    }
     if (coordinate == 0x80u && bytes == 1u && write && post) {
         if (clock->stage) return MACHINE_RESULT_ENTRY_MAP;
         post->byte = (pl_u8)byte; post->valid = 1u; return 0u;

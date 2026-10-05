@@ -14,7 +14,7 @@ static vm_rtc rtc;
 static vm_uart uart;
 static vm_console console_owner;
 static vm_post post;
-static unsigned failures, permissions;
+static unsigned failures, permissions, absent_transfers;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr,"io: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value, pl_u32 size)
 { for (pl_u32 i = 0u; i < size; ++i) arena[at+i] = (pl_u8)(value >> (i*8u)); }
@@ -87,6 +87,41 @@ int main(void)
     EXPECT(get(16u)==0x401000u && get(24u)==14u); /* supervisor #PF */
     reset(3u,0u); put(28672u+102u,0u,2u); segments.cache[MACHINE_SEGMENT_TR].attributes=0u;
     EXPECT(io(0x61u,1u,0u)==6u && !clock_owner.stage);
+    /* This machine has no legacy ISA DMA controller. These exact removed
+     * page ports float high; no writable register or transfer is implied. */
+    const pl_u32 absent_ports[]={0x81u,0x82u,0x83u,0x87u,0x89u,0x8au,0x8bu,0x8fu};
+    for(pl_u32 rank=0u;rank<8u;++rank)for(pl_u32 cpl=0u;cpl<4u;++cpl)
+    for(pl_u32 iopl=0u;iopl<4u;++iopl)for(pl_u32 width=1u;width<=4u;width*=2u)
+    for(pl_u32 bit=0u;bit<16u;++bit)for(pl_u32 write=0u;write<2u;++write){
+        reset(cpl,iopl);pl_u32 coordinate=absent_ports[rank];
+        put(28672u+104u+(coordinate>>3u),1u<<bit,2u);
+        const pl_u64 sentinel=0xfeedabcd01234567ull;put(8u,sentinel,8u);
+        machine_state before=state;machine_segments hidden=segments;vm_post old=post;
+        int denied=cpl>iopl && ((1u<<bit)&(((1u<<width)-1u)<<(coordinate&7u)));
+        machine_result expected=denied ? 107u : width==1u ? 0u : 6u;
+        EXPECT(io(coordinate,width|(write ? MACHINE_IO_WRITE : 0u),0xabcdef98u)==expected);
+        EXPECT(get(8u)==(!expected && !write ? 255u : sentinel));
+        EXPECT(!memcmp(&state,&before,sizeof state) && !memcmp(&segments,&hidden,sizeof hidden)
+            && !memcmp(&post,&old,sizeof post) && !clock_owner.stage && !clock_owner.now);
+        if(denied)EXPECT(get(16u)==state.rip && get(24u)==13u);
+        ++absent_transfers;
+    }
+    /* Device absence cannot consume clock/console replies or bypass the TSS,
+     * mode, generation or transfer-width frontier. Unknown ports stay red. */
+    reset(0u,0u);EXPECT(time_read()==18u);pl_u64 pending=ticket();
+    EXPECT(io(0x87u,1u,0u)==6u && ticket()==pending && clock_owner.stage==1u);
+    reset(0u,0u);EXPECT(io(0x3f8u,0x101u,65u)==26u);pending=ticket();
+    EXPECT(io(0x87u,1u,0u)==6u && ticket()==pending && vm_console_pending(&console_owner));
+    reset(3u,0u);put(28672u+102u,4080u,2u);pages[5].kind=VM_MEMORY_DEFERRED;
+    EXPECT(io(0x87u,1u,0u)==2u && !clock_owner.stage);
+    reset(3u,0u);put(28672u+102u,4080u,2u);put(20480u+8u,0u,8u);
+    EXPECT(io(0x87u,1u,0u)==115u && get(16u)==0x401000u && get(24u)==14u);
+    reset(0u,0u);put(0u,8u,8u);EXPECT(io(0x87u,1u,0u)==5u);
+    reset(0u,0u);state.rflags|=0x100u;EXPECT(io(0x87u,1u,0u)==6u);
+    reset(0u,0u);
+    const pl_u32 unknown_ports[]={0x84u,0x85u,0x86u,0x88u,0x8cu,0x8du,0x8eu,0x97u};
+    for(pl_u32 rank=0u;rank<8u;++rank)for(pl_u32 write=0u;write<2u;++write)
+        EXPECT(io(unknown_ports[rank],1u|(write ? MACHINE_IO_WRITE : 0u),0u)==6u);
     reset(0u,0u);
     for (pl_u32 coordinate=0u;coordinate<65536u;coordinate+=127u)
         if(!vm_uart_accepts(coordinate))EXPECT(io(coordinate,1u,0u)==6u && !clock_owner.stage);
@@ -205,6 +240,6 @@ int main(void)
         if (denied || width!=1u || coordinate==0x71u) EXPECT(!memcmp(&rtc,&hidden_rtc,sizeof rtc));
         ++permissions;
     }
-    if (!failures) printf("C IO/clock/PIT/PIC: %u permission cases and event/fault/edge checks green (not Linux boot)\n",permissions);
+    if (!failures) printf("C IO/clock/PIT/PIC: %u permission cases, %u absent-DMA transfers and event/fault/edge checks green (not Linux boot)\n",permissions,absent_transfers);
     return failures ? 1 : 0;
 }

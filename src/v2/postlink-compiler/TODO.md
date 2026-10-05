@@ -42,10 +42,10 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Derive the port-87h platform semantics from primary hardware/Linux sources,
-   make the virtual-I/O red explicit and close it in the C machine provider.
-   Do not skip the instruction or manufacture a successful transfer.
-   Rerun the unchanged bundle/segments/root image after the general checks.
+1. Rerun the unchanged bundle/segments/root image with the C absent-ISA-DMA
+   platform contract. The port-87h red is green in general C/native/C-Wasm
+   checks, not yet a new full-bundle observation. Unknown ports still refuse.
+   See [derivation and validation](../vm/check/browser/evidence/2026-10-05-absent-dma.md).
 2. Close the next actual common ISA/MMU/machine-ABI red when it appears.
    Strict independent CALL fault-payload/provenance red remains open; no
    expectation was weakened to merge it with the passing ordinary CALL set.
