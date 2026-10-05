@@ -72,9 +72,11 @@ Native bundle/UI/retained browser Workers/staged binaries are unchanged.
 
 ## Independent full-bundle run and remaining fixed fees
 
-The unchanged bundle/segments/root-image run started from `ff8a329` is still
-running. Its [bounded observation](2026-10-05-node-startup-dma-running.json)
-is not a final gate, boot percentage, PID 1 or speedup comparison. The
+The unchanged bundle/segments/root-image run started from `ff8a329` has completed
+at a secondary UART port, after passing DMA absence. See the
+[completed observation](2026-10-05-node-startup-dma-serial-red.json).
+Its earlier [bounded observation](2026-10-05-node-startup-dma-running.json)
+was not a final gate, boot percentage, PID 1 or speedup comparison. The
 diagnostic lazy-message change is loaded in this run, unlike `bea73ae`.
 Sequence-test additions affect no loaded execution binary or checker.
 
@@ -98,7 +100,7 @@ No warm-cohort speedup is established by this inspection.
 
 ```sh
 make -C src/v2/vm check
-node data/oracle/check-absent-dma.mjs VM.WASM COMPILER.WASM
+node data/oracle/check-absent-io.mjs VM.WASM COMPILER.WASM
 node data/oracle/check-io.mjs VM.WASM COMPILER.WASM FRESH-NATIVE-IO-DIR
 node data/oracle/check-entry-binding.mjs VM.WASM COMPILER.WASM
 ```

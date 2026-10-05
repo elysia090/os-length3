@@ -1,9 +1,12 @@
 # x86 semantic oracles
 
-`check-absent-dma.mjs VM.WASM COMPILER.WASM` checks the fixed platform's eight
-explicit absent ISA-DMA page ports through actual cold C emission and C table/
-MMU execution. It does not implement a DMA engine or accept arbitrary unknown
-I/O. See [contract, red and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-dma.md).
+`check-absent-io.mjs VM.WASM COMPILER.WASM` checks the fixed platform's eight
+absent ISA-DMA page ports and three absent legacy UART ranges through actual
+cold C emission and C table/MMU execution. It neither creates phantom devices
+nor accepts arbitrary unknown I/O. The old DMA-only check was expanded and
+renamed, not kept as a second implementation. See
+[DMA contract](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-dma.md) and
+[serial absence](../../src/v2/vm/check/browser/evidence/2026-10-05-absent-serial.md).
 
 ## C-Wasm browser boundary — 2026-10-02
 

@@ -1,9 +1,9 @@
 // Explicit fixed-platform absence through the generated x86 cut and C MMU.
-// Not an 8237 engine, a physical-CPU I/O oracle, browser acceptance or Linux boot.
+// Not a phantom device, a physical-CPU I/O oracle, browser acceptance or Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const [vmFile,compilerFile]=process.argv.slice(2);
-if(!compilerFile)throw new Error('usage: check-absent-dma.mjs VM.WASM COMPILER.WASM');
+if(!compilerFile)throw new Error('usage: check-absent-io.mjs VM.WASM COMPILER.WASM');
 const memory=new WebAssembly.Memory({initial:16,maximum:18});
 const coldMemory=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
@@ -14,7 +14,9 @@ const cold=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer);
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;
 const directory=vm.vm_arena_min(),rows=directory+512,base=directory+4096;
 const port=base+2048,segments=base+1408,slot=vm.__indirect_function_table.grow(1);
-const ports=[0x81,0x82,0x83,0x87,0x89,0x8a,0x8b,0x8f];
+const dmaPorts=[0x81,0x82,0x83,0x87,0x89,0x8a,0x8b,0x8f];
+const serialPorts=[0x2e8,0x2f8,0x3e8].flatMap(base=>Array.from({length:8},(_,rank)=>base+rank));
+const ports=[...dmaPorts,...serialPorts];
 const codePhysical=0x8000n,tssPhysical=0x9000n,tssAddress=0x500000n;
 const pageOffset=physical=>base+Number(physical)+4096;
 const put=(at,x)=>view.setBigUint64(at,BigInt.asUintN(64,BigInt(x)),true);
@@ -70,7 +72,7 @@ async function emit(entry,source){
 try{
   const entry=0x400000n;
   for(const coordinate of ports)for(const address32 of [false,true])
-  for(const dynamic of [false,true])for(const write of [false,true])for(const width of [1,2,4]){
+  for(const dynamic of coordinate<256?[false,true]:[true])for(const write of [false,true])for(const width of [1,2,4]){
     const source=[...(address32?[0x67]:[]),...(width===2?[0x66]:[]),
       (dynamic?0xec:0xe4)|(write?2:0)|(width===1?0:1),...(dynamic?[]:[coordinate])];
     const cut=await emit(entry,source);
@@ -108,39 +110,47 @@ try{
     assert.equal(view.getBigUint64(port+32,true),ticket);++pendingRefusals;
     if(emissions===96){memory.grow(1);data=Buffer.from(memory.buffer);view=new DataView(memory.buffer);assert.equal(vm.vm_grow(),0);}
   }
-  // The actual stopped opcode/coordinate, without changing a kernel byte.
-  const actualEntry=0xffffffff81405c2bn,source=[0xe4,0x87];await emit(actualEntry,source);
-  reset(actualEntry,source,0x87);const expected=cpu();
-  expected.writeBigUInt64LE((expected.readBigUInt64LE(0)&~255n)|255n,0);
-  expected.writeBigUInt64LE(actualEntry+2n,384);expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(42n,1128);
-  assert.equal(vm.vm_run(port,9n,1),1n);assert(cpu().equals(expected));++comparisons;++retirements;
+  // Both actual stopped opcodes/coordinates, without changing a kernel byte.
+  for(const [actualEntry,source,coordinate] of [
+    [0xffffffff81405c2bn,[0xe4,0x87],0x87],
+    [0xffffffff81263891n,[0xec],0x2f9]]){
+    await emit(actualEntry,source);reset(actualEntry,source,coordinate);const expected=cpu();
+    expected.writeBigUInt64LE((expected.readBigUInt64LE(0)&~255n)|255n,0);
+    expected.writeBigUInt64LE(actualEntry+BigInt(source.length),384);
+    expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(42n,1128);
+    assert.equal(vm.vm_run(port,9n,1),1n);assert(cpu().equals(expected));++comparisons;++retirements;
+  }
   // OUT then IN without reopen: discarded writes must not create a latch.
   // Both rows are compiled normally and receive separate admitted coordinates.
   const readSlot=vm.__indirect_function_table.grow(1);
   try{
     for(const coordinate of ports){
-      const out=[0xe6,coordinate],ins=[0xe4,coordinate],source=[...out,...ins];
-      const outCut=await emit(entry,out),inCut=await emit(entry+2n,ins);
+      const out=coordinate<256?[0xe6,coordinate]:[0xee],ins=coordinate<256?[0xe4,coordinate]:[0xec];
+      const source=[...out,...ins],readEntry=entry+BigInt(out.length);
+      const outCut=await emit(entry,out),inCut=await emit(readEntry,ins);
       vm.__indirect_function_table.set(slot,outCut);vm.__indirect_function_table.set(readSlot,inCut);
       for(let value=0;value<256;++value){
         reset(entry,source,coordinate);put(base,0xfeedabcd98765400n|BigInt(value));
-        view.setUint32(rows+8,2,true);put(rows+24,entry+2n);
-        view.setUint32(rows+32,2,true);view.setUint32(rows+36,1,true);
+        view.setUint32(rows+8,out.length,true);put(rows+24,readEntry);
+        view.setUint32(rows+32,ins.length,true);view.setUint32(rows+36,1,true);
         view.setUint32(rows+40,readSlot,true);view.setUint32(rows+44,0,true);
         assert.equal(vm.vm_bind_execution(rows,2,9n),0);
         const expected=cpu();expected.writeBigUInt64LE(0xfeedabcd987654ffn,0);
-        expected.writeBigUInt64LE(entry+4n,384);expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(43n,1128);
+        expected.writeBigUInt64LE(entry+BigInt(source.length),384);
+        expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(43n,1128);
         assert.equal(vm.vm_run(port,9n,2),1n);assert(cpu().equals(expected));
         assert.equal(vm.vm_completed(),2);assert.equal(vm.vm_source_retired(),2n);++writeReadSequences;
       }
     }
   }finally{vm.__indirect_function_table.set(readSlot,null);}
-  for(const coordinate of [0x84,0x85,0x86,0x88,0x8c,0x8d,0x8e,0x97])for(const write of [false,true]){
-    const source=[write?0xe6:0xe4,coordinate];await emit(entry,source);reset(entry,source,coordinate);
+  // Real COM1 is a separate device. No neighbor acquires an absent-bus default.
+  for(const coordinate of [0x84,0x85,0x86,0x88,0x8c,0x8d,0x8e,0x97,0x2e7,0x2f0,0x2f7,0x300,0x3e7,0x3f0])for(const write of [false,true]){
+    const source=coordinate<256?[write?0xe6:0xe4,coordinate]:[write?0xee:0xec];
+    await emit(entry,source);reset(entry,source,coordinate);
     const before=cpu();assert.equal(vm.vm_run(port,9n,1),6n);assert(cpu().equals(before));++unknownRefusals;
   }
 }finally{vm.__indirect_function_table.set(slot,null);vm.vm_close();cc.compiler_close();}
-console.log(JSON.stringify({format:'c-wasm-absent-isa-dma-v1',status:'pass',emissions,comparisons,
+console.log(JSON.stringify({format:'c-wasm-absent-io-v1',status:'pass',dmaPorts,serialPorts,emissions,comparisons,
   retirements,permissionFaults,widthRefusals,fetchFaults,staleRefusals,bindingRefusals,pendingRefusals,unknownRefusals,writeReadSequences,
-  oracle:'fixed-platform absent page-port contract and x86 permission/frontier models; no system-mode hardware comparison',
+  oracle:'fixed-platform absent DMA/secondary UART contract and x86 permission/frontier models; no system-mode hardware comparison',
   browserAcceptance:'not-tested',linuxBoot:'not-tested'},null,2));

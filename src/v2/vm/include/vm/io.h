@@ -10,9 +10,10 @@
 /* PC diagnostic output latch at port 80h: write-only byte, synchronous bus
  * completion. No invented per-access time increment or console transport. */
 typedef struct { pl_u8 byte, valid; } vm_post;
-/* The fixed platform has no 8237 ISA DMA or ISA DMA clients. Byte reads of
- * 81h-83h, 87h, 89h-8Bh and 8Fh float high (ffh), writes are discarded.
- * This is device absence, not an implemented DMA engine or a generic
+/* The fixed platform has one UART at 3F8h-3FFh and no 8237 ISA DMA clients.
+ * Byte reads of absent COM2-4 (2E8h-2EFh, 2F8h-2FFh, 3E8h-3EFh) and DMA
+ * page ports 81h-83h, 87h, 89h-8Bh, 8Fh float high; writes are discarded.
+ * This is device absence, not an implemented device or a generic
  * unassigned-port policy. x86 I/O permission checks still precede the bus.
  * Other widths/unknown ports refuse without architectural retirement. */
 machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,

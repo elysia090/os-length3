@@ -60,11 +60,14 @@ machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
     result = permission(physical,port,state,segments,coordinate,bytes);
     if (result) return result;
     pl_u32 byte = write ? (pl_u32)value & 255u : 0u;
-    /* No ISA DMA controller is wired into this machine. Only its removed
-     * page ports have the specified byte-wide floating-bus response. Unknown
-     * ports and unsupported widths still refuse; writes create no register. */
-    if (bytes==1u && (coordinate & ~15u)==0x80u
-            && ((0x8e8eu >> (coordinate & 15u)) & 1u)) {
+    /* One UART is wired at 3F8h. The other three legacy UART ranges and
+     * removed ISA DMA page ports have no bus target: byte reads float high,
+     * writes create no register/IRQ/output. This is not an unknown-port
+     * default; unsupported widths and other coordinates still refuse. */
+    pl_u32 serial_base=coordinate & ~7u;
+    if (bytes==1u && (((coordinate & ~15u)==0x80u
+            && ((0x8e8eu >> (coordinate & 15u)) & 1u))
+            || serial_base==0x2e8u || serial_base==0x2f8u || serial_base==0x3e8u)) {
         if (clock->stage) return MACHINE_RESULT_ENTRY_MAP;
         if (!write) vm_memory_store(physical->bytes+port+offsetof(machine_memory_port,value),255u,8u);
         return 0u;

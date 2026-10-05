@@ -1,23 +1,24 @@
 # Remaining work — 2026-10-05
 
-Current actual full-bundle gate: C virtual-I/O execution refusal at
-`IN AL, 0x87` (`e4 87`), RIP `0xffffffff81405c2b`, result 6. ABI 2 reaches
-PF_INET/TCP/UDP, PF_UNIX/PF_LOCAL and RTC fallback device registration at
-167,850,980 retirements / 91,763,661 admissions. Kernel decompression agrees.
+Current actual full-bundle gate: secondary-UART I/O execution refusal at
+`IN AL, DX` (`ec`), DX=2F9h, RIP `0xffffffff81263891`, result 6. ABI 2 passes
+DMA absence and reaches initramfs unpacking, CRNG ready, SquashFS registration
+and ttyS0 discovery at 214,024,756 retirements / 124,957,500 admissions.
+Kernel decompression agrees completely.
 The instruction is decoded/emitted; it retires zero instructions at the gate.
 The receipt's fault/clock fields can be stale and are not evidence of a new
 #GP at that instruction. PID 1, release-root mount, shell and real-browser
 acceptance remain unachieved; cold shell 3s is unmet.
-See [completed ABI-2 measurement](../vm/check/browser/evidence/2026-10-05-node-startup-binding-io-red.json).
+See [completed measurement](../vm/check/browser/evidence/2026-10-05-node-startup-dma-serial-red.json).
 
-Measured ABI-2 maximum term: 13,420,224 engine constructions / 389,496 ms,
-cold C emission 182,357 ms, execution 81,753 ms, admission 23,367 ms and
-extent supply 198 ms; total diagnostic 830,017 ms. There are 756 live engine
-entries / 261,975 witness bytes, 13,419,468 evictions and 8,699,571 hits under
-unchanged quotas. Source-owner misses are 22,119,795 / hits 69,643,866. This
+Measured maximum term: 34,933,372 engine constructions / 1,070,384 ms,
+cold C emission 462,900 ms, execution 183,279 ms, admission 35,602 ms and
+extent supply 731 ms; total diagnostic 1,938,091 ms. There are 774 live engine
+entries / 261,995 witness bytes, 34,932,598 evictions and 19,286,417 hits under
+unchanged quotas. Source-owner misses are 54,219,789 / hits 70,737,711. This
 run has different retired work and clock calibration from the old quota run:
-its elapsed time is not a speedup ratio. Allocated Memory is 21,037,056 bytes,
-not RSS. The later diagnostic lazy-message change was not loaded in this run.
+its elapsed time is not a speedup ratio. Allocated Memory is 21,561,344 bytes,
+not RSS. The diagnostic lazy-message change is loaded in this run.
 
 Historical pre-ABI-2 maximum term: 73,441,447 engine constructions / 1,985,421 ms,
 followed by cold C emission 674,917 ms and execution 358,598 ms. Source owner
@@ -42,18 +43,20 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Complete the running unchanged bundle/segments/root-image test with the C absent-ISA-DMA
-   platform contract. The port-87h red is green in general C/native/C-Wasm
-   checks, not yet a new full-bundle observation. Unknown ports still refuse.
-   See [derivation and validation](../vm/check/browser/evidence/2026-10-05-absent-dma.md).
+1. Run the unchanged bundle/segments/root-image with exact C secondary-UART
+   absence. COM1 is unchanged; COM2-4 are absent, not phantom devices. The
+   2F9h red is green in C/native/C-Wasm and sanitizer checks, not yet in a new
+   full-bundle observation. Unknown neighbors/widths still refuse. See
+   [derivation and validation](../vm/check/browser/evidence/2026-10-05-absent-serial.md).
 2. Close the next actual common ISA/MMU/machine-ABI red when it appears.
    Strict independent CALL fault-payload/provenance red remains open; no
    expectation was weakened to merge it with the passing ordinary CALL set.
-3. From the completed ABI-2 profile, remove remaining source/descriptor
+3. From the completed profile, remove remaining source/descriptor
    reconstruction work using exact physical admission/lifetime invariants,
    not cache-quota inflation or an unproved coordinate/hash alias.
-   Inspection also identifies per-admission one-row bind/one-cut return in
-   the startup diagnostic. Derive/test a C-owned warm cohort before batching;
+   A new behavioral red warms three actual source rows, binds the first,
+   requests 99 cuts and gets result 6 after one. Derive/test a C-owned warm
+   cohort before changing the per-admission one-row/one-cut diagnostic;
    source permissions, context/write revocation, fault/IRQ/shadow priority
    and pinned continuations cannot be dropped. This is a candidate, not an
    already measured Linux speedup. Host working set and linear Memory differ.
