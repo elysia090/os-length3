@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {seedDisabledDebug} from './machine-observation.mjs';
 const [providerFile,compilerFile,directory,...extra]=process.argv.slice(2);
-if(!directory||extra.length)throw new Error('usage: check-exchange.mjs VM.WASM COMPILER.WASM EXCHANGE-FIXTURE-DIRECTORY');
+const observe=extra.length===1&&extra[0]==='--observe';
+if(!directory||(extra.length&&!observe))throw new Error('usage: check-exchange.mjs VM.WASM COMPILER.WASM EXCHANGE-FIXTURE-DIRECTORY [--observe]');
 const result=await checkRegisterRecords({providerFile,compilerFile,directory,prefix:'exchange',forms:186,
   // Memory XCHG already uses the serialized atomic/RMW boundary. Only
   // invalid LOCK-on-register encodings belong in this refusal set.
@@ -15,7 +16,7 @@ const vm=(await WebAssembly.instantiate(await readFile(providerFile),{machine:{m
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
 const cold=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer),data=Buffer.from(memory.buffer),v=new DataView(memory.buffer);
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536,base=vm.vm_arena_min(),port=base+2048;
-let models=0;
+let models=0,identityModels=0,sharingRed=false;const identities=new Map(),identityWitnesses=new Map();
 for(const legacy of [false,true])for(const width of legacy?[8]:[8,16,32,64])
 for(let a=0;a<(legacy?8:16);++a)for(let b=0;b<(legacy?8:16);++b){
   const code=[];if(width===16)code.push(0x66);
@@ -25,7 +26,18 @@ for(let a=0;a<(legacy?8:16);++a)for(let b=0;b<(legacy?8:16);++b){
   cold.fill(0x90,input,input+4096);cold.set(code,input);
   assert.equal(cc.compiler_open_pages(input,1,0x400000n,9n),0);
   assert.equal(cc.compiler_emit(0x400000n,1,output,65536,report),0);
-  const module=await WebAssembly.instantiate(cold.subarray(output,output+Number(cv.getBigUint64(report+40,true))),{machine:{memory}});
+  const body=Buffer.from(cold.subarray(output,output+Number(cv.getBigUint64(report+40,true))));
+  if(a===b&&width!==32){
+    identityWitnesses.set(body.toString('hex'),body.length);
+    const previous=identities.get(code.length);
+    if(previous&&!body.equals(previous)){
+      sharingRed=true;
+      assert(observe,'reflexive fields must share the exact identity body at equal source length');
+    }
+    else identities.set(code.length,body);
+    ++identityModels;
+  }
+  const module=await WebAssembly.instantiate(body,{machine:{memory}});
   data.fill(0x5a,base,base+1256);
   seedDisabledDebug(v,base);
   for(let reg=0;reg<16;++reg)v.setBigUint64(base+reg*8,BigInt(reg+1)*0x1029384756abcdefn&0xffffffffffffffffn,true);
@@ -43,5 +55,7 @@ for(let a=0;a<(legacy?8:16);++a)for(let b=0;b<(legacy?8:16);++b){
   assert(data.subarray(base,base+1256).equals(expected),`substitution model ${legacy}/${width}/${a}/${b}`);++models;
 }
 cc.compiler_close();vm.vm_close();
-console.log(JSON.stringify({format:'c-wasm-register-exchange-native-v1',...result,models,
+console.log(JSON.stringify({format:'c-wasm-register-exchange-native-v1',...result,status:sharingRed?'identity-sharing-red':'pass',models,identityModels,
+  identityBodies:identityWitnesses.size,identitySourceLengths:[...identities.keys()],
+  identityModuleBytes:[...identityWitnesses.values()],identityStoredBytes:[...identityWitnesses.values()].reduce((a,b)=>a+b,0),
   modelScope:'1088 exact complete-state substitutions including virtual RSP and AL/AH aliases; not hardware observations'},null,2));

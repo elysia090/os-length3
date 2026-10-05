@@ -71,3 +71,30 @@ This candidate is not in the completed `f30ac99` receipt. Re-run the same
 authenticated bundle/segment fixture/immutable root to obtain its next actual
 gate. PID 1, root mount, shell/tooling, real-browser acceptance and cold shell
 3 seconds remain unachieved.
+
+## Follow-up: reflexive substitution has no register work
+
+For equal fields of the same parent, `a = b`, and the two deposits reduce to
+identity for 8/16/64-bit writes. Eliminate the register reads/writes entirely,
+but keep ordinary RIP/RF/retirement publication. The exception is a 32-bit
+write: `parent' = parent & 0xffffffff` is not identity, so it remains emitted.
+AL/AH are different fields even though they share a parent and are not removed.
+
+The previous candidate fails the strict exact-body sharing assertion. With
+`--observe` it still passes all semantics comparisons but explicitly reports
+[identity-sharing-red](2026-10-06-exchange-identity-before.json), not green.
+The same synthetic 56-field matrix is **56 bodies / 14,328 bytes -> 3 bodies /
+612 bytes** after substitution. The three residual source lengths are 2/3/4;
+each identity module is 204 bytes. This is exact topology-witness storage for
+that matrix, not a measured Linux-frequency or release-size reduction.
+[Fresh green](2026-10-06-exchange-identity-green.json) retains all 186 native/
+cold parity emissions, 11,904 direct + 11,904 dispatch comparisons and 1,088
+complete-state models. Fresh full native compiler/CLI and scoped ASan/UBSan
+also pass without new warnings.
+
+Compiler **452,486 bytes**, SHA-256
+`eac50ba46948eb70c7aef1f5c30377a87c8364c052f3864a63893781d8d95cf2`;
+VM unchanged. This later candidate is not loaded in the ongoing separately
+frozen `5610a5f` same-bundle job (PID 15708, 452,445-byte compiler,
+`temp/exchange-1006/frozen`, unchanged quotas/warmCuts=64). Do not overwrite its
+binary or attribute its receipt to the later normalization.

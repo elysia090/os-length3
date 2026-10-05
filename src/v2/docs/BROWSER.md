@@ -1,10 +1,14 @@
 # Browser projection of OS Length3 Linux
 
-Next local candidate: register XCHG is simultaneous SSA substitution, with
+Active frozen candidate (`5610a5f`, PID 15708): register XCHG is simultaneous SSA substitution, with
 186 native/cold parity emissions and 11,904 native x86 rows agreeing in direct
 and C-dispatch execution. Full native checks/scoped sanitizers and 1,088
 RSP/high-byte models pass; compiler 452,445 bytes, VM unchanged. This is not
-loaded in the completed FS run below. See
+loaded in the completed FS run below. Later reflexive substitution eliminates
+register work for equal 8/16/64-bit fields (not 32-bit writes), reducing the
+synthetic identity matrix from 56 bodies / 14,328 bytes to 3 / 612 bytes.
+That 452,486-byte compiler is locally verified but NOT loaded in this active
+452,445-byte run. See
 [exchange normal form and scope](../vm/check/browser/evidence/2026-10-06-register-exchange.md).
 
 Local candidate (2026-10-06): the general C-owned FS/GS address boundary

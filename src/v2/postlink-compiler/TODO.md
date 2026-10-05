@@ -1,5 +1,19 @@
 # Remaining work — 2026-10-06
 
+The `5610a5f` register-XCHG candidate is in an active separately frozen
+unchanged-bundle Node job (PID 15708, `temp/exchange-1006/frozen`, VM 70,499 /
+compiler 452,445 bytes, warmCuts=64 and unchanged quotas). Obtain its completed
+receipt before attributing a new actual gate. It neither replaces retained
+browser Workers/staged assets nor constitutes real-browser acceptance.
+
+Later reflexive XCHG normalization is locally green but NOT loaded there:
+equal 8/16/64-bit fields remove all register work; 32-bit self writes still
+zero the upper half. Synthetic exact witnesses 56 bodies / 14,328 bytes ->
+3 bodies / 612 bytes, with all 11,904 native rows and 1,088 complete-state
+models retained. Compiler 452,486 bytes, VM unchanged; fresh full C/CLI and
+scoped sanitizers pass. See
+[derivation and before/after](../vm/check/browser/evidence/2026-10-06-register-exchange.md).
+
 Register XCHG is separately locally green: 186 fresh native/cold emission
 parity checks, 11,904 native x86 GPR/flags rows, 11,904 direct + 11,904 C-dispatch
 comparisons, 1,088 complete-state substitution models including RSP/high-byte
@@ -37,8 +51,8 @@ do not establish an elapsed-ratio speedup. See the
 [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
 PID 21444 completed; no retained browser Worker or staged asset was replaced.
 
-Immediate order: freeze the register-XCHG candidate and rerun the unchanged
-bundle, then make its next actual gate red. XCHG widths/aliases/current SSA
+Immediate order: retain the active frozen run's completed receipt and make its
+next actual gate red. XCHG widths/aliases/current SSA
 values now close in the common pure lowering without a host interpreter.
 FS/GS effective-offset -> linear-address normalization now uses
 the same C-owned boundary across scalar, reservation, vector, ordered record

@@ -391,6 +391,11 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
     if (operation == PL_X86_OPERATION_EXCHANGE) {
+        /* Reflexive substitution is identity except a 32-bit parent write:
+         * even that self exchange must still clear its original upper half. */
+        if (operands[0].value.reg.index==operands[1].value.reg.index
+                && operands[0].value.reg.flags==operands[1].value.reg.flags
+                && operands[0].bits!=32u) return;
         /* Simultaneous substitution, not three arithmetic operations. Capture
          * both current SSA values before either partial-parent write. AL/AH
          * then preserve the other's newly substituted field; 32-bit writes
