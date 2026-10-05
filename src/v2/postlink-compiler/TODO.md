@@ -69,9 +69,13 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Close FXRSTOR through common compiled semantics: independent native FPU
-   observations, precise control/alignment/MXCSR/fault/wait ordering and unchanged
-   CPU/payload on refused access. Do not introduce a mnemonic host callback.
+1. FXRSTOR fixture red is now green through common compiled semantics and a
+   generic two-fragment read view. 576 native observations, 2,304 complete
+   direct/C-dispatch comparisons, precise control/MXCSR/fault/wait/refusal
+   checks and full C/CLI/scoped sanitizers pass. No intermediate image or opcode
+   callback; XMM lanes remain vector. Final VM/compiler are 67,944 / 450,781
+   bytes. Same-bundle passage of that gate remains to be measured. See
+   [derivation and limits](../vm/check/browser/evidence/2026-10-05-fxrstor.md).
 2. Re-run the unchanged bundle/segments/root image after that red is green,
    including general memory body sharing. Freeze/hash the new binaries and
    retain actual gate and dominant counts, not a speedup ratio across different

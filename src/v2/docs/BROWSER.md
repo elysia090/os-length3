@@ -7,6 +7,9 @@ stops at FXRSTOR64 grammar -102; repeated engine construction is its largest
 measured term. Machine-entry ABI 3 shares exact relative-memory
 bodies through scalar attestations and retains cross-page table continuations.
 The general GPR/index candidate is separately tested, not loaded in that run.
+FXRSTOR is now independently verified in the common C compiler/VM through
+borrowed physical read extents; its same-bundle full run remains to be measured.
+See [restoration proof and checks](../vm/check/browser/evidence/2026-10-05-fxrstor.md).
 See [current evidence and counted scope](../vm/check/browser/evidence/2026-10-05-memory-operand-binding.md)
 and [remaining obligations](../postlink-compiler/TODO.md). Node/native/model
 passes are not real-browser acceptance. Retained browser Workers and staged

@@ -22,6 +22,7 @@ SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-repeat.c src/lower-branch.c
 SOURCES += src/lower-paired-exchange.c
 SOURCES += src/lower-fxsave.c
+SOURCES += src/lower-fxrstor.c
 SOURCES += src/lower-double-shift.c
 SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
@@ -79,6 +80,15 @@ $(BUILD)/fxsave-check: check/fxsave.c check/native-fxsave.S check/native-cut.S $
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -mno-red-zone check/fxsave.c check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 $(BUILD)/fxsave-observe: check/fxsave-observe.c | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) -mno-red-zone $< -o $@
+
+.PHONY: fxrstor-check
+check: fxrstor-check
+fxrstor-check: $(BUILD)/fxrstor-check
+	$(BUILD)/fxrstor-check
+$(BUILD)/fxrstor-check: check/fxrstor.c check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -mno-red-zone check/fxrstor.c check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+$(BUILD)/fxrstor-observe: check/fxrstor-observe.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) -mno-red-zone $< -o $@
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \

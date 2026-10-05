@@ -44,6 +44,18 @@ typedef struct {
 _Static_assert(sizeof(machine_memory_pair_port) == 56u, "pair port ABI extent");
 _Static_assert(offsetof(machine_memory_pair_port, high) == 48u, "pair high word ABI");
 
+/* A synchronous borrowed read view, never a payload image. Offsets are relative
+ * to the provider's arena in C and rebased to Wasm linear memory by its adapter.
+ * Complete preflight publishes at most two fragments on success only. The
+ * serialized compiled call keeps RAM/directory/context pinned until it returns;
+ * no event, yield, remap or guest write may interleave. These descriptors confer
+ * no authority after that call. No source opcode or CPU image crosses the API. */
+typedef struct {
+    machine_memory_port scalar;
+    pl_u32 offsets[2], lengths[2];
+} machine_memory_extent_port;
+_Static_assert(sizeof(machine_memory_extent_port)==64u,"borrowed extent port ABI");
+
 /* machine.read_pair(port,address,16,READ[|STACK|ALIGNED16]) -> result:
  * complete read-only preflight publishes scalar.value/high only on success.
  * Unaligned records may cross two pages; faults/waits leave both words and

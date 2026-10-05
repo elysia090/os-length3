@@ -124,6 +124,10 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',9,'r','e','a','d','_','p','a','i','r',0,0
     };
+    static const pl_u8 read_extent_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',11,'r','e','a','d','_','e','x','t','e','n','t',0,0
+    };
     static const pl_u8 return_imports[] = {
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',10,'f','a','r','_','r','e','t','u','r','n',0,0
@@ -181,6 +185,11 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         section(writer,2u,sizeof read_pair_imports);raw(writer,read_pair_imports,sizeof read_pair_imports);
         section(writer,3u,sizeof memory_functions);raw(writer,memory_functions,sizeof memory_functions);
         section(writer,7u,sizeof memory_exports);raw(writer,memory_exports,sizeof memory_exports);
+    } else if (boundary==18) {
+        section(writer,1u,sizeof table_type); raw(writer,table_type,sizeof table_type);
+        section(writer,2u,sizeof read_extent_imports); raw(writer,read_extent_imports,sizeof read_extent_imports);
+        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
+        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
     } else if (boundary==16) {
         section(writer,1u,sizeof software_type); raw(writer,software_type,sizeof software_type);
         section(writer,2u,sizeof software_imports); raw(writer,software_imports,sizeof software_imports);
@@ -278,6 +287,7 @@ static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
     if (plan->system_cut == CUT_SYSTEM_INTERRUPT_FLAG) return 14;
     if (plan->system_cut == CUT_SYSTEM_DEBUG) return 12;
     if (plan->system_cut == CUT_SYSTEM_FXSAVE) return 15;
+    if (plan->system_cut == CUT_SYSTEM_FXRSTOR) return 18;
     if (plan->system_cut == CUT_SYSTEM_VECTOR_TRANSFER && report->memory_bytes)
         return (report->memory_access&MACHINE_MEMORY_WRITE)?15:17;
     if (plan->system_cut == CUT_SYSTEM_SOFTWARE_INTERRUPT) return 16;

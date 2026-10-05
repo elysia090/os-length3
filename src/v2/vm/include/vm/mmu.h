@@ -68,6 +68,12 @@ machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,
 machine_result vm_mmu_read_pair(vm_memory *physical, pl_u32 port_offset,
                                 const vm_mmu_context *context, pl_u64 address,
                                 pl_u32 bytes, pl_u32 access);
+/* READ[|STACK|ALIGNED16] over 1..512 bytes. Publish only physical coordinates,
+ * never a record copy. Borrowed view has the same synchronous lifetime as pair
+ * reads; generated consumers do not call another provider before finishing. */
+machine_result vm_mmu_read_extent(vm_memory *physical, pl_u32 port_offset,
+                                  const vm_mmu_context *context, pl_u64 address,
+                                  pl_u32 bytes, pl_u32 access);
 /* Preflight WRITE[|STACK|ALIGNED16] over 1..512 bytes, pin at most two
  * physical fragments, without reading or copying payload. Canonical range,
  * alignment and all page permissions precede the first output store.

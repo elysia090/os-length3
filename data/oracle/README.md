@@ -115,6 +115,15 @@ and strict independent CALL provenance reds are not waived by ordinary tests.
 
 ### Serialized memory-order cuts — 2026-10-05
 
+`check-fxrstor.mjs VM.WASM COMPILER.WASM NATIVE-FIXTURES` compares the common
+compiled FPU restore against nine native forms, C-MMU/dispatcher and explicit
+fault/wait/control models. `wasm-compiler/check/fxrstor.c DIRECTORY --observe`
+records native results independently before compiler support; normal mode also
+requires exact emission. `fxrstor-observe.c` separately checks protected-page /
+invalid-MXCSR fault priority in the reference x86 VM. `vm/check/read-extent.c`
+checks generic zero-copy physical projection. None is a product interpreter.
+See [derivation and bounds](../../src/v2/vm/check/browser/evidence/2026-10-05-fxrstor.md).
+
 `src/v2/wasm-compiler/check/memory-order.c` records GPR/flags/FPU preservation
 on native x86 before and after lowering, with `--observe` available before
 compiler support. `check-memory-order.mjs VM.WASM COMPILER.WASM EMITTED-DIR

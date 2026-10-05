@@ -1,11 +1,12 @@
 #include "cut-internal.h"
 
-int cut_fxsave_supported(const pl_x86_instruction *instruction)
+int cut_fxstate_supported(const pl_x86_instruction *instruction,int restore)
 {
+    pl_u64 argument=PL_X86_X87_STATE_IMAGE|((pl_u64)!!restore<<40u);
     return instruction->status==PL_X86_DECODE_VALID && instruction->flow==PL_X86_FLOW_NEXT
         && instruction->machine_operation==PL_X86_MACHINE_X87
-        && (instruction->machine_argument==PL_X86_X87_STATE_IMAGE
-            || instruction->machine_argument==(PL_X86_X87_STATE_IMAGE|(1ull<<44u)))
+        && (instruction->machine_argument==argument
+            || instruction->machine_argument==(argument|(1ull<<44u)))
         && instruction->visible_operand_count==1u
         && instruction->operands[0].kind==PL_X86_OPERAND_MEMORY
         && instruction->operands[0].bits==4096u
@@ -14,6 +15,9 @@ int cut_fxsave_supported(const pl_x86_instruction *instruction)
         && (instruction->address_width==32u || instruction->address_width==64u)
         && cut_memory_address_supported(instruction,&instruction->operands[0].value.memory);
 }
+
+int cut_fxsave_supported(const pl_x86_instruction *instruction)
+{ return cut_fxstate_supported(instruction,0); }
 
 static void output(cut_lowering *cut,pl_u32 offset)
 {

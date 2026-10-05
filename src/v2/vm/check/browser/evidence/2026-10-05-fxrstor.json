@@ -1,0 +1,68 @@
+{
+  "format": "compiled-fxrstor-read-extent-v1",
+  "status": "pass",
+  "linuxBoot": "not-tested",
+  "browserAcceptance": "not-tested",
+  "red": {
+    "preimplementation": "FXRSTOR form=0 compiler=-102 decode=0 status=0 flow=0 machine=22 arg=10000000033 operands=1 bits=4096 flags=24d",
+    "omissions": [
+      "FIP byte1246/1247: ab,dc versus ff,ff",
+      "FSW byte1234/1235: 06,08 versus 86,88"
+    ],
+    "note": "Unchanged full-state assertions exposed both normalization omissions; neither was waived."
+  },
+  "native": {
+    "observations": 576,
+    "forms": 9,
+    "accelerator": "reference QEMU TCG build VM; independent x86 instruction execution, not physical hardware"
+  },
+  "checks": {
+    "status": "pass",
+    "nativeColdParity": 9,
+    "directComparisons": 1152,
+    "dispatchComparisons": 1152,
+    "preciseFaultModels": 788,
+    "waitRetryModels": 36,
+    "entryRefusals": 108,
+    "osfxsrProfileModels": 27,
+    "oracle": "native x86 instruction images in reference build VM; MMU fault models, not physical hardware",
+    "linuxBoot": "not-tested"
+  },
+  "physicalRead": {
+    "offsetModels": 4096,
+    "directlyProjectedBytes": 1050624,
+    "refusalFaultWaitModels": 12,
+    "portBytes": 64,
+    "maximumFragments": 2,
+    "payloadImageBytes": 0,
+    "scope": "serialized synchronous borrowed view; no persistent/SMP lease"
+  },
+  "sanitizers": {
+    "status": "pass",
+    "scope": [
+      "read extent",
+      "write extent",
+      "MMU",
+      "source"
+    ]
+  },
+  "compiler": {
+    "bytes": 450781,
+    "sha256": "2507c8b832911cbbf789a6025eecff34c052130aa95b30c33172949be87fdbf7"
+  },
+  "vm": {
+    "bytes": 67944,
+    "sha256": "e7d62baf869c4954f23263b94b16dbfdf89ec7572ebc496f06e0deab7c0b95a4"
+  },
+  "sampleEmittedBody": {
+    "scalarBytes": 3259,
+    "vectorBytes": 2651
+  },
+  "unchanged": {
+    "nativeBundle": true,
+    "humanUI": true,
+    "rowBytes": 24,
+    "reportBytes": 80,
+    "sourceMetadataBytes": 6880
+  }
+}

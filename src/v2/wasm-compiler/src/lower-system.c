@@ -24,6 +24,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     int io = cut_io_supported(instruction);
     if (io) return io;
     if (cut_fxsave_supported(instruction)) return CUT_SYSTEM_FXSAVE;
+    if (cut_fxrstor_supported(instruction)) return CUT_SYSTEM_FXRSTOR;
     if (cut_mxcsr_supported(instruction)) return CUT_SYSTEM_MXCSR;
     if (cut_vector_supported(instruction)) return CUT_SYSTEM_VECTOR_TRANSFER;
     if (cut_vector_scalar_supported(instruction)) return CUT_SYSTEM_VECTOR_SCALAR;
@@ -342,6 +343,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     }
     if (cut_io_supported(instruction)) { cut_lower_io(cut,instruction); return; }
     if (cut_fxsave_supported(instruction)) { cut_lower_fxsave(cut,instruction); return; }
+    if (cut_fxrstor_supported(instruction)) { cut_lower_fxrstor(cut,instruction); return; }
     if (cut_mxcsr_supported(instruction)) { cut_lower_mxcsr(cut,instruction); return; }
     if (cut_vector_supported(instruction)) { cut_lower_vector(cut,instruction); return; }
     if (cut_vector_scalar_supported(instruction)) { cut_lower_vector_scalar(cut,instruction); return; }

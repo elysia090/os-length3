@@ -55,7 +55,7 @@ static int boundaries(void)
     if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)
             || report.source_instructions!=1u || report.source_bytes!=3u || report.memory_bytes!=512u
             || report.continuation!=map.address+4u)return 0;
-    static const pl_u8 refused[][4]={{0xf0u,0x0fu,0xaeu,0x07u},{0x0fu,0xaeu,0x0fu,0x90u},
+    static const pl_u8 refused[][4]={{0xf0u,0x0fu,0xaeu,0x07u},
         {0x66u,0x0fu,0xaeu,0x07u},{0xf3u,0x0fu,0xaeu,0x07u},{0x0fu,0xaeu,0xc0u,0x90u}};
     options.entry=map.address;
     for(pl_u32 rank=0u;rank<sizeof refused/sizeof refused[0];++rank) {

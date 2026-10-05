@@ -278,6 +278,27 @@ machine_result vm_mmu_read_pair(vm_memory *memory, pl_u32 port_offset,
     return 0u;
 }
 
+machine_result vm_mmu_read_extent(vm_memory *memory, pl_u32 port_offset,
+                                  const vm_mmu_context *context, pl_u64 address,
+                                  pl_u32 bytes, pl_u32 access)
+{
+    vm_memory_abort(memory);
+    if (!memory || !memory->bytes || (access & ~39u)
+            || (access & 3u)!=MACHINE_MEMORY_READ
+            || (pl_u64)port_offset+sizeof(machine_memory_extent_port)>memory->reserved_bytes)
+        return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result result=preflight(memory,port_offset,context,address,bytes,access,512u,&ready);
+    if (result) return result;
+    for (pl_u32 i=0u;i<2u;++i) {
+        vm_memory_store(memory->bytes+port_offset+offsetof(machine_memory_extent_port,offsets)+i*4u,
+            i<ready.parts ? ready.offsets[i] : 0u,4u);
+        vm_memory_store(memory->bytes+port_offset+offsetof(machine_memory_extent_port,lengths)+i*4u,
+            i<ready.parts ? ready.lengths[i] : 0u,4u);
+    }
+    return 0u;
+}
+
 machine_result vm_mmu_code_page(vm_memory *memory, pl_u32 port_offset,
                                 const vm_mmu_context *context, pl_u64 address,
                                 vm_code_page *target)

@@ -122,7 +122,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->flag_frontier[0] = 0u;
                 if (indirect) plan->report.memory_bytes = instruction.operation == PL_X86_OPERATION_CALL
                     || instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
-                else if (system==CUT_SYSTEM_FXSAVE) plan->report.memory_bytes=512u;
+                else if (system==CUT_SYSTEM_FXSAVE || system==CUT_SYSTEM_FXRSTOR)
+                    plan->report.memory_bytes=512u;
                 else if (system==CUT_SYSTEM_MXCSR) plan->report.memory_bytes=4u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                     plan->report.memory_bytes=(instruction.machine_argument&(3ull<<24u))?16u:0u;
@@ -221,7 +222,8 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u);
         cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        pl_u32 port_bytes=plan->report.memory_bytes==16u ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
+        pl_u32 port_bytes=plan->system_cut==CUT_SYSTEM_FXRSTOR ? sizeof(machine_memory_extent_port)
+            : plan->report.memory_bytes==16u ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
         cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu);
         cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
         cut_const(&cut, 65536u); cut_op(&cut, 0x7eu); cut_op(&cut, 0x56u); return_if(&cut);
