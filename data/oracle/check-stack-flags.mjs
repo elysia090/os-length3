@@ -79,7 +79,7 @@ try {
       } else expected.writeBigUInt64LE(flagsAfter(flags,value,width,cpl),392);
       expected.writeBigUInt64LE(rsp + (push ? -1n : 1n) * BigInt(width / 8),32);
       expected.writeBigUInt64LE(entry + BigInt(sourceBytes),384); expected.writeBigUInt64LE(43n,1128);
-      assert.equal(cut(base,port),1n,name);
+      assert.equal(cut(base,port,entry),1n,name);
       assert(data.subarray(base,base + 1256).equals(expected),`${name}: complete direct CPU`);
       assert(data.subarray(ram,ram + 8192).equals(expectedRam),`${name}: direct RAM`);
       data.set(before,base); data.set(beforeRam,ram);
@@ -117,7 +117,7 @@ try {
       if (failure === 'port-alias') argument = base;
       if (failure === 'port-wrap') argument = 0xfffffff8;
       const before = Buffer.from(data.subarray(base,base + 1256)), oldRam = Buffer.from(data.subarray(ram,ram + 8192));
-      assert.equal(cut(base,argument),expected,`${name}: ${failure}`);
+      assert.equal(cut(base,argument,entry),expected,`${name}: ${failure}`);
       assert(data.subarray(base,base + 1256).equals(before)); assert(data.subarray(ram,ram + 8192).equals(oldRam));
       if (failure === 'canonical') { assert.equal(view.getUint32(port + 24,true),12); assert.equal(view.getUint32(port + 28,true),0); }
       if (failure === 'pte-absent') { assert.equal(view.getUint32(port + 24,true),14); assert.equal(view.getUint32(port + 28,true),push ? 6 : 4); }

@@ -18,7 +18,7 @@ export async function checkEngineConstruction(compilerBytes) {
     const expected=payload.slice(state,state+1256),ev=new DataView(expected.buffer);
     ev.setBigUint64(0,BigInt(value),true);ev.setBigUint64(384,entry+5n,true);
     ev.setBigUint64(392,2n,true);ev.setBigUint64(1128,18n,true);
-    ensure(instance.exports.cut(state,port)===1n,'generated MOV result');
+    ensure(instance.exports.cut(state,port,entry)===1n,'generated MOV result');
     ensure(same(payload.subarray(state,state+1256),expected),'whole generated MOV CPU preservation');
     ++comparisons;
   }
@@ -41,7 +41,7 @@ export async function checkEngineConstruction(compilerBytes) {
     const methods={
       asynchronous:async bytes=>WebAssembly.instantiate(await WebAssembly.compile(bytes),imports),
       inline:async bytes=>new WebAssembly.Instance(new WebAssembly.Module(bytes),imports),
-      boundedOwner:async(bytes,entry)=>owner.get(entry,bytes),
+      boundedOwner:async(bytes)=>owner.get(bytes),
     };
     // Rotate which API sees a fresh body first. Other positions can benefit
     // from an engine-internal cache; report all positions, not just the winner.
@@ -55,7 +55,7 @@ export async function checkEngineConstruction(compilerBytes) {
       }
       samples.push({round,method,position:rotated.indexOf(method),modules,milliseconds});
     }
-    ensure(owner.stats().compilations===modules,'owner constructs every deliberately absent key');
+    ensure(owner.stats().compilations===modules,'owner constructs every deliberately distinct literal body');
     ensure(owner.stats().entries===1&&owner.stats().retainedModuleBytes<=65536,'unchanged owner quota');
     owner.close();
   }

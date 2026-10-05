@@ -333,7 +333,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
          * successful delivery. A wait or delivery fault keeps the source RIP. */
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
-        cut_const(cut,instruction->fallthrough);
+        cut_coordinate(cut,instruction->fallthrough);
         cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
         cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
         cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);

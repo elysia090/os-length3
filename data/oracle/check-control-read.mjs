@@ -27,11 +27,11 @@ for (const name of names) {
     view.setBigUint64(state + 488,16n | BigInt(cpl),true); view.setBigUint64(state + 1128,42n,true);
     const expected = Buffer.from(bytes.subarray(state,state + 1256));
     if (cpl) {
-      assert.equal(cut(state,port),107n);
+      assert.equal(cut(state,port,BigInt(meta.entry)),107n);
       assert.equal(view.getBigUint64(port + 16,true),BigInt(meta.entry));
       assert.equal(view.getUint32(port + 24,true),13); assert.equal(view.getUint32(port + 28,true),0);
     } else {
-      assert.equal(cut(state,port),1n);
+      assert.equal(cut(state,port,BigInt(meta.entry)),1n);
       expected.writeBigUInt64LE(value,meta.reg * 8);
       expected.writeBigUInt64LE(flags & ~0x10000n,392);
       expected.writeBigUInt64LE(BigInt(meta.entry) + BigInt(meta.sourceBytes),384);
@@ -44,7 +44,7 @@ for (const name of names) {
     view.setBigUint64(state + 392,2n | flag,true);
     view.setBigUint64(state + 488,16n,true);
     const before = Buffer.from(bytes.subarray(state,state + 1256));
-    assert.equal(cut(state,port),6n);
+    assert.equal(cut(state,port,BigInt(meta.entry)),6n);
     assert(bytes.subarray(state,state + 1256).equals(before)); ++cases;
   }
 }

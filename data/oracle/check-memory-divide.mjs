@@ -91,7 +91,7 @@ function compare(cut,meta,expected,result,label,dispatch=false) {
     expected=Buffer.from(expected);
     expected.writeBigUInt64LE(BigInt(meta.fetchByte),port-base+8);
   }
-  assert.equal(dispatch ? vm.vm_run(port,9n,1) : cut(base,port),result,label);
+  assert.equal(dispatch ? vm.vm_run(port,9n,1) : cut(base,port,entry),result,label);
   if (!arena().equals(expected)) {
     const differences=[];
     for (let i=0;i<arenaBytes && differences.length<16;++i)
@@ -192,7 +192,7 @@ try {
       if (failure==='stale') put(port,8);
       if (failure==='closed') vm.vm_close();
       const before=Buffer.from(arena());
-      assert.equal(cut(base,failure==='alias' ? base : failure==='unaligned' ? port+1 : failure==='bounds' ? 0xfffffff8 : port),
+      assert.equal(cut(base,failure==='alias' ? base : failure==='unaligned' ? port+1 : failure==='bounds' ? 0xfffffff8 : port,entry),
         failure==='stale' ? 5n : 6n);
       assert(arena().equals(before)); ++refusals;
     }

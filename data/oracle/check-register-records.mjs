@@ -70,7 +70,7 @@ export async function checkRegisterRecords({providerFile,compilerFile,directory,
         assert(data.subarray(code,code+4096).equals(payload));
         assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),BigInt(meta.instructions)); ++comparisons;
         reset(source,meta,record);
-        assert.equal(cut(base,port),1n,`${form}/${row}: direct`);
+        assert.equal(cut(base,port,entry),1n,`${form}/${row}: direct`);
         assert(data.subarray(base,base+1256).equals(expected),`${form}/${row}: direct complete CPU`);
         assert(data.subarray(code,code+4096).equals(payload)); ++directComparisons;
       }
@@ -81,7 +81,7 @@ export async function checkRegisterRecords({providerFile,compilerFile,directory,
         if (failure === 'stale') put(port,8);
         const before = cpu();
         assert.equal(failure === 'stale' ? vm.vm_run(port,9n,1)
-          : cut(failure === 'unaligned' ? base+1 : failure === 'wrap' ? 0xfffffff8 : base,port),failure === 'stale' ? 5n : 6n);
+          : cut(failure === 'unaligned' ? base+1 : failure === 'wrap' ? 0xfffffff8 : base,port,entry),failure === 'stale' ? 5n : 6n);
         assert(data.subarray(base,base+1256).equals(before)); ++refusals;
       }
       reset(source,meta,record); put(base+392,flags(record,meta)|0x10000n);
@@ -92,7 +92,7 @@ export async function checkRegisterRecords({providerFile,compilerFile,directory,
         // Control bits belong to the pinned execution context; admit the
         // chosen faulting context before running, rather than mutating a pin.
         if(dispatched)assert.equal(vm.vm_bind_execution(rows,1,9n),0);
-        assert.equal(dispatched?vm.vm_run(port,9n,1):cut(base,port),BigInt(vector)*8n+3n,`${form}: fault, dispatch=${dispatched}`);
+        assert.equal(dispatched?vm.vm_run(port,9n,1):cut(base,port,entry),BigInt(vector)*8n+3n,`${form}: fault, dispatch=${dispatched}`);
         assert(data.subarray(base,base+1256).equals(before),'fault preserves the entire CPU and RF');
         assert.equal(view.getBigUint64(port+16,true),entry);
         assert.equal(view.getUint32(port+24,true),vector);assert.equal(view.getUint32(port+28,true),0);

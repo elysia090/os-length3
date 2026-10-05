@@ -39,13 +39,14 @@ typedef struct {
 } wasm_cut_report;
 
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
- * cut(i32 machine_state_offset, i32 memory_port_offset) -> i64 machine_result.
+ * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry)
+ * -> i64 machine_result (machine-entry ABI 2).
  * Pure cuts ignore the port; all generated cuts share machine/entry.h's table
  * type. Architectural addresses
  * remain i64. The supervisor owns an aligned, fully resident state reservation
- * and executable admission, including current generation/fetch permissions
+ * and executable admission, including the exact entry binding and current generation/fetch permissions
  * and event/debug context. This function is not an MMU or code-admission check.
- * RIP mismatch or TF returns ENTRY_MAP without
+ * RIP mismatch with that separately admitted binding or TF returns ENTRY_MAP without
  * mutation. The baseline is long mode without debug single-stepping.
  *
  * A one-instruction RAM cut also imports machine.access (machine/memory.h)
@@ -139,6 +140,10 @@ typedef struct {
  * page. A crossing first instruction is emitted alone. Thus executable-page
  * admission cannot fault ahead of retirement of the preceding pure prefix.
  * Success covers only source_bytes, never the continuation or an ELF closure.
+ * Decoder-owned instruction coordinates are offsets from admitted_entry;
+ * literal immediates and loaded guest addresses are not rebound. The binding
+ * comes from the C-owned execution row, including its latched continuation;
+ * reading current RIP is not a substitute for that independent admission.
  * No decoder or source bytes are imported by the generated function. The
  * caller borrows immutable ELF bytes; no private execution section is read.
  * Undefined arithmetic flags may choose a canonical value; defined flags are

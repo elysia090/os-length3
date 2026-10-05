@@ -28,7 +28,7 @@ typedef struct {
     pl_u64 continuation_generation;
 } vm_execution;
 typedef machine_result (*vm_execution_fetch)(void *owner, pl_u64 address);
-typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot);
+typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot, pl_u64 entry);
 
 /* Rows are sorted by distinct canonical entry, nonzero slot, and cover at most
  * one executable page, or one <=15-byte instruction crossing two pages. The
@@ -61,6 +61,8 @@ void vm_execution_close(vm_execution *execution);
  * only this in-flight instruction may continue. Completion/fault releases the
  * latch. Host reopen/close or a changed CPU/MMU context cancels it. This does
  * not deliver interrupts or prove async source/module authenticity. */
+/* The call receives the selected row's entry by value, including on resume.
+ * A shared compiled topology cannot choose or replace this binding. */
 /* With an active MOV SS shadow the next row must contain exactly one source
  * instruction. ENTRY_MAP requests that narrower compile admission; it never
  * retires a larger slice or decodes an instruction. A successful retirement

@@ -36,7 +36,7 @@ for (const row of trace) {
   expected.writeBigUInt64LE(row[6],872); expected.writeBigUInt64LE(row[7],424);
   expected.writeBigUInt64LE(row[8],392); expected.writeBigUInt64LE(row[1] === 1n ? 0x400002n : 0x400003n,384);
   expected.writeBigUInt64LE(1n,1128);
-  assert.equal(cuts[row[1] === 1n ? 0 : 2](state,port),1n);
+  assert.equal(cuts[row[1] === 1n ? 0 : 2](state,port,0x400000n),1n);
   assert.deepEqual(bytes.subarray(state,state+1256),expected); assert.deepEqual(bytes.subarray(segments,segments+136),hidden);
   for (let rank = 0; rank < 4; ++rank) {
     const key = rank === 3 ? 0xc0000080 : 0xc0000100+rank, value = row[4+rank];
@@ -45,7 +45,7 @@ for (const row of trace) {
     const before = Buffer.from(bytes.subarray(state,state+1256));
     before.writeBigUInt64LE(value & 0xffffffffn,0); before.writeBigUInt64LE(value >> 32n,16);
     before.writeBigUInt64LE(0x400002n,384); before.writeBigUInt64LE(BigInt(rank+2),1128);
-    assert.equal(cuts[1](state,port),1n); assert.deepEqual(bytes.subarray(state,state+1256),before);
+    assert.equal(cuts[1](state,port,0x400000n),1n); assert.deepEqual(bytes.subarray(state,state+1256),before);
     assert.deepEqual(bytes.subarray(segments,segments+136),hidden); ++comparisons;
   }
   ++comparisons; vm.vm_close();

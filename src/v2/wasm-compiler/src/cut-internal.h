@@ -49,6 +49,8 @@ void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);
 void cut_set(cut_lowering *cut, pl_u32 local);
 void cut_const(cut_lowering *cut, pl_u64 bits);
+/* Only decoder-owned instruction coordinates use this substitution. */
+void cut_coordinate(cut_lowering *cut, pl_u64 address);
 void cut_mask(cut_lowering *cut, pl_u32 bits);
 void cut_load(cut_lowering *cut, pl_u32 offset);
 void cut_store(cut_lowering *cut, pl_u32 offset, pl_u32 local);

@@ -2,9 +2,9 @@
 
 void cut_op(cut_lowering *cut, pl_u32 opcode) { wasm_writer_byte(cut->writer, opcode); }
 void cut_get(cut_lowering *cut, pl_u32 local)
-{ cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, local ? local + 1u : 0u); }
+{ cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, local ? local + 2u : 0u); }
 void cut_set(cut_lowering *cut, pl_u32 local)
-{ cut_op(cut, 0x21u); wasm_writer_uleb(cut->writer, local ? local + 1u : 0u); }
+{ cut_op(cut, 0x21u); wasm_writer_uleb(cut->writer, local ? local + 2u : 0u); }
 
 void cut_const(cut_lowering *cut, pl_u64 bits)
 {
@@ -24,6 +24,13 @@ void cut_const(cut_lowering *cut, pl_u64 bits)
 void cut_mask(cut_lowering *cut, pl_u32 bits)
 {
     if (bits < 64u) { cut_const(cut, (1ull << bits) - 1u); cut_op(cut, 0x83u); }
+}
+
+void cut_coordinate(cut_lowering *cut, pl_u64 address)
+{
+    pl_u64 offset = address - cut->report.entry;
+    cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 2u);
+    if (offset) { cut_const(cut, offset); cut_op(cut, 0x7cu); }
 }
 
 void cut_load(cut_lowering *cut, pl_u32 offset)
@@ -340,7 +347,7 @@ void cut_arithmetic_flags(cut_lowering *cut, pl_u32 width,
 void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruction,
                             const pl_x86_memory *memory)
 {
-    if (memory->base.class_id == PL_X86_REGISTER_IP) cut_const(cut, instruction->fallthrough);
+    if (memory->base.class_id == PL_X86_REGISTER_IP) cut_coordinate(cut, instruction->fallthrough);
     else if (memory->base.class_id == PL_X86_REGISTER_GPR) read_register(cut, &memory->base);
     else cut_const(cut, 0u);
     if (memory->index.class_id == PL_X86_REGISTER_GPR) {
@@ -454,9 +461,9 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         return;
     }
     if (operation == PL_X86_OPERATION_BRANCH) {
-        cut_const(cut, instruction->target);
+        cut_coordinate(cut, instruction->target);
         if (instruction->flow == PL_X86_FLOW_CONDITIONAL) {
-            cut_const(cut, instruction->fallthrough);
+            cut_coordinate(cut, instruction->fallthrough);
             cut_condition(cut, instruction->condition); cut_op(cut, 0x1bu);
         }
         cut_set(cut, CUT_NEXT); return;

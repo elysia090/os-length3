@@ -1,136 +1,119 @@
-// Host engine reuse only. No instruction decoder or Linux boot claim.
+// Exact bounded topology ownership only; no source admission or Linux boot.
 import assert from 'node:assert/strict';
 import {CompiledModules} from '../../src/v2/web/compiled-modules.mjs';
-const emitted = value => Uint8Array.from([
+const emitted=(value,suffix=[])=>Uint8Array.from([
   0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,
   2,19,1,7,109,97,99,104,105,110,101,6,109,101,109,111,114,121,2,0,1,
-  3,2,1,0,7,7,1,3,103,101,116,0,0,10,9,1,7,0,65,value,40,2,0,11
+  3,2,1,0,7,7,1,3,103,101,116,0,0,10,9,1,7,0,65,value,40,2,0,11,
+  ...(suffix.length?[0,suffix.length+2,1,120,...suffix]:[])
 ]);
-const memory = new WebAssembly.Memory({initial:1,maximum:2});
-new DataView(memory.buffer).setUint32(0,17,true);
-new DataView(memory.buffer).setUint32(4,29,true);
-const cache = new CompiledModules({machine:{memory}},{maximumEntries:2,maximumBytes:256});
-const source = emitted(0), first = await cache.get(1n,source);
-assert.equal(first.exports.get(),17);
-assert.equal(await cache.get(1n,source),first);
-source[source.length - 5] = 4;
-const replacement = await cache.get(1n,source);
-assert.notEqual(replacement,first); assert.equal(replacement.exports.get(),29);
-source.fill(0); // Caller-arena reuse cannot poison the owned comparison witness.
-assert.equal(await cache.get(1n,emitted(4)),replacement);
-await cache.get(2n,emitted(0)); await cache.get(3n,emitted(4));
-assert.equal(cache.stats().entries,2); assert(cache.stats().retainedModuleBytes <= 256);
-assert.notEqual(await cache.get(1n,emitted(4)),replacement,'bounded inactive-entry eviction');
-assert.equal(cache.stats().compilations,5);
-assert.equal(cache.stats().absentKeyCompilations,4);
-assert.equal(cache.stats().changedBodyCompilations,1);
-assert.equal(cache.stats().quotaEvictions,2);
-memory.grow(1);
-new DataView(memory.buffer).setUint32(4,37,true);
-assert.equal((await cache.get(1n,emitted(4))).exports.get(),37,'same memory object after grow');
-const before = cache.stats();
-await assert.rejects(cache.get(1n,new Uint8Array(1)),WebAssembly.CompileError);
-assert.deepEqual(cache.stats(),before,'invalid emission cannot publish or remove a valid entry');
-// Placement changes independently of the C-approved executable coordinate.
-// Slot reuse must not turn an unchanged body into fresh engine construction.
-const coordinateOwner=new CompiledModules({machine:{memory}},{maximumEntries:2,maximumBytes:256});
-const table=new WebAssembly.Table({element:'anyfunc',initial:3});
-const a=await coordinateOwner.get(0x400000n,emitted(0));table.set(1,a.exports.get);
-const b=await coordinateOwner.get(0x400001n,emitted(4));table.set(1,b.exports.get);
-const moved=await coordinateOwner.get(0x400000n,emitted(0));table.set(2,moved.exports.get);
-assert.equal(moved,a);assert.equal(table.get(1)(),37);assert.equal(table.get(2)(),17);
-assert.equal(coordinateOwner.stats().compilations,2);assert.equal(coordinateOwner.stats().hits,1);
-assert.notEqual(await coordinateOwner.get(0x400000n,emitted(4)),a,'same coordinate is not an equivalence proof');
-table.set(1,null);table.set(2,null);coordinateOwner.close();
-const tiny = new CompiledModules({machine:{memory}},{maximumEntries:8,maximumBytes:emitted(0).length});
-await tiny.get(1,emitted(0)); await tiny.get(2,emitted(4));
-assert.equal(tiny.stats().entries,1,'byte quota independent of entry quota');
-assert.equal(tiny.stats().absentKeyCompilations,2);assert.equal(tiny.stats().quotaEvictions,1);
-await assert.rejects(tiny.get(3,new Uint8Array(65537)),RangeError);
-// A repeatedly demanded body must outlive an inactive body under the same
-// entry AND byte quota. Compiler-approved bytes remain the exact witness.
+const memory=new WebAssembly.Memory({initial:1,maximum:2});
+let data=new DataView(memory.buffer);
+data.setUint32(0,17,true);data.setUint32(4,29,true);data.setUint32(8,53,true);
+const cache=new CompiledModules({machine:{memory}},{maximumEntries:2,maximumBytes:256});
+const arena=emitted(0),first=await cache.get(arena);
+assert.equal(first.exports.get(),17);assert.equal(await cache.get(arena),first);
+arena[arena.length-5]=4;
+const changed=await cache.get(arena);
+assert.notEqual(changed,first);assert.equal(changed.exports.get(),29);
+arena.fill(0);assert.equal(await cache.get(emitted(4)),changed,'caller reuse cannot corrupt witness');
+await cache.get(emitted(8));assert.equal(cache.demand(first),false,'evicted witness cannot be resurrected');
+assert.equal(await cache.get(emitted(4)),changed);
+assert.notEqual(await cache.get(emitted(0)),first);
+assert.equal(cache.stats().compilations,4);assert.equal(cache.stats().quotaEvictions,2);
+memory.grow(1);data=new DataView(memory.buffer);data.setUint32(4,37,true);
+assert.equal((await cache.get(emitted(4))).exports.get(),37,'same object/instance after grow');
+const before=cache.stats();
+await assert.rejects(cache.get(new Uint8Array(1)),WebAssembly.CompileError);
+assert.deepEqual(cache.stats(),before,'invalid bytes cannot change a valid owner');
+await assert.rejects(cache.get(1n,emitted(0)),RangeError,'obsolete coordinate-key API is not a fallback');
+await assert.rejects(cache.get(new Uint8Array(new SharedArrayBuffer(16))),RangeError);
+assert.deepEqual(cache.stats(),before,'shared source cannot race the immutable witness');
+
+// Distinct table placements use the same opaque instance. C separately owns
+// binding/admission; the host owner does not receive or invent a coordinate.
+const placed=new CompiledModules({machine:{memory}});
+const shared=await placed.get(emitted(0)),table=new WebAssembly.Table({element:'anyfunc',initial:3});
+table.set(1,shared.exports.get);table.set(2,(await placed.get(emitted(0))).exports.get);
+assert.equal(table.get(1),table.get(2));assert.equal(table.get(1)(),17);
+assert.equal(placed.stats().compilations,1);
+table.set(1,null);table.set(2,null);placed.close();
+
+// A real 32-bit prefilter collision has different executable constants.
+// The eight-byte custom payloads make both modules valid, with hash 867302654.
+// Full witness equality, not this host index, must choose the instance.
+const collisionA=emitted(0,[135,63,22,19,86,176,57,54]);
+const collisionB=emitted(4,[145,52,254,190,160,57,13,29]);
+const collision=new CompiledModules({machine:{memory}});
+const ca=await collision.get(collisionA),cb=await collision.get(collisionB);
+assert.equal(collision.buckets.get(867302654).size,2,'actual equal prefilter, distinct exact witnesses');
+assert.notEqual(ca,cb);assert.equal(ca.exports.get(),17);assert.equal(cb.exports.get(),37);
+assert.equal(await collision.get(collisionA),ca);assert.equal(await collision.get(collisionB),cb);
+assert.equal(collision.stats().compilations,2);collision.close();
+
+const tiny=new CompiledModules({machine:{memory}},{maximumEntries:8,maximumBytes:emitted(0).length});
+const discarded=await tiny.get(emitted(0));await tiny.get(emitted(4));
+assert.equal(tiny.stats().entries,1);assert.equal(tiny.stats().quotaEvictions,1);
+assert.equal(tiny.demand(discarded),false);await assert.rejects(tiny.get(new Uint8Array(65537)),RangeError);
 for(const quota of [{maximumEntries:2,maximumBytes:256},
-                   {maximumEntries:8,maximumBytes:emitted(0).length*2}]) {
-  const hotOwner=new CompiledModules({machine:{memory}},quota);
-  const hot=await hotOwner.get(0,emitted(0));
-  for(let cold=1;cold<=32;++cold) {
-    await hotOwner.get(cold,emitted(4));
-    assert.equal(await hotOwner.get(0,emitted(0)),hot,'hot body survives cold stream without recompilation');
-    assert(hotOwner.stats().entries<=quota.maximumEntries);
-    assert(hotOwner.stats().retainedModuleBytes<=quota.maximumBytes);
+                   {maximumEntries:8,maximumBytes:emitted(0).length+emitted(4,[1]).length}]) {
+  for(const byDemand of [false,true]) {
+    const owner=new CompiledModules({machine:{memory}},quota),hot=await owner.get(emitted(0));
+    for(let cold=1;cold<=32;++cold) {
+      await owner.get(emitted(4,[cold]));
+      if(byDemand)assert.equal(owner.demand(hot),true);
+      else assert.equal(await owner.get(emitted(0)),hot);
+      assert(owner.stats().entries<=quota.maximumEntries);
+      assert(owner.stats().retainedModuleBytes<=quota.maximumBytes);
+    }
+    assert.equal(owner.stats().compilations,33);assert.equal(owner.stats().quotaEvictions,31);
+    assert.equal(owner.stats().hits,byDemand?0:32);
+    assert.equal(owner.stats().validatedDemands,byDemand?32:0);
+    const unchanged=owner.stats();
+    assert.equal(owner.demand(first),false,'foreign owner is not a lifetime witness');
+    assert.deepEqual(owner.stats(),unchanged);
+    owner.close();assert.throws(()=>owner.demand(hot),/owner closed/);
+    assert.equal(owner.stats().retainedModuleBytes,0);
   }
-  assert.equal(hotOwner.stats().compilations,33);assert.equal(hotOwner.stats().hits,32);
-  assert.equal(hotOwner.stats().absentKeyCompilations,33);
-  assert.equal(hotOwner.stats().changedBodyCompilations,0);
-  assert.equal(hotOwner.stats().quotaEvictions,31);
-  hotOwner.close();assert.equal(hotOwner.stats().retainedModuleBytes,0);
 }
-const otherMemory = new WebAssembly.Memory({initial:1});
-// Real C source hits use an already installed instance, without cold output.
-// That demand must reach the engine lifetime owner too, not just its cold LRU.
-for(const quota of [{maximumEntries:2,maximumBytes:256},
-                   {maximumEntries:8,maximumBytes:emitted(0).length*2}]) {
-  const owner=new CompiledModules({machine:{memory}},quota);
-  const hot=await owner.get(0,emitted(0));
-  for(let cold=1;cold<=32;++cold) {
-    await owner.get(cold,emitted(4));
-    assert.equal(owner.demand(0,hot),true,'installed hot body stays live without re-emission');
-  }
-  assert.equal(await owner.get(0,emitted(0)),hot);
-  assert.equal(owner.stats().compilations,33);
-  assert.equal(owner.stats().validatedDemands,32);
-  const unchanged=owner.stats();
-  assert.equal(owner.demand(0,first),false,'foreign/stale instance is not a demand witness');
-  assert.equal(owner.demand(-1,hot),false,'evicted/absent key is not resurrected');
-  assert.deepEqual(owner.stats(),unchanged);
-  const changed=await owner.get(0,emitted(4));
-  assert.notEqual(changed,hot);assert.equal(owner.demand(0,hot),false);
-  assert.equal(owner.demand(0,changed),true);
-  owner.close();assert.throws(()=>owner.demand(0,changed),/owner closed/);
-}
+
+const otherMemory=new WebAssembly.Memory({initial:1});
 new DataView(otherMemory.buffer).setUint32(0,43,true);
-const other = new CompiledModules({machine:{memory:otherMemory}});
-assert.equal((await other.get(1n,emitted(0))).exports.get(),43,'Worker owners never share imported memories');
-const mutableImports = {machine:{memory}}, pinned = new CompiledModules(mutableImports);
-mutableImports.machine.memory = otherMemory;
-assert.equal((await pinned.get(1n,emitted(0))).exports.get(),17,'imports are bound at owner construction');
-// These tiny bounded modules are already available inside the single-owner
-// execution Worker. Scheduling asynchronous engine work must not be part of
-// each cold admission; the large provider/compiler loaders are independent.
+const other=new CompiledModules({machine:{memory:otherMemory}});
+assert.equal((await other.get(emitted(0))).exports.get(),43,'imports never cross Worker owners');
+const mutable={machine:{memory}},pinned=new CompiledModules(mutable);
+mutable.machine.memory=otherMemory;
+assert.equal((await pinned.get(emitted(0))).exports.get(),17,'imports pinned at construction');
 const scheduledCompile=WebAssembly.compile;
 let scheduled=0;
-WebAssembly.compile=async()=>{++scheduled;throw new Error('unexpected scheduled tiny compilation');};
+WebAssembly.compile=async()=>{++scheduled;throw new Error('unexpected asynchronous tiny construction');};
 try {
-  const inlineOwner=new CompiledModules({machine:{memory}});
-  assert.equal((await inlineOwner.get(9n,emitted(0))).exports.get(),17);
-  assert.equal(scheduled,0,'bounded owner uses no asynchronous compilation job');
-  inlineOwner.close();
+  const inline=new CompiledModules({machine:{memory}});
+  assert.equal((await inline.get(emitted(0))).exports.get(),17);
+  assert.equal(scheduled,0);inline.close();
 } finally {WebAssembly.compile=scheduledCompile;}
-const duplicate = new CompiledModules({machine:{memory}});
-await Promise.all([duplicate.get(1n,emitted(0)),duplicate.get(1n,emitted(4))]);
-assert.equal(duplicate.stats().entries,1); assert.equal(duplicate.stats().retainedModuleBytes,emitted(0).length);
-assert.equal(duplicate.stats().absentKeyCompilations,2,'request-time absence, not post-await replacement');
-assert.equal(duplicate.stats().changedBodyCompilations,0);assert.equal(duplicate.stats().quotaEvictions,0);
-assert.equal((await duplicate.get(1n,emitted(4))).exports.get(),37,'duplicate pending work keeps exact accounting/body');
-const pending = other.get(2n,emitted(4)); other.close();
-await assert.rejects(pending,/owner closed/); assert.equal(other.stats().entries,0);
+const duplicate=new CompiledModules({machine:{memory}});
+const twins=await Promise.all([duplicate.get(emitted(0)),duplicate.get(emitted(0))]);
+assert.equal(twins[0],twins[1]);assert.equal(duplicate.stats().compilations,1);
+assert.equal(duplicate.stats().hits,1);assert.equal(duplicate.stats().retainedModuleBytes,emitted(0).length);
+await Promise.all([duplicate.get(emitted(4)),duplicate.get(emitted(8))]);
+assert.equal(duplicate.stats().entries,3);assert.equal(duplicate.stats().compilations,3);
+const pending=other.get(emitted(4));other.close();
+await assert.rejects(pending,/owner closed/);assert.equal(other.stats().entries,0);
 const originalModule=WebAssembly.Module,cancelledOwner=new CompiledModules({machine:{memory}});
-let cancelledConstruction=0;
-WebAssembly.Module=function(bytes){++cancelledConstruction;return new originalModule(bytes);};
+let constructions=0;
+WebAssembly.Module=function(bytes){++constructions;return new originalModule(bytes);};
 try {
-  const cancelled=cancelledOwner.get(1n,emitted(0));cancelledOwner.close();
-  await assert.rejects(cancelled,/owner closed/);
-  assert.equal(cancelledConstruction,0,'pending close precedes actual engine construction');
+  const cancelled=cancelledOwner.get(emitted(0));cancelledOwner.close();
+  await assert.rejects(cancelled,/owner closed/);assert.equal(constructions,0);
 } finally {WebAssembly.Module=originalModule;}
-const arenaOwner=new CompiledModules({machine:{memory}}),arena=emitted(0);
-const snapshotted=arenaOwner.get(1n,arena);arena.fill(0);
-assert.equal((await snapshotted).exports.get(),17,'copy precedes cancellation yield and caller-arena reuse');
-const badLink=new CompiledModules({machine:{}}),badLinkBefore=badLink.stats();
-await assert.rejects(badLink.get(1n,emitted(0)),WebAssembly.LinkError);
-assert.deepEqual(badLink.stats(),badLinkBefore,'link failure never publishes a witness');
+const arenaOwner=new CompiledModules({machine:{memory}}),borrowed=emitted(0);
+const snapshot=arenaOwner.get(borrowed);borrowed.fill(0);
+assert.equal((await snapshot).exports.get(),17,'snapshot before cancellation yield');
+const badLink=new CompiledModules({machine:{}}),linkBefore=badLink.stats();
+await assert.rejects(badLink.get(emitted(0)),WebAssembly.LinkError);
+assert.deepEqual(badLink.stats(),linkBefore);
 assert.throws(()=>new CompiledModules({}, {maximumModuleBytes:65537}),RangeError);
-arenaOwner.close();badLink.close();
-cache.close(); tiny.close(); pinned.close(); duplicate.close();
-await assert.rejects(cache.get(1n,emitted(0)),/owner closed/);
-assert.equal(cache.stats().retainedModuleBytes,0);
-console.log('Bounded emitted-Wasm engine reuse: green (inline tiny construction, exact body, changed body, arena reuse before cancellation, LRU/byte quotas, 2 hot/cold streams: 33 compilations + 32 hits each, grow, invalid emission/link, independent owners, pending close; not Linux boot)');
+for(const owner of [cache,tiny,pinned,duplicate,arenaOwner,badLink])owner.close();
+await assert.rejects(cache.get(emitted(0)),/owner closed/);
+console.log('Exact bounded topology owner: green (shared instances/placements, real hash collision with distinct results, changed bytes, immutable arena/grow, LRU/byte quotas, demand/eviction, independent imports, duplicate pending work, cancellation/refusals; no coordinate-key or guest fallback, not Linux boot)');

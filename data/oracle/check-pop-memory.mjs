@@ -100,13 +100,13 @@ try {
       }
       ++comparisons;
       reset(source,meta,record,row); const hidden = Buffer.from(data.subarray(segments,segments+136));
-      assert.equal(cut(base,port),result,`${form}/${row}: direct result`);
+      assert.equal(cut(base,port,entry),result,`${form}/${row}: direct result`);
       assert(data.subarray(base,base+1256).equals(expected)); assert(data.subarray(code,base+65536).equals(bytes));
       assert(data.subarray(segments,segments+136).equals(hidden)); ++directComparisons;
       reset(source,meta,record,row); put(base+392,u64(record,16)|0x10000n);
       const rfExpected = Buffer.from(expected);
       if (vector) rfExpected.writeBigUInt64LE(u64(record,16)|0x10000n,392);
-      assert.equal(cut(base,port),result);
+      assert.equal(cut(base,port,entry),result);
       assert(data.subarray(base,base+1256).equals(rfExpected)); assert(data.subarray(code,base+65536).equals(bytes)); ++rf;
     }
     const record = native.subarray(0,stride);
@@ -115,7 +115,7 @@ try {
       if (failure === 'TF' || failure === 'AC') put(base+392,0x202n|(failure === 'TF' ? 256n : 262144n));
       if (failure === 'stale') put(port,8);
       const before = cpu(), bytes = payload();
-      assert.equal(cut(base,failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port),failure === 'stale' ? 5n : 6n);
+      assert.equal(cut(base,failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port,entry),failure === 'stale' ? 5n : 6n);
       assert(data.subarray(base,base+1256).equals(before)); assert(data.subarray(code,base+65536).equals(bytes)); ++refusals;
     }
     for (const missing of ['stack','destination']) {
@@ -129,7 +129,7 @@ try {
       }
       const original = view.getBigUint64(at(table)+leaf*8,true);
       put(at(table)+leaf*8,0x11067); const before = cpu(), bytes = payload();
-      assert.equal(cut(base,port),2n,`${form}: physical ${missing} wait`);
+      assert.equal(cut(base,port,entry),2n,`${form}: physical ${missing} wait`);
       assert(data.subarray(base,base+1256).equals(before)); assert(data.subarray(code,base+65536).equals(bytes));
       assert.equal(view.getBigUint64(port+32,true)&~4095n,0x11000n);
       assert.equal(view.getUint32(port+44,true)&3,missing === 'stack' ? 1 : 2);
@@ -143,7 +143,7 @@ try {
       for (let byte = 0; byte < meta.bytes; ++byte) bytes[target-code+byte] = Number(value>>BigInt(byte*8)&255n);
       before.writeBigUInt64LE(rsp+BigInt(meta.bytes),32); before.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);
       before.writeBigUInt64LE(43n,1128);
-      assert.equal(cut(base,port),1n); assert(data.subarray(base,base+1256).equals(before));
+      assert.equal(cut(base,port,entry),1n); assert(data.subarray(base,base+1256).equals(before));
       assert(data.subarray(code,base+65536).equals(bytes)); ++retries;
     }
   }

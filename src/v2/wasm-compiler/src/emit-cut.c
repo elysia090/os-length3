@@ -175,7 +175,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
             && instruction.operands[2].value.immediate!=0xe4u;
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
-    cut.vector_local=locals+2u; /* The two parameters precede ordinary locals. */
+    cut.vector_local=locals+3u; /* State, port and admitted entry precede locals. */
     wasm_writer_uleb(writer, permutation_local?2u:1u);
     wasm_writer_uleb(writer, locals);
     wasm_writer_byte(writer, 0x7eu);
@@ -210,7 +210,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_const(&cut,255u); cut_op(&cut,0x83u); cut_op(&cut,0x50u); cut_op(&cut,0x45u);
     return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rip));
-    cut_const(&cut, rip); cut_op(&cut, 0x52u); return_if(&cut);
+    cut_coordinate(&cut, rip); cut_op(&cut, 0x52u); return_if(&cut);
     cut_load(&cut, (pl_u32)offsetof(machine_state, rflags)); cut_set(&cut, CUT_FLAGS);
     cut_get(&cut, CUT_FLAGS); cut_const(&cut, (cut.has_memory || cut.has_table) ? 0x40100u : 0x100u);
     cut_op(&cut, 0x83u); cut_op(&cut, 0x50u); cut_op(&cut, 0x45u); return_if(&cut);
@@ -227,7 +227,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
         rip = instruction.fallthrough;
     }
     if (cut.report.boundary != WASM_CUT_CONTROL) {
-        cut_const(&cut, rip); cut_set(&cut, CUT_NEXT);
+        cut_coordinate(&cut, rip); cut_set(&cut, CUT_NEXT);
     }
     for (pl_u32 i = 0u; i < MACHINE_X86_REGISTER_COUNT; ++i)
         if (cut.report.written_registers & (1u << i))

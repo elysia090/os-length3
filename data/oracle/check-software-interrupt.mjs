@@ -65,13 +65,13 @@ try {
     for(const dispatch of [false,true])for(const gate of [0x8e,0x8f])for(let align=0;align<16;++align)
     for(const rf of [0n,0x10000n]) {
       reset(source,{gate,rsp:0xb100n-BigInt(align),flags:0x603n|rf});bind(meta.sourceBytes);const result=expected(meta.sourceBytes);
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),dispatch?5n:1n);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch?5n:1n);
       assert(cpu().equals(result.state));assert(data.subarray(payload(8),payload(8)+8192).equals(result.image));
       if(dispatch){assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);}++comparisons;
     }
     for(const dispatch of [false,true])for(const deferred of [3,4,8,9]) {
       reset(source,{rsp:0xb010n,deferred});bind(meta.sourceBytes);const before=cpu(),result=expected(meta.sourceBytes);
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),2n);assert(cpu().equals(before));
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),2n);assert(cpu().equals(before));
       if(dispatch){assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);}
       if(deferred===8) {
         // Two completed stores precede the lower-page wait. Keep them intact
@@ -83,7 +83,7 @@ try {
       assert.equal(vm.vm_bind_execution(rows,1,9n),-1);
       assert.equal(vm.vm_fault(port),6n);assert(cpu().equals(before));
       v.setUint32(dir+deferred*32+16,1,true);
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),dispatch?5n:1n);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch?5n:1n);
       assert(cpu().equals(result.state));assert(data.subarray(payload(8),payload(8)+8192).equals(result.image));
       if(dispatch){assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);}++waits;
     }
@@ -97,14 +97,14 @@ try {
       if(mode===5)put(base+32,0x800000000000n);
       const before=cpu(),image=Buffer.from(data.subarray(payload(8),payload(8)+8192));
       const vector=mode===1||mode===4?11:mode===5?12:13;
-      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),(BigInt(vector)<<3n)|3n);
+      assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),(BigInt(vector)<<3n)|3n);
       assert(cpu().equals(before));assert(data.subarray(payload(8),payload(8)+8192).equals(image));
       assert.equal(v.getUint32(port+24,true),vector);if(dispatch)assert.equal(vm.vm_completed(),0);++faults;
     }
     for(const badPort of [port+1,base,base+8,base+1248,data.length-24,-1]) {
-      reset(source);const before=cpu();assert.equal(cut(base,badPort),6n);assert(cpu().equals(before));++refusals;
+      reset(source);const before=cpu();assert.equal(cut(base,badPort,entry),6n);assert(cpu().equals(before));++refusals;
     }
-    reset(source);put(port,8);const before=cpu();assert.equal(cut(base,port),5n);assert(cpu().equals(before));++refusals;
+    reset(source);put(port,8);const before=cpu();assert.equal(cut(base,port,entry),5n);assert(cpu().equals(before));++refusals;
   }
 }finally{vm.__indirect_function_table.set(slot,null);vm.vm_close();}
 console.log(JSON.stringify({status:'pass',nativeColdParity:parity,fullCpuFrameModels:comparisons,

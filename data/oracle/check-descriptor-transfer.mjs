@@ -123,7 +123,7 @@ for (let rank=0;rank<96;++rank) {
     reset(source,meta,row.offset,3,0,row.protection);
     const record=Buffer.from(row.descriptor), at=state+448+meta.table*16;
     put(at,record.readBigUInt64LE(2)); put(at+8,record.readUInt16LE(0));
-    assert.equal(cut(state,port),row.vector ? 115n : 1n);
+    assert.equal(cut(state,port,entry),row.vector ? 115n : 1n);
     assert.deepEqual(data.subarray(first+row.offset-3,first+row.offset+13),Buffer.from(row.payload));
     if (row.vector) {
       assert.equal(view.getUint32(port+24,true),row.vector); assert.equal(view.getUint32(port+28,true),row.error);
@@ -186,7 +186,7 @@ for (let rank=0;rank<96;++rank) {
   reset(source,meta,64);
   for (const flag of [0x100n,0x40000n]) {
     put(state+392,2n|flag); const before=Buffer.from(data.subarray(state,state+4096));
-    assert.equal(cut(state,port),6n); assert.deepEqual(data.subarray(state,state+4096),before); ++refusals;
+    assert.equal(cut(state,port,entry),6n); assert.deepEqual(data.subarray(state,state+4096),before); ++refusals;
   }
 }
 vm.__indirect_function_table.set(slot,null); cc.compiler_close(); vm.vm_close();

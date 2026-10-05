@@ -26,7 +26,7 @@ static void fault_if(cut_lowering *cut,pl_u64 rip)
         offsetof(machine_memory_port,fault_vector),offsetof(machine_memory_port,fault_error)};
     for (pl_u32 rank=0u;rank<3u;++rank) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
-        if (!rank) cut_const(cut,rip);
+        if (!rank) cut_coordinate(cut,rip);
         else { cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,0u); }
         cut_op(cut,rank ? 0x36u : 0x37u); wasm_writer_uleb(cut->writer,rank ? 2u : 3u);
         wasm_writer_uleb(cut->writer,offsets[rank]);

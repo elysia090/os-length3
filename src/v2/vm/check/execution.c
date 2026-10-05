@@ -7,7 +7,7 @@ static machine_segments segments;
 static vm_execution_row rows[2];
 static pl_u32 calls, fetches, stop, revoke, revoke_fetch, load_ss, call_fault;
 static pl_u32 yielding, called_slot;
-static pl_u64 fetched[2];
+static pl_u64 fetched[2], called_entry;
 static int failures;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static machine_result fetch(void *owner, pl_u64 address)
@@ -17,10 +17,12 @@ static machine_result fetch(void *owner, pl_u64 address)
     if (revoke_fetch) execution.generation = 0u;
     return fetches == stop ? machine_result_make(MACHINE_RESULT_FAULT, 14u) : 0u;
 }
-static machine_result call(void *owner, pl_u32 slot)
+static machine_result call(void *owner, pl_u32 slot, pl_u64 entry)
 {
     (void)owner; ++calls;
     called_slot = slot;
+    called_entry = entry;
+    EXPECT(entry == state.rip);
     if (call_fault) return 107u;
     if (yielding) {
         if (revoke) execution.generation = 0u;
@@ -79,10 +81,13 @@ int main(void)
     /* Source bytes/borrowed rows may have changed by this instruction's own
      * stores. Its latched slot, not a fresh fetch/row lookup, must resume. */
     rows[0].slot = 2u;
+    rows[0].entry = 0x400020u;
     EXPECT(run(8u,1u) == 5u && calls == 1u);
     EXPECT(run(9u,1u) == 10u && fetches == 1u && calls == 2u && called_slot == 1u);
+    EXPECT(called_entry == 0x400000u);
     yielding = 0u;
     EXPECT(run(9u,1u) == 5u && calls == 3u && fetches == 1u && state.retired == 1u);
+    EXPECT(called_entry == 0x400000u);
     EXPECT(execution.completed == 1u && execution.retired == 1u && !segments.interrupt_shadow);
     EXPECT(run(9u,1u) == 5u && calls == 3u);
     reset(); yielding = 2u;

@@ -83,7 +83,7 @@ function expected(r,meta,rf=0n) {
 }
 function compare(cut,wanted,label,dispatch=false) {
   const low=v.getBigUint64(port+8,true),high=v.getBigUint64(port+48,true);
-  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),dispatch&&wanted.write?5n:wanted.result,label);
+  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch&&wanted.write?5n:wanted.result,label);
   if(!cpu().equals(wanted.state)) {
     const delta=[];for(let i=0;i<1256;++i)if(data[base+i]!==wanted.state[i])delta.push([i,data[base+i],wanted.state[i]]);
     assert.fail(`${label}: complete CPU ${JSON.stringify(delta.slice(0,16))}`);
@@ -131,7 +131,7 @@ try {
     const imports=[{module:'machine',name:'memory',kind:'memory'}];
     if(!meta.register)for(const name of meta.store?['write_begin','write_word','write_end']:['read_pair'])imports.push({module:'machine',name,kind:'function'});
     assert.deepEqual(WebAssembly.Module.imports(module),imports);
-    const cut=(await engines.get(entry,emitted)).exports.cut;vm.__indirect_function_table.set(slot,cut);
+    const cut=(await engines.get(emitted)).exports.cut;vm.__indirect_function_table.set(slot,cut);
     if(form===256) {
       // Model an engine without this required feature at its normal module
       // construction boundary. It must propagate refusal, publish nothing and
@@ -140,7 +140,7 @@ try {
       const before=owner.stats(),state=cpu(),bytes=image(),installed=vm.__indirect_function_table.get(slot);
       let constructions=0;
       WebAssembly.Module=function(){++constructions;throw new WebAssembly.CompileError('required SIMD unavailable');};
-      try {await assert.rejects(owner.get(entry,emitted),/required SIMD unavailable/);}
+      try {await assert.rejects(owner.get(emitted),/required SIMD unavailable/);}
       finally {WebAssembly.Module=original;}
       assert.equal(constructions,1);assert.deepEqual(owner.stats(),before);
       assert(cpu().equals(state));assert(image().equals(bytes));assert.equal(vm.__indirect_function_table.get(slot),installed);
@@ -166,7 +166,7 @@ try {
         cold.set(selected,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
         assert.equal(cc.compiler_emit(entry,1,output,65536,report),0);
         const length=Number(cv.getBigUint64(report+40,true)),body=Buffer.from(cold.subarray(output,output+length));
-        const transformed=(await engines.get(entry,body)).exports.cut;vm.__indirect_function_table.set(slot,transformed);
+        const transformed=(await engines.get(body)).exports.cut;vm.__indirect_function_table.set(slot,transformed);
         if(control===0xe4) {
           assert(!body.includes(Buffer.from([0xfd,0x0d])),'identity has no pure permutation');
           if(meta.register&&(form-360)%8===1) {
@@ -197,7 +197,7 @@ try {
         cold.set(selected,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
         assert.equal(cc.compiler_emit(entry,1,output,65536,report),0);
         const length=Number(cv.getBigUint64(report+40,true));
-        const shifted=(await engines.get(entry,cold.subarray(output,output+length))).exports.cut;
+        const shifted=(await engines.get(cold.subarray(output,output+length))).exports.cut;
         vm.__indirect_function_table.set(slot,shifted);
         for(const dispatch of [false,true])for(const a of patterns) {
           reset(selected,meta,first,0);put(base+272,BigInt.asUintN(64,a));put(base+280,BigInt.asUintN(64,~a));
@@ -280,7 +280,7 @@ try {
       cold.set(alias,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
       assert.equal(cc.compiler_emit(entry,1,output,65536,report),0);
       const n=Number(cv.getBigUint64(report+40,true));
-      const same=(await engines.get(entry,cold.subarray(output,output+n))).exports.cut;
+      const same=(await engines.get(cold.subarray(output,output+n))).exports.cut;
       reset(alias,meta,first,0);const wanted={state:cpu(),bytes:image(),result:1n};
       wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
       if(meta.add)for(const offset of [272,280])
@@ -311,10 +311,10 @@ try {
       vm.__indirect_function_table.set(slot,cut);
     }
     for(const badPort of [port+1,base,base+8,base+1248,data.length-24,-1]) {
-      reset(source,meta,first,0);compare((state)=>cut(state,badPort),{state:cpu(),bytes:image(),result:6n},`${form}: private port`);++refusals;
+      reset(source,meta,first,0);compare((state)=>cut(state,badPort,entry),{state:cpu(),bytes:image(),result:6n},`${form}: private port`);++refusals;
     }
     for(const badState of [base+1,0xfffffff8,data.length-1248]) {
-      reset(source,meta,first,0);const before=cpu(),bytes=image();assert.equal(cut(badState,port),6n);assert(cpu().equals(before));assert(image().equals(bytes));++refusals;
+      reset(source,meta,first,0);const before=cpu(),bytes=image();assert.equal(cut(badState,port,entry),6n);assert(cpu().equals(before));assert(image().equals(bytes));++refusals;
     }
     for(const dispatch of [false,true])for(const flag of meta.register?[0x100n]:[0x100n,0x40000n]) {
       reset(source,meta,first,0);put(base+392,v.getBigUint64(base+392,true)|flag);

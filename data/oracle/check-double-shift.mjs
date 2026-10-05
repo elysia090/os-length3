@@ -87,7 +87,7 @@ function physical(address) {
   return BigInt(10+2*owner)*4096n+(address-addresses[owner]&~4095n);
 }
 function compare(cut,wanted,label,dispatch=false) {
-  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),dispatch?wanted.dispatchResult:wanted.result,label);
+  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch?wanted.dispatchResult:wanted.result,label);
   if(!cpu().equals(wanted.state)) {
     const differences=[];
     for(let i=0;i<1256;++i)if(data[base+i]!==wanted.state[i])differences.push([i,data[base+i],wanted.state[i]]);
@@ -149,7 +149,7 @@ try {
       if(failure==='RIP')put(base+384,entry+1n);
       const before=cpu(),image=payload();
       const state=failure==='state-align'?base+1:failure==='state-wrap'?0xfffffff8:base;
-      assert.equal(cut(state,failure==='alias'?base:failure==='wrap'?0xfffffff8:port),failure==='stale'?5n:6n,`${form}: ${failure}`);
+      assert.equal(cut(state,failure==='alias'?base:failure==='wrap'?0xfffffff8:port,entry),failure==='stale'?5n:6n,`${form}: ${failure}`);
       assert(cpu().equals(before));assert(payload().equals(image));++refusals;
     }
     if(meta.kind!==6) {
@@ -158,7 +158,7 @@ try {
         assert.equal(u64(record,35),0n);reset(source,meta,record,row);const wanted=expected(record,meta);
         const address=u64(record,38)+(missing==='second'?BigInt(meta.bytes-1):0n),page=physical(address),index=Number(page/4096n)-1;
         v.setUint32(dir+index*32+16,3,true);const before=cpu(),image=payload();
-        assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),2n,`${form}/${missing}: wait`);
+        assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),2n,`${form}/${missing}: wait`);
         assert(cpu().equals(before));assert(payload().equals(image));
         assert.equal(v.getBigUint64(port+32,true)&~4095n,page);assert(v.getUint32(port+44,true)&16);++waits;
         // Exact deferred physical row promoted by a serialized test owner;

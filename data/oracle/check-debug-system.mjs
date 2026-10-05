@@ -53,7 +53,7 @@ for (let index=0;index<rows.length;++index) {
   const expected=Buffer.from(bytes.subarray(state,state+1256));
   for (let k=0;k<6;++k) expected.writeBigUInt64LE(expectedDebug[k],544+(k<4 ? k : k+2)*8);
   if (!vector) {expected.writeBigUInt64LE(0x400003n,384);expected.writeBigUInt64LE(1n,1128);}
-  assert.equal(cuts[write][rank](state,port),vector ? BigInt(vector*8+3) : 1n);
+  assert.equal(cuts[write][rank](state,port,0x400000n),vector ? BigInt(vector*8+3) : 1n);
   assert.deepEqual(bytes.subarray(state,state+1256),expected);
   if (vector) assert.equal(view.getUint32(port+24,true),vector);
   ++comparisons;

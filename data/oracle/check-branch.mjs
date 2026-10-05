@@ -117,7 +117,7 @@ try {
       if (failure === 'stale') view.setBigUint64(port,8n,true);
       const before = cpu(), bytes = payload();
       assert.equal(failure === 'stale' ? vm.vm_run(port,9n,1)
-        : cut(base,failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port),failure === 'stale' ? 5n : 6n);
+        : cut(base,failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port,entry),failure === 'stale' ? 5n : 6n);
       unchanged(before,bytes,failure); ++refusals;
     }
     if (meta.memory && form !== 22) {

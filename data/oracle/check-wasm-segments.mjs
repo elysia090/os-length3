@@ -56,8 +56,8 @@ let comparisons = 0;
 function check(rank,selector,vector,baseAddress,limit,attributes) {
   const savedState = bytes.subarray(base,base + 1256).slice();
   const savedSegments = bytes.subarray(segments,segments + 136).slice();
-  const {fn,next} = cuts.get(rank);
-  assert.equal(fn(base,port),vector ? BigInt(vector * 8 + 3) : 1n);
+  const {fn,next,entry} = cuts.get(rank);
+  assert.equal(fn(base,port,entry),vector ? BigInt(vector * 8 + 3) : 1n);
   if (vector) {
     assert.deepEqual(bytes.subarray(base,base + 1256),savedState);
     assert.deepEqual(bytes.subarray(segments,segments + 136),savedSegments);

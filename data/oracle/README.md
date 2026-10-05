@@ -58,16 +58,25 @@ must never be reconstructed as initial zero RAM after execution.
 
 ## Independent native oracles
 
-### Coordinate-sharing red — 2026-10-05
+### Coordinate binding and exact sharing — 2026-10-05
 
-`check-cut-coordinate-sharing.mjs COMPILER.WASM` is a deliberately red,
-independent cold-C emission test, not an ISA oracle or production route. It
+`check-cut-coordinate-sharing.mjs COMPILER.WASM` is an independent cold-C
+emission test, not an ISA oracle or production route. It
 checks complete coordinate-normalized state covariance and unchanged wrong-RIP
 refusal, then requires a single exact topology per shape across twelve virtual
-coordinates. The present compiler fails all ten families. `--observe` records
-the red and separates fresh/warmed Module and Instance construction under
+coordinates. The original compiler failed all ten families; ABI 2 now passes
+their exact-template condition. `--observe` separates fresh/warmed Module
+and Instance construction under
 unchanged bounded-owner quotas. It never edits Wasm bytes or removes entry
-checks. See [factorization, measurements and remaining ABI obligation](../../src/v2/vm/check/browser/evidence/2026-10-05-coordinate-sharing.md).
+checks. The original [red and factorization](../../src/v2/vm/check/browser/evidence/2026-10-05-coordinate-sharing.md)
+remain historical evidence. `check-entry-binding.mjs VM.WASM COMPILER.WASM`
+separately exercises shared templates through the actual C-MMU/typed table,
+including literal preservation, relative/absolute targets, #DE/fetch faults,
+REP descriptor mutation/growth and old-ABI type refusal. Its explicit models
+do not replace independent native instruction observations or Linux boot.
+Use fresh native-emitted fixtures with the current compiler: stored ABI-1
+modules are not adapted into ABI-2 validation. See
+[ABI-2 evidence](../../src/v2/vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 ### Serialized memory-order cuts — 2026-10-05
 

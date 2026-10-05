@@ -111,7 +111,7 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_access(cut); cut_access_value(cut);
         cut_get(cut,CUT_LEFT); cut_set(cut,CUT_ADDRESS);
     }
-    else if (instruction->operation == PL_X86_OPERATION_CALL) cut_const(cut, instruction->fallthrough);
+    else if (instruction->operation == PL_X86_OPERATION_CALL) cut_coordinate(cut, instruction->fallthrough);
     else if (instruction->operation == PL_X86_OPERATION_PUSH_FLAGS) {
         cut_get(cut, CUT_FLAGS); cut_const(cut, ~0x30000ull); cut_op(cut, 0x83u);
     }
@@ -160,6 +160,6 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
         } else cut_write_register(cut, &instruction->operands[0].value.reg);
     } else if (instruction->operation == PL_X86_OPERATION_CALL
             && instruction->flags & PL_X86_INSTRUCTION_DIRECT_TARGET) {
-        cut_const(cut, instruction->target); cut_set(cut, CUT_NEXT);
+        cut_coordinate(cut, instruction->target); cut_set(cut, CUT_NEXT);
     }
 }

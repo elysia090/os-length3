@@ -76,7 +76,7 @@ try {
       ++comparisons;
       reset(source,meta,record,row);
       const hidden = Buffer.from(data.subarray(segments,segments+136));
-      assert.equal(cut(base,port),vector ? (vector << 3n)|3n : 1n,`${form}/${row}: direct result`);
+      assert.equal(cut(base,port,entry),vector ? (vector << 3n)|3n : 1n,`${form}/${row}: direct result`);
       assert(data.subarray(base,base+1256).equals(expected),`${form}/${row}: direct complete CPU`);
       assert(data.subarray(code,ram+8192).equals(bytes));
       assert(data.subarray(segments,segments+136).equals(hidden)); ++directComparisons;
@@ -88,7 +88,7 @@ try {
       if (failure === 'stale') put(port,8);
       const before = cpu(), bytes = payload();
       assert.equal(failure === 'stale' ? vm.vm_run(port,9n,1)
-        : cut(base,failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port),failure === 'stale' ? 5n : 6n);
+        : cut(base,failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port,entry),failure === 'stale' ? 5n : 6n);
       assert(data.subarray(base,base+1256).equals(before)); assert(data.subarray(code,ram+8192).equals(bytes)); ++refusals;
     }
     reset(source,meta,record,0); put(base+392,u64(record,16)|0x10000n);

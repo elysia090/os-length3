@@ -34,7 +34,7 @@ export function checkSelectorModel(cut, memory, meta) {
     next.setBigUint64(meta.ripOffset, BigInt(meta.entry) + BigInt(meta.sourceBytes), true);
     next.setBigUint64(meta.flagsOffset, flags & ~0x10000n, true);
     next.setBigUint64(meta.retiredOffset, 43n, true);
-    assert.equal(cut(0), 1n);
+    assert.equal(cut(0,0,BigInt(meta.entry)), 1n);
     assert.deepEqual(contents, expected, `guest selector model row ${row}`);
     ++comparisons;
   }

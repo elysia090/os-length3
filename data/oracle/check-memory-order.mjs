@@ -62,7 +62,7 @@ for(let form=0;form<120;++form) {
     const r=records.subarray(row*2512,(row+1)*2512),expected=Buffer.from(r.subarray(1256));
     reset(source,r.subarray(0,1256));put(base+392,v.getBigUint64(base+392,true)|rf);bind(entry,meta.sourceBytes);
     const before=Buffer.from(data);expected.copy(before,base);
-    assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),1n,`form ${form}/${row}`);
+    assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),1n,`form ${form}/${row}`);
     assert(cpu().equals(expected),'complete native CPU state, not just GPRs');
     if(!dispatch)assert(data.equals(before),'no port, RAM or private-memory mutation');
     else {assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);}
@@ -78,7 +78,7 @@ for(let form=0;form<120;++form) {
     expected.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),base+384);
     expected.writeBigUInt64LE(0x40603n,base+392);expected.writeBigUInt64LE(43n,base+1128);
     // A port is intentionally ignored, even when overlapping or nonresident.
-    assert.equal(cut(base,bits&1?-1:base),1n);assert(data.equals(expected));++controls;
+    assert.equal(cut(base,bits&1?-1:base,entry),1n);assert(data.equals(expected));++controls;
   }
   for(const [stateOffset,flags,dr7,rip] of [
     [base+1,0x202n,0x400n,entry],[0xfffffff8,0x202n,0x400n,entry],
@@ -86,7 +86,7 @@ for(let form=0;form<120;++form) {
     [base,0x10302n,0x400n,entry],[base,0x202n,0x401n,entry],[base,0x202n,0x400n,entry+1n],
   ]) {
     reset(source,state);put(base+392,flags);put(base+600,dr7);put(base+384,rip);
-    const before=Buffer.from(data);assert.equal(cut(stateOffset,port),6n);assert(data.equals(before));++refusals;
+    const before=Buffer.from(data);assert.equal(cut(stateOffset,port,entry),6n);assert(data.equals(before));++refusals;
   }
   for(const [leaf,result,error] of [[0n,115n,20],[0x8000000000008067n,115n,21]]) {
     reset(source,state);put(base+20480,leaf);bind(entry,meta.sourceBytes);const before=cpu();
@@ -155,11 +155,11 @@ for(const opcode of [0xe8,0xf0,0xf8]) {
   const tiny=new WebAssembly.Memory({initial:1,maximum:2});
   const one=await readFile(path.join(directory,`memory-order-${opcode===0xe8?0:opcode===0xf0?40:80}.wasm`));
   const ordinary=(await WebAssembly.instantiate(one,{machine:{memory:tiny}})).instance.exports.cut;
-  const prior=Buffer.from(tiny.buffer);assert.equal(ordinary(65536,-1),6n);assert(Buffer.from(tiny.buffer).equals(prior));++growth;
+  const prior=Buffer.from(tiny.buffer);assert.equal(ordinary(65536,-1,entry),6n);assert(Buffer.from(tiny.buffer).equals(prior));++growth;
   assert.equal(tiny.grow(1),1);const now=Buffer.from(tiny.buffer);now.set(state,65536);
   const expected=Buffer.from(now);expected.writeBigUInt64LE(entry+3n,65536+384);
   expected.writeBigUInt64LE(43n,65536+1128);
-  assert.equal(ordinary(65536,-1),1n);assert(now.equals(expected));++growth;
+  assert.equal(ordinary(65536,-1,entry),1n);assert(now.equals(expected));++growth;
 }
 for(let s=0;s<3;++s)vm.__indirect_function_table.set(slot+s,null);
 console.log(JSON.stringify({format:'single-owner-memory-order-comparison-v1',status:'pass',

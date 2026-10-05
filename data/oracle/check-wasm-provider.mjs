@@ -182,7 +182,7 @@ for (const name of names) {
         word(36) & ((1n << BigInt(meta.bytes * 8)) - 1n), true);
     }
     const savedDirectory = Buffer.from(new Uint8Array(memory.buffer, directoryOffset, 192));
-    assert.equal(instance.exports.cut(state, port), 1n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 1n);
     assert.deepEqual(arena(), expected, `${name}: native/C-Wasm row ${row}`);
     assert.deepEqual(Buffer.from(memory.buffer, directoryOffset, 192), savedDirectory);
     ++comparisons;
@@ -201,12 +201,12 @@ for (const name of names) {
       p.setBigUint64(port-base+32,physical+BigInt(split ? 0 : offset),true);
       p.setUint32(port-base+40,split ? meta.bytes-(4096-offset) : meta.bytes,true);
       p.setUint32(port-base+44,(meta.access&3)|16,true);
-      assert.equal(instance.exports.cut(state,port),2n);
+      assert.equal(instance.exports.cut(state,port,BigInt(meta.entry)),2n);
       assert.deepEqual(arena(),pending,'unresident fragment cannot partially publish'); ++residencyWaits;
       page(view,rank,physical,(rank===5 ? nextPage : firstPage)-base); open();
       const resumed=Buffer.from(expected);
       pending.copy(resumed,port-base+32,port-base+32,port-base+48);
-      assert.equal(instance.exports.cut(state,port),1n);
+      assert.equal(instance.exports.cut(state,port,BigInt(meta.entry)),1n);
       assert.deepEqual(arena(),resumed,'exact input retires only once after supply'); ++residencyRetries;
     }
 
@@ -226,7 +226,7 @@ for (const name of names) {
       for (let i = 0; i < 2; ++i)
         model[payloadAt(address, i) - base] = Number((selector >> BigInt(i * 8)) & 255n);
       open();
-      assert.equal(instance.exports.cut(state, port), 1n);
+      assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 1n);
       assert.deepEqual(arena(), model, `${name}: visible guest selector model ${row}`);
       ++selectorModels;
     }
@@ -235,19 +235,19 @@ for (const name of names) {
     // test the architectural successful-retirement rule with the real C MMU.
     arena().set(initial); view.setBigUint64(state + meta.flagsOffset,word(16) | 0x10000n,true);
     open();
-    assert.equal(instance.exports.cut(state,port),1n);
+    assert.equal(instance.exports.cut(state,port,BigInt(meta.entry)),1n);
     assert.deepEqual(arena(),expected,`${name}: successful access clears RF, row ${row}`);
     ++resumeFlagChecks;
 
     arena().set(initial); view.setBigUint64(port, 8n, true);
     const stale = Buffer.from(arena());
-    assert.equal(instance.exports.cut(state, port), 5n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 5n);
     assert.deepEqual(arena(), stale, 'old generation must not mutate RAM or retire');
     arena().set(initial); vm.vm_close();
-    assert.equal(instance.exports.cut(state, port), 6n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 6n);
     assert.deepEqual(arena(), initial, 'closed provider cannot keep old mappings');
     page(view, 4, 0x8000n, 0, 3, 3); open();
-    assert.equal(instance.exports.cut(state, port), 2n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 2n);
     const pending = Buffer.from(initial);
     const pendingView = new DataView(pending.buffer, pending.byteOffset, pending.byteLength);
     pendingView.setBigUint64(port - base + 32, 0x8000n + (address & 4095n), true);
@@ -256,7 +256,7 @@ for (const name of names) {
     assert.deepEqual(arena(), pending, 'only complete pending-request metadata changes');
     arena().set(initial);
     page(view, 4, 0x8000n, firstPage - base); view.setBigUint64(leaf, 0n, true); open();
-    assert.equal(instance.exports.cut(state, port), (14n << 3n) | 3n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), (14n << 3n) | 3n);
     const fault = Buffer.from(initial);
     const faultView = new DataView(fault.buffer, fault.byteOffset, fault.byteLength);
     faultView.setBigUint64(port - base + 16, address, true);
@@ -292,7 +292,7 @@ for (const name of names) {
       e.setBigUint64(port - base + 16,observed(35),true);
       e.setUint32(port - base + 24,Number(observed(36)),true);
       e.setUint32(port - base + 28,Number(observed(37)),true);
-      assert.equal(instance.exports.cut(state,port),(observed(36) << 3n) | 3n,`${name}: native protection row ${row}`);
+      assert.equal(instance.exports.cut(state,port,BigInt(meta.entry)),(observed(36) << 3n) | 3n,`${name}: native protection row ${row}`);
       assert.deepEqual(arena(),expectedFault,`${name}: native CMOV fault preserves CPU regardless of condition`);
       ++hardwareFaults;
 
@@ -302,7 +302,7 @@ for (const name of names) {
       view.setBigUint64(state + meta.flagsOffset,observed(16) | 0x10000n,true);
       open();
       const rfFault=Buffer.from(arena());
-      assert.equal(instance.exports.cut(state,port),(observed(36) << 3n) | 3n);
+      assert.equal(instance.exports.cut(state,port,BigInt(meta.entry)),(observed(36) << 3n) | 3n);
       assert.deepEqual(arena(),rfFault,`${name}: failed access preserves RF, row ${row}`);
       ++resumeFlagChecks;
       if (dispatch) compareDispatch(rfFault.subarray(0,meta.stateBytes),(observed(36) << 3n) | 3n,rfFault,address);
@@ -336,7 +336,7 @@ for (const name of names) {
     expectedView.setBigUint64(port - base + 16, 0x800000000000n, true);
     expectedView.setUint32(port - base + 24, 13, true);
     expectedView.setUint32(port - base + 28, 0, true);
-    assert.equal(instance.exports.cut(state, port), 107n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry)), 107n);
     assert.deepEqual(arena(), expected, 'noncanonical RET faults before RSP/RIP/retirement commit');
   }
   // C stack/static data and descriptor rows are outside guest-addressable RAM.

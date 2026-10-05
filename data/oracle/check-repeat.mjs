@@ -17,7 +17,7 @@ const slot = vm.__indirect_function_table.grow(1);
 const native = await readFile(path.join(directory,store ? 'stos-native.bin' : 'native.bin'));
 const recordHeader = store ? 128 : 96, recordBytes = recordHeader + 16384;
 assert.equal(native.length,336 * recordBytes);
-let seed = 0xabcdef123456789n, comparisons = 0, yields = 0, faults = 0, stale = 0, selfModification = 0;
+let seed = 0xabcdef123456789n, comparisons = 0, yields = 0, faults = 0, stale = 0, selfModification = 0, rfFrontiers = 0;
 function random() {
   seed = BigInt.asUintN(64,seed ^ seed << 13n); seed ^= seed >> 7n;
   seed = BigInt.asUintN(64,seed ^ seed << 17n); return seed;
@@ -108,6 +108,7 @@ try {
           assert.equal(vm.vm_run(port,9n,1),5n); assert(data.subarray(base,base + 1256).equals(saved)); ++stale;
           view.setBigUint64(port,9n,true);
           // Changing the caller's descriptor must not replace an in-flight instruction.
+          view.setBigUint64(rows,entry+0x1000n,true);
           view.setUint32(rows + 16,0,true);
         }
       }
@@ -180,14 +181,27 @@ try {
     narrow(before,address);
     before.writeBigUInt64LE(entry + BigInt(meta.sourceBytes),384); before.writeBigUInt64LE(43n,1128);
     assert.equal(vm.vm_run(port,9n,1),1n); assert(data.subarray(base,base + 1256).equals(before));
-    for (const refusal of ['stale','TF','RF','AC','alias','wrap']) {
+    // Architectural RF is legal. Partial REP returns preserve it; only final
+    // successful retirement clears it. This is a model, not a native RF row.
+    reset(source,meta.sourceBytes,513n,start+512n,start+8192n,0,0,width);
+    view.setBigUint64(base+392,0x10202n,true);
+    const rfState=Buffer.from(data.subarray(base,base+1256)),rfPayload=Buffer.from(data.subarray(ram,ram+16384));
+    for (let part=0;part<3;++part) {
+      narrow(rfState,address);const complete=advance(rfState,rfPayload,width,address,256);
+      if(complete){rfState.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);
+        rfState.writeBigUInt64LE(43n,1128);rfState.writeBigUInt64LE(0x202n,392);}
+      assert.equal(vm.vm_run(port,9n,1),complete?5n:10n);
+      assert(data.subarray(base,base+1256).equals(rfState),'RF survives every incomplete REP frontier');
+      assert(data.subarray(ram,ram+16384).equals(rfPayload));++rfFrontiers;
+    }
+    for (const refusal of ['stale','TF','AC','alias','wrap']) {
       reset(source,meta.sourceBytes,0x1234567800000004n,0x8765432100500200n,0xabcdef0100502000n,0,0,width);
       // Address-size-64 noncanonical pointers are not reached on entry refusal.
-      if (['TF','RF','AC'].includes(refusal)) view.setBigUint64(base + 392,0x202n | ({TF:256n,RF:65536n,AC:262144n})[refusal],true);
+      if (['TF','AC'].includes(refusal)) view.setBigUint64(base + 392,0x202n | ({TF:256n,AC:262144n})[refusal],true);
       if (refusal === 'stale') view.setBigUint64(port,8n,true);
       const before = Buffer.from(data.subarray(base,base + 1256)), payload = Buffer.from(data.subarray(ram,ram + 16384));
       const argument = refusal === 'alias' ? base : refusal === 'wrap' ? 0xfffffff8 : port;
-      assert.equal(cut(base,argument),refusal === 'stale' ? 5n : 6n,refusal);
+      assert.equal(cut(base,argument,entry),refusal === 'stale' ? 5n : 6n,refusal);
       assert(data.subarray(base,base + 1256).equals(before)); assert(data.subarray(ram,ram + 16384).equals(payload)); ++stale;
     }
     if (width === 8) {
@@ -211,4 +225,4 @@ try {
     }
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); }
-console.log(`REP ${store ? 'STOS' : 'MOVS'}: green (${comparisons} native x86 CPU/RAM receipts, ${yields} bounded latch resumes, ${stale} entry/stale refusals, ${faults} partial/fault/miss cases, ${selfModification} source-code alias continuations; NOT exception delivery/Linux boot)`);
+console.log(`REP ${store ? 'STOS' : 'MOVS'}: green (${comparisons} native x86 CPU/RAM receipts, ${yields} bounded latch resumes, ${stale} entry/stale refusals, ${faults} partial/fault/miss cases, ${selfModification} source-code alias continuations, ${rfFrontiers} RF frontier models; NOT exception delivery/Linux boot)`);

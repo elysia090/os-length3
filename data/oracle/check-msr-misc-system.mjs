@@ -38,13 +38,13 @@ try {
       expected.writeUInt32LE(2,608); expected.writeBigUInt64LE(0xc0000102n,616);
       expected.writeBigUInt64LE(0x1a0n,624); expected.writeBigUInt64LE(controls|0x1800n,880);
       expected.writeBigUInt64LE(0x400002n,384); expected.writeBigUInt64LE(1n,1128);
-      assert.equal(cuts[0](state,port),1n); assert.deepEqual(data.subarray(state,state+1256),expected); ++comparisons;
+      assert.equal(cuts[0](state,port,0x400000n),1n); assert.deepEqual(data.subarray(state,state+1256),expected); ++comparisons;
     }
     put(state+384,0x400000); put(state+8,0x1a0); put(state,0xdeadbeef00000000n); put(state+16,0xdeadbeef00000000n);
     const expected=Buffer.from(data.subarray(state,state+1256));
     expected.writeBigUInt64LE((row[4]|0x1800n)&0xffffffffn,0); expected.writeBigUInt64LE(row[4]>>32n,16);
     expected.writeBigUInt64LE(0x400002n,384); expected.writeBigUInt64LE(row[0] ? 2n : 1n,1128);
-    assert.equal(cuts[1](state,port),1n); assert.deepEqual(data.subarray(state,state+1256),expected); ++comparisons;
+    assert.equal(cuts[1](state,port,0x400000n),1n); assert.deepEqual(data.subarray(state,state+1256),expected); ++comparisons;
     vm.vm_close();
   }
 } finally { vm.vm_close(); }

@@ -47,6 +47,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const compilerModule = await WebAssembly.compile(compilerBytes);
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
+  assert.equal(vm.vm_entry_abi(),2);assert.equal(cc.compiler_entry_abi(),2);
   assert(vm.vm_arena_min()<=cc.compiler_static_min(),'disjoint VM and cold static/stack reservations');
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
@@ -416,10 +417,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       const instructions = Number(report.getBigUint64(compilerReport + 24,true));
       assert(length > 0 && length <= 65536 && instructions > 0 && instructions <= limit);
       const beforeEngine = performance.now();
-      // The source owner's rotating slot is placement, not executable
-      // identity. Keep a bounded engine candidate per C-selected coordinate;
-      // CompiledModules still requires exact newly emitted bytes to reuse it.
-      const instance = await engines.get(entry,cold.subarray(compilerOutput,compilerOutput + length));
+      // C owns each source coordinate and binding; the engine owner shares
+      // only an exact newly emitted topology, not a per-coordinate instance.
+      const instance = await engines.get(cold.subarray(compilerOutput,compilerOutput + length));
       engineMs += performance.now() - beforeEngine; emittedBytes += length;
       table.set(slot,instance.exports.cut); installedSlots.set(slot,instance);
       beforeAdmission = performance.now();
@@ -433,7 +433,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       // within that cohort is not an architectural fact or an exact LRU claim.
       const rank=slot-firstSlot;
       if(demandedAfterMiss[rank]!==sourceMisses) {
-        engines.demand(entry,installedSlots.get(slot)); demandedAfterMiss[rank]=sourceMisses;
+        engines.demand(installedSlots.get(slot)); demandedAfterMiss[rank]=sourceMisses;
       }
     }
     const sourceBytes = view.getUint32(rows + 8,true), instructions = view.getUint32(rows + 12,true);

@@ -104,11 +104,11 @@ async function checkStartup() {
     const savedState = data.subarray(base, base + expectedState.length).slice();
     const expectedCli = Buffer.from(savedState);
     if (cpl <= iopl) {
-      assert.equal(cli(base, port), 1n);
+      assert.equal(cli(base, port, cliEntry), 1n);
       expectedCli.writeBigUInt64LE(flags & ~0x200n, 392);
       expectedCli.writeBigUInt64LE(cliEntry + 1n, 384); expectedCli.writeBigUInt64LE(1n, 1128);
     } else {
-      assert.equal(cli(base, port), 107n);
+      assert.equal(cli(base, port, cliEntry), 107n);
       assert.equal(view.getBigUint64(port + 16, true), cliEntry);
       assert.equal(view.getUint32(port + 24, true), 13); assert.equal(view.getUint32(port + 28, true), 0);
     }
@@ -120,7 +120,7 @@ async function checkStartup() {
     view.setBigUint64(base + 392, flags, true);
     const savedState = data.subarray(base, base + expectedState.length).slice();
     const savedPort = data.subarray(port, port + 48).slice();
-    assert.equal(cli(base, port), 6n);
+    assert.equal(cli(base, port, cliEntry), 6n);
     assert.deepEqual(data.subarray(base, base + expectedState.length), savedState);
     assert.deepEqual(data.subarray(port, port + 48), savedPort);
   }

@@ -108,7 +108,7 @@ try {
       view.setBigUint64(base+392,u64(record,16)|0x10000n,true);
       const rfExpected = Buffer.from(expected);
       if (vector) rfExpected.writeBigUInt64LE(u64(record,16)|0x10000n,392);
-      assert.equal(cut(base,port),vector ? vector<<3n|3n : 1n);
+      assert.equal(cut(base,port,entry),vector ? vector<<3n|3n : 1n);
       assert(data.subarray(base,base+1256).equals(rfExpected)); assert(data.subarray(code,ram+8192).equals(bytes)); ++rf;
     }
     const record = native.subarray(0, stride);
@@ -119,7 +119,7 @@ try {
       if (failure === 'stale') view.setBigUint64(port, 8n, true);
       const before = cpu(), bytes = payload();
       assert.equal(failure === 'stale' ? vm.vm_run(port, 9n, 1)
-        : cut(base, failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port), failure === 'stale' ? 5n : 6n);
+        : cut(base, failure === 'alias' ? base : failure === 'wrap' ? 0xfffffff8 : port,entry), failure === 'stale' ? 5n : 6n);
       unchanged(before, bytes); ++refusals;
     }
     if (form === 0) {

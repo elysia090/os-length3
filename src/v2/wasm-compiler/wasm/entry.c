@@ -1,5 +1,6 @@
 /* Privileged cold construction exports; never imports of generated guest code. */
 #include <wasm-compiler/cut.h>
+#include <machine/entry.h>
 #include <stdint.h>
 
 extern unsigned char __heap_base;
@@ -15,6 +16,7 @@ pl_u32 compiler_static_min(void) { return COLD_STATIC_MIN; }
 pl_u32 compiler_arena_min(void)
 { return ((pl_u32)(uintptr_t)&__heap_base + 4095u) & ~4095u; }
 pl_u32 compiler_report_bytes(void) { return sizeof(wasm_cut_report); }
+pl_u32 compiler_entry_abi(void) { return MACHINE_ENTRY_ABI_VERSION; }
 
 static int range(pl_u32 offset, pl_u64 bytes)
 {

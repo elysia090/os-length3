@@ -1,83 +1,87 @@
-// Cache engine instances, not source instructions or guest-machine decisions.
-// Every new body must first succeed in the C compiler. Exact emitted bytes are
-// the reuse witness; source writes and changed compilation limits cannot reuse
-// a different body under the same key. Imports belong to one Worker lifetime.
-// The bounded owner is used in the execution Worker, not the UI thread.
+// Exact C-emitted topology witnesses belong to one bounded Worker owner.
+// Source coordinates, generation and permission admission remain in C. An
+// entry is passed by value at execution; it is not another instance identity.
+function fingerprint(bytes) {
+  // A bounded host index only, never authentication or semantic equivalence.
+  // Every candidate must still match the entire immutable byte witness.
+  let value=2166136261;
+  for(let i=0;i<bytes.length;++i)value=Math.imul(value^bytes[i],16777619);
+  return value>>>0;
+}
+function equal(left,right) {
+  if(left.length!==right.length)return false;
+  for(let i=0;i<left.length;++i)if(left[i]!==right[i])return false;
+  return true;
+}
 export class CompiledModules {
-  constructor(imports,{maximumEntries = 64,maximumBytes = 262144,maximumModuleBytes = 65536} = {}) {
-    for (const value of [maximumEntries,maximumBytes,maximumModuleBytes])
-      if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError('positive bounded module quota');
-    if (maximumModuleBytes > 65536) throw new RangeError('small emitted module quota');
-    this.imports = Object.fromEntries(Object.entries(imports)
-      .map(([module,values]) => [module,Object.freeze({...values})]));
-    this.maximumEntries = maximumEntries;
-    this.maximumBytes = maximumBytes;
-    this.maximumModuleBytes = maximumModuleBytes;
-    this.entries = new Map();
-    this.bytes = 0; this.hits = 0; this.compilations = 0; this.closed = false;
-    this.absentKeyCompilations = 0; this.changedBodyCompilations = 0; this.quotaEvictions = 0;
-    this.validatedDemands = 0; this.newestInstance = null;
+  constructor(imports,{maximumEntries=64,maximumBytes=262144,maximumModuleBytes=65536}={}) {
+    for(const value of [maximumEntries,maximumBytes,maximumModuleBytes])
+      if(!Number.isSafeInteger(value)||value<=0)throw new RangeError('positive bounded module quota');
+    if(maximumModuleBytes>65536)throw new RangeError('small emitted module quota');
+    this.imports=Object.fromEntries(Object.entries(imports)
+      .map(([module,values])=>[module,Object.freeze({...values})]));
+    this.maximumEntries=maximumEntries;this.maximumBytes=maximumBytes;
+    this.maximumModuleBytes=maximumModuleBytes;
+    this.entries=new Map();this.buckets=new Map();this.instances=new WeakMap();
+    this.bytes=0;this.hits=0;this.compilations=0;this.quotaEvictions=0;
+    this.validatedDemands=0;this.newestInstance=null;this.closed=false;
   }
-  demand(key,instance) {
-    if (this.closed) throw new Error('module owner closed');
-    const entry=this.entries.get(key);
-    if (!entry || entry.instance!==instance) return false;
-    // The serialized caller has separately revalidated its installed C source
-    // lease. This is only a lifetime hint for the SAME opaque instance, never
-    // admission or a new-body equivalence witness. Missing/stale/other-owner
-    // handles cannot resurrect a discarded byte witness or select guest code.
-    if (this.newestInstance!==instance) {
-      this.entries.delete(key); this.entries.set(key,entry); this.newestInstance=instance;
-    }
-    ++this.validatedDemands; return true;
+  find(hash,bytes) {
+    const bucket=this.buckets.get(hash);
+    if(bucket)for(const entry of bucket)if(equal(entry.bytes,bytes))return entry;
+    return null;
   }
-  async get(key,bytes) {
-    if (this.closed) throw new Error('module owner closed');
-    if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > this.maximumModuleBytes
-        || bytes.length > this.maximumBytes) throw new RangeError('bounded emitted module');
-    const previous = this.entries.get(key);
-    if (previous && previous.bytes.length === bytes.length
-        && previous.bytes.every((byte,rank) => byte === bytes[rank])) {
-      // Only an exact C-emitted witness refreshes demand lifetime. Cold
-      // construction may evict inactive entries, not a repeatedly used body.
-      // Map insertion order gives bounded LRU without sorting or a new index.
-      this.entries.delete(key); this.entries.set(key,previous);
-      this.newestInstance=previous.instance;
-      ++this.hits; return previous.instance;
+  touch(entry) {
+    if(this.newestInstance!==entry.instance) {
+      this.entries.delete(entry);this.entries.set(entry,true);
+      this.newestInstance=entry.instance;
     }
-    // The caller's cold-emission arena is reused on the next request.
-    const owned = Uint8Array.from(bytes);
-    // Keep an explicit cancellation/publication boundary, but do not enqueue
-    // engine jobs for a tiny body whose bytes are already resident and whose
-    // sole caller must wait before executing it. Larger initial provider and
-    // compiler modules use their separate asynchronous loaders.
+  }
+  demand(instance) {
+    if(this.closed)throw new Error('module owner closed');
+    const entry=this.instances.get(instance);
+    // This is only a lifetime hint after the caller's C source-lease check.
+    // Foreign or evicted handles cannot resurrect a byte witness or admit code.
+    if(!entry||!this.entries.has(entry))return false;
+    this.touch(entry);++this.validatedDemands;return true;
+  }
+  async get(bytes) {
+    if(this.closed)throw new Error('module owner closed');
+    if(!(bytes instanceof Uint8Array)||!bytes.length||bytes.length>this.maximumModuleBytes
+        ||bytes.length>this.maximumBytes
+        ||(typeof SharedArrayBuffer==='function'&&bytes.buffer instanceof SharedArrayBuffer))
+      throw new RangeError('bounded emitted module');
+    const hash=fingerprint(bytes),previous=this.find(hash,bytes);
+    if(previous){this.touch(previous);++this.hits;return previous.instance;}
+    // The caller's emission arena may be reused before this continuation.
+    const owned=Uint8Array.from(bytes);
     await Promise.resolve();
-    if (this.closed) throw new Error('module owner closed during compilation');
-    const module = new WebAssembly.Module(owned);
-    const instance = new WebAssembly.Instance(module,this.imports);
-    if (this.closed) throw new Error('module owner closed during compilation');
-    ++this.compilations;
-    // Request-time reason, counted only after successful construction. An
-    // absent key may be new OR evicted: no unbounded history is retained.
-    if (previous) ++this.changedBodyCompilations; else ++this.absentKeyCompilations;
-    // Replace any entry installed while compilation was pending, not a stale
-    // pre-await reference. This keeps accounting exact even for duplicate work.
-    const current = this.entries.get(key);
-    if (current) { this.bytes -= current.bytes.length; this.entries.delete(key); }
-    while (this.entries.size >= this.maximumEntries || this.bytes + owned.length > this.maximumBytes) {
-      const first = this.entries.keys().next().value, victim = this.entries.get(first);
-      this.bytes -= victim.bytes.length; this.entries.delete(first);
-      ++this.quotaEvictions;
+    if(this.closed)throw new Error('module owner closed during compilation');
+    // Duplicate pending work shares only after another complete byte match.
+    const published=this.find(hash,owned);
+    if(published){this.touch(published);++this.hits;return published.instance;}
+    const module=new WebAssembly.Module(owned),instance=new WebAssembly.Instance(module,this.imports);
+    if(this.closed)throw new Error('module owner closed during compilation');
+    while(this.entries.size>=this.maximumEntries||this.bytes+owned.length>this.maximumBytes) {
+      const victim=this.entries.keys().next().value,bucket=this.buckets.get(victim.hash);
+      this.entries.delete(victim);this.instances.delete(victim.instance);
+      bucket.delete(victim);if(!bucket.size)this.buckets.delete(victim.hash);
+      this.bytes-=victim.bytes.length;++this.quotaEvictions;
     }
-    this.entries.set(key,{bytes:owned,instance}); this.bytes += owned.length;
-    this.newestInstance=instance;
+    const entry={bytes:owned,instance,hash};
+    let bucket=this.buckets.get(hash);
+    if(!bucket){bucket=new Set();this.buckets.set(hash,bucket);}
+    bucket.add(entry);this.entries.set(entry,true);this.instances.set(instance,entry);
+    this.bytes+=owned.length;++this.compilations;this.newestInstance=instance;
     return instance;
   }
   stats() {
     return {compilations:this.compilations,hits:this.hits,entries:this.entries.size,
-      absentKeyCompilations:this.absentKeyCompilations,changedBodyCompilations:this.changedBodyCompilations,
       quotaEvictions:this.quotaEvictions,validatedDemands:this.validatedDemands,
       retainedModuleBytes:this.bytes,maximumEntries:this.maximumEntries,maximumBytes:this.maximumBytes};
   }
-  close() { this.closed = true; this.entries.clear(); this.bytes = 0; this.imports = null; this.newestInstance=null; }
+  close() {
+    this.closed=true;this.entries.clear();this.buckets.clear();this.instances=new WeakMap();
+    this.bytes=0;this.imports=null;this.newestInstance=null;
+  }
 }

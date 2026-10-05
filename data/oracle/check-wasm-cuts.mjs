@@ -66,7 +66,7 @@ for (const file of files) {
     expectedView.setBigUint64(offset + meta.ripOffset, word(34), true);
     expectedView.setBigUint64(offset + meta.retiredOffset,
       BigInt.asUintN(64, 0xfffffffffffffffen + BigInt(meta.instructions)), true);
-    assert.equal(instance.exports.cut(offset), 1n, `${file}: result row ${row}`);
+    assert.equal(instance.exports.cut(offset,0,BigInt(meta.entry)), 1n, `${file}: result row ${row}`);
     const flags = view.getBigUint64(offset + meta.flagsOffset, true);
     assert.equal(flags & 0x10000n,0n,`${file}: successful RF clear row ${row}`);
     const mask = masks ? masks.readBigUInt64LE(row * 8) : BigInt(meta.flagsMask);
@@ -84,19 +84,19 @@ for (const file of files) {
   view.setBigUint64(meta.flagsOffset, 0x202n, true);
   for (const badOffset of [1, -1, contents.length - meta.stateBytes + 8, contents.length]) {
     const snapshot = Buffer.from(contents);
-    assert.equal(instance.exports.cut(badOffset), 6n, `${file}: invalid reservation`);
+    assert.equal(instance.exports.cut(badOffset,0,BigInt(meta.entry)), 6n, `${file}: invalid reservation`);
     assert.deepEqual(contents, snapshot);
   }
   for (const flags of [0x302n, 0x10302n]) {
     view.setBigUint64(meta.flagsOffset, flags, true);
     const snapshot = Buffer.from(contents);
-    assert.equal(instance.exports.cut(0), 6n, `${file}: debug cut rejection`);
+    assert.equal(instance.exports.cut(0,0,BigInt(meta.entry)), 6n, `${file}: debug cut rejection`);
     assert.deepEqual(contents, snapshot);
   }
   view.setBigUint64(meta.flagsOffset, 0x202n, true);
   view.setBigUint64(meta.ripOffset, BigInt(meta.entry) + 1n, true);
   const snapshot = Buffer.from(contents);
-  assert.equal(instance.exports.cut(0), 6n, `${file}: wrong RIP`);
+  assert.equal(instance.exports.cut(0,0,BigInt(meta.entry)), 6n, `${file}: wrong RIP`);
   assert.deepEqual(contents, snapshot);
 }
 console.log(`Generated Wasm/native x86: green (${files.length} modules, ${comparisons} comparisons; ${selectorModels} guest selector models; ${legacyTwinModules} legacy-prefix native twins, ${zeroRepresentatives} chosen undefined zero destinations; not Linux/browser boot)`);

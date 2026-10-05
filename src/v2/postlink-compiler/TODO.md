@@ -1,32 +1,56 @@
 # Remaining work — 2026-10-05
 
-Current actual gate: LFENCE, `0f ae e8`, 0xffffffff810332c7.
-Final permutation startup actually passes PSHUFD and reaches 165,880,678
-retirements / 90,288,812 admissions. Complete decompression agrees; PID 1,
-release-root mount/shell and real-browser acceptance are not achieved.
-Engine construction remains dominant (18,346,806 constructions, 474,845.138 ms).
-Next: complete the startup with general LFENCE/MFENCE/SFENCE under the explicit
-single-owner ordinary Memory contract, then bounded engine/source reconstruction.
-See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-lfence-red.json).
+Current actual full-bundle gate: diagnostic quota, not LFENCE or a new
+unsupported instruction. The completed fence compiler reaches PF_INET/TCP/UDP
+and PF_UNIX/PF_LOCAL, 247,565,228 retirements / 150,000,000 admissions, at
+0xffffffff81086f0e. Kernel decompression agrees. PID 1, release-root mount,
+shell and real-browser acceptance remain unachieved; cold shell 3s is unmet.
+See [completed measurement](../vm/check/browser/evidence/2026-10-05-node-startup-fence-quota.json).
 
-General LFENCE/MFENCE/SFENCE now have an empty value-state frontier under that
-contract, with a separate precise cut and ordinary-Memory link enforcement.
-120 exact emissions, 7,680 unchanged native observations, 30,720 full-state
-comparisons, real C-MMU ordering/fetch/wait checks and scoped sanitizers pass.
-The final 446,566-byte compiler is running independently on the same bundle
-to determine the next actual gate. No PID 1/browser/speedup claim follows from
-the fixtures. See [derivation and checks](../vm/check/browser/evidence/2026-10-05-memory-order.md).
+Measured old maximum term: 73,441,447 engine constructions / 1,985,421 ms,
+followed by cold C emission 674,917 ms and execution 358,598 ms. Source owner
+has 78,722,815 misses, capacity 64, metadata 6,880 bytes and no payload copy.
+Allocated linear Memory is 21,037,056 bytes; RSS is not measured.
 
-Coordinate-sharing is now independently red: ten C-emitted operation shapes
-each produce twelve distinct modules at twelve coordinates, despite 960 exact
-normalized-state comparisons and 120 unchanged wrong-RIP refusals. Fresh
-Module construction and coordinate-by-coordinate Instance placement both
-remain coefficients. Next general performance obligation: factor decoder-owned
-coordinates into the existing admitted row, migrate the typed entry call and
-precise-frontier oracles together, then share exact templates under unchanged
-bounded ownership. Do not remove RIP checks or substitute an unproved hash/key
-for C source admission. No production route changed at this red checkpoint.
-See [the measured red and derivation](../vm/check/browser/evidence/2026-10-05-coordinate-sharing.md).
+The coordinate-sharing red is now green through machine-entry ABI 2. C passes
+the exact admitted/latching row entry by value. Decoder-owned coordinates
+become offsets, while literal/pointer/loaded-target values and full RIP checks
+remain unchanged. Each of ten shapes has one exact body at twelve coordinates.
+The unchanged bounded engine owner builds ten instances for 4,096 fixture
+requests instead of 4,096; its witnesses are 2,431 bytes. Hash collisions still
+require exact whole-byte equality. Source admission never follows from sharing.
+Fresh native/C-MMU division, branch/CALL, INT, vector/scalar/MXCSR/fence,
+REP/latch/RF, full C/CLI and scoped sanitizer checks pass. An old entry type
+traps before mutation, with no two-argument compatibility route.
+
+Matched short-prefix architecture/trace/source observations agree at
+1,616,430 retirements / 1,000,000 admissions; engine constructions 1,211 -> 905
+and evictions 460 -> 143. Total elapsed time is not claimed faster.
+Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchanged.
+See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
+
+Next obligations, in order:
+1. Run that exact bundle/segments/root-image with ABI 2 and unchanged full
+   limits/quotas. Measure constructors, cold/source reconstruction, execution,
+   elapsed time and resident/allocated Memory separately; no boot claim from
+   a fixture or a quota exit.
+2. Close the next actual common ISA/MMU/machine-ABI red, if one appears.
+   Strict independent CALL fault-payload/provenance red remains open; no
+   expectation was weakened to merge it with the passing ordinary CALL set.
+3. From the completed ABI-2 profile, remove remaining source/descriptor
+   reconstruction work using exact physical admission/lifetime invariants,
+   not cache-quota inflation or an unproved coordinate/hash alias.
+4. Actual PID 1 -> immutable release-root mount -> offline shell/C compile/run/
+   make/Git/apk; then authenticated workspace recovery and grant-based NIC.
+   Independent Node evidence is not real-browser acceptance. Retained browser
+   Workers/staged assets are not replaced or treated as stopped.
+
+## Historical checkpoints
+
+The original coordinate-sharing [red and derivation](../vm/check/browser/evidence/2026-10-05-coordinate-sharing.md)
+remain historical. Its old two-argument ABI and running fence-job status do
+not describe current execution. The following older checkpoints are not
+current acceptance.
 
 Previous actual gate: PSHUFD, `66 0f 70 c0 93`, 0xffffffff81204eb8.
 Independent Windows-native CALL diagnosis also reproduces mixed payloads:

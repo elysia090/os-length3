@@ -40,10 +40,11 @@ static pl_u32 boot_header, boot_header_bytes, boot_command;
 static pl_u32 boot_projected;
 static machine_result fetch_entry(void *pointer, pl_u64 address);
 static machine_result pending_boundary(pl_u32 port);
-static machine_result call_entry(void *pointer, pl_u32 slot);
+static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding);
 static int clock_boundary_pending(void)
 { return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
 pl_u32 vm_source_capacity(void) { return VM_SOURCE_ROWS; }
+pl_u32 vm_entry_abi(void) { return MACHINE_ENTRY_ABI_VERSION; }
 pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
 
 pl_u32 vm_slot_min(void)
@@ -799,7 +800,7 @@ static machine_result fetch_entry(void *pointer, pl_u64 address)
     return vm_access(owner->port, address, 1u,
                        (pl_u32)MACHINE_MEMORY_READ | (pl_u32)VM_MMU_EXECUTE, 0u);
 }
-static machine_result call_entry(void *pointer, pl_u32 slot)
+static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding)
 {
     const execution_owner *owner = pointer;
     /* Wasm C function pointers are table indices. All admitted functions have
@@ -807,7 +808,7 @@ static machine_result call_entry(void *pointer, pl_u32 slot)
      * never an x86 instruction fallback. Slots stay pinned during vm_run. */
     machine_entry entry = (machine_entry)(uintptr_t)slot;
     vm_memory_abort(&resident);
-    machine_result result = entry(state_offset, owner->port);
+    machine_result result = entry(state_offset, owner->port, binding);
     vm_memory_abort(&resident);
     return result;
 }

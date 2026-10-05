@@ -53,7 +53,7 @@ function expected(r,meta,rf=0n) {
 }
 function compare(cut,wanted,label,dispatch=false) {
   const low=v.getBigUint64(port+8,true),high=v.getBigUint64(port+48,true);
-  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port),dispatch&&wanted.write?5n:wanted.result,label);
+  assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry),dispatch&&wanted.write?5n:wanted.result,label);
   if(!cpu().equals(wanted.state)) {
     const delta=[];for(let i=0;i<1256;++i)if(data[base+i]!==wanted.state[i])delta.push([i,data[base+i],wanted.state[i]]);
     assert.fail(`${label}: complete CPU ${JSON.stringify(delta.slice(0,16))}`);
@@ -78,7 +78,7 @@ try {
     const imports=[{module:'machine',name:'memory',kind:'memory'}];
     if(!meta.register)imports.push({module:'machine',name:'access',kind:'function'});
     assert.deepEqual(WebAssembly.Module.imports(module),imports);
-    const cut=(await engines.get(entry,emitted)).exports.cut;vm.__indirect_function_table.set(slot,cut);
+    const cut=(await engines.get(emitted)).exports.cut;vm.__indirect_function_table.set(slot,cut);
     for(let row=0;row<meta.native;++row) {
       const r=records.subarray(row*stride,(row+1)*stride);
       for(const dispatch of [false,true])for(const rf of [0n,0x10000n]) {
@@ -109,10 +109,10 @@ try {
     }
     if(form>=100)aliases+=meta.native;
     for(const badPort of [port+1,base,base+8,base+1248,data.length-24,-1]) {
-      reset(source,meta,first,0);compare((state)=>cut(state,badPort),{state:cpu(),bytes:image(),result:6n},`${form}: private port`);++refusals;
+      reset(source,meta,first,0);compare((state)=>cut(state,badPort,entry),{state:cpu(),bytes:image(),result:6n},`${form}: private port`);++refusals;
     }
     for(const badState of [base+1,0xfffffff8,data.length-1248]) {
-      reset(source,meta,first,0);const before=cpu(),bytes=image();assert.equal(cut(badState,port),6n);assert(cpu().equals(before));assert(image().equals(bytes));++refusals;
+      reset(source,meta,first,0);const before=cpu(),bytes=image();assert.equal(cut(badState,port,entry),6n);assert(cpu().equals(before));assert(image().equals(bytes));++refusals;
     }
     for(const dispatch of [false,true])for(const flag of meta.register?[0x100n]:[0x100n,0x40000n]) {
       reset(source,meta,first,0);put(base+392,v.getBigUint64(base+392,true)|flag);

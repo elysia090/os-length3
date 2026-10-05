@@ -16,6 +16,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_static_min,--export=compiler_open_fragments \
 	-Wl,--export=compiler_arena_min,--export=compiler_report_bytes,--export=compiler_close \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
+WASM_FLAGS += -Wl,--export=compiler_entry_abi
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-repeat.c src/lower-branch.c

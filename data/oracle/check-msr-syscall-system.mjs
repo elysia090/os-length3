@@ -56,7 +56,7 @@ for (let index=0;index<rows.length;++index) {
     expected.writeBigUInt64LE(value,888+keyRank*8); expected.writeBigUInt64LE(0x400002n,384);
     expected.writeBigUInt64LE(1n,1128);
   }
-  assert.equal(cuts[0](state,port),invalid ? 107n : 1n);
+  assert.equal(cuts[0](state,port,0x400000n),invalid ? 107n : 1n);
   assert.deepEqual(data.subarray(state,state+1256),expected); assert.deepEqual(data.subarray(hidden,hidden+136),cache);
   if (invalid) { assert.equal(view.getUint32(port+24,true),13); assert.equal(view.getUint32(port+28,true),0); }
   ++comparisons;
@@ -66,7 +66,7 @@ for (let index=0;index<rows.length;++index) {
     const readback=k===keyRank && !invalid ? value : 0n;
     wanted.writeBigUInt64LE(readback&0xffffffffn,0); wanted.writeBigUInt64LE(readback>>32n,16);
     wanted.writeBigUInt64LE(0x400002n,384); wanted.writeBigUInt64LE(wanted.readBigUInt64LE(1128)+1n,1128);
-    assert.equal(cuts[1](state,port),1n); assert.deepEqual(data.subarray(state,state+1256),wanted);
+    assert.equal(cuts[1](state,port,0x400000n),1n); assert.deepEqual(data.subarray(state,state+1256),wanted);
     assert.deepEqual(data.subarray(hidden,hidden+136),cache); ++comparisons;
   }
   vm.vm_close();

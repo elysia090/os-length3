@@ -345,8 +345,15 @@ bzImage-startup checks use Node as a Wasm engine, separately from that actual
 browser observation. Build with `data/oracle/wasm-tools.ps1`; this pins a
 scope-local official SDK and adds no WASI/runtime or distribution dependency.
 
-The compiled table now has one `cut(i32 state, i32 port) -> i64` type, for pure,
-memory, stack and the admitted CLI cut. A bounded C dispatcher borrows sorted
+The compiled table now has one ABI-2
+`cut(i32 state, i32 port, i64 admitted_entry) -> i64` type, for pure,
+memory, stack and system cuts. The exact C-admitted row supplies the last
+argument by value; an in-flight instruction retains its original row. Decoder
+coordinates become offsets from that binding, never guessed relative literals
+or guest pointers. The full RIP check remains. Exact template bytes may share
+one bounded engine instance, but source admission remains per coordinate.
+The VM/compiler report ABI 2; old two-argument table types trap, without an
+execution adapter. A bounded C dispatcher borrows sorted
 coordinate rows, checks executable pages through the C MMU, calls the generated
 function table and returns on budget/fault/miss/revocation. No JS cut loop or
 runtime decoder is introduced. This is a baseline bounded directory, not the

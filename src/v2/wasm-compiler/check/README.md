@@ -115,7 +115,8 @@ limit, a direct control cut, or before an unlowered transfer. It does not claim
 the continuation or whole ELF is covered. All source meaning comes from
 ordinary PF_X segments; no proof count is mistaken for a block table. The new
 `x86` dependency is cold compiler machinery only. The generated module imports
-one ordinary wasm32 `machine.memory` and exports `cut(i32 state, i32 port) -> i64`; it imports
+one ordinary wasm32 `machine.memory` and exports
+`cut(i32 state, i32 port, i64 admitted_entry) -> i64` (machine-entry ABI 2); it imports
 no source reader, host function or decoder. Architectural addresses stay i64.
 
 Supported transfers in this checkpoint are register/immediate MOV, MOVZX/SX,
@@ -198,7 +199,8 @@ immediate stores, address32 truncation, indexed and RIP-relative addressing,
 now emit one-instruction memory cuts. A preceding pure cut ends **before** the
 faulting instruction; the memory cut updates registers/RIP/retired only after
 its complete RAM transaction succeeds. The module imports `machine.memory`
-and the typed C boundary `machine.access`, and exports `cut(i32 state, i32 port)`.
+and the typed C boundary `machine.access`, and exports
+`cut(i32 state, i32 port, i64 admitted_entry)`.
 No instruction bytes, decoded operation descriptor or per-byte host calls are
 in that boundary. `machine/memory.h` fixes its address/range/right/value ABI.
 State/port extents, alignment and disjointness are checked before calling it.
