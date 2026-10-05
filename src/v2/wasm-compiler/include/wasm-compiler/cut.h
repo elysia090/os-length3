@@ -60,7 +60,10 @@ typedef struct {
  * with the same cut type. Its synchronous C provider must
  * pin translations/residency and keep the state/port arena disjoint from guest
  * RAM. Ordinary failed access preserves architectural state and retirement. Alignment
- * checking, FS/GS bases, concurrent workers and MMIO remain unsupported.
+ * checking, concurrent workers and MMIO remain unsupported. Explicit FS/GS
+ * operands carry an already-truncated offset and a segment role; the same C
+ * provider adds the full-width hidden base before ordinary linear preflight.
+ * Neither generated code nor the host keeps a second copy of that base.
  * REP MOVS is a one-instruction Wasm loop through the same access boundary.
  * Completed elements publish only RCX/RSI/RDI at a return, while RIP and
  * retirement stay unchanged until completion. An element's load precedes its

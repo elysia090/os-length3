@@ -57,8 +57,7 @@ void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruc
         const pl_x86_memory *memory=&instruction->operands[write?0u:1u].value.memory;
         cut_effective_address(cut,instruction,memory);cut_set(cut,CUT_ADDRESS);
         cut->report.memory_access=write?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
-        if(memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index==2u)
-            cut->report.memory_access|=MACHINE_MEMORY_STACK;
+        cut->report.memory_access|=cut_memory_role(memory);
         /* A single precise 4/8-byte access, including cross-page preflight.
          * No 16-byte pair or intermediate SIMD record is needed here. */
         cut_access(cut);

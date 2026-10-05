@@ -12,13 +12,20 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <ucontext.h>
+#include <sys/syscall.h>
+#include <asm/prctl.h>
+#include <unistd.h>
 #include "native-selectors.h"
 
 extern void native_cut(machine_state *state, const void *code);
+extern int native_segment_cut(machine_state *,const void *,unsigned,pl_u64);
+extern void native_segment_signal(int,siginfo_t *,void *);
+pl_u64 native_host_fs,native_host_gs;
+static int native_role=-1;
 static sigjmp_buf fault_return;
 static machine_state fault_state;
 static pl_u64 fault_address, fault_vector, fault_error;
-static void memory_exception(int number, siginfo_t *info, void *pointer)
+void native_segment_fault(int number, siginfo_t *info, void *pointer)
 {
     (void)number;
     const ucontext_t *context = pointer;
@@ -35,6 +42,7 @@ static void memory_exception(int number, siginfo_t *info, void *pointer)
 static int observe_fault(machine_state *state, const void *code)
 {
     if (sigsetjmp(fault_return,1)) return 1;
+    if(native_role>=0)return native_segment_cut(state,code,(unsigned)native_role,0u)?-1:0;
     native_cut(state,code); return 0;
 }
 static pl_u64 random_word(pl_u64 *seed)
@@ -65,6 +73,8 @@ static int close_output(FILE **file)
 int main(int argc, char **argv)
 {
     if (argc != 3) return 2;
+    if(syscall(SYS_arch_prctl,ARCH_GET_FS,&native_host_fs)
+            ||syscall(SYS_arch_prctl,ARCH_GET_GS,&native_host_gs))return 1;
     FILE *file = NULL, *prefix_file = NULL, *wasm = NULL, *cases = NULL, *meta = NULL, *source_page = NULL, *faults = NULL;
     struct sigaction old_action;
     int action_installed = 0;
@@ -138,6 +148,8 @@ int main(int argc, char **argv)
     pl_x86_image image = { &map, 1u, 0u, report.entry };
     pl_x86_instruction instruction;
     if (pl_x86_decode_profile(&image, report.entry, &instruction)) goto finish;
+    if(report.memory_access&MACHINE_MEMORY_FS)native_role=0;
+    if(report.memory_access&MACHINE_MEMORY_GS)native_role=1;
     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
     int unary = instruction.operation == PL_X86_OPERATION_INCREMENT
         || instruction.operation == PL_X86_OPERATION_DECREMENT
@@ -190,7 +202,7 @@ int main(int argc, char **argv)
     }
     if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
             || instruction.operation == PL_X86_OPERATION_BIT_TEST || multiply || carry || precise_write || summary)) {
-        struct sigaction action = {.sa_sigaction=memory_exception,.sa_flags=SA_SIGINFO};
+        struct sigaction action = {.sa_sigaction=native_segment_signal,.sa_flags=SA_SIGINFO};
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
         action_installed = 1;
@@ -308,7 +320,9 @@ int main(int argc, char **argv)
         for (pl_u32 reg = 0u; reg < 16u; ++reg) record[reg] = state.registers[reg];
         record[16] = state.rflags; record[35] = address;
         record[36] = read_word((const pl_u8 *)(uintptr_t)address);
-        native_cut(&state, (const void *)(uintptr_t)report.entry);
+        if(native_role>=0){
+            if(native_segment_cut(&state,(const void *)(uintptr_t)report.entry,(unsigned)native_role,0u))goto finish;
+        }else native_cut(&state, (const void *)(uintptr_t)report.entry);
         record[4] = state.registers[4];
         for (pl_u32 reg = 0u; reg < 16u; ++reg) record[17u + reg] = state.registers[reg];
         record[33] = state.rflags; record[34] = report.continuation;

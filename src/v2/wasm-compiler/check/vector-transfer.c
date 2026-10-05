@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "segment-admission.h"
 #include <machine/state.h>
 #include <machine/memory.h>
 #include <x86/decode.h>
@@ -199,6 +200,10 @@ static int admission(void)
         {0x65u,0xf2u,0x0fu,0x70u,0x07u,0x93u}};
     for(pl_u32 i=0u;i<sizeof invalid/sizeof invalid[0];++i) {
         memset(page,0x90,sizeof page);memcpy(page,invalid[i],sizeof invalid[i]);
+        if(invalid[i][0]==0x64u||invalid[i][0]==0x65u){
+            if(check_segment_admission(&image,&options,invalid[i][0]))return -1;
+            continue;
+        }
         memset(module,0xa5,sizeof module);wasm_cut_report report;memset(&report,0xa5,sizeof report);
         wasm_cut_report old=report;pl_u64 emitted=77u;
         if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)!=WASM_COMPILER_ERROR_GRAMMAR

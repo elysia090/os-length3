@@ -46,7 +46,7 @@ function reset(source,meta,word,row,missing=false){
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 let parity=0,direct=0,dispatch=0,nativeSuccess=0,nativeFault=0,waits=0,retries=0,refusals=0,rfModels=0;
-let prefixNativeFaults=0,baseSegmentRefusals=0;
+let prefixNativeFaults=0,baseSegmentModels=0;
 const moduleBytes=[];
 try{
 for(let form=0;form<16;++form){
@@ -128,7 +128,16 @@ for(const repeated of [false,true])for(const segment of [0x36,0x3e,0x64,0x65]){
   const source=Buffer.alloc(4096,0x90),bytes=[segment,...(repeated?[0xf3]:[]),0xa4];source.set(bytes);
   cold.set(source,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
   const status=cc.compiler_emit(entry,8,output,65536,report);
-  if(segment===0x64||segment===0x65){assert.equal(status,-102,'FS/GS base cannot become flat DS');++baseSegmentRefusals;continue;}
+  if(segment===0x64||segment===0x65){
+    assert.equal(status,0);meta.sourceBytes=bytes.length;
+    const body=Buffer.from(cold.subarray(output,output+Number(cv.getBigUint64(report+40,true))));
+    const cut=(await WebAssembly.instantiate(body,{machine:{memory,access:vm.vm_access}})).instance.exports.cut;
+    vm.__indirect_function_table.set(slot,cut);
+    const word=index=>index===16?0x202n:index===1?1n:index===6?0x200n:index===7?0x502200n:0n;
+    reset(source,meta,word,0);put(segments+8+(segment===0x64?4:5)*16,0x500000n);
+    const value=data[ramAt+512];assert.equal(vm.vm_run(port,9n,1),5n);
+    assert.equal(data[ramAt+8704],value);++baseSegmentModels;continue;
+  }
   assert.equal(status,0);meta.sourceBytes=bytes.length;
   const body=Buffer.from(cold.subarray(output,output+Number(cv.getBigUint64(report+40,true))));
   const cut=(await WebAssembly.instantiate(body,{machine:{memory,access:vm.vm_access}})).instance.exports.cut;
@@ -145,5 +154,5 @@ for(const repeated of [false,true])for(const segment of [0x36,0x3e,0x64,0x65]){
 }finally{vm.__indirect_function_table.set(slot,null);vm.vm_close();}
 console.log(JSON.stringify({format:'native-string-element-v1',status:'pass',compilerBytes:compiler.length,
   compilerSha256:createHash('sha256').update(compiler).digest('hex'),parity,direct,dispatch,nativeSuccess,nativeFault,
-  waits,retries,refusals,rfModels,prefixNativeFaults,baseSegmentRefusals,moduleBytes,
-  scope:'single MOVS/STOS, flat long-mode source, 32/64 address size; four native ignored SS/DS-prefix faults; hidden cache unchanged models; no FS/GS-base or debug/AC equivalence claim',linuxBoot:'not-tested'},null,2));
+  waits,retries,refusals,rfModels,prefixNativeFaults,baseSegmentModels,moduleBytes,
+  scope:'single MOVS/STOS, 32/64 address size; four native ignored SS/DS-prefix faults and four FS/GS-base success models; hidden cache unchanged models; FS/GS native observations are in check-segment-memory, no debug/AC equivalence claim',linuxBoot:'not-tested'},null,2));

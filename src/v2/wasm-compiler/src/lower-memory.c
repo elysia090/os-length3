@@ -197,7 +197,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
 int cut_memory_address_supported(const pl_x86_instruction *instruction,const pl_x86_memory *address)
 {
     return (address->segment.class_id == PL_X86_REGISTER_NONE
-            || (address->segment.class_id == PL_X86_REGISTER_SEGMENT && address->segment.index < 4u))
+            || (address->segment.class_id == PL_X86_REGISTER_SEGMENT && address->segment.index < 6u))
         && (address->base.class_id == PL_X86_REGISTER_NONE
             || address->base.class_id == PL_X86_REGISTER_IP || cut_gpr(&address->base))
         && (address->index.class_id == PL_X86_REGISTER_NONE || cut_gpr(&address->index))
@@ -205,6 +205,14 @@ int cut_memory_address_supported(const pl_x86_instruction *instruction,const pl_
             || address->scale == 4u || address->scale == 8u)
         && ((instruction->rip >> 47u) == 0u || (instruction->rip >> 47u) == 0x1ffffu)
         && ((instruction->fallthrough >> 47u) == 0u || (instruction->fallthrough >> 47u) == 0x1ffffu);
+}
+
+pl_u32 cut_memory_role(const pl_x86_memory *address)
+{
+    if (address->segment.class_id!=PL_X86_REGISTER_SEGMENT) return 0u;
+    return address->segment.index==2u ? MACHINE_MEMORY_STACK
+        : address->segment.index==4u ? MACHINE_MEMORY_FS
+        : address->segment.index==5u ? MACHINE_MEMORY_GS : 0u;
 }
 
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
@@ -247,9 +255,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut->report.memory_bytes = memory->bits / 8u;
     cut->report.memory_access = store ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ;
     if (rmw) cut->report.memory_access |= MACHINE_MEMORY_READ;
-    if (memory->value.memory.segment.class_id == PL_X86_REGISTER_SEGMENT
-            && memory->value.memory.segment.index == 2u)
-        cut->report.memory_access |= MACHINE_MEMORY_STACK;
+    cut->report.memory_access |= cut_memory_role(&memory->value.memory);
     if (load_arithmetic || (multiply && instruction->visible_operand_count == 2u)) {
         // Capture the destination before loading through its aliased address.
         // A failed C read leaves both the parent register and flags untouched.
@@ -272,7 +278,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
         cut_get(cut, CUT_ADDRESS);
         cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, cut->report.memory_bytes);
-        cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, cut->report.memory_access);
+        cut_i32_const(cut,cut->report.memory_access);
         cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 0u);
         cut_access_status(cut);
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
@@ -365,7 +371,7 @@ void cut_access(cut_lowering *cut)
     cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u); /* private port parameter */
     cut_get(cut, CUT_ADDRESS);
     cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, cut->report.memory_bytes);
-    cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, cut->report.memory_access);
+    cut_i32_const(cut,cut->report.memory_access);
     cut_get(cut, CUT_VALUE);
     cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 0u); /* C RAM boundary */
     cut_access_status(cut);

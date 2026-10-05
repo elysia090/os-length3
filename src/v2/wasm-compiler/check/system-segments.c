@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include "segment-admission.h"
 #include <stdio.h>
 #include <string.h>
 static pl_u8 page[4096], output[65536];
@@ -48,6 +49,10 @@ int main(int argc, char **argv)
         {0x64,0x0f,0x00,0x1f,0x90},{0x65,0x0f,0x00,0x17,0x90}};
     for (unsigned i=0u;i<sizeof denied/sizeof denied[0];++i) {
         memset(page,0x90,sizeof page); memcpy(page,denied[i],sizeof denied[i]); memset(output,0xa5,sizeof output);
+        if(denied[i][0]==0x64u||denied[i][0]==0x65u){
+            EXPECT(!check_segment_admission(&image,&options,denied[i][0]));
+            continue;
+        }
         pl_u64 length=123u; wasm_cut_report report;
         EXPECT(wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&length,&report)==WASM_COMPILER_ERROR_GRAMMAR);
         EXPECT(length==123u); for (unsigned j=0u;j<sizeof output;++j) EXPECT(output[j]==0xa5u);

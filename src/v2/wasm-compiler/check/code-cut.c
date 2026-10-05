@@ -28,6 +28,24 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
+    /* Former base refusals now require explicit C-owned roles. Invalid LOCK,
+     * far-control and reserved encodings below remain rejection tests. */
+    static const struct {pl_u8 code[6];pl_u32 size,access;} segment_cases[]={
+        {{0x64u,0x8cu,0x17u},3u,2u}, {{0x64u,0x0fu,0x94u,0x07u},4u,2u},
+        {{0x64u,0x0fu,0xafu,0x07u},4u,1u}, {{0x64u,0x48u,0xf7u,0x27u},4u,1u},
+        {{0x64u,0xffu,0x20u},3u,1u}, {{0x64u,0xffu,0x10u},3u,7u},
+        {{0x64u,0x48u,0x0fu,0x44u,0x00u},5u,1u}, {{0x64u,0x48u,0x0fu,0xabu,0x08u},5u,3u},
+        {{0x64u,0x48u,0x0fu,0xb1u,0x0fu},5u,3u}, {{0x64u,0x48u,0x0fu,0xc7u,0x0fu},5u,3u},
+    };
+    options.maximum_source_instructions=1u;
+    for(pl_u32 segment=0u;segment<2u;++segment)
+    for(pl_u32 rank=0u;rank<sizeof segment_cases/sizeof segment_cases[0];++rank){
+        memset(pages,0x90,sizeof pages);memcpy(pages,segment_cases[rank].code,segment_cases[rank].size);
+        pages[0]=(pl_u8)(0x64u+segment);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_bytes==segment_cases[rank].size && report.source_instructions==1u
+            && report.memory_access==(segment_cases[rank].access|(segment?MACHINE_MEMORY_GS:MACHINE_MEMORY_FS)));
+    }
     /* Double shifts share pure value/flag SSA for every GPR binding; the
      * memory destination alone introduces the existing RMW boundary. */
     options.maximum_source_instructions=1u;
@@ -184,7 +202,6 @@ int main(int argc, char **argv)
     static const pl_u8 selector_refused[][3]={
         {0x8cu,0xf0u,0x90u}, {0x8cu,0xf8u,0x90u}, /* Reserved Sreg encodings. */
         {0xf0u,0x8cu,0xd0u}, {0xf0u,0x8cu,0x17u}, /* LOCK is not a selector read. */
-        {0x64u,0x8cu,0x17u}, {0x65u,0x8cu,0x17u}, /* Unlowered address bases. */
     };
     for (pl_u32 rank=0u;rank<sizeof selector_refused/sizeof selector_refused[0];++rank) {
         memset(pages,0x90,sizeof pages); memcpy(pages,selector_refused[rank],3u);
@@ -285,7 +302,7 @@ int main(int argc, char **argv)
     EXPECT(report.source_instructions == 1u && report.source_bytes == 3u
         && report.flags_written && !report.memory_bytes && report.continuation == source.entry+3u);
     static const pl_u8 set_rejected[][4] = {
-        {0xf0u,0x0fu,0x94u,0x07u}, {0x64u,0x0fu,0x94u,0x07u}, {0x65u,0x0fu,0x94u,0x07u},
+        {0xf0u,0x0fu,0x94u,0x07u},
     };
     for (pl_u32 rank = 0u; rank < sizeof set_rejected/sizeof set_rejected[0]; ++rank) {
         memcpy(pages,set_rejected[rank],sizeof set_rejected[rank]); memset(output,0xa5,sizeof output);
@@ -346,11 +363,9 @@ int main(int argc, char **argv)
         EXPECT(report.boundary==(rank==1u ? WASM_CUT_MEMORY : WASM_CUT_LIMIT));
         EXPECT(report.memory_access==(rank==1u ? MACHINE_MEMORY_READ : 0u));
     }
-    // FS address bases and invalid LOCK encodings still explicitly refuse.
+    // Invalid LOCK encodings still explicitly refuse.
     static const pl_u8 multiply_rejected[][5] = {
-        {0x64u,0x0fu,0xafu,0x07u,0x90u},
         {0xf0u,0x0fu,0xafu,0xc7u,0x90u},
-        {0x64u,0x48u,0xf7u,0x27u,0x90u},
         {0xf0u,0x48u,0xf7u,0xe2u,0x90u},
     };
     options.maximum_source_instructions = 1u;
@@ -532,8 +547,8 @@ int main(int argc, char **argv)
                 || write_record(prefix,"source-page",pages,4096u)) return 1;
         }
         pages[0] = 0x64u; pages[1] = 0xf3u; pages[2] = 0xa4u;
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-               == WASM_COMPILER_ERROR_GRAMMAR); /* FS base is not silently DS. */
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_bytes==3u && report.source_instructions==1u && report.memory_access==(3u|MACHINE_MEMORY_FS));
         pages[0] = 0xf0u; pages[1] = 0xf3u; pages[2] = 0xa4u;
         EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
                == WASM_COMPILER_ERROR_GRAMMAR);
@@ -557,9 +572,8 @@ int main(int argc, char **argv)
         EXPECT(report.written_registers == (family && form != 2u ? 16u : form == 2u ? 1u : 0u));
     }
     static const pl_u8 rejected[][3] = {
-        {0x64u,0xffu,0x20u}, /* FS memory target needs explicit base semantics. */
-        {0x65u,0xffu,0x20u}, {0xffu,0x28u,0x90u}, /* Far control is not near JMP. */
-        {0xf0u,0xffu,0xe0u}, {0xffu,0x18u,0x90u}, {0x64u,0xffu,0x10u},
+        {0xffu,0x28u,0x90u}, /* Far control is not near JMP. */
+        {0xf0u,0xffu,0xe0u}, {0xffu,0x18u,0x90u},
     };
     /* ADC/SBB consume CF even if a later instruction overwrites every flag.
      * SBB EAX,EAX is also the next instruction in the shipped boot payload. */
@@ -593,7 +607,6 @@ int main(int argc, char **argv)
     static const pl_u8 rejected_carry_loads[][5] = {
         {0xf0u,0x19u,0xc0u,0x90u,0x90u}, /* LOCK register SBB is invalid. */
         {0xf0u,0x48u,0x19u,0x00u,0x90u}, /* LOCK RMW still requires an explicit atomic descriptor. */
-        {0x64u,0x48u,0x0fu,0x44u,0x00u}, /* An FS-base source is not ordinary DS. */
         {0xf0u,0x48u,0x0fu,0x44u,0x00u}, /* CMOV does not accept LOCK. */
     };
     for (pl_u32 form = 0u; form < sizeof rejected_carry_loads / sizeof rejected_carry_loads[0]; ++form) {
@@ -604,7 +617,6 @@ int main(int argc, char **argv)
     static const pl_u8 rejected_bits[][6] = {
         {0xf0u,0x48u,0x0fu,0xbau,0xeeu,0x3au}, /* LOCK register BTS is invalid. */
         {0xf0u,0x48u,0x0fu,0xbau,0x28u,0x3au}, /* Locked memory RMW is not admitted yet. */
-        {0x64u,0x48u,0x0fu,0xabu,0x08u,0x90u}, /* FS base is not ordinary flat memory. */
     };
     for (pl_u32 form = 0u; form < sizeof rejected_bits / sizeof rejected_bits[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected_bits[form],sizeof rejected_bits[0]);
@@ -659,8 +671,6 @@ int main(int argc, char **argv)
     }
     static const pl_u8 exchange_rejected[][6] = {
         {0xf0u,0x48u,0x0fu,0xb1u,0xcfu,0x90u}, /* LOCK register destination is invalid. */
-        {0x64u,0x48u,0x0fu,0xb1u,0x0fu,0x90u}, /* Missing FS base. */
-        {0x64u,0x48u,0x0fu,0xc7u,0x0fu,0x90u}, /* Wide pair still requires an owned FS base. */
         {0x48u,0x0fu,0xc7u,0xcfu,0x90u,0x90u}, /* Pair destination must be memory. */
     };
     /* All ordinary scalar transfer forms join the same precise RMW owner.

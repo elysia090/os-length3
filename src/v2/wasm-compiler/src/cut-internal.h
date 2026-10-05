@@ -53,6 +53,7 @@ void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);
 void cut_set(cut_lowering *cut, pl_u32 local);
 void cut_const(cut_lowering *cut, pl_u64 bits);
+void cut_i32_const(cut_lowering *cut, pl_u32 bits);
 /* Only decoder-owned instruction coordinates use this substitution. */
 void cut_coordinate(cut_lowering *cut, pl_u64 address);
 void cut_mask(cut_lowering *cut, pl_u32 bits);
@@ -67,6 +68,7 @@ void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruct
                             const pl_x86_memory *memory);
 int cut_memory_supported(const pl_x86_instruction *instruction);
 int cut_memory_address_supported(const pl_x86_instruction *instruction,const pl_x86_memory *address);
+pl_u32 cut_memory_role(const pl_x86_memory *address);
 int cut_paired_exchange_supported(const pl_x86_instruction *instruction);
 void cut_lower_paired_exchange(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction);

@@ -38,6 +38,12 @@ OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
 .PHONY: system-check
+.PHONY: segment-address-check
+check: segment-address-check
+segment-address-check: $(BUILD)/segment-address-check
+	$(BUILD)/segment-address-check
+$(BUILD)/segment-address-check: check/segment-address.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 check: system-check
 system-check: $(BUILD)/system-check
 	$(BUILD)/system-check

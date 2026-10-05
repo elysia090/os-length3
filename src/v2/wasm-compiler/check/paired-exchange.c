@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "segment-admission.h"
 #include <machine/state.h>
 #include <machine/memory.h>
 #include <signal.h>
@@ -79,6 +80,10 @@ static int check_frontier(const pl_x86_map *map,pl_u32 size)
         if (rank<4u) memcpy(prefix,refused[rank],5u); else memcpy(prefix,map->bytes,size);
         memcpy(saved,prefix,sizeof saved); options.entry=image.entry;
         memset(emitted,0xa5,sizeof emitted); memset(&report,0xa5,sizeof report); bytes=77u;
+        if(rank<2u){
+            if(check_segment_admission(&image,&options,prefix[0])||memcmp(prefix,saved,sizeof saved))return -1;
+            continue;
+        }
         if (wasm_compiler_emit_code_cut(&image,9u,&options,emitted,rank<4u ? sizeof emitted : 1u,&bytes,&report)
                 !=(rank<4u ? WASM_COMPILER_ERROR_GRAMMAR : WASM_COMPILER_ERROR_CAPACITY)
                 || bytes!=77u || memcmp(prefix,saved,sizeof saved)) return -1;

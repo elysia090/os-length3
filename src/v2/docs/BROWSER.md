@@ -1,5 +1,16 @@
 # Browser projection of OS Length3 Linux
 
+Local candidate (2026-10-06): the general C-owned FS/GS address boundary
+matches 1,024 native x86 observations in both direct and C-dispatch execution.
+Twenty-family address substitution, actual C page-wait/latch/MSR fences,
+full native VM/compiler/CLI, scoped sanitizers and fresh REP regressions pass.
+Candidate VM/compiler 70,499 / 452,168 bytes are frozen for the independent
+same-bundle Node rerun (PID 13684, warmCuts=64, unchanged quotas). See
+[normalization and counted scope](../vm/check/browser/evidence/2026-10-06-segment-memory.md).
+The completed full measurement is still the FS red below; local green is not
+PID 1, root mount, shell/tooling or browser acceptance. Retained browser
+Workers/staged assets and the native publication/UI remain unchanged.
+
 Current measured state (2026-10-06): completed `36eb952` passes non-REP MOVSB
 and reaches the common compiler refusal for `mov rax, fs:[0]`
 (`64 48 8b 04 25 00 00 00 00`) at `0x7fdb6f31f16b`, -102 after
@@ -9,8 +20,8 @@ term: 285,700 ms versus cold emission 249,735 ms and C execution 75,913 ms;
 total 766,681 ms. Different work/active-execution clock calibration is not a
 paired speedup. See the
 [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
-The next correction is general C-owned FS/GS linear-address normalization,
-not a host TLS/syscall implementation. PID 1/root mount/shell/real-browser
+The separate local correction above is general C-owned FS/GS linear-address
+normalization, not a host TLS/syscall implementation. PID 1/root mount/shell/real-browser
 remain unachieved; cold shell 3s is unmet. These Node/native checks neither
 replace retained browser Workers/staged assets nor establish browser acceptance.
 

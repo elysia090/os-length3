@@ -84,8 +84,7 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_const(cut,0u); cut_set(cut,CUT_VALUE);
         const pl_x86_memory *source=source_address(instruction);
         cut->report.memory_access = MACHINE_MEMORY_READ;
-        if(source->segment.class_id==PL_X86_REGISTER_SEGMENT && source->segment.index==2u)
-            cut->report.memory_access|=MACHINE_MEMORY_STACK;
+        cut->report.memory_access|=cut_memory_role(source);
         cut_access(cut);
         cut_access_value(cut); cut_set(cut,CUT_VALUE);
     }
@@ -108,4 +107,5 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x0bu); cut_op(cut,0x0bu);
     }
     cut->report.memory_access = store ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ | MACHINE_MEMORY_WRITE;
+    if(!store)cut->report.memory_access|=cut_memory_role(source_address(instruction));
 }

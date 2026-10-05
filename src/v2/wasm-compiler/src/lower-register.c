@@ -6,9 +6,8 @@ void cut_get(cut_lowering *cut, pl_u32 local)
 void cut_set(cut_lowering *cut, pl_u32 local)
 { cut_op(cut, 0x21u); wasm_writer_uleb(cut->writer, local ? local + 3u : 0u); }
 
-void cut_const(cut_lowering *cut, pl_u64 bits)
+static void signed_immediate(cut_lowering *cut, pl_u64 bits)
 {
-    cut_op(cut, 0x42u);
     for (;;) {
         pl_u32 byte = (pl_u32)bits & 0x7fu;
         pl_u64 next = bits >> 7u;
@@ -19,6 +18,15 @@ void cut_const(cut_lowering *cut, pl_u64 bits)
         if (last) break;
         bits = next;
     }
+}
+
+void cut_const(cut_lowering *cut, pl_u64 bits)
+{ cut_op(cut,0x42u); signed_immediate(cut,bits); }
+
+void cut_i32_const(cut_lowering *cut, pl_u32 bits)
+{
+    cut_op(cut,0x41u);
+    signed_immediate(cut,(pl_u64)bits | (bits & 0x80000000u ? ~0ull << 32u : 0u));
 }
 
 void cut_mask(cut_lowering *cut, pl_u32 bits)

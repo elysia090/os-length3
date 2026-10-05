@@ -36,6 +36,16 @@ SOURCES += src/lower-vector-scalar.c
 .PHONY: memory-order-check
 .PHONY: direct-call-check
 .PHONY: string-element-check
+.PHONY: segment-memory-check
+$(BUILD)/vector-scalar-check $(BUILD)/vector-transfer-check $(BUILD)/mxcsr-check \
+$(BUILD)/memory-divide-check $(BUILD)/paired-exchange-check $(BUILD)/memory-shift-check \
+$(BUILD)/double-shift-check $(BUILD)/push-memory-check $(BUILD)/pop-memory-check \
+$(BUILD)/divide-check $(BUILD)/system-segments-check: check/segment-admission.h
+check: segment-memory-check
+segment-memory-check: $(BUILD)/segment-memory-check
+	$(BUILD)/segment-memory-check
+$(BUILD)/segment-memory-check: check/segment-memory.c check/native-segment.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/segment-memory.c check/native-segment.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: string-element-check
 string-element-check: $(BUILD)/string-element-check
 	$(BUILD)/string-element-check
@@ -157,8 +167,8 @@ $(BUILD)/cut-check: check/cut.c check/native-cut.S check/native-selectors.h $(BU
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/cut.c check/native-cut.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
-$(BUILD)/memory-cut-check: check/memory-cut.c check/native-cut.S check/native-selectors.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/memory-cut.c check/native-cut.S \
+$(BUILD)/memory-cut-check: check/memory-cut.c check/native-cut.S check/native-segment.S check/native-selectors.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie check/memory-cut.c check/native-cut.S check/native-segment.S \
 		$(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 $(BUILD)/stack-cut-check: check/stack-cut.c check/native-stack.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
@@ -440,7 +450,7 @@ memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 		-DMEMORY_CASE=$$rank check/memory-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
 	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
-	if [ $$rank = 22 ] || [ $$rank = 45 ] || [ $$rank = 88 ]; then \
+	if [ $$rank = 45 ]; then \
 		if $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; then exit 1; fi; \
 	else $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; fi; \
 	done

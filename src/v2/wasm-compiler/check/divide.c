@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "segment-admission.h"
 #include <machine/state.h>
 #include <signal.h>
 #include <setjmp.h>
@@ -129,6 +130,10 @@ int main(int argc,char **argv)
             for (pl_u32 rank=0u;rank<2u;++rank) {
                 memcpy(prefix,refused[rank],4u); pl_u64 unchanged=77u;
                 wasm_cut_report saved; memset(&saved,0xa5,sizeof saved); memset(prior_module,0xa5,sizeof prior_module);
+                if(rank==1u){
+                    if(check_segment_admission(&composed,&options,prefix[0]))goto finish;
+                    continue;
+                }
                 if (wasm_compiler_emit_code_cut(&composed,9u,&options,prior_module,sizeof prior_module,&unchanged,&saved)
                         != WASM_COMPILER_ERROR_GRAMMAR || unchanged != 77u) goto finish;
                 for (size_t byte=0u;byte<sizeof prior_module;++byte) if (prior_module[byte] != 0xa5u) goto finish;

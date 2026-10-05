@@ -6,6 +6,24 @@
 
 static int canonical(pl_u64 address)
 { return address >> 47u == 0u || address >> 47u == 0x1ffffu; }
+int vm_segment_address(const machine_segments *segments, pl_u64 *address, pl_u32 *access)
+{
+    if (!address || !access) return -1;
+    pl_u32 role=*access & (MACHINE_MEMORY_FS | MACHINE_MEMORY_GS);
+    if (!role) return 0;
+    if (role==(MACHINE_MEMORY_FS | MACHINE_MEMORY_GS)
+            || (*access & ((pl_u32)MACHINE_MEMORY_STACK | (pl_u32)VM_MMU_EXECUTE))
+            || !segments || segments->version!=MACHINE_SEGMENTS_ABI_VERSION
+            || segments->interrupt_shadow>MACHINE_SHADOW_STI) return -1;
+    pl_u32 cs=segments->cache[MACHINE_SEGMENT_CS].attributes;
+    pl_u32 rank=role==MACHINE_MEMORY_FS ? MACHINE_SEGMENT_FS : MACHINE_SEGMENT_GS;
+    pl_u64 base=segments->cache[rank].base;
+    if (!(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
+            || !canonical(base)) return -1;
+    *address+=base;
+    *access &= ~(pl_u32)(MACHINE_MEMORY_FS | MACHINE_MEMORY_GS);
+    return 0;
+}
 static machine_result fault(pl_u8 *port, const machine_state *state, pl_u32 vector, pl_u32 error)
 {
     vm_memory_store(port + offsetof(machine_memory_port,fault_address),state->rip,8u);

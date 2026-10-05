@@ -1,5 +1,18 @@
 # Remaining work — 2026-10-06
 
+FS/GS common addressing is locally green: 1,024 native x86 observations,
+1,024 direct + 1,024 C-dispatch comparisons, 24 fresh native/cold byte-parity
+emissions, 240 twenty-family address models and 160 C page-wait resumes.
+MSR interposition refuses without destroying the latched ticket; fresh base
+publication passes. Signed `i32.const` encoding, all native VM/compiler/CLI
+checks, scoped ASan/UBSan and freshly emitted REP regressions pass.
+Frozen VM/compiler are 70,499 / 452,168 bytes. See
+[substitution, evidence and limits](../vm/check/browser/evidence/2026-10-06-segment-memory.md).
+The unchanged-bundle independent Node rerun is active (PID 13684,
+`temp/segment-1006/frozen`, warmCuts=64, unchanged quotas). It is not a
+browser run; no retained Worker or staged asset is replaced. Do not describe
+the local TLS green as successful PID 1, root mount or shell.
+
 Latest completed same-bundle gate (`36eb952`): non-REP MOVSB passes. The next
 common compiler refusal is FS TLS load `64 48 8b 04 25 00 00 00 00`
 (`mov rax, fs:[0]`) at `0x7fdb6f31f16b`, -102 after 186,388,534 retirements /
@@ -11,12 +24,14 @@ do not establish an elapsed-ratio speedup. See the
 [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
 PID 21444 completed; no retained browser Worker or staged asset was replaced.
 
-Immediate order: close FS/GS effective-offset -> linear-address normalization
-in the same C-owned segment/MMU boundary, including scalar, reservation,
-vector, ordered record and string consumers. Address-size truncation precedes
-the full-width base addition; LEA must remain a base-free effective offset.
-Turn the exact TLS gate and general native address/fault cases red before
-editing acceptance guards. Then freeze/hash and re-run the unchanged bundle.
+Immediate order: obtain that frozen rerun's completed receipt, then make its
+next actual common ISA/MMU/machine-ABI gate red and close it without a host
+interpreter. FS/GS effective-offset -> linear-address normalization now uses
+the same C-owned boundary across scalar, reservation, vector, ordered record
+and string consumers. Address-size truncation precedes the full-width base
+addition; LEA remains base-free. The old frozen compiler still fails the exact
+TLS assertion with -102. Engine construction/cold emission remain measured
+optimization obligations, not permission to raise quotas or skip execution.
 PID 1, root mount, shell/tooling, browser acceptance and cold shell 3s remain
 unachieved. The `/init` console announcement alone is not successful PID 1.
 

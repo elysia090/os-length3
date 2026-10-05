@@ -39,8 +39,7 @@ void cut_lower_mxcsr(cut_lowering *cut,const pl_x86_instruction *instruction)
     cut_sse_guard(cut);
     cut_effective_address(cut,instruction,address);cut_set(cut,CUT_ADDRESS);
     cut->report.memory_access=store?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
-    if(address->segment.class_id==PL_X86_REGISTER_SEGMENT && address->segment.index==2u)
-        cut->report.memory_access|=MACHINE_MEMORY_STACK;
+    cut->report.memory_access|=cut_memory_role(address);
     if(store) {
         cut_get(cut,0u);cut_op(cut,0x35u);wasm_writer_uleb(cut->writer,2u);
         wasm_writer_uleb(cut->writer,offsetof(machine_state,mxcsr));

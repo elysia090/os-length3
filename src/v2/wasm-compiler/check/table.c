@@ -48,11 +48,16 @@ int main(int argc, char **argv)
                     || save(argv[1],rank,"wasm",output,(size_t)length) || save(argv[1],rank,"source-page",page,sizeof page)) return 1;
         }
     }
-    /* Refuse unsupported segment bases and invalid prefixes without output. */
+    /* FS/GS use the same C-owned table boundary; LOCK stays invalid. */
     for (unsigned prefix=0u;prefix<3u;++prefix) {
         memset(page,0x90,sizeof page); page[0]=(pl_u8)(prefix==0u ? 0x64u : prefix==1u ? 0x65u : 0xf0u);
         page[1]=0x0fu; page[2]=0x01u; page[3]=0x07u; memset(output,0xa5,sizeof output);
         pl_u64 length=123u; wasm_cut_report report; memset(&report,0xa5,sizeof report);
+        if(prefix<2u){
+            EXPECT(!wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&length,&report));
+            EXPECT(report.source_bytes==4u && report.source_instructions==1u && report.boundary==WASM_CUT_SYSTEM);
+            continue;
+        }
         EXPECT(wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&length,&report)==WASM_COMPILER_ERROR_GRAMMAR);
         EXPECT(length==123u);
         for (unsigned i=0u;i<sizeof output;++i) EXPECT(output[i]==0xa5u);

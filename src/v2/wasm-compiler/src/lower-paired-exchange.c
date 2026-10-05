@@ -29,12 +29,11 @@ void cut_lower_paired_exchange(cut_lowering *cut,const pl_x86_instruction *instr
     const pl_x86_memory *address=&instruction->operands[0].value.memory;
     cut->report.memory_bytes=wide ? 16u : 8u;
     cut->report.memory_access=MACHINE_MEMORY_READ|MACHINE_MEMORY_WRITE;
-    if (address->segment.class_id==PL_X86_REGISTER_SEGMENT && address->segment.index==2u)
-        cut->report.memory_access|=MACHINE_MEMORY_STACK;
+    cut->report.memory_access|=cut_memory_role(address);
     cut_effective_address(cut,instruction,address); cut_set(cut,CUT_ADDRESS);
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u); cut_get(cut,CUT_ADDRESS);
     cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,cut->report.memory_bytes);
-    cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,cut->report.memory_access);
+    cut_i32_const(cut,cut->report.memory_access);
     cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
     cut_access_value(cut); cut_set(cut,CUT_LEFT);
     if (wide) {

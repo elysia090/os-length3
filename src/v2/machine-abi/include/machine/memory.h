@@ -4,13 +4,15 @@
 #include <support/types.h>
 #include <stddef.h>
 
-#define MACHINE_MEMORY_ABI_VERSION 1u
+#define MACHINE_MEMORY_ABI_VERSION 2u
 
 enum machine_memory_access {
     MACHINE_MEMORY_READ = 1u,
     MACHINE_MEMORY_WRITE = 2u,
     MACHINE_MEMORY_STACK = 4u,
     MACHINE_MEMORY_ALIGNED16 = 32u, /* Ordered extent/pair preflight only. */
+    MACHINE_MEMORY_FS = 64u,
+    MACHINE_MEMORY_GS = 128u,
 };
 
 /* One private port per serialized execution lane. A fault is a pending CPU
@@ -70,7 +72,15 @@ _Static_assert(sizeof(machine_memory_extent_port)==64u,"borrowed extent port ABI
  * consumes that entire reservation once. Neither import receives an opcode. */
 
 /* Generated memory cuts import machine.access:
- * (i32 port, i64 linear_address, i32 bytes, i32 access, i64 value) -> i64 result.
+ * (i32 port, i64 address, i32 bytes, i32 access, i64 value) -> i64 result.
+ * With FS or GS, address is the effective offset, already truncated to the
+ * instruction's address size. The C provider adds the pinned full-width
+ * hidden base modulo 2^64, then performs the ordinary linear preflight.
+ * Exactly one segment role is permitted; neither may combine with STACK or
+ * instruction-fetch rights. Instruction fetch always uses its own CS address.
+ * All scalar/pair/extent/reservation/record imports use this same rule.
+ * No selector, descriptor limit or base is copied into generated code.
+ * Without FS/GS, address remains a linear address. LEA uses no memory import.
  * DIRECT/0 commits a complete scalar transaction and supplies port.value for
  * reads. Other results perform no payload store; architectural page-table A/D
  * updates may already have occurred. FAULT publishes the fault fields;

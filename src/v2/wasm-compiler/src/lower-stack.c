@@ -106,8 +106,7 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_effective_address(cut,instruction,memory); cut_set(cut,CUT_ADDRESS);
         cut_const(cut,0u); cut_set(cut,CUT_VALUE);
         cut->report.memory_bytes=bytes; cut->report.memory_access=MACHINE_MEMORY_READ;
-        if (memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index==2u)
-            cut->report.memory_access|=MACHINE_MEMORY_STACK;
+        cut->report.memory_access|=cut_memory_role(memory);
         cut_access(cut); cut_access_value(cut);
         cut_get(cut,CUT_LEFT); cut_set(cut,CUT_ADDRESS);
     }
@@ -121,7 +120,8 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut->report.memory_bytes = bytes;
     cut->report.memory_access = MACHINE_MEMORY_STACK | (push ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ);
     cut_access(cut);
-    if (memory_push) cut->report.memory_access|=MACHINE_MEMORY_READ;
+    if (memory_push) cut->report.memory_access|=MACHINE_MEMORY_READ
+        | cut_memory_role(&instruction->operands[0].value.memory);
     if (!push) {
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
         if (instruction->operation == PL_X86_OPERATION_RETURN) {
@@ -153,8 +153,7 @@ void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
             const pl_x86_memory *memory = &instruction->operands[0].value.memory;
             cut_effective_address(cut, instruction, memory); cut_set(cut, CUT_ADDRESS);
             cut->report.memory_access = MACHINE_MEMORY_WRITE;
-            if (memory->segment.class_id == PL_X86_REGISTER_SEGMENT && memory->segment.index == 2u)
-                cut->report.memory_access |= MACHINE_MEMORY_STACK;
+            cut->report.memory_access |= cut_memory_role(memory);
             cut_access(cut);
             cut->report.memory_access |= MACHINE_MEMORY_READ | MACHINE_MEMORY_STACK;
         } else cut_write_register(cut, &instruction->operands[0].value.reg);

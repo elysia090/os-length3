@@ -305,13 +305,18 @@ static void after_guest_write(pl_u64 admitted)
     execution.generation=0u;
 }
 
+static int linear_address(pl_u64 *address, pl_u32 *access)
+{
+    return vm_segment_address(segments_offset
+        ? (const machine_segments *)(uintptr_t)segments_offset : NULL,address,access);
+}
 machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
                           pl_u32 access, pl_u64 value)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (delivery.stage || !private_port(port))
+    if (delivery.stage || !private_port(port) || linear_address(&address,&access))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     const pl_u8 *state = resident.bytes + state_offset - arena_base;
     vm_mmu_context context = {
@@ -454,7 +459,7 @@ machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 acce
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (delivery.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage || !private_port(port) || linear_address(&address,&access)) return MACHINE_RESULT_ENTRY_MAP;
     vm_mmu_context context = cpu_context();
     pl_u64 admitted=sources.valid;
     resident.write_touched = 0u;
@@ -477,7 +482,7 @@ machine_result vm_write_begin(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
-    if (delivery.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage || !private_port(port) || linear_address(&address,&access)) return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 admitted=sources.valid;
     vm_mmu_context context=cpu_context(); resident.write_touched=0u;
     machine_result result=vm_mmu_write_begin(&resident,port-arena_base,&context,address,bytes,access);
@@ -507,6 +512,7 @@ machine_result vm_read_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 ac
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);vm_memory_abort(&resident);
     if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))
+            || linear_address(&address,&access)
             || bytes!=16u || (access & ~39u) || (access & 3u)!=MACHINE_MEMORY_READ)
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 admitted=sources.valid;
@@ -519,7 +525,8 @@ machine_result vm_read_extent(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);vm_memory_abort(&resident);
-    if (delivery.stage || !private_record(port,sizeof(machine_memory_extent_port)))
+    if (delivery.stage || !private_record(port,sizeof(machine_memory_extent_port))
+            || linear_address(&address,&access))
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 admitted=sources.valid;
     vm_mmu_context context=cpu_context();resident.write_touched=0u;
@@ -537,6 +544,7 @@ machine_result vm_reserve_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
     if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))
+            || linear_address(&address,&access)
             || bytes!=16u || (access & ~7u) || (access & 3u)!=3u) return MACHINE_RESULT_ENTRY_MAP;
     pl_u8 record[16]; vm_mmu_context context=cpu_context();
     pl_u64 admitted=sources.valid;
@@ -660,7 +668,8 @@ machine_result vm_table(pl_u32 port, pl_u64 address, pl_u32 rank, pl_u32 access)
 {
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
-    if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    if (delivery.stage || !segments_offset || !private_port(port)
+            || linear_address(&address,&access)) return MACHINE_RESULT_ENTRY_MAP;
     const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
     pl_u32 cs = segments->cache[MACHINE_SEGMENT_CS].attributes;
     if (!(cs & 0x2000u) || (cs & (0x4000u | MACHINE_SEGMENT_UNUSABLE))) return MACHINE_RESULT_ENTRY_MAP;
@@ -760,7 +769,11 @@ machine_result vm_debug(pl_u32 port, pl_u32 write, pl_u32 rank, pl_u64 value)
 
 machine_result vm_msr(pl_u32 port, pl_u32 operation, pl_u32 key, pl_u64 value)
 {
-    if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
+    /* A suspended one-instruction entry owns its address context. Do not
+     * interpose a host MSR operation before its page/console wait resumes;
+     * refusal must leave that entry's supply ticket and reservation intact.
+     * RDMSR/WRMSR themselves never suspend on guest memory in this profile. */
+    if (table_frontier.stage || execution.continuation.slot) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;

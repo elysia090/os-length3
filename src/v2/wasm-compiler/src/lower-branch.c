@@ -21,7 +21,7 @@ int cut_indirect_supported(const pl_x86_instruction *instruction)
             || (instruction->address_width != 32u && instruction->address_width != 64u)) return 0;
     const pl_x86_memory *address = &operand->value.memory;
     return (address->segment.class_id == PL_X86_REGISTER_NONE
-            || (address->segment.class_id == PL_X86_REGISTER_SEGMENT && address->segment.index < 4u))
+            || (address->segment.class_id == PL_X86_REGISTER_SEGMENT && address->segment.index < 6u))
         && (address->base.class_id == PL_X86_REGISTER_NONE || address->base.class_id == PL_X86_REGISTER_IP
             || cut_gpr(&address->base))
         && (address->index.class_id == PL_X86_REGISTER_NONE || cut_gpr(&address->index))
@@ -54,8 +54,7 @@ void cut_lower_indirect(cut_lowering *cut, const pl_x86_instruction *instruction
         cut_effective_address(cut,instruction,&operand->value.memory); cut_set(cut,CUT_ADDRESS);
         cut_const(cut,0u); cut_set(cut,CUT_VALUE);
         cut->report.memory_bytes = 8u; cut->report.memory_access = MACHINE_MEMORY_READ;
-        if (operand->value.memory.segment.class_id == PL_X86_REGISTER_SEGMENT
-                && operand->value.memory.segment.index == 2u) cut->report.memory_access |= MACHINE_MEMORY_STACK;
+        cut->report.memory_access |= cut_memory_role(&operand->value.memory);
         cut_access(cut); cut_access_value(cut);
     } else cut_read_operand(cut,operand,64u);
     cut_set(cut,CUT_LEFT);

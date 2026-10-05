@@ -86,7 +86,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
                 && (instruction->address_width==32u || instruction->address_width==64u)) {
             const pl_x86_memory *memory=&source->value.memory;
             if ((memory->segment.class_id==PL_X86_REGISTER_NONE
-                    || (memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index<4u))
+                    || (memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index<6u))
                     && (memory->base.class_id==PL_X86_REGISTER_NONE
                         || memory->base.class_id==PL_X86_REGISTER_IP || cut_gpr(&memory->base))
                     && (memory->index.class_id==PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
@@ -183,7 +183,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
                                        | PL_X86_INSTRUCTION_TRAP_AFTER))) {
         const pl_x86_memory *memory = &instruction->operands[0].value.memory;
         if ((memory->segment.class_id == PL_X86_REGISTER_NONE
-                || (memory->segment.class_id == PL_X86_REGISTER_SEGMENT && memory->segment.index < 4u))
+                || (memory->segment.class_id == PL_X86_REGISTER_SEGMENT && memory->segment.index < 6u))
                 && (memory->base.class_id == PL_X86_REGISTER_NONE
                     || memory->base.class_id == PL_X86_REGISTER_IP || cut_gpr(&memory->base))
                 && (memory->index.class_id == PL_X86_REGISTER_NONE || cut_gpr(&memory->index))
@@ -511,10 +511,9 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_get(cut,CUT_ADDRESS);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument & 1u);
-        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,
+        cut_i32_const(cut,
             (instruction->machine_argument & 2u ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ)
-            | (memory->segment.class_id == PL_X86_REGISTER_SEGMENT
-                && memory->segment.index == 2u ? MACHINE_MEMORY_STACK : 0u));
+            | cut_memory_role(memory));
         cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u);
         cut_access_status(cut);
         return;
@@ -528,8 +527,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
                 cut_set(cut,CUT_ADDRESS);
                 const pl_x86_memory *memory=&instruction->operands[0].value.memory;
                 cut->report.memory_access=MACHINE_MEMORY_READ
-                    | (memory->segment.class_id==PL_X86_REGISTER_SEGMENT
-                        && memory->segment.index==2u ? MACHINE_MEMORY_STACK : 0u);
+                    | cut_memory_role(memory);
                 cut_const(cut,0u); cut_set(cut,CUT_VALUE); cut_access(cut); cut_access_value(cut);
             } else cut_read_operand(cut,&instruction->operands[0],16u);
             cut_set(cut,CUT_LEFT);
