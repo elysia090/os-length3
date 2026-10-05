@@ -215,36 +215,59 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
         frame[i] = vm_memory_load(port + offsetof(machine_memory_port,value),8u);
     }
     pl_u32 selector = (pl_u32)frame[1] & 65535u, error = selector & 0xfffcu;
-    if (selector & 3u) return MACHINE_RESULT_ENTRY_MAP;
+    pl_u32 return_cpl = selector & 3u;
     pl_u64 address, value;
     machine_result result = descriptor(memory,port_offset,state,segments,selector,0u,&address,&value);
     if (result) return result;
     pl_u32 access = (pl_u32)(value >> 40u) & 255u;
     machine_segment_cache code = vm_segment_cache_decode(value);
-    if ((access & 0x18u) != 0x18u || (access & 96u) || (code.attributes & 0x6000u) != 0x2000u)
+    pl_u32 dpl = (access >> 5u) & 3u;
+    if ((access & 0x18u) != 0x18u
+            || ((access & 4u) ? dpl > return_cpl : dpl != return_cpl)
+            || (code.attributes & 0x6000u) != 0x2000u)
         return fault(port,state,13u,error);
     if (!(access & 128u)) return fault(port,state,11u,error);
-    if (!canonical(frame[0])) return fault(port,state,13u,0u);
-    if (!canonical(frame[3])) return fault(port,state,12u,0u);
+    /* Loading CS can set its descriptor Accessed bit before a later SS
+     * check fails. Architectural register publication is still deferred. */
+    result = accessed(memory,port_offset,state,address,access);
+    if (result) return result;
     pl_u32 ss = (pl_u32)frame[4] & 65535u;
-    if (ss & 3u) return fault(port,state,13u,ss & 0xfffcu);
-    machine_segment_cache stack = {0u,0u,MACHINE_SEGMENT_UNUSABLE};
+    if ((ss & 3u) != return_cpl) return fault(port,state,13u,ss & 0xfffcu);
+    machine_segment_cache stack = {0u,0u,MACHINE_SEGMENT_UNUSABLE | return_cpl << 5u};
     pl_u64 stack_address = 0u; pl_u32 stack_access = 1u;
     if (ss & 0xfffcu) {
         result = descriptor(memory,port_offset,state,segments,ss,0u,&stack_address,&value);
         if (result) return result;
         stack_access = (pl_u32)(value >> 40u) & 255u;
-        if ((stack_access & 0x7eu) != 0x12u) return fault(port,state,13u,ss & 0xfffcu);
+        if ((stack_access & 0x1au) != 0x12u || ((stack_access >> 5u) & 3u) != return_cpl)
+            return fault(port,state,13u,ss & 0xfffcu);
         if (!(stack_access & 128u)) return fault(port,state,12u,ss & 0xfffcu);
         stack = vm_segment_cache_decode(value);
-    }
-    result = accessed(memory,port_offset,state,address,access);
-    if (result) return result;
+    } else if (return_cpl == 3u) return fault(port,state,13u,0u);
     result = accessed(memory,port_offset,state,stack_address,stack_access);
     if (result) return result;
+    /* RIP legality follows the descriptor loads and their Accessed writes.
+     * Merely restoring RSP does not dereference it: a non-canonical restored
+     * stack pointer faults only when a subsequent instruction uses it. */
+    if (!canonical(frame[0])) return fault(port,state,13u,0u);
     state->rip = frame[0]; state->registers[4] = frame[3];
     state->system[MACHINE_SYSTEM_CS] = selector; state->system[MACHINE_SYSTEM_SS] = ss;
     segments->cache[MACHINE_SEGMENT_CS] = code; segments->cache[MACHINE_SEGMENT_SS] = stack;
+    /* Outer return invalidates only data/non-conforming caches whose old
+     * descriptor privilege is now too strong. Conforming code remains usable.
+     * No architectural selector/cache publication precedes the checks above. */
+    if (return_cpl) for (pl_u32 rank = 0u; rank <= MACHINE_SEGMENT_GS; ++rank) {
+        if (rank == MACHINE_SEGMENT_CS || rank == MACHINE_SEGMENT_SS) continue;
+        machine_segment_cache *cache = segments->cache + rank;
+        if (!(cache->attributes & MACHINE_SEGMENT_UNUSABLE)
+                && ((cache->attributes >> 5u) & 3u) < return_cpl
+                && (cache->attributes & 12u) != 12u) {
+            state->system[MACHINE_SYSTEM_ES + rank] = 0u;
+            /* IRET invalidation preserves the cached base/limit. In 64-bit
+             * mode FS/GS bases remain observable independently of selector. */
+            cache->attributes = (cache->attributes & ~128u) | MACHINE_SEGMENT_UNUSABLE;
+        }
+    }
     /* CPL0 restores IOPL/IF/VIF/VIP; VM remains unchanged. Reserved bits
      * use the architectural fixed-zero/fixed-one representative. */
     state->rflags = (frame[2] & 0x3d7fd5u) | (state->rflags & 0x20000u) | 2u;

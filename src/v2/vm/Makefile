@@ -138,6 +138,14 @@ $(BUILD)/registers-check: check/registers.c $(BUILD)/libvm.a
 $(BUILD)/exception-check: check/exception.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
+$(BUILD)/interrupt-return-check: check/interrupt-return.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+
+.PHONY: interrupt-return-check
+check: interrupt-return-check
+interrupt-return-check: $(BUILD)/interrupt-return-check
+	$(BUILD)/interrupt-return-check
+
 $(BUILD)/source-check: check/source.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 

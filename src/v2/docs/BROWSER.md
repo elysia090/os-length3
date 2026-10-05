@@ -2,10 +2,13 @@
 
 Current measured state (2026-10-05): the completed `775fe27` unchanged-bundle
 job reaches `/init` announcement and refuses IRETQ execution at
-`0xffffffff81000b7e` after 214,809,102 retirements. Outer-return semantics are
-the next exact gate; PID 1/root mount/shell and browser acceptance remain
-unachieved. The branch sharing candidate is separately verified, not loaded
-in that completed run. See [normal form, measurements and next blocker](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
+`0xffffffff81000b7e` after 214,809,102 retirements. Outer-return semantics and
+branch sharing are now separately verified, not loaded in that completed run.
+The C return boundary agrees with 320 hardware-assisted observations and
+132 cold-compiled/C-dispatch cases; TCG disagreements remain recorded.
+PID 1/root mount/shell and browser acceptance remain unachieved. See
+[return frontier and exact scope](../vm/check/browser/evidence/2026-10-05-outer-iret.md)
+and [sharing measurements](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
 
 Previous measured state: the unchanged bundle reaches Linux
 initialization and announces `Run /init as init process`, but successful

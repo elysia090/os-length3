@@ -18,8 +18,17 @@ Compiler is 450,892 bytes (+111); VM/rows/report/metadata do not grow.
 This candidate is NOT in the completed full job. See
 [derivation and counted scope](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
 
-Immediate order: exact outer-IRET privilege/descriptor/frame/flags red, common
-C return semantics, then a separately frozen full job with branch sharing.
+Outer IRET is now locally green in the common C boundary: 320 independent
+hardware-assisted observations, 120 complete-state models and 132 generated
+Wasm/C-dispatch cases. Accessed writes survive later SS/target failures;
+FS/GS bases survive selector invalidation; restoring noncanonical RSP alone
+does not fault. TCG's 384 field differences remain explicit rather than waived.
+VM is 68,291 bytes (+347), compiler 450,892 bytes. Full native C checks and
+scoped GCC ASan/UBSan are green. See
+[return frontier and scope](../vm/check/browser/evidence/2026-10-05-outer-iret.md).
+
+Immediate order: separately frozen same-bundle full job with outer IRET and
+branch sharing; inspect the next real execution gate and measured maximum term.
 Retain explicit unsupported contracts and the independent CALL provenance red.
 PID 1, immutable release-root mount, shell/tooling and browser acceptance remain
 unachieved. The older receipts below are historical, not current running jobs.

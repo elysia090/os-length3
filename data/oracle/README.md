@@ -889,3 +889,16 @@ checks 102 cold-C body/attestation identities and 52,224 native comparisons.
 the real C dispatcher. Fresh records must contain `operandBinding`; no old
 zero-binding adapter is provided. The row/report/entry ABI and cache quotas
 are unchanged. See [derivation and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-branch-binding.md).
+
+### Outer IRET system observations
+
+Build `iret-entry.S` with `as --32` and `ld -m elf_i386 -T exception-entry.ld`.
+`check-iret-system.mjs QEMU.EXE ORACLE.ELF NEW-ROWS.log [tcg|whpx]` records 320
+real long-mode GDT/TSS/IDT transitions. Existing receipts are never replaced.
+`check-outer-iret.mjs VM.WASM COMPILER.WASM [HARDWARE-ROWS.log] [TCG-ROWS.log]`
+compares the common C return boundary and cold-compiled C table dispatch.
+TCG is not interchangeable with the hardware-assisted oracle: Accessed writes,
+nonpresent SS and noncanonical-RIP fault state differ and remain reported.
+Only hardware-assisted rows belong in the first optional argument. Neither
+test supplies a product VM fallback or proves Linux boot. See
+[frontier, measured disagreement and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-outer-iret.md).
