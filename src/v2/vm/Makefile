@@ -1,5 +1,6 @@
 CC ?= cc
 AR ?= ar
+.DEFAULT_GOAL := all
 CFLAGS ?= -O2
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iinclude -I../support/include -I../machine-abi/include
