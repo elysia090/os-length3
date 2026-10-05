@@ -1,6 +1,20 @@
 # Browser projection of OS Length3 Linux
 
-Current measured state (2026-10-05): completed `f1cd38c` passes user SYSCALL
+Current measured state (2026-10-06): completed `36eb952` passes non-REP MOVSB
+and reaches the common compiler refusal for `mov rax, fs:[0]`
+(`64 48 8b 04 25 00 00 00 00`) at `0x7fdb6f31f16b`, -102 after
+186,388,534 retirements / 97,300,274 admissions. Loaded VM/compiler are
+69,903 / 452,030 bytes. Engine construction remains the largest measured
+term: 285,700 ms versus cold emission 249,735 ms and C execution 75,913 ms;
+total 766,681 ms. Different work/active-execution clock calibration is not a
+paired speedup. See the
+[completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
+The next correction is general C-owned FS/GS linear-address normalization,
+not a host TLS/syscall implementation. PID 1/root mount/shell/real-browser
+remain unachieved; cold shell 3s is unmet. These Node/native checks neither
+replace retained browser Workers/staged assets nor establish browser acceptance.
+
+Earlier measured state: completed `f1cd38c` passes user SYSCALL
 and reaches unprefixed MOVSB `a4` at `0x7f997650c1f2`, compiler -102, after
 187,420,592 retirements / 97,917,652 admissions. Loaded VM/compiler are
 69,903 / 451,602 bytes. Engine construction is still the maximum term:

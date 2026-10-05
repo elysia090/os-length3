@@ -1,4 +1,26 @@
-# Remaining work — 2026-10-05
+# Remaining work — 2026-10-06
+
+Latest completed same-bundle gate (`36eb952`): non-REP MOVSB passes. The next
+common compiler refusal is FS TLS load `64 48 8b 04 25 00 00 00 00`
+(`mov rax, fs:[0]`) at `0x7fdb6f31f16b`, -102 after 186,388,534 retirements /
+97,300,274 admissions. Frozen VM/compiler are 69,903 / 452,030 bytes.
+Engine construction 285,700 ms / 7,113,814 constructions remains the largest
+measured term, ahead of cold emission 249,735 ms and C execution 75,913 ms;
+total 766,681 ms. Different retired work and active-execution clock calibration
+do not establish an elapsed-ratio speedup. See the
+[completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
+PID 21444 completed; no retained browser Worker or staged asset was replaced.
+
+Immediate order: close FS/GS effective-offset -> linear-address normalization
+in the same C-owned segment/MMU boundary, including scalar, reservation,
+vector, ordered record and string consumers. Address-size truncation precedes
+the full-width base addition; LEA must remain a base-free effective offset.
+Turn the exact TLS gate and general native address/fault cases red before
+editing acceptance guards. Then freeze/hash and re-run the unchanged bundle.
+PID 1, root mount, shell/tooling, browser acceptance and cold shell 3s remain
+unachieved. The `/init` console announcement alone is not successful PID 1.
+
+## Earlier checkpoints
 
 Latest completed actual same-bundle gate (`f1cd38c`): user SYSCALL passes;
 unprefixed MOVSB `a4` at `0x7f997650c1f2` reaches compiler -102 after
@@ -22,12 +44,10 @@ actual C supply/latch resumes pass. REP and full compiler/CLI/scoped sanitizer
 regressions pass. Compiler is 452,030 bytes, VM unchanged.
 See [normal form and counted scope](../vm/check/browser/evidence/2026-10-05-string-element.md).
 
-Immediate order: re-run the unchanged bundle with
-CALL sharing and that correction, warmCuts=64 and unchanged quotas.
+The unchanged-bundle rerun with CALL sharing and that correction completed
+with warmCuts=64 and unchanged quotas; its FS gate is recorded above.
 PID 1, immutable-root mount, shell/tooling, real-browser acceptance and
 cold shell 3s remain unachieved. Old PID 24256 has completed.
-
-## Earlier checkpoints
 
 Earlier completed actual same-bundle gate (`be64020`): TSS user-fetch fault
 delivery has passed; user SYSCALL `0f05` at `0x7f2f8acfa0a0` reaches compiler
