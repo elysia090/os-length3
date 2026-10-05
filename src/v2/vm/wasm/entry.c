@@ -26,6 +26,9 @@ static pl_u32 segments_offset;
 static vm_boot boot;
 static vm_execution execution;
 static pl_u32 source_limit;
+static pl_u64 source_demands;
+static pl_u32 source_admissions, run_interrupted;
+static pl_u32 run_source_rank=VM_SOURCE_ROWS;
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
 static vm_table_frontier table_frontier;
@@ -84,6 +87,8 @@ void vm_close(void)
     boot_projected = 0u;
     vm_execution_close(&execution);
     source_limit = 0u;
+    source_demands=0u;source_admissions=run_interrupted=0u;
+    run_source_rank=VM_SOURCE_ROWS;
 }
 
 static int range(pl_u32 offset, pl_u32 bytes)
@@ -200,6 +205,7 @@ pl_u32 vm_page_count(void) { return resident.page_count; }
 
 int vm_bind_state(pl_u32 state)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
     vm_console_abort(&console_owner);
@@ -219,6 +225,7 @@ int vm_bind_state(pl_u32 state)
 
 int vm_bind_segments(pl_u32 segments)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     table_frontier=(vm_table_frontier){0};
     vm_clock_abort(&clock_owner);
     vm_console_abort(&console_owner);
@@ -368,6 +375,7 @@ static machine_result source_tail(pl_u32 port, pl_u32 view_target, pl_u32 row_ta
 machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
                               pl_u32 view_target, pl_u32 row_target)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     sources.pending = 0u;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
@@ -404,6 +412,7 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
  * extend an uncompiled source. This API never decodes or executes x86. */
 machine_result vm_source_extend(pl_u32 port, pl_u32 view_target, pl_u32 row_target)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
     if (delivery.stage || execution.continuation.slot || !segments_offset || !private_port(port)
@@ -414,6 +423,7 @@ machine_result vm_source_extend(pl_u32 port, pl_u32 view_target, pl_u32 row_targ
 }
 int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 row_target)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     if (delivery.stage || table_frontier.stage || execution.continuation.slot
             || !execution_record(row_target,sizeof(vm_execution_row))) {
         sources.pending = 0u; return -1;
@@ -422,6 +432,7 @@ int vm_source_publish(pl_u32 bytes, pl_u32 instructions, pl_u32 row_target)
 }
 int vm_sources_reset(void)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     if (delivery.stage || table_frontier.stage || execution.continuation.slot) return -1;
     vm_sources_open(&sources,resident.generation,vm_slot_min());
     vm_execution_close(&execution); return 0;
@@ -743,6 +754,7 @@ machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 
 int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     if (delivery.stage || table_frontier.stage || clock_boundary_pending() || vm_console_pending(&console_owner)) return -1;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
@@ -786,6 +798,7 @@ typedef struct { pl_u32 port; } execution_owner;
  * observer, IRQ boundary and latched-instruction owner remain authoritative. */
 static machine_result source_entry(void *pointer, pl_u64 address, const vm_execution_row **row)
 {
+    run_source_rank=VM_SOURCE_ROWS;
     const execution_owner *owner=pointer;
     machine_result result=pending_boundary(owner->port);
     if (result) return result;
@@ -813,6 +826,11 @@ static machine_result source_entry(void *pointer, pl_u64 address, const vm_execu
     }
     if (status<0) return MACHINE_RESULT_ENTRY_MAP;
     if (status==1) *row=0; /* Exact prefix yield; no eviction or cold reservation. */
+    else {
+        run_source_rank=(*row)->slot-sources.first_slot;
+        source_demands |= 1ull << run_source_rank;
+        ++source_admissions;
+    }
     return 0u;
 }
 static machine_result interrupt_boundary(pl_u32 port)
@@ -824,6 +842,7 @@ static machine_result interrupt_boundary(pl_u32 port)
     /* Hardware entry changes control without retiring the interrupted cut.
      * Its new RIP is admitted afresh, never executed through the old row. */
     execution.generation=0u;
+    if (!result) run_interrupted=1u;
     return memory_result(port,result ? result : MACHINE_RESULT_RESOLVE_RIP);
 }
 static machine_result pending_boundary(pl_u32 port)
@@ -875,6 +894,8 @@ static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding)
 machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
 {
     vm_memory_abort(&resident);
+    source_demands=0u;source_admissions=run_interrupted=0u;
+    run_source_rank=VM_SOURCE_ROWS;
     execution.completed = 0u; execution.retired = 0u;
     if (!private_port(port))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
@@ -886,8 +907,38 @@ machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
         return MACHINE_RESULT_ENTRY_MAP;
     machine_result boundary=pending_boundary(port);
     if (boundary) return boundary;
-    return vm_execution_run(&execution, (machine_state *)(uintptr_t)state_offset,
+    machine_result result=vm_execution_run(&execution, (machine_state *)(uintptr_t)state_offset,
                              generation, maximum_cuts, fetch_entry, call_entry, &owner);
+    if (result==MACHINE_RESULT_RESOLVE_RIP || result==MACHINE_RESULT_STALE_GENERATION)
+        run_source_rank=VM_SOURCE_ROWS;
+    return result;
 }
 pl_u32 vm_completed(void) { return execution.completed; }
 pl_u64 vm_source_retired(void) { return execution.retired; }
+/* Read-only supervisor observations of the LAST run. They are demand hints,
+ * not source, execution or table admission authority. No retained history. */
+pl_u64 vm_source_demands(void) { return source_demands; }
+pl_u32 vm_source_admissions(void) { return source_admissions; }
+pl_u32 vm_run_interrupted(void) { return run_interrupted; }
+/* Failed-cut observation only. Borrow the last still-owned physical source,
+ * never rewalk the MMU, overwrite a fault request or refresh cache demand.
+ * A completed/missing/revoked/latched row is deliberately unavailable. This
+ * API is not an import of generated guest functions or execution authority. */
+int vm_run_source(pl_u32 port, pl_u64 generation, pl_u32 target)
+{
+    if (!private_port(port) || generation!=resident.generation || sources.generation!=generation
+            || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation
+            || execution.continuation.slot || run_source_rank>=VM_SOURCE_ROWS || !(sources.valid&(1ull<<run_source_rank))
+            || !private_record(target,2u*sizeof(vm_code_page))
+            || !separate(target,2u*sizeof(vm_code_page),port,sizeof(machine_memory_port))) return -1;
+    const vm_source_row *source=sources.rows+run_source_rank;
+    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
+    if (state->rip!=source->row.entry) return -1;
+    vm_code_page *views=(vm_code_page *)(uintptr_t)target;
+    pl_u64 address=source->row.entry&~4095ull;
+    views[0]=(vm_code_page){address,generation,arena_base+source->offset,4096u};
+    views[1]=(source->row.entry&4095u)+source->row.source_bytes>4096u
+        ? (vm_code_page){address+4096u,generation,arena_base+source->next_offset,4096u}
+        : (vm_code_page){0};
+    return (int)source->row.source_bytes;
+}

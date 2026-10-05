@@ -834,6 +834,14 @@ diagnostic compiler manifest. This compares 768 actual cold-C emissions with
 rotating fresh-first method order and 2,304 whole-CPU preservation models.
 All positions are reported; this is not an ISA oracle, timing CI gate, or
 Linux/shell speedup claim. `node data/oracle/check-cut-trace.mjs` compares the
-fixed 1,056-byte numeric observer with an independent eager-object reference.
+fixed 1,088-byte numeric observer with an independent eager-object reference.
+Its 32-bit retirement count preserves a 65,536-instruction warm quantum;
+invalid counts refuse before history mutation. `check-cut-progress.mjs`
+checks bounded committed-prefix accounting against architectural retirement.
+`check-source-cohort.mjs VM.WASM COMPILER.WASM` additionally checks that
+accounting through actual C-selected cuts, later faults, console waits and
+all 64 demand bits. `check-wasm-startup.mjs` accepts `--warm-cuts=1..64`;
+only independently verified decompression and the Linux-entry witness enable
+warm execution. Preproof cuts remain single and all cache quotas stay fixed.
 No formatted history is materialized per cut. See
 [measurements and scope](../../src/v2/vm/check/browser/evidence/2026-10-04-engine-construction.md).

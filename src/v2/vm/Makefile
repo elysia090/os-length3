@@ -27,6 +27,8 @@ WASM_FLAGS += -Wl,--export=vm_clock_poll
 WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_extend,--export=vm_source_publish,--export=vm_sources_reset
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 WASM_FLAGS += -Wl,--export=vm_entry_abi
+WASM_FLAGS += -Wl,--export=vm_source_demands,--export=vm_source_admissions,--export=vm_run_interrupted
+WASM_FLAGS += -Wl,--export=vm_run_source
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 

@@ -7,7 +7,7 @@ const toString=BigInt.prototype.toString;
 let hotFormatting=0;
 for(let rank=0;rank<100000;++rank) {
   const entry=rank&1?0xffffffff81000000n+BigInt(rank):BigInt(rank),next=entry+8n,result=BigInt(rank%7);
-  const instructions=rank%1025;
+  const instructions=rank%10<7?[0,1,1024,65535,65536,67108864,0xffffffff][rank%10]:rank%1025;
   for(const offset of [0,8,16,56,392])view.setBigUint64(state+offset,BigInt(rank)*(1n<<40n)+BigInt(offset),true);
   const expected={entry:`0x${entry.toString(16)}`,instructions,next:`0x${next.toString(16)}`,result:String(result),
     rax:`0x${view.getBigUint64(state,true).toString(16)}`,rcx:`0x${view.getBigUint64(state+8,true).toString(16)}`,
@@ -24,8 +24,13 @@ for(let rank=0;rank<100000;++rank) {
   }
 }
 assert.equal(hotFormatting,0,'no per-cut hex conversion');
-assert.equal(ring.words.byteLength+ring.instructions.byteLength,1056,'fixed trace payload');
+assert.equal(ring.words.byteLength+ring.instructions.byteLength,1088,'fixed trace payload');
+const before=ring.read();
+for(const count of [-1,1.5,0x100000000,NaN,Infinity]){
+  assert.throws(()=>ring.append(0n,count,0n,0n,view,state),RangeError);
+  assert.deepEqual(ring.read(),before,'invalid observation changes neither history nor guest');
+}
 assert.throws(()=>ring.read(17),RangeError);assert.throws(()=>ring.read(-1),RangeError);
 assert.throws(()=>ring.read(1.5),RangeError);
 console.log(JSON.stringify({status:'pass',appends:100000,comparisons,hotHexConversions:hotFormatting,
-  tracePayloadBytes:1056,guestMutation:false,linuxBoot:'not-tested'}));
+  tracePayloadBytes:1088,guestMutation:false,linuxBoot:'not-tested'}));

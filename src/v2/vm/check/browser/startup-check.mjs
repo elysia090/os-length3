@@ -5,6 +5,7 @@ import {CompiledModules} from '../../../web/compiled-modules.mjs';
 import {CutTrace} from './cut-trace.mjs';
 import {CompilerOutput} from './compiler-output.mjs';
 import {equal} from './assertion.mjs';
+import {CutProgress} from './cut-progress.mjs';
 class Bytes extends Uint8Array {
   constructor(value,offset,length) {
     super(value,offset,length);
@@ -22,9 +23,10 @@ assert.equal = equal;
 assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'startup imports');
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
-    {extended = false,onProgress = () => {},decompression,immutableImage,
+    {extended = false,onProgress = () => {},decompression,immutableImage,warmCuts=1,
       utcSeconds = BigInt(Math.floor(Date.now()/1000))} = {}) {
   const startedAt=performance.now();
+  assert(Number.isInteger(warmCuts) && warmCuts>=1 && warmCuts<=64,'bounded warm cut quantum');
   const read = async name => new Bytes(await reader(name));
   const header = await read('boot.header');
   let command = await read('boot.command');
@@ -49,6 +51,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
   assert.equal(vm.vm_entry_abi(),2);assert.equal(cc.compiler_entry_abi(),2);
+  for(const name of ['vm_source_demands','vm_source_admissions','vm_run_interrupted','vm_run_source'])
+    assert.equal(typeof vm[name],'function','C warm admission observations required');
   assert(vm.vm_arena_min()<=cc.compiler_static_min(),'disjoint VM and cold static/stack reservations');
   const engines = new CompiledModules({machine:{memory,
     access:vm.vm_access,segment:vm.vm_segment,reserve:vm.vm_reserve,commit:vm.vm_commit,
@@ -119,6 +123,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let admissions = 0, retired = 0, emittedBytes = 0, borrowedCodeBytes = 0;
   const exceptions = [];
   let sourceHits = 0, sourceMisses = 0, admissionMs = 0;
+  let warmAdmissions=0,warmRuns=0,warmCompleted=0;
+  const progress=new CutProgress(0); // One serialized lane, no per-cut allocation/history.
   let resourceGate;
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
@@ -148,7 +154,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       architecturalRCX:`0x${view.getBigUint64(base+8,true).toString(16)}`,
       residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
       console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
-      sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity},engineReuse:engines.stats(),
+      sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity},engineReuse:engines.stats(),
       compilerOutput:compilerOutputWitness.stats(),
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt}});
@@ -211,6 +217,26 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       vector:view.getUint32(port + 24,true),error:view.getUint32(port + 28,true),
       address:`0x${view.getBigUint64(port + 16,true).toString(16)}`};
     return event;
+  }
+  function runSource(generation) {
+    // Last C-admitted owner, not another page walk that could change the
+    // precise fault/IRQ request. A miss/revocation/continuation is explicit.
+    const bytes=vm.vm_run_source(port,generation,codeView);
+    if(bytes<0)return {sourceUnavailable:'no current retained C run source'};
+    assert(bytes>0 && bytes<=4096,'bounded C failed-source span');
+    const entry=rip(),source=[];
+    let left=Math.min(bytes,24);
+    for(let page=0;left;++page){
+      assert(page<2,'at most two physical source owners');
+      const at=codeView+page*24,offset=view.getUint32(at+16,true),within=page?0:Number(entry&4095n);
+      assert.equal(view.getBigUint64(at,true),(entry&~4095n)+BigInt(page*4096));
+      assert.equal(view.getBigUint64(at+8,true),generation);assert.equal(view.getUint32(at+20,true),4096);
+      assert(offset>=base+4096 && offset+4096<=data.length,'C-owned physical source fragment');
+      const count=Math.min(left,4096-within);
+      for(let byte=0;byte<count;++byte)source.push(data[offset+within+byte]);
+      left-=count;
+    }
+    return {source,sourceBytes:bytes,sourceObservation:'last valid C-admitted physical owner; no faulting reread'};
   }
   function relocationInputs() {
     // The unchanged command retains its independent fixed 378-instruction
@@ -441,14 +467,42 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert.equal(view.getBigUint64(rows,true),entry);
     assert(instructions > 0 && instructions <= limit);
     assert.equal(vm.vm_bind_execution(rows,1,generation),0); ++admissions;
+    // Never leap over startup proof observations. Only after the actual
+    // independently checked decompression AND Linux-entry cut may warm
+    // quanta use already published C source rows. This is not a native
+    // checkpoint restore, predecoded RIP list or host branch execution.
+    const cutBudget=linuxEntry ? warmCuts : 1;
+    progress.reset(retired);
     let result;
     for (let resumes = 0; resumes < 8192; ++resumes) {
       const beforeExecution = performance.now();
-      result = vm.vm_run(port,generation,1);
+      const remaining=cutBudget-progress.completed;
+      assert(remaining>0,'barrier needs an unretired cut');
+      result = vm.vm_run(port,generation,remaining);
       executionMs += performance.now() - beforeExecution;
+      progress.add(vm.vm_completed(),vm.vm_source_retired(),view.getBigUint64(base+1128,true),remaining);
+      warmAdmissions+=vm.vm_source_admissions();
+      if(cutBudget>1){++warmRuns;warmCompleted+=vm.vm_completed();}
+      if(vm.vm_run_interrupted())++externalInterrupts;
+      // The C mask is a validated demand hint, never execution authority.
+      // One host refresh per distinct cohort rank avoids per-cut Map churn.
+      if(cutBudget>1){
+        const mask=vm.vm_source_demands();
+        for(let bank=0;bank<2;++bank){
+          let bits=Number(bank ? mask>>32n : mask&0xffffffffn)>>>0;
+          while(bits){
+            const rank=bank*32+31-Math.clz32(bits&-bits);bits=(bits&(bits-1))>>>0;
+            assert(rank<sourceCapacity && installedSlots.has(firstSlot+rank),'C demand needs its installed engine');
+            if(demandedAfterMiss[rank]!==sourceMisses){
+              engines.demand(installedSlots.get(firstSlot+rank));demandedAfterMiss[rank]=sourceMisses;
+            }
+          }
+        }
+      }
       if (result !== 2n && result !== 10n && result !== 18n && result !== 26n) break;
-      assert.equal(vm.vm_completed(),0); assert.equal(vm.vm_source_retired(),0n);
-      assert.equal(rip(),entry); assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
+      const waitingEntry=rip();
+      assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired+progress.retired));
+      if(cutBudget===1){assert.equal(progress.completed,0);assert.equal(waitingEntry,entry);}
       if (result === 10n) {
         ++quantumYields;
         if(extended && !(quantumYields&255))reportProgress();
@@ -460,8 +514,12 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         assert(byte>=0 && byte<=255);
         // Reserve bounded observation capacity BEFORE transport acceptance.
         // This is a local byte sink, not a JS UART or Linux console model.
-        if(consoleBytes===consoleOutput.length)return {kind:'console-capacity',result:'26',
-          entry:`0x${entry.toString(16)}`,acceptedBytes:consoleBytes,capacity:consoleOutput.length};
+        if(consoleBytes===consoleOutput.length){
+          retired+=progress.retired;
+          return {kind:'console-capacity',result:'26',
+            entry:`0x${waitingEntry.toString(16)}`,acceptedBytes:consoleBytes,capacity:consoleOutput.length,
+            completed:progress.completed,sourceRetired:progress.retired};
+        }
         assert.equal(vm.vm_console_commit(port,generation,ticket,byte),1);
         consoleOutput[consoleBytes++]=byte;
         assert.equal(vm.vm_console_commit(port,generation,ticket,byte),0);continue;
@@ -476,9 +534,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         assert.equal(firstRepeatWait.bytes,8); assert.equal(firstRepeatWait.access,18);
       }
       const start = performance.now(); const supplied = await supplyPhysical(); supplyMs += performance.now() - start;
-      if (!supplied) return {...resourceGate,entry:`0x${entry.toString(16)}`};
+      if (!supplied) {
+        retired+=progress.retired;
+        return {...resourceGate,entry:`0x${waitingEntry.toString(16)}`,completed:progress.completed,sourceRetired:progress.retired};
+      }
     }
-    const done = Number(vm.vm_source_retired());
+    const done=progress.retired,completed=progress.completed;
+    const failedSource=result!==1n && result!==5n ? runSource(generation) : null;
     trace.append(entry,done,rip(),result,view,base);
     if (entry === 0x10002a1n) {
       assert.equal(rip(),relocated + 0x2ded00n,'independent shipped relocation trampoline destination');
@@ -489,17 +551,21 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         offset + Number(entry - address) + Math.min(sourceBytes,24))),
         rax:`0x${view.getBigUint64(base,true).toString(16)}`,rsp:`0x${view.getBigUint64(base + 32,true).toString(16)}`});
     if (result !== 1n && result !== 5n) {
-      const delivery = await deliverFault(result,entry);
+      // A later cut can fault after a committed prefix. The faulting RIP,
+      // not the first admitted row, is the precise exception coordinate.
+      retired+=done;
+      const delivery = await deliverFault(result,rip());
       if (delivery) {
-        assert.equal(done,0); assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
-        return delivery.deliveryResult === '0' ? null : {kind:'exception-delivery',...delivery};
+        assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
+        return delivery.deliveryResult === '0' ? null : {kind:'exception-delivery',...delivery,
+          admittedEntry:`0x${entry.toString(16)}`,completed,sourceRetired:done,...failedSource};
       }
     }
     if (result !== 1n && result !== 5n)
-      return {kind:'execution',result:String(result),entry:`0x${entry.toString(16)}`,
-        source:Array.from(data.subarray(offset+Number(entry-address),
-          offset+Number(entry-address)+Math.min(sourceBytes,24))),sourceBytes,
-        completed:vm.vm_completed(),sourceRetired:done,
+      return {kind:'execution',result:String(result),entry:`0x${rip().toString(16)}`,
+        admittedEntry:`0x${entry.toString(16)}`,
+        ...failedSource,
+        completed,sourceRetired:done,
         faultAddress:`0x${view.getBigUint64(port + 16,true).toString(16)}`,
         faultVector:view.getUint32(port + 24,true),faultError:view.getUint32(port + 28,true),
         cpu:{registers:Array.from({length:16},(_,i) => `0x${view.getBigUint64(base + i * 8,true).toString(16)}`),
@@ -511,13 +577,14 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         // authoritative only for a pending architectural fault result.
         requestAddress:`0x${view.getBigUint64(port + 32,true).toString(16)}`,
         requestBytes:view.getUint32(port + 40,true),requestAccess:view.getUint32(port + 44,true)};
-    if (!vm.vm_completed() && !done) {
-      // The C boundary delivered an external interrupt, not a source cut.
-      // The handler's RIP must be admitted normally on the next iteration.
+    if (!completed && !done) {
+      // An IRQ or exact source cold miss yields to fresh C admission. Neither
+      // is a retired instruction or permission to decode/execute in JS.
       assert.equal(result,1n);assert.equal(view.getBigUint64(base+1128,true),BigInt(retired));
       return null;
     }
-    assert.equal(vm.vm_completed(),1); assert.equal(done,instructions);
+    if(cutBudget===1){assert.equal(completed,1);assert.equal(done,instructions);}
+    else assert(completed<=cutBudget && done>=completed,'bounded committed cohort');
     retired += done; assert.equal(view.getBigUint64(base + 1128,true),BigInt(retired));
     if (decompression && !linuxEntry && entry === linuxEntryAddress) {
       assert(decompressedOutput,'Linux entry must follow independently checked decompression');
@@ -628,7 +695,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes:0,borrowedCodeBytes,engineReuse:engines.stats(),compilerOutput:compilerOutputWitness.stats(),
-      sourceReuse:{hits:sourceHits,misses:sourceMisses,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
+      warmCuts,admissionUnit:'supervisor source query/bind; C warm admissions counted separately',
+      sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt},trace:trace.read(),relocationTrace,
       providerBytes:providerBytes.byteLength,compilerBytes:compilerBytes.byteLength,
@@ -638,7 +706,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   } catch (error) {
     // Preserve a bounded last state before disposal. An assertion failure is
     // not an unsupported opcode, quota stop, page fault or successful boot.
-    error.diagnostic={retired,admissions,entry:`0x${rip().toString(16)}`,
+    error.diagnostic={retired,architecturalRetired:String(view.getBigUint64(base+1128,true)),
+      cohort:{base:progress.base,completed:progress.completed,sourceRetired:progress.retired},
+      admissions,entry:`0x${rip().toString(16)}`,
       cpu:{registers:Array.from({length:16},(_,i)=>`0x${view.getBigUint64(base+i*8,true).toString(16)}`),
         flags:`0x${view.getBigUint64(base+392,true).toString(16)}`,
         cr0:`0x${view.getBigUint64(base+400,true).toString(16)}`,

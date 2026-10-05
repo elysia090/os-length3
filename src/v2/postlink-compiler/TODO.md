@@ -1,23 +1,20 @@
 # Remaining work — 2026-10-05
 
-Current actual full-bundle gate: secondary-UART I/O execution refusal at
-`IN AL, DX` (`ec`), DX=2F9h, RIP `0xffffffff81263891`, result 6. ABI 2 passes
-DMA absence and reaches initramfs unpacking, CRNG ready, SquashFS registration
-and ttyS0 discovery at 214,024,756 retirements / 124,957,500 admissions.
-Kernel decompression agrees completely.
-The instruction is decoded/emitted; it retires zero instructions at the gate.
-The receipt's fault/clock fields can be stale and are not evidence of a new
-#GP at that instruction. PID 1, release-root mount, shell and real-browser
-acceptance remain unachieved; cold shell 3s is unmet.
-See [completed measurement](../vm/check/browser/evidence/2026-10-05-node-startup-dma-serial-red.json).
+Current actual full-bundle stop: the 150,000,000-admission quota at
+247,245,398 retirements, RIP `0xffffffff810a7faa`. The unchanged bundle passes
+the secondary-UART 2F9h refusal, registers the phram system device / IPv6 /
+PF_PACKET and reports microcode status. Full kernel decompression agrees.
+This is not an unsupported-opcode red. PID 1, release-root mount, shell and
+real-browser acceptance remain unachieved; cold shell 3s is unmet.
+See [completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-serial-quota.json).
 
-Measured maximum term: 34,933,372 engine constructions / 1,070,384 ms,
-cold C emission 462,900 ms, execution 183,279 ms, admission 35,602 ms and
-extent supply 731 ms; total diagnostic 1,938,091 ms. There are 774 live engine
-entries / 261,995 witness bytes, 34,932,598 evictions and 19,286,417 hits under
-unchanged quotas. Source-owner misses are 54,219,789 / hits 70,737,711. This
-run has different retired work and clock calibration from the old quota run:
-its elapsed time is not a speedup ratio. Allocated Memory is 21,561,344 bytes,
+Measured maximum term: 52,860,225 engine constructions / 1,502,576 ms,
+cold C emission 644,489 ms, execution 252,847 ms, admission 43,583 ms and
+extent supply 744 ms; total diagnostic 2,676,904 ms. There are 765 live engine
+entries / 261,827 witness bytes, 52,859,460 evictions and 25,644,448 hits under
+unchanged quotas. Source-owner misses are 78,504,673 / hits 71,495,327. This
+run has different retired work and clock calibration from prior runs:
+its elapsed time is not a speedup ratio. Allocated Memory is 22,085,632 bytes,
 not RSS. The diagnostic lazy-message change is loaded in this run.
 
 Historical pre-ABI-2 maximum term: 73,441,447 engine constructions / 1,985,421 ms,
@@ -43,11 +40,15 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Run the unchanged bundle/segments/root-image with exact C secondary-UART
-   absence. COM1 is unchanged; COM2-4 are absent, not phantom devices. The
-   2F9h red is green in C/native/C-Wasm and sanitizer checks, not yet in a new
-   full-bundle observation. Unknown neighbors/widths still refuse. See
-   [derivation and validation](../vm/check/browser/evidence/2026-10-05-absent-serial.md).
+1. Finish the unchanged bundle/segments/root-image warm-64 full run using
+   the fresh 66,258-byte VM and existing ABI-2 compiler. Warm quanta are
+   enabled only after independently checked decompression AND Linux entry.
+   Complete committed-prefix accounting, actual later fault/physical source,
+   IRQ/console continuation and exact C demand mask are implemented. The
+   old 16-bit trace overflow was red and is green with fixed 32-bit counts.
+   The short prefix requests 64 but has ZERO warmRuns (before Linux entry).
+   Actual warm Linux activation, speedup or PID 1 is not established by it.
+   See [derivation and validation](../vm/check/browser/evidence/2026-10-05-warm-startup.md).
 2. Close the next actual common ISA/MMU/machine-ABI red when it appears.
    Strict independent CALL fault-payload/provenance red remains open; no
    expectation was weakened to merge it with the passing ordinary CALL set.
@@ -58,10 +59,8 @@ Next obligations, in order:
    borrowing original metadata with current physical/MMU admission. Fixed
    65,536-retirement boundary samples have median 21.391 -> 7.615 ms, not
    Linux/browser speedup. See [scope](../vm/check/browser/evidence/2026-10-05-source-cohort.md).
-   Before enabling bounded warm quanta, generalize the diagnostic's committed
-   prefix counts, actual later fault entry/source, engine demand hints and
-   proof observation stops; do not merely replace its one-cut budget.
-   source permissions, context/write revocation, fault/IRQ/shadow priority
+   Warm supervisor integration now passes full C models, but the full run
+   remains to be measured. Source permissions, context/write revocation, fault/IRQ/shadow priority
    and pinned continuations cannot be dropped. This is a candidate, not an
    already measured Linux speedup. Host working set and linear Memory differ.
 4. Actual PID 1 -> immutable release-root mount -> offline shell/C compile/run/

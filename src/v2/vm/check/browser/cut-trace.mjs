@@ -2,10 +2,13 @@
 export class CutTrace {
   constructor() {
     this.words=new BigUint64Array(16*8);
-    this.instructions=new Uint16Array(16);
+    // A 64-cut cohort can retire 65,536 source instructions; 16 bits wraps.
+    this.instructions=new Uint32Array(16);
     this.head=0;this.count=0;
   }
   append(entry,instructions,next,result,view,state) {
+    if(!Number.isInteger(instructions)||instructions<0||instructions>0xffffffff)
+      throw new RangeError('bounded trace retirement count');
     const at=this.head*8;
     this.words[at]=entry;this.words[at+1]=next;this.words[at+2]=result;
     this.words[at+3]=view.getBigUint64(state,true);

@@ -2,6 +2,7 @@
 // are reported separately. Passing these checks is not Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {CutProgress} from '../../src/v2/vm/check/browser/cut-progress.mjs';
 const [vmFile,compilerFile,systemRows]=process.argv.slice(2);
 if(!compilerFile)throw new Error('usage: check-interrupt-provider.mjs VM.WASM COMPILER.WASM [SYSTEM-ROWS.txt]');
 const cm=new WebAssembly.Memory({initial:16});
@@ -219,6 +220,11 @@ for(const oldShadow of [0,1,2]){
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   assert.equal(vm.vm_run(port,9n,99),1n);
   const done=oldShadow?1:2,savedRip=oldShadow?0x9001n:0x400000n;
+  const progress=new CutProgress(123);
+  progress.add(vm.vm_completed(),vm.vm_source_retired(),get(base+1128),99);
+  assert.equal(progress.completed,done);assert.equal(progress.retired,done);
+  assert.equal(vm.vm_source_admissions(),done);assert.equal(vm.vm_source_demands(),oldShadow?1n:3n);
+  assert.equal(vm.vm_run_interrupted(),1,'IRQ observation includes a committed prefix, not retirement');
   assert.equal(vm.vm_completed(),done);assert.equal(vm.vm_source_retired(),BigInt(done));
   assert.equal(get(base+1128),123n+BigInt(done));assert.equal(get(base+384),0x8000n);
   assert.equal(get(base+392),2n);assert.equal(v.getUint32(segments+4,true),0);

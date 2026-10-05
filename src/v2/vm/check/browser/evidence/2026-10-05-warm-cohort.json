@@ -1,0 +1,50 @@
+{
+  "format": "c-wasm-source-cohort-v1",
+  "status": "pass",
+  "emissions": 155,
+  "retired": 69772,
+  "boundaryCalls": 8,
+  "comparisons": 28,
+  "coldMisses": 1,
+  "fetchFaults": 2,
+  "writeRevocations": 2,
+  "continuations": 1,
+  "prefixChecks": 26,
+  "demandChecks": 31,
+  "sourceObservations": 3,
+  "sourceRefusals": 37,
+  "matchedTimings": [
+    {
+      "oneCutMs": 31.0327,
+      "cohortMs": 7.754199999999997,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 28.7307,
+      "cohortMs": 7.732300000000009,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 22.134800000000013,
+      "cohortMs": 7.975600000000014,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 21.84299999999999,
+      "cohortMs": 7.739200000000011,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 21.777900000000017,
+      "cohortMs": 7.683899999999994,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    }
+  ],
+  "oracle": "explicit source/CPU model through C MMU and compiled table; not Linux/native speedup",
+  "linuxBoot": "not-tested"
+}
