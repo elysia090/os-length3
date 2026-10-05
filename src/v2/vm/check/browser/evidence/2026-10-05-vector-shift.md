@@ -82,9 +82,20 @@ The final compiler is 445,459 bytes (+696 from byte shuffle), SHA-256
 `17faa0a272a558d18b4c387c77c012f7d62a17b98448ea26d02f15a9ecabd272`.
 The 63,052-byte VM is unchanged, SHA-256
 `a0bb464e8f4d3bd47e9dbc12fe84ac111cb9e9ad9a52d190be67a3f615cb814c`.
-The final compiler is running on the same shipped native bundle with the
-independent segment/root-image fixtures. Keep that process: actual PSRLD
-execution/next gate remain to be observed. Native bundle and human UI stay.
+The final compiler completed on the same shipped native bundle with the
+independent segment/root-image fixtures. It actually passes PSRLD/PSLLD and
+reaches PSHUFD (`66 0f 70 c0 93`), 0xffffffff81204eb8, after 162,281,231
+retirements / 87,825,289 admissions. All decompressed bytes remain exact.
+[Actual receipt](2026-10-05-node-startup-pshufd-red.json) comes from
+`temp/vector-shift-1005/startup-image.json`, raw SHA-256
+`4d91eadbf1571e2063eec401aaf9e853e197083951054a42dc7aad57b40f8951`.
+Engine construction remains dominant: 16,175,966 constructions, 16,175,228
+quota evictions, 737 retained entries / 262,077 bytes; quota is unchanged.
+Measured ms: engine 417,747.825, cold 157,391.655, execution 92,629.999,
+admission 21,902.099, supply 202.324, elapsed 831,784.035. Calibration changes
+retired work, so these numbers do not establish speedup. Allocated linear
+Memory is 20,512,768 bytes, not a process RSS measurement. PID 1, release-root
+mount and shell remain unmet. Native bundle and human UI stay unchanged.
 Standard Wasm SIMD is required; relaxed SIMD, a new VM opcode handler,
 scalar fallback, source copies and JavaScript guest execution are not added.
 

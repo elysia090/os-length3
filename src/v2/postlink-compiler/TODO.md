@@ -1,6 +1,17 @@
 # Remaining work — 2026-10-05
 
-Current actual gate: immediate PSRLD, `66 0f 72 d1 0c`, 0xffffffff81204e49.
+Current actual gate: PSHUFD, `66 0f 70 c0 93`, 0xffffffff81204eb8.
+The completed final immediate-shift compiler actually passes PSRLD/PSLLD and
+reaches 162,281,231 retirements / 87,825,289 admissions; complete decompression
+agrees. This remains independent Node evidence, not browser/PID 1/shell.
+16,175,966 engine constructions / 16,175,228 quota evictions dominate:
+engine 417,747.825 ms, cold compiler 157,391.655 ms, execution 92,629.999 ms.
+Allocated linear Memory is 20,512,768 bytes; RSS is not measured. Counts vary
+with calibration and are not a speedup claim. The same bundle/UI are unchanged.
+Next: general admitted-immediate vector permutation, then bounded precise
+engine/source reconstruction. See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-pshufd-red.json).
+
+Previous actual gate: immediate PSRLD, `66 0f 72 d1 0c`, 0xffffffff81204e49.
 The final byte-shuffle compiler actually passes PSHUFB and reaches 161,593,710
 retirements / 87,316,980 admissions; complete decompression agrees. This is
 not browser/PID 1 or shell acceptance. General immediate logical shifts
@@ -9,8 +20,8 @@ not browser/PID 1 or shell acceptance. General immediate logical shifts
 comparisons, full compiler checks and scoped sanitizers. Zero-count identity
 has no XMM work; oversized count has one zero vector publication (381 ->
 372 emitted bytes); valid nonzero count has one vector shift. The final
-445,459-byte compiler is running independently on the same bundle; do not
-restart it or relabel fixture pass as actual PSRLD/PID 1 execution.
+445,459-byte compiler completed independently on the same bundle and passed
+PSRLD/PSLLD. Do not relabel that as PID 1 execution.
 General PSHUFB now passes 33,792 unchanged native observations, 264 exact
 emissions, all selector bits and full precise fault/wait/alias comparisons.
 It emits deterministic vector AND/swizzle without a sixteen-byte intermediate

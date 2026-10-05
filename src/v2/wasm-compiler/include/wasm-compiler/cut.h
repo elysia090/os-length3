@@ -117,6 +117,12 @@ typedef struct {
  * installing unmasked status bits alone does not raise a SIMD exception.
  * Both retain the existing explicit AC/TF context refusal. They are not a
  * SIMD arithmetic, VEX or arbitrary exception/debug closure claim.
+ * Legacy PSHUFB and 16/32/64-bit immediate logical packed shifts emit standard
+ * deterministic WebAssembly SIMD. The target engine must support it; missing
+ * support is an explicit construction refusal, not a scalar/interpreter
+ * alternative. Relaxed SIMD is never required. Selector bits and oversized
+ * x86 shift counts are normalized before emission; identity/zero substitution
+ * does not remove the preceding precise control frontier or retirement.
  *
  * Compilation stops before an unlowered transfer, or after a direct branch.
  * It also stops before a later instruction that crosses/starts another fetch
