@@ -105,9 +105,13 @@ node data/oracle/check-vector-transfer.mjs VM.wasm COMPILER.wasm temp/vector-emi
 node data/oracle/check-wasm-startup.mjs VM.wasm COMPILER.wasm BUNDLE-PREFIX-DIRECTORY --extended --progress --segments=INDEPENDENT-SEGMENT-FIXTURE --image=IMMUTABLE-SYSTEM-IMAGE
 ```
 
-The final compiler is running on the same published bundle with independent
-segments/root-image fixtures; do not restart/overwrite it. Actual PSHUFB
-execution, next gate and PID 1/shell remain to be observed. In the preceding
+The final compiler completed the same-bundle run with independent segments/
+root-image fixtures. It actually passes PSHUFB and reaches immediate PSRLD,
+`66 0f 72 d1 0c`, at 0xffffffff81204e49: [receipt](2026-10-05-node-startup-psrld-red.json).
+161,593,710 instructions retire / 87,316,980 admissions; complete decompression
+still agrees. Raw local receipt SHA-256:
+`89e8a3f33056065e22640351afa4e103976906e45f21fda3e4e321522f41c805`.
+This is not PID 1/shell or browser acceptance. In the preceding
 completed run, 16,241,866 engine constructions / 16,241,123 quota evictions
 dominate: engine 404,371.7 ms, cold 160,874.0 ms, execution 90,695.6 ms,
 admission 21,676.8 ms, supply 208.3 ms, elapsed 816,594.3 ms. Copied code bytes

@@ -1,25 +1,28 @@
 # Remaining work — 2026-10-05
 
-Current actual gate: PSHUFB, `66 41 0f 38 00 dc`, 0xffffffff81204e36. The
-final packed-add compiler actually passes PADDD and reaches 162,943,231
-retirements / 88,109,844 admissions; complete decompression agrees. General
-PADDB/PADDW/PADDD now pass 32,768 unchanged native observations, 256 exact
-emissions, full C-MMU/dispatcher fault/wait/control/alias checks, 768 carry
-corners, all 65,536 byte input pairs, full compiler checks and scoped
-sanitizers. The final 444,118-byte compiler has completed that same-bundle
-run. This is not PID 1 or shell acceptance.
+Current actual gate: immediate PSRLD, `66 0f 72 d1 0c`, 0xffffffff81204e49.
+The final byte-shuffle compiler actually passes PSHUFB and reaches 161,593,710
+retirements / 87,316,980 admissions; complete decompression agrees. This is
+not browser/PID 1 or shell acceptance. General immediate logical shifts
+(16/32/64-bit, left/right) now pass 46,080 unchanged native observations,
+360 exact emissions, all 256 counts and full precise control/fault/wait
+comparisons, full compiler checks and scoped sanitizers. Zero-count identity
+has no XMM work; oversized count has one zero vector publication (381 ->
+372 emitted bytes); valid nonzero count has one vector shift. The final
+445,459-byte compiler is running independently on the same bundle; do not
+restart it or relabel fixture pass as actual PSRLD/PID 1 execution.
 General PSHUFB now passes 33,792 unchanged native observations, 264 exact
 emissions, all selector bits and full precise fault/wait/alias comparisons.
 It emits deterministic vector AND/swizzle without a sixteen-byte intermediate
 image or scalar fallback; standard Wasm SIMD is an explicit projection
-requirement. The final 444,763-byte compiler is running independently on the
-same bundle. Do not restart it or relabel fixture pass as actual boot.
+requirement. Its completed same-bundle run reaches the current PSRLD gate.
 Next: observe that run's actual gate, close the next common ISA/ABI red and
 reduce dominant engine/source reconstruction with bounded precise admission.
 PID 1, release-root mount, shell/development commands, storage/recovery,
 granted network and browser acceptance remain open; cold shell 3s is unmet.
 See [actual gate and general packed-add evidence](../vm/check/browser/evidence/2026-10-05-vector-add-narrow.md).
 See [general byte-shuffle derivation and checks](../vm/check/browser/evidence/2026-10-05-vector-shuffle.md).
+See [general immediate-shift derivation and checks](../vm/check/browser/evidence/2026-10-05-vector-shift.md).
 Previous checkpoints below are historical, not current acceptance.
 
 Previous actual gate: PUNPCKLDQ, `66 0f 62 e5`, 0xffffffff81204e1e. General

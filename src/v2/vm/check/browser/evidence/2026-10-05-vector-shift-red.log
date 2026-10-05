@@ -1,0 +1,3 @@
+cc -O2 -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Iinclude -I../support/include -I../optimized-x86/include -I../machine-abi/include -I../x86/include -fPIE -pie check/vector-transfer.c check/native-vector.S check/native-stack.S /build/vector-1004/libwasm-compiler.a ../optimized-x86/build/liboptimized-x86.a ../x86/build/libx86.a ../support/build/libsupport.a -o /build/vector-1004/vector-transfer-check
+vector transfers/additions/logic/unpack/shuffle/shift: 46080 actual x86 CPU/RAM observations, 15248 fault frames; lowering not tested; CR0/CR4 require separate models
+vector 264 red: compiler=-102 decode=0 argument=90905 operand-bits=128/8 register-bits=128/0

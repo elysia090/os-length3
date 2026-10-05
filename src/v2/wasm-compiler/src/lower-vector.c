@@ -16,6 +16,7 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
             || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
                 |PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
     const pl_x86_operand *target=&instruction->operands[0],*source=&instruction->operands[1];
+    if(cut_vector_shift_shape(instruction))return xmm(target,0);
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
     pl_u64 operation=instruction->machine_argument>>32u;
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
@@ -77,6 +78,8 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
     if(kind==10u && (instruction->machine_argument>>32u)==12u)kind=24u;
     cut_sse_guard(cut);
+    pl_u32 shift=cut_vector_shift_shape(instruction);
+    if(shift) {cut_lower_vector_shift(cut,instruction,shift);return;}
     /* Equal logical operands normalize to zero or identity. Control faults
      * still precede this pure substitution; no old XMM payload is needed. */
     if(!read && (kind==1u || kind==2u || kind==3u || kind==24u)

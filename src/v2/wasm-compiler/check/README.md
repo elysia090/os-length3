@@ -9,6 +9,13 @@ C-MMU/direct/dispatcher comparisons, all selectors and scoped sanitizers pass.
 These checks are not browser/PID 1 or whole-image acceptance. See
 [derivation, red and reproducible scope](../../vm/check/browser/evidence/2026-10-05-vector-shuffle.md).
 
+Immediate logical shifts now extend that same boundary to all 16/32/64-bit
+left/right forms: 360 exact emissions and 46,080 unchanged native records.
+The admitted count is substituted before emission, so count zero has no XMM
+work, oversized counts publish one zero vector and other counts use one vector
+shift. All 256 counts and precise CPU/RAM/control boundaries pass. See
+[the derivation and actual PSRLD gate](../../vm/check/browser/evidence/2026-10-05-vector-shift.md).
+
 Current IF boundary (2026-10-04): common CLI/STI emits one precise
 `machine.interrupt_flag` call. C owns privilege, IF and inhibition; generated
 code owns successful RIP/RF/retirement. The old inline CLI implementation is

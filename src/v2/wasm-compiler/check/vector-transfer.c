@@ -68,8 +68,18 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
  * boundary, with distinct-register/alias and six memory address topologies.
  * Twelve unpack encodings add the same forms, including ignored source halves.
  * The three narrower packed additions expose carry isolation and doubling.
- * PSHUFB adds all selector bits, self-alias and the same memory topologies. */
-enum { VECTOR_FORMS=264u };
+ * PSHUFB adds all selector bits, self-alias and the same memory topologies.
+ * Immediate logical shifts cover all widths, both directions and count cuts. */
+enum { VECTOR_FORMS=360u };
+static pl_u32 shift_width(pl_u32 form)
+{ return form<264u?0u:form<296u?32u:form<328u?64u:16u; }
+static pl_u32 shift_count(pl_u32 form)
+{
+    static const pl_u32 counts[]={0u,1u,2u,7u,8u,12u,15u,16u,20u,31u,32u,33u,63u,64u,127u,255u};
+    return form<264u?0u:counts[(form-264u)%16u];
+}
+static pl_u32 shift_left(pl_u32 form)
+{ return form>=264u && ((form-264u)/16u&1u); }
 static pl_u32 unpack_width(pl_u32 form)
 {
     static const pl_u32 widths[]={8u,16u,32u,64u,8u,16u,32u,64u,32u,32u,64u,64u};
@@ -87,6 +97,14 @@ static pl_u32 add_width(pl_u32 form)
 }
 static pl_u32 encoding(pl_u32 form,pl_u32 *kind,pl_u32 *store,pl_u32 *reg,pl_u32 *aligned)
 {
+    if(form>=264u) {
+        pl_u32 width=shift_width(form);
+        *kind=*store=*aligned=0u;*reg=1u;
+        source[0]=0x66u;source[1]=0x41u;source[2]=0x0fu;
+        source[3]=(pl_u8)(width==16u?0x71u:width==32u?0x72u:0x73u);
+        source[4]=(pl_u8)(shift_left(form)?0xf1u:0xd1u);source[5]=(pl_u8)shift_count(form);
+        return 6u;
+    }
     if(form>=32u) {
         pl_u32 local=(form-32u)%8u,family=form<40u?0u:1u+(form-40u)/8u;
         static const pl_u8 opcodes[]={0xd4u,0xefu,0xdbu,0xebu,0xdfu,
@@ -162,7 +180,10 @@ static int admission(void)
         {0xc4u,0xe2u,0x79u,0x00u,0xc1u},
         {0xf0u,0x66u,0x0fu,0x38u,0x00u,0xc1u},
         {0x64u,0x66u,0x0fu,0x38u,0x00u,0x07u},
-        {0x65u,0x66u,0x0fu,0x38u,0x00u,0x07u}};
+        {0x65u,0x66u,0x0fu,0x38u,0x00u,0x07u},
+        {0x0fu,0x72u,0xd1u,0x0cu}, /* MMX packed shifts remain outside XMM. */
+        {0xc5u,0xf9u,0x72u,0xd1u,0x0cu},
+        {0xf0u,0x66u,0x0fu,0x72u,0xd1u,0x0cu}};
     for(pl_u32 i=0u;i<sizeof invalid/sizeof invalid[0];++i) {
         memset(page,0x90,sizeof page);memcpy(page,invalid[i],sizeof invalid[i]);
         memset(module,0xa5,sizeof module);wasm_cut_report report;memset(&report,0xa5,sizeof report);
@@ -302,7 +323,7 @@ int main(int argc,char **argv)
                         *(half?&high:&low)|=((a+b)&mask)<<shift;
                     }
                 }
-                else if(form>=256u) {
+                else if(form>=256u && form<264u) {
                     pl_u8 values[16],selectors[16],result[16];
                     put(values,state->xmm[18u],8u);put(values+8u,state->xmm[19u],8u);
                     put(selectors,low,8u);put(selectors+8u,high,8u);
@@ -310,16 +331,25 @@ int main(int argc,char **argv)
                         result[i]=(selectors[i]&128u)?0u:values[selectors[i]&15u];
                     low=word(result,8u);high=word(result+8u,8u);
                 }
+                else if(form>=264u) {
+                    pl_u32 width=shift_width(form),count=shift_count(form);
+                    pl_u64 mask=width==64u?~0ull:(1ull<<width)-1u;low=high=0u;
+                    if(count<width)for(pl_u32 half=0u;half<2u;++half)for(pl_u32 i=0u;i<64u/width;++i) {
+                        pl_u32 at=i*width;pl_u64 value=(state->xmm[18u+half]>>at)&mask;
+                        *(half?&high:&low)|=(shift_left(form)?(value<<count)&mask:value>>count)<<at;
+                    }
+                }
                 if((store?record->new_low:record->after.xmm[18u])!=low
                         || (store?record->new_high:record->after.xmm[19u])!=high)goto finish;
             }
             ++observations;
         }
-        char json[384];int n=snprintf(json,sizeof json,
-            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u,\"addWidth\":%u,\"shuffle\":%u}\n",
+        char json[448];int n=snprintf(json,sizeof json,
+            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u,\"addWidth\":%u,\"shuffle\":%u,\"shiftWidth\":%u,\"shiftCount\":%u,\"shiftLeft\":%u}\n",
             size,sizeof(machine_state),sizeof(observation),kind,store,reg,aligned,
             (pl_u32)(form>=32u && form<40u),form>=40u && form<136u?1u+(form-40u)/8u%4u:0u,
-            unpack_width(form),unpack_high(form),add_width(form),(pl_u32)(form>=256u));
+            unpack_width(form),unpack_high(form),add_width(form),(pl_u32)(form>=256u && form<264u),
+            shift_width(form),shift_count(form),shift_left(form));
         if(n<1 || (size_t)n>=sizeof json || save(directory,form,"json",json,(size_t)n)
             || save(directory,form,"source-page",source,sizeof source) || save(directory,form,"cases",records,sizeof records)
             || (!observe_only && save(directory,form,"wasm",module,(size_t)emitted)))goto finish;
@@ -330,7 +360,7 @@ finish:
     if(munmap(code,4096u) || munmap(ram,8192u))status=1;
     if(sigaction(SIGSEGV,&old_segv,NULL) || sigaction(SIGBUS,&old_bus,NULL) || sigaction(SIGILL,&old_ill,NULL)
             || sigaltstack(&old_stack,NULL))status=1;
-    if(!status)printf("vector transfers/additions/logic/unpack/shuffle: %u actual x86 CPU/RAM observations, %u fault frames%s; CR0/CR4 require separate models\n",
+    if(!status)printf("vector transfers/additions/logic/unpack/shuffle/shift: %u actual x86 CPU/RAM observations, %u fault frames%s; CR0/CR4 require separate models\n",
         observations,faults,observe_only?"; lowering not tested":"");
     return status;
 }
