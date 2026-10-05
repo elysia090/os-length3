@@ -42,8 +42,9 @@ typedef struct {
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
  * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry,
  *     i32 operand_binding) -> i64 machine_result (machine-entry ABI 3).
- * The trusted compiler reports a signed disp32 binding for an isolated
- * IP-relative memory operand; otherwise zero. The serialized caller must
+ * The trusted compiler reports a signed displacement binding for one isolated
+ * IP/GPR-relative memory operand, including scaled index and disp8; otherwise
+ * zero. Absolute pointers and pure LEA literals are not rebound. The caller must
  * preserve it by value through admission and any pinned continuation.
  * Pure cuts ignore the port; all generated cuts share machine/entry.h's table
  * type. Architectural addresses

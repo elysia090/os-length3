@@ -5,9 +5,9 @@ import {createHash} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
 import {CompiledModules} from '../../src/v2/web/compiled-modules.mjs';
 const [compilerFile,kernelFile,...flags]=process.argv.slice(2);
-if(!kernelFile || flags.some(x=>x!=='--observe' && !x.startsWith('--vm='))
+if(!kernelFile || flags.some(x=>x!=='--observe' && x!=='--memory' && !x.startsWith('--vm='))
     || new Set(flags).size!==flags.length || flags.filter(x=>x.startsWith('--vm=')).length>1)
-  throw new Error('usage: check-cut-operand-sharing.mjs COMPILER.WASM BZIMAGE [--observe] [--vm=VM.WASM]');
+  throw new Error('usage: check-cut-operand-sharing.mjs COMPILER.WASM BZIMAGE [--observe] [--memory] [--vm=VM.WASM]');
 const vmFile=flags.find(x=>x.startsWith('--vm='))?.slice(5);
 if(vmFile==='')throw new Error('empty VM path');
 const digest=b=>createHash('sha256').update(b).digest('hex');
@@ -42,6 +42,33 @@ try {
     families.push({name,sourceCoordinates:count,distinctExactModules:new Set(modules.map(digest)).size,
       moduleBytes:modules.map(b=>b.length),bindings,desiredTopologyCount:1});
   }
+  if(flags.includes('--memory'))for(const example of [
+    {name:'rdi-load',prefix:[0x48,0x8b,0x87]},
+    {name:'rdi-store',prefix:[0x48,0x89,0x87]},
+    {name:'rsp-load',prefix:[0x48,0x8b,0x84,0x24]},
+    {name:'scaled-index-load',prefix:[0x48,0x8b,0x84,0x8f]},
+    {name:'address32-index-load',prefix:[0x67,0x48,0x8b,0x84,0x8f]},
+    {name:'disp8-load',prefix:[0x48,0x8b,0x47],width:1},
+  ]){
+    // Deliberately encoded operand grid, NOT additional release coordinates.
+    // This tests exact C topology identity; independent CPU/MMU tests are separate.
+    const modules=[],bindings=[],width=example.width||4;
+    for(const displacement of width===1?[-128,-8,-1,0,1,120,127]
+      :[-2147483648,-8192,-4096,-8,-1,0,1,4092,4095,2147483647]){
+      const page=Buffer.alloc(4096,0x90);page.set(example.prefix);
+      page.writeIntLE(displacement,example.prefix.length,width);data.set(page,input);
+      assert.equal(cc.compiler_open_pages(input,1,0x400000n,9n),0);
+      assert.equal(cc.compiler_emit(0x400000n,1,output,65536,report),0);
+      assert.equal(view.getBigUint64(report+24,true),1n);
+      assert.equal(view.getBigUint64(report+32,true),BigInt(example.prefix.length+width));
+      const body=Buffer.from(data.subarray(output,output+Number(view.getBigUint64(report+40,true))));
+      modules.push(body);templates.push(body);bindings.push(view.getUint32(report+76,true));
+    }
+    families.push({name:example.name,sourceCoordinates:modules.length,
+      source:'synthetic signed operand grid, not immutable release coordinates',
+      distinctExactModules:new Set(modules.map(digest)).size,moduleBytes:modules.map(b=>b.length),
+      bindings,desiredTopologyCount:1});
+  }
   const unmet=families.filter(f=>f.distinctExactModules!==f.desiredTopologyCount).length;
   let construction;
   if(vmFile){
@@ -53,13 +80,16 @@ try {
     const samples=4096,start=performance.now();
     for(let rank=0;rank<samples;++rank)await owner.get(templates[rank%templates.length]);
     construction={samples,elapsedMs:performance.now()-start,engine:owner.stats(),
-      scope:'matched 12 immutable hot load/store emissions; bounded constructor only, no guest execution or Linux/browser timing'};
+      scope:flags.includes('--memory')?'matched release plus explicitly synthetic memory-operand grid; bounded constructor only, no guest execution or Linux/browser timing'
+        :'matched 12 immutable hot load/store emissions; bounded constructor only, no guest execution or Linux/browser timing'};
     assert.equal(owner.stats().compilations,new Set(templates.map(digest)).size);
     owner.close();vm.vm_close();
   }
   console.log(JSON.stringify({format:'cut-operand-sharing-v1',status:unmet?'red':'pass',
     linuxBoot:'not-tested',kernelSha256:digest(kernel),decompressedElfSha256:digest(elf),
     compilerBytes:binary.length,compilerSha256:digest(binary),entryABI:cc.compiler_entry_abi(),
-    families,construction,unmetFamilies:unmet,scope:'exact cold C body identity, matched immutable release ELF; no runtime admission or native ISA proof'},null,2));
+    families,construction,unmetFamilies:unmet,scope:flags.includes('--memory')
+      ?'exact cold C body identity, matched immutable release ELF plus explicitly synthetic operand grids; no runtime admission or native ISA proof'
+      :'exact cold C body identity, matched immutable release ELF; no runtime admission or native ISA proof'},null,2));
   if(!flags.includes('--observe'))assert.equal(unmet,0,'literal displacement still splits a shared topology');
 }finally{cc.compiler_close();}

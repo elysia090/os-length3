@@ -1,11 +1,13 @@
 # Browser projection of OS Length3 Linux
 
 Current measured state (2026-10-05): the unchanged bundle reaches Linux
-initialization but not PID 1/root mount/shell. The completed warm run stops at
-its admission quota, not an unsupported opcode; repeated engine construction
-is its largest measured term. Machine-entry ABI 3 shares exact IP-relative
+initialization and announces `Run /init as init process`, but successful
+PID 1/root mount/shell remain unverified. The completed `47ba6f2` warm run
+stops at FXRSTOR64 grammar -102; repeated engine construction is its largest
+measured term. Machine-entry ABI 3 shares exact relative-memory
 bodies through scalar attestations and retains cross-page table continuations.
-See [current evidence and counted scope](../vm/check/browser/evidence/2026-10-05-operand-binding.md)
+The general GPR/index candidate is separately tested, not loaded in that run.
+See [current evidence and counted scope](../vm/check/browser/evidence/2026-10-05-memory-operand-binding.md)
 and [remaining obligations](../postlink-compiler/TODO.md). Node/native/model
 passes are not real-browser acceptance. Retained browser Workers and staged
 assets are not replaced by these independent checks.

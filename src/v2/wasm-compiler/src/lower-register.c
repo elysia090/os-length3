@@ -355,7 +355,7 @@ void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruct
         if (memory->scale > 1u) { cut_const(cut, memory->scale); cut_op(cut, 0x7eu); }
         cut_op(cut, 0x7cu);
     }
-    if (cut->has_operand_binding && memory->base.class_id == PL_X86_REGISTER_IP) {
+    if (cut->has_operand_binding) {
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 3u);
         cut_op(cut, 0xacu); /* i64.extend_i32_s, before address-size truncation */
     } else cut_const(cut, (pl_u64)memory->displacement);

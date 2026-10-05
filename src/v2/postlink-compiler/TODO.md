@@ -1,21 +1,32 @@
 # Remaining work — 2026-10-05
 
-Current actual full-bundle stop: the warm-64 150,000,000-admission quota at
-255,274,658 retirements, RIP `0xffffffff8109b342`. The unchanged bundle passes
-the secondary-UART 2F9h refusal, registers the phram system device / IPv6 /
-PF_PACKET and reports microcode status. Full kernel decompression agrees.
-This is not an unsupported-opcode red. PID 1, release-root mount, shell and
+Current actual full-bundle stop (`47ba6f2`): common compiler -102 at
+230,277,143 retirements / 129,152,056 admissions, RIP `0xffffffff81034ee2`,
+`48 0f ae 4f 40` (FXRSTOR64 [RDI+64]). The unchanged bundle reports
+`Run /init as init process`, but that announcement is not successful PID 1
+execution. Full kernel decompression agrees. PID 1, release-root mount, shell and
 real-browser acceptance remain unachieved; cold shell 3s is unmet.
-See [completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-warm-quota.json).
+See [completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-fxrstor-red.json).
 
-Measured maximum term: 57,114,117 engine constructions / 1,623,498 ms,
-cold C emission 705,074 ms, execution 276,196 ms, admission 43,587 ms and
-extent supply 833 ms; total diagnostic 2,936,145 ms. There are 754 live engine
-entries / 262,015 witness bytes, 57,113,363 evictions and 27,125,109 hits under
-unchanged quotas. Source-owner misses are 84,239,226 / hits 65,760,774. This
-run has 91,496,390 actual warm completions, but different retired work and clock calibration from prior runs:
-its elapsed time is not a speedup ratio. Allocated Memory is 22,085,632 bytes,
-not RSS. The disjoint-write and operand-binding candidates were NOT loaded in this run.
+Measured maximum term: 31,694,949 engine constructions / 938,657 ms,
+cold C emission 526,961 ms, execution 173,510 ms, admission 36,333 ms and
+extent supply 666 ms; total diagnostic 1,895,515 ms. There are 768 live engine
+entries / 262,002 witness bytes, 31,694,181 evictions and 33,073,051 hits under
+unchanged quotas. Source-owner misses are 64,768,001 / hits 64,384,056. There
+are 72,436,833 actual warm completions. Different retired work and clock
+calibration prevent an elapsed-time speedup comparison. Allocated Memory is
+22,609,920 bytes, not RSS. This run includes disjoint-write and IP-only operand
+binding, NOT the general-memory candidate below. VM/compiler are 67,133 /
+447,154 bytes, frozen throughout the completed job.
+
+The general relative-memory candidate now shares GPR/RSP/index/disp8 bodies
+through the same ABI-3 scalar binding. The controlled grid has 12 matched
+release RIP cases plus 57 explicitly synthetic cases: 59 bodies / 21,115 bytes
+become 8 / 2,833. Fresh 79-module / 40,448 native comparisons, 321 complete
+CPU/RAM models, entry/stack/segment/vector/descriptor regressions and full C/CLI
+checks pass. Compiler is 447,176 bytes (+22); VM/row/report do not grow.
+No Linux-wide effect has yet been measured for that candidate. See
+[derivation and counted scope](../vm/check/browser/evidence/2026-10-05-memory-operand-binding.md).
 
 The next exact body-sharing red is green through machine-entry ABI 3.
 Matched release hot RIP-relative loads/stores had twelve bodies / 4,122 bytes;
@@ -58,14 +69,13 @@ Compiler/VM sizes are 446,940 / 63,085 bytes. Native bundle and human UI unchang
 See [derivation, scope and validation](../vm/check/browser/evidence/2026-10-05-entry-binding.md).
 
 Next obligations, in order:
-1. Run the unchanged bundle/segments/root-image warm-64 full check using frozen
-   corrected ABI-3 VM/compiler binaries (67,133 / 447,154 bytes), including proved-disjoint
-   writes and exact operand binding. The short prefix still agrees at 1,617,931
-   retirements / 1,000,000 admissions, with 876 engine constructions; it is
-   before Linux entry and has ZERO warm runs. Record the actual new gate and
-   dominant counts, not an elapsed-time ratio across clock-calibrated runs.
-   No retained browser Worker or staged Wasm is replaced.
-2. Close the next actual common ISA/MMU/machine-ABI red when it appears.
+1. Close FXRSTOR through common compiled semantics: independent native FPU
+   observations, precise control/alignment/MXCSR/fault/wait ordering and unchanged
+   CPU/payload on refused access. Do not introduce a mnemonic host callback.
+2. Re-run the unchanged bundle/segments/root image after that red is green,
+   including general memory body sharing. Freeze/hash the new binaries and
+   retain actual gate and dominant counts, not a speedup ratio across different
+   clock-calibrated runs. No retained browser Worker or staged Wasm is replaced.
    Strict independent CALL fault-payload/provenance red remains open; no
    expectation was weakened to merge it with the passing ordinary CALL set.
 3. From the completed profile, remove remaining source/descriptor

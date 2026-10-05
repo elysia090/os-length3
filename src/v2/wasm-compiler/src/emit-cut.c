@@ -93,15 +93,21 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 plan->indirect_cut = (pl_u32)indirect;
                 plan->report.source_instructions = 1u;
                 plan->report.source_bytes = instruction.length;
-                /* Isolated explicit IP-relative addressing has exactly one
-                 * disp32. Keep its value in the attestation, not the body.
+                /* One explicit relative address has one signed displacement.
+                 * Keep its value in the attestation, not the body.
                  * Pure multi-instruction slices retain their literal values. */
+                pl_u32 memory_operands = 0u;
                 for (pl_u32 operand = 0u; operand < instruction.visible_operand_count; ++operand) {
                     const pl_x86_operand *value = instruction.operands + operand;
                     if (value->kind != PL_X86_OPERAND_MEMORY) continue;
+                    ++memory_operands;
                     const pl_x86_memory *address = &value->value.memory;
-                    if (address->base.class_id == PL_X86_REGISTER_IP
-                            && address->index.class_id != PL_X86_REGISTER_GPR
+                    int relative = (address->base.class_id == PL_X86_REGISTER_IP
+                            && address->index.class_id == PL_X86_REGISTER_NONE)
+                        || (address->base.class_id == PL_X86_REGISTER_GPR
+                            && (address->index.class_id == PL_X86_REGISTER_NONE
+                                || address->index.class_id == PL_X86_REGISTER_GPR));
+                    if (relative
                             && (instruction.address_width == 32u || instruction.address_width == 64u)
                             && address->displacement >= -2147483647ll - 1ll
                             && address->displacement <= 2147483647ll) {
@@ -109,7 +115,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                         plan->report.operand_binding = (pl_u32)address->displacement;
                     }
                 }
-                if (plan->has_operand_binding != 1u) {
+                if (memory_operands != 1u || plan->has_operand_binding != 1u) {
                     plan->has_operand_binding = 0u;
                     plan->report.operand_binding = 0u;
                 }

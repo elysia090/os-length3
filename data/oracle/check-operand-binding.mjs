@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
 import {CompiledModules} from '../../src/v2/web/compiled-modules.mjs';
-const [vmFile,compilerFile,nativeDirectory]=process.argv.slice(2);
-if(!compilerFile)throw new Error('usage: check-operand-binding.mjs VM.WASM COMPILER.WASM [FRESH-NATIVE-RECORDS]');
+const [vmFile,compilerFile,...args]=process.argv.slice(2);
+const directories=args.filter(x=>!x.startsWith('--'));
+if(!compilerFile || directories.length>1 || args.some(x=>x.startsWith('--') && x!=='--memory')
+  || args.filter(x=>x==='--memory').length>1)
+  throw new Error('usage: check-operand-binding.mjs VM.WASM COMPILER.WASM [FRESH-NATIVE-RECORDS] [--memory]');
+const nativeDirectory=directories[0];
 const memory=new WebAssembly.Memory({initial:32,maximum:34}),coldMemory=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
@@ -29,6 +33,14 @@ const families=[
   {name:'load64-eip',prefix:[0x67,0x48,0x8b,0x05],bytes:8,address32:true},
   {name:'store64-eip',prefix:[0x67,0x48,0x89,0x05],bytes:8,address32:true,store:true},
 ];
+if(args.includes('--memory'))families.push(
+  {name:'load64-rdi',prefix:[0x48,0x8b,0x87],bytes:8,baseRank:7},
+  {name:'store64-rdi',prefix:[0x48,0x89,0x87],bytes:8,baseRank:7,store:true},
+  {name:'load64-rsp',prefix:[0x48,0x8b,0x84,0x24],bytes:8,baseRank:4},
+  {name:'load64-scaled-index',prefix:[0x48,0x8b,0x84,0x8f],bytes:8,baseRank:7,indexRank:1,scale:4},
+  {name:'load64-address32-index',prefix:[0x67,0x48,0x8b,0x84,0x8f],bytes:8,baseRank:7,indexRank:1,scale:4,address32:true},
+  {name:'load64-disp8',prefix:[0x48,0x8b,0x47],bytes:8,baseRank:7,displacementBytes:1},
+);
 let emissions=0,comparisons=0,fetchFaults=0,dataFaults=0,bindingRefusals=0,sourceRevocations=0;
 let nativeEmissions=0;
 const bodies=new Map(),owner=new CompiledModules({machine:{memory,access:vm.vm_access}},
@@ -59,6 +71,13 @@ function setup(entry,source,example,displacement){
   data.fill(0x90,code,code+4096);data.set(source,code);
   for(let rank=0;rank<16;++rank)put(base+rank*8,BigInt(rank+1)*0xabcdef012345n);
   put(base,0x1122334455667788n);put(base+384,entry);put(base+392,0x10202);
+  if(example.baseRank!==undefined){
+    const index=example.indexRank===undefined?0n:3n;
+    let anchor=BigInt.asUintN(64,entry+BigInt(source.length)-index*BigInt(example.scale||1));
+    if(example.address32)anchor=BigInt.asUintN(32,anchor)|0xdeadbeef00000000n;
+    put(base+example.baseRank*8,anchor);
+    if(example.indexRank!==undefined)put(base+example.indexRank*8,index);
+  }
   put(base+400,0x80010011);put(base+408,0x1000);put(base+416,32);put(base+424,0xd00);
   put(base+488,8);put(base+600,0x400);put(base+1128,41);put(port,9);
   view.setUint32(segments,2,true);view.setUint32(segments+36,0xa09b,true);
@@ -96,9 +115,11 @@ try{
     const actual=cold.subarray(output,output+Number(cv.getBigUint64(report+40,true)));
     assert(actual.equals(await readFile(prefix+'.wasm')),'exact native/cold C emission: '+name);++nativeEmissions;
   }
-  for(const example of families)for(const entry of entries)for(const displacement of displacements){
-    const source=Buffer.alloc(example.prefix.length+4);source.set(example.prefix);
-    source.writeInt32LE(displacement,example.prefix.length);
+  for(const example of families)for(const entry of entries)for(const displacement of
+      example.displacementBytes===1?[-128,-8,-1,0,1,120,127]:displacements){
+    const displacementBytes=example.displacementBytes||4;
+    const source=Buffer.alloc(example.prefix.length+displacementBytes);source.set(example.prefix);
+    source.writeIntLE(displacement,example.prefix.length,displacementBytes);
     const {at,codePte,code,ram,tail}=setup(entry,source,example,displacement);
     const {body,binding}=await admit(entry,source);
     assert.equal(binding,displacement>>>0);

@@ -97,6 +97,9 @@ growing the row/report. `check-cut-operand-sharing.mjs COMPILER.WASM BZIMAGE`
 checks the matched release hot load/store bodies (use `--observe` only for a
 frozen historical red). `check-operand-binding.mjs VM.WASM COMPILER.WASM
 [FRESH-NATIVE-RECORDS]` checks C source/MMU/frontiers and exact native emissions.
+Both probes accept `--memory` to include general GPR/RSP/index/disp8 binding.
+The sharing grid explicitly separates matched release bytes from synthetic
+coordinates; it does not turn local body counts into Linux speedup claims.
 `prepare-operand-cuts.sh NEW-OUTPUT COMPILER-BUILD` requires an explicit fresh
 native build. Neither probe establishes Linux boot or browser acceptance.
 See [scope and receipts](../../src/v2/vm/check/browser/evidence/2026-10-05-operand-binding.md).
