@@ -1,0 +1,255 @@
+{
+  "format": "cut-coordinate-sharing-red-v1",
+  "status": "red",
+  "linuxBoot": "not-tested",
+  "compilerBytes": 446566,
+  "compilerSha256": "f5b8e31bfe9649d9f5eae79c4b0cd2a88c1065fb216e891acabd590f2a0ebeb5",
+  "scope": "C-emission metamorphic coordinate covariance, not independent native ISA equivalence or topology proof",
+  "fullStateCovarianceComparisons": 960,
+  "unchangedWrongEntryRefusals": 120,
+  "memoryGrowthChecks": 1,
+  "families": [
+    {
+      "name": "nop",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        205,
+        205,
+        205,
+        207,
+        207,
+        207,
+        207,
+        209,
+        211,
+        211,
+        207,
+        207
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "move-register",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        227,
+        227,
+        227,
+        229,
+        229,
+        229,
+        229,
+        231,
+        233,
+        233,
+        229,
+        229
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "add-immediate",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        326,
+        326,
+        326,
+        328,
+        328,
+        328,
+        328,
+        330,
+        332,
+        332,
+        328,
+        328
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "xor-self",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        283,
+        283,
+        283,
+        285,
+        285,
+        285,
+        285,
+        287,
+        289,
+        289,
+        285,
+        285
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "compare-register",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        319,
+        319,
+        319,
+        321,
+        321,
+        321,
+        321,
+        323,
+        325,
+        325,
+        321,
+        321
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "jump-relative",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        205,
+        205,
+        205,
+        207,
+        207,
+        207,
+        207,
+        209,
+        211,
+        211,
+        207,
+        207
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "conditional-relative",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        220,
+        220,
+        220,
+        223,
+        223,
+        223,
+        223,
+        226,
+        229,
+        229,
+        223,
+        223
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "lea-rip",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        227,
+        227,
+        227,
+        230,
+        230,
+        230,
+        230,
+        233,
+        236,
+        236,
+        230,
+        230
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "lea-eip",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        234,
+        234,
+        234,
+        237,
+        237,
+        237,
+        237,
+        240,
+        243,
+        243,
+        237,
+        237
+      ],
+      "desiredTopologyCount": 1
+    },
+    {
+      "name": "serialized-fence",
+      "coordinates": 12,
+      "distinctExactModules": 12,
+      "bytes": [
+        205,
+        205,
+        205,
+        207,
+        207,
+        207,
+        207,
+        209,
+        211,
+        211,
+        207,
+        207
+      ],
+      "desiredTopologyCount": 1
+    }
+  ],
+  "unmetFamilies": 10,
+  "coldCoordinateConstruction": {
+    "samples": 4096,
+    "emissionMs": 25.748200000000963,
+    "moduleMs": 158.1622000000006,
+    "instanceMs": 82.50320000000069
+  },
+  "warmCoordinateConstruction": [
+    {
+      "moduleMs": 10.737199999999973,
+      "instanceMs": 34.09190000000001,
+      "samples": 4096
+    },
+    {
+      "moduleMs": 10.552000000000021,
+      "instanceMs": 21.913099999999986,
+      "samples": 4096
+    },
+    {
+      "moduleMs": 10.96410000000003,
+      "instanceMs": 19.142200000000003,
+      "samples": 4096
+    }
+  ],
+  "boundedOwner": {
+    "samples": 4096,
+    "elapsedMs": 44.2303,
+    "stats": {
+      "compilations": 4096,
+      "hits": 0,
+      "entries": 1024,
+      "absentKeyCompilations": 4096,
+      "changedBodyCompilations": 0,
+      "quotaEvictions": 3072,
+      "validatedDemands": 0,
+      "retainedModuleBytes": 252056,
+      "maximumEntries": 1024,
+      "maximumBytes": 262144
+    }
+  },
+  "timingScope": "independent Node constructor microbenchmark, concurrent host load, not Linux/browser speedup",
+  "policy": "No production path or quota changed; no byte patch, erased entry guard or fallback"
+}

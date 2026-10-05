@@ -17,6 +17,17 @@ The final 446,566-byte compiler is running independently on the same bundle
 to determine the next actual gate. No PID 1/browser/speedup claim follows from
 the fixtures. See [derivation and checks](../vm/check/browser/evidence/2026-10-05-memory-order.md).
 
+Coordinate-sharing is now independently red: ten C-emitted operation shapes
+each produce twelve distinct modules at twelve coordinates, despite 960 exact
+normalized-state comparisons and 120 unchanged wrong-RIP refusals. Fresh
+Module construction and coordinate-by-coordinate Instance placement both
+remain coefficients. Next general performance obligation: factor decoder-owned
+coordinates into the existing admitted row, migrate the typed entry call and
+precise-frontier oracles together, then share exact templates under unchanged
+bounded ownership. Do not remove RIP checks or substitute an unproved hash/key
+for C source admission. No production route changed at this red checkpoint.
+See [the measured red and derivation](../vm/check/browser/evidence/2026-10-05-coordinate-sharing.md).
+
 Previous actual gate: PSHUFD, `66 0f 70 c0 93`, 0xffffffff81204eb8.
 Independent Windows-native CALL diagnosis also reproduces mixed payloads:
 426 untouched words / 884,736 calls outside the build guest. CPUID still

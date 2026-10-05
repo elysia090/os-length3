@@ -58,6 +58,17 @@ must never be reconstructed as initial zero RAM after execution.
 
 ## Independent native oracles
 
+### Coordinate-sharing red — 2026-10-05
+
+`check-cut-coordinate-sharing.mjs COMPILER.WASM` is a deliberately red,
+independent cold-C emission test, not an ISA oracle or production route. It
+checks complete coordinate-normalized state covariance and unchanged wrong-RIP
+refusal, then requires a single exact topology per shape across twelve virtual
+coordinates. The present compiler fails all ten families. `--observe` records
+the red and separates fresh/warmed Module and Instance construction under
+unchanged bounded-owner quotas. It never edits Wasm bytes or removes entry
+checks. See [factorization, measurements and remaining ABI obligation](../../src/v2/vm/check/browser/evidence/2026-10-05-coordinate-sharing.md).
+
 ### Serialized memory-order cuts — 2026-10-05
 
 `src/v2/wasm-compiler/check/memory-order.c` records GPR/flags/FPU preservation
