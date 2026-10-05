@@ -20,6 +20,7 @@ WASM_FLAGS += -Wl,--export=vm_write_begin,--export=vm_write_word,--export=vm_wri
 WASM_FLAGS += -Wl,--export=vm_control,--export=vm_code,--export=vm_grow,--export=vm_page_prepare,--export=vm_page_commit,--export=vm_page_count
 WASM_FLAGS += -Wl,--export=vm_fault,--export=vm_iret,--export=vm_msr
 WASM_FLAGS += -Wl,--export=vm_software_interrupt
+WASM_FLAGS += -Wl,--export=vm_system
 WASM_FLAGS += -Wl,--export=vm_debug
 WASM_FLAGS += -Wl,--export=vm_flag,--export=vm_boundary
 WASM_FLAGS += -Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit,--export=vm_rtc_start,--export=vm_console_commit
@@ -31,9 +32,16 @@ WASM_FLAGS += -Wl,--export=vm_entry_abi
 WASM_FLAGS += -Wl,--export=vm_source_demands,--export=vm_source_admissions,--export=vm_run_interrupted
 WASM_FLAGS += -Wl,--export=vm_run_source
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
+SOURCES += core/system.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: system-check
+check: system-check
+system-check: $(BUILD)/system-check
+	$(BUILD)/system-check
+$(BUILD)/system-check: check/system.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 # Resource and resident RAM boundaries; not a bootable machine or complete MMU.
 all: $(BUILD)/libvm.a
 
@@ -44,6 +52,7 @@ $(BUILD)/vm.wasm: core/rtc.c include/vm/rtc.h
 $(BUILD)/vm.wasm: core/uart.c include/vm/uart.h
 $(BUILD)/vm.wasm: core/console.c include/vm/console.h
 $(BUILD)/vm.wasm: core/interrupt.c include/vm/interrupt.h
+$(BUILD)/vm.wasm: core/system.c include/vm/system.h ../machine-abi/include/machine/system.h
 
 # The provider shares ordinary machine memory with generated functions. It has
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
@@ -54,7 +63,7 @@ $(BUILD)/vm.wasm: wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.
 	../machine-abi/include/machine/state.h ../machine-abi/include/machine/memory.h \
 	include/vm/segments.h include/vm/tables.h include/vm/control.h include/vm/registers.h ../machine-abi/include/machine/segments.h \
 	../machine-abi/include/machine/result.h ../machine-abi/include/machine/entry.h | $(BUILD)
-	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c -o $@
+	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c core/system.c -o $@
 
 $(BUILD):
 	mkdir -p $@

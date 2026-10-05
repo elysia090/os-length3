@@ -7,6 +7,7 @@
 #include <vm/control.h>
 #include <vm/registers.h>
 #include <vm/msr.h>
+#include <vm/system.h>
 #include <vm/debug.h>
 #include <vm/io.h>
 #include <vm/supply.h>
@@ -771,6 +772,17 @@ machine_result vm_msr(pl_u32 port, pl_u32 operation, pl_u32 key, pl_u64 value)
     if (!result && operation == MACHINE_MSR_WRITE
             && (key == MACHINE_MSR_EFER || key == MACHINE_MSR_MISC_ENABLE))
         execution.generation = 0u;
+    return result;
+}
+
+machine_result vm_system(pl_u32 port, pl_u32 operation, pl_u64 next_rip)
+{
+    vm_supply_reset(&supply);vm_memory_abort(&resident);
+    if(table_frontier.stage || delivery.stage || !segments_offset || !private_port(port))
+        return MACHINE_RESULT_ENTRY_MAP;
+    machine_result result=vm_system_transfer(&resident,port-arena_base,
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,operation,next_rip);
+    if(!result)execution.generation=0u;
     return result;
 }
 

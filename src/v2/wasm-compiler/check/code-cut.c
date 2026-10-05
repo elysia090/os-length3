@@ -739,8 +739,11 @@ int main(int argc, char **argv)
         == WASM_COMPILER_ERROR_FETCH);
     EXPECT(bytes == 99u && !memcmp(&report,&fetch_saved,sizeof report));
     for (pl_u32 i=0u;i<sizeof output;++i) EXPECT(output[i] == 0xa5u);
-    /* A complete but unsupported instruction must not ask for more bytes. */
     options.entry = source.entry = 0x400ffeu; pages[4094] = 0x0fu; pages[4095] = 0x05u;
+    EXPECT(!wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report));
+    EXPECT(report.source_bytes==2u && report.source_instructions==1u && report.boundary==WASM_CUT_CONTROL);
+    /* A complete but unsupported SYSENTER must not ask for more bytes. */
+    pages[4095]=0x34u;
     EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,0)
         == WASM_COMPILER_ERROR_GRAMMAR);
     options.entry = source.entry = 0x400fffu; pages[4095] = 0x0fu;

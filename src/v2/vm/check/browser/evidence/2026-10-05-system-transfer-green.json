@@ -1,0 +1,32 @@
+{
+  "format": "c-system-transfer-v1",
+  "status": "pass",
+  "models": 640,
+  "faults": 1476,
+  "direct": 752,
+  "dispatch": 752,
+  "hardware": 112,
+  "refusals": 14,
+  "nativeCompilerParity": 2,
+  "moduleBytes": [
+    288,
+    285
+  ],
+  "oracleDifferences": {
+    "count": 232,
+    "byField": {
+      "7": 36,
+      "8": 12,
+      "14": 32,
+      "16": 48,
+      "17": 16,
+      "18": 48,
+      "20": 16,
+      "22": 16,
+      "23": 8
+    }
+  },
+  "observed": "64 independent hardware-assisted rows; 48 calls, 32 returns, 16 return #GP, 16 call #UD",
+  "scope": "48-bit Intel long mode, SCE and forced CS/SS caches; no compat/CET/debug or SMP claim",
+  "linuxBoot": "not-tested"
+}

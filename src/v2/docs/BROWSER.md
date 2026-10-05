@@ -1,15 +1,16 @@
 # Browser projection of OS Length3 Linux
 
-Current measured state (2026-10-05): the completed `a59f66e` unchanged-bundle
-job has passed IRET and reaches user instruction fetch `0x7fd6ae6b5ed9`, then
-refuses #PF14/error20 delivery with result 6 after 187,681,639 retirements /
-98,127,488 admissions. Engine construction remains the largest measured term;
-no time ratio across different retired work/clock calibration is a speedup.
-The bounded C TSS.RSP0 fix now agrees with 208 hardware-assisted fault frames
-and complete C-state models, with native/sanitizer/IRQ/IRET/source regressions.
-VM 68,451 / compiler 450,892 bytes are a separate candidate, not loaded in that
-completed job. See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-user-page-fault-red.json)
-and [fault-entry frontier](../vm/check/browser/evidence/2026-10-05-user-fault.md).
+Current measured state (2026-10-05): completed `be64020` passes the TSS user
+fetch-fault boundary and reaches actual user SYSCALL `0x7f2f8acfa0a0`, compiler
+-102, after 194,722,641 retirements / 103,148,627 admissions. Loaded VM/compiler
+are 68,451 / 450,892 bytes. Engine construction remains the maximum measured
+term; no time ratio across different work/clock calibration is a speedup.
+SYSCALL/SYSRETQ is separately green through common C and cold compiled table
+execution: 64 hardware rows, 640 complete-state models, native/sanitizer/CLI
+checks. No Linux syscall/guest VFS implementation is added in the host.
+Candidate VM/compiler 69,903 / 451,602 bytes are not loaded in that completed
+run. TCG differences remain explicit. See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-syscall-red.json)
+and [transfer frontier](../vm/check/browser/evidence/2026-10-05-system-transfer.md).
 PID 1/root mount/shell/browser remain unachieved; cold shell 3s is unmet.
 
 Earlier measured state: the completed `775fe27` unchanged-bundle

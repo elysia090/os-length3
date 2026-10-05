@@ -179,8 +179,17 @@ static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
         2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
         7,'m','a','c','h','i','n','e',18,'s','o','f','t','w','a','r','e','_','i','n','t','e','r','r','u','p','t',0,0
     };
+    static const pl_u8 system_imports[] = {
+        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
+        7,'m','a','c','h','i','n','e',15,'s','y','s','t','e','m','_','t','r','a','n','s','f','e','r',0,0
+    };
     raw(writer, header, sizeof header);
-    if (boundary==17) {
+    if(boundary==19) {
+        section(writer,1u,sizeof software_type);raw(writer,software_type,sizeof software_type);
+        section(writer,2u,sizeof system_imports);raw(writer,system_imports,sizeof system_imports);
+        section(writer,3u,sizeof memory_functions);raw(writer,memory_functions,sizeof memory_functions);
+        section(writer,7u,sizeof memory_exports);raw(writer,memory_exports,sizeof memory_exports);
+    } else if (boundary==17) {
         section(writer,1u,sizeof table_type);raw(writer,table_type,sizeof table_type);
         section(writer,2u,sizeof read_pair_imports);raw(writer,read_pair_imports,sizeof read_pair_imports);
         section(writer,3u,sizeof memory_functions);raw(writer,memory_functions,sizeof memory_functions);
@@ -291,6 +300,7 @@ static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
     if (plan->system_cut == CUT_SYSTEM_VECTOR_TRANSFER && report->memory_bytes)
         return (report->memory_access&MACHINE_MEMORY_WRITE)?15:17;
     if (plan->system_cut == CUT_SYSTEM_SOFTWARE_INTERRUPT) return 16;
+    if (plan->system_cut == CUT_SYSTEM_PRIVILEGE_TRANSFER) return 19;
     if (plan->system_cut == CUT_SYSTEM_IO) return 9;
     if (plan->system_cut == CUT_SYSTEM_TIME) return 10;
     if (plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN) return 7;

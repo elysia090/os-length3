@@ -34,6 +34,12 @@ SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 
 .PHONY: memory-order-check
+.PHONY: system-check
+check: system-check
+system-check: $(BUILD)/system-check
+	$(BUILD)/system-check
+$(BUILD)/system-check: check/system.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: memory-order-check
 memory-order-check: $(BUILD)/memory-order-check
 	$(BUILD)/memory-order-check

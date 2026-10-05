@@ -145,7 +145,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->report.branch_target = instruction.target;
                 }
                 if (system == CUT_SYSTEM_FAR_RETURN || system == CUT_SYSTEM_INTERRUPT_RETURN
-                        || system == CUT_SYSTEM_SOFTWARE_INTERRUPT)
+                        || system == CUT_SYSTEM_SOFTWARE_INTERRUPT || system==CUT_SYSTEM_PRIVILEGE_TRANSFER)
                     plan->report.boundary = WASM_CUT_CONTROL;
                 rip = instruction.fallthrough;
             }
@@ -267,18 +267,20 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     if (cut.report.boundary != WASM_CUT_CONTROL) {
         cut_coordinate(&cut, rip); cut_set(&cut, CUT_NEXT);
     }
-    for (pl_u32 i = 0u; i < MACHINE_X86_REGISTER_COUNT; ++i)
-        if (cut.report.written_registers & (1u << i))
-            cut_store(&cut, (pl_u32)offsetof(machine_state, registers) + i * 8u, i + 1u);
-    /* RF is restored by IRETQ, and otherwise cleared only on successful
-     * retirement. A pending fault or residency wait returns before here. */
-    if (!cut.has_interrupt_return) {
-        cut_get(&cut,CUT_FLAGS); cut_const(&cut,~0x10000ull); cut_op(&cut,0x83u);
-        cut_set(&cut,CUT_FLAGS);
+    if (plan->system_cut != CUT_SYSTEM_PRIVILEGE_TRANSFER) {
+        for (pl_u32 i = 0u; i < MACHINE_X86_REGISTER_COUNT; ++i)
+            if (cut.report.written_registers & (1u << i))
+                cut_store(&cut, (pl_u32)offsetof(machine_state, registers) + i * 8u, i + 1u);
+        /* RF is restored by IRETQ, and otherwise cleared only on successful
+         * retirement. A pending fault or residency wait returns before here. */
+        if (!cut.has_interrupt_return) {
+            cut_get(&cut,CUT_FLAGS); cut_const(&cut,~0x10000ull); cut_op(&cut,0x83u);
+            cut_set(&cut,CUT_FLAGS);
+        }
+        if (cut.report.flags_written || !cut.has_interrupt_return)
+            cut_store(&cut, (pl_u32)offsetof(machine_state, rflags), CUT_FLAGS);
+        cut_store(&cut, (pl_u32)offsetof(machine_state, rip), CUT_NEXT);
     }
-    if (cut.report.flags_written || !cut.has_interrupt_return)
-        cut_store(&cut, (pl_u32)offsetof(machine_state, rflags), CUT_FLAGS);
-    cut_store(&cut, (pl_u32)offsetof(machine_state, rip), CUT_NEXT);
     cut_load(&cut, (pl_u32)offsetof(machine_state, retired));
     cut_const(&cut, cut.report.source_instructions); cut_op(&cut, 0x7cu);
     cut_set(&cut, CUT_VALUE);

@@ -1,23 +1,22 @@
 # Remaining work — 2026-10-05
 
-Latest completed actual same-bundle gate (`a59f66e`): IRET has passed; user
-instruction fetch at `0x7fd6ae6b5ed9` produces #PF14/error20 and fault-delivery
-refusal 6, after 187,681,639 retirements / 98,127,488 admissions. The frozen VM /
-compiler are 68,291 / 450,892 bytes. Engine 9,112,171 constructions / 332,771 ms
-still dominates cold emission 258,493 ms and execution 79,876 ms; total 826,093 ms.
-Different retired work/clock calibration is not a speedup ratio. The exact
-[completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-user-page-fault-red.json)
-has no CS/TR cache snapshot; do not invent one or count `/init` announcement
-as successful PID 1. Old PID 19152 has completed, not remained running.
+Latest completed actual same-bundle gate (`be64020`): TSS user-fetch fault
+delivery has passed; user SYSCALL `0f05` at `0x7f2f8acfa0a0` reaches compiler
+-102 after 194,722,641 retirements / 103,148,627 admissions. Frozen VM/compiler
+are 68,451 / 450,892 bytes. Engine 10,222,289 constructions / 384,729 ms still
+dominates cold emission 298,480 ms and C execution 92,598 ms; total 952,595 ms.
+Different retired work/clock calibration is not a speedup ratio. See the
+[exact completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-syscall-red.json).
+Old PID 26424 has completed. `/init` announcement is not successful PID 1.
 
-The next common-C red is locally green: CPL1/2/3 fetch faults switch to a
-valid busy TSS.RSP0, publish CR2, and preserve the 168-byte event frontier across
-page waits. 208 independent hardware-assisted frames, 96 complete-state native
-models, TSS/frame waits, TSS self-aliasing and no-PIC-consumption refusals pass.
-Full VM checks, scoped GCC ASan/UBSan, 484 IRET dispatch cases, IRQ/source-cohort
-and FXRSTOR regressions pass. VM is 68,451 bytes; compiler remains 450,892.
-No interpreter, larger quota or native release/UI change. See
-[derivation, exact evidence and limits](../vm/check/browser/evidence/2026-10-05-user-fault.md).
+The next common-C red is locally green: typed SYSCALL/SYSRETQ transitions
+use the existing fixed MSR bank without descriptor/stack reads or duplicate
+CPU publication. 64 hardware rows, 640 complete-state models, 752 direct +
+752 C-dispatch cases, native-C/cold-C parity, full VM/compiler/CLI checks and
+scoped VM ASan/UBSan pass. TCG's 232 field differences remain explicit.
+VM/compiler are 69,903 / 451,602 bytes; generated bodies 288 / 285 bytes.
+Native publication/UI, entry ABI, source metadata and quotas are unchanged.
+See [frontier, actual evidence and limits](../vm/check/browser/evidence/2026-10-05-system-transfer.md).
 
 Immediate order: freeze this candidate and run the same bundle/segments/image
 with warmCuts=64 and unchanged quotas. Inspect the next actual execution gate

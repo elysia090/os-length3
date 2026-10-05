@@ -4,7 +4,9 @@ if [[ $# != 1 ]]; then exit 2; fi
 compiler=$(realpath -e -- "$1")
 scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT HUP INT TERM
-printf '\374\372\061\300\017\005' >"$scratch/page"
+# SYSENTER remains outside the accepted 64-bit transfer profile. SYSCALL is
+# now a compiled control boundary and cannot stand in for an unlowered opcode.
+printf '\374\372\061\300\017\064' >"$scratch/page"
 truncate -s 4096 "$scratch/page"
 partial() {
   local status
@@ -38,6 +40,12 @@ if "$compiler" --code-pages 0x400000 0x400000 "$scratch/page" "$scratch/bad"; th
 test ! -e "$scratch/bad.summary.json"
 
 # A backward jump is compiled once, not followed as a guessed execution trace.
+printf '\017\005' >"$scratch/page"
+truncate -s 4096 "$scratch/page"
+partial --code-pages 0x400000 0x400000 "$scratch/page" "$scratch/syscall"
+grep -q '"modules":1,"instructions":1' "$scratch/syscall.summary.json"
+grep -q '"kind":"control"' "$scratch/syscall.summary.json"
+
 printf '\353\376' >"$scratch/page"
 truncate -s 4096 "$scratch/page"
 partial --code-pages 0x400000 0x400000 "$scratch/page" "$scratch/loop"
