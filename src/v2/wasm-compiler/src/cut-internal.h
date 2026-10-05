@@ -17,6 +17,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_MXCSR, CUT_SYSTEM_VECTOR_TRANSFER, CUT_SYSTEM_VECTOR_SCALAR,
        CUT_SYSTEM_MEMORY_ORDER, CUT_SYSTEM_FXRSTOR };
 enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
+enum { CUT_BIND_NONE, CUT_BIND_MEMORY_DISPLACEMENT, CUT_BIND_BRANCH_DISPLACEMENT };
 typedef struct {
     wasm_writer *writer;
     wasm_cut_report report;
@@ -33,7 +34,7 @@ typedef struct {
     pl_u32 has_debug;
     pl_u32 has_repeat;
     pl_u32 vector_local;
-    pl_u32 has_operand_binding;
+    pl_u32 operand_binding_kind;
 } cut_lowering;
 typedef struct {
     pl_x86_map maps[64];
@@ -45,7 +46,7 @@ typedef struct {
     pl_u32 system_cut;
     pl_u32 repeat_cut;
     pl_u32 indirect_cut;
-    pl_u32 has_operand_binding;
+    pl_u32 operand_binding_kind;
 } cut_plan;
 void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);

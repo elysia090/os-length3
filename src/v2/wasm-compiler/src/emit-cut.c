@@ -50,7 +50,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->system_cut = 0u;
     plan->repeat_cut = 0u;
     plan->indirect_cut = 0u;
-    plan->has_operand_binding = 0u;
+    plan->operand_binding_kind = CUT_BIND_NONE;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -111,12 +111,12 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                             && (instruction.address_width == 32u || instruction.address_width == 64u)
                             && address->displacement >= -2147483647ll - 1ll
                             && address->displacement <= 2147483647ll) {
-                        ++plan->has_operand_binding;
+                        plan->operand_binding_kind = CUT_BIND_MEMORY_DISPLACEMENT;
                         plan->report.operand_binding = (pl_u32)address->displacement;
                     }
                 }
-                if (memory_operands != 1u || plan->has_operand_binding != 1u) {
-                    plan->has_operand_binding = 0u;
+                if (memory_operands != 1u) {
+                    plan->operand_binding_kind = CUT_BIND_NONE;
                     plan->report.operand_binding = 0u;
                 }
                 plan->flag_frontier[0] = 0u;
@@ -167,6 +167,14 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
         if (instruction.operation == PL_X86_OPERATION_BRANCH) {
             plan->report.boundary = WASM_CUT_CONTROL;
             plan->report.branch_target = instruction.target;
+            /* One final pure branch has one decoded rel8/rel32 displacement.
+             * Its prefix (including any LEA literal) is not rebound. Subtract
+             * unsigned coordinates to avoid signed overflow at high entries. */
+            pl_u64 displacement = instruction.target - instruction.fallthrough;
+            if (displacement <= 0x7fffffffull || displacement >= 0xffffffff80000000ull) {
+                plan->operand_binding_kind = CUT_BIND_BRANCH_DISPLACEMENT;
+                plan->report.operand_binding = (pl_u32)displacement;
+            }
             break;
         }
         plan->report.boundary = WASM_CUT_LIMIT;
@@ -183,7 +191,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     pl_u64 rip = plan->report.entry;
     cut.writer = writer;
     cut.report = plan->report;
-    cut.has_operand_binding = plan->has_operand_binding;
+    cut.operand_binding_kind = plan->operand_binding_kind;
     cut.has_memory = plan->report.memory_bytes != 0u;
     cut.has_port = cut.has_memory || plan->indirect_cut || (plan->system_cut
         && plan->system_cut != CUT_SYSTEM_CPUID && plan->system_cut != CUT_SYSTEM_SELECTOR_READ

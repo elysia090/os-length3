@@ -5,14 +5,19 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import {seedDisabledDebug} from './machine-observation.mjs';
 import {seedNativeSelector, checkSelectorModel} from './selector-observation.mjs';
-const directory = process.argv[2];
-if (!directory) throw new Error('usage: node check-wasm-cuts.mjs RECORD-DIRECTORY');
+const [directory,compilerFile,...extra] = process.argv.slice(2);
+if (!directory || extra.length) throw new Error('usage: node check-wasm-cuts.mjs RECORD-DIRECTORY [COMPILER.WASM]');
+const coldMemory=compilerFile?new WebAssembly.Memory({initial:16}):null;
+const cc=compilerFile?(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports:null;
+const cold=cc?Buffer.from(coldMemory.buffer):null,cv=cc?new DataView(coldMemory.buffer):null;
+const input=cc?.compiler_arena_min(),output=cc?input+8192:0,receipt=cc?output+65536:0;
 const files = (await readdir(directory)).filter(name => name.endsWith('.json')).sort();
 assert(files.length > 0, 'no actual native oracle records');
-let comparisons = 0, legacyTwinModules = 0, zeroRepresentatives = 0, selectorModels = 0;
+let comparisons = 0, legacyTwinModules = 0, zeroRepresentatives = 0, selectorModels = 0, coldParity=0;
 for (const file of files) {
   const prefix = path.join(directory, file.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
+  assert(Number.isInteger(meta.operandBinding),'fresh complete C attestation required');
   if (meta.summary?.nativeLegacyPrefixTwin) ++legacyTwinModules;
   if (file === 'composed.json')
     assert(meta.moduleBytes <= 400, 'dead intermediate flags reintroduced into the composed cut');
@@ -20,6 +25,17 @@ for (const file of files) {
     assert(meta.moduleBytes <= 360, 'ADD -> INC must retain carry only from the earlier writer');
   const bytes = await readFile(`${prefix}.wasm`);
   assert.equal(bytes.length, meta.moduleBytes);
+  if(cc) {
+    const page=await readFile(`${prefix}.source-page`);
+    assert.equal(page.length,4096);cold.set(page,input);
+    assert.equal(cc.compiler_open_pages(input,1,BigInt(meta.entry)&~4095n,9n),0);
+    assert.equal(cc.compiler_emit(BigInt(meta.entry),meta.instructions,output,65536,receipt),0);
+    assert.equal(cv.getBigUint64(receipt+24,true),BigInt(meta.instructions));
+    assert.equal(cv.getBigUint64(receipt+32,true),BigInt(meta.sourceBytes));
+    assert.equal(cv.getUint32(receipt+76,true),meta.operandBinding);
+    assert.equal(cv.getBigUint64(receipt+40,true),BigInt(bytes.length));
+    assert(cold.subarray(output,output+bytes.length).equals(bytes),'independent native/C-Wasm compiler body identity');++coldParity;
+  }
   const module = await WebAssembly.compile(bytes);
   assert.deepEqual(WebAssembly.Module.imports(module), [
     { module: 'machine', name: 'memory', kind: 'memory' },
@@ -67,7 +83,7 @@ for (const file of files) {
     expectedView.setBigUint64(offset + meta.ripOffset, word(34), true);
     expectedView.setBigUint64(offset + meta.retiredOffset,
       BigInt.asUintN(64, 0xfffffffffffffffen + BigInt(meta.instructions)), true);
-    assert.equal(instance.exports.cut(offset,0,BigInt(meta.entry),0), 1n, `${file}: result row ${row}`);
+    assert.equal(instance.exports.cut(offset,0,BigInt(meta.entry),meta.operandBinding), 1n, `${file}: result row ${row}`);
     const flags = view.getBigUint64(offset + meta.flagsOffset, true);
     assert.equal(flags & 0x10000n,0n,`${file}: successful RF clear row ${row}`);
     const mask = masks ? masks.readBigUInt64LE(row * 8) : BigInt(meta.flagsMask);
@@ -100,4 +116,5 @@ for (const file of files) {
   assert.equal(instance.exports.cut(0,0,BigInt(meta.entry),0), 6n, `${file}: wrong RIP`);
   assert.deepEqual(contents, snapshot);
 }
-console.log(`Generated Wasm/native x86: green (${files.length} modules, ${comparisons} comparisons; ${selectorModels} guest selector models; ${legacyTwinModules} legacy-prefix native twins, ${zeroRepresentatives} chosen undefined zero destinations; not Linux/browser boot)`);
+if(cc)cc.compiler_close();
+console.log(`Generated Wasm/native x86: green (${files.length} modules, ${comparisons} comparisons, ${coldParity} cold-C parity checks; ${selectorModels} guest selector models; ${legacyTwinModules} legacy-prefix native twins, ${zeroRepresentatives} chosen undefined zero destinations; not Linux/browser boot)`);

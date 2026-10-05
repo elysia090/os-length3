@@ -51,7 +51,8 @@ static int same_report(const wasm_cut_report *a, const wasm_cut_report *b)
         && a->written_registers == b->written_registers
         && a->flags_written == b->flags_written && a->boundary == b->boundary
         && a->boundary_operation == b->boundary_operation
-        && a->memory_bytes == b->memory_bytes && a->memory_access == b->memory_access;
+        && a->memory_bytes == b->memory_bytes && a->memory_access == b->memory_access
+        && a->operand_binding == b->operand_binding;
 }
 
 static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *report,
@@ -328,14 +329,14 @@ static int emit_oracle(const pl_elf_image *elf, const wasm_cut_report *report,
         "{\"stateBytes\":%zu,\"ripOffset\":%zu,\"flagsOffset\":%zu,"
         "\"retiredOffset\":%zu,\"entry\":\"%llu\",\"instructions\":%llu,"
         "\"flagsMask\":\"%llu\",\"writtenRegisters\":%u,\"sourceBytes\":%llu,"
-        "\"moduleBytes\":%llu,\"boundary\":%u,"
+        "\"moduleBytes\":%llu,\"boundary\":%u,\"operandBinding\":%u,"
         "\"selector\":{\"enabled\":%u,\"offset\":%zu,\"rank\":%u,\"width\":%u,\"destination\":%u,"
         "\"native\":[\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\",\"%llu\"]},"
         "\"summary\":{\"source\":%u,\"destination\":%u,\"width\":%u,\"undefinedZeroDestination\":%u,\"nativeLegacyPrefixTwin\":%u}}\n",
         sizeof(machine_state), offsetof(machine_state, rip), offsetof(machine_state, rflags),
         offsetof(machine_state, retired), report->entry, report->source_instructions,
         flags_mask, report->written_registers, report->source_bytes, report->module_bytes,
-        report->boundary,(unsigned)!!selector.length,
+        report->boundary,report->operand_binding,(unsigned)!!selector.length,
         offsetof(machine_state,system)+MACHINE_SYSTEM_ES*8u,selector.operands[1].value.reg.index,
         selector.operands[0].bits,selector.operands[0].value.reg.index,
         selectors[0],selectors[1],selectors[2],selectors[3],selectors[4],selectors[5],

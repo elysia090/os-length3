@@ -164,9 +164,19 @@ _start:
     CUT_OPCODE SOURCE,DEST
 #endif
 #elif defined(CUT_BRANCH)
+#if CUT_BRANCH_PREFIX == 1
+    lea 25(%rbx),%r8
+#elif CUT_BRANCH_PREFIX == 2
+    cmp %rsi,%rdi
+#endif
     CUT_BRANCH .Ltrue
     mov $0,%eax
     ret
+#ifdef CUT_BRANCH_PADDING
+.rept CUT_BRANCH_PADDING
+    nop
+.endr
+#endif
 .Ltrue:
     mov $1,%eax
     ret

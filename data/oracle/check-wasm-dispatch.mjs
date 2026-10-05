@@ -15,6 +15,7 @@ assert(names.length > 0);
 for (const name of names) {
   const prefix = path.join(directory, name.slice(0, -5));
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
+  assert(Number.isInteger(meta.operandBinding),'fresh complete C attestation required');
   if (meta.summary?.nativeLegacyPrefixTwin) ++legacyTwinModules;
   const cases = await readFile(`${prefix}.cases`);
   assert.equal(cases.length, 512 * 35 * 8);
@@ -51,6 +52,7 @@ for (const name of names) {
   view.setUint32(cutRows + 8, meta.sourceBytes, true);
   view.setUint32(cutRows + 12, meta.instructions, true);
   view.setUint32(cutRows + 16, slot, true);
+  view.setUint32(cutRows + 20, meta.operandBinding, true);
   assert.equal(vm.vm_open(base,memory.buffer.byteLength - base,4096,pageRows,5,5,pageRows + 1024,9n), 0);
   assert.equal(vm.vm_bind_state(state), 0);
   const bind = () => assert.equal(vm.vm_bind_execution(cutRows, 1, 9n), 0);

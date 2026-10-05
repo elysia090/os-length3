@@ -875,3 +875,17 @@ only independently verified decompression and the Linux-entry witness enable
 warm execution. Preproof cuts remain single and all cache quotas stay fixed.
 No formatted history is materialized per cut. See
 [measurements and scope](../../src/v2/vm/check/browser/evidence/2026-10-04-engine-construction.md).
+
+### Direct-branch residual binding
+
+`check-branch-sharing.mjs COMPILER.WASM` turns an embedded rel8/rel32 target
+into an exact body-sharing red; `--observe` reports the old result without
+pretending the CPU behavior is wrong. Its signed/all-condition/LEA/CMP grid is
+explicitly synthetic, not a kernel hot-frequency profile. Run
+`prepare-branch-cuts.sh NEW-DIRECTORY FRESH-COMPILER-BUILD` for actual native
+postlinked ELF observations; then `check-wasm-cuts.mjs NEW-DIRECTORY COMPILER.WASM`
+checks 102 cold-C body/attestation identities and 52,224 native comparisons.
+`check-wasm-dispatch.mjs VM.WASM NEW-DIRECTORY` checks the same cases through
+the real C dispatcher. Fresh records must contain `operandBinding`; no old
+zero-binding adapter is provided. The row/report/entry ABI and cache quotas
+are unchanged. See [derivation and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-branch-binding.md).

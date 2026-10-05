@@ -63,11 +63,12 @@ try {
       const module=new WebAssembly.Module(bytes);
       assert.deepEqual(WebAssembly.Module.imports(module),[{module:'machine',name:'memory',kind:'memory'}]);
       const cut=new WebAssembly.Instance(module,{machine:{memory}}).exports.cut;
+      const binding=view.getUint32(report+76,true);
       witnesses.push(bytes);templates.push({bytes,module,cut});
       for(let row=0;row<8;++row) {
         seed(entry,row);
         const outside=Buffer.from(data.subarray(state+stateBytes,state+windowBytes));
-        assert.equal(cut(state,-1,entry,0),1n);
+        assert.equal(cut(state,-1,entry,binding),1n);
         assert.equal(view.getBigUint64(state+1128,true),42n);
         assert.equal(view.getBigUint64(state+392,true)&0x10000n,0n);
         assert(data.subarray(state+stateBytes,state+windowBytes).equals(outside),'no state-window overrun');
@@ -78,7 +79,7 @@ try {
       }
       seed(entry+1n,0);
       const before=Buffer.from(data.subarray(state,state+windowBytes));
-      assert.equal(cut(state,-1,entry,0),6n,'coordinate mismatch must retain its entry refusal');
+      assert.equal(cut(state,-1,entry,binding),6n,'coordinate mismatch must retain its entry refusal');
       assert(data.subarray(state,state+windowBytes).equals(before));++entryRefusals;
     }
     // Exact bytes only. This digest measures identity; it does not strip

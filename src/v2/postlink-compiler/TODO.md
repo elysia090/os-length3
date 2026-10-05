@@ -1,6 +1,30 @@
 # Remaining work — 2026-10-05
 
-Current actual full-bundle stop (`47ba6f2`): common compiler -102 at
+Latest completed actual same-bundle gate (`775fe27`): IRETQ execution refusal 6,
+`48 cf`, RIP `0xffffffff81000b7e`, after 214,809,102 retirements / 117,257,400
+admissions. It announces `/init` but does not prove successful PID 1. Memory
+sharing and FXRSTOR are loaded; the final VM/compiler are frozen 67,944 /
+450,781 bytes. Engine 18,325,526 constructions / 620,365 ms dominates cold
+emission 421,736 ms and execution 131,046 ms; total 1,394,547 ms. Different
+retired work/clock calibration is not a speedup ratio. See the
+[exact completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-outer-iret-red.json).
+
+The next sharing red is now locally green: direct rel8/rel32 branch targets
+use the same latched ABI-3 scalar. 195 -> 21 exact bodies / 44,888 -> 4,881
+witness bytes on an explicitly synthetic grid; 37,440 full-state models,
+102 fresh native modules / 52,224 direct + 52,224 C-dispatch comparisons,
+102 native-C/cold-Wasm parity checks, full C/CLI and scoped sanitizers pass.
+Compiler is 450,892 bytes (+111); VM/rows/report/metadata do not grow.
+This candidate is NOT in the completed full job. See
+[derivation and counted scope](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
+
+Immediate order: exact outer-IRET privilege/descriptor/frame/flags red, common
+C return semantics, then a separately frozen full job with branch sharing.
+Retain explicit unsupported contracts and the independent CALL provenance red.
+PID 1, immutable release-root mount, shell/tooling and browser acceptance remain
+unachieved. The older receipts below are historical, not current running jobs.
+
+Previous actual full-bundle stop (`47ba6f2`): common compiler -102 at
 230,277,143 retirements / 129,152,056 admissions, RIP `0xffffffff81034ee2`,
 `48 0f ae 4f 40` (FXRSTOR64 [RDI+64]). The unchanged bundle reports
 `Run /init as init process`, but that announcement is not successful PID 1

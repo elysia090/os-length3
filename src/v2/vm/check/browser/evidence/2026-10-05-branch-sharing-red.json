@@ -1,0 +1,154 @@
+{
+  "format": "cold-branch-sharing-v1",
+  "status": "red",
+  "linuxBoot": "not-tested",
+  "compilerBytes": 450781,
+  "compilerSha256": "2507c8b832911cbbf789a6025eecff34c052130aa95b30c33172949be87fdbf7",
+  "entryABI": 3,
+  "emissions": 585,
+  "comparisons": 37440,
+  "entryRefusals": 1170,
+  "bindingMismatches": 522,
+  "families": [
+    {
+      "name": "jmp-near",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-0",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-1",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-2",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-3",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-4",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-5",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-6",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-7",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-8",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-9",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-10",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-11",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-12",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-13",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-14",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-near-15",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jmp-short",
+      "emissions": 15,
+      "distinctExactBodies": 5,
+      "desiredBodies": 1
+    },
+    {
+      "name": "jcc-short-zero",
+      "emissions": 15,
+      "distinctExactBodies": 5,
+      "desiredBodies": 1
+    },
+    {
+      "name": "lea-then-jcc",
+      "emissions": 15,
+      "distinctExactBodies": 5,
+      "desiredBodies": 1
+    },
+    {
+      "name": "cmp-then-jcc",
+      "emissions": 30,
+      "distinctExactBodies": 10,
+      "desiredBodies": 1
+    }
+  ],
+  "distinctExactBodies": 195,
+  "witnessBytes": 44888,
+  "boundedConstruction": {
+    "samples": 4096,
+    "compilations": 195,
+    "hits": 3901,
+    "entries": 195,
+    "quotaEvictions": 0,
+    "validatedDemands": 0,
+    "retainedModuleBytes": 44888,
+    "maximumEntries": 1024,
+    "maximumBytes": 262144
+  },
+  "scope": "synthetic signed rel8/rel32 grid, all 16 conditions, incoming flags, LEA/CMP prefixes, whole CPU/window and RF/retirement models; not native ISA, actual hot frequency or Linux/browser speedup"
+}

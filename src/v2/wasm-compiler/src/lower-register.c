@@ -355,7 +355,7 @@ void cut_effective_address(cut_lowering *cut, const pl_x86_instruction *instruct
         if (memory->scale > 1u) { cut_const(cut, memory->scale); cut_op(cut, 0x7eu); }
         cut_op(cut, 0x7cu);
     }
-    if (cut->has_operand_binding) {
+    if (cut->operand_binding_kind == CUT_BIND_MEMORY_DISPLACEMENT) {
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 3u);
         cut_op(cut, 0xacu); /* i64.extend_i32_s, before address-size truncation */
     } else cut_const(cut, (pl_u64)memory->displacement);
@@ -465,7 +465,11 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         return;
     }
     if (operation == PL_X86_OPERATION_BRANCH) {
-        cut_coordinate(cut, instruction->target);
+        if (cut->operand_binding_kind == CUT_BIND_BRANCH_DISPLACEMENT) {
+            cut_coordinate(cut, instruction->fallthrough);
+            cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 3u);
+            cut_op(cut, 0xacu); cut_op(cut, 0x7cu);
+        } else cut_coordinate(cut, instruction->target);
         if (instruction->flow == PL_X86_FLOW_CONDITIONAL) {
             cut_coordinate(cut, instruction->fallthrough);
             cut_condition(cut, instruction->condition); cut_op(cut, 0x1bu);

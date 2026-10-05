@@ -48,13 +48,15 @@ async function compile(opcode){
   const module=await WebAssembly.compile(bytes.slice(output,output+Number(view.getBigUint64(report+40,true))));
   const cut=(await WebAssembly.instantiate(module,{machine:{memory,interrupt_flag:vm.vm_flag,iret:vm.vm_iret,
     segment:vm.vm_segment,io:vm.vm_io}})).exports.cut;
-  cuts.set(key,cut);return cut;
+  const compiled={cut,binding:view.getUint32(report+76,true)};
+  cuts.set(key,compiled);return compiled;
 }
 async function bind(opcode){
   data.set(opcode,payload(6));put(base+384,0x9000);
-  vm.__indirect_function_table.set(slot,await compile(opcode));
+  const compiled=await compile(opcode);
+  vm.__indirect_function_table.set(slot,compiled.cut);
   put(rows,0x9000);v.setUint32(rows+8,opcode.length,true);v.setUint32(rows+12,1,true);
-  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,0,true);
+  v.setUint32(rows+16,slot,true);v.setUint32(rows+20,compiled.binding,true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 let transfers=0,privilegeFaults=0,irqEntries=0,waits=0,refusals=0;

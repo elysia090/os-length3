@@ -1,6 +1,13 @@
 # Browser projection of OS Length3 Linux
 
-Current measured state (2026-10-05): the unchanged bundle reaches Linux
+Current measured state (2026-10-05): the completed `775fe27` unchanged-bundle
+job reaches `/init` announcement and refuses IRETQ execution at
+`0xffffffff81000b7e` after 214,809,102 retirements. Outer-return semantics are
+the next exact gate; PID 1/root mount/shell and browser acceptance remain
+unachieved. The branch sharing candidate is separately verified, not loaded
+in that completed run. See [normal form, measurements and next blocker](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
+
+Previous measured state: the unchanged bundle reaches Linux
 initialization and announces `Run /init as init process`, but successful
 PID 1/root mount/shell remain unverified. The completed `47ba6f2` warm run
 stops at FXRSTOR64 grammar -102; repeated engine construction is its largest

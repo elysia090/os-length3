@@ -43,8 +43,10 @@ typedef struct {
  * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry,
  *     i32 operand_binding) -> i64 machine_result (machine-entry ABI 3).
  * The trusted compiler reports a signed displacement binding for one isolated
- * IP/GPR-relative memory operand, including scaled index and disp8; otherwise
- * zero. Absolute pointers and pure LEA literals are not rebound. The caller must
+ * IP/GPR-relative memory operand, including scaled index and disp8, or the
+ * final rel8/rel32 branch of a pure cut; otherwise zero. A branch uses it as
+ * sign_extend_32(d) added to its admitted fallthrough. Absolute pointers,
+ * preceding operands and pure LEA literals are not rebound. The caller must
  * preserve it by value through admission and any pinned continuation.
  * Pure cuts ignore the port; all generated cuts share machine/entry.h's table
  * type. Architectural addresses

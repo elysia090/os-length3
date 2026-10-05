@@ -28,13 +28,16 @@ const examples=[
   {name:'return-absolute',source:[0xc3],ret:true},
   {name:'divide',source:[0x48,0xf7,0xf3],divide:true},
   {name:'repeat',source:[0xf3,0xa4],repeat:true},
+  {name:'jump-relative',source:[0xeb,0xfd],branchOffset:-1n},
+  {name:'conditional-relative',source:[0x75,7],branchOffset:9n},
+  {name:'lea-before-branch',source:[0x48,0x8d,0x43,0x19,0x75,7],instructions:2,rax:()=>28n,branchOffset:13n},
 ];
 let templates=0,dispatchComparisons=0,entryRefusals=0,divideFaults=0;
 let fetchFaults=0,continuations=0,legacyTypeRefusals=0;
 async function emit(entry,example) {
   cold.fill(0x90,input,input+4096);cold.set(example.source,input);
   assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
-  assert.equal(cc.compiler_emit(entry,1,output,65536,report),0,example.name);
+  assert.equal(cc.compiler_emit(entry,example.instructions||1,output,65536,report),0,example.name);
   assert.equal(cv.getBigUint64(report+32,true),BigInt(example.source.length));
   return Buffer.from(cold.subarray(output,output+Number(cv.getBigUint64(report+40,true))));
 }
@@ -69,7 +72,7 @@ function reset(entry,example) {
   view.setUint32(segments,2,true);view.setUint32(segments+36,0xa09b,true);
   assert.equal(vm.vm_open(base,data.length-base,4096,directory,9,9,directory+1024,9n),0);
   assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
-  put(rows,entry);view.setUint32(rows+8,example.source.length,true);view.setUint32(rows+12,1,true);
+  put(rows,entry);view.setUint32(rows+8,example.source.length,true);view.setUint32(rows+12,example.instructions||1,true);
   view.setUint32(rows+16,slot,true);view.setUint32(rows+20,cv.getUint32(report+76,true),true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   return {codePte,code,ram};
@@ -84,7 +87,8 @@ try {
       let {ram}=reset(entry,example);
       const expected=cpu(),image=Buffer.from(data.subarray(ram,ram+4096));
       expected.writeBigUInt64LE(entry+BigInt(example.source.length),384);
-      expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(42n,1128);
+      expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(41n+BigInt(example.instructions||1),1128);
+      if(example.branchOffset!==undefined)expected.writeBigUInt64LE(BigInt.asUintN(64,entry+example.branchOffset),384);
       if(example.rax)expected.writeBigUInt64LE(example.rax(entry),0);
       if(example.call){expected.writeBigUInt64LE(entry+18n,384);expected.writeBigUInt64LE(stack+504n,32);image.writeBigUInt64LE(entry+5n,504);}
       if(example.ret){expected.writeBigUInt64LE(0x600000n,384);expected.writeBigUInt64LE(stack+520n,32);}
@@ -102,7 +106,7 @@ try {
       }else assert.equal(vm.vm_run(port,9n,1),example.call?5n:1n,example.name);
       assert(cpu().equals(expected),example.name+': complete state at admitted coordinate');
       assert(data.subarray(ram,ram+4096).equals(image),example.name+': exact RAM');
-      assert.equal(vm.vm_source_retired(),1n);++dispatchComparisons;
+      assert.equal(vm.vm_source_retired(),BigInt(example.instructions||1));++dispatchComparisons;
       reset(entry,example);
       const before=Buffer.from(data.subarray(base,base+4096));
       assert.equal(cut(base,port,entry+1n,cv.getUint32(report+76,true)),6n,'wrong independent binding refuses before mutation');

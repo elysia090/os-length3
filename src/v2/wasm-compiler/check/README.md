@@ -119,6 +119,11 @@ one ordinary wasm32 `machine.memory` and exports
 `cut(i32 state, i32 port, i64 admitted_entry, i32 operand_binding) -> i64`
 (machine-entry ABI 3); it imports
 no source reader, host function or decoder. Architectural addresses stay i64.
+The ABI-3 residual is either one isolated relative-memory displacement or the
+final pure branch's signed rel8/rel32 displacement. Preceding LEA/immediate
+literals and indirect targets remain independent. Fresh native records retain
+the exact `operandBinding`; direct and C-dispatch checks must not substitute
+zero. See [branch derivation and current scope](../../vm/check/browser/evidence/2026-10-05-branch-binding.md).
 
 Supported transfers in this checkpoint are register/immediate MOV, MOVZX/SX,
 LEA, ADD/SUB, AND/OR/XOR, CMP/TEST, INC/DEC, NEG/NOT, NOP and direct Jcc/JMP.
