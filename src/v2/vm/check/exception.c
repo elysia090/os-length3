@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 static _Alignas(8) pl_u8 arena[65536];
-static vm_memory_page pages[7];
-static vm_memory_branch branches[6];
+static vm_memory_page pages[8];
+static vm_memory_branch branches[7];
 static vm_memory memory;
 static machine_state cpu, before;
 static machine_segments segments;
@@ -25,7 +25,7 @@ static void reset(pl_u64 rsp, pl_u64 rip, pl_u64 flags, pl_u32 vector, pl_u32 ga
     put(20480u+vector*16u,0x9000u|8ull<<16u|(pl_u64)gate<<40u);
     const pl_u64 addresses[]={0x1000u,0x2000u,0x3000u,0x4000u,0x5000u,rsp&~4095ull};
     for(pl_u32 i=0u;i<6u;++i)pages[i]=(vm_memory_page){addresses[i],4096u+i*4096u,3u,VM_MEMORY_RAM,0u,0u};
-    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,7u,branches,9u));
+    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,8u,branches,9u));
     cpu=(machine_state){0}; cpu.cr0=0x80010011u;cpu.cr3=0x1000u;cpu.cr4=32u;cpu.efer=0x500u;
     cpu.rip=rip;cpu.rflags=flags;cpu.registers[4]=rsp;cpu.retired=123u;
     cpu.system[MACHINE_SYSTEM_CS]=8u;cpu.system[MACHINE_SYSTEM_SS]=16u;
@@ -211,7 +211,68 @@ int main(int argc,char **argv)
     EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,before.rip+1u));
     EXPECT(!delivery.stage && cpu.rip==0x9000u && cpu.registers[4]==0x107fe8u && cpu.retired==123u);
     EXPECT(get((pl_u32)memory.next_offset-4096u+4072u)==before.rip+1u);
+    unsigned inner=0u;
+    for(pl_u32 cpl=1u;cpl<=3u;++cpl)for(pl_u32 gate=0x8eu;gate<=0x8fu;++gate)
+    for(pl_u32 align=0u;align<16u;++align) {
+        reset(0x108f00u,0x300000u,0x603u,14u,gate);
+        EXPECT(!vm_memory_append(&memory,0x7000u,(pl_u32)memory.next_offset,3u));
+        put(28672u+4u,0x108f00u-align);
+        cpu.registers[4]=0x800000000000ull;cpu.system[MACHINE_SYSTEM_CS]=24u|cpl;
+        cpu.system[MACHINE_SYSTEM_SS]=32u|cpl;cpu.system[MACHINE_SYSTEM_TR]=40u;
+        segments.cache[MACHINE_SEGMENT_CS].attributes=0xa09bu|cpl<<5u;
+        segments.cache[MACHINE_SEGMENT_SS].attributes=0xc093u|cpl<<5u;
+        segments.cache[MACHINE_SEGMENT_TR]=(machine_segment_cache){0x7000u,103u,0x8bu};
+        put(16u,0x300000u);put(24u,(pl_u64)(cpl==3u?20u:16u)<<32u|14u);before=cpu;
+        machine_state expected=cpu;machine_segments hidden=segments;
+        expected.registers[4]=((0x108f00u-align)&~15ull)-48u;
+        expected.rip=0x9000u;expected.rflags=gate==0x8eu?0x403u:0x603u;
+        expected.system[MACHINE_SYSTEM_CS]=8u;expected.system[MACHINE_SYSTEM_SS]=0u;
+        expected.system[MACHINE_SYSTEM_CR2]=0x300000u;
+        hidden.cache[MACHINE_SEGMENT_CS]=(machine_segment_cache){0u,0xffffffffu,0xa09bu};
+        hidden.cache[MACHINE_SEGMENT_SS]=(machine_segment_cache){0u,0u,MACHINE_SEGMENT_UNUSABLE};
+        if(!align) {
+            pages[6].kind=VM_MEMORY_DEFERRED;EXPECT(vm_fault_enter(&memory,0u,&cpu,&segments,&delivery)==2u);
+            EXPECT(delivery.stage==3u&&!delivery.pushed);before.system[MACHINE_SYSTEM_CR2]=0x300000u;
+            EXPECT(!memcmp(&cpu,&before,sizeof cpu));pages[6].kind=VM_MEMORY_RAM;
+        }
+        EXPECT(!vm_fault_enter(&memory,0u,&cpu,&segments,&delivery));
+        EXPECT(!memcmp(&cpu,&expected,sizeof cpu)&&!memcmp(&segments,&hidden,sizeof segments));
+        const pl_u64 frame[]={cpl==3u?20u:16u,0x300000u,24u|cpl,0x10603u,0x800000000000ull,32u|cpl};
+        for(pl_u32 i=0u;i<6u;++i)EXPECT(get(stack_offset(cpu.registers[4])+i*8u)==frame[i]);
+        ++inner;
+    }
+    /* Software gate DPL is checked before Present, unlike processor faults.
+     * Refusal must not become successful privileged entry or retirement. */
+    for(pl_u32 present=0u;present<2u;++present) {
+        reset(0x108f00u,0x300000u,0x603u,3u,present?0x8eu:0x0eu);
+        cpu.system[MACHINE_SYSTEM_CS]=27u;segments.cache[MACHINE_SEGMENT_CS].attributes=0xa0fbu;before=cpu;
+        EXPECT(vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,cpu.rip+1u)==107u);
+        EXPECT(get(24u)==(26ull<<32u|13u));EXPECT(!memcmp(&cpu,&before,sizeof cpu));
+    }
+    /* The first four frame stores overwrite the TSS itself before a lower
+     * frame page arrives. Neither RSP0 nor those stores may be replayed. */
+    reset(0x108f00u,0x300000u,0x603u,14u,0x8eu);
+    EXPECT(!vm_memory_append(&memory,0x7000u,(pl_u32)memory.next_offset,3u));put(28676u,0x7020u);
+    cpu.registers[4]=0x800000000000ull;cpu.system[MACHINE_SYSTEM_CS]=27u;cpu.system[MACHINE_SYSTEM_SS]=35u;
+    segments.cache[MACHINE_SEGMENT_CS].attributes=0xa0fbu;
+    segments.cache[MACHINE_SEGMENT_TR]=(machine_segment_cache){0x7000u,103u,0x8bu};before=cpu;
+    EXPECT(vm_fault_enter(&memory,0u,&cpu,&segments,&delivery)==2u);
+    EXPECT(delivery.stage==4u&&delivery.pushed==4u&&delivery.stack==0x7020u);
+    EXPECT(get(28676u)!=0x7020u&&cpu.rip==before.rip&&cpu.registers[4]==before.registers[4]);
+    /* Supply only the absent lower frame page; the event owner stays pinned. */
+    EXPECT(!vm_memory_append(&memory,0x6000u,(pl_u32)memory.next_offset,3u));
+    EXPECT(!vm_fault_enter(&memory,0u,&cpu,&segments,&delivery));
+    EXPECT(cpu.registers[4]==0x6ff0u&&cpu.rip==0x9000u&&cpu.retired==before.retired);
+    EXPECT(get(36848u)==2u&&get(36856u)==before.rip);
+    /* Inconsistent selector/cache privilege must leave both PIC and CPU
+     * untouched; accepting the event then refusing TSS would lose the IRQ. */
+    reset(0x108f00u,0x300000u,0x202u,40u,0x8eu);cpu.system[MACHINE_SYSTEM_CS]=11u;before=cpu;
+    vm_pic_reset(&pic);value=0x13u;EXPECT(!vm_pic_transfer(&pic,0x20u,1u,&value));value=40u;
+    EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));value=1u;
+    EXPECT(!vm_pic_transfer(&pic,0x21u,1u,&value));EXPECT(!vm_pic_set_irq(&pic,0u,1u));accepted=pic;
+    EXPECT(vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic)==6u);
+    EXPECT(!memcmp(&pic,&accepted,sizeof pic)&&!memcmp(&cpu,&before,sizeof cpu)&&!delivery.stage);
     if(failures)return 1;
-    printf("Long-mode CPL0 fault/trap/IRETQ: %u cases; PIC IRQ/retry/return: %u; software #BP models: %u; TSS/IST/outer/secondary escalation NOT tested\n",cases,interrupts,software);
+    printf("Long-mode CPL0 fault/trap/IRETQ: %u cases; PIC IRQ/retry/return: %u; software #BP models: %u; TSS inner-fault models: %u; IST/secondary escalation NOT tested\n",cases,interrupts,software,inner);
     return 0;
 }

@@ -1,6 +1,34 @@
 # Remaining work — 2026-10-05
 
-Latest completed actual same-bundle gate (`775fe27`): IRETQ execution refusal 6,
+Latest completed actual same-bundle gate (`a59f66e`): IRET has passed; user
+instruction fetch at `0x7fd6ae6b5ed9` produces #PF14/error20 and fault-delivery
+refusal 6, after 187,681,639 retirements / 98,127,488 admissions. The frozen VM /
+compiler are 68,291 / 450,892 bytes. Engine 9,112,171 constructions / 332,771 ms
+still dominates cold emission 258,493 ms and execution 79,876 ms; total 826,093 ms.
+Different retired work/clock calibration is not a speedup ratio. The exact
+[completed receipt](../vm/check/browser/evidence/2026-10-05-node-startup-user-page-fault-red.json)
+has no CS/TR cache snapshot; do not invent one or count `/init` announcement
+as successful PID 1. Old PID 19152 has completed, not remained running.
+
+The next common-C red is locally green: CPL1/2/3 fetch faults switch to a
+valid busy TSS.RSP0, publish CR2, and preserve the 168-byte event frontier across
+page waits. 208 independent hardware-assisted frames, 96 complete-state native
+models, TSS/frame waits, TSS self-aliasing and no-PIC-consumption refusals pass.
+Full VM checks, scoped GCC ASan/UBSan, 484 IRET dispatch cases, IRQ/source-cohort
+and FXRSTOR regressions pass. VM is 68,451 bytes; compiler remains 450,892.
+No interpreter, larger quota or native release/UI change. See
+[derivation, exact evidence and limits](../vm/check/browser/evidence/2026-10-05-user-fault.md).
+
+Immediate order: freeze this candidate and run the same bundle/segments/image
+with warmCuts=64 and unchanged quotas. Inspect the next actual execution gate
+and maximum measured term; do not conflate local oracle checks with that run.
+PID 1, immutable release-root mount, shell/tooling and browser acceptance remain
+unachieved. IST/invalid-TSS/secondary escalation and strict CALL provenance
+remain explicit obligations, not silently accepted fallback.
+
+## Earlier checkpoints
+
+Earlier completed actual same-bundle gate (`775fe27`): IRETQ execution refusal 6,
 `48 cf`, RIP `0xffffffff81000b7e`, after 214,809,102 retirements / 117,257,400
 admissions. It announces `/init` but does not prove successful PID 1. Memory
 sharing and FXRSTOR are loaded; the final VM/compiler are frozen 67,944 /
@@ -15,7 +43,7 @@ witness bytes on an explicitly synthetic grid; 37,440 full-state models,
 102 fresh native modules / 52,224 direct + 52,224 C-dispatch comparisons,
 102 native-C/cold-Wasm parity checks, full C/CLI and scoped sanitizers pass.
 Compiler is 450,892 bytes (+111); VM/rows/report/metadata do not grow.
-This candidate is NOT in the completed full job. See
+This candidate was not in `775fe27`, but is in completed `a59f66e`. See
 [derivation and counted scope](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
 
 Outer IRET is now locally green in the common C boundary: 320 independent
@@ -27,22 +55,20 @@ VM is 68,291 bytes (+347), compiler 450,892 bytes. Full native C checks and
 scoped GCC ASan/UBSan are green. See
 [return frontier and scope](../vm/check/browser/evidence/2026-10-05-outer-iret.md).
 
-The separately frozen same-bundle full job is now running (PID 19152,
+The separately frozen same-bundle full job has completed (old PID 19152,
 `a59f66e`, VM 68,291 / compiler 450,892 bytes, warmCuts=64, unchanged quotas).
-Later edits do not alter its binaries. Do not restart/widen quotas or count
-the new frame candidate as loaded in that job.
+Later edits did not alter its binaries. It passed IRET and reached the user
+fetch-fault gate above. The new frame candidate was not loaded in that job.
 
 An independent competing-fault red additionally closes selector extent and
 CS-before-stack/SS-before-RSP priority. 352 hardware rows, 484 cold compiled
 C-dispatch cases, full native checks and scoped sanitizers pass. VM candidate
-is 68,421 bytes (+130), not loaded in the running job. See
+is 68,421 bytes (+130), not loaded in that completed job. See
 [exact frame provenance](../vm/check/browser/evidence/2026-10-05-iret-frame.md).
 
-Immediate order: finish that full job; inspect its next real execution gate
-and measured maximum term. Outer-origin fault/IRQ delivery remains incomplete.
-Retain explicit unsupported contracts and the independent CALL provenance red.
-PID 1, immutable release-root mount, shell/tooling and browser acceptance remain
-unachieved. The older receipts below are historical, not current running jobs.
+These receipts are historical; the next locally closed gate and pending full
+measurement are above. Retain explicit unsupported contracts and the independent
+CALL provenance red. No historical fixture pass is PID 1 or browser acceptance.
 
 Previous actual full-bundle stop (`47ba6f2`): common compiler -102 at
 230,277,143 retirements / 129,152,056 admissions, RIP `0xffffffff81034ee2`,

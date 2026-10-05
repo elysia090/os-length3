@@ -1,6 +1,18 @@
 # Browser projection of OS Length3 Linux
 
-Current measured state (2026-10-05): the completed `775fe27` unchanged-bundle
+Current measured state (2026-10-05): the completed `a59f66e` unchanged-bundle
+job has passed IRET and reaches user instruction fetch `0x7fd6ae6b5ed9`, then
+refuses #PF14/error20 delivery with result 6 after 187,681,639 retirements /
+98,127,488 admissions. Engine construction remains the largest measured term;
+no time ratio across different retired work/clock calibration is a speedup.
+The bounded C TSS.RSP0 fix now agrees with 208 hardware-assisted fault frames
+and complete C-state models, with native/sanitizer/IRQ/IRET/source regressions.
+VM 68,451 / compiler 450,892 bytes are a separate candidate, not loaded in that
+completed job. See [actual receipt](../vm/check/browser/evidence/2026-10-05-node-startup-user-page-fault-red.json)
+and [fault-entry frontier](../vm/check/browser/evidence/2026-10-05-user-fault.md).
+PID 1/root mount/shell/browser remain unachieved; cold shell 3s is unmet.
+
+Earlier measured state: the completed `775fe27` unchanged-bundle
 job reaches `/init` announcement and refuses IRETQ execution at
 `0xffffffff81000b7e` after 214,809,102 retirements. Outer-return semantics and
 branch sharing are now separately verified, not loaded in that completed run.
@@ -9,7 +21,7 @@ The C return boundary agrees with 320 hardware-assisted observations and
 PID 1/root mount/shell and browser acceptance remain unachieved. See
 [return frontier and exact scope](../vm/check/browser/evidence/2026-10-05-outer-iret.md)
 and [sharing measurements](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
-The frozen `a59f66e` job is now running with these candidates, unchanged
+The frozen `a59f66e` job completed with these candidates, unchanged
 quotas and bundle. A later selector-extent/fault-priority correction has
 352 hardware observations and 484 compiled dispatch checks but is not loaded
 in that job; see [separate candidate](../vm/check/browser/evidence/2026-10-05-iret-frame.md).

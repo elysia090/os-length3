@@ -4,9 +4,10 @@ import {spawn} from 'node:child_process';
 import {readFile,stat} from 'node:fs/promises';
 import path from 'node:path';
 const [qemuFile,elfFile,logFile,accelerator='tcg',...flags]=process.argv.slice(2);
-if(!logFile||flags.length>1||flags.some(x=>x!=='--frame-priority')||!['tcg','whpx'].includes(accelerator))
-  throw new Error('usage: check-iret-system.mjs QEMU.EXE ORACLE.ELF NEW-NATIVE.LOG [tcg|whpx] [--frame-priority]');
+if(!logFile||flags.length>1||flags.some(x=>!['--frame-priority','--user-fault'].includes(x))||!['tcg','whpx'].includes(accelerator))
+  throw new Error('usage: check-iret-system.mjs QEMU.EXE ORACLE.ELF NEW-NATIVE.LOG [tcg|whpx] [--frame-priority|--user-fault]');
 const framePriority=flags.includes('--frame-priority');
+const userFault=flags.includes('--user-fault');
 assert.equal(await stat(logFile).then(()=>true,err=>{if(err.code==='ENOENT')return false;throw err;}),false,'do not replace a native receipt');
 const stderr=[];
 const exit=await new Promise((resolve,reject)=>{
@@ -20,8 +21,8 @@ assert.equal(exit.code,33,Buffer.concat(stderr).toString()||'fixture must exit t
 assert.equal(exit.signal,null);
 const rows=(await readFile(logFile,'utf8')).trim().split(/\r?\n/).map(line=>line.trim().split(/\s+/).map(x=>BigInt(`0x${x}`)));
 assert.equal(rows.length,framePriority?352:320);
-for(const [rank,row]of rows.entries()){assert.equal(row.length,framePriority?23:22);assert.equal(row[0],BigInt(rank));}
+for(const [rank,row]of rows.entries()){assert.equal(row.length,userFault?27:framePriority?23:22);assert.equal(row[0],BigInt(rank));}
 const vectors=Object.fromEntries([...new Set(rows.map(row=>Number(row[7])))].map(vector=>[vector,rows.filter(row=>Number(row[7])===vector).length]));
 console.log(JSON.stringify({format:'native-outer-iret-observation-v1',status:'pass',rows:rows.length,vectors,accelerator,
   oracle:accelerator==='tcg'?'QEMU TCG system semantics':'Windows Hypervisor Platform virtual CPU',
-  framePriority,scope:'CPL0/long-mode IRET, GDT/TSS/IDT and resulting processor frames; not product execution',linuxBoot:'not-tested'},null,2));
+  framePriority,userFault,scope:'CPL0/long-mode IRET, GDT/TSS/IDT and resulting processor frames; not product execution',linuxBoot:'not-tested'},null,2));

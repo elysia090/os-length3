@@ -15,10 +15,16 @@ static machine_result fault(pl_u8 *port, const machine_state *state, pl_u32 vect
 static int admitted(vm_memory *memory, pl_u32 port, const machine_state *state,
                     const machine_segments *segments)
 {
+    if (state && segments) {
+        pl_u32 cpl=(pl_u32)state->system[MACHINE_SYSTEM_CS]&3u;
+        pl_u32 cs=segments->cache[MACHINE_SEGMENT_CS].attributes, dpl=(cs>>5u)&3u;
+        /* A forged outer selector with a kernel-only cache is not an admitted
+         * CPU state. Reject it before consuming a pending interrupt. */
+        if (cpl && ((cs&0x98u)!=0x98u || ((cs&4u)?dpl>cpl:dpl!=cpl))) return 0;
+    }
     return memory && memory->bytes && memory->generation && state && segments
         && !(port & 7u) && (pl_u64)port + sizeof(machine_memory_port) <= memory->reserved_bytes
         && segments->version == MACHINE_SEGMENTS_ABI_VERSION && segments->interrupt_shadow <= MACHINE_SHADOW_STI
-        && !(state->system[MACHINE_SYSTEM_CS] & 3u)
         && (segments->cache[MACHINE_SEGMENT_CS].attributes & 0x2000u)
         && !(segments->cache[MACHINE_SEGMENT_CS].attributes & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
         && !(state->rflags & 0x20000u) && !(state->cr4 & (1ull << 23u));
@@ -107,6 +113,9 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
                 || vm_memory_load(gate + 12u,4u)) {
             result = fault(port,state,13u,idt_error); goto done;
         }
+        if (software && (state->system[MACHINE_SYSTEM_CS]&3u)>((gate[5]>>5u)&3u)) {
+            result=fault(port,state,13u,idt_error);goto done;
+        }
         if (!(gate[5] & 128u)) { result = fault(port,state,11u,idt_error); goto done; }
         if (gate[4] & 7u) { result = MACHINE_RESULT_ENTRY_MAP; goto done; }
         delivery->selector = (pl_u32)vm_memory_load(gate + 2u,2u);
@@ -127,13 +136,31 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
             result = fault(port,state,13u,selector_error); goto done;
         }
         if (!(access & 128u)) { result = fault(port,state,11u,selector_error); goto done; }
+        /* The accepted inner transition targets non-conforming CPL0 code.
+         * Conforming outer-origin entries require a different stack rule. */
+        if ((delivery->frame[3]&3u) && (access&4u)) { result=MACHINE_RESULT_ENTRY_MAP;goto done; }
         if (!canonical(delivery->target)) { result = fault(port,state,13u,0u); goto done; }
         delivery->descriptor_access = access;
         delivery->stage = 3u;
     }
     if (delivery->stage == 3u) {
+        /* A privilege switch uses TSS.RSP0, never the interrupted user stack.
+         * Bit 8 pins the successfully read stack across a later Accessed-write
+         * residency wait, without growing the bounded event frontier. */
+        if ((delivery->frame[3]&3u) && !(delivery->descriptor_access&256u)) {
+            const machine_segment_cache *tss=segments->cache+MACHINE_SEGMENT_TR;
+            if ((tss->attributes&MACHINE_SEGMENT_UNUSABLE) || (tss->attributes&0x9fu)!=0x8bu
+                    || tss->limit<103u || tss->base>~0ull-11u
+                    || !canonical(tss->base+4u) || !canonical(tss->base+11u)) {
+                result=MACHINE_RESULT_ENTRY_MAP;goto done;
+            }
+            result=vm_mmu_access(memory,port_offset,&context,tss->base+4u,8u,MACHINE_MEMORY_READ,0u);
+            if(result)goto done;
+            delivery->stack=vm_memory_load(port+offsetof(machine_memory_port,value),8u)&~15ull;
+            delivery->descriptor_access|=256u;
+        }
         if (!canonical(delivery->stack)) { result = fault(port,state,12u,0u); goto done; }
-        result = accessed(memory,port_offset,state,delivery->descriptor_address,delivery->descriptor_access);
+        result = accessed(memory,port_offset,state,delivery->descriptor_address,delivery->descriptor_access&255u);
         if (result) goto done;
         delivery->stage = 4u;
     }
@@ -145,6 +172,10 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
         ++delivery->pushed;
     }
     state->registers[4] = delivery->stack - delivery->words * 8u;
+    if (delivery->frame[3]&3u) {
+        state->system[MACHINE_SYSTEM_SS]=0u;
+        segments->cache[MACHINE_SEGMENT_SS]=(machine_segment_cache){0u,0u,MACHINE_SEGMENT_UNUSABLE};
+    }
     state->system[MACHINE_SYSTEM_CS] = delivery->selector & ~3u;
     segments->cache[MACHINE_SEGMENT_CS] = delivery->code;
     state->rip = delivery->target;
@@ -202,7 +233,8 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
     machine_state *state, machine_segments *segments)
 {
     vm_memory_abort(memory);
-    if (!admitted(memory,port_offset,state,segments)) return MACHINE_RESULT_ENTRY_MAP;
+    if (!admitted(memory,port_offset,state,segments) || (state->system[MACHINE_SYSTEM_CS]&3u))
+        return MACHINE_RESULT_ENTRY_MAP;
     pl_u8 *port = memory->bytes + port_offset;
     if (vm_memory_load(port,8u) != memory->generation) return MACHINE_RESULT_STALE_GENERATION;
     if (state->rflags & 0x4000u) return fault(port,state,13u,0u);

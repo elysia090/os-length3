@@ -1,7 +1,7 @@
 # IRET selector extent and fault priority — 2026-10-05
 
 This extends [the outer-return check](2026-10-05-outer-iret.md), not the
-currently running frozen startup job. VM `a59f66e` still reads five whole
+now completed frozen startup job. VM `a59f66e` reads five whole
 qwords before CS validation. The new independent frame fixture makes it red:
 at case 320 C reports #PF (115), hardware reports #GP (107) for null CS.
 
@@ -52,7 +52,9 @@ faults and unnecessary residency demands are avoided, not just made faster.
 
 Not a full fault-priority proof: all descriptor/stack aliasing, retries after
 aliasing Accessed writes, nonzero-origin returns, NMI/CET and other modes
-still require separate obligations. The frozen full startup job is PID 19152,
+still require separate obligations. The frozen full startup job was PID 19152,
 VM 68,291 bytes (`a59f66e`), compiler 450,892 bytes, unchanged warmCuts=64 /
 engine 1024 entries / 262144 witness bytes. It is not restarted or replaced
-by this separately compiled candidate. PID 1/shell/browser remain unachieved.
+by this separately compiled candidate. It has now completed, passing IRET and
+reaching [a user fetch #PF delivery refusal](2026-10-05-node-startup-user-page-fault-red.json).
+PID 1/shell/browser remain unachieved.

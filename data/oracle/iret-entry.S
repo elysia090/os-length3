@@ -1,6 +1,12 @@
 /* Independent system oracle only. Real IRETQ leaves CPL0; a hardware INT gate
  * records the resulting user frame. Failed trials start a new fixture case,
  * never an execution fallback for a product guest. */
+.ifdef FRAME_FAULT_PROFILE
+.equ HAVE_PF_HANDLER,1
+.endif
+.ifdef USER_FAULT_PROFILE
+.equ HAVE_PF_HANDLER,1
+.endif
 .section .multiboot,"a"
 .balign 4
 .long 0x1badb002,0,-0x1badb002
@@ -33,6 +39,9 @@ _start:
     mov $0xc0000080,%ecx
     rdmsr
     or $256,%eax
+.ifdef USER_FAULT_PROFILE
+    or $2048,%eax
+.endif
     wrmsr
     mov %cr0,%eax
     or $0x80000001,%eax
@@ -65,10 +74,12 @@ long_start:
     mov $idt+12*16,%edi
     mov $ss_handler,%esi
     call write_gate
-.ifdef FRAME_FAULT_PROFILE
+.ifdef HAVE_PF_HANDLER
     mov $idt+14*16,%edi
     mov $pf_handler,%esi
     call write_gate
+.endif
+.ifdef FRAME_FAULT_PROFILE
     movb $1,idt+11*16+4(%rip)
     movb $1,idt+12*16+4(%rip)
     movb $1,idt+13*16+4(%rip)
@@ -200,6 +211,9 @@ descriptors_ready:
 .endif
     push %rax
     mov $user_start,%eax
+.ifdef USER_FAULT_PROFILE
+    mov $0x300000,%eax
+.endif
     cmp $18,%r13d
     jne 12f
     mov $0x0000800000000000,%rax
@@ -231,8 +245,11 @@ ss_handler:
 gp_handler:
     pushq $13
     jmp recorded
-.ifdef FRAME_FAULT_PROFILE
+.ifdef HAVE_PF_HANDLER
 pf_handler:
+.ifdef USER_FAULT_PROFILE
+    mov $pf_handler,%r11d
+.endif
     pushq $14
     jmp recorded
 .endif
@@ -240,6 +257,19 @@ user_handler:
     pushq $0
     pushq $128
 recorded:
+.ifdef USER_FAULT_PROFILE
+    mov %r11,record+208(%rip)
+    pushfq
+    pop %rax
+    mov %rax,record+200(%rip)
+    lea 16(%rsp),%rax
+    mov %rax,record+176(%rip)
+    mov $0,%eax
+    mov %ss,%ax
+    mov %rax,record+184(%rip)
+    mov %cs,%ax
+    mov %rax,record+192(%rip)
+.endif
     mov $record,%edi
     mov (%rsp),%rax
     mov %rax,56(%rdi)
@@ -283,6 +313,9 @@ recorded:
     cld
     mov $record,%esi
     mov $22,%r15d
+.ifdef USER_FAULT_PROFILE
+    mov $27,%r15d
+.endif
 .ifdef FRAME_FAULT_PROFILE
     inc %r15d
 .endif
@@ -349,7 +382,11 @@ pd: .skip 4096
 idt: .skip 129*16
 .balign 16
 tss: .skip 104
+.ifdef USER_FAULT_PROFILE
+record: .skip 216
+.else
 record: .skip 184
+.endif
 .balign 4096
 .skip 8192
 user_stack_end:

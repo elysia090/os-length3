@@ -209,6 +209,16 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     }
     event.deliveryResult = String(deliveryResult); event.nextRip = `0x${rip().toString(16)}`;
     event.cr2 = `0x${view.getBigUint64(base + 432,true).toString(16)}`;
+    if (deliveryResult !== 0n) {
+      // Capture a bounded refusal diagnostic only at the terminal gate. This
+      // is neither an event-time full CPU copy nor an alternate guest executor.
+      const hex=at=>`0x${view.getBigUint64(at,true).toString(16)}`;
+      const cache=rank=>({base:hex(segments+8+rank*16),limit:view.getUint32(segments+16+rank*16,true),
+        attributes:view.getUint32(segments+20+rank*16,true)});
+      event.state={rsp:hex(base+32),rflags:hex(base+392),cs:hex(base+488),ss:hex(base+496),tr:hex(base+536),
+        gdtrBase:hex(base+448),gdtrLimit:hex(base+456),idtrBase:hex(base+464),idtrLimit:hex(base+472),
+        csCache:cache(1),ssCache:cache(2),trCache:cache(7)};
+    }
     exceptions.push(event);
     if (exceptions.length > 16) exceptions.shift();
     // C owns the IDT, frame, handler target and page-wait continuation.
