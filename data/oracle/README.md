@@ -902,3 +902,8 @@ nonpresent SS and noncanonical-RIP fault state differ and remain reported.
 Only hardware-assisted rows belong in the first optional argument. Neither
 test supplies a product VM fallback or proves Linux boot. See
 [frontier, measured disagreement and scope](../../src/v2/vm/check/browser/evidence/2026-10-05-outer-iret.md).
+For competing frame faults, assemble with `--defsym FRAME_FAULT_PROFILE=1`
+and add `--frame-priority` after the accelerator argument. This records 352
+rows with CR2, including exact two-byte selector extents; the same C checker
+accepts that complete profile and checks every row through compiled dispatch.
+See [frame provenance](../../src/v2/vm/check/browser/evidence/2026-10-05-iret-frame.md).

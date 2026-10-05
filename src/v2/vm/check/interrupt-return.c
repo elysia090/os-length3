@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 static _Alignas(8) pl_u8 arena[65536];
-static vm_memory_page pages[6];
+static vm_memory_page pages[7];
 static vm_memory_branch branches[6];
 static vm_memory memory;
 static machine_state cpu, before;
 static machine_segments segments, old_segments;
-static unsigned failures, returns, faults, waits;
+static unsigned failures, returns, faults, waits, frame_boundaries;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr,"iret: line %u\n",(unsigned)__LINE__); ++failures; } } while (0)
 static void put(pl_u32 at, pl_u64 value)
 { for (pl_u32 i=0u;i<8u;++i) arena[at+i]=(pl_u8)(value>>(i*8u)); }
@@ -18,7 +18,7 @@ static void reset(pl_u32 cpl, pl_u32 accessed)
     put(16384u+24u,0x00af9a000000ffffull|((pl_u64)cpl<<45u)|((pl_u64)accessed<<40u));
     put(16384u+32u,0x00cf92000000ffffull|((pl_u64)cpl<<45u)|((pl_u64)accessed<<40u));
     for(pl_u32 i=0u;i<6u;++i)pages[i]=(vm_memory_page){(i+1ull)*4096u,4096u+i*4096u,3u,VM_MEMORY_RAM,0u,0u};
-    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,6u,branches,9u));
+    EXPECT(!vm_memory_open(&memory,arena,sizeof arena,4096u,pages,6u,7u,branches,9u));
     cpu=(machine_state){0};cpu.cr0=0x80010011u;cpu.cr3=0x1000u;cpu.cr4=32u;cpu.efer=0x500u;
     cpu.rip=0x6000u;cpu.rflags=2u;cpu.registers[4]=0x5e00u;cpu.retired=123u;
     cpu.system[MACHINE_SYSTEM_CS]=8u;cpu.system[MACHINE_SYSTEM_SS]=16u;
@@ -66,7 +66,27 @@ int main(void)
         EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!memcmp(&segments,&old_segments,sizeof segments));
         pages[rank].kind=VM_MEMORY_RAM;EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));++waits;
     }
+    /* Last-page SS selector has only two significant bytes. Null CS must
+     * fault before the absent outer stack operands; otherwise SS is read
+     * before RSP, including exact cross-page #PF linear provenance. */
+    for(pl_u32 invalid=0u;invalid<2u;++invalid)for(pl_u32 align=0u;align<16u;++align) {
+        reset(3u,0u);EXPECT(!vm_memory_append(&memory,0x7000u,(pl_u32)memory.next_offset,3u));
+        put(12288u,0x7023u);put(28672u+4u*8u,0x4023u);put(28672u+511u*8u,0x5023u);
+        cpu.registers[4]=0x1fffe8u-align;before=cpu;
+        pl_u32 at=20480u+(pl_u32)(cpu.registers[4]&4095u);
+        put(at,0x600100u);put(at+8u,invalid?3u:27u);put(at+16u,0x603u);put(at+24u,0x7e00u);put(at+32u,35u);
+        machine_result result=vm_interrupt_return(&memory,0u,&cpu,&segments);
+        if(invalid||align<10u) {
+            EXPECT(result==(invalid?107u:115u));
+            EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!memcmp(&segments,&old_segments,sizeof segments));
+            pl_u64 address=cpu.rip;
+            if(!invalid)address=cpu.registers[4]+32u<0x200000u?0x200000u:cpu.registers[4]+32u;
+            pl_u64 reported=0u;for(pl_u32 i=0u;i<8u;++i)reported|=(pl_u64)arena[16u+i]<<(i*8u);
+            EXPECT(reported==address);EXPECT(arena[16384u+29u]==(invalid?0xfau:0xfbu));
+        }else EXPECT(!result&&cpu.rip==0x600100u&&cpu.registers[4]==0x7e00u&&cpu.retired==123u);
+        ++frame_boundaries;
+    }
     if(failures)return 1;
-    printf("CPL0 outer IRETQ: %u full-state returns, %u precise descriptor/target faults, %u residency retries; no Linux boot claim\n",returns,faults,waits);
+    printf("CPL0 outer IRETQ: %u full-state returns, %u precise descriptor/target faults, %u residency retries, %u frame-boundary models; no Linux boot claim\n",returns,faults,waits,frame_boundaries);
     return 0;
 }

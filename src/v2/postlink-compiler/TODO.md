@@ -27,8 +27,19 @@ VM is 68,291 bytes (+347), compiler 450,892 bytes. Full native C checks and
 scoped GCC ASan/UBSan are green. See
 [return frontier and scope](../vm/check/browser/evidence/2026-10-05-outer-iret.md).
 
-Immediate order: separately frozen same-bundle full job with outer IRET and
-branch sharing; inspect the next real execution gate and measured maximum term.
+The separately frozen same-bundle full job is now running (PID 19152,
+`a59f66e`, VM 68,291 / compiler 450,892 bytes, warmCuts=64, unchanged quotas).
+Later edits do not alter its binaries. Do not restart/widen quotas or count
+the new frame candidate as loaded in that job.
+
+An independent competing-fault red additionally closes selector extent and
+CS-before-stack/SS-before-RSP priority. 352 hardware rows, 484 cold compiled
+C-dispatch cases, full native checks and scoped sanitizers pass. VM candidate
+is 68,421 bytes (+130), not loaded in the running job. See
+[exact frame provenance](../vm/check/browser/evidence/2026-10-05-iret-frame.md).
+
+Immediate order: finish that full job; inspect its next real execution gate
+and measured maximum term. Outer-origin fault/IRQ delivery remains incomplete.
 Retain explicit unsupported contracts and the independent CALL provenance red.
 PID 1, immutable release-root mount, shell/tooling and browser acceptance remain
 unachieved. The older receipts below are historical, not current running jobs.

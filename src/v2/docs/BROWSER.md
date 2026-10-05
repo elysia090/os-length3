@@ -9,6 +9,10 @@ The C return boundary agrees with 320 hardware-assisted observations and
 PID 1/root mount/shell and browser acceptance remain unachieved. See
 [return frontier and exact scope](../vm/check/browser/evidence/2026-10-05-outer-iret.md)
 and [sharing measurements](../vm/check/browser/evidence/2026-10-05-branch-binding.md).
+The frozen `a59f66e` job is now running with these candidates, unchanged
+quotas and bundle. A later selector-extent/fault-priority correction has
+352 hardware observations and 484 compiled dispatch checks but is not loaded
+in that job; see [separate candidate](../vm/check/browser/evidence/2026-10-05-iret-frame.md).
 
 Previous measured state: the unchanged bundle reaches Linux
 initialization and announces `Run /init as init process`, but successful

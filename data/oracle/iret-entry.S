@@ -48,6 +48,9 @@ long_start:
     mov %rax,gdt+40(%rip)
     mov $stack_end,%eax
     mov %rax,tss+4(%rip)
+.ifdef FRAME_FAULT_PROFILE
+    mov %rax,tss+36(%rip)
+.endif
     mov $40,%eax
     ltr %ax
     mov $idt,%edi
@@ -62,6 +65,15 @@ long_start:
     mov $idt+12*16,%edi
     mov $ss_handler,%esi
     call write_gate
+.ifdef FRAME_FAULT_PROFILE
+    mov $idt+14*16,%edi
+    mov $pf_handler,%esi
+    call write_gate
+    movb $1,idt+11*16+4(%rip)
+    movb $1,idt+12*16+4(%rip)
+    movb $1,idt+13*16+4(%rip)
+    movb $1,idt+14*16+4(%rip)
+.endif
     mov $idt+128*16,%edi
     mov $user_handler,%esi
     call write_gate
@@ -69,6 +81,13 @@ long_start:
     xor %r12d,%r12d
 case_loop:
     cli
+.ifdef FRAME_FAULT_PROFILE
+    xor %eax,%eax
+    mov %rax,%cr2
+    movq $0x200087,pd+8(%rip)
+    mov $0x200000,%eax
+    invlpg (%rax)
+.endif
     mov $stack_end,%esp
     mov $16,%eax
     mov %ax,%ds
@@ -155,6 +174,13 @@ descriptors_ready:
     mov %rax,40(%rdi)
     mov $stack_end,%esp
     sub %rdx,%rsp
+.ifdef FRAME_FAULT_PROFILE
+    cmp $20,%r13d
+    jb 13f
+    mov $0x200010,%esp
+    sub %rdx,%rsp
+13:
+.endif
     mov %rsp,48(%rdi)
     mov %r14d,%eax
     or $32,%eax
@@ -166,6 +192,12 @@ descriptors_ready:
     push %rbx
     mov %r14d,%eax
     or $24,%eax
+.ifdef FRAME_FAULT_PROFILE
+    cmp $20,%r13d
+    jne 14f
+    mov $3,%eax
+14:
+.endif
     push %rax
     mov $user_start,%eax
     cmp $18,%r13d
@@ -175,6 +207,16 @@ descriptors_ready:
     push %rax
     pushq $2
     popfq
+.ifdef FRAME_FAULT_PROFILE
+    cmp $20,%r13d
+    jb 15f
+    movq $0,pd+8(%rip)
+    mov $0x200000,%eax
+    invlpg (%rax)
+15:
+    pushq $2
+    popfq
+.endif
 iret_trial:
     iretq
 user_start:
@@ -189,6 +231,11 @@ ss_handler:
 gp_handler:
     pushq $13
     jmp recorded
+.ifdef FRAME_FAULT_PROFILE
+pf_handler:
+    pushq $14
+    jmp recorded
+.endif
 user_handler:
     pushq $0
     pushq $128
@@ -227,11 +274,18 @@ recorded:
     mov %rax,160(%rdi)
     movzbl gdt+37(%rip),%eax
     mov %rax,168(%rdi)
+.ifdef FRAME_FAULT_PROFILE
+    mov %cr2,%rax
+    mov %rax,176(%rdi)
+.endif
     mov $stack_end,%esp
     cli
     cld
     mov $record,%esi
     mov $22,%r15d
+.ifdef FRAME_FAULT_PROFILE
+    inc %r15d
+.endif
 print_record:
     mov (%rsi),%rax
     call hex
@@ -243,7 +297,11 @@ print_record:
     mov $10,%al
     out %al,$0xe9
     inc %r12d
+.ifdef FRAME_FAULT_PROFILE
+    cmp $352,%r12d
+.else
     cmp $320,%r12d
+.endif
     jb case_loop
     mov $0x10,%eax
     out %eax,$0xf4
@@ -291,7 +349,7 @@ pd: .skip 4096
 idt: .skip 129*16
 .balign 16
 tss: .skip 104
-record: .skip 176
+record: .skip 184
 .balign 4096
 .skip 8192
 user_stack_end:

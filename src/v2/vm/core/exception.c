@@ -208,11 +208,12 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
     if (state->rflags & 0x4000u) return fault(port,state,13u,0u);
     vm_mmu_context context = {state->cr0,state->cr3,state->cr4,state->efer,0u};
     pl_u64 frame[5];
-    for (pl_u32 i = 0u; i < 5u; ++i) {
+    for (pl_u32 i = 0u; i < 3u; ++i) {
+        pl_u32 width = i == 1u ? 2u : 8u;
         machine_result result = vm_mmu_access(memory,port_offset,&context,state->registers[4] + i * 8u,
-            8u,MACHINE_MEMORY_READ | MACHINE_MEMORY_STACK,0u);
+            width,MACHINE_MEMORY_READ | MACHINE_MEMORY_STACK,0u);
         if (result) return result;
-        frame[i] = vm_memory_load(port + offsetof(machine_memory_port,value),8u);
+        frame[i] = vm_memory_load(port + offsetof(machine_memory_port,value),width);
     }
     pl_u32 selector = (pl_u32)frame[1] & 65535u, error = selector & 0xfffcu;
     pl_u32 return_cpl = selector & 3u;
@@ -231,6 +232,16 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
      * check fails. Architectural register publication is still deferred. */
     result = accessed(memory,port_offset,state,address,access);
     if (result) return result;
+    /* CS checks precede outer stack operands. Selector slots have 8-byte
+     * spacing, but only the low two bytes are read; SS precedes RSP. Reading
+     * discarded bytes changes #PF priority/address at page boundaries. */
+    for (pl_u32 rank = 0u; rank < 2u; ++rank) {
+        pl_u32 i = 4u-rank, width = rank ? 8u : 2u;
+        result = vm_mmu_access(memory,port_offset,&context,state->registers[4] + i * 8u,
+            width,MACHINE_MEMORY_READ | MACHINE_MEMORY_STACK,0u);
+        if (result) return result;
+        frame[i] = vm_memory_load(port + offsetof(machine_memory_port,value),width);
+    }
     pl_u32 ss = (pl_u32)frame[4] & 65535u;
     if ((ss & 3u) != return_cpl) return fault(port,state,13u,ss & 0xfffcu);
     machine_segment_cache stack = {0u,0u,MACHINE_SEGMENT_UNUSABLE | return_cpl << 5u};

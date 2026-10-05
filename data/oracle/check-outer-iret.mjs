@@ -126,15 +126,24 @@ if(hardwareFile) {
   const parse=async file=>(await readFile(file,'utf8')).trim().split(/\r?\n/)
     .map(line=>line.trim().split(/\s+/).map(x=>BigInt(`0x${x}`)));
   const observations=await parse(hardwareFile);
-  assert.equal(observations.length,320,'complete independent system fixture');
+  assert([320,352].includes(observations.length),'complete independent system fixture');
   for(const [index,row] of observations.entries()) {
-    assert.equal(row.length,22);assert.equal(row[0],BigInt(index));
-    const cpl=Number(row[1]),{frame}=reset(cpl);
+    assert.equal(row.length,observations.length===352?23:22);assert.equal(row[0],BigInt(index));
+    const cpl=Number(row[1]),start=reset(cpl);
+    let frame=start.frame;
+    if(index>=320) {
+      const rsp=row[6]-40n;put(base+32,rsp);frame=payload(4)+Number(rsp&4095n);
+      put(payload(2),0x7027);put(payload(2)+8,0);data.fill(0,payload(6),payload(6)+4096);
+      put(payload(6)+4*8,0x4027);put(payload(6)+6*8,0x6027);put(payload(6)+511*8,0x5027);
+    }
     put(payload(3)+24,0x00af00000000ffffn|row[2]<<40n);
     put(payload(3)+32,0x00cf00000000ffffn|row[3]<<40n);
     put(frame,row[7]===128n?row[9]-2n:0x100260n);put(frame+16,row[4]);put(frame+24,row[5]);
+    put(frame+8,24|cpl);put(frame+32,32|cpl);
     if(index>>4===18)put(frame,0x800000000000n);
     if(index>>4===14)put(frame+32,3);
+    if(index>>4===20)put(frame+8,3);
+    put(base+384,row[7]===128n?row[9]-4n:row[9]);
     put(base+392,2);put(segments+8+4*16,row[18]);put(segments+8+5*16,row[19]);
     const prior=cpu(),cache=hidden(),result=vm.vm_iret(port);
     if(row[7]===128n) {
@@ -144,6 +153,7 @@ if(hardwareFile) {
     } else {
       assert.equal(result,row[7]*8n+3n,`hardware exception ${index}`);
       assert.equal(BigInt(v.getUint32(port+28,true)),row[8]);
+      assert.equal(get(port+16),row[7]===14n?row[22]:row[9]);
       assert(cpu().equals(prior));assert(hidden().equals(cache));
       assert.equal(row[10],8n);assert.equal(row[13],16n);assert.equal(row[12],row[6]-40n);
       assert.equal(row[11],0x10002n,'native fault frame adds RF without retiring IRET');
@@ -152,14 +162,26 @@ if(hardwareFile) {
     assert.equal(get(segments+8+4*16),row[18]);assert.equal(get(segments+8+5*16),row[19]);
     assert.equal(BigInt(data[payload(3)+29]),row[20],`CS Accessed side effect ${index}`);
     assert.equal(BigInt(data[payload(3)+37]),row[21],`SS Accessed side effect ${index}`);++native;
+    const expected=cpu(),hiddenResult=hidden();data.set(prior,base);data.set(cache,segments);
+    data[payload(3)+29]=Number(row[2]);data[payload(3)+37]=Number(row[3]);
+    if(row[7]===128n)expected.writeBigUInt64LE(expected.readBigUInt64LE(1128)+1n,1128);
+    else expected.writeBigUInt64LE(0x6000n,384);
+    assert.equal(runCompiled(),row[7]===128n?5n:row[7]*8n+3n,`compiled hardware case ${index}`);
+    assert(cpu().equals(expected));assert(hidden().equals(hiddenResult));
+    assert.equal(vm.vm_completed(),row[7]===128n?1:0);
+    assert.equal(vm.vm_source_retired(),row[7]===128n?1n:0n);
+    if(row[7]===14n)assert.equal(get(port+16),row[22]);
+    assert.equal(BigInt(data[payload(3)+29]),row[20]);assert.equal(BigInt(data[payload(3)+37]),row[21]);
   }
   if(tcgFile) {
     const reference=await parse(tcgFile);assert.equal(reference.length,observations.length);
     for(const [index,row] of reference.entries()) {
-      assert.equal(row.length,22);assert.equal(row[0],BigInt(index));
-      for(let field=1;field<22;++field)if(row[field]!==observations[index][field]) {
+      assert.equal(row.length,observations[index].length);assert.equal(row[0],BigInt(index));
+      for(let field=1;field<row.length;++field)if(row[field]!==observations[index][field]) {
         assert(field===20||field===21||(index>>4===12&&field===7)
-          ||(index>>4===18&&field>=9&&field<=17),`unclassified oracle disagreement ${index}:${field}`);
+          ||(index>>4===18&&field>=9&&field<=17)
+          ||(index>>4===21&&(field===7||field===22||(field>=9&&field<=17))),
+          `unclassified oracle disagreement ${index}:${field}`);
         oracleDifferences.push({case:index,field,hardware:`0x${observations[index][field].toString(16)}`,tcg:`0x${row[field].toString(16)}`});
       }
     }
