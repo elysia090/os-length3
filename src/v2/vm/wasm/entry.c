@@ -290,6 +290,19 @@ static machine_result memory_result(pl_u32 port, machine_result result)
                         port - arena_base,result);
     return result;
 }
+static void after_guest_write(pl_u64 admitted)
+{
+    if (!resident.write_touched) return;
+    /* Valid bits can only be removed during this serialized physical effect:
+     * no guest import can publish a source. Equality therefore proves the
+     * write is disjoint from ALL retained executable extents. The owned next
+     * cut still rewalks the MMU and checks original context/physical identity.
+     * Flat directories and latched instructions retain the coarse fence. */
+    if (execution.select==source_entry && execution.generation==resident.generation
+            && !execution.continuation.slot && run_source_rank<VM_SOURCE_ROWS
+            && (admitted&(1ull<<run_source_rank)) && sources.valid==admitted) return;
+    execution.generation=0u;
+}
 
 machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
                           pl_u32 access, pl_u64 value)
@@ -308,13 +321,10 @@ machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
         (pl_u32)vm_memory_load(state + offsetof(machine_state, system)
                               + MACHINE_SYSTEM_CS * 8u, 8u) & 3u,
     };
+    pl_u64 admitted=sources.valid;
     resident.write_touched = 0u;
     machine_result result = vm_mmu_access(&resident, port - arena_base, &context, address, bytes, access, value);
-    /* Guest code can physically alias a page table: even A/D writes may
-     * change instruction bytes. Until disjoint write sets are proved, ANY
-     * guest RAM mutation revokes code admission, including on a later fault.
-     * A one-call bit avoids epoch wraparound/ABA; no async writer is admitted. */
-    if (resident.write_touched) execution.generation = 0u;
+    after_guest_write(admitted);
     return memory_result(port,result);
 }
 
@@ -444,9 +454,10 @@ machine_result vm_reserve(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 acce
     vm_memory_abort(&resident);
     if (delivery.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     vm_mmu_context context = cpu_context();
+    pl_u64 admitted=sources.valid;
     resident.write_touched = 0u;
     machine_result result = vm_mmu_reserve(&resident,port - arena_base,&context,address,bytes,access);
-    if (resident.write_touched) execution.generation = 0u;
+    after_guest_write(admitted);
     return memory_result(port,result);
 }
 machine_result vm_commit(pl_u32 port, pl_u64 value)
@@ -454,9 +465,10 @@ machine_result vm_commit(pl_u32 port, pl_u64 value)
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     if (delivery.stage || !private_port(port)) { vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP; }
+    pl_u64 admitted=sources.valid;
     resident.write_touched = 0u;
     machine_result result = vm_memory_commit(&resident,port - arena_base,value);
-    if (resident.write_touched) execution.generation = 0u;
+    after_guest_write(admitted);
     return result;
 }
 machine_result vm_write_begin(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
@@ -464,9 +476,10 @@ machine_result vm_write_begin(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply); vm_memory_abort(&resident);
     if (delivery.stage || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
+    pl_u64 admitted=sources.valid;
     vm_mmu_context context=cpu_context(); resident.write_touched=0u;
     machine_result result=vm_mmu_write_begin(&resident,port-arena_base,&context,address,bytes,access);
-    if (resident.write_touched) execution.generation=0u;
+    after_guest_write(admitted);
     return memory_result(port,result);
 }
 machine_result vm_write_word(pl_u32 port, pl_u32 offset, pl_u32 bytes, pl_u64 value)
@@ -474,9 +487,10 @@ machine_result vm_write_word(pl_u32 port, pl_u32 offset, pl_u32 bytes, pl_u64 va
     if (table_frontier.stage || delivery.stage || !private_port(port)) {
         vm_memory_abort(&resident); return MACHINE_RESULT_ENTRY_MAP;
     }
+    pl_u64 admitted=sources.valid;
     resident.write_touched=0u;
     machine_result result=vm_memory_write_word(&resident,port-arena_base,offset,bytes,value);
-    if (resident.write_touched) execution.generation=0u;
+    after_guest_write(admitted);
     return result;
 }
 machine_result vm_write_end(pl_u32 port)
@@ -493,9 +507,10 @@ machine_result vm_read_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 ac
     if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))
             || bytes!=16u || (access & ~39u) || (access & 3u)!=MACHINE_MEMORY_READ)
         return MACHINE_RESULT_ENTRY_MAP;
+    pl_u64 admitted=sources.valid;
     vm_mmu_context context=cpu_context();resident.write_touched=0u;
     machine_result result=vm_mmu_read_pair(&resident,port-arena_base,&context,address,bytes,access);
-    if (resident.write_touched) execution.generation=0u;
+    after_guest_write(admitted);
     return memory_result(port,result);
 }
 machine_result vm_reserve_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 access)
@@ -505,6 +520,7 @@ machine_result vm_reserve_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32
     if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))
             || bytes!=16u || (access & ~7u) || (access & 3u)!=3u) return MACHINE_RESULT_ENTRY_MAP;
     pl_u8 record[16]; vm_mmu_context context=cpu_context();
+    pl_u64 admitted=sources.valid;
     resident.write_touched=0u;
     machine_result result=vm_mmu_reserve_record_access(&resident,port-arena_base,&context,
         address,16u,access | VM_MMU_ALIGNED16,record);
@@ -515,7 +531,7 @@ machine_result vm_reserve_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32
             output[offsetof(machine_memory_pair_port,high)+i]=record[8u+i];
         }
     }
-    if (resident.write_touched) execution.generation=0u;
+    after_guest_write(admitted);
     return memory_result(port,result);
 }
 machine_result vm_commit_pair(pl_u32 port, pl_u64 low, pl_u64 high)
@@ -527,9 +543,10 @@ machine_result vm_commit_pair(pl_u32 port, pl_u64 low, pl_u64 high)
     }
     pl_u8 record[16];
     for (pl_u32 i=0u;i<8u;++i) { record[i]=(pl_u8)(low>>(i*8u)); record[8u+i]=(pl_u8)(high>>(i*8u)); }
+    pl_u64 admitted=sources.valid;
     resident.write_touched=0u;
     machine_result result=vm_memory_commit_record(&resident,port-arena_base,record,16u);
-    if (resident.write_touched) execution.generation=0u;
+    after_guest_write(admitted);
     return result;
 }
 void vm_abort(void)

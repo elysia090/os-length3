@@ -43,9 +43,11 @@ typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot, pl_u64 ent
  * profile and current source bytes after executable MMU admission (including
  * observable A/D updates). This API validates bounds/shape, NOT that
  * attestation, source identity or Wasm function type. Keep rows, table slots,
- * CPU/MMU context and physical residency pinned until run returns. All guest
- * RAM writes (including page-table A/D) and host remaps/code/table changes
- * must revoke admission. Code can alias page tables; do not assume otherwise.
+ * CPU/MMU context and physical residency pinned until run returns. Explicit
+ * directories revoke admission after every guest RAM write (including A/D).
+ * An owned source may retain only a proved-disjoint physical effect, with
+ * current MMU/physical re-admission at EVERY successor; code/page-table aliases
+ * cannot be assumed disjoint. Host remaps/code/table changes revoke admission.
  * No mutable directory or concurrent CPU/device/host writer is admitted.
  * Failed open revokes the previous admission. */
 int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
@@ -60,7 +62,8 @@ void vm_execution_close(vm_execution *execution);
  * source-owned cold miss returns RESOLVE_RIP with the exact completed prefix;
  * the trusted compiler may admit it later. No row/page directory is copied.
  * Budget exhaustion yields RESOLVE_RIP/0 with completed/retired counters.
- * Revoke after a successful writing cut stops before the following cut.
+ * Revocation after a successful writing cut stops before the following cut.
+ * A proved-disjoint owned effect may continue only through fresh selection.
  * Exceptions are pending, not delivered. This is not a complete machine. */
 /* A single-instruction RESOURCE/QUANTUM barrier pins its original table slot
  * and source identity. Resume does not refetch/redecode self-modified bytes.

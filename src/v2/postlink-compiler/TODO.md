@@ -49,6 +49,12 @@ Next obligations, in order:
    The short prefix requests 64 but has ZERO warmRuns (before Linux entry).
    Actual warm Linux activation, speedup or PID 1 is not established by it.
    See [derivation and validation](../vm/check/browser/evidence/2026-10-05-warm-startup.md).
+   The next 67,106-byte candidate additionally retains proved-disjoint physical
+   writes through fresh C successor admission. Scalar/RMW/vector loops, next
+   PTE nonpresent/NX/remap, code aliases and latches are green. Fixed data-loop
+   calls 4,096 -> 64, median 2.226 -> 0.666 ms; not Linux/native speedup.
+   It is NOT loaded into the frozen warm-64 run or retained browser Workers.
+   See [exact frontier and scope](../vm/check/browser/evidence/2026-10-05-disjoint-write.md).
 2. Close the next actual common ISA/MMU/machine-ABI red when it appears.
    Strict independent CALL fault-payload/provenance red remains open; no
    expectation was weakened to merge it with the passing ordinary CALL set.

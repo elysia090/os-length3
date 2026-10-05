@@ -247,7 +247,8 @@ for (const write of [false,true]) for (const index of [-61n,67n]) {
   put(base+384,0x400000n); assert.equal(query(),write ? 1n : 0n);
 }
 // POP is an ordered stack read then destination write, not a single RMW.
-// The write must fence its exact code owner even when bytes are unchanged.
+// Exact code aliases fence even when bytes are unchanged. A disjoint
+// same-page write retains the row; its next use is still physically admitted.
 for (const [rank,address] of [0x400000n,0x400000n,0x400080n].entries()) {
   put(leaf,0x8067n); put(leaf+8,0x9067n);
   data.set([0x8f,0x07,0x90,0x90,0x90,0x90,0x90,0x90],code);
@@ -257,7 +258,7 @@ for (const [rank,address] of [0x400000n,0x400000n,0x400080n].entries()) {
   assert.equal(vm.vm_bind_state(base),0); assert.equal(vm.vm_bind_segments(segments),0);
   assert.equal(query(),1n); await publish(); assert.equal(vm.vm_bind_execution(rows,1,9n),0);
   const beforeStack = data.slice(stackAt,stackAt+8);
-  assert.equal(vm.vm_run(port,9n,1),5n); assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n);
+  assert.equal(vm.vm_run(port,9n,1),rank===2?1n:5n); assert.equal(vm.vm_completed(),1); assert.equal(vm.vm_source_retired(),1n);
   assert.equal(view.getBigUint64(base+32,true),0x401108n); assert.equal(view.getBigUint64(base+384,true),0x400002n);
   assert.equal(view.getBigUint64(base+392,true),2n); assert.deepEqual(data.slice(stackAt,stackAt+8),beforeStack);
   assert.deepEqual(data.slice(code+Number(address-0x400000n),code+Number(address-0x400000n)+8),beforeStack);

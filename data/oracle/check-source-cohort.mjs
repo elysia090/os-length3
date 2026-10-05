@@ -21,10 +21,10 @@ const parts=[{offset:0,bytes:7},{offset:7,bytes:1},{offset:8,bytes:2}];
 // MOV RAX,1; CLC; JMP back. All other registers/flags/RAM are observable.
 const program=[0x48,0xc7,0xc0,1,0,0,0,0xf8,0xeb,0xf6];
 let emissions=0,retired=0,boundaryCalls=0,comparisons=0,coldMisses=0,fetchFaults=0,writeRevocations=0,continuations=0;
-const matchedTimings=[];
+const matchedTimings=[],matchedWriteTimings=[];
 const progress=new CutProgress(0);
 let prefixChecks=0,demandChecks=0;
-let sourceObservations=0,sourceRefusals=0;
+let sourceObservations=0,sourceRefusals=0,disjointWriteRuns=0,revalidatedWrites=0;
 function run(budget,continuing=false){
   if(!continuing)progress.reset(Number(view.getBigUint64(base+1128,true)));
   const result=vm.vm_run(port,9n,budget);
@@ -96,7 +96,9 @@ async function prime(selected=parts,limit=1024,start=entry){
     assert.equal(cv.getBigUint64(receipt+32,true),BigInt(part.bytes));
     const module=cold.subarray(output,output+Number(cv.getBigUint64(receipt+40,true)));
     const cut=(await WebAssembly.instantiate(module,{machine:{memory,access:vm.vm_access,
-      io:vm.vm_io,reserve:vm.vm_reserve,commit:vm.vm_commit,interrupt_flag:vm.vm_flag}})).instance.exports.cut;
+      io:vm.vm_io,reserve:vm.vm_reserve,commit:vm.vm_commit,interrupt_flag:vm.vm_flag,
+      read_pair:vm.vm_read_pair,write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,
+      write_end:vm.vm_write_end,reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair}})).instance.exports.cut;
     assert.equal(cut.length,3);table.set(slot,cut);
     assert.equal(vm.vm_source_publish(part.bytes,1,rows),0);++emissions;
   }
@@ -189,10 +191,104 @@ try{
     await prime([{offset:0,bytes:7},{offset:7,bytes:7}]);expected=cpu();
     expected.writeBigUInt64LE(1n,0);expected.writeBigUInt64LE(entry+14n,384);
     expected.writeBigUInt64LE(0x203n,392);expected.writeBigUInt64LE(43n,1128);
-    assert.equal(run(99),5n);assert.equal(vm.vm_completed(),2);demand(3n,2);
+    assert.equal(run(99),alias?5n:1n);assert.equal(vm.vm_completed(),2);demand(3n,2);
     assert.equal(vm.vm_source_retired(),2n);assert(cpu().equals(expected));
-    assert.equal(view.getBigUint64(alias?code:tail,true),1n);++writeRevocations;++comparisons;
+    assert.equal(view.getBigUint64(alias?code:tail,true),1n);
+    if(alias)++writeRevocations;else ++disjointWriteRuns;++comparisons;
     observe(-1);
+  }
+  // Scalar data writes are disjoint from every retained executable extent.
+  // All four cuts stay admitted through the same C MMU/source owner; no
+  // host branch selection, synthetic retirement or bigger source cache.
+  for(const budget of [4,31,64,4096]){
+    reset();data.set([0x48,0xc7,0xc0,1,0,0,0,0x48,0x89,0x05,0xf2,0x0f,0,0,0xf8,0xeb,0xef],code);
+    await prime([{offset:0,bytes:7},{offset:7,bytes:7},{offset:14,bytes:1},{offset:15,bytes:2}]);
+    expected=cpu();expected.writeBigUInt64LE(1n,0);expected.writeBigUInt64LE(0x202n,392);
+    expected.writeBigUInt64LE(entry+BigInt([0,7,14,15][budget%4]),384);
+    expected.writeBigUInt64LE(41n+BigInt(budget),1128);
+    assert.equal(run(budget),1n,'data-only store cannot fence a revalidated source cohort');
+    assert.equal(vm.vm_completed(),budget);assert.equal(vm.vm_source_retired(),BigInt(budget));
+    assert(cpu().equals(expected));assert.equal(view.getBigUint64(tail,true),1n);demand(15n,budget);
+    ++disjointWriteRuns;++comparisons;
+  }
+  // Fixed data-writing workload, same four real C-owned bodies and exact
+  // complete CPU/data outcome. Only supervisor quantum width changes; the
+  // reference follows the C-produced RIP and executes no instruction in JS.
+  for(let sample=0;sample<5;++sample){
+    let reference,oneCutMs;
+    for(const budget of [1,64]){
+      reset();data.set([0x48,0xc7,0xc0,1,0,0,0,0x48,0x89,0x05,0xf2,0x0f,0,0,0xf8,0xeb,0xef],code);
+      await prime([{offset:0,bytes:7},{offset:7,bytes:7},{offset:14,bytes:1},{offset:15,bytes:2}]);
+      const start=performance.now();
+      for(let remaining=4096;remaining;remaining-=budget){
+        const current=view.getBigUint64(base+384,true);
+        assert.equal(vm.vm_source_query(port,current,1024,codeView,rows),0n);
+        assert.equal(vm.vm_bind_execution(rows,1,9n),0);assert.equal(vm.vm_run(port,9n,budget),1n);
+        assert.equal(vm.vm_completed(),budget);
+      }
+      const elapsed=performance.now()-start;
+      assert.equal(view.getBigUint64(base+1128,true),4137n);assert.equal(view.getBigUint64(tail,true),1n);
+      if(budget===1){oneCutMs=elapsed;reference=cpu();}
+      else{
+        assert(cpu().equals(reference));
+        matchedWriteTimings.push({oneCutMs,cohort64Ms:elapsed,sourceRetirements:4096,referenceCalls:4096,cohortCalls:64});
+      }
+    }
+  }
+  // A data-only write to a page table is NOT permission to retain its old
+  // translation. The very next warm fetch sees missing/NX/remapped code,
+  // even though no executable source bytes themselves were overwritten.
+  for(const [mode,pte]of [['nonpresent',0n],['nx',0x8000000000008067n],['remap',0x9067n]]){
+    reset();data.set([0x48,0x89,0x05,0xf9,0x0f,0,0,0xf8],code);
+    put(base,pte);put(base+20488,0x4067);
+    await prime([{offset:0,bytes:7},{offset:7,bytes:1}]);expected=cpu();
+    expected.writeBigUInt64LE(entry+7n,384);expected.writeBigUInt64LE(0x203n,392);
+    expected.writeBigUInt64LE(42n,1128);
+    assert.equal(run(64),mode==='remap'?1n:115n);assert.equal(vm.vm_completed(),1);
+    assert.equal(vm.vm_source_retired(),1n);assert(cpu().equals(expected));demand(1n,1);
+    assert.equal(view.getBigUint64(base+20480,true),pte);
+    if(mode!=='remap'){
+      assert.equal(view.getBigUint64(port+16,true),entry+7n);
+      assert.equal(view.getUint32(port+28,true),mode==='nx'?17:16);
+    }
+    observe(-1);++revalidatedWrites;++comparisons;
+  }
+  // Reserved RMW commits share the same physical disjointness frontier as
+  // scalar stores. Architectural data/flags change, not source authority.
+  for(const budget of [4,31,64,4096]){
+    reset();data.set([0x48,0xff,0x05,0xf9,0x0f,0,0,0xeb,0xf7],code);put(tail,0);
+    await prime([{offset:0,bytes:7},{offset:7,bytes:2}]);expected=cpu();
+    const increments=Math.ceil(budget/2);let byte=increments&255,ones=0;
+    while(byte){ones+=byte&1;byte>>>=1;}
+    const flags=0x203+(increments%16===0?16:0)+(ones%2===0?4:0);
+    expected.writeBigUInt64LE(BigInt(flags),392);expected.writeBigUInt64LE(41n+BigInt(budget),1128);
+    expected.writeBigUInt64LE(entry+BigInt(budget%2?7:0),384);
+    assert.equal(run(budget),1n);assert.equal(vm.vm_completed(),budget);
+    assert(cpu().equals(expected));assert.equal(view.getBigUint64(tail,true),BigInt(increments));
+    demand(3n,budget);++disjointWriteRuns;++comparisons;
+  }
+  for(const mode of ['data','code','cross-fault']){
+    reset();put(base+416,32+512);put(base+128,0x123456789abcdefn);put(base+136,0xfedcba9876543210n);
+    data.set([0xf3,0x0f,0x7f,0x05,0,0,0,0,0xeb,0xf6],code);
+    view.setInt32(code+4,mode==='data'?0xff8:mode==='code'?-8:0x1ff0,true);
+    await prime([{offset:0,bytes:8},{offset:8,bytes:2}]);expected=cpu();
+    const untouched=Buffer.from(data.subarray(tail+4088,tail+4096));
+    if(mode!=='cross-fault'){
+      expected.writeBigUInt64LE(mode==='data'?entry:entry+8n,384);expected.writeBigUInt64LE(0x203n,392);
+      expected.writeBigUInt64LE(mode==='data'?105n:42n,1128);
+    }
+    assert.equal(run(64),mode==='data'?1n:mode==='code'?5n:115n);
+    assert.equal(vm.vm_completed(),mode==='data'?64:mode==='code'?1:0);assert(cpu().equals(expected));
+    demand(mode==='data'?3n:1n,mode==='data'?64:1);
+    if(mode==='cross-fault'){
+      assert(data.subarray(tail+4088,tail+4096).equals(untouched));
+      assert.equal(view.getBigUint64(port+16,true),entry+8192n);assert.equal(view.getUint32(port+28,true),2);
+      observe(8);
+    }else{
+      assert(data.subarray(mode==='data'?tail:code,(mode==='data'?tail:code)+16).equals(data.subarray(base+128,base+144)));
+      if(mode==='data')++disjointWriteRuns;else ++writeRevocations;
+    }
+    ++comparisons;
   }
   reset();data.set([0x48,0xf7,0xf3],code+7);put(base+8*3,0);
   await prime([{offset:0,bytes:7},{offset:7,bytes:3}]);expected=cpu();
@@ -263,6 +359,6 @@ try{
   assert.equal(vm.vm_run(port,8n,64),5n);demand(0n,0);assert(cpu().equals(expected));++comparisons;
 }finally{for(let slot=firstSlot;slot<firstSlot+vm.vm_source_capacity();++slot)table.set(slot,null);vm.vm_close();cc.compiler_close();}
 console.log(JSON.stringify({format:'c-wasm-source-cohort-v1',status:'pass',emissions,retired,boundaryCalls,
-  comparisons,coldMisses,fetchFaults,writeRevocations,continuations,prefixChecks,demandChecks,sourceObservations,sourceRefusals,
-  matchedTimings,
+  comparisons,coldMisses,fetchFaults,writeRevocations,continuations,prefixChecks,demandChecks,sourceObservations,sourceRefusals,disjointWriteRuns,revalidatedWrites,
+  matchedTimings,matchedWriteTimings,
   oracle:'explicit source/CPU model through C MMU and compiled table; not Linux/native speedup',linuxBoot:'not-tested'},null,2));
