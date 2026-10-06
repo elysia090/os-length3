@@ -1,11 +1,17 @@
 # Browser projection of OS Length3 Linux
 
-2026-10-07 actual in-app browser checkpoint: the standard browser-control path
+2026-10-07 latest actual-browser failure: /init startup and crng are observed,
+but the long tab subsequently says `This page crashed`. No final result/shell;
+the old Worker is not confirmed live. Crash cause/native-code RSS are unproved.
+Encoded-byte quotas alone are not an engine-memory bound. See
+[snapshot, selector candidate and remaining connection](../vm/check/browser/evidence/2026-10-07-selector-memory.md).
+
+Earlier 2026-10-07 actual in-app browser checkpoint: the standard browser-control path
 works without sandbox/launch overrides. A fresh same-bundle fixture completes
 the independent 86-instruction CPU/segment check and 1,617,931 retirements,
 then the unchanged short quota. This is NOT Linux boot or shell readiness.
-An explicitly selected warm64/idle long Worker remains live; do not reload it
-or replace its fixture while it is progressing. Whole ELF remains -104 and
+The warm64/idle long Worker later terminated as recorded above; do not infer
+live execution from its old progress receipt. Whole ELF remains -104 and
 authenticated C Artifact execution residency is not yet the startup path.
 See [actual receipt and reproduction](../vm/check/browser/evidence/2026-10-07-browser-startup.md).
 

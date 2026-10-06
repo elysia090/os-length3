@@ -96,6 +96,15 @@ string-repeat-check: $(BUILD)/string-repeat-check
 $(BUILD)/string-repeat-check: check/string-repeat.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie $< check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: segment-memory-check
+.PHONY: segment-load-check
+.PHONY: segment-sanitizer-check
+segment-sanitizer-check:
+	bash check/sanitizers.sh
+check: segment-load-check
+segment-load-check: $(BUILD)/segment-load-check
+	$(BUILD)/segment-load-check
+$(BUILD)/segment-load-check: check/segment-load.c check/native-segment.S check/native-cut.S check/native-selectors.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie $< check/native-segment.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: exchange-check
 check: exchange-check
 exchange-check: $(BUILD)/exchange-check

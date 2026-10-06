@@ -23,11 +23,27 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+2026-10-07 same-bundle real-browser long run is now TERMINAL: last visible
+236,680,689 retired / 129,048,368 admissions, /init startup and crng logs, then
+tab metadata `This page crashed`. No final result or shell; do not assume the
+old Worker is alive. Native-code/RSS high-water and crash cause are unproved.
+Reconstruction dominates; encoded-byte LRU quotas do not prove native-code
+reclamation. Complete C module/coordinate projection + C Artifact residency
+and exact machine/device/dirty-cut recovery remain required.
+See [snapshot / failure scope](../vm/check/browser/evidence/2026-10-07-selector-memory.md).
+
+Separate shared MOV-to-segment memory candidate closes the first published
+make miss without a new VM operation. 750 native/cold byte matches and C-MMU/
+table comparisons, 9,750 malformed-law refusals, scoped sanitizers and full
+product checks pass. Existing LFS/LGS/LSS native semantics remain intact.
+Exact make/s6 gaps fall 78/20/16 coordinates, NOT frequency or shell acceptance.
+Candidate is not loaded in the crashed run. Whole ELF remains -104.
+
 Actual in-app browser control now works through the standard path, with no
 launch/sandbox override. A fresh same-bundle fixture completes the independent
 86-instruction CPU/segment observation and 1,617,931 retirements, then its
-unchanged short quota. Explicit warm64/idle selection retains one long Worker;
-it progresses into initramfs, not a proven terminal. Current signed-production
+unchanged short quota. The explicit warm64/idle Worker progressed into
+initramfs, then suffered the terminal failure above. Current signed-production
 delivery / whole-ELF closure and all product acceptance gates remain open.
 See [receipt and reproduction](../vm/check/browser/evidence/2026-10-07-browser-startup.md).
 

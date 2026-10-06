@@ -193,17 +193,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
                 && (!memory->scale || memory->scale == 1u || memory->scale == 2u
                     || memory->scale == 4u || memory->scale == 8u)) return CUT_SYSTEM_TABLE;
     }
-    if (instruction->status == PL_X86_DECODE_VALID && instruction->operation == PL_X86_OPERATION_MOVE
-            && instruction->machine_operation == PL_X86_MACHINE_WRITE_SEGMENT
-            && instruction->flow == PL_X86_FLOW_NEXT && instruction->visible_operand_count == 2u
-            && instruction->operands[0].kind == PL_X86_OPERAND_REGISTER
-            && instruction->operands[0].value.reg.class_id == PL_X86_REGISTER_SEGMENT
-            && instruction->operands[0].value.reg.index < 6u
-            && instruction->operands[0].value.reg.index != 1u
-            && instruction->operands[1].kind == PL_X86_OPERAND_REGISTER
-            && cut_gpr(&instruction->operands[1].value.reg)
-            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
-                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_SEGMENT;
+    if(pl_x86_segment_move_supported(instruction))return CUT_SYSTEM_SEGMENT;
     return instruction->status == PL_X86_DECODE_VALID
         && instruction->operation == PL_X86_OPERATION_FLAG_CONTROL
         && (instruction->condition == 5u || instruction->condition == 6u) && !instruction->visible_operand_count
@@ -532,12 +522,12 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     }
     if (cut->has_segment) {
         int system=instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR;
-        if (system) {
-            require_cpl0(cut); /* Privilege precedes even a memory-source fault. */
+        if (system || cut->has_memory) {
+            if(system)require_cpl0(cut); /* LLDT/LTR privilege precedes the source; MOV has no CPL0 gate. */
             if (cut->has_memory) {
-                cut_effective_address(cut,instruction,&instruction->operands[0].value.memory);
+                const pl_x86_memory *memory=&instruction->operands[system?0u:1u].value.memory;
+                cut_effective_address(cut,instruction,memory);
                 cut_set(cut,CUT_ADDRESS);
-                const pl_x86_memory *memory=&instruction->operands[0].value.memory;
                 cut->report.memory_access=MACHINE_MEMORY_READ
                     | cut_memory_role(memory);
                 cut_const(cut,0u); cut_set(cut,CUT_VALUE); cut_access(cut); cut_access_value(cut);
@@ -547,7 +537,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,system
             ? 4u+(instruction->machine_argument&255u) : instruction->operands[0].value.reg.index);
-        if (system) cut_get(cut,CUT_LEFT);
+        if (system || cut->has_memory) cut_get(cut,CUT_LEFT);
         else cut_read_operand(cut,&instruction->operands[1],16u);
         cut_op(cut,0xa7u);
         cut_call(cut,WASM_IMPORT_SEGMENT);

@@ -8,8 +8,10 @@ remain incomplete. `wasm/entry.c` is the freestanding wrapper of this C core.
 
 The [new actual-browser checkpoint](browser/evidence/2026-10-07-browser-startup.md)
 uses a fresh same-bundle fixture and the standard control path, without sandbox
-overrides. Its short CPU/segment witness passes and reaches quota; a separately
-retained warm64/idle Worker progresses into initramfs. Linux shell/development
+overrides. Its short CPU/segment witness passes and reaches quota; a separate
+warm64/idle Worker later reached /init startup, then its tab crashed. See
+[last snapshot / scope](browser/evidence/2026-10-07-selector-memory.md).
+No final result or shell is observed; the Worker is not confirmed live. Linux shell/development
 and full authenticated delivery remain red. The older receipt below is dated,
 not the current candidate or evidence that independent clock transport is absent.
 

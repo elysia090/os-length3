@@ -1,5 +1,12 @@
 # Compiler boundary checkpoint — 2026-10-02
 
+2026-10-07 common MOV-to-segment memory frontier: 750 native/cold module byte
+matches and actual C-MMU/table comparisons, source-before-descriptor fault
+priority, 9,750 malformed-law refusals, scoped sanitizers and full product checks
+pass. Existing LFS/LGS/LSS native semantics remain intact. See
+[reproduction and precise scope](../../vm/check/browser/evidence/2026-10-07-selector-memory.md).
+Not whole ELF, working Linux terminal or a browser-crash fix.
+
 Current ordering checkpoint (2026-10-05): general LFENCE/MFENCE/SFENCE retain
 their precise system cuts but have no value payload under the synchronous,
 single-owner ordinary-Memory contract. 120 exact emissions, 7,680 unchanged

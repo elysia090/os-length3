@@ -1,6 +1,9 @@
 // Exact C-emitted topology witnesses belong to one bounded Worker owner.
 // Source coordinates, generation and permission admission remain in C. An
 // entry is passed by value at execution; it is not another instance identity.
+// Byte quotas bound retained encoded witnesses, not the engine's native code,
+// transient compilation allocations or renderer RSS. Eviction releases our
+// references; it is not a synchronous native-code/OS-memory reclamation proof.
 function fingerprint(bytes) {
   // A bounded host index only, never authentication or semantic equivalence.
   // Every candidate must still match the entire immutable byte witness.

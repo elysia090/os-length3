@@ -2786,6 +2786,46 @@ int pl_x86_count_branch_lower(const pl_x86_instruction *instruction,pl_x86_count
     return 1;
 }
 
+int pl_x86_segment_move_supported(const pl_x86_instruction *instruction)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT
+        |PL_X86_INSTRUCTION_BARRIER;
+    if(!instruction || instruction->status!=PL_X86_DECODE_VALID
+            || instruction->encoding!=PL_X86_ENCODING_LEGACY
+            || instruction->operation!=PL_X86_OPERATION_MOVE
+            || instruction->machine_operation!=PL_X86_MACHINE_WRITE_SEGMENT
+            || instruction->flow!=PL_X86_FLOW_NEXT || instruction->visible_operand_count!=2u
+            || (instruction->flags&required)!=required
+            || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                |PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    const pl_x86_operand *target=instruction->operands, *source=target+1u;
+    const pl_x86_register *reg=&target->value.reg;
+    if(target->kind!=PL_X86_OPERAND_REGISTER || target->bits!=16u
+            || reg->class_id!=PL_X86_REGISTER_SEGMENT || reg->bits!=16u
+            || reg->index>=6u || reg->index==1u || reg->flags || source->bits!=16u)return 0;
+    pl_u64 argument=reg->index;
+    if(source->kind==PL_X86_OPERAND_REGISTER){
+        const pl_x86_register *value=&source->value.reg;
+        if(value->class_id!=PL_X86_REGISTER_GPR || value->index>=16u || value->bits!=16u
+                || value->flags || (instruction->flags&PL_X86_INSTRUCTION_READS_MEMORY))return 0;
+        argument|=(pl_u64)value->index<<8u;
+    }else if(source->kind==PL_X86_OPERAND_MEMORY){
+        const pl_x86_memory *memory=&source->value.memory;
+        if(!(instruction->flags&PL_X86_INSTRUCTION_READS_MEMORY)
+                || (instruction->address_width!=32u && instruction->address_width!=64u)
+                || (memory->segment.class_id!=PL_X86_REGISTER_NONE
+                    && (memory->segment.class_id!=PL_X86_REGISTER_SEGMENT || memory->segment.index>=6u))
+                || (memory->base.class_id!=PL_X86_REGISTER_NONE && memory->base.class_id!=PL_X86_REGISTER_IP
+                    && (memory->base.class_id!=PL_X86_REGISTER_GPR || memory->base.index>=16u))
+                || (memory->index.class_id!=PL_X86_REGISTER_NONE
+                    && (memory->index.class_id!=PL_X86_REGISTER_GPR || memory->index.index>=16u))
+                || (memory->scale && memory->scale!=1u && memory->scale!=2u
+                    && memory->scale!=4u && memory->scale!=8u))return 0;
+        argument|=1ull<<16u;
+    }else return 0;
+    return instruction->machine_argument==argument;
+}
+
 int pl_x86_halt_supported(const pl_x86_instruction *instruction)
 {
     const pl_u32 required = PL_X86_INSTRUCTION_PRECISE_CUT
@@ -2813,6 +2853,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
     if (instruction->status != PL_X86_DECODE_VALID
             || (instruction->machine_operation == PL_X86_MACHINE_HALT
                 && !pl_x86_halt_supported(instruction))
+            || (instruction->machine_operation == PL_X86_MACHINE_WRITE_SEGMENT
+                && instruction->operation == PL_X86_OPERATION_MOVE
+                && !pl_x86_segment_move_supported(instruction))
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
                 && instruction->machine_operation == PL_X86_MACHINE_NONE)
             || ((instruction->flags & PL_X86_INSTRUCTION_BARRIER)

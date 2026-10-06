@@ -70,6 +70,11 @@ typedef struct {
 int pl_x86_string_lower(const pl_x86_instruction *instruction,pl_x86_string *out);
 const pl_x86_operand *pl_x86_string_memory(const pl_x86_instruction *instruction,pl_u32 index);
 
+/* MOV ES/SS/DS/FS/GS accepts a 16-bit selector from a GPR or memory. The
+ * source access precedes descriptor admission and destination publication;
+ * descriptor/interrupt-shadow ownership belongs to the machine boundary. */
+int pl_x86_segment_move_supported(const pl_x86_instruction *instruction);
+
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
  * names and byte coordinates are construction facts, not saved runtime rows.

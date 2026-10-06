@@ -1,12 +1,19 @@
 # Browser boundary observations
 
+2026-10-07 latest: [actual long-browser crash observation](2026-10-07-browser-crash.json)
+and [separate selector-memory candidate](2026-10-07-selector-memory.md).
+/init startup and crng precede terminal renderer failure; no shell or final
+quota/compiler result is proven. The old Worker is not confirmed live.
+The new shared memory-selector law is verified independently, not loaded in
+that run. Browser/development/storage/network acceptance remains red.
+
 2026-10-07 actual in-app browser:
 [completed short-prefix receipt](2026-10-07-browser-prefix.json) and
 [fresh fixture, explicit warm/idle selection and scope](2026-10-07-browser-startup.md).
 The standard browser path works. The short independent CPU/segment witness
 passes and reaches quota; a separate long Worker progresses into initramfs.
-Neither is PID 1 / terminal / development acceptance. Keep the long Worker
-and its fixture intact; do not equate Node observations with browser results.
+Neither is PID 1 / terminal / development acceptance. The long Worker later
+crashed as recorded above; do not equate Node observations with browser results.
 
 Latest independent Node/C work:
 [source profiling definitions](2026-10-06-source-profile.md),

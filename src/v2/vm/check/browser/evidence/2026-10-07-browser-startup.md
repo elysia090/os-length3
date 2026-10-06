@@ -1,5 +1,11 @@
 # Real-browser startup checkpoint — 2026-10-07
 
+Subsequent terminal observation: the long tab crashed after /init startup and
+crng logs, without a final result or shell. The old Worker is not confirmed live.
+See [last snapshot and remaining connection](2026-10-07-selector-memory.md).
+The short completed receipt below remains valid; the earlier live-run remarks
+describe that earlier observation, not its present state.
+
 The standard in-app-browser control path works without launch environment
 overrides, disabling the sandbox or a second browser automation connection.
 These are actual browser Worker observations, separate from Node/native tests.
