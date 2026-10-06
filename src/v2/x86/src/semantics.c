@@ -777,6 +777,8 @@ static int lower_exchange_add(const pl_x86_instruction *instruction,
             status = memory_load(builder, address, source_bits, &left);
         left_narrow = 1;
     } else {
+        pl_x86_register_update law;
+        if(!pl_x86_register_update_lower(instruction,&law) || law.compare)return PL_ERROR_X86_SEMANTIC;
         pl_u32 destination_index, destination_bits, destination_offset;
         if (gpr(destination, &destination_index, &destination_bits,
                 &destination_offset) || destination_bits != source_bits)
@@ -825,8 +827,8 @@ static int lower_exchange_add(const pl_x86_instruction *instruction,
 static int lower_compare_exchange(const pl_x86_instruction *instruction,
                                   semantic_builder *builder)
 {
-    if (instruction->visible_operand_count != 2u)
-        return PL_ERROR_X86_SEMANTIC;
+    pl_x86_register_update law;
+    if(!pl_x86_register_update_lower(instruction,&law) || !law.compare)return PL_ERROR_X86_SEMANTIC;
     const pl_x86_operand *destination = &instruction->operands[0];
     const pl_x86_operand *source = &instruction->operands[1];
     pl_u32 destination_index, bits, destination_offset;
@@ -856,8 +858,6 @@ static int lower_compare_exchange(const pl_x86_instruction *instruction,
         &constant, &accumulator_narrow);
     if (status) return status;
     (void)constant;
-    (void)destination_narrow;
-    (void)source_narrow;
     (void)accumulator_narrow;
     pl_operand compare_arguments[4] = {
         operand(PL_OPERAND_LOCAL, PL_X86_RFLAGS_LOCAL),
@@ -871,27 +871,32 @@ static int lower_compare_exchange(const pl_x86_instruction *instruction,
     pl_operand equal = operand(
         PL_OPERAND_PROJECTION,
         (flags.value << PROJECTION_SELECTOR_BITS) | 4u);
-    pl_operand destination_arguments[3] = {
-        source_value, destination_value, equal,
-    };
-    pl_u32 select_opcode = bits == 32u
-                         ? PL_OPCODE_LANE32_SELECT
-                         : PL_OPCODE_LANE64_SELECT;
-    pl_operand next_destination = emit(
-        builder, select_opcode, destination_arguments, 3u);
-    if (next_destination.kind != PL_OPERAND_NODE) return PL_ERROR_ARENA;
-    if (destination_index == 0u && destination_offset == 0u)
-        return published_register(
-            builder, destination, next_destination, bits == 32u);
-    pl_operand accumulator_arguments[3] = {
-        accumulator_value, destination_value, equal,
-    };
-    pl_operand next_accumulator = emit(
-        builder, select_opcode, accumulator_arguments, 3u);
-    if (next_accumulator.kind != PL_OPERAND_NODE) return PL_ERROR_ARENA;
-    return publish_two_slices(
-        builder, destination, next_destination, 0,
-        &accumulator, next_accumulator, bits == 32u);
+    /* Merge complete parent definitions, not selected narrow lane values.
+     * A successful CMPXCHG r32 does not write EAX; a failed one does not write
+     * the destination. Selecting lane32 first would erase an untouched upper
+     * half in either arm. AL/AH share one parent but two different fields. */
+    pl_operand before_destination=builder->plan->locals[destination_index];
+    pl_operand before_accumulator=builder->plan->locals[0u];
+    status=published_register(builder,destination,source_value,source_narrow);
+    if(status)return status;
+    pl_operand success=builder->plan->locals[destination_index];
+    builder->plan->locals[destination_index]=before_destination;
+    if(destination_index==0u && !destination_offset){
+        builder->plan->locals[0u]=success;return 0; /* comparison is reflexive */
+    }
+    status=published_register(builder,&accumulator,destination_value,destination_narrow);
+    if(status)return status;
+    pl_operand failure=builder->plan->locals[0u];
+    builder->plan->locals[0u]=before_accumulator;
+    pl_operand destination_arguments[3]={success,destination_index?before_destination:failure,equal};
+    pl_operand next=emit(builder,PL_OPCODE_LANE64_SELECT,destination_arguments,3u);
+    if(next.kind!=PL_OPERAND_NODE)return PL_ERROR_ARENA;
+    builder->plan->locals[destination_index]=next;
+    if(!destination_index)return 0;
+    pl_operand accumulator_arguments[3]={before_accumulator,failure,equal};
+    next=emit(builder,PL_OPCODE_LANE64_SELECT,accumulator_arguments,3u);
+    if(next.kind!=PL_OPERAND_NODE)return PL_ERROR_ARENA;
+    builder->plan->locals[0u]=next;return 0;
 }
 
 static int lower_test(const pl_x86_instruction *instruction,
@@ -2705,6 +2710,29 @@ int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cu
             || !instruction->length || instruction->length>PL_X86_MAX_INSTRUCTION_BYTES
             || instruction->source_bytes!=instruction->length)return 0;
     *out=(pl_x86_fault_cut){instruction->trap_vector,instruction->source_bytes};return 1;
+}
+
+int pl_x86_register_update_lower(const pl_x86_instruction *instruction,pl_x86_register_update *out)
+{
+    if(!instruction || !out || instruction->status!=PL_X86_DECODE_VALID
+            || instruction->encoding!=PL_X86_ENCODING_LEGACY
+            || instruction->flow!=PL_X86_FLOW_NEXT || instruction->machine_operation!=PL_X86_MACHINE_NONE
+            || instruction->machine_argument || instruction->visible_operand_count!=2u
+            || (instruction->operation!=PL_X86_OPERATION_EXCHANGE_ADD
+                && instruction->operation!=PL_X86_OPERATION_COMPARE_EXCHANGE)
+            || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                |PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY
+                |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_BARRIER)))return 0;
+    pl_u32 bits=instruction->operands[0].bits;
+    for(pl_u32 i=0u;i<2u;++i){
+        const pl_x86_operand *operand=&instruction->operands[i];const pl_x86_register *reg=&operand->value.reg;
+        if(operand->kind!=PL_X86_OPERAND_REGISTER || operand->bits!=bits || reg->bits!=bits
+                || reg->class_id!=PL_X86_REGISTER_GPR || reg->index>=16u
+                || (bits!=8u && bits!=16u && bits!=32u && bits!=64u)
+                || (reg->flags&~PL_X86_REGISTER_HIGH8)
+                || ((reg->flags&PL_X86_REGISTER_HIGH8) && (bits!=8u || reg->index>=4u)))return 0;
+    }
+    *out=(pl_x86_register_update){(pl_u8)bits,(pl_u8)(instruction->operation==PL_X86_OPERATION_COMPARE_EXCHANGE)};return 1;
 }
 
 int pl_x86_count_branch_lower(const pl_x86_instruction *instruction,pl_x86_count_branch *out)

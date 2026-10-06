@@ -23,6 +23,19 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Newest register-update candidate closes an independently red generic XADD/
+CMPXCHG Wasm admission and fixes latent lane32-vs-full-parent conditional
+publication in shared SSA. Old-library parent check is red; 2,048 new shared
+forms, 25,728 stable native/direct/C-VM CPU/flags observations and full checks /
+scoped sanitizers are green. Native before/after ELF execution both pass;
+the old native selector protected this case with source retention. No published
+native failure, Linux speedup or working browser shell is inferred.
+Exact paired make scans remain 8,059 missing coordinates: this generic feature
+does not remove the actual measured x87/string/ENTER/RET population. Use the
+new machine/descriptor histograms to prioritize those genuine gaps; enum
+46/47 is ENTER/STRING, NOT XADD/CMPXCHG.
+See [scope and authoritative inventory](../vm/check/browser/evidence/2026-10-06-register-update.md).
+
 Newest independent candidate inventories every actual final PF_X byte through
 one fixed-profile catalogue and the actual Wasm backend. `--coverage` is a
 diagnostic, never a publication shortcut. Shared LOOP/count-zero and exact

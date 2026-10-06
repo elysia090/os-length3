@@ -36,6 +36,14 @@ SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 SOURCES += src/emit-interface.c
 SOURCES += src/coverage.c
+SOURCES += src/lower-register-update.c
+
+.PHONY: register-update-check
+check: register-update-check
+register-update-check: $(BUILD)/register-update-check
+	$(BUILD)/register-update-check
+$(BUILD)/register-update-check: check/register-update.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: fault-cut-check
 check: fault-cut-check

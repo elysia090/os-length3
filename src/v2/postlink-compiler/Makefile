@@ -1123,6 +1123,17 @@ lane32-publication-check: $(PROGRAM)
 
 check: lane32-publication-check
 
+.PHONY: register-update-check
+check: register-update-check
+register-update-check: $(PROGRAM)
+	@set -e; temporary=$$(mktemp -d); \
+	trap 'rm -rf "$$temporary"' EXIT; \
+	$(CC) $(BARE_FIXTURE_FLAGS) check/register-update.S -o "$$temporary/linked"; \
+	"$$temporary/linked"; \
+	$(PROGRAM) "$$temporary/linked" -o "$$temporary/optimized"; \
+	"$$temporary/optimized"; \
+	printf 'register update native ELF: green (conditional upper halves and AL/AH aliases)\n'
+
 $(BUILD)/select-x86: check/select-x86.c $(LIBRARY) dependencies
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/select-x86.c $(LIBRARY) \
 		../x86/build/libx86.a ../optimized-x86/build/liboptimized-x86.a \

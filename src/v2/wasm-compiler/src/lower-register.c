@@ -180,6 +180,8 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
             && (instruction->flags & PL_X86_INSTRUCTION_DIRECT_TARGET) && canonical(instruction->target);
     if (instruction->flow != PL_X86_FLOW_NEXT || !count
             || operands[0].kind != PL_X86_OPERAND_REGISTER || !cut_gpr(&operands[0].value.reg)) return 0;
+    pl_x86_register_update update;
+    if(pl_x86_register_update_lower(instruction,&update))return 1;
     switch (instruction->operation) {
     case PL_X86_OPERATION_BYTE_SWAP:
         return count == 1u && (operands[0].bits == 32u || operands[0].bits == 64u)
@@ -392,6 +394,9 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     const pl_x86_operand *operands = instruction->operands;
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
+    if(operation==PL_X86_OPERATION_EXCHANGE_ADD || operation==PL_X86_OPERATION_COMPARE_EXCHANGE){
+        cut_lower_register_update(cut,instruction);return;
+    }
     if (operation == PL_X86_OPERATION_EXCHANGE) {
         /* Reflexive substitution is identity except a 32-bit parent write:
          * even that self exchange must still clear its original upper half. */

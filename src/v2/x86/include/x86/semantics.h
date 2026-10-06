@@ -56,6 +56,11 @@ typedef struct { pl_u8 vector,bytes; } pl_x86_fault_cut;
  * incompleteness and trap-after instructions are different machine futures. */
 int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out);
 
+typedef struct { pl_u8 bits,compare; } pl_x86_register_update;
+/* Simultaneous old-value capture, add/exchange or accumulator comparison.
+ * Narrow conditional writes preserve every unselected parent bit. */
+int pl_x86_register_update_lower(const pl_x86_instruction *instruction,pl_x86_register_update *out);
+
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
  * names and byte coordinates are construction facts, not saved runtime rows.

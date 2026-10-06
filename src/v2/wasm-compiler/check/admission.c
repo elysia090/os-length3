@@ -101,6 +101,12 @@ int main(int argc, char **argv)
         EXPECT(!wasm_compiler_coverage(&compiler,&coverage));
         EXPECT(coverage.catalog.coordinates==coverage.lowerable+coverage.unlowered_valid
             +coverage.unlowered_faults+coverage.fetch_demands+coverage.capacity_refusals);
+        pl_u64 machine_total=0u,x87_total=0u,vector_total=0u;
+        for(pl_u32 rank=0u;rank<=PL_X86_MACHINE_EXTENSION;++rank)machine_total+=coverage.machine_operations[rank];
+        for(pl_u32 rank=0u;rank<256u;++rank){x87_total+=coverage.x87_operations[rank];vector_total+=coverage.vector_operations[rank];}
+        EXPECT(machine_total==coverage.unlowered_valid+coverage.unlowered_faults);
+        EXPECT(x87_total==coverage.machine_operations[PL_X86_MACHINE_X87]);
+        EXPECT(vector_total==coverage.machine_operations[PL_X86_MACHINE_VECTOR]);
         pl_elf_image elf;pl_x86_map maps[64];pl_x86_image image;pl_x86_catalog catalog;
         EXPECT(!pl_elf_open(input,input_bytes,&elf));
         EXPECT(!pl_x86_image_from_elf(&elf,0u,1u,maps,64u,&image));

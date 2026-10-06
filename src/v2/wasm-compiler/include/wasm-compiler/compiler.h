@@ -45,6 +45,9 @@ typedef struct {
     pl_u8 first_operation,first_machine_operation,first_decode_status,first_source_bytes;
     pl_u8 first_source[PL_X86_MAX_INSTRUCTION_BYTES];
     pl_u64 operations[PL_X86_OPERATION_MAX+1u];
+    pl_u64 machine_operations[PL_X86_MACHINE_EXTENSION+1u];
+    /* Stable descriptor operation bytes, not decoder mnemonics. */
+    pl_u64 x87_operations[256],vector_operations[256];
 } wasm_coverage_report;
 
 /* Visit EVERY final PF_X byte coordinate, including interior/padding/zero-fill

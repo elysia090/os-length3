@@ -148,6 +148,7 @@ int cut_divide_supported(const pl_x86_instruction *instruction);
 void cut_divide_value(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_divide(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruction);
+void cut_lower_register_update(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
                  cut_plan *plan);
 int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options,

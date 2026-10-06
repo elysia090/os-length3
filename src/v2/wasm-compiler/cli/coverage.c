@@ -3,6 +3,14 @@
 #include <wasm-compiler/compiler.h>
 #include <stdlib.h>
 
+static void histogram(const char *name,const pl_u64 *counts,pl_u32 count)
+{
+    printf("],\"%s\":[",name);int comma=0;
+    for(pl_u32 i=0u;i<count;++i)if(counts[i]){
+        printf("%s{\"operation\":%u,\"unlowered\":%llu}",comma?",":"",i,counts[i]);comma=1;
+    }
+}
+
 int cli_coverage(const char *input_path)
 {
     pl_u64 length=0u;pl_u8 *input=cli_read_file(input_path,&length);
@@ -27,6 +35,8 @@ int cli_coverage(const char *input_path)
     for(pl_u32 i=0u;i<=PL_X86_OPERATION_MAX;++i)if(report.operations[i]){
         printf("%s{\"operation\":%u,\"unlowered\":%llu}",comma?",":"",i,report.operations[i]);comma=1;
     }
+    histogram("machines",report.machine_operations,PL_X86_MACHINE_EXTENSION+1u);
+    histogram("x87",report.x87_operations,256u);histogram("vector",report.vector_operations,256u);
     printf("],\"coverageComplete\":%s,\"publicationAllowed\":false,\"linuxBoot\":\"not-tested\"}\n",missing?"false":"true");
     free(input);return missing?3:0;
 }

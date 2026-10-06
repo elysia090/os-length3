@@ -31,6 +31,12 @@ static int visit(const pl_x86_instruction *instruction,void *pointer)
         if(instruction->flow==PL_X86_FLOW_FAULT)++report->unlowered_faults;
         else ++report->unlowered_valid;
         if(instruction->operation<=PL_X86_OPERATION_MAX)++report->operations[instruction->operation];
+        if(instruction->machine_operation<=PL_X86_MACHINE_EXTENSION)
+            ++report->machine_operations[instruction->machine_operation];
+        if(instruction->machine_operation==PL_X86_MACHINE_X87)
+            ++report->x87_operations[instruction->machine_argument&255u];
+        if(instruction->machine_operation==PL_X86_MACHINE_VECTOR)
+            ++report->vector_operations[instruction->machine_argument&255u];
     }else return status;
     if(!report->first_status){
         report->first_status=status;report->first_unlowered=instruction->rip;
