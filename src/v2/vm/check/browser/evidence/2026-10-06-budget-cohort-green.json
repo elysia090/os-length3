@@ -1,0 +1,90 @@
+{
+  "format": "c-wasm-source-cohort-v1",
+  "status": "pass",
+  "emissions": 233,
+  "retired": 69772,
+  "boundaryCalls": 8,
+  "comparisons": 42,
+  "coldMisses": 1,
+  "fetchFaults": 2,
+  "writeRevocations": 2,
+  "continuations": 1,
+  "prefixChecks": 42,
+  "demandChecks": 47,
+  "budgetModels": 2,
+  "sourceObservations": 4,
+  "sourceRefusals": 46,
+  "disjointWriteRuns": 10,
+  "revalidatedWrites": 3,
+  "matchedTimings": [
+    {
+      "oneCutMs": 33.70479999999999,
+      "cohortMs": 7.429100000000005,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 21.75570000000002,
+      "cohortMs": 7.358200000000011,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 28.72120000000001,
+      "cohortMs": 7.522300000000001,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 24.746199999999988,
+      "cohortMs": 7.317999999999984,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    },
+    {
+      "oneCutMs": 26.136699999999962,
+      "cohortMs": 7.726800000000026,
+      "referenceCalls": 65536,
+      "cohortCalls": 1
+    }
+  ],
+  "matchedWriteTimings": [
+    {
+      "oneCutMs": 2.442299999999989,
+      "cohort64Ms": 0.7096000000000231,
+      "sourceRetirements": 4096,
+      "referenceCalls": 4096,
+      "cohortCalls": 64
+    },
+    {
+      "oneCutMs": 2.23599999999999,
+      "cohort64Ms": 0.6882000000000517,
+      "sourceRetirements": 4096,
+      "referenceCalls": 4096,
+      "cohortCalls": 64
+    },
+    {
+      "oneCutMs": 2.2351000000000454,
+      "cohort64Ms": 0.6631000000000427,
+      "sourceRetirements": 4096,
+      "referenceCalls": 4096,
+      "cohortCalls": 64
+    },
+    {
+      "oneCutMs": 2.2649000000000115,
+      "cohort64Ms": 0.6339000000000397,
+      "sourceRetirements": 4096,
+      "referenceCalls": 4096,
+      "cohortCalls": 64
+    },
+    {
+      "oneCutMs": 2.2404000000000224,
+      "cohort64Ms": 0.6182999999999765,
+      "sourceRetirements": 4096,
+      "referenceCalls": 4096,
+      "cohortCalls": 64
+    }
+  ],
+  "oracle": "explicit source/CPU model through C MMU and compiled table; not Linux/native speedup",
+  "linuxBoot": "not-tested"
+}

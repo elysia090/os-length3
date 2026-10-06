@@ -67,6 +67,12 @@ backend emits standard SIMD rather than rebuilding word-carry networks or
 scalar lane loops. Its former arithmetic lower is deleted. This does not
 claim that register/ALU/flags lowering already consumes the shared block DAG.
 
+Whole-byte shifts use that same coordinate projection with a translated old
+region and zero-default. Identity/constant eliminate the old payload input.
+Source ownership separately quotients request caps only when a fixed transfer
+fits the current cap; the latest demand policy is not compiled-body identity.
+Exact source/write/physical-owner checks and executable MMU admission remain.
+
 This migration is not complete: the scalar cold emitter still walks admitted
 instructions and owns independent ALU/flags/address spelling. Moving the common
 SSA sources is not evidence that this emitter uses block-wide normalization.

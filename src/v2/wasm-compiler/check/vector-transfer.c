@@ -72,7 +72,7 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
  * PSHUFB adds all selector bits, self-alias and the same memory topologies.
  * Immediate logical shifts cover all widths, both directions and count cuts.
  * Dword/high-word/low-word permutations share the eight operand topologies. */
-enum { VECTOR_FORMS=432u };
+enum { VECTOR_FORMS=464u };
 static pl_u32 permutation_width(pl_u32 form)
 { return form<360u || form>=408u?0u:form<368u || form>=384u?32u:16u; }
 static pl_u32 permutation_high(pl_u32 form)
@@ -84,7 +84,12 @@ static pl_u32 permutation_fixed(pl_u32 form)
 static pl_u32 permutation_control(pl_u32 form)
 { return form<360u || form>=408u?0u:form<392u?0x93u:form<400u?0xf5u:0xa0u; }
 static pl_u32 comparison_width(pl_u32 form)
-{ return form<408u?0u:8u<<((form-408u)/8u); }
+{ return form<408u || form>=432u?0u:8u<<((form-408u)/8u); }
+static pl_u32 byte_shift(pl_u32 form)
+{ return form>=432u; }
+static pl_u32 shift_count(pl_u32 form);
+static pl_u32 byte_shift_count(pl_u32 form)
+{ return byte_shift(form)?shift_count(264u+(form-432u)%16u):0u; }
 static pl_u32 shift_width(pl_u32 form)
 { return form<264u || form>=360u?0u:form<296u?32u:form<328u?64u:16u; }
 static pl_u32 shift_count(pl_u32 form)
@@ -111,6 +116,12 @@ static pl_u32 add_width(pl_u32 form)
 }
 static pl_u32 encoding(pl_u32 form,pl_u32 *kind,pl_u32 *store,pl_u32 *reg,pl_u32 *aligned)
 {
+    if(byte_shift(form)) {
+        *kind=*store=*aligned=0u;*reg=1u;
+        source[0]=0x66u;source[1]=0x41u;source[2]=0x0fu;source[3]=0x73u;
+        source[4]=(pl_u8)(form<448u?0xd9u:0xf9u);source[5]=(pl_u8)byte_shift_count(form);
+        return 6u;
+    }
     if(form>=264u && form<360u) {
         pl_u32 width=shift_width(form);
         *kind=*store=*aligned=0u;*reg=1u;
@@ -371,6 +382,15 @@ int main(int argc,char **argv)
                         *(half?&high:&low)|=(shift_left(form)?(value<<count)&mask:value>>count)<<at;
                     }
                 }
+                else if(byte_shift(form)) {
+                    pl_u8 old[16],result[16]={0};put(old,state->xmm[18u],8u);put(old+8u,state->xmm[19u],8u);
+                    pl_u32 count=byte_shift_count(form);
+                    if(count<16u) {
+                        if(form<448u)memcpy(result,old+count,16u-count);
+                        else memcpy(result+count,old,16u-count);
+                    }
+                    low=word(result,8u);high=word(result+8u,8u);
+                }
                 else if(form>=408u) {
                     pl_u32 width=comparison_width(form);
                     pl_u64 mask=(1ull<<width)-1u,old[]={low,high};low=high=0u;
@@ -399,12 +419,13 @@ int main(int argc,char **argv)
             ++observations;
         }
         char json[768];int n=snprintf(json,sizeof json,
-            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u,\"addWidth\":%u,\"shuffle\":%u,\"shiftWidth\":%u,\"shiftCount\":%u,\"shiftLeft\":%u,\"permutationWidth\":%u,\"permutationHigh\":%u,\"permutationControl\":%u,\"permutationTwo\":%u,\"permutationFixed\":%u,\"comparisonWidth\":%u}\n",
+            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u,\"addWidth\":%u,\"shuffle\":%u,\"shiftWidth\":%u,\"shiftCount\":%u,\"shiftLeft\":%u,\"permutationWidth\":%u,\"permutationHigh\":%u,\"permutationControl\":%u,\"permutationTwo\":%u,\"permutationFixed\":%u,\"comparisonWidth\":%u,\"byteShift\":%u,\"byteShiftCount\":%u,\"byteShiftLeft\":%u}\n",
             size,sizeof(machine_state),sizeof(observation),kind,store,reg,aligned,
             (pl_u32)(form>=32u && form<40u),form>=40u && form<136u?1u+(form-40u)/8u%4u:0u,
             unpack_width(form),unpack_high(form),add_width(form),(pl_u32)(form>=256u && form<264u),
             shift_width(form),shift_count(form),shift_left(form),permutation_width(form),permutation_high(form),
-            permutation_control(form),permutation_two(form),permutation_fixed(form),comparison_width(form));
+            permutation_control(form),permutation_two(form),permutation_fixed(form),comparison_width(form),
+            byte_shift(form),byte_shift_count(form),(pl_u32)(form>=448u));
         if(n<1 || (size_t)n>=sizeof json || save(directory,form,"json",json,(size_t)n)
             || save(directory,form,"source-page",source,sizeof source) || save(directory,form,"cases",records,sizeof records)
             || (!observe_only && save(directory,form,"wasm",module,(size_t)emitted)))goto finish;

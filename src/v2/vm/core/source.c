@@ -3,8 +3,8 @@ _Static_assert(VM_SOURCE_ROWS == 64u, "one exact rank mask and byte-sized links"
 
 static pl_u32 bucket(pl_u32 offset)
 { return (offset >> 12u) & (VM_SOURCE_WATCH_BUCKETS - 1u); }
-static pl_u32 key(pl_u64 entry, pl_u32 limit)
-{ return (pl_u32)(entry ^ (entry >> 8u) ^ limit) & (VM_SOURCE_WATCH_BUCKETS - 1u); }
+static pl_u32 key(pl_u64 entry)
+{ return (pl_u32)(entry ^ (entry >> 8u)) & (VM_SOURCE_WATCH_BUCKETS - 1u); }
 static int crosses(const vm_source_row *row)
 { return (row->row.entry & 4095u) + row->row.source_bytes > 4096u; }
 static void unlink_rank(vm_sources *sources, pl_u32 rank)
@@ -34,18 +34,19 @@ static void discard(vm_sources *sources, pl_u32 rank)
 {
     pl_u64 bit = 1ull << rank;
     if (sources->valid & bit) {
+        if (rank == sources->newest) sources->demand_limit = 0u;
         unlink_rank(sources,rank);
         sources->watch[bucket(sources->rows[rank].offset)] &= ~bit;
         if (crosses(sources->rows + rank))
             sources->watch[bucket(sources->rows[rank].next_offset)] &= ~bit;
-        sources->lookup[key(sources->rows[rank].row.entry,sources->rows[rank].limit)] &= ~bit;
+        sources->lookup[key(sources->rows[rank].row.entry)] &= ~bit;
     }
     sources->valid &= ~bit;
 }
 void vm_sources_open(vm_sources *sources, pl_u64 generation, pl_u32 first_slot)
 {
     if (!sources) return;
-    sources->valid = 0u; sources->pending = 0u;
+    sources->valid = 0u; sources->pending = 0u; sources->demand_limit = 0u;
     sources->generation = generation; sources->first_slot = first_slot;
     for (pl_u32 i = 0u; i < VM_SOURCE_WATCH_BUCKETS; ++i)
         sources->watch[i] = sources->lookup[i] = 0u;
@@ -64,15 +65,27 @@ static int page_valid(const vm_sources *sources, const vm_code_page *page,
 static pl_u32 match(const vm_sources *sources, const vm_code_page *page,
     pl_u64 entry, pl_u32 limit)
 {
-    pl_u64 candidates = sources->lookup[key(entry,limit)] & sources->valid;
+    pl_u64 candidates = sources->lookup[key(entry)] & sources->valid;
+    pl_u32 selected = VM_SOURCE_ROWS;
     while (candidates) {
         pl_u32 rank = (pl_u32)__builtin_ctzll(candidates);
         const vm_source_row *candidate = sources->rows + rank;
         if (candidate->row.entry == entry && candidate->offset == page->offset
-                && candidate->limit == limit) return rank;
+                && candidate->row.source_instructions <= limit
+                && (candidate->limit == limit
+                    || candidate->row.source_instructions < candidate->limit)) {
+            const vm_source_row *previous = selected < VM_SOURCE_ROWS
+                ? sources->rows + selected : 0;
+            /* Prefer the longest legal prefix; a shorter cached body must not
+             * hide an already available stronger construction. Ties prefer
+             * the largest attested budget, then the first rank. */
+            if (!previous || candidate->row.source_instructions > previous->row.source_instructions
+                    || (candidate->row.source_instructions == previous->row.source_instructions
+                        && candidate->limit > previous->limit)) selected = rank;
+        }
         candidates &= candidates - 1u;
     }
-    return VM_SOURCE_ROWS;
+    return selected;
 }
 int vm_sources_reuse(vm_sources *sources, const vm_code_page *page,
     const vm_code_page *next, pl_u64 entry, pl_u32 limit,
@@ -89,6 +102,7 @@ int vm_sources_reuse(vm_sources *sources, const vm_code_page *page,
         if (candidate->next_offset != next->offset) return 1;
     }
     demand(sources,rank);
+    sources->demand_limit = limit;
     *row = &candidate->row;
     return 0;
 }
@@ -108,6 +122,7 @@ int vm_sources_probe(vm_sources *sources, const vm_code_page *page,
             *row = candidate->row; return 2;
         }
         demand(sources,hit);
+        sources->demand_limit = limit;
         *row = candidate->row; return 0;
     }
     /* No demand may keep an invalid row alive. Free ranks precede eviction;
@@ -137,6 +152,7 @@ int vm_sources_extend(vm_sources *sources, const vm_code_page *next, vm_executio
     if ((sources->valid & (1ull << rank)) && crosses(candidate)
             && candidate->next_offset == next->offset) {
         demand(sources,rank);
+        sources->demand_limit = sources->pending_limit;
         *row = candidate->row; sources->pending = 0u; return 0;
     }
     discard(sources,rank);
@@ -163,9 +179,10 @@ int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
     target->next_offset = crossing ? sources->pending_next.offset : 0u;
     sources->watch[bucket(target->offset)] |= 1ull << rank;
     if (crossing) sources->watch[bucket(target->next_offset)] |= 1ull << rank;
-    sources->lookup[key(target->row.entry,target->limit)] |= 1ull << rank;
+    sources->lookup[key(target->row.entry)] |= 1ull << rank;
     sources->valid |= 1ull << rank;
     append_rank(sources,rank);
+    sources->demand_limit = sources->pending_limit;
     *row = target->row;
     return 0;
 }

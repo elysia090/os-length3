@@ -1,5 +1,26 @@
 # Browser projection of OS Length3 Linux
 
+Latest completed same-bundle run (`3147e94`, child 14672 / exec 35873 completed):
+PCMPEQD passes; compiler -102 is `66 0f 73 d9 08` (PSRLDQ xmm1,8),
+RIP `0x7f7289383862`, 242,172,992 retired / 133,002,483 admissions.
+Frozen compiler/VM 456,366 / 70,499 bytes; warmCuts=64 and bounds unchanged.
+Engine 576,295 ms, cold 473,120 ms, C execution 127,113 ms,
+total check 1,418,360 ms. Not a speedup against unequal work/clock inputs.
+See [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-psrldq-red.json).
+
+Source-owner request budgets are now conservatively quotiented for an exact
+fixed transfer that fits the current demand. Same 64 rows, 6,880 -> 6,888
+metadata bytes, no quota/payload-copy increase. Current demand policy is kept
+separate from the row's original cap; MMU/write/fault/context fences remain.
+Whole-byte shifts use the existing coordinate rule with zero-default.
+11,270 shared projection laws, 464 native/cold emissions / 59,392 unchanged
+native observations in direct/C-dispatch execution, all-count models, full
+native checks and scoped sanitizers pass. Candidate VM/compiler
+70,796 / 456,722 bytes; NOT in the completed run above.
+See [proof, regression corrections and scope](../vm/check/browser/evidence/2026-10-06-budget-and-byte-region.md).
+PID 1/root mount/shell/tooling/browser acceptance and cold shell 3s remain
+unachieved. Native publication/UI and retained browser assets/Workers are unchanged.
+
 Latest completed same-bundle Node run (`aa750ea`, exec session 91452 completed):
 SHUFPS passes; compiler -102 is `66 0f 76 c0` (PCMPEQD xmm0,xmm0),
 RIP `0x7f1159591ddb`, 229,117,402 retired / 124,477,220 admissions.

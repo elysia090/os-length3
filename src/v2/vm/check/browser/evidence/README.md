@@ -1,6 +1,13 @@
 # Browser boundary observations
 
 Latest independent Node/native work:
+[source budget quotient and byte region](2026-10-06-budget-and-byte-region.md),
+[cohort policy/fault checks](2026-10-06-budget-cohort-green.json),
+[native/cold vector receipt](2026-10-06-byte-region-green.json) and
+[completed same-bundle PSRLDQ stop](2026-10-06-node-startup-psrldq-red.json).
+These are not new browser or Linux/shell acceptance observations.
+
+Latest independent Node/native work:
 [packed binary law](2026-10-06-vector-binary.md),
 [strict execution receipt](2026-10-06-vector-binary-green.json) and
 [completed same-bundle PCMPEQD stop](2026-10-06-node-startup-pcmpeqd-red.json).

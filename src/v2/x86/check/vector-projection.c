@@ -20,6 +20,35 @@ static int form(pl_u32 family, pl_u32 control, pl_u32 location,
 int main(void)
 {
     pl_u32 cases = 0u, refusals = 0u;
+    for(pl_u32 left=0u;left<2u;++left)for(pl_u32 count=0u;count<256u;++count)
+        for(pl_u32 target=0u;target<16u;++target) {
+            pl_u8 code[16]={0};pl_u32 at=0u;code[at++]=0x66u;
+            if(target>=8u)code[at++]=0x41u;
+            code[at++]=0x0fu;code[at++]=0x73u;
+            code[at++]=(pl_u8)((left?0xf8u:0xd8u)|(target&7u));code[at++]=(pl_u8)count;
+            pl_x86_map map={code,0x400000u,at,at,PL_ELF_FLAG_EXECUTE,1u};
+            pl_x86_image image={&map,1u,0u,map.address};
+            pl_x86_instruction instruction;pl_x86_vector_projection projection;
+            if(pl_x86_decode_profile(&image,map.address,&instruction)
+                    || !pl_x86_vector_project(&instruction,&projection))return 1;
+            pl_u8 input[16],actual[16],expected[16]={0};
+            for(pl_u32 byte=0u;byte<16u;++byte)input[byte]=(pl_u8)(byte*11u+7u);
+            if(count<16u) {
+                if(left)memcpy(expected+count,input,16u-count);
+                else memcpy(expected,input+count,16u-count);
+            }
+            for(pl_u32 byte=0u;byte<16u;++byte) {
+                pl_u32 source=pl_x86_vector_project_byte(&projection,byte);
+                if(source>=32u)return 1;
+                actual[byte]=source<16u?input[source]:0u;
+            }
+            if(memcmp(actual,expected,16u) || projection.identity!=(count==0u)
+                    || projection.inputs!=(count>=16u?0u:count?2u:1u))return 1;
+            _Alignas(8) pl_u8 storage[8192];pl_arena arena={storage,sizeof storage,0u};
+            pl_x86_semantic semantic;
+            if(pl_x86_lower(&instruction,&arena,&semantic))return 1;
+            ++cases;
+        }
     for (pl_u32 family = 0u; family < 6u; ++family)
         for (pl_u32 control = 0u; control < (family < 4u ? 256u : 1u); ++control)
             for (pl_u32 location = 0u; location < 3u; ++location) {

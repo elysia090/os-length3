@@ -844,7 +844,12 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
                 || directory_rows->operand_binding!=owned->row.operand_binding) {
             vm_execution_close(&execution); return -1;
         }
-        source_limit=owned->limit;
+        /* Rebinding a retained owned row still rewalks permissions/context.
+         * The newest successful demand supplies its current policy; an older
+         * explicit row retains its own original admitted cap. Neither choice
+         * admits different code or bypasses the execution fetch boundary. */
+        source_limit=sources.newest==rank && sources.demand_limit>=owned->row.source_instructions
+            && sources.demand_limit<=1024u ? sources.demand_limit : owned->limit;
         execution.rows=&owned->row;
         execution.select=source_entry;
     }

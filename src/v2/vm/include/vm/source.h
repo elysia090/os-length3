@@ -18,7 +18,7 @@ typedef struct {
     vm_code_page pending_next;
     pl_u64 pending_entry;
     pl_u32 pending_limit, pending_rank, pending, pending_pages;
-    pl_u32 first_slot;
+    pl_u32 first_slot, demand_limit;
     pl_u8 previous[VM_SOURCE_ROWS], next[VM_SOURCE_ROWS];
     pl_u8 oldest, newest;
 } vm_sources;
@@ -34,6 +34,14 @@ typedef struct {
  * moves one row to its tail; replacement uses a free rank or the oldest row.
  * Refresh, unlink and victim selection are bounded O(1), without epochs,
  * copied source payload, growing history, a sort or a quota increase. */
+/* An admitted demand budget is not executable identity. A nonsaturated owned
+ * row (instructions < its admitted limit) may reuse its exact fixed transfer
+ * under another limit that admits its actual instruction count. We retain an
+ * exact budget match for saturated rows conservatively: a larger request may
+ * seek a longer pure prefix. This is not proof the compiler formed a maximal
+ * slice; its reported fixed extent remains the executable authority.
+ * demand_limit belongs to the newest validated demand, not a cached body;
+ * invalidating that newest row clears the demand certificate. */
 void vm_sources_open(vm_sources *sources, pl_u64 generation, pl_u32 first_slot);
 /* 0: reusable row, 1: pinned miss, 2: cached crossing requiring tail admission,
  * -1: refusal. Only a demand from the same trusted compiler extends a miss.

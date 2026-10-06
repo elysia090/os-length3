@@ -46,7 +46,10 @@ pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
- * names and byte coordinates are construction facts, not saved runtime rows. */
+ * names and byte coordinates are construction facts, not saved runtime rows.
+ * lane_bytes==1 is a whole-byte region translation: start is the saturated
+ * byte count, control chooses left/right, and the second region is zero.
+ * inputs==0 carries a constant zero result without reading the old register. */
 typedef struct {
     pl_u8 lane_bytes;
     pl_u8 start;

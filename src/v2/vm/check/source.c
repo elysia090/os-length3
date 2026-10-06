@@ -40,6 +40,56 @@ static void mmu_alias(void)
 }
 static int probe(pl_u64 entry, pl_u32 limit)
 { return vm_sources_probe(&sources,&page,entry,limit,&row); }
+static void budget_independent(void)
+{
+    const pl_u64 entry=page.address+128u;
+    vm_sources_open(&sources,9u,3u);
+    EXPECT(probe(entry,8u)==1);
+    EXPECT(!vm_sources_publish(&sources,7u,1u,0xaffeu,&row));
+    const pl_u32 slot=row.slot;
+    const vm_execution_row *borrowed=0;
+    EXPECT(vm_sources_reuse(&sources,&page,0,entry,1u,&borrowed)==0);
+    EXPECT(borrowed && borrowed->slot==slot && borrowed->source_instructions==1u
+        && borrowed->operand_binding==0xaffeu);
+    EXPECT(probe(entry,1u)==0 && row.slot==slot);
+    EXPECT(sources.demand_limit==1u && sources.rows[row.slot-sources.first_slot].limit==8u);
+    EXPECT(probe(entry,1024u)==0 && row.slot==slot);
+    EXPECT(sources.demand_limit==1024u);
+    vm_sources_write(&sources,page.offset+128u,1u);
+    EXPECT(!sources.demand_limit);
+    /* A saturated prefix is not known to end independently of its budget.
+     * Do not use it as a larger analysis cut or under a smaller shadow. */
+    vm_sources_open(&sources,9u,3u);
+    EXPECT(probe(entry,8u)==1);
+    EXPECT(!vm_sources_publish(&sources,16u,8u,0u,&row));
+    vm_sources snapshot=sources;
+    borrowed=&row;
+    EXPECT(vm_sources_reuse(&sources,&page,0,entry,1u,&borrowed)==1);
+    EXPECT(borrowed==&row && !memcmp(&sources,&snapshot,sizeof sources));
+    EXPECT(vm_sources_reuse(&sources,&page,0,entry,1024u,&borrowed)==1);
+    EXPECT(!memcmp(&sources,&snapshot,sizeof sources));
+    EXPECT(vm_sources_reuse(&sources,&page,0,entry,8u,&borrowed)==0);
+    vm_sources_open(&sources,9u,3u);
+}
+static void budget_working_set(void)
+{
+    vm_sources_open(&sources,9u,3u);
+    pl_u32 slots[VM_SOURCE_ROWS];
+    for(pl_u32 i=0u;i<VM_SOURCE_ROWS;++i) {
+        EXPECT(probe(page.address+i*8u,8u)==1);
+        EXPECT(!vm_sources_publish(&sources,1u,1u,i,&row));
+        slots[i]=row.slot;
+    }
+    for(pl_u32 turn=0u;turn<4096u;++turn) {
+        pl_u32 i=turn%VM_SOURCE_ROWS;
+        pl_u32 limit=turn%3u==0u?1u:turn%3u==1u?8u:1024u;
+        const vm_execution_row *borrowed=0;
+        EXPECT(!vm_sources_reuse(&sources,&page,0,page.address+i*8u,limit,&borrowed));
+        EXPECT(borrowed && borrowed->slot==slots[i] && borrowed->operand_binding==i);
+        EXPECT(sources.valid==~0ull && sources.demand_limit==limit);
+    }
+    vm_sources_open(&sources,9u,3u);
+}
 static void demand_lifetime(void)
 {
     /* A repeated, still-valid source must outlive inactive cold sources.
@@ -114,7 +164,7 @@ static void reference_check(void)
         for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i) {
             if (!reference[i].valid) continue;
             if (((reference[i].offset>>12u)&(VM_SOURCE_WATCH_BUCKETS-1u))==b) watch |= 1ull<<i;
-            if (((pl_u32)(reference[i].entry^(reference[i].entry>>8u)^reference[i].limit)
+            if (((pl_u32)(reference[i].entry^(reference[i].entry>>8u))
                     &(VM_SOURCE_WATCH_BUCKETS-1u))==b) lookup |= 1ull<<i;
         }
         EXPECT(sources.watch[b]==watch && sources.lookup[b]==lookup);
@@ -132,7 +182,9 @@ static void demand_reference(void)
         page.offset=(random&1u)?8192u:0x102000u; /* Colliding physical watch buckets. */
         for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i)
             if (reference[i].valid && reference[i].entry==entry
-                    && reference[i].offset==page.offset && reference[i].limit==limit) rank=i;
+                    && reference[i].offset==page.offset
+                    && (reference[i].limit==limit || reference[i].limit>1u)
+                    && (rank==VM_SOURCE_ROWS || reference[i].limit>reference[rank].limit)) rank=i;
         int hit=rank<VM_SOURCE_ROWS;
         if (!hit) {
             for (pl_u32 i=0u;i<VM_SOURCE_ROWS;++i)
@@ -155,7 +207,8 @@ static void demand_reference(void)
             }
             EXPECT(!vm_sources_publish(&sources,1u,1u,0u,&row));
         }
-        reference[rank]=(reference_row){entry,turn,page.offset,limit,1};
+        pl_u32 construction_limit=hit?reference[rank].limit:limit;
+        reference[rank]=(reference_row){entry,turn,page.offset,construction_limit,1};
         if ((random&15u)==2u) {
             pl_u32 at=page.offset+(pl_u32)(entry-page.address);
             vm_sources_write(&sources,at,1u);
@@ -401,6 +454,8 @@ int main(void)
     vm_sources_write(&sources,0u,0xffffffffu); EXPECT(probe(0x400080u,1u) == 1);
     page.offset = 8192u;
     demand_lifetime();
+    budget_independent();
+    budget_working_set();
     operand_binding();
     demand_reference();
     crossing_demand();

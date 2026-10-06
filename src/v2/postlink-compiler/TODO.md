@@ -23,6 +23,22 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Latest completed `3147e94` run: PCMPEQD passes, 242,172,992 retired /
+133,002,483 admissions; PSRLDQ `66 0f 73 d9 08` at
+`0x7f7289383862` is compiler -102. Same bounds and warmCuts=64.
+Engine 576,295 ms, cold 473,120 ms, execution 127,113 ms,
+total 1,418,360 ms, not a paired speedup. See
+[receipt](../vm/check/browser/evidence/2026-10-06-node-startup-psrldq-red.json).
+The independent candidate conservatively shares fixed transfers across
+request caps and projects whole-byte region shifts/zero-default. Same 64-row
+quota, metadata +8 bytes, VM/compiler 70,796 / 456,722 bytes.
+464 native/cold emissions / 59,392 stable native observations, source/MMU/
+fault/shadow models, native checks and scoped sanitizers pass.
+NOT loaded in that completed run. See
+[scope](../vm/check/browser/evidence/2026-10-06-budget-and-byte-region.md).
+PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
+
+Earlier:
 Latest completed `aa750ea` same-bundle run: 229,117,402 retired /
 124,477,220 admissions; SHUFPS passes and PCMPEQD self-equality
 `66 0f 76 c0` at `0x7f1159591ddb` is compiler -102.

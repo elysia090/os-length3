@@ -23,7 +23,7 @@ const program=[0x48,0xc7,0xc0,1,0,0,0,0xf8,0xeb,0xf6];
 let emissions=0,retired=0,boundaryCalls=0,comparisons=0,coldMisses=0,fetchFaults=0,writeRevocations=0,continuations=0;
 const matchedTimings=[],matchedWriteTimings=[];
 const progress=new CutProgress(0);
-let prefixChecks=0,demandChecks=0;
+let prefixChecks=0,demandChecks=0,budgetModels=0;
 let sourceObservations=0,sourceRefusals=0,disjointWriteRuns=0,revalidatedWrites=0;
 function run(budget,continuing=false){
   if(!continuing)progress.reset(Number(view.getBigUint64(base+1128,true)));
@@ -84,28 +84,46 @@ async function prime(selected=parts,limit=1024,start=entry){
     const slot=view.getUint32(rows+16,true),borrowed=view.getUint32(codeView+16,true);
     cold.set(data.subarray(borrowed,borrowed+4096),input);
     assert.equal(cc.compiler_open_pages(input,1,at&~4095n,9n),0);
-    let result=cc.compiler_emit(at,1,output,65536,receipt);
+    const compileLimit=part.compileLimit||1,instructions=part.instructions||1;
+    let result=cc.compiler_emit(at,compileLimit,output,65536,receipt);
     if(result===-105){
       assert.equal(vm.vm_source_extend(port,codeView,rows),1n);
       const borrowedTail=view.getUint32(codeView+40,true);
       cold.set(data.subarray(borrowedTail,borrowedTail+4096),input+4096);
       assert.equal(cc.compiler_open_pages(input,2,at&~4095n,9n),0);
-      result=cc.compiler_emit(at,1,output,65536,receipt);
+      result=cc.compiler_emit(at,compileLimit,output,65536,receipt);
     }
     assert.equal(result,0);
     assert.equal(cv.getBigUint64(receipt+32,true),BigInt(part.bytes));
+    assert.equal(cv.getBigUint64(receipt+24,true),BigInt(instructions));
     const module=cold.subarray(output,output+Number(cv.getBigUint64(receipt+40,true)));
     const cut=(await WebAssembly.instantiate(module,{machine:{memory,access:vm.vm_access,
       io:vm.vm_io,reserve:vm.vm_reserve,commit:vm.vm_commit,interrupt_flag:vm.vm_flag,
       read_pair:vm.vm_read_pair,write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,
       write_end:vm.vm_write_end,reserve_pair:vm.vm_reserve_pair,commit_pair:vm.vm_commit_pair}})).instance.exports.cut;
     assert.equal(cut.length,4);table.set(slot,cut);
-    assert.equal(vm.vm_source_publish(part.bytes,1,cv.getUint32(receipt+76,true),rows),0);++emissions;
+    assert.equal(vm.vm_source_publish(part.bytes,instructions,cv.getUint32(receipt+76,true),rows),0);++emissions;
   }
   assert.equal(vm.vm_source_query(port,start,limit,codeView,rows),0n);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 try{
+  // Reusing a short transfer must retain the current demand policy, not its
+  // old 1024 cap. The next owned two-instruction prefix cannot run under 1.
+  reset();await prime([{offset:0,bytes:7},{offset:7,bytes:3,instructions:2,compileLimit:8}]);
+  assert.equal(vm.vm_source_query(port,entry,1,codeView,rows),0n);
+  assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  const budgetExpected=cpu();
+  budgetExpected.writeBigUInt64LE(1n,0);budgetExpected.writeBigUInt64LE(0x203n,392);
+  budgetExpected.writeBigUInt64LE(entry+7n,384);budgetExpected.writeBigUInt64LE(42n,1128);
+  assert.equal(run(99),1n);assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);
+  demand(1n,1);assert(cpu().equals(budgetExpected));++budgetModels;
+  assert.equal(vm.vm_source_query(port,entry+7n,8,codeView,rows),0n);
+  assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  budgetExpected.writeBigUInt64LE(0x202n,392);budgetExpected.writeBigUInt64LE(entry,384);
+  budgetExpected.writeBigUInt64LE(44n,1128);
+  assert.equal(run(1),1n);assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),2n);
+  demand(2n,1);assert(cpu().equals(budgetExpected));++budgetModels;
   for(const cuts of [1,2,3,4,31,99,4096,65536]){
     reset();await prime();const expected=cpu();
     assert.equal(run(cuts),1n,'cached source cohort must consume the requested pure quantum');
@@ -317,8 +335,17 @@ try{
     if(mode==='debug'){put(base+600,1);expected=cpu();} // DR7 = system[14+7].
     if(mode==='shadow')view.setUint32(segments+4,1,true);
     assert.equal(vm.vm_run(port,9n,99),mode==='generation'||mode==='context'?5n:mode==='debug'?6n:1n);
-    demand(0n,0);
-    assert.equal(vm.vm_completed(),0);assert(cpu().equals(expected));++comparisons;
+    if(mode==='shadow'){
+      // Every retained body contains exactly one instruction: the first
+      // consumes inhibition before the next independently revalidated fetch.
+      // A request-budget difference must not manufacture a cold miss.
+      demand(7n,99);
+      expected.writeBigUInt64LE(1n,0);expected.writeBigUInt64LE(0x202n,392);
+      expected.writeBigUInt64LE(entry,384);expected.writeBigUInt64LE(140n,1128);
+      assert.equal(view.getUint32(segments+4,true),0);
+      assert.equal(vm.vm_completed(),99);assert.equal(vm.vm_source_retired(),99n);
+    }else {demand(0n,0);assert.equal(vm.vm_completed(),0);}
+    assert(cpu().equals(expected));++comparisons;
   }
   // A later console barrier latches its own entry, not the first row of the
   // quantum. Resume survives descriptor mutation and Memory growth.
@@ -359,6 +386,6 @@ try{
   assert.equal(vm.vm_run(port,8n,64),5n);demand(0n,0);assert(cpu().equals(expected));++comparisons;
 }finally{for(let slot=firstSlot;slot<firstSlot+vm.vm_source_capacity();++slot)table.set(slot,null);vm.vm_close();cc.compiler_close();}
 console.log(JSON.stringify({format:'c-wasm-source-cohort-v1',status:'pass',emissions,retired,boundaryCalls,
-  comparisons,coldMisses,fetchFaults,writeRevocations,continuations,prefixChecks,demandChecks,sourceObservations,sourceRefusals,disjointWriteRuns,revalidatedWrites,
+  comparisons,coldMisses,fetchFaults,writeRevocations,continuations,prefixChecks,demandChecks,budgetModels,sourceObservations,sourceRefusals,disjointWriteRuns,revalidatedWrites,
   matchedTimings,matchedWriteTimings,
   oracle:'explicit source/CPU model through C MMU and compiled table; not Linux/native speedup',linuxBoot:'not-tested'},null,2));

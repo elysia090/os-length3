@@ -33,6 +33,11 @@ static void load_vector(cut_lowering *cut, pl_u32 index)
 static void load_source(cut_lowering *cut,
                          const pl_x86_vector_projection *projection)
 {
+    if (projection->lane_bytes == 1u) {
+        cut_const(cut,0u);
+        simd(cut,0x12u);
+        return;
+    }
     if (!projection->source_memory) {
         load_vector(cut, projection->inputs == 2u
                     ? projection->second_register : projection->first_register);
@@ -59,7 +64,7 @@ void cut_emit_vector_projection(cut_lowering *cut,
     cut_get(cut, 0u);
     if (projection->inputs == 2u) load_vector(cut, projection->first_register);
     load_source(cut, projection);
-    if (!unchanged(projection)) {
+    if (projection->inputs && !unchanged(projection)) {
         if (projection->inputs == 1u) {
             cut_op(cut, 0x22u);
             wasm_writer_uleb(cut->writer, cut->vector_local);
