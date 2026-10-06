@@ -23,6 +23,14 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Actual in-app browser control now works through the standard path, with no
+launch/sandbox override. A fresh same-bundle fixture completes the independent
+86-instruction CPU/segment observation and 1,617,931 retirements, then its
+unchanged short quota. Explicit warm64/idle selection retains one long Worker;
+it progresses into initramfs, not a proven terminal. Current signed-production
+delivery / whole-ELF closure and all product acceptance gates remain open.
+See [receipt and reproduction](../vm/check/browser/evidence/2026-10-07-browser-startup.md).
+
 New literal factorization: a single GPR MOV uses the existing attested scalar
 binding for exactly unsigned32/sign-extended32 values; longer slices are not
 split and wide64 constants retain exact meaning. 1,024 native/full-C-VM

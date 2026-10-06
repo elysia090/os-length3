@@ -1,5 +1,14 @@
 # Browser projection of OS Length3 Linux
 
+2026-10-07 actual in-app browser checkpoint: the standard browser-control path
+works without sandbox/launch overrides. A fresh same-bundle fixture completes
+the independent 86-instruction CPU/segment check and 1,617,931 retirements,
+then the unchanged short quota. This is NOT Linux boot or shell readiness.
+An explicitly selected warm64/idle long Worker remains live; do not reload it
+or replace its fixture while it is progressing. Whole ELF remains -104 and
+authenticated C Artifact execution residency is not yet the startup path.
+See [actual receipt and reproduction](../vm/check/browser/evidence/2026-10-07-browser-startup.md).
+
 New separate compiler backend candidate shares one typed machine interface
 across bounded mixed-cut modules. 28 functions use one 12,786-byte module
 instead of 14,367 standalone bytes; all 22 callback identities, frozen single

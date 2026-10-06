@@ -1,8 +1,12 @@
 import {checkStartup} from './startup-check.mjs';
 import {diagnosticExtents} from './extent-reader.mjs';
+import {waitForClock} from '../../../web/idle-clock.mjs';
 
 self.onmessage = async ({data}) => {
   try {
+    if ((data?.warmCuts !== undefined && (!Number.isInteger(data.warmCuts) || data.warmCuts < 1 || data.warmCuts > 64))
+        || (data?.idle !== undefined && typeof data.idle !== 'boolean'))
+      throw new Error('diagnostic warm/idle selection');
     const fixture=data?.fixture ?? 'generated-startup';
     if (typeof fixture!=='string' || fixture.length>80 || !/^generated-startup(?:-[a-z0-9-]+)?$/.test(fixture))
       throw new Error('diagnostic fixture directory');
@@ -31,6 +35,7 @@ self.onmessage = async ({data}) => {
     const transport = diagnosticExtents(manifest.objects,root);
     const result = await checkStartup(read,await read('vm.wasm'),await read('wasm-compiler.wasm'),transport.read,
       {extended:data?.extended === true,onProgress:progress => self.postMessage(progress),
+        warmCuts:data?.warmCuts??1,idleWait:data?.idle===true?waitForClock:undefined,
         immutableImage:manifest.immutableImage,
         decompression:JSON.parse(new TextDecoder().decode(await read('boot.decompression.json')))});
     self.postMessage({...result,secureContext:self.isSecureContext,isolated:self.crossOriginIsolated,

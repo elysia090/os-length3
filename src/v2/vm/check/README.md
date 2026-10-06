@@ -6,7 +6,14 @@ function-table execution. The separate compiler lowers x86; the VM does not
 decode/interpret instructions. Linux boot, exception entry and virtio devices
 remain incomplete. `wasm/entry.c` is the freestanding wrapper of this C core.
 
-The [current browser receipt](browser/evidence/2026-10-04-byte-swap.md) retires
+The [new actual-browser checkpoint](browser/evidence/2026-10-07-browser-startup.md)
+uses a fresh same-bundle fixture and the standard control path, without sandbox
+overrides. Its short CPU/segment witness passes and reaches quota; a separately
+retained warm64/idle Worker progresses into initramfs. Linux shell/development
+and full authenticated delivery remain red. The older receipt below is dated,
+not the current candidate or evidence that independent clock transport is absent.
+
+The [2026-10-04 browser receipt](browser/evidence/2026-10-04-byte-swap.md) retires
 258,087,125 exact shipped source instructions through cold C compilation and C execution,
 with unchanged complete decompression and C-owned PIC/RTC, not a booted Linux.
 CLI/STI now shares the C privilege/IF/shadow owner. CPL0/IST0 PIC interrupt

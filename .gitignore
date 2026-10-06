@@ -17,3 +17,5 @@ src/v2/data/out/
 /artifact/native/*.tar.zst
 /src/v2/vm/check/browser/generated/
 /src/v2/vm/check/browser/generated-startup/
+# Independently generated diagnostic runs are reproducible, not release assets.
+/src/v2/vm/check/browser/generated-startup-*/

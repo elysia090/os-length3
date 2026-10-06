@@ -1,5 +1,13 @@
 # Browser boundary observations
 
+2026-10-07 actual in-app browser:
+[completed short-prefix receipt](2026-10-07-browser-prefix.json) and
+[fresh fixture, explicit warm/idle selection and scope](2026-10-07-browser-startup.md).
+The standard browser path works. The short independent CPU/segment witness
+passes and reaches quota; a separate long Worker progresses into initramfs.
+Neither is PID 1 / terminal / development acceptance. Keep the long Worker
+and its fixture intact; do not equate Node observations with browser results.
+
 Latest independent Node/C work:
 [source profiling definitions](2026-10-06-source-profile.md),
 [controlled metric models](2026-10-06-source-profile-cohort.json),
