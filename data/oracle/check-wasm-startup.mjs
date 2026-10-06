@@ -22,6 +22,7 @@ const onProgress=flags.includes('--progress') ? progress=>console.error(JSON.str
   residentPages:progress.residentPages,memoryBytes:progress.memoryBytes,consoleBytes:progress.console?.acceptedBytes,
   engineReuse:progress.engineReuse,compilerOutput:progress.compilerOutput,timingMs:progress.timingMs,
   sourceReuse:progress.sourceReuse,
+  sourceProfile:progress.sourceProfile,
 })) : undefined;
 async function extent(kind,offset,bytes) {
   const fileName = kind === 2 ? path.join(directory,'boot.kernel-object')

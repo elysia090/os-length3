@@ -1,5 +1,12 @@
 # Browser boundary observations
 
+Latest independent Node/C work:
+[source profiling definitions](2026-10-06-source-profile.md),
+[controlled metric models](2026-10-06-source-profile-cohort.json),
+[short-prefix measurement](2026-10-06-source-profile-prefix.json) and
+[completed real guest service failure](2026-10-06-node-startup-service-timeout.json).
+Terminal is down. These are not actual-browser/development acceptance.
+
 Latest independent Node/native work:
 [source budget quotient and byte region](2026-10-06-budget-and-byte-region.md),
 [cohort policy/fault checks](2026-10-06-budget-cohort-green.json),

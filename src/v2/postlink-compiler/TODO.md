@@ -23,6 +23,21 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Latest completed `a305af4` run: PSRLDQ passes, 265,612,366 retired /
+149,485,773 admissions. Guest s6 sync fails (Broken pipe / timeout), and
+terminal stays down. HLT `f4` at `0xffffffff813efa53` is then -102.
+Engine 725,454 ms, cold 595,693 ms, execution 158,080 ms,
+total 1,764,466 ms; same quotas, not a speedup.
+See [receipt](../vm/check/browser/evidence/2026-10-06-node-startup-service-timeout.json).
+Next: full opt-in C source profile to distinguish quota/candidate/write
+causes; faithful HLT idle/wake retirement; actual service/IPC/scheduling
+failure under the existing explicit clock contract. No timeout/clock
+relaxation or kernel wait skip. Normal VM is unchanged; six metric models
+and source/MMU/fault/CPU checkpoint checks pass. See
+[scope](../vm/check/browser/evidence/2026-10-06-source-profile.md).
+Full Linux/browser/offline development/storage/network acceptance remains red.
+
+Earlier:
 Latest completed `3147e94` run: PCMPEQD passes, 242,172,992 retired /
 133,002,483 admissions; PSRLDQ `66 0f 73 d9 08` at
 `0x7f7289383862` is compiler -102. Same bounds and warmCuts=64.

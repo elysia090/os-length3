@@ -1,5 +1,29 @@
 # Browser projection of OS Length3 Linux
 
+Latest completed same-bundle run (`a305af4`, child 7160 / exec 59604 completed):
+PSRLDQ passes; 265,612,366 retired / 149,485,773 admissions.
+Guest s6 synchronization fails with Broken pipe / Operation timed out:
+`Offline service transition failed; terminal remains down.`
+Then HLT `f4` at `0xffffffff813efa53` is compiler -102.
+Frozen compiler/VM 456,722 / 70,796 bytes; bounds and warmCuts=64 unchanged.
+Engine 725,454 ms, cold 595,693 ms, C execution 158,080 ms,
+total check 1,764,466 ms. Not a paired speedup or shell acceptance.
+See [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-service-timeout.json).
+
+Opt-in C source profiling now counts queries/reservations/full-owner
+replacements/writes and periodically samples absent/remapped/budget/reusable
+candidates. Six controlled models, existing C source/MMU/fault controls and
+the independent 86-instruction checkpoint pass. Normal VM bytes are unchanged.
+The early short prefix has 1,770 cold reservations / 1,706 full-owner
+replacements; all periodic early samples are hits. This does not classify
+the later kernel/service workload. Measure the full profile before changing
+lifetime, quota or guest semantics.
+See [definitions and scope](../vm/check/browser/evidence/2026-10-06-source-profile.md).
+Do not soften service timeouts/clock policy or treat /init/fixture pass as success.
+PID 1/offline terminal/development/storage/network/browser acceptance and
+cold shell 3s remain unachieved; native publication/UI and retained browser
+assets/Workers remain unchanged.
+
 Latest completed same-bundle run (`3147e94`, child 14672 / exec 35873 completed):
 PCMPEQD passes; compiler -102 is `66 0f 73 d9 08` (PSRLDQ xmm1,8),
 RIP `0x7f7289383862`, 242,172,992 retired / 133,002,483 admissions.

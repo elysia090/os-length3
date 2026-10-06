@@ -1,7 +1,8 @@
 # Scope-local build tool; it is neither a release dependency nor a guest libc.
 [CmdletBinding()]
-param([string]$Output = 'temp/wasm-tools-34/vm.wasm', [switch]$Compiler)
+param([string]$Output = 'temp/wasm-tools-34/vm.wasm', [switch]$Compiler, [switch]$Profile)
 $ErrorActionPreference = 'Stop'
+if ($Profile -and $Compiler) { throw 'Source profiling belongs to the VM, not the compiler' }
 if ($Compiler -and !$PSBoundParameters.ContainsKey('Output')) {
     $Output = 'temp/wasm-tools-34/wasm-compiler.wasm'
 }
@@ -32,7 +33,10 @@ $taskCompiler = (Join-Path $taskSdk 'bin/clang.exe').Replace('\', '/')
 $taskTarget = $taskOutput.Replace('\', '/')
 Push-Location $taskRepository
 try {
-    & $taskMake.Source -C "src/v2/$taskProduct" wasm "WASM_CC=$taskCompiler" "WASM_OUTPUT=$taskTarget"
+    $taskProfile = if ($Profile) { '1' } else { '0' }
+    # Mode flags are not ordinary timestamp dependencies. Rebuild this small
+    # standalone module so changing profile mode cannot retain a stale target.
+    & $taskMake.Source -B -C "src/v2/$taskProduct" wasm "WASM_CC=$taskCompiler" "WASM_OUTPUT=$taskTarget" "WASM_PROFILE=$taskProfile"
     if ($LASTEXITCODE) { throw "C $taskProduct Wasm build failed" }
 } finally { Pop-Location }
 Get-FileHash -Algorithm SHA256 -LiteralPath $taskOutput

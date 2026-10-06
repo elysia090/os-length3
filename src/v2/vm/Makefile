@@ -7,6 +7,7 @@ INCLUDES = -Iinclude -I../support/include -I../machine-abi/include
 BUILD ?= build
 WASM_OUTPUT ?= $(BUILD)/vm.wasm
 WASM_CC ?= clang
+WASM_PROFILE ?= 0
 WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--no-entry,--strip-all -Xlinker --import-memory=machine,memory \
 	-Wl,--export=vm_arena_min,--export=vm_open,--export=vm_close,--export=vm_bind_state,--export=vm_access
@@ -33,6 +34,9 @@ WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 WASM_FLAGS += -Wl,--export=vm_entry_abi
 WASM_FLAGS += -Wl,--export=vm_source_demands,--export=vm_source_admissions,--export=vm_run_interrupted
 WASM_FLAGS += -Wl,--export=vm_run_source
+ifeq ($(WASM_PROFILE),1)
+WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile
+endif
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
 SOURCES += core/system.c
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))

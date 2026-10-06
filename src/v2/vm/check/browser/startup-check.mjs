@@ -47,6 +47,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const provider = await WebAssembly.compile(providerBytes);
   assert.deepEqual(WebAssembly.Module.imports(provider),[{module:'machine',name:'memory',kind:'memory'}]);
   const vm = (await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
+  const sourceProfile = () => {
+    if(typeof vm.vm_source_profile!=='function')return null;
+    const names=['queries','coldReservations','quotaReplacements','sampledQueries',
+      'sampledAbsentEntry','sampledRemappedOwner','sampledBudgetReject',
+      'sampledReusable','sampledValidRowsSum','writeRevokedRows','pendingWriteCancellations'];
+    return Object.fromEntries(names.map((name,i)=>[name,String(vm.vm_source_profile(i))]));
+  };
   const compilerModule = await WebAssembly.compile(compilerBytes);
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
@@ -157,6 +164,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
       sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity},engineReuse:engines.stats(),
       compilerOutput:compilerOutputWitness.stats(),
+      sourceProfile:sourceProfile(),
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,
         elapsedCheck:performance.now()-startedAt}});
   }
@@ -706,6 +714,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       guestExecution:'C-Wasm table dispatcher/MMU',coldCompilation:'C-Wasm decoder/planner/emitter',
       guestMemoryCallback:'C-Wasm, not JavaScript',sourceProjection:'C-MMU borrowed page, no JS virtual-to-physical mapping',
       emittedBytes,copiedCodeBytes:0,borrowedCodeBytes,engineReuse:engines.stats(),compilerOutput:compilerOutputWitness.stats(),
+      sourceProfile:sourceProfile(),
       warmCuts,admissionUnit:'supervisor source query/bind; C warm admissions counted separately',
       sourceReuse:{hits:sourceHits,misses:sourceMisses,warmAdmissions,warmRuns,warmCompleted,capacity:sourceCapacity,metadataBytes:vm.vm_source_metadata_bytes(),sourcePayloadBytes:0},
       timingMs:{cold:coldMs,engine:engineMs,execution:executionMs,supply:supplyMs,admission:admissionMs,

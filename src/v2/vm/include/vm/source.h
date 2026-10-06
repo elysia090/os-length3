@@ -23,6 +23,14 @@ typedef struct {
     pl_u8 oldest, newest;
 } vm_sources;
 
+/* Pure admissibility predicate, shared with read-only profile classification.
+ * It neither authorizes a mapping nor refreshes/cancels a source owner. */
+static inline int vm_source_budget_fits(const vm_source_row *row, pl_u32 limit)
+{
+    return row->row.source_instructions <= limit
+        && (row->limit == limit || row->row.source_instructions < row->limit);
+}
+
 /* One serialized compiler/engine owner. Page views must come from executable
  * C-MMU admission on EVERY lookup; permission checks are never cached. The
  * exact source extent is pinned without copying bytes. All physical guest

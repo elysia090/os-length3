@@ -71,9 +71,7 @@ static pl_u32 match(const vm_sources *sources, const vm_code_page *page,
         pl_u32 rank = (pl_u32)__builtin_ctzll(candidates);
         const vm_source_row *candidate = sources->rows + rank;
         if (candidate->row.entry == entry && candidate->offset == page->offset
-                && candidate->row.source_instructions <= limit
-                && (candidate->limit == limit
-                    || candidate->row.source_instructions < candidate->limit)) {
+                && vm_source_budget_fits(candidate,limit)) {
             const vm_source_row *previous = selected < VM_SOURCE_ROWS
                 ? sources->rows + selected : 0;
             /* Prefer the longest legal prefix; a shorter cached body must not

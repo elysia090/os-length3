@@ -29,11 +29,52 @@ static vm_execution execution;
 static pl_u32 source_limit;
 static pl_u64 source_demands;
 static pl_u32 source_admissions, run_interrupted;
+static vm_sources sources;
+#ifdef VM_SOURCE_PROFILE
+/* Construction-side observations, not CPU state, code identity or authority.
+ * Every 4096th supervisor query samples only the bounded resident owner. */
+static pl_u64 source_profile[11];
+pl_u64 vm_source_profile(pl_u32 index)
+{ return index<11u ? source_profile[index] : 0u; }
+static void source_profile_write(void *owner, pl_u32 offset, pl_u32 bytes)
+{
+    vm_sources *owned=owner;
+    pl_u64 before=owned->valid;pl_u32 pending=owned->pending;
+    vm_sources_write(owner,offset,bytes);
+    source_profile[9]+=(pl_u64)__builtin_popcountll(before&~owned->valid);
+    source_profile[10]+=(pl_u64)(pending && !owned->pending);
+}
+#define SOURCE_WRITE_OBSERVER source_profile_write
+static void source_profile_before(const vm_code_page *page, pl_u64 entry, pl_u32 limit)
+{
+    ++source_profile[0];
+    if (source_profile[0]&4095u) return;
+    ++source_profile[3];
+    source_profile[8]+=(pl_u64)__builtin_popcountll(sources.valid);
+    int same_entry=0,same_owner=0,admissible=0;
+    pl_u64 valid=sources.valid;
+    while(valid) {
+        pl_u32 rank=(pl_u32)__builtin_ctzll(valid);
+        const vm_source_row *row=sources.rows+rank;
+        if(row->row.entry==entry) {
+            same_entry=1;
+            if(row->offset==page->offset) {
+                same_owner=1;
+                if(vm_source_budget_fits(row,limit))admissible=1;
+            }
+        }
+        valid&=valid-1u;
+    }
+    ++source_profile[!same_entry?4u:!same_owner?5u:!admissible?6u:7u];
+}
+#endif
+#ifndef VM_SOURCE_PROFILE
+#define SOURCE_WRITE_OBSERVER vm_sources_write
+#endif
 static pl_u32 run_source_rank=VM_SOURCE_ROWS;
 static vm_page_supply supply;
 static vm_fault_delivery delivery;
 static vm_table_frontier table_frontier;
-static vm_sources sources;
 static vm_clock clock_owner;
 static vm_pit pit;
 static vm_pic pic;
@@ -56,7 +97,7 @@ pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
 pl_u32 vm_slot_min(void)
 {
     pl_u32 fetch = (pl_u32)(uintptr_t)fetch_entry, call = (pl_u32)(uintptr_t)call_entry;
-    pl_u32 write = (pl_u32)(uintptr_t)vm_sources_write;
+    pl_u32 write = (pl_u32)(uintptr_t)SOURCE_WRITE_OBSERVER;
     pl_u32 last = fetch > call ? fetch : call;
     if (last < write) last = write;
     pl_u32 select = (pl_u32)(uintptr_t)source_entry;
@@ -70,6 +111,9 @@ pl_u32 vm_arena_min(void)
 
 void vm_close(void)
 {
+#ifdef VM_SOURCE_PROFILE
+    for(pl_u32 i=0u;i<11u;++i)source_profile[i]=0u;
+#endif
     table_frontier=(vm_table_frontier){0};
     vm_clock_close(&clock_owner); vm_pit_reset(&pit); vm_pic_reset(&pic);
     vm_console_close(&console_owner);
@@ -187,7 +231,7 @@ int vm_open(pl_u32 base, pl_u32 bytes, pl_u32 reserved,
                        (vm_memory_page *)(uintptr_t)directory,
                        count, capacity, (vm_memory_branch *)(uintptr_t)branches, generation)) return -1;
     vm_sources_open(&sources,generation,vm_slot_min());
-    resident.before_write = vm_sources_write; resident.write_owner = &sources;
+    resident.before_write = SOURCE_WRITE_OBSERVER; resident.write_owner = &sources;
     arena_base = base;
     boot = prepared_boot; boot_header = header; boot_header_bytes = header_bytes; boot_command = command;
     return 0;
@@ -415,7 +459,14 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
     machine_result result = vm_mmu_code_page(&resident,port - arena_base,&context,entry,&page);
     if (resident.write_touched) execution.generation = 0u;
     if (result) return memory_result(port,result);
+#ifdef VM_SOURCE_PROFILE
+    int was_full=sources.valid==~0ull;
+    source_profile_before(&page,entry,limit);
+#endif
     int status = vm_sources_probe(&sources,&page,entry,limit,&row);
+#ifdef VM_SOURCE_PROFILE
+    if(status==1){++source_profile[1];if(was_full)++source_profile[2];}
+#endif
     if (status < 0) return MACHINE_RESULT_ENTRY_MAP;
     if (status == 2) return source_tail(port,view_target,row_target);
     page.offset += arena_base;

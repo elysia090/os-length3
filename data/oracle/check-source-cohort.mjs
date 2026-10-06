@@ -23,7 +23,7 @@ const program=[0x48,0xc7,0xc0,1,0,0,0,0xf8,0xeb,0xf6];
 let emissions=0,retired=0,boundaryCalls=0,comparisons=0,coldMisses=0,fetchFaults=0,writeRevocations=0,continuations=0;
 const matchedTimings=[],matchedWriteTimings=[];
 const progress=new CutProgress(0);
-let prefixChecks=0,demandChecks=0,budgetModels=0;
+let prefixChecks=0,demandChecks=0,budgetModels=0,profileModels=0;
 let sourceObservations=0,sourceRefusals=0,disjointWriteRuns=0,revalidatedWrites=0;
 function run(budget,continuing=false){
   if(!continuing)progress.reset(Number(view.getBigUint64(base+1128,true)));
@@ -108,6 +108,33 @@ async function prime(selected=parts,limit=1024,start=entry){
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
 try{
+  if(typeof vm.vm_source_profile==='function') {
+    const metric=i=>vm.vm_source_profile(i);
+    reset();
+    for(let i=0;i<4096;++i)assert.equal(vm.vm_source_query(port,entry+512n,8,codeView,rows),1n);
+    assert.equal(metric(0),4096n);assert.equal(metric(1),4096n);
+    assert.equal(metric(2),0n);assert.equal(metric(3),1n);assert.equal(metric(4),1n);++profileModels;
+    reset();await prime();
+    const unchanged=cpu();
+    while(metric(0)<4096n)assert.equal(vm.vm_source_query(port,entry,1024,codeView,rows),0n);
+    assert.equal(metric(7),1n);assert.equal(metric(8),3n);assert(cpu().equals(unchanged));++profileModels;
+    reset();await prime([{offset:0,bytes:7},{offset:7,bytes:3,instructions:2,compileLimit:8}]);
+    while(metric(0)<4096n)assert.equal(vm.vm_source_query(port,entry+7n,1,codeView,rows),1n);
+    assert.equal(metric(6),1n);++profileModels;
+    reset();await prime();put(base+20480,0x9067);
+    while(metric(0)<4096n)assert.equal(vm.vm_source_query(port,entry,1024,codeView,rows),1n);
+    assert.equal(metric(5),1n);++profileModels;
+    reset();await prime();
+    assert.equal(vm.vm_access(port,entry,1,2,0x90n),0n);assert.equal(metric(9),1n);
+    assert.equal(vm.vm_source_query(port,entry+512n,8,codeView,rows),1n);
+    assert.equal(vm.vm_access(port,entry+768n,1,2,0x90n),0n);assert.equal(metric(10),1n);++profileModels;
+    reset();const all=[];
+    for(let rank=0;rank<64;++rank){data[code+rank*5]=0xe9;view.setInt32(code+rank*5+1,0,true);all.push({offset:rank*5,bytes:5});}
+    await prime(all);
+    assert.equal(vm.vm_source_query(port,entry+512n,8,codeView,rows),1n);
+    assert.equal(metric(2),1n);++profileModels;
+    assert.equal(vm.vm_source_profile(11),0n);
+  }
   // Reusing a short transfer must retain the current demand policy, not its
   // old 1024 cap. The next owned two-instruction prefix cannot run under 1.
   reset();await prime([{offset:0,bytes:7},{offset:7,bytes:3,instructions:2,compileLimit:8}]);
@@ -386,6 +413,6 @@ try{
   assert.equal(vm.vm_run(port,8n,64),5n);demand(0n,0);assert(cpu().equals(expected));++comparisons;
 }finally{for(let slot=firstSlot;slot<firstSlot+vm.vm_source_capacity();++slot)table.set(slot,null);vm.vm_close();cc.compiler_close();}
 console.log(JSON.stringify({format:'c-wasm-source-cohort-v1',status:'pass',emissions,retired,boundaryCalls,
-  comparisons,coldMisses,fetchFaults,writeRevocations,continuations,prefixChecks,demandChecks,budgetModels,sourceObservations,sourceRefusals,disjointWriteRuns,revalidatedWrites,
+  comparisons,coldMisses,fetchFaults,writeRevocations,continuations,prefixChecks,demandChecks,budgetModels,profileModels,sourceObservations,sourceRefusals,disjointWriteRuns,revalidatedWrites,
   matchedTimings,matchedWriteTimings,
   oracle:'explicit source/CPU model through C MMU and compiled table; not Linux/native speedup',linuxBoot:'not-tested'},null,2));
