@@ -92,7 +92,8 @@ and production Worker integration remain unverified.
   pulse and 25,728 batch observations additionally check future edges. PIC
   147,456 grant observations and slave masks check the same priority law.
   RTC 1,536 deadline phases check no IRQ at `D-1` and IRQ at `D`.
-* Scoped native ASan/UBSan rebuilds clock/device/execution owners and passes
+* `make -C src/v2/vm device-sanitizer-check` rebuilds clock/device/execution
+  owners with scoped native ASan/UBSan and passes
   their checks. This is not a Wasm-engine sanitizer or silicon fidelity claim.
 * Old VM is red: `vm_idle_clock` absent. New C-Wasm PIT/RTC waits, masked/IF
   refusals, exact-neighbour event timing, duplicate/stale/cancel/rebind checks

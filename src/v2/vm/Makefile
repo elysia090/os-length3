@@ -215,6 +215,9 @@ $(BUILD)/clock-check: check/clock.c $(BUILD)/libvm.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 
 .PHONY: clock-check
+.PHONY: device-sanitizer-check
+device-sanitizer-check:
+	bash check/sanitizers.sh
 check: clock-check
 clock-check: $(BUILD)/clock-check
 	$(BUILD)/clock-check
