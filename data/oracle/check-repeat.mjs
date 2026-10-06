@@ -3,9 +3,14 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-const [providerFile,directory,family = 'movs'] = process.argv.slice(2);
-if (!directory || !['movs','stos'].includes(family))
-  throw new Error('usage: check-repeat.mjs VM.WASM REPEAT-FIXTURE-DIRECTORY [movs|stos]');
+const [providerFile,directory,family = 'movs',compilerFile,...extra] = process.argv.slice(2);
+if (!directory || !['movs','stos'].includes(family) || extra.length)
+  throw new Error('usage: check-repeat.mjs VM.WASM REPEAT-FIXTURE-DIRECTORY [movs|stos [COMPILER.WASM]]');
+const cm = compilerFile ? new WebAssembly.Memory({initial:16}) : null;
+const cc = cm ? (await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports : null;
+const cold = cm ? Buffer.from(cm.buffer) : null, cv = cm ? new DataView(cm.buffer) : null;
+const input = cc?.compiler_arena_min(), output = input + 8192, report = output + 65536;
+let parity = 0;
 const store = family === 'stos';
 const memory = new WebAssembly.Memory({initial:8,maximum:16});
 const vm = (await WebAssembly.instantiate(await readFile(providerFile),{machine:{memory}})).instance.exports;
@@ -79,12 +84,18 @@ function narrow(cpu,address) {
 try {
   for (const address of [32,64]) for (const width of [8,16,32,64]) {
     const prefix = path.join(directory,`${store ? 'stos' : 'repeat'}-${width}-${address}`);
-    const module = await WebAssembly.compile(await readFile(`${prefix}.wasm`));
+    const emitted = await readFile(`${prefix}.wasm`);
+    const module = await WebAssembly.compile(emitted);
     assert.deepEqual(WebAssembly.Module.imports(module),[
       {module:'machine',name:'memory',kind:'memory'},{module:'machine',name:'access',kind:'function'}]);
     const cut = (await WebAssembly.instantiate(module,{machine:{memory,access:vm.vm_access}})).exports.cut;
     vm.__indirect_function_table.set(slot,cut);
     const source = await readFile(`${prefix}.source-page`), meta = JSON.parse(await readFile(`${prefix}.json`));
+    if(cc){
+      cold.set(source,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
+      assert.equal(cc.compiler_emit(entry,8,output,65536,report),0);
+      assert(cold.subarray(output,output+Number(cv.getBigUint64(report+40,true))).equals(emitted),'native/cold byte parity');++parity;
+    }
     for (let at = 0; at < native.length; at += recordBytes) {
       if (native.readBigUInt64LE(at) !== BigInt(width) || native.readBigUInt64LE(at + 8) !== BigInt(address)) continue;
       const df = Number(native.readBigUInt64LE(at + 24)), sample = Number(native.readBigUInt64LE(at + 40));
@@ -225,4 +236,4 @@ try {
     }
   }
 } finally { vm.__indirect_function_table.set(slot,null); vm.vm_close(); }
-console.log(`REP ${store ? 'STOS' : 'MOVS'}: green (${comparisons} native x86 CPU/RAM receipts, ${yields} bounded latch resumes, ${stale} entry/stale refusals, ${faults} partial/fault/miss cases, ${selfModification} source-code alias continuations, ${rfFrontiers} RF frontier models; NOT exception delivery/Linux boot)`);
+console.log(`REP ${store ? 'STOS' : 'MOVS'}: green (${comparisons} native x86 CPU/RAM receipts, ${parity} native/cold byte comparisons, ${yields} bounded latch resumes, ${stale} entry/stale refusals, ${faults} partial/fault/miss cases, ${selfModification} source-code alias continuations, ${rfFrontiers} RF frontier models; NOT exception delivery/Linux boot)`);

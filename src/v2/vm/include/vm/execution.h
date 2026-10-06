@@ -35,6 +35,8 @@ typedef struct {
     machine_activity *activity; /* Machine-owned; directory close never resets it. */
     vm_execution_row continuation; /* One latched instruction, not a CPU frame. */
     pl_u64 continuation_generation;
+    pl_u16 continuation_flags; /* Six sparse pre-instruction arithmetic bits. */
+    pl_u8 continuation_interruptible; /* Only a completed quantum frontier. */
     vm_execution_select select;
 } vm_execution;
 typedef machine_result (*vm_execution_fetch)(void *owner, pl_u64 address);
@@ -57,6 +59,9 @@ typedef machine_result (*vm_execution_call)(void *owner, pl_u32 slot, pl_u64 ent
 int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
                        pl_u32 count, pl_u64 generation, const machine_state *state);
 void vm_execution_close(vm_execution *execution);
+/* A committed control event discards an incomplete instruction but preserves
+ * completed-prefix accounting. This is not a guest decoder or a rollback. */
+void vm_execution_cancel(vm_execution *execution);
 /* Each cut's executable page(s) are checked through the C MMU before calling
  * the already compiled function; no opcode/source decoding occurs here. A
  * same-page span needs one permission/residency check, a crossing instruction
@@ -71,8 +76,10 @@ void vm_execution_close(vm_execution *execution);
  * Exceptions are pending, not delivered. This is not a complete machine. */
 /* A single-instruction RESOURCE/QUANTUM barrier pins its original table slot
  * and source identity. Resume does not refetch/redecode self-modified bytes.
- * Its completed element frontier is already in architectural state; no state
- * copy is stored here. Pin the slot/context and serialize CPU/host writers
+ * Its completed element frontier is already in architectural state; only the
+ * six original arithmetic bits survive for precise fault rollback. A quantum
+ * frontier can be cancelled by an accepted interrupt; resource/I/O waits
+ * remain pinned. Pin the slot/context and serialize CPU/host writers
  * across the wait. Ordinary code admission stays revoked after payload writes;
  * only this in-flight instruction may continue. Completion/fault releases the
  * latch. Host reopen/close or a changed CPU/MMU context cancels it. This does

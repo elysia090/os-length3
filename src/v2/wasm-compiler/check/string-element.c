@@ -45,7 +45,8 @@ static int save(const char *directory,unsigned form,const char *suffix,const voi
 }
 int main(int argc,char **argv)
 {
-    if(argc!=1&&argc!=2)return 2;
+    if(argc!=1&&argc!=2&&argc!=3)return 2;
+    int observe=argc==3 && !strcmp(argv[2],"--observe");if(argc==3 && !observe)return 2;
     pl_u8 *code=mmap((void *)(uintptr_t)0x400000u,4096u,PROT_READ|PROT_WRITE|PROT_EXEC,
         MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
     pl_u8 *ram=mmap((void *)(uintptr_t)0x500000u,16384u,PROT_READ|PROT_WRITE,
@@ -54,29 +55,36 @@ int main(int argc,char **argv)
     struct sigaction action={0},previous;action.sa_sigaction=fault;action.sa_flags=SA_SIGINFO;
     if(sigemptyset(&action.sa_mask)||sigaction(SIGSEGV,&action,&previous))goto finish;
     pl_u64 seed=0x519e1e00cafebabeull;unsigned successes=0u,faults=0u;
-    for(unsigned form=0u;form<16u;++form){
-        pl_u32 store=form/8u,address=(form/4u%2u)?64u:32u,width=8u<<(form%4u),size=width/8u;
+    for(unsigned form=0u;form<40u;++form){
+        pl_u32 kind=form/8u,store=kind==1u,read_source=kind==0u||kind==2u||kind==3u;
+        pl_u32 target=kind!=2u,address=(form/4u%2u)?64u:32u,width=8u<<(form%4u),size=width/8u;
         pl_u32 length=0u;memset(page,0xcc,sizeof page);
         if(address==32u)page[length++]=0x67u;
         if(width==16u)page[length++]=0x66u;
         if(width==64u)page[length++]=0x48u;
-        page[length++]=(pl_u8)((store?0xaau:0xa4u)+(width!=8u));page[length]=0xc3u;
+        static const pl_u8 opcode[]={0xa4u,0xaau,0xacu,0xa6u,0xaeu};
+        page[length++]=(pl_u8)(opcode[kind]+(width!=8u));page[length]=0xc3u;
         memcpy(code,page,sizeof page);
         pl_x86_map map={page,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
         pl_x86_image image={&map,1u,0u,0x400000u};wasm_cut_options options={0x400000u,8u,sizeof module};
         wasm_cut_report report;pl_u64 bytes=0u;
-        int status=wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&bytes,&report);
-        if(status ||report.source_instructions!=1u||report.source_bytes!=length||report.memory_bytes!=size
-                ||report.read_registers!=(store?0x81u:0xc0u)||report.written_registers!=(store?0x80u:0xc0u)
-                ||report.memory_access!=(store?2u:3u)||report.flags_written||report.operand_binding){
-            fprintf(stderr,"string element form %u rejected or wrong frontier (%d)\n",form,status);goto restore;
+        if(!observe){
+            pl_u32 reads=kind==1u||kind==4u?0x81u:kind==2u?0x40u|(width<32u):0xc0u;
+            pl_u32 writes=kind==1u||kind==4u?0x80u:kind==2u?0x41u:0xc0u;
+            int status=wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&bytes,&report);
+            if(status ||report.source_instructions!=1u||report.source_bytes!=length||report.memory_bytes!=size
+                    ||report.read_registers!=reads||report.written_registers!=writes
+                    ||report.memory_access!=(kind==0u?3u:store?2u:1u)||report.flags_written!=(kind>=3u)||report.operand_binding){
+                fprintf(stderr,"string element form %u rejected or wrong frontier (%d)\n",form,status);goto restore;
+            }
         }
         char filename[4096];FILE *file=NULL;
-        if(argc==2){int n=snprintf(filename,sizeof filename,"%s/string-%u.cases",argv[1],form);
+        if(argc>=2){int n=snprintf(filename,sizeof filename,"%s/string-%u.cases",argv[1],form);
             if(n<1||(size_t)n>=sizeof filename||(file=fopen(filename,"wbx"))==NULL)goto restore;}
         unsigned rows=0u;
         for(unsigned mode=0u;mode<8u;++mode)for(unsigned row=0u;row<16u;++row){
-            if((store&&(mode==1u||mode==3u||mode==5u||mode==6u))
+            if((!read_source&&(mode==1u||mode==3u||mode==5u||mode==6u))
+                ||(!target&&(mode==2u||mode==4u||mode==5u||mode==7u))
                 ||(size==1u&&(mode==3u||mode==4u))||(address==32u&&mode>=6u))continue;
             machine_state state={0};pl_u64 record[38];
             for(pl_u32 reg=0u;reg<16u;++reg)state.registers[reg]=random_word(&seed);
@@ -88,7 +96,8 @@ int main(int argc,char **argv)
             if(mode==4u)dst=0x501000u-(size-1u);
             if(mode==6u)src=0x800000000000ull;
             if(mode==7u)dst=0x800000000000ull;
-            state.registers[6]=store?0x800000000000ull:src;state.registers[7]=dst;
+            state.registers[6]=read_source?src:0x800000000000ull;
+            state.registers[7]=target?dst:0x800000000000ull;
             if(address==32u){state.registers[6]|=0x7654321000000000ull;state.registers[7]|=0xabcdef0100000000ull;}
             state.rflags=0x202u|(random_word(&seed)&0xcd5u);
             for(pl_u32 i=0u;i<16384u;++i)ram[i]=(pl_u8)(i*37u+row*19u+form);
@@ -120,11 +129,11 @@ int main(int argc,char **argv)
         }
         if(file&&fclose(file))goto restore;
         char json[256];int n=snprintf(json,sizeof json,
-            "{\"entry\":4194304,\"sourceBytes\":%u,\"operandBinding\":0,\"rows\":%u,\"words\":38,\"store\":%u,\"width\":%u,\"address\":%u}\n",
-            length,rows,store,width,address);
-        if(n<1||(size_t)n>=sizeof json||save(argc==2?argv[1]:NULL,form,"json",json,(size_t)n)
-                ||save(argc==2?argv[1]:NULL,form,"wasm",module,(size_t)bytes)
-                ||save(argc==2?argv[1]:NULL,form,"source-page",page,sizeof page))goto restore;
+            "{\"entry\":4194304,\"sourceBytes\":%u,\"operandBinding\":0,\"rows\":%u,\"words\":38,\"store\":%u,\"kind\":%u,\"width\":%u,\"address\":%u}\n",
+            length,rows,store,kind,width,address);
+        if(n<1||(size_t)n>=sizeof json||save(argc>=2?argv[1]:NULL,form,"json",json,(size_t)n)
+                ||(!observe && save(argc>=2?argv[1]:NULL,form,"wasm",module,(size_t)bytes))
+                ||save(argc>=2?argv[1]:NULL,form,"source-page",page,sizeof page))goto restore;
     }
     /* In long mode, DS/SS override bytes do not turn the implicit RSI
      * source into a stack reference. Observe that separately, rather than
@@ -146,8 +155,9 @@ int main(int argc,char **argv)
         segment_records[form][34]=observed[17];segment_records[form][35]=observed[18];
         segment_records[form][36]=observed[19];segment_records[form][37]=form;
     }
-    if(save(argc==2?argv[1]:NULL,16u,"cases",segment_records,sizeof segment_records))goto restore;
-    printf("String element: %u native success and %u unchanged CPU/RAM fault receipts, 16 C emissions, 4 ignored-prefix #GP observations\n",successes,faults);result=0;
+    if(save(argc>=2?argv[1]:NULL,40u,"cases",segment_records,sizeof segment_records))goto restore;
+    printf("String element: %u native success and %u unchanged CPU/RAM fault receipts, 40 forms, 4 ignored-prefix #GP observations%s\n",
+        successes,faults,observe?"; lowering not tested":"");result=0;
 restore:
     if(sigaction(SIGSEGV,&previous,NULL))result=1;
 finish:

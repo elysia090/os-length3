@@ -23,7 +23,23 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
-Newest register-update candidate closes an independently red generic XADD/
+Newest string candidate shares decoded memory/counter/comparison roles with
+native SSA and the independent backend. Non-REP LODS/CMPS/SCAS and repeated
+load/comparison grammar are closed without a guest interpreter callback.
+Native observations expose zero-count/first-fault index-parent preservation
+for LODS/CMPS/SCAS; fresh MOVS/STOS observations protect their different old
+behavior. Six arithmetic bits, not a CPU snapshot, survive comparison quanta
+for precise fault rollback. Completed quanta admit device time and real C
+IRQ/IRET; source-owned and explicit rows re-admit correctly, while resource
+waits remain pinned. Native/C-Wasm comparisons, all product checks, scoped
+sanitizers and existing source/vector/control/directory regressions pass.
+Published make gaps are 8,059 -> 7,329; s6 gaps 1,790 -> 1,580 and
+1,910 -> 1,768 (all-byte inventory, NOT execution frequency or speedup).
+Whole ELF remains -104; s6 service readiness and actual browser acceptance
+remain red. Native publication/human UI/retained browser assets unchanged.
+See [scope and exact receipts](../vm/check/browser/evidence/2026-10-06-string.md).
+
+Prior register-update candidate closes an independently red generic XADD/
 CMPXCHG Wasm admission and fixes latent lane32-vs-full-parent conditional
 publication in shared SSA. Old-library parent check is red; 2,048 new shared
 forms, 25,728 stable native/direct/C-VM CPU/flags observations and full checks /
@@ -36,7 +52,7 @@ new machine/descriptor histograms to prioritize those genuine gaps; enum
 46/47 is ENTER/STRING, NOT XADD/CMPXCHG.
 See [scope and authoritative inventory](../vm/check/browser/evidence/2026-10-06-register-update.md).
 
-Newest independent candidate inventories every actual final PF_X byte through
+Earlier coverage candidate inventories every actual final PF_X byte through
 one fixed-profile catalogue and the actual Wasm backend. `--coverage` is a
 diagnostic, never a publication shortcut. Shared LOOP/count-zero and exact
 decoder-proven #UD/#GP laws remove 4,299/5,088 gaps in two actual published s6
@@ -48,7 +64,7 @@ See [scope and exact inputs](../vm/check/browser/evidence/2026-10-06-final-elf-c
 Whole ELF emission still refuses -104. Treat valid grammar misses and missing
 load/fetch context as real obligations, not synthetic architectural faults.
 
-Newer independent compiler candidate removes the 19 per-cut header cases:
+Earlier collection candidate removes the 19 per-cut header cases:
 typed callback identity/signature and body-used import sets now have one
 definition. Bounded collections share that interface and export ordinary Wasm
 cut functions; they do not introduce an instruction stream. 28 mixed cuts

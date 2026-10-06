@@ -91,6 +91,7 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
 {
     if (cut_paired_exchange_supported(instruction)) return 0x40u;
     switch (instruction->operation) {
+    case PL_X86_OPERATION_STRING: return instruction->condition>=3u && instruction->condition<=4u ? 0x8d5u : 0u;
     case PL_X86_OPERATION_ADD:
     case PL_X86_OPERATION_ADD_CARRY:
     case PL_X86_OPERATION_SUBTRACT:
@@ -131,6 +132,7 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
 
 pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction)
 {
+    if(instruction->operation==PL_X86_OPERATION_STRING && (instruction->flags&PL_X86_INSTRUCTION_REPEATED))return 0u;
     if (instruction->operation == PL_X86_OPERATION_SHIFT
             && instruction->operands[1].kind == PL_X86_OPERAND_REGISTER) return 0u;
     if(instruction->operation==PL_X86_OPERATION_DOUBLE_SHIFT
@@ -140,6 +142,7 @@ pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction)
 
 pl_u32 cut_flag_read_mask(const pl_x86_instruction *instruction)
 {
+    if(instruction->operation==PL_X86_OPERATION_STRING)return 0x400u;
     pl_x86_count_branch count;
     if(pl_x86_count_branch_lower(instruction,&count))return count.zero_flag?0x40u:0u;
     static const pl_u32 condition_bits[] = { 0x800u,1u,0x40u,0x41u,0x80u,4u,0x880u,0x8c0u };

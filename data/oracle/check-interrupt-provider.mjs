@@ -47,7 +47,7 @@ async function compile(opcode){
   assert.equal(cc.compiler_emit(0x9000n,1,output,65536,report),0);
   const module=await WebAssembly.compile(bytes.slice(output,output+Number(view.getBigUint64(report+40,true))));
   const cut=(await WebAssembly.instantiate(module,{machine:{memory,interrupt_flag:vm.vm_flag,iret:vm.vm_iret,
-    segment:vm.vm_segment,io:vm.vm_io}})).exports.cut;
+    segment:vm.vm_segment,io:vm.vm_io,access:vm.vm_access}})).exports.cut;
   const compiled={cut,binding:view.getUint32(report+76,true)};
   cuts.set(key,compiled);return compiled;
 }
@@ -354,6 +354,67 @@ assert.equal(vm.vm_clock_poll(port,9n),6n);
 assert(data.subarray(base,base+1256).equals(pinnedClockCPU));
 assert(data.subarray(port,port+64).equals(pinnedRequest));
 let systemComparisons=0,qemuSavedRFDifferences=0,systemHaltComparisons=0;
+// A bounded REP quantum is a completed-element boundary, not a pinned
+// resource transaction. Admit device time and a real C-PIT/PIC IRQ there,
+// cancel the old slot, then re-admit the interrupted RIP after IRET.
+let repeatIrqs=0,repeatClockResumes=0,repeatResourceRefusals=0,ownedRepeatIrqs=0;
+for(const owned of [false,true])for(const kind of [2,3,4])for(const enabled of [0,1])for(const type of [0x8e,0x8f]){
+  reset();pitProgram();gate(32,type);put(base+392,2|(enabled<<9));
+  put(base+8,513);put(base+48,0x8000);put(base+56,0x8000);put(base,0);
+  const opcode=[0xf3,kind===2?0xac:kind===3?0xa6:0xae];
+  const admit=async()=>{
+    if(!owned){await bind(opcode);return;}
+    data.set(opcode,payload(6));
+    const first=vm.vm_slot_min(),capacity=vm.vm_source_capacity();
+    vm.__indirect_function_table.grow(Math.max(0,first+capacity-vm.__indirect_function_table.length));
+    const demand=vm.vm_source_query(port,0x9000n,1,codeView,rows);
+    assert([0n,1n].includes(demand));
+    if(demand===1n){
+      const compiled=await compile(opcode);
+      vm.__indirect_function_table.set(v.getUint32(rows+16,true),compiled.cut);
+      assert.equal(vm.vm_source_publish(opcode.length,1,compiled.binding,rows),0);
+    }
+    assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+  };
+  await admit();
+  assert.equal(vm.vm_run(port,9n,1),10n);assert.equal(get(base+8),257n);
+  assert.equal(get(base+384),0x9000n);assert.equal(get(base+1128),123n);
+  const frontier=Buffer.from(data.subarray(base,base+1256)),flags=get(base+392);
+  assert.equal(vm.vm_clock_poll(port,9n),18n);assert.equal(vm.vm_clock_poll(port,8n),5n);
+  const ticket=get(port+32);assert.equal(vm.vm_run(port,9n,1),6n);
+  assert.equal(vm.vm_clock_commit(port,8n,ticket,34362n),-1);
+  assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),0);
+  assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),0);
+  assert.equal(vm.vm_clock_poll(port,9n),0n);
+  assert(data.subarray(base,base+1256).equals(frontier),'time must not execute an element');
+  assert.equal(vm.vm_boundary(port,9n),enabled?1n:0n);
+  assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);
+  if(enabled){
+    assert.equal(get(base+384),0x8000n);assert.equal(get(base+8),257n);
+    const frame=payload(7)+Number(get(base+32)&4095n);
+    assert.equal(get(frame),0x9000n);assert.equal(get(frame+16),flags);
+    io(0x20,1,0x20);assert.equal(vm.vm_iret(port),0n);
+    assert(data.subarray(base,base+1256).equals(frontier),'IRET restores the quantum frontier');
+    assert.equal(vm.vm_run(port,9n,1),5n,'the interrupted admission must not reuse its old slot');
+    await admit();++repeatIrqs;if(owned)++ownedRepeatIrqs;
+  }
+  assert.equal(vm.vm_run(port,9n,1),10n);assert.equal(get(base+8),1n);
+  assert.equal(vm.vm_run(port,9n,1),1n);assert.equal(get(base+8),0n);
+  assert.equal(get(base+384),0x9002n);assert.equal(get(base+1128),124n);++repeatClockResumes;
+}
+for(const kind of [2,3,4]){
+  reset();put(base+392,0x202);put(base+8,2);put(base+48,0x8000);put(base+56,0x8000);put(base,0);
+  // A present identity mapping whose payload is nonresident: only its supply
+  // reply may resume. A pending IRQ must not displace that access owner.
+  put(dir+5*32,0x6000);assert.equal(vm.vm_open(base,data.length-base,4096,dir,addresses.length,addresses.length,dir+1024,9n),0);
+  assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
+  pitPending();gate(32);io(0x21,1,0xff);
+  await bind([0xf3,kind===2?0xac:kind===3?0xa6:0xae]);
+  assert.equal(vm.vm_run(port,9n,1),2n);io(0x21,1,0xfe);
+  const cpu=Buffer.from(data.subarray(base,base+1256));
+  assert.equal(vm.vm_clock_poll(port,9n),6n);assert.equal(vm.vm_boundary(port,9n),0n);
+  assert(data.subarray(base,base+1256).equals(cpu));++repeatResourceRefusals;
+}
 if(systemRows){
   const records=(await readFile(systemRows,'utf8')).trim().split('\n').map(line=>line.trim().split(/\s+/).map(x=>BigInt(`0x${x}`)));
   assert([192,224].includes(records.length),'six historical or seven current sequences, 16 alignments, two gate types');
@@ -392,7 +453,7 @@ if(systemRows){
   }
 }
 console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,pitIrqEntries,pitBoundaryEntries,pureLoopCuts,waits,refusals,
-  ownedCohortIrqs,haltTransfers,haltFaults,haltWaits,haltWakes,
+  ownedCohortIrqs,haltTransfers,haltFaults,haltWaits,haltWakes,repeatIrqs,ownedRepeatIrqs,repeatClockResumes,repeatResourceRefusals,
   haltOracle:'shared decoded law; native CPL3 #GP is a separate C check; privileged wake uses Intel/C-PIT/PIC/IDT model',
   clockLifecycle:'private port/generation/source pin/duplicate/cancel/rebind/reopen assertions green',
   admissionPriorityChecks:1,shadowExtentChecks:1,oldAbiRefusals:1,

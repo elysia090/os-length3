@@ -2400,9 +2400,10 @@ static int lower_divide(const pl_x86_instruction *instruction,
         builder, &high_half, remainder, bits >= 32u);
 }
 
-static const pl_x86_operand *string_memory_operand(
+const pl_x86_operand *pl_x86_string_memory(
         const pl_x86_instruction *instruction, pl_u32 base)
 {
+    if(!instruction || instruction->operand_count>PL_X86_MAX_OPERANDS)return 0;
     for (pl_u32 index = 0u; index < instruction->operand_count; ++index) {
         const pl_x86_operand *candidate = &instruction->operands[index];
         if (candidate->kind == PL_X86_OPERAND_MEMORY
@@ -2587,18 +2588,14 @@ static int lower_repeated_store(semantic_builder *builder,
 static int lower_string(const pl_x86_instruction *instruction,
                         semantic_builder *builder)
 {
-    pl_u32 mode = instruction->condition;
-    pl_u32 bits = instruction->operand_width;
-    if (mode > 4u || (bits != 8u && bits != 16u
-            && bits != 32u && bits != 64u))
-        return PL_ERROR_X86_SEMANTIC;
-    int reads_source = mode == 0u || mode == 2u || mode == 3u;
-    int reads_target = mode == 3u || mode == 4u;
-    int writes_target = mode == 0u || mode == 1u;
+    pl_x86_string law;
+    if(!pl_x86_string_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;
+    pl_u32 mode=law.kind,bits=law.bits;
+    int reads_source=law.reads_source,reads_target=law.reads_target,writes_target=law.writes_target;
     const pl_x86_operand *source = reads_source
-        ? string_memory_operand(instruction, 6u) : 0;
+        ? pl_x86_string_memory(instruction, 6u) : 0;
     const pl_x86_operand *target = (reads_target || writes_target)
-        ? string_memory_operand(instruction, 7u) : 0;
+        ? pl_x86_string_memory(instruction, 7u) : 0;
     pl_operand source_address, target_address;
     int status = 0;
     if (source)
@@ -2733,6 +2730,41 @@ int pl_x86_register_update_lower(const pl_x86_instruction *instruction,pl_x86_re
                 || ((reg->flags&PL_X86_REGISTER_HIGH8) && (bits!=8u || reg->index>=4u)))return 0;
     }
     *out=(pl_x86_register_update){(pl_u8)bits,(pl_u8)(instruction->operation==PL_X86_OPERATION_COMPARE_EXCHANGE)};return 1;
+}
+
+int pl_x86_string_lower(const pl_x86_instruction *instruction,pl_x86_string *out)
+{
+    if(!instruction || !out || instruction->status!=PL_X86_DECODE_VALID
+            || instruction->encoding!=PL_X86_ENCODING_LEGACY || instruction->flow!=PL_X86_FLOW_NEXT
+            || instruction->operation!=PL_X86_OPERATION_STRING || instruction->condition>4u
+            || (instruction->operand_width!=8u && instruction->operand_width!=16u
+                && instruction->operand_width!=32u && instruction->operand_width!=64u)
+            || (instruction->address_width!=32u && instruction->address_width!=64u)
+            || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    pl_u32 kind=instruction->condition,repeated=!!(instruction->flags&PL_X86_INSTRUCTION_REPEATED);
+    pl_x86_string law={(pl_u8)kind,(pl_u8)instruction->operand_width,(pl_u8)instruction->address_width,
+        (pl_u8)repeated,(pl_u8)(kind>=3u && !!(instruction->flags&PL_X86_INSTRUCTION_REPEAT_WHILE_NOT_EQUAL)),3u,
+        (pl_u8)(kind==0u || kind==2u || kind==3u),(pl_u8)(kind>=3u),(pl_u8)(kind<2u),
+        (pl_u8)(kind==1u || kind==4u),(pl_u8)(kind==2u)};
+    for(pl_u32 index=6u;index<=7u;++index){
+        int needed=index==6u?law.reads_source:law.reads_target || law.writes_target;
+        if(!needed)continue;
+        const pl_x86_operand *operand=pl_x86_string_memory(instruction,index);
+        if(!operand || operand->bits!=law.bits)return 0;
+        const pl_x86_memory *memory=&operand->value.memory;
+        if(memory->base.bits!=law.address_bits || memory->base.flags
+                || memory->index.class_id!=PL_X86_REGISTER_NONE || memory->has_displacement
+                || (memory->scale!=0u && memory->scale!=1u)
+                || (memory->segment.class_id!=PL_X86_REGISTER_NONE
+                    && (memory->segment.class_id!=PL_X86_REGISTER_SEGMENT || memory->segment.index>5u)))return 0;
+        if(index==6u && memory->segment.class_id==PL_X86_REGISTER_SEGMENT)law.source_segment=memory->segment.index;
+        if(index==7u && memory->segment.class_id==PL_X86_REGISTER_SEGMENT && memory->segment.index!=0u)return 0;
+    }
+    pl_u32 machine=repeated && kind!=1u?PL_X86_MACHINE_STRING:PL_X86_MACHINE_NONE;
+    pl_u64 argument=machine?law.bits/8u|((pl_u64)law.address_bits<<8u)
+        |((pl_u64)(kind==4u?0u:law.source_segment)<<16u)|((pl_u64)kind<<24u)|((pl_u64)law.not_equal<<27u):0u;
+    if(instruction->machine_operation!=machine || instruction->machine_argument!=argument)return 0;
+    *out=law;return 1;
 }
 
 int pl_x86_count_branch_lower(const pl_x86_instruction *instruction,pl_x86_count_branch *out)

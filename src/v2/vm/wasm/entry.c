@@ -747,12 +747,13 @@ int vm_console_commit(pl_u32 port,pl_u64 generation,pl_u64 ticket,pl_u32 byte)
         (const machine_state *)(uintptr_t)state_offset,ticket,byte);
 }
 /* Clock delivery is independent of guest IN/OUT/RDTSC. No emitted function
- * imports this supervisor API, and it cannot interrupt a pinned instruction,
+ * imports this supervisor API. A completed quantum frontier can sample time;
+ * it cannot interrupt a pinned resource/I/O instruction,
  * fault/page/console/table frontier, reservation or cold source admission. */
 machine_result vm_clock_poll(pl_u32 port, pl_u64 generation)
 {
     if (!private_port(port) || delivery.stage || table_frontier.stage || supply.generation
-            || sources.pending || execution.continuation.slot || resident.reservation.parts
+            || sources.pending || (execution.continuation.slot && !execution.continuation_interruptible) || resident.reservation.parts
             || vm_console_pending(&console_owner)) return MACHINE_RESULT_ENTRY_MAP;
     if (generation!=resident.generation || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation)
         return MACHINE_RESULT_STALE_GENERATION;
@@ -1032,7 +1033,7 @@ static machine_result interrupt_boundary(pl_u32 port)
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,&delivery,&pic);
     /* Hardware entry changes control without retiring the interrupted cut.
      * Its new RIP is admitted afresh, never executed through the old row. */
-    execution.generation=0u;
+    vm_execution_cancel(&execution);
     if (!result) {
         activity.state = MACHINE_ACTIVITY_RUNNING;
         run_interrupted=1u;
@@ -1050,7 +1051,8 @@ static machine_result pending_boundary(pl_u32 port)
         return delivery.kind==VM_EVENT_SOFTWARE && execution.continuation.slot ? 0u : MACHINE_RESULT_ENTRY_MAP;
     }
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
-    if (!execution.continuation.slot && (state->rflags&0x200u) && vm_pic_pending(&pic)
+    if ((!execution.continuation.slot || (execution.continuation_interruptible && !table_frontier.stage
+            && !vm_console_pending(&console_owner))) && (state->rflags&0x200u) && vm_pic_pending(&pic)
             && (!segments_offset || !((const machine_segments *)(uintptr_t)segments_offset)->interrupt_shadow))
         return segments_offset ? interrupt_boundary(port) : MACHINE_RESULT_ENTRY_MAP;
     return activity.state == MACHINE_ACTIVITY_HALTED ? MACHINE_RESULT_HALT : 0u;

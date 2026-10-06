@@ -61,6 +61,15 @@ typedef struct { pl_u8 bits,compare; } pl_x86_register_update;
  * Narrow conditional writes preserve every unselected parent bit. */
 int pl_x86_register_update_lower(const pl_x86_instruction *instruction,pl_x86_register_update *out);
 
+typedef struct {
+    pl_u8 kind,bits,address_bits,repeated,not_equal,source_segment;
+    pl_u8 reads_source,reads_target,writes_target,reads_accumulator,writes_accumulator;
+} pl_x86_string;
+/* One element law and its optional repetition: source access precedes target,
+ * DF determines the pointer delta, and comparisons terminate on the NEW ZF. */
+int pl_x86_string_lower(const pl_x86_instruction *instruction,pl_x86_string *out);
+const pl_x86_operand *pl_x86_string_memory(const pl_x86_instruction *instruction,pl_u32 index);
+
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
  * names and byte coordinates are construction facts, not saved runtime rows.

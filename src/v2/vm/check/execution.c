@@ -11,6 +11,7 @@ static pl_u32 yielding, called_slot, called_operand;
 static pl_u64 fetched[2], called_entry;
 static pl_u32 selections, miss_selection, change_context, debug_after_call;
 static pl_u32 halting;
+static pl_u32 alter_flags;
 static int failures;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static machine_result fetch(void *owner, pl_u64 address)
@@ -28,6 +29,7 @@ static machine_result call(void *owner, pl_u32 slot, pl_u64 entry, pl_u32 operan
     called_operand = operand_binding;
     EXPECT(entry == state.rip);
     if (call_fault) return 107u;
+    if(alter_flags && yielding)state.rflags^=0x8d5u;
     if (yielding) {
         if (revoke) execution.generation = 0u;
         return machine_result_make(MACHINE_RESULT_BARRIER,
@@ -58,6 +60,7 @@ static void reset(void)
     memset(&state, 0, sizeof state); calls = fetches = stop = revoke = revoke_fetch = 0u;
     load_ss = call_fault = yielding = called_slot = 0u; segments = (machine_segments){0};
     selections=miss_selection=change_context=debug_after_call=halting=0u;
+    alter_flags=0u;
     activity = (machine_activity){ MACHINE_ACTIVITY_RUNNING };
     segments.version = MACHINE_SEGMENTS_ABI_VERSION;
     rows[0] = (vm_execution_row){ 0x400000u, 1u, 1u, 1u, 0u };
@@ -68,6 +71,17 @@ static void reset(void)
 }
 int main(void)
 {
+    /* Internal yields are not new source instructions. A subsequent precise
+     * fault must recover their original arithmetic flag definitions. */
+    for(pl_u32 rank=0u;rank<64u;++rank){
+        reset();pl_u64 flags=0x10602u;
+        static const pl_u32 positions[]={0u,2u,4u,6u,7u,11u};
+        for(pl_u32 bit=0u;bit<6u;++bit)flags|=(pl_u64)((rank>>bit)&1u)<<positions[bit];
+        state.rflags=flags;yielding=alter_flags=1u;
+        EXPECT(run(9u,1u)==10u && state.rflags==(flags^0x8d5u));
+        call_fault=1u;EXPECT(run(9u,1u)==107u);
+        EXPECT(state.rflags==flags && !execution.continuation.slot);
+    }
     /* A retired halt consumes the STI shadow, but neither another quantum
      * nor directory replacement authorizes fetching its successor. */
     reset(); execution.segments = &segments;
@@ -114,10 +128,22 @@ int main(void)
         reset();execution.select=select_row;yielding=barrier;
         machine_result result=barrier==1u ? 10u : barrier==2u ? 2u : barrier==3u ? 18u : 26u;
         EXPECT(run(9u,99u)==result && calls==1u && selections==1u && fetches==1u);
+        EXPECT(execution.continuation_interruptible==(barrier==1u));
         rows[0].entry+=32u;rows[0].slot=2u;
         EXPECT(run(9u,99u)==result && calls==2u && selections==1u && fetches==1u);
         EXPECT(called_entry==0x400000u && called_slot==1u && !execution.completed);
     }
+    reset(); EXPECT(run(9u,1u)==1u);
+    yielding=alter_flags=1u;state.rflags=0x603u;
+    EXPECT(run(9u,1u)==10u && execution.continuation_flags==1u);
+    execution.completed=7u;execution.retired=11u;
+    vm_execution_cancel(&execution);
+    EXPECT(!execution.generation && !execution.continuation.slot
+        && !execution.continuation_generation && !execution.continuation_flags
+        && !execution.continuation_interruptible);
+    EXPECT(execution.completed==7u && execution.retired==11u && state.retired==1u);
+    EXPECT(run(9u,1u)==5u && calls==2u);
+    vm_execution_cancel(NULL);
     for (pl_u32 bit=0u;bit<8u;++bit) {
         reset(); state.system[MACHINE_SYSTEM_DR0+7u]=1ull<<bit;
         EXPECT(run(9u,1u)==6u && !calls && !fetches && !state.retired);

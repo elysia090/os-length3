@@ -49,7 +49,7 @@ let parity=0,direct=0,dispatch=0,nativeSuccess=0,nativeFault=0,waits=0,retries=0
 let prefixNativeFaults=0,baseSegmentModels=0;
 const moduleBytes=[];
 try{
-for(let form=0;form<16;++form){
+for(let form=0;form<40;++form){
   const prefix=`${directory}/string-${form}`,meta=JSON.parse(await readFile(`${prefix}.json`));meta.form=form;
   const source=await readFile(`${prefix}.source-page`),records=await readFile(`${prefix}.cases`);
   const stride=38*8+16384;assert.equal(meta.words,38);assert.equal(records.length,meta.rows*stride);
@@ -72,7 +72,7 @@ for(let form=0;form<16;++form){
       for(let reg=0;reg<16;++reg)expected.writeBigUInt64LE(word(17+reg),reg*8);
       expected.writeBigUInt64LE(word(33)&~0x10000n,392); // Hardware delivery alone adds RF.
       if(!mode){expected.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);expected.writeBigUInt64LE(43n,1128);}
-      const wanted=mode?(word(34)*8n+3n):table?5n:1n;
+      const wanted=mode?(word(34)*8n+3n):table&&form<16?5n:1n;
       assert.equal(table?vm.vm_run(port,9n,1):cut(base,port,entry,meta.operandBinding),wanted,`form ${form}, record ${record}, table ${table}`);
       assert(cpu().equals(expected),'all 1256 CPU bytes against independent GPR/flag observations');
       assert(cache().equals(hidden),'hidden cache is an unchanged model, not a hardware observation');
@@ -91,9 +91,9 @@ for(let form=0;form<16;++form){
     assert(cpu().equals(expected)&&cache().equals(hidden)&&data.subarray(ramAt,ramAt+16384).equals(payload));++refusals;
   }
   reset(source,meta,first,0);put(base+392,first(16)|65536n);
-  assert.equal(cut(base,port,entry,0),1n);assert.equal(v.getBigUint64(base+392,true),first(16));++rfModels;
+  assert.equal(cut(base,port,entry,0),1n);assert.equal(v.getBigUint64(base+392,true),first(33)&~0x10000n);++rfModels;
   // C-authenticated residency supply, same pending row even if caller edits it.
-  for(const read of meta.store?[false]:[true,false]){
+  for(const read of form<16?(meta.store?[false]:[true,false]):[]){
     reset(source,meta,first,0,true);const size=meta.width/8;
     const pointer=0x501000n-BigInt(size>1?size-1:0);
     const src=read?pointer:0x502200n,dst=read?0x502200n:pointer;
@@ -121,9 +121,26 @@ for(let form=0;form<16;++form){
     const logical=Buffer.concat([data.subarray(ramAt,ramAt+4096),data.subarray(target,target+4096),data.subarray(ramAt+8192,ramAt+16384)]);
     assert(logical.equals(payload));
   }
+  if(form>=16){
+    // Same native virtual operands and bytes, with an absent physical backing.
+    reset(source,meta,first,0);put(pte,0xd067n);put(base+392,first(16)|0x10000n);
+    const waiting=cpu(),hidden=cache(),payload=Buffer.from(data.subarray(ramAt,ramAt+16384));
+    assert.equal(vm.vm_run(port,9n,1),2n);assert(cpu().equals(waiting));assert(cache().equals(hidden));
+    assert(data.subarray(ramAt,ramAt+16384).equals(payload));assert.equal(vm.vm_source_retired(),0n);++waits;
+    assert.equal(vm.vm_page_prepare(port,request),0);
+    const target=v.getUint32(request+24,true),ticket=v.getBigUint64(request+40,true);
+    data.set(payload.subarray(0,4096),target);assert.equal(vm.vm_page_commit(port,ticket),0);
+    assert.equal(vm.vm_page_commit(port,ticket),-1);
+    assert.equal(vm.vm_run(port,9n,1),1n);assert.equal(vm.vm_source_retired(),1n);++retries;
+    const expected=Buffer.from(waiting);for(let reg=0;reg<16;++reg)expected.writeBigUInt64LE(first(17+reg),reg*8);
+    expected.writeBigUInt64LE(first(33)&~0x10000n,392);expected.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);
+    expected.writeBigUInt64LE(43n,1128);assert(cpu().equals(expected));assert(cache().equals(hidden));
+    const logical=Buffer.concat([data.subarray(target,target+4096),data.subarray(ramAt+4096,ramAt+16384)]);
+    assert(logical.equals(records.subarray(38*8,stride)));
+  }
 }
 const meta={form:0,sourceBytes:0,operandBinding:0};
-const prefixRecords=await readFile(`${directory}/string-16.cases`);assert.equal(prefixRecords.length,4*38*8);
+const prefixRecords=await readFile(`${directory}/string-40.cases`);assert.equal(prefixRecords.length,4*38*8);
 for(const repeated of [false,true])for(const segment of [0x36,0x3e,0x64,0x65]){
   const source=Buffer.alloc(4096,0x90),bytes=[segment,...(repeated?[0xf3]:[]),0xa4];source.set(bytes);
   cold.set(source,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
@@ -155,4 +172,4 @@ for(const repeated of [false,true])for(const segment of [0x36,0x3e,0x64,0x65]){
 console.log(JSON.stringify({format:'native-string-element-v1',status:'pass',compilerBytes:compiler.length,
   compilerSha256:createHash('sha256').update(compiler).digest('hex'),parity,direct,dispatch,nativeSuccess,nativeFault,
   waits,retries,refusals,rfModels,prefixNativeFaults,baseSegmentModels,moduleBytes,
-  scope:'single MOVS/STOS, 32/64 address size; four native ignored SS/DS-prefix faults and four FS/GS-base success models; hidden cache unchanged models; FS/GS native observations are in check-segment-memory, no debug/AC equivalence claim',linuxBoot:'not-tested'},null,2));
+  scope:'single MOVS/STOS/LODS/CMPS/SCAS, 32/64 address size; four native ignored SS/DS-prefix faults and four FS/GS-base success models; hidden cache unchanged models; FS/GS native observations are in check-segment-memory, no debug/AC equivalence claim',linuxBoot:'not-tested'},null,2));

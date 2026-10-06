@@ -2,70 +2,73 @@
 
 static const pl_x86_memory *source_address(const pl_x86_instruction *instruction)
 {
-    for(pl_u32 rank=0u;rank<instruction->operand_count;++rank){
-        const pl_x86_operand *operand=instruction->operands+rank;
-        if(operand->kind==PL_X86_OPERAND_MEMORY
-                && operand->value.memory.base.class_id==PL_X86_REGISTER_GPR
-                && operand->value.memory.base.index==6u)return &operand->value.memory;
-    }
-    return NULL;
+    const pl_x86_operand *operand=pl_x86_string_memory(instruction,6u);
+    return operand?&operand->value.memory:NULL;
 }
 
 int cut_string_supported(const pl_x86_instruction *instruction)
 {
-    if(!(instruction->status == PL_X86_DECODE_VALID
-        && instruction->operation == PL_X86_OPERATION_STRING
-        && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_PRIVILEGED
-                                   | PL_X86_INSTRUCTION_TRAP_AFTER))
-        && (instruction->operand_width == 8u || instruction->operand_width == 16u
-            || instruction->operand_width == 32u || instruction->operand_width == 64u)
-        && (instruction->address_width == 32u || instruction->address_width == 64u)
-        && (instruction->rip >> 47u == 0u || instruction->rip >> 47u == 0x1ffffu)
-        && (instruction->fallthrough >> 47u == 0u || instruction->fallthrough >> 47u == 0x1ffffu)))return CUT_STRING_NONE;
-    int repeated=!!(instruction->flags&PL_X86_INSTRUCTION_REPEATED);
-    if(instruction->condition==0u){
+    pl_x86_string law;
+    if(!pl_x86_string_lower(instruction,&law)
+            || !(instruction->rip >> 47u == 0u || instruction->rip >> 47u == 0x1ffffu)
+            || !(instruction->fallthrough >> 47u == 0u || instruction->fallthrough >> 47u == 0x1ffffu))return CUT_STRING_NONE;
+    if(law.reads_source){
         const pl_x86_memory *source=source_address(instruction);
-        if(!source || !cut_memory_address_supported(instruction,source)
-                || instruction->machine_operation!=(repeated?PL_X86_MACHINE_STRING:PL_X86_MACHINE_NONE))return CUT_STRING_NONE;
-    }else if(instruction->condition!=1u || instruction->machine_operation!=PL_X86_MACHINE_NONE
-            || instruction->flags&PL_X86_INSTRUCTION_REPEAT_WHILE_NOT_EQUAL)return CUT_STRING_NONE;
-    return repeated?CUT_STRING_REPEAT:CUT_STRING_SINGLE;
+        if(!source || !cut_memory_address_supported(instruction,source))return CUT_STRING_NONE;
+    }
+    return law.repeated?CUT_STRING_REPEAT:CUT_STRING_SINGLE;
 }
 
 void cut_repeat_frontier(cut_lowering *cut)
 {
-    const pl_u32 registers[] = {1u,6u,7u};
-    for (pl_u32 rank = 0u; rank < 3u; ++rank)
+    const pl_u32 registers[] = {0u,1u,6u,7u};
+    for (pl_u32 rank = 0u; rank < 4u; ++rank)
         if (cut->report.written_registers & (1u << registers[rank]))
             cut_store(cut,offsetof(machine_state,registers) + registers[rank] * 8u,registers[rank] + 1u);
+    if(cut->report.flags_written){
+        /* A barrier exposes the completed comparison frontier; a pending
+         * fault keeps this call's original flags. Cross-call rollback belongs
+         * to the C instruction owner, which retains only six flag bits. */
+        cut_get(cut,CUT_STATUS);cut_const(cut,7u);cut_op(cut,0x83u);cut_const(cut,MACHINE_RESULT_FAULT);
+        cut_op(cut,0x52u);cut_op(cut,0x04u);cut_op(cut,0x40u);
+        cut_store(cut,offsetof(machine_state,rflags),CUT_FLAGS);cut_op(cut,0x0bu);
+    }
 }
 
 void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
-    int store = instruction->condition == 1u;
-    int repeated = !!(instruction->flags & PL_X86_INSTRUCTION_REPEATED);
+    pl_x86_string law;
+    if(!pl_x86_string_lower(instruction,&law)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    int store=law.kind==1u,compare=law.kind>=3u,repeated=law.repeated;
     /* The exact frontier is known before the first possible partial return.
      * A store neither reads nor narrows/publishes RSI or RAX. */
-    cut->report.written_registers |= (store ? 0x80u : 0xc0u) | (repeated ? 2u : 0u);
+    cut->report.written_registers|=(law.reads_source?0x40u:0u)|((law.reads_target||law.writes_target)?0x80u:0u)
+        |(law.writes_accumulator?1u:0u)|(repeated?2u:0u);
+    cut->report.flags_written|=(pl_u32)compare;
     const pl_u32 registers[] = {1u,6u,7u};
     for (pl_u32 rank = 0u; rank < 3u; ++rank) {
-        if ((!repeated && registers[rank] == 1u) || (store && registers[rank] == 6u)) continue;
+        if (!(cut->report.written_registers & (1u<<registers[rank]))) continue;
         pl_x86_operand operand = { .kind = PL_X86_OPERAND_REGISTER, .bits = 64u,
             .value.reg = {PL_X86_REGISTER_GPR, (pl_u8)registers[rank], 64u, 0u} };
         cut_read_operand(cut,&operand,64u); cut_op(cut,0x1au);
-        if (instruction->address_width == 32u) {
+        /* The count parent is narrowed on entry. MOVS/STOS also publish
+         * their used index parents there; LODS/CMPS/SCAS publish them only
+         * after a successful element. Non-REP faults preserve every parent. */
+        if (repeated && instruction->address_width == 32u
+                && (registers[rank]==1u || law.kind<=1u)) {
             cut_get(cut,registers[rank] + 1u); cut_mask(cut,32u); cut_set(cut,registers[rank] + 1u);
         }
     }
-    if (store) {
+    if(law.reads_accumulator || (law.writes_accumulator && repeated)){
         const pl_x86_operand accumulator = { .kind = PL_X86_OPERAND_REGISTER, .bits = 64u,
             .value.reg = {PL_X86_REGISTER_GPR,0u,64u,0u} };
-        cut_read_operand(cut,&accumulator,64u); cut_mask(cut,instruction->operand_width); cut_set(cut,CUT_LEFT);
+        cut_read_operand(cut,&accumulator,64u);cut_mask(cut,law.bits);cut_set(cut,CUT_LEFT);
     }
     pl_u32 bytes = instruction->operand_width / 8u, width = instruction->address_width;
+    pl_u32 stride=compare?CUT_NEXT:CUT_RIGHT;
     cut_const(cut,0u - (pl_u64)bytes); cut_const(cut,bytes);
     cut_get(cut,CUT_FLAGS); cut_const(cut,0x400u); cut_op(cut,0x83u); cut_op(cut,0xa7u);
-    cut_op(cut,0x1bu); cut_set(cut,CUT_RIGHT); /* DF ? -bytes : bytes */
+    cut_op(cut,0x1bu);cut_set(cut,stride); /* DF ? -bytes : bytes */
     if (repeated) {
         cut_const(cut,MACHINE_REPEAT_MAX_ELEMENTS); cut_set(cut,CUT_REPEAT_BUDGET);
         cut_op(cut,0x02u); cut_op(cut,0x40u); /* block */
@@ -79,7 +82,7 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x0fu); cut_op(cut,0x0bu);
     }
     if (store) { cut_get(cut,CUT_LEFT); cut_set(cut,CUT_VALUE); }
-    else {
+    if(law.reads_source){
         cut_get(cut,7u); cut_mask(cut,width); cut_set(cut,CUT_ADDRESS);
         cut_const(cut,0u); cut_set(cut,CUT_VALUE);
         const pl_x86_memory *source=source_address(instruction);
@@ -88,8 +91,21 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_access(cut);
         cut_access_value(cut); cut_set(cut,CUT_VALUE);
     }
-    cut_get(cut,8u); cut_mask(cut,width); cut_set(cut,CUT_ADDRESS);
-    cut->report.memory_access = MACHINE_MEMORY_WRITE; cut_access(cut);
+    if(compare && law.reads_source){cut_get(cut,CUT_VALUE);cut_set(cut,CUT_LEFT);}
+    if(law.reads_target || law.writes_target){
+        cut_get(cut,8u);cut_mask(cut,width);cut_set(cut,CUT_ADDRESS);
+        cut->report.memory_access=law.writes_target?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
+        cut_access(cut);
+        if(compare){
+            cut_access_value(cut);cut_set(cut,CUT_RIGHT);
+            cut_get(cut,CUT_LEFT);cut_get(cut,CUT_RIGHT);cut_op(cut,0x7du);cut_mask(cut,law.bits);cut_set(cut,CUT_VALUE);
+            cut_arithmetic_flags(cut,law.bits,1,0,CUT_CARRY_NORMAL);
+        }
+    }
+    if(law.writes_accumulator){
+        pl_x86_register accumulator={.class_id=PL_X86_REGISTER_GPR,.bits=law.bits};
+        cut_write_register(cut,&accumulator);
+    }
     /* A fault/miss commits no part of this element. Only REP publishes a
      * completed-element frontier on partial return. Without REP, RCX is
      * neither read nor written and faulting 32-bit pointers keep their old
@@ -97,15 +113,21 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (repeated) {
         cut_get(cut,2u); cut_const(cut,1u); cut_op(cut,0x7du); cut_mask(cut,width); cut_set(cut,2u);
     }
-    for (pl_u32 local = store ? 8u : 7u; local <= 8u; ++local) {
-        cut_get(cut,local); cut_get(cut,CUT_RIGHT); cut_op(cut,0x7cu);
+    for(pl_u32 local=7u;local<=8u;++local){
+        if(!(cut->report.written_registers&(1u<<(local-1u))))continue;
+        cut_get(cut,local);cut_get(cut,stride);cut_op(cut,0x7cu);
         cut_mask(cut,width); cut_set(cut,local);
     }
     if (repeated) {
+        if(compare){
+            cut_get(cut,CUT_FLAGS);cut_const(cut,0x40u);cut_op(cut,0x83u);cut_op(cut,0x50u);
+            if(law.not_equal)cut_op(cut,0x45u);
+            cut_op(cut,0x0du);wasm_writer_uleb(cut->writer,1u);
+        }
         cut_get(cut,CUT_REPEAT_BUDGET); cut_const(cut,1u); cut_op(cut,0x7du); cut_set(cut,CUT_REPEAT_BUDGET);
         cut_op(cut,0x0cu); wasm_writer_uleb(cut->writer,0u);
         cut_op(cut,0x0bu); cut_op(cut,0x0bu);
     }
-    cut->report.memory_access = store ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ | MACHINE_MEMORY_WRITE;
-    if(!store)cut->report.memory_access|=cut_memory_role(source_address(instruction));
+    cut->report.memory_access=law.kind==0u?MACHINE_MEMORY_READ|MACHINE_MEMORY_WRITE:store?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
+    if(law.reads_source)cut->report.memory_access|=cut_memory_role(source_address(instruction));
 }

@@ -59,6 +59,13 @@ $(BUILD)/decode-profile-check: check/decode-profile.c $(BUILD)/libx86.a | $(BUIL
 		$(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 
 .PHONY: register-update-check
+.PHONY: string-check
+check: string-check
+string-check: $(BUILD)/string-check
+	$(BUILD)/string-check
+$(BUILD)/string-check: check/string.c $(BUILD)/libx86.a | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) $< $(BUILD)/libx86.a ../support/build/libsupport.a -o $@
+
 check: register-update-check
 register-update-check: $(BUILD)/register-update-check
 	$(BUILD)/register-update-check

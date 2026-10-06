@@ -83,6 +83,12 @@ $(BUILD)/flag-frontier-check: check/flag-frontier.c $(BUILD)/libwasm-compiler.a 
 .PHONY: memory-order-check
 .PHONY: direct-call-check
 .PHONY: string-element-check
+.PHONY: string-repeat-check
+check: string-repeat-check
+string-repeat-check: $(BUILD)/string-repeat-check
+	$(BUILD)/string-repeat-check
+$(BUILD)/string-repeat-check: check/string-repeat.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -fPIE -pie $< check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: segment-memory-check
 .PHONY: exchange-check
 check: exchange-check

@@ -14,6 +14,13 @@ static pl_u64 context_word(const machine_state *state, pl_u32 rank)
 }
 void vm_execution_close(vm_execution *execution)
 { if (execution) *execution = (vm_execution){ 0 }; }
+void vm_execution_cancel(vm_execution *execution)
+{
+    if(!execution)return;
+    execution->generation=0u;execution->continuation=(vm_execution_row){0};
+    execution->continuation_generation=0u;execution->continuation_flags=0u;
+    execution->continuation_interruptible=0u;
+}
 int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
                        pl_u32 count, pl_u64 generation, const machine_state *state)
 {
@@ -65,9 +72,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
         for (pl_u32 j = 0u; j < 5u; ++j)
             if (execution->context[j] != context_word(state, j)) {
-                execution->generation = 0u;
-                execution->continuation = (vm_execution_row){0};
-                execution->continuation_generation = 0u;
+                vm_execution_cancel(execution);
                 return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
             }
         if (execution->activity) {
@@ -88,8 +93,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
         } else row = find(execution,state->rip);
         if (!row) return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
         if (state->rip != row->entry) {
-            execution->generation = 0u; execution->continuation = (vm_execution_row){0};
-            execution->continuation_generation = 0u;
+            vm_execution_cancel(execution);
             return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
         }
         pl_u32 shadow = execution->segments ? execution->segments->interrupt_shadow : 0u;
@@ -109,14 +113,21 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             }
         }
         pl_u32 source_instructions = row->source_instructions;
+        pl_u16 flags_before=resuming?execution->continuation_flags
+            :(pl_u16)(state->rflags&MACHINE_X86_ARITHMETIC_FLAGS);
         result = call(owner, row->slot, row->entry, row->operand_binding);
         if (machine_result_kind(result) == MACHINE_RESULT_BARRIER
                 && machine_result_payload(result) <= MACHINE_BARRIER_CONSOLE
                 && source_instructions == 1u && state->rip == row->entry) {
             execution->continuation = *row; execution->continuation_generation = generation;
+            execution->continuation_flags=flags_before;
+            execution->continuation_interruptible=(pl_u8)(machine_result_payload(result)==MACHINE_BARRIER_QUANTUM);
             return result;
         }
+        if(machine_result_kind(result)==MACHINE_RESULT_FAULT && source_instructions==1u && state->rip==row->entry)
+            state->rflags=(state->rflags&~(pl_u64)MACHINE_X86_ARITHMETIC_FLAGS)|flags_before;
         execution->continuation = (vm_execution_row){0}; execution->continuation_generation = 0u;
+        execution->continuation_flags=0u;execution->continuation_interruptible=0u;
         int halted = result == MACHINE_RESULT_HALT;
         if (halted) {
             if (!execution->activity || source_instructions != 1u
