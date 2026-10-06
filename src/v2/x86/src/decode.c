@@ -2917,21 +2917,28 @@ static void classify_machine_operation(
         if ((source->attributes & ZYDIS_ATTRIB_HAS_LOCK)
                 && out->visible_operand_count == 2u
                 && out->operands[0].kind == PL_X86_OPERAND_MEMORY
-                && out->operands[1].kind == PL_X86_OPERAND_REGISTER
-                && out->operands[1].value.reg.class_id
-                   == PL_X86_REGISTER_GPR
-                && out->operands[1].value.reg.index < 16u
-                && out->operands[0].bits == out->operands[1].bits
                 && (out->operands[0].bits == 16u
                     || out->operands[0].bits == 32u
                     || out->operands[0].bits == 64u)) {
+            const pl_x86_operand *value=&out->operands[1];
+            int register_source=value->kind==PL_X86_OPERAND_REGISTER
+                && value->value.reg.class_id==PL_X86_REGISTER_GPR
+                && value->value.reg.index<16u && value->bits==out->operands[0].bits;
+            int immediate_source=value->kind==PL_X86_OPERAND_IMMEDIATE
+                && value->bits==8u && !(value->flags&PL_X86_OPERAND_SIGNED);
+            if (!register_source && !immediate_source) break;
             pl_u32 kind = source->mnemonic == ZYDIS_MNEMONIC_BTS ? 14u
                         : source->mnemonic == ZYDIS_MNEMONIC_BTR ? 15u
                         : 16u;
             out->machine_operation = PL_X86_MACHINE_ATOMIC;
             out->machine_argument = kind
-                | ((pl_u64)(out->operands[0].bits / 8u) << 8u)
-                | ((pl_u64)out->operands[1].value.reg.index << 16u);
+                | ((pl_u64)(out->operands[0].bits / 8u) << 8u);
+            /* Immediate index selects within the operand; the register form
+             * additionally selects a signed word in the memory bit string. */
+            if (register_source)
+                out->machine_argument|=(pl_u64)value->value.reg.index<<16u;
+            else out->machine_argument|=(1ull<<25u)
+                | ((value->value.immediate&255u)<<32u);
         }
         break;
     case ZYDIS_MNEMONIC_IN:

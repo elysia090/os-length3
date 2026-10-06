@@ -55,6 +55,14 @@ $(BUILD)/transfer-check: check/transfer.c $(BUILD)/libx86.a | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) $< \
 		$(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 
+$(BUILD)/locked-bit-check: check/locked-bit.c $(BUILD)/libx86.a | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $(DEFINES) $< \
+		$(BUILD)/libx86.a ../support/build/libsupport.a -o $@
+.PHONY: locked-bit-check
+check: locked-bit-check
+locked-bit-check: $(BUILD)/locked-bit-check
+	$(BUILD)/locked-bit-check
+
 check: all $(BUILD)/profile-check $(BUILD)/kernel-profile-check $(BUILD)/decode-profile-check $(BUILD)/code-map-check \
 	$(BUILD)/relocation-check $(BUILD)/transfer-check
 	$(BUILD)/profile-check

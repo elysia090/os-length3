@@ -639,6 +639,31 @@ _start:
     lock not byte ptr [r12]
 #elif MEMORY_CASE == 493
     lock btr qword ptr [rdi+r11*2+7], r11
+#elif MEMORY_CASE >= 494 && MEMORY_CASE <= 520
+/* Immediate bit offsets stay within the addressed operand. Unlike the
+ * register form, they do not add a signed word displacement. */
+#define LOCK_RANK (MEMORY_CASE-494)
+#if LOCK_RANK%3 == 0
+#define LOCK_DEST word ptr [rdi]
+#elif LOCK_RANK%3 == 1
+#define LOCK_DEST dword ptr [rdi]
+#else
+#define LOCK_DEST qword ptr [rdi]
+#endif
+#if (LOCK_RANK/3)%3 == 0
+#define LOCK_SOURCE 0
+#elif (LOCK_RANK/3)%3 == 1
+#define LOCK_SOURCE 31
+#else
+#define LOCK_SOURCE 255
+#endif
+#if LOCK_RANK/9 == 0
+    lock bts LOCK_DEST, LOCK_SOURCE
+#elif LOCK_RANK/9 == 1
+    lock btr LOCK_DEST, LOCK_SOURCE
+#else
+    lock btc LOCK_DEST, LOCK_SOURCE
+#endif
 #else
 #error unsupported case
 #endif

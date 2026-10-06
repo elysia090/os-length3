@@ -37,7 +37,10 @@ static int locked_rmw_supported(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_NEGATE: kind=18u; break;
     case PL_X86_OPERATION_BIT_TEST:
         if (!instruction->condition || instruction->condition>3u
-                || memory->bits<16u || value->kind!=PL_X86_OPERAND_REGISTER) return 0;
+                || memory->bits<16u
+                || (value->kind!=PL_X86_OPERAND_REGISTER
+                    && (value->kind!=PL_X86_OPERAND_IMMEDIATE || value->bits!=8u
+                        || value->flags&PL_X86_OPERAND_SIGNED))) return 0;
         kind=13u+instruction->condition; break;
     default: return 0;
     }

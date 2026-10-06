@@ -45,8 +45,10 @@ The entrance checks the decoder descriptor against operation/width/source,
 including high-byte GPR selection and signed immediate extension. Changing
 any descriptor bit, removing LOCK, changing the machine effect or changing
 the memory destination is rejected. Invalid LOCK register, CMOV, multiply
-and LEAVE encodings remain rejected; immediate-indexed LOCK bit operations
-without a typed decoder descriptor also remain explicitly unsupported.
+and LEAVE encodings remain rejected. At the `f1ab0fe` checkpoint,
+immediate-indexed LOCK bit operations without a typed decoder descriptor
+remain explicitly unsupported; the separately verified extension below
+closes that entrance, not an execution fallback.
 No atomic-op interpreter, new VM callback, import type, CPU field, memory role,
 report word or execution row is introduced. Existing physical reservations
 and the arithmetic/flag equations are reused unchanged.
@@ -109,3 +111,53 @@ node data/oracle/check-wasm-provider.mjs VM.wasm NEW_NATIVE_DIRECTORY \
 node data/oracle/check-segment-memory.mjs VM.wasm COMPILER.wasm FS_NATIVE_DIRECTORY
 make -C src/v2/wasm-compiler check
 ```
+
+## Immediate bit index closes the common decoder entrance
+
+The next nearby red is a valid immediate LOCK BTS/BTR/BTC. The old C
+decoder's atomic classifier accepts register indices only, even though
+ordinary bit SSA already supports the immediate. Before the change, a new
+positive cut/typed-descriptor test fails. This is separate from the observed
+Linux LOCK OR gate and is not claimed as an actual next Linux stop.
+
+The exact substitution differs from a register bit string:
+
+```
+register: A' = A + ((sign_extend(index) >> 3) & -(width / 8))
+          bit = index & (width - 1)
+immediate: A' = A
+           bit = imm8 & (width - 1)
+```
+
+An assembler-selected displacement is already part of A, not another
+runtime word displacement. The decoder now encodes the unsigned imm8 in
+the existing atomic descriptor's immediate-source field. The same
+admission cross-check and SSA bit lowering consume it. Register descriptors
+are byte-for-byte unchanged; no new atomic opcode, VM callback or ABI field
+is needed. Immediate indices never reach register word-offset lowering.
+
+Independent common-x86 checks verify every imm8 at all three widths and
+families through native and fixed-profile decoders: 4,608 exact descriptor/
+source/effect checks. Both regular linked inputs and the cold C decoder
+agree. Fresh optimized ELF proofs pass for all 118 forms (preceding 91 plus
+27 immediate cases: 16/32/64-bit, indices 0/31/255).
+
+The extended native/C VM oracle passes 118 byte-parity emissions, 60,416
+success observations, 59,904 actual protection-fault observations, 120,320
+C-dispatch comparisons and RF models, 29,952 readable write faults and 236
+direct physical waits/retries. Separate 37-family segmented/latch models
+pass 444 comparisons / 296 latched resumes; 36 comparisons / 24 resumes
+are the newly added immediate families. Descriptor mutation refusals grow
+to 603. Full common-x86 and compiler/CLI checks, plus scoped compiler
+ASan/UBSan, pass. An intermediate new Make dependency accidentally supplied
+a second `check` recipe; it was changed to its own phony target and all
+checks rerun with no recipe-override warning.
+
+See the [separate extended receipt](2026-10-06-locked-immediate-bit-green.json).
+Compiler is 453,250 bytes (+155), SHA-256
+`ae8a05c0e31e6f962f77965dae3872043a470a1b0f9cc944828268a912f037d0`;
+VM remains unchanged. The running frozen `f1ab0fe` job (PID 20464,
+`temp/locked-memory-1006/frozen`, warmCuts=64, unchanged quotas) contains the
+453,095-byte compiler, NOT this extension. It was neither restarted nor
+overwritten. No timing ratio, successful PID 1, shell or browser acceptance
+is inferred from these isolated checks.

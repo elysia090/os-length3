@@ -6,7 +6,7 @@ output=${1:?usage: prepare-locked-memory-cuts.sh NEW-OUTPUT-DIRECTORY}
 test ! -e "$output" || { printf 'Refusing existing output\n' >&2; exit 2; }
 mkdir -p -- "$output"
 make -C "$repo/src/v2/wasm-compiler" all build/memory-cut-check fixture-tools
-for rank in {403..493}; do
+for rank in {403..520}; do
   prefix="$output/memory-$rank"
   cc -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
     -DMEMORY_CASE="$rank" "$repo/src/v2/wasm-compiler/check/memory-fixture.S" -o "$prefix.linked.elf"

@@ -616,7 +616,6 @@ int main(int argc, char **argv)
     }
     static const pl_u8 rejected_bits[][6] = {
         {0xf0u,0x48u,0x0fu,0xbau,0xeeu,0x3au}, /* LOCK register BTS is invalid. */
-        {0xf0u,0x48u,0x0fu,0xbau,0x28u,0x3au}, /* Locked memory RMW is not admitted yet. */
     };
     for (pl_u32 form = 0u; form < sizeof rejected_bits / sizeof rejected_bits[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected_bits[form],sizeof rejected_bits[0]);
@@ -667,12 +666,13 @@ int main(int argc, char **argv)
         {0xf0u,0x48u,0x29u,0x00u,0x90u},
         {0xf0u,0x48u,0x31u,0x00u,0x90u},
         {0xf0u,0x48u,0x0fu,0xabu,0x0fu},
+        {0xf0u,0x0fu,0xbau,0x2fu,0xffu},
     };
     for(pl_u32 rank=0u;rank<sizeof locked_rmw/sizeof locked_rmw[0];++rank){
         memset(pages,0x90,sizeof pages);memcpy(pages,locked_rmw[rank],sizeof locked_rmw[rank]);
         EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
         EXPECT(report.source_instructions==1u && report.memory_access==3u
-            && report.memory_bytes==8u && !report.written_registers && report.flags_written);
+            && report.memory_bytes==(rank==8u?4u:8u) && !report.written_registers && report.flags_written);
         pl_x86_instruction decoded;
         EXPECT(!pl_x86_decode_profile(&source,options.entry,&decoded));
         EXPECT(decoded.machine_operation==PL_X86_MACHINE_ATOMIC && cut_memory_supported(&decoded));

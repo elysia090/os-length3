@@ -90,7 +90,7 @@ typedef struct {
  * next target fetch is a separate admission after successful CALL retirement.
  * Memory ADD/ADC/SUB/SBB/AND/OR/XOR uses machine.reserve/commit with pinned physical
  * fragments; generated Wasm computes arithmetic, not a C opcode callback.
- * Valid LOCK arithmetic, unary and register-indexed bit RMW use this same
+ * Valid LOCK arithmetic, unary and bit RMW use this same
  * transaction under the ordinary non-shared RAM, single serialized owner
  * contract. No guest writer/event/await intervenes between reservation and
  * commit. This is not SMP, split-lock-detection or MMIO atomicity support.

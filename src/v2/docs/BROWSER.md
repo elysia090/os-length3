@@ -18,6 +18,14 @@ It reuses reserve -> SSA -> commit without adding an atomic-op interpreter
 or VM/ABI state. Compiler 453,095 bytes, VM unchanged at 70,499; not loaded
 in the completed run above. See [scope and derivation](../vm/check/browser/evidence/2026-10-06-locked-memory.md).
 
+That candidate is now in frozen same-bundle job `f1ab0fe` (PID 20464,
+compiler 453,095 / VM 70,499 bytes, warmCuts=64 and unchanged quotas).
+A later nearby immediate LOCK-bit entrance is independently green, with
+4,608 exact common-x86/profile descriptor checks, 118 native/cold parity
+emissions and 120,320 C-dispatch comparisons. Compiler 453,250 bytes,
+VM unchanged; NOT loaded in that active job. Its normal form and precise
+counts are in the same evidence. These are not browser acceptance.
+
 Register XCHG is simultaneous SSA substitution, with
 186 native/cold parity emissions and 11,904 native x86 rows agreeing in direct
 and C-dispatch execution. Full native checks/scoped sanitizers and 1,088

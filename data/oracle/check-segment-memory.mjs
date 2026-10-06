@@ -137,6 +137,8 @@ const families=[
     ({name:`LOCK unary ${index}`,code:[0xf0,0x48,index<2?0xff:0xf7,modrm],size:8})),
   ...[0xab,0xb3,0xbb].map((opcode,index)=>
     ({name:`LOCK bit ${index}`,code:[0xf0,0x48,0x0f,opcode,0x0e],size:8})),
+  ...[0x2e,0x36,0x3e].map((modrm,index)=>
+    ({name:`LOCK immediate bit ${index}`,code:[0xf0,0x48,0x0f,0xba,modrm,0xff],size:8})),
 ];
 familyCount=families.length;
 for(const segment of [0,1])for(const address of [32,64])for(const family of families)
