@@ -1,10 +1,26 @@
 # Remaining work — 2026-10-06
 
-The `5610a5f` register-XCHG candidate is in an active separately frozen
-unchanged-bundle Node job (PID 15708, `temp/exchange-1006/frozen`, VM 70,499 /
-compiler 452,445 bytes, warmCuts=64 and unchanged quotas). Obtain its completed
-receipt before attributing a new actual gate. It neither replaces retained
-browser Workers/staged assets nor constitutes real-browser acceptance.
+The `5610a5f` separately frozen unchanged-bundle Node job completed (PID 15708,
+`temp/exchange-1006/frozen`, VM 70,499 / compiler 452,445 bytes, warmCuts=64,
+unchanged quotas). Register XCHG passes; the next compiler -102 is
+`f0 48 09 14 c8` (LOCK OR qword [RAX+RCX*8],RDX), RIP `0x7fc71de30801`,
+after 181,874,281 retirements / 93,957,446 admissions. Engine construction
+261,443 ms exceeds cold emission 222,689 ms and C execution 69,205 ms;
+total 695,534 ms. There are 6,503,944 constructions / 6,503,201 evictions,
+743 live bodies / 261,991 witness bytes. See the
+[completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-locked-or-red.json).
+Different retired work/clock calibration is not a paired speedup. No retained
+browser Worker/staged asset was replaced; this is not browser acceptance.
+PID 1, immutable-root mount and shell/tooling remain unachieved.
+
+The LOCK entrance is now locally green through the existing C reservation /
+SSA arithmetic / commit path: 91 fresh native/cold parity checks, 46,592 native
+success and 46,080 native protection-fault comparisons, 92,672 C-dispatch
+comparisons, 536 descriptor mutations/refusals, full native compiler/CLI and
+scoped sanitizers. Added LOCK address models retain 112 C latched supply
+resumes; SMP/MMIO/split-lock detection are not claimed. Compiler 453,095 bytes,
+VM unchanged at 70,499; this is NOT loaded in the completed run above.
+See [deduction, exact counts and scope](../vm/check/browser/evidence/2026-10-06-locked-memory.md).
 
 Later reflexive XCHG normalization is locally green but NOT loaded there:
 equal 8/16/64-bit fields remove all register work; 32-bit self writes still
@@ -40,7 +56,7 @@ PID 13684 completed. This is not a browser run and different retired work/
 clock calibration is not a paired speedup. No retained Worker/staged asset
 was replaced. PID 1, root mount and shell remain unachieved.
 
-Latest completed same-bundle gate (`36eb952`): non-REP MOVSB passes. The next
+Previous completed same-bundle gate (`36eb952`): non-REP MOVSB passes. Its next
 common compiler refusal is FS TLS load `64 48 8b 04 25 00 00 00 00`
 (`mov rax, fs:[0]`) at `0x7fdb6f31f16b`, -102 after 186,388,534 retirements /
 97,300,274 admissions. Frozen VM/compiler are 69,903 / 452,030 bytes.
@@ -51,8 +67,9 @@ do not establish an elapsed-ratio speedup. See the
 [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
 PID 21444 completed; no retained browser Worker or staged asset was replaced.
 
-Immediate order: retain the active frozen run's completed receipt and make its
-next actual gate red. XCHG widths/aliases/current SSA
+Immediate order: freeze the locally green LOCK candidate, run the same bundle
+with unchanged quotas and retain its completed next actual gate.
+XCHG widths/aliases/current SSA
 values now close in the common pure lowering without a host interpreter.
 FS/GS effective-offset -> linear-address normalization now uses
 the same C-owned boundary across scalar, reservation, vector, ordered record

@@ -1,13 +1,31 @@
 # Browser projection of OS Length3 Linux
 
-Active frozen candidate (`5610a5f`, PID 15708): register XCHG is simultaneous SSA substitution, with
+Latest completed same-bundle measurement (`5610a5f`, PID 15708 completed):
+register XCHG passes; next compiler -102 is `f0 48 09 14 c8`
+(LOCK OR qword [RAX+RCX*8],RDX), RIP `0x7fc71de30801`, after 181,874,281
+retirements / 93,957,446 admissions. VM/compiler are frozen 70,499 / 452,445
+bytes, warmCuts=64 and unchanged quotas. Engine construction 261,443 ms,
+cold emission 222,689 ms, C execution 69,205 ms, total 695,534 ms; different
+work/clock calibration is not a paired speedup. See the
+[completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-locked-or-red.json).
+PID 1/root mount/shell and real-browser acceptance remain unachieved.
+
+General LOCK arithmetic/unary/register-bit RMW is separately locally green:
+91 native/cold parity emissions, 46,592 native success / 46,080 protection-fault
+comparisons, 92,672 C-dispatch comparisons, descriptor mutation refusals,
+full C/CLI/scoped sanitizer checks and C-owned page-wait/latch models.
+It reuses reserve -> SSA -> commit without adding an atomic-op interpreter
+or VM/ABI state. Compiler 453,095 bytes, VM unchanged at 70,499; not loaded
+in the completed run above. See [scope and derivation](../vm/check/browser/evidence/2026-10-06-locked-memory.md).
+
+Register XCHG is simultaneous SSA substitution, with
 186 native/cold parity emissions and 11,904 native x86 rows agreeing in direct
 and C-dispatch execution. Full native checks/scoped sanitizers and 1,088
 RSP/high-byte models pass; compiler 452,445 bytes, VM unchanged. This is not
 loaded in the completed FS run below. Later reflexive substitution eliminates
 register work for equal 8/16/64-bit fields (not 32-bit writes), reducing the
 synthetic identity matrix from 56 bodies / 14,328 bytes to 3 / 612 bytes.
-That 452,486-byte compiler is locally verified but NOT loaded in this active
+That 452,486-byte compiler is locally verified but NOT loaded in this completed
 452,445-byte run. See
 [exchange normal form and scope](../vm/check/browser/evidence/2026-10-06-register-exchange.md).
 
@@ -27,7 +45,7 @@ PID 13684 completed. The FS red below is historical; the local green is not
 PID 1, root mount, shell/tooling or browser acceptance. Retained browser
 Workers/staged assets and the native publication/UI remain unchanged.
 
-Current measured state (2026-10-06): completed `36eb952` passes non-REP MOVSB
+Previous measured state (2026-10-06): completed `36eb952` passes non-REP MOVSB
 and reaches the common compiler refusal for `mov rax, fs:[0]`
 (`64 48 8b 04 25 00 00 00 00`) at `0x7fdb6f31f16b`, -102 after
 186,388,534 retirements / 97,300,274 admissions. Loaded VM/compiler are

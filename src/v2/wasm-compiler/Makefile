@@ -456,9 +456,19 @@ memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
 		-DMEMORY_CASE=$$rank check/memory-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
 	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
-	if [ $$rank = 45 ]; then \
-		if $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; then exit 1; fi; \
-	else $(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; fi; \
+	$(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
+	done
+
+.PHONY: locked-memory-fixture-check
+check: locked-memory-fixture-check
+locked-memory-fixture-check: $(BUILD)/memory-cut-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	for rank in $$(seq 403 493); do \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs \
+		-DMEMORY_CASE=$$rank check/memory-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/memory-cut-check "$$scratch/optimized.elf" "$$scratch/cut"; \
 	done
 
 # C rejection/emission checks are separate from the Node execution oracle and

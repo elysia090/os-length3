@@ -14,6 +14,55 @@ static int unary_arithmetic(pl_u32 operation)
         || operation == PL_X86_OPERATION_NEGATE || operation == PL_X86_OPERATION_COMPLEMENT;
 }
 
+static int locked_rmw_supported(const pl_x86_instruction *instruction)
+{
+    if (!(instruction->flags & PL_X86_INSTRUCTION_LOCKED)
+            || instruction->machine_operation != PL_X86_MACHINE_ATOMIC) return 0;
+    const pl_x86_operand *memory=instruction->operands,*value=memory+1u;
+    if (memory->kind!=PL_X86_OPERAND_MEMORY
+            || (memory->bits!=8u && memory->bits!=16u
+                && memory->bits!=32u && memory->bits!=64u)) return 0;
+    pl_u32 kind;
+    switch (instruction->operation) {
+    case PL_X86_OPERATION_ADD: kind=4u; break;
+    case PL_X86_OPERATION_OR: kind=5u; break;
+    case PL_X86_OPERATION_ADD_CARRY: kind=6u; break;
+    case PL_X86_OPERATION_SUBTRACT_BORROW: kind=7u; break;
+    case PL_X86_OPERATION_AND: kind=8u; break;
+    case PL_X86_OPERATION_SUBTRACT: kind=9u; break;
+    case PL_X86_OPERATION_XOR: kind=10u; break;
+    case PL_X86_OPERATION_INCREMENT: kind=11u; break;
+    case PL_X86_OPERATION_DECREMENT: kind=12u; break;
+    case PL_X86_OPERATION_COMPLEMENT: kind=17u; break;
+    case PL_X86_OPERATION_NEGATE: kind=18u; break;
+    case PL_X86_OPERATION_BIT_TEST:
+        if (!instruction->condition || instruction->condition>3u
+                || memory->bits<16u || value->kind!=PL_X86_OPERAND_REGISTER) return 0;
+        kind=13u+instruction->condition; break;
+    default: return 0;
+    }
+    pl_u64 expected=kind | ((pl_u64)(memory->bits/8u)<<8u);
+    if (unary_arithmetic(instruction->operation)) {
+        if (instruction->visible_operand_count!=1u) return 0;
+    } else {
+        if (instruction->visible_operand_count!=2u) return 0;
+        if (value->kind==PL_X86_OPERAND_REGISTER) {
+            if (!cut_gpr(&value->value.reg) || value->bits!=memory->bits) return 0;
+            expected|=((pl_u64)value->value.reg.index<<16u)
+                | ((pl_u64)!!(value->value.reg.flags&PL_X86_REGISTER_HIGH8)<<24u);
+        } else if (value->kind==PL_X86_OPERAND_IMMEDIATE) {
+            if (value->bits!=8u && value->bits!=(memory->bits==64u ? 32u : memory->bits)) return 0;
+            pl_u64 immediate=value->value.immediate;
+            if (value->flags&PL_X86_OPERAND_SIGNED) {
+                pl_u64 sign=1ull<<(value->bits-1u),mask=(1ull<<value->bits)-1u;
+                immediate=((immediate&mask)^sign)-sign;
+            }
+            expected|=(1ull<<25u)|((immediate&0xffffffffull)<<32u);
+        } else return 0;
+    }
+    return instruction->machine_argument==expected;
+}
+
 static void unary_value(cut_lowering *cut, pl_u32 operation, pl_u32 width)
 {
     if (operation == PL_X86_OPERATION_NEGATE) {
@@ -123,6 +172,7 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
     int exchange = instruction->operation == PL_X86_OPERATION_COMPARE_EXCHANGE;
     int transfer = exchange || instruction->operation == PL_X86_OPERATION_EXCHANGE_ADD
         || instruction->operation == PL_X86_OPERATION_EXCHANGE;
+    int locked_rmw = locked_rmw_supported(instruction);
     int selector = cut_selector_read_supported(instruction);
     int shift = instruction->operation == PL_X86_OPERATION_SHIFT;
     int double_shift=instruction->operation==PL_X86_OPERATION_DOUBLE_SHIFT;
@@ -134,11 +184,12 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
         || instruction->operation == PL_X86_OPERATION_DIVIDE_UNSIGNED;
     if (instruction->status != PL_X86_DECODE_VALID || instruction->flow != PL_X86_FLOW_NEXT
             || (instruction->machine_operation != PL_X86_MACHINE_NONE
-                && !selector && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
+                && !selector && !locked_rmw
+                && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || (divide ? !cut_divide_supported(instruction) : multiply ? !cut_multiply_supported(instruction)
                 : instruction->visible_operand_count != (unary || set ? 1u : double_shift ? 3u : 2u))
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
-                && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
+                && !locked_rmw && !(transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC))
             || instruction->flags & (PL_X86_INSTRUCTION_PRIVILEGED
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)
             || (instruction->address_width != 32u && instruction->address_width != 64u)) return 0;
@@ -157,7 +208,9 @@ int cut_memory_supported(const pl_x86_instruction *instruction)
      * typed machine effect. This ordinary, non-shared-memory projection has
      * one serialized owner: reserve/commit is synchronous, with no intervening
      * guest writer, event or await. That closes LOCK too, not SMP/shared RAM.
-     * Both forms specialize to SSA, never an atomic-op runtime callback. */
+     * Arithmetic, unary and indexed-bit forms verify that same decoder-owned
+     * descriptor above. All specialize to SSA, never an atomic-op callback.
+     * LOCK is not erased from the instruction's precise-cut metadata. */
     if (transfer && instruction->machine_operation == PL_X86_MACHINE_ATOMIC
             && instruction->machine_argument != ((exchange ? 2u : instruction->operation==PL_X86_OPERATION_EXCHANGE_ADD ? 1u : 0u)
                 | ((pl_u64)(operands[1].bits/8u)<<8u)

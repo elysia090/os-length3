@@ -1,5 +1,6 @@
 #include <wasm-compiler/cut.h>
 #include <machine/memory.h>
+#include "../src/cut-internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -606,7 +607,6 @@ int main(int argc, char **argv)
         && report.memory_access == 1u && report.written_registers == 1u && !report.flags_written);
     static const pl_u8 rejected_carry_loads[][5] = {
         {0xf0u,0x19u,0xc0u,0x90u,0x90u}, /* LOCK register SBB is invalid. */
-        {0xf0u,0x48u,0x19u,0x00u,0x90u}, /* LOCK RMW still requires an explicit atomic descriptor. */
         {0xf0u,0x48u,0x0fu,0x44u,0x00u}, /* CMOV does not accept LOCK. */
     };
     for (pl_u32 form = 0u; form < sizeof rejected_carry_loads / sizeof rejected_carry_loads[0]; ++form) {
@@ -646,14 +646,46 @@ int main(int argc, char **argv)
                 && report.boundary == WASM_CUT_MEMORY && !report.written_registers
                 && report.flags_written == (operation != 3u));
         }
-        /* LOCK is a separate atomicity contract, not an ignored prefix. */
+        /* The valid atomic descriptor closes through serialized reservation,
+         * not by ignoring LOCK or invoking a runtime opcode interpreter. */
         const pl_u8 locked[]={0xf0u,0x48u,(pl_u8)(operation < 2u ? 0xffu : 0xf7u),
             (pl_u8)(operation < 2u ? operation*8u : operation == 2u ? 0x18u : 0x10u)};
         memset(pages,0x90,sizeof pages); memcpy(pages,locked,sizeof locked);
-        memset(output,0xa5,sizeof output);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            == WASM_COMPILER_ERROR_GRAMMAR);
-        for (pl_u32 at=0u;at<sizeof output;++at) EXPECT(output[at] == 0xa5u);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions==1u && report.source_bytes==sizeof locked
+            && report.memory_access==3u && report.memory_bytes==8u
+            && !report.written_registers && report.flags_written==(operation!=3u));
+    }
+    /* Exact userland gate from the same-bundle execution, plus every binary
+     * family and a register-indexed bit RMW. Invalid LOCK forms above stay red. */
+    static const pl_u8 locked_rmw[][5]={
+        {0xf0u,0x48u,0x09u,0x14u,0xc8u},
+        {0xf0u,0x48u,0x01u,0x00u,0x90u},
+        {0xf0u,0x48u,0x11u,0x00u,0x90u},
+        {0xf0u,0x48u,0x19u,0x00u,0x90u},
+        {0xf0u,0x48u,0x21u,0x00u,0x90u},
+        {0xf0u,0x48u,0x29u,0x00u,0x90u},
+        {0xf0u,0x48u,0x31u,0x00u,0x90u},
+        {0xf0u,0x48u,0x0fu,0xabu,0x0fu},
+    };
+    for(pl_u32 rank=0u;rank<sizeof locked_rmw/sizeof locked_rmw[0];++rank){
+        memset(pages,0x90,sizeof pages);memcpy(pages,locked_rmw[rank],sizeof locked_rmw[rank]);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_instructions==1u && report.memory_access==3u
+            && report.memory_bytes==8u && !report.written_registers && report.flags_written);
+        pl_x86_instruction decoded;
+        EXPECT(!pl_x86_decode_profile(&source,options.entry,&decoded));
+        EXPECT(decoded.machine_operation==PL_X86_MACHINE_ATOMIC && cut_memory_supported(&decoded));
+        for(pl_u32 field=0u;field<64u;++field){
+            pl_x86_instruction changed=decoded;changed.machine_argument^=1ull<<field;
+            EXPECT(!cut_memory_supported(&changed));
+        }
+        pl_x86_instruction changed=decoded;changed.flags&=~PL_X86_INSTRUCTION_LOCKED;
+        EXPECT(!cut_memory_supported(&changed));
+        changed=decoded;changed.machine_operation=PL_X86_MACHINE_NONE;
+        EXPECT(!cut_memory_supported(&changed));
+        changed=decoded;changed.operands[0].kind=PL_X86_OPERAND_REGISTER;
+        EXPECT(!cut_memory_supported(&changed));
     }
     for (pl_u32 locked=0u;locked<2u;++locked) for (pl_u32 width=0u;width<4u;++width) {
         pl_u8 exchange[5]; pl_u32 count=0u;

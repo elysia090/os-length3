@@ -6,11 +6,18 @@ import path from 'node:path';
 import {seedDisabledDebug} from './machine-observation.mjs';
 import {seedNativeSelector} from './selector-observation.mjs';
 
-const [providerFile, directory, mode] = process.argv.slice(2);
+const [providerFile, directory, ...options] = process.argv.slice(2);
 if (!providerFile || !directory)
-  throw new Error('usage: node check-wasm-provider.mjs VM.WASM NATIVE-RECORD-DIRECTORY [--dispatch]');
-assert(mode === undefined || mode === '--dispatch', 'unknown check mode');
-const dispatch = mode === '--dispatch';
+  throw new Error('usage: node check-wasm-provider.mjs VM.WASM NATIVE-RECORD-DIRECTORY [--dispatch] [--compiler=COMPILER.WASM]');
+assert(options.every(option=>option==='--dispatch'||option.startsWith('--compiler=')), 'unknown check mode');
+assert(options.filter(option=>option==='--dispatch').length<=1);
+const compilerOptions=options.filter(option=>option.startsWith('--compiler='));
+assert(compilerOptions.length<=1);
+const dispatch = options.includes('--dispatch');
+const coldMemory=compilerOptions.length?new WebAssembly.Memory({initial:16}):null;
+const compiler=coldMemory?(await WebAssembly.instantiate(await readFile(compilerOptions[0].slice(11)),
+  {machine:{memory:coldMemory}})).instance.exports:null;
+let parity=0;
 const provider = await WebAssembly.compile(await readFile(providerFile));
 assert.deepEqual(WebAssembly.Module.imports(provider), [
   { module: 'machine', name: 'memory', kind: 'memory' },
@@ -25,7 +32,20 @@ for (const name of names) {
   const meta = JSON.parse(await readFile(`${prefix}.json`, 'utf8'));
   assert(Number.isInteger(meta.operandBinding) && meta.operandBinding>=0 && meta.operandBinding<=0xffffffff,
     'regenerate the native attestation; never guess an absent scalar binding');
-  const module = await WebAssembly.compile(await readFile(`${prefix}.wasm`));
+  const nativeModule=await readFile(`${prefix}.wasm`);
+  const source = dispatch||compiler ? await readFile(`${prefix}.source-page`) : null;
+  if(compiler){
+    const input=compiler.compiler_arena_min(),output=input+8192,report=output+65536;
+    const cold=Buffer.from(coldMemory.buffer),view=new DataView(coldMemory.buffer),entry=BigInt(meta.entry);
+    assert.equal(compiler.compiler_entry_abi(),3);assert.equal(compiler.compiler_report_bytes(),80);
+    cold.set(source,input);assert.equal(compiler.compiler_open_pages(input,1,entry&~4095n,9n),0);
+    assert.equal(compiler.compiler_emit(entry,1,output,65536,report),0,`${name}: common cold grammar`);
+    assert.equal(view.getBigUint64(report+32,true),BigInt(meta.sourceBytes));
+    assert.equal(view.getUint32(report+76,true),meta.operandBinding);
+    assert(cold.subarray(output,output+Number(view.getBigUint64(report+40,true))).equals(nativeModule),
+      `${name}: exact native/cold C emission`);++parity;
+  }
+  const module = await WebAssembly.compile(nativeModule);
   const memory = new WebAssembly.Memory({ initial: 8, maximum: 16 });
   const vm = (await WebAssembly.instantiate(provider, { machine: { memory } })).exports;
   const instance = await WebAssembly.instantiate(module, {
@@ -42,7 +62,6 @@ for (const name of names) {
     return null;
   });
   if (faultRecords) assert.equal(faultRecords.length,512 * 38 * 8);
-  const source = dispatch ? await readFile(`${prefix}.source-page`) : null;
   const slot = dispatch ? vm.__indirect_function_table.grow(1) : 0;
   if (dispatch) {
     assert(meta.access & 1, 'dispatch mode accepts READ and precise RMW cuts');
@@ -348,4 +367,4 @@ for (const name of names) {
   assert.equal(vm.vm_access(port, address, 8, 1, 0n), 6n);
   if (dispatch) vm.__indirect_function_table.set(slot,null);
 }
-console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks, ${selectorModels} guest selector models, ${dispatchComparisons} separate C-dispatch comparisons, ${residencyWaits} waits/${residencyRetries} retries, ${readableWriteFaults} readable write faults; exception entry/Linux boot not tested)`);
+console.log(`Generated cuts -> C vm.wasm/MMU/native: green (${names.length} modules, ${parity} native/cold parity checks, ${comparisons} comparisons, ${hardwareFaults} actual protection-fault comparisons, ${resumeFlagChecks} RF checks, ${selectorModels} guest selector models, ${dispatchComparisons} separate C-dispatch comparisons, ${residencyWaits} waits/${residencyRetries} retries, ${readableWriteFaults} readable write faults; exception entry/Linux boot not tested)`);

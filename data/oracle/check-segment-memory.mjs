@@ -63,6 +63,7 @@ async function load(body){
 }
 const page=Buffer.alloc(4096,0xcc);page.set([0x64,0x48,0x8b,0x04,0x25,0,0,0,0]);
 let parity=0,direct=0,dispatch=0,nativeSuccess=0,nativeFault=0,models=0,waits=0,retries=0,refusals=0,differentials=0,msrFences=0,msrFresh=0;
+let familyCount=0;
 const moduleBytes=[];
 try{
 const exact=emit(page);assert.equal(exact.sourceBytes,9);const exactCut=await load(exact.body);
@@ -128,7 +129,16 @@ const families=[
   {name:'BTS',code:[0x48,0x0f,0xab,0x0e],size:8},
   {name:'SHRD',code:[0x48,0x0f,0xad,0x06],size:8},
   {name:'IDIV',code:[0x48,0xf7,0x3e],size:8},
+  // Serialized LOCK uses the same complete-fragment C reservation. These
+  // are address/latch models; independent native LOCK rows live separately.
+  ...[0x01,0x09,0x11,0x19,0x21,0x29,0x31].map((opcode,index)=>
+    ({name:`LOCK ALU ${index}`,code:[0xf0,0x48,opcode,0x0e],size:8})),
+  ...[0x06,0x0e,0x1e,0x16].map((modrm,index)=>
+    ({name:`LOCK unary ${index}`,code:[0xf0,0x48,index<2?0xff:0xf7,modrm],size:8})),
+  ...[0xab,0xb3,0xbb].map((opcode,index)=>
+    ({name:`LOCK bit ${index}`,code:[0xf0,0x48,0x0f,opcode,0x0e],size:8})),
 ];
+familyCount=families.length;
 for(const segment of [0,1])for(const address of [32,64])for(const family of families)
 for(const mode of ['normal','fault','wait']){
   const linear=mode==='normal'?0x500200n:0x500000n+BigInt(4096-(family.aligned&&family.size>16?16:family.aligned||family.size===1?0:1));
@@ -185,7 +195,14 @@ for(const mode of ['normal','fault','wait']){
   const delta=family.string?expectedCPU.readBigUInt64LE(48)-target:0n;
   expectedCPU.writeBigUInt64LE(BigInt.asUintN(address,initialRSI+delta) | (family.string?0n:initialRSI&~((1n<<BigInt(address))-1n)),48);
   if(family.name==='indirect CALL'&&(result===1n||result===5n))expectedRAM.writeBigUInt64LE(entry+BigInt(seg.sourceBytes),0x778);
-  assert(cpu().equals(expectedCPU),`complete normalized CPU: ${family.name}, ${segment}, ${address}, ${mode}`);
+  const actualCPU=cpu();
+  if(!actualCPU.equals(expectedCPU)){
+    const fields=[];
+    for(let offset=0;offset+8<=expectedCPU.length;offset+=8)
+      if(actualCPU.readBigUInt64LE(offset)!==expectedCPU.readBigUInt64LE(offset))
+        fields.push(`${offset}: ${actualCPU.readBigUInt64LE(offset).toString(16)} != ${expectedCPU.readBigUInt64LE(offset).toString(16)}`);
+    assert.fail(`complete normalized CPU: ${family.name}, ${segment}, ${address}, ${mode}: ${fields.join(', ')}`);
+  }
   assert(ram().equals(expectedRAM),`complete normalized RAM: ${family.name}, ${segment}, ${address}, ${mode}`);
   assert(cache().equals(hidden),'no hidden-base publication by a payload access');
   if((result&7n)===3n)assert(data.subarray(port+16,port+32).equals(faultFields));
@@ -231,4 +248,5 @@ console.log(JSON.stringify({format:'native-segment-memory-v1',status:'pass',linu
   vmBytes:vmBytes.length,vmSha256:createHash('sha256').update(vmBytes).digest('hex'),
   compilerBytes:compilerBytes.length,compilerSha256:createHash('sha256').update(compilerBytes).digest('hex'),
   parity,direct,dispatch,nativeSuccess,nativeFault,models,differentials,waits,retries,refusals,msrFences,msrFresh,moduleBytes,
-  scope:'actual native FS/GS load/store/RMW/LEA/MOVSB/TLS, 32/64-bit offsets, high/zero bases, wrap, #PF/#GP; 20-family metamorphic address checks and C page-wait/MSR fences are models, not independent ISA observations or browser boot'},null,2));
+  familyCount,
+  scope:`actual native FS/GS load/store/RMW/LEA/MOVSB/TLS, 32/64-bit offsets, high/zero bases, wrap, #PF/#GP; ${familyCount}-family metamorphic address checks and C page-wait/MSR fences are models, not independent ISA observations or browser boot`},null,2));

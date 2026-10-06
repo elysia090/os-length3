@@ -545,6 +545,100 @@ _start:
     xchg qword ptr ss:[rdi+r11*2+7], r11
 #elif MEMORY_CASE == 402
     xchg qword ptr [rip+512], rax
+#elif MEMORY_CASE >= 403 && MEMORY_CASE <= 458
+/* Seven arithmetic families, four widths, register and signed immediate. */
+#define LOCK_RANK (MEMORY_CASE-403)
+#if LOCK_RANK%4 == 0
+#define LOCK_DEST byte ptr [rdi]
+#define LOCK_SOURCE r9b
+#elif LOCK_RANK%4 == 1
+#define LOCK_DEST word ptr [rdi]
+#define LOCK_SOURCE r9w
+#elif LOCK_RANK%4 == 2
+#define LOCK_DEST dword ptr [rdi]
+#define LOCK_SOURCE r9d
+#else
+#define LOCK_DEST qword ptr [rdi]
+#define LOCK_SOURCE r9
+#endif
+#if (LOCK_RANK/4)%2
+#undef LOCK_SOURCE
+#define LOCK_SOURCE -123
+#endif
+#if LOCK_RANK/8 == 0
+    lock add LOCK_DEST, LOCK_SOURCE
+#elif LOCK_RANK/8 == 1
+    lock or LOCK_DEST, LOCK_SOURCE
+#elif LOCK_RANK/8 == 2
+    lock adc LOCK_DEST, LOCK_SOURCE
+#elif LOCK_RANK/8 == 3
+    lock sbb LOCK_DEST, LOCK_SOURCE
+#elif LOCK_RANK/8 == 4
+    lock and LOCK_DEST, LOCK_SOURCE
+#elif LOCK_RANK/8 == 5
+    lock sub LOCK_DEST, LOCK_SOURCE
+#else
+    lock xor LOCK_DEST, LOCK_SOURCE
+#endif
+#elif MEMORY_CASE >= 459 && MEMORY_CASE <= 474
+#define LOCK_RANK (MEMORY_CASE-459)
+#if LOCK_RANK%4 == 0
+#define LOCK_DEST byte ptr [rdi]
+#elif LOCK_RANK%4 == 1
+#define LOCK_DEST word ptr [rdi]
+#elif LOCK_RANK%4 == 2
+#define LOCK_DEST dword ptr [rdi]
+#else
+#define LOCK_DEST qword ptr [rdi]
+#endif
+#if LOCK_RANK/4 == 0
+    lock inc LOCK_DEST
+#elif LOCK_RANK/4 == 1
+    lock dec LOCK_DEST
+#elif LOCK_RANK/4 == 2
+    lock neg LOCK_DEST
+#else
+    lock not LOCK_DEST
+#endif
+#elif MEMORY_CASE >= 475 && MEMORY_CASE <= 483
+#define LOCK_RANK (MEMORY_CASE-475)
+#if LOCK_RANK%3 == 0
+#define LOCK_DEST word ptr [rdi]
+#define LOCK_SOURCE cx
+#elif LOCK_RANK%3 == 1
+#define LOCK_DEST dword ptr [rdi]
+#define LOCK_SOURCE ecx
+#else
+#define LOCK_DEST qword ptr [rdi]
+#define LOCK_SOURCE rcx
+#endif
+#if LOCK_RANK/3 == 0
+    lock bts LOCK_DEST, LOCK_SOURCE
+#elif LOCK_RANK/3 == 1
+    lock btr LOCK_DEST, LOCK_SOURCE
+#else
+    lock btc LOCK_DEST, LOCK_SOURCE
+#endif
+#elif MEMORY_CASE == 484
+    lock or qword ptr [rax+rcx*8], rdx
+#elif MEMORY_CASE == 485
+    lock xor byte ptr [rdi], ah
+#elif MEMORY_CASE == 486
+    lock add qword ptr [rdi], rdi
+#elif MEMORY_CASE == 487
+    lock adc dword ptr [edi], eax
+#elif MEMORY_CASE == 488
+    lock sub qword ptr [rdi+rcx*4+7], rcx
+#elif MEMORY_CASE == 489
+    lock and qword ptr [rip+512], -123
+#elif MEMORY_CASE == 490
+    lock or qword ptr [rdi], -2147483648
+#elif MEMORY_CASE == 491
+    lock xor word ptr [rdi], 0x8001
+#elif MEMORY_CASE == 492
+    lock not byte ptr [r12]
+#elif MEMORY_CASE == 493
+    lock btr qword ptr [rdi+r11*2+7], r11
 #else
 #error unsupported case
 #endif
