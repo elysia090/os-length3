@@ -18,7 +18,7 @@ const at=physical=>base+(Number(physical/4096n)+1)*4096;
 const put=(where,x)=>v.setBigUint64(where,BigInt(x),true),u64=(r,i)=>r.readBigUInt64LE(2512+i*8);
 const slot=vm.__indirect_function_table.grow(1),cpu=()=>Buffer.from(data.subarray(base,base+1256));
 const image=()=>Buffer.from(data.subarray(code,payload+8192));
-let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0;
+let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,halfModels=0;
 function target(where) {
   if(where>=entry&&where+16n<=entry+4096n)return code+Number(where-entry);
   return where>=address&&where+16n<=address+8192n?payload+Number(where-address):-1;
@@ -66,7 +66,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<108;++form) {
+  for(let form=0;form<156;++form) {
     const prefix=path.join(directory,`vector-scalar-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
@@ -79,6 +79,26 @@ try {
     if(!meta.register)imports.push({module:'machine',name:'access',kind:'function'});
     assert.deepEqual(WebAssembly.Module.imports(module),imports);
     const cut=(await engines.get(emitted)).exports.cut;vm.__indirect_function_table.set(slot,cut);
+    if(meta.selectedHalf) {
+      // Substitute a valid one-page coordinate with the NEXT page absent.
+      // The exact eight-byte operand must succeed; a widened pair read fails.
+      // Every crossing split then fails without publishing any selected half.
+      const first=records.subarray(0,stride);
+      if(meta.kind===1)for(const dispatch of [false,true])for(let split=0;split<8;++split) {
+        reset(source,meta,first,0);const start=4096-8+split;
+        put(base+56,address+BigInt(start));put(at(0x5000n)+(Number(address>>12n&511n)+1)*8,0n);
+        const wanted={state:cpu(),bytes:image(),result:split?14n<<3n|3n:1n,write:!!meta.store&&!split};
+        if(!split) {
+          const offset=128+meta.xmm*16+meta.high*8;
+          if(meta.store)wanted.bytes.writeBigUInt64LE(v.getBigUint64(base+offset,true),payload+start-code);
+          else wanted.state.writeBigUInt64LE(v.getBigUint64(payload+start,true),offset);
+          wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
+        }
+        compare(cut,wanted,`${form}: exact half extent/split ${split}`,dispatch);
+        if(split){assert.equal(v.getUint32(port+24,true),14);assert.equal(v.getBigUint64(port+16,true),address+4096n);}
+        ++halfModels;
+      }
+    }
     for(let row=0;row<meta.native;++row) {
       const r=records.subarray(row*stride,(row+1)*stride);
       for(const dispatch of [false,true])for(const rf of [0n,0x10000n]) {
@@ -107,7 +127,7 @@ try {
       compare(cut,{state:cpu(),bytes:image(),result:2n},`${form}: whole operand waits`,dispatch);++waits;
       v.setUint32(dir+page*32+16,1,true);compare(cut,expected(r,meta),`${form}: same instruction retries`,dispatch);++waits;
     }
-    if(form>=100)aliases+=meta.native;
+    if(form>=100 && form<108)aliases+=meta.native;
     for(const badPort of [port+1,base,base+8,base+1248,data.length-24,-1]) {
       reset(source,meta,first,0);compare((state)=>cut(state,badPort,entry,v.getUint32(rows+20,true)),{state:cpu(),bytes:image(),result:6n},`${form}: private port`);++refusals;
     }
@@ -125,9 +145,13 @@ try {
   assert.equal(cc.compiler_open_pages(input,1,0xffffffff81204000n,9n),0);
   assert.equal(cc.compiler_emit(0xffffffff81204dc2n,8,output,65536,report),0);
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),0);
+  cold.fill(0x90,input,input+4096);cold.set([0x0f,0x16,0x05,0x88,0xb8,0,0],input+0x51);
+  assert.equal(cc.compiler_open_pages(input,1,0x7ff37faf2000n,9n),0);
+  assert.equal(cc.compiler_emit(0x7ff37faf2051n,8,output,65536,report),0,'exact measured MOVHPS gate');
+  assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),8);
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stableIndependentNativeObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
-    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,nativeXmmOnlyObservations:aliases,
+    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,nativeXmmOnlyObservations:aliases,exactHalfExtentModels:halfModels,
     shippedGate:'common C compilation accepted; not executed by this fixture',
     oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or SIMD arithmetic',
     linuxBoot:'not-tested'}));

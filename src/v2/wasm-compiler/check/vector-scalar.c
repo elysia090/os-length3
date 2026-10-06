@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "../src/cut-internal.h"
 #include "segment-admission.h"
 #include <machine/state.h>
 #include <machine/memory.h>
@@ -62,8 +63,10 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
     int status=fwrite(data,1u,bytes,file)==bytes?0:-1; if(fclose(file))status=-1; return status;
 }
 /* All 16 GPRs in both directions/widths; six address topologies; both
- * memory MOVQ encodings; low/high/aliased XMM-only MOVQ encodings. */
-typedef struct { pl_u32 kind,store,reg,width,vector,target,source,general; } form_info;
+ * memory MOVQ encodings; low/high/aliased XMM-only MOVQ encodings;
+ * four selected-half families, both directions and all six memory topologies. */
+enum { SCALAR_FORMS=156u };
+typedef struct { pl_u32 kind,store,reg,width,vector,target,source,general,half,high; } form_info;
 static pl_u32 encoding(pl_u32 form,form_info *info)
 {
     *info=(form_info){0}; pl_u32 at=0u,rex,opcode,modrm;
@@ -78,7 +81,7 @@ static pl_u32 encoding(pl_u32 form,form_info *info)
         source[at++]=(pl_u8)(0xc0u|((info->vector&7u)<<3u)|(info->general&7u));
         return at;
     }
-    if(form>=100u) {
+    if(form>=100u && form<108u) {
         static const pl_u32 pairs[][2]={{9u,11u},{0u,15u},{15u,0u},{9u,9u}};
         info->reg=1u;info->width=64u;info->target=pairs[form%4u][0];info->source=pairs[form%4u][1];
         pl_u32 field=form<104u?info->target:info->source,rm=form<104u?info->source:info->target;
@@ -87,13 +90,19 @@ static pl_u32 encoding(pl_u32 form,form_info *info)
         source[at++]=(pl_u8)(form<104u?0x7eu:0xd6u);
         source[at++]=(pl_u8)(0xc0u|((field&7u)<<3u)|(rm&7u));return at;
     }
-    info->kind=1u+(form<88u?(form-64u)/4u:(form-88u)/2u);
-    info->store=form%2u;info->width=form>=88u || ((form-64u)%4u)>=2u?64u:32u;info->vector=9u;
+    if(form>=108u) {
+        pl_u32 local=form-108u,family=local/12u;
+        info->half=1u;info->high=family>=2u;info->kind=1u+(local%12u)/2u;
+        info->store=local%2u;info->width=64u;info->vector=9u;
+    } else info->kind=1u+(form<88u?(form-64u)/4u:(form-88u)/2u);
+    if(!info->half) {info->store=form%2u;info->width=form>=88u || ((form-64u)%4u)>=2u?64u:32u;info->vector=9u;}
     if(info->kind==1u)source[at++]=0x67u;
-    source[at++]=(pl_u8)(form>=88u&&!info->store?0xf3u:0x66u);
-    rex=0x44u|(form<88u&&info->width==64u?8u:0u)|(info->kind==3u?1u:0u);
+    if(!info->half || (form-108u)/12u%2u)
+        source[at++]=(pl_u8)(!info->half && form>=88u&&!info->store?0xf3u:0x66u);
+    rex=0x44u|(!info->half&&form<88u&&info->width==64u?8u:0u)|(info->kind==3u?1u:0u);
     source[at++]=(pl_u8)rex;source[at++]=0x0fu;
-    opcode=form>=88u?(info->store?0xd6u:0x7eu):(info->store?0x7eu:0x6eu);source[at++]=(pl_u8)opcode;
+    opcode=info->half?(info->high?0x16u:0x12u)+info->store
+        :form>=88u?(info->store?0xd6u:0x7eu):(info->store?0x7eu:0x6eu);source[at++]=(pl_u8)opcode;
     modrm=1u<<3u;
     if(info->kind==1u)source[at++]=(pl_u8)(modrm|7u);
     else if(info->kind==2u) {source[at++]=(pl_u8)(modrm|0x44u);source[at++]=0x24u;source[at++]=12u;}
@@ -107,7 +116,7 @@ static int admission(void)
 {
     pl_u8 page[4096]; pl_x86_map map={page,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
     pl_x86_image image={&map,1u,0u,map.address}; wasm_cut_options options={map.address,8u,sizeof module};
-    for(pl_u32 form=0u;form<108u;++form) {
+    for(pl_u32 form=0u;form<SCALAR_FORMS;++form) {
         form_info info;
         memset(source,0x90,sizeof source);pl_u32 size=encoding(form,&info);
         memset(page,0x90,sizeof page);memcpy(page+1u,source,size);
@@ -135,6 +144,27 @@ static int admission(void)
                 || emitted!=77u || memcmp(&report,&old,sizeof report))return -1;
         for(pl_u32 j=0u;j<sizeof module;++j)if(module[j]!=0xa5u)return -1;
     }
+    /* Typed descriptors must not admit a wider read, a second memory operand,
+     * an invented alignment requirement or a different register binding. Bit
+     * 32 alone selects another valid half, so it is not a malformed descriptor. */
+    pl_u32 rejected=0u;
+    for(pl_u32 form=108u;form<SCALAR_FORMS;form+=12u) {
+        form_info info;memset(source,0x90,sizeof source);(void)encoding(form,&info);
+        memcpy(page,source,sizeof page);pl_x86_instruction instruction;
+        if(pl_x86_decode_profile(&image,map.address,&instruction)
+                || !cut_vector_scalar_supported(&instruction))return -1;
+        for(pl_u32 bit=0u;bit<64u;++bit)if(bit!=32u) {
+            pl_x86_instruction changed=instruction;changed.machine_argument^=1ull<<bit;
+            if(cut_vector_scalar_supported(&changed))return -1;
+            ++rejected;
+        }
+        pl_x86_instruction changed=instruction;changed.operands[1].bits=128u;
+        if(cut_vector_scalar_supported(&changed))return -1;
+        ++rejected;changed=instruction;changed.flags|=PL_X86_INSTRUCTION_LOCKED;
+        if(cut_vector_scalar_supported(&changed))return -1;
+        ++rejected;
+    }
+    printf("selected-half typed descriptor refusals: %u\n",rejected);
     return 0;
 }
 int main(int argc,char **argv)
@@ -153,7 +183,7 @@ int main(int argc,char **argv)
         MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0);
     if(code==MAP_FAILED || ram==MAP_FAILED)return 1;
     pl_u64 seed=0x2352250940811235ull;int status=1;pl_u32 observations=0u,faults=0u;
-    for(pl_u32 form=0u;form<108u;++form) {
+    for(pl_u32 form=0u;form<SCALAR_FORMS;++form) {
         form_info info;
         memset(source,0x90,sizeof source);pl_u32 size=encoding(form,&info);
         pl_x86_map map={source,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
@@ -180,6 +210,7 @@ int main(int argc,char **argv)
             state->rflags=0x202u|(random_word(&seed)&0xcd5u);
             pl_u64 operand=phase>=1u && phase<=3u?0x12341000ull-info.width/16u:phase==5u?0x8000000000000000ull
                 :phase==6u?0x12343000u:phase>=8u?0x12340200u+(phase-8u):0x12340200u;
+            if(info.half && phase>=8u)operand=0x12341000ull-(phase-7u);
             state->registers[4u]=0x12341c00u;
             if(info.kind==1u)state->registers[7u]=operand;
             else if(info.kind==2u)state->registers[4u]=operand-12u;
@@ -231,21 +262,23 @@ int main(int argc,char **argv)
                 fprintf(stderr,"vector partial/unrelated RAM write %u/%u\n",form,row);goto finish;
             }
             if(!trapped) {
-                pl_u64 input=form>=100u?state->xmm[info.source*2u]:info.store?state->xmm[info.vector*2u]
+                pl_u64 input=form>=100u && form<108u?state->xmm[info.source*2u]:info.store?state->xmm[info.vector*2u+info.high]
                     :info.reg?state->registers[info.general]:record->old_low;
                 if(info.width==32u)input&=0xffffffffu;
                 if(info.store) {
                     if((info.reg?record->after.registers[info.general]:record->new_low&(info.width==32u?0xffffffffu:~0ull))!=input)goto finish;
                 } else {
-                    pl_u32 target_index=form>=100u?info.target:info.vector;
-                    if(record->after.xmm[target_index*2u]!=input || record->after.xmm[target_index*2u+1u])goto finish;
+                    pl_u32 target_index=form>=100u && form<108u?info.target:info.vector;
+                    if(record->after.xmm[target_index*2u+info.high]!=input
+                            || record->after.xmm[target_index*2u+(1u-info.high)]
+                                !=(info.half?state->xmm[target_index*2u+(1u-info.high)]:0u))goto finish;
                 }
             }
             ++observations;
         }
         char json[384];int n=snprintf(json,sizeof json,
-            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":64,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"width\":%u,\"gpr\":%u,\"xmm\":%u}\n",
-            size,sizeof(machine_state),sizeof(observation),info.kind,info.store,info.reg,info.width,info.general,info.vector);
+            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":64,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"width\":%u,\"gpr\":%u,\"xmm\":%u,\"selectedHalf\":%u,\"high\":%u}\n",
+            size,sizeof(machine_state),sizeof(observation),info.kind,info.store,info.reg,info.width,info.general,info.vector,info.half,info.high);
         if(n<1 || (size_t)n>=sizeof json || save(directory,form,"json",json,(size_t)n)
             || save(directory,form,"source-page",source,sizeof source) || save(directory,form,"cases",records,sizeof records)
             || (!observe_only && save(directory,form,"wasm",module,(size_t)emitted)))goto finish;

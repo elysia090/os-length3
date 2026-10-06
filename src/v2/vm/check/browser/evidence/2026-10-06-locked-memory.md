@@ -156,8 +156,10 @@ checks rerun with no recipe-override warning.
 See the [separate extended receipt](2026-10-06-locked-immediate-bit-green.json).
 Compiler is 453,250 bytes (+155), SHA-256
 `ae8a05c0e31e6f962f77965dae3872043a470a1b0f9cc944828268a912f037d0`;
-VM remains unchanged. The running frozen `f1ab0fe` job (PID 20464,
+VM remains unchanged. The completed frozen `f1ab0fe` job (PID 20464,
 `temp/locked-memory-1006/frozen`, warmCuts=64, unchanged quotas) contains the
 453,095-byte compiler, NOT this extension. It was neither restarted nor
-overwritten. No timing ratio, successful PID 1, shell or browser acceptance
+overwritten. It passed LOCK RMW and next refused MOVHPS; see the
+[completed receipt](2026-10-06-node-startup-movhps-red.json).
+No timing ratio, successful PID 1, shell or browser acceptance
 is inferred from these isolated checks.

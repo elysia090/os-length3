@@ -1,5 +1,26 @@
 # Remaining work — 2026-10-06
 
+Latest completed unchanged-bundle Node measurement (`f1ab0fe`, PID 20464
+completed): LOCK RMW passes. The next compiler -102 is `0f 16 05 88 b8 00 00`
+(MOVHPS xmm0,[RIP+0xb888]), RIP `0x7ff37faf2051`, after 189,152,720
+retirements / 99,217,996 admissions. Frozen VM/compiler are 70,499 / 453,095
+bytes, warmCuts=64 and unchanged quotas. Engine construction 321,690 ms,
+cold emission 273,294 ms, C execution 80,363 ms, supply 1,129 ms and total
+842,132 ms. The owner has 7,445,051 constructions / 7,444,310 evictions,
+741 live bodies / 262,093 witness bytes. Different work/clock calibration
+does not establish a speedup. See the
+[completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-movhps-red.json).
+Selected-half transfer is now locally green through the exact eight-byte C
+access, with no read/materialization of the untouched XMM half. There are
+156 native/cold parity checks / 9,984 unchanged native observations, direct
+and C-dispatch comparisons, 260 descriptor refusals, 128 exact-extent models,
+full native compiler/CLI and scoped sanitizers. VM unchanged at 70,499 /
+compiler 453,522 bytes. The separately frozen same-bundle run started
+11:30:28 JST, PID 7804 (`temp/half-vector-1006/frozen`, warmCuts=64, unchanged
+quotas). Obtain its completed next gate; this local green is not Linux passage.
+See [normal form and scope](../vm/check/browser/evidence/2026-10-06-selected-half.md).
+PID 1/root mount/shell/browser acceptance remain unachieved.
+
 The `5610a5f` separately frozen unchanged-bundle Node job completed (PID 15708,
 `temp/exchange-1006/frozen`, VM 70,499 / compiler 452,445 bytes, warmCuts=64,
 unchanged quotas). Register XCHG passes; the next compiler -102 is
@@ -22,15 +43,15 @@ resumes; SMP/MMIO/split-lock detection are not claimed. Compiler 453,095 bytes,
 VM unchanged at 70,499; this is NOT loaded in the completed run above.
 See [deduction, exact counts and scope](../vm/check/browser/evidence/2026-10-06-locked-memory.md).
 
-The `f1ab0fe` candidate is in a separately frozen same-bundle Node run
+The `f1ab0fe` candidate completed its separately frozen same-bundle Node run
 (PID 20464, `temp/locked-memory-1006/frozen`, compiler 453,095 / VM 70,499
-bytes, warmCuts=64, unchanged quotas). Obtain its completed next gate before
-claiming Linux passage. A later nearby immediate LOCK-bit decoder entrance
+bytes, warmCuts=64, unchanged quotas); its exact next gate is recorded above.
+A later nearby immediate LOCK-bit decoder entrance
 is separately green: 4,608 native/profile descriptor checks, 118 fresh
 optimized-ELF proofs/native-cold parity emissions, 60,416 native success /
 59,904 protection-fault observations and 120,320 C-dispatch comparisons,
 full common-x86/compiler/CLI checks and scoped sanitizers. Compiler 453,250
-bytes, VM unchanged; it is NOT loaded in the active frozen job. See the same
+bytes, VM unchanged; it was NOT loaded in that completed frozen job. See the same
 [derivation and extended receipt](../vm/check/browser/evidence/2026-10-06-locked-memory.md#immediate-bit-index-closes-the-common-decoder-entrance).
 
 Later reflexive XCHG normalization is locally green but NOT loaded there:
@@ -78,8 +99,8 @@ do not establish an elapsed-ratio speedup. See the
 [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-fs-red.json).
 PID 21444 completed; no retained browser Worker or staged asset was replaced.
 
-Immediate order: retain the active frozen LOCK run's completed next actual
-gate, then make that exact common-C boundary red. Do not substitute the later
+Immediate order: obtain the frozen selected-half run's next actual gate,
+then close that common C boundary. Do not substitute the later
 immediate-bit local green for a completed Linux measurement.
 XCHG widths/aliases/current SSA
 values now close in the common pure lowering without a host interpreter.

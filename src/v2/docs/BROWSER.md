@@ -1,5 +1,23 @@
 # Browser projection of OS Length3 Linux
 
+Latest completed same-bundle Node measurement (`f1ab0fe`, PID 20464 completed):
+LOCK RMW passes; next compiler -102 is `0f 16 05 88 b8 00 00`
+(MOVHPS xmm0,[RIP+0xb888]) at `0x7ff37faf2051`, after 189,152,720
+retirements / 99,217,996 admissions. Frozen VM/compiler 70,499 / 453,095
+bytes; warmCuts=64 and quotas unchanged. Engine construction 321,690 ms,
+cold emission 273,294 ms, C execution 80,363 ms, supply 1,129 ms, total
+842,132 ms. Different work/clock calibration is not a paired speedup.
+See the [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-movhps-red.json).
+The eight-byte selected-half transfer is locally green without accessing the
+other half: 156 native/cold parity checks, 9,984 unchanged native observations
+and direct/C-dispatch comparisons, 128 exact-extent models, full compiler/CLI
+and scoped sanitizers. Frozen VM/compiler 70,499 / 453,522 bytes are in the
+new same-bundle job (PID 7804, started 11:30:28 JST, warmCuts=64, quotas
+unchanged). Its completed gate is pending; local green is not Linux passage.
+See [derivation and scope](../vm/check/browser/evidence/2026-10-06-selected-half.md).
+PID 1, root mount, shell/tooling and browser acceptance remain unachieved.
+The native publication, UI and retained browser Workers/staged assets remain unchanged.
+
 Latest completed same-bundle measurement (`5610a5f`, PID 15708 completed):
 register XCHG passes; next compiler -102 is `f0 48 09 14 c8`
 (LOCK OR qword [RAX+RCX*8],RDX), RIP `0x7fc71de30801`, after 181,874,281
@@ -18,12 +36,12 @@ It reuses reserve -> SSA -> commit without adding an atomic-op interpreter
 or VM/ABI state. Compiler 453,095 bytes, VM unchanged at 70,499; not loaded
 in the completed run above. See [scope and derivation](../vm/check/browser/evidence/2026-10-06-locked-memory.md).
 
-That candidate is now in frozen same-bundle job `f1ab0fe` (PID 20464,
+That candidate completed frozen same-bundle job `f1ab0fe` (PID 20464,
 compiler 453,095 / VM 70,499 bytes, warmCuts=64 and unchanged quotas).
 A later nearby immediate LOCK-bit entrance is independently green, with
 4,608 exact common-x86/profile descriptor checks, 118 native/cold parity
 emissions and 120,320 C-dispatch comparisons. Compiler 453,250 bytes,
-VM unchanged; NOT loaded in that active job. Its normal form and precise
+VM unchanged; NOT loaded in that completed job. Its normal form and precise
 counts are in the same evidence. These are not browser acceptance.
 
 Register XCHG is simultaneous SSA substitution, with

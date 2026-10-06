@@ -64,6 +64,10 @@ typedef struct {
  * operands carry an already-truncated offset and a segment role; the same C
  * provider adds the full-width hidden base before ordinary linear preflight.
  * Neither generated code nor the host keeps a second copy of that base.
+ * Legacy MOVLPS/MOVLPD/MOVHPS/MOVHPD transfers access exactly eight bytes.
+ * Only the selected XMM half is read/stored; the other half is neither
+ * materialized nor zeroed. Their control/fault boundary is the same SSE
+ * guard and machine.access transaction as MOVD/MOVQ, not read_pair.
  * REP MOVS is a one-instruction Wasm loop through the same access boundary.
  * Completed elements publish only RCX/RSI/RDI at a return, while RIP and
  * retirement stay unchanged until completion. An element's load precedes its
