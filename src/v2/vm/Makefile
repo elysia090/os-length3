@@ -3,7 +3,7 @@ AR ?= ar
 .DEFAULT_GOAL := all
 CFLAGS ?= -O2
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
-INCLUDES = -Iinclude -I../support/include -I../machine-abi/include
+INCLUDES = -Iinclude -I../support/include -I../machine-abi/include -I../artifact/include
 BUILD ?= build
 WASM_OUTPUT ?= $(BUILD)/vm.wasm
 WASM_CC ?= clang
@@ -35,15 +35,38 @@ WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 WASM_FLAGS += -Wl,--export=vm_entry_abi
 WASM_FLAGS += -Wl,--export=vm_source_demands,--export=vm_source_admissions,--export=vm_run_interrupted
 WASM_FLAGS += -Wl,--export=vm_run_source
+WASM_FLAGS += -Wl,--export=vm_directory_bind,--export=vm_directory_query,--export=vm_directory_request
+WASM_FLAGS += -Wl,--export=vm_directory_node_commit,--export=vm_directory_object_commit
+WASM_FLAGS += -Wl,--export=vm_directory_cancel_request,--export=vm_directory_status
 ifeq ($(WASM_PROFILE),1)
 WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile
 endif
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
 SOURCES += core/system.c
+SOURCES += core/directory.c
+include ../artifact/sources.mk
+ARTIFACT_PROVIDER_SOURCES = $(addprefix ../artifact/,$(ARTIFACT_INDEX_SOURCES)) ../support/src/sha256.c
+WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
 .PHONY: system-check
+.PHONY: directory-check
+.PHONY: artifact-dependency directory-sanitizer-check
+artifact-dependency:
+	$(MAKE) -C ../artifact all
+check: directory-check
+directory-check: $(BUILD)/directory-check
+	$(BUILD)/directory-check
+../artifact/build/libartifact.a: | artifact-dependency
+$(BUILD)/directory-check: check/directory.c $(BUILD)/libvm.a ../artifact/build/libartifact.a ../support/build/libsupport.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a ../artifact/build/libartifact.a ../support/build/libsupport.a -o $@
+directory-sanitizer-check: $(BUILD)/directory-sanitizer-check
+	$(BUILD)/directory-sanitizer-check
+$(BUILD)/directory-sanitizer-check: check/directory.c core/directory.c $(ARTIFACT_PROVIDER_SOURCES) \
+	include/vm/directory.h ../artifact/include/artifact/resource.h | $(BUILD)
+	$(CC) -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all \
+		$(WARN) $(INCLUDES) check/directory.c core/directory.c $(ARTIFACT_PROVIDER_SOURCES) -o $@
 .PHONY: segment-address-check
 check: segment-address-check
 segment-address-check: $(BUILD)/segment-address-check
@@ -70,13 +93,15 @@ $(WASM_OUTPUT): core/system.c include/vm/system.h ../machine-abi/include/machine
 # The provider shares ordinary machine memory with generated functions. It has
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
 wasm: $(WASM_OUTPUT)
+$(WASM_OUTPUT): $(WASM_SOURCES) Makefile ../artifact/sources.mk \
+	$(wildcard ../artifact/include/artifact/*.h ../support/include/support/*.h include/vm/*.h)
 
 $(WASM_OUTPUT): wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c include/vm/supply.h core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c include/vm/msr.h ../machine-abi/include/machine/msr.h core/exception.c include/vm/exception.h core/source.c include/vm/source.h core/memory-internal.h core/segments-internal.h \
 	include/vm/memory.h include/vm/mmu.h include/vm/boot.h include/vm/execution.h ../support/include/support/types.h \
 	../machine-abi/include/machine/state.h ../machine-abi/include/machine/memory.h \
 	include/vm/segments.h include/vm/tables.h include/vm/control.h include/vm/registers.h ../machine-abi/include/machine/segments.h \
 	../machine-abi/include/machine/result.h ../machine-abi/include/machine/entry.h | $(BUILD)
-	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c core/system.c -o $@
+	$(WASM_CC) $(WASM_FLAGS) $(WARN) $(INCLUDES) $(WASM_SOURCES) -o $@
 
 $(BUILD):
 	mkdir -p $@

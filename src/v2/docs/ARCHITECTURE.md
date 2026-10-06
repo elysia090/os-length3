@@ -104,6 +104,16 @@ startup checker and must not be enabled as a fallback. Retiring them requires
 reconnecting their consumers to the modern C boundaries, not silently dropping
 storage validation or substituting an interpreter.
 
+The modern C VM now links the existing Artifact index/object reader for a
+supervisor-selected projection root. Root -> <=4 KiB authenticated path ->
+one role/generation/size-checked resource -> exact object-byte verification
+has one C owner; web transports only opaque digest/extent/ticket requests.
+The reader retains 304 bytes, not an opened directory. A loaded module still
+requires ordinary engine validation and independent compiler/source/MMU/table
+admission. Root selection/authentication, whole-ELF projection production,
+encrypted/erasure delivery and the Linux startup caller are not completed by
+this loader fixture. See [scope](../vm/check/browser/evidence/2026-10-06-directory.md).
+
 ## Verification
 
 Each moved source has one owner and one archive member. Native postlink and

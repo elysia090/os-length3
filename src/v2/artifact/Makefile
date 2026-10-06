@@ -5,12 +5,8 @@ DEPFLAGS = -MMD -MP
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 BUILD ?= build
 INCLUDES = -Iinclude -I../support/include
-SOURCES = src/index.c src/object.c src/root.c src/resource.c src/immutable.c \
-	src/share.c src/payload.c src/derive.c src/layout.c src/factor.c \
-	src/factor-index.c src/factor-codec.c src/archive.c src/rank-map.c \
-	src/future.c src/complete.c src/namespace.c
-
-SOURCES += src/program.c src/executable.c
+include sources.mk
+SOURCES = $(ARTIFACT_SOURCES)
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 DEPS = $(OBJECTS:.o=.d)
 
@@ -36,8 +32,10 @@ $(BUILD)/%.o: src/%.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(DEPFLAGS) $(INCLUDES) \
 		-ffreestanding -c $< -o $@
 
-$(BUILD)/libartifact.a: $(OBJECTS) | ../support/build/libsupport.a
-	$(AR) rcs $@ $^
+$(BUILD)/libartifact.a: $(OBJECTS) Makefile sources.mk | ../support/build/libsupport.a
+	$(RM) $@.tmp
+	$(AR) rcs $@.tmp $(OBJECTS)
+	mv $@.tmp $@
 
 $(BUILD)/artifact-measure-root: cli/measure-root.c $(BUILD)/libartifact.a ../support/build/libsupport.a | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/measure-root.c \

@@ -1,5 +1,21 @@
 # Browser projection of OS Length3 Linux
 
+Latest completed `96614e6` same-bundle Node run (child 25728 / exec 19431 ended):
+265,700,872 retired / 149,484,339 admissions. HLT at `0xffffffff813efa53`
+now retires once, advances to `0xffffffff813efa54` and yields HALT/0 exactly.
+s6 Broken pipe / timeout and `terminal remains down` still precede it.
+Cold 599,436 ms / engine 722,488 ms / C execution 157,043 ms,
+total 1,767,473 ms. Same limits, not a speedup or browser/shell acceptance.
+See [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-halt.json).
+
+The separate newer C Artifact reader consumes bounded authenticated paths
+and verifies one requested object without a host canonical-row parser or
+whole-directory reconstruction. A C-emitted module has passed that boundary
+and C source/MMU/table execution. Native index/writer/VM checks and the exact
+reader's native ASan/UBSan pass; this is fixture integration, not a published
+Linux projection or managed encrypted storage. It is NOT in the completed
+run above. See [receipt/scope](../vm/check/browser/evidence/2026-10-06-directory.md).
+
 Completed opt-in `4c344cd` Node profile (child 13512 / exec 60635 ended):
 266,180,192 retired / 150,000,000 admissions; unchanged admission cap reached.
 s6-ftrigrd reports Broken pipe and no terminal is proven. 85,581,906 cold

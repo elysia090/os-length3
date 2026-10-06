@@ -1,0 +1,16 @@
+{
+  "format": "c-artifact-directory-provider-v1",
+  "status": "pass",
+  "objects": 6,
+  "nodeReads": 18,
+  "objectReads": 6,
+  "bytesRead": 49350,
+  "fixtureRows": 3000,
+  "queriedRows": 6,
+  "maximumPathNodes": 3,
+  "checks": 73,
+  "compiledRetired": 3,
+  "authority": "fixture root selected by the test; release-root authentication and full ELF closure not established",
+  "guestExecution": "exact verified C-emitted Wasm via C source/MMU/table dispatcher",
+  "linuxBoot": "not-tested"
+}

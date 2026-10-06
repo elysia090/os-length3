@@ -23,6 +23,21 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Latest completed `96614e6` same-bundle Node run: 265,700,872 retired /
+149,484,339 admissions. HLT is now an exact retired halt at the following
+RIP `0xffffffff813efa54`, not compiler -102. s6 still reports Broken pipe /
+timeout and terminal remains down. Total 1,767,473 ms; cold/engine remain
+599,436 / 722,488 ms. No shell/browser acceptance or speedup.
+See [receipt](../vm/check/browser/evidence/2026-10-06-node-startup-halt.json).
+
+New separate C Artifact loader: the existing index and object reader now
+serve the modern VM, without a new index/hash implementation or host row
+parser. 304-byte owner, <=4 KiB paths, exact role/generation/cap/payload
+verification and non-reused tickets. Native 3000 paths, reader ASan/UBSan,
+C-Wasm verified-module -> source/MMU/table execution and existing regressions
+pass. This is NOT a shipped Linux projection or the startup path yet.
+See [scope and next connection](../vm/check/browser/evidence/2026-10-06-directory.md).
+
 Completed `4c344cd` opt-in Node profile: 266,180,192 retired /
 150,000,000 admissions, stopped at the unchanged admission bound, not boot
 acceptance. s6-ftrigrd reports Broken pipe; no working terminal. Of 85,581,906
@@ -136,6 +151,11 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    coverage and atomic publication outside in-flight execution.
    Raw-page diagnostics neither authenticate release nor prove total closure.
    No fabricated ELF, guessed continuation or execution fallback.
+   Connect the existing compiler-produced module/page projection to the C
+   Artifact path above, with source span/binding/CPU-proof admission carried
+   from accepted optimized ELF. Do not populate it from observed RIPs and call
+   that complete closure. C authenticated lookup should replace repeated cold
+   reconstruction of already compiled transfers; it is not a second compiler.
 
 4. Retire remaining legacy consumers.
    `web/vm.js`, old Worker/Storage callers and old runtime catalog are not

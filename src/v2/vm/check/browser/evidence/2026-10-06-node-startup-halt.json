@@ -1,0 +1,797 @@
+{
+  "format": "browser-bzimage-startup-v1",
+  "status": "pass",
+  "linuxBoot": "not-achieved",
+  "decompressedOutput": {
+    "entry": "0x1e23d31",
+    "comparedBytes": 14622864,
+    "pages": 3571,
+    "sha256": "6cf2f7d852ac0ca21cd1332425af772065e9e9795e4de813f877c95e2798fbe9",
+    "gzipCrc32": 380732796,
+    "oracle": "independent gzip CRC/ISIZE verified; exact per-page SHA-256 comparison before ELF PT_LOAD moves",
+    "guestCrc": "PREBOOT uses raw inflate; this is independent output validation, not a guest CRC check"
+  },
+  "linuxEntry": {
+    "entry": "0x14015e4",
+    "instructions": 5,
+    "nextRip": "0x14015f7",
+    "retired": 129061782
+  },
+  "retired": 265700872,
+  "modules": 16851664,
+  "admissions": 149484339,
+  "liveSlots": 64,
+  "manualBranchEntries": 0,
+  "independentStateCheckpoint": 86,
+  "relocationRegisterCheckpoint": 1264,
+  "commandWitness": "fixed 86-instruction prefix; variable command parser count observed, not independently certified",
+  "immutableImage": {
+    "address": "0x30000000",
+    "bytes": 89878528
+  },
+  "nextRip": "0xffffffff813efa54",
+  "nextGate": {
+    "kind": "halted",
+    "result": "4",
+    "entry": "0xffffffff813efa54",
+    "admittedEntry": "0xffffffff813efa53",
+    "completed": 1,
+    "sourceRetired": 1,
+    "flags": "0x246",
+    "awaiting": "accepted machine wake event; this diagnostic has no idle-time transport"
+  },
+  "exceptions": [
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7f395f4fcded",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7f395f4ef000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7f395f4ef000"
+    },
+    {
+      "entry": "0x7fec522f0703",
+      "vector": 14,
+      "error": 7,
+      "address": "0x7fec5230d46c",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7fec5230d46c"
+    },
+    {
+      "entry": "0x7fec522f0ab1",
+      "vector": 14,
+      "error": 7,
+      "address": "0x55555cb401c4",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x55555cb401c4"
+    },
+    {
+      "entry": "0x7fec522b51dc",
+      "vector": 14,
+      "error": 7,
+      "address": "0x7fec5230c460",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7fec5230c460"
+    },
+    {
+      "entry": "0x7fec522b59e5",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7fec52299000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7fec52299000"
+    },
+    {
+      "entry": "0x7fd8486ba4cb",
+      "vector": 14,
+      "error": 6,
+      "address": "0x7fd8486ac000",
+      "deliveryResult": "0",
+      "nextRip": "0xffffffff810009da",
+      "cr2": "0x7fd8486ac000"
+    }
+  ],
+  "repeatAdmission": "completed through one pinned module; all copied bytes checked through C-MMU views",
+  "firstRepeatWait": {
+    "address": "0x1e283f8",
+    "bytes": 8,
+    "access": 18
+  },
+  "pageSupplies": 5765,
+  "sourceExtentBytes": 3960320,
+  "quantumYields": 10549,
+  "clockEvents": 314464,
+  "boundaryClockEvents": 115223,
+  "deferredClockPolls": 0,
+  "externalInterrupts": 32469,
+  "postCode": 0,
+  "console": {
+    "acceptedBytes": 9658,
+    "capacity": 16384,
+    "text": "[    0.000000] unchecked MSR access error: WRMSR to 0x8b (tried to write 0x0000000000000000) at rIP: 0xffffffff810414b1 (intel_collect_cpu_info+0x1d/0x4d)\r\n[    0.000000] Call Trace:\r\n[    0.000000]  <TASK>\r\n[    0.000000]  ? _einittext+0x5db5e9/0x75c6d9\r\n[    0.000000]  ? get_microcode_blob+0x2a/0x161\r\n[    0.000000]  ? early_idt_handler_common+0x2f/0x3a\r\n[    0.000000]  ? load_ucode_intel_bsp+0x1f/0xb1\r\n[    0.000000]  ? x86_64_start_kernel+0xb7/0xcd\r\n[    0.000000]  ? common_startup_64+0xbd/0xbf\r\n[    0.000000]  </TASK>\r\n[    0.000000] unchecked MSR access error: RDMSR from 0x8b at rIP: 0xffffffff810414be (intel_collect_cpu_info+0x2a/0x4d)\r\n[    0.000000] Call Trace:\r\n[    0.000000]  <TASK>\r\n[    0.000000]  ? _einittext+0x5db5e9/0x75c6d9\r\n[    0.000000]  ? get_microcode_blob+0x2a/0x161\r\n[    0.000000]  ? early_idt_handler_common+0x2f/0x3a\r\n[    0.000000]  ? load_ucode_intel_bsp+0x1f/0xb1\r\n[    0.000000]  ? x86_64_start_kernel+0xb7/0xcd\r\n[    0.000000]  ? common_startup_64+0xbd/0xbf\r\n[    0.000000]  </TASK>\r\n[    0.000000] Linux version 7.2.7 (builder@build-host) (gcc (Alpine 15.2.0) 15.2.0, GNU ld (GNU Binutils) 2.45.1) #1 PREEMPT 1970-01-01 00:00:00 UTC\r\n[    0.000000] Command line: console=ttyS0 nokaslr memmap=0x55b7000$0x30000000 phram.phram=system,0x30000000,0x55b7000\r\n[    0.000000] x86/CPU: Model not found in latest microcode list\r\n[    0.000000] BIOS-provided physical RAM map:\r\n[    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009ffff]  System RAM\r\n[    0.000000] BIOS-e820: [mem 0x00000000000a0000-0x00000000000fffff]  device reserved\r\n[    0.000000] BIOS-e820: [mem 0x0000000000100000-0x0000000007ffffff]  System RAM\r\n[    0.000000] BIOS-e820: [gap 0x0000000008000000-0x000000002fffffff]\r\n[    0.000000] BIOS-e820: [mem 0x0000000030000000-0x00000000355b6fff]  device reserved\r\n[    0.000000] NX (Execute Disable) protection: active\r\n[    0.000000] APIC: Static calls initialized\r\n[    0.000000] user-defined physical RAM map:\r\n[    0.000000] user: [mem 0x0000000000000000-0x000000000009ffff]  System RAM\r\n[    0.000000] user: [mem 0x00000000000a0000-0x00000000000fffff]  device reserved\r\n[    0.000000] user: [mem 0x0000000000100000-0x0000000007ffffff]  System RAM\r\n[    0.000000] user: [gap 0x0000000008000000-0x000000002fffffff]\r\n[    0.000000] user: [mem 0x0000000030000000-0x00000000355b6fff]  device reserved\r\n[    0.000000] DMI: not present or invalid.\r\n[    0.000000] tsc: Fast TSC calibration using PIT\r\n[    0.000000] tsc: Detected 999.937 MHz processor\r\n[    0.013211] last_pfn = 0x8000 max_arch_pfn = 0x400000000\r\n[    0.014735] MTRRs disabled (not available)\r\n[    0.015833] x86/PAT: PAT not supported by the CPU.\r\n[    0.018418] x86/PAT: Configuration [0-7]: WB  WT  UC- UC  WB  WT  UC- UC  \r\n[    0.704232] RAMDISK: [mem 0x01e62000-0x01ec9fff]\r\n[    0.711170] No local APIC present\r\n[    0.711798] APIC: disable apic facility\r\n[    0.727054] APIC: Switched APIC routing to: noop\r\n[    0.730099] CPU topo: Max. logical packages:   1\r\n[    0.731424] CPU topo: Max. logical nodes:      1\r\n[    0.732353] CPU topo: Num. nodes per package:  1\r\n[    0.734277] CPU topo: Max. logical dies:       1\r\n[    0.735197] CPU topo: Max. dies per package:   1\r\n[    0.738441] CPU topo: Max. threads per core:   1\r\n[    0.739927] CPU topo: Num. cores per package:     1\r\n[    0.741176] CPU topo: Num. threads per package:   1\r\n[    0.742268] CPU topo: Allowing 1 present CPUs plus 0 hotplug CPUs\r\n[    0.749026] [gap 0x355b7000-0xffffffff] available for PCI devices\r\n[    0.751500] clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645519600211568 ns\r\n[    0.763747] Zone ranges:\r\n[    0.764671]   DMA      [mem 0x0000000000001000-0x0000000000ffffff]\r\n[    0.769118]   DMA32    [mem 0x0000000001000000-0x0000000007ffffff]\r\n[    0.771111]   Normal   empty\r\n[    0.772653] Movable zone start for each node\r\n[    0.773519] Early memory node ranges\r\n[    0.774217]   node   0: [mem 0x0000000000001000-0x000000000009ffff]\r\n[    0.776225]   node   0: [mem 0x0000000000100000-0x0000000007ffffff]\r\n[    0.778415] Initmem setup node 0 [mem 0x0000000000001000-0x0000000007ffffff]\r\n[    0.785370] On node 0, zone DMA: 1 pages in unavailable ranges\r\n[    0.806724] On node 0, zone DMA: 96 pages in unavailable ranges\r\n[    0.970120] Kernel command line: console=ttyS0 nokaslr memmap=0x55b7000$0x30000000 phram.phram=system,0x30000000,0x55b7000\r\n[    0.982455] Unknown kernel command line parameters \"nokaslr\", will be passed to user space.\r\n[    0.992081] printk: log buffer data + meta data: 131072 + 458752 = 589824 bytes\r\n[    1.000962] Dentry cache hash table entries: 16384 (order: 5, 131072 bytes, linear)\r\n[    1.006750] Inode-cache hash table entries: 8192 (order: 4, 65536 bytes, linear)\r\n[    1.021204] Built 1 zonelists, mobility grouping on.  Total pages: 32671\r\n[    1.023338] mem auto-init: stack:all(zero), heap alloc:off, heap free:off\r\n[    1.182767] SLUB: HWalign=32, Order=0-3, MinObjects=0, CPUs=1, Nodes=1\r\n[    1.256527] NR_IRQS: 4352, nr_irqs: 24, preallocated irqs: 16\r\n[    1.323542] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns\r\n[    1.372515] Console: colour dummy device 80x25\r\n[    1.384862] printk: legacy console [ttyS0] enabled\r\n[    1.724515] APIC disabled by BIOS\r\n[    1.749610] APIC: Keep in PIC mode(8259)\r\n[    1.757483] clocksource: tsc-early: mask: 0xffffffffffffffff max_cycles: 0x1cd3b700f24, max_idle_ns: 881590419145 ns\r\n[    1.772497] Calibrating delay loop (skipped), value calculated using timer frequency.. 1999.87 BogoMIPS (lpj=3999748)\r\n[    1.801797] Last level iTLB entries: 4KB 0, 2MB 0, 4MB 0\r\n[    1.812175] Last level dTLB entries: 4KB 0, 2MB 0, 4MB 0, 1GB 0\r\n[    1.821235] CPU: Intel 06/3a (family: 0x6, model: 0x3a, stepping: 0x9)\r\n[    1.839792] mitigations: Enabled attack vectors: SMT mitigations: off\r\n[    1.852169] Speculative Store Bypass: Vulnerable\r\n[    1.860339] Spectre V2 : Vulnerable\r\n[    1.863880] MDS: Vulnerable\r\n[    1.871756] VMSCAPE: Vulnerable\r\n[    1.875910] Spectre V1 : Vulnerable: __user pointer sanitization and usercopy barriers only; no swapgs barriers\r\n[    1.889606] x86/fpu: x87 FPU will use FXSAVE\r\n[    2.852017] pid_max: default: 32768 minimum: 301\r\n[    2.925221] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)\r\n[    2.936738] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)\r\n[    3.047566] VFS: Finished mounting rootfs on nullfs\r\n[    3.857065] Performance Events: unsupported CPU family 6 model 58 no PMU driver, software events only.\r\n[    3.914084] signal: max sigframe size: 1040\r\n[    4.125601] Memory: 114112K/130684K available (6275K kernel code, 814K rwdata, 1000K rodata, 7943K init, 260K bss, 15464K reserved, 0K cma-reserved)\r\n[    4.372228] devtmpfs: initialized\r\n[    4.850285] posixtimers hash table entries: 512 (order: 0, 4096 bytes, linear)\r\n[    4.876705] futex hash table entries: 256 (6144 bytes on 1 NUMA nodes, total 6 KiB, linear).\r\n[    5.231962] NET: Registered PF_NETLINK/PF_ROUTE protocol family\r\n[    6.837572] clocksource: Switched to clocksource tsc-early\r\n[   17.196949] NET: Registered PF_INET protocol family\r\n[   17.371344] IP idents hash table entries: 2048 (order: 2, 16384 bytes, linear)\r\n[   17.656755] tcp_listen_portaddr_hash hash table entries: 512 (order: 0, 4096 bytes, linear)\r\n[   17.684963] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)\r\n[   17.725718] TCP established hash table entries: 1024 (order: 1, 8192 bytes, linear)\r\n[   17.756166] TCP bind hash table entries: 1024 (order: 2, 16384 bytes, linear)\r\n[   17.782828] TCP: Hash tables configured (established 1024 bind 1024)\r\n[   17.844715] UDP hash table entries: 256 (order: 2, 16384 bytes, linear)\r\n[   17.980661] NET: Registered PF_UNIX/PF_LOCAL protocol family\r\n[   18.404723] platform rtc_cmos: registered fallback platform RTC device\r\n[   19.080314] Unpacking initramfs...\r\n[   19.227395] clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x1cd3b700f24, max_idle_ns: 881590419145 ns\r\n[   19.335838] clocksource: Switched to clocksource tsc\r\n[   20.567597] workingset: timestamp_bits=62 (anon: 57) max_order=15 bucket_order=0 (anon: 0)\r\n[   21.099637] squashfs: version 4.0 (2009/01/31) Phillip Lougher\r\n[   21.864795] Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled\r\n[   23.129695] serial8250: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A\r\n[   27.288769] pmd_set_huge: Cannot satisfy [mem 0x30000000-0x30200000] with a huge-page mapping due to MTRR override.\r\n[   30.367813] phram: system device: 0x55b7000 at 0x30000000 for erasesize 0x1000\r\n[   31.245571] NET: Registered PF_INET6 protocol family\r\n[   33.989351] Segment Routing with IPv6\r\n[   34.274714] In-situ OAM (IOAM) with IPv6\r\n[   34.542565] NET: Registered PF_PACKET protocol family\r\n[   34.674688] microcode: Current revision: 0x00000000\r\n[   44.657480] sched_clock: Marking stable (44236634742, 416635965)->(44813389343, -160118636)\r\n[   49.132265] Freeing initrd memory: 416K\r\n[   51.502370] Freeing unused kernel image (initmem) memory: 668K\r\n[   51.520125] Write protecting the kernel read-only data: 10240k\r\n[   52.362461] Freeing unused kernel image (text/rodata gap) memory: 1916K\r\n[   52.623242] Freeing unused kernel image (rodata/data gap) memory: 1048K\r\n[   52.647421] Run /init as init process\r\n[   89.596295] random: crng init done\r\ns6-ftrigrd: fatal: unable to sync with client: Broken pipe\r\ns6-rc-init: fatal: unable to supervise service directories in /run/s6-rc/servicedirs: Operation timed out\r\nOffline service transition failed; terminal remains down.\r\n",
+    "ownership": "bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation"
+  },
+  "rtcSeed": {
+    "utcSeconds": "1791271070",
+    "source": "explicit supervisor UTC snapshot; not authenticated network time"
+  },
+  "clockContract": "active C execution nanoseconds, guest clock requests plus safe cut-boundary poll each >=1 ms; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused",
+  "repeatComparedBytes": 3040256,
+  "bssComparedBytes": 98656,
+  "memsetComparedBytes": 131104,
+  "memsetReturns": 3,
+  "residentPages": 5778,
+  "descriptorCapacity": 8192,
+  "descriptorBytes": 393200,
+  "guestExecution": "C-Wasm table dispatcher/MMU",
+  "coldCompilation": "C-Wasm decoder/planner/emitter",
+  "guestMemoryCallback": "C-Wasm, not JavaScript",
+  "sourceProjection": "C-MMU borrowed page, no JS virtual-to-physical mapping",
+  "emittedBytes": 29833868986,
+  "copiedCodeBytes": 0,
+  "borrowedCodeBytes": 348769415168,
+  "engineReuse": {
+    "compilations": 16851664,
+    "hits": 68214241,
+    "entries": 733,
+    "quotaEvictions": 16850931,
+    "validatedDemands": 87988561,
+    "retainedModuleBytes": 261922,
+    "maximumEntries": 1024,
+    "maximumBytes": 262144
+  },
+  "compilerOutput": {
+    "initialPoisonBytes": 65616,
+    "clearedModuleBytes": 29833868650,
+    "clearedReportBytes": 6805272320,
+    "emissions": 85107344,
+    "refusalComparisons": 41439
+  },
+  "sourceProfile": null,
+  "warmCuts": 64,
+  "admissionUnit": "supervisor source query/bind; C warm admissions counted separately",
+  "sourceReuse": {
+    "hits": 64418434,
+    "misses": 85065905,
+    "warmAdmissions": 159887481,
+    "warmRuns": 85280493,
+    "warmCompleted": 95467491,
+    "capacity": 64,
+    "metadataBytes": 6888,
+    "sourcePayloadBytes": 0
+  },
+  "timingMs": {
+    "cold": 599436.3309990763,
+    "engine": 722487.86619996,
+    "execution": 157042.79349949735,
+    "supply": 2207.197999997244,
+    "admission": 42703.98060084222,
+    "elapsedCheck": 1767472.6496
+  },
+  "trace": [
+    {
+      "entry": "0xffffffff81084d0a",
+      "instructions": 2,
+      "next": "0xffffffff81084d0e",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81084d0e",
+      "instructions": 1,
+      "next": "0xffffffff81084d11",
+      "result": "1",
+      "rax": "0x80040",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81084d11",
+      "instructions": 2,
+      "next": "0xffffffff81084d15",
+      "result": "1",
+      "rax": "0x80040",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff81084d15",
+      "instructions": 1,
+      "next": "0xffffffff813efac8",
+      "result": "1",
+      "rax": "0x80040",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efac8",
+      "instructions": 1,
+      "next": "0xffffffff813efacf",
+      "result": "1",
+      "rax": "0xffffffff81a1c7c0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efacf",
+      "instructions": 1,
+      "next": "0xffffffff813efad2",
+      "result": "1",
+      "rax": "0xffffffff81a1c7c0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efad2",
+      "instructions": 1,
+      "next": "0xffffffff813efad5",
+      "result": "1",
+      "rax": "0x80000",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efad5",
+      "instructions": 2,
+      "next": "0xffffffff813efad9",
+      "result": "1",
+      "rax": "0x80000",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efad9",
+      "instructions": 1,
+      "next": "0xffffffff813efadf",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efadf",
+      "instructions": 2,
+      "next": "0xffffffff813efae3",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efae3",
+      "instructions": 1,
+      "next": "0xffffffff813efa9e",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efa9e",
+      "instructions": 1,
+      "next": "0xffffffff813efa41",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efa41",
+      "instructions": 1,
+      "next": "0xffffffff813efa47",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efa47",
+      "instructions": 2,
+      "next": "0xffffffff813efa52",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x46"
+    },
+    {
+      "entry": "0xffffffff813efa52",
+      "instructions": 1,
+      "next": "0xffffffff813efa53",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x246"
+    },
+    {
+      "entry": "0xffffffff813efa53",
+      "instructions": 1,
+      "next": "0xffffffff813efa54",
+      "result": "4",
+      "rax": "0x0",
+      "rcx": "0x2",
+      "rdx": "0x0",
+      "rdi": "0x0",
+      "flags": "0x246"
+    }
+  ],
+  "relocationTrace": [
+    {
+      "entry": "0x100029a",
+      "instructions": 1,
+      "next": "0x10002a1",
+      "result": "1",
+      "rax": "0x1e20d00",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1b41ff8",
+      "flags": "0x2",
+      "source": [
+        72,
+        141,
+        131,
+        0,
+        237,
+        45,
+        0
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x10002a1",
+      "instructions": 1,
+      "next": "0x1e20d00",
+      "result": "1",
+      "rax": "0x1e20d00",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1b41ff8",
+      "flags": "0x2",
+      "source": [
+        255,
+        224
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x1e20d00",
+      "instructions": 5,
+      "next": "0x1e20d17",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x302c",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e28400",
+      "flags": "0x2",
+      "source": [
+        49,
+        192,
+        72,
+        141,
+        61,
+        247,
+        118,
+        0,
+        0,
+        72,
+        141,
+        13,
+        80,
+        248,
+        1,
+        0,
+        72,
+        41,
+        249,
+        72,
+        193,
+        233,
+        3
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x1e20d17",
+      "instructions": 1,
+      "next": "0x1e20d1a",
+      "result": "5",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        243,
+        72,
+        171
+      ],
+      "rsp": "0x1e2c400"
+    },
+    {
+      "entry": "0x1e20d1a",
+      "instructions": 1,
+      "next": "0x1e25bd0",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        232,
+        177,
+        78,
+        0,
+        0
+      ],
+      "rsp": "0x1e2c3f8"
+    },
+    {
+      "entry": "0x1e25bd0",
+      "instructions": 1,
+      "next": "0x1e25bd1",
+      "result": "1",
+      "rax": "0x0",
+      "rcx": "0x0",
+      "rdx": "0x1e28010",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        85
+      ],
+      "rsp": "0x1e2c3f0"
+    },
+    {
+      "entry": "0x1e25bd1",
+      "instructions": 3,
+      "next": "0x1e25bdf",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x46",
+      "source": [
+        49,
+        246,
+        72,
+        141,
+        5,
+        118,
+        36,
+        0,
+        0,
+        186,
+        16,
+        0,
+        0,
+        0
+      ],
+      "rsp": "0x1e2c3f0"
+    },
+    {
+      "entry": "0x1e25bdf",
+      "instructions": 1,
+      "next": "0x1e25be0",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x46",
+      "source": [
+        83
+      ],
+      "rsp": "0x1e2c3e8"
+    },
+    {
+      "entry": "0x1e25be0",
+      "instructions": 2,
+      "next": "0x1e25beb",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        72,
+        141,
+        29,
+        217,
+        0,
+        0,
+        0,
+        72,
+        131,
+        236,
+        24
+      ],
+      "rsp": "0x1e2c3d0"
+    },
+    {
+      "entry": "0x1e25beb",
+      "instructions": 1,
+      "next": "0x1e25bf2",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e40560",
+      "flags": "0x2",
+      "source": [
+        72,
+        137,
+        5,
+        80,
+        36,
+        0,
+        0
+      ],
+      "rsp": "0x1e2c3d0"
+    },
+    {
+      "entry": "0x1e25bf2",
+      "instructions": 1,
+      "next": "0x1e25bf5",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x2",
+      "source": [
+        72,
+        137,
+        231
+      ],
+      "rsp": "0x1e2c3d0"
+    },
+    {
+      "entry": "0x1e25bf5",
+      "instructions": 1,
+      "next": "0x1e24700",
+      "result": "1",
+      "rax": "0x1e28050",
+      "rcx": "0x0",
+      "rdx": "0x10",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x2",
+      "source": [
+        232,
+        6,
+        235,
+        255,
+        255
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e24700",
+      "instructions": 5,
+      "next": "0x1e2470f",
+      "result": "1",
+      "rax": "0x1e2c3d0",
+      "rcx": "0x10",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x2",
+      "source": [
+        72,
+        137,
+        209,
+        72,
+        137,
+        248,
+        72,
+        141,
+        20,
+        23,
+        72,
+        133,
+        201,
+        116,
+        49
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e2470f",
+      "instructions": 4,
+      "next": "0x1e24730",
+      "result": "1",
+      "rax": "0x1e2c3d0",
+      "rcx": "0x0",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x46",
+      "source": [
+        72,
+        137,
+        209,
+        72,
+        41,
+        249,
+        131,
+        225,
+        1,
+        116,
+        22
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e24730",
+      "instructions": 1,
+      "next": "0x1e24733",
+      "result": "1",
+      "rax": "0x1e2c3d0",
+      "rcx": "0x0",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x46",
+      "source": [
+        64,
+        136,
+        48
+      ],
+      "rsp": "0x1e2c3c8"
+    },
+    {
+      "entry": "0x1e24733",
+      "instructions": 1,
+      "next": "0x1e24737",
+      "result": "1",
+      "rax": "0x1e2c3d2",
+      "rcx": "0x0",
+      "rdx": "0x1e2c3e0",
+      "rdi": "0x1e2c3d0",
+      "flags": "0x6",
+      "source": [
+        72,
+        131,
+        192,
+        2
+      ],
+      "rsp": "0x1e2c3c8"
+    }
+  ],
+  "providerBytes": 71079,
+  "compilerBytes": 456929,
+  "memoryBytes": 24707072,
+  "coldMemoryBytes": 0,
+  "compilerReservation": {
+    "staticBegin": 131072,
+    "arenaBegin": 516096,
+    "outputBytes": 65536,
+    "reportBytes": 80,
+    "vmMetadataBegin": 585728,
+    "guestArenaBegin": 991232
+  }
+}

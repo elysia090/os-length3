@@ -14,6 +14,7 @@
 #include <vm/exception.h>
 #include <vm/interrupt.h>
 #include <vm/source.h>
+#include <vm/directory.h>
 #include <machine/state.h>
 #include "../core/memory-internal.h"
 #include <stdint.h>
@@ -27,6 +28,7 @@ static pl_u32 segments_offset;
 static vm_boot boot;
 static vm_execution execution;
 static machine_activity activity;
+static vm_directory artifact_directory;
 static pl_u32 source_limit;
 static pl_u64 source_demands;
 static pl_u32 source_admissions, run_interrupted;
@@ -134,6 +136,7 @@ void vm_close(void)
     boot_projected = 0u;
     vm_execution_close(&execution);
     activity = (machine_activity){ MACHINE_ACTIVITY_RUNNING };
+    vm_directory_close(&artifact_directory);
     source_limit = 0u;
     source_demands=0u;source_admissions=run_interrupted=0u;
     run_source_rank=VM_SOURCE_ROWS;
@@ -313,6 +316,69 @@ static int execution_record(pl_u32 rows, pl_u32 bytes)
         && (!boot.header || (separate(rows,bytes,boot_header,boot_header_bytes)
             && separate(rows,bytes,boot_command,boot.command_bytes)));
 }
+
+/* Supervisor-only Artifact transport. The bytes are a bounded projection of
+ * an independently accepted root, not another executable authority. No guest
+ * module imports these APIs, and no ISA/compiler is linked into this owner. */
+static int directory_boundary(void)
+{
+    return state_offset && !delivery.stage && !table_frontier.stage
+        && !clock_owner.stage && !execution.continuation.slot
+        && !resident.reservation.parts && !vm_console_pending(&console_owner);
+}
+int vm_directory_bind(pl_u32 root_offset,pl_u64 generation,pl_u32 maximum_object_bytes)
+{
+    if (!directory_boundary() || !private_record(root_offset,PL_INDEX_REF_BYTES))
+        return VM_DIRECTORY_ERROR_INPUT;
+    if (generation!=resident.generation) return VM_DIRECTORY_ERROR_STALE;
+    pl_index_ref root;
+    if (pl_index_ref_read((const pl_u8 *)(uintptr_t)root_offset,&root)) {
+        vm_directory_close(&artifact_directory);return VM_DIRECTORY_ERROR_INPUT;
+    }
+    return vm_directory_open(&artifact_directory,&root,generation,maximum_object_bytes);
+}
+int vm_directory_query(pl_u64 generation,pl_u64 major,pl_u64 minor,pl_u32 expected_kind)
+{
+    if (!directory_boundary()) return VM_DIRECTORY_ERROR_BUSY;
+    if (generation!=resident.generation) return VM_DIRECTORY_ERROR_STALE;
+    return vm_directory_begin(&artifact_directory,generation,(pl_index_key){major,minor},expected_kind);
+}
+/* Transport DTO: generation, ticket, opaque digest[32], bytes, resource kind.
+ * DIRECTORY requests are existing index nodes; the selected resource follows.
+ * C already parsed/authenticated all canonical structure and rank selection. */
+int vm_directory_request(pl_u32 target,pl_u64 generation)
+{
+    if (!directory_boundary() || !private_record(target,56u)) return VM_DIRECTORY_ERROR_INPUT;
+    if (generation!=resident.generation || generation!=artifact_directory.generation)
+        return VM_DIRECTORY_ERROR_STALE;
+    pl_u32 stage=artifact_directory.stage;
+    if (stage!=VM_DIRECTORY_NODE && stage!=VM_DIRECTORY_OBJECT) return VM_DIRECTORY_ERROR_INPUT;
+    pl_u8 *request=(pl_u8 *)(uintptr_t)target;
+    const pl_u8 *digest=stage==VM_DIRECTORY_NODE ? artifact_directory.pending.digest
+        : artifact_directory.resource.object.digest;
+    vm_memory_store(request,generation,8u);vm_memory_store(request+8u,artifact_directory.ticket,8u);
+    for(pl_u32 i=0u;i<PL_SHA256_BYTES;++i)request[16u+i]=digest[i];
+    vm_memory_store(request+48u,stage==VM_DIRECTORY_NODE ? artifact_directory.pending.node_bytes
+        : artifact_directory.resource.object.bytes,4u);
+    vm_memory_store(request+52u,stage==VM_DIRECTORY_NODE ? ARTIFACT_RESOURCE_DIRECTORY
+        : artifact_directory.resource.object.kind,4u);
+    return (int)stage;
+}
+int vm_directory_node_commit(pl_u32 source,pl_u32 bytes,pl_u64 generation,pl_u64 ticket)
+{
+    if (!directory_boundary() || !private_record(source,bytes) || !bytes || bytes>PL_INDEX_NODE_BYTES)
+        return VM_DIRECTORY_ERROR_INPUT;
+    if (generation!=resident.generation) return VM_DIRECTORY_ERROR_STALE;
+    return vm_directory_node(&artifact_directory,generation,ticket,(const pl_u8 *)(uintptr_t)source,bytes);
+}
+int vm_directory_object_commit(pl_u32 source,pl_u32 bytes,pl_u64 generation,pl_u64 ticket)
+{
+    if (!directory_boundary() || !private_record(source,bytes) || !bytes) return VM_DIRECTORY_ERROR_INPUT;
+    if (generation!=resident.generation) return VM_DIRECTORY_ERROR_STALE;
+    return vm_directory_object(&artifact_directory,generation,ticket,(const pl_u8 *)(uintptr_t)source,bytes);
+}
+void vm_directory_cancel_request(void) { vm_directory_cancel(&artifact_directory); }
+pl_u32 vm_directory_status(void) { return artifact_directory.stage; }
 
 int vm_page_prepare(pl_u32 port, pl_u32 record)
 {
