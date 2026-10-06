@@ -350,7 +350,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,instruction->machine_argument);
         if(instruction->machine_argument==MACHINE_SYSTEM_CALL64)cut_coordinate(cut,instruction->fallthrough);
         else cut_const(cut,0u);
-        cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,0u);cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_SYSTEM_TRANSFER);cut_access_status(cut);
         /* The C boundary owns the complete privilege transition. Do not
          * reload and republish the same CPU words in the generated body. */
         cut->report.flags_written=1u;
@@ -365,7 +365,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
         cut_coordinate(cut,instruction->fallthrough);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_SOFTWARE_INTERRUPT); cut_access_status(cut);
         cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
         cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);
         cut->report.flags_written=1u;
@@ -439,7 +439,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
             cut_const(cut,32u); cut_op(cut,0x86u); cut_op(cut,0x84u);
             cut->report.read_registers |= 5u;
         } else cut_const(cut,0u);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_MSR); cut_access_status(cut);
         if (!write && !swap) {
             cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
             cut_op(cut,0x29u); wasm_writer_uleb(cut->writer,3u);
@@ -457,7 +457,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,(instruction->machine_argument>>8u)&255u);
         if (write) cut_read_operand(cut,&instruction->operands[1],64u);
         else cut_const(cut,0u);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_DEBUG); cut_access_status(cut);
         if (!write) {
             cut_access_value(cut); cut_set(cut,CUT_VALUE);
             cut_write_register(cut,&instruction->operands[0].value.reg);
@@ -466,7 +466,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     }
     if (cut->has_interrupt_return) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_IRET); cut_access_status(cut);
         cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
         cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);
         cut->report.flags_written = 1u;
@@ -491,7 +491,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->operands[0].value.reg.index);
         cut_read_operand(cut,&instruction->operands[1],64u);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_CONTROL); cut_access_status(cut);
         return;
     }
     if (instruction->machine_operation == PL_X86_MACHINE_READ_CONTROL) {
@@ -509,7 +509,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (cut->has_far_return) {
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_FAR_RETURN); cut_access_status(cut);
         cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
         return;
     }
@@ -522,7 +522,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_i32_const(cut,
             (instruction->machine_argument & 2u ? MACHINE_MEMORY_WRITE : MACHINE_MEMORY_READ)
             | cut_memory_role(memory));
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u);
+        cut_call(cut,WASM_IMPORT_TABLE);
         cut_access_status(cut);
         return;
     }
@@ -546,7 +546,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         if (system) cut_get(cut,CUT_LEFT);
         else cut_read_operand(cut,&instruction->operands[1],16u);
         cut_op(cut,0xa7u);
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,cut->has_memory ? 1u : 0u);
+        cut_call(cut,WASM_IMPORT_SEGMENT);
         cut_set(cut,CUT_STATUS); cut_get(cut,CUT_STATUS); cut_op(cut,0x50u); cut_op(cut,0x45u);
         cut_op(cut,0x04u); cut_op(cut,0x40u);
         cut_get(cut,CUT_STATUS); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
@@ -556,7 +556,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
      * no source opcode import or duplicate segment-state pointer in Wasm. */
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
     cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->condition == 6u);
-    cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+    cut_call(cut,WASM_IMPORT_INTERRUPT_FLAG); cut_access_status(cut);
     cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);
     cut->report.flags_written=1u;
 }

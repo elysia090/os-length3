@@ -80,7 +80,7 @@ static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
     cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);
     cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,offset);
     cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,8u);
-    cut_get(cut,local);cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,1u);cut_access_status(cut);
+    cut_get(cut,local);cut_call(cut,WASM_IMPORT_WRITE_WORD);cut_access_status(cut);
 }
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
@@ -108,7 +108,7 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
         cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_get(cut,CUT_ADDRESS);
         cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,16u);
         cut_i32_const(cut,cut->report.memory_access);
-        cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,0u);cut_access_status(cut);
+        cut_call(cut,write ? WASM_IMPORT_WRITE_BEGIN : WASM_IMPORT_READ_PAIR);cut_access_status(cut);
     }
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
     if(projected) {cut_emit_vector_projection(cut,instruction,&projection);return;}
@@ -127,7 +127,7 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     if(write) {
         write_word(cut,0u,CUT_LEFT);write_word(cut,8u,CUT_RIGHT);
         cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);
-        cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,2u);cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_WRITE_END);cut_access_status(cut);
     } else {
         pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[0].value.reg.index*16u;
         cut_store(cut,offset,CUT_LEFT);cut_store(cut,offset+8u,CUT_RIGHT);

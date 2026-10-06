@@ -206,11 +206,13 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     return flag_dependencies(plan);
 }
 
-int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *report)
+static int body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,
+    const pl_u32 *import_slots,pl_u32 *imports)
 {
     cut_lowering cut = { 0 };
     pl_u64 rip = plan->report.entry;
     cut.writer = writer;
+    cut.import_slots=import_slots;
     cut.report = plan->report;
     cut.operand_binding_kind = plan->operand_binding_kind;
     cut.has_memory = plan->report.memory_bytes != 0u;
@@ -309,6 +311,20 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_const(&cut, machine_result_make(plan->system_cut == CUT_SYSTEM_HALT
         ? MACHINE_RESULT_HALT : MACHINE_RESULT_RESOLVE_RIP, 0u)); cut_op(&cut, 0x0bu);
     if (writer->error) return writer->error;
+    if(imports)*imports=cut.imports_used;
     *report = cut.report;
     return 0;
+}
+int cut_measure_body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,pl_u32 *imports)
+{
+    if(!writer || writer->bytes || !imports)return WASM_COMPILER_ERROR_INPUT;
+    return body(writer,plan,report,0,imports);
+}
+int cut_emit_body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,pl_u32 imports)
+{
+    if(imports&~WASM_IMPORT_MASK)return WASM_COMPILER_ERROR_INPUT;
+    pl_u32 slots[WASM_IMPORT_COUNT],used=0u;wasm_import_map(imports,slots);
+    int status=body(writer,plan,report,slots,&used);
+    if(!status && used!=plan->imports)return WASM_COMPILER_ERROR_GRAMMAR;
+    return status;
 }

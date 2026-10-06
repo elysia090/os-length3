@@ -18,6 +18,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_arena_min,--export=compiler_report_bytes,--export=compiler_close \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 WASM_FLAGS += -Wl,--export=compiler_entry_abi
+WASM_FLAGS += -Wl,--export=compiler_emit_module
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-string.c src/lower-branch.c
@@ -33,6 +34,14 @@ SOURCES += src/lower-vector-shuffle.c
 SOURCES += src/emit-vector-projection.c
 SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
+SOURCES += src/emit-interface.c
+
+.PHONY: cut-module-check
+check: cut-module-check
+cut-module-check: $(BUILD)/cut-module-check
+	$(BUILD)/cut-module-check
+$(BUILD)/cut-module-check: check/cut-module.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: halt-check
 check: halt-check

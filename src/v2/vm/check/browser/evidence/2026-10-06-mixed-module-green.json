@@ -1,0 +1,17 @@
+{
+  "format": "mixed-cut-module-v1",
+  "status": "pass",
+  "functions": 28,
+  "typedImports": 22,
+  "routeComparisons": 112,
+  "cComparisons": 54,
+  "standaloneByteParity": 28,
+  "nativeColdByteParity": 1,
+  "ulebFunctions": 129,
+  "standaloneBytes": 14367,
+  "combinedBytes": 12786,
+  "savedBytes": 1581,
+  "oracle": "routing spies separately scoped; actual C-VM/source/MMU/permission/fault/CPU comparison against frozen standalone emitter",
+  "linuxBoot": "not-tested",
+  "wholeElf": "not-closed"
+}

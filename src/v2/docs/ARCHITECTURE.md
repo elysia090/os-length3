@@ -98,6 +98,14 @@ same-bundle startup checks are not a published browser execution product.
 Linux owns syscall, VFS, process, signal and network semantics; there is no
 browser POSIX or Linux-function fallback.
 
+The Wasm emitter now has one typed machine-import definition, shared by
+isolated cuts and bounded multi-function modules. Body construction reports
+its actual import set and names callbacks by identity; module construction
+assigns function indices and quotients identical signatures. The old 19
+header-layout branches and raw callback-number assumptions are deleted.
+This permits shared module/page emission, but an explicit selected-cut list
+is not a complete ELF/control/indirect-generation admission proof.
+
 Historical `web/vm.js`, its old Worker/storage callers and the old runtime
 catalog remain separate retirement work. They are not inputs to the modern
 startup checker and must not be enabled as a fallback. Retiring them requires

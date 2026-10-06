@@ -25,7 +25,7 @@ static void output(cut_lowering *cut,pl_u32 offset)
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
     cut_const(cut,offset); cut_op(cut,0xa7u);
     cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,8u);
-    cut_get(cut,CUT_VALUE); cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,1u);
+    cut_get(cut,CUT_VALUE); cut_call(cut,WASM_IMPORT_WRITE_WORD);
     cut_access_status(cut);
 }
 
@@ -61,7 +61,7 @@ void cut_lower_fxsave(cut_lowering *cut,const pl_x86_instruction *instruction)
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u); cut_get(cut,CUT_ADDRESS);
     cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,512u);
     cut_i32_const(cut,cut->report.memory_access|MACHINE_MEMORY_ALIGNED16);
-    cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+    cut_call(cut,WASM_IMPORT_WRITE_BEGIN); cut_access_status(cut);
 
     cut_const(cut,0u); cut_set(cut,CUT_RIGHT);
     for(pl_u32 rank=0u;rank<8u;++rank) {
@@ -92,5 +92,5 @@ void cut_lower_fxsave(cut_lowering *cut,const pl_x86_instruction *instruction)
     /* Chosen reserved fields inside 0..415 are zero; 416..511 remain
      * untouched, including the architecturally software-owned 464..511. */
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
-    cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,2u); cut_access_status(cut);
+    cut_call(cut,WASM_IMPORT_WRITE_END); cut_access_status(cut);
 }

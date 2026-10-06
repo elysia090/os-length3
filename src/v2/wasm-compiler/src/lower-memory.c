@@ -335,7 +335,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_get(cut, CUT_ADDRESS);
         cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, cut->report.memory_bytes);
         cut_i32_const(cut,cut->report.memory_access);
-        cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 0u);
+        cut_call(cut,WASM_IMPORT_RESERVE);
         cut_access_status(cut);
         cut_access_value(cut); cut_set(cut, CUT_LEFT);
         if (unary) unary_value(cut,instruction->operation,memory->bits);
@@ -351,7 +351,7 @@ void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
         else arithmetic(cut,instruction->operation,memory->bits);
         cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, 1u);
         cut_get(cut, CUT_VALUE);
-        cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 1u);
+        cut_call(cut,WASM_IMPORT_COMMIT);
         cut_access_status(cut);
         if (exchange) {
             /* Both arms committed a memory write. Only mismatch writes the
@@ -429,7 +429,7 @@ void cut_access(cut_lowering *cut)
     cut_op(cut, 0x41u); wasm_writer_uleb(cut->writer, cut->report.memory_bytes);
     cut_i32_const(cut,cut->report.memory_access);
     cut_get(cut, CUT_VALUE);
-    cut_op(cut, 0x10u); wasm_writer_uleb(cut->writer, 0u); /* C RAM boundary */
+    cut_call(cut,WASM_IMPORT_ACCESS); /* C RAM boundary */
     cut_access_status(cut);
 }
 

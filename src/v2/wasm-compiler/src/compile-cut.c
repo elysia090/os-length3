@@ -11,16 +11,16 @@ static int overlaps(const void *left, pl_u64 left_bytes,
 }
 
 static int result_aliases(const wasm_compiler *compiler, const pl_x86_image *source,
-                          const wasm_cut_options *options, const pl_u64 *written,
-                          const wasm_cut_report *report)
+                          const wasm_cut_options *options,pl_u64 option_bytes,
+                          const pl_u64 *written,const wasm_cut_report *report,pl_u64 report_bytes)
 {
     const void *outputs[2] = { written, report };
-    const pl_u64 sizes[2] = { sizeof *written, sizeof *report };
-    if (report && overlaps(written, sizeof *written, report, sizeof *report)) return 1;
+    const pl_u64 sizes[2] = { sizeof *written, report_bytes };
+    if (report && overlaps(written, sizeof *written, report, report_bytes)) return 1;
     for (pl_u32 i = 0u; i < 2u; ++i) {
         if (!outputs[i]) continue;
         if ((pl_u64)(uintptr_t)outputs[i] > (pl_u64)UINTPTR_MAX - sizes[i]
-                || overlaps(outputs[i], sizes[i], options, sizeof *options)) return 1;
+                || overlaps(outputs[i], sizes[i], options, option_bytes)) return 1;
         if (compiler && (overlaps(outputs[i], sizes[i], compiler, sizeof *compiler)
                 || overlaps(outputs[i], sizes[i], compiler->image.bytes, compiler->image.length))) return 1;
         if (source) {
@@ -32,285 +32,26 @@ static int result_aliases(const wasm_compiler *compiler, const pl_x86_image *sou
     }
     return 0;
 }
-
-static void section(wasm_writer *writer, pl_u32 id, pl_u64 bytes)
-{ wasm_writer_byte(writer, id); wasm_writer_uleb(writer, bytes); }
-static void raw(wasm_writer *writer, const pl_u8 *bytes, pl_u32 count)
-{ for (pl_u32 i = 0u; i < count; ++i) wasm_writer_byte(writer, bytes[i]); }
-static pl_u32 uleb_bytes(pl_u64 value)
+static int target_aliases(const wasm_compiler *compiler,const pl_x86_image *source,
+    const wasm_cut_options *options,pl_u64 option_bytes,pl_u8 *target,pl_u64 bytes,
+    const pl_u64 *written,const wasm_cut_report *reports,pl_u64 report_bytes)
 {
-    pl_u32 bytes = 1u;
-    while ((value >>= 7u)) ++bytes;
-    return bytes;
-}
-
-static void module_header(wasm_writer *writer, pl_u64 body_bytes, int boundary)
-{
-    static const pl_u8 header[] = { 0,0x61,0x73,0x6d,1,0,0,0 };
-    static const pl_u8 type[] = { 1,0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e };
-    static const pl_u8 imports[] = {
-        1,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1
-    };
-    static const pl_u8 functions[] = { 1,0 };
-    static const pl_u8 exports[] = { 1,3,'c','u','t',0,0 };
-    static const pl_u8 memory_type[] = {
-        2,0x60,5,0x7f,0x7e,0x7f,0x7f,0x7e,1,0x7e,
-        0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 memory_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',6,'a','c','c','e','s','s',0,0
-    };
-    static const pl_u8 memory_functions[] = { 1,1 };
-    static const pl_u8 memory_exports[] = { 1,3,'c','u','t',0,1 };
-    static const pl_u8 write_type[] = {
-        4,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
-        0x60,4,0x7f,0x7f,0x7f,0x7e,1,0x7e,
-        0x60,1,0x7f,1,0x7e,0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 write_imports[] = {
-        4,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',11,'w','r','i','t','e','_','b','e','g','i','n',0,0,
-        7,'m','a','c','h','i','n','e',10,'w','r','i','t','e','_','w','o','r','d',0,1,
-        7,'m','a','c','h','i','n','e',9,'w','r','i','t','e','_','e','n','d',0,2
-    };
-    static const pl_u8 write_functions[]={1,3};
-    static const pl_u8 write_exports[]={1,3,'c','u','t',0,3};
-    static const pl_u8 segment_type[] = {
-        2,0x60,3,0x7f,0x7f,0x7f,1,0x7e,
-        0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 segment_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',7,'s','e','g','m','e','n','t',0,0
-    };
-    static const pl_u8 loaded_segment_type[] = {
-        3,0x60,5,0x7f,0x7e,0x7f,0x7f,0x7e,1,0x7e,
-        0x60,3,0x7f,0x7f,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 loaded_segment_imports[] = {
-        3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',6,'a','c','c','e','s','s',0,0,
-        7,'m','a','c','h','i','n','e',7,'s','e','g','m','e','n','t',0,1
-    };
-    static const pl_u8 rmw_type[] = {
-        3,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
-        0x60,2,0x7f,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 rmw_imports[] = {
-        3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',7,'r','e','s','e','r','v','e',0,0,
-        7,'m','a','c','h','i','n','e',6,'c','o','m','m','i','t',0,1
-    };
-    static const pl_u8 rmw_functions[] = { 1,2 };
-    static const pl_u8 rmw_exports[] = { 1,3,'c','u','t',0,2 };
-    static const pl_u8 pair_type[] = {
-        3,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e,
-        0x60,3,0x7f,0x7e,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 pair_imports[] = {
-        3,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',12,'r','e','s','e','r','v','e','_','p','a','i','r',0,0,
-        7,'m','a','c','h','i','n','e',11,'c','o','m','m','i','t','_','p','a','i','r',0,1
-    };
-    static const pl_u8 table_type[] = {
-        2,0x60,4,0x7f,0x7e,0x7f,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 table_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',5,'t','a','b','l','e',0,0
-    };
-    static const pl_u8 read_pair_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',9,'r','e','a','d','_','p','a','i','r',0,0
-    };
-    static const pl_u8 read_extent_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',11,'r','e','a','d','_','e','x','t','e','n','t',0,0
-    };
-    static const pl_u8 return_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',10,'f','a','r','_','r','e','t','u','r','n',0,0
-    };
-    static const pl_u8 control_type[] = {
-        2,0x60,3,0x7f,0x7f,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 control_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',7,'c','o','n','t','r','o','l',0,0
-    };
-    static const pl_u8 interrupt_type[] = {
-        2,0x60,1,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 interrupt_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',4,'i','r','e','t',0,0
-    };
-    static const pl_u8 msr_type[] = {
-        2,0x60,4,0x7f,0x7f,0x7f,0x7e,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 msr_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',3,'m','s','r',0,0
-    };
-    static const pl_u8 debug_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',5,'d','e','b','u','g',0,0
-    };
-    static const pl_u8 io_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',2,'i','o',0,0
-    };
-    static const pl_u8 time_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',4,'t','i','m','e',0,0
-    };
-    static const pl_u8 flag_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',14,'i','n','t','e','r','r','u','p','t','_','f','l','a','g',0,0
-    };
-    static const pl_u8 two_word_type[] = {
-        2,0x60,2,0x7f,0x7f,1,0x7e, 0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 software_type[] = {
-        2,0x60,3,0x7f,0x7f,0x7e,1,0x7e,0x60,4,0x7f,0x7f,0x7e,0x7f,1,0x7e
-    };
-    static const pl_u8 software_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',18,'s','o','f','t','w','a','r','e','_','i','n','t','e','r','r','u','p','t',0,0
-    };
-    static const pl_u8 system_imports[] = {
-        2,7,'m','a','c','h','i','n','e',6,'m','e','m','o','r','y',2,0,1,
-        7,'m','a','c','h','i','n','e',15,'s','y','s','t','e','m','_','t','r','a','n','s','f','e','r',0,0
-    };
-    raw(writer, header, sizeof header);
-    if(boundary==19) {
-        section(writer,1u,sizeof software_type);raw(writer,software_type,sizeof software_type);
-        section(writer,2u,sizeof system_imports);raw(writer,system_imports,sizeof system_imports);
-        section(writer,3u,sizeof memory_functions);raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports);raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary==17) {
-        section(writer,1u,sizeof table_type);raw(writer,table_type,sizeof table_type);
-        section(writer,2u,sizeof read_pair_imports);raw(writer,read_pair_imports,sizeof read_pair_imports);
-        section(writer,3u,sizeof memory_functions);raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports);raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary==18) {
-        section(writer,1u,sizeof table_type); raw(writer,table_type,sizeof table_type);
-        section(writer,2u,sizeof read_extent_imports); raw(writer,read_extent_imports,sizeof read_extent_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary==16) {
-        section(writer,1u,sizeof software_type); raw(writer,software_type,sizeof software_type);
-        section(writer,2u,sizeof software_imports); raw(writer,software_imports,sizeof software_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary==15) {
-        section(writer,1u,sizeof write_type); raw(writer,write_type,sizeof write_type);
-        section(writer,2u,sizeof write_imports); raw(writer,write_imports,sizeof write_imports);
-        section(writer,3u,sizeof write_functions); raw(writer,write_functions,sizeof write_functions);
-        section(writer,7u,sizeof write_exports); raw(writer,write_exports,sizeof write_exports);
-    } else if (boundary==14) {
-        section(writer,1u,sizeof two_word_type); raw(writer,two_word_type,sizeof two_word_type);
-        section(writer,2u,sizeof flag_imports); raw(writer,flag_imports,sizeof flag_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary==13) {
-        section(writer,1u,sizeof pair_type); raw(writer,pair_type,sizeof pair_type);
-        section(writer,2u,sizeof pair_imports); raw(writer,pair_imports,sizeof pair_imports);
-        section(writer,3u,sizeof rmw_functions); raw(writer,rmw_functions,sizeof rmw_functions);
-        section(writer,7u,sizeof rmw_exports); raw(writer,rmw_exports,sizeof rmw_exports);
-    } else if (boundary==11) {
-        section(writer,1u,sizeof loaded_segment_type); raw(writer,loaded_segment_type,sizeof loaded_segment_type);
-        section(writer,2u,sizeof loaded_segment_imports); raw(writer,loaded_segment_imports,sizeof loaded_segment_imports);
-        section(writer,3u,sizeof rmw_functions); raw(writer,rmw_functions,sizeof rmw_functions);
-        section(writer,7u,sizeof rmw_exports); raw(writer,rmw_exports,sizeof rmw_exports);
-    } else if (boundary == 9 || boundary == 10) {
-        section(writer,1u,boundary == 9 ? sizeof msr_type : sizeof interrupt_type);
-        if (boundary == 9) raw(writer,msr_type,sizeof msr_type);
-        else raw(writer,interrupt_type,sizeof interrupt_type);
-        section(writer,2u,boundary == 9 ? sizeof io_imports : sizeof time_imports);
-        if (boundary == 9) raw(writer,io_imports,sizeof io_imports);
-        else raw(writer,time_imports,sizeof time_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary == 8 || boundary==12) {
-        section(writer,1u,sizeof msr_type); raw(writer,msr_type,sizeof msr_type);
-        section(writer,2u,boundary==12 ? sizeof debug_imports : sizeof msr_imports);
-        if (boundary==12) raw(writer,debug_imports,sizeof debug_imports);
-        else raw(writer,msr_imports,sizeof msr_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary == 7) {
-        section(writer,1u,sizeof interrupt_type); raw(writer,interrupt_type,sizeof interrupt_type);
-        section(writer,2u,sizeof interrupt_imports); raw(writer,interrupt_imports,sizeof interrupt_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary == 6) {
-        section(writer,1u,sizeof control_type); raw(writer,control_type,sizeof control_type);
-        section(writer,2u,sizeof control_imports); raw(writer,control_imports,sizeof control_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary == 5) {
-        section(writer,1u,sizeof two_word_type); raw(writer,two_word_type,sizeof two_word_type);
-        section(writer,2u,sizeof return_imports); raw(writer,return_imports,sizeof return_imports);
-        section(writer,3u,sizeof memory_functions); raw(writer,memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports); raw(writer,memory_exports,sizeof memory_exports);
-    } else if (boundary == 3 || boundary == 4) {
-        section(writer,1u,boundary == 3 ? sizeof rmw_type : sizeof table_type);
-        if (boundary == 3) raw(writer,rmw_type,sizeof rmw_type);
-        else raw(writer,table_type,sizeof table_type);
-        section(writer,2u,boundary == 3 ? sizeof rmw_imports : sizeof table_imports);
-        if (boundary == 3) raw(writer,rmw_imports,sizeof rmw_imports);
-        else raw(writer,table_imports,sizeof table_imports);
-        section(writer,3u,sizeof memory_functions);
-        raw(writer,boundary == 3 ? rmw_functions : memory_functions,sizeof memory_functions);
-        section(writer,7u,sizeof memory_exports);
-        raw(writer,boundary == 3 ? rmw_exports : memory_exports,sizeof memory_exports);
-    } else if (boundary) {
-        section(writer, 1u, boundary == 2 ? sizeof segment_type : sizeof memory_type);
-        if (boundary == 2) raw(writer,segment_type,sizeof segment_type);
-        else raw(writer,memory_type,sizeof memory_type);
-        section(writer, 2u, boundary == 2 ? sizeof segment_imports : sizeof memory_imports);
-        if (boundary == 2) raw(writer,segment_imports,sizeof segment_imports);
-        else raw(writer,memory_imports,sizeof memory_imports);
-        section(writer, 3u, sizeof memory_functions); raw(writer, memory_functions, sizeof memory_functions);
-        section(writer, 7u, sizeof memory_exports); raw(writer, memory_exports, sizeof memory_exports);
-    } else {
-        section(writer, 1u, sizeof type); raw(writer, type, sizeof type);
-        section(writer, 2u, sizeof imports); raw(writer, imports, sizeof imports);
-        section(writer, 3u, sizeof functions); raw(writer, functions, sizeof functions);
-        section(writer, 7u, sizeof exports); raw(writer, exports, sizeof exports);
+    if (bytes>(pl_u64)UINTPTR_MAX-(pl_u64)(uintptr_t)target
+            || overlaps(target,bytes,options,option_bytes)
+            || overlaps(target,bytes,written,sizeof *written)
+            || (reports && overlaps(target,bytes,reports,report_bytes))
+            || (compiler && (overlaps(target,bytes,compiler,sizeof *compiler)
+                || overlaps(target,bytes,compiler->image.bytes,compiler->image.length)))) return 1;
+    if(source){
+        if(overlaps(target,bytes,source,sizeof *source)
+                || overlaps(target,bytes,source->maps,source->map_count*sizeof(pl_x86_map)))return 1;
+        for(pl_u32 i=0u;i<source->map_count;++i)
+            if(overlaps(target,bytes,source->maps[i].bytes,source->maps[i].file_bytes))return 1;
     }
-    section(writer, 10u, 1u + uleb_bytes(body_bytes) + body_bytes);
-    wasm_writer_uleb(writer, 1u); wasm_writer_uleb(writer, body_bytes);
+    return 0;
 }
 
-static int boundary_kind(const cut_plan *plan, const wasm_cut_report *report)
-{
-    /* CALL target/stack, PUSH source/stack and POP stack/destination are
-     * ordered transfers, not an RMW reservation on a single operand. */
-    if (plan->string_cut || (report->memory_bytes && (plan->indirect_cut
-            || report->boundary_operation == PL_X86_OPERATION_POP
-            || report->boundary_operation == PL_X86_OPERATION_PUSH))) return 1;
-    if (plan->system_cut == CUT_SYSTEM_MSR) return 8;
-    if (plan->system_cut == CUT_SYSTEM_INTERRUPT_FLAG) return 14;
-    if (plan->system_cut == CUT_SYSTEM_DEBUG) return 12;
-    if (plan->system_cut == CUT_SYSTEM_FXSAVE) return 15;
-    if (plan->system_cut == CUT_SYSTEM_FXRSTOR) return 18;
-    if (plan->system_cut == CUT_SYSTEM_VECTOR_TRANSFER && report->memory_bytes)
-        return (report->memory_access&MACHINE_MEMORY_WRITE)?15:17;
-    if (plan->system_cut == CUT_SYSTEM_SOFTWARE_INTERRUPT) return 16;
-    if (plan->system_cut == CUT_SYSTEM_PRIVILEGE_TRANSFER) return 19;
-    if (plan->system_cut == CUT_SYSTEM_IO) return 9;
-    if (plan->system_cut == CUT_SYSTEM_TIME) return 10;
-    if (plan->system_cut == CUT_SYSTEM_INTERRUPT_RETURN) return 7;
-    if (plan->system_cut == CUT_SYSTEM_CONTROL_WRITE) return 6;
-    if (plan->system_cut == CUT_SYSTEM_FAR_RETURN) return 5;
-    if (plan->system_cut == CUT_SYSTEM_TABLE) return 4;
-    if (plan->system_cut == CUT_SYSTEM_SEGMENT) return report->memory_bytes ? 11 : 2;
-    if (report->memory_bytes==16u && (report->memory_access & 3u)==3u) return 13;
-    return (report->memory_access & 3u) == 3u ? 3 : report->memory_bytes != 0u;
-}
+/* One typed interface serves isolated cuts and multi-function modules. */
 
 static int prepare(const wasm_compiler *compiler, const pl_x86_image *source,
                     pl_u64 generation, const wasm_cut_options *options,
@@ -342,9 +83,10 @@ static int prepare(const wasm_compiler *compiler, const pl_x86_image *source,
         }
         status = cut_prepare_image(source, options, plan);
     }
-    if (!status) status = cut_emit_body(&body, plan, &measured);
+    if (!status) status = cut_measure_body(&body, plan, &measured,&plan->imports);
     if (status) return status;
-    module_header(&header, body.used, boundary_kind(plan, &measured));
+    wasm_module_prefix(&header,plan->imports,1u,1u+wasm_uleb_bytes(body.used)+body.used);
+    wasm_writer_uleb(&header,body.used);
     if (!pl_checked_add_u64(header.used, body.used, &measured.module_bytes)
             || measured.module_bytes > options->maximum_module_bytes)
         return WASM_COMPILER_ERROR_CAPACITY;
@@ -362,7 +104,7 @@ int wasm_compiler_measure_cut(const wasm_compiler *compiler,
     if (!bytes) return WASM_COMPILER_ERROR_INPUT;
     int status = prepare(compiler, 0, 0u, options, &plan, &body_bytes);
     if (status) return status;
-    if (result_aliases(compiler, 0, options, bytes, report)) return WASM_COMPILER_ERROR_INPUT;
+    if (result_aliases(compiler,0,options,sizeof *options,bytes,report,sizeof *report)) return WASM_COMPILER_ERROR_INPUT;
     *bytes = plan.report.module_bytes;
     if (report) *report = plan.report;
     return 0;
@@ -379,27 +121,15 @@ static int emit(const wasm_compiler *compiler, const pl_x86_image *source, pl_u6
     if (!target || !written) return WASM_COMPILER_ERROR_INPUT;
     int status = prepare(compiler, source, generation, options, &plan, &body_bytes);
     if (status) return status;
-    if (result_aliases(compiler, source, options, written, report)) return WASM_COMPILER_ERROR_INPUT;
+    if (result_aliases(compiler,source,options,sizeof *options,written,report,sizeof *report)) return WASM_COMPILER_ERROR_INPUT;
     pl_u64 bytes = plan.report.module_bytes;
     if (capacity < bytes) return WASM_COMPILER_ERROR_CAPACITY;
-    if (bytes > (pl_u64)UINTPTR_MAX - (pl_u64)(uintptr_t)target
-            || (compiler && (overlaps(target, bytes, compiler->image.bytes, compiler->image.length)
-                             || overlaps(target, bytes, compiler, sizeof *compiler)))
-            || overlaps(target, bytes, options, sizeof *options)
-            || overlaps(target, bytes, written, sizeof *written)
-            || (report && overlaps(target, bytes, report, sizeof *report)))
+    if(target_aliases(compiler,source,options,sizeof *options,target,bytes,written,report,sizeof *report))
         return WASM_COMPILER_ERROR_INPUT;
-    if (source) {
-        if (overlaps(target, bytes, source, sizeof *source)
-                || overlaps(target, bytes, source->maps, source->map_count * sizeof(pl_x86_map)))
-            return WASM_COMPILER_ERROR_INPUT;
-        for (pl_u32 i = 0u; i < source->map_count; ++i)
-            if (overlaps(target, bytes, source->maps[i].bytes, source->maps[i].file_bytes))
-                return WASM_COMPILER_ERROR_INPUT;
-    }
     wasm_writer writer = { target, capacity, 0u, 0 };
-    module_header(&writer, body_bytes, boundary_kind(&plan, &plan.report));
-    status = cut_emit_body(&writer, &plan, &measured);
+    wasm_module_prefix(&writer,plan.imports,1u,1u+wasm_uleb_bytes(body_bytes)+body_bytes);
+    wasm_writer_uleb(&writer,body_bytes);
+    status = cut_emit_body(&writer, &plan, &measured,plan.imports);
     if (status) return status;
     measured.module_bytes = writer.used;
     *written = writer.used;
@@ -420,7 +150,7 @@ int wasm_compiler_measure_code_cut(const pl_x86_image *source, pl_u64 generation
     if (!bytes) return WASM_COMPILER_ERROR_INPUT;
     int status = prepare(0, source, generation, options, &plan, &body_bytes);
     if (status) return status;
-    if (result_aliases(0, source, options, bytes, report)) return WASM_COMPILER_ERROR_INPUT;
+    if (result_aliases(0,source,options,sizeof *options,bytes,report,sizeof *report)) return WASM_COMPILER_ERROR_INPUT;
     *bytes = plan.report.module_bytes;
     if (report) *report = plan.report;
     return 0;
@@ -429,3 +159,53 @@ int wasm_compiler_emit_code_cut(const pl_x86_image *source, pl_u64 generation,
                                 const wasm_cut_options *options, pl_u8 *target,
                                 pl_u64 capacity, pl_u64 *written, wasm_cut_report *report)
 { return emit(0, source, generation, options, target, capacity, written, report); }
+
+static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,pl_u64 generation,
+    const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
+    pl_u64 *written,wasm_cut_report *reports)
+{
+    if(!cuts || !count || count>WASM_CUT_MODULE_MAX_FUNCTIONS || !target || !written)
+        return WASM_COMPILER_ERROR_INPUT;
+    pl_u32 limit=cuts[0].maximum_module_bytes,imports=0u;
+    if(!limit || limit>WASM_CUT_MODULE_MAX_BYTES)return WASM_COMPILER_ERROR_INPUT;
+    pl_u64 option_bytes=(pl_u64)count*sizeof *cuts,report_bytes=(pl_u64)count*sizeof *reports;
+    pl_u64 code_bytes=wasm_uleb_bytes(count);
+    cut_plan plan;pl_u64 bodies[WASM_CUT_MODULE_MAX_FUNCTIONS];
+    /* One transient plan is recycled. No decoded-instruction population or
+     * object-sized directory is materialized. Complete preflight precedes all
+     * externally visible writes, including when a later cut is unlowered. */
+    for(pl_u32 i=0u;i<count;++i){
+        if(cuts[i].maximum_module_bytes!=limit || (i && cuts[i-1u].entry>=cuts[i].entry))
+            return WASM_COMPILER_ERROR_INPUT;
+        int status=prepare(compiler,source,generation,cuts+i,&plan,bodies+i);
+        if(status)return status;
+        imports|=plan.imports;
+        if(!pl_checked_add_u64(code_bytes,wasm_uleb_bytes(bodies[i])+bodies[i],&code_bytes))
+            return WASM_COMPILER_ERROR_CAPACITY;
+    }
+    wasm_writer measure={0,~0ull,0u,0};wasm_module_prefix(&measure,imports,count,code_bytes);
+    pl_u64 total=measure.used+code_bytes-wasm_uleb_bytes(count);
+    if(measure.error)return measure.error;
+    if(total>limit || total>capacity)return WASM_COMPILER_ERROR_CAPACITY;
+    if(result_aliases(compiler,source,cuts,option_bytes,written,reports,report_bytes)
+            || target_aliases(compiler,source,cuts,option_bytes,target,total,written,reports,report_bytes))
+        return WASM_COMPILER_ERROR_INPUT;
+    wasm_writer writer={target,capacity,0u,0};wasm_module_prefix(&writer,imports,count,code_bytes);
+    for(pl_u32 i=0u;i<count;++i){
+        pl_u64 body_bytes;int status=prepare(compiler,source,generation,cuts+i,&plan,&body_bytes);
+        if(status || body_bytes!=bodies[i])return status?status:WASM_COMPILER_ERROR_GRAMMAR;
+        wasm_writer_uleb(&writer,body_bytes);wasm_cut_report report;
+        status=cut_emit_body(&writer,&plan,&report,imports);
+        if(status)return status;
+        report.module_bytes=total;if(reports)reports[i]=report;
+    }
+    if(writer.error)return writer.error;
+    if(writer.used!=total)return WASM_COMPILER_ERROR_GRAMMAR;
+    *written=total;return 0;
+}
+int wasm_compiler_emit_cut_module(const wasm_compiler *compiler,const wasm_cut_options *cuts,
+    pl_u32 count,pl_u8 *target,pl_u64 capacity,pl_u64 *written,wasm_cut_report *reports)
+{ return emit_module(compiler,0,0u,cuts,count,target,capacity,written,reports); }
+int wasm_compiler_emit_code_module(const pl_x86_image *source,pl_u64 generation,const wasm_cut_options *cuts,
+    pl_u32 count,pl_u8 *target,pl_u64 capacity,pl_u64 *written,wasm_cut_report *reports)
+{ return emit_module(0,source,generation,cuts,count,target,capacity,written,reports); }

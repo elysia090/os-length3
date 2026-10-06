@@ -73,7 +73,7 @@ void cut_lower_fxrstor(cut_lowering *cut,const pl_x86_instruction *instruction)
     cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_get(cut,CUT_ADDRESS);
     cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,512u);
     cut_i32_const(cut,cut->report.memory_access|MACHINE_MEMORY_ALIGNED16);
-    cut_op(cut,0x10u);wasm_writer_uleb(cut->writer,0u);cut_access_status(cut);
+    cut_call(cut,WASM_IMPORT_READ_EXTENT);cut_access_status(cut);
     port_word(cut,offsetof(machine_memory_extent_port,offsets),CUT_ADDRESS);
     port_word(cut,offsetof(machine_memory_extent_port,offsets)+4u,CUT_NEXT);
     port_word(cut,offsetof(machine_memory_extent_port,lengths),CUT_STATUS);

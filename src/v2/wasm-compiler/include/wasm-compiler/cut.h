@@ -6,6 +6,8 @@
 #include <x86/decode.h>
 
 #define WASM_CUT_MAX_INSTRUCTIONS 1024u
+#define WASM_CUT_MODULE_MAX_FUNCTIONS 256u
+#define WASM_CUT_MODULE_MAX_BYTES 65536u
 
 enum wasm_cut_boundary {
     WASM_CUT_LIMIT = 1,
@@ -38,6 +40,21 @@ typedef struct {
     pl_u32 memory_access;
     pl_u32 operand_binding;
 } wasm_cut_report;
+
+/* Bounded standard-Wasm collection of explicitly admitted cuts. Entries must
+ * be strictly increasing; every option names the same <=64 KiB module cap.
+ * Shared typed imports and function types are emitted once, then exports
+ * cut.0, cut.1, ... (or cut for one function). The ordinary machine-entry ABI
+ * and per-cut source/span/binding obligations are unchanged. Report[i] is the
+ * exact ith cut; module_bytes names their shared module, not a private stream.
+ * Selected cuts do NOT establish whole-ELF/control/indirect-generation closure.
+ * Borrow all inputs immutably; failed preflight leaves target/outputs unchanged. */
+int wasm_compiler_emit_cut_module(const wasm_compiler *compiler,
+    const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
+    pl_u64 *written,wasm_cut_report *reports);
+int wasm_compiler_emit_code_module(const pl_x86_image *source,pl_u64 generation,
+    const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
+    pl_u64 *written,wasm_cut_report *reports);
 
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
  * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry,

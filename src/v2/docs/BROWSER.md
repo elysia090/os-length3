@@ -1,5 +1,14 @@
 # Browser projection of OS Length3 Linux
 
+New separate compiler backend candidate shares one typed machine interface
+across bounded mixed-cut modules. 28 functions use one 12,786-byte module
+instead of 14,367 standalone bytes; all 22 callback identities, frozen single
+outputs, native/cold bytes and actual C-VM/source/fault parity pass. Compiler
+453,310 bytes. This is backend/fixture progress, NOT a published whole ELF or
+a Linux delivery/speed reduction. See
+[scope](../vm/check/browser/evidence/2026-10-06-cut-module.md).
+The full same-bundle and real-browser shell gates below remain red.
+
 Latest completed `96614e6` same-bundle Node run (child 25728 / exec 19431 ended):
 265,700,872 retired / 149,484,339 admissions. HLT at `0xffffffff813efa53`
 now retires once, advances to `0xffffffff813efa54` and yields HALT/0 exactly.

@@ -23,6 +23,18 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Newer independent compiler candidate removes the 19 per-cut header cases:
+typed callback identity/signature and body-used import sets now have one
+definition. Bounded collections share that interface and export ordinary Wasm
+cut functions; they do not introduce an instruction stream. 28 mixed cuts
+shrink 14,367 -> 12,786 bytes; standalone bytes, native/cold bytes, 112 routing
+and 54 actual C-VM parity cases, 129-function ULEB boundary and full checks pass.
+All 464 native/cold vector fixtures and C event/source regressions remain green.
+NOT whole ELF or a Linux speed/size claim. See
+[scope](../vm/check/browser/evidence/2026-10-06-cut-module.md).
+Whole-image coordinate/control/indirect closure still blocks publication; the
+new collection is its backend building block, not a guessed coverage proof.
+
 Latest completed `96614e6` same-bundle Node run: 265,700,872 retired /
 149,484,339 admissions. HLT is now an exact retired halt at the following
 RIP `0xffffffff813efa54`, not compiler -102. s6 still reports Broken pipe /
@@ -151,6 +163,9 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    coverage and atomic publication outside in-flight execution.
    Raw-page diagnostics neither authenticate release nor prove total closure.
    No fabricated ELF, guessed continuation or execution fallback.
+   Mixed cut imports can now share one typed standard-Wasm module through the
+   same emitter. Derive its complete admitted coordinate population from final
+   ELF/load/generation obligations, never from proof counts or observed RIPs.
    Connect the existing compiler-produced module/page projection to the C
    Artifact path above, with source span/binding/CPU-proof admission carried
    from accepted optimized ELF. Do not populate it from observed RIPs and call

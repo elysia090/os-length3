@@ -1,6 +1,7 @@
 #ifndef WASM_CUT_INTERNAL_H
 #define WASM_CUT_INTERNAL_H
 #include "internal.h"
+#include "module-interface.h"
 #include <wasm-compiler/cut.h>
 #include <machine/state.h>
 #include <machine/memory.h>
@@ -38,6 +39,8 @@ typedef struct {
     pl_u32 has_repeat;
     pl_u32 vector_local;
     pl_u32 operand_binding_kind;
+    const pl_u32 *import_slots;
+    pl_u32 imports_used;
 } cut_lowering;
 typedef struct {
     pl_x86_map maps[64];
@@ -51,7 +54,9 @@ typedef struct {
     pl_u32 string_cut;
     pl_u32 indirect_cut;
     pl_u32 operand_binding_kind;
+    pl_u32 imports;
 } cut_plan;
+void cut_call(cut_lowering *cut,pl_u32 import);
 void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);
 void cut_set(cut_lowering *cut, pl_u32 local);
@@ -145,5 +150,6 @@ int cut_prepare(const wasm_compiler *compiler, const wasm_cut_options *options,
                  cut_plan *plan);
 int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options,
                        cut_plan *plan);
-int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *report);
+int cut_measure_body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,pl_u32 *imports);
+int cut_emit_body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,pl_u32 imports);
 #endif

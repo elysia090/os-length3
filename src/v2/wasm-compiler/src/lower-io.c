@@ -30,7 +30,7 @@ void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
     if (instruction->machine_operation == PL_X86_MACHINE_TIME) {
-        cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+        cut_call(cut,WASM_IMPORT_TIME); cut_access_status(cut);
         cut_access_value(cut); cut_set(cut,CUT_VALUE);
         cut_get(cut,CUT_VALUE); cut_mask(cut,32u); cut_set(cut,1u);
         cut_get(cut,CUT_VALUE); cut_const(cut,32u); cut_op(cut,0x88u); cut_set(cut,3u);
@@ -43,6 +43,6 @@ void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction)
     cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,bytes | (write ? MACHINE_IO_WRITE : 0u));
     if (write) cut_read_operand(cut,&instruction->operands[1],bytes * 8u);
     else cut_const(cut,0u);
-    cut_op(cut,0x10u); wasm_writer_uleb(cut->writer,0u); cut_access_status(cut);
+    cut_call(cut,WASM_IMPORT_IO); cut_access_status(cut);
     if (!write) { cut_access_value(cut); cut_set(cut,CUT_VALUE); cut_write_register(cut,&instruction->operands[0].value.reg); }
 }

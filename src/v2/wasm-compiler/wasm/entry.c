@@ -107,3 +107,25 @@ int compiler_emit(pl_u64 entry, pl_u32 maximum_instructions,
     return wasm_compiler_emit_code_cut(&source,source_generation,&options,
                                        (pl_u8 *)(uintptr_t)target,capacity,&written,report);
 }
+
+int compiler_emit_module(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 capacity,pl_u32 report_offset)
+{
+    pl_u64 cut_bytes=(pl_u64)count*sizeof(wasm_cut_options),report_bytes=(pl_u64)count*sizeof(wasm_cut_report);
+    if(!mode || !count || count>WASM_CUT_MODULE_MAX_FUNCTIONS || !capacity || capacity>WASM_CUT_MODULE_MAX_BYTES
+            || (cut_offset&7u) || (report_offset&7u) || !range(cut_offset,cut_bytes)
+            || !range(target,capacity) || !range(report_offset,report_bytes)
+            || overlaps(target,capacity,(const void *)(uintptr_t)report_offset,report_bytes)
+            || overlaps(target,capacity,(const void *)(uintptr_t)cut_offset,cut_bytes)
+            || overlaps(report_offset,report_bytes,(const void *)(uintptr_t)cut_offset,cut_bytes))
+        return WASM_COMPILER_ERROR_INPUT;
+    if(mode==1u){
+        if(overlaps(target,capacity,compiler.image.bytes,compiler.image.length)
+                || overlaps(report_offset,report_bytes,compiler.image.bytes,compiler.image.length))return WASM_COMPILER_ERROR_INPUT;
+    }else for(pl_u32 i=0u;i<source.map_count;++i)
+        if(overlaps(target,capacity,maps[i].bytes,maps[i].file_bytes)
+                || overlaps(report_offset,report_bytes,maps[i].bytes,maps[i].file_bytes))return WASM_COMPILER_ERROR_INPUT;
+    const wasm_cut_options *cuts=(const wasm_cut_options *)(uintptr_t)cut_offset;
+    pl_u64 written=0u;wasm_cut_report *reports=(wasm_cut_report *)(uintptr_t)report_offset;
+    return mode==1u?wasm_compiler_emit_cut_module(&compiler,cuts,count,(pl_u8 *)(uintptr_t)target,capacity,&written,reports)
+        :wasm_compiler_emit_code_module(&source,source_generation,cuts,count,(pl_u8 *)(uintptr_t)target,capacity,&written,reports);
+}
