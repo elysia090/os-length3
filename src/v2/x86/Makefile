@@ -8,12 +8,19 @@ INCLUDES = -Iinclude -I../support/include -I$(ZYDIS)/include \
 	-I$(ZYDIS)/dependencies/zycore/include -I$(ZYDIS)/src
 DEFINES = -DZYDIS_STATIC_BUILD -DZYDIS_DISABLE_ENCODER \
 	-DZYDIS_DISABLE_FORMATTER -DZYDIS_DISABLE_SEGMENT -DZYDIS_DISABLE_KNC
-SOURCES = src/elf.c src/decode.c
+include sources.mk
+SOURCES = $(X86_SOURCES)
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 ZYDIS_SOURCES = Register SharedData DecoderData Decoder Mnemonic
 ZYDIS_OBJECTS = $(patsubst %,$(BUILD)/zydis/%.o,$(ZYDIS_SOURCES))
 
 .PHONY: all check clean
+.PHONY: vector-projection-check
+check: vector-projection-check
+vector-projection-check: $(BUILD)/vector-projection-check
+	$(BUILD)/vector-projection-check
+$(BUILD)/vector-projection-check: check/vector-projection.c $(BUILD)/libx86.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 all: $(BUILD)/libx86.a
 
 $(BUILD) $(BUILD)/zydis:
@@ -30,8 +37,10 @@ $(BUILD)/zydis/%.o: $(ZYDIS)/src/%.c | $(BUILD)/zydis
 	$(CC) $(CFLAGS) $(INCLUDES) $(DEFINES) -ffreestanding \
 		-ffunction-sections -fdata-sections -c $< -o $@
 
-$(BUILD)/libx86.a: $(OBJECTS) $(ZYDIS_OBJECTS)
-	$(AR) rcs $@ $^
+$(BUILD)/libx86.a: $(OBJECTS) $(ZYDIS_OBJECTS) Makefile sources.mk
+	rm -f $@.tmp
+	$(AR) rcs $@.tmp $(OBJECTS) $(ZYDIS_OBJECTS)
+	mv $@.tmp $@
 
 $(BUILD)/profile-check: check/profile.c include/x86/profile.h | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@

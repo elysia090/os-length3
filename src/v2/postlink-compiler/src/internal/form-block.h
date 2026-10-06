@@ -4,7 +4,7 @@
 #define POSTLINK_FORM_BLOCK_H
 
 #include "direct.h"
-#include "instruction-semantics.h"
+#include <x86/semantics.h>
 
 #define PL_ERROR_BLOCK       (-47)
 #define PL_ERROR_BLOCK_LIMIT (-48)

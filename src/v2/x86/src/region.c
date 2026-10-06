@@ -1,6 +1,6 @@
 /* Reopening a cached read region.
  *
- * _reopen_load_regions in qm/stepnormalize.py.  A load_region stands for a run
+ * A load_region stands for a run
  * of adjacent loads plus the pointer past the end; composing a larger cut needs
  * those back as ordinary loads so the surrounding graph can see them, and the
  * main sweep closes the region again afterwards if it still holds.
@@ -13,7 +13,7 @@
  * Freestanding: no libc, no allocation.
  */
 
-#include "internal/sweep.h"
+#include <x86/ssa-build.h>
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 #define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)

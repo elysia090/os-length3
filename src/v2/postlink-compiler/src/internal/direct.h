@@ -4,7 +4,7 @@
 #define POSTLINK_DIRECT_H
 
 #include "format.h"
-#include "plan.h"
+#include <x86/ssa.h>
 
 #define PL_DIRECT_RESULT_KIND_BITS 3u
 #define PL_DIRECT_RESULT_KIND_MASK 7u

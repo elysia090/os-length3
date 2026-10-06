@@ -229,8 +229,7 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER) {
         pl_x86_instruction instruction;
         if(pl_x86_decode_profile(&plan->image,rip,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
-        permutation_local=cut_vector_permutation_shape(&instruction)
-            && instruction.operands[2].value.immediate!=0xe4u;
+        permutation_local=(pl_u32)cut_vector_projection_local(&instruction);
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
     cut.vector_local = locals + 4u; /* Four typed bindings precede locals. */

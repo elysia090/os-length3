@@ -1,5 +1,12 @@
 # Browser boundary observations
 
+Latest independent Node/native work:
+[shared x86 construction and vector projection](2026-10-06-shared-x86.md),
+[strict parity/execution receipt](2026-10-06-shared-x86-green.json), and
+[completed same-bundle SHUFPS gate](2026-10-06-node-startup-shufps-red.json).
+These are not new actual-browser observations. The frozen old compiler in that
+startup receipt differs from the separately verified shared-core candidate.
+
 Latest: [common BSWAP and independent clock boundary red](2026-10-04-byte-swap.md)
 with [actual browser JSON](2026-10-04-byte-swap-browser.json). BSWAP passes;
 258,087,125 instructions / 16 external IRQs / 4,766 console bytes reach a

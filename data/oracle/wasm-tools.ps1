@@ -24,38 +24,15 @@ if (!$taskOutput.StartsWith($taskRepository + [IO.Path]::DirectorySeparatorChar,
     throw 'Output must stay inside this repository'
 }
 New-Item -ItemType Directory -Force -Path (Split-Path $taskOutput) | Out-Null
+# The product Makefiles are the only build/source/ABI definition. This helper
+# locates the pinned toolchain; it must not retain a second linker invocation.
+$taskMake = Get-Command make -ErrorAction Stop
+$taskProduct = if ($Compiler) { 'wasm-compiler' } else { 'vm' }
+$taskCompiler = (Join-Path $taskSdk 'bin/clang.exe').Replace('\', '/')
+$taskTarget = $taskOutput.Replace('\', '/')
 Push-Location $taskRepository
 try {
-  if ($Compiler) {
-    $taskZydis = 'src/v2/x86/third_party/zydis'
-    $taskSources = @(
-      'src/v2/wasm-compiler/wasm/entry.c', 'src/v2/wasm-compiler/wasm/memory.c',
-      'src/v2/wasm-compiler/src/read-optimized-x86.c', 'src/v2/wasm-compiler/src/lower-machine-abi.c',
-      'src/v2/wasm-compiler/src/emit-function.c', 'src/v2/wasm-compiler/src/compile-cut.c',
-      'src/v2/wasm-compiler/src/emit-cut.c', 'src/v2/wasm-compiler/src/lower-register.c',
-      'src/v2/wasm-compiler/src/lower-shift.c',
-      'src/v2/wasm-compiler/src/lower-double-shift.c',
-      'src/v2/wasm-compiler/src/lower-multiply.c',
-      'src/v2/wasm-compiler/src/lower-summary.c',
-      'src/v2/wasm-compiler/src/lower-paired-exchange.c',
-      'src/v2/wasm-compiler/src/lower-fxsave.c',
-      'src/v2/wasm-compiler/src/lower-mxcsr.c',
-      'src/v2/wasm-compiler/src/lower-divide.c',
-      'src/v2/wasm-compiler/src/lower-io.c',
-      'src/v2/wasm-compiler/src/lower-repeat.c',
-      'src/v2/wasm-compiler/src/lower-branch.c',
-      'src/v2/wasm-compiler/src/lower-memory.c', 'src/v2/wasm-compiler/src/lower-stack.c',
-      'src/v2/wasm-compiler/src/lower-system.c', 'src/v2/x86/src/decode.c', 'src/v2/x86/src/elf.c',
-      'src/v2/optimized-x86/src/proof.c', 'src/v2/optimized-x86/src/reader.c', 'src/v2/support/src/sha256.c'
-    ) + @('Register', 'SharedData', 'DecoderData', 'Decoder', 'Mnemonic' | ForEach-Object { "$taskZydis/src/$_.c" })
-    & "$taskSdk/bin/clang.exe" --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib '-Wl,--no-entry,--strip-all' -Xlinker '--import-memory=machine,memory' '-Wl,--export=compiler_arena_min,--export=compiler_report_bytes,--export=compiler_close,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit' '-DZYAN_NO_LIBC' '-DZYDIS_STATIC_BUILD' '-DZYDIS_DISABLE_ENCODER' '-DZYDIS_DISABLE_FORMATTER' '-DZYDIS_DISABLE_SEGMENT' '-DZYDIS_DISABLE_KNC' '-Isrc/v2/wasm-compiler/include' '-Isrc/v2/optimized-x86/include' '-Isrc/v2/x86/include' '-Isrc/v2/support/include' '-Isrc/v2/machine-abi/include' "-I$taskZydis/include" "-I$taskZydis/dependencies/zycore/include" "-I$taskZydis/src" @taskSources -o $taskOutput
-    if ($LASTEXITCODE) { throw 'C cold compiler Wasm build failed' }
-  } else {
-    $taskDebug = @('-Wl,--export=vm_debug,--export=vm_flag,--export=vm_boundary,--export=vm_reserve_pair,--export=vm_commit_pair,--export=vm_write_begin,--export=vm_write_word,--export=vm_write_end,--export=vm_software_interrupt', 'src/v2/vm/core/debug.c', 'src/v2/vm/core/interrupt.c')
-    $taskIo = @('-Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit,--export=vm_clock_poll,--export=vm_rtc_start,--export=vm_console_commit,--export=vm_post_read', 'src/v2/vm/core/clock.c', 'src/v2/vm/core/pit.c', 'src/v2/vm/core/pic.c', 'src/v2/vm/core/rtc.c', 'src/v2/vm/core/uart.c', 'src/v2/vm/core/console.c', 'src/v2/vm/core/io.c')
-    $taskControl = @('-Wl,--export=vm_return,--export=vm_control,--export=vm_code,--export=vm_grow,--export=vm_page_prepare,--export=vm_page_commit,--export=vm_page_count,--export=vm_fault,--export=vm_iret,--export=vm_msr,--export=vm_source_query,--export=vm_source_extend,--export=vm_source_publish,--export=vm_sources_reset,--export=vm_source_capacity,--export=vm_source_metadata_bytes', 'src/v2/vm/core/control.c', 'src/v2/vm/core/registers.c', 'src/v2/vm/core/msr.c', 'src/v2/vm/core/supply.c', 'src/v2/vm/core/exception.c', 'src/v2/vm/core/source.c')
-    & "$taskSdk/bin/clang.exe" --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib '-Wl,--no-entry,--strip-all,--export-table,--growable-table' -Xlinker '--import-memory=machine,memory' '-Wl,--export=vm_arena_min,--export=vm_open,--export=vm_close,--export=vm_bind_state,--export=vm_access,--export=vm_boot_prepare,--export=vm_boot_project,--export=vm_boot_initial_state,--export=vm_slot_min,--export=vm_bind_execution,--export=vm_run,--export=vm_completed,--export=vm_source_retired,--export=vm_boot_initial_segments,--export=vm_bind_segments,--export=vm_segment' '-Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--export=vm_table' -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion '-Isrc/v2/vm/include' '-Isrc/v2/support/include' '-Isrc/v2/machine-abi/include' 'src/v2/vm/wasm/entry.c' 'src/v2/vm/core/memory.c' 'src/v2/vm/core/mmu.c' 'src/v2/vm/core/boot.c' 'src/v2/vm/core/execution.c' 'src/v2/vm/core/segments.c' 'src/v2/vm/core/tables.c' @taskControl @taskDebug @taskIo -o $taskOutput
-    if ($LASTEXITCODE) { throw 'C VM Wasm build failed' }
-  }
+    & $taskMake.Source -C "src/v2/$taskProduct" wasm "WASM_CC=$taskCompiler" "WASM_OUTPUT=$taskTarget"
+    if ($LASTEXITCODE) { throw "C $taskProduct Wasm build failed" }
 } finally { Pop-Location }
 Get-FileHash -Algorithm SHA256 -LiteralPath $taskOutput

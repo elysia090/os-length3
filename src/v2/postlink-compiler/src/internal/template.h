@@ -26,24 +26,13 @@
 #define POSTLINK_TEMPLATE_H
 
 #include "format.h"
+#include <x86/ssa.h>
 
 #define PL_TEMPLATE_MAGIC "STQT"
 #define PL_TEMPLATE_VERSION 2u
 #define PL_TEMPLATE_PREFIX_BYTES 8u
 #define PL_TEMPLATE_SCALARS 10u
 
-/* Operand kinds, in the order project_step_template tags them.  const, stack
- * and local leave for the parameter row; node and projection stay because they
- * are the operator graph itself. */
-#define PL_OPERAND_CONST      0u
-#define PL_OPERAND_STACK      1u
-#define PL_OPERAND_LOCAL      2u
-#define PL_OPERAND_NODE       3u
-#define PL_OPERAND_PROJECTION 4u
-#define PL_OPERAND_KINDS      5u
-
-#define PL_OPERAND_STAYS(tag) \
-    ((tag) == PL_OPERAND_NODE || (tag) == PL_OPERAND_PROJECTION)
 
 /* One logical tag group inside the two shared packed streams. */
 typedef struct {

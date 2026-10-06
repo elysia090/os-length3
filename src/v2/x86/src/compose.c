@@ -1,8 +1,6 @@
 /* Raw composition: substitute one state step through another.
  *
- * Mirrors compose_plans_raw in qm/stepnormalize.py.  Three mechanisms make this
- * more than a concatenation, and each was read off that function rather than
- * assumed:
+ * Composition carries values and effects without an intermediate frame:
  *
  *   - the second plan's local and stack operands are replaced by whatever the
  *     first publishes at that coordinate, so no intermediate frame exists;
@@ -16,7 +14,7 @@
  * normalization's job, and normalization is a separate stage.
  */
 
-#include "internal/plan.h"
+#include <x86/ssa.h>
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 #define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)

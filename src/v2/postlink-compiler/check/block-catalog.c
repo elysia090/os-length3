@@ -6,8 +6,7 @@
 
 #include "../src/internal/form-block.h"
 #include "../src/internal/closure.h"
-#include "../src/internal/opcodes.h"
-#include "../src/internal/plan.h"
+#include <x86/ssa.h>
 #include "../src/internal/quotient.h"
 #include "../src/internal/x86-selection.h"
 #include <x86/elf.h>

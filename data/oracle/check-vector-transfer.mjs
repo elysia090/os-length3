@@ -39,12 +39,12 @@ function logicalShift(value,width,count,left) {
   }
   return result;
 }
-function permutation(values,width,high,control) {
+function permutation(values,width,high,control,left=null) {
   // Independent per-element loads/copies; not the emitted byte-coordinate map.
   const result=Buffer.from(values),bytes=width/8,start=high?8:0;
   for(let lane=0;lane<4;++lane) {
     const selected=(control>>(lane*2))&3;
-    if(width===32)result.writeUInt32LE(values.readUInt32LE(selected*4),lane*4);
+    if(width===32)result.writeUInt32LE((left&&lane<2?left:values).readUInt32LE(selected*4),lane*4);
     else result.writeUInt16LE(values.readUInt16LE(start+selected*2),start+lane*bytes);
   }
   return result;
@@ -95,13 +95,13 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<384;++form) {
+  for(let form=0;form<408;++form) {
     const prefix=path.join(directory,`vector-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
     if(beforeDirectory){assert(records.equals(await readFile(path.join(beforeDirectory,`vector-${form}.cases`))),`${form}: pre-lowering native records unchanged`);stable+=meta.native;}
     cold.set(source,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
-    assert.equal(cc.compiler_emit(entry,8,output,65536,report),0);
+    assert.equal(cc.compiler_emit(entry,8,output,65536,report),0,`${form}: cold vector admission`);
     assert.equal(cv.getBigUint64(report+40,true),BigInt(emitted.length));assert(cold.subarray(output,output+emitted.length).equals(emitted));++parity;
     const module=await WebAssembly.compile(emitted);
     if(meta.shuffle) {
@@ -123,8 +123,9 @@ try {
     }
     if(meta.permutationWidth) {
       const coordinates=Array.from({length:16},(_,i)=>i),bytes=meta.permutationWidth/8,start=meta.permutationHigh?8:0;
+      const paired=meta.permutationTwo&&!(meta.register&&(form-360)%8===1);
       for(let lane=0;lane<4;++lane)for(let byte=0;byte<bytes;++byte)
-        coordinates[start+lane*bytes+byte]=start+bytes*((meta.permutationControl>>(2*lane))&3)+byte;
+        coordinates[start+lane*bytes+byte]=(paired&&lane>=2?16:0)+start+bytes*((meta.permutationControl>>(2*lane))&3)+byte;
       assert(emitted.includes(Buffer.from([0xfd,0x0d,...coordinates,0xfd,0x0b])),`${form}: one static permutation/publication`);
       assert(emitted.length<=(meta.register?410:495),'no scalar lane expansion');
     }
@@ -160,14 +161,14 @@ try {
     }
     // Model-only control faults: a user-mode native oracle cannot write CR0/4.
     const first=records.subarray(0,stride);
-    if(meta.permutationWidth) {
+    if(meta.permutationWidth&&!meta.permutationFixed) {
       for(let control=0;control<256;++control) {
         const selected=Buffer.from(source);selected[meta.sourceBytes-1]=control;
         cold.set(selected,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
-        assert.equal(cc.compiler_emit(entry,1,output,65536,report),0);
+        assert.equal(cc.compiler_emit(entry,1,output,65536,report),0,`${form}: every projection control`);
         const length=Number(cv.getBigUint64(report+40,true)),body=Buffer.from(cold.subarray(output,output+length));
         const transformed=(await engines.get(body)).exports.cut;vm.__indirect_function_table.set(slot,transformed);
-        if(control===0xe4) {
+        if(control===0xe4&&(!meta.permutationTwo||(meta.register&&(form-360)%8===1))) {
           assert(!body.includes(Buffer.from([0xfd,0x0d])),'identity has no pure permutation');
           if(meta.register&&(form-360)%8===1) {
             assert(length<=365,'identity alias has no payload read/publication');
@@ -179,11 +180,12 @@ try {
           const where=meta.register?base+(same?272:304):target(u64(first,0));
           for(let byte=0;byte<16;++byte)data[where+byte]=pattern?255-byte*13:byte*7+3;
           const wanted={state:cpu(),bytes:image(),result:1n};
-          permutation(Buffer.from(data.subarray(where,where+16)),meta.permutationWidth,meta.permutationHigh,control).copy(wanted.state,272);
+          permutation(Buffer.from(data.subarray(where,where+16)),meta.permutationWidth,meta.permutationHigh,control,
+            meta.permutationTwo?Buffer.from(wanted.state.subarray(272,288)):null).copy(wanted.state,272);
           wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);wanted.state.writeBigUInt64LE(43n,1128);
           compare(transformed,wanted,`${form}: every permutation immediate ${control}/${pattern}`,dispatch);++immediatePermutationModels;
         }
-        if(control===0xe4&&!meta.register&&meta.kind!==4)for(const dispatch of [false,true])for(const row of [3,5,6,9]) {
+        if(control===0xe4&&!meta.permutationTwo&&!meta.register&&meta.kind!==4)for(const dispatch of [false,true])for(const row of [3,5,6,9]) {
           const r=records.subarray(row*stride,(row+1)*stride);assert(u64(r,5));
           reset(selected,meta,r,row);compare(transformed,expected(r,meta),`${form}: identity still faults/${row}`,dispatch);++identityFaultModels;
         }
@@ -276,7 +278,7 @@ try {
     }
     if(meta.register && !meta.shiftWidth)for(const dispatch of [false,true]) {
       // Deliberate source/target alias: full input is captured before output.
-      const alias=Buffer.from(source);alias[meta.sourceBytes-(meta.permutationWidth?2:1)]=0xc9;
+      const alias=Buffer.from(source);alias[meta.sourceBytes-(meta.permutationWidth&&!meta.permutationFixed?2:1)]=0xc9;
       cold.set(alias,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
       assert.equal(cc.compiler_emit(entry,1,output,65536,report),0);
       const n=Number(cv.getBigUint64(report+40,true));
@@ -371,7 +373,7 @@ try {
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
     controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,shuffleSelectorModels,simdRefusalModels,immediateShiftModels,immediatePermutationModels,identityFaultModels,
-    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ, PADDD, PSHUFB, PSRLD and PSHUFD common C compilation accepted; not executed by this fixture',
+    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ, PADDD, PSHUFB, PSRLD, PSHUFD and SHUFPS common C compilation accepted; not shipped Linux execution by this fixture',
     oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or FP arithmetic',
     linuxBoot:'not-tested'}));
 } finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}

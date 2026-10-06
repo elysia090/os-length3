@@ -1,6 +1,7 @@
 /* Straight-line block formation.  See include/postlink/block.h. */
 
 #include "internal/form-block.h"
+#include "internal/plan-codec.h"
 
 /* Compose instruction laws into one precise barrier-bounded block. */
 

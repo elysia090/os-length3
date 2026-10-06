@@ -1,4 +1,4 @@
-/* Bounded little-endian ELF64 input.  See include/postlink/elf.h. */
+/* Bounded little-endian ELF64 input. */
 
 #include <x86/elf.h>
 

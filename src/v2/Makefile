@@ -159,6 +159,10 @@ check: release-sharing-check artifact-executable-stage-check native-bundle-check
 	@! test -e tests
 	@! test -e tools
 	@! test -e machine-artifact
+	@! test -e vm/wasm/vm.c
+	@! test -e wasm-compiler/src/lower-vector-permutation.c
+	@! test -e postlink-compiler/src/instruction-semantics.c
+	@! test -e postlink-compiler/src/normalize-ssa.c
 	@test -d web
 	@! grep -REn 'Pyodide|pyodide|from qm|import qm|from kernel|import kernel|machine-artifact/' \
 		--exclude=Makefile --exclude='*.md' --exclude-dir=build \

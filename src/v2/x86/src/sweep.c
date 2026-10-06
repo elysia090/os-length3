@@ -1,6 +1,6 @@
-/* The shared traversal.  See include/postlink/sweep.h. */
+/* The shared dependency-ordered substitution traversal. */
 
-#include "internal/sweep.h"
+#include <x86/ssa-build.h>
 
 int pl_remap_open(pl_remap *remap, pl_u32 values, pl_arena *arena)
 {

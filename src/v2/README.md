@@ -225,6 +225,10 @@ Notably:
   cold `x86` frontend and lowers the machine ABI. It never reopens the original
   linked input or imports a decoder into execution. Native post-link selection
   remains independent from the Wasm backend.
+  Exact instruction laws and transient SSA composition/normalization are
+  owned by `x86`, not copied into either backend. The current vector projection
+  consumes those shared coordinate laws; migration of the remaining
+  instruction-wise scalar emitter to the shared SSA is still required.
 - `vm` executes the machine ABI and faults immutable objects through
   `artifact` and `storage`; it does not link either compiler.
 - `web` owns orchestration and presentation only. It does not implement x86,

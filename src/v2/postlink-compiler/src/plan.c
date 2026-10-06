@@ -1,6 +1,6 @@
 /* Plan decoding and raw composition.  See include/postlink/plan.h. */
 
-#include "internal/plan.h"
+#include "internal/plan-codec.h"
 
 /* Values interleave: a tag group's stayed words sit in the template while its
  * consts and coordinates sit in the parameter row, and both advance in tag

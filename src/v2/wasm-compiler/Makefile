@@ -6,6 +6,7 @@ WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iinclude -I../support/include -I../optimized-x86/include \
 	-I../machine-abi/include -I../x86/include
 BUILD ?= build
+WASM_OUTPUT ?= $(BUILD)/wasm-compiler.wasm
 WASM_CC ?= clang
 # Disjoint cold static/stack placement in a caller-owned imported memory.
 # Stack follows this module's data, not address zero in another module.
@@ -29,7 +30,7 @@ SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/lower-vector-arithmetic.c
 SOURCES += src/lower-vector-shuffle.c
-SOURCES += src/lower-vector-permutation.c
+SOURCES += src/emit-vector-projection.c
 SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 
@@ -140,12 +141,13 @@ all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 
 # Independent cold compiler and private stack; never a runtime decoder.
 ZYDIS = ../x86/third_party/zydis
+include ../x86/sources.mk
 COLD_SOURCES = wasm/entry.c wasm/memory.c $(filter-out src/emit-module.c src/emit-dispatch.c,$(SOURCES)) \
-	../x86/src/elf.c ../x86/src/decode.c ../optimized-x86/src/proof.c \
+	$(addprefix ../x86/,$(X86_SOURCES)) ../optimized-x86/src/proof.c \
 	../optimized-x86/src/reader.c ../support/src/sha256.c \
 	$(addprefix $(ZYDIS)/src/,$(addsuffix .c,Register SharedData DecoderData Decoder Mnemonic))
-wasm: $(BUILD)/wasm-compiler.wasm
-$(BUILD)/wasm-compiler.wasm: $(COLD_SOURCES) $(wildcard include/wasm-compiler/*.h src/*.h \
+wasm: $(WASM_OUTPUT)
+$(WASM_OUTPUT): $(COLD_SOURCES) Makefile ../x86/sources.mk $(wildcard include/wasm-compiler/*.h src/*.h \
 	../machine-abi/include/machine/*.h ../x86/include/x86/*.h \
 	../optimized-x86/include/optimized-x86/*.h ../support/include/support/*.h) | $(BUILD)
 	$(WASM_CC) $(WASM_FLAGS) $(INCLUDES) -I$(ZYDIS)/include \

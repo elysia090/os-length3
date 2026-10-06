@@ -1,6 +1,6 @@
 /* Lower one decoded x86 instruction to a precise physical SSA law. */
 
-#include "internal/instruction-semantics.h"
+#include <x86/semantics.h>
 
 #define SEMANTIC_NODE_CAPACITY      16u
 #define SEMANTIC_ARGUMENT_CAPACITY 80u
@@ -2918,7 +2918,19 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         out->machine_value = operand(PL_OPERAND_LOCAL, 7u);
     }
     if (out->machine_operation != PL_X86_MACHINE_NONE)
+    {
+        if (out->machine_operation == PL_X86_MACHINE_VECTOR) {
+            pl_u32 kind = (pl_u32)out->machine_argument & 255u;
+            if (kind == 7u || kind == 8u || kind == 27u
+                    || kind == PL_X86_VECTOR_SHUFFLE_LOW_WORDS
+                    || kind == PL_X86_VECTOR_FIXED_DWORD_SHUFFLE) {
+                pl_x86_vector_projection projection;
+                if (!pl_x86_vector_project(instruction, &projection))
+                    return PL_ERROR_X86_SEMANTIC;
+            }
+        }
         return close_plan(&builder);
+    }
     switch (instruction->operation) {
     case PL_X86_OPERATION_NOP:
         status = 0;

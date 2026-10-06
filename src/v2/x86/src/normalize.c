@@ -4,7 +4,7 @@
  * reaches the fixed point without retaining an extra intermediate graph.
  * Freestanding: no libc, no allocation. */
 
-#include "internal/sweep.h"
+#include <x86/ssa-build.h>
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 

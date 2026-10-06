@@ -1,6 +1,6 @@
 /* Reopening a consumed ALU result.
  *
- * _reopen_consumed_x86_alu in qm/stepnormalize.py.  X86_ALU and X86_AFFINE_ALU
+ * X86_ALU and X86_AFFINE_ALU
  * are the one-lane spelling of arithmetic plus flags.  Once separately
  * normalized blocks are composed, an ALU's value result can become an internal
  * input to a larger memory transaction, and while it stays folded the
@@ -15,7 +15,7 @@
  * Freestanding: no libc, no allocation.
  */
 
-#include "internal/sweep.h"
+#include <x86/ssa-build.h>
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 #define PL_PROJECTION_SELECTOR_MASK ((1u << PL_PROJECTION_SELECTOR_BITS) - 1u)

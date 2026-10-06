@@ -12,9 +12,8 @@ INCLUDES = -Iinclude -Isrc -I../support/include -I../x86/include \
 ZYDIS_INCLUDES = -I../x86/third_party/zydis/include \
 	-I../x86/third_party/zydis/dependencies/zycore/include \
 	-I../x86/third_party/zydis/src
-SOURCES = src/compiler.c src/emit-x86.c src/layout-elf.c src/metadata.c src/relocate-elf.c src/discover-entry.c src/jump-table.c src/compile-elf.c src/minimum.c src/format.c src/instruction-semantics.c src/form-block.c src/closure.c \
-	src/transfer.c src/template.c src/project.c src/plan.c src/compose.c \
-	src/compact.c src/normalize-ssa.c src/sweep.c src/region.c src/alu.c \
+SOURCES = src/compiler.c src/emit-x86.c src/layout-elf.c src/metadata.c src/relocate-elf.c src/discover-entry.c src/jump-table.c src/compile-elf.c src/minimum.c src/format.c src/form-block.c src/closure.c \
+	src/transfer.c src/template.c src/project.c src/plan.c \
 	src/affine.c src/quotient.c src/scalar.c \
 	src/selection/encoding.c src/selection/source.c src/selection/operands.c \
 	src/selection/expressions.c src/selection/flags.c src/selection/select-rules.c \

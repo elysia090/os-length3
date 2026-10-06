@@ -72,11 +72,17 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
  * PSHUFB adds all selector bits, self-alias and the same memory topologies.
  * Immediate logical shifts cover all widths, both directions and count cuts.
  * Dword/high-word/low-word permutations share the eight operand topologies. */
-enum { VECTOR_FORMS=384u };
+enum { VECTOR_FORMS=408u };
 static pl_u32 permutation_width(pl_u32 form)
-{ return form<360u?0u:form<368u?32u:16u; }
+{ return form<360u?0u:form<368u || form>=384u?32u:16u; }
 static pl_u32 permutation_high(pl_u32 form)
 { return form>=368u && form<376u; }
+static pl_u32 permutation_two(pl_u32 form)
+{ return form>=384u && form<392u; }
+static pl_u32 permutation_fixed(pl_u32 form)
+{ return form>=392u; }
+static pl_u32 permutation_control(pl_u32 form)
+{ return form<360u?0u:form<392u?0x93u:form<400u?0xf5u:0xa0u; }
 static pl_u32 shift_width(pl_u32 form)
 { return form<264u || form>=360u?0u:form<296u?32u:form<328u?64u:16u; }
 static pl_u32 shift_count(pl_u32 form)
@@ -123,21 +129,25 @@ static pl_u32 encoding(pl_u32 form,pl_u32 *kind,pl_u32 *store,pl_u32 *reg,pl_u32
         if(is_unpack)family=(form-136u)/8u;else if(is_add)family=(form-232u)/8u;
         *kind=local<2u?0u:local-1u;*store=0u;*reg=local<2u;*aligned=!*reg;
         pl_u32 at=0u;if(*kind==1u)source[at++]=0x67u;
-        if(is_permutation)source[at++]=(pl_u8)(form<368u?0x66u:form<376u?0xf3u:0xf2u);
-        else if(is_shuffle || is_add || (is_unpack?(family<8u || family>=10u):(family<5u || family>=9u)))source[at++]=0x66u;
+        if(is_permutation && !permutation_two(form))
+            source[at++]=(pl_u8)(form<368u?0x66u:form<376u || permutation_fixed(form)?0xf3u:0xf2u);
+        else if(!is_permutation && (is_shuffle || is_add
+            || (is_unpack?(family<8u || family>=10u):(family<5u || family>=9u))))source[at++]=0x66u;
         source[at++]=(pl_u8)(*reg || *kind==3u?0x45u:0x44u);
         source[at++]=0x0fu;
-        if(is_permutation)source[at++]=0x70u;
+        if(is_permutation)source[at++]=(pl_u8)(permutation_two(form)?0xc6u
+            :permutation_fixed(form)?form<400u?0x16u:0x12u:0x70u);
         else if(is_shuffle) {source[at++]=0x38u;source[at++]=0x00u;}
         else source[at++]=is_add?add[family]:is_unpack?unpack[family]:opcodes[family];
         if(*reg)source[at++]=(pl_u8)(local?0xc9u:0xcbu);
         else if(*kind==1u)source[at++]=0x0fu;
         else if(*kind==2u) {source[at++]=0x4cu;source[at++]=0x24u;source[at++]=12u;}
         else if(*kind==3u) {source[at++]=0x4cu;source[at++]=0x8cu;source[at++]=7u;}
-        else if(*kind==4u) {source[at++]=0x0du;put(source+at,2048u-at-4u-(pl_u32)is_permutation,4u);at+=4u;}
+        else if(*kind==4u) {source[at++]=0x0du;put(source+at,2048u-at-4u
+            -(pl_u32)(is_permutation && !permutation_fixed(form)),4u);at+=4u;}
         else if(*kind==5u) {source[at++]=0x4du;source[at++]=0xf8u;}
         else {source[at++]=0x8fu;put(source+at,0xfffff001u,4u);at+=4u;}
-        if(is_permutation)source[at++]=0x93u;
+        if(is_permutation && !permutation_fixed(form))source[at++]=(pl_u8)permutation_control(form);
         return at;
     }
     pl_u32 family=form<18u?form/3u:form<20u?form-12u:0u;
@@ -362,9 +372,11 @@ int main(int argc,char **argv)
                      * sixteen static byte-coordinate emission. */
                     pl_u8 old[16],result[16];put(old,low,8u);put(old+8u,high,8u);memcpy(result,old,16u);
                     pl_u32 bytes=permutation_width(form)/8u,start=permutation_high(form)?8u:0u;
+                    pl_u8 left[16];put(left,state->xmm[18u],8u);put(left+8u,state->xmm[19u],8u);
                     for(pl_u32 lane=0u;lane<4u;++lane) {
-                        pl_u32 selected=(0x93u>>(lane*2u))&3u;
-                        memcpy(result+start+lane*bytes,old+start+selected*bytes,bytes);
+                        pl_u32 selected=(permutation_control(form)>>(lane*2u))&3u;
+                        const pl_u8 *owner=permutation_two(form) && lane<2u?left:old;
+                        memcpy(result+start+lane*bytes,owner+start+selected*bytes,bytes);
                     }
                     low=word(result,8u);high=word(result+8u,8u);
                 }
@@ -373,12 +385,13 @@ int main(int argc,char **argv)
             }
             ++observations;
         }
-        char json[512];int n=snprintf(json,sizeof json,
-            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u,\"addWidth\":%u,\"shuffle\":%u,\"shiftWidth\":%u,\"shiftCount\":%u,\"shiftLeft\":%u,\"permutationWidth\":%u,\"permutationHigh\":%u,\"permutationControl\":%u}\n",
+        char json[768];int n=snprintf(json,sizeof json,
+            "{\"entry\":\"4194304\",\"sourceBytes\":%u,\"native\":128,\"stateBytes\":%zu,\"recordBytes\":%zu,\"kind\":%u,\"store\":%u,\"register\":%u,\"aligned\":%u,\"add\":%u,\"logic\":%u,\"unpackWidth\":%u,\"unpackHigh\":%u,\"addWidth\":%u,\"shuffle\":%u,\"shiftWidth\":%u,\"shiftCount\":%u,\"shiftLeft\":%u,\"permutationWidth\":%u,\"permutationHigh\":%u,\"permutationControl\":%u,\"permutationTwo\":%u,\"permutationFixed\":%u}\n",
             size,sizeof(machine_state),sizeof(observation),kind,store,reg,aligned,
             (pl_u32)(form>=32u && form<40u),form>=40u && form<136u?1u+(form-40u)/8u%4u:0u,
             unpack_width(form),unpack_high(form),add_width(form),(pl_u32)(form>=256u && form<264u),
-            shift_width(form),shift_count(form),shift_left(form),permutation_width(form),permutation_high(form),form>=360u?0x93u:0u);
+            shift_width(form),shift_count(form),shift_left(form),permutation_width(form),permutation_high(form),
+            permutation_control(form),permutation_two(form),permutation_fixed(form));
         if(n<1 || (size_t)n>=sizeof json || save(directory,form,"json",json,(size_t)n)
             || save(directory,form,"source-page",source,sizeof source) || save(directory,form,"cases",records,sizeof records)
             || (!observe_only && save(directory,form,"wasm",module,(size_t)emitted)))goto finish;

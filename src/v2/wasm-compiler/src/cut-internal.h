@@ -5,6 +5,7 @@
 #include <machine/state.h>
 #include <machine/memory.h>
 #include <x86/decode.h>
+#include <x86/semantics.h>
 #include <stddef.h>
 enum { CUT_FLAGS = 17, CUT_LEFT, CUT_RIGHT, CUT_VALUE, CUT_NEXT,
        CUT_ADDRESS, CUT_STATUS, CUT_REPEAT_BUDGET,
@@ -41,7 +42,8 @@ typedef struct {
     pl_x86_map maps[64];
     pl_x86_image image;
     wasm_cut_report report;
-    /* Low 16: bounded source offset. High 16: needed flag definitions.
+    /* Admission: write/read masks plus definite-kill bit. After reverse
+     * liveness, bits 16..27 contain the needed flag definitions.
      * No decoded instruction or architectural predecessor frame is retained. */
     pl_u32 flag_frontier[WASM_CUT_MAX_INSTRUCTIONS];
     pl_u32 system_cut;
@@ -102,9 +104,10 @@ void cut_lower_vector_unpack(cut_lowering *cut,const pl_x86_instruction *instruc
 pl_u32 cut_vector_add_width(const pl_x86_instruction *instruction);
 void cut_lower_vector_add(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 width);
 void cut_lower_vector_shuffle(cut_lowering *cut,const pl_x86_instruction *instruction);
-/* Static source-only permutation: element width, bit 7 for high words. */
-pl_u32 cut_vector_permutation_shape(const pl_x86_instruction *instruction);
-void cut_lower_vector_permutation(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape);
+int cut_vector_projection_local(const pl_x86_instruction *instruction);
+void cut_emit_vector_projection(cut_lowering *cut,
+    const pl_x86_instruction *instruction,
+    const pl_x86_vector_projection *projection);
 /* Logical immediate shift: element width, bit 7 for left; zero rejects. */
 pl_u32 cut_vector_shift_shape(const pl_x86_instruction *instruction);
 void cut_lower_vector_shift(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape);

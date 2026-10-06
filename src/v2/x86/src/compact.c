@@ -1,7 +1,6 @@
 /* Compaction: drop, share, renumber, reschedule.
  *
- * _compact_once in qm/stepnormalize.py, expressed on the shared traversal in
- * sweep.h.  The four stages, in the order the reference runs them:
+ * The shared traversal applies four stages:
  *
  *   liveness   a node survives if something observes it.  Memory nodes and the
  *              trapping divides are observable in themselves; everything else
@@ -14,13 +13,12 @@
  *   reschedule depth is one past the deepest argument, and the waves are those
  *              depths as offsets into a run of node values.
  *
- * The reference's algebraic rewriter is not here; it is src/rewrite.c, and the
- * caller is expected to have run it to its fixed point first.
+ * Algebraic normalization precedes this dependency compaction.
  *
  * Freestanding: no libc, no allocation.
  */
 
-#include "internal/sweep.h"
+#include <x86/ssa-build.h>
 
 #define PL_PROJECTION_SELECTOR_BITS 8u
 

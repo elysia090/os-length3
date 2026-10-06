@@ -1,6 +1,6 @@
 /* Canonical normalized-plan projection into a shared template and typed row. */
 
-#include "internal/plan.h"
+#include "internal/plan-codec.h"
 
 typedef struct {
     pl_u8 *target;

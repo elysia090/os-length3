@@ -1,5 +1,29 @@
 # Browser projection of OS Length3 Linux
 
+Latest completed same-bundle Node run (`cfb0d28`, PID 7804 completed):
+196,784,804 retired / 104,131,710 admissions; compiler -102 at
+`0x7f7baf27d340`, SHUFPS `0f c6 c2 00`.
+Frozen VM/compiler 70,499 / 453,522 bytes, unchanged quotas and warmCuts=64.
+Engine construction 356,170 ms, cold emission 301,678 ms, execution 87,149 ms,
+total check 914,753 ms; this is not a paired speedup or browser acceptance.
+See the [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-shufps-red.json).
+
+Shared instruction semantics and SSA construction now belong to `x86`.
+The former private copies, old permutation lower and historical VM source/
+unowned benches are deleted. Six vector permutation families consume one
+coordinate-selection law: 3,078 shared-law checks, 196,992 descriptor
+refusals, 408 native/cold parity emissions and 52,224 unchanged native
+observations in both direct and C-dispatch execution. Full native compiler/
+CLI checks and instrumented shared-core/native ASan/UBSan pass.
+Candidate compiler 455,822 bytes, VM unchanged. This candidate is not in
+the completed run above. Scalar instruction-wise Wasm emission, whole-image
+closure and old web/catalog consumers still require migration; this is not
+a claim that every backend already consumes normalized block SSA.
+See [derivation and scope](../vm/check/browser/evidence/2026-10-06-shared-x86.md).
+PID 1/root mount/shell/tooling/browser acceptance and cold shell 3s remain
+unachieved. Native publication/UI and retained browser Workers/staged assets
+are unchanged.
+
 Latest completed same-bundle Node measurement (`f1ab0fe`, PID 20464 completed):
 LOCK RMW passes; next compiler -102 is `0f 16 05 88 b8 00 00`
 (MOVHPS xmm0,[RIP+0xb888]) at `0x7ff37faf2051`, after 189,152,720
@@ -422,8 +446,9 @@ Inspection on 2026-10-02 found:
   exact host request, not a fabricated Linux page fault. Its 49,152 permission
   cases are a model test, not a hardware/QEMU fault-delivery differential.
   Bounded C table dispatch exists; complete closure, CPU exception delivery and
-  virtio devices remain unimplemented. The retained `vm/wasm` and `web/vm.js` code still contains
-  historical execution machinery. Resource/RAM boundaries alone are not a VM.
+  virtio devices remain unimplemented. The historical VM source is now deleted;
+  retained `web/vm.js`/catalog consumers still require retirement. They are not
+  a fallback for the modern machine. Resource/RAM boundaries alone are not a VM.
 * `linux-worker.js` defaults to `linux-x86-64-machine`, which is absent from
   the current catalog and is not the shipped bundle. Re-enabling that old
   catalog entry would not test this release.

@@ -29,7 +29,7 @@
 #ifndef POSTLINK_AFFINE_H
 #define POSTLINK_AFFINE_H
 
-#include "plan.h"
+#include <x86/ssa.h>
 
 /* How one local slot evolves across one iteration. */
 typedef enum {

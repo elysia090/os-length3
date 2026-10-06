@@ -11,7 +11,7 @@
 
 #include <x86/elf.h>
 #include <x86/fault.h>
-#include <x86/semantics.h>
+#include <x86/profile.h>
 
 #define PL_X86_MAX_INSTRUCTION_BYTES 15u
 #define PL_X86_MAX_OPERANDS          10u

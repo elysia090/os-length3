@@ -100,8 +100,8 @@ modules do not introduce another output format or runtime dependency.
 | Source | Responsibility |
 | --- | --- |
 | `discover-entry.c`, `jump-table.c` | Prove execution entries and indirect targets from ELF evidence |
-| `instruction-semantics.c`, `form-block.c` | Exact instruction laws and barrier-bounded SSA composition |
-| `normalize-ssa.c`, `sweep.c` | Algebraic substitution and dependency-ordered normalization |
+| `../x86/src/semantics.c`, `form-block.c` | Shared exact instruction laws and native barrier-bounded block formation |
+| `../x86/src/compose.c`, `normalize.c`, `compact.c`, `sweep.c` | Shared substitution, algebraic normalization, DCE, CSE and dependency waves |
 | `compile-elf.c` | Reachable entry closure and whole-ELF construction |
 | `layout-elf.c`, `relocate-elf.c`, `emit-x86.c` | Layout, reference rebinding, and ordinary ELF output |
 | `selection/encoding.c`, `selection/source.c` | Native encodings and source-field ownership |

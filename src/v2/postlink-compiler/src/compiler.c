@@ -17,7 +17,7 @@
 #include "internal/minimum.h"
 #include "internal/compile-elf.h"
 #include "internal/relocate-elf.h"
-#include "internal/instruction-semantics.h"
+#include <x86/semantics.h>
 
 /* ELF program-header counts are untrusted input.  The compiler does not hide
  * allocation inside its freestanding core, so the public whole-image entry

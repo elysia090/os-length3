@@ -5,6 +5,7 @@ CFLAGS ?= -O2
 WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iinclude -I../support/include -I../machine-abi/include
 BUILD ?= build
+WASM_OUTPUT ?= $(BUILD)/vm.wasm
 WASM_CC ?= clang
 WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--no-entry,--strip-all -Xlinker --import-memory=machine,memory \
@@ -52,20 +53,20 @@ $(BUILD)/system-check: check/system.c $(BUILD)/libvm.a
 # Resource and resident RAM boundaries; not a bootable machine or complete MMU.
 all: $(BUILD)/libvm.a
 
-$(BUILD)/vm.wasm: core/clock.c core/pit.c core/io.c include/vm/clock.h include/vm/pit.h include/vm/io.h ../machine-abi/include/machine/io.h
-$(BUILD)/vm.wasm: core/debug.c include/vm/debug.h
-$(BUILD)/vm.wasm: core/pic.c include/vm/pic.h
-$(BUILD)/vm.wasm: core/rtc.c include/vm/rtc.h
-$(BUILD)/vm.wasm: core/uart.c include/vm/uart.h
-$(BUILD)/vm.wasm: core/console.c include/vm/console.h
-$(BUILD)/vm.wasm: core/interrupt.c include/vm/interrupt.h
-$(BUILD)/vm.wasm: core/system.c include/vm/system.h ../machine-abi/include/machine/system.h
+$(WASM_OUTPUT): core/clock.c core/pit.c core/io.c include/vm/clock.h include/vm/pit.h include/vm/io.h ../machine-abi/include/machine/io.h
+$(WASM_OUTPUT): core/debug.c include/vm/debug.h
+$(WASM_OUTPUT): core/pic.c include/vm/pic.h
+$(WASM_OUTPUT): core/rtc.c include/vm/rtc.h
+$(WASM_OUTPUT): core/uart.c include/vm/uart.h
+$(WASM_OUTPUT): core/console.c include/vm/console.h
+$(WASM_OUTPUT): core/interrupt.c include/vm/interrupt.h
+$(WASM_OUTPUT): core/system.c include/vm/system.h ../machine-abi/include/machine/system.h
 
 # The provider shares ordinary machine memory with generated functions. It has
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
-wasm: $(BUILD)/vm.wasm
+wasm: $(WASM_OUTPUT)
 
-$(BUILD)/vm.wasm: wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c include/vm/supply.h core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c include/vm/msr.h ../machine-abi/include/machine/msr.h core/exception.c include/vm/exception.h core/source.c include/vm/source.h core/memory-internal.h core/segments-internal.h \
+$(WASM_OUTPUT): wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c include/vm/supply.h core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c include/vm/msr.h ../machine-abi/include/machine/msr.h core/exception.c include/vm/exception.h core/source.c include/vm/source.h core/memory-internal.h core/segments-internal.h \
 	include/vm/memory.h include/vm/mmu.h include/vm/boot.h include/vm/execution.h ../support/include/support/types.h \
 	../machine-abi/include/machine/state.h ../machine-abi/include/machine/memory.h \
 	include/vm/segments.h include/vm/tables.h include/vm/control.h include/vm/registers.h ../machine-abi/include/machine/segments.h \
