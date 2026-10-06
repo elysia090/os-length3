@@ -18,6 +18,15 @@ See [derivation and scope](../vm/check/browser/evidence/2026-10-06-selected-half
 PID 1, root mount, shell/tooling and browser acceptance remain unachieved.
 The native publication, UI and retained browser Workers/staged assets remain unchanged.
 
+Later cold-compiler cost normalization retains only the exact flag dependence
+in the existing frontier word and removes reverse-pass redecoding. Emission
+4N -> 3N / measurement 3N -> 2N decode counts, 231 full-byte/report parity
+cuts, full checks/scoped sanitizers and the 50-field fixed prefix pass.
+Candidate compiler 453,800 bytes, VM unchanged; NOT loaded in PID 7804.
+This changes cold construction cost, not generated execution work/span or
+Linux/browser measured speed. See
+[derivation and evidence](../vm/check/browser/evidence/2026-10-06-flag-frontier.md).
+
 Latest completed same-bundle measurement (`5610a5f`, PID 15708 completed):
 register XCHG passes; next compiler -102 is `f0 48 09 14 c8`
 (LOCK OR qword [RAX+RCX*8],RDX), RIP `0x7fc71de30801`, after 181,874,281

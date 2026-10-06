@@ -12,17 +12,30 @@ static int flag_dependencies(cut_plan *plan)
     pl_u32 live = 0xfffu; /* The cut's outgoing architectural flags are observable. */
     for (pl_u32 rank = (pl_u32)plan->report.source_instructions; rank; ) {
         --rank;
-        pl_u32 offset = plan->flag_frontier[rank];
-        pl_x86_instruction instruction;
-        if (pl_x86_decode_profile(&plan->image, plan->report.entry + offset, &instruction))
-            return WASM_COMPILER_ERROR_GRAMMAR;
-        pl_u32 wanted = live & cut_flag_write_mask(&instruction);
-        plan->flag_frontier[rank] = offset | (wanted << 16u);
+        pl_u32 summary = plan->flag_frontier[rank];
+        pl_u32 writes = summary & 0xfffu, reads = (summary >> 12u) & 0xfffu;
+        pl_u32 kills = (summary & (1u << 24u)) ? writes : 0u;
+        pl_u32 wanted = live & writes;
+        plan->flag_frontier[rank] = wanted << 16u;
         /* A consumer sees the incoming definition, including when the same
          * operation writes flags. Conditional zero-count shifts never kill
          * their predecessor. No future use is confused with a later kill. */
-        live = (live & ~cut_flag_kill_mask(&instruction)) | cut_flag_read_mask(&instruction);
+        live = (live & ~kills) | reads;
     }
+    return 0;
+}
+
+static int remember_flags(cut_plan *plan,pl_u32 rank,const pl_x86_instruction *instruction)
+{
+    pl_u32 writes=cut_flag_write_mask(instruction),kills=cut_flag_kill_mask(instruction);
+    pl_u32 reads=cut_flag_read_mask(instruction);
+    /* This grammar either definitely defines its write set or may preserve
+     * every incoming flag (register-count shifts). Retain only that relation,
+     * not a decoded instruction or a source coordinate to decode again. A
+     * future partial-kill/out-of-domain extension must update this projection. */
+    if(((writes|kills|reads)&~0xfffu) || (kills && kills!=writes))
+        return WASM_COMPILER_ERROR_GRAMMAR;
+    plan->flag_frontier[rank]=writes|(reads<<12u)|(kills?1u<<24u:0u);
     return 0;
 }
 
@@ -130,7 +143,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                         plan->report.operand_binding=(pl_u32)displacement;
                     }
                 }
-                plan->flag_frontier[0] = 0u;
+                if(remember_flags(plan,0u,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
                 if (indirect) plan->report.memory_bytes = instruction.operation == PL_X86_OPERATION_CALL
                     || instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
                 else if (system==CUT_SYSTEM_FXSAVE || system==CUT_SYSTEM_FXRSTOR)
@@ -168,10 +181,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             plan->report.boundary_operation = instruction.operation;
             break;
         }
-        /* Only source coordinates are kept for the reverse dependency pass.
-         * Later instructions stay in the entry page; a crossing first
-         * instruction stands alone. Therefore this offset fits sixteen bits. */
-        plan->flag_frontier[i] = (pl_u32)(rip - options->entry);
+        if(remember_flags(plan,i,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
         ++plan->report.source_instructions;
         plan->report.source_bytes += instruction.length;
         rip = instruction.fallthrough;

@@ -21,6 +21,15 @@ quotas). Obtain its completed next gate; this local green is not Linux passage.
 See [normal form and scope](../vm/check/browser/evidence/2026-10-06-selected-half.md).
 PID 1/root mount/shell/browser acceptance remain unachieved.
 
+The later cold cost candidate removes reverse-pass instruction redecoding
+without changing generated bodies/reports or frontier storage: 4N -> 3N
+emission decodes and 3N -> 2N measurement decodes, 231 counted cuts and
+42,987 source instructions in full-byte old/new parity. Native compiler/CLI,
+scoped sanitizer, scalar/half/LOCK regressions and the 50-field fixed prefix
+pass. Compiler 453,800 bytes (+278); VM unchanged. It is NOT in frozen
+PID 7804. Micro timings are not Linux/browser speedup. See
+[relation and counted scope](../vm/check/browser/evidence/2026-10-06-flag-frontier.md).
+
 The `5610a5f` separately frozen unchanged-bundle Node job completed (PID 15708,
 `temp/exchange-1006/frozen`, VM 70,499 / compiler 452,445 bytes, warmCuts=64,
 unchanged quotas). Register XCHG passes; the next compiler -102 is

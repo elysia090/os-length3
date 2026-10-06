@@ -33,6 +33,13 @@ SOURCES += src/lower-vector-permutation.c
 SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 
+.PHONY: flag-frontier-check
+check: flag-frontier-check
+flag-frontier-check: $(BUILD)/flag-frontier-check
+	$(BUILD)/flag-frontier-check
+$(BUILD)/flag-frontier-check: check/flag-frontier.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/flag-frontier.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -Wl,--wrap=pl_x86_decode_profile -o $@
+
 .PHONY: memory-order-check
 .PHONY: direct-call-check
 .PHONY: string-element-check

@@ -1,0 +1,186 @@
+{
+  "format": "cold-flag-frontier-v1",
+  "status": "pass",
+  "linuxBoot": "not-tested",
+  "before": {
+    "bytes": 453522,
+    "sha256": "53f774bce965b1878cc91ea01b7ebb991a6482796d41f910282ce16430a64439"
+  },
+  "after": {
+    "bytes": 453800,
+    "sha256": "dd3400a9dc87f6358b33bb59a7088b5e387a80b15f58ea1355ad4ff89168c5f0"
+  },
+  "exactModuleAndReportComparisons": 231,
+  "comparedSourceInstructions": 42987,
+  "timing": [
+    {
+      "length": 1,
+      "trial": 0,
+      "iterations": 1000,
+      "beforeMs": 7.028800000000018,
+      "afterMs": 4.70829999999998
+    },
+    {
+      "length": 1,
+      "trial": 1,
+      "iterations": 1000,
+      "afterMs": 4.668200000000013,
+      "beforeMs": 5.292899999999975
+    },
+    {
+      "length": 1,
+      "trial": 2,
+      "iterations": 1000,
+      "beforeMs": 5.24939999999998,
+      "afterMs": 4.6831000000000245
+    },
+    {
+      "length": 1,
+      "trial": 3,
+      "iterations": 1000,
+      "afterMs": 4.6381999999999834,
+      "beforeMs": 5.2531999999999925
+    },
+    {
+      "length": 1,
+      "trial": 4,
+      "iterations": 1000,
+      "beforeMs": 5.3537000000000035,
+      "afterMs": 4.7853000000000065
+    },
+    {
+      "length": 1,
+      "trial": 5,
+      "iterations": 1000,
+      "afterMs": 4.646000000000015,
+      "beforeMs": 5.085800000000006
+    },
+    {
+      "length": 1,
+      "trial": 6,
+      "iterations": 1000,
+      "beforeMs": 5.044800000000009,
+      "afterMs": 4.629099999999994
+    },
+    {
+      "length": 1,
+      "trial": 7,
+      "iterations": 1000,
+      "afterMs": 4.664200000000051,
+      "beforeMs": 5.108199999999954
+    },
+    {
+      "length": 8,
+      "trial": 0,
+      "iterations": 1000,
+      "beforeMs": 19.046400000000006,
+      "afterMs": 15.874099999999999
+    },
+    {
+      "length": 8,
+      "trial": 1,
+      "iterations": 1000,
+      "afterMs": 15.986100000000022,
+      "beforeMs": 19.20369999999997
+    },
+    {
+      "length": 8,
+      "trial": 2,
+      "iterations": 1000,
+      "beforeMs": 19.26339999999999,
+      "afterMs": 15.938499999999976
+    },
+    {
+      "length": 8,
+      "trial": 3,
+      "iterations": 1000,
+      "afterMs": 16.0283,
+      "beforeMs": 19.049800000000005
+    },
+    {
+      "length": 8,
+      "trial": 4,
+      "iterations": 1000,
+      "beforeMs": 18.916200000000003,
+      "afterMs": 15.77819999999997
+    },
+    {
+      "length": 8,
+      "trial": 5,
+      "iterations": 1000,
+      "afterMs": 15.876099999999951,
+      "beforeMs": 18.923400000000015
+    },
+    {
+      "length": 8,
+      "trial": 6,
+      "iterations": 1000,
+      "beforeMs": 18.91509999999994,
+      "afterMs": 15.751499999999965
+    },
+    {
+      "length": 8,
+      "trial": 7,
+      "iterations": 1000,
+      "afterMs": 15.807000000000016,
+      "beforeMs": 19.616800000000012
+    },
+    {
+      "length": 64,
+      "trial": 0,
+      "iterations": 1000,
+      "beforeMs": 132.47389999999996,
+      "afterMs": 106.95799999999997
+    },
+    {
+      "length": 64,
+      "trial": 1,
+      "iterations": 1000,
+      "afterMs": 106.68740000000003,
+      "beforeMs": 131.77929999999992
+    },
+    {
+      "length": 64,
+      "trial": 2,
+      "iterations": 1000,
+      "beforeMs": 132.2591,
+      "afterMs": 107.60989999999993
+    },
+    {
+      "length": 64,
+      "trial": 3,
+      "iterations": 1000,
+      "afterMs": 110.87130000000002,
+      "beforeMs": 131.75229999999988
+    },
+    {
+      "length": 64,
+      "trial": 4,
+      "iterations": 1000,
+      "beforeMs": 131.8922,
+      "afterMs": 108.05649999999991
+    },
+    {
+      "length": 64,
+      "trial": 5,
+      "iterations": 1000,
+      "afterMs": 109.39069999999992,
+      "beforeMs": 131.92719999999986
+    },
+    {
+      "length": 64,
+      "trial": 6,
+      "iterations": 1000,
+      "beforeMs": 131.5713999999998,
+      "afterMs": 108.0291000000002
+    },
+    {
+      "length": 64,
+      "trial": 7,
+      "iterations": 1000,
+      "afterMs": 108.81410000000005,
+      "beforeMs": 131.6938
+    }
+  ],
+  "scope": "alternating concurrent Node compiler micro measurements, not guest execution or isolated browser/Linux speedup"
+}
