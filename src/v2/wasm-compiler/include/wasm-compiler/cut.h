@@ -61,7 +61,11 @@ int wasm_compiler_emit_code_module(const pl_x86_image *source,pl_u64 generation,
  *     i32 operand_binding) -> i64 machine_result (machine-entry ABI 3).
  * The trusted compiler reports a signed displacement binding for one isolated
  * IP/GPR-relative memory operand, including scaled index and disp8, or the
- * final rel8/rel32 branch of a pure cut; otherwise zero. A branch uses it as
+ * final rel8/rel32 branch of a pure cut. A single GPR MOV whose value fits
+ * unsigned32 or sign-extended32 carries that exact scalar value instead.
+ * Its emitted topology determines the extension; it is not an opcode or
+ * a runtime decoder descriptor. Wider values and multi-instruction literals
+ * are encoded exactly in their body; other bindings are zero. A branch uses it as
  * sign_extend_32(d) added to its admitted fallthrough. Absolute pointers,
  * preceding operands and pure LEA literals are not rebound. The caller must
  * preserve it by value through admission and any pinned continuation.
