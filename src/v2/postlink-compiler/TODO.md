@@ -23,6 +23,22 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Latest completed `aa750ea` same-bundle run: 229,117,402 retired /
+124,477,220 admissions; SHUFPS passes and PCMPEQD self-equality
+`66 0f 76 c0` at `0x7f1159591ddb` is compiler -102.
+Engine 507,555 ms, cold 421,207 ms, execution 113,947 ms,
+total 1,261,153 ms; unchanged quotas, not a speedup comparison.
+See [receipt](../vm/check/browser/evidence/2026-10-06-node-startup-pcmpeqd-red.json).
+The separate shared binary candidate passes 432 native/cold emissions /
+55,296 unchanged observations in direct and C dispatch, 2,992 common laws,
+full compiler/CLI and shared-core/native sanitizers. Compiler 456,366 bytes;
+VM unchanged. It deletes scalar packed-add/logic reconstruction and consumes
+one lane-parametric law, including equality/identity/zero/ones substitution.
+It is NOT in that completed run. See
+[scope](../vm/check/browser/evidence/2026-10-06-vector-binary.md).
+PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
+
+Earlier:
 Completed `cfb0d28` Node run: 196,784,804 retired / 104,131,710 admissions;
 -102 at `0x7f7baf27d340`, SHUFPS `0f c6 c2 00`.
 Frozen VM/compiler 70,499 / 453,522 bytes, warmCuts=64, unchanged quotas.

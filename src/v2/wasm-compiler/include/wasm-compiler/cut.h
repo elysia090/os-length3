@@ -136,7 +136,8 @@ typedef struct {
  * installing unmasked status bits alone does not raise a SIMD exception.
  * Both retain the existing explicit AC/TF context refusal. They are not a
  * SIMD arithmetic, VEX or arbitrary exception/debug closure claim.
- * Legacy PSHUFB, immediate source-only dword/word permutations and 16/32/64-bit
+ * Legacy packed add/equality/bitwise logic, PSHUFB, immediate one/two-source
+ * dword/word permutations and 16/32/64-bit
  * logical packed shifts emit standard deterministic WebAssembly SIMD.
  * The target engine must support it; missing
  * support is an explicit construction refusal, not a scalar/interpreter

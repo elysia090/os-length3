@@ -19,10 +19,16 @@ const at=physical=>base+(Number(physical/4096n)+1)*4096;
 const put=(where,x)=>v.setBigUint64(where,BigInt(x),true),u64=(r,i)=>r.readBigUInt64LE(2512+i*8);
 const slot=vm.__indirect_function_table.grow(1),cpu=()=>Buffer.from(data.subarray(base,base+1256));
 const image=()=>Buffer.from(data.subarray(code,payload+8192));
-let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0,carryModels=0,exhaustiveByteModels=0,shuffleSelectorModels=0,simdRefusalModels=0,immediateShiftModels=0,immediatePermutationModels=0,identityFaultModels=0;
+let parity=0,comparisons=0,direct=0,rfComparisons=0,faults=0,controls=0,waits=0,refusals=0,stable=0,aliases=0,pairRefusals=0,carryModels=0,exhaustiveByteModels=0,shuffleSelectorModels=0,simdRefusalModels=0,immediateShiftModels=0,immediatePermutationModels=0,identityFaultModels=0,equalityModels=0;
+let equalityWitness=null;
 function packedAdd(a,b,width) {
   const bits=BigInt(width),mask=(1n<<bits)-1n;let value=0n;
   for(let bit=0n;bit<64n;bit+=bits)value|=(((a>>bit&mask)+(b>>bit&mask))&mask)<<bit;
+  return value;
+}
+function packedEqual(a,b,width) {
+  const bits=BigInt(width),mask=(1n<<bits)-1n;let value=0n;
+  for(let bit=0n;bit<64n;bit+=bits)if((a>>bit&mask)===(b>>bit&mask))value|=mask<<bit;
   return value;
 }
 function byteShuffle(values,selectors) {
@@ -95,7 +101,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<408;++form) {
+  for(let form=0;form<432;++form) {
     const prefix=path.join(directory,`vector-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`),records=await readFile(`${prefix}.cases`);
     assert.equal(meta.recordBytes,stride);assert.equal(meta.stateBytes,1256);assert.equal(records.length,meta.native*stride);
@@ -104,6 +110,25 @@ try {
     assert.equal(cc.compiler_emit(entry,8,output,65536,report),0,`${form}: cold vector admission`);
     assert.equal(cv.getBigUint64(report+40,true),BigInt(emitted.length));assert(cold.subarray(output,output+emitted.length).equals(emitted));++parity;
     const module=await WebAssembly.compile(emitted);
+    if(meta.comparisonWidth&&meta.register&&(form-32)%8===1) {
+      if(equalityWitness)assert(emitted.equals(equalityWitness),'all three equality widths share one exact constant body');
+      else equalityWitness=emitted;
+    }
+    const binary=meta.addWidth||meta.logic||meta.comparisonWidth;
+    if(binary) {
+      const same=meta.register&&(form-32)%8===1;
+      const substituted=same&&(meta.logic||meta.comparisonWidth);
+      if(substituted) {
+        assert(!emitted.includes(Buffer.from([0xfd,0x00])),'equal inputs have no vector payload read');
+        assert.equal(emitted.includes(Buffer.from([0xfd,0x0b])),!!meta.comparisonWidth||meta.logic===1||meta.logic===4);
+      } else {
+        const opcode=meta.logic?[0,0x51,0x4e,0x50,0x4f][meta.logic]
+          :meta.comparisonWidth?{8:0x23,16:0x2d,32:0x37}[meta.comparisonWidth]
+          :{8:0x6e,16:0x8e,32:0xae,64:0xce}[meta.addWidth];
+        const encoded=opcode<128?[0xfd,opcode]:[0xfd,opcode&127|128,opcode>>7];
+        assert(emitted.includes(Buffer.from(encoded)),`${form}: one standard vector operation, not scalar lanes`);
+      }
+    }
     if(meta.shuffle) {
       const network=Buffer.from([0xfd,0x0c,...Array(16).fill(0x8f),0xfd,0x4e,0xfd,0x0e,0xfd,0x0b]);
       assert(emitted.includes(network),`${form}: one vector AND/swizzle/publication, not sixteen scalar slices`);
@@ -161,6 +186,23 @@ try {
     }
     // Model-only control faults: a user-mode native oracle cannot write CR0/4.
     const first=records.subarray(0,stride);
+    if(meta.comparisonWidth) {
+      const same=meta.register&&(form-32)%8===1,width=meta.comparisonWidth;
+      for(const dispatch of [false,true])for(const changed of [1,128])
+        for(let lane=0;lane<128/width;++lane) {
+          reset(source,meta,first,0);
+          const where=meta.register?base+(same?272:304):target(u64(first,0));
+          assert(where>=0,'equality source extent');
+          for(let byte=0;byte<16;++byte)data[base+272+byte]=(byte*13+41)&255;
+          if(!same){data.copy(data,where,base+272,base+288);data[where+lane*(width/8)]^=changed;}
+          const wanted={state:cpu(),bytes:image(),result:1n};
+          for(let half=0;half<2;++half)wanted.state.writeBigUInt64LE(
+            packedEqual(wanted.state.readBigUInt64LE(272+half*8),data.readBigUInt64LE(where+half*8),width),272+half*8);
+          wanted.state.writeBigUInt64LE(entry+BigInt(meta.sourceBytes),384);
+          wanted.state.writeBigUInt64LE(43n,1128);
+          compare(cut,wanted,`${form}: equality lane ${lane}/${changed}`,dispatch);++equalityModels;
+        }
+    }
     if(meta.permutationWidth&&!meta.permutationFixed) {
       for(let control=0;control<256;++control) {
         const selected=Buffer.from(source);selected[meta.sourceBytes-1]=control;
@@ -309,6 +351,7 @@ try {
       }
       if(meta.permutationWidth)
         permutation(Buffer.from(wanted.state.subarray(272,288)),meta.permutationWidth,meta.permutationHigh,meta.permutationControl).copy(wanted.state,272);
+      if(meta.comparisonWidth)wanted.state.fill(255,272,288);
       vm.__indirect_function_table.set(slot,same);compare(same,wanted,`${form}: alias`,dispatch);++aliases;
       vm.__indirect_function_table.set(slot,cut);
     }
@@ -372,8 +415,8 @@ try {
   assert.equal(cv.getBigUint64(report+24,true),1n);assert.equal(cv.getUint32(report+68,true),16);
   console.log(JSON.stringify({status:'pass',nativeColdParity:parity,stablePreLoweringObservations:stable,
     directComparisons:direct,dispatchComparisons:comparisons,rfComparisons,independentNativeFaultComparisons:faults,
-    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,shuffleSelectorModels,simdRefusalModels,immediateShiftModels,immediatePermutationModels,identityFaultModels,
-    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ, PADDD, PSHUFB, PSRLD, PSHUFD and SHUFPS common C compilation accepted; not shipped Linux execution by this fixture',
+    controlPriorityModels:controls,waitRetryModels:waits,entryRefusals:refusals,registerAliasModels:aliases,pairBoundaryRefusals:pairRefusals,packedCarryModels:carryModels,exhaustiveByteModels,shuffleSelectorModels,simdRefusalModels,immediateShiftModels,immediatePermutationModels,identityFaultModels,equalityModels,
+    shippedGates:'MOVDQU, PADDQ, PXOR, PUNPCKLDQ, PADDD, PSHUFB, PSRLD, PSHUFD, SHUFPS and PCMPEQD common C compilation accepted; not shipped Linux execution by this fixture',
     oracle:'actual native x86 in independent build VM; CR0/CR4 models; not physical hardware or FP arithmetic',
     linuxBoot:'not-tested'}));
 } finally {vm.__indirect_function_table.set(slot,null);engines.close();vm.vm_close();}

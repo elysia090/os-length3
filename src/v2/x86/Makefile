@@ -16,6 +16,12 @@ ZYDIS_OBJECTS = $(patsubst %,$(BUILD)/zydis/%.o,$(ZYDIS_SOURCES))
 
 .PHONY: all check clean
 .PHONY: vector-projection-check
+.PHONY: vector-binary-check
+check: vector-binary-check
+vector-binary-check: $(BUILD)/vector-binary-check
+	$(BUILD)/vector-binary-check
+$(BUILD)/vector-binary-check: check/vector-binary.c $(BUILD)/libx86.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 check: vector-projection-check
 vector-projection-check: $(BUILD)/vector-projection-check
 	$(BUILD)/vector-projection-check

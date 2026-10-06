@@ -1,6 +1,12 @@
 # Browser boundary observations
 
 Latest independent Node/native work:
+[packed binary law](2026-10-06-vector-binary.md),
+[strict execution receipt](2026-10-06-vector-binary-green.json) and
+[completed same-bundle PCMPEQD stop](2026-10-06-node-startup-pcmpeqd-red.json).
+Not a new actual-browser observation or Linux boot/shell acceptance.
+
+Latest independent Node/native work:
 [shared x86 construction and vector projection](2026-10-06-shared-x86.md),
 [strict parity/execution receipt](2026-10-06-shared-x86-green.json), and
 [completed same-bundle SHUFPS gate](2026-10-06-node-startup-shufps-red.json).

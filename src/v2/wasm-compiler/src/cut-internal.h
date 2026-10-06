@@ -101,8 +101,9 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction);
 /* Element width, with bit 7 selecting the old high 64-bit word; zero rejects. */
 pl_u32 cut_vector_unpack_shape(const pl_x86_instruction *instruction);
 void cut_lower_vector_unpack(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape);
-pl_u32 cut_vector_add_width(const pl_x86_instruction *instruction);
-void cut_lower_vector_add(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 width);
+int cut_vector_binary_local(const pl_x86_instruction *instruction);
+void cut_emit_vector_binary(cut_lowering *cut, const pl_x86_instruction *instruction,
+                             const pl_x86_vector_binary *law);
 void cut_lower_vector_shuffle(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_vector_projection_local(const pl_x86_instruction *instruction);
 void cut_emit_vector_projection(cut_lowering *cut,

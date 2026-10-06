@@ -2928,6 +2928,15 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                 if (!pl_x86_vector_project(instruction, &projection))
                     return PL_ERROR_X86_SEMANTIC;
             }
+            pl_u64 subtype = out->machine_argument >> 32u;
+            if (kind == 1u || kind == 2u || kind == 3u || kind == 4u || kind == 24u
+                    || (kind == 10u && (subtype == 12u || subtype == 15u
+                        || subtype == 48u || subtype == 51u || subtype == 52u
+                        || subtype == 56u || subtype == 57u))) {
+                pl_x86_vector_binary law;
+                if (!pl_x86_vector_binary_lower(instruction, &law))
+                    return PL_ERROR_X86_SEMANTIC;
+            }
         }
         return close_plan(&builder);
     }

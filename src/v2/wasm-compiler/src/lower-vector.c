@@ -23,16 +23,19 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
             || ((instruction->address_width==32u || instruction->address_width==64u)
                 && cut_memory_address_supported(instruction,&memory->value.memory));
     }
+    pl_x86_vector_binary binary;
+    if(pl_x86_vector_binary_lower(instruction,&binary))
+        return !binary.source_memory
+            || ((instruction->address_width==32u || instruction->address_width==64u)
+                && cut_memory_address_supported(instruction,&source->value.memory));
     if(instruction->visible_operand_count!=2u)return 0;
     if(cut_vector_shift_shape(instruction))return xmm(target,0);
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
     pl_u64 operation=instruction->machine_argument>>32u;
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
-    pl_u32 add=cut_vector_add_width(instruction);
-    int packed=kind==10u && (add || operation==12u || unpack);
-    int logic=(kind>=1u && kind<=3u) || kind==24u;
+    int packed=kind==10u && unpack;
     int shuffle=kind==61u;
-    if(kind && !packed && !logic && !add && !shuffle)return 0;
+    if(kind && !packed && !shuffle)return 0;
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
     if((read && write) || (kind && write))return 0;
     if((read?source->bits!=128u:!xmm(source,!!unpack))
@@ -43,7 +46,7 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
     pl_u64 argument=kind|((pl_u64)(write?0u:target->value.reg.index)<<8u)
         |((pl_u64)(read?0u:source->value.reg.index)<<16u)|((pl_u64)read<<24u)|((pl_u64)write<<25u);
     if(packed)argument|=(operation<<32u)|((pl_u64)read<<26u);
-    else if(logic || add || shuffle)argument|=(pl_u64)read<<26u;
+    else if(shuffle)argument|=(pl_u64)read<<26u;
     else if(read || write)argument|=instruction->machine_argument&(1ull<<26u);
     return instruction->machine_argument==argument;
 }
@@ -84,23 +87,15 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     int read=!!(instruction->machine_argument&(1ull<<24u));
     int write=!!(instruction->machine_argument&(1ull<<25u));
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
-    if(kind==10u && (instruction->machine_argument>>32u)==12u)kind=24u;
     cut_sse_guard(cut);
     pl_u32 shift=cut_vector_shift_shape(instruction);
     if(shift) {cut_lower_vector_shift(cut,instruction,shift);return;}
     pl_x86_vector_projection projection;
     int projected=pl_x86_vector_project(instruction,&projection);
     if(projected && projection.identity)return;
-    /* Equal logical operands normalize to zero or identity. Control faults
-     * still precede this pure substitution; no old XMM payload is needed. */
-    if(!read && (kind==1u || kind==2u || kind==3u || kind==24u)
-            && instruction->operands[0].value.reg.index==instruction->operands[1].value.reg.index) {
-        if(kind==1u || kind==24u) {
-            pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[0].value.reg.index*16u;
-            cut_const(cut,0u);cut_set(cut,CUT_LEFT);cut_store(cut,offset,CUT_LEFT);cut_store(cut,offset+8u,CUT_LEFT);
-        }
-        return;
-    }
+    pl_x86_vector_binary binary;
+    int binary_value=pl_x86_vector_binary_lower(instruction,&binary);
+    if(binary_value && binary.result==PL_X86_VECTOR_BINARY_IDENTITY)return;
     if(read || write) {
         const pl_x86_memory *memory=&instruction->operands[write?0u:1u].value.memory;
         cut_effective_address(cut,instruction,memory);cut_set(cut,CUT_ADDRESS);
@@ -117,6 +112,7 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     }
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
     if(projected) {cut_emit_vector_projection(cut,instruction,&projection);return;}
+    if(binary_value) {cut_emit_vector_binary(cut,instruction,&binary);return;}
     if(unpack) {cut_lower_vector_unpack(cut,instruction,unpack);return;}
     if(kind==61u) {cut_lower_vector_shuffle(cut,instruction);return;}
     if(read) {
@@ -127,22 +123,6 @@ void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
     } else {
         pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[1].value.reg.index*16u;
         cut_load(cut,offset);cut_set(cut,CUT_LEFT);cut_load(cut,offset+8u);cut_set(cut,CUT_RIGHT);
-    }
-    pl_u32 add=cut_vector_add_width(instruction);
-    if(add && add<64u)cut_lower_vector_add(cut,instruction,add);
-    else if(kind) {
-        /* Two pure lanes share one precise operand preflight. PADDQ is
-         * modulo-2^64 addition; AND-NOT complements the old destination,
-         * not the source. Capture both results before any publication. */
-        pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[0].value.reg.index*16u;
-        for(pl_u32 i=0u;i<2u;++i) {
-            pl_u32 local=i?CUT_RIGHT:CUT_LEFT;
-            cut_load(cut,offset+i*8u);
-            if(kind==24u) {cut_const(cut,~0ull);cut_op(cut,0x85u);}
-            cut_get(cut,local);
-            cut_op(cut,kind==10u?0x7cu:kind==1u?0x85u:kind==3u?0x84u:0x83u);
-            cut_set(cut,local);
-        }
     }
     if(write) {
         write_word(cut,0u,CUT_LEFT);write_word(cut,8u,CUT_RIGHT);

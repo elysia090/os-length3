@@ -26,7 +26,7 @@ for provider in support x86 optimized-x86; do
   make -C "$temporary/$provider" -j2 CFLAGS="$flags" all
 done
 if [[ $mode == address,undefined ]]; then
-  make -C "$temporary/x86" CFLAGS="$flags" vector-projection-check
+  make -C "$temporary/x86" CFLAGS="$flags" vector-projection-check vector-binary-check
 fi
 make -C "$temporary/support" CFLAGS="$flags" arena-check
 make -C "$temporary/postlink-compiler" -j2 CFLAGS="$flags" "${checks[@]}"

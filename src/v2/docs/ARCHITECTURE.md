@@ -60,6 +60,13 @@ PSHUFD/SHUFPS/PSHUFHW/PSHUFLW/MOVSHDUP/MOVSLDUP semantics. A memory input retain
 one complete precise preflight and its architectural fault order even when
 the value permutation is identity.
 
+Packed integer add, equality and bitwise logic similarly consume one shared
+lane-parametric binary law. Equal input coordinates become identity/zero/ones
+before emission; AND-NOT source order belongs to the x86 frontend. The Wasm
+backend emits standard SIMD rather than rebuilding word-carry networks or
+scalar lane loops. Its former arithmetic lower is deleted. This does not
+claim that register/ALU/flags lowering already consumes the shared block DAG.
+
 This migration is not complete: the scalar cold emitter still walks admitted
 instructions and owns independent ALU/flags/address spelling. Moving the common
 SSA sources is not evidence that this emitter uses block-wide normalization.

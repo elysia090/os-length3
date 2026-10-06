@@ -1,5 +1,27 @@
 # Browser projection of OS Length3 Linux
 
+Latest completed same-bundle Node run (`aa750ea`, exec session 91452 completed):
+SHUFPS passes; compiler -102 is `66 0f 76 c0` (PCMPEQD xmm0,xmm0),
+RIP `0x7f1159591ddb`, 229,117,402 retired / 124,477,220 admissions.
+Frozen VM/compiler 70,499 / 455,822 bytes, unchanged quotas and warmCuts=64.
+Engine construction 507,555 ms, cold emission 421,207 ms, C execution
+113,947 ms, total check 1,261,153 ms. Different work/clock calibration is not
+a speedup. See
+[completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-pcmpeqd-red.json).
+
+The general packed binary law is locally green: 2,992 decoded laws,
+188,768 descriptor refusals and 2,720 distinct valid operator alternatives;
+432 native/cold parity emissions and 55,296 unchanged native observations
+in both direct and C-dispatch execution. Full compiler/CLI checks and
+instrumented shared-core/native sanitizers pass. Integer add/logic/equality
+now use one shared lane law and standard SIMD, not scalar carry networks.
+The replaced arithmetic lower is deleted. Candidate compiler 456,366 bytes,
+VM unchanged; NOT in the completed run above.
+See [derivation and measured scope](../vm/check/browser/evidence/2026-10-06-vector-binary.md).
+PID 1/root mount/shell/tooling/browser acceptance and cold shell 3s remain
+unachieved; no native publication/UI or retained browser Worker/staged asset
+is changed.
+
 Latest completed same-bundle Node run (`cfb0d28`, PID 7804 completed):
 196,784,804 retired / 104,131,710 admissions; compiler -102 at
 `0x7f7baf27d340`, SHUFPS `0f c6 c2 00`.
