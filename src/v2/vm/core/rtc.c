@@ -1,4 +1,5 @@
 #include <vm/rtc.h>
+#include "clock-internal.h"
 
 enum { SECOND=0, MINUTE=2, HOUR=4, WEEKDAY=6, DAY=7, MONTH=8, YEAR=9,
     A=10, B=11, C=12, D=13, CENTURY=0x32 };
@@ -133,6 +134,33 @@ int vm_rtc_can_advance(const vm_rtc *r, pl_u64 ns)
     if (!running(r)) return 1;
     pl_u64 delta=ns-r->now, carry=((pl_u64)r->fraction+delta%BILLION)/BILLION;
     return r->seconds<=VM_RTC_MAX_SECONDS && delta/BILLION+carry<=VM_RTC_MAX_SECONDS-r->seconds;
+}
+int vm_rtc_next_irq(const vm_rtc *r,pl_u64 *ns)
+{
+    if(!r || !ns || !r->seeded || !running(r) || vm_rtc_irq(r)
+            || r->now<r->oscillator_origin || r->fraction>=BILLION)return 0;
+    pl_u64 next=0u,candidate;int found=0;
+    pl_u32 p=period(r);
+    if((r->bytes[B]&64u) && p){
+        pl_u64 tick=ticks(r->now-r->oscillator_origin);
+        tick=tick-tick%p+p;
+        if(vm_tick_deadline(tick,32768u,r->oscillator_origin,&candidate)){next=candidate;found=1;}
+    }
+    if(!(r->bytes[B]&128u)){
+        if(r->bytes[B]&16u){
+            pl_u64 delta=BILLION-r->fraction;
+            if(r->now<=~0ull-delta && (!found || r->now+delta<next)){next=r->now+delta;found=1;}
+        }
+        if(r->bytes[B]&32u){
+            pl_u64 alarm=next_alarm(r,r->seconds);
+            if(alarm!=~0ull && alarm>r->seconds){
+                pl_u64 delta=(alarm-r->seconds)*BILLION-r->fraction;
+                if(r->now<=~0ull-delta && (!found || r->now+delta<next)){next=r->now+delta;found=1;}
+            }
+        }
+    }
+    if(!found || !vm_rtc_can_advance(r,next))return 0;
+    *ns=next;return 1;
 }
 int vm_rtc_advance(vm_rtc *r, pl_u64 ns)
 {

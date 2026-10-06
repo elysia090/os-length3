@@ -82,6 +82,25 @@ static int trace(void)
 int main(int argc, char **argv)
 {
     if (argc==2 && !strcmp(argv[1],"--trace")) return trace();
+    const pl_u8 modes[]={2u,0x42u,0x12u,0x22u,0x72u,0xc2u};
+    for(pl_u32 rate=0u;rate<16u;++rate)for(pl_u32 mode=0u;mode<sizeof modes;++mode)
+    for(pl_u32 phase=0u;phase<16u;++phase){
+        vm_rtc timer;open_rtc(&timer,1791117296u);
+        write_register(&timer,0u,10u,0x20u|rate);
+        write_register(&timer,0u,1u,0xc0u);write_register(&timer,0u,3u,0xc0u);write_register(&timer,0u,5u,0xc0u);
+        write_register(&timer,0u,11u,modes[mode]);
+        pl_u64 now=(pl_u64)phase*123456789u;
+        EXPECT(!vm_rtc_advance(&timer,now));read_register(&timer,now,12u);
+        vm_rtc before=timer;pl_u64 deadline=0u;
+        int future=vm_rtc_next_irq(&timer,&deadline);
+        EXPECT(!memcmp(&before,&timer,sizeof timer));
+        if(future){
+            EXPECT(deadline>now);
+            vm_rtc neighbour=timer;EXPECT(!vm_rtc_advance(&neighbour,deadline-1u) && !vm_rtc_irq(&neighbour));
+            neighbour=timer;EXPECT(!vm_rtc_advance(&neighbour,deadline) && vm_rtc_irq(&neighbour));
+            EXPECT(!vm_rtc_next_irq(&neighbour,&deadline));
+        }else EXPECT(mode==0u || ((mode==1u || mode==5u) && !rate));
+    }
     /* Independent libc calendar, every day in a Gregorian 400-year era,
      * all four wire encodings. No libc is linked into the product device. */
     for (pl_u64 day=0u;day<146097u;++day)

@@ -2,13 +2,14 @@ import {readFile,open,stat} from 'node:fs/promises';
 import path from 'node:path';
 import {checkStartup} from '../../src/v2/vm/check/browser/startup-check.mjs';
 import {decompressionOracle} from './decompression-oracle.mjs';
+import {waitForClock} from '../../src/v2/web/idle-clock.mjs';
 
 const [providerFile,compilerFile,directory,...flags] = process.argv.slice(2);
-if (!directory || flags.some(flag=>!['--extended','--progress'].includes(flag)
+if (!directory || flags.some(flag=>!['--extended','--progress','--idle'].includes(flag)
       && !flag.startsWith('--segments=') && !flag.startsWith('--image=') && !flag.startsWith('--warm-cuts='))
     || new Set(flags).size!==flags.length
     || ['--segments=','--image=','--warm-cuts='].some(prefix=>flags.filter(flag=>flag.startsWith(prefix)).length>1))
-  throw new Error('usage: check-wasm-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX-DIRECTORY [--extended] [--progress] [--segments=INDEPENDENT-SEGMENT-FIXTURE] [--image=IMMUTABLE-SYSTEM-IMAGE] [--warm-cuts=1..64]');
+  throw new Error('usage: check-wasm-startup.mjs VM.WASM COMPILER.WASM BUNDLE-PREFIX-DIRECTORY [--extended] [--progress] [--idle] [--segments=INDEPENDENT-SEGMENT-FIXTURE] [--image=IMMUTABLE-SYSTEM-IMAGE] [--warm-cuts=1..64]');
 const segmentFile=flags.find(flag=>flag.startsWith('--segments='))?.slice('--segments='.length);
 const imageFile=flags.find(flag=>flag.startsWith('--image='))?.slice('--image='.length);
 if (segmentFile==='' || imageFile==='') throw new Error('empty independent fixture path');
@@ -23,6 +24,7 @@ const onProgress=flags.includes('--progress') ? progress=>console.error(JSON.str
   engineReuse:progress.engineReuse,compilerOutput:progress.compilerOutput,timingMs:progress.timingMs,
   sourceReuse:progress.sourceReuse,
   sourceProfile:progress.sourceProfile,
+  idleEvents:progress.idleEvents,idleNanoseconds:progress.idleNanoseconds,
 })) : undefined;
 async function extent(kind,offset,bytes) {
   const fileName = kind === 2 ? path.join(directory,'boot.kernel-object')
@@ -40,5 +42,5 @@ async function extent(kind,offset,bytes) {
 console.log(JSON.stringify(await checkStartup(name => readFile(name==='boot.segments' && segmentFile
     ? segmentFile : path.join(directory,name)),
   await readFile(providerFile),await readFile(compilerFile),extent,
-  {extended:flags.includes('--extended'),onProgress,immutableImage,warmCuts,
+  {extended:flags.includes('--extended'),onProgress,immutableImage,warmCuts,idleWait:flags.includes('--idle')?waitForClock:undefined,
     decompression:decompressionOracle(await readFile(path.join(directory,'boot.kernel-object')))}),null,2));

@@ -24,6 +24,9 @@ int vm_pit_can_advance(const vm_pit *pit, pl_u64 nanoseconds);
  * coalesces intervening rising edges; final OUT also preserves level mode.
  * Repeating an accepted timestamp produces no new pulse. */
 int vm_pit_advance(vm_pit *pit, pl_u64 nanoseconds, vm_pic *pic);
+/* Earliest future IRQ0 rising edge, without advancing or scanning pulses.
+ * 0 means no representable future edge; 1 writes its absolute ns. */
+int vm_pit_next_irq(const vm_pit *pit, pl_u64 *nanoseconds);
 int vm_pit_transfer(vm_pit *pit, pl_u64 nanoseconds, vm_pic *pic, pl_u32 port,
     pl_u32 write, pl_u32 *value);
 #endif

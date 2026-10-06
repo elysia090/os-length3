@@ -20,4 +20,5 @@ int vm_uart_transfer(vm_uart *uart, pl_u64 now, pl_u32 coordinate,
 int vm_uart_transmit_commit(vm_uart *uart, pl_u32 value);
 void vm_uart_advance(vm_uart *uart, pl_u64 now);
 int vm_uart_irq(const vm_uart *uart);
+int vm_uart_next_irq(const vm_uart *uart, pl_u64 *nanoseconds);
 #endif

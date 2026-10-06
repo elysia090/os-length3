@@ -1,4 +1,5 @@
 #include <vm/clock.h>
+#include "../core/clock-internal.h"
 #include <stdio.h>
 #include <string.h>
 static _Alignas(8) pl_u8 arena[4096];
@@ -8,6 +9,27 @@ static void put(pl_u32 at, pl_u64 value)
 { for (pl_u32 byte=0u;byte<8u;++byte) arena[at+byte]=(pl_u8)(value>>(byte*8u)); }
 int main(void)
 {
+    /* The inverse is exact at both neighbours and over the complete u64
+     * domain; no multiplying a full-width timestamp by a frequency. */
+    const pl_u32 frequencies[]={1u,32768u,1193182u,1000000000u};
+    const pl_u64 origins[]={0u,123456789u,~0ull-5000000000u};
+    for(pl_u32 f=0u;f<4u;++f)for(pl_u32 o=0u;o<3u;++o)
+    for(pl_u32 sample=0u;sample<1024u;++sample){
+        pl_u64 room=~0ull-origins[o];
+        pl_u64 delta=sample==1023u?room:(pl_u64)sample*4194303u;
+        if(delta>room)continue;
+        pl_u64 tick=delta/1000000000u*frequencies[f]+delta%1000000000u*frequencies[f]/1000000000u;
+        pl_u64 ns=0u;EXPECT(vm_tick_deadline(tick,frequencies[f],origins[o],&ns));
+        EXPECT(ns>=origins[o] && ns<=origins[o]+delta);
+        pl_u64 d=ns-origins[o];
+        EXPECT(d/1000000000u*frequencies[f]+d%1000000000u*frequencies[f]/1000000000u==tick);
+        if(d){--d;EXPECT(d/1000000000u*frequencies[f]+d%1000000000u*frequencies[f]/1000000000u<tick);}
+        if(sample==1023u && tick!=~0ull)EXPECT(!vm_tick_deadline(tick+1u,frequencies[f],origins[o],&ns));
+    }
+    pl_u64 bad_deadline=0u;
+    EXPECT(!vm_tick_deadline(1u,0u,0u,&bad_deadline));
+    EXPECT(!vm_tick_deadline(1u,1000000001u,0u,&bad_deadline));
+    EXPECT(!vm_tick_deadline(1u,1u,0u,NULL));
     _Static_assert(sizeof(vm_clock)==88u,"one clock frontier, no boundary snapshot");
     vm_clock clock={0}; vm_memory memory={0}; machine_state state={0};
     static const pl_u64 generations[]={1u,9u,1ull<<63u,~0ull};

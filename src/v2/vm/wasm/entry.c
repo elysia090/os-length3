@@ -760,6 +760,33 @@ machine_result vm_clock_poll(pl_u32 port, pl_u64 generation)
     return vm_clock_boundary_sample(&clock_owner,&resident,port-arena_base,
         (const machine_state *)(uintptr_t)state_offset);
 }
+/* Host timer transport gets one least eligible deadline, not a device model
+ * or per-tick polling stream. The ordinary clock ticket pins the halted RIP
+ * until its timestamp reply is consumed; cancellation uses existing scope. */
+machine_result vm_idle_clock(pl_u32 port,pl_u64 generation)
+{
+    if(!private_port(port) || delivery.stage || table_frontier.stage || supply.generation
+            || sources.pending || execution.continuation.slot || resident.reservation.parts
+            || vm_console_pending(&console_owner) || activity.state!=MACHINE_ACTIVITY_HALTED)
+        return MACHINE_RESULT_ENTRY_MAP;
+    if(generation!=resident.generation || vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=generation)
+        return MACHINE_RESULT_STALE_GENERATION;
+    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
+    if(clock_owner.stage)return vm_clock_boundary_sample(&clock_owner,&resident,port-arena_base,state);
+    if(!(state->rflags&0x200u) || (segments_offset
+            && ((const machine_segments *)(uintptr_t)segments_offset)->interrupt_shadow))return MACHINE_RESULT_HALT;
+    if(vm_pic_pending(&pic))return MACHINE_RESULT_RESOLVE_RIP;
+    pl_u64 next=0u,candidate;int found=0;
+    if(vm_pic_can_irq(&pic,0u) && vm_pit_next_irq(&pit,&candidate)){next=candidate;found=1;}
+    if(vm_pic_can_irq(&pic,8u) && vm_rtc_next_irq(&rtc,&candidate) && (!found || candidate<next)){next=candidate;found=1;}
+    if(vm_pic_can_irq(&pic,4u) && vm_uart_next_irq(&uart,&candidate) && (!found || candidate<next)){next=candidate;found=1;}
+    if(!found)return MACHINE_RESULT_HALT;
+    if(next<=clock_owner.now)return MACHINE_RESULT_ENTRY_MAP;
+    machine_result result=vm_clock_boundary_sample(&clock_owner,&resident,port-arena_base,state);
+    if(result==machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CLOCK))
+        vm_memory_store((pl_u8 *)(uintptr_t)port+offsetof(machine_memory_port,value),next,8u);
+    return result;
+}
 int vm_clock_commit(pl_u32 port, pl_u64 generation, pl_u64 ticket, pl_u64 nanoseconds)
 {
     if (!private_port(port) || delivery.stage || table_frontier.stage || vm_console_pending(&console_owner) || generation != resident.generation

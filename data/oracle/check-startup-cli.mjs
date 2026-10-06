@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const script=fileURLToPath(new URL('./check-wasm-startup.mjs',import.meta.url));
 let refusals=0;
-for (const flags of [['--unknown'],['--extended','--extended'],['--progress','--progress'],
+for (const flags of [['--unknown'],['--idle','--idle'],['--extended','--extended'],['--progress','--progress'],
     ['--segments=a','--segments=b'],['--image=a','--image=b'],['--segments='],['--image='],
     ['--warm-cuts='],['--warm-cuts=0'],['--warm-cuts=65'],['--warm-cuts=-1'],['--warm-cuts=1.5'],
     ['--warm-cuts=01'],['--warm-cuts=1','--warm-cuts=2']]) {

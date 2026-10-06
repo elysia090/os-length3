@@ -17,5 +17,8 @@ int vm_pic_transfer(vm_pic *pic, pl_u32 port, pl_u32 write, pl_u32 *value);
  * the vector (including spurious IRQ7/15); caller owns CPU interrupt delivery. */
 int vm_pic_set_irq(vm_pic *pic, pl_u32 irq, pl_u32 level);
 int vm_pic_pending(const vm_pic *pic);
+/* A new request on this wire can pass the present mask/service priority.
+ * It does not assert/acknowledge a line or change either PIC owner. */
+int vm_pic_can_irq(const vm_pic *pic, pl_u32 irq);
 int vm_pic_acknowledge(vm_pic *pic);
 #endif

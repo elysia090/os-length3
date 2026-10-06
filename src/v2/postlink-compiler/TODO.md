@@ -23,7 +23,20 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
-Newest string candidate shares decoded memory/counter/comparison roles with
+Newest idle-event candidate derives least eligible PIT/RTC/UART deadlines
+from existing residual device state and the same PIC grant law; no per-tick
+polling/CPU image or JS guest device model. Existing clock tickets pin a halted
+RIP and reject stale/duplicate/cancelled replies. C-Wasm exact-neighbour waits,
+real host timer -> C-PIT/PIC/IDT wake, scoped ASan/UBSan and device/source/system
+regressions pass. Explicit Node --idle uses the browser-compatible transport;
+retained browser Workers/assets and native publication/UI are unchanged.
+Same-bundle short prefix preserves the complete 86-instruction checkpoint and
+1,617,931 retirements; it reaches quota, not an idle event or Linux shell.
+Full Linux/s6 readiness and actual-browser transport/Worker observation remain
+unverified; no timeout/clock-rate relaxation or performance claim.
+See [derivation and scope](../vm/check/browser/evidence/2026-10-06-idle-clock.md).
+
+Prior string candidate shares decoded memory/counter/comparison roles with
 native SSA and the independent backend. Non-REP LODS/CMPS/SCAS and repeated
 load/comparison grammar are closed without a guest interpreter callback.
 Native observations expose zero-count/first-fault index-parent preservation

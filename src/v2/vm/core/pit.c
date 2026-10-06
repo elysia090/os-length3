@@ -1,4 +1,5 @@
 #include <vm/pit.h>
+#include "clock-internal.h"
 static pl_u64 ticks(pl_u64 ns)
 {
     /* Split before multiplying: even UINT64_MAX nanoseconds cannot overflow. */
@@ -81,6 +82,22 @@ int vm_pit_advance(vm_pit *pit, pl_u64 ns, vm_pic *pic)
     pl_u32 rising = advance(&pit->channel[0],tick);
     for (pl_u32 i = 1u; i < 3u; ++i) advance(&pit->channel[i],tick);
     drive(pit,pic,rising); return 0;
+}
+int vm_pit_next_irq(const vm_pit *pit,pl_u64 *ns)
+{
+    if(!pit || !ns)return 0;
+    const vm_pit_channel *c=&pit->channel[0];
+    if(!c->gate || (!periodic(c) && c->write_high))return 0;
+    pl_u64 pulses;
+    if((c->pending && (!c->loaded || !periodic(c))) || c->restart){
+        if(!c->reload)return 0;
+        pulses=(pl_u64)c->reload+1u; /* Loading pulse, then the full count. */
+    }else{
+        if(!c->loaded || !c->count || c->elapsed>=c->count)return 0;
+        pulses=c->count-c->elapsed;
+    }
+    if(c->anchor>~0ull-pulses)return 0;
+    return vm_tick_deadline(c->anchor+pulses,VM_PIT_FREQUENCY,0u,ns);
 }
 int vm_pit_transfer(vm_pit *pit, pl_u64 ns, vm_pic *pic, pl_u32 port, pl_u32 write, pl_u32 *value)
 {

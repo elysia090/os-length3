@@ -11,6 +11,8 @@ static pl_u32 read_reg(pl_u32 rank)
 int main(int argc,char **argv)
 {
     vm_uart_reset(&uart);
+    pl_u64 timeout_at=0u;
+    EXPECT(!vm_uart_next_irq(&uart,&timeout_at));
     if(argc==2 && !strcmp(argv[1],"--trace")){
         char kind;unsigned port,byte;
         while(scanf(" %c %u",&kind,&port)==2){
@@ -57,6 +59,12 @@ int main(int argc,char **argv)
             bad==1u ? 2u : 1u,&invalid)==-1);
         EXPECT(!memcmp(&uart,&saved,sizeof uart));
     }
+    vm_uart_reset(&uart);uart.ier=1u;uart.fcr=0x41u;uart.count=1u;uart.deadline=~0ull;
+    vm_uart immutable=uart;
+    EXPECT(vm_uart_next_irq(&uart,&timeout_at) && timeout_at==~0ull);
+    EXPECT(!memcmp(&uart,&immutable,sizeof uart));
+    vm_uart_advance(&uart,timeout_at-1u);EXPECT(!vm_uart_irq(&uart));
+    vm_uart_advance(&uart,timeout_at);EXPECT(vm_uart_irq(&uart) && !vm_uart_next_irq(&uart,&timeout_at));
     if(failures)return 1;
     printf("C UART: %u register/FIFO/IRQ observations green; external sink and silicon baud fidelity NOT tested\n",reads);
     return 0;

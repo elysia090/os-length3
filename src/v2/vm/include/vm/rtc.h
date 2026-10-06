@@ -19,4 +19,6 @@ int vm_rtc_accepts(const vm_rtc *rtc, pl_u32 port, pl_u32 write, pl_u32 value);
 int vm_rtc_transfer(vm_rtc *rtc, pl_u64 nanoseconds, pl_u32 port,
     pl_u32 write, pl_u32 *value);
 int vm_rtc_irq(const vm_rtc *rtc);
+/* Earliest enabled IRQ8 assertion; no calendar/tick history is materialized. */
+int vm_rtc_next_irq(const vm_rtc *rtc, pl_u64 *nanoseconds);
 #endif

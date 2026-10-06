@@ -2,6 +2,7 @@
 // are reported separately. Passing these checks is not Linux boot.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {waitForClock} from '../../src/v2/web/idle-clock.mjs';
 import {CutProgress} from '../../src/v2/vm/check/browser/cut-progress.mjs';
 const [vmFile,compilerFile,systemRows]=process.argv.slice(2);
 if(!compilerFile)throw new Error('usage: check-interrupt-provider.mjs VM.WASM COMPILER.WASM [SYSTEM-ROWS.txt]');
@@ -358,6 +359,60 @@ let systemComparisons=0,qemuSavedRFDifferences=0,systemHaltComparisons=0;
 // resource transaction. Admit device time and a real C-PIT/PIC IRQ there,
 // cancel the old slot, then re-admit the interrupted RIP after IRET.
 let repeatIrqs=0,repeatClockResumes=0,repeatResourceRefusals=0,ownedRepeatIrqs=0;
+// Least timer deadlines are projected by C, not decoded/synthesized in JS.
+// The old VM has no idle wait API; a timer wait uses the existing scoped
+// clock ticket and cannot survive close/rebind or execute guest work.
+let idleWaits=0,idleWakes=0,idleRefusals=0;
+assert.equal(typeof vm.vm_idle_clock,'function');
+for(const timer of ['pit','rtc'])for(const enabled of [0,1])for(const masked of [0,1]){
+  reset();
+  if(timer==='pit'){pitProgram();io(0x21,1,masked?0xff:0xfe);gate(32);}
+  else{
+    for(const [p,x] of [[0x20,0x11],[0xa0,0x11],[0x21,32],[0xa1,40],[0x21,4],[0xa1,2],
+      [0x21,1],[0xa1,1],[0x21,0xfb],[0xa1,masked?0xff:0xfe]])io(p,1,x);
+    assert.equal(vm.vm_rtc_start(port,9n,1791117296n),0);io(0x70,1,11);io(0x71,1,0x42);gate(40);
+  }
+  put(base+392,2|(enabled<<9));await bind([0xf4]);assert.equal(vm.vm_run(port,9n,1),4n);
+  const frontier=Buffer.from(data.subarray(base,base+1256));
+  assert.equal(vm.vm_idle_clock(port,8n),5n);assert.equal(vm.vm_idle_clock(port+1,9n),6n);
+  const waiting=vm.vm_idle_clock(port,9n);
+  if(!enabled||masked){assert.equal(waiting,4n);++idleRefusals;continue;}
+  assert.equal(waiting,18n);
+  const deadline=get(port+8),ticket=get(port+32),request=Buffer.from(data.subarray(port,port+64));
+  assert.equal(vm.vm_idle_clock(port,9n),18n);assert(data.subarray(port,port+64).equals(request));
+  assert.equal(vm.vm_run(port,9n,1),6n);assert.equal(vm.vm_boundary(port,9n),6n);
+  assert.equal(vm.vm_clock_commit(port,8n,ticket,deadline),-1);
+  assert.equal(vm.vm_clock_commit(port,9n,ticket+1n,deadline),-1);
+  // One ns before the candidate cannot wake. An accepted early clock reply
+  // consumes this ticket and recomputes the same remaining hardware boundary.
+  assert.equal(vm.vm_clock_commit(port,9n,ticket,deadline-1n),0);
+  assert.equal(vm.vm_idle_clock(port,9n),0n);assert.equal(vm.vm_boundary(port,9n),4n);
+  assert.equal(vm.vm_idle_clock(port,9n),18n);assert.equal(get(port+8),deadline);
+  const nextTicket=get(port+32);assert(nextTicket>ticket);
+  assert.equal(vm.vm_clock_commit(port,9n,ticket,deadline),-1);
+  assert.equal(vm.vm_clock_commit(port,9n,nextTicket,deadline),0);
+  assert.equal(vm.vm_clock_commit(port,9n,nextTicket,deadline),0);
+  assert.equal(vm.vm_idle_clock(port,9n),0n);
+  assert(data.subarray(base,base+1256).equals(frontier));
+  assert.equal(vm.vm_boundary(port,9n),1n);assert.equal(vm.vm_halted(),0);
+  assert.equal(get(base+384),0x8000n);assert.equal(get(base+1128),124n);
+  assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);++idleWaits;++idleWakes;
+}
+reset();pitProgram();gate(32);put(base+392,0x202);await bind([0xf4]);assert.equal(vm.vm_run(port,9n,1),4n);
+assert.equal(vm.vm_idle_clock(port,9n),18n);const abandonedIdle=get(port+32),abandonedTime=get(port+8);
+assert.equal(vm.vm_bind_state(base),0);assert.equal(vm.vm_bind_segments(segments),0);
+assert.equal(vm.vm_clock_commit(port,9n,abandonedIdle,abandonedTime),-1);
+assert.equal(vm.vm_idle_clock(port,9n),18n);assert(get(port+32)>abandonedIdle);
+vm.vm_close();assert.equal(vm.vm_clock_commit(port,9n,get(port+32),abandonedTime),-1);++idleRefusals;
+reset();pitProgram();gate(32);put(base+392,0x202);await bind([0xf4]);assert.equal(vm.vm_run(port,9n,1),4n);
+assert.equal(vm.vm_idle_clock(port,9n),18n);
+const liveIdleTicket=get(port+32),liveIdleDeadline=get(port+8),liveCpu=Buffer.from(data.subarray(base,base+1256));
+const hostIdle=await waitForClock({deadlineNanoseconds:liveIdleDeadline,virtualNanoseconds:0n});
+assert(hostIdle.elapsedNanoseconds>=liveIdleDeadline);
+assert(data.subarray(base,base+1256).equals(liveCpu),'host sleep performs no guest work');
+assert.equal(vm.vm_clock_commit(port,9n,liveIdleTicket,hostIdle.elapsedNanoseconds),0);
+assert.equal(vm.vm_idle_clock(port,9n),0n);assert.equal(vm.vm_boundary(port,9n),1n);
+assert.equal(get(base+384),0x8000n);assert.equal(get(base+1128),124n);
 for(const owned of [false,true])for(const kind of [2,3,4])for(const enabled of [0,1])for(const type of [0x8e,0x8f]){
   reset();pitProgram();gate(32,type);put(base+392,2|(enabled<<9));
   put(base+8,513);put(base+48,0x8000);put(base+56,0x8000);put(base,0);
@@ -454,6 +509,8 @@ if(systemRows){
 }
 console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,pitIrqEntries,pitBoundaryEntries,pureLoopCuts,waits,refusals,
   ownedCohortIrqs,haltTransfers,haltFaults,haltWaits,haltWakes,repeatIrqs,ownedRepeatIrqs,repeatClockResumes,repeatResourceRefusals,
+  idleWaits,idleWakes,idleRefusals,
+  hostIdleWake:1,hostIdleNanoseconds:String(hostIdle.elapsedNanoseconds),
   haltOracle:'shared decoded law; native CPL3 #GP is a separate C check; privileged wake uses Intel/C-PIT/PIC/IDT model',
   clockLifecycle:'private port/generation/source pin/duplicate/cancel/rebind/reopen assertions green',
   admissionPriorityChecks:1,shadowExtentChecks:1,oldAbiRefusals:1,

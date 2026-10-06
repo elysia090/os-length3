@@ -47,8 +47,18 @@ int main(int argc, char **argv)
         c->request=(pl_u8)(1u<<((request+rotation)&7u));
         c->service=(pl_u8)(service==8u ? 0u : 1u<<((service+rotation)&7u));
         EXPECT(vm_pic_pending(&pic)==(request<service && !(mask & c->request)));
+        pl_u32 wire=(request+rotation)&7u;
+        if(wire!=2u)EXPECT(vm_pic_can_irq(&pic,wire)==(request<service && !(mask & c->request)));
         ++grants;
     }
+    for(pl_u32 wire=8u;wire<16u;++wire)for(pl_u32 disabled=0u;disabled<4u;++disabled){
+        initialize(1u);pic.chip[0].mask=(pl_u8)((disabled&1u)?4u:0u);
+        pic.chip[1].mask=(pl_u8)((disabled&2u)?1u<<(wire&7u):0u);
+        vm_pic before=pic;
+        EXPECT(vm_pic_can_irq(&pic,wire)==!disabled);
+        EXPECT(!memcmp(&before,&pic,sizeof pic));
+    }
+    EXPECT(!vm_pic_can_irq(NULL,0u) && !vm_pic_can_irq(&pic,2u) && !vm_pic_can_irq(&pic,16u));
     initialize(1u); EXPECT(!vm_pic_set_irq(&pic,5u,1u));
     EXPECT(vm_pic_pending(&pic) && vm_pic_acknowledge(&pic)==0x25);
     EXPECT(pic.chip[0].service==32u && !pic.chip[0].request);

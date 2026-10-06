@@ -34,6 +34,12 @@ static pl_u32 interrupt(const vm_uart *uart)
 }
 int vm_uart_irq(const vm_uart *uart)
 { return uart && interrupt(uart)!=1u; }
+int vm_uart_next_irq(const vm_uart *uart,pl_u64 *ns)
+{
+    if(!uart || !ns || vm_uart_irq(uart) || !(uart->ier&1u)
+            || !(uart->fcr&1u) || !uart->count || !uart->deadline)return 0;
+    *ns=uart->deadline;return 1;
+}
 static void receive(vm_uart *uart,pl_u64 now,pl_u8 byte)
 {
     if(uart->fcr&1u){

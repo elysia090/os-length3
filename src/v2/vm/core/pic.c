@@ -6,14 +6,16 @@ static pl_u32 first(const vm_pic_chip *c, pl_u32 bits)
         if (bits & (1u << ((rank+c->priority)&7u))) return rank;
     return 8u;
 }
-static int pending(const vm_pic_chip *c, pl_u32 master)
+static int grant(const vm_pic_chip *c, pl_u32 master,pl_u32 requests)
 {
-    pl_u32 rank=first(c,(pl_u32)c->request & ~(pl_u32)c->mask);
+    pl_u32 rank=first(c,requests & ~(pl_u32)c->mask);
     pl_u32 service=c->service;
     if (c->special_mask) service &= ~(pl_u32)c->mask;
     if (master && c->fully_nested) service &= ~4u;
     return rank < first(c,service) ? (int)((rank+c->priority)&7u) : -1;
 }
+static int pending(const vm_pic_chip *c,pl_u32 master)
+{ return grant(c,master,c->request); }
 static void line(vm_pic_chip *c, pl_u32 irq, pl_u32 high)
 {
     pl_u32 bit=1u<<irq;
@@ -117,6 +119,17 @@ int vm_pic_set_irq(vm_pic *pic, pl_u32 irq, pl_u32 high)
 }
 int vm_pic_pending(const vm_pic *pic)
 { return pic && pending(&pic->chip[0],1u)>=0; }
+int vm_pic_can_irq(const vm_pic *pic,pl_u32 irq)
+{
+    if(!pic || irq>=16u || irq==2u)return 0;
+    for(pl_u32 chip=irq>=8u?1u:0u;;chip=0u){
+        const vm_pic_chip *c=&pic->chip[chip];
+        pl_u32 bit=1u<<(chip?irq&7u:irq>=8u?2u:irq);
+        if(grant(c,!chip,bit)<0)return 0;
+        if(!chip)return 1;
+        if(pic->chip[0].single || !(pic->chip[0].cascade&4u) || (c->cascade&7u)!=2u)return 0;
+    }
+}
 int vm_pic_acknowledge(vm_pic *pic)
 {
     if (!pic) return -1;

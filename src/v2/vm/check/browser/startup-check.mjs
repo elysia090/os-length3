@@ -24,7 +24,7 @@ assert.deepEqual = (a,b) => assert(JSON.stringify(a) === JSON.stringify(b),'star
 
 export async function checkStartup(reader,providerBytes,compilerBytes,readExtent,
     {extended = false,onProgress = () => {},decompression,immutableImage,warmCuts=1,
-      utcSeconds = BigInt(Math.floor(Date.now()/1000))} = {}) {
+      utcSeconds = BigInt(Math.floor(Date.now()/1000)),idleWait} = {}) {
   const startedAt=performance.now();
   assert(Number.isInteger(warmCuts) && warmCuts>=1 && warmCuts<=64,'bounded warm cut quantum');
   const read = async name => new Bytes(await reader(name));
@@ -137,6 +137,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   let engineMs = 0, coldMs = 0, executionMs = 0;
   let supplyMs = 0, pageSupplies = 0, sourceExtentBytes = 0, quantumYields = 0;
   let clockEvents = 0, boundaryClockEvents = 0, deferredClockPolls = 0, sampledClockMs = 0;
+  let idleEvents=0,idleNanoseconds=0n;
+  if(idleWait!==undefined)assert(typeof idleWait==='function' && typeof vm.vm_idle_clock==='function','C idle clock transport');
   const consoleOutput=new Uint8Array(16384);
   let consoleBytes=0;
   let repeatInitialState, repeatInitialSegments, repeatComparedBytes = 0;
@@ -158,7 +160,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     // Read-only diagnostics: neither a CPU snapshot nor a source retirement.
     // Admission/quantum progress also exposes work inside long instructions.
     onProgress({format:'browser-bzimage-startup-v1',status:'running',linuxBoot:'not-achieved',
-      retired,admissions,nextRip:`0x${rip().toString(16)}`,quantumYields,
+      retired,admissions,nextRip:`0x${rip().toString(16)}`,quantumYields,idleEvents,idleNanoseconds:String(idleNanoseconds),
       architecturalRCX:`0x${view.getBigUint64(base+8,true).toString(16)}`,
       residentPages:vm.vm_page_count(),memoryBytes:memory.buffer.byteLength,
       console:{acceptedBytes:consoleBytes,text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes))},
@@ -333,9 +335,30 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert.equal(view.getUint32(port+44,true),0x100);
     // Only measured C execution advances this diagnostic clock. Compilation,
     // delivery and UI stalls are paused; no guest counter is synthesized.
-    assert.equal(vm.vm_clock_commit(port,generation,view.getBigUint64(port+32,true),
-      BigInt(Math.round(executionMs*1000000))),0);
+    const nanoseconds=BigInt(Math.round(executionMs*1000000))+idleNanoseconds;
+    assert(nanoseconds>=0n && nanoseconds<1n<<64n,'clock timestamp does not wrap');
+    assert.equal(vm.vm_clock_commit(port,generation,view.getBigUint64(port+32,true),nanoseconds),0);
     sampledClockMs=executionMs; ++clockEvents;
+  }
+  async function idleBoundary(){
+    if(!idleWait)return {awaiting:'accepted machine wake event; idle transport not selected'};
+    if(idleEvents>=4096)return {awaiting:'idle event diagnostic bound',idleEvents};
+    // Account for the retiring HLT's real execution before selecting its
+    // next deadline. A hardware edge may already be due; never ask the host
+    // to wait for a timestamp earlier than the current virtual observation.
+    const sample=vm.vm_clock_poll(port,machineGeneration);assert.equal(sample,18n);
+    acceptClock(machineGeneration);assert.equal(vm.vm_clock_poll(port,machineGeneration),0n);++boundaryClockEvents;
+    const result=vm.vm_idle_clock(port,machineGeneration);
+    if(result===1n)return null; // An already pending C event needs no host delay.
+    if(result===4n)return {awaiting:'external wake event; no currently eligible timer deadline'};
+    assert.equal(result,18n);
+    const deadlineNanoseconds=view.getBigUint64(port+8,true);
+    const virtualNanoseconds=BigInt(Math.round(executionMs*1000000))+idleNanoseconds;
+    const observed=await idleWait({deadlineNanoseconds,virtualNanoseconds});
+    assert(typeof observed?.elapsedNanoseconds==='bigint' && observed.elapsedNanoseconds>=0n,'measured idle duration');
+    idleNanoseconds+=observed.elapsedNanoseconds;acceptClock(machineGeneration);
+    assert.equal(vm.vm_idle_clock(port,machineGeneration),0n);++idleEvents;
+    reportProgress();return null;
   }
   async function step(limit) {
     // A supervisor clock event is not a guest time instruction. C permits it
@@ -363,8 +386,9 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       if(boundary===1n){++externalInterrupts;return null;}
       if(boundary===4n){
         assert.equal(vm.vm_halted(),1);
+        const idle=await idleBoundary();if(!idle)return null;
         return {kind:'halted',result:'4',entry:`0x${rip().toString(16)}`,completed:0,sourceRetired:0,
-          awaiting:'accepted machine wake event; this diagnostic has no idle-time transport'};
+          ...idle};
       }
       const delivered=await deliverFault(boundary,interrupted);
       if(delivered)return delivered.deliveryResult==='0'?null:{kind:'interrupt-delivery',...delivered};
@@ -568,9 +592,10 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       assert.equal(vm.vm_halted(),1);assert(completed>0 && done>=completed);
       retired+=done;assert.equal(view.getBigUint64(base+1128,true),BigInt(retired));
       trace.append(entry,done,rip(),result,view,base);
+      const idle=await idleBoundary();if(!idle)return null;
       return {kind:'halted',result:'4',entry:`0x${rip().toString(16)}`,admittedEntry:`0x${entry.toString(16)}`,
         completed,sourceRetired:done,flags:`0x${view.getBigUint64(base+392,true).toString(16)}`,
-        awaiting:'accepted machine wake event; this diagnostic has no idle-time transport'};
+        ...idle};
     }
     const failedSource=result!==1n && result!==5n ? runSource(generation) : null;
     trace.append(entry,done,rip(),result,view,base);
@@ -715,12 +740,13 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       nextRip:`0x${rip().toString(16)}`,nextGate:stopped,exceptions,
       repeatAdmission:'completed through one pinned module; all copied bytes checked through C-MMU views',
       firstRepeatWait,pageSupplies,sourceExtentBytes,quantumYields,clockEvents,boundaryClockEvents,deferredClockPolls,externalInterrupts,
+      idleEvents,idleNanoseconds:String(idleNanoseconds),
       postCode:vm.vm_post_read(machineGeneration),
       console:{acceptedBytes:consoleBytes,capacity:consoleOutput.length,
         text:new TextDecoder().decode(consoleOutput.subarray(0,consoleBytes)),
         ownership:'bounded local sink; C accepts generation/ticket/exact byte before UART commit/retirement; not a guest tty implementation'},
       rtcSeed:{utcSeconds:String(utcSeconds),source:'explicit supervisor UTC snapshot; not authenticated network time'},
-      clockContract:'active C execution nanoseconds, guest clock requests plus safe cut-boundary poll each >=1 ms; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused',
+      clockContract:`active C execution nanoseconds${idleWait?' plus measured idle transport time':''}, guest clock requests plus safe cut-boundary poll each >=1 ms; virtual TSC 1 GHz, PIT 1193182 Hz, C RTC 32768 Hz; compilation/delivery paused`,
       repeatComparedBytes,bssComparedBytes,
       memsetComparedBytes,memsetReturns,
       residentPages:vm.vm_page_count(),descriptorCapacity:capacity,descriptorBytes:capacity * 32 + (capacity - 1) * 16,

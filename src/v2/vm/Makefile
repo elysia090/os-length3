@@ -30,6 +30,7 @@ WASM_FLAGS += -Wl,--export=vm_halted
 WASM_FLAGS += -Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit,--export=vm_rtc_start,--export=vm_console_commit
 WASM_FLAGS += -Wl,--export=vm_post_read
 WASM_FLAGS += -Wl,--export=vm_clock_poll
+WASM_FLAGS += -Wl,--export=vm_idle_clock
 WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_extend,--export=vm_source_publish,--export=vm_sources_reset
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 WASM_FLAGS += -Wl,--export=vm_entry_abi
@@ -93,7 +94,7 @@ $(WASM_OUTPUT): core/system.c include/vm/system.h ../machine-abi/include/machine
 # The provider shares ordinary machine memory with generated functions. It has
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.
 wasm: $(WASM_OUTPUT)
-$(WASM_OUTPUT): $(WASM_SOURCES) Makefile ../artifact/sources.mk \
+$(WASM_OUTPUT): $(WASM_SOURCES) $(wildcard core/*.h) Makefile ../artifact/sources.mk \
 	$(wildcard ../artifact/include/artifact/*.h ../support/include/support/*.h include/vm/*.h)
 
 $(WASM_OUTPUT): wasm/entry.c core/memory.c core/mmu.c core/boot.c core/supply.c include/vm/supply.h core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c include/vm/msr.h ../machine-abi/include/machine/msr.h core/exception.c include/vm/exception.h core/source.c include/vm/source.h core/memory-internal.h core/segments-internal.h \

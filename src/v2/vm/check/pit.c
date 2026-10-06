@@ -32,6 +32,8 @@ static void clear_irq(void)
 int main(int argc, char **argv)
 {
     reset();
+    pl_u64 absent=0u;
+    EXPECT(!vm_pit_next_irq(&pit,&absent));
     if (argc==2 && !strcmp(argv[1],"--trace")) {
         char kind; uint64_t ns; unsigned port,byte;
         while (scanf(" %c %" SCNu64 " %u",&kind,&ns,&port)==3) {
@@ -55,11 +57,18 @@ int main(int argc, char **argv)
             EXPECT((pic.chip[0].request&1u)==(pl_u32)(channel==0u && tick>1u && reference==n));
             if(channel==2u)EXPECT((read_at(tick,0x61u)&32u)==(reference==1u ? 0u : 32u));
             clear_irq();++comparisons;
+            if(!channel){
+                vm_pit before=pit;pl_u64 deadline=0u;
+                EXPECT(vm_pit_next_irq(&pit,&deadline));
+                EXPECT(deadline==ns_at(tick+reference));
+                EXPECT(!memcmp(&before,&pit,sizeof pit));
+            }
         }
     }
     /* A new CR is loaded only at the next cycle boundary, not next access.
      * A partial two-byte write does not stop an active mode-2 CE. */
     reset();program(0u,2u,5u);pl_u32 status=0u;
+    EXPECT(vm_pit_next_irq(&pit,&absent) && absent==ns_at(6u));
     EXPECT(snapshot(2u,0u,&status)==4u);write_at(2u,0x40u,3u);
     EXPECT(snapshot(3u,0u,&status)==3u && status==0xb4u);
     write_at(3u,0x40u,0u);EXPECT(snapshot(4u,0u,&status)==2u && status==0xf4u);
@@ -136,8 +145,10 @@ int main(int argc, char **argv)
     EXPECT(vm_pit_transfer(&pit,ns_at(3u),&pic,0x40u,1u,NULL)==-1);
     /* Mode-0 terminal rising edge routes through exactly the same PIC. */
     reset();program(0u,0u,3u);clear_irq();
+    EXPECT(vm_pit_next_irq(&pit,&absent) && absent==ns_at(4u));
     EXPECT(!vm_pit_advance(&pit,ns_at(3u),&pic)&&!pic.chip[0].request);
     EXPECT(!vm_pit_advance(&pit,ns_at(4u),&pic)&&(pic.chip[0].request&1u));
+    EXPECT(!vm_pit_next_irq(&pit,&absent));
     clear_irq();EXPECT(!vm_pit_advance(&pit,ns_at(100u),&pic)&&!pic.chip[0].request);
     if(failures)return 1;
     printf("C PIT: %u pulse/reference, %u batch/residual comparisons; mode0/2, gate/reload/latch, bounded IRQ0 and rejection checks green (not Linux boot)\n",comparisons,batch_comparisons);
