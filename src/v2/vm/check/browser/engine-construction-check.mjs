@@ -10,15 +10,15 @@ export async function checkEngineConstruction(compilerBytes) {
   const cold=new Uint8Array(cm.buffer),report=new DataView(cm.buffer);
   const input=cc.compiler_arena_min(),output=input+8192,receipt=output+65536;
   const state=4096,port=8192,view=new DataView(memory.buffer),payload=new Uint8Array(memory.buffer);
-  const imports={machine:{memory}},samples=[],modules=128,rounds=6;
+  const imports={machine:{memory}},samples=[],bodyClasses=[],modules=128,rounds=6;
   let comparisons=0,minimum=65536,maximum=0;
-  function check(instance,entry,value) {
+  function check(instance,entry,value,binding) {
     payload.fill(0,state,state+1256);view.setBigUint64(state+384,entry,true);
     view.setBigUint64(state+392,0x10002n,true);view.setBigUint64(state+1128,17n,true);
     const expected=payload.slice(state,state+1256),ev=new DataView(expected.buffer);
     ev.setBigUint64(0,BigInt(value),true);ev.setBigUint64(384,entry+5n,true);
     ev.setBigUint64(392,2n,true);ev.setBigUint64(1128,18n,true);
-    ensure(instance.exports.cut(state,port,entry,0)===1n,'generated MOV result');
+    ensure(instance.exports.cut(state,port,entry,binding)===1n,'generated MOV result');
     ensure(same(payload.subarray(state,state+1256),expected),'whole generated MOV CPU preservation');
     ++comparisons;
   }
@@ -35,7 +35,7 @@ export async function checkEngineConstruction(compilerBytes) {
       ensure(cc.compiler_emit(entry,1,output,65536,receipt)===0,'C MOV lowering');
       const length=Number(report.getBigUint64(receipt+40,true));
       ensure(length>0&&length<=65536,'bounded C emission');minimum=Math.min(minimum,length);maximum=Math.max(maximum,length);
-      emissions.push({entry,value,bytes:cold.slice(output,output+length)});
+      emissions.push({entry,value,binding:report.getUint32(receipt+76,true),bytes:cold.slice(output,output+length)});
     }
     const owner=new CompiledModules(imports,{maximumEntries:1,maximumBytes:65536});
     const methods={
@@ -49,13 +49,16 @@ export async function checkEngineConstruction(compilerBytes) {
     const rotated=order.slice(round%3).concat(order.slice(0,round%3));
     for(const method of rotated) {
       let milliseconds=0;
-      for(const {entry,value,bytes}of emissions) {
+      for(const {entry,value,binding,bytes}of emissions) {
         const started=performance.now(),instance=await methods[method](bytes,entry);
-        milliseconds+=performance.now()-started;check(instance,entry,value);
+        milliseconds+=performance.now()-started;check(instance,entry,value,binding);
       }
       samples.push({round,method,position:rotated.indexOf(method),modules,milliseconds});
     }
-    ensure(owner.stats().compilations===modules,'owner constructs every deliberately distinct literal body');
+    const distinct=new Set(emissions.map(({bytes})=>Array.from(bytes).join(','))).size;
+    bodyClasses.push({round,distinct,owner:owner.stats()});
+    ensure(owner.stats().compilations===distinct,'owner constructs only distinct emitted topologies');
+    ensure(owner.stats().hits===modules-distinct,'different literal bindings must reuse an exact body when emitted alike');
     ensure(owner.stats().entries===1&&owner.stats().retainedModuleBytes<=65536,'unchanged owner quota');
     owner.close();
   }
@@ -65,6 +68,6 @@ export async function checkEngineConstruction(compilerBytes) {
   const coldFirst=Object.fromEntries(['asynchronous','inline','boundedOwner'].map(method=>
     [method,samples.filter(row=>row.method===method&&row.position===0).reduce((sum,row)=>sum+row.milliseconds,0)]));
   return {format:'bounded-engine-construction-v1',status:'pass',linuxBoot:'not-tested',
-    emissions:modules*rounds,comparisons,moduleBytes:{minimum,maximum},totalsMs:totals,coldFirstMs:coldFirst,samples,
+    emissions:modules*rounds,comparisons,moduleBytes:{minimum,maximum},bodyClasses,totalsMs:totals,coldFirstMs:coldFirst,samples,
     scope:'rotating fresh-first tiny cold-C MOV emissions; full 1256-byte CPU models, not a native ISA oracle or Linux speedup'};
 }

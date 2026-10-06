@@ -199,6 +199,24 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
             plan->report.boundary_operation = instruction.operation;
             break;
         }
+        /* A single MOV has one value binding, not a different body for every
+         * literal. Do not split a stronger multi-instruction slice to obtain
+         * this sharing, or rebind another immediate in that slice. */
+        if(i && plan->operand_binding_kind>=CUT_BIND_IMMEDIATE_UNSIGNED){
+            plan->operand_binding_kind=CUT_BIND_NONE;plan->report.operand_binding=0u;
+        }
+        if(!i && instruction.operation==PL_X86_OPERATION_MOVE
+                && instruction.visible_operand_count==2u
+                && instruction.operands[0].kind==PL_X86_OPERAND_REGISTER
+                && cut_gpr(&instruction.operands[0].value.reg)
+                && instruction.operands[1].kind==PL_X86_OPERAND_IMMEDIATE){
+            pl_u64 value=instruction.operands[1].value.immediate;
+            if(instruction.operands[0].bits<64u)value&=(1ull<<instruction.operands[0].bits)-1u;
+            if(value<=0xffffffffu || value>=0xffffffff80000000ull){
+                plan->operand_binding_kind=value<=0xffffffffu?CUT_BIND_IMMEDIATE_UNSIGNED:CUT_BIND_IMMEDIATE_SIGNED;
+                plan->report.operand_binding=(pl_u32)value;
+            }
+        }
         if(remember_flags(plan,i,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
         ++plan->report.source_instructions;
         plan->report.source_bytes += instruction.length;

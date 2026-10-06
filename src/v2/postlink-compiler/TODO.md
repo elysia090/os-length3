@@ -1,4 +1,4 @@
-# Remaining work — 2026-10-06
+# Remaining work — 2026-10-07
 
 ## Fixed input and success
 
@@ -22,6 +22,29 @@ exactly. Measure fetch count/bytes, resident high-water and cold-ready
 separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
+
+New literal factorization: a single GPR MOV uses the existing attested scalar
+binding for exactly unsigned32/sign-extended32 values; longer slices are not
+split and wide64 constants retain exact meaning. 1,024 native/full-C-VM
+observations and cold/native bytes, scoped sanitizers and existing regressions
+pass. Six 128-value rounds share six bodies instead of 768 at the same quota.
+An argument load/extension may add one Wasm operation, so minimum work/span
+and individual/native execution speed are NOT proved. Cold reconstruction is
+still paid before shared-body lookup. See
+[scope and remaining dominant connection](../vm/check/browser/evidence/2026-10-07-literal-binding.md).
+
+Completed same-bundle `a4def3a` Node run: 265,423,406 retired / 150,000,000
+admissions, diagnostic quota at `0xffffffff810a7d3e`, not a compiler miss or
+boot success. Kernel announces /init and crng init; no terminal/service
+readiness is proven. No idle event occurred, so this run does NOT exercise
+the new idle transport. Cold/engine 693,573 / 744,757 ms dominate the
+1,933,394 ms total (74.39%). 85,586,257 misses still reconstruct before
+69,748,248 exact engine hits; 15,838,009 constructions replace the bounded
+engine owner. Do not infer speedup from different virtual clock/work paths.
+See [actual receipt](../vm/check/browser/evidence/2026-10-06-node-startup-idle-quota.json).
+Whole ELF remains -104. Connect complete compiler-produced module/coordinate
+projection and C Artifact residency, rather than increasing source/engine/
+execution quotas or declaring a prefix cache complete closure.
 
 Newest idle-event candidate derives least eligible PIT/RTC/UART deadlines
 from existing residual device state and the same PIC grant law; no per-tick

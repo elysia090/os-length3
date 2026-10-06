@@ -266,7 +266,11 @@ void cut_read_operand(cut_lowering *cut, const pl_x86_operand *operand, pl_u32 w
             +(MACHINE_SYSTEM_ES+operand->value.reg.index)*8u);
         cut_mask(cut,16u);
     } else if (operand->kind == PL_X86_OPERAND_REGISTER) read_register(cut, &operand->value.reg);
-    else cut_const(cut, operand->value.immediate);
+    else if(cut->operand_binding_kind==CUT_BIND_IMMEDIATE_UNSIGNED
+            || cut->operand_binding_kind==CUT_BIND_IMMEDIATE_SIGNED){
+        cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,3u);
+        cut_op(cut,cut->operand_binding_kind==CUT_BIND_IMMEDIATE_SIGNED?0xacu:0xadu);
+    }else cut_const(cut, operand->value.immediate);
     cut_mask(cut, width);
 }
 

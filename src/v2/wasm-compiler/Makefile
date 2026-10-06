@@ -39,6 +39,12 @@ SOURCES += src/coverage.c
 SOURCES += src/lower-register-update.c
 
 .PHONY: register-update-check
+.PHONY: literal-check
+check: literal-check
+literal-check: $(BUILD)/literal-check
+	$(BUILD)/literal-check
+$(BUILD)/literal-check: check/literal.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: register-update-check
 register-update-check: $(BUILD)/register-update-check
 	$(BUILD)/register-update-check
