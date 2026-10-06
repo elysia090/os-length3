@@ -7,7 +7,8 @@ let refusals=0;
 for (const flags of [['--unknown'],['--idle','--idle'],['--extended','--extended'],['--progress','--progress'],
     ['--segments=a','--segments=b'],['--image=a','--image=b'],['--segments='],['--image='],
     ['--warm-cuts='],['--warm-cuts=0'],['--warm-cuts=65'],['--warm-cuts=-1'],['--warm-cuts=1.5'],
-    ['--warm-cuts=01'],['--warm-cuts=1','--warm-cuts=2']]) {
+    ['--warm-cuts=01'],['--warm-cuts=1','--warm-cuts=2'],['--progress-file='],
+    ['--progress-file=a','--progress-file=b']]) {
   const result=spawnSync(process.execPath,[script,'unused-vm','unused-compiler','unused-directory',...flags],{encoding:'utf8',windowsHide:true});
   assert.equal(result.status,1); assert.match(result.stderr,/usage:|empty independent fixture path/);
   assert.doesNotMatch(result.stderr,/ENOENT/); assert.equal(result.stdout,''); ++refusals;
