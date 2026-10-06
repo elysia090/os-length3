@@ -5,6 +5,7 @@
 
 #include <machine/result.h>
 #include <optimized-x86/reader.h>
+#include <x86/decode.h>
 
 #define WASM_COMPILER_OK 0
 #define WASM_COMPILER_ERROR_INPUT      (-100)
@@ -35,6 +36,24 @@ typedef struct {
     pl_u64 modules;
     pl_u64 bytes;
 } wasm_compile_report;
+
+typedef struct {
+    pl_x86_catalog catalog;
+    pl_u64 lowerable,unlowered_valid,unlowered_faults,fetch_demands,capacity_refusals;
+    pl_u64 first_unlowered;
+    pl_i32 first_status;
+    pl_u8 first_operation,first_machine_operation,first_decode_status,first_source_bytes;
+    pl_u8 first_source[PL_X86_MAX_INSTRUCTION_BYTES];
+    pl_u64 operations[PL_X86_OPERATION_MAX+1u];
+} wasm_coverage_report;
+
+/* Visit EVERY final PF_X byte coordinate, including interior/padding/zero-fill
+ * and indirect targets. Classify actual backend admission, not proof counts,
+ * symbols or observed RIPs. A grammar miss is never changed into #UD/#PF;
+ * fetch demands mean the source/load context must be completed. This exact
+ * finite coverage report is necessary, NOT sufficient for whole-machine
+ * closure/publication. No Wasm or program table is emitted by this query. */
+int wasm_compiler_coverage(const wasm_compiler *compiler,wasm_coverage_report *report);
 
 /* Borrow immutable ELF bytes until the compiler is discarded. Failed reopen
  * invalidates the compiler; it must not retain a previous accepted image. */

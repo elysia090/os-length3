@@ -1,5 +1,6 @@
 #include <x86/decode.h>
 #include <x86/profile.h>
+#include <x86/semantics.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -43,6 +44,20 @@ int main(void)
                 || instruction.condition!=native_condition) {
             fprintf(stderr,"native extension decode: RED\n"); ++failed;
         }
+        ++cases;
+    }
+    /* Absent features fault in the fixed machine, while native postlinking
+     * retains their source on superset hosts. No operand is accessed at #UD. */
+    static const pl_u8 absent[][6]={{0xc5,0xf8,0x10,0x07},
+        {0x66,0x0f,0x38,0xdc,0x07},{0x0f,0xae,0x27}};
+    static const pl_u8 lengths[]={4u,5u,3u};
+    for(pl_u32 i=0u;i<sizeof lengths;++i){
+        memset(bytes,0x90,sizeof bytes);memcpy(bytes,absent[i],lengths[i]);
+        pl_x86_instruction instruction;pl_x86_fault_cut law;
+        if(pl_x86_decode_profile(&image,image.entry,&instruction)
+                || !pl_x86_fault_cut_lower(&instruction,&law) || law.vector!=6u || law.bytes!=lengths[i])++failed;
+        if(pl_x86_decode(&image,image.entry,&instruction)
+                || instruction.flow==PL_X86_FLOW_FAULT || instruction.machine_operation!=PL_X86_MACHINE_EXTENSION)++failed;
         ++cases;
     }
     if (failed) return 1;

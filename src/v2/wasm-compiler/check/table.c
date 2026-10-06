@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <stdio.h>
 #include <string.h>
 static pl_u8 page[4096], output[65536];
@@ -58,9 +59,7 @@ int main(int argc, char **argv)
             EXPECT(report.source_bytes==4u && report.source_instructions==1u && report.boundary==WASM_CUT_SYSTEM);
             continue;
         }
-        EXPECT(wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&length,&report)==WASM_COMPILER_ERROR_GRAMMAR);
-        EXPECT(length==123u);
-        for (unsigned i=0u;i<sizeof output;++i) EXPECT(output[i]==0xa5u);
+        EXPECT(!check_fault_admission(&image,&options,6u));
     }
     if (!failures) puts("Descriptor transfers: 96 C entrance forms green (not Linux boot)");
     return failures ? 1 : 0;

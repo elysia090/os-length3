@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <machine/state.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -40,6 +41,7 @@ static int refused(const pl_u8 *bytes, pl_u32 length)
     pl_x86_map map = {bad, 0x400000u, 4096u, 4096u, PL_ELF_FLAG_EXECUTE, 9u};
     pl_x86_image image = {&map, 1u, 0u, map.address};
     wasm_cut_options options = {image.entry, 1u, sizeof output};
+    if(bytes[0]==0xf0u)return !check_fault_admission(&image,&options,6u);
     wasm_cut_report report; memset(&report, 0xa5, sizeof report); pl_u64 emitted = 77u;
     if (wasm_compiler_emit_code_cut(&image, 9u, &options, output, sizeof output, &emitted, &report)
             != WASM_COMPILER_ERROR_GRAMMAR || emitted != 77u) return 0;

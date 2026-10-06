@@ -2173,10 +2173,9 @@ static pl_x86_operand accumulator_operand(pl_u32 index, pl_u32 bits);
 static int lower_loop(const pl_x86_instruction *instruction,
                       semantic_builder *builder, pl_x86_semantic *out)
 {
-    pl_u32 bits = instruction->address_width;
-    if (instruction->condition > 2u
-            || (bits != 16u && bits != 32u && bits != 64u))
-        return PL_ERROR_X86_SEMANTIC;
+    pl_x86_count_branch law;
+    if(!pl_x86_count_branch_lower(instruction,&law) || !law.decrement)return PL_ERROR_X86_SEMANTIC;
+    pl_u32 bits=law.bits;
     pl_u32 lane = bits == 32u ? 0u : 1u;
     pl_operand decrement_arguments[2] = {
         operand(PL_OPERAND_LOCAL, 1u), operand(PL_OPERAND_CONST, 1u),
@@ -2196,10 +2195,10 @@ static int lower_loop(const pl_x86_instruction *instruction,
     pl_operand predicate;
     int status = count_condition(builder, next_count, bits, 5u, &predicate);
     if (status) return status;
-    if (instruction->condition) {
+    if (law.zero_flag) {
         pl_operand zero;
         status = condition_value(
-            builder, instruction->condition == 1u ? 4u : 5u, &zero);
+            builder, law.zero_flag == 1u ? 4u : 5u, &zero);
         if (status) return status;
         pl_operand arguments[2] = { predicate, zero };
         predicate = emit(
@@ -2213,9 +2212,9 @@ static int lower_count_zero_branch(
     const pl_x86_instruction *instruction, semantic_builder *builder,
     pl_x86_semantic *out)
 {
-    pl_u32 bits = instruction->address_width;
-    if (bits != 16u && bits != 32u && bits != 64u)
-        return PL_ERROR_X86_SEMANTIC;
+    pl_x86_count_branch law;
+    if(!pl_x86_count_branch_lower(instruction,&law) || law.decrement)return PL_ERROR_X86_SEMANTIC;
+    pl_u32 bits=law.bits;
     pl_operand predicate;
     int status = count_condition(
         builder, operand(PL_OPERAND_LOCAL, 1u), bits, 4u, &predicate);
@@ -2692,6 +2691,39 @@ pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction)
         }
     }
     return reads;
+}
+
+int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out)
+{
+    if(!instruction || !out || instruction->flow!=PL_X86_FLOW_FAULT
+            || instruction->operation!=PL_X86_OPERATION_FAULT
+            || instruction->machine_operation!=PL_X86_MACHINE_NONE
+            || (instruction->flags&PL_X86_INSTRUCTION_TRAP_AFTER)
+            || (instruction->status!=PL_X86_DECODE_VALID && instruction->status!=PL_X86_DECODE_INVALID
+                && instruction->status!=PL_X86_DECODE_TOO_LONG)
+            || (instruction->trap_vector!=6u && instruction->trap_vector!=13u)
+            || !instruction->length || instruction->length>PL_X86_MAX_INSTRUCTION_BYTES
+            || instruction->source_bytes!=instruction->length)return 0;
+    *out=(pl_x86_fault_cut){instruction->trap_vector,instruction->source_bytes};return 1;
+}
+
+int pl_x86_count_branch_lower(const pl_x86_instruction *instruction,pl_x86_count_branch *out)
+{
+    if(!instruction || !out || instruction->status!=PL_X86_DECODE_VALID
+            || instruction->encoding!=PL_X86_ENCODING_LEGACY
+            || instruction->machine_operation!=PL_X86_MACHINE_NONE
+            || instruction->flow!=PL_X86_FLOW_CONDITIONAL
+            || !(instruction->flags&PL_X86_INSTRUCTION_DIRECT_TARGET)
+            || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_READS_MEMORY
+                |PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER))
+            || instruction->visible_operand_count!=1u
+            || instruction->operands[0].kind!=PL_X86_OPERAND_IMMEDIATE
+            || (instruction->address_width!=16u && instruction->address_width!=32u && instruction->address_width!=64u))return 0;
+    int loop=instruction->operation==PL_X86_OPERATION_LOOP;
+    if(loop?instruction->condition>2u:instruction->operation!=PL_X86_OPERATION_COUNT_ZERO_BRANCH)return 0;
+    *out=(pl_x86_count_branch){(pl_u8)instruction->address_width,(pl_u8)loop,loop?instruction->condition:0u};
+    return 1;
 }
 
 int pl_x86_halt_supported(const pl_x86_instruction *instruction)

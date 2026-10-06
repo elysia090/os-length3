@@ -557,5 +557,8 @@ int pl_x86_transfer_write(const pl_x86_instruction *instruction,
  * target the machine can publish already has a function or a fault row. */
 int pl_x86_catalog_image(const pl_x86_image *image, pl_x86_visit visit,
                          void *context, pl_x86_catalog *out);
+/* Same complete coordinate domain under the immutable delivery CPU profile. */
+int pl_x86_catalog_profile(const pl_x86_image *image,pl_x86_visit visit,
+    void *context,pl_x86_catalog *out);
 
 #endif /* X86_DECODE_H */

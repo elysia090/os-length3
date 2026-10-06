@@ -140,6 +140,8 @@ pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction)
 
 pl_u32 cut_flag_read_mask(const pl_x86_instruction *instruction)
 {
+    pl_x86_count_branch count;
+    if(pl_x86_count_branch_lower(instruction,&count))return count.zero_flag?0x40u:0u;
     static const pl_u32 condition_bits[] = { 0x800u,1u,0x40u,0x41u,0x80u,4u,0x880u,0x8c0u };
     if (instruction->operation == PL_X86_OPERATION_ADD_CARRY
             || instruction->operation == PL_X86_OPERATION_SUBTRACT_BORROW) return 1u;

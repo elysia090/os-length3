@@ -1428,6 +1428,18 @@ residency is 64 modules / 20,390 bytes but over 1.2 million compilations and
 zero reported reuse. Cumulative copies/timing/retirements do not establish
 RSS, download reduction, controlled speedup or boot completion percentage.
 
+## Final-ELF construction status — 2026-10-06
+
+[The final-ELF coverage checkpoint](../vm/check/browser/evidence/2026-10-06-final-elf-coverage.md)
+adds a complete final PF_X byte inventory, shared counter-branch laws and
+decoder-proven precise #UD/#GP cuts. Real published s6 files reduce their
+backend gaps by 4,299 and 5,088 coordinates. Full native/cold checks and C-MMU
+fault priority pass; this is not browser boot, a Linux speedup or a shipped
+Artifact projection. Whole-image publication still refuses -104, valid missing
+semantics never become invented faults, and the native bundle/UI/VM/retained
+browser assets are unchanged. Linux shell, development/storage/network and
+three-second cold-ready acceptance remain open.
+
 ## Platform sources
 
 * [WebAssembly memory growth](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/Memory/grow)

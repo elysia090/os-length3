@@ -21,6 +21,8 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 }
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_count_branch count;
+    if(pl_x86_count_branch_lower(instruction,&count) && count.bits!=16u)return CUT_SYSTEM_COUNTER_BRANCH;
     if (pl_x86_halt_supported(instruction)) return CUT_SYSTEM_HALT;
     if(instruction->status==PL_X86_DECODE_VALID && instruction->encoding==PL_X86_ENCODING_LEGACY
             && instruction->machine_operation==PL_X86_MACHINE_SYSTEM_TRANSFER
@@ -338,6 +340,8 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    pl_x86_count_branch count;
+    if(pl_x86_count_branch_lower(instruction,&count)){cut_lower_counter_branch(cut,instruction);return;}
     if (pl_x86_halt_supported(instruction)) {
         require_cpl0(cut);
         /* The ordinary successful epilogue advances RIP, clears RF and

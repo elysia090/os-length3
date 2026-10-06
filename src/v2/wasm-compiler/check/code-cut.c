@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <machine/memory.h>
 #include "../src/cut-internal.h"
 #include <stdio.h>
@@ -29,8 +30,8 @@ int main(int argc, char **argv)
     wasm_cut_options options = { source.entry, 1024u, sizeof output };
     wasm_cut_report report;
     pl_u64 bytes = 0u;
-    /* Former base refusals now require explicit C-owned roles. Invalid LOCK,
-     * far-control and reserved encodings below remain rejection tests. */
+    /* Base roles, architectural faults and legal unimplemented semantics
+     * remain distinct admissions; none can be guessed from a grammar miss. */
     static const struct {pl_u8 code[6];pl_u32 size,access;} segment_cases[]={
         {{0x64u,0x8cu,0x17u},3u,2u}, {{0x64u,0x0fu,0x94u,0x07u},4u,2u},
         {{0x64u,0x0fu,0xafu,0x07u},4u,1u}, {{0x64u,0x48u,0xf7u,0x27u},4u,1u},
@@ -206,10 +207,7 @@ int main(int argc, char **argv)
     };
     for (pl_u32 rank=0u;rank<sizeof selector_refused/sizeof selector_refused[0];++rank) {
         memset(pages,0x90,sizeof pages); memcpy(pages,selector_refused[rank],3u);
-        memset(output,0xa5,sizeof output);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            ==WASM_COMPILER_ERROR_GRAMMAR);
-        for (pl_u32 at=0u;at<sizeof output;++at) EXPECT(output[at]==0xa5u);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     /* A nonzero whole-width turn keeps the value but updates CF. The flag
      * count is masked, not reduced modulo the narrow destination width. */
@@ -307,9 +305,7 @@ int main(int argc, char **argv)
     };
     for (pl_u32 rank = 0u; rank < sizeof set_rejected/sizeof set_rejected[0]; ++rank) {
         memcpy(pages,set_rejected[rank],sizeof set_rejected[rank]); memset(output,0xa5,sizeof output);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            == WASM_COMPILER_ERROR_GRAMMAR);
-        for (pl_u32 at = 0u; at < sizeof output; ++at) EXPECT(output[at] == 0xa5u);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     /* MSR transfers and SWAPGS must be ordinary one-instruction system cuts,
      * not address-specific startup exceptions. */
@@ -364,7 +360,7 @@ int main(int argc, char **argv)
         EXPECT(report.boundary==(rank==1u ? WASM_CUT_MEMORY : WASM_CUT_LIMIT));
         EXPECT(report.memory_access==(rank==1u ? MACHINE_MEMORY_READ : 0u));
     }
-    // Invalid LOCK encodings still explicitly refuse.
+    // Invalid LOCK encodings generate precise #UD, never multiplication.
     static const pl_u8 multiply_rejected[][5] = {
         {0xf0u,0x0fu,0xafu,0xc7u,0x90u},
         {0xf0u,0x48u,0xf7u,0xe2u,0x90u},
@@ -372,14 +368,11 @@ int main(int argc, char **argv)
     options.maximum_source_instructions = 1u;
     for (pl_u32 rank = 0u; rank < sizeof multiply_rejected / sizeof multiply_rejected[0]; ++rank) {
         memcpy(pages,multiply_rejected[rank],sizeof multiply_rejected[rank]);
-        memset(output,0xa5,sizeof output);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            == WASM_COMPILER_ERROR_GRAMMAR);
-        for (pl_u32 at = 0u; at < sizeof output; ++at) EXPECT(output[at] == 0xa5u);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     options.maximum_source_instructions = 1024u;
     /* LEAVE is a possibly faulting read, not a pure MOV RSP,RBP prefix.
-     * No output publication is allowed for a locked encoding. */
+     * The locked encoding faults before reading either stack coordinate. */
     pages[0] = 0xc9u;
     EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
     EXPECT(report.source_instructions == 1u && report.boundary == WASM_CUT_MEMORY
@@ -388,9 +381,7 @@ int main(int argc, char **argv)
     EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
     EXPECT(report.source_instructions == 1u && report.memory_bytes == 2u);
     pages[0] = 0xf0u; pages[1] = 0xc9u; memset(output,0xa5,sizeof output);
-    EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-        == WASM_COMPILER_ERROR_GRAMMAR);
-    for (pl_u32 at = 0u; at < sizeof output; ++at) EXPECT(output[at] == 0xa5u);
+    EXPECT(!check_fault_admission(&source,&options,6u));
     memset(pages, 0x90, sizeof pages); pages[0] = 0xfcu; pages[1] = 0xfau;
     EXPECT(!wasm_compiler_measure_code_cut(&source, 9u, &options, &bytes, &report));
     EXPECT(report.source_bytes == 1u && report.source_instructions == 1u);
@@ -419,7 +410,8 @@ int main(int argc, char **argv)
         int status = wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
         if (rank < 2u) EXPECT(!status && report.source_bytes == 3u
             && report.source_instructions == 1u && report.boundary == WASM_CUT_SYSTEM);
-        else EXPECT(status == WASM_COMPILER_ERROR_GRAMMAR); /* Non-table-load encodings. */
+        else if(rank==3u)EXPECT(!status && !check_fault_admission(&source,&options,6u)); /* Reserved /5. */
+        else EXPECT(status == WASM_COMPILER_ERROR_GRAMMAR); /* SMSW is not a table load. */
     }
     pages[0] = 0xfcu; pages[1] = 0xfau;
     for (pl_u32 rank = 0u; rank < 6u; ++rank)
@@ -428,7 +420,8 @@ int main(int argc, char **argv)
         pages[0] = 0x41u; pages[at] = 0x8eu;
         pages[at + 1u] = (pl_u8)(0xc0u | (rank << 3u) | (reg & 7u));
         int status = wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report);
-        if (rank == 1u) EXPECT(status == WASM_COMPILER_ERROR_GRAMMAR);
+        if (rank == 1u) EXPECT(!status && report.boundary==WASM_CUT_FAULT
+            && !check_fault_admission(&source,&options,6u));
         else {
             EXPECT(!status && report.source_bytes == at + 2u && report.source_instructions == 1u);
             EXPECT(report.read_registers == (1u << reg) && !report.written_registers && !report.flags_written);
@@ -448,7 +441,7 @@ int main(int argc, char **argv)
     pages[0] = 0x66u; pages[1] = 0xcfu;
     EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
     pages[0] = 0xf0u; pages[1] = 0x48u; pages[2] = 0xcfu;
-    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,&report) == WASM_COMPILER_ERROR_GRAMMAR);
+    EXPECT(!check_fault_admission(&source,&options,6u));
     /* Every long-mode control source and destination GPR shares one lowering.
      * No privileged hardware instruction is executed by this fixture tool. */
     static const pl_u32 controls[] = {0u,2u,3u,4u,8u};
@@ -502,8 +495,7 @@ int main(int argc, char **argv)
             || write_record(prefix,"source-page",pages,4096u)) return 1;
     }
     pages[0] = 0xf0u; pages[1] = 0x0fu; pages[2] = 0xa2u;
-    EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-           == WASM_COMPILER_ERROR_GRAMMAR); /* LOCK CPUID is not a valid transfer. */
+    EXPECT(!check_fault_admission(&source,&options,6u)); /* LOCK CPUID is #UD. */
     for (pl_u32 rank = 0u; rank < 4u; ++rank) {
         static const char *const names[] = {"pushfq", "popfq", "pushf", "popf"};
         pl_u32 at = rank >= 2u ? 1u : 0u;
@@ -521,8 +513,7 @@ int main(int argc, char **argv)
                 || write_record(prefix,"source-page",pages,4096u)) return 1;
         }
         pages[0] = 0xf0u; pages[1] = (pl_u8)(0x9cu + (rank & 1u));
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-               == WASM_COMPILER_ERROR_GRAMMAR);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     for (pl_u32 family = 0u; family < 2u; ++family)
     for (pl_u32 address = 32u; address <= 64u; address += 32u)
@@ -551,8 +542,7 @@ int main(int argc, char **argv)
         EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
         EXPECT(report.source_bytes==3u && report.source_instructions==1u && report.memory_access==(3u|MACHINE_MEMORY_FS));
         pages[0] = 0xf0u; pages[1] = 0xf3u; pages[2] = 0xa4u;
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-               == WASM_COMPILER_ERROR_GRAMMAR);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     /* Generic indirect control, including the pure-prefix boundary that
      * otherwise misclassified an unemitted successor as a branch. */
@@ -611,16 +601,14 @@ int main(int argc, char **argv)
     };
     for (pl_u32 form = 0u; form < sizeof rejected_carry_loads / sizeof rejected_carry_loads[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected_carry_loads[form],sizeof rejected_carry_loads[0]);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            == WASM_COMPILER_ERROR_GRAMMAR);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     static const pl_u8 rejected_bits[][6] = {
         {0xf0u,0x48u,0x0fu,0xbau,0xeeu,0x3au}, /* LOCK register BTS is invalid. */
     };
     for (pl_u32 form = 0u; form < sizeof rejected_bits / sizeof rejected_bits[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected_bits[form],sizeof rejected_bits[0]);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            == WASM_COMPILER_ERROR_GRAMMAR);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     for (pl_u32 condition=0u;condition<4u;++condition) {
         memset(pages,0x90,sizeof pages);
@@ -656,7 +644,7 @@ int main(int argc, char **argv)
             && !report.written_registers && report.flags_written==(operation!=3u));
     }
     /* Exact userland gate from the same-bundle execution, plus every binary
-     * family and a register-indexed bit RMW. Invalid LOCK forms above stay red. */
+     * family and a register-indexed bit RMW. Invalid LOCK forms above stay faults. */
     static const pl_u8 locked_rmw[][5]={
         {0xf0u,0x48u,0x09u,0x14u,0xc8u},
         {0xf0u,0x48u,0x01u,0x00u,0x90u},
@@ -734,13 +722,11 @@ int main(int argc, char **argv)
     }
     for (pl_u32 i=0u;i<sizeof exchange_rejected/sizeof exchange_rejected[0];++i) {
         memset(pages,0x90,sizeof pages); memcpy(pages,exchange_rejected[i],sizeof exchange_rejected[0]);
-        memset(output,0xa5,sizeof output);
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            == WASM_COMPILER_ERROR_GRAMMAR);
-        for (pl_u32 at=0u;at<sizeof output;++at) EXPECT(output[at] == 0xa5u);
+        EXPECT(!check_fault_admission(&source,&options,6u));
     }
     for (pl_u32 form = 0u; form < sizeof rejected / sizeof rejected[0]; ++form) {
         memset(pages,0x90,sizeof pages); memcpy(pages,rejected[form],sizeof rejected[0]);
+        if(form==1u){EXPECT(!check_fault_admission(&source,&options,6u));continue;}
         memset(output,0xa5,sizeof output);
         EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
             == WASM_COMPILER_ERROR_GRAMMAR);
@@ -793,8 +779,7 @@ int main(int argc, char **argv)
         == WASM_COMPILER_ERROR_FETCH);
     options.entry = source.entry = 0x400ff1u;
     memset(pages+4081u,0x66,15u); /* Too-long prefix stream is not truncation. */
-    EXPECT(wasm_compiler_measure_code_cut(&source,9u,&options,&bytes,0)
-        == WASM_COMPILER_ERROR_GRAMMAR);
+    EXPECT(!check_fault_admission(&source,&options,13u));
     source.entry = options.entry = 0x400ffeu;
     pages[4094] = 0xfcu; pages[4095] = 0x48u; pages[4096] = 0xb8u;
     source.map_count = 2u;

@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <machine/state.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -93,13 +94,8 @@ int main(int argc, char **argv)
             pl_u8 locked[4096]; memcpy(locked,page,sizeof locked); locked[0]=0xf0u;
             locked[1]=encodings[family][0]; locked[2]=encodings[family][1];
             pl_x86_map invalid=map; invalid.bytes=locked; pl_x86_image bad={&invalid,1u,0u,image.entry};
-            pl_u64 unchanged=77u; wasm_cut_report saved; memset(&saved,0xa5,sizeof saved);
-            pl_u8 output[4096]; memset(output,0xa5,sizeof output);
-            wasm_cut_options one={image.entry,1u,sizeof output};
-            if (wasm_compiler_emit_code_cut(&bad,9u,&one,output,sizeof output,&unchanged,&saved) != WASM_COMPILER_ERROR_GRAMMAR
-                    || unchanged != 77u) goto finish;
-            for (size_t rank=0u;rank<sizeof output;++rank) if (output[rank] != 0xa5u) goto finish;
-            for (size_t rank=0u;rank<sizeof saved;++rank) if (((const pl_u8 *)&saved)[rank] != 0xa5u) goto finish;
+            wasm_cut_options one={image.entry,1u,4096u};
+            if(check_fault_admission(&bad,&one,6u))goto finish;
         }
         char json[256]; int length=snprintf(json,sizeof json,
             "{\"entry\":\"4194304\",\"form\":%u,\"sourceBytes\":%u,\"instructions\":%u,\"native\":256,\"words\":34}\n",

@@ -64,6 +64,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     plan->string_cut = CUT_STRING_NONE;
     plan->indirect_cut = 0u;
     plan->operand_binding_kind = CUT_BIND_NONE;
+    plan->fault_vector=0u;
     plan->report.entry = rip;
     for (pl_u32 i = 0u; i < options->maximum_source_instructions; ++i) {
         if (i && (rip >> 12u) != (options->entry >> 12u)) {
@@ -79,6 +80,15 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
         }
         if (!i && instruction.status == PL_X86_DECODE_FETCH_FAULT)
             return WASM_COMPILER_ERROR_FETCH;
+        pl_x86_fault_cut fault;
+        if(pl_x86_fault_cut_lower(&instruction,&fault)){
+            plan->report.boundary=WASM_CUT_FAULT;plan->report.boundary_operation=PL_X86_OPERATION_FAULT;
+            if(!i){
+                plan->fault_vector=fault.vector;plan->report.source_instructions=1u;
+                plan->report.source_bytes=fault.bytes;plan->flag_frontier[0]=0u;
+            }
+            break; /* An earlier pure prefix retires before this fault cut. */
+        }
         /* Later instruction fetch must not fault ahead of an already retired
          * prefix. Only the first instruction may cross its executable page;
          * it then occupies a separate one-instruction cut. */
@@ -168,7 +178,15 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->report.boundary = WASM_CUT_CONTROL;
                     plan->report.branch_target = instruction.target;
                 }
-                if (system == CUT_SYSTEM_FAR_RETURN || system == CUT_SYSTEM_INTERRUPT_RETURN
+                if(system==CUT_SYSTEM_COUNTER_BRANCH){
+                    plan->report.branch_target=instruction.target;
+                    pl_u64 displacement=instruction.target-instruction.fallthrough;
+                    if(displacement<=0x7fffffffull || displacement>=0xffffffff80000000ull){
+                        plan->operand_binding_kind=CUT_BIND_CONTROL_DISPLACEMENT;
+                        plan->report.operand_binding=(pl_u32)displacement;
+                    }
+                }
+                if (system == CUT_SYSTEM_FAR_RETURN || system == CUT_SYSTEM_INTERRUPT_RETURN || system==CUT_SYSTEM_COUNTER_BRANCH
                         || system == CUT_SYSTEM_SOFTWARE_INTERRUPT || system==CUT_SYSTEM_PRIVILEGE_TRANSFER)
                     plan->report.boundary = WASM_CUT_CONTROL;
                 rip = instruction.fallthrough;
@@ -216,7 +234,7 @@ static int body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report
     cut.report = plan->report;
     cut.operand_binding_kind = plan->operand_binding_kind;
     cut.has_memory = plan->report.memory_bytes != 0u;
-    cut.has_port = cut.has_memory || plan->indirect_cut || (plan->system_cut
+    cut.has_port = cut.has_memory || plan->indirect_cut || plan->fault_vector || (plan->system_cut
         && plan->system_cut != CUT_SYSTEM_CPUID && plan->system_cut != CUT_SYSTEM_SELECTOR_READ
         && plan->system_cut != CUT_SYSTEM_MEMORY_ORDER);
     cut.has_segment = plan->system_cut == CUT_SYSTEM_SEGMENT;
@@ -275,6 +293,18 @@ static int body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report
     cut_load(&cut, (pl_u32)offsetof(machine_state, rflags)); cut_set(&cut, CUT_FLAGS);
     cut_get(&cut, CUT_FLAGS); cut_const(&cut, (cut.has_memory || cut.has_table) ? 0x40100u : 0x100u);
     cut_op(&cut, 0x83u); cut_op(&cut, 0x50u); cut_op(&cut, 0x45u); return_if(&cut);
+    if(plan->fault_vector){
+        /* No register, RIP, RF or retirement is published by a pending fault.
+         * Delivery/CR2/frame effects belong to the ordinary C event owner. */
+        cut_op(&cut,0x20u);wasm_writer_uleb(writer,1u);cut_coordinate(&cut,rip);
+        cut_op(&cut,0x37u);wasm_writer_uleb(writer,3u);wasm_writer_uleb(writer,offsetof(machine_memory_port,fault_address));
+        cut_op(&cut,0x20u);wasm_writer_uleb(writer,1u);cut_const(&cut,plan->fault_vector);
+        cut_op(&cut,0x37u);wasm_writer_uleb(writer,3u);wasm_writer_uleb(writer,offsetof(machine_memory_port,fault_vector));
+        cut_const(&cut,machine_result_make(MACHINE_RESULT_FAULT,plan->fault_vector));cut_op(&cut,0x0bu);
+        if(writer->error)return writer->error;
+        if(imports)*imports=0u;
+        *report=cut.report;return 0;
+    }
     for (pl_u32 i = 0u; i < plan->report.source_instructions; ++i) {
         pl_x86_instruction instruction;
         if (pl_x86_decode_profile(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;

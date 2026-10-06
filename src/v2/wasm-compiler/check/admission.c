@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wasm-compiler/compiler.h>
 
 static pl_u8 *read_input(const char *path, size_t *bytes)
@@ -68,6 +69,12 @@ int main(int argc, char **argv)
     EXPECT(wasm_compiler_measure(&compiler, &options, &written, NULL)
            == WASM_COMPILER_ERROR_PROOF);
     EXPECT(written == 99u);
+    wasm_coverage_report coverage,saved_coverage;
+    memset(&coverage,0xa5,sizeof coverage);saved_coverage=coverage;
+    EXPECT(wasm_compiler_coverage(NULL,&coverage)==WASM_COMPILER_ERROR_INPUT);
+    EXPECT(wasm_compiler_coverage(&compiler,NULL)==WASM_COMPILER_ERROR_INPUT);
+    EXPECT(wasm_compiler_coverage(&compiler,&coverage)==WASM_COMPILER_ERROR_PROOF);
+    EXPECT(!memcmp(&coverage,&saved_coverage,sizeof coverage));
     EXPECT(wasm_compiler_emit(&compiler, &options, NULL, 0u, &written, NULL)
            == WASM_COMPILER_ERROR_INPUT);
     options.maximum_functions_per_module = 0u;
@@ -91,6 +98,19 @@ int main(int argc, char **argv)
         EXPECT(compiler.image.length == input_bytes);
         EXPECT(compiler.function_count > 0u);
         EXPECT(compiler.coordinate_count > 0u);
+        EXPECT(!wasm_compiler_coverage(&compiler,&coverage));
+        EXPECT(coverage.catalog.coordinates==coverage.lowerable+coverage.unlowered_valid
+            +coverage.unlowered_faults+coverage.fetch_demands+coverage.capacity_refusals);
+        pl_elf_image elf;pl_x86_map maps[64];pl_x86_image image;pl_x86_catalog catalog;
+        EXPECT(!pl_elf_open(input,input_bytes,&elf));
+        EXPECT(!pl_x86_image_from_elf(&elf,0u,1u,maps,64u,&image));
+        EXPECT(!pl_x86_catalog_profile(&image,NULL,NULL,&catalog));
+        EXPECT(!memcmp(&catalog,&coverage.catalog,sizeof catalog));
+        wasm_compiler saved_compiler=compiler;
+        EXPECT(wasm_compiler_coverage(&compiler,(wasm_coverage_report *)(void *)&compiler)==WASM_COMPILER_ERROR_INPUT);
+        EXPECT(!memcmp(&compiler,&saved_compiler,sizeof compiler));
+        EXPECT(wasm_compiler_coverage(&compiler,(wasm_coverage_report *)(void *)input)==WASM_COMPILER_ERROR_INPUT);
+        EXPECT(!memcmp(&compiler,&saved_compiler,sizeof compiler));
         EXPECT(wasm_compiler_open(&compiler, invalid, sizeof invalid)
                == WASM_COMPILER_ERROR_PROOF);
         EXPECT(compiler.image.bytes == NULL);

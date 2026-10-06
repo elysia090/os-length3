@@ -35,6 +35,21 @@ SOURCES += src/emit-vector-projection.c
 SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 SOURCES += src/emit-interface.c
+SOURCES += src/coverage.c
+
+.PHONY: fault-cut-check
+check: fault-cut-check
+fault-cut-check: $(BUILD)/fault-cut-check
+	$(BUILD)/fault-cut-check
+$(BUILD)/fault-cut-check: check/fault-cut.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
+.PHONY: count-branch-check
+check: count-branch-check
+count-branch-check: $(BUILD)/count-branch-check
+	$(BUILD)/count-branch-check
+$(BUILD)/count-branch-check: check/count-branch.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: cut-module-check
 check: cut-module-check
@@ -152,6 +167,8 @@ OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
 
+$(patsubst check/%.c,$(BUILD)/%-check,$(wildcard check/*.c)): check/fault-admission.h
+
 .PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 
@@ -184,8 +201,8 @@ $(BUILD)/libwasm-compiler.a: $(OBJECTS) Makefile
 	$(RM) $@
 	$(AR) rcs $@ $(OBJECTS)
 
-$(BUILD)/wasm-compiler: cli/main.c cli/io.c cli/prefix.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
-	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/main.c cli/io.c cli/prefix.c \
+$(BUILD)/wasm-compiler: cli/main.c cli/io.c cli/prefix.c cli/coverage.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/main.c cli/io.c cli/prefix.c cli/coverage.c \
 		$(BUILD)/libwasm-compiler.a ../optimized-x86/build/liboptimized-x86.a \
 		../x86/build/libx86.a ../support/build/libsupport.a -o $@
 

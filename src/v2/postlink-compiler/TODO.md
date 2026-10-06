@@ -23,6 +23,18 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Newest independent candidate inventories every actual final PF_X byte through
+one fixed-profile catalogue and the actual Wasm backend. `--coverage` is a
+diagnostic, never a publication shortcut. Shared LOOP/count-zero and exact
+decoder-proven #UD/#GP laws remove 4,299/5,088 gaps in two actual published s6
+ELFs; 1,790/1,910 remain (not a speed/size or service-readiness measurement).
+Native count/page-end fault observations, actual C-Wasm/MMU priority tests,
+full compiler/postlink checks and scoped ASan/UBSan pass. Native bundle/UI/VM
+and retained browser assets are unchanged; no new Linux/browser run.
+See [scope and exact inputs](../vm/check/browser/evidence/2026-10-06-final-elf-coverage.md).
+Whole ELF emission still refuses -104. Treat valid grammar misses and missing
+load/fetch context as real obligations, not synthetic architectural faults.
+
 Newer independent compiler candidate removes the 19 per-cut header cases:
 typed callback identity/signature and body-used import sets now have one
 definition. Bounded collections share that interface and export ordinary Wasm
@@ -163,6 +175,11 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    coverage and atomic publication outside in-flight execution.
    Raw-page diagnostics neither authenticate release nor prove total closure.
    No fabricated ELF, guessed continuation or execution fallback.
+   The complete byte-coordinate inventory is now implemented; use its actual
+   backend gaps to close generic ISA families. Shared counter branches and
+   architectural fault cuts are covered, not an unimplemented-opcode fallback.
+   First gaps in the two published s6 files are x87; their outside-image/indirect
+   control edges and executable-map-end fetch context still require closure.
    Mixed cut imports can now share one typed standard-Wasm module through the
    same emitter. Derive its complete admitted coordinate population from final
    ELF/load/generation obligations, never from proof counts or observed RIPs.

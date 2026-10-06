@@ -5102,6 +5102,18 @@ static int decode_validated(const pl_x86_image *image, pl_u64 rip,
             set_fault(out, PL_X86_DECODE_TOO_LONG, 13u);
         else
             set_fault(out, PL_X86_DECODE_INVALID, 6u);
+        if(out->status!=PL_X86_DECODE_FETCH_FAULT){
+            /* A fault proof owns only the decisive fetched prefix. Keeping
+             * all fifteen available bytes could force an unrelated next-page
+             * fetch ahead of an already determined #UD. Do not replace a
+             * NO_MORE_DATA prefix by a guessed architectural exception. */
+            pl_u32 needed=available;
+            for(pl_u32 prefix=1u;prefix<available;++prefix){
+                ZyanStatus probe=ZydisDecoderDecodeFull(&decoder,bytes,prefix,&instruction,operands);
+                if(!ZYAN_SUCCESS(probe) && probe!=ZYDIS_STATUS_NO_MORE_DATA){needed=prefix;break;}
+            }
+            out->length=(pl_u8)needed;out->source_bytes=(pl_u8)needed;out->fallthrough=rip+needed;
+        }
         return 0;
     }
 
@@ -5160,7 +5172,7 @@ static int decode_validated(const pl_x86_image *image, pl_u64 rip,
     if (outside_delivery_profile(instruction.meta.isa_set)
             && instruction.mnemonic != ZYDIS_MNEMONIC_ENDBR32
             && instruction.mnemonic != ZYDIS_MNEMONIC_ENDBR64
-            && (out->flow == PL_X86_FLOW_NEXT
+            && !fixed_profile && (out->flow == PL_X86_FLOW_NEXT
                 || out->flow == PL_X86_FLOW_SYSTEM)) {
         out->machine_operation = PL_X86_MACHINE_EXTENSION;
         out->machine_argument = 0u;
@@ -5537,8 +5549,8 @@ pl_u64 pl_x86_transfer_hash(const pl_x86_instruction *instruction)
     return hash;
 }
 
-int pl_x86_catalog_image(const pl_x86_image *image, pl_x86_visit visit,
-                         void *context, pl_x86_catalog *out)
+static int catalog(const pl_x86_image *image,pl_x86_visit visit,
+    void *context,pl_x86_catalog *out,int fixed_profile)
 {
     if (!image || !out) return PL_ERROR_X86;
     int status = pl_x86_image_validate(image);
@@ -5549,7 +5561,7 @@ int pl_x86_catalog_image(const pl_x86_image *image, pl_x86_visit visit,
         for (pl_u64 offset = 0u; offset < map->memory_bytes; ++offset) {
             pl_x86_instruction instruction;
             status = decode_validated(
-                image, map->address + offset, &instruction, 0);
+                image, map->address + offset, &instruction, fixed_profile);
             if (status) return status;
             ++out->coordinates;
             switch (instruction.status) {
@@ -5581,3 +5593,9 @@ int pl_x86_catalog_image(const pl_x86_image *image, pl_x86_visit visit,
     }
     return 0;
 }
+int pl_x86_catalog_image(const pl_x86_image *image,pl_x86_visit visit,
+    void *context,pl_x86_catalog *out)
+{ return catalog(image,visit,context,out,0); }
+int pl_x86_catalog_profile(const pl_x86_image *image,pl_x86_visit visit,
+    void *context,pl_x86_catalog *out)
+{ return catalog(image,visit,context,out,1); }

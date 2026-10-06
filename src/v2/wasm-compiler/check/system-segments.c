@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include "segment-admission.h"
 #include <stdio.h>
 #include <string.h>
@@ -49,6 +50,7 @@ int main(int argc, char **argv)
         {0x64,0x0f,0x00,0x1f,0x90},{0x65,0x0f,0x00,0x17,0x90}};
     for (unsigned i=0u;i<sizeof denied/sizeof denied[0];++i) {
         memset(page,0x90,sizeof page); memcpy(page,denied[i],sizeof denied[i]); memset(output,0xa5,sizeof output);
+        if(i==2u){EXPECT(!check_fault_admission(&image,&options,6u));continue;}
         if(denied[i][0]==0x64u||denied[i][0]==0x65u){
             EXPECT(!check_segment_admission(&image,&options,denied[i][0]));
             continue;

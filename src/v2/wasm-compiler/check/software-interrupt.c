@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <stdio.h>
 #include <string.h>
 static pl_u8 page[4096], output[65536];
@@ -39,11 +40,12 @@ int main(int argc,char **argv)
     pl_u64 emitted=0u;wasm_cut_report report;
     EXPECT(!wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&emitted,&report));
     EXPECT(report.source_instructions==1u && report.source_bytes==1u && report.continuation==map.address+1u);
-    /* Plain HLT now has its own positive privileged/idle/wake checks. LOCK
-     * HLT remains an invalid encoding with immutable refusal outputs here. */
+    /* LOCK INT3/HLT are #UD, not compiler grammar failures. INT n/INT1 still
+     * require their own precise machine laws and refuse immutably. */
     static const pl_u8 refused[][3]={{0xf0u,0xccu},{0xcdu,3u},{0xf1u},{0xf0u,0xf4u}};
     for(unsigned rank=0u;rank<4u;++rank) {
         memcpy(page,refused[rank],sizeof refused[rank]);memset(output,0xa5,sizeof output);
+        if(rank==0u || rank==3u){EXPECT(!check_fault_admission(&image,&options,6u));continue;}
         memset(&report,0xa5,sizeof report);wasm_cut_report before=report;emitted=77u;
         EXPECT(wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&emitted,&report)==WASM_COMPILER_ERROR_GRAMMAR);
         EXPECT(emitted==77u && !memcmp(&before,&report,sizeof report));

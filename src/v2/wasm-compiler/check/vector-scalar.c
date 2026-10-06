@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include "../src/cut-internal.h"
 #include "segment-admission.h"
 #include <machine/state.h>
@@ -134,6 +135,7 @@ static int admission(void)
         {0x65u,0x66u,0x0fu,0x7eu,0x07u},{0x0fu,0x6eu,0x07u}};
     for(pl_u32 i=0u;i<sizeof invalid/sizeof invalid[0];++i) {
         memset(page,0x90,sizeof page);memcpy(page,invalid[i],sizeof invalid[i]);
+        if(i==0u || i==1u){if(check_fault_admission(&image,&options,6u))return -1;continue;}
         if(invalid[i][0]==0x64u||invalid[i][0]==0x65u){
             if(check_segment_admission(&image,&options,invalid[i][0]))return -1;
             continue;

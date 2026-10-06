@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include "segment-admission.h"
 #include <machine/state.h>
 #include <machine/memory.h>
@@ -80,6 +81,7 @@ static int check_frontier(const pl_x86_map *map,pl_u32 size)
         if (rank<4u) memcpy(prefix,refused[rank],5u); else memcpy(prefix,map->bytes,size);
         memcpy(saved,prefix,sizeof saved); options.entry=image.entry;
         memset(emitted,0xa5,sizeof emitted); memset(&report,0xa5,sizeof report); bytes=77u;
+        if(rank==2u || rank==3u){if(check_fault_admission(&image,&options,6u) || memcmp(prefix,saved,sizeof saved))return -1;continue;}
         if(rank<2u){
             if(check_segment_admission(&image,&options,prefix[0])||memcmp(prefix,saved,sizeof saved))return -1;
             continue;

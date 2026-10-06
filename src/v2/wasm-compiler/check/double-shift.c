@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include "segment-admission.h"
 #include <machine/state.h>
 #include <signal.h>
@@ -108,15 +109,11 @@ static int admission(void)
         if(width==16u)page[at++]=0x66u;
         if(width==64u)page[at++]=0x48u;
         page[at++]=0x0fu;page[at++]=0xadu;page[at]=0x17u;
-        memset(module,0xa5,sizeof module);wasm_cut_report report;memset(&report,0xa5,sizeof report);
         if(refusal==1u||refusal==2u){
             if(check_segment_admission(&image,&options,page[0]))return -1;
             continue;
         }
-        wasm_cut_report before=report;pl_u64 emitted=77u;
-        if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)!=WASM_COMPILER_ERROR_GRAMMAR
-            || emitted!=77u || memcmp(&report,&before,sizeof report))return -1;
-        for(pl_u32 i=0u;i<sizeof module;++i)if(module[i]!=0xa5u)return -1;
+        if(check_fault_admission(&image,&options,6u))return -1;
     }
     return 0;
 }

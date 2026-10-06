@@ -39,6 +39,11 @@ truncate -s 4095 "$scratch/page"
 if "$compiler" --code-pages 0x400000 0x400000 "$scratch/page" "$scratch/bad"; then exit 1; fi
 test ! -e "$scratch/bad.summary.json"
 
+# Coverage is a query of accepted final ELF, not another raw-page publisher.
+if "$compiler" --coverage "$scratch/page" >"$scratch/stdout" 2>"$scratch/stderr"; then exit 1; fi
+grep -q 'refused input (-101)' "$scratch/stderr"
+test ! -s "$scratch/stdout"
+
 # A backward jump is compiled once, not followed as a guessed execution trace.
 printf '\017\005' >"$scratch/page"
 truncate -s 4096 "$scratch/page"

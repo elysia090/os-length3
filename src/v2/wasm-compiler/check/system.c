@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <stdio.h>
 #include <string.h>
 static pl_u8 page[4096],output[65536];
@@ -37,11 +38,12 @@ int main(int argc,char **argv)
     static const pl_u8 refused[][4]={{0x0fu,0x07u},{0x0fu,0x34u},{0x0fu,0x35u},{0xf0u,0x0fu,0x05u},{0xf0u,0x48u,0x0fu,0x07u}};
     for(unsigned rank=0u;rank<5u;++rank){
         memset(page,0x90,sizeof page);memcpy(page,refused[rank],sizeof refused[rank]);memset(output,0xa5,sizeof output);
+        if(rank>=3u){EXPECT(!check_fault_admission(&image,&options,6u));continue;}
         memset(&report,0xa5,sizeof report);wasm_cut_report before=report;emitted=77u;
         EXPECT(wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&emitted,&report)==WASM_COMPILER_ERROR_GRAMMAR);
         EXPECT(emitted==77u && !memcmp(&before,&report,sizeof report));
         for(unsigned i=0u;i<sizeof output;++i)EXPECT(output[i]==0xa5u);
     }
     if(failures)return 1;
-    puts("SYSCALL/SYSRETQ: two common C transfers, cut separation and five immutable grammar refusals");return 0;
+    puts("SYSCALL/SYSRETQ: two common C transfers, cut separation, two #UD and three immutable grammar refusals");return 0;
 }

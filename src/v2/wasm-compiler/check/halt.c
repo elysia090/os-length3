@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
 #include <x86/semantics.h>
+#include "fault-admission.h"
 #include <signal.h>
 #include <setjmp.h>
 #include <sys/mman.h>
@@ -78,7 +79,7 @@ int main(void)
             || report.source_instructions != 1u || report.continuation != map.address + 1u
             || report.boundary != WASM_CUT_SYSTEM) return 6;
     page[0] = 0xf0; page[1] = 0xf4;
-    if (!wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)) return 7;
+    if (check_fault_admission(&image,&options,6u)) return 7;
     int status = native_fault();
     if (status) return status;
     printf("halt: 5 shared/native-cold forms, %u descriptor refusals, native CPL3 #GP; privileged wake separate\n",refusals);

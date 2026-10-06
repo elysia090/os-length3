@@ -47,6 +47,14 @@ pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction);
 /* A privileged halt has no value-state operands. Its continuation is the
  * decoded fallthrough, retained across the machine's interrupt wait. */
 int pl_x86_halt_supported(const pl_x86_instruction *instruction);
+typedef struct { pl_u8 bits,decrement,zero_flag; } pl_x86_count_branch;
+/* RCX/CX/ECX count and optional incoming ZF; no arithmetic flag producer.
+ * The shared law covers LOOP/LOOPE/LOOPNE and count-zero branches. */
+int pl_x86_count_branch_lower(const pl_x86_instruction *instruction,pl_x86_count_branch *out);
+typedef struct { pl_u8 vector,bytes; } pl_x86_fault_cut;
+/* A decoder-proved synchronous #UD/#GP with a decisive source extent. Fetch
+ * incompleteness and trap-after instructions are different machine futures. */
+int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

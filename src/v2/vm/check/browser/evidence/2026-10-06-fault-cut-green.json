@@ -1,0 +1,11 @@
+{
+  "format": "fault-cut-c-wasm-v1",
+  "status": "pass",
+  "direct": 36,
+  "dispatch": 37,
+  "priority": 38,
+  "refusals": 145,
+  "prefix": 1,
+  "oracle": "six native page-end #UD/#GP forms; fixed-profile feature/RF/shadow/MMU models separate",
+  "linuxBoot": "not-tested"
+}

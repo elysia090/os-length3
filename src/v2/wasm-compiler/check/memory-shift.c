@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include "segment-admission.h"
 #include <machine/state.h>
 #include <machine/memory.h>
@@ -103,6 +104,7 @@ static int check_admission(void)
         if(width==64u)page[at++]=0x48u;
         page[at++]=(pl_u8)(width==8u?0xd2u:0xd3u);
         page[at]=(pl_u8)((refusal<3u?7u:refusal-1u)<<3u|7u);
+        if(refusal==0u){if(check_fault_admission(&image,&options,6u))return -1;continue;}
         memset(module,0xa5,sizeof module);wasm_cut_report report;memset(&report,0xa5,sizeof report);
         if(refusal==1u||refusal==2u){
             if(check_segment_admission(&image,&options,page[0]))return -1;

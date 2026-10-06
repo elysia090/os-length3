@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <machine/state.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -59,11 +60,8 @@ static int boundaries(void)
         {0x66u,0x0fu,0xaeu,0x07u},{0xf3u,0x0fu,0xaeu,0x07u},{0x0fu,0xaeu,0xc0u,0x90u}};
     options.entry=map.address;
     for(pl_u32 rank=0u;rank<sizeof refused/sizeof refused[0];++rank) {
-        memcpy(page,refused[rank],sizeof refused[rank]); memset(module,0xa5,sizeof module);
-        memset(&report,0xa5,sizeof report); wasm_cut_report before=report; emitted=77u;
-        if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)
-                !=WASM_COMPILER_ERROR_GRAMMAR || emitted!=77u || memcmp(&before,&report,sizeof report))return 0;
-        for(pl_u32 at=0u;at<sizeof module;++at)if(module[at]!=0xa5u)return 0;
+        memcpy(page,refused[rank],sizeof refused[rank]);
+        if(check_fault_admission(&image,&options,6u))return 0;
     }
     return 1;
 }

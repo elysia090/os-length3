@@ -18,7 +18,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_DEBUG, CUT_SYSTEM_X87_INIT, CUT_SYSTEM_FXSAVE, CUT_SYSTEM_SOFTWARE_INTERRUPT,
        CUT_SYSTEM_MXCSR, CUT_SYSTEM_VECTOR_TRANSFER, CUT_SYSTEM_VECTOR_SCALAR,
        CUT_SYSTEM_MEMORY_ORDER, CUT_SYSTEM_FXRSTOR, CUT_SYSTEM_PRIVILEGE_TRANSFER,
-       CUT_SYSTEM_HALT };
+       CUT_SYSTEM_HALT, CUT_SYSTEM_COUNTER_BRANCH };
 enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
 enum { CUT_BIND_NONE, CUT_BIND_MEMORY_DISPLACEMENT, CUT_BIND_CONTROL_DISPLACEMENT };
 enum { CUT_STRING_NONE, CUT_STRING_SINGLE, CUT_STRING_REPEAT };
@@ -55,6 +55,7 @@ typedef struct {
     pl_u32 indirect_cut;
     pl_u32 operand_binding_kind;
     pl_u32 imports;
+    pl_u32 fault_vector;
 } cut_plan;
 void cut_call(cut_lowering *cut,pl_u32 import);
 void cut_op(cut_lowering *cut, pl_u32 opcode);
@@ -94,6 +95,7 @@ int cut_string_supported(const pl_x86_instruction *instruction);
 void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_repeat_frontier(cut_lowering *cut);
 int cut_system_supported(const pl_x86_instruction *instruction);
+void cut_lower_counter_branch(cut_lowering *cut,const pl_x86_instruction *instruction);
 int cut_io_supported(const pl_x86_instruction *instruction);
 int cut_fxsave_supported(const pl_x86_instruction *instruction);
 int cut_fxstate_supported(const pl_x86_instruction *instruction,int restore);

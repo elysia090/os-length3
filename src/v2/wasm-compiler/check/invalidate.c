@@ -1,5 +1,6 @@
 /* Address-only invalidation must not turn into a guest payload load. */
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -73,6 +74,7 @@ int main(int argc, char **argv)
         {0x0fu,0x01u,0xf9u,0x90u}}; /* RDTSCP is not register INVLPG. */
     for (unsigned i=0u;i<sizeof refused/sizeof refused[0];++i) {
         memset(page,0x90,sizeof page); memcpy(page,refused[i],sizeof refused[i]);
+        if(i==0u){EXPECT(!check_fault_admission(&image,&options,6u));continue;}
         memset(output,0xa5,sizeof output);
         EXPECT(wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&bytes,&report)
             ==WASM_COMPILER_ERROR_GRAMMAR);

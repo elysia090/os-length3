@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include "segment-admission.h"
 #include <machine/state.h>
 #include <signal.h>
@@ -100,12 +101,8 @@ int main(int argc,char **argv)
         for (pl_u32 i=0u;i<3u;++i) {
             memset(source,0x90,sizeof source); source[0]=(pl_u8)(i==0u ? 0x64u : i==1u ? 0x65u : 0xf0u);
             source[1]=0x8fu; source[2]=0x07u;
-            if(i<2u){
-                if(check_segment_admission(&image,&options,source[0]))goto finish;
-                continue;
-            }
-            if (wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)
-                    !=WASM_COMPILER_ERROR_GRAMMAR) goto finish;
+            if(i==2u){if(check_fault_admission(&image,&options,6u))goto finish;}
+            else if(check_segment_admission(&image,&options,source[0]))goto finish;
         }
     }
     for (pl_u32 form=0u;form<24u;++form) {

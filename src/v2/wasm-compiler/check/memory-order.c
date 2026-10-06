@@ -2,6 +2,7 @@
  * The compiler's ordering contract is synchronous, single-owner ordinary RAM. */
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include <machine/state.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -78,10 +79,13 @@ static int admission(void)
     };
     for(pl_u32 i=0u;i<sizeof refused/sizeof refused[0];++i) {
         memset(pages,0x90,sizeof pages);memcpy(pages,refused[i],sizeof refused[i]);
+        if(i<=2u || i==8u || i==9u || i>=11u){if(check_fault_admission(&image,&options,6u))return -1;continue;}
         memset(module,0xa5,sizeof module);wasm_cut_report report;memset(&report,0xa5,sizeof report);
         wasm_cut_report before=report;pl_u64 emitted=77u;
-        if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)
-                !=WASM_COMPILER_ERROR_GRAMMAR || emitted!=77u || memcmp(&report,&before,sizeof report))return -1;
+        int status=wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report);
+        if(status!=WASM_COMPILER_ERROR_GRAMMAR || emitted!=77u || memcmp(&report,&before,sizeof report)){
+            fprintf(stderr,"memory-order negative row=%u status=%d boundary=%u\n",i,status,report.boundary);return -1;
+        }
         for(pl_u32 j=0u;j<sizeof module;++j)if(module[j]!=0xa5u)return -1;
     }
     return 0;

@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
+#include "fault-admission.h"
 #include "segment-admission.h"
 #include <machine/state.h>
 #include <machine/memory.h>
@@ -82,8 +83,8 @@ static int check_frontier(const pl_x86_map *map,pl_u32 size)
     if (wasm_compiler_emit_code_cut(&image,9u,&options,emitted,sizeof emitted,&bytes,&report)
             || report.source_bytes!=size || report.source_instructions!=1u
             || report.boundary!=WASM_CUT_MEMORY || memcmp(prefix,saved,sizeof saved)) return -1;
-    /* Unsupported addressing/LOCK and a short output leave every result
-     * byte and source byte unchanged, rather than exposing a partial module. */
+    /* LOCK faults before the operand; segmented addressing uses its positive
+     * role admission. A short output exposes no partial module or source edit. */
     static const pl_u8 refused[][3]={{0xf0,0xf7,0x37},{0xf0,0xf7,0x3f},
         {0x64,0xf7,0x3f},{0x65,0xf7,0x3f}};
     for (pl_u32 rank=0u;rank<5u;++rank) {
@@ -91,6 +92,7 @@ static int check_frontier(const pl_x86_map *map,pl_u32 size)
         else memcpy(prefix,map->bytes,size);
         memcpy(saved,prefix,sizeof saved); options.entry=image.entry;
         memset(emitted,0xa5,sizeof emitted); memset(&report,0xa5,sizeof report); bytes=77u;
+        if(rank<2u){if(check_fault_admission(&image,&options,6u) || memcmp(prefix,saved,sizeof saved))return -1;continue;}
         if(rank==2u||rank==3u){
             if(check_segment_admission(&image,&options,prefix[0])||memcmp(prefix,saved,sizeof saved))return -1;
             continue;

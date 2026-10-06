@@ -3,6 +3,36 @@
 static int canonical(pl_u64 value)
 { return value >> 47u == 0u || value >> 47u == 0x1ffffu; }
 
+void cut_lower_counter_branch(cut_lowering *cut,const pl_x86_instruction *instruction)
+{
+    pl_x86_count_branch law;
+    if(!pl_x86_count_branch_lower(instruction,&law) || law.bits==16u){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    pl_x86_operand counter={0};counter.kind=PL_X86_OPERAND_REGISTER;counter.bits=law.bits;
+    counter.value.reg=(pl_x86_register){.class_id=PL_X86_REGISTER_GPR,.index=1u,.bits=law.bits};
+    cut_read_operand(cut,&counter,law.bits);
+    if(law.decrement){
+        cut_const(cut,1u);cut_op(cut,0x7du);cut_mask(cut,law.bits);
+        cut_set(cut,2u);cut->report.written_registers|=2u;cut_get(cut,2u);
+    }
+    cut_op(cut,0x50u); /* count == 0, i32 */
+    if(law.decrement)cut_op(cut,0x45u);
+    if(law.zero_flag){
+        cut_get(cut,CUT_FLAGS);cut_const(cut,0x40u);cut_op(cut,0x83u);cut_op(cut,0x50u);
+        if(law.zero_flag==1u)cut_op(cut,0x45u);
+        cut_op(cut,0x71u);
+    }
+    cut_op(cut,0xadu);cut_set(cut,CUT_RIGHT);
+    cut_coordinate(cut,instruction->fallthrough);cut_set(cut,CUT_NEXT);
+    cut_get(cut,CUT_RIGHT);cut_op(cut,0x50u);cut_op(cut,0x45u);
+    cut_op(cut,0x04u);cut_op(cut,0x40u);
+    if(cut->operand_binding_kind==CUT_BIND_CONTROL_DISPLACEMENT){
+        cut_coordinate(cut,instruction->fallthrough);cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,3u);
+        cut_op(cut,0xacu);cut_op(cut,0x7cu);
+    }else cut_coordinate(cut,instruction->target);
+    cut_set(cut,CUT_LEFT);cut_reject_target(cut);cut_get(cut,CUT_LEFT);cut_set(cut,CUT_NEXT);
+    cut_op(cut,0x0bu);
+}
+
 int cut_indirect_supported(const pl_x86_instruction *instruction)
 {
     int call = instruction->operation == PL_X86_OPERATION_CALL && instruction->flow == PL_X86_FLOW_CALL;
