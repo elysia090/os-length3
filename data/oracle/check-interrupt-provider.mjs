@@ -51,11 +51,11 @@ async function compile(opcode){
   const compiled={cut,binding:view.getUint32(report+76,true)};
   cuts.set(key,compiled);return compiled;
 }
-async function bind(opcode){
-  data.set(opcode,payload(6));put(base+384,0x9000);
+async function bind(opcode,entry=0x9000n){
+  data.set(opcode,payload(6)+Number(entry-0x9000n));put(base+384,entry);
   const compiled=await compile(opcode);
   vm.__indirect_function_table.set(slot,compiled.cut);
-  put(rows,0x9000);v.setUint32(rows+8,opcode.length,true);v.setUint32(rows+12,1,true);
+  put(rows,entry);v.setUint32(rows+8,opcode.length,true);v.setUint32(rows+12,1,true);
   v.setUint32(rows+16,slot,true);v.setUint32(rows+20,compiled.binding,true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);
 }
@@ -107,6 +107,78 @@ function pitPending(){
   pitProgram();
   assert.equal(vm.vm_time(port),18n);now=34362n; // 41 PIT pulses, ten complete periods.
   assert.equal(vm.vm_clock_commit(port,9n,get(port+32),now),0);assert.equal(vm.vm_time(port),0n);
+}
+// A halt is a retired machine activity transition, not an in-flight opcode
+// latch. No host quantum, source query or directory replacement wakes it.
+// CPL3 #GP is independently observed by the native C check; privileged wake
+// here is an Intel-model/C-PIT/PIC/IDT comparison, not browser Linux boot.
+let haltTransfers=0,haltFaults=0,haltWaits=0,haltWakes=0;
+for(const opcode of [[0xf4],[0x66,0xf4],[0x48,0xf4],[0x67,0xf4],[0x2e,0xf4]])
+for(let cpl=0;cpl<4;++cpl)for(let iopl=0;iopl<4;++iopl)
+for(const enabled of [0,1])for(const shadow of [0,1,2])for(const rf of [0,1]){
+  reset();put(base+488,8|cpl);put(base+392,2|(iopl<<12)|(enabled<<9)|(rf<<16));
+  v.setUint32(segments+4,shadow,true);await bind(opcode);
+  const expected=Buffer.from(data.subarray(base,base+1256)),hidden=Buffer.from(data.subarray(segments,segments+136));
+  assert.equal(vm.vm_run(port,9n,64),cpl?107n:4n);
+  if(cpl){
+    assert.equal(v.getUint32(port+24,true),13);assert.equal(v.getUint32(port+28,true),0);
+    assert.equal(get(port+16),0x9000n);assert.equal(vm.vm_halted(),0);++haltFaults;
+  }else{
+    expected.writeBigUInt64LE(0x9000n+BigInt(opcode.length),384);
+    expected.writeBigUInt64LE(expected.readBigUInt64LE(392)&~0x10000n,392);
+    expected.writeBigUInt64LE(124n,1128);hidden.writeUInt32LE(0,4);
+    assert.equal(vm.vm_halted(),1);assert.equal(vm.vm_source_retired(),1n);++haltTransfers;
+  }
+  assert.equal(vm.vm_completed(),cpl?0:1);
+  assert(data.subarray(base,base+1256).equals(expected));assert(data.subarray(segments,segments+136).equals(hidden));
+  if(!cpl){
+    const request=Buffer.from(data.subarray(port,port+64));
+    for(let repeat=0;repeat<3;++repeat){
+      assert.equal(vm.vm_run(port,9n,64),4n);assert.equal(vm.vm_boundary(port,9n),4n);
+      assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);
+      assert(data.subarray(base,base+1256).equals(expected));assert(data.subarray(port,port+64).equals(request));++haltWaits;
+    }
+  }
+}
+for(const absent of [false,true]){
+  reset();
+  // Replace the 2 MiB identity mapping by a 4 KiB table. The page immediately
+  // after HLT is either absent or NX; neither may be touched while halted.
+  put(payload(2),0xb027);put(payload(8)+9*8,0x9027);
+  put(payload(8)+10*8,absent?0n:0x800000000000a027n);
+  put(base+392,0x202);await bind([0xf4],0x9fffn);
+  assert.equal(vm.vm_run(port,9n,64),4n);assert.equal(get(base+384),0xa000n);
+  const expected=Buffer.from(data.subarray(base,base+1256)),request=Buffer.from(data.subarray(port,port+64));
+  const codeView=port+64;data.fill(0xa5,codeView,codeView+48);
+  assert.equal(vm.vm_source_query(port,0xa000n,8,codeView,rows),4n);
+  assert(data.subarray(codeView,codeView+48).every(x=>x===0xa5));
+  await bind([0x90],0xa000n);assert.equal(vm.vm_run(port,9n,64),4n);
+  assert.equal(vm.vm_boundary(port,8n),5n);assert.equal(vm.vm_run(port,8n,1),5n);
+  assert(data.subarray(base,base+1256).equals(expected));assert(data.subarray(port,port+64).equals(request));++haltWaits;
+}
+for(const enabled of [0,1])for(const type of [0x8e,0x8f]){
+  reset();pitProgram();gate(32,type);put(base+392,0x10002|(enabled<<9));await bind([0xf4]);
+  assert.equal(vm.vm_run(port,9n,64),4n);assert.equal(vm.vm_halted(),1);
+  const expected=Buffer.from(data.subarray(base,base+1256));
+  // An idle processor still accepts explicit device time events. Time is not
+  // guest retirement and duplicate/stale replies cannot create a second IRQ.
+  assert.equal(vm.vm_clock_poll(port,9n),18n);const ticket=get(port+32);
+  assert.equal(vm.vm_clock_commit(port,8n,ticket,34362n),-1);
+  assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),0);
+  assert.equal(vm.vm_clock_commit(port,9n,ticket,34362n),0);
+  assert.equal(vm.vm_clock_poll(port,9n),0n);
+  assert(data.subarray(base,base+1256).equals(expected));assert.equal(vm.vm_halted(),1);
+  assert.equal(vm.vm_boundary(port,9n),enabled?1n:4n);
+  assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);assert.equal(get(base+1128),124n);
+  if(enabled){
+    assert.equal(vm.vm_halted(),0);assert.equal(get(base+384),0x8000n);
+    const stack=get(base+32),frame=payload(7)+Number(stack&4095n);
+    assert.equal(get(frame),0x9001n);assert.equal(get(frame+16),0x202n);
+    assert.equal(vm.vm_iret(port),0n);assert.equal(get(base+384),0x9001n);
+    assert.equal(get(base+1128),124n);assert.equal(vm.vm_halted(),0);++haltWakes;
+  }else{
+    assert(data.subarray(base,base+1256).equals(expected));++haltWaits;
+  }
 }
 let pitIrqEntries=0,pitBoundaryEntries=0,pureLoopCuts=0;
 for(const boundaryClock of [false,true])for(const type of [0x8e,0x8f])for(let align=0;align<16;++align){
@@ -281,10 +353,11 @@ const pinnedClockCPU=Buffer.from(data.subarray(base,base+1256)),pinnedRequest=Bu
 assert.equal(vm.vm_clock_poll(port,9n),6n);
 assert(data.subarray(base,base+1256).equals(pinnedClockCPU));
 assert(data.subarray(port,port+64).equals(pinnedRequest));
-let systemComparisons=0,qemuSavedRFDifferences=0;
+let systemComparisons=0,qemuSavedRFDifferences=0,systemHaltComparisons=0;
 if(systemRows){
   const records=(await readFile(systemRows,'utf8')).trim().split('\n').map(line=>line.trim().split(/\s+/).map(x=>BigInt(`0x${x}`)));
-  assert.equal(records.length,192);
+  assert([192,224].includes(records.length),'six historical or seven current sequences, 16 alignments, two gate types');
+  const sequenceCount=records.length/32;
   for(const [index,row]of records.entries()){
     assert.equal(row.length,16);assert.equal(row[0],BigInt(index));assert.equal(row[15],1n,'exactly one hardware interrupt');
     assert.equal(row[5],row[14],'independent consecutive-inhibition sequence must interrupt at its expected boundary');
@@ -297,18 +370,31 @@ if(systemRows){
     // set_rf. Intel SDM 19.3.1.1 preserves RF for an ordinary boundary IRQ.
     // Do not copy that oracle discrepancy into CPU input or product behavior.
     if(row[7]!==architecturalFlags)++qemuSavedRFDifferences;
-    pending(32);gate(32,index<96?0x8e:0x8f);put(base+32,row[1]);put(base+384,row[5]);put(base+392,architecturalFlags);
-    assert.equal(vm.vm_run(port,9n,1),1n);assert.equal(vm.vm_completed(),0);assert.equal(get(base+32),row[3]);
-    assert.equal(get(base+392),row[4]);assert.equal(get(base+1128),123n);
+    const haltSequence=index%sequenceCount===6;
+    pending(32);gate(32,index<records.length/2?0x8e:0x8f);put(base+32,row[1]);
+    if(haltSequence){
+      put(base+392,row[2]);await bind([0xfb]);assert.equal(vm.vm_run(port,9n,1),1n);
+      assert.equal(v.getUint32(segments+4,true),2);
+      await bind([0xf4],0x9001n);assert.equal(vm.vm_run(port,9n,1),4n);
+      assert.equal(get(base+384),0x9002n);assert.equal(vm.vm_halted(),1);
+      assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);
+      assert.equal(vm.vm_boundary(port,9n),1n);assert.equal(vm.vm_halted(),0);++systemHaltComparisons;
+    }else{
+      put(base+384,row[5]);put(base+392,architecturalFlags);
+      assert.equal(vm.vm_run(port,9n,1),1n);
+    }
+    assert.equal(vm.vm_completed(),0);assert.equal(get(base+32),row[3]);
+    assert.equal(get(base+392),row[4]);assert.equal(get(base+1128),haltSequence?125n:123n);
     const stackAt=payload(7)+Number(row[3]&4095n);
-    for(let i=0;i<5;++i)assert.equal(get(stackAt+i*8),i===2?row[7]&~0x10000n:row[5+i]);
+    for(let i=0;i<5;++i)assert.equal(get(stackAt+i*8),haltSequence&&i===0?0x9002n:i===2?row[7]&~0x10000n:row[5+i]);
     assert.equal(vm.vm_iret(port),0n);assert.equal(get(base+32),row[13]);assert.equal(get(base+392)&~0x200n,row[12]);
     ++systemComparisons;
   }
 }
 console.log(JSON.stringify({format:'interrupt-provider-v1',status:'pass',transfers,privilegeFaults,irqEntries,pitIrqEntries,pitBoundaryEntries,pureLoopCuts,waits,refusals,
-  ownedCohortIrqs,
+  ownedCohortIrqs,haltTransfers,haltFaults,haltWaits,haltWakes,
+  haltOracle:'shared decoded law; native CPL3 #GP is a separate C check; privileged wake uses Intel/C-PIT/PIC/IDT model',
   clockLifecycle:'private port/generation/source pin/duplicate/cancel/rebind/reopen assertions green',
   admissionPriorityChecks:1,shadowExtentChecks:1,oldAbiRefusals:1,
-  systemComparisons,qemuSavedRFDifferences,oracle:systemRows?'QEMU TCG PIT/PIC/shadow/IDT; saved RF difference explicitly excluded; privilege/RF matrix is a model':
+  systemComparisons,systemHaltComparisons,qemuSavedRFDifferences,oracle:systemRows?'QEMU TCG PIT/PIC/shadow/IDT; saved RF difference explicitly excluded; privilege/RF matrix is a model':
     'architectural model only; supply SYSTEM-ROWS.txt for independent system comparison',linuxBoot:'not-tested'},null,2));

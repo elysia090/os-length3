@@ -4,11 +4,13 @@
 static vm_execution execution;
 static machine_state state;
 static machine_segments segments;
+static machine_activity activity;
 static vm_execution_row rows[2];
 static pl_u32 calls, fetches, stop, revoke, revoke_fetch, load_ss, call_fault;
 static pl_u32 yielding, called_slot, called_operand;
 static pl_u64 fetched[2], called_entry;
 static pl_u32 selections, miss_selection, change_context, debug_after_call;
+static pl_u32 halting;
 static int failures;
 #define EXPECT(x) do { if (!(x)) { fprintf(stderr, "execution: line %u\n", (unsigned)__LINE__); ++failures; } } while (0)
 static machine_result fetch(void *owner, pl_u64 address)
@@ -32,13 +34,14 @@ static machine_result call(void *owner, pl_u32 slot, pl_u64 entry, pl_u32 operan
             yielding == 1u ? MACHINE_BARRIER_QUANTUM : yielding == 3u ? MACHINE_BARRIER_CLOCK
             : yielding == 4u ? MACHINE_BARRIER_CONSOLE : MACHINE_BARRIER_RESOURCE);
     }
-    state.rip = slot == 1u ? rows[1].entry : rows[0].entry;
+    state.rip = halting ? entry + rows[0].source_bytes
+                       : slot == 1u ? rows[1].entry : rows[0].entry;
     ++state.retired;
     if (revoke) execution.generation = 0u;
     if (load_ss) segments.interrupt_shadow = 1u;
     if (change_context && calls==1u) ++state.cr3;
     if (debug_after_call && calls==1u) state.system[MACHINE_SYSTEM_DR0+7u]=1u;
-    return machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u);
+    return halting ? MACHINE_RESULT_HALT : MACHINE_RESULT_RESOLVE_RIP;
 }
 static machine_result run(pl_u64 generation, pl_u32 budget)
 { return vm_execution_run(&execution, &state, generation, budget, fetch, call, 0); }
@@ -54,15 +57,37 @@ static void reset(void)
 {
     memset(&state, 0, sizeof state); calls = fetches = stop = revoke = revoke_fetch = 0u;
     load_ss = call_fault = yielding = called_slot = 0u; segments = (machine_segments){0};
-    selections=miss_selection=change_context=debug_after_call=0u;
+    selections=miss_selection=change_context=debug_after_call=halting=0u;
+    activity = (machine_activity){ MACHINE_ACTIVITY_RUNNING };
     segments.version = MACHINE_SEGMENTS_ABI_VERSION;
     rows[0] = (vm_execution_row){ 0x400000u, 1u, 1u, 1u, 0u };
     rows[1] = (vm_execution_row){ 0x400001u, 1u, 1u, 2u, 0u };
     state.rip = rows[0].entry;
     EXPECT(!vm_execution_open(&execution, rows, 2u, 9u, &state));
+    execution.activity = &activity;
 }
 int main(void)
 {
+    /* A retired halt consumes the STI shadow, but neither another quantum
+     * nor directory replacement authorizes fetching its successor. */
+    reset(); execution.segments = &segments;
+    segments.interrupt_shadow = MACHINE_SHADOW_STI; halting = 1u;
+    EXPECT(run(9u,99u) == MACHINE_RESULT_HALT && calls == 1u && fetches == 1u);
+    EXPECT(execution.completed == 1u && execution.retired == 1u && state.retired == 1u);
+    EXPECT(!segments.interrupt_shadow && activity.state == MACHINE_ACTIVITY_HALTED);
+    EXPECT(!execution.continuation.slot && state.rip == rows[1].entry);
+    EXPECT(run(9u,99u) == MACHINE_RESULT_HALT && calls == 1u && fetches == 1u);
+    EXPECT(!execution.completed && !execution.retired && state.retired == 1u);
+    EXPECT(run(8u,99u) == MACHINE_RESULT_STALE_GENERATION && calls == 1u);
+    EXPECT(!vm_execution_open(&execution,rows,2u,9u,&state)); execution.activity = &activity;
+    EXPECT(run(9u,99u) == MACHINE_RESULT_HALT && calls == 1u && fetches == 1u);
+    activity.state = MACHINE_ACTIVITY_RUNNING; halting = 0u;
+    EXPECT(run(9u,1u) == MACHINE_RESULT_RESOLVE_RIP && calls == 2u && fetches == 2u);
+    reset(); activity.state = MACHINE_ACTIVITY_HALTED + 1u;
+    EXPECT(run(9u,1u) == MACHINE_RESULT_ENTRY_MAP && !calls && !fetches);
+    reset(); halting = 1u; rows[0].source_instructions = rows[0].source_bytes = 2u;
+    EXPECT(run(9u,1u) == MACHINE_RESULT_ENTRY_MAP && activity.state == MACHINE_ACTIVITY_RUNNING);
+    EXPECT(!execution.completed && !execution.retired);
     /* A borrowed source owner uses exactly the same precise-fault/latch/
      * context dispatcher. It performs fetch admission once, not twice. */
     for(pl_u32 budget=1u;budget<=4096u;budget*=2u){

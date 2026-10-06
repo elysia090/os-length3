@@ -39,7 +39,9 @@ int main(int argc,char **argv)
     pl_u64 emitted=0u;wasm_cut_report report;
     EXPECT(!wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&emitted,&report));
     EXPECT(report.source_instructions==1u && report.source_bytes==1u && report.continuation==map.address+1u);
-    static const pl_u8 refused[][3]={{0xf0u,0xccu},{0xcdu,3u},{0xf1u},{0xf4u}};
+    /* Plain HLT now has its own positive privileged/idle/wake checks. LOCK
+     * HLT remains an invalid encoding with immutable refusal outputs here. */
+    static const pl_u8 refused[][3]={{0xf0u,0xccu},{0xcdu,3u},{0xf1u},{0xf0u,0xf4u}};
     for(unsigned rank=0u;rank<4u;++rank) {
         memcpy(page,refused[rank],sizeof refused[rank]);memset(output,0xa5,sizeof output);
         memset(&report,0xa5,sizeof report);wasm_cut_report before=report;emitted=77u;

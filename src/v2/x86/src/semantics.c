@@ -2694,11 +2694,33 @@ pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction)
     return reads;
 }
 
+int pl_x86_halt_supported(const pl_x86_instruction *instruction)
+{
+    const pl_u32 required = PL_X86_INSTRUCTION_PRECISE_CUT
+        | PL_X86_INSTRUCTION_BARRIER | PL_X86_INSTRUCTION_PRIVILEGED
+        | PL_X86_INSTRUCTION_MAY_TRAP;
+    return instruction && instruction->status == PL_X86_DECODE_VALID
+        && instruction->encoding == PL_X86_ENCODING_LEGACY
+        && instruction->family == PL_X86_FAMILY_HALT
+        && instruction->flow == PL_X86_FLOW_HALT
+        && instruction->machine_operation == PL_X86_MACHINE_HALT
+        && !instruction->machine_argument && !instruction->operand_count
+        && !instruction->visible_operand_count
+        && instruction->length && instruction->length <= 15u
+        && instruction->fallthrough == instruction->rip + instruction->length
+        && (instruction->flags & required) == required
+        && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED
+            | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_READS_MEMORY
+            | PL_X86_INSTRUCTION_WRITES_MEMORY | PL_X86_INSTRUCTION_TRAP_AFTER));
+}
+
 int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
     if (instruction->status != PL_X86_DECODE_VALID
+            || (instruction->machine_operation == PL_X86_MACHINE_HALT
+                && !pl_x86_halt_supported(instruction))
             || ((instruction->flags & PL_X86_INSTRUCTION_LOCKED)
                 && instruction->machine_operation == PL_X86_MACHINE_NONE)
             || ((instruction->flags & PL_X86_INSTRUCTION_BARRIER)

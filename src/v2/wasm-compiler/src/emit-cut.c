@@ -306,7 +306,8 @@ int cut_emit_body(wasm_writer *writer, const cut_plan *plan, wasm_cut_report *re
     cut_const(&cut, cut.report.source_instructions); cut_op(&cut, 0x7cu);
     cut_set(&cut, CUT_VALUE);
     cut_store(&cut, (pl_u32)offsetof(machine_state, retired), CUT_VALUE);
-    cut_const(&cut, machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)); cut_op(&cut, 0x0bu);
+    cut_const(&cut, machine_result_make(plan->system_cut == CUT_SYSTEM_HALT
+        ? MACHINE_RESULT_HALT : MACHINE_RESULT_RESOLVE_RIP, 0u)); cut_op(&cut, 0x0bu);
     if (writer->error) return writer->error;
     *report = cut.report;
     return 0;

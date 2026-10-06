@@ -26,6 +26,7 @@ static pl_u32 state_offset;
 static pl_u32 segments_offset;
 static vm_boot boot;
 static vm_execution execution;
+static machine_activity activity;
 static pl_u32 source_limit;
 static pl_u64 source_demands;
 static pl_u32 source_admissions, run_interrupted;
@@ -92,6 +93,7 @@ static int clock_boundary_pending(void)
 { return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
 pl_u32 vm_source_capacity(void) { return VM_SOURCE_ROWS; }
 pl_u32 vm_entry_abi(void) { return MACHINE_ENTRY_ABI_VERSION; }
+pl_u32 vm_halted(void) { return activity.state == MACHINE_ACTIVITY_HALTED; }
 pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_sources); }
 
 pl_u32 vm_slot_min(void)
@@ -131,6 +133,7 @@ void vm_close(void)
     boot_header = boot_header_bytes = boot_command = 0u;
     boot_projected = 0u;
     vm_execution_close(&execution);
+    activity = (machine_activity){ MACHINE_ACTIVITY_RUNNING };
     source_limit = 0u;
     source_demands=0u;source_admissions=run_interrupted=0u;
     run_source_rank=VM_SOURCE_ROWS;
@@ -443,6 +446,9 @@ machine_result vm_source_query(pl_u32 port, pl_u64 entry, pl_u32 limit,
             || !private_record(view_target,2u*sizeof(vm_code_page))
             || !separate(view_target,2u*sizeof(vm_code_page),port,sizeof(machine_memory_port))
             || !execution_record(row_target,sizeof(vm_execution_row))) return MACHINE_RESULT_ENTRY_MAP;
+    if (activity.state == MACHINE_ACTIVITY_HALTED)
+        return vm_memory_load((const pl_u8 *)(uintptr_t)port,8u) == resident.generation
+            ? MACHINE_RESULT_HALT : MACHINE_RESULT_STALE_GENERATION;
     const machine_segments *segments = (const machine_segments *)(uintptr_t)segments_offset;
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
     /* The supervisor must drain an eligible event before treating a source
@@ -757,6 +763,7 @@ machine_result vm_fault(pl_u32 port)
     resident.write_touched = 0u;
     machine_result result = vm_fault_enter(&resident,port - arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,&delivery);
+    if (!result) activity.state = MACHINE_ACTIVITY_RUNNING;
     return memory_result(port,result);
 }
 /* Generic software-exception boundary; no opcode or handler address enters
@@ -881,6 +888,7 @@ int vm_bind_execution(pl_u32 rows, pl_u32 count, pl_u64 generation)
     int status = vm_execution_open(&execution, (const vm_execution_row *)(uintptr_t)rows,
                               count, generation, (const machine_state *)(uintptr_t)state_offset);
     if (!status && segments_offset) execution.segments = (machine_segments *)(uintptr_t)segments_offset;
+    if (!status) execution.activity = &activity;
     /* A published source rank is already the immutable metadata owner. Do
      * not copy/sort its cohort into another directory. Flat trusted test
      * directories use this same dispatcher; they are not ISA fallbacks. */
@@ -959,7 +967,10 @@ static machine_result interrupt_boundary(pl_u32 port)
     /* Hardware entry changes control without retiring the interrupted cut.
      * Its new RIP is admitted afresh, never executed through the old row. */
     execution.generation=0u;
-    if (!result) run_interrupted=1u;
+    if (!result) {
+        activity.state = MACHINE_ACTIVITY_RUNNING;
+        run_interrupted=1u;
+    }
     return memory_result(port,result ? result : MACHINE_RESULT_RESOLVE_RIP);
 }
 static machine_result pending_boundary(pl_u32 port)
@@ -976,7 +987,7 @@ static machine_result pending_boundary(pl_u32 port)
     if (!execution.continuation.slot && (state->rflags&0x200u) && vm_pic_pending(&pic)
             && (!segments_offset || !((const machine_segments *)(uintptr_t)segments_offset)->interrupt_shadow))
         return segments_offset ? interrupt_boundary(port) : MACHINE_RESULT_ENTRY_MAP;
-    return 0u;
+    return activity.state == MACHINE_ACTIVITY_HALTED ? MACHINE_RESULT_HALT : 0u;
 }
 /* Supervisor event admission precedes cold source projection. This is not
  * available to emitted guest functions and contains no source decoder. */

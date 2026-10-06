@@ -4,6 +4,7 @@
 #include <machine/entry.h>
 #include <machine/state.h>
 #include <machine/segments.h>
+#include <machine/activity.h>
 
 #define VM_EXECUTION_MAX_ROWS 4096u
 #define VM_EXECUTION_MAX_QUANTUM 65536u
@@ -31,6 +32,7 @@ typedef struct {
     pl_u64 retired;
     pl_u64 context[5];
     machine_segments *segments; /* Optional only for register-only fixtures. */
+    machine_activity *activity; /* Machine-owned; directory close never resets it. */
     vm_execution_row continuation; /* One latched instruction, not a CPU frame. */
     pl_u64 continuation_generation;
     vm_execution_select select;
@@ -82,6 +84,9 @@ void vm_execution_close(vm_execution *execution);
  * retires a larger slice or decodes an instruction. A successful retirement
  * consumes the old shadow, including consecutive MOV SS. Pending faults and
  * host misses preserve it until actual exception delivery/continuation. */
+/* HALT/0 retires exactly one instruction and preserves its fallthrough RIP.
+ * The separate activity owner blocks subsequent fetch/select/call until an
+ * accepted machine event wakes it. A directory rebind is not such an event. */
 machine_result vm_execution_run(vm_execution *execution, machine_state *state,
                                 pl_u64 generation, pl_u32 maximum_cuts,
                                 vm_execution_fetch fetch, vm_execution_call call,

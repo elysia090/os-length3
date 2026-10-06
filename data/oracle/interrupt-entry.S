@@ -5,6 +5,7 @@
 .balign 4
 .long 0x1badb002, 0, -0x1badb002
 .section .text,"ax"
+.equ sequence_count, 7
 .code32
 .global _start
 _start:
@@ -68,7 +69,7 @@ case_loop:
     movw $8, 2(%rdi)
     movb $0, 4(%rdi)
     mov $0x8e, %eax
-    cmp $96, %r12d
+    cmp $(sequence_count*16), %r12d
     jb gate_ready
     inc %eax
 gate_ready:
@@ -94,7 +95,7 @@ wait_irq:
     jz wait_irq
     mov %r12d, %eax
     xor %edx, %edx
-    mov $6, %ecx
+    mov $sequence_count, %ecx
     div %ecx
     mov %edx, %r14d
     and $15, %eax
@@ -150,6 +151,11 @@ select_sequence:
     sti
     nop
 1:  cli
+    jmp resumed
+    sequence_head seq6
+    sti
+    hlt
+1:  cli
 resumed:
     mov %rsp, record+104(%rip)
     pushfq
@@ -181,7 +187,7 @@ emit:
     mov $10, %al
     out %al, $0xe9
     inc %r12d
-    cmp $192, %r12d
+    cmp $(sequence_count*32), %r12d
     jb case_loop
     mov $0x10, %eax
     out %eax, $0xf4
@@ -209,7 +215,7 @@ handler:
     iretq
 .section .rodata,"a"
 .balign 8
-sequences: .long seq0,0,seq1,0,seq2,0,seq3,0,seq4,0,seq5,0
+sequences: .long seq0,0,seq1,0,seq2,0,seq3,0,seq4,0,seq5,0,seq6,0
 gdt: .quad 0, 0x00af9b000000ffff, 0x00cf93000000ffff
 gdt_pointer: .word 23
     .long gdt

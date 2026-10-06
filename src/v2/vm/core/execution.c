@@ -70,6 +70,12 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
                 execution->continuation_generation = 0u;
                 return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
             }
+        if (execution->activity) {
+            if (execution->activity->state > MACHINE_ACTIVITY_HALTED)
+                return MACHINE_RESULT_ENTRY_MAP;
+            if (execution->activity->state == MACHINE_ACTIVITY_HALTED)
+                return MACHINE_RESULT_HALT;
+        }
         const vm_execution_row *row;
         machine_result result;
         if (resuming) row = &execution->continuation;
@@ -111,7 +117,13 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             return result;
         }
         execution->continuation = (vm_execution_row){0}; execution->continuation_generation = 0u;
-        if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) return result;
+        int halted = result == MACHINE_RESULT_HALT;
+        if (halted) {
+            if (!execution->activity || source_instructions != 1u
+                    || state->rip != row->entry + row->source_bytes)
+                return MACHINE_RESULT_ENTRY_MAP;
+            execution->activity->state = MACHINE_ACTIVITY_HALTED;
+        } else if (result != machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u)) return result;
         if (shadow) execution->segments->interrupt_shadow = 0u;
         ++execution->completed;
         execution->retired += source_instructions;
@@ -119,6 +131,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
          * call. Never invoke the next entry, even at the quantum boundary. */
         if (execution->generation != generation)
             return machine_result_make(MACHINE_RESULT_STALE_GENERATION, 0u);
+        if (halted) return MACHINE_RESULT_HALT;
     }
     return machine_result_make(MACHINE_RESULT_RESOLVE_RIP, 0u);
 }

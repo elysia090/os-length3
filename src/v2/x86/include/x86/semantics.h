@@ -44,6 +44,10 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
  * is the single source of scalar dependencies at a machine barrier. */
 pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction);
 
+/* A privileged halt has no value-state operands. Its continuation is the
+ * decoded fallthrough, retained across the machine's interrupt wait. */
+int pl_x86_halt_supported(const pl_x86_instruction *instruction);
+
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
  * names and byte coordinates are construction facts, not saved runtime rows.

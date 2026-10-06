@@ -34,6 +34,13 @@ SOURCES += src/emit-vector-projection.c
 SOURCES += src/lower-vector-shift.c
 SOURCES += src/lower-vector-scalar.c
 
+.PHONY: halt-check
+check: halt-check
+halt-check: $(BUILD)/halt-check
+	$(BUILD)/halt-check
+$(BUILD)/halt-check: check/halt.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
 .PHONY: flag-frontier-check
 check: flag-frontier-check
 flag-frontier-check: $(BUILD)/flag-frontier-check

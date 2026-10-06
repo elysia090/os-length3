@@ -90,11 +90,25 @@ unchanged. Node engine/model results are not actual-browser observations.
 
 ## Next work
 
-Use the full profile to identify source replacements versus true code writes,
-mapping/context and budget causes; then remove the dominant unnecessary work
-through shared normalization/layout/lifetime, not analysis-only acceleration.
-Implement HLT as a precise privileged retirement/idle/wake boundary, not a
-kernel wait skip. Investigate the actual service/IPC/scheduling/timeout
+The [completed full opt-in profile](2026-10-06-source-profile-full.json)
+retires 266,180,192 instructions / 150,000,000 admissions, reaching the
+unchanged diagnostic admission cap. It records 85,581,906 cold reservations,
+85,581,842 full-owner replacements, 36,621 periodic samples: 20,900 absent,
+15,721 reusable, zero remapped-owner/budget rejection. Sampled valid-row sum
+2,343,744 is exactly 64 times the sample count. No currently retained source
+row was write-revoked and no pending compilation was write-cancelled; these
+counters do not imply absence of guest RAM writes or future code mutation.
+Engine/cold/execution elapsed is 703,894 / 598,602 / 162,175 ms, total
+1,760,260 ms. The diagnostic says `pass`, but `linuxBoot: not-achieved`;
+console ends in s6-ftrigrd Broken pipe, not a usable terminal. Same frozen
+compiler/profile VM and quotas as above. Session 60635 / child 13512 ended
+normally. Instrumented timing is not a paired performance improvement.
+
+Remove demanded coordinate/body reconstructions through shared normalized
+layout and bounded physical delivery/lifetime, not a larger cache quota or
+analysis-only acceleration. A [separate HLT candidate](2026-10-06-halt.md)
+now supplies exact retirement/idle/wake without a kernel wait skip; it was not
+in this completed profile. Investigate the actual service/IPC/scheduling/timeout
 failure under the existing explicit clock contract. Preserve the same accepted
 bundle; no fake POSIX, another interpreter or softened success condition.
 

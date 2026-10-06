@@ -26,6 +26,7 @@ WASM_FLAGS += -Wl,--export=vm_software_interrupt
 WASM_FLAGS += -Wl,--export=vm_system
 WASM_FLAGS += -Wl,--export=vm_debug
 WASM_FLAGS += -Wl,--export=vm_flag,--export=vm_boundary
+WASM_FLAGS += -Wl,--export=vm_halted
 WASM_FLAGS += -Wl,--export=vm_io,--export=vm_time,--export=vm_clock_commit,--export=vm_rtc_start,--export=vm_console_commit
 WASM_FLAGS += -Wl,--export=vm_post_read
 WASM_FLAGS += -Wl,--export=vm_clock_poll

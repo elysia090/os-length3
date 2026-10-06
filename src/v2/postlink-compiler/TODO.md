@@ -23,16 +23,36 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
-Latest completed `a305af4` run: PSRLDQ passes, 265,612,366 retired /
+Completed `4c344cd` opt-in Node profile: 266,180,192 retired /
+150,000,000 admissions, stopped at the unchanged admission bound, not boot
+acceptance. s6-ftrigrd reports Broken pipe; no working terminal. Of 85,581,906
+cold reservations, 85,581,842 replace a full 64-row owner. Periodic samples
+observe 20,900 absent entries, zero remapped-owner/budget rejections and
+15,721 reusable entries. Write-revoked rows/pending cancellations are zero;
+this does not mean the guest did not write RAM. Engine/cold 703,894/598,602 ms
+dominate. See [full receipt](../vm/check/browser/evidence/2026-10-06-source-profile-full.json).
+Do not hide coordinate/body residency mismatch by increasing quotas.
+
+The separate HLT candidate now consumes a common decoded law and emits a
+privileged retirement followed by HALT/0, without an interpreter import.
+Machine-owned activity survives directory rebind and only an accepted event
+wakes it. Native CPL3 #GP, 960 C-Wasm privilege/flag/shadow cases, 724 idle
+checks and 32 independent x86 STI/HLT/IRQ/IRET comparisons pass, alongside full
+product checks and scoped sanitizers. It was NOT in that full profile.
+See [meaning, receipts and remaining work](../vm/check/browser/evidence/2026-10-06-halt.md).
+Idle clock/event transport, s6 IPC/scheduling failure, whole-ELF closure and
+the full browser development/storage/network goal remain red.
+
+Earlier completed `a305af4` run: PSRLDQ passes, 265,612,366 retired /
 149,485,773 admissions. Guest s6 sync fails (Broken pipe / timeout), and
 terminal stays down. HLT `f4` at `0xffffffff813efa53` is then -102.
 Engine 725,454 ms, cold 595,693 ms, execution 158,080 ms,
 total 1,764,466 ms; same quotas, not a speedup.
 See [receipt](../vm/check/browser/evidence/2026-10-06-node-startup-service-timeout.json).
-Next: full opt-in C source profile to distinguish quota/candidate/write
-causes; faithful HLT idle/wake retirement; actual service/IPC/scheduling
-failure under the existing explicit clock contract. No timeout/clock
-relaxation or kernel wait skip. Normal VM is unchanged; six metric models
+The subsequent profile/candidate above address measurement and HLT locally;
+actual service/IPC/scheduling failure under the explicit clock contract remains.
+No timeout/clock relaxation or kernel wait skip. That normal VM was unchanged;
+six metric models
 and source/MMU/fault/CPU checkpoint checks pass. See
 [scope](../vm/check/browser/evidence/2026-10-06-source-profile.md).
 Full Linux/browser/offline development/storage/network acceptance remains red.

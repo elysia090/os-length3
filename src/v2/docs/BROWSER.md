@@ -1,6 +1,24 @@
 # Browser projection of OS Length3 Linux
 
-Latest completed same-bundle run (`a305af4`, child 7160 / exec 59604 completed):
+Completed opt-in `4c344cd` Node profile (child 13512 / exec 60635 ended):
+266,180,192 retired / 150,000,000 admissions; unchanged admission cap reached.
+s6-ftrigrd reports Broken pipe and no terminal is proven. 85,581,906 cold
+reservations include 85,581,842 full-owner replacements. Periodic samples
+show absent entries, not remapped-owner/budget rejection. No retained source
+row was revoked by a write; this is not absence of guest RAM writes.
+Engine 703,894 ms / cold 598,602 ms dominate, not a paired speedup.
+See [completed profile](../vm/check/browser/evidence/2026-10-06-source-profile-full.json).
+
+Separate HLT candidate: privileged retirement, machine-owned halted activity,
+no successor fetch while idle, event-only wake, and 32 independent x86
+STI/HLT/IRQ/IRET comparisons are green. The Node startup diagnostic explicitly
+reports an idle wake-event boundary instead of treating HALT as an opcode
+failure or silently advancing time. It has no idle-time transport yet.
+See [scope](../vm/check/browser/evidence/2026-10-06-halt.md).
+Whole ELF, s6 service synchronization, real-browser PID 1/offline development,
+storage/recovery/network and cold shell 3s remain unachieved.
+
+Earlier completed same-bundle run (`a305af4`, child 7160 / exec 59604 completed):
 PSRLDQ passes; 265,612,366 retired / 149,485,773 admissions.
 Guest s6 synchronization fails with Broken pipe / Operation timed out:
 `Offline service transition failed; terminal remains down.`
@@ -13,11 +31,11 @@ See [completed receipt](../vm/check/browser/evidence/2026-10-06-node-startup-ser
 Opt-in C source profiling now counts queries/reservations/full-owner
 replacements/writes and periodically samples absent/remapped/budget/reusable
 candidates. Six controlled models, existing C source/MMU/fault controls and
-the independent 86-instruction checkpoint pass. Normal VM bytes are unchanged.
-The early short prefix has 1,770 cold reservations / 1,706 full-owner
+the independent 86-instruction checkpoint pass. Normal VM bytes were unchanged
+at that profiling checkpoint; the separate HLT candidate above is newer.
+The historical early short prefix has 1,770 cold reservations / 1,706 full-owner
 replacements; all periodic early samples are hits. This does not classify
-the later kernel/service workload. Measure the full profile before changing
-lifetime, quota or guest semantics.
+the later kernel/service workload; the subsequent full profile is above.
 See [definitions and scope](../vm/check/browser/evidence/2026-10-06-source-profile.md).
 Do not soften service timeouts/clock policy or treat /init/fixture pass as success.
 PID 1/offline terminal/development/storage/network/browser acceptance and

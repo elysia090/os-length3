@@ -21,6 +21,7 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 }
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if (pl_x86_halt_supported(instruction)) return CUT_SYSTEM_HALT;
     if(instruction->status==PL_X86_DECODE_VALID && instruction->encoding==PL_X86_ENCODING_LEGACY
             && instruction->machine_operation==PL_X86_MACHINE_SYSTEM_TRANSFER
             && instruction->machine_argument<=1u && !instruction->visible_operand_count
@@ -337,6 +338,13 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if (pl_x86_halt_supported(instruction)) {
+        require_cpl0(cut);
+        /* The ordinary successful epilogue advances RIP, clears RF and
+         * retires once. HALT then lends control to the machine event owner;
+         * it is neither a no-op nor an opcode interpreter callback. */
+        return;
+    }
     if(instruction->machine_operation==PL_X86_MACHINE_SYSTEM_TRANSFER) {
         cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,instruction->machine_argument);

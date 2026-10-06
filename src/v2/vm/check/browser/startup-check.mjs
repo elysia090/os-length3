@@ -361,6 +361,11 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);
       assert.equal(view.getBigUint64(base+1128,true),BigInt(retired));
       if(boundary===1n){++externalInterrupts;return null;}
+      if(boundary===4n){
+        assert.equal(vm.vm_halted(),1);
+        return {kind:'halted',result:'4',entry:`0x${rip().toString(16)}`,completed:0,sourceRetired:0,
+          awaiting:'accepted machine wake event; this diagnostic has no idle-time transport'};
+      }
       const delivered=await deliverFault(boundary,interrupted);
       if(delivered)return delivered.deliveryResult==='0'?null:{kind:'interrupt-delivery',...delivered};
       return {kind:'interrupt-boundary',result:String(boundary),entry:`0x${interrupted.toString(16)}`};
@@ -559,6 +564,14 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
       }
     }
     const done=progress.retired,completed=progress.completed;
+    if(result===4n){
+      assert.equal(vm.vm_halted(),1);assert(completed>0 && done>=completed);
+      retired+=done;assert.equal(view.getBigUint64(base+1128,true),BigInt(retired));
+      trace.append(entry,done,rip(),result,view,base);
+      return {kind:'halted',result:'4',entry:`0x${rip().toString(16)}`,admittedEntry:`0x${entry.toString(16)}`,
+        completed,sourceRetired:done,flags:`0x${view.getBigUint64(base+392,true).toString(16)}`,
+        awaiting:'accepted machine wake event; this diagnostic has no idle-time transport'};
+    }
     const failedSource=result!==1n && result!==5n ? runSource(generation) : null;
     trace.append(entry,done,rip(),result,view,base);
     if (entry === 0x10002a1n) {
