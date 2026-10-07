@@ -161,6 +161,47 @@ int wasm_compiler_emit_code_cut(const pl_x86_image *source, pl_u64 generation,
                                 pl_u64 capacity, pl_u64 *written, wasm_cut_report *report)
 { return emit(0, source, generation, options, target, capacity, written, report); }
 
+static int body_compare(const pl_u8 *bytes,const pl_u64 *offsets,const pl_u64 *lengths,pl_u32 a,pl_u32 b)
+{
+    if(lengths[a]!=lengths[b])return lengths[a]<lengths[b]?-1:1;
+    for(pl_u64 i=0u;i<lengths[a];++i)if(bytes[offsets[a]+i]!=bytes[offsets[b]+i])
+        return bytes[offsets[a]+i]<bytes[offsets[b]+i]?-1:1;
+    return 0;
+}
+/* Exact body equality after one shared import mapping. Sort only bounded
+ * ranks, not another code population; no hash collision can merge bodies. */
+static pl_u32 body_quotient(const pl_u8 *bytes,const pl_u64 *offsets,const pl_u64 *lengths,pl_u32 count,
+    pl_u16 *classes,pl_u16 *representatives)
+{
+    pl_u16 order[WASM_CUT_MODULE_MAX_FUNCTIONS],scratch[WASM_CUT_MODULE_MAX_FUNCTIONS],first[WASM_CUT_MODULE_MAX_FUNCTIONS];
+    for(pl_u32 i=0u;i<count;++i)order[i]=(pl_u16)i;
+    for(pl_u32 width=1u;width<count;width*=2u){
+        for(pl_u32 begin=0u;begin<count;begin+=2u*width){
+            pl_u32 middle=begin+width;if(middle>count)middle=count;
+            pl_u32 end=middle+width;if(end>count)end=count;
+            pl_u32 a=begin,b=middle;
+            for(pl_u32 out=begin;out<end;++out)
+                scratch[out]=(b==end || (a<middle && body_compare(bytes,offsets,lengths,order[a],order[b])<=0))?order[a++]:order[b++];
+        }
+        for(pl_u32 i=0u;i<count;++i)order[i]=scratch[i];
+    }
+    for(pl_u32 begin=0u;begin<count;){
+        pl_u32 end=begin+1u,minimum=order[begin];
+        while(end<count && !body_compare(bytes,offsets,lengths,order[begin],order[end])){
+            if(order[end]<minimum)minimum=order[end];
+            ++end;
+        }
+        for(pl_u32 i=begin;i<end;++i)first[order[i]]=(pl_u16)minimum;
+        begin=end;
+    }
+    pl_u32 unique=0u;
+    for(pl_u32 i=0u;i<count;++i){
+        if(first[i]==i){classes[i]=(pl_u16)unique;representatives[unique++]=(pl_u16)i;}
+        else classes[i]=classes[first[i]];
+    }
+    return unique;
+}
+
 static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,pl_u64 generation,
     const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
     pl_u64 *written,wasm_cut_report *reports,int projection)
@@ -173,7 +214,7 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
     if(!limit || limit>WASM_CUT_MODULE_MAX_BYTES)return WASM_COMPILER_ERROR_INPUT;
     pl_u64 option_bytes=(pl_u64)count*sizeof *cuts,report_bytes=(pl_u64)count*sizeof *reports;
     pl_u64 code_bytes=wasm_uleb_bytes(count);
-    cut_plan plan;pl_u64 bodies[WASM_CUT_MODULE_MAX_FUNCTIONS];
+    cut_plan plan;pl_u64 bodies[WASM_CUT_MODULE_MAX_FUNCTIONS],offsets[WASM_CUT_MODULE_MAX_FUNCTIONS];
     /* One transient plan is recycled. No decoded-instruction population or
      * object-sized directory is materialized. Complete preflight precedes all
      * externally visible writes, including when a later cut is unlowered. */
@@ -216,6 +257,7 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
         pl_u64 body_bytes;int status=prepare(compiler,source,generation,cuts+i,&plan,&body_bytes);
         if(status || body_bytes!=bodies[i])return status?status:WASM_COMPILER_ERROR_GRAMMAR;
         wasm_writer_uleb(&writer,body_bytes);wasm_cut_report report;
+        offsets[i]=writer.used;
         status=cut_emit_body(&writer,&plan,&report,imports);
         if(status)return status;
         report.module_bytes=total;if(reports)reports[i]=report;
@@ -236,6 +278,31 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
             for(pl_u32 i=0u;i<4096u;++i)wasm_writer_byte(&metadata,source->maps[page].bytes[i]);
         if(metadata.error)return metadata.error;
         if(metadata.used!=total)return WASM_COMPILER_ERROR_GRAMMAR;
+    }
+    pl_u16 classes[WASM_CUT_MODULE_MAX_FUNCTIONS],representatives[WASM_CUT_MODULE_MAX_FUNCTIONS];
+    pl_u32 unique=body_quotient(target,offsets,bodies,count,classes,representatives);
+    if(unique<count){
+        pl_u64 payload=wasm_uleb_bytes(unique);
+        for(pl_u32 i=0u;i<unique;++i){pl_u32 rank=representatives[i];payload+=wasm_uleb_bytes(bodies[rank])+bodies[rank];}
+        wasm_writer compact={target,capacity,0u,0};wasm_module_alias_prefix(&compact,imports,unique,count,classes,payload);
+        /* Bodies contain only typed imports, not internal function indices.
+         * Re-emit unique representatives from the pinned original input into
+         * this SAME output owner; no second module/body buffer is allocated. */
+        for(pl_u32 i=0u;i<unique;++i){
+            pl_u32 rank=representatives[i];pl_u64 body_bytes;
+            int status=prepare(compiler,source,generation,cuts+rank,&plan,&body_bytes);
+            if(status || body_bytes!=bodies[rank])return status?status:WASM_COMPILER_ERROR_GRAMMAR;
+            wasm_writer_uleb(&compact,body_bytes);wasm_cut_report report;
+            status=cut_emit_body(&compact,&plan,&report,imports);if(status)return status;
+        }
+        if(compact.error || compact.used>code_total)return WASM_COMPILER_ERROR_GRAMMAR;
+        pl_u64 tail=total-code_total,new_total=compact.used+tail;
+        /* Forward compaction of inert metadata is overlap-safe. The old
+         * bytes beyond written are not another published program owner. */
+        for(pl_u64 i=0u;i<tail;++i)target[compact.used+i]=target[code_total+i];
+        if(reports)for(pl_u32 i=0u;i<count;++i)reports[i].module_bytes=new_total;
+        for(pl_u64 i=new_total;i<total;++i)target[i]=0u; /* No unreachable old program bytes survive. */
+        total=new_total;
     }
     *written=total;return 0;
 }

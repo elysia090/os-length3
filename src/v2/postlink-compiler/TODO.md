@@ -23,6 +23,15 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Exact emitted-body quotient now aliases source exports to shared functions,
+not copied bodies/wrappers. 130 exports -> one body; that fixture's object
+30,614 -> 7,646 bytes, with 780 native/C-MMU comparisons and crossing controls
+preserved. Distinct same-length bodies remain distinct. Full compiler/VM and
+scoped sanitizers pass. This is NOT global semantic/work/span minimum or Linux
+size/speed. Raw-size preflight and transient raw formation in the same output
+owner remain; the fully virtual writer and whole-ELF production are incomplete.
+See [exact scope/receipt](../vm/check/browser/evidence/2026-10-07-body-quotient.md).
+
 New C compiler -> authenticated C source-admission metadata connection:
 standard Wasm custom section, exact unchanged executable prefix, ordinal/span/
 binding chosen in C and current source bytes compared before publication.

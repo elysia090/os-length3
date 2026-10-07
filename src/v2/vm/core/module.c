@@ -29,7 +29,7 @@ int vm_module_open(const pl_u8 *bytes,pl_u32 length,vm_module *out)
     static const pl_u8 magic[]={0u,0x61u,0x73u,0x6du,1u,0u,0u,0u};
     static const pl_u8 name[]=MACHINE_SOURCE_SECTION;
     if(!bytes || !out || length<8u || length>MACHINE_SOURCE_MAX_BYTES || !equal(bytes,magic,8u))return VM_MODULE_ERROR_INPUT;
-    pl_u32 at=8u,functions=0u,code_functions=0u;int saw_functions=0,saw_code=0;
+    pl_u32 at=8u,functions=0u,code_functions=0u,exports=0u;int saw_functions=0,saw_code=0,saw_exports=0;
     while(at<length){
         pl_u32 start=at,kind=bytes[at++],size;
         if(kind>12u || !uleb(bytes,length,&at,&size) || size>length-at)return VM_MODULE_ERROR_INPUT;
@@ -43,18 +43,29 @@ int vm_module_open(const pl_u8 *bytes,pl_u32 length,vm_module *out)
                 for(pl_u32 i=0u;i<count;++i){pl_u32 type;if(!uleb(bytes,end,&at,&type))return VM_MODULE_ERROR_INPUT;}
                 if(at!=end)return VM_MODULE_ERROR_INPUT;
             }else{if(saw_code)return VM_MODULE_ERROR_INPUT;saw_code=1;code_functions=count;}
+        }else if(kind==7u){
+            if(saw_exports || !uleb(bytes,end,&at,&exports) || !exports || exports>MACHINE_SOURCE_MAX_FUNCTIONS)
+                return VM_MODULE_ERROR_INPUT;
+            saw_exports=1;
+            for(pl_u32 i=0u;i<exports;++i){
+                pl_u32 name_bytes,index;
+                if(!uleb(bytes,end,&at,&name_bytes) || name_bytes>end-at)return VM_MODULE_ERROR_INPUT;
+                at+=name_bytes;
+                if(at>=end || bytes[at++]!=0u || !uleb(bytes,end,&at,&index))return VM_MODULE_ERROR_INPUT;
+            }
+            if(at!=end)return VM_MODULE_ERROR_INPUT;
         }else if(!kind){
             pl_u32 name_bytes;
             if(!uleb(bytes,end,&at,&name_bytes) || name_bytes>end-at)return VM_MODULE_ERROR_INPUT;
             if(name_bytes==sizeof name-1u && equal(bytes+at,name,sizeof name-1u)){
                 at+=name_bytes;
-                if(end!=length || end-at<MACHINE_SOURCE_HEADER_BYTES || !saw_functions || !saw_code)return VM_MODULE_ERROR_INPUT;
+                if(end!=length || end-at<MACHINE_SOURCE_HEADER_BYTES || !saw_functions || !saw_code || !saw_exports)return VM_MODULE_ERROR_INPUT;
                 const pl_u8 *header=bytes+at;
                 if(pl_read_u32(header)!=MACHINE_SOURCE_VERSION || pl_read_u32(header+4u)!=MACHINE_ABI_VERSION
                         || pl_read_u32(header+8u)!=MACHINE_ENTRY_ABI_VERSION)return VM_MODULE_ERROR_ABI;
                 pl_u32 count=pl_read_u32(header+12u),pages=pl_read_u32(header+24u);
                 vm_module opened={header+MACHINE_SOURCE_HEADER_BYTES,0,pl_read_u64(header+16u),start,count,pages};
-                if(!opened.generation || count!=functions || count!=code_functions || !pages || pages>2u
+                if(!opened.generation || count!=exports || functions>count || functions!=code_functions || !pages || pages>2u
                         || pl_read_u32(header+28u))return VM_MODULE_ERROR_INPUT;
                 pl_u32 row_bytes=count*MACHINE_SOURCE_ROW_BYTES,witness_bytes=pages*4096u;
                 if(end-at!=MACHINE_SOURCE_HEADER_BYTES+row_bytes+witness_bytes)return VM_MODULE_ERROR_INPUT;

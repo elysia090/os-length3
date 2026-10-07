@@ -1,5 +1,9 @@
 # Browser boundary observations
 
+New independent native/C/Node work:
+[exact body quotient](2026-10-07-body-quotient.md) and
+[receipt](2026-10-07-body-quotient-green.json). Not a new browser/Linux acceptance.
+
 New independent C/Node work: [compiled-source metadata into C admission](2026-10-07-source-module.md)
 and [exact receipt](2026-10-07-source-module-green.json). No new browser run,
 working terminal, signed Linux projection or renderer-lifetime improvement.

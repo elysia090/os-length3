@@ -22,4 +22,7 @@ pl_u32 wasm_import_count(pl_u32 mask);
 pl_u32 wasm_uleb_bytes(pl_u64 value);
 void wasm_module_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
     pl_u64 code_payload_bytes);
+/* Source exports may alias an exact shared body. No forwarding functions. */
+void wasm_module_alias_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
+    pl_u32 exports,const pl_u16 *ranks,pl_u64 code_payload_bytes);
 #endif

@@ -106,6 +106,15 @@ int main(int argc,char **argv)
     if(failures)return 1;
     if(argc==2 && (save(argv[1],"projection.wasm",projected,(size_t)bytes)
             ||save(argv[1],"source-page",page,sizeof page)||save(argv[1],"native",native,sizeof native)))return 1;
+    /* Same-length but different destinations must not be falsely merged.
+     * Repeated instances of each destination still share an exact body. */
+    for(pl_u32 i=0u;i<COUNT;++i)page[64u+i*16u]=(pl_u8)(0xb8u+i%4u);
+    EXPECT(!wasm_compiler_emit_code_projection(&image,9u,options,COUNT,projected,sizeof projected,&bytes,reports));
+    EXPECT(!vm_module_open(projected,(pl_u32)bytes,&opened));
+    for(pl_u32 i=(pl_u32)bytes;i<30614u;++i)EXPECT(projected[i]==0u);
+    if(argc==2 && (save(argv[1],"mixed.wasm",projected,(size_t)bytes)
+            ||save(argv[1],"mixed.source",page,sizeof page)
+            ||save_projection_root(argv[1],"mixed.root-ref",projected,(pl_u32)bytes,1u)))return 1;
     memset(pair,0x90,sizeof pair);
     const pl_u32 offsets[]={32u,4094u,4128u};const pl_u32 values[]={17u,0x12345678u,29u};
     pl_x86_map maps[2]={{pair,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u},

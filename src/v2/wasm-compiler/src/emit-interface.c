@@ -104,14 +104,15 @@ static void function_section(wasm_writer *writer,pl_u32 count,pl_u32 type)
     wasm_writer_uleb(writer,count);
     for(pl_u32 i=0u;i<count;++i)wasm_writer_uleb(writer,type);
 }
-static void export_section(wasm_writer *writer,pl_u32 count,pl_u32 imports)
+static void export_section(wasm_writer *writer,pl_u32 count,pl_u32 imports,const pl_u16 *ranks)
 {
     wasm_writer_uleb(writer,count);
     for(pl_u32 i=0u;i<count;++i){
-        export_name(writer,i,count);wasm_writer_byte(writer,0u);wasm_writer_uleb(writer,imports+i);
+        export_name(writer,i,count);wasm_writer_byte(writer,0u);wasm_writer_uleb(writer,imports+(ranks?ranks[i]:i));
     }
 }
-void wasm_module_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,pl_u64 code_payload_bytes)
+void wasm_module_alias_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
+    pl_u32 exports,const pl_u16 *body_ranks,pl_u64 code_payload_bytes)
 {
     if(!writer || imports&~WASM_IMPORT_MASK || !functions){
         if(writer)writer->error=WASM_COMPILER_ERROR_INPUT;
@@ -127,7 +128,9 @@ void wasm_module_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,pl_u
     type_section(&measured,types,type_count);section(writer,1u,measured.used);type_section(writer,types,type_count);
     measured.used=0u;import_section(&measured,imports,ranks);section(writer,2u,measured.used);import_section(writer,imports,ranks);
     measured.used=0u;function_section(&measured,functions,entry);section(writer,3u,measured.used);function_section(writer,functions,entry);
-    measured.used=0u;export_section(&measured,functions,wasm_import_count(imports));section(writer,7u,measured.used);
-    export_section(writer,functions,wasm_import_count(imports));
+    measured.used=0u;export_section(&measured,exports,wasm_import_count(imports),body_ranks);section(writer,7u,measured.used);
+    export_section(writer,exports,wasm_import_count(imports),body_ranks);
     section(writer,10u,code_payload_bytes);wasm_writer_uleb(writer,functions);
 }
+void wasm_module_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,pl_u64 code_payload_bytes)
+{wasm_module_alias_prefix(writer,imports,functions,functions,0,code_payload_bytes);}
