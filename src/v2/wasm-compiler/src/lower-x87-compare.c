@@ -20,19 +20,23 @@ static void register_load(cut_lowering *c,pl_u32 index,pl_u32 offset,pl_u32 shif
     cut_get(c,0u);cut_get(c,index);cut_const(c,shift);cut_op(c,0x86u);cut_op(c,0xa7u);cut_op(c,0x6au);
     cut_op(c,opcode);wasm_writer_uleb(c->writer,shift);wasm_writer_uleb(c->writer,offset);cut_set(c,local);
 }
+void cut_x87_wait_guard(cut_lowering *c,pl_u32 cw,pl_u32 sw)
+{
+    cut_load(c,offsetof(machine_state,cr0));cut_const(c,12u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);fault_if(c,7u);
+    load16(c,offsetof(machine_state,x87_control),cw);load16(c,offsetof(machine_state,x87_status),sw);
+    cut_get(c,cw);cut_const(c,~0ull);cut_op(c,0x85u);cut_get(c,sw);cut_op(c,0x83u);cut_const(c,63u);cut_op(c,0x83u);
+    cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0x04u);cut_op(c,0x40u);
+    cut_load(c,offsetof(machine_state,cr0));cut_const(c,32u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);fault_if(c,16u);
+    cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_call(c,WASM_IMPORT_FLOATING_WAIT);cut_op(c,0x0fu);cut_op(c,0x0bu);
+}
 void cut_lower_x87_compare(cut_lowering *c,const pl_x86_instruction *i)
 {
     pl_x86_x87_compare law;if(!pl_x86_x87_compare_lower(i,&law)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     _Alignas(8) pl_u8 scratch[32768];pl_arena arena={scratch,sizeof scratch,0u};pl_plan pure;
     if(pl_x86_x87_relation_plan(law.ordered,!law.source,&arena,&pure)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
-    cut_load(c,offsetof(machine_state,cr0));cut_const(c,12u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);fault_if(c,7u);
-    load16(c,offsetof(machine_state,x87_control),FP_CW);load16(c,offsetof(machine_state,x87_status),FP_SW);
     // Native #MF is deferred to this waiting operation. Legacy FERR goes to
     // the C device/interrupt owner; neither path starts numeric publication.
-    cut_get(c,FP_CW);cut_const(c,~0ull);cut_op(c,0x85u);cut_get(c,FP_SW);cut_op(c,0x83u);cut_const(c,63u);cut_op(c,0x83u);
-    cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0x04u);cut_op(c,0x40u);
-    cut_load(c,offsetof(machine_state,cr0));cut_const(c,32u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);fault_if(c,16u);
-    cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_call(c,WASM_IMPORT_FLOATING_WAIT);cut_op(c,0x0fu);cut_op(c,0x0bu);
+    cut_x87_wait_guard(c,FP_CW,FP_SW);
     load16(c,offsetof(machine_state,x87_tag),FP_TAG);
     cut_get(c,FP_SW);cut_const(c,11u);cut_op(c,0x88u);cut_const(c,7u);cut_op(c,0x83u);cut_set(c,FP_TOP);
     cut_get(c,FP_TOP);cut_const(c,law.source);cut_op(c,0x7cu);cut_const(c,7u);cut_op(c,0x83u);cut_set(c,FP_OTHER);

@@ -1,4 +1,4 @@
-# Remaining work — 2026-10-07
+# Remaining work — 2026-10-08
 
 ## Fixed input and success
 
@@ -22,6 +22,22 @@ exactly. Measure fetch count/bytes, resident high-water and cold-ready
 separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
+
+Exact FILD now consumes the common signed-integer -> ext80 SSA through the
+same pure-plan emitter. Official SoftFloat agrees on 105,536 inputs (the
+complete signed16 domain, plus 20,000 signed32 and 20,000 signed64 samples).
+12,288 local hardware FPU/RFLAGS observations cover PC/RC, physical TOP,
+stack occupancy and masked/unmasked overflow; C-Wasm agrees on complete
+state. 18 native/cold forms, 180 malformed laws, 540 #NM/#MF/page-fault models
+and 36 success controls pass. Existing compare/deferred-boundary regressions,
+full compiler/postlink checks and positive ASan/UBSan pass. Actual make:
+6,760 -> 6,545 missing (215 recovered), first STILL da2503005548/FISUB at
+0xa0cb. Whole-directory publication refuses -102 before mkdir/root. This
+closes integer conversion/load, NOT exact add/sub arithmetic or Linux boot.
+SoftFloat/TestFloat remain independent build-only oracles under data, never
+a product library or fallback. Native bundle/UI/VM unchanged; no fresh browser
+boot, signed root, speed/size/RSS or global-minimum claim. See
+[derivation, reproduction and exact scope](../vm/check/browser/evidence/2026-10-08-x87-integer.md).
 
 The real dfe8 compare gate is now green through common x86 SSA and ordinary
 Wasm, not f64 or a VM arithmetic callback. Direct Windows/GCC CPU captures
@@ -397,8 +413,12 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    The four register x87 compare variants now use a shared normalized SSA
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
-   remaining arithmetic/source-context/precise-event cases: make's new first
+   remaining arithmetic/source-context/precise-event cases: make's current first
    miss is da2503005548, not dfe8. No-wait snapshots/FNCLEX are covered.
+   Exact signed16/32/64 integer conversion/FILD is now covered; reuse that
+   common coercion for FIADD/FISUB/FISUBR. Derive exact ext80 alignment,
+   cancellation and PC/RC rounding before connecting arithmetic; independent
+   SoftFloat/TestFloat and local hardware are oracles, not product helpers.
    First gaps in the two published s6 files are x87; their outside-image/indirect
    control edges and executable-map-end fetch context still require closure.
    Mixed cut imports can now share one typed standard-Wasm module through the

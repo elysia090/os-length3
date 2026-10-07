@@ -1,24 +1,11 @@
 #define _GNU_SOURCE
 #include "x87-observation.h"
+#include "x87-hardware.h"
 #include <x86/decode.h>
 #include <stdio.h>
 #include <stdint.h>
 #ifdef _WIN32
 #include <windows.h>
-/* Physical-CPU oracle only. The compare has no GPR outputs; Windows doesn't
- * use the SysV GPR capture helper. Capture both actual flag words and the
- * complete FPU images without a waiting instruction between them. */
-static void native_observe(machine_state *first,machine_state *last,const void *code,const void *input,void *before,void *after)
-{
-    _Alignas(16) pl_u8 host[512];pl_u64 old_flags,new_flags;
-    __asm__ volatile("fxsave64 %[host]\n\tfxrstor64 %[input]\n\tfxsave64 %[before]\n\t"
-        "pushq %[flags]\n\tpopfq\n\tpushfq\n\tpopq %[old]\n\tcall *%[code]\n\t"
-        "pushfq\n\tpopq %[new]\n\tfxsave64 %[after]\n\tfxrstor64 %[host]\n\tcld"
-        :[host]"=m"(host),[before]"=m"(*(pl_u8 (*)[512])before),[after]"=m"(*(pl_u8 (*)[512])after),
-         [old]"=&r"(old_flags),[new]"=&r"(new_flags)
-        :[input]"m"(*(const pl_u8 (*)[512])input),[code]"r"(code),[flags]"r"(first->rflags):"memory","cc");
-    first->rflags=old_flags;last->rflags=new_flags;
-}
 #else
 #include <sys/mman.h>
 extern void native_fxsave(machine_state *,const void *,const void *,void *,void *);
@@ -84,11 +71,7 @@ int main(int argc,char **argv)
             first->rflags=0xa92u|((left&1u)?1u:0u)|((right&1u)?4u:0u)|(((left^right)&2u)?0x40u:0u);
             first->cr0=0x80010031u;first->cr3=0x1000u;first->cr4=32u;first->efer=0xd00u;
             first->retired=42u;first->system[MACHINE_SYSTEM_CS]=19u;first->system[MACHINE_SYSTEM_DR0+7u]=0x400u;*last=*first;
-#ifdef _WIN32
-            native_observe(first,last,code,input,before,after);
-#else
-            native_fxsave(last,code,input,before,after);first->registers[4u]=last->registers[4u];
-#endif
+            check_x87_hardware(first,last,code,input,before,after);
             check_x87_project(first,before);check_x87_project(last,after);
             // Bind a native code-map coordinate to the diagnostic guest map.
             // This is oracle loading, not runtime branch/opcode interpretation.

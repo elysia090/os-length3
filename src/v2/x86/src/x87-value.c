@@ -22,6 +22,21 @@ int pl_x86_x87_compare_lower(const pl_x86_instruction *i,pl_x86_x87_compare *out
     *out=(pl_x86_x87_compare){b->value.reg.index,(pl_u8)ordered,(pl_u8)pop,(pl_u16)opcode};return 1;
 }
 typedef struct {pl_builder builder;int failed;} expression;
+int pl_x86_x87_integer_load_lower(const pl_x86_instruction *i,pl_x86_x87_integer_load *out)
+{
+    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER|PL_X86_INSTRUCTION_READS_MEMORY;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY
+        ||i->machine_operation!=PL_X86_MACHINE_X87||i->visible_operand_count!=1u
+        ||(i->flow!=PL_X86_FLOW_NEXT&&i->flow!=PL_X86_FLOW_SYSTEM)||(i->flags&required)!=required
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_WRITES_MEMORY
+            |PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_PRIVILEGED)))return 0;
+    const pl_x86_operand *m=i->operands;pl_u32 width=m->bits/8u;
+    if(m->kind!=PL_X86_OPERAND_MEMORY||(m->bits!=16u&&m->bits!=32u&&m->bits!=64u))return 0;
+    pl_u32 fop=(pl_u32)(i->machine_argument>>16u)&0x7ffu;
+    if((fop>>8u)!=(width==4u?3u:7u)||((fop>>3u)&7u)!=(width==8u?5u:0u)||(fop&0xc0u)==0xc0u
+        ||i->machine_argument!=(1u|((pl_u64)width<<8u)|((pl_u64)fop<<16u)))return 0;
+    *out=(pl_x86_x87_integer_load){(pl_u8)width,(pl_u16)fop};return 1;
+}
 static pl_operand constant(pl_u64 v){return(pl_operand){PL_OPERAND_CONST,v};}
 static int same(pl_operand a,pl_operand b){return a.kind==b.kind&&a.value==b.value;}
 static pl_operand node(expression *e,pl_u32 opcode,const pl_operand *args,pl_u32 n)
@@ -112,6 +127,30 @@ int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan
     pl_operand relation=select(&e,constant(69u),zero_flags,unordered);
     raw.locals[0]=relation;raw.locals[1]=raised;raw.locals[2]=empty;
     raw.locals[3]=(pl_operand){PL_OPERAND_LOCAL,3u};raw.locals[4]=empty;
+    if(e.failed)return PL_ERROR_ARENA;
+    const pl_u8 live[]={1u,1u,1u,0u,0u};return pl_compact_projected(&raw,live,arena,out);
+}
+int pl_x86_x87_integer_plan(pl_u32 bits,pl_arena *arena,pl_plan *out)
+{
+    if(!arena||!out||(bits!=16u&&bits!=32u&&bits!=64u))return PL_ERROR_PLAN;
+    pl_plan raw={.instructions=1u};expression e={0};
+    if(pl_builder_open(&e.builder,&raw,arena,32u,96u,0u,5u))return PL_ERROR_ARENA;
+    pl_operand x={PL_OPERAND_LOCAL,0u};
+    if(bits<64u){x=binary(&e,PL_OPCODE_LANE64_SHL,x,constant(64u-bits));x=binary(&e,PL_OPCODE_LANE64_SAR,x,constant(64u-bits));}
+    pl_operand sign=shift(&e,x,63u),negative=binary(&e,96u,constant(0u),sign);
+    pl_operand magnitude=binary(&e,86u,x,negative);magnitude=binary(&e,89u,magnitude,sign);
+    // BSR's zero representative is -1. 63-BSR therefore gives the exact
+    // leading-zero count, including 64 for zero, without an invented shift.
+    pl_operand args[]={constant(0u),magnitude,constant(64u),constant(~0ull)};
+    pl_operand scan=node(&e,PL_OPCODE_X86_BIT_SUMMARY,args,4u);
+    pl_operand index={PL_OPERAND_PROJECTION,(scan.value<<8u)|16u};
+    pl_operand leading=binary(&e,96u,constant(63u),index);
+    pl_operand significand=binary(&e,PL_OPCODE_LANE64_SHL,magnitude,leading);
+    pl_operand exponent=binary(&e,96u,constant(16383u+63u),leading);
+    pl_operand zero=equal(&e,magnitude,constant(0u));exponent=select(&e,constant(0u),exponent,zero);
+    pl_operand sign_word=binary(&e,PL_OPCODE_LANE64_SHL,sign,constant(15u));
+    raw.locals[0]=significand;raw.locals[1]=bit_or(&e,sign_word,exponent);raw.locals[2]=zero;
+    raw.locals[3]=(pl_operand){PL_OPERAND_LOCAL,3u};raw.locals[4]=(pl_operand){PL_OPERAND_LOCAL,4u};
     if(e.failed)return PL_ERROR_ARENA;
     const pl_u8 live[]={1u,1u,1u,0u,0u};return pl_compact_projected(&raw,live,arena,out);
 }

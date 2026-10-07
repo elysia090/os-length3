@@ -1,5 +1,16 @@
 # x86 semantic oracles
 
+`prepare-float.ps1 -Verify` authenticates pinned official SoftFloat/TestFloat
+3e archives, retains unmodified upstream sources/licenses under `data/upstream`
+and builds their independent references under Windows `temp/float-oracle`.
+`float-source.json` records provenance and limitations: these libraries are
+never product runtime/fallbacks. `check-x87-integer.c` compares common integer
+SSA with that reference; its caller must use the same FAST_INT64/LITTLEENDIAN
+interface layout as the library. `check-x87-load.mjs` independently compares
+FILD C-Wasm/C-MMU execution with physical Windows FPU/RFLAGS observations;
+`check-x87-load-fault.mjs` covers separate fault-priority models. See
+[derivation, measured coverage and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-integer.md).
+
 `check-absent-io.mjs VM.WASM COMPILER.WASM` checks the fixed platform's eight
 absent ISA-DMA page ports and three absent legacy UART ranges through actual
 cold C emission and C table/MMU execution. It neither creates phantom devices

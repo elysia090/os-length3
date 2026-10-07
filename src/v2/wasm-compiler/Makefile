@@ -46,19 +46,26 @@ SOURCES += src/image.c src/image-stream.c
 SOURCES += src/emit-image-metadata.c
 SOURCES += src/lower-x87-snapshot.c
 SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
+SOURCES += src/lower-x87-integer.c
 .PHONY: x87-snapshot-check
 check: x87-snapshot-check
 x87-snapshot-check: $(BUILD)/x87-snapshot-check
 	$(BUILD)/x87-snapshot-check
 $(BUILD)/x87-snapshot-check: check/x87-snapshot.c check/x87-observation.h check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
-$(BUILD)/x87-compare-observe: check/x87-compare-observe.c check/x87-observation.h check/native-fxsave.S check/native-cut.S $(PROVIDER_LIBRARIES)
+$(BUILD)/x87-compare-observe: check/x87-compare-observe.c check/x87-hardware.h check/x87-observation.h check/native-fxsave.S check/native-cut.S $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-fxsave.S check/native-cut.S $(PROVIDER_LIBRARIES) -o $@
 .PHONY: x87-compare-check
 check: x87-compare-check
 x87-compare-check: $(BUILD)/x87-compare-check
 	$(BUILD)/x87-compare-check
 $(BUILD)/x87-compare-check: check/x87-compare.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: x87-integer-check
+check: x87-integer-check
+x87-integer-check: $(BUILD)/x87-integer-check
+	$(BUILD)/x87-integer-check
+$(BUILD)/x87-integer-check: check/x87-integer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: register-update-check

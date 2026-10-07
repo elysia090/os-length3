@@ -15,7 +15,7 @@ ZYDIS_SOURCES = Register SharedData DecoderData Decoder Mnemonic
 ZYDIS_OBJECTS = $(patsubst %,$(BUILD)/zydis/%.o,$(ZYDIS_SOURCES))
 
 .PHONY: all check clean
-$(BUILD)/x87-relation-check: check/x87-relation.c $(BUILD)/libx86.a
+$(BUILD)/x87-relation-check: check/x87-relation.c check/scalar-plan.h $(BUILD)/libx86.a
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 .PHONY: vector-projection-check
 .PHONY: vector-binary-check

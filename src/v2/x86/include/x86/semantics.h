@@ -92,6 +92,12 @@ int pl_x86_x87_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_co
  * rounding, architectural state effect, or serialized operation stream. */
 #define PL_X86_X87_RELATION_MAX_NODES 96u
 int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out);
+/* Exact signed 16/32/64 -> extended representation, independent of PC/RC.
+ * Input local 0 is the source word; outputs 0..2 are significand, sign/exp,
+ * zero tag. Uses the same physical SSA vocabulary and compaction. */
+int pl_x86_x87_integer_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes;pl_u16 opcode;} pl_x86_x87_integer_load;
+int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
