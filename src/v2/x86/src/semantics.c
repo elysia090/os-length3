@@ -2877,10 +2877,36 @@ int pl_x86_selector_read_lower(const pl_x86_instruction *instruction,pl_x86_sele
     *out=(pl_x86_selector_read){(pl_u8)selector,(pl_u8)memory,(pl_u8)target,(pl_u8)destination->bits,(pl_u8)system};return 1;
 }
 
+int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_snapshot *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!instruction || !out || instruction->status!=PL_X86_DECODE_VALID
+        || instruction->encoding!=PL_X86_ENCODING_LEGACY || instruction->machine_operation!=PL_X86_MACHINE_X87
+        || (instruction->flow!=PL_X86_FLOW_NEXT && instruction->flow!=PL_X86_FLOW_SYSTEM)
+        || instruction->visible_operand_count!=1u || (instruction->flags&required)!=required
+        || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_PRIVILEGED)))return 0;
+    pl_u32 kind=(pl_u32)instruction->machine_argument&255u;
+    if(kind!=PL_X86_X87_STORE_CONTROL_WORD && kind!=PL_X86_X87_STORE_STATUS_WORD)return 0;
+    const pl_x86_operand *destination=instruction->operands;
+    pl_u32 memory=destination->kind==PL_X86_OPERAND_MEMORY;
+    if(destination->bits!=16u || instruction->machine_argument!=(kind|((pl_u64)(memory?2u:0u)<<8u)))return 0;
+    if(memory){if(!(instruction->flags&PL_X86_INSTRUCTION_WRITES_MEMORY))return 0;}
+    else if(kind!=PL_X86_X87_STORE_STATUS_WORD || destination->kind!=PL_X86_OPERAND_REGISTER
+        || destination->value.reg.class_id!=PL_X86_REGISTER_GPR || destination->value.reg.index
+        || destination->value.reg.bits!=16u || destination->value.reg.flags
+        || (instruction->flags&PL_X86_INSTRUCTION_WRITES_MEMORY))return 0;
+    *out=(pl_x86_x87_snapshot){(pl_u8)(kind==PL_X86_X87_STORE_STATUS_WORD),(pl_u8)memory};return 1;
+}
+
 int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87
+        && ((instruction->machine_argument&255u)==PL_X86_X87_STORE_CONTROL_WORD
+            || (instruction->machine_argument&255u)==PL_X86_X87_STORE_STATUS_WORD)){
+        pl_x86_x87_snapshot law;if(!pl_x86_x87_snapshot_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_READ_SELECTOR){pl_x86_selector_read law;
         if(!pl_x86_selector_read_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if (instruction->status != PL_X86_DECODE_VALID

@@ -2216,7 +2216,7 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_FRSTOR:
         if (out->visible_operand_count == 1u
                 && out->operands[0].kind == PL_X86_OPERAND_MEMORY) {
-            pl_u32 kind = source->mnemonic == ZYDIS_MNEMONIC_FNSTCW ? 29u
+            pl_u32 kind = source->mnemonic == ZYDIS_MNEMONIC_FNSTCW ? PL_X86_X87_STORE_CONTROL_WORD
                         : source->mnemonic == ZYDIS_MNEMONIC_FLDCW ? 30u
                         : source->mnemonic == ZYDIS_MNEMONIC_FNSTENV ? 32u
                         : source->mnemonic == ZYDIS_MNEMONIC_FLDENV ? 33u
@@ -2246,7 +2246,7 @@ static void classify_machine_operation(
             pl_u32 width = out->operands[0].kind == PL_X86_OPERAND_MEMORY
                          ? 2u : 0u;
             out->machine_operation = PL_X86_MACHINE_X87;
-            out->machine_argument = 31u | ((pl_u64)width << 8u);
+            out->machine_argument = PL_X86_X87_STORE_STATUS_WORD | ((pl_u64)width << 8u);
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
                         | PL_X86_INSTRUCTION_PRECISE_CUT
                         | PL_X86_INSTRUCTION_BARRIER;

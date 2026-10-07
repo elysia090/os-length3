@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
 #include "fault-admission.h"
+#include "x87-observation.h"
 #include <machine/state.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -15,26 +16,6 @@ static pl_u64 random_word(pl_u64 *seed)
 { *seed^=*seed<<13u; *seed^=*seed>>7u; *seed^=*seed<<17u; return *seed; }
 static void put(void *at,pl_u64 value,pl_u32 bytes)
 { for(pl_u32 i=0u;i<bytes;++i)((pl_u8 *)at)[i]=(pl_u8)(value>>(i*8u)); }
-static pl_u64 get(const void *at,pl_u32 bytes)
-{ pl_u64 value=0u; for(pl_u32 i=0u;i<bytes;++i)value|=(pl_u64)((const pl_u8 *)at)[i]<<(i*8u); return value; }
-static void project(machine_state *cpu,const pl_u8 *image)
-{
-    cpu->x87_control=(pl_u16)get(image,2u); cpu->x87_status=(pl_u16)get(image+2u,2u);
-    cpu->x87_opcode=(pl_u16)get(image+6u,2u); cpu->x87_ip=get(image+8u,8u); cpu->x87_dp=get(image+16u,8u);
-    cpu->mxcsr=(pl_u32)get(image+24u,4u); cpu->x87_tag=0u;
-    pl_u32 top=(cpu->x87_status>>11u)&7u;
-    for(pl_u32 rank=0u;rank<8u;++rank) {
-        pl_u32 logical=(rank+8u-top)&7u;
-        pl_u64 fraction=get(image+32u+logical*16u,8u);
-        pl_u16 sign_exponent=(pl_u16)get(image+40u+logical*16u,2u);
-        pl_u32 exponent=sign_exponent&0x7fffu;
-        pl_u32 tag=!(image[4u]&(1u<<rank)) ? 3u : !exponent && !fraction ? 1u
-            : !exponent || exponent==0x7fffu || !(fraction>>63u) ? 2u : 0u;
-        cpu->x87_tag=(pl_u16)(cpu->x87_tag|(tag<<(rank*2u)));
-        cpu->x87_significand[rank]=fraction; cpu->x87_sign_exponent[rank]=sign_exponent;
-    }
-    memcpy(cpu->xmm,image+160u,sizeof cpu->xmm);
-}
 static int save(const char *directory,pl_u32 form,const char *suffix,const void *bytes,size_t count)
 {
     if(!directory)return 0;
@@ -121,7 +102,7 @@ int main(int argc,char **argv)
             record->before.registers[4u]=cpu.registers[4u];
             if(memcmp(record->before.registers,cpu.registers,sizeof cpu.registers)
                     || record->before.rflags!=cpu.rflags || memcmp(before,after,416u))goto done;
-            project(&record->before,before);
+            check_x87_project(&record->before,before);
             record->before.rip=map.address; record->before.cr0=0x80010011u;
             record->before.cr3=0x1000u; record->before.cr4=0x220u; record->before.efer=0xd00u;
             record->before.system[MACHINE_SYSTEM_CS]=19u;

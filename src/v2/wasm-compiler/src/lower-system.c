@@ -24,6 +24,10 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     pl_x86_count_branch count;
     if(pl_x86_count_branch_lower(instruction,&count) && count.bits!=16u)return CUT_SYSTEM_COUNTER_BRANCH;
     pl_x86_selector_read snapshot;
+    pl_x86_x87_snapshot fpu;
+    if(pl_x86_x87_snapshot_lower(instruction,&fpu)
+        && (!fpu.memory || cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))
+        return CUT_SYSTEM_X87_SNAPSHOT;
     if(pl_x86_selector_read_lower(instruction,&snapshot) && snapshot.umip
             && (!snapshot.memory || cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))
         return CUT_SYSTEM_SELECTOR_SNAPSHOT;
@@ -409,6 +413,8 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
          * and requires a different lowering before admitting that projection. */
         return;
     }
+    pl_x86_x87_snapshot fpu;
+    if(pl_x86_x87_snapshot_lower(instruction,&fpu)){cut_lower_x87_snapshot(cut,instruction);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && instruction->machine_argument==PL_X86_X87_INITIALIZE) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.

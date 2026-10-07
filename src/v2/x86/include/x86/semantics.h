@@ -79,6 +79,11 @@ typedef struct { pl_u8 selector,memory,register_index,bits,umip; } pl_x86_select
  * GPR destinations zero-extend. LDTR/TR reads have the conditional UMIP cut. */
 int pl_x86_selector_read_lower(const pl_x86_instruction *instruction,pl_x86_selector_read *out);
 
+typedef struct { pl_u8 status,memory; } pl_x86_x87_snapshot;
+/* No-wait FNSTCW/FNSTSW: one current 16-bit word, no floating exception
+ * consumption. EM/TS #NM precedes operand access; AX preserves its parent. */
+int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_snapshot *out);
+
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
  * names and byte coordinates are construction facts, not saved runtime rows.

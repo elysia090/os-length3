@@ -23,6 +23,20 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Common no-wait x87 word snapshots now recover 31 ACTUAL make coordinates:
+7,183 -> 7,152 missing (x87 3,312). Native/cold bytes at 24 forms, 768 direct
++ 768 C-MMU full-state comparisons, 496 fault models, 288 malformed-law and
+3 real LOCK-fault controls pass. Shared test FPU projection replaces old copies;
+full current compiler/postlink checks and scoped sanitizers are warning-free.
+The first miss is STILL dfe8, not a completed image. A new independent native
+compare oracle has 16,384 observations / 64 forms, including 4,966 unmasked
+exception states and 2,483 suppressed pops. Its complete C-Wasm gate is red
+at the same dfe8/-102. Resolve exact 80-bit relation/exception, deferred #MF /
+legacy FERR, pop and flags before claiming that family closed. QEMU's observed
+C1 retention differs from the manual's simple table; do not fit it as silicon
+proof. No new Linux root/browser boot or distribution speed/size claim.
+See [closed snapshot law, measured coverage and compare red](../vm/check/browser/evidence/2026-10-07-x87-snapshot.md).
+
 The complete small-image C Artifact -> source/span/bias -> ordinary entry
 connection now passes the SAME test in Node and the actual browser Worker.
 384 coordinates x 3 biases = 1,152 full CPU/segment/port/RAM comparisons,
@@ -364,6 +378,9 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    The complete byte-coordinate inventory is now implemented; use its actual
    backend gaps to close generic ISA families. Shared counter branches and
    architectural fault cuts are covered, not an unimplemented-opcode fallback.
+   X87 compare is now backed by a 64-form / 16,384-row independent native gate,
+   still red at make's dfe8. Implement the exact deferred exception frontier,
+   not f64 approximation or a fabricated fault. No-wait snapshots are closed.
    First gaps in the two published s6 files are x87; their outside-image/indirect
    control edges and executable-map-end fetch context still require closure.
    Mixed cut imports can now share one typed standard-Wasm module through the

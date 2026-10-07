@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <wasm-compiler/cut.h>
 #include "fault-admission.h"
+#include "x87-observation.h"
 #include <machine/state.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,19 +16,6 @@ static void put(void *bytes, pl_u64 value, pl_u32 count)
 { for(pl_u32 i=0u;i<count;++i)((pl_u8 *)bytes)[i]=(pl_u8)(value>>(i*8u)); }
 static pl_u64 get(const void *bytes, pl_u32 count)
 { pl_u64 value=0u; for(pl_u32 i=0u;i<count;++i)value|=(pl_u64)((const pl_u8 *)bytes)[i]<<(i*8u); return value; }
-static void project(machine_state *state, const pl_u8 *image)
-{
-    state->x87_control=(pl_u16)get(image,2u); state->x87_status=(pl_u16)get(image+2u,2u);
-    state->x87_tag=image[4u]?0u:0xffffu;
-    state->x87_opcode=(pl_u16)get(image+6u,2u);
-    state->x87_ip=get(image+8u,8u); state->x87_dp=get(image+16u,8u);
-    state->mxcsr=(pl_u32)get(image+24u,4u);
-    for(pl_u32 i=0u;i<8u;++i){
-        state->x87_significand[i]=get(image+32u+i*16u,8u);
-        state->x87_sign_exponent[i]=(pl_u16)get(image+40u+i*16u,2u);
-    }
-    memcpy(state->xmm,image+160u,sizeof state->xmm);
-}
 static int save(const char *directory, pl_u32 form, const char *suffix, const void *bytes, size_t count)
 {
     if(!directory)return 0;
@@ -113,7 +101,7 @@ int main(int argc, char **argv)
             first->cr0=0x80010011u; first->cr3=0x1000u; first->cr4=32u; first->efer=0xd00u;
             first->system[MACHINE_SYSTEM_CS]=19u; first->system[MACHINE_SYSTEM_DR0+6u]=0xffff0ff0u;
             first->system[MACHINE_SYSTEM_DR0+7u]=0x400u; first->retired=42u;
-            project(first,before);
+            check_x87_project(first,before);
             _Alignas(16) pl_u8 integer_host[512]; machine_state integer=*first;
             __asm__ volatile("fxsave64 %0":"=m"(integer_host));
             native_cut(&integer,code);
@@ -121,7 +109,7 @@ int main(int argc, char **argv)
             first->registers[4u]=integer.registers[4u];
             if(memcmp(first->registers,integer.registers,sizeof first->registers)
                     || first->rflags!=integer.rflags)goto finished;
-            *last=*first; project(last,after);
+            *last=*first; check_x87_project(last,after);
             last->rip+=length; ++last->retired; ++observations;
         }
         char json[256]; int n=snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"sourceBytes\":%u,\"instructions\":1,\"native\":256,\"stateBytes\":%zu}\n",length,sizeof(machine_state));

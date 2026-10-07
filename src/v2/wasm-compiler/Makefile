@@ -6,6 +6,8 @@ WARN = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
 INCLUDES = -Iinclude -I../support/include -I../optimized-x86/include \
 	-I../machine-abi/include -I../x86/include
 BUILD ?= build
+PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
+	../x86/build/libx86.a ../support/build/libsupport.a
 WASM_OUTPUT ?= $(BUILD)/wasm-compiler.wasm
 WASM_CC ?= clang
 # Disjoint cold static/stack placement in a caller-owned imported memory.
@@ -42,6 +44,15 @@ SOURCES += src/coverage.c
 SOURCES += src/lower-register-update.c
 SOURCES += src/image.c src/image-stream.c
 SOURCES += src/emit-image-metadata.c
+SOURCES += src/lower-x87-snapshot.c
+.PHONY: x87-snapshot-check
+check: x87-snapshot-check
+x87-snapshot-check: $(BUILD)/x87-snapshot-check
+	$(BUILD)/x87-snapshot-check
+$(BUILD)/x87-snapshot-check: check/x87-snapshot.c check/x87-observation.h check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+$(BUILD)/x87-compare-observe: check/x87-compare-observe.c check/x87-observation.h check/native-fxsave.S check/native-cut.S $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-fxsave.S check/native-cut.S $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: register-update-check
 .PHONY: literal-check
@@ -240,10 +251,9 @@ $(BUILD)/fxrstor-check: check/fxrstor.c check/native-fxsave.S check/native-cut.S
 $(BUILD)/fxrstor-observe: check/fxrstor-observe.c | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) -mno-red-zone $< -o $@
 OBJECTS = $(patsubst src/%.c,$(BUILD)/%.o,$(SOURCES))
-PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
-	../x86/build/libx86.a ../support/build/libsupport.a
 
 $(patsubst check/%.c,$(BUILD)/%-check,$(wildcard check/*.c)): check/fault-admission.h
+$(BUILD)/fxsave-check $(BUILD)/x87-init-check: check/x87-observation.h
 
 .PHONY: all wasm check fixture-tools cut-check cut-fixture-check shift-fixture-check selector-fixture-check condition-fixture-check cmov-fixture-check bit-fixture-check carry-fixture-check multiply-fixture-check summary-fixture-check memory-cmov-fixture-check memory-fixture-check stack-fixture-check repeat-fixture-check accepted-input-check projection-check clean
 all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
