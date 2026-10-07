@@ -58,7 +58,16 @@ typedef struct {
     pl_u32 imports;
     pl_u32 fault_vector;
 } cut_plan;
-typedef struct { pl_u32 length,imports,binding; } cut_body_extent;
+typedef struct { pl_u32 length,imports,binding,span; } cut_body_extent;
+typedef struct {
+    pl_u32 ranges,payload_bytes,witness_bytes;
+    struct { pl_u16 first,count,witness; } range[64];
+} cut_image_metadata;
+int cut_image_metadata_measure(const wasm_cut_options *cuts,const cut_body_extent *bodies,
+    pl_u32 count,cut_image_metadata *metadata);
+int cut_image_metadata_emit(wasm_writer *writer,const cut_image_metadata *metadata,
+    const wasm_cut_options *cuts,const cut_body_extent *bodies,pl_u32 count,
+    const pl_x86_image *source,const pl_u8 digest[32]);
 void cut_emit_dispatch(wasm_writer *writer,const wasm_cut_options *cuts,
     const cut_body_extent *bodies,const pl_u16 *classes,pl_u32 count,pl_u32 imports);
 int wasm_emit_image_collection(const wasm_compiler *compiler,const wasm_compile_options *options,

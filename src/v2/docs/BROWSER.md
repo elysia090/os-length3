@@ -1,6 +1,15 @@
 # Browser projection of OS Length3 Linux
 
-New independent C connection carries compiled span/binding/ordinal metadata
+Latest bounded image test: the actual in-app browser Worker reports pass for
+the C authenticated IMAGE_SOURCE/IMAGE_MODULE -> current source/span/bias ->
+ordinary entry connection. The SAME Node/browser test gives 1,170 comparisons,
+28 refusals and 6 admitted crossing tails, with zero execution compiler calls.
+This is a local trusted small-ELF fixture, NOT Linux boot, signed release,
+independent native ISA proof, crash/RSS fix or cold-shell measurement. Complete
+actual Linux/ISA/context/generation closure and startup migration remain open.
+See [execution/reuse protocol and receipt](../vm/check/browser/evidence/2026-10-07-image-admission.md).
+
+The earlier selected-cut C connection carries span/binding/ordinal metadata
 through the authenticated reader, not JavaScript. A 130-coordinate source
 domain reuses one code collection beyond the 64-row source owner without
 compiler calls. This is not a complete Linux projection or a browser-crash

@@ -64,7 +64,7 @@ int wasm_compiler_prepare_image(const wasm_compiler *compiler,
     if(status)return status;
     if(iterator.coordinates!=view.coordinates)return WASM_COMPILER_ERROR_GRAMMAR;
     made.report.dispatchers=made.report.modules=iterator.modules;made.report.source_instructions=view.coordinates;
-    pl_sha256_digest(made.input,made.input_bytes,made.input_digest);
+    for(pl_u32 i=0u;i<sizeof made.input_digest;++i)made.input_digest[i]=compiler->input_digest[i];
     *plan=made;return 0;
 }
 static int plan_current(const wasm_image_plan *plan)

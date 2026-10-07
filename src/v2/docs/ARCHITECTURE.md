@@ -93,8 +93,15 @@ cuts, but does not independently authenticate the release or prove complete
 executable closure. A generated or patched executable generation must obtain
 the same admission/proof obligations before publication.
 
-Whole-image function/dispatch emission still reports incomplete. The current
-same-bundle startup checks are not a published browser execution product.
+Whole-image preflight/iteration now emits bounded ordinary modules for fully
+lowerable accepted ELF domains. The C Artifact bridge binds the canonical
+source row/digest, checks current source leases/spans and supplies the immutable
+bias/prefix before ordinary entry publication. Explicit pinned selection avoids
+per-coordinate object fetch and whole-code rehash. Small images pass the same
+Node and actual-browser test; complete Linux ISA/context/generation closure is
+still missing. The same-bundle raw-page startup is not migrated or a published
+browser execution product. See
+[boundary and exact scope](../vm/check/browser/evidence/2026-10-07-image-admission.md).
 Linux owns syscall, VFS, process, signal and network semantics; there is no
 browser POSIX or Linux-function fallback.
 

@@ -40,6 +40,8 @@ WASM_FLAGS += -Wl,--export=vm_directory_bind,--export=vm_directory_query,--expor
 WASM_FLAGS += -Wl,--export=vm_directory_node_commit,--export=vm_directory_object_commit
 WASM_FLAGS += -Wl,--export=vm_directory_cancel_request,--export=vm_directory_status
 WASM_FLAGS += -Wl,--export=vm_directory_module_plan,--export=vm_directory_source_publish
+WASM_FLAGS += -Wl,--export=vm_directory_image_source_bind,--export=vm_directory_image_plan,--export=vm_directory_image_publish
+WASM_FLAGS += -Wl,--export=vm_directory_image_select
 ifeq ($(WASM_PROFILE),1)
 WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile
 endif

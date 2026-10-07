@@ -21,6 +21,7 @@ typedef struct {
     ox_image image;
     pl_u64 function_count;
     pl_u64 coordinate_count;
+    pl_u8 input_digest[32]; /* One identity per immutable accepted ELF, not per module. */
 } wasm_compiler;
 
 typedef struct {
@@ -65,8 +66,9 @@ int wasm_compiler_open(wasm_compiler *compiler,
 /* Complete final PF_X code projection when the ENTIRE coordinate domain fits
  * one bounded module (currently <=256 coordinates / <=64 KiB). Interior and
  * zero-fill bytes are entries too; any unsupported/fetch-demand coordinate
- * refuses before output publication. Larger domains still return INCOMPLETE
- * until multi-module/directory construction is connected, never a prefix.
+ * refuses before output publication. Larger domains return INCOMPLETE here;
+ * use image.h's complete prepared iterator for multi-module construction,
+ * never a prefix of this single-module API.
  *
  * Import ordinary machine.memory / used typed callbacks and immutable i64
  * machine.image_bias. Export entry with the machine-entry ABI 3 signature:

@@ -57,4 +57,4 @@ cc.compiler_close();assert.equal(cc.compiler_image_next(co,65536,cr),-100);vm.vm
 console.log(JSON.stringify({format:'image-directory-c-range-delivery-v1',status:'pass',coordinates:Number(coordinates),
   modules:Number(modules),moduleBytes:Number(bytes),queries,nodeReads:nodes,objectReads:objects,refusals,
   oracle:'native/C-Wasm bytes and actual C authenticated index/object reader; no host row or ISA parser',
-  executionAdmission:'not-connected',linuxBoot:'not-tested',productionRoot:'not-signed'},null,2));
+  executionAdmission:'not-tested-by-this-delivery-driver',linuxBoot:'not-tested',productionRoot:'not-signed'},null,2));

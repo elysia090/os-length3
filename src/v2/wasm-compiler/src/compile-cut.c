@@ -310,7 +310,7 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
             return WASM_COMPILER_ERROR_INPUT;
         pl_u64 body_bytes;int status=prepare(compiler,source,generation,cuts+i,&plan,&body_bytes);
         if(status)return status;
-        bodies[i]=(cut_body_extent){(pl_u32)body_bytes,plan.imports,plan.report.operand_binding};
+        bodies[i]=(cut_body_extent){(pl_u32)body_bytes,plan.imports,plan.report.operand_binding,(pl_u32)plan.report.source_bytes};
         imports|=plan.imports;
     }
     pl_u16 classes[WASM_CUT_MODULE_MAX_FUNCTIONS],representatives[WASM_CUT_MODULE_MAX_FUNCTIONS];
@@ -331,6 +331,9 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
     if(image_options)wasm_module_image_prefix(&measure,imports,unique,count,classes,code_bytes);
     else wasm_module_alias_prefix(&measure,imports,unique,count,classes,code_bytes);
     pl_u64 code_total=measure.used+code_bytes-wasm_uleb_bytes(definitions),total=code_total;
+    cut_image_metadata image_metadata={0};
+    if(image_options){status=cut_image_metadata_measure(cuts,bodies,count,&image_metadata);if(status)return status;
+        total+=1u+wasm_uleb_bytes(image_metadata.payload_bytes)+image_metadata.payload_bytes;}
     static const pl_u8 name[]=MACHINE_SOURCE_SECTION;
     pl_u32 metadata_bytes=0u;
     if(projection){
@@ -380,6 +383,9 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
         cut_emit_dispatch(&writer,cuts,bodies,classes,count,wasm_import_count(imports));}
     if(writer.error)return writer.error;
     if(writer.used!=code_total)return WASM_COMPILER_ERROR_GRAMMAR;
+    if(image_options){status=cut_image_metadata_emit(&writer,&image_metadata,cuts,bodies,count,&plan.image,compiler->input_digest);
+        if(status)return status;
+        if(writer.used!=total)return WASM_COMPILER_ERROR_GRAMMAR;}
     if(projection){
         for(pl_u32 page=0u;page<source->map_count;++page)
             for(pl_u32 i=0u;i<4096u;++i)wasm_writer_byte(&metadata,source->maps[page].bytes[i]);

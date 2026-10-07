@@ -1,0 +1,30 @@
+{
+  "format": "authenticated-c-image-admission-candidate-v1",
+  "status": "pass",
+  "baselineCommit": "106661a",
+  "baselineVm": "image admission APIs absent; same test refuses",
+  "compiler": {"bytes":473106,"sha256":"c75f29d9db0d544114d530520259ebcee0a6a8bb332ee3c27bf3f01cb908f838"},
+  "vm": {"bytes":94517,"sha256":"6a7a363891a34c92b663a23d9fb86b26fb1ff15cb302e06aad614475751e0199"},
+  "multi": {
+    "elfBytes":10224,"elfSha256":"199b14e5b88729d8eb8ae6641513d92c5b2f940616b8844484ab086242d91e4b",
+    "rootRefSha256":"083ccbac561eb2cbf24da9e0cb046b28961b562f5360551da04a72544b457df9",
+    "coordinates":384,"modules":2,"moduleBytes":40598,"directoryBytes":51246,
+    "previousDirectoryBytes":50475,"admissionMetadataGrowth":771,
+    "comparisons":1152,"refusals":13,"engineConstructions":6,"engineLookups":6,
+    "nodeReads":12,"objectReads":8,"previousReloadNodeReads":2307,"previousReloadObjectReads":1154
+  },
+  "cross": {
+    "elfBytes":5624,"elfSha256":"dd4467d932b0aa947ab9f6001bad8b116833e0e30ba6890a14841fdeaace982f",
+    "rootRefSha256":"d45d762293b43b36e584a82f612b4c3a34993e8bd245d48c4f5b65ace45c49ea",
+    "textAddress":"0x401ffd","coordinates":6,"comparisons":18,"refusals":15,
+    "engineConstructions":3,"engineLookups":3,"nodeReads":9,"objectReads":5,"tailAdmissions":6
+  },
+  "executionCompilerCalls":0,
+  "sourceIdentity": "authenticated C source row; source ELF not readAll in VM",
+  "browser": {"actualInAppWorker":"pass","secureContext":true,"isolated":false,"sameSharedNodeTest":true,"reportedThenTerminated":true},
+  "checks": {"fullCompilerAndVm":"pass","scopedAddressUndefinedSanitizers":"pass","oldSourceAdmission":"512 cold + 512 hot full CPU comparisons","oldSourceModule":"780 native/C-MMU comparisons + 3 crossing","directoryNativeColdParity":"7 queries / 15 refusals"},
+  "publishedMake": "7183 missing; first dfe8 at 0xa0c9; no root publication",
+  "newProductionRoot":false,
+  "linuxBoot":"not-achieved",
+  "scope":"Local trusted compiler/ELF fixtures and same-compiler C-MMU parity, not signed release, independent native ISA proof, global work/span/storage minimum, RSS reclamation or Linux speed/boot. Native publication/human UI unchanged."
+}

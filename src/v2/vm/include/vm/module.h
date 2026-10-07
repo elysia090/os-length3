@@ -23,4 +23,12 @@ typedef struct {
 int vm_module_open(const pl_u8 *bytes,pl_u32 length,vm_module *out);
 int vm_module_find(const vm_module *module,pl_u64 generation,pl_u32 source_offset,
     pl_u32 limit,vm_module_entry *out);
+
+typedef struct {
+    const pl_u8 *ranges,*lengths,*source,*digest;
+    pl_u32 code_bytes,count,range_count,witness_bytes;
+} vm_image_module;
+int vm_image_module_open(const pl_u8 *bytes,pl_u32 length,vm_image_module *out);
+int vm_image_module_find(const vm_image_module *module,pl_u64 coordinate,pl_u32 limit,
+    vm_module_entry *out);
 #endif

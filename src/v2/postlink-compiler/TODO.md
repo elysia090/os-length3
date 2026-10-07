@@ -23,6 +23,22 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+The complete small-image C Artifact -> source/span/bias -> ordinary entry
+connection now passes the SAME test in Node and the actual browser Worker.
+384 coordinates x 3 biases = 1,152 full CPU/segment/port/RAM comparisons,
+6 code constructions, zero execution compiler calls. Pinned C image selection
+reduces the reload driver's node/object reads from 2,307/1,154 to 12/8; hot
+whole-Wasm lookups are only 6. A real page-crossing ELF adds 18 comparisons,
+6 admitted tails and 15 refusal controls (28 refusals total). Failed TAIL
+selection preserves the previous coordinate, then C extend/reselect succeeds.
+All compiler/VM regressions, old source paths and scoped ASan/UBSan pass.
+The directory grows 50,475 -> 51,246 bytes (+771 necessary admission witness),
+not a distribution-size improvement. Complete Linux/ISA/source-context and
+generation closure/residency/recovery remain open; actual published make still
+refuses 7,183 missing coordinates, first dfe8. Raw-page startup is not migrated
+by this fixture green. No Linux boot/shell, signed root, crash/RSS or speed claim.
+See [C execution boundary, reuse, actual browser and limits](../vm/check/browser/evidence/2026-10-07-image-admission.md).
+
 Whole-image preflight and deterministic adaptive module iteration now replace
 the directory constructor's former global 256-coordinate restriction. The
 compiler core remains Artifact/filesystem-independent; CLI --directory is its
@@ -39,10 +55,11 @@ is 16-bit, UMIP fault precedes access. 288 C-MMU models (216 faults) pass, not a
 hardware-proof claim. Full compiler/VM regressions and scoped sanitizers pass.
 Actual published make now fails --directory with -102 BEFORE creating any
 directory/root, not the old -104 size stub. 7,183 actual final-PF_X misses remain;
-first is still dfe8. Complete ISA/source-context closure AND C image execution
-admission/residency remain the main blockers. Delivery readiness is not source
-admission: IMAGE_MODULE is a distinct resource role and cannot use the old
-selected-cut metadata path. No new signed production root or browser boot.
+first is still dfe8. At that directory-only checkpoint, C image execution
+admission was still missing; the new checkpoint above supplies it for small
+images. Complete ISA/source-context closure and production image residency
+remain blockers. IMAGE_MODULE keeps its distinct admission role rather than
+using selected-cut metadata. No new signed production root or Linux boot.
 See [producer/delivery contract, measurements and limits](../vm/check/browser/evidence/2026-10-07-image-directory.md).
 
 The ordinary ELF CLI and cold C compiler now generate a complete final-PF_X
@@ -335,8 +352,10 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    speedups. An /init announcement is not PID 1.
 
 3. Close optimized-ELF and executable-generation admission.
-   Whole-image `wasm-compiler INPUT.elf OUTPUT.wasm` remains -104:
-   complete function/control/dispatch coverage is unpublished. Every required
+   Single-file `wasm-compiler INPUT.elf OUTPUT.wasm` still refuses larger
+   domains -104; whole-image prepared iteration/CLI --directory now work for
+   fully lowerable inputs. Small-image C execution admission is connected.
+   Actual Linux/ISA/source-context/generation closure is NOT published. Every required
    relinked instruction and precise fault cut must lower to the same ABI.
    Generated code/text mutations need fenced accepted generations, complete
    coverage and atomic publication outside in-flight execution.
@@ -350,9 +369,9 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    Mixed cut imports can now share one typed standard-Wasm module through the
    same emitter. Derive its complete admitted coordinate population from final
    ELF/load/generation obligations, never from proof counts or observed RIPs.
-   Connect the existing compiler-produced module/page projection to the C
-   Artifact path above, with source span/binding/CPU-proof admission carried
-   from accepted optimized ELF. Do not populate it from observed RIPs and call
+   Extend the now-connected C image projection to full actual Linux domains,
+   with CPU/load/proof and executable-generation admission from the accepted
+   optimized ELF. Do not populate it from observed RIPs and call
    that complete closure. C authenticated lookup should replace repeated cold
    reconstruction of already compiled transfers; it is not a second compiler.
 

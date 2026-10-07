@@ -41,6 +41,7 @@ SOURCES += src/emit-interface.c
 SOURCES += src/coverage.c
 SOURCES += src/lower-register-update.c
 SOURCES += src/image.c src/image-stream.c
+SOURCES += src/emit-image-metadata.c
 
 .PHONY: register-update-check
 .PHONY: literal-check
@@ -83,18 +84,22 @@ image-stream-check: $(BUILD)/image-stream-check fixture-tools
 $(BUILD)/image-stream-check: check/image-stream.c cli/io.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< cli/io.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: image-path-check
-image-path-check: $(BUILD)/image-check fixture-tools
+image-path-check: $(BUILD)/image-check $(BUILD)/image-module-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
 	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs check/image-fixture.S -o "$$scratch/linked.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
 	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
 	$(BUILD)/image-check "$$scratch/optimized.elf"; \
+	$(BUILD)/image-module-check "$$scratch/optimized.elf"; \
 	$(CC) -DIMAGE_SHARED -nostdlib -shared -Wl,--build-id=none,--emit-relocs check/image-fixture.S -o "$$scratch/linked-shared.elf"; \
 	../postlink-compiler/build/postlink-compiler "$$scratch/linked-shared.elf" -o "$$scratch/optimized-shared.elf"; \
 	../optimized-x86/build/postlink-verify "$$scratch/linked-shared.elf" "$$scratch/optimized-shared.elf"; \
-	$(BUILD)/image-check "$$scratch/optimized-shared.elf"
+	$(BUILD)/image-check "$$scratch/optimized-shared.elf"; \
+	$(BUILD)/image-module-check "$$scratch/optimized-shared.elf"
 $(BUILD)/image-check: check/image.c cli/io.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< cli/io.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+$(BUILD)/image-module-check: check/image-module.c cli/io.c cli/io.h ../vm/core/module.c ../vm/include/vm/module.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -I../vm/include $< cli/io.c ../vm/core/module.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: quotient-cap-check
 check: quotient-cap-check
 quotient-cap-check: $(BUILD)/quotient-cap-check

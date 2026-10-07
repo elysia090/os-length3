@@ -17,6 +17,7 @@
 #include <vm/directory.h>
 #include <vm/module.h>
 #include <machine/state.h>
+#include <support/checked.h>
 #include "../core/memory-internal.h"
 #include <stdint.h>
 
@@ -33,6 +34,14 @@ static vm_directory artifact_directory;
 static pl_u32 artifact_module_offset,artifact_module_bytes;
 static pl_u64 artifact_module_ticket;
 static vm_module artifact_module;
+static vm_image_module artifact_image;
+static pl_u8 artifact_image_source[32];
+static pl_u32 artifact_image_source_bound;
+static void artifact_witness_clear(void)
+{
+    artifact_module_offset=artifact_module_bytes=0u;artifact_module_ticket=0u;
+    artifact_module=(vm_module){0};artifact_image=(vm_image_module){0};
+}
 static pl_u32 source_limit;
 static pl_u64 source_demands;
 static pl_u32 source_admissions, run_interrupted;
@@ -141,8 +150,7 @@ void vm_close(void)
     vm_execution_close(&execution);
     activity = (machine_activity){ MACHINE_ACTIVITY_RUNNING };
     vm_directory_close(&artifact_directory);
-    artifact_module_offset=artifact_module_bytes=0u;artifact_module_ticket=0u;
-    artifact_module=(vm_module){0};
+    artifact_witness_clear();artifact_image_source_bound=0u;
     source_limit = 0u;
     source_demands=0u;source_admissions=run_interrupted=0u;
     run_source_rank=VM_SOURCE_ROWS;
@@ -337,7 +345,7 @@ int vm_directory_bind(pl_u32 root_offset,pl_u64 generation,pl_u32 maximum_object
     if (!directory_boundary() || !private_record(root_offset,PL_INDEX_REF_BYTES))
         return VM_DIRECTORY_ERROR_INPUT;
     if (generation!=resident.generation) return VM_DIRECTORY_ERROR_STALE;
-    artifact_module_offset=artifact_module_bytes=0u;artifact_module_ticket=0u;artifact_module=(vm_module){0};
+    artifact_witness_clear();artifact_image_source_bound=0u;
     pl_index_ref root;
     if (pl_index_ref_read((const pl_u8 *)(uintptr_t)root_offset,&root)) {
         vm_directory_close(&artifact_directory);return VM_DIRECTORY_ERROR_INPUT;
@@ -349,7 +357,7 @@ int vm_directory_query(pl_u64 generation,pl_u64 major,pl_u64 minor,pl_u32 expect
     if (!directory_boundary()) return VM_DIRECTORY_ERROR_BUSY;
     if (generation!=resident.generation) return VM_DIRECTORY_ERROR_STALE;
     int status=vm_directory_begin(&artifact_directory,generation,(pl_index_key){major,minor},expected_kind);
-    if(!status){artifact_module_offset=artifact_module_bytes=0u;artifact_module_ticket=0u;artifact_module=(vm_module){0};}
+    if(!status)artifact_witness_clear();
     return status;
 }
 /* Transport DTO: generation, ticket, opaque digest[32], bytes, resource kind.
@@ -385,12 +393,12 @@ int vm_directory_object_commit(pl_u32 source,pl_u32 bytes,pl_u64 generation,pl_u
     if (!directory_boundary() || !private_record(source,bytes) || !bytes) return VM_DIRECTORY_ERROR_INPUT;
     if (generation!=resident.generation) return VM_DIRECTORY_ERROR_STALE;
     int status=vm_directory_object(&artifact_directory,generation,ticket,(const pl_u8 *)(uintptr_t)source,bytes);
-    if(!status){artifact_module_offset=source;artifact_module_bytes=bytes;artifact_module_ticket=ticket;artifact_module=(vm_module){0};}
+    if(!status){artifact_witness_clear();artifact_module_offset=source;artifact_module_bytes=bytes;artifact_module_ticket=ticket;}
     return status;
 }
 void vm_directory_cancel_request(void) {
     vm_directory_cancel(&artifact_directory);
-    artifact_module_offset=artifact_module_bytes=0u;artifact_module_ticket=0u;artifact_module=(vm_module){0};
+    artifact_witness_clear();
 }
 pl_u32 vm_directory_status(void) { return artifact_directory.stage; }
 
@@ -399,6 +407,18 @@ pl_u32 vm_directory_status(void) { return artifact_directory.stage; }
  * guest instructions or accept source/span/binding from JavaScript. The host
  * must keep the object unchanged until prefix consumption and publication;
  * replacing/reusing its private buffer requires cancel/query/rebind first. */
+static int source_witness_match(const pl_u8 *witness,pl_u32 bytes,pl_u64 generation)
+{
+    pl_u32 first=4096u-(pl_u32)(sources.pending_entry&4095u);if(first>bytes)first=bytes;
+    const pl_u8 *source=resident.bytes+sources.pending_page.offset+(sources.pending_entry&4095u);
+    for(pl_u32 i=0u;i<first;++i)if(source[i]!=witness[i])return VM_MODULE_ERROR_SOURCE;
+    pl_u32 tail=bytes-first;
+    if(tail){if(sources.pending_pages!=2u)return VM_MODULE_ERROR_TAIL;
+        if(sources.pending_next.generation!=generation)return VM_MODULE_ERROR_SOURCE;
+        source=resident.bytes+sources.pending_next.offset;
+        for(pl_u32 i=0u;i<tail;++i)if(source[i]!=witness[first+i])return VM_MODULE_ERROR_SOURCE;}
+    return 0;
+}
 static int directory_source_entry(pl_u64 generation,pl_u64 ticket,vm_module_entry *out)
 {
     if(!directory_boundary() || !sources.pending || !artifact_module_offset || !artifact_module_bytes)
@@ -420,18 +440,8 @@ static int directory_source_entry(pl_u64 generation,pl_u64 ticket,vm_module_entr
     vm_module_entry selected;
     int status=vm_module_find(&artifact_module,generation,offset,sources.pending_limit,&selected);
     if(status)return status;
-    pl_u32 first=4096u-(pl_u32)(sources.pending_entry&4095u);
-    if(first>selected.source_bytes)first=selected.source_bytes;
     const pl_u8 *witness=artifact_module.source+offset;
-    const pl_u8 *source=resident.bytes+sources.pending_page.offset+(sources.pending_entry&4095u);
-    for(pl_u32 i=0u;i<first;++i)if(source[i]!=witness[i])return VM_MODULE_ERROR_SOURCE;
-    pl_u32 tail=selected.source_bytes-first;
-    if(tail){
-        if(sources.pending_pages!=2u)return VM_MODULE_ERROR_TAIL;
-        if(sources.pending_next.generation!=generation)return VM_MODULE_ERROR_SOURCE;
-        source=resident.bytes+sources.pending_next.offset;
-        for(pl_u32 i=0u;i<tail;++i)if(source[i]!=witness[first+i])return VM_MODULE_ERROR_SOURCE;
-    }
+    status=source_witness_match(witness,selected.source_bytes,generation);if(status)return status;
     *out=selected;return 0;
 }
 int vm_directory_module_plan(pl_u64 generation,pl_u64 ticket,pl_u32 target)
@@ -456,6 +466,77 @@ int vm_directory_source_publish(pl_u64 generation,pl_u64 ticket,pl_u32 row_targe
      * immutable buffer pinning are supervisor obligations, not opcode checks. */
     return vm_sources_publish(&sources,selected.source_bytes,selected.source_instructions,selected.operand_binding,
         (vm_execution_row *)(uintptr_t)row_target);
+}
+
+/* Bind the source identity from an authenticated exact (0,0) source row.
+ * The source object need not be copied/readAll to learn its identity. This is
+ * selected-root authorization context, not an ELF/optimizer proof verifier. */
+int vm_directory_image_source_bind(pl_u64 generation,pl_u64 ticket)
+{
+    if(!directory_boundary())return VM_DIRECTORY_ERROR_BUSY;
+    if(generation!=resident.generation || generation!=artifact_directory.generation
+        || ticket!=artifact_directory.ticket || !ticket)return VM_DIRECTORY_ERROR_STALE;
+    if((artifact_directory.stage!=VM_DIRECTORY_OBJECT && artifact_directory.stage!=VM_DIRECTORY_READY)
+        || artifact_directory.resource.object.kind!=ARTIFACT_RESOURCE_IMAGE_SOURCE
+        || artifact_directory.resource.key.major || artifact_directory.resource.key.minor)return VM_MODULE_ERROR_INPUT;
+    for(pl_u32 i=0u;i<32u;++i)artifact_image_source[i]=artifact_directory.resource.object.digest[i];
+    artifact_image_source_bound=1u;return 0;
+}
+static int directory_image_entry(pl_u64 generation,pl_u64 ticket,vm_module_entry *out)
+{
+    if(!directory_boundary() || !sources.pending || !artifact_image_source_bound
+        || !artifact_module_offset || !artifact_module_bytes)return VM_MODULE_ERROR_INPUT;
+    if(generation!=resident.generation || generation!=artifact_directory.generation
+        || artifact_directory.stage!=VM_DIRECTORY_READY || ticket!=artifact_directory.ticket
+        || ticket!=artifact_module_ticket)return VM_DIRECTORY_ERROR_STALE;
+    if(artifact_directory.resource.object.kind!=ARTIFACT_RESOURCE_IMAGE_MODULE
+        || !private_record(artifact_module_offset,artifact_module_bytes)
+        || sources.pending_page.generation!=generation || sources.pending_entry!=((machine_state *)(uintptr_t)state_offset)->rip)
+        return VM_MODULE_ERROR_INPUT;
+    if(!artifact_image.code_bytes){int status=vm_image_module_open((const pl_u8 *)(uintptr_t)artifact_module_offset,
+        artifact_module_bytes,&artifact_image);if(status)return status;}
+    for(pl_u32 i=0u;i<32u;++i)if(artifact_image.digest[i]!=artifact_image_source[i])return VM_MODULE_ERROR_SOURCE;
+    const pl_u8 *last=artifact_image.ranges+(artifact_image.range_count-1u)*MACHINE_IMAGE_RANGE_BYTES;
+    if(pl_read_u64(artifact_image.ranges)!=artifact_directory.resource.key.minor
+        || pl_read_u64(last)+pl_read_u16(last+8u)!=artifact_directory.resource.coordinate)return VM_MODULE_ERROR_SOURCE;
+    vm_module_entry selected;int status=vm_image_module_find(&artifact_image,artifact_directory.key.minor,sources.pending_limit,&selected);
+    if(!status)status=source_witness_match(artifact_image.source+selected.source_offset,selected.source_bytes,generation);
+    if(status)return status;
+    *out=selected;return 0;
+}
+int vm_directory_image_plan(pl_u64 generation,pl_u64 ticket,pl_u32 target)
+{
+    if(!private_record(target,MACHINE_IMAGE_PLAN_BYTES)
+        || !separate(target,MACHINE_IMAGE_PLAN_BYTES,artifact_module_offset,artifact_module_bytes))return VM_MODULE_ERROR_INPUT;
+    vm_module_entry selected;int status=directory_image_entry(generation,ticket,&selected);if(status)return status;
+    pl_u8 *plan=(pl_u8 *)(uintptr_t)target;
+    vm_memory_store(plan,artifact_module_offset,4u);vm_memory_store(plan+4u,artifact_image.code_bytes,4u);
+    vm_memory_store(plan+8u,sources.pending_entry-artifact_directory.key.minor,8u);
+    vm_memory_store(plan+16u,artifact_image.count,4u);vm_memory_store(plan+20u,0u,4u);return 0;
+}
+/* Explicit reuse of the still-pinned immutable verified object. The caller
+ * must cancel/query/rebind before overwriting its buffer. This changes only
+ * the requested coordinate inside the already authenticated interval; the
+ * payload ticket is not a new transport reply or source execution lease. */
+int vm_directory_image_select(pl_u64 generation,pl_u64 coordinate)
+{
+    if(!directory_boundary() || !sources.pending || artifact_directory.stage!=VM_DIRECTORY_READY
+        || artifact_directory.resource.object.kind!=ARTIFACT_RESOURCE_IMAGE_MODULE)return VM_MODULE_ERROR_INPUT;
+    if(generation!=resident.generation || generation!=artifact_directory.generation)return VM_DIRECTORY_ERROR_STALE;
+    if(coordinate<artifact_directory.resource.key.minor || coordinate>=artifact_directory.resource.coordinate)
+        return VM_MODULE_ERROR_ABSENT;
+    pl_index_key previous=artifact_directory.key;
+    artifact_directory.key=(pl_index_key){artifact_directory.resource.key.major,coordinate};
+    vm_module_entry selected;int status=directory_image_entry(generation,artifact_module_ticket,&selected);
+    if(status)artifact_directory.key=previous;
+    return status;
+}
+int vm_directory_image_publish(pl_u64 generation,pl_u64 ticket,pl_u32 row_target)
+{
+    if(!execution_record(row_target,sizeof(vm_execution_row))
+        || !separate(row_target,sizeof(vm_execution_row),artifact_module_offset,artifact_module_bytes))return VM_MODULE_ERROR_INPUT;
+    vm_module_entry selected;int status=directory_image_entry(generation,ticket,&selected);if(status)return status;
+    return vm_sources_publish(&sources,selected.source_bytes,1u,0u,(vm_execution_row *)(uintptr_t)row_target);
 }
 
 int vm_page_prepare(pl_u32 port, pl_u32 record)
