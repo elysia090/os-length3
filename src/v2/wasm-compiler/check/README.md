@@ -1,5 +1,11 @@
 # Compiler boundary checkpoint — 2026-10-02
 
+2026-10-07 source-module connection: native/cold standard Wasm metadata,
+exact old code prefix, 130 native observations / 780 C source/MMU/table rows
+and two-page/crossing controls pass without repeated compiler construction.
+This selected domain is NOT whole ELF or Linux/browser delivery. See
+[reproduction and remaining obligations](../../vm/check/browser/evidence/2026-10-07-source-module.md).
+
 2026-10-07 common MOV-to-segment memory frontier: 750 native/cold module byte
 matches and actual C-MMU/table comparisons, source-before-descriptor fault
 priority, 9,750 malformed-law refusals, scoped sanitizers and full product checks

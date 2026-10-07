@@ -1,5 +1,12 @@
 # Browser projection of OS Length3 Linux
 
+New independent C connection carries compiled span/binding/ordinal metadata
+through the authenticated reader, not JavaScript. A 130-coordinate source
+domain reuses one code collection beyond the 64-row source owner without
+compiler calls. This is not a complete Linux projection or a browser-crash
+fix; whole ELF remains -104. See
+[protocol and honest scope](../vm/check/browser/evidence/2026-10-07-source-module.md).
+
 2026-10-07 latest actual-browser failure: /init startup and crng are observed,
 but the long tab subsequently says `This page crashed`. No final result/shell;
 the old Worker is not confirmed live. Crash cause/native-code RSS are unproved.

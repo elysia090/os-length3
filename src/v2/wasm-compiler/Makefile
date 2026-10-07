@@ -19,6 +19,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 WASM_FLAGS += -Wl,--export=compiler_entry_abi
 WASM_FLAGS += -Wl,--export=compiler_emit_module
+WASM_FLAGS += -Wl,--export=compiler_emit_projection
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-string.c src/lower-branch.c
@@ -66,6 +67,14 @@ $(BUILD)/count-branch-check: check/count-branch.c check/native-cut.S $(BUILD)/li
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: cut-module-check
+.PHONY: source-module-check
+check: source-module-check
+source-module-check: $(BUILD)/source-module-check
+	$(BUILD)/source-module-check
+include ../artifact/sources.mk
+SOURCE_MODULE_FIXTURE_SOURCES = $(addprefix ../artifact/,$(ARTIFACT_INDEX_SOURCES)) ../support/src/sha256.c
+$(BUILD)/source-module-check: check/source-module.c check/native-cut.S ../vm/core/module.c ../vm/include/vm/module.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) $(SOURCE_MODULE_FIXTURE_SOURCES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) -I../vm/include -I../artifact/include $< check/native-cut.S ../vm/core/module.c $(SOURCE_MODULE_FIXTURE_SOURCES) $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: cut-module-check
 cut-module-check: $(BUILD)/cut-module-check
 	$(BUILD)/cut-module-check

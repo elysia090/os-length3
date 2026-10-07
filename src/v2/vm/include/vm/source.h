@@ -74,7 +74,9 @@ int vm_sources_reuse(vm_sources *sources, const vm_code_page *page,
  * A pending source mutation cancels publication even if bytes changed back. */
 int vm_sources_publish(vm_sources *sources, pl_u32 bytes, pl_u32 instructions,
     pl_u32 operand_binding, vm_execution_row *row);
-/* Extend a pinned miss or validate the cached tail from executable C-MMU
+/* A trusted decoder FETCH or C-validated source-module TAIL descriptor may
+ * demand the tail. Neither permits the host to guess an instruction extent.
+ * Extend a pinned miss or validate the cached tail from executable C-MMU
  * admission. 0: complete hit, 1: pinned two-page miss, -1: refusal. */
 int vm_sources_extend(vm_sources *sources, const vm_code_page *next,
     vm_execution_row *row);

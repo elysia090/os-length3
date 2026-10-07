@@ -39,12 +39,14 @@ WASM_FLAGS += -Wl,--export=vm_run_source
 WASM_FLAGS += -Wl,--export=vm_directory_bind,--export=vm_directory_query,--export=vm_directory_request
 WASM_FLAGS += -Wl,--export=vm_directory_node_commit,--export=vm_directory_object_commit
 WASM_FLAGS += -Wl,--export=vm_directory_cancel_request,--export=vm_directory_status
+WASM_FLAGS += -Wl,--export=vm_directory_module_plan,--export=vm_directory_source_publish
 ifeq ($(WASM_PROFILE),1)
 WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile
 endif
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
 SOURCES += core/system.c
 SOURCES += core/directory.c
+SOURCES += core/module.c
 include ../artifact/sources.mk
 ARTIFACT_PROVIDER_SOURCES = $(addprefix ../artifact/,$(ARTIFACT_INDEX_SOURCES)) ../support/src/sha256.c
 WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
@@ -90,6 +92,7 @@ $(WASM_OUTPUT): core/uart.c include/vm/uart.h
 $(WASM_OUTPUT): core/console.c include/vm/console.h
 $(WASM_OUTPUT): core/interrupt.c include/vm/interrupt.h
 $(WASM_OUTPUT): core/system.c include/vm/system.h ../machine-abi/include/machine/system.h
+$(WASM_OUTPUT): ../machine-abi/include/machine/module.h
 
 # The provider shares ordinary machine memory with generated functions. It has
 # no WASI, source-decoder or JavaScript instruction/byte callback imports.

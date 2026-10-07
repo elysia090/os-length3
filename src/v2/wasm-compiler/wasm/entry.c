@@ -108,10 +108,10 @@ int compiler_emit(pl_u64 entry, pl_u32 maximum_instructions,
                                        (pl_u8 *)(uintptr_t)target,capacity,&written,report);
 }
 
-int compiler_emit_module(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 capacity,pl_u32 report_offset)
+static int emit_collection(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 capacity,pl_u32 report_offset,int projection)
 {
     pl_u64 cut_bytes=(pl_u64)count*sizeof(wasm_cut_options),report_bytes=(pl_u64)count*sizeof(wasm_cut_report);
-    if(!mode || !count || count>WASM_CUT_MODULE_MAX_FUNCTIONS || !capacity || capacity>WASM_CUT_MODULE_MAX_BYTES
+    if(!mode || (projection && mode!=2u) || !count || count>WASM_CUT_MODULE_MAX_FUNCTIONS || !capacity || capacity>WASM_CUT_MODULE_MAX_BYTES
             || (cut_offset&7u) || (report_offset&7u) || !range(cut_offset,cut_bytes)
             || !range(target,capacity) || !range(report_offset,report_bytes)
             || overlaps(target,capacity,(const void *)(uintptr_t)report_offset,report_bytes)
@@ -126,6 +126,12 @@ int compiler_emit_module(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 cap
                 || overlaps(report_offset,report_bytes,maps[i].bytes,maps[i].file_bytes))return WASM_COMPILER_ERROR_INPUT;
     const wasm_cut_options *cuts=(const wasm_cut_options *)(uintptr_t)cut_offset;
     pl_u64 written=0u;wasm_cut_report *reports=(wasm_cut_report *)(uintptr_t)report_offset;
+    if(projection)return wasm_compiler_emit_code_projection(&source,source_generation,cuts,count,
+        (pl_u8 *)(uintptr_t)target,capacity,&written,reports);
     return mode==1u?wasm_compiler_emit_cut_module(&compiler,cuts,count,(pl_u8 *)(uintptr_t)target,capacity,&written,reports)
         :wasm_compiler_emit_code_module(&source,source_generation,cuts,count,(pl_u8 *)(uintptr_t)target,capacity,&written,reports);
 }
+int compiler_emit_module(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 capacity,pl_u32 report_offset)
+{return emit_collection(cut_offset,count,target,capacity,report_offset,0);}
+int compiler_emit_projection(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 capacity,pl_u32 report_offset)
+{return emit_collection(cut_offset,count,target,capacity,report_offset,1);}

@@ -23,6 +23,17 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+New C compiler -> authenticated C source-admission metadata connection:
+standard Wasm custom section, exact unchanged executable prefix, ordinal/span/
+binding chosen in C and current source bytes compared before publication.
+130 native rows / 780 C-MMU/table comparisons exceed the unchanged 64-row
+source owner with zero compiler calls during reuse and one code construction.
+Crossing/two-page and stale/write/budget/cancel controls, scoped sanitizers and
+product checks pass. This is NOT a complete ELF/Linux root, canonical storage
+minimum or browser-crash fix. Whole ELF remains -104; startup is still on its
+old fresh-compilation path. No partial observed-domain root may replace closure.
+See [protocol, scope and exact receipt](../vm/check/browser/evidence/2026-10-07-source-module.md).
+
 2026-10-07 same-bundle real-browser long run is now TERMINAL: last visible
 236,680,689 retired / 129,048,368 admissions, /init startup and crng logs, then
 tab metadata `This page crashed`. No final result or shell; do not assume the

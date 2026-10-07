@@ -1,5 +1,9 @@
 # Browser boundary observations
 
+New independent C/Node work: [compiled-source metadata into C admission](2026-10-07-source-module.md)
+and [exact receipt](2026-10-07-source-module-green.json). No new browser run,
+working terminal, signed Linux projection or renderer-lifetime improvement.
+
 2026-10-07 latest: [actual long-browser crash observation](2026-10-07-browser-crash.json)
 and [separate selector-memory candidate](2026-10-07-selector-memory.md).
 /init startup and crng precede terminal renderer failure; no shell or final

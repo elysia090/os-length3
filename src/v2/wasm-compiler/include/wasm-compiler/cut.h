@@ -56,6 +56,18 @@ int wasm_compiler_emit_code_module(const pl_x86_image *source,pl_u64 generation,
     const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
     pl_u64 *written,wasm_cut_report *reports);
 
+/* Same code collection, with a trailing standard machine.source custom
+ * section carrying derived span/binding/ordinal metadata and one borrowed
+ * source-page witness. The code prefix remains byte-identical to the ordinary
+ * collection, so metadata does not split executable-body identity. Reports'
+ * module_bytes includes this non-executable projection. This explicitly
+ * selected cut domain is NOT whole-image closure or a release authorization.
+ * Storage must share/rederive its source witness from the canonical owner;
+ * it is not a second canonical program. Total object cap remains <=64 KiB. */
+int wasm_compiler_emit_code_projection(const pl_x86_image *source,pl_u64 generation,
+    const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
+    pl_u64 *written,wasm_cut_report *reports);
+
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
  * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry,
  *     i32 operand_binding) -> i64 machine_result (machine-entry ABI 3).

@@ -1,5 +1,6 @@
 #include "cut-internal.h"
 #include <stdint.h>
+#include <machine/module.h>
 
 static int overlaps(const void *left, pl_u64 left_bytes,
                      const void *right, pl_u64 right_bytes)
@@ -162,9 +163,11 @@ int wasm_compiler_emit_code_cut(const pl_x86_image *source, pl_u64 generation,
 
 static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,pl_u64 generation,
     const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
-    pl_u64 *written,wasm_cut_report *reports)
+    pl_u64 *written,wasm_cut_report *reports,int projection)
 {
     if(!cuts || !count || count>WASM_CUT_MODULE_MAX_FUNCTIONS || !target || !written)
+        return WASM_COMPILER_ERROR_INPUT;
+    if(projection && (compiler || !source || !source->map_count || source->map_count>2u))
         return WASM_COMPILER_ERROR_INPUT;
     pl_u32 limit=cuts[0].maximum_module_bytes,imports=0u;
     if(!limit || limit>WASM_CUT_MODULE_MAX_BYTES)return WASM_COMPILER_ERROR_INPUT;
@@ -184,13 +187,31 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
             return WASM_COMPILER_ERROR_CAPACITY;
     }
     wasm_writer measure={0,~0ull,0u,0};wasm_module_prefix(&measure,imports,count,code_bytes);
-    pl_u64 total=measure.used+code_bytes-wasm_uleb_bytes(count);
+    pl_u64 code_total=measure.used+code_bytes-wasm_uleb_bytes(count),total=code_total;
+    static const pl_u8 name[]=MACHINE_SOURCE_SECTION;
+    pl_u32 metadata_bytes=0u;
+    if(projection){
+        metadata_bytes=wasm_uleb_bytes(sizeof name-1u)+(pl_u32)sizeof name-1u
+            +MACHINE_SOURCE_HEADER_BYTES+count*MACHINE_SOURCE_ROW_BYTES+source->map_count*4096u;
+        total+=1u+wasm_uleb_bytes(metadata_bytes)+metadata_bytes;
+    }
     if(measure.error)return measure.error;
     if(total>limit || total>capacity)return WASM_COMPILER_ERROR_CAPACITY;
     if(result_aliases(compiler,source,cuts,option_bytes,written,reports,report_bytes)
             || target_aliases(compiler,source,cuts,option_bytes,target,total,written,reports,report_bytes))
         return WASM_COMPILER_ERROR_INPUT;
     wasm_writer writer={target,capacity,0u,0};wasm_module_prefix(&writer,imports,count,code_bytes);
+    wasm_writer metadata={target,capacity,code_total,0};
+    if(projection){
+        wasm_writer_byte(&metadata,0u);wasm_writer_uleb(&metadata,metadata_bytes);
+        wasm_writer_uleb(&metadata,sizeof name-1u);
+        for(pl_u32 i=0u;i<sizeof name-1u;++i)wasm_writer_byte(&metadata,name[i]);
+        pl_u8 header[MACHINE_SOURCE_HEADER_BYTES]={0};
+        pl_write_u32(header,MACHINE_SOURCE_VERSION);pl_write_u32(header+4u,MACHINE_ABI_VERSION);
+        pl_write_u32(header+8u,MACHINE_ENTRY_ABI_VERSION);pl_write_u32(header+12u,count);
+        pl_write_u64(header+16u,generation);pl_write_u32(header+24u,source->map_count);
+        for(pl_u32 i=0u;i<sizeof header;++i)wasm_writer_byte(&metadata,header[i]);
+    }
     for(pl_u32 i=0u;i<count;++i){
         pl_u64 body_bytes;int status=prepare(compiler,source,generation,cuts+i,&plan,&body_bytes);
         if(status || body_bytes!=bodies[i])return status?status:WASM_COMPILER_ERROR_GRAMMAR;
@@ -198,14 +219,32 @@ static int emit_module(const wasm_compiler *compiler,const pl_x86_image *source,
         status=cut_emit_body(&writer,&plan,&report,imports);
         if(status)return status;
         report.module_bytes=total;if(reports)reports[i]=report;
+        if(projection){
+            pl_u8 row[MACHINE_SOURCE_ROW_BYTES]={0};
+            pl_write_u32(row,(pl_u32)(cuts[i].entry-source->maps[0].address));
+            pl_write_u16(row+4u,(pl_u16)report.source_bytes);
+            pl_write_u16(row+6u,(pl_u16)report.source_instructions);
+            pl_write_u16(row+8u,(pl_u16)cuts[i].maximum_source_instructions);
+            pl_write_u32(row+12u,report.operand_binding);
+            for(pl_u32 j=0u;j<sizeof row;++j)wasm_writer_byte(&metadata,row[j]);
+        }
     }
     if(writer.error)return writer.error;
-    if(writer.used!=total)return WASM_COMPILER_ERROR_GRAMMAR;
+    if(writer.used!=code_total)return WASM_COMPILER_ERROR_GRAMMAR;
+    if(projection){
+        for(pl_u32 page=0u;page<source->map_count;++page)
+            for(pl_u32 i=0u;i<4096u;++i)wasm_writer_byte(&metadata,source->maps[page].bytes[i]);
+        if(metadata.error)return metadata.error;
+        if(metadata.used!=total)return WASM_COMPILER_ERROR_GRAMMAR;
+    }
     *written=total;return 0;
 }
 int wasm_compiler_emit_cut_module(const wasm_compiler *compiler,const wasm_cut_options *cuts,
     pl_u32 count,pl_u8 *target,pl_u64 capacity,pl_u64 *written,wasm_cut_report *reports)
-{ return emit_module(compiler,0,0u,cuts,count,target,capacity,written,reports); }
+{ return emit_module(compiler,0,0u,cuts,count,target,capacity,written,reports,0); }
 int wasm_compiler_emit_code_module(const pl_x86_image *source,pl_u64 generation,const wasm_cut_options *cuts,
     pl_u32 count,pl_u8 *target,pl_u64 capacity,pl_u64 *written,wasm_cut_report *reports)
-{ return emit_module(0,source,generation,cuts,count,target,capacity,written,reports); }
+{ return emit_module(0,source,generation,cuts,count,target,capacity,written,reports,0); }
+int wasm_compiler_emit_code_projection(const pl_x86_image *source,pl_u64 generation,const wasm_cut_options *cuts,
+    pl_u32 count,pl_u8 *target,pl_u64 capacity,pl_u64 *written,wasm_cut_report *reports)
+{ return emit_module(0,source,generation,cuts,count,target,capacity,written,reports,1); }
