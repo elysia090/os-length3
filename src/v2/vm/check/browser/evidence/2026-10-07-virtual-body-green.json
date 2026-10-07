@@ -1,0 +1,59 @@
+{
+  "format": "virtual-body-quotient-candidate-v1",
+  "status": "pass",
+  "baselineCommit": "3d9c7ba",
+  "capacity": {
+    "oldStatusAt8000": -103,
+    "newStatusAt8000": 0,
+    "rawPopulationBytes": 30614,
+    "unchangedProjectionBytes": 7646,
+    "projectionSha256": "141ab95d499e8b6422313e0eb44e736f551eac19703760758a5d9e86f5f433c3",
+    "exactCap": 7646,
+    "sourceExports": 130,
+    "uniqueBodies": 1,
+    "fxsaveProjectionBytes": 9971,
+    "noRawPopulationOrTailWrite": true,
+    "unchangedFailureOutputs": true
+  },
+  "growingBodyDecoderCounter": {
+    "unshippedWholeBodyReplay128": 4224,
+    "cursor16": 208,
+    "cursor128": 1664
+  },
+  "pairedShortGeneration": {
+    "runtime": "Node C-Wasm",
+    "samples": 101,
+    "warmup": 20,
+    "cap": 65536,
+    "beforeMedianMs": 0.8334,
+    "afterMedianMs": 1.1412,
+    "ratio": 1.3693304535637398,
+    "scope": "cold collection generation is slower; not Linux/browser/native execution speed"
+  },
+  "compiler": {
+    "bytes": 461959,
+    "sha256": "785c9e61a58673709e30ec71a6291685f5df94ba164d31614c03d504d6edb8a1"
+  },
+  "vm": {
+    "bytes": 87193,
+    "sha256": "7b5bf95bd368411a7eb030020d6873ce9cafb76c467a2dfb96723c49dae482fd"
+  },
+  "checks": {
+    "nativeCompiler": "pass",
+    "nativeVm": "pass",
+    "scopedAddressUndefinedSanitizers": "pass",
+    "nativeColdProjection": "byte-identical",
+    "fullCpuComparisons": 780,
+    "sourceOwnerRows": 64,
+    "reuseCompilerCalls": 0,
+    "primaryEngineConstructions": 1,
+    "crossingCases": 3,
+    "faultCut": "36 direct / 37 dispatch / 38 priority / 145 refusals",
+    "sourceCohort": "233 emissions / 42 comparisons / 47 demand checks",
+    "sameBundleShortPrefix": "Node: independent 86-instruction checkpoint / 1617931 retired, then 1000000-admission quota"
+  },
+  "linuxBoot": "not-achieved",
+  "wholeElf": "not-closed (-104)",
+  "newBrowserObservation": false,
+  "scope": "Exact emitted byte identity and final-object capacity under one emitter/import mapping; not semantic/work/span global minimum, Linux speed/size or RSS/crash recovery proof. Native publication/human UI unchanged."
+}

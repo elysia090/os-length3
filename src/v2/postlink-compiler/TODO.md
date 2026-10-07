@@ -23,13 +23,32 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Virtual body quotient now precedes capacity/public output checks. The old
+30,614-byte raw-population gate rejects an exact 7,646-byte object at cap
+8,000 (-103); the new writer accepts both 8,000 and exact 7,646. It never forms
+raw bodies or compacts an output tail. 130 FXSAVE exports also fit as 9,971
+bytes, despite their raw population exceeding the fixed 64 KiB cap. Failed
+publication and bytes outside the final extent remain unchanged.
+The SAME lowering emitter has a construction cursor (prologue / instruction /
+epilogue), not a second opcode path. A growing-body replay counter is red at
+4,224 decodes for 128 instructions; the cursor gives 208 / 1,664 for 16 / 128.
+Full compiler/VM and scoped sanitizers, maximum/odd ranks, late-window identity,
+780 native/C-VM comparisons and the unchanged same-bundle Node prefix pass.
+Short paired generation is 0.8334 -> 1.1412 ms (about 37% slower), not an
+execution speedup. No new distribution size or browser acceptance claim.
+Whole-ELF function production AND page dispatch still return -104; connecting
+the complete compiler domain to authenticated residency remains the main
+blocker, not merely an ISA coverage percentage. See
+[capacity law, continuation and receipt](../vm/check/browser/evidence/2026-10-07-virtual-body.md).
+
 Exact emitted-body quotient now aliases source exports to shared functions,
 not copied bodies/wrappers. 130 exports -> one body; that fixture's object
 30,614 -> 7,646 bytes, with 780 native/C-MMU comparisons and crossing controls
 preserved. Distinct same-length bodies remain distinct. Full compiler/VM and
 scoped sanitizers pass. This is NOT global semantic/work/span minimum or Linux
-size/speed. Raw-size preflight and transient raw formation in the same output
-owner remain; the fully virtual writer and whole-ELF production are incomplete.
+size/speed. Its raw-size gate and transient raw formation are removed by the
+checkpoint above; global semantic/work/span minimum and whole-ELF production
+remain incomplete.
 See [exact scope/receipt](../vm/check/browser/evidence/2026-10-07-body-quotient.md).
 
 New C compiler -> authenticated C source-admission metadata connection:

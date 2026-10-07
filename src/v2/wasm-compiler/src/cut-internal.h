@@ -58,6 +58,17 @@ typedef struct {
     pl_u32 imports;
     pl_u32 fault_vector;
 } cut_plan;
+/* Construction continuation only: it borrows the immutable source/flag
+ * frontier and carries no decoded instruction or generated code owner. */
+typedef struct {
+    const cut_plan *plan;
+    cut_lowering cut;
+    pl_u64 rip;
+    pl_u32 instruction,phase;
+} cut_body_cursor;
+void cut_body_open(const cut_plan *plan,const pl_u32 *import_slots,cut_body_cursor *cursor);
+/* Emit one prologue/instruction/epilogue. 1 = fragment, 0 = complete. */
+int cut_body_next(cut_body_cursor *cursor,wasm_writer *writer);
 void cut_call(cut_lowering *cut,pl_u32 import);
 void cut_op(cut_lowering *cut, pl_u32 opcode);
 void cut_get(cut_lowering *cut, pl_u32 local);

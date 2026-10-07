@@ -14,10 +14,10 @@ static int visit(const pl_x86_instruction *instruction,void *pointer)
     wasm_cut_options options={instruction->rip,1u,65536u};cut_plan plan;
     int status=cut_prepare_image(owner->image,&options,&plan);
     if(!status){
-        wasm_writer writer={0,~0ull,0u,0};wasm_cut_report measured;pl_u32 imports=0u;
+        wasm_writer writer={.capacity=~0ull};wasm_cut_report measured;pl_u32 imports=0u;
         status=cut_measure_body(&writer,&plan,&measured,&imports);
         if(!status){
-            wasm_writer header={0,~0ull,0u,0};
+            wasm_writer header={.capacity=~0ull};
             wasm_module_prefix(&header,imports,1u,1u+wasm_uleb_bytes(writer.used)+writer.used);
             wasm_writer_uleb(&header,writer.used);
             if(header.error || header.used+writer.used>options.maximum_module_bytes)

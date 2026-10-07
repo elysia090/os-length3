@@ -68,6 +68,12 @@ $(BUILD)/count-branch-check: check/count-branch.c check/native-cut.S $(BUILD)/li
 
 .PHONY: cut-module-check
 .PHONY: source-module-check
+.PHONY: quotient-cap-check
+check: quotient-cap-check
+quotient-cap-check: $(BUILD)/quotient-cap-check
+	$(BUILD)/quotient-cap-check
+$(BUILD)/quotient-cap-check: check/quotient-cap.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -Wl,--wrap=pl_x86_decode_profile -o $@
 check: source-module-check
 source-module-check: $(BUILD)/source-module-check
 	$(BUILD)/source-module-check

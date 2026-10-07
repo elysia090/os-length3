@@ -109,9 +109,11 @@ int main(int argc,char **argv)
     /* Same-length but different destinations must not be falsely merged.
      * Repeated instances of each destination still share an exact body. */
     for(pl_u32 i=0u;i<COUNT;++i)page[64u+i*16u]=(pl_u8)(0xb8u+i%4u);
+    memset(projected,0xa5,sizeof projected);
     EXPECT(!wasm_compiler_emit_code_projection(&image,9u,options,COUNT,projected,sizeof projected,&bytes,reports));
     EXPECT(!vm_module_open(projected,(pl_u32)bytes,&opened));
-    for(pl_u32 i=(pl_u32)bytes;i<30614u;++i)EXPECT(projected[i]==0u);
+    /* No raw bodies, compaction or old program tail are written at all. */
+    for(pl_u32 i=(pl_u32)bytes;i<sizeof projected;++i)EXPECT(projected[i]==0xa5u);
     if(argc==2 && (save(argv[1],"mixed.wasm",projected,(size_t)bytes)
             ||save(argv[1],"mixed.source",page,sizeof page)
             ||save_projection_root(argv[1],"mixed.root-ref",projected,(pl_u32)bytes,1u)))return 1;

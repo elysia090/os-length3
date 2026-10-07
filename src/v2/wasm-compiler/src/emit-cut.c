@@ -242,13 +242,12 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
     return flag_dependencies(plan);
 }
 
-static int body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,
-    const pl_u32 *import_slots,pl_u32 *imports)
+static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state)
 {
     cut_lowering cut = { 0 };
     pl_u64 rip = plan->report.entry;
     cut.writer = writer;
-    cut.import_slots=import_slots;
+    cut.import_slots=state->import_slots;
     cut.report = plan->report;
     cut.operand_binding_kind = plan->operand_binding_kind;
     cut.has_memory = plan->report.memory_bytes != 0u;
@@ -320,21 +319,29 @@ static int body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report
         cut_op(&cut,0x37u);wasm_writer_uleb(writer,3u);wasm_writer_uleb(writer,offsetof(machine_memory_port,fault_vector));
         cut_const(&cut,machine_result_make(MACHINE_RESULT_FAULT,plan->fault_vector));cut_op(&cut,0x0bu);
         if(writer->error)return writer->error;
-        if(imports)*imports=0u;
-        *report=cut.report;return 0;
+        *state=cut;return 0;
     }
-    for (pl_u32 i = 0u; i < plan->report.source_instructions; ++i) {
-        pl_x86_instruction instruction;
-        if (pl_x86_decode_profile(&plan->image, rip, &instruction)) return WASM_COMPILER_ERROR_GRAMMAR;
-        cut.wanted_flags = plan->flag_frontier[i] >> 16u;
-        if (plan->system_cut) cut_lower_system(&cut, &instruction);
-        else if (plan->indirect_cut) cut_lower_indirect(&cut, &instruction);
-        else if (plan->string_cut) cut_lower_string(&cut, &instruction);
-        else if (cut.has_memory && cut_stack_supported(&instruction)) cut_lower_stack(&cut, &instruction);
-        else if (cut.has_memory) cut_lower_memory(&cut, &instruction);
-        else cut_lower_instruction(&cut, &instruction);
-        rip = instruction.fallthrough;
-    }
+    *state=cut;return writer->error;
+}
+
+static int instruction_fragment(wasm_writer *writer,const cut_plan *plan,pl_u32 rank,
+    pl_u64 *rip,cut_lowering *state)
+{
+    cut_lowering cut=*state;cut.writer=writer;pl_x86_instruction instruction;
+    if(pl_x86_decode_profile(&plan->image,*rip,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
+    cut.wanted_flags=plan->flag_frontier[rank]>>16u;
+    if(plan->system_cut)cut_lower_system(&cut,&instruction);
+    else if(plan->indirect_cut)cut_lower_indirect(&cut,&instruction);
+    else if(plan->string_cut)cut_lower_string(&cut,&instruction);
+    else if(cut.has_memory && cut_stack_supported(&instruction))cut_lower_stack(&cut,&instruction);
+    else if(cut.has_memory)cut_lower_memory(&cut,&instruction);
+    else cut_lower_instruction(&cut,&instruction);
+    *rip=instruction.fallthrough;*state=cut;return writer->error;
+}
+
+static int epilogue(wasm_writer *writer,const cut_plan *plan,pl_u64 rip,cut_lowering *state)
+{
+    cut_lowering cut=*state;cut.writer=writer;
     if (cut.report.boundary != WASM_CUT_CONTROL) {
         cut_coordinate(&cut, rip); cut_set(&cut, CUT_NEXT);
     }
@@ -359,9 +366,39 @@ static int body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report
     cut_const(&cut, machine_result_make(plan->system_cut == CUT_SYSTEM_HALT
         ? MACHINE_RESULT_HALT : MACHINE_RESULT_RESOLVE_RIP, 0u)); cut_op(&cut, 0x0bu);
     if (writer->error) return writer->error;
-    if(imports)*imports=cut.imports_used;
-    *report = cut.report;
-    return 0;
+    *state=cut;return 0;
+}
+
+void cut_body_open(const cut_plan *plan,const pl_u32 *import_slots,cut_body_cursor *cursor)
+{
+    *cursor=(cut_body_cursor){.plan=plan,.rip=plan->report.entry};
+    cursor->cut.import_slots=import_slots;
+}
+
+int cut_body_next(cut_body_cursor *cursor,wasm_writer *writer)
+{
+    if(cursor->phase==3u)return 0;
+    int status;
+    if(!cursor->phase){
+        status=prologue(writer,cursor->plan,&cursor->cut);
+        cursor->phase=cursor->plan->fault_vector?3u:1u;
+    }else if(cursor->phase==1u){
+        status=instruction_fragment(writer,cursor->plan,cursor->instruction,&cursor->rip,&cursor->cut);
+        if(++cursor->instruction==cursor->plan->report.source_instructions)cursor->phase=2u;
+    }else{
+        status=epilogue(writer,cursor->plan,cursor->rip,&cursor->cut);cursor->phase=3u;
+    }
+    return status?status:1;
+}
+
+static int body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,
+    const pl_u32 *import_slots,pl_u32 *imports)
+{
+    cut_body_cursor cursor;cut_body_open(plan,import_slots,&cursor);int status;
+    while((status=cut_body_next(&cursor,writer))>0){}
+    if(status)return status;
+    if(imports)*imports=cursor.cut.imports_used;
+    *report=cursor.cut.report;return 0;
 }
 int cut_measure_body(wasm_writer *writer,const cut_plan *plan,wasm_cut_report *report,pl_u32 *imports)
 {

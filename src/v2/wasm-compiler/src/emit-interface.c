@@ -124,7 +124,7 @@ void wasm_module_alias_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 function
     pl_u32 entry=admit_type(types,&type_count,&entry_type);
     static const pl_u8 magic[]={0u,0x61u,0x73u,0x6du,1u,0u,0u,0u};
     for(pl_u32 i=0u;i<sizeof magic;++i)wasm_writer_byte(writer,magic[i]);
-    wasm_writer measured={0,~0ull,0u,0};
+    wasm_writer measured={.capacity=~0ull};
     type_section(&measured,types,type_count);section(writer,1u,measured.used);type_section(writer,types,type_count);
     measured.used=0u;import_section(&measured,imports,ranks);section(writer,2u,measured.used);import_section(writer,imports,ranks);
     measured.used=0u;function_section(&measured,functions,entry);section(writer,3u,measured.used);function_section(writer,functions,entry);

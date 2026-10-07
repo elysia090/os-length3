@@ -21,7 +21,7 @@ static int compile(const wasm_compiler *compiler,
                    pl_u8 *target, pl_u64 capacity, pl_u64 *written,
                    wasm_compile_report *report)
 {
-    wasm_writer writer = { target, capacity, 0u, 0 };
+    wasm_writer writer = { .bytes=target, .capacity=capacity };
     wasm_compile_report measured = { 0 };
     int status;
     if (!compiler || !options || !written

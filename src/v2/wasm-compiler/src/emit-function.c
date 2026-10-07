@@ -7,7 +7,12 @@ void wasm_writer_byte(wasm_writer *writer, pl_u32 value)
         writer->error = WASM_COMPILER_ERROR_CAPACITY;
         return;
     }
-    if (writer->bytes) writer->bytes[writer->used] = (pl_u8)value;
+    if (writer->bytes) {
+        if (!writer->window_bytes) writer->bytes[writer->used] = (pl_u8)value;
+        else if (writer->used >= writer->window_start
+                && writer->used - writer->window_start < writer->window_bytes)
+            writer->bytes[writer->used - writer->window_start] = (pl_u8)value;
+    }
     ++writer->used;
 }
 

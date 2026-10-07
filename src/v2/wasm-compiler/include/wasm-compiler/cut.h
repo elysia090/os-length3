@@ -48,6 +48,9 @@ typedef struct {
  * and per-cut source/span/binding obligations are unchanged. Report[i] is the
  * exact ith cut; module_bytes names their shared module, not a private stream.
  * Selected cuts do NOT establish whole-ELF/control/indirect-generation closure.
+ * The cap applies to the exact shared-body module, never the raw source
+ * population. Body identity is compared through fixed emitter windows before
+ * output publication. No raw encoded collection or compacted tail is formed.
  * Borrow all inputs immutably; failed preflight leaves target/outputs unchanged. */
 int wasm_compiler_emit_cut_module(const wasm_compiler *compiler,
     const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,

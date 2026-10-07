@@ -907,3 +907,16 @@ and add `--frame-priority` after the accelerator argument. This records 352
 rows with CR2, including exact two-byte selector extents; the same C checker
 accepts that complete profile and checks every row through compiled dispatch.
 See [frame provenance](../../src/v2/vm/check/browser/evidence/2026-10-05-iret-frame.md).
+
+### Virtual body capacity and construction continuation
+
+`check-quotient-cap.mjs COMPILER.WASM` is independently red against
+`3d9c7ba`: an exact 7,646-byte projection is refused at cap 8,000. The current
+compiler accepts its exact final cap, preserves short-cap failure outputs,
+never writes a raw body tail, and accepts 130 FXSAVE exports as 9,971 bytes.
+`make -C src/v2/wasm-compiler quotient-cap-check` adds late-window, maximum/odd
+rank and wrapped real-decoder traversal checks. It rejects replaying a growing
+body for every window: 4,224 -> 1,664 calls for 128 instructions.
+`bench-quotient-cap.mjs OLD-COMPILER.WASM COMPILER.WASM` compares unchanged
+bytes and alternating paired generation time, not Linux/native/browser speed.
+See [derivation, scope and regression](../../src/v2/vm/check/browser/evidence/2026-10-07-virtual-body.md).
