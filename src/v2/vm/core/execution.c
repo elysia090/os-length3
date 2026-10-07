@@ -117,11 +117,12 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             :(pl_u16)(state->rflags&MACHINE_X86_ARITHMETIC_FLAGS);
         result = call(owner, row->slot, row->entry, row->operand_binding);
         if (machine_result_kind(result) == MACHINE_RESULT_BARRIER
-                && machine_result_payload(result) <= MACHINE_BARRIER_CONSOLE
+                && machine_result_payload(result) <= MACHINE_BARRIER_FLOATING
                 && source_instructions == 1u && state->rip == row->entry) {
             execution->continuation = *row; execution->continuation_generation = generation;
             execution->continuation_flags=flags_before;
-            execution->continuation_interruptible=(pl_u8)(machine_result_payload(result)==MACHINE_BARRIER_QUANTUM);
+            execution->continuation_interruptible=(pl_u8)(machine_result_payload(result)==MACHINE_BARRIER_QUANTUM
+                ||machine_result_payload(result)==MACHINE_BARRIER_FLOATING);
             return result;
         }
         if(machine_result_kind(result)==MACHINE_RESULT_FAULT && source_instructions==1u && state->rip==row->entry)

@@ -273,6 +273,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
             || cut_vector_binary_local(&instruction));
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
     cut.vector_local = locals + 4u; /* Four typed bindings precede locals. */
     wasm_writer_uleb(writer, permutation_local?2u:1u);
     wasm_writer_uleb(writer, locals);

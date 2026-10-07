@@ -1,0 +1,14 @@
+{
+  "format":"shared-ssa-x87-compare-candidate-v1","status":"pass","baselineCommit":"1a62aae",
+  "compiler":{"bytes":500071,"sha256":"e88b6583180fc9db35aac26ebcc6d2feae407a09ac8eb8db9fcbe0b5ed4b7481"},
+  "vm":{"bytes":95012,"sha256":"92d917f30526f46b00554202de16fcfc0f5eae5f0af537ebc554bfc74b01be5c"},
+  "hardware":{"platform":"Windows GCC / native FPU + RFLAGS capture","vendor":"GenuineIntel","forms":64,"rows":16384,"incomingFlags":"varied","unmaskedExceptionStates":4966,"suppressedPops":2483,"c1Kept":14520,"gprScope":"architectural invariance, not SysV GPR capture"},
+  "ssa":{"relationRows":16384,"maxAbstractWork":73,"maxAbstractSpan":11,"globalMinimum":false,"nativeColdByteForms":72,"malformedLaws":864,"deterministicConstruction":"sequenced, no compiler evaluation-order identity"},
+  "boundaries":{"nmMfModels":288,"maskedStickyModels":72,"legacyGuestHandlerRoundtrip":1,"legacyScope":"C/PIC/IDT/GDT/stack/compiled guest FNCLEX/EOI/IRET model, not hardware pin certification"},
+  "make":{"coordinates":233455,"lowerable":226695,"oldMissing":7152,"missing":6760,"recovered":392,"first":"da2503005548","firstAddress":"0xa0cb","directoryPublication":"refused -102 before mkdir/root"},
+  "imageFpu":{"elfBytes":9744,"elfSha256":"dc69420b12054e0ad5f363a2d2560f18b96c2dd5ff154c9ad8841c0b69660be1","coordinates":27,"directoryBytes":15731,"rootRefSha256":"74a055fd02d2a7d4370052b57a08da8f957774aec8f353ff8180029d86e49cbe","comparisons":81},
+  "browser":{"actualInAppWorker":"pass","cases":["multi","cross","fpu"],"comparisons":1251,"refusals":41,"secureContext":true,"isolated":false,"executionCompilerCalls":0,"linuxBoot":"not-tested"},
+  "checks":{"compilerVmPostlink":"pass","positiveCompareAddressUndefinedSanitizers":"pass","warnings":0,"shortSameBundleNode":"86-instruction independent witness / 1617931 retired / 1000000 admissions, then quota"},
+  "nativeReleaseChanged":false,"humanUiChanged":false,"newProductionRoot":false,"linuxBoot":"not-achieved",
+  "scope":"Exact shared extended relation and tested state/event projection, not whole ISA/machine certification, a global work/span/storage minimum, distribution speed/size reduction, signed root or browser development acceptance."
+}

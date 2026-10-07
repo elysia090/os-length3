@@ -79,6 +79,14 @@ SSA sources is not evidence that this emitter uses block-wide normalization.
 Its next obligation is to consume the shared normalized transfer, delete the
 replaced instruction-wise rules, and pass native/Wasm/fault parity.
 
+Extended register comparison is now an actual shared-SSA consumer: one x86
+relation/exception graph is compacted and emitted as ordinary Wasm. Its
+descriptor/state publication and C-owned deferred FERR boundary are separate.
+Cold arena support is active, not merely dead-linked SSA sources. Native/cold
+bytes are deterministic; local hardware and C event models have explicit scopes.
+This does not migrate the remaining scalar ALU or certify a complete Linux
+projection. See [exact evidence](../vm/check/browser/evidence/2026-10-07-x87-compare.md).
+
 ## Current machine and publication boundary
 
 The modern machine is built from `vm/wasm/entry.c` and `vm/core`. The

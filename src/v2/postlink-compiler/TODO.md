@@ -23,6 +23,22 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+The real dfe8 compare gate is now green through common x86 SSA and ordinary
+Wasm, not f64 or a VM arithmetic callback. Direct Windows/GCC CPU captures
+vary incoming flags: 16,384 FPU/RFLAGS observations match C-Wasm execution.
+72 native/cold forms have identical bytes after removing C evaluation-order
+dependence in SSA construction. 288 #NM/#MF models, 72 masked-sticky cases
+and a real C PIC/IDT -> compiled guest FNCLEX/EOI/IRET -> retry model pass.
+The previously linked-but-inactive common SSA path now uses its arena support.
+Actual make: 7,152 -> 6,760 missing (392 recovered); first is da2503005548 at
+0xa0cb, so whole directory remains refused before mkdir/root. Actual browser
+C image admission passes the added compare ELF (81 comparisons), 1,251 total.
+Full compiler/VM/postlink checks and positive comparison ASan/UBSan pass.
+Native release/UI unchanged; same-bundle short Node prefix still ends at
+quota after the 86-instruction witness, not Linux boot/shell. No new signed
+root or speed/size/RSS claim. See
+[shared math, hardware observations, boundaries and limitations](../vm/check/browser/evidence/2026-10-07-x87-compare.md).
+
 Common no-wait x87 word snapshots now recover 31 ACTUAL make coordinates:
 7,183 -> 7,152 missing (x87 3,312). Native/cold bytes at 24 forms, 768 direct
 + 768 C-MMU full-state comparisons, 496 fault models, 288 malformed-law and
@@ -378,9 +394,11 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    The complete byte-coordinate inventory is now implemented; use its actual
    backend gaps to close generic ISA families. Shared counter branches and
    architectural fault cuts are covered, not an unimplemented-opcode fallback.
-   X87 compare is now backed by a 64-form / 16,384-row independent native gate,
-   still red at make's dfe8. Implement the exact deferred exception frontier,
-   not f64 approximation or a fabricated fault. No-wait snapshots are closed.
+   The four register x87 compare variants now use a shared normalized SSA
+   relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
+   observations and byte-identical native/cold output. Continue the real
+   remaining arithmetic/source-context/precise-event cases: make's new first
+   miss is da2503005548, not dfe8. No-wait snapshots/FNCLEX are covered.
    First gaps in the two published s6 files are x87; their outside-image/indirect
    control edges and executable-map-end fetch context still require closure.
    Mixed cut imports can now share one typed standard-Wasm module through the

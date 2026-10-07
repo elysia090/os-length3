@@ -1,5 +1,12 @@
 # Browser projection of OS Length3 Linux
 
+New actual in-app Worker pass includes an accepted ELF with the recovered
+extended compare, 81 additional C-authenticated image execution comparisons
+(1,251 total). Separate direct Windows CPU observations cover 16,384 compare
+states; C #NM/#MF/FERR/guest-handler models and native/cold byte gates pass.
+Make still has 6,760 missing final coordinates; no Linux root/boot/shell is
+claimed. See [shared-SSA / hardware / actual-browser scope](../vm/check/browser/evidence/2026-10-07-x87-compare.md).
+
 Latest bounded image test: the actual in-app browser Worker reports pass for
 the C authenticated IMAGE_SOURCE/IMAGE_MODULE -> current source/span/bias ->
 ordinary entry connection. The SAME Node/browser test gives 1,170 comparisons,

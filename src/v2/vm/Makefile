@@ -42,6 +42,7 @@ WASM_FLAGS += -Wl,--export=vm_directory_cancel_request,--export=vm_directory_sta
 WASM_FLAGS += -Wl,--export=vm_directory_module_plan,--export=vm_directory_source_publish
 WASM_FLAGS += -Wl,--export=vm_directory_image_source_bind,--export=vm_directory_image_plan,--export=vm_directory_image_publish
 WASM_FLAGS += -Wl,--export=vm_directory_image_select
+WASM_FLAGS += -Wl,--export=vm_floating_wait
 ifeq ($(WASM_PROFILE),1)
 WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile
 endif

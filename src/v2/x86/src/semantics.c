@@ -2904,6 +2904,10 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_X87
+        && ((instruction->machine_argument&255u)==5u||(instruction->machine_argument&255u)==6u
+            ||(instruction->machine_argument&255u)==19u||(instruction->machine_argument&255u)==20u)){
+        pl_x86_x87_compare law;if(!pl_x86_x87_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87
         && ((instruction->machine_argument&255u)==PL_X86_X87_STORE_CONTROL_WORD
             || (instruction->machine_argument&255u)==PL_X86_X87_STORE_STATUS_WORD)){
         pl_x86_x87_snapshot law;if(!pl_x86_x87_snapshot_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}

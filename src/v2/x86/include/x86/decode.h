@@ -169,6 +169,7 @@ enum pl_x86_x87_operation {
     PL_X86_X87_STORE_CONTROL_WORD = 29u,
     PL_X86_X87_STORE_STATUS_WORD = 31u,
     PL_X86_X87_INITIALIZE = 44u,
+    PL_X86_X87_CLEAR_EXCEPTIONS = 47u,
     PL_X86_X87_STATE_IMAGE = 51u,
     /* MMX aliases the x87 register file.  Immediate packed shifts still use
      * one explicit descriptor rather than an instruction-byte interpreter. */

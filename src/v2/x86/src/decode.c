@@ -1590,7 +1590,7 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_FNCLEX:
         if (!out->visible_operand_count) {
             out->machine_operation = PL_X86_MACHINE_X87;
-            out->machine_argument = 47u;
+            out->machine_argument = PL_X86_X87_CLEAR_EXCEPTIONS;
             out->flags |= PL_X86_INSTRUCTION_MAY_TRAP
                         | PL_X86_INSTRUCTION_PRECISE_CUT
                         | PL_X86_INSTRUCTION_BARRIER;
@@ -2307,8 +2307,8 @@ static void classify_machine_operation(
                         || source->mnemonic == ZYDIS_MNEMONIC_FUCOMIP;
             pl_u32 kind = quiet ? (pop ? 5u : 6u)
                                   : (pop ? 19u : 20u);
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                | ((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = kind
                 | ((pl_u64)fop << 16u)

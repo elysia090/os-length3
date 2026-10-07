@@ -68,7 +68,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     read_extent:vm.vm_read_extent,
     write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,write_end:vm.vm_write_end,
     table:vm.vm_table,far_return:vm.vm_return,control:vm.vm_control,iret:vm.vm_iret,msr:vm.vm_msr,interrupt_flag:vm.vm_flag,
-    software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,
+    software_interrupt:vm.vm_software_interrupt,system_transfer:vm.vm_system,floating_wait:vm.vm_floating_wait,
     io:vm.vm_io,time:vm.vm_time,debug:vm.vm_debug}},
     {maximumEntries:1024,maximumBytes:262144});
   const compilerOutput = cc.compiler_arena_min();
@@ -555,6 +555,22 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
         ++quantumYields;
         if(extended && !(quantumYields&255))reportProgress();
         continue;
+      }
+      if(result===34n){
+        // Internal C FERR/IRQ ownership, not a host floating-point exception
+        // implementation or a physical-memory reply with a guessed address.
+        retired+=progress.retired;trace.append(entry,progress.retired,rip(),result,view,base);
+        let boundary=vm.vm_boundary(port,generation);
+        for(let waits=0;boundary===2n&&waits<8192;++waits){
+          const before=performance.now(),supplied=await supplyPhysical();supplyMs+=performance.now()-before;
+          if(!supplied)return {...resourceGate,entry:`0x${rip().toString(16)}`};
+          boundary=vm.vm_boundary(port,generation);
+        }
+        if(boundary===1n){++externalInterrupts;return null;}
+        if(!boundary)return {kind:'floating-wait',result:'34',entry:`0x${rip().toString(16)}`,
+          awaiting:'guest interrupt enable/controller/handler; no fabricated #MF or retirement'};
+        const delivered=await deliverFault(boundary,rip());
+        return delivered??{kind:'floating-interrupt-boundary',result:String(boundary),entry:`0x${rip().toString(16)}`};
       }
       if(result===26n){
         assert.equal(view.getUint32(port+40,true),1);assert.equal(view.getUint32(port+44,true),0x200);

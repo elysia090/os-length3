@@ -45,6 +45,7 @@ SOURCES += src/lower-register-update.c
 SOURCES += src/image.c src/image-stream.c
 SOURCES += src/emit-image-metadata.c
 SOURCES += src/lower-x87-snapshot.c
+SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 .PHONY: x87-snapshot-check
 check: x87-snapshot-check
 x87-snapshot-check: $(BUILD)/x87-snapshot-check
@@ -53,6 +54,12 @@ $(BUILD)/x87-snapshot-check: check/x87-snapshot.c check/x87-observation.h check/
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-fxsave.S check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 $(BUILD)/x87-compare-observe: check/x87-compare-observe.c check/x87-observation.h check/native-fxsave.S check/native-cut.S $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-fxsave.S check/native-cut.S $(PROVIDER_LIBRARIES) -o $@
+.PHONY: x87-compare-check
+check: x87-compare-check
+x87-compare-check: $(BUILD)/x87-compare-check
+	$(BUILD)/x87-compare-check
+$(BUILD)/x87-compare-check: check/x87-compare.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
 .PHONY: register-update-check
 .PHONY: literal-check
@@ -263,7 +270,7 @@ ZYDIS = ../x86/third_party/zydis
 include ../x86/sources.mk
 COLD_SOURCES = wasm/entry.c wasm/memory.c $(SOURCES) \
 	$(addprefix ../x86/,$(X86_SOURCES)) ../optimized-x86/src/proof.c \
-	../optimized-x86/src/reader.c ../support/src/sha256.c \
+    ../optimized-x86/src/reader.c ../support/src/sha256.c ../support/src/arena.c \
 	$(addprefix $(ZYDIS)/src/,$(addsuffix .c,Register SharedData DecoderData Decoder Mnemonic))
 wasm: $(WASM_OUTPUT)
 $(WASM_OUTPUT): $(COLD_SOURCES) Makefile ../x86/sources.mk $(wildcard include/wasm-compiler/*.h src/*.h \

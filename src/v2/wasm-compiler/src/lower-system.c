@@ -25,6 +25,8 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     if(pl_x86_count_branch_lower(instruction,&count) && count.bits!=16u)return CUT_SYSTEM_COUNTER_BRANCH;
     pl_x86_selector_read snapshot;
     pl_x86_x87_snapshot fpu;
+    pl_x86_x87_compare compare;
+    if(pl_x86_x87_compare_lower(instruction,&compare))return CUT_SYSTEM_X87_COMPARE;
     if(pl_x86_x87_snapshot_lower(instruction,&fpu)
         && (!fpu.memory || cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))
         return CUT_SYSTEM_X87_SNAPSHOT;
@@ -57,7 +59,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
         return CUT_SYSTEM_SOFTWARE_INTERRUPT;
     if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_X87
-            && instruction->machine_argument==PL_X86_X87_INITIALIZE
+            && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)
             && !instruction->visible_operand_count
             && (instruction->flow==PL_X86_FLOW_NEXT || instruction->flow==PL_X86_FLOW_SYSTEM)
             && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
@@ -415,8 +417,10 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     }
     pl_x86_x87_snapshot fpu;
     if(pl_x86_x87_snapshot_lower(instruction,&fpu)){cut_lower_x87_snapshot(cut,instruction);return;}
+    pl_x86_x87_compare compare;
+    if(pl_x86_x87_compare_lower(instruction,&compare)){cut_lower_x87_compare(cut,instruction);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87
-            && instruction->machine_argument==PL_X86_X87_INITIALIZE) {
+            && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.
          * CR0.EM/TS still cause precise #NM before any FPU state publication. */
         cut_load(cut,offsetof(machine_state,cr0)); cut_const(cut,12u); cut_op(cut,0x83u);
@@ -425,6 +429,12 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         cut_const(cut,7u); port_store(cut,offsetof(machine_memory_port,fault_vector),4u);
         cut_const(cut,0u); port_store(cut,offsetof(machine_memory_port,fault_error),4u);
         cut_const(cut,machine_result_make(MACHINE_RESULT_FAULT,7u)); cut_op(cut,0x0fu); cut_op(cut,0x0bu);
+        if(instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS){
+            cut_get(cut,0u);cut_op(cut,0x33u);wasm_writer_uleb(cut->writer,1u);wasm_writer_uleb(cut->writer,offsetof(machine_state,x87_status));
+            cut_const(cut,0x7f00u);cut_op(cut,0x83u);cut_set(cut,CUT_VALUE);
+            cut_get(cut,0u);cut_get(cut,CUT_VALUE);cut_op(cut,0x3du);wasm_writer_uleb(cut->writer,1u);
+            wasm_writer_uleb(cut->writer,offsetof(machine_state,x87_status));return;
+        }
         _Static_assert(offsetof(machine_state,x87_status)==offsetof(machine_state,x87_control)+2u
             && offsetof(machine_state,x87_tag)==offsetof(machine_state,x87_control)+4u
             && offsetof(machine_state,x87_opcode)==offsetof(machine_state,x87_control)+6u,

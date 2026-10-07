@@ -39,7 +39,7 @@ static int boundaries(void)
     if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)
             || report.source_instructions!=1u || report.source_bytes!=2u
             || report.continuation!=map.address+3u || report.boundary!=WASM_CUT_SYSTEM)return 0;
-    static const pl_u8 invalid[][3]={{0xf0u,0xdbu,0xe3u},{0x9bu,0xdbu,0xe3u},{0xdbu,0xe2u,0x90u}};
+    static const pl_u8 invalid[][3]={{0xf0u,0xdbu,0xe3u},{0x9bu,0xdbu,0xe3u},{0xd9u,0x2fu,0x90u}};
     options.entry=map.address;
     for(pl_u32 row=0u;row<sizeof invalid/sizeof invalid[0];++row){
         memcpy(page,invalid[row],sizeof invalid[row]); memset(module,0xa5,sizeof module);

@@ -60,6 +60,12 @@ machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
     result = permission(physical,port,state,segments,coordinate,bytes);
     if (result) return result;
     pl_u32 byte = write ? (pl_u32)value & 255u : 0u;
+    /* AT math-error interrupt latch reset. The FPU status itself is unchanged;
+     * the guest subsequently clears it with a no-wait FPU control operation. */
+    if(coordinate==0xf0u&&bytes==1u&&write&&pic){
+        if(clock->stage)return MACHINE_RESULT_ENTRY_MAP;
+        return vm_pic_set_irq(pic,13u,0u)?MACHINE_RESULT_ENTRY_MAP:0u;
+    }
     /* One UART is wired at 3F8h. The other three legacy UART ranges and
      * removed ISA DMA page ports have no bus target: byte reads float high,
      * writes create no register/IRQ/output. This is not an unknown-port

@@ -882,6 +882,18 @@ machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 val
         || result == machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_CONSOLE)
         ? result : memory_result(port,result);
 }
+/* PC deferred FERR wire only. Arithmetic/status publication belongs to the
+ * emitted ordinary function, never an x87 operation decoded by this VM. */
+machine_result vm_floating_wait(pl_u32 port)
+{
+    if(!private_port(port)||!segments_offset||delivery.stage||table_frontier.stage
+        ||resident.reservation.parts||clock_boundary_pending())return MACHINE_RESULT_ENTRY_MAP;
+    if(vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=resident.generation)return MACHINE_RESULT_STALE_GENERATION;
+    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
+    if((state->cr0&44u)||!(state->x87_status&~(pl_u32)state->x87_control&63u))return MACHINE_RESULT_ENTRY_MAP;
+    if(vm_pic_set_irq(&pic,13u,1u))return MACHINE_RESULT_ENTRY_MAP;
+    return machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_FLOATING);
+}
 machine_result vm_time(pl_u32 port)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
@@ -1272,6 +1284,8 @@ static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding, pl_
     machine_entry entry = (machine_entry)(uintptr_t)slot;
     vm_memory_abort(&resident);
     machine_result result = entry(state_offset, owner->port, binding, operand_binding);
+    const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
+    if(!(state->x87_status&~(pl_u32)state->x87_control&63u))vm_pic_set_irq(&pic,13u,0u);
     vm_memory_abort(&resident);
     return result;
 }

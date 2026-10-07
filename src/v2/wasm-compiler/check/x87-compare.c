@@ -1,0 +1,46 @@
+#include <wasm-compiler/cut.h>
+#include <x86/semantics.h>
+#include <stdio.h>
+#include <string.h>
+static pl_u8 page[4096],module[65536];
+int main(int argc,char **argv)
+{
+    if(argc>2)return 2;
+    const pl_u8 prefixes[]={0u,0x66u,0x67u,0x48u,0xf2u,0xf3u},sources[]={0u,1u,7u};pl_u32 forms=0u,refusals=0u;
+    for(pl_u32 prefix=0u;prefix<6u;++prefix)for(pl_u32 pop=0u;pop<2u;++pop)
+    for(pl_u32 ordered=0u;ordered<2u;++ordered)for(pl_u32 s=0u;s<3u;++s){
+        memset(page,0x90,sizeof page);pl_u32 n=0u;if(prefixes[prefix])page[n++]=prefixes[prefix];
+        page[n++]=(pl_u8)(pop?0xdfu:0xdbu);page[n++]=(pl_u8)((ordered?0xf0u:0xe8u)+sources[s]);
+        pl_x86_map map={page,0x9000u,sizeof page,sizeof page,PL_ELF_FLAG_EXECUTE,9u};pl_x86_image image={&map,1u,0u,map.address};
+        pl_x86_instruction i;pl_x86_x87_compare law;
+        if(pl_x86_decode_profile(&image,map.address,&i)||!pl_x86_x87_compare_lower(&i,&law)
+            ||law.source!=sources[s]||law.pop!=pop||law.ordered!=ordered||law.opcode!=(((pop?7u:3u)<<8u)|page[n-1u]))return 1;
+        wasm_cut_options options={map.address,1u,sizeof module};wasm_cut_report report;pl_u64 bytes=0u;
+        if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&bytes,&report)
+            ||report.source_bytes!=n||report.source_instructions!=1u||report.memory_bytes||!report.flags_written)return 1;
+        if(argc==2){char key[33],path[4096];for(pl_u32 k=0u;k<n;++k)snprintf(key+k*2u,3u,"%02x",page[k]);
+            int length=snprintf(path,sizeof path,"%s/%s.wasm",argv[1],key);if(length<1||(size_t)length>=sizeof path)return 2;
+            FILE *file=fopen(path,"wbx");if(!file)return 2;
+            int failed=fwrite(module,1u,(size_t)bytes,file)!=(size_t)bytes;if(fclose(file))failed=1;if(failed)return 2;
+        }
+        for(pl_u32 wrong=0u;wrong<12u;++wrong){pl_x86_instruction changed=i;
+            switch(wrong){case 0:changed.machine_argument^=1ull<<48u;break;case 1:changed.visible_operand_count=1u;break;
+            case 2:changed.operands[1].value.reg.index=8u;break;case 3:changed.operands[0].value.reg.index=1u;break;
+            case 4:changed.operands[0].bits=64u;break;case 5:changed.flags|=PL_X86_INSTRUCTION_LOCKED;break;
+            case 6:changed.flags|=PL_X86_INSTRUCTION_READS_MEMORY;break;case 7:changed.flags&=~PL_X86_INSTRUCTION_MAY_TRAP;break;
+            case 8:changed.flags&=~PL_X86_INSTRUCTION_BARRIER;break;case 9:changed.status=PL_X86_DECODE_INVALID;break;
+            case 10:changed.flow=PL_X86_FLOW_FAULT;break;default:changed.operands[1].value.reg.class_id=PL_X86_REGISTER_GPR;break;}
+            pl_x86_x87_compare out,before;memset(&before,0xa5,sizeof before);out=before;
+            if(pl_x86_x87_compare_lower(&changed,&out)||memcmp(&out,&before,sizeof out))return 1;
+            pl_u8 scratch[8192];pl_arena arena={scratch,sizeof scratch,0u};pl_x86_semantic semantic;
+            if(pl_x86_lower(&changed,&arena,&semantic)!=PL_ERROR_X86_SEMANTIC)return 1;
+            ++refusals;
+        }
+        memset(module,0xa5,sizeof module);bytes=77u;memset(&report,0xa5,sizeof report);wasm_cut_report before=report;
+        if(wasm_compiler_emit_code_cut(&image,9u,&options,module,1u,&bytes,&report)!=WASM_COMPILER_ERROR_CAPACITY
+            ||bytes!=77u||memcmp(&report,&before,sizeof before))return 1;
+        for(pl_u32 k=0u;k<sizeof module;++k)if(module[k]!=0xa5u)return 1;
+        ++forms;
+    }
+    printf("Exact x87 compare: %u shared/native entrances, %u malformed laws and unchanged capacity refusals\n",forms,refusals);return 0;
+}

@@ -3,8 +3,26 @@
 #include <x86/decode.h>
 #include <stdio.h>
 #include <stdint.h>
+#ifdef _WIN32
+#include <windows.h>
+/* Physical-CPU oracle only. The compare has no GPR outputs; Windows doesn't
+ * use the SysV GPR capture helper. Capture both actual flag words and the
+ * complete FPU images without a waiting instruction between them. */
+static void native_observe(machine_state *first,machine_state *last,const void *code,const void *input,void *before,void *after)
+{
+    _Alignas(16) pl_u8 host[512];pl_u64 old_flags,new_flags;
+    __asm__ volatile("fxsave64 %[host]\n\tfxrstor64 %[input]\n\tfxsave64 %[before]\n\t"
+        "pushq %[flags]\n\tpopfq\n\tpushfq\n\tpopq %[old]\n\tcall *%[code]\n\t"
+        "pushfq\n\tpopq %[new]\n\tfxsave64 %[after]\n\tfxrstor64 %[host]\n\tcld"
+        :[host]"=m"(host),[before]"=m"(*(pl_u8 (*)[512])before),[after]"=m"(*(pl_u8 (*)[512])after),
+         [old]"=&r"(old_flags),[new]"=&r"(new_flags)
+        :[input]"m"(*(const pl_u8 (*)[512])input),[code]"r"(code),[flags]"r"(first->rflags):"memory","cc");
+    first->rflags=old_flags;last->rflags=new_flags;
+}
+#else
 #include <sys/mman.h>
 extern void native_fxsave(machine_state *,const void *,const void *,void *,void *);
+#endif
 typedef struct { pl_u64 significand;pl_u16 se;pl_u8 empty; } value;
 static const value values[]={
     {0u,0u,0u},{0u,0x8000u,0u},{0x8000000000000000ull,0x3fffu,0u},
@@ -29,8 +47,13 @@ int main(int argc,char **argv)
 {
     if(argc>2)return 2;
     const char *directory=argc==2?argv[1]:NULL;
+#ifdef _WIN32
+    pl_u8 *code=VirtualAlloc(NULL,4096u,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
+    if(!code)return 1;
+#else
     pl_u8 *code=mmap(NULL,4096u,PROT_READ|PROT_WRITE|PROT_EXEC,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
     if(code==MAP_FAILED)return 1;
+#endif
     pl_u32 count=(pl_u32)(sizeof values/sizeof values[0]),rows=0u;
     pl_u32 cpuid_a=0u,cpuid_b,cpuid_c,cpuid_d;char vendor[13];
     __asm__ volatile("cpuid":"+a"(cpuid_a),"=b"(cpuid_b),"=c"(cpuid_c),"=d"(cpuid_d));
@@ -38,10 +61,13 @@ int main(int argc,char **argv)
     pl_u64 status_changes=0u,unmasked=0u,pop_suppressed=0u,c1_kept=0u;int failed=1;
     for(pl_u32 form=0u;form<64u;++form){pl_u32 index=form&7u,mode=(form>>3u)&3u,mask=(form>>5u)&1u;
         code[0]=(pl_u8)(mode&1u?0xdfu:0xdbu);code[1]=(pl_u8)((mode&2u?0xf0u:0xe8u)+index);code[2]=0xc3u;
-        pl_x86_map map={code,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};pl_x86_image image={&map,1u,0u,map.address};
+        pl_x86_map map={code,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
+#ifndef _WIN32
+        pl_x86_image image={&map,1u,0u,map.address};
         pl_x86_instruction decoded;if(pl_x86_decode_profile(&image,map.address,&decoded)
             ||decoded.status!=PL_X86_DECODE_VALID||decoded.source_bytes!=2u||decoded.machine_operation!=PL_X86_MACHINE_X87
             ||decoded.visible_operand_count!=2u||decoded.operands[1].value.reg.index!=index)return 1;
+#endif
         for(pl_u32 left=0u;left<count;++left)for(pl_u32 right=0u;right<count;++right){
             _Alignas(16) pl_u8 input[512]={0},before[512],after[512];pl_u32 top=(left+right)&7u;
             put(input,mask?0x37cu:0x37fu,2u);put(input+2u,0x4700u|(top<<11u),2u);input[4u]=255u;
@@ -54,9 +80,15 @@ int main(int argc,char **argv)
             if(b->empty)input[4u]=(pl_u8)(input[4u]&~(1u<<((top+index)&7u)));
             machine_state *first=&observations[left][right][0],*last=first+1u;memset(first,0,sizeof *first);
             for(pl_u32 r=0u;r<16u;++r)first->registers[r]=0x123456789abc0000ull+r;
-            first->rip=map.address;first->rflags=0xad7u;first->cr0=0x80010031u;first->cr3=0x1000u;first->cr4=32u;first->efer=0xd00u;
+            first->rip=map.address;
+            first->rflags=0xa92u|((left&1u)?1u:0u)|((right&1u)?4u:0u)|(((left^right)&2u)?0x40u:0u);
+            first->cr0=0x80010031u;first->cr3=0x1000u;first->cr4=32u;first->efer=0xd00u;
             first->retired=42u;first->system[MACHINE_SYSTEM_CS]=19u;first->system[MACHINE_SYSTEM_DR0+7u]=0x400u;*last=*first;
+#ifdef _WIN32
+            native_observe(first,last,code,input,before,after);
+#else
             native_fxsave(last,code,input,before,after);first->registers[4u]=last->registers[4u];
+#endif
             check_x87_project(first,before);check_x87_project(last,after);
             // Bind a native code-map coordinate to the diagnostic guest map.
             // This is oracle loading, not runtime branch/opcode interpretation.
@@ -71,7 +103,21 @@ int main(int argc,char **argv)
         if(n<1||(size_t)n>=sizeof json||save(directory,form,"json",json,(size_t)n)||save(directory,form,"cases",observations,sizeof observations)
             ||save(directory,form,"source",code,2u))goto done;
     }
-    printf("{\"format\":\"native-x87-compare-observations-v1\",\"rows\":%u,\"forms\":64,\"vendor\":\"%s\",\"statusChanges\":%llu,\"unmasked\":%llu,\"popSuppressed\":%llu,\"c1Kept\":%llu,\"runtimeImplementation\":\"not-added\",\"oracle\":\"build QEMU CPU, not silicon\"}\n",rows,vendor,(unsigned long long)status_changes,(unsigned long long)unmasked,(unsigned long long)pop_suppressed,(unsigned long long)c1_kept);
+    char receipt[768];int reported=snprintf(receipt,sizeof receipt,"{\"format\":\"native-x87-compare-observations-v2\",\"rows\":%u,\"forms\":64,\"vendor\":\"%s\",\"statusChanges\":%llu,\"unmasked\":%llu,\"popSuppressed\":%llu,\"c1Kept\":%llu,\"runtimeImplementation\":\"oracle-only\",\"oracle\":\"%s\"}\n",rows,vendor,(unsigned long long)status_changes,(unsigned long long)unmasked,(unsigned long long)pop_suppressed,(unsigned long long)c1_kept,
+#ifdef _WIN32
+        "physical Windows CPU; FPU/RFLAGS observed, compare GPR invariance is architectural"
+#else
+        "build QEMU CPU, not silicon"
+#endif
+    );
+    if(reported<1||(size_t)reported>=sizeof receipt||save(directory,64u,"json",receipt,(size_t)reported))goto done;
+    fputs(receipt,stdout);
     failed=0;
-done:if(munmap(code,4096u))failed=1;return failed;
+done:
+#ifdef _WIN32
+    if(!VirtualFree(code,0u,MEM_RELEASE))failed=1;
+#else
+    if(munmap(code,4096u))failed=1;
+#endif
+    return failed;
 }

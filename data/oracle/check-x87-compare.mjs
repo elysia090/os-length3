@@ -5,6 +5,9 @@ import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 const [vmFile,compilerFile,directory]=process.argv.slice(2);
 if(!directory)throw new Error('VM.WASM COLD.WASM NATIVE-COMPARE-RECORDS');
+const provenance=JSON.parse(await readFile(path.join(directory,'x87-compare-64.json')));
+assert.equal(provenance.format,'native-x87-compare-observations-v2');
+assert.equal(provenance.rows,16384);assert.equal(provenance.forms,64);
 const memory=new WebAssembly.Memory({initial:16}),vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const coldMemory=new WebAssembly.Memory({initial:16}),cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
 const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer);
@@ -21,7 +24,7 @@ for(const form of [8,...Array.from({length:64},(_,i)=>i).filter(i=>i!==8)]){cons
   const status=cc.compiler_emit(entry,1,co,65536,cr);
   assert.equal(status,0,`real x87 compare must lower exactly: form ${form}, source ${source.toString('hex')}`);
   const code=c.subarray(co,co+Number(cv.getBigUint64(cr+40,true))),binding=cv.getUint32(cr+76,true);
-  const instance=(await WebAssembly.instantiate(code,{machine:{memory}})).instance;cc.compiler_close();
+  const instance=(await WebAssembly.instantiate(code,{machine:{memory,floating_wait:vm.vm_floating_wait}})).instance;cc.compiler_close();
   for(let row=0;row<meta.native;++row){vm.vm_close();a.fill(0,dir);
     const before=native.subarray(row*2512,row*2512+1256),after=native.subarray(row*2512+1256,(row+1)*2512);
     a.set(before,cpu);[0x1000,0x2000,0x3000,0x4000,0x8000].forEach((address,i)=>{
@@ -37,4 +40,4 @@ for(const form of [8,...Array.from({length:64},(_,i)=>i).filter(i=>i!==8)]){cons
   }
 }
 vm.vm_close();console.log(JSON.stringify({format:'native-x87-compare-c-v1',status:'pass',comparisons,
-  oracle:'build QEMU native instructions, not physical silicon or complete CR0.NE/legacy FERR/interrupt proof',linuxBoot:'not-tested'},null,2));
+  oracle:provenance.oracle,exceptionBoundaryScope:'separate C #NM/#MF/legacy FERR models required',linuxBoot:'not-tested'},null,2));

@@ -72,6 +72,8 @@ static int canonical(pl_u64 address)
 
 pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
 {
+    pl_x86_x87_compare compare;
+    if(pl_x86_x87_compare_lower(instruction,&compare))return 0x8d5u;
     if (cut_paired_exchange_supported(instruction)) return 0x40u;
     switch (instruction->operation) {
     case PL_X86_OPERATION_STRING: return instruction->condition>=3u && instruction->condition<=4u ? 0x8d5u : 0u;

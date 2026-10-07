@@ -84,6 +84,15 @@ typedef struct { pl_u8 status,memory; } pl_x86_x87_snapshot;
  * consumption. EM/TS #NM precedes operand access; AX preserves its parent. */
 int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_snapshot *out);
 
+typedef struct { pl_u8 source,ordered,pop;pl_u16 opcode; } pl_x86_x87_compare;
+int pl_x86_x87_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_compare *out);
+/* Pure extended-precision relation. Inputs: significand/sign-exponent A,
+ * significand/sign-exponent B, empty-stack predicate. Outputs 0..2: EFLAGS
+ * CF/PF/ZF, newly raised IE/DE/SF bits, empty predicate. No f64 conversion,
+ * rounding, architectural state effect, or serialized operation stream. */
+#define PL_X86_X87_RELATION_MAX_NODES 96u
+int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out);
+
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input
  * names and byte coordinates are construction facts, not saved runtime rows.

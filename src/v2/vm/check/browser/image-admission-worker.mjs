@@ -17,7 +17,10 @@ self.onmessage=async({data})=>{
       return bytes;
     }
     const [vm,compiler]=await Promise.all(['vm.wasm','compiler.wasm'].map(read)),cases=[];
-    for(const name of ['multi','cross']){
+    const names=manifest.cases??['multi','cross'];
+    if(!Array.isArray(names)||!names.length||names.length>3||new Set(names).size!==names.length
+        ||names.some(name=>!['multi','cross','fpu'].includes(name)))throw new Error('diagnostic case list');
+    for(const name of names){
       const [elf,index]=await Promise.all([read(`${name}.elf`),read(`${name}/root-ref`)]);
       const result=await checkImageAdmission(vm,compiler,elf,index,opaque=>{
         if(!/^[0-9a-f]{64}$/.test(opaque))throw new Error('C object identity');
