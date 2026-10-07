@@ -2846,10 +2846,43 @@ int pl_x86_halt_supported(const pl_x86_instruction *instruction)
             | PL_X86_INSTRUCTION_WRITES_MEMORY | PL_X86_INSTRUCTION_TRAP_AFTER));
 }
 
+int pl_x86_selector_read_lower(const pl_x86_instruction *instruction,pl_x86_selector_read *out)
+{
+    if(!instruction || !out || instruction->status!=PL_X86_DECODE_VALID
+            || instruction->encoding!=PL_X86_ENCODING_LEGACY
+            || instruction->machine_operation!=PL_X86_MACHINE_READ_SELECTOR
+            || !instruction->length || instruction->length>15u
+            || instruction->fallthrough!=instruction->rip+instruction->length
+            || (instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+                |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_READS_MEMORY)))return 0;
+    pl_u32 selector=(pl_u32)instruction->machine_argument&255u,system=selector>=6u;
+    if(selector>=8u || (instruction->flow!=PL_X86_FLOW_NEXT && !(system && instruction->flow==PL_X86_FLOW_SYSTEM))
+            || instruction->visible_operand_count!=(system?1u:2u))return 0;
+    if(system){pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+        if((instruction->flags&required)!=required)return 0;
+    }else{const pl_x86_operand *source=&instruction->operands[1];
+        if(instruction->operation!=PL_X86_OPERATION_MOVE || source->kind!=PL_X86_OPERAND_REGISTER || source->bits!=16u
+                || source->value.reg.class_id!=PL_X86_REGISTER_SEGMENT || source->value.reg.index!=selector
+                || source->value.reg.bits!=16u || source->value.reg.flags)return 0;}
+    const pl_x86_operand *destination=&instruction->operands[0];pl_u32 memory=destination->kind==PL_X86_OPERAND_MEMORY;
+    pl_u32 target=0u;
+    if(memory){if(destination->bits!=16u || !(instruction->flags&PL_X86_INSTRUCTION_WRITES_MEMORY))return 0;}
+    else{if(destination->kind!=PL_X86_OPERAND_REGISTER || destination->value.reg.class_id!=PL_X86_REGISTER_GPR
+            || destination->value.reg.index>=16u || destination->value.reg.flags
+            || (destination->bits!=16u && destination->bits!=32u && destination->bits!=64u)
+            || destination->bits!=destination->value.reg.bits || (instruction->flags&PL_X86_INSTRUCTION_WRITES_MEMORY))return 0;
+        target=destination->value.reg.index;}
+    if(instruction->machine_argument!=(selector|((pl_u64)memory<<8u)|((pl_u64)target<<16u)
+            |((pl_u64)destination->bits<<24u)))return 0;
+    *out=(pl_x86_selector_read){(pl_u8)selector,(pl_u8)memory,(pl_u8)target,(pl_u8)destination->bits,(pl_u8)system};return 1;
+}
+
 int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_READ_SELECTOR){pl_x86_selector_read law;
+        if(!pl_x86_selector_read_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if (instruction->status != PL_X86_DECODE_VALID
             || (instruction->machine_operation == PL_X86_MACHINE_HALT
                 && !pl_x86_halt_supported(instruction))

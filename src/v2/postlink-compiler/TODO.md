@@ -23,6 +23,28 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Whole-image preflight and deterministic adaptive module iteration now replace
+the directory constructor's former global 256-coordinate restriction. The
+compiler core remains Artifact/filesystem-independent; CLI --directory is its
+publication adapter using the existing index/resource/object codec. It holds
+one module buffer and a bounded 71,760-byte index frontier, not a full row/code
+population. Root-ref is renamed into place last; existing output is refused.
+An actual verified 384-coordinate ELF produces 2 ordinary modules / 39,827
+module bytes, one 10,224-byte canonical ELF owner and existing index (50,475
+directory bytes total). Native/cold bytes and C authenticated range delivery
+match; holes/last end/stale/corrupt/source lifetime/alias controls pass.
+The one selector grammar miss in that full input is recovered through a shared
+descriptor law, existing SSA loads and typed C memory boundary: SLDT/STR memory
+is 16-bit, UMIP fault precedes access. 288 C-MMU models (216 faults) pass, not a
+hardware-proof claim. Full compiler/VM regressions and scoped sanitizers pass.
+Actual published make now fails --directory with -102 BEFORE creating any
+directory/root, not the old -104 size stub. 7,183 actual final-PF_X misses remain;
+first is still dfe8. Complete ISA/source-context closure AND C image execution
+admission/residency remain the main blockers. Delivery readiness is not source
+admission: IMAGE_MODULE is a distinct resource role and cannot use the old
+selected-cut metadata path. No new signed production root or browser boot.
+See [producer/delivery contract, measurements and limits](../vm/check/browser/evidence/2026-10-07-image-directory.md).
+
 The ordinary ELF CLI and cold C compiler now generate a complete final-PF_X
 code domain WHEN it fits one bounded module. The old function/dispatcher
 placeholders are removed; actual final executable maps, not proof counts,
@@ -31,10 +53,11 @@ immutable loader bias and compiled scalar bindings. ET_EXEC 6 / ET_DYN 11
 coordinates yield 5 / 7 bodies, one dispatcher, 2,024 / 2,777 bytes, with
 306 actual C-MMU/table comparisons, 18 unchanged out-of-domain refusals and
 native/cold byte identity. Full regressions/scoped sanitizers pass.
-Larger domains still refuse -104 before any prefix publication: the actual
-published make ELF does so. Missing grammar/fetch context is never a fake
-architectural fault. Complete multi-module/directory production and C-authenticated
-image admission/residency are still required before Linux/browser acceptance.
+Its single-file API still refuses larger domains -104 rather than publishing
+a prefix. The new directory API above removes that constructor restriction;
+make's remaining failure is actual grammar. Missing grammar/fetch context is
+never a fake architectural fault. C-authenticated image execution admission /
+residency and complete ISA closure remain required before Linux acceptance.
 No new production root or browser observation; native release/UI unchanged.
 See [contract, exact input/output and remaining main blocker](../vm/check/browser/evidence/2026-10-07-image-dispatch.md).
 

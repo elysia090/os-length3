@@ -24,9 +24,9 @@ static pl_u32 find(const pl_index_ref *ref)
         if(same(nodes[i].digest,ref->digest,32u) && nodes[i].length==ref->node_bytes)return i;
     return MAX_NODES;
 }
-static int walk(vm_directory *directory,pl_index_key key)
+static int walk_kind(vm_directory *directory,pl_index_key key,pl_u32 kind)
 {
-    int status=vm_directory_begin(directory,9u,key,ARTIFACT_RESOURCE_WASM_MODULE);pl_u32 count=0u;
+    int status=vm_directory_begin(directory,9u,key,kind);pl_u32 count=0u;
     if(status)return status;
     while(directory->stage==VM_DIRECTORY_NODE){
         pl_u32 rank=find(&directory->pending);if(rank==MAX_NODES)return -1;
@@ -37,6 +37,8 @@ static int walk(vm_directory *directory,pl_index_key key)
     visits+=count;if(count>longest)longest=count;
     return vm_directory_object(directory,9u,directory->ticket,object,object_bytes);
 }
+static int walk(vm_directory *directory,pl_index_key key)
+{return walk_kind(directory,key,ARTIFACT_RESOURCE_WASM_MODULE);}
 static int save(const char *directory,const char *name,const pl_u8 *bytes,pl_u32 length)
 {
     char path[4096];int n=snprintf(path,sizeof path,"%s/%s",directory,name);
@@ -134,6 +136,24 @@ int main(int argc,char **argv)
             if(save(argv[1],name,i<node_count?nodes[i].bytes:object,i<node_count?nodes[i].length:object_bytes))return 6;
         }
     }
-    printf("Artifact directory: 3000 bounded 3-node authenticated paths; stale/corrupt/cancel/reopen/exhaustion controls; owner %u bytes, no payload copy\n",(unsigned)sizeof(vm_directory));
+    /* Ordered module intervals reuse exactly the same node/object reader. */
+    node_count=0u;resource.object.kind=ARTIFACT_RESOURCE_IMAGE_MODULE;
+    for(pl_u32 i=0u;i<100u;++i){resource.key=(pl_index_key){1u,0x400000u+(pl_u64)i*512u};
+        resource.coordinate=resource.key.minor+256u;EXPECT(!artifact_resource_write(&resource,rows[i]));}
+    EXPECT(!pl_index_build(rows[0],ARTIFACT_RESOURCE_BYTES,100u,references,64u,scratch,publish,0,&root));
+    vm_directory intervals={0}; /* Separate construction/authority from the exhausted owner above. */
+    EXPECT(!vm_directory_open(&intervals,&root,9u,sizeof object));
+    for(pl_u32 i=0u;i<100u;++i)for(pl_u32 part=0u;part<3u;++part){pl_u64 offset=part==0u?0u:part==1u?127u:255u;
+        EXPECT(!walk_kind(&intervals,(pl_index_key){1u,0x400000u+(pl_u64)i*512u+offset},ARTIFACT_RESOURCE_IMAGE_MODULE));
+        EXPECT(intervals.resource.key.minor==0x400000u+(pl_u64)i*512u);}
+    for(pl_u32 i=0u;i<100u;++i){
+        EXPECT(walk_kind(&intervals,(pl_index_key){1u,0x400100u+(pl_u64)i*512u},ARTIFACT_RESOURCE_IMAGE_MODULE)==PL_ERROR_INDEX_ABSENT);
+        vm_directory_cancel(&intervals);}
+    EXPECT(vm_directory_begin(&intervals,9u,(pl_index_key){2u,0u},ARTIFACT_RESOURCE_IMAGE_MODULE)==PL_ERROR_INDEX_ABSENT);
+    EXPECT(!vm_directory_begin(&intervals,9u,(pl_index_key){1u,0x400080u},ARTIFACT_RESOURCE_IMAGE_MODULE));
+    before=intervals;rank=find(&intervals.pending);
+    EXPECT(vm_directory_node(&intervals,9u,intervals.ticket+1u,nodes[rank].bytes,nodes[rank].length)==VM_DIRECTORY_ERROR_STALE);
+    EXPECT(same(&intervals,&before,sizeof before));
+    printf("Artifact directory: 3000 exact paths, 300 interval lookups/100 holes plus last end; stale/corrupt/cancel/reopen/exhaustion controls; owner %u bytes, no payload copy\n",(unsigned)sizeof(vm_directory));
     return failures?1:0;
 }

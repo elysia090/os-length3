@@ -164,6 +164,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
                     plan->report.memory_bytes=(instruction.machine_argument&(3ull<<24u))
                         ? (instruction.machine_argument&255u)==9u?4u:8u : 0u;
+                else if(system==CUT_SYSTEM_SELECTOR_SNAPSHOT && instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
+                    plan->report.memory_bytes=2u;
                 else if (system==CUT_SYSTEM_SEGMENT
                         && instruction.operands[instruction.machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
                             ?0u:1u].kind==PL_X86_OPERAND_MEMORY)

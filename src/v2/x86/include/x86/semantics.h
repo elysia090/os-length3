@@ -74,6 +74,10 @@ const pl_x86_operand *pl_x86_string_memory(const pl_x86_instruction *instruction
  * source access precedes descriptor admission and destination publication;
  * descriptor/interrupt-shadow ownership belongs to the machine boundary. */
 int pl_x86_segment_move_supported(const pl_x86_instruction *instruction);
+typedef struct { pl_u8 selector,memory,register_index,bits,umip; } pl_x86_selector_read;
+/* Visible ES..TR selector snapshot. Memory receives exactly 16 bits; wider
+ * GPR destinations zero-extend. LDTR/TR reads have the conditional UMIP cut. */
+int pl_x86_selector_read_lower(const pl_x86_instruction *instruction,pl_x86_selector_read *out);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

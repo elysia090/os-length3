@@ -5,7 +5,8 @@ int artifact_resource_validate(const artifact_resource *resource)
 {
     return resource && resource->generation
         && resource->object.kind > ARTIFACT_RESOURCE_NONE
-        && resource->object.kind <= ARTIFACT_RESOURCE_BOOT_SNAPSHOT
+        && resource->object.kind <= ARTIFACT_RESOURCE_IMAGE_SOURCE
+        && (resource->object.kind!=ARTIFACT_RESOURCE_IMAGE_MODULE || resource->coordinate>resource->key.minor)
         && resource->object.version == ARTIFACT_RESOURCE_VERSION
         && artifact_object_validate(&resource->object);
 }

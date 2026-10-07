@@ -23,6 +23,10 @@ int cut_system_supported(const pl_x86_instruction *instruction)
 {
     pl_x86_count_branch count;
     if(pl_x86_count_branch_lower(instruction,&count) && count.bits!=16u)return CUT_SYSTEM_COUNTER_BRANCH;
+    pl_x86_selector_read snapshot;
+    if(pl_x86_selector_read_lower(instruction,&snapshot) && snapshot.umip
+            && (!snapshot.memory || cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))
+        return CUT_SYSTEM_SELECTOR_SNAPSHOT;
     if (pl_x86_halt_supported(instruction)) return CUT_SYSTEM_HALT;
     if(instruction->status==PL_X86_DECODE_VALID && instruction->encoding==PL_X86_ENCODING_LEGACY
             && instruction->machine_operation==PL_X86_MACHINE_SYSTEM_TRANSFER
@@ -330,6 +334,27 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    pl_x86_selector_read snapshot;
+    if(pl_x86_selector_read_lower(instruction,&snapshot) && snapshot.umip){
+        /* A conditional privilege fault precedes the destination access.
+         * Snapshot only the visible selector, never its descriptor/cache. */
+        cut_load(cut,offsetof(machine_state,system)+MACHINE_SYSTEM_CS*8u);
+        cut_const(cut,3u);cut_op(cut,0x83u);cut_op(cut,0x50u);
+        cut_load(cut,offsetof(machine_state,cr4));cut_const(cut,1u<<11u);cut_op(cut,0x83u);cut_op(cut,0x50u);
+        cut_op(cut,0x72u);cut_op(cut,0x45u);cut_op(cut,0x04u);cut_op(cut,0x40u);
+        cut_load(cut,offsetof(machine_state,rip));port_store(cut,offsetof(machine_memory_port,fault_address),8u);
+        cut_const(cut,13u);port_store(cut,offsetof(machine_memory_port,fault_vector),4u);
+        cut_const(cut,0u);port_store(cut,offsetof(machine_memory_port,fault_error),4u);
+        cut_const(cut,machine_result_make(MACHINE_RESULT_FAULT,13u));cut_op(cut,0x0fu);cut_op(cut,0x0bu);
+        if(snapshot.memory){cut_effective_address(cut,instruction,&instruction->operands[0].value.memory);cut_set(cut,CUT_ADDRESS);}
+        cut_load(cut,offsetof(machine_state,system)+(MACHINE_SYSTEM_ES+snapshot.selector)*8u);
+        cut_mask(cut,16u);cut_set(cut,CUT_VALUE);
+        if(snapshot.memory){cut->report.memory_bytes=2u;
+            cut->report.memory_access=MACHINE_MEMORY_WRITE|cut_memory_role(&instruction->operands[0].value.memory);
+            cut_access(cut);
+        }else cut_write_register(cut,&instruction->operands[0].value.reg);
+        return;
+    }
     pl_x86_count_branch count;
     if(pl_x86_count_branch_lower(instruction,&count)){cut_lower_counter_branch(cut,instruction);return;}
     if (pl_x86_halt_supported(instruction)) {

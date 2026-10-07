@@ -15,6 +15,11 @@ enum artifact_resource_kind {
     ARTIFACT_RESOURCE_MEMORY_PAGE,
     ARTIFACT_RESOURCE_DIRECTORY,
     ARTIFACT_RESOURCE_BOOT_SNAPSHOT,
+    /* Complete-image entry module, not machine.source selected-cut metadata.
+     * minor key is the original ELF interval start, coordinate is exclusive
+     * end. The image loader owns bias/generation/source authorization. */
+    ARTIFACT_RESOURCE_IMAGE_MODULE,
+    ARTIFACT_RESOURCE_IMAGE_SOURCE,
 };
 
 typedef struct {

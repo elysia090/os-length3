@@ -94,4 +94,4 @@ for(const bias of [0n,0x70000000n,0xffff800000000000n]){
 vm.vm_close();console.log(JSON.stringify({format:'bounded-complete-elf-dispatch-v1',status:'pass',
   sourceCoordinates:entries.length,definedBodies:defined,dispatchers:1,comparisons,refusals,biases:3,
   oracle:'native/cold bytes; every final PF_X coordinate against frozen C compiler through actual C MMU/table, CPL/permissions/faults',
-  linuxBoot:'not-tested',largeImageDirectory:'not-implemented',productionRoot:'not-published'},null,2));
+  linuxBoot:'not-tested',largeImageDirectory:'not-tested-by-this-oracle',productionRoot:'not-published'},null,2));

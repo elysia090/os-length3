@@ -21,6 +21,7 @@ WASM_FLAGS += -Wl,--export=compiler_entry_abi
 WASM_FLAGS += -Wl,--export=compiler_emit_module
 WASM_FLAGS += -Wl,--export=compiler_emit_projection
 WASM_FLAGS += -Wl,--export=compiler_emit_image,--export=compiler_image_report_bytes
+WASM_FLAGS += -Wl,--export=compiler_prepare_image,--export=compiler_image_next,--export=compiler_image_module_bytes
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-string.c src/lower-branch.c
@@ -39,6 +40,7 @@ SOURCES += src/lower-vector-scalar.c
 SOURCES += src/emit-interface.c
 SOURCES += src/coverage.c
 SOURCES += src/lower-register-update.c
+SOURCES += src/image.c src/image-stream.c
 
 .PHONY: register-update-check
 .PHONY: literal-check
@@ -70,6 +72,16 @@ $(BUILD)/count-branch-check: check/count-branch.c check/native-cut.S $(BUILD)/li
 .PHONY: cut-module-check
 .PHONY: source-module-check
 .PHONY: image-path-check
+.PHONY: image-stream-check
+check: image-stream-check
+image-stream-check: $(BUILD)/image-stream-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs check/image-large.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/image-stream-check "$$scratch/optimized.elf"
+$(BUILD)/image-stream-check: check/image-stream.c cli/io.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< cli/io.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 check: image-path-check
 image-path-check: $(BUILD)/image-check fixture-tools
 	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
@@ -260,8 +272,10 @@ $(BUILD)/libwasm-compiler.a: $(OBJECTS) Makefile
 	$(RM) $@
 	$(AR) rcs $@ $(OBJECTS)
 
-$(BUILD)/wasm-compiler: cli/main.c cli/io.c cli/prefix.c cli/coverage.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+DIRECTORY_SOURCES = $(SOURCE_MODULE_FIXTURE_SOURCES) ../artifact/src/index-stream.c
+$(BUILD)/wasm-compiler: cli/main.c cli/io.c cli/prefix.c cli/coverage.c cli/directory.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) $(DIRECTORY_SOURCES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) cli/main.c cli/io.c cli/prefix.c cli/coverage.c \
+		-I../artifact/include cli/directory.c $(DIRECTORY_SOURCES) \
 		$(BUILD)/libwasm-compiler.a ../optimized-x86/build/liboptimized-x86.a \
 		../x86/build/libx86.a ../support/build/libsupport.a -o $@
 

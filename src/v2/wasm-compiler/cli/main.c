@@ -13,6 +13,7 @@ int main(int argc, char **argv)
     wasm_compile_options options = { 256u, 1u << 20u };
     pl_u64 output_bytes = 0u;
     int status;
+    if(argc==4 && !strcmp(argv[1],"--directory"))return cli_directory(argv[2],argv[3]);
     if(argc==3 && !strcmp(argv[1],"--coverage"))return cli_coverage(argv[2]);
     if (argc == 4 && !strcmp(argv[1],"--prefix"))
         return cli_prefix(argv[2],argv[3],0,0u,0u);
@@ -23,6 +24,7 @@ int main(int argc, char **argv)
     }
     if (argc != 3 || argv[1][0] == '-') {
         fprintf(stderr, "usage: wasm-compiler INPUT.elf OUTPUT.wasm\n"
+                "       wasm-compiler --directory INPUT.elf NEW-OUTPUT-DIRECTORY\n"
                 "       wasm-compiler --coverage INPUT.elf\n"
                 "       wasm-compiler --prefix INPUT.elf OUTPUT-PREFIX\n"
                 "       wasm-compiler --code-pages PAGE-ADDRESS ENTRY INPUT.pages OUTPUT-PREFIX\n"

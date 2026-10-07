@@ -934,3 +934,19 @@ without publishing a prefix. `projection-check` requires VM_WASM,
 COLD_COMPILER_WASM and REFERENCE_COMPILER_WASM in addition to INPUT, and calls
 the executable comparator rather than an always-red placeholder.
 See [contract and scope](../../src/v2/vm/check/browser/evidence/2026-10-07-image-dispatch.md).
+
+### Whole-image directory producer and authenticated range delivery
+
+`wasm-compiler --directory VERIFIED.elf NEW-DIRECTORY` preflights the entire
+final code domain, then emits bounded ordinary modules and the existing
+Artifact index. No coordinate prefix is published on a grammar/fetch miss.
+`check-image-directory.mjs VM.WASM COLD.WASM VERIFIED.elf NEW-DIRECTORY`
+matches native/cold iteration and actual C authenticated range/object lookup.
+Delivery readiness is not image execution admission. `index-stream-check`
+checks exact batch spelling with only a bounded frontier; `image-stream-check`
+uses a real linked/postlinked/verified >256-coordinate image. `LENGTH3_STREAM_INPUT`
+enables that same source under the scoped compiler sanitizers.
+`check-selector-snapshot.mjs VM.WASM COLD.WASM` checks the recovered selector
+descriptor/UMIP/memory path against explicitly labeled ISA models, not host
+Linux UMIP emulation or a native ring0 proof. See
+[measurements and remaining actual Linux blockers](../../src/v2/vm/check/browser/evidence/2026-10-07-image-directory.md).

@@ -31,6 +31,10 @@ int vm_directory_open(vm_directory *directory, const pl_index_ref *root,
     pl_u64 generation, pl_u32 maximum_object_bytes);
 /* The requested role is part of admission: a valid memory-page row cannot
  * satisfy a module request, even when its payload happens to be valid Wasm. */
+/* IMAGE_MODULE uses authenticated predecessor/range lookup in original ELF
+ * coordinates. The exclusive end must contain the requested coordinate;
+ * holes and the last interval's end refuse. Other roles retain exact lookup.
+ * Object identity readiness is not image execution/source/bias admission. */
 int vm_directory_begin(vm_directory *directory, pl_u64 generation, pl_index_key key,
     pl_u32 expected_kind);
 /* Return 1 only after an authenticated leaf selected one bounded resource;

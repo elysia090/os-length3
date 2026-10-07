@@ -1,5 +1,6 @@
 /* Privileged cold construction exports; never imports of generated guest code. */
 #include <wasm-compiler/cut.h>
+#include <wasm-compiler/image.h>
 #include <machine/entry.h>
 #include <stdint.h>
 
@@ -9,6 +10,9 @@ static pl_x86_map maps[2];
 static pl_x86_image source;
 static pl_u32 mode;
 static pl_u64 source_generation;
+static wasm_image_plan image_plan;
+static wasm_image_iterator image_iterator;
+static pl_u32 image_ready;
 
 _Static_assert(sizeof(wasm_cut_report) == 80u, "cut report transport extent");
 _Static_assert(__builtin_offsetof(wasm_cut_report, operand_binding) == 76u,
@@ -28,6 +32,7 @@ static int range(pl_u32 offset, pl_u64 bytes)
 
 void compiler_close(void)
 {
+    image_ready=0u;image_plan=(wasm_image_plan){0};image_iterator=(wasm_image_iterator){0};
     compiler = (wasm_compiler){0}; source = (pl_x86_image){0};
     maps[0] = maps[1] = (pl_x86_map){0}; mode = 0u; source_generation = 0u;
 }
@@ -148,4 +153,28 @@ int compiler_emit_image(pl_u32 functions,pl_u32 module_bytes,pl_u32 target,pl_u3
     wasm_compile_options options={functions,module_bytes};pl_u64 written=0u;
     return wasm_compiler_emit(&compiler,&options,(pl_u8 *)(uintptr_t)target,capacity,&written,
         (wasm_compile_report *)(uintptr_t)report_offset);
+}
+
+int compiler_prepare_image(pl_u32 functions,pl_u32 module_bytes,pl_u32 report_offset)
+{
+    image_ready=0u;image_plan=(wasm_image_plan){0};image_iterator=(wasm_image_iterator){0};
+    if(mode!=1u || (report_offset&7u) || !range(report_offset,sizeof(wasm_compile_report))
+            || overlaps(report_offset,sizeof(wasm_compile_report),compiler.image.bytes,compiler.image.length))
+        return WASM_COMPILER_ERROR_INPUT;
+    wasm_compile_options options={functions,module_bytes};
+    int status=wasm_compiler_prepare_image(&compiler,&options,&image_plan);
+    if(status)return status;
+    *(wasm_compile_report *)(uintptr_t)report_offset=image_plan.report;image_ready=1u;return 0;
+}
+pl_u32 compiler_image_module_bytes(void){return sizeof(wasm_image_module);}
+int compiler_image_next(pl_u32 target,pl_u32 capacity,pl_u32 info_offset)
+{
+    if(mode!=1u || !image_ready || !capacity || !range(target,capacity) || (info_offset&7u)
+            || !range(info_offset,sizeof(wasm_image_module))
+            || overlaps(target,capacity,(const void *)(uintptr_t)info_offset,sizeof(wasm_image_module))
+            || overlaps(target,capacity,compiler.image.bytes,compiler.image.length)
+            || overlaps(info_offset,sizeof(wasm_image_module),compiler.image.bytes,compiler.image.length))return WASM_COMPILER_ERROR_INPUT;
+    if(image_ready==1u){int status=wasm_image_iterator_open(&image_plan,&image_iterator);if(status){image_ready=0u;return status;}image_ready=2u;}
+    return wasm_image_iterator_next(&image_iterator,(pl_u8 *)(uintptr_t)target,capacity,
+        (wasm_image_module *)(uintptr_t)info_offset);
 }

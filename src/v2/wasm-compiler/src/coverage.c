@@ -1,4 +1,5 @@
 #include "cut-internal.h"
+#include "image-internal.h"
 #include <stdint.h>
 
 static int overlaps(const void *left,pl_u64 left_bytes,const void *right,pl_u64 right_bytes)
@@ -53,16 +54,9 @@ int wasm_compiler_coverage(const wasm_compiler *compiler,wasm_coverage_report *r
             || overlaps(report,sizeof *report,compiler,sizeof *compiler)
             || overlaps(report,sizeof *report,compiler->image.bytes,compiler->image.length))
         return WASM_COMPILER_ERROR_INPUT;
-    wasm_compile_report admission={0};int status=wasm_lower_machine_abi(compiler,&admission);
-    if(status)return status;
-    pl_elf_image elf;pl_u32 count=0u;
-    if(pl_elf_open(compiler->image.bytes,compiler->image.length,&elf)
-            || pl_x86_elf_map_count(&elf,&count))return WASM_COMPILER_ERROR_PROOF;
-    if(count>64u)return WASM_COMPILER_ERROR_CAPACITY;
-    pl_x86_map maps[64];pl_x86_image image;
-    if(pl_x86_image_from_elf(&elf,0u,1u,maps,64u,&image))return WASM_COMPILER_ERROR_PROOF;
-    wasm_coverage_report measured={0};coverage_owner owner={&image,&measured};
-    status=pl_x86_catalog_profile(&image,visit,&owner,&measured.catalog);
+    wasm_image_view view;int status=wasm_image_open(compiler,&view);if(status)return status;
+    wasm_coverage_report measured={0};coverage_owner owner={&view.image,&measured};
+    status=pl_x86_catalog_profile(&view.image,visit,&owner,&measured.catalog);
     if(status)return status;
     if(measured.catalog.coordinates!=measured.lowerable+measured.unlowered_valid+measured.unlowered_faults
             +measured.fetch_demands+measured.capacity_refusals)return WASM_COMPILER_ERROR_GRAMMAR;

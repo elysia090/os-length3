@@ -33,7 +33,7 @@ static int get_bit(const pl_u8 *code, pl_u64 bits,
                    pl_u64 *at, pl_u32 *out)
 {
     if (*at >= bits) return 0;
-    *out = (code[*at >> 3u] >> (7u - (pl_u32)(*at & 7u))) & 1u;
+    *out = ((pl_u32)code[*at >> 3u] >> (7u - (pl_u32)(*at & 7u))) & 1u;
     ++*at;
     return 1;
 }

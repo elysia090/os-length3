@@ -1,0 +1,67 @@
+{
+  "format": "complete-image-directory-candidate-v1",
+  "status": "pass",
+  "baselineCommit": "69c103e",
+  "compiler": {
+    "bytes": 471067,
+    "sha256": "daa8daf65d6cd3fa620e1abf5aa254d844aa44d0bfd7373ddce5522ef66cdda5"
+  },
+  "vm": {
+    "bytes": 88304,
+    "sha256": "04a19ce49e590176ee5d6233fd2a1388e0077e9f1aebc525c76b84cf4517d6f4"
+  },
+  "verifiedExample": {
+    "elfBytes": 10224,
+    "elfSha256": "199b14e5b88729d8eb8ae6641513d92c5b2f940616b8844484ab086242d91e4b",
+    "coordinates": 384,
+    "beforeLowerable": 383,
+    "afterLowerable": 384,
+    "modules": 2,
+    "moduleBytes": 39827,
+    "objects": 4,
+    "directoryBytesIncludingRoot": 50475,
+    "rootReferenceBytes": 88,
+    "rootReferenceSha256": "f7e77b06d722f44c6818b97b57bf1bc18b8fd041f2e880eeec11a498c5fdca06"
+  },
+  "indexWriter": {
+    "frontierBytes": 71760,
+    "exactBatchNodeRootBoundaryCases": 11,
+    "failureAndIdempotenceControls": "pass"
+  },
+  "authenticatedDelivery": {
+    "queries": 7,
+    "nodeReads": 7,
+    "objectReads": 7,
+    "staleCorruptEndRefusals": 15,
+    "nativeColdBytes": "exact",
+    "executionAdmission": "not-connected"
+  },
+  "selectorSnapshot": {
+    "emissions": 12,
+    "cMmuDescriptorModels": 288,
+    "faults": 216,
+    "oracle": "Intel descriptor/UMIP laws and actual C MMU/table; not native hardware proof"
+  },
+  "publishedMake": {
+    "coordinates": 233455,
+    "lowerable": 226272,
+    "missing": 7183,
+    "firstAddress": "0xa0c9",
+    "firstSource": "dfe8",
+    "newDirectoryStatus": -102,
+    "noDirectoryOrRootPublished": true
+  },
+  "checks": {
+    "fullCompilerVm": "pass",
+    "scopedAddressUndefinedSanitizers": "pass",
+    "cRangeReader": "300 interval / 100 holes + 3000 exact paths; unchanged 304-byte owner",
+    "imageIterator": "complete preflight, exact completion, capacity/alias/reopen/digest controls",
+    "existingDirectory": "refused; all previous object/root hashes unchanged",
+    "rootNamespacePublish": "temporary -> rename last; no durable/fsync claim"
+  },
+  "nativeReleaseAndUi": "unchanged",
+  "newSignedProductionRoot": false,
+  "newBrowserObservation": false,
+  "linuxBoot": "not-achieved",
+  "scope": "Complete constructor and authenticated delivery of a fully admitted actual 384-coordinate image. Real Linux/ISA and C image execution admission/residency remain incomplete; no distribution-size/speed/RSS or global semantic minimum claim."
+}

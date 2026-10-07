@@ -63,6 +63,13 @@ $(BUILD)/index-check: check/index.c $(BUILD)/libartifact.a | $(BUILD)
 index-check: $(BUILD)/index-check
 	$(BUILD)/index-check
 
+.PHONY: index-stream-check
+check: index-stream-check
+$(BUILD)/index-stream-check: check/index-stream.c $(BUILD)/libartifact.a | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libartifact.a ../support/build/libsupport.a -o $@
+index-stream-check: $(BUILD)/index-stream-check
+	$(BUILD)/index-stream-check
+
 $(BUILD)/share-check: check/share.c $(BUILD)/libartifact.a | $(BUILD)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) check/share.c \
 		$(BUILD)/libartifact.a ../support/build/libsupport.a -o $@
