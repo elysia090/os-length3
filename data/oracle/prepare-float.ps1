@@ -1,7 +1,7 @@
 # Independent oracles only. Official source stays under data; build objects
 # and executables are Windows temp products, never distribution artifacts.
 [CmdletBinding()]
-param([switch]$Verify)
+param([switch]$Verify,[switch]$Arithmetic)
 $ErrorActionPreference='Stop'
 $taskRepo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $taskInputs=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'float-source.json') -Raw | ConvertFrom-Json
@@ -35,5 +35,16 @@ try {
         if($LASTEXITCODE){throw 'integer oracle self-check failed'}
         & $test -level 1 -precision80 -rnear_even extF80_add
         if($LASTEXITCODE){throw 'ext80 add oracle self-check failed'}
+    }
+    if($Arithmetic){
+        $test=Join-Path $taskRepo 'temp/float-oracle/testfloat-build/testsoftfloat.exe'
+        foreach($precision in @('32','64','80')){
+            foreach($rounding in @('rnear_even','rmin','rmax','rminMag')){
+                foreach($operation in @('extF80_add','extF80_sub')){
+                    & $test -level 1 "-precision$precision" "-$rounding" -tininessafter $operation
+                    if($LASTEXITCODE){throw "arithmetic oracle self-check failed: $precision / $rounding / $operation"}
+                }
+            }
+        }
     }
 }finally{Pop-Location}

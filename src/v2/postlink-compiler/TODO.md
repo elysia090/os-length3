@@ -23,6 +23,21 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+The next arithmetic gate is now independently observed, not guessed:
+576 FIADD/FISUB/FISUBR forms / 36,864 physical FPU/RFLAGS rows. 2,880 canonical,
+masked, non-reserved-PC cases match official SoftFloat. Unmasked IE/DE keep
+payloads, but OE/UE/PE include 2,096 changed-payload observations; the compare
+writer's blanket suppression rule MUST NOT be reused. Tininess-before was
+red at the min-normal rounding boundary; after-rounding matches this domain.
+TestFloat's independent reference passes 1,115,136 add/sub tests across three
+precisions/four rounding modes. The strict common C-MMU/table gate remains
+red at FISUB/-102, not a hidden software fallback. One driver serves both
+FILD and arithmetic; FILD's 12,288 comparisons/18 byte forms remain green.
+The shared decoder also had a real prefixed-FOP defect: 48 new descriptor
+forms are red-before/green-after. Full x86/compiler/postlink checks pass.
+Coverage stays 6,545 missing; no arithmetic closure or Linux/browser claim.
+See [arithmetic red and required normal form](../vm/check/browser/evidence/2026-10-08-x87-arithmetic-red.md).
+
 Exact FILD now consumes the common signed-integer -> ext80 SSA through the
 same pure-plan emitter. Official SoftFloat agrees on 105,536 inputs (the
 complete signed16 domain, plus 20,000 signed32 and 20,000 signed64 samples).
@@ -419,6 +434,9 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    common coercion for FIADD/FISUB/FISUBR. Derive exact ext80 alignment,
    cancellation and PC/RC rounding before connecting arithmetic; independent
    SoftFloat/TestFloat and local hardware are oracles, not product helpers.
+   Keep IE/DE suppression separate from unmasked OE/UE scaled-result and PE
+   publication. Use the new complete-state arithmetic hardware gate, not a
+   masked numeric-only pass, to admit that implementation.
    First gaps in the two published s6 files are x87; their outside-image/indirect
    control edges and executable-map-end fetch context still require closure.
    Mixed cut imports can now share one typed standard-Wasm module through the

@@ -6,10 +6,17 @@ and builds their independent references under Windows `temp/float-oracle`.
 `float-source.json` records provenance and limitations: these libraries are
 never product runtime/fallbacks. `check-x87-integer.c` compares common integer
 SSA with that reference; its caller must use the same FAST_INT64/LITTLEENDIAN
-interface layout as the library. `check-x87-load.mjs` independently compares
+interface layout as the library. `check-x87-integer-memory.mjs` independently compares
 FILD C-Wasm/C-MMU execution with physical Windows FPU/RFLAGS observations;
 `check-x87-load-fault.mjs` covers separate fault-priority models. See
 [derivation, measured coverage and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-integer.md).
+
+Its `--arithmetic` mode is the strict (currently red) full-state gate for
+FIADD/FISUB/FISUBR hardware records. Both modes use ONE C-MMU/table driver;
+unknown arithmetic still refuses compilation, never executes a SoftFloat or
+JS fallback. `check-x87-arithmetic.c` independently checks the canonical,
+masked result subset against SoftFloat and retains separate counts for
+unmasked result publication outside that reference's domain.
 
 `check-absent-io.mjs VM.WASM COMPILER.WASM` checks the fixed platform's eight
 absent ISA-DMA page ports and three absent legacy UART ranges through actual

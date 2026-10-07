@@ -2799,8 +2799,10 @@ static void classify_machine_operation(
                 && out->operands[0].kind == PL_X86_OPERAND_MEMORY
                 && (out->operands[0].bits == 16u
                     || out->operands[0].bits == 32u)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u)
+                       | source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FIADD ? 0u
                            : source->mnemonic == ZYDIS_MNEMONIC_FISUB
                            ? 2u : 3u;
