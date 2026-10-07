@@ -417,8 +417,19 @@ int main(int argc, char **argv)
         EXPECT(written == before);
     }
     wasm_compile_options whole = { 256u, 1048576u };
-    EXPECT(wasm_compiler_measure(&compiler, &whole, &written, NULL)
-           == WASM_COMPILER_ERROR_INCOMPLETE);
+    wasm_coverage_report domain;wasm_compile_report image_report;
+    EXPECT(!wasm_compiler_coverage(&compiler,&domain));
+    pl_u64 old_written=written;
+    int image_status=wasm_compiler_measure(&compiler,&whole,&written,&image_report);
+    if(domain.catalog.coordinates>WASM_CUT_MODULE_MAX_FUNCTIONS)
+        EXPECT(image_status==WASM_COMPILER_ERROR_INCOMPLETE);
+    else if(domain.first_status)EXPECT(image_status==domain.first_status);
+    else{
+        EXPECT(!image_status || image_status==WASM_COMPILER_ERROR_CAPACITY);
+        if(!image_status)EXPECT(image_report.dispatchers==1u && image_report.modules==1u
+            && image_report.source_instructions==domain.catalog.coordinates && image_report.bytes==written);
+    }
+    if(image_status)EXPECT(written==old_written);
     pl_u8 *alias = malloc((size_t)length);
     if (!alias) failed = 1;
     else {
@@ -439,7 +450,7 @@ int main(int argc, char **argv)
         }
         if (!failed && !emit_oracle(&elf, &report, argv[2])) failed = 1;
     }
-    if (!failed) printf("cut bytes=%llu source=%llu boundary=%u (whole ELF remains red)\n",
-                        bytes, report.source_instructions, report.boundary);
+    if (!failed) printf("cut bytes=%llu source=%llu boundary=%u (selected cut; final image status=%d)\n",
+                        bytes, report.source_instructions, report.boundary,image_status);
     free(output); free(input); return failed ? 1 : 0;
 }

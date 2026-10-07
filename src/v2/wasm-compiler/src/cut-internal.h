@@ -58,6 +58,12 @@ typedef struct {
     pl_u32 imports;
     pl_u32 fault_vector;
 } cut_plan;
+typedef struct { pl_u32 length,imports,binding; } cut_body_extent;
+void cut_emit_dispatch(wasm_writer *writer,const wasm_cut_options *cuts,
+    const cut_body_extent *bodies,const pl_u16 *classes,pl_u32 count,pl_u32 imports);
+int wasm_emit_image_collection(const wasm_compiler *compiler,const wasm_compile_options *options,
+    const wasm_cut_options *cuts,pl_u32 count,pl_u8 *target,pl_u64 capacity,
+    pl_u64 *written,wasm_compile_report *report);
 /* Construction continuation only: it borrows the immutable source/flag
  * frontier and carries no decoded instruction or generated code owner. */
 typedef struct {

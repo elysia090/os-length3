@@ -89,30 +89,34 @@ static void type_section(wasm_writer *writer,const signature *types,pl_u32 count
         wasm_writer_byte(writer,1u);wasm_writer_byte(writer,I64);
     }
 }
-static void import_section(wasm_writer *writer,pl_u32 mask,const pl_u32 *type_ranks)
+static void import_section(wasm_writer *writer,pl_u32 mask,const pl_u32 *type_ranks,int image)
 {
-    wasm_writer_uleb(writer,1u+wasm_import_count(mask));
+    wasm_writer_uleb(writer,1u+wasm_import_count(mask)+(pl_u32)image);
     name(writer,"machine");name(writer,"memory");
     wasm_writer_byte(writer,2u);wasm_writer_byte(writer,0u);wasm_writer_byte(writer,1u);
     for(pl_u32 i=0u;i<WASM_IMPORT_COUNT;++i)if(mask&(1u<<i)){
         name(writer,"machine");name(writer,interface[i].name);
         wasm_writer_byte(writer,0u);wasm_writer_uleb(writer,type_ranks[i]);
     }
+    if(image){name(writer,"machine");name(writer,"image_bias");
+        wasm_writer_byte(writer,3u);wasm_writer_byte(writer,I64);wasm_writer_byte(writer,0u);}
 }
 static void function_section(wasm_writer *writer,pl_u32 count,pl_u32 type)
 {
     wasm_writer_uleb(writer,count);
     for(pl_u32 i=0u;i<count;++i)wasm_writer_uleb(writer,type);
 }
-static void export_section(wasm_writer *writer,pl_u32 count,pl_u32 imports,const pl_u16 *ranks)
+static void export_section(wasm_writer *writer,pl_u32 count,pl_u32 imports,const pl_u16 *ranks,
+    pl_u32 functions,int image)
 {
-    wasm_writer_uleb(writer,count);
+    wasm_writer_uleb(writer,count+(pl_u32)image);
     for(pl_u32 i=0u;i<count;++i){
         export_name(writer,i,count);wasm_writer_byte(writer,0u);wasm_writer_uleb(writer,imports+(ranks?ranks[i]:i));
     }
+    if(image){name(writer,"entry");wasm_writer_byte(writer,0u);wasm_writer_uleb(writer,imports+functions);}
 }
-void wasm_module_alias_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
-    pl_u32 exports,const pl_u16 *body_ranks,pl_u64 code_payload_bytes)
+static void module_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
+    pl_u32 exports,const pl_u16 *body_ranks,pl_u64 code_payload_bytes,int image)
 {
     if(!writer || imports&~WASM_IMPORT_MASK || !functions){
         if(writer)writer->error=WASM_COMPILER_ERROR_INPUT;
@@ -126,11 +130,18 @@ void wasm_module_alias_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 function
     for(pl_u32 i=0u;i<sizeof magic;++i)wasm_writer_byte(writer,magic[i]);
     wasm_writer measured={.capacity=~0ull};
     type_section(&measured,types,type_count);section(writer,1u,measured.used);type_section(writer,types,type_count);
-    measured.used=0u;import_section(&measured,imports,ranks);section(writer,2u,measured.used);import_section(writer,imports,ranks);
-    measured.used=0u;function_section(&measured,functions,entry);section(writer,3u,measured.used);function_section(writer,functions,entry);
-    measured.used=0u;export_section(&measured,exports,wasm_import_count(imports),body_ranks);section(writer,7u,measured.used);
-    export_section(writer,exports,wasm_import_count(imports),body_ranks);
-    section(writer,10u,code_payload_bytes);wasm_writer_uleb(writer,functions);
+    pl_u32 definitions=functions+(pl_u32)image;
+    measured.used=0u;import_section(&measured,imports,ranks,image);section(writer,2u,measured.used);import_section(writer,imports,ranks,image);
+    measured.used=0u;function_section(&measured,definitions,entry);section(writer,3u,measured.used);function_section(writer,definitions,entry);
+    measured.used=0u;export_section(&measured,exports,wasm_import_count(imports),body_ranks,functions,image);section(writer,7u,measured.used);
+    export_section(writer,exports,wasm_import_count(imports),body_ranks,functions,image);
+    section(writer,10u,code_payload_bytes);wasm_writer_uleb(writer,definitions);
 }
+void wasm_module_alias_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
+    pl_u32 exports,const pl_u16 *body_ranks,pl_u64 code_payload_bytes)
+{module_prefix(writer,imports,functions,exports,body_ranks,code_payload_bytes,0);}
+void wasm_module_image_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
+    pl_u32 exports,const pl_u16 *body_ranks,pl_u64 code_payload_bytes)
+{module_prefix(writer,imports,functions,exports,body_ranks,code_payload_bytes,1);}
 void wasm_module_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,pl_u64 code_payload_bytes)
 {wasm_module_alias_prefix(writer,imports,functions,functions,0,code_payload_bytes);}

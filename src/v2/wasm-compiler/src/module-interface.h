@@ -25,4 +25,7 @@ void wasm_module_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
 /* Source exports may alias an exact shared body. No forwarding functions. */
 void wasm_module_alias_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
     pl_u32 exports,const pl_u16 *ranks,pl_u64 code_payload_bytes);
+/* One ordinary entry dispatcher plus an immutable loader-supplied i64 bias. */
+void wasm_module_image_prefix(wasm_writer *writer,pl_u32 imports,pl_u32 functions,
+    pl_u32 exports,const pl_u16 *ranks,pl_u64 code_payload_bytes);
 #endif

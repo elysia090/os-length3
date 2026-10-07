@@ -23,6 +23,21 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+The ordinary ELF CLI and cold C compiler now generate a complete final-PF_X
+code domain WHEN it fits one bounded module. The old function/dispatcher
+placeholders are removed; actual final executable maps, not proof counts,
+feed the same virtual body quotient. Ordinary Wasm `entry` dispatch uses an
+immutable loader bias and compiled scalar bindings. ET_EXEC 6 / ET_DYN 11
+coordinates yield 5 / 7 bodies, one dispatcher, 2,024 / 2,777 bytes, with
+306 actual C-MMU/table comparisons, 18 unchanged out-of-domain refusals and
+native/cold byte identity. Full regressions/scoped sanitizers pass.
+Larger domains still refuse -104 before any prefix publication: the actual
+published make ELF does so. Missing grammar/fetch context is never a fake
+architectural fault. Complete multi-module/directory production and C-authenticated
+image admission/residency are still required before Linux/browser acceptance.
+No new production root or browser observation; native release/UI unchanged.
+See [contract, exact input/output and remaining main blocker](../vm/check/browser/evidence/2026-10-07-image-dispatch.md).
+
 Virtual body quotient now precedes capacity/public output checks. The old
 30,614-byte raw-population gate rejects an exact 7,646-byte object at cap
 8,000 (-103); the new writer accepts both 8,000 and exact 7,646. It never forms
@@ -36,8 +51,9 @@ Full compiler/VM and scoped sanitizers, maximum/odd ranks, late-window identity,
 780 native/C-VM comparisons and the unchanged same-bundle Node prefix pass.
 Short paired generation is 0.8334 -> 1.1412 ms (about 37% slower), not an
 execution speedup. No new distribution size or browser acceptance claim.
-Whole-ELF function production AND page dispatch still return -104; connecting
-the complete compiler domain to authenticated residency remains the main
+At that checkpoint whole-ELF function production AND page dispatch were
+unimplemented. The bounded image connection above removes those placeholders;
+complete large-image production/authenticated residency remains the main
 blocker, not merely an ISA coverage percentage. See
 [capacity law, continuation and receipt](../vm/check/browser/evidence/2026-10-07-virtual-body.md).
 

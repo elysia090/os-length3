@@ -135,3 +135,17 @@ int compiler_emit_module(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 cap
 {return emit_collection(cut_offset,count,target,capacity,report_offset,0);}
 int compiler_emit_projection(pl_u32 cut_offset,pl_u32 count,pl_u32 target,pl_u32 capacity,pl_u32 report_offset)
 {return emit_collection(cut_offset,count,target,capacity,report_offset,1);}
+
+pl_u32 compiler_image_report_bytes(void){return sizeof(wasm_compile_report);}
+int compiler_emit_image(pl_u32 functions,pl_u32 module_bytes,pl_u32 target,pl_u32 capacity,pl_u32 report_offset)
+{
+    if(mode!=1u || !capacity || !range(target,capacity) || (report_offset&7u)
+            || !range(report_offset,sizeof(wasm_compile_report))
+            || overlaps(target,capacity,(const void *)(uintptr_t)report_offset,sizeof(wasm_compile_report))
+            || overlaps(target,capacity,compiler.image.bytes,compiler.image.length)
+            || overlaps(report_offset,sizeof(wasm_compile_report),compiler.image.bytes,compiler.image.length))
+        return WASM_COMPILER_ERROR_INPUT;
+    wasm_compile_options options={functions,module_bytes};pl_u64 written=0u;
+    return wasm_compiler_emit(&compiler,&options,(pl_u8 *)(uintptr_t)target,capacity,&written,
+        (wasm_compile_report *)(uintptr_t)report_offset);
+}

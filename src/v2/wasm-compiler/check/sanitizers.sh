@@ -12,5 +12,6 @@ export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 flags='-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all'
 for product in support x86 optimized-x86;do make -j4 -C "$temporary/$product" CFLAGS="$flags" all;done
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
-    build/segment-load-check build/system-segments-check build/code-cut-check build/literal-check build/source-module-check build/quotient-cap-check
+    build/segment-load-check build/system-segments-check build/code-cut-check build/literal-check build/source-module-check build/quotient-cap-check build/image-check
 for test in segment-load system-segments code-cut literal source-module quotient-cap;do "$temporary/wasm-compiler/build/$test-check";done
+if [[ -n ${LENGTH3_IMAGE_INPUT:-} ]];then "$temporary/wasm-compiler/build/image-check" "$LENGTH3_IMAGE_INPUT";fi

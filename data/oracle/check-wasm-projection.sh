@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# != 2 || ! -x $1 || ! -f $2 ]]; then
-  printf 'usage: %s WASM-COMPILER OPTIMIZED-ELF\n' "$0" >&2
+if [[ $# != 5 || ! -x $1 || ! -f $2 || ! -f $3 || ! -f $4 || ! -f $5 ]]; then
+  printf 'usage: %s WASM-COMPILER OPTIMIZED-ELF VM.WASM COLD-COMPILER.WASM FROZEN-COMPILER.WASM\n' "$0" >&2
   exit 2
 fi
 compiler=$(realpath -e -- "$1")
@@ -21,7 +21,8 @@ if [[ ! -s $scratch/output.wasm \
   printf 'executable Wasm projection: red (missing/invalid module header)\n' >&2
   exit 1
 fi
-# A header is not execution proof. The backend's machine-ABI oracle must be
-# connected before this gate can succeed; never silently mark a stub green.
-printf 'executable Wasm projection: red (machine-ABI execution oracle pending)\n' >&2
-exit 1
+# Compare every final PF_X coordinate, biases and permission/fault contexts
+# through the actual C VM, not just the file magic or one entry prefix. This
+# oracle explicitly refuses images outside its one-page test environment;
+# it is not a Linux/signed-production/root publication acceptance gate.
+node "$(dirname -- "$0")/check-image-dispatch.mjs" "$3" "$4" "$5" "$input" "$scratch/output.wasm"

@@ -20,6 +20,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 WASM_FLAGS += -Wl,--export=compiler_entry_abi
 WASM_FLAGS += -Wl,--export=compiler_emit_module
 WASM_FLAGS += -Wl,--export=compiler_emit_projection
+WASM_FLAGS += -Wl,--export=compiler_emit_image,--export=compiler_image_report_bytes
 SOURCES = src/read-optimized-x86.c src/lower-machine-abi.c \
 	src/emit-function.c src/emit-dispatch.c src/emit-module.c src/compile-cut.c \
 	src/emit-cut.c src/lower-register.c src/lower-multiply.c src/lower-summary.c src/lower-divide.c src/lower-shift.c src/lower-memory.c src/lower-stack.c src/lower-system.c src/lower-io.c src/lower-string.c src/lower-branch.c
@@ -68,6 +69,20 @@ $(BUILD)/count-branch-check: check/count-branch.c check/native-cut.S $(BUILD)/li
 
 .PHONY: cut-module-check
 .PHONY: source-module-check
+.PHONY: image-path-check
+check: image-path-check
+image-path-check: $(BUILD)/image-check fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs check/image-fixture.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/image-check "$$scratch/optimized.elf"; \
+	$(CC) -DIMAGE_SHARED -nostdlib -shared -Wl,--build-id=none,--emit-relocs check/image-fixture.S -o "$$scratch/linked-shared.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked-shared.elf" -o "$$scratch/optimized-shared.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked-shared.elf" "$$scratch/optimized-shared.elf"; \
+	$(BUILD)/image-check "$$scratch/optimized-shared.elf"
+$(BUILD)/image-check: check/image.c cli/io.c cli/io.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< cli/io.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: quotient-cap-check
 check: quotient-cap-check
 quotient-cap-check: $(BUILD)/quotient-cap-check
@@ -219,7 +234,7 @@ all: $(BUILD)/libwasm-compiler.a $(BUILD)/wasm-compiler
 # Independent cold compiler and private stack; never a runtime decoder.
 ZYDIS = ../x86/third_party/zydis
 include ../x86/sources.mk
-COLD_SOURCES = wasm/entry.c wasm/memory.c $(filter-out src/emit-module.c src/emit-dispatch.c,$(SOURCES)) \
+COLD_SOURCES = wasm/entry.c wasm/memory.c $(SOURCES) \
 	$(addprefix ../x86/,$(X86_SOURCES)) ../optimized-x86/src/proof.c \
 	../optimized-x86/src/reader.c ../support/src/sha256.c \
 	$(addprefix $(ZYDIS)/src/,$(addsuffix .c,Register SharedData DecoderData Decoder Mnemonic))
@@ -625,11 +640,12 @@ accepted-input-check: all $(BUILD)/admission-check
 	@test -n "$(INPUT)" || { printf 'set INPUT to a proved optimized ELF\n' >&2; exit 2; }
 	$(BUILD)/admission-check "$(INPUT)"
 
-# Deliberately red until the real optimized input produces executable Wasm.
+# Bounded final-PF_X execution gate, separate from Linux/production admission.
 projection-check: all
 	@test -n "$(INPUT)" || { printf 'set INPUT to a proved optimized ELF\n' >&2; exit 2; }
+	@test -n "$(VM_WASM)" -a -n "$(COLD_COMPILER_WASM)" -a -n "$(REFERENCE_COMPILER_WASM)" || { printf 'set VM_WASM, COLD_COMPILER_WASM and REFERENCE_COMPILER_WASM\n' >&2; exit 2; }
 	bash ../../../data/oracle/check-wasm-projection.sh \
-		$(BUILD)/wasm-compiler "$(INPUT)"
+		$(BUILD)/wasm-compiler "$(INPUT)" "$(VM_WASM)" "$(COLD_COMPILER_WASM)" "$(REFERENCE_COMPILER_WASM)"
 
 clean:
 	rm -rf $(BUILD)

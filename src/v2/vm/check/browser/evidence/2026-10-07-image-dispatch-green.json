@@ -1,0 +1,50 @@
+{
+  "format": "bounded-complete-image-dispatch-candidate-v1",
+  "status": "pass",
+  "baselineCommit": "a79dc4e",
+  "baselineNativeCli": "same verified ET_EXEC refused -104, no module",
+  "baselineColdC": "compiler_emit_image absent",
+  "compiler": {
+    "bytes": 464775,
+    "sha256": "1be326f1e53bb00525b06ceb3b03fafd5f17261e9325904dc88943795aee0dc2"
+  },
+  "executable": {
+    "elfBytes": 5624,
+    "elfSha256": "98f53867ecce8af145918b0cc5f33be68c136c1bfeec1213b8ffda0b5394a7ec",
+    "coordinates": 6,
+    "uniqueBodies": 5,
+    "dispatchers": 1,
+    "wasmBytes": 2024,
+    "wasmSha256": "1e4940a91faa95fc92df8585f1df5a4540d70ce3e8f3aed8d69f124d7dde5c5e",
+    "cVmComparisons": 108,
+    "outOfDomainRefusals": 9
+  },
+  "sharedObject": {
+    "elfBytes": 13808,
+    "elfSha256": "ba026e4c6c2640700586fa57d2fefd6275986f26aa7186ed07e3236fdbf78fc5",
+    "coordinates": 11,
+    "uniqueBodies": 7,
+    "dispatchers": 1,
+    "wasmBytes": 2777,
+    "wasmSha256": "84f2d36b0e29678c89c446acbeb6d5870c5734b827a0f6deb17a81c51b3910d8",
+    "cVmComparisons": 198,
+    "outOfDomainRefusals": 9
+  },
+  "checks": {
+    "biases": 3,
+    "mutableBiasImport": "refused by Wasm LinkError",
+    "nativeColdBytes": "exact",
+    "compilerAndVmRegressions": "pass",
+    "scopedAddressUndefinedSanitizers": "pass",
+    "cPublicationFailures": "five unchanged output/report/written controls",
+    "sourceModule": "780 unchanged native/C-VM comparisons",
+    "virtualBodyCapacity": "7646 at cap 8000/exact cap; FXSAVE 9971",
+    "sameBundleShortPrefix": "Node: independent checkpoint 86 / retired 1617931 / admissions 1000000, then quota",
+    "shellProjectionWrapper": "syntax checked; host Node comparator executed separately"
+  },
+  "publishedMake": "still -104; complete multi-module directory not implemented",
+  "newProductionRoot": false,
+  "newBrowserObservation": false,
+  "linuxBoot": "not-achieved",
+  "scope": "Complete final PF_X code domain only when it fits one bounded module; not complete Linux/machine/ISA proof, signed root admission, native speed or minimum work/span. Native release/human UI unchanged."
+}

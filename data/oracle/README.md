@@ -920,3 +920,17 @@ body for every window: 4,224 -> 1,664 calls for 128 instructions.
 `bench-quotient-cap.mjs OLD-COMPILER.WASM COMPILER.WASM` compares unchanged
 bytes and alternating paired generation time, not Linux/native/browser speed.
 See [derivation, scope and regression](../../src/v2/vm/check/browser/evidence/2026-10-07-virtual-body.md).
+
+### Complete bounded final-ELF dispatch
+
+`check-image-dispatch.mjs VM.WASM COLD.WASM FROZEN.WASM VERIFIED-IMAGE.elf IMAGE.wasm`
+checks native/cold full-image identity, every final PF_X coordinate through
+actual C MMU/table execution, immutable load bias and out-of-domain refusal.
+The test environment is explicitly one source page; it is not a Linux or
+signed-root acceptance shortcut. `make -C src/v2/wasm-compiler image-path-check`
+constructs and verifies both actual ET_EXEC and ET_DYN inputs. The ordinary
+compiler now emits a complete bounded image; larger domains still refuse
+without publishing a prefix. `projection-check` requires VM_WASM,
+COLD_COMPILER_WASM and REFERENCE_COMPILER_WASM in addition to INPUT, and calls
+the executable comparator rather than an always-red placeholder.
+See [contract and scope](../../src/v2/vm/check/browser/evidence/2026-10-07-image-dispatch.md).

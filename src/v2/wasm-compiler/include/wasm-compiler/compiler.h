@@ -62,6 +62,27 @@ int wasm_compiler_coverage(const wasm_compiler *compiler,wasm_coverage_report *r
  * invalidates the compiler; it must not retain a previous accepted image. */
 int wasm_compiler_open(wasm_compiler *compiler,
                        const pl_u8 *elf, pl_u64 elf_bytes);
+/* Complete final PF_X code projection when the ENTIRE coordinate domain fits
+ * one bounded module (currently <=256 coordinates / <=64 KiB). Interior and
+ * zero-fill bytes are entries too; any unsupported/fetch-demand coordinate
+ * refuses before output publication. Larger domains still return INCOMPLETE
+ * until multi-module/directory construction is connected, never a prefix.
+ *
+ * Import ordinary machine.memory / used typed callbacks and immutable i64
+ * machine.image_bias. Export entry with the machine-entry ABI 3 signature:
+ * it maps admitted_entry-image_bias to a known ELF coordinate, supplies that
+ * coordinate's compiled scalar binding and calls its shared body. Unknown
+ * coordinates return ENTRY_MAP without CPU mutation, not a guest fault or
+ * an execution fallback. The fourth entry argument is ignored; cut exports
+ * retain their ordinary separately attested binding contract.
+ *
+ * The loader owns source/generation/MMU/debug admission and the immutable
+ * bias/mapping lifetime. Executable relocations require a new admitted source
+ * generation; a bias is not a relocation engine or Linux implementation.
+ * This code projection is not a signed release root or whole-machine closure.
+ * report.functions counts unique body definitions (dispatcher separately);
+ * source_instructions is the complete one-instruction coordinate population;
+ * wasm_instructions=0 is unmeasured, not a minimum-work claim. */
 int wasm_compiler_measure(const wasm_compiler *compiler,
                           const wasm_compile_options *options,
                           pl_u64 *wasm_bytes,
