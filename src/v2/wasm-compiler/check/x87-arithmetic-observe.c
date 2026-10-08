@@ -34,7 +34,13 @@ int main(int argc,char **argv)
     const char *dir=argc==2?argv[1]:NULL;
     /* Code and operand occupy distinct pages. Only the current form's code
      * is made writable, then RX before observation; operand stays RW. */
-    pl_u8 *code=VirtualAlloc(NULL,8192u,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!code)return 1;
+    /* Windows' context format has 32-bit x87 ErrorOffset/DataOffset fields.
+     * Keep both native oracle coordinates representable without truncation;
+     * do not repair individual recorded pointers after an OS context switch. */
+    pl_u8 *code=NULL;
+    for(uintptr_t address=0x10000000u;!code&&address<0x70000000u;address+=65536u)
+        code=VirtualAlloc((void *)address,8192u,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
+    if(!code||(uintptr_t)code>0xffffffffu-8192u)return 1;
     const pl_u32 masks[]={0u,1u,2u,8u,16u,32u},groups[]={4u,0u,5u};
     pl_u32 rows=0u,changed=0u,pending=0u,published_pending=0u;int failed=1;
     for(pl_u32 form=0u;form<576u;++form){pl_u32 width=(form&1u)?2u:4u,operation=(form/2u)%3u;

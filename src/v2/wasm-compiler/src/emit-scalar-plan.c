@@ -23,7 +23,7 @@ static void operand_emit(cut_lowering *c,pl_operand a,const pl_u32 input[5],pl_u
 }
 void cut_emit_scalar_plan(cut_lowering *c,const pl_plan *p,const pl_u32 input[5],pl_u32 first,const pl_u32 output[3])
 {
-    if(!p||p->node_count>PL_X86_X87_RELATION_MAX_NODES||p->local_count!=5u){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    if(!p||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES||p->local_count!=5u){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;
         if(node->argument_at>p->argument_count||node->argument_count>p->argument_count-node->argument_at)goto bad;
         const pl_operand *args=p->arguments+node->argument_at;

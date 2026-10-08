@@ -159,7 +159,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if (system==CUT_SYSTEM_FXSAVE || system==CUT_SYSTEM_FXRSTOR)
                     plan->report.memory_bytes=512u;
                 else if (system==CUT_SYSTEM_MXCSR) plan->report.memory_bytes=4u;
-                else if (system==CUT_SYSTEM_X87_INTEGER) plan->report.memory_bytes=instruction.operands[0].bits/8u;
+                else if (system==CUT_SYSTEM_X87_INTEGER||system==CUT_SYSTEM_X87_ARITHMETIC) plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                     plan->report.memory_bytes=(instruction.machine_argument&(3ull<<24u))?16u:0u;
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
@@ -276,6 +276,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
     if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_INTEGER)locals=CUT_X87_LOCALS;
+    if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC)locals=CUT_X87_ARITHMETIC_LOCALS;
     cut.vector_local = locals + 4u; /* Four typed bindings precede locals. */
     wasm_writer_uleb(writer, permutation_local?2u:1u);
     wasm_writer_uleb(writer, locals);

@@ -37,7 +37,9 @@ for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(director
     assert.equal(vm.vm_source_query(port,entry,1,codeView,rows),1n);table.set(v.getUint32(rows+16,true),made.fn);
     assert.equal(vm.vm_source_publish(meta.sourceBytes,1,made.binding,rows),0);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
     assert.equal(vm.vm_run(port,9n,1),1n);
-    assert(a.subarray(cpu,cpu+1256).equals(after),`${prefix} full state ${form}/${row}`);++comparisons;
+    const actual=a.subarray(cpu,cpu+1256);
+    assert(actual.equals(after),`${prefix} full state ${form}/${row}; byte differences: ${Array.from(after.entries())
+      .filter(([offset,byte])=>actual[offset]!==byte).slice(0,24).map(([offset,byte])=>`${offset}:${actual[offset].toString(16)}/${byte.toString(16)}`).join(',')}`);++comparisons;
   }
 }
 vm.vm_close();console.log(JSON.stringify({format:arithmetic?'native-fi-arithmetic-c-v1':'native-fild-c-v1',status:'pass',comparisons,modules,

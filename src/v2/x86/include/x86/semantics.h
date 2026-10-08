@@ -98,6 +98,14 @@ int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan
 int pl_x86_x87_integer_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 bytes;pl_u16 opcode;} pl_x86_x87_integer_load;
 int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
+/* Integer-memory add/subtract. Inputs: ST0 significand/sign-exponent,
+ * signed operand, control word, empty predicate. Outputs: significand,
+ * sign-exponent, outcome (new exception bits, C1, suppress bit16, tag18..19).
+ * Operation is 0 add, 2 subtract, 3 reverse subtract. No state effects. */
+#define PL_X86_X87_ARITHMETIC_MAX_NODES 512u
+int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,operation;pl_u16 opcode;} pl_x86_x87_integer_arithmetic;
+int pl_x86_x87_integer_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

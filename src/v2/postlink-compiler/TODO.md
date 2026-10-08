@@ -23,6 +23,24 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+FIADD/FISUB/FISUBR signed16/32 now use one shared ext80 SSA and ordinary Wasm,
+not f64, SoftFloat in the product, or a VM math callback. Native hardware's
+36,864 complete FPU/RFLAGS states match C-MMU/table execution through six
+modules, including unmasked IE/DE suppression and OE/UE/PE publication.
+240,000 canonical finite samples agree with official SoftFloat; 48 native/cold
+forms, 576 malformed laws, 1,080 fault models and 72 success controls pass.
+Full compiler/postlink checks and positive ASan/UBSan are warning-free;
+FILD/compare/deferred boundaries and same-bundle short Node prefix remain
+green. Actual make: 6,545 -> 6,404 missing, 141 coordinates recovered. The first
+miss is now d818 / memory FCOMP at 0xa0df; directory/root publication is still
+refused before mkdir. Max 313 abstract nodes / span 83 is NOT a minimum or
+execution-speed claim. Compiler grew; its bounded cold stack reservation is
+explicit and exposed by the existing arena API. Native bundle/UI/VM unchanged;
+no new signed root or actual-browser Linux acceptance. See
+[numeric/state derivation, hardware limitation and reproduction](../vm/check/browser/evidence/2026-10-08-x87-arithmetic.md).
+
+## Earlier checkpoints (historical scopes, not pending work)
+
 The next arithmetic gate is now independently observed, not guessed:
 576 FIADD/FISUB/FISUBR forms / 36,864 physical FPU/RFLAGS rows. 2,880 canonical,
 masked, non-reserved-PC cases match official SoftFloat. Unmasked IE/DE keep
@@ -401,6 +419,10 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    normalized transfer and delete replaced rules. Red-test emitted work and
    dependency structure against common normalization: merely linking that
    library does not prove backend use.
+   Pure scalar-plan CMP still spells both CF and ZF even when only one
+   projection is live; lower its actual projected frontier, benchmark emitted
+   execution and keep raw/unsupported flag views refused. The new arithmetic
+   baseline is exact but its 313/83 graph is not a work/span minimum.
    Preserve exact faults/access order, live flags, partial registers, CPU
    profiles, aliases and continuation ownership. SSA is transient evidence,
    never another saved runtime format.
@@ -429,14 +451,15 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
    remaining arithmetic/source-context/precise-event cases: make's current first
-   miss is da2503005548, not dfe8. No-wait snapshots/FNCLEX are covered.
-   Exact signed16/32/64 integer conversion/FILD is now covered; reuse that
-   common coercion for FIADD/FISUB/FISUBR. Derive exact ext80 alignment,
-   cancellation and PC/RC rounding before connecting arithmetic; independent
-   SoftFloat/TestFloat and local hardware are oracles, not product helpers.
-   Keep IE/DE suppression separate from unmasked OE/UE scaled-result and PE
-   publication. Use the new complete-state arithmetic hardware gate, not a
-   masked numeric-only pass, to admit that implementation.
+   miss is d818 / memory FCOMP, not FISUB or dfe8. No-wait snapshots/FNCLEX,
+   signed16/32/64 coercion/FILD and integer-memory add/sub are now covered.
+   Derive exact IEEE32/64 -> extended conversion and source denormal/NaN
+   classification for memory compares/loads; reuse the common relation and
+   physical FPU publication, not a second floating implementation. Preserve
+   memory fault priority, C0/C2/C3, C1, stack pop and deferred exceptions.
+   Continue the other actual arithmetic families using independent full-state
+   hardware gates; SoftFloat/TestFloat are build-side references, not product
+   helpers or substitutes for unmasked state semantics.
    First gaps in the two published s6 files are x87; their outside-image/indirect
    control edges and executable-map-end fetch context still require closure.
    Mixed cut imports can now share one typed standard-Wasm module through the

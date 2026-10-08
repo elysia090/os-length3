@@ -30,6 +30,9 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     pl_x86_x87_integer_load integer;
     if(pl_x86_x87_integer_load_lower(instruction,&integer)
         &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_INTEGER;
+    pl_x86_x87_integer_arithmetic arithmetic;
+    if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)
+        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_ARITHMETIC;
     if(pl_x86_x87_snapshot_lower(instruction,&fpu)
         && (!fpu.memory || cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))
         return CUT_SYSTEM_X87_SNAPSHOT;
@@ -424,6 +427,8 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(pl_x86_x87_compare_lower(instruction,&compare)){cut_lower_x87_compare(cut,instruction);return;}
     pl_x86_x87_integer_load integer;
     if(pl_x86_x87_integer_load_lower(instruction,&integer)){cut_lower_x87_integer(cut,instruction);return;}
+    pl_x86_x87_integer_arithmetic arithmetic;
+    if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)){cut_lower_x87_arithmetic(cut,instruction);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.

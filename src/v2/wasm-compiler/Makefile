@@ -16,6 +16,7 @@ COLD_STATIC_MIN = 131072
 WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--no-entry,--strip-all -Xlinker --import-memory=machine,memory \
 	-DCOLD_STATIC_MIN=$(COLD_STATIC_MIN) -Wl,--global-base=$(COLD_STATIC_MIN),--no-stack-first \
+	-Wl,-z,stack-size=262144 \
 	-Wl,--export=compiler_static_min,--export=compiler_open_fragments \
 	-Wl,--export=compiler_arena_min,--export=compiler_report_bytes,--export=compiler_close \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
@@ -47,6 +48,13 @@ SOURCES += src/emit-image-metadata.c
 SOURCES += src/lower-x87-snapshot.c
 SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-integer.c
+SOURCES += src/lower-x87-arithmetic.c
+.PHONY: x87-arithmetic-check
+check: x87-arithmetic-check
+x87-arithmetic-check: $(BUILD)/x87-arithmetic-check
+	$(BUILD)/x87-arithmetic-check
+$(BUILD)/x87-arithmetic-check: check/x87-arithmetic.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: x87-snapshot-check
 check: x87-snapshot-check
 x87-snapshot-check: $(BUILD)/x87-snapshot-check
@@ -281,7 +289,7 @@ COLD_SOURCES = wasm/entry.c wasm/memory.c $(SOURCES) \
 	$(addprefix $(ZYDIS)/src/,$(addsuffix .c,Register SharedData DecoderData Decoder Mnemonic))
 wasm: $(WASM_OUTPUT)
 $(WASM_OUTPUT): $(COLD_SOURCES) Makefile ../x86/sources.mk $(wildcard include/wasm-compiler/*.h src/*.h \
-	../machine-abi/include/machine/*.h ../x86/include/x86/*.h \
+	../machine-abi/include/machine/*.h ../x86/include/x86/*.h ../x86/src/*.h \
 	../optimized-x86/include/optimized-x86/*.h ../support/include/support/*.h) | $(BUILD)
 	$(WASM_CC) $(WASM_FLAGS) $(INCLUDES) -I$(ZYDIS)/include \
 		-I$(ZYDIS)/dependencies/zycore/include -I$(ZYDIS)/src \

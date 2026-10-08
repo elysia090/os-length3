@@ -2,7 +2,7 @@
 #define CHECK_SCALAR_PLAN_H
 #include <x86/semantics.h>
 /* Oracle-only evaluation. Product execution emits ordinary instructions. */
-static pl_u64 check_scalar_nodes[PL_X86_X87_RELATION_MAX_NODES+1u];
+static pl_u64 check_scalar_nodes[PL_X86_X87_ARITHMETIC_MAX_NODES+1u];
 static pl_u64 check_scalar_value(pl_operand a,const pl_u64 input[5])
 {
     if(a.kind==PL_OPERAND_CONST)return a.value;

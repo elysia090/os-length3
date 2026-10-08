@@ -1,0 +1,43 @@
+{
+  "format": "common-x87-integer-arithmetic-checkpoint-v1",
+  "status": "progress",
+  "baseline": "6193c03",
+  "nativePublication": "1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195",
+  "nativeBundleSha256": "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc",
+  "compiler": {"bytes": 562188, "sha256": "652157c0323cf3be81ba0f87f04ffb654a5782d8b088e0730e9adde165c684a6", "growthBytes": 57460},
+  "vm": {"bytes": 95012, "sha256": "92d917f30526f46b00554202de16fcfc0f5eae5f0af537ebc554bfc74b01be5c", "changed": false},
+  "numeric": {
+    "physicalRows": 36864, "canonicalMaskedHardwareSoftFloatRows": 2880,
+    "canonicalFiniteReferenceSamples": 240000,
+    "maxAbstractNodes": 313, "maxAbstractSpan": 83, "maximumArenaUsed": 74076,
+    "scratchBytes": 131072, "coldStackReservationBytes": 262144,
+    "minimumProof": false, "productSoftFloat": false, "f64Conversion": false
+  },
+  "execution": {
+    "fullStateHardwareComparisons": 36864, "modules": 6,
+    "nativeColdByteForms": 48, "malformedLaws": 576,
+    "faultModels": 1080, "successControls": 72,
+    "newVmMathCallback": false, "runtimeOpcodeInterpreter": false
+  },
+  "hardwareCoordinates": {
+    "nativeCodeAndDataBelow4GiB": true,
+    "failedOldObservation": "539/39: FIP/FDP truncated to native low32 coordinates",
+    "oldRowsPatched": false,
+    "high64WindowsContextPointerPreservationCertified": false
+  },
+  "actualMake": {
+    "coordinates": 233455, "lowerable": 227051, "missingBefore": 6545,
+    "missingAfter": 6404, "recovered": 141,
+    "firstAddress": "0xa0df", "firstSource": "d818", "firstStatus": -102,
+    "directoryCreated": false, "rootPublished": false
+  },
+  "retainedRegressions": {
+    "fildComparisons": 12288, "fildFaults": 540,
+    "compareComparisons": 16384,
+    "deferredBoundaries": {"faults": 288, "masked": 72, "legacy": 1},
+    "compiler": "pass", "postlinkCompiler": "pass", "positiveASanUBSan": "pass"
+  },
+  "sameBundleShortNode": {"independentWitnessInstructions": 86, "retired": 1617931, "admissions": 1000000, "stop": "quota"},
+  "linuxBoot": "not-achieved", "freshBrowserObservation": false,
+  "signedProductionRootPublished": false, "executionSpeedup": "not-measured", "rssReclamation": "not-measured"
+}
