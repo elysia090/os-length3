@@ -121,8 +121,9 @@ static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
             || (port_offset & 7u)
             || (pl_u64)port_offset + sizeof(machine_memory_port) > memory->reserved_bytes
             || !bytes || bytes > maximum_bytes || !ready
-            || (access & ~47u) || !(access & 3u)
+            || (access & ~(47u|MACHINE_MEMORY_ALIGNED8)) || !(access & 3u)
             || ((access & VM_MMU_ALIGNED16) && bytes != 16u && maximum_bytes==16u)
+            || ((access & MACHINE_MEMORY_ALIGNED8) && bytes!=8u)
             || ((access & VM_MMU_EXECUTE) && (access & (MACHINE_MEMORY_WRITE | MACHINE_MEMORY_STACK))))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     pl_u8 *port = memory->bytes + port_offset;
@@ -134,6 +135,7 @@ static machine_result preflight(vm_memory *memory, pl_u32 port_offset,
         return exception(port, address, access & MACHINE_MEMORY_STACK ? 12u : 13u, 0u);
     if ((access & VM_MMU_ALIGNED16) && (address & 15u))
         return exception(port,address,13u,0u);
+    if ((access & MACHINE_MEMORY_ALIGNED8) && (address & 7u))return exception(port,address,13u,0u);
     *ready = (vm_memory_reservation){ .generation = memory->generation, .port = port_offset };
     pl_u32 consumed = 0u;
     while (consumed < bytes) {

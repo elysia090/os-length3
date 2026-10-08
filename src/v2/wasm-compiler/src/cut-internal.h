@@ -147,6 +147,7 @@ void cut_lower_string_io(cut_lowering *cut,const pl_x86_instruction *instruction
 typedef struct {pl_u32 top,tag,sw,cw,relation,raised,empty,unmasked,opcode,pop,memory,status;} cut_x87_comparison;
 void cut_publish_x87_comparison(cut_lowering *cut,const pl_x86_instruction *instruction,const cut_x87_comparison *view);
 void cut_x87_wait_guard(cut_lowering *cut,pl_u32 cw,pl_u32 sw);
+void cut_x87_pending_guard(cut_lowering *cut,pl_u32 cw,pl_u32 sw);
 void cut_emit_scalar_plan(cut_lowering *cut,const pl_plan *plan,const pl_u32 *inputs,pl_u32 first,const pl_u32 outputs[3]);
 void cut_lower_mxcsr(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_vector_supported(const pl_x86_instruction *instruction);
@@ -168,6 +169,8 @@ void cut_lower_vector_shift(cut_lowering *cut,const pl_x86_instruction *instruct
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_sse_guard(cut_lowering *cut);
+void cut_mmx_guard(cut_lowering *cut);
+void cut_mmx_publish(cut_lowering *cut,pl_u32 destination);
 void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction);
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_instruction_supported(const pl_x86_instruction *instruction);

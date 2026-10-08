@@ -15,6 +15,9 @@ static int scalar(const pl_x86_operand *operand,pl_u32 width)
 }
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_mmx_transfer mmx;
+    if(pl_x86_mmx_transfer_lower(instruction,&mmx))return !(mmx.source_memory||mmx.target_memory)
+        ||cut_memory_address_supported(instruction,&instruction->operands[mmx.target_memory?0u:1u].value.memory);
     if(instruction->status!=PL_X86_DECODE_VALID || instruction->flow!=PL_X86_FLOW_NEXT
             || instruction->machine_operation!=PL_X86_MACHINE_VECTOR
             || instruction->visible_operand_count!=2u
@@ -53,15 +56,17 @@ int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
-    pl_u32 width=(instruction->machine_argument&255u)==9u?32u:64u;
+    pl_x86_mmx_transfer law;int mmx=pl_x86_mmx_transfer_lower(instruction,&law);
+    pl_u32 width=mmx?law.bytes*8u:(instruction->machine_argument&255u)==9u?32u:64u;
     int half=(instruction->machine_argument&255u)==14u;
     pl_u32 selected=half?(pl_u32)(instruction->machine_argument>>32u)*8u:0u;
     const pl_x86_operand *target=&instruction->operands[0],*source=&instruction->operands[1];
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
-    cut_sse_guard(cut);
+    if(mmx)cut_mmx_guard(cut);else cut_sse_guard(cut);
     /* Only the low scalar is live. Capture it before touching an aliased XMM
      * destination or publishing any CPU state; 32-bit GPR output zero-extends. */
     if(read)cut_const(cut,0u);
+    else if(mmx&&law.source_mmx){cut_load(cut,offsetof(machine_state,x87_significand)+source->value.reg.index*8u);cut_mask(cut,width);}
     else if(vector(source,width)) {
         cut_load(cut,(pl_u32)offsetof(machine_state,xmm)+source->value.reg.index*16u+selected);
         cut_mask(cut,width);
@@ -72,10 +77,16 @@ void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruc
         cut_effective_address(cut,instruction,memory);cut_set(cut,CUT_ADDRESS);
         cut->report.memory_access=write?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
         cut->report.memory_access|=cut_memory_role(memory);
+        if(mmx&&law.aligned)cut->report.memory_access|=MACHINE_MEMORY_ALIGNED8;
         /* A single precise 4/8-byte access, including cross-page preflight.
          * No 16-byte pair or intermediate SIMD record is needed here. */
         cut_access(cut);
         if(read) {cut_access_value(cut);cut_mask(cut,width);cut_set(cut,CUT_VALUE);}
+    }
+    if(mmx){
+        if(law.target_mmx)cut_store(cut,offsetof(machine_state,x87_significand)+target->value.reg.index*8u,CUT_VALUE);
+        else if(!write)cut_write_register(cut,&target->value.reg);
+        cut_mmx_publish(cut,law.target_mmx?target->value.reg.index:~0u);return;
     }
     if(vector(target,width)) {
         pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+target->value.reg.index*16u;

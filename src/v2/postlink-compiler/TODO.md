@@ -23,6 +23,19 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+MMX64/XMM128 binary lanes now share33 operators, alias substitutions and one
+SIMD emitter:28,512+47,520 physical rows. MOVD/MOVQ/MOVNTQ join the shared scalar
+transfer path:1,920 actual RAX/FPU/tag/flags/memory rows. Full saved tags are
+observed independently and derived through physical column bitmaps, not a
+literal occupancy guess. Constructors11352/90816 and1232/9856 pass; MMX guard
+and FS-before-alignment models pass. Full product/positive ASan/UBSan gates are
+green without warnings. Same make domain1389->1031 unresolved (358 recovered).
+Next close generic INT and FWAIT, then remaining SIMD/x87/far transfers. ZERO
+plus the full browser Linux objective remain the gate, not these probes. See
+[common physical lanes, saved views and reproducible evidence](../vm/check/browser/evidence/2026-10-08-packed-mmx.md).
+
+## Preceding return-family checkpoint
+
 far RET/IRET now have one width/parameter descriptor and C frame path. All16/32/
 64-bit forms, outer far returns, origin-CPL/IOPL flag masks and significant
 selector bytes are implemented. Shared GDT/LDT/Accessed/outer-cache owners

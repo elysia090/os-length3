@@ -13,6 +13,7 @@ enum machine_memory_access {
     MACHINE_MEMORY_ALIGNED16 = 32u, /* Ordered extent/pair preflight only. */
     MACHINE_MEMORY_FS = 64u,
     MACHINE_MEMORY_GS = 128u,
+    MACHINE_MEMORY_ALIGNED8 = 256u,
 };
 
 /* One private port per serialized execution lane. A fault is a pending CPU

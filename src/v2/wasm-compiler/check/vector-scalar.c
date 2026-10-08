@@ -140,6 +140,9 @@ static int admission(void)
             if(check_segment_admission(&image,&options,invalid[i][0]))return -1;
             continue;
         }
+        if(i==4u){wasm_cut_report report;pl_u64 bytes=0u;
+            if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&bytes,&report)||report.memory_bytes!=4u)return -1;
+            continue;}
         memset(module,0xa5,sizeof module);wasm_cut_report report;memset(&report,0xa5,sizeof report);
         wasm_cut_report old=report;pl_u64 emitted=77u;
         if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)!=WASM_COMPILER_ERROR_GRAMMAR

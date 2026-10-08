@@ -10,6 +10,9 @@ static int xmm(const pl_x86_operand *operand, int selected_half)
 }
 int cut_vector_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_vector_binary binary;
+    if(pl_x86_vector_binary_lower(instruction,&binary))return !binary.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
     if(instruction->status!=PL_X86_DECODE_VALID || instruction->flow!=PL_X86_FLOW_NEXT
             || instruction->machine_operation!=PL_X86_MACHINE_VECTOR
             || (instruction->visible_operand_count!=2u && instruction->visible_operand_count!=3u)
@@ -23,11 +26,6 @@ int cut_vector_supported(const pl_x86_instruction *instruction)
             || ((instruction->address_width==32u || instruction->address_width==64u)
                 && cut_memory_address_supported(instruction,&memory->value.memory));
     }
-    pl_x86_vector_binary binary;
-    if(pl_x86_vector_binary_lower(instruction,&binary))
-        return !binary.source_memory
-            || ((instruction->address_width==32u || instruction->address_width==64u)
-                && cut_memory_address_supported(instruction,&source->value.memory));
     if(instruction->visible_operand_count!=2u)return 0;
     if(cut_vector_shift_shape(instruction))return xmm(target,0);
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
@@ -75,6 +73,12 @@ void cut_sse_guard(cut_lowering *cut)
     cut_load(cut,offsetof(machine_state,cr0));cut_const(cut,8u);cut_op(cut,0x83u);
     cut_op(cut,0x50u);cut_op(cut,0x45u);fault_if(cut,7u);
 }
+void cut_mmx_guard(cut_lowering *cut)
+{
+    cut_load(cut,offsetof(machine_state,cr0));cut_const(cut,4u);cut_op(cut,0x83u);cut_op(cut,0x50u);cut_op(cut,0x45u);fault_if(cut,6u);
+    cut_load(cut,offsetof(machine_state,cr0));cut_const(cut,8u);cut_op(cut,0x83u);cut_op(cut,0x50u);cut_op(cut,0x45u);fault_if(cut,7u);
+    cut_x87_pending_guard(cut,CUT_LEFT,CUT_RIGHT);
+}
 static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
 {
     cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);
@@ -84,31 +88,32 @@ static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
 }
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
-    int read=!!(instruction->machine_argument&(1ull<<24u));
-    int write=!!(instruction->machine_argument&(1ull<<25u));
+    pl_x86_vector_binary binary;
+    int binary_value=pl_x86_vector_binary_lower(instruction,&binary),mmx=binary_value&&binary.register_bytes==8u;
+    int read=binary_value?binary.source_memory:!!(instruction->machine_argument&(1ull<<24u));
+    int write=mmx?0:!!(instruction->machine_argument&(1ull<<25u));
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u);
-    cut_sse_guard(cut);
+    if(mmx)cut_mmx_guard(cut);else cut_sse_guard(cut);
     pl_u32 shift=cut_vector_shift_shape(instruction);
     if(shift) {cut_lower_vector_shift(cut,instruction,shift);return;}
     pl_x86_vector_projection projection;
     int projected=pl_x86_vector_project(instruction,&projection);
     if(projected && projection.identity)return;
-    pl_x86_vector_binary binary;
-    int binary_value=pl_x86_vector_binary_lower(instruction,&binary);
-    if(binary_value && binary.result==PL_X86_VECTOR_BINARY_IDENTITY)return;
+    if(binary_value&&!mmx&&binary.result==PL_X86_VECTOR_BINARY_IDENTITY)return;
     if(read || write) {
         const pl_x86_memory *memory=&instruction->operands[write?0u:1u].value.memory;
         cut_effective_address(cut,instruction,memory);cut_set(cut,CUT_ADDRESS);
         cut->report.memory_access=write?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
         cut->report.memory_access|=cut_memory_role(memory);
-        if(instruction->machine_argument&(1ull<<26u))cut->report.memory_access|=MACHINE_MEMORY_ALIGNED16;
+        if(!mmx&&(instruction->machine_argument&(1ull<<26u)))cut->report.memory_access|=MACHINE_MEMORY_ALIGNED16;
         /* All sixteen bytes obtain their rights/residency before either
          * XMM publication or the first store. Two scalar access calls would
          * expose a partial operand on a second-page fault. */
-        cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_get(cut,CUT_ADDRESS);
+        if(mmx){cut_const(cut,0u);cut_set(cut,CUT_VALUE);cut_access(cut);}
+        else{cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_get(cut,CUT_ADDRESS);
         cut_op(cut,0x41u);wasm_writer_uleb(cut->writer,16u);
         cut_i32_const(cut,cut->report.memory_access);
-        cut_call(cut,write ? WASM_IMPORT_WRITE_BEGIN : WASM_IMPORT_READ_PAIR);cut_access_status(cut);
+        cut_call(cut,write ? WASM_IMPORT_WRITE_BEGIN : WASM_IMPORT_READ_PAIR);cut_access_status(cut);}
     }
     pl_u32 unpack=cut_vector_unpack_shape(instruction);
     if(projected) {cut_emit_vector_projection(cut,instruction,&projection);return;}

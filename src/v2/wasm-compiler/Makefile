@@ -36,6 +36,17 @@ SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
+.PHONY: packed-binary-check
+check: mmx-transfer-check
+mmx-transfer-check: $(BUILD)/mmx-transfer-check
+	$(BUILD)/mmx-transfer-check
+$(BUILD)/mmx-transfer-check: check/mmx-transfer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+check: packed-binary-check
+packed-binary-check: $(BUILD)/packed-binary-check
+	$(BUILD)/packed-binary-check
+$(BUILD)/packed-binary-check: check/packed-binary.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-vector-shuffle.c
 SOURCES += src/emit-vector-projection.c
 SOURCES += src/lower-vector-shift.c

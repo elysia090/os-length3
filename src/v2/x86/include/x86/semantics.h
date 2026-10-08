@@ -181,7 +181,11 @@ pl_u32 pl_x86_vector_project_byte(const pl_x86_vector_projection *projection,
 enum pl_x86_vector_binary_operator {
     PL_X86_VECTOR_BINARY_AND, PL_X86_VECTOR_BINARY_OR,
     PL_X86_VECTOR_BINARY_XOR, PL_X86_VECTOR_BINARY_AND_NOT,
-    PL_X86_VECTOR_BINARY_ADD, PL_X86_VECTOR_BINARY_EQUAL
+    PL_X86_VECTOR_BINARY_ADD, PL_X86_VECTOR_BINARY_EQUAL,
+    PL_X86_VECTOR_BINARY_SUBTRACT,PL_X86_VECTOR_BINARY_GREATER,
+    PL_X86_VECTOR_BINARY_ADD_SAT,PL_X86_VECTOR_BINARY_SUBTRACT_SAT,
+    PL_X86_VECTOR_BINARY_MINIMUM,PL_X86_VECTOR_BINARY_MAXIMUM,
+    PL_X86_VECTOR_BINARY_AVERAGE,PL_X86_VECTOR_BINARY_MULTIPLY
 };
 enum pl_x86_vector_binary_result {
     PL_X86_VECTOR_BINARY_VALUE, PL_X86_VECTOR_BINARY_IDENTITY,
@@ -189,10 +193,13 @@ enum pl_x86_vector_binary_result {
 };
 typedef struct {
     pl_u8 operation, lane_bytes, source_memory, alias, reverse, result;
+    pl_u8 register_bytes,signed_lanes;
 } pl_x86_vector_binary;
 /* Lower a decoded vector law, substituting equal input coordinates. AND_NOT
  * means first & ~second; source order belongs to this frontend, not a backend. */
 int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
                                pl_x86_vector_binary *out);
+typedef struct {pl_u8 bytes,source_memory,target_memory,source_mmx,target_mmx,aligned;} pl_x86_mmx_transfer;
+int pl_x86_mmx_transfer_lower(const pl_x86_instruction *instruction,pl_x86_mmx_transfer *out);
 
 #endif /* X86_SEMANTICS_H */

@@ -1,5 +1,12 @@
 # x86 semantic oracles
 
+MMX64 and XMM128 now share33 packed binary operators. The existing FPU capture
+adds actual full saved tags and RAX; `mmx-binary-observe.c DIRECTORY [--wide|
+--transfer|--tag-first]` records the independent populations. Execute via
+`check-x87-state.mjs` modes `--mmx`, `--packed`, `--mmx-transfer`. Guard and
+FS-before-alignment C models are separate from physical observations. See
+[packed lane and transfer closure](../../src/v2/vm/check/browser/evidence/2026-10-08-packed-mmx.md).
+
 Return widths reuse the existing system observer with a low INT landing pad:
 `prepare-return-widths.sh NEW-DIRECTORY` generates16/32/64-bit IRET and far RET
 with0/7 release. Both `check-iret-system.mjs` and `check-outer-iret.mjs` accept

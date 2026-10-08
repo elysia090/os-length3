@@ -164,10 +164,10 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if (system==CUT_SYSTEM_X87_STATUS_COMPARE&&instruction.visible_operand_count&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY) plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if(system==CUT_SYSTEM_STRING_IO)plan->report.memory_bytes=(pl_u32)instruction.machine_argument&255u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
-                    plan->report.memory_bytes=(instruction.machine_argument&(3ull<<24u))?16u:0u;
+                {pl_x86_vector_binary law;plan->report.memory_bytes=pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
-                    plan->report.memory_bytes=(instruction.machine_argument&(3ull<<24u))
-                        ? (instruction.machine_argument&255u)==9u?4u:8u : 0u;
+                {pl_x86_mmx_transfer law;plan->report.memory_bytes=pl_x86_mmx_transfer_lower(&instruction,&law)?(law.source_memory||law.target_memory?law.bytes:0u):
+                    (instruction.machine_argument&(3ull<<24u))?(instruction.machine_argument&255u)==9u?4u:8u:0u;}
                 else if((system==CUT_SYSTEM_SELECTOR_SNAPSHOT || system==CUT_SYSTEM_X87_SNAPSHOT)
                     && instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
                     plan->report.memory_bytes=2u;
@@ -277,6 +277,10 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
             || cut_vector_binary_local(&instruction));
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_binary law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_binary_lower(&i,&law)&&law.register_bytes==8u)locals=26u;}
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_mmx_transfer law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_mmx_transfer_lower(&i,&law)){locals=26u;permutation_local=1u;}}
     pl_u32 checkpoint=0u;
     if(plan->report.boundary_operation==PL_X86_OPERATION_ENTER){locals=CUT_ENTER_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_STRING_IO){locals=CUT_STRING_IO_LOCALS;checkpoint=1u;}
