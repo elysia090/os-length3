@@ -60,14 +60,8 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     if (cut_mxcsr_supported(instruction)) return CUT_SYSTEM_MXCSR;
     if (cut_vector_supported(instruction)) return CUT_SYSTEM_VECTOR_TRANSFER;
     if (cut_vector_scalar_supported(instruction)) return CUT_SYSTEM_VECTOR_SCALAR;
-    if (instruction->status==PL_X86_DECODE_VALID
-            && instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT
-            && instruction->machine_argument==MACHINE_EXCEPTION_BREAKPOINT
-            && instruction->trap_vector==MACHINE_EXCEPTION_BREAKPOINT
-            && !instruction->visible_operand_count && instruction->flow==PL_X86_FLOW_FAULT
-            && (instruction->flags&PL_X86_INSTRUCTION_TRAP_AFTER)
-            && !(instruction->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED)))
-        return CUT_SYSTEM_SOFTWARE_INTERRUPT;
+    pl_x86_software_trap trap;
+    if(pl_x86_software_trap_lower(instruction,&trap))return CUT_SYSTEM_SOFTWARE_INTERRUPT;
     if (instruction->status==PL_X86_DECODE_VALID
             && instruction->machine_operation==PL_X86_MACHINE_X87
             && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)

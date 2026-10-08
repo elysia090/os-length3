@@ -55,6 +55,9 @@ typedef struct { pl_u8 vector,bytes; } pl_x86_fault_cut;
 /* A decoder-proved synchronous #UD/#GP with a decisive source extent. Fetch
  * incompleteness and trap-after instructions are different machine futures. */
 int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out);
+typedef struct {pl_u8 vector,bytes;} pl_x86_software_trap;
+/* INT1/INT3 are explicit traps, not INT n or pending fault cuts. */
+int pl_x86_software_trap_lower(const pl_x86_instruction *instruction,pl_x86_software_trap *out);
 
 typedef struct { pl_u8 bits,compare; } pl_x86_register_update;
 /* Simultaneous old-value capture, add/exchange or accumulator comparison.

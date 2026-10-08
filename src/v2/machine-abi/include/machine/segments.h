@@ -12,7 +12,8 @@ enum machine_segment_rank {
 };
 #define MACHINE_SEGMENT_UNUSABLE 0x10000u
 /* Mutually exclusive boundary inhibition, not two independent countdowns.
- * STI blocks maskable interrupts; MOV SS additionally inhibits debug events.
+ * STI blocks maskable interrupts; MOV SS also inhibits ordinary debug
+ * conditions. Explicit INT1 traps are not blocked by either kind.
  * Exact suspend retains the kind, and admission rejects unknown kinds. */
 enum { MACHINE_SHADOW_NONE, MACHINE_SHADOW_MOV_SS, MACHINE_SHADOW_STI };
 

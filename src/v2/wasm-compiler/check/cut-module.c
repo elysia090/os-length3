@@ -63,16 +63,18 @@ int main(int argc,char **argv)
         memset(reports,0xa5,sizeof reports);memcpy(before,reports,sizeof reports);bytes=77u;
         pl_u64 old=options[1].entry;pl_u32 old_cap=options[1].maximum_module_bytes;
         pl_u8 old_byte=page[(COUNT-1u)*64u];
+        pl_u8 old_second=page[(COUNT-1u)*64u+1u];
         pl_u32 count=COUNT;pl_u64 capacity=sizeof module;
         if(case_id==0u)count=0u;
         if(case_id==1u)count=WASM_CUT_MODULE_MAX_FUNCTIONS+1u;
         if(case_id==2u)options[1].entry=options[0].entry;
         if(case_id==3u)capacity=1u;
         if(case_id==4u)options[1].maximum_module_bytes=1u;
-        if(case_id==5u)page[(COUNT-1u)*64u]=0xf1u;
+        if(case_id==5u){page[(COUNT-1u)*64u]=0xcdu;page[(COUNT-1u)*64u+1u]=1u;}
         int status=wasm_compiler_emit_code_module(&source,9u,options,count,module,capacity,
             case_id==6u?(pl_u64 *)reports:&bytes,reports);
         options[1].entry=old;options[1].maximum_module_bytes=old_cap;page[(COUNT-1u)*64u]=old_byte;
+        page[(COUNT-1u)*64u+1u]=old_second;
         if(!status || bytes!=77u || memcmp(module,saved,sizeof module) || memcmp(reports,before,sizeof reports))return 11;
     }
     /* ULEB count/index boundary, still one interface and bounded workspace. */

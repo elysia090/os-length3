@@ -3,7 +3,7 @@
 #include <vm/segments.h>
 #include <vm/pic.h>
 #include <machine/exception.h>
-enum vm_event_kind { VM_EVENT_FAULT, VM_EVENT_INTERRUPT, VM_EVENT_SOFTWARE };
+enum vm_event_kind { VM_EVENT_FAULT, VM_EVENT_INTERRUPT, VM_EVENT_SOFTWARE, VM_EVENT_DEBUG_TRAP };
 
 /* One serialized architectural event, not a CPU snapshot. Completed frame
  * stores must not be replayed after a residency wait: they can alias the IDT,
@@ -19,7 +19,7 @@ _Static_assert(sizeof(vm_fault_delivery) == 168u, "bounded event frontier extent
 /* Deliver a pending processor fault from machine_memory_port through the
  * guest IDT. Currently long-mode interrupt/trap gates to non-conforming CPL0
  * code, IST=0; outer origins use a valid busy 64-bit TSS.RSP0,
- * vectors 0/6/7/10/11/12/13/14/17. CR2 is published for #PF before delivery.
+ * vectors 0/1/6/7/10/11/12/13/14/17. CR2 is published for #PF before delivery.
  * Host page absence returns BARRIER and retains the bounded event frontier.
  * Success updates RIP/CS/RSP/flags but does not retire the faulting instruction.
  * A secondary architectural fault is exposed and releases the frontier;
@@ -40,9 +40,10 @@ machine_result vm_fault_enter(vm_memory *physical, pl_u32 port_offset,
 machine_result vm_interrupt_enter(vm_memory *physical, pl_u32 port_offset,
     machine_state *state, machine_segments *segments, vm_fault_delivery *delivery, vm_pic *pic);
 
-/* Synchronous software exception delivery, currently #BP to CPL0/IST0.
- * The gate DPL is checked for software entry. Outer origins use TSS.RSP0.
+/* Explicit #BP/#DB trap delivery to CPL0/IST0. #DB bypasses gate DPL and
+ * uses EXT=1 for secondary errors. Outer origins use TSS.RSP0.
  * next_rip is the architectural return coordinate, not a handler address.
+ * #DB clears DR6.B0..3/GD once before delivery, including failed delivery.
  * RF is saved as zero; no error code is pushed. Delivery failure/wait leaves
  * the source RIP/retirement unchanged; the caller retires after success.
  * Retry must use the same vector/return coordinate and serialized frontier. */

@@ -2685,6 +2685,19 @@ pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction)
     return reads;
 }
 
+int pl_x86_software_trap_lower(const pl_x86_instruction *i,pl_x86_software_trap *out)
+{
+    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER|PL_X86_INSTRUCTION_TRAP_AFTER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY
+        ||i->operation!=PL_X86_OPERATION_FAULT||i->flow!=PL_X86_FLOW_FAULT||i->family!=PL_X86_FAMILY_INTERRUPT
+        ||i->machine_operation!=PL_X86_MACHINE_SOFTWARE_INTERRUPT||i->visible_operand_count
+        ||(i->flags&required)!=required||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED))
+        ||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes)return 0;
+    pl_u32 vector=i->opcode==0xf1u?1u:i->opcode==0xccu?3u:0u;
+    if(!vector||i->trap_vector!=vector||i->machine_argument!=vector)return 0;
+    *out=(pl_x86_software_trap){(pl_u8)vector,i->source_bytes};return 1;
+}
 int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out)
 {
     if(!instruction || !out || instruction->flow!=PL_X86_FLOW_FAULT
@@ -2893,6 +2906,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT
+        &&((instruction->flags&PL_X86_INSTRUCTION_TRAP_AFTER)||instruction->opcode==0xf1u||instruction->opcode==0xccu)){
+        pl_x86_software_trap law;if(!pl_x86_software_trap_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_PORT_IO&&(instruction->machine_argument&(1ull<<10u))){
         pl_x86_string_io law;if(!pl_x86_string_io_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==1u){

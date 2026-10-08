@@ -13,7 +13,7 @@ const dir=vm.vm_arena_min(),base=dir+4096,port=base+2048,segments=base+1408,rows
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536,entry=0x400000n;
 const payload=i=>base+(i+1)*4096,put=(at,x)=>v.setBigUint64(at,BigInt(x),true);
 const slot=vm.__indirect_function_table.grow(1),cpu=()=>Buffer.from(data.subarray(base,base+1256));
-let parity=0,comparisons=0,waits=0,faults=0,refusals=0;
+let parity=0,comparisons=0,waits=0,faults=0,refusals=0,eventVector=3;
 function reset(source,{gate=0x8e,flags=0x10603n,rsp=0xb100n,deferred=-1}={}) {
   data.fill(0,base);
   for(let i=0;i<10;++i) {
@@ -24,13 +24,14 @@ function reset(source,{gate=0x8e,flags=0x10603n,rsp=0xb100n,deferred=-1}={}) {
   put(payload(0),0x2067);put(payload(1),0x3067);put(payload(2),0xe3);
   put(payload(2)+16,0x6067);put(payload(5),0x8067);
   put(payload(3)+8,0x00af9b000000ffffn);put(payload(3)+16,0x00cf93000000ffffn);
-  put(payload(4)+48,0x9000n|8n<<16n|BigInt(gate)<<40n);
+  put(payload(4)+eventVector*16,0x9000n|8n<<16n|BigInt(gate)<<40n);
   data.set(source,payload(6));data.set([0x48,0xcf],payload(7));
   for(let r=0;r<16;++r)put(base+r*8,0xabcdef9887650000n+BigInt(r));
   put(base+32,rsp);put(base+384,entry);put(base+392,flags);put(base+400,0x80010011);
   put(base+408,0x1000);put(base+416,32);put(base+424,0x500);put(base+432,0xabcdef);
   put(base+448,0x4000);put(base+456,23);put(base+464,0x5000);put(base+472,4095);
   put(base+488,8);put(base+496,16);put(base+1128,42);put(port,9);
+  if(eventVector===1){put(base+592,0xffffefff);put(base+600,0x2400);}
   v.setUint32(segments,2,true);v.setUint32(segments+36,0xa09b,true);v.setUint32(segments+52,0xc093,true);
   data.fill(0x93,payload(8),payload(8)+8192);
   assert.equal(vm.vm_open(base,data.length-base,4096,dir,10,10,dir+1024,9n),0);
@@ -46,14 +47,18 @@ function expected(sourceBytes) {
   const frame=[entry+BigInt(sourceBytes),8n,flags&~0x10000n,rsp,16n];
   frame.forEach((word,i)=>image.writeBigUInt64LE(word,Number(target-0xa000n)+i*8));
   state.writeBigUInt64LE(target,32);state.writeBigUInt64LE(0x9000n,384);
-  state.writeBigUInt64LE(flags&~(0x34100n|(data[payload(4)+53]===0x8e?0x200n:0n)),392);
+  state.writeBigUInt64LE(flags&~(0x34100n|(data[payload(4)+eventVector*16+5]===0x8e?0x200n:0n)),392);
+  debugEffect(state);
   state.writeBigUInt64LE(43n,1128);
   return {state,image};
 }
+function debugEffect(state){if(eventVector===1){state.writeBigUInt64LE(state.readBigUInt64LE(592)&~15n,592);
+  state.writeBigUInt64LE(state.readBigUInt64LE(600)&~0x2000n,600);}return state;}
 try {
-  for(let form=0;form<8;++form) {
+  for(let form=0;form<16;++form) {
     const prefix=path.join(directory,`software-interrupt-${form}`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),source=await readFile(`${prefix}.source-page`),emitted=await readFile(`${prefix}.wasm`);
+    eventVector=meta.vector??3;assert([1,3].includes(eventVector));
     cold.set(source,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
     assert.equal(cc.compiler_emit(entry,8,output,65536,report),0);
     assert.equal(cv.getBigUint64(report+40,true),BigInt(emitted.length));assert(cold.subarray(output,output+emitted.length).equals(emitted));++parity;
@@ -70,7 +75,7 @@ try {
       if(dispatch){assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);}++comparisons;
     }
     for(const dispatch of [false,true])for(const deferred of [3,4,8,9]) {
-      reset(source,{rsp:0xb010n,deferred});bind(meta.sourceBytes);const before=cpu(),result=expected(meta.sourceBytes);
+      reset(source,{rsp:0xb010n,deferred});bind(meta.sourceBytes);const before=debugEffect(cpu()),result=expected(meta.sourceBytes);
       assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),2n);assert(cpu().equals(before));
       if(dispatch){assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);}
       if(deferred===8) {
@@ -78,7 +83,7 @@ try {
         // and corrupt the consumed gate: retry must not read/replay it again.
         assert.equal(v.getBigUint64(payload(9),true),0xb010n);
         assert.equal(v.getBigUint64(payload(9)+8,true),16n);
-        data.fill(0,payload(4)+48,payload(4)+64);
+        data.fill(0,payload(4)+eventVector*16,payload(4)+eventVector*16+16);
       }
       assert.equal(vm.vm_bind_execution(rows,1,9n),-1);
       assert.equal(vm.vm_fault(port),6n);assert(cpu().equals(before));
@@ -89,13 +94,13 @@ try {
     }
     for(const dispatch of [false,true])for(let mode=0;mode<6;++mode) {
       reset(source);bind(meta.sourceBytes);
-      if(mode===0)put(base+472,47);
-      if(mode===1)data[payload(4)+53]=0x0f;
-      if(mode===2)data[payload(4)+53]=0x8d;
-      if(mode===3)put(payload(4)+48,0x9000n|24n<<16n|0x8fn<<40n);
+      if(mode===0)put(base+472,eventVector*16-1);
+      if(mode===1)data[payload(4)+eventVector*16+5]=0x0f;
+      if(mode===2)data[payload(4)+eventVector*16+5]=0x8d;
+      if(mode===3)put(payload(4)+eventVector*16,0x9000n|24n<<16n|0x8fn<<40n);
       if(mode===4)put(payload(3)+8,0x00af1b000000ffffn);
       if(mode===5)put(base+32,0x800000000000n);
-      const before=cpu(),image=Buffer.from(data.subarray(payload(8),payload(8)+8192));
+      const before=debugEffect(cpu()),image=Buffer.from(data.subarray(payload(8),payload(8)+8192));
       const vector=mode===1||mode===4?11:mode===5?12:13;
       assert.equal(dispatch?vm.vm_run(port,9n,1):cut(base,port,entry,v.getUint32(rows+20,true)),(BigInt(vector)<<3n)|3n);
       assert(cpu().equals(before));assert(data.subarray(payload(8),payload(8)+8192).equals(image));

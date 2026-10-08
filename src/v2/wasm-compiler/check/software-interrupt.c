@@ -1,4 +1,5 @@
 #include <wasm-compiler/cut.h>
+#include <x86/semantics.h>
 #include "fault-admission.h"
 #include <stdio.h>
 #include <string.h>
@@ -22,8 +23,13 @@ int main(int argc,char **argv)
     pl_x86_image image={&map,1u,0u,map.address};wasm_cut_options options={map.address,8u,sizeof output};
     static const pl_u8 forms[][3]={{0xccu},{0x66u,0xccu},{0x67u,0xccu},{0x48u,0xccu},
         {0x64u,0xccu},{0x65u,0xccu},{0xf2u,0xccu},{0xf3u,0xccu}};
-    for(unsigned rank=0u;rank<8u;++rank) {
-        memset(page,0x90,sizeof page);unsigned length=rank?2u:1u;memcpy(page,forms[rank],length);
+    for(unsigned rank=0u;rank<16u;++rank) {
+        unsigned form=rank&7u,vector=rank<8u?3u:1u;
+        memset(page,0x90,sizeof page);unsigned length=form?2u:1u;memcpy(page,forms[form],length);
+        page[length-1u]=(pl_u8)(vector==1u?0xf1u:0xccu);
+        pl_x86_instruction instruction;pl_x86_software_trap law;
+        EXPECT(!pl_x86_decode_profile(&image,map.address,&instruction));
+        EXPECT(pl_x86_software_trap_lower(&instruction,&law)&&law.vector==vector&&law.bytes==length);
         pl_u64 emitted=0u;wasm_cut_report report;
         int status=wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&emitted,&report);
         EXPECT(!status);
@@ -31,26 +37,37 @@ int main(int argc,char **argv)
         EXPECT(report.source_instructions==1u && report.source_bytes==length
             && report.continuation==map.address+length && report.boundary==WASM_CUT_CONTROL
             && !report.memory_bytes && !report.read_registers && !report.written_registers && report.flags_written);
-        char json[160];int n=snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"sourceBytes\":%u,\"instructions\":1}\n",length);
+        char json[160];int n=snprintf(json,sizeof json,"{\"entry\":\"4194304\",\"sourceBytes\":%u,\"instructions\":1,\"vector\":%u}\n",length,vector);
         if(n<=0 || (size_t)n>=sizeof json || save(argc==2?argv[1]:NULL,rank,"json",json,(size_t)n)
             || save(argc==2?argv[1]:NULL,rank,"source-page",page,sizeof page)
             || save(argc==2?argv[1]:NULL,rank,"wasm",output,(size_t)emitted))return 1;
+        for(unsigned bad=0u;bad<12u;++bad){pl_x86_instruction changed=instruction;
+            switch(bad){case 0:changed.machine_argument|=1ull<<32u;break;case 1:changed.trap_vector^=2u;break;
+            case 2:changed.flags&=~PL_X86_INSTRUCTION_TRAP_AFTER;break;case 3:changed.visible_operand_count=1u;break;
+            case 4:changed.length=0u;break;case 5:changed.flags|=PL_X86_INSTRUCTION_PRIVILEGED;break;
+            case 6:changed.flags|=PL_X86_INSTRUCTION_WRITES_MEMORY;break;case 7:changed.flags|=PL_X86_INSTRUCTION_LOCKED;break;
+            case 8:changed.flow=PL_X86_FLOW_SYSTEM;break;case 9:changed.status=PL_X86_DECODE_INVALID;break;
+            case 10:changed.opcode=0xcdu;break;default:++changed.source_bytes;break;}
+            pl_x86_software_trap value,old;memset(&old,0xa5,sizeof old);value=old;
+            EXPECT(!pl_x86_software_trap_lower(&changed,&value)&&!memcmp(&value,&old,sizeof old));
+            pl_u8 scratch[8192];pl_arena arena={scratch,sizeof scratch,0u};pl_x86_semantic semantic;
+            EXPECT(pl_x86_lower(&changed,&arena,&semantic)==PL_ERROR_X86_SEMANTIC);}
     }
     memset(page,0x90,sizeof page);page[1u]=0xccu;
     pl_u64 emitted=0u;wasm_cut_report report;
     EXPECT(!wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&emitted,&report));
     EXPECT(report.source_instructions==1u && report.source_bytes==1u && report.continuation==map.address+1u);
-    /* LOCK INT3/HLT are #UD, not compiler grammar failures. INT n/INT1 still
+    /* LOCK explicit traps/HLT are #UD, not compiler grammar failures. INT n still
      * require their own precise machine laws and refuse immutably. */
-    static const pl_u8 refused[][3]={{0xf0u,0xccu},{0xcdu,3u},{0xf1u},{0xf0u,0xf4u}};
-    for(unsigned rank=0u;rank<4u;++rank) {
+    static const pl_u8 refused[][3]={{0xf0u,0xccu},{0xcdu,3u},{0xcdu,1u},{0xf0u,0xf4u},{0xf0u,0xf1u}};
+    for(unsigned rank=0u;rank<5u;++rank) {
         memcpy(page,refused[rank],sizeof refused[rank]);memset(output,0xa5,sizeof output);
-        if(rank==0u || rank==3u){EXPECT(!check_fault_admission(&image,&options,6u));continue;}
+        if(rank==0u || rank==3u || rank==4u){EXPECT(!check_fault_admission(&image,&options,6u));continue;}
         memset(&report,0xa5,sizeof report);wasm_cut_report before=report;emitted=77u;
         EXPECT(wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&emitted,&report)==WASM_COMPILER_ERROR_GRAMMAR);
         EXPECT(emitted==77u && !memcmp(&before,&report,sizeof report));
         for(unsigned i=0u;i<sizeof output;++i)EXPECT(output[i]==0xa5u);
     }
     if(failures)return 1;
-    puts("INT3: 8 common C forms, precise prefix and unchanged refusal output; runtime oracle is separate");return 0;
+    puts("INT1/INT3: 16 common C forms, 192 malformed laws, precise prefix and unchanged refusals; runtime oracle separate");return 0;
 }

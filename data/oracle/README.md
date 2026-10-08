@@ -1,5 +1,14 @@
 # x86 semantic oracles
 
+`prepare-debug.sh NEW-DIRECTORY --traps` reuses the existing Multiboot/debug
+oracle for explicit F1 traps; `--trap-faults` adds invalid IDT/GDT delivery.
+Run with an explicitly identified accelerator. `check-debug-trap.mjs VM.WASM
+COMPILER.WASM WHPX-TRACE [--faults]` compares actual C frame/debug effects,
+including retained effects after a secondary fault. TCG differs here; do NOT
+use its observer-induced nested #DB as the original trap. The separate
+physical-Windows `debug-trap-observe.c` checks page-end RIP/RFLAGS at CPL3.
+See [scope, rejected oracle conflation and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-debug-trap.md).
+
 The existing `x87-arithmetic-observe` also accepts `DIRECTORY --register`:
 72 raw register add/sub encodings, both operand directions/pop/alias, plus
 precision/rounding/exception-mask matrices. `check-x87-state.mjs --register`

@@ -169,16 +169,19 @@ int main(int argc,char **argv)
     EXPECT(!memcmp(&pic,&accepted,sizeof pic) && !delivery.stage && cpu.rip==0x9000u);
     EXPECT(cpu.registers[4]==0x107fe8u && cpu.retired==123u);
     unsigned software=0u;
+    for(pl_u32 vector=1u;vector<=3u;vector+=2u)
     for(pl_u32 gate=0x8eu;gate<=0x8fu;++gate)for(pl_u32 alignment=0u;alignment<16u;++alignment)
     for(pl_u32 rf=0u;rf<2u;++rf) {
-        reset(0x108f00u-alignment,0x1000204u,0x603u|((pl_u64)rf<<16u),3u,gate);
-        EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,3u,before.rip+1u));
+        reset(0x108f00u-alignment,0x1000204u,0x603u|((pl_u64)rf<<16u),vector,gate);
+        if(vector==1u){cpu.system[MACHINE_SYSTEM_DR0+6u]=0xffffefffu;cpu.system[MACHINE_SYSTEM_DR0+7u]=0x2400u;}
+        EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,vector,before.rip+1u));
         EXPECT(cpu.retired==123u && cpu.rip==0x9000u && !delivery.stage);
         EXPECT(cpu.registers[4]==((before.registers[4]&~15ull)-40u));
         EXPECT(get(stack_offset(cpu.registers[4]))==before.rip+1u);
         EXPECT(get(stack_offset(cpu.registers[4])+16u)==(before.rflags&~0x10000ull));
         EXPECT(cpu.rflags==(gate==0x8eu?0x403u:0x603u));
         EXPECT(cpu.system[MACHINE_SYSTEM_CR2]==before.system[MACHINE_SYSTEM_CR2]);
+        if(vector==1u)EXPECT(cpu.system[MACHINE_SYSTEM_DR0+6u]==0xffffeff0u&&cpu.system[MACHINE_SYSTEM_DR0+7u]==0x400u);
         EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
         EXPECT(cpu.rip==before.rip+1u && cpu.registers[4]==before.registers[4] && cpu.rflags==0x603u);
         ++software;

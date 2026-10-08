@@ -1,0 +1,19 @@
+{
+  "format": "compiled-explicit-debug-trap-v1", "status": "progress", "baseline": "490f103",
+  "compiler": {"bytes": 602806, "sha256": "6df97ac06bad65070e5e1a1be35635578af7d93a1c798a69e147f0fe5f49be98", "growthBytes": 200},
+  "vm": {"bytes": 96861, "sha256": "51cca38ac180be8dfdc61106c0f899e652d5dfa0015c1e5da06b96545418798c", "growthBytes": 165},
+  "independent": {"whpxNormalRows": 768, "whpxFaultRows": 768, "secondaryDeliveries": 576, "physicalWindowsPageEndRows": 512,
+    "bareMetalPrivilegedCertificate": false, "tcgObserverReentries": 384, "tcgDr6Differences": 480, "tcgUsedAsExpectedDebugStatus": false,
+    "normalTraceSha256": "7c2a3ae1bb4f3a38cdecba3ea603a3d65e98175ead20331f919780665502b88c",
+    "faultTraceSha256": "00f242ce02b1c9133eccd3bd99ba0cdb6e9ef285c2e9621c6eca634a5c3cf9d6"},
+  "common": {"nativeColdForms": 16, "malformedRefusals": 192, "cpuFrameModels": 2048, "waitResumes": 128,
+    "deliveryFaultModels": 192, "entryRefusals": 112, "frontierBytes": 168, "newVmOpcode": false, "importAbiChanged": false},
+  "checks": {"x86": "pass", "vm": "pass", "compiler": "pass", "postlinkCompiler": "pass", "positiveASanUBSan": "pass", "warnings": 0},
+  "actualMake": {"coordinates": 233455, "lowerable": 229074, "missingBefore": 4609, "missingAfter": 4381, "recovered": 228,
+    "unloweredFaultCoordinates": 0, "firstAddress": "0xa268", "firstSource": "debf03000000", "firstFamily": "FIDIVR m16",
+    "directoryBeforeMkdirRefused": true, "rootPublished": false},
+  "retained": {"registerArithmeticRows": 42624, "sameBundleIndependentWitness": 86, "retired": 1617931, "admissions": 1000000, "stop": "quota"},
+  "remainingExplicitMachineGaps": ["IST", "general TF/address-breakpoint execution", "double/triple-fault escalation", "broader mode/privilege contracts"],
+  "nativeBundleOrHumanUiChanged": false, "freshBrowserRun": false, "linuxBoot": "not-achieved", "signedRootPublished": false,
+  "speedup": "not-measured", "rssReclamation": "not-measured", "globalMinimum": false
+}

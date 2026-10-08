@@ -23,6 +23,23 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+INT1/F1 now shares INT3's checked trap descriptor, ordinary Wasm and C event
+frontier. #DB bypasses IDT DPL, uses EXT=1 for secondary errors, clears low
+DR6 status/GD before delivery and preserves these effects across failure/wait.
+WHPX reference: 768 normal frames + 768 secondary-fault rows (576 failed
+deliveries) match C; physical Windows adds 512 page-end traps with no successor
+fetch. TCG's 384 observer reentries/480 DR6 differences are NOT fitted as x86
+semantics. 16 native/cold forms, 192 malformed laws, 2,048 CPU/frame models,
+128 waits, 192 delivery faults and positive ASan/UBSan/full product checks pass.
+Actual make: 4,609 -> 4,381 missing (228 recovered), unlowered fault coordinates
+zero; first debf03000000 / FIDIVR m16 at 0xa268. Directory still refuses before
+mkdir/root. Retained 42,624 register arithmetic rows and same-bundle short
+Node prefix pass, NOT Linux boot. No fresh browser or signed root; native/UI
+unchanged. IST/general single-step/address breakpoints remain explicit gaps.
+See [independent differences, delivery ordering and reproduction](../vm/check/browser/evidence/2026-10-08-debug-trap.md).
+
+## Previous register-arithmetic checkpoint
+
 Register FADD/FSUB/FSUBR and pop forms now share the integer-memory arithmetic
 SSA core, raw two-operand classification and ordinary Wasm publisher. 42,624
 local physical full-state rows match C-MMU/table execution through 72 modules;
@@ -538,8 +555,11 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
    remaining arithmetic/source-context/precise-event cases: make's current first
-   miss is F1/debug trap at 0xa21e. Close its precise trap/retirement/debug-state
-   boundary against independent observations; do not substitute #UD or skip it.
+   miss is debf03000000 / FIDIVR m16 at 0xa268. Extend shared exact arithmetic
+   to division, deriving numeric/rounding and IE/DE/ZE/OE/UE/PE publication from
+   independent hardware/reference rows before lowering. Do not use f64 or a
+   runtime numeric callback. F1 now uses the common event owner with its exact
+   DPL/EXT/debug-state distinctions; full IST/debug admission is still needed.
    Register extended add/sub now shares integer arithmetic's exact core and
    handles both raw operand classes, destination direction and pop. Continue
    the remaining float-memory arithmetic, conversion/store and other families,

@@ -13,11 +13,14 @@ flags='-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize
 for product in support x86 optimized-x86;do make -j4 -C "$temporary/$product" CFLAGS="$flags" all;done
 make -j4 -C "$temporary/vm" CFLAGS="$flags" build/io-check
 "$temporary/vm/build/io-check"
+make -j4 -C "$temporary/vm" CFLAGS="$flags" build/exception-check
+"$temporary/vm/build/exception-check"
 make -j4 -C "$temporary/artifact" CFLAGS="$flags" build/index-stream-check
 "$temporary/artifact/build/index-stream-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
     build/segment-load-check build/system-segments-check build/code-cut-check build/literal-check build/source-module-check build/quotient-cap-check build/image-check build/image-module-check build/image-stream-check build/x87-snapshot-check build/x87-compare-check build/x87-integer-check build/x87-arithmetic-check build/x87-register-check build/x87-status-check build/enter-check build/string-io-check
-for test in segment-load system-segments code-cut literal source-module quotient-cap x87-snapshot x87-compare x87-integer x87-arithmetic x87-register x87-status enter string-io;do "$temporary/wasm-compiler/build/$test-check";done
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/software-interrupt-check
+for test in segment-load system-segments code-cut literal source-module quotient-cap x87-snapshot x87-compare x87-integer x87-arithmetic x87-register x87-status enter string-io software-interrupt;do "$temporary/wasm-compiler/build/$test-check";done
 if [[ -n ${LENGTH3_IMAGE_INPUT:-} ]];then
     "$temporary/wasm-compiler/build/image-check" "$LENGTH3_IMAGE_INPUT"
     "$temporary/wasm-compiler/build/image-module-check" "$LENGTH3_IMAGE_INPUT"

@@ -69,19 +69,22 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
     pl_u8 *port = memory->bytes + port_offset;
     if (vm_memory_load(port,8u) != memory->generation) return MACHINE_RESULT_STALE_GENERATION;
     vm_mmu_context context = {state->cr0,state->cr3,state->cr4,state->efer,0u};
-    pl_u32 external=kind==VM_EVENT_INTERRUPT;
+    pl_u32 irq=kind==VM_EVENT_INTERRUPT,external=irq||kind==VM_EVENT_DEBUG_TRAP;
     int software=kind==VM_EVENT_SOFTWARE;
+    int trap=software||kind==VM_EVENT_DEBUG_TRAP;
     if (!delivery->stage) {
-        if (kind==VM_EVENT_FAULT && vector != 0u && vector != 6u && vector != 7u && vector != 10u && vector != 11u
+        if (kind==VM_EVENT_FAULT && vector != 0u && vector != 1u && vector != 6u && vector != 7u && vector != 10u && vector != 11u
                 && vector != 12u && vector != 13u && vector != 14u && vector != 17u)
             return MACHINE_RESULT_ENTRY_MAP;
         if (kind==VM_EVENT_FAULT && vector == 14u) state->system[MACHINE_SYSTEM_CR2] =
             vm_memory_load(port + offsetof(machine_memory_port,fault_address),8u);
+        if(vector==1u){state->system[MACHINE_SYSTEM_DR0+7u]&=~0x2000ull;
+            if(kind==VM_EVENT_DEBUG_TRAP)state->system[MACHINE_SYSTEM_DR0+6u]&=~15ull;}
         *delivery = (vm_fault_delivery){.generation=memory->generation,.stage=1u,.kind=kind,
             .context={state->rip,state->cr0,state->cr3,state->cr4,state->efer},
             .frame={state->system[MACHINE_SYSTEM_SS] & 65535u,state->registers[4],
-                    software ? state->rflags & ~0x10000ull : state->rflags | (external ? 0u : 0x10000u),
-                    state->system[MACHINE_SYSTEM_CS] & 65535u,software ? next_rip : state->rip,error},
+                    trap ? state->rflags & ~0x10000ull : state->rflags | (irq ? 0u : 0x10000u),
+                    state->system[MACHINE_SYSTEM_CS] & 65535u,trap ? next_rip : state->rip,error},
             .words=kind==VM_EVENT_FAULT && vector >= 10u ? 6u : 5u,.stack=state->registers[4] & ~15ull,
             .descriptor_address=vector * 16u};
     } else if (delivery->kind != kind || delivery->stage > 4u || (delivery->words != 5u && delivery->words != 6u)
@@ -90,9 +93,9 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
             || delivery->context[1] != state->cr0 || delivery->context[2] != state->cr3
             || delivery->context[3] != state->cr4 || delivery->context[4] != state->efer
             || delivery->frame[1] != state->registers[4]
-            || (software && delivery->frame[4]!=next_rip)
-            || (delivery->frame[2] & (external ? ~0ull : ~0x10000ull))
-                != (state->rflags & (external ? ~0ull : ~0x10000ull))
+            || (trap && delivery->frame[4]!=next_rip)
+            || (delivery->frame[2] & (irq ? ~0ull : ~0x10000ull))
+                != (state->rflags & (irq ? ~0ull : ~0x10000ull))
             || delivery->frame[3] != (state->system[MACHINE_SYSTEM_CS] & 65535u)
             || delivery->frame[0] != (state->system[MACHINE_SYSTEM_SS] & 65535u)) {
         *delivery = (vm_fault_delivery){0}; return MACHINE_RESULT_ENTRY_MAP;
@@ -223,10 +226,11 @@ machine_result vm_interrupt_enter(vm_memory *memory, pl_u32 port, machine_state 
 machine_result vm_software_interrupt_enter(vm_memory *memory, pl_u32 port, machine_state *state,
     machine_segments *segments, vm_fault_delivery *delivery, pl_u32 vector, pl_u64 next_rip)
 {
-    if (!delivery || !admitted(memory,port,state,segments) || vector!=MACHINE_EXCEPTION_BREAKPOINT
+    pl_u32 kind=vector==MACHINE_EXCEPTION_DEBUG?VM_EVENT_DEBUG_TRAP:VM_EVENT_SOFTWARE;
+    if (!delivery || !admitted(memory,port,state,segments) || (vector!=MACHINE_EXCEPTION_BREAKPOINT&&vector!=MACHINE_EXCEPTION_DEBUG)
             || !((next_rip-state->rip)>=1u && (next_rip-state->rip)<=15u)
-            || (delivery->stage && delivery->kind!=VM_EVENT_SOFTWARE)) return MACHINE_RESULT_ENTRY_MAP;
-    return enter(memory,port,state,segments,delivery,VM_EVENT_SOFTWARE,vector,0u,next_rip);
+            || (delivery->stage && delivery->kind!=kind)) return MACHINE_RESULT_ENTRY_MAP;
+    return enter(memory,port,state,segments,delivery,kind,vector,0u,next_rip);
 }
 
 machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
