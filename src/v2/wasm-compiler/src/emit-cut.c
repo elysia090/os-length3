@@ -159,7 +159,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if (system==CUT_SYSTEM_FXSAVE || system==CUT_SYSTEM_FXRSTOR)
                     plan->report.memory_bytes=512u;
                 else if (system==CUT_SYSTEM_MXCSR) plan->report.memory_bytes=4u;
-                else if ((system==CUT_SYSTEM_X87_INTEGER||system==CUT_SYSTEM_X87_ARITHMETIC)&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
+                else if ((system==CUT_SYSTEM_X87_INTEGER||system==CUT_SYSTEM_X87_ARITHMETIC||system==CUT_SYSTEM_X87_INTEGER_STORE)&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
                     plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_X87_STATUS_COMPARE&&instruction.visible_operand_count&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY) plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if(system==CUT_SYSTEM_STRING_IO)plan->report.memory_bytes=(pl_u32)instruction.machine_argument&255u;
@@ -282,6 +282,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->system_cut==CUT_SYSTEM_STRING_IO){locals=CUT_STRING_IO_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_INTEGER)locals=CUT_X87_LOCALS;
+    if(plan->system_cut==CUT_SYSTEM_X87_INTEGER_STORE)locals=180u;
     if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC)locals=CUT_X87_ARITHMETIC_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_STATUS_COMPARE)locals=CUT_X87_STATUS_LOCALS;
     if(plan->report.boundary_operation==PL_X86_OPERATION_DIVIDE_UNSIGNED||plan->report.boundary_operation==PL_X86_OPERATION_DIVIDE_SIGNED){

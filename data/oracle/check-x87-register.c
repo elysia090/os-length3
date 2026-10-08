@@ -5,7 +5,7 @@
 #include <string.h>
 /* Independent numeric reference only. Stack, deferred errors, noncanonical
  * values and unmasked publication remain in the full-state hardware gate. */
-static machine_state states[1536][2];
+static machine_state states[2240][2];
 static const char *record_prefix="x87-register";
 static int read_form(const char *dir,pl_u32 form,const char *suffix,void *data,size_t bytes)
 {
@@ -63,7 +63,7 @@ int main(int argc,char **argv)
     if(multiply)record_prefix="x87-register-multiply";
     const pl_u8 rounding[]={softfloat_round_near_even,softfloat_round_min,softfloat_round_max,softfloat_round_minMag};
     pl_u32 compared=0u,outside=0u,ssa_rows=0u,max_work=0u,max_span=0u,max_arena=0u;
-    for(pl_u32 form=0u;form<(multiply?27u:divide?54u:81u);++form){pl_u8 code[2];pl_u32 rows=form<(multiply?24u:divide?48u:72u)?400u:1536u;
+    for(pl_u32 form=0u;form<(multiply?27u:divide?54u:81u);++form){pl_u8 code[2];pl_u32 rows=form<(multiply?24u:divide?48u:72u)?400u:divide?2240u:1536u;
         if(read_form(argv[1],form,"source",code,sizeof code)||read_form(argv[1],form,"cases",states,(size_t)rows*sizeof states[0]))return 2;
         pl_u32 index=code[1]&7u,group=(code[1]>>3u)&7u,other_destination=code[0]!=0xd8u;
         if((code[0]!=0xd8u&&code[0]!=0xdcu&&code[0]!=0xdeu)||(code[1]&0xc0u)!=0xc0u

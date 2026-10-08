@@ -7,7 +7,7 @@
     "sha256": "29f7772c5008850471649e11251a782a006b0000455996eab41bdfaef60d9a63"
   },
   "vmChanged": false,
-  "addedPhysicalFpuRows": 300672,
+  "addedPhysicalFpuRows": 304896,
   "retainedPhysicalFpuRows": 42624,
   "officialFiniteRegisterComparisons": 480000,
   "integerDivision": {
@@ -18,9 +18,9 @@
   },
   "registerDivision": {
     "forms": 54,
-    "rows": 28416,
-    "officialCanonicalMasked": 14898,
-    "separateUnmaskedZE": false
+    "rows": 32640,
+    "officialCanonicalMasked": 15186,
+    "separateUnmaskedZE": true
   },
   "memoryArithmetic": {
     "forms": 1120,

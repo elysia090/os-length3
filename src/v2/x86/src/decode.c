@@ -2621,8 +2621,8 @@ static void classify_machine_operation(
                 && (out->operands[0].bits == 32u
                     || out->operands[0].bits == 64u
                     || out->operands[0].bits == 80u)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 10u
                 | ((pl_u64)(out->operands[0].bits / 8u) << 8u)

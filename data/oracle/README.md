@@ -1,5 +1,14 @@
 # x86 semantic oracles
 
+FIST/FISTP/FISTTP and FLD32/64 also consume the common physical SSA and C
+memory/push/store owners. Observer/checker modes `--store` and `--load` provide
+24,576/6,144 complete physical FPU/RFLAGS rows. `check-x87-store.c` and
+`check-x87-load.c` add official numeric references. The independent native
+`x87-store-fault-observe` captures real protected-page ordering; use checker
+`--store-fault` for the same C-MMU comparison. `check-x87-fault.mjs --store`
+or `--load` adds #NM/#MF-before-access and cross-page/refusal models. See
+[transfer publication and reference scopes](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-transfers.md).
+
 The SAME arithmetic observer closes integer/register division, binary32/64
 memory add/sub/div, and all three multiply locations through shared SSA.
 `check-x87-state.mjs VM.WASM COMPILER.WASM RECORDS MODE` compares 300,672

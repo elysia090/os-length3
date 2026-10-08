@@ -23,6 +23,20 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+FIST/FISTP/FISTTP are now closed through one signed conversion/store/pop path:
+24,576 full physical rows +7,424 official numeric rows,64 independent actual
+write-fault ordering rows,64 prefix forms/768 malformed controls. Unmasked
+invalid bypasses destination translation entirely; unmasked precision stores
+and pops. FLD32/64 now shares FILD's push publisher:6,144 physical +1,024
+official rows; retained FILD12,288 rows pass. #NM/#MF/access models and full
+product/positive ASan/UBSan pass without warnings. Register division ZE matrix
+is also complete:32,640 physical/15,186 official masked rows. Same make domain:
+4,381 ->2,648 ->2,255 ->2,099 unresolved (2,282 recovered). Next close FAR RET/
+IRET width families and remaining architectural effects; ZERO remains the gate.
+See [exact publication/fault ordering and reproduction](../vm/check/browser/evidence/2026-10-08-x87-transfers.md).
+
+## Preceding arithmetic/flag/memory checkpoint
+
 Integer/register division, IEEE32/64 memory add/sub/div and all multiply
 locations share the significand/rounding/classification core: 300,672 physical
 FPU/RFLAGS rows pass actual C compiler/MMU/table execution. 480,000 canonical

@@ -49,6 +49,17 @@ SOURCES += src/lower-x87-snapshot.c
 SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-integer.c
 SOURCES += src/lower-x87-arithmetic.c
+SOURCES += src/lower-x87-integer-store.c
+.PHONY: x87-integer-store-check
+check: x87-integer-store-check x87-store-fault-check
+x87-store-fault-check: $(BUILD)/x87-store-fault-observe
+	$(BUILD)/x87-store-fault-observe
+$(BUILD)/x87-store-fault-observe: check/x87-store-fault-observe.c check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
+x87-integer-store-check: $(BUILD)/x87-integer-store-check
+	$(BUILD)/x87-integer-store-check
+$(BUILD)/x87-integer-store-check: check/x87-integer-store.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-x87-status.c
 SOURCES += src/lower-enter.c
 SOURCES += src/lower-string-io.c

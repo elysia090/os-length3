@@ -7,12 +7,12 @@ int main(int argc,char **argv)
 {
     if(argc>2)return 2;
     const pl_u8 prefixes[]={0u,0x66u,0x67u,0x48u,0xf2u,0xf3u};pl_u32 forms=0u,refusals=0u;
-    for(pl_u32 p=0u;p<6u;++p)for(pl_u32 w=0u;w<3u;++w){pl_u32 width=w==0u?2u:w==1u?4u:8u,n=0u;
+    for(pl_u32 ieee=0u;ieee<2u;++ieee)for(pl_u32 p=0u;p<6u;++p)for(pl_u32 w=0u;w<(ieee?2u:3u);++w){pl_u32 width=ieee?(w?8u:4u):w==0u?2u:w==1u?4u:8u,n=0u;
         memset(page,0x90,sizeof page);if(prefixes[p])page[n++]=prefixes[p];
-        page[n++]=(pl_u8)(width==4u?0xdbu:0xdfu);page[n++]=(pl_u8)(width==8u?0x2fu:0x07u);
+        page[n++]=(pl_u8)(ieee?(width==4u?0xd9u:0xddu):(width==4u?0xdbu:0xdfu));page[n++]=(pl_u8)(ieee?7u:width==8u?0x2fu:0x07u);
         pl_x86_map map={page,0x400000u,sizeof page,sizeof page,PL_ELF_FLAG_EXECUTE,9u};pl_x86_image image={&map,1u,0u,map.address};
         pl_x86_instruction i;pl_x86_x87_integer_load law;
-        if(pl_x86_decode_profile(&image,map.address,&i)||!pl_x86_x87_integer_load_lower(&i,&law)||law.bytes!=width)return 1;
+        if(pl_x86_decode_profile(&image,map.address,&i)||!(ieee?pl_x86_x87_memory_load_lower(&i,&law):pl_x86_x87_integer_load_lower(&i,&law))||law.bytes!=width)return 1;
         wasm_cut_options options={map.address,1u,sizeof module};wasm_cut_report report;pl_u64 bytes=0u;
         if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&bytes,&report)
             ||report.source_bytes!=n||report.memory_bytes!=width||report.flags_written||report.source_instructions!=1u)return 1;
@@ -26,7 +26,7 @@ int main(int argc,char **argv)
             case 6:changed.flags&=~PL_X86_INSTRUCTION_READS_MEMORY;break;case 7:changed.flags&=~PL_X86_INSTRUCTION_MAY_TRAP;break;
             case 8:changed.flow=PL_X86_FLOW_FAULT;break;default:changed.status=PL_X86_DECODE_INVALID;break;}
             pl_x86_x87_integer_load out,old;memset(&old,0xa5,sizeof old);out=old;
-            if(pl_x86_x87_integer_load_lower(&changed,&out)||memcmp(&out,&old,sizeof out))return 1;
+            if((ieee?pl_x86_x87_memory_load_lower(&changed,&out):pl_x86_x87_integer_load_lower(&changed,&out))||memcmp(&out,&old,sizeof out))return 1;
             pl_u8 scratch[8192];pl_arena arena={scratch,sizeof scratch,0u};pl_x86_semantic semantic;
             if(pl_x86_lower(&changed,&arena,&semantic)!=PL_ERROR_X86_SEMANTIC)return 1;
             ++refusals;}

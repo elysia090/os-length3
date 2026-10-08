@@ -101,6 +101,10 @@ int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan
 int pl_x86_x87_integer_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 bytes;pl_u16 opcode;} pl_x86_x87_integer_load;
 int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
+int pl_x86_x87_memory_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
+/* Exact load and push outcome. Inputs raw word,CW,full-stack predicate;
+ * outputs extended fields and the arithmetic outcome/tag publication word. */
+int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 integer,pl_arena *arena,pl_plan *out);
 /* Integer-memory add/subtract. Inputs: ST0 significand/sign-exponent,
  * signed operand, control word, empty predicate. Outputs: significand,
  * sign-exponent, outcome (new exception bits, C1, suppress bit16, tag18..19).
@@ -114,6 +118,11 @@ int pl_x86_x87_integer_arithmetic_lower(const pl_x86_instruction *instruction,pl
  * Source denormal classification survives the widening conversion. */
 int pl_x86_x87_memory_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
 int pl_x86_x87_memory_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,pop,truncate;pl_u16 opcode;} pl_x86_x87_integer_store;
+int pl_x86_x87_integer_store_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_store *out);
+/* Inputs sig,sign/exp,CW,empty; outputs signed payload,raised/C1/SF,suppress.
+ * PC does not round integer destinations; FISTTP overrides RC to truncation. */
+int pl_x86_x87_integer_store_plan(pl_u32 bits,pl_u32 truncate,pl_arena *arena,pl_plan *out);
 /* Total unsigned 128/64 quotient. Inputs H,L,D in locals 0..2; outputs
  * quotient,remainder,#DE predicate. Invalid operands publish zero payloads.
  * Fixed radix-2^32 corrections, not a bit-serial runtime loop. */
