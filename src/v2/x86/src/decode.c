@@ -4593,6 +4593,8 @@ static void classify_machine_operation(
                 | ((pl_u64)repeat << 11u)
                 | ((pl_u64)source->address_width << 16u)
                 | ((pl_u64)segment << 24u);
+            out->flags|=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+            if(repeat)out->flags|=PL_X86_INSTRUCTION_REPEATED;
         }
         break;
     }

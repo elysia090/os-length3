@@ -19,7 +19,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_MXCSR, CUT_SYSTEM_VECTOR_TRANSFER, CUT_SYSTEM_VECTOR_SCALAR,
        CUT_SYSTEM_MEMORY_ORDER, CUT_SYSTEM_FXRSTOR, CUT_SYSTEM_PRIVILEGE_TRANSFER,
        CUT_SYSTEM_HALT, CUT_SYSTEM_COUNTER_BRANCH, CUT_SYSTEM_SELECTOR_SNAPSHOT, CUT_SYSTEM_X87_SNAPSHOT,
-       CUT_SYSTEM_X87_COMPARE, CUT_SYSTEM_X87_INTEGER, CUT_SYSTEM_X87_ARITHMETIC, CUT_SYSTEM_X87_STATUS_COMPARE };
+       CUT_SYSTEM_X87_COMPARE, CUT_SYSTEM_X87_INTEGER, CUT_SYSTEM_X87_ARITHMETIC, CUT_SYSTEM_X87_STATUS_COMPARE, CUT_SYSTEM_STRING_IO };
 #define CUT_X87_LOCALS 140u
 #define CUT_X87_ARITHMETIC_LOCALS (40u+PL_X86_X87_ARITHMETIC_MAX_NODES)
 #define CUT_X87_STATUS_LOCALS (40u+PL_X86_X87_MEMORY_RELATION_MAX_NODES)
@@ -140,6 +140,8 @@ void cut_lower_x87_integer(cut_lowering *cut,const pl_x86_instruction *instructi
 void cut_lower_x87_arithmetic(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_x87_status_compare(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_enter(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_string_io(cut_lowering *cut,const pl_x86_instruction *instruction);
+#define CUT_STRING_IO_LOCALS 34u
 #define CUT_ENTER_LOCALS 32u
 typedef struct {pl_u32 top,tag,sw,cw,relation,raised,empty,unmasked,opcode,pop,memory,status;} cut_x87_comparison;
 void cut_publish_x87_comparison(cut_lowering *cut,const pl_x86_instruction *instruction,const cut_x87_comparison *view);

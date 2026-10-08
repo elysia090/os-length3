@@ -3,6 +3,8 @@
 #include <machine/io.h>
 int cut_io_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_string_io string;if(pl_x86_string_io_lower(instruction,&string)
+        &&cut_memory_address_supported(instruction,&pl_x86_string_io_memory(instruction)->value.memory))return CUT_SYSTEM_STRING_IO;
     if (instruction->status != PL_X86_DECODE_VALID
             || (instruction->flow != PL_X86_FLOW_NEXT && instruction->flow != PL_X86_FLOW_SYSTEM)
             || (instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
@@ -28,6 +30,7 @@ int cut_io_supported(const pl_x86_instruction *instruction)
 }
 void cut_lower_io(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    pl_x86_string_io string;if(pl_x86_string_io_lower(instruction,&string)){cut_lower_string_io(cut,instruction);return;}
     cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
     if (instruction->machine_operation == PL_X86_MACHINE_TIME) {
         cut_call(cut,WASM_IMPORT_TIME); cut_access_status(cut);

@@ -1,0 +1,21 @@
+{
+  "format": "compiled-string-io-checkpoint-v1",
+  "status": "progress", "baseline": "4287bc2",
+  "nativePublication": "1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195",
+  "nativeBundleSha256": "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc",
+  "compiler": {"bytes": 590718, "sha256": "c154ac77754915ec615060d7350cb864ee773275ec479e573b0bf3e08455226d", "growthBytes": 3160},
+  "vm": {"bytes": 96696, "sha256": "219dfe61b066388d239ee06bf93ff8e2fd7649bf63681737b6515f6fc32c81a5", "growthBytes": 1022},
+  "referenceSystem": {"backend": "independent QEMU TCG, not product", "kernel": "official Alpine 6.18.35-0-virt",
+    "forms": 72, "cpuRamComparisons": 4608, "faults": 3048, "originalUpstreamImageUsed": true,
+    "observerStaticSha256": "d925d1aec127c03271c1e500e371df7a3b67e026408d9233e8274ebf22e1a0cd", "ownedVmStopped": true},
+  "whpx": {"deniedOnlyComparisons": 4608, "permittedFaultRun": "invalid reference: reserved page-fault bit / kernel oops; excluded"},
+  "construction": {"nativeColdForms": 72, "malformedRefusals": 576, "lostRepFrontendFlagFixed": true},
+  "boundaries": {"cUartReadOnce": true, "consoleByteLatched": true, "quantumResumes": 2, "opcodeToVm": false, "cpuSnapshot": false},
+  "actualMake": {"coordinates": 233455, "lowerable": 228727, "missingBefore": 5598, "missingAfter": 4728, "recovered": 870,
+    "firstAddress": "0xa19a", "firstSource": "dced", "firstFamily": "register FSUBR", "firstStatus": -102, "rootPublished": false},
+  "checks": {"x86": "pass", "vm": "pass", "compiler": "pass", "postlinkCompiler": "pass", "ioOwnerAndPositiveEmitterASanUBSan": "pass", "warnings": 0},
+  "retainedEnter": {"comparisons": 8064, "residencyResumes": 252},
+  "sameBundleShortNode": {"witness": 86, "retired": 1617931, "admissions": 1000000, "stop": "quota", "linuxBoot": "not-achieved"},
+  "freshBrowserLinuxRun": false, "nativeBundleOrHumanUiChanged": false, "signedRootPublished": false,
+  "linuxBoot": "not-achieved", "executionSpeedup": "not-measured", "rssReclamation": "not-measured"
+}

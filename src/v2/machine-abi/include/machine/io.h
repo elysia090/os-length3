@@ -3,6 +3,11 @@
 #define MACHINE_IO_H
 #include <machine/memory.h>
 #define MACHINE_IO_WRITE 0x100u
+#define MACHINE_IO_CHECK 0x200u
+#define MACHINE_IO_CHECKED 0x400u
+/* CHECK admits a serialized transfer shape without a device effect; CHECKED
+ * uses that exact C-owned decision within its pinned in-flight instruction.
+ * Generation, entry, port coordinate and width/direction remain pinned. */
 #define MACHINE_CLOCK_REQUEST 0x100u
 #define MACHINE_CONSOLE_WRITE_REQUEST 0x200u
 /* machine.io(i32 private_port, i32 io_port, i32 bytes|WRITE, i64 value)

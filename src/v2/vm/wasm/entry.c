@@ -30,6 +30,7 @@ static pl_u32 segments_offset;
 static vm_boot boot;
 static vm_execution execution;
 static pl_u32 active_call_port;
+static vm_io_admission io_admission;
 static machine_activity activity;
 static vm_directory artifact_directory;
 static pl_u32 artifact_module_offset,artifact_module_bytes;
@@ -129,6 +130,7 @@ pl_u32 vm_arena_min(void)
 
 void vm_close(void)
 {
+    io_admission=(vm_io_admission){0};
 #ifdef VM_SOURCE_PROFILE
     for(pl_u32 i=0u;i<11u;++i)source_profile[i]=0u;
 #endif
@@ -875,7 +877,15 @@ machine_result vm_io(pl_u32 port, pl_u32 coordinate, pl_u32 transfer, pl_u64 val
     vm_supply_reset(&supply);
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     resident.write_touched = 0u;
-    machine_result result = vm_io_transfer(&resident,port - arena_base,
+    pl_u32 mode=transfer&(MACHINE_IO_CHECK|MACHINE_IO_CHECKED);transfer&=~(pl_u32)(MACHINE_IO_CHECK|MACHINE_IO_CHECKED);
+    if(mode&&(!execution.in_call||active_call_port!=port||mode==(MACHINE_IO_CHECK|MACHINE_IO_CHECKED)))return MACHINE_RESULT_ENTRY_MAP;
+    if(mode==MACHINE_IO_CHECK){machine_result checked=vm_io_check(&io_admission,&resident,port-arena_base,
+        (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,coordinate,transfer);
+        if(resident.write_touched)execution.generation=0u;
+        return memory_result(port,checked);}
+    machine_result result = mode==MACHINE_IO_CHECKED?vm_io_checked_transfer(&io_admission,&resident,port-arena_base,
+        (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
+        &clock_owner,&pit,&pic,&rtc,&uart,&console_owner,&post,coordinate,transfer,value):vm_io_transfer(&resident,port - arena_base,
         (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,
         &clock_owner,&pit,&pic,&rtc,&uart,&console_owner,&post,coordinate,transfer,value);
     if (resident.write_touched) execution.generation = 0u;
@@ -1284,6 +1294,7 @@ static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding, pl_
      * never an x86 instruction fallback. Slots stay pinned during vm_run. */
     machine_entry entry = (machine_entry)(uintptr_t)slot;
     vm_memory_abort(&resident);
+    if(!execution.continuation.slot)io_admission=(vm_io_admission){0};
     active_call_port=owner->port;
     machine_result result = entry(state_offset, owner->port, binding, operand_binding);
     active_call_port=0u;

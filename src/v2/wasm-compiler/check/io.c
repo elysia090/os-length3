@@ -47,8 +47,7 @@ int main(int argc, char **argv)
                     || save(argv[1],rank,"wasm",output,(size_t)length) || save(argv[1],rank,"source-page",page,sizeof page)) return 1;
         }
     }
-    const pl_u8 refused[][4]={{0x0fu,0x01u,0xf9u,0x90u},{0x0fu,0x33u,0x90u,0x90u},
-        {0x6cu,0x90u,0x90u,0x90u},{0x6eu,0x90u,0x90u,0x90u},{0xf3u,0x6cu,0x90u,0x90u}};
+    const pl_u8 refused[][4]={{0x0fu,0x01u,0xf9u,0x90u},{0x0fu,0x33u,0x90u,0x90u}};
     for (unsigned i=0u;i<sizeof refused/sizeof refused[0];++i) {
         memset(page,0x90,sizeof page); memcpy(page,refused[i],sizeof refused[i]); memset(output,0xa5,sizeof output);
         pl_u64 length=0u; wasm_cut_report report;

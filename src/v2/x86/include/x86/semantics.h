@@ -121,6 +121,9 @@ enum {PL_X86_ENTER_OLD_BASE,PL_X86_ENTER_READ,PL_X86_ENTER_COPY,PL_X86_ENTER_FRA
 typedef struct {pl_u32 kind,subtract;} pl_x86_enter_step_info;
 int pl_x86_enter_lower(const pl_x86_instruction *instruction,pl_x86_enter *out);
 int pl_x86_enter_step(const pl_x86_enter *enter,pl_u32 rank,pl_x86_enter_step_info *out);
+typedef struct {pl_u8 bytes,write,repeated,address_bits,segment,index;} pl_x86_string_io;
+int pl_x86_string_io_lower(const pl_x86_instruction *instruction,pl_x86_string_io *out);
+const pl_x86_operand *pl_x86_string_io_memory(const pl_x86_instruction *instruction);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

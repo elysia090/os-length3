@@ -1,5 +1,15 @@
 # x86 semantic oracles
 
+`check-string-io.mjs VM.WASM COMPILER.WASM RECORDS` executes compiled INS/OUTS
+against independent reference-system CPU/RAM records. The primary WHPX route
+produced a guest bad-pagetable oops for permitted INS into absent memory;
+those incomplete records are NOT used as expected ISA results. A separate
+TCG overlay of the original official Alpine image supplies the full gate;
+WHPX denied-only cases corroborate permission/zero-count priority. Neither
+reference backend is a product path. `check-string-io-boundary.mjs` adds C UART
+read-once, console-byte latch and bounded-REP continuation models. See
+[exact scope, reproducibility and limits](../../src/v2/vm/check/browser/evidence/2026-10-08-string-io.md).
+
 `check-enter.mjs VM.WASM COMPILER.WASM NATIVE-RECORDS` compares common compiled
 ENTER with independent reference-x86 CPU/partial-RAM observations. Its synthetic
 deferred-page cases resume through the C-owned two-word checkpoint, including

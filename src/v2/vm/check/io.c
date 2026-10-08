@@ -103,9 +103,10 @@ int main(void)
         machine_state before=state;machine_segments hidden=segments;vm_post old=post;
         vm_uart old_uart=uart;vm_pic old_pic=pic;vm_pit old_pit=pit;vm_rtc old_rtc=rtc;
         int denied=cpl>iopl && ((1u<<bit)&(((1u<<width)-1u)<<(coordinate&7u)));
-        machine_result expected=denied ? 107u : width==1u ? 0u : 6u;
+        pl_u32 base=coordinate&~7u;int wide_absent=(base==0x2e8u||base==0x2f8u||base==0x3e8u)&&coordinate+width-1u<=base+7u;
+        machine_result expected=denied ? 107u : width==1u||wide_absent ? 0u : 6u;
         EXPECT(io(coordinate,width|(write ? MACHINE_IO_WRITE : 0u),0xabcdef98u)==expected);
-        EXPECT(get(8u)==(!expected && !write ? 255u : sentinel));
+        EXPECT(get(8u)==(!expected && !write ? (1ull<<(width*8u))-1u : sentinel));
         EXPECT(!memcmp(&state,&before,sizeof state) && !memcmp(&segments,&hidden,sizeof hidden)
             && !memcmp(&post,&old,sizeof post) && !clock_owner.stage && !clock_owner.now
             && !memcmp(&uart,&old_uart,sizeof uart) && !memcmp(&pic,&old_pic,sizeof pic)
@@ -284,6 +285,14 @@ int main(void)
         if (denied || width!=1u || coordinate==0x71u) EXPECT(!memcmp(&rtc,&hidden_rtc,sizeof rtc));
         ++permissions;
     }
-    if (!failures) printf("C IO/clock/PIT/PIC: %u permission cases, %u absent-device transfers and event/fault/edge checks green (not Linux boot)\n",permissions,absent_transfers);
+    reset(3u,0u);vm_io_admission admission={0};pl_u32 map_at=28672u+104u+(0x2e8u>>3u);
+    put(map_at,0u,2u);EXPECT(!vm_io_check(&admission,&memory,0u,&state,&segments,0x2e8u,4u)&&admission.valid);
+    put(map_at,0xffffu,2u); // A later memory effect cannot redo the earlier permission decision.
+    EXPECT(!vm_io_checked_transfer(&admission,&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,&uart,&console_owner,&post,0x2e8u,4u,0u));
+    EXPECT(get(8u)==0xffffffffu&&admission.valid);
+    EXPECT(io(0x2e8u,4u,0u)==107u); // Independent scalar transfer still checks current rights.
+    EXPECT(vm_io_checked_transfer(&admission,&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,&uart,&console_owner,&post,0x2e9u,4u,0u)==6u);
+    state.rip++;EXPECT(vm_io_checked_transfer(&admission,&memory,0u,&state,&segments,&clock_owner,&pit,&pic,&rtc,&uart,&console_owner,&post,0x2e8u,4u,0u)==6u);
+    if (!failures) printf("C IO/clock/PIT/PIC: %u permission cases, %u absent-device transfers, scoped admission and event/fault/edge checks green (not Linux boot)\n",permissions,absent_transfers);
     return failures ? 1 : 0;
 }

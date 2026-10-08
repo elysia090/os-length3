@@ -45,10 +45,20 @@ static machine_result permission(vm_memory *physical, pl_u32 port, const machine
     return ((vm_memory_load(word,2u) >> (coordinate & 7u)) & ((1u << bytes) - 1u))
         ? gp(physical,port,state) : 0u;
 }
-machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
+machine_result vm_io_check(vm_io_admission *a,vm_memory *physical,pl_u32 port,
+    const machine_state *state,const machine_segments *segments,pl_u32 coordinate,pl_u32 transfer)
+{
+    if(!a)return MACHINE_RESULT_ENTRY_MAP;
+    *a=(vm_io_admission){0};machine_result result=context(physical,port,state,segments);if(result)return result;
+    pl_u32 bytes=transfer&255u;
+    if(coordinate>65535u||(transfer&~0x1ffu)||(bytes!=1u&&bytes!=2u&&bytes!=4u))return MACHINE_RESULT_ENTRY_MAP;
+    result=permission(physical,port,state,segments,coordinate,bytes);if(result)return result;
+    *a=(vm_io_admission){physical->generation,state->rip,port,coordinate,transfer,1u};return 0u;
+}
+static machine_result transfer(vm_memory *physical, pl_u32 port,
     const machine_state *state, const machine_segments *segments,
     vm_clock *clock, vm_pit *pit, vm_pic *pic, vm_rtc *rtc, vm_uart *uart, vm_console *console, vm_post *post,
-    pl_u32 coordinate, pl_u32 transfer, pl_u64 value)
+    pl_u32 coordinate, pl_u32 transfer, pl_u64 value,pl_u32 admitted)
 {
     machine_result result = context(physical,port,state,segments);
     if (result) return result;
@@ -57,8 +67,7 @@ machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
             || (bytes != 1u && bytes != 2u && bytes != 4u)) return MACHINE_RESULT_ENTRY_MAP;
     if(vm_console_pending(console) && (coordinate!=0x3f8u || bytes!=1u || !write))
         return MACHINE_RESULT_ENTRY_MAP;
-    result = permission(physical,port,state,segments,coordinate,bytes);
-    if (result) return result;
+    if(!admitted){result=permission(physical,port,state,segments,coordinate,bytes);if(result)return result;}
     pl_u32 byte = write ? (pl_u32)value & 255u : 0u;
     /* AT math-error interrupt latch reset. The FPU status itself is unchanged;
      * the guest subsequently clears it with a no-wait FPU control operation. */
@@ -71,11 +80,16 @@ machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
      * writes create no register/IRQ/output. This is not an unknown-port
      * default; unsupported widths and other coordinates still refuse. */
     pl_u32 serial_base=coordinate & ~7u;
-    if (bytes==1u && (((coordinate & ~15u)==0x80u
-            && ((0x8e8eu >> (coordinate & 15u)) & 1u))
-            || serial_base==0x2e8u || serial_base==0x2f8u || serial_base==0x3e8u)) {
+    if (bytes==1u && (coordinate & ~15u)==0x80u
+            && ((0x8e8eu >> (coordinate & 15u)) & 1u)) {
         if (clock->stage) return MACHINE_RESULT_ENTRY_MAP;
         if (!write) vm_memory_store(physical->bytes+port+offsetof(machine_memory_port,value),255u,8u);
+        return 0u;
+    }
+    if ((serial_base==0x2e8u||serial_base==0x2f8u||serial_base==0x3e8u)
+        &&coordinate+bytes-1u<=serial_base+7u){
+        if(clock->stage)return MACHINE_RESULT_ENTRY_MAP;
+        if(!write)vm_memory_store(physical->bytes+port+offsetof(machine_memory_port,value),(1ull<<(bytes*8u))-1u,8u);
         return 0u;
     }
     if (coordinate == 0x80u && bytes == 1u && write && post) {
@@ -123,6 +137,22 @@ machine_result vm_io_transfer(vm_memory *physical, pl_u32 port,
     if (vm_pit_transfer(pit,clock->now,pic,coordinate,write,&byte)) return MACHINE_RESULT_ENTRY_MAP;
     if (!write) vm_memory_store(physical->bytes + port + offsetof(machine_memory_port,value),byte,8u);
     vm_clock_consume(clock); return 0u;
+}
+machine_result vm_io_transfer(vm_memory *physical,pl_u32 port,
+    const machine_state *state,const machine_segments *segments,
+    vm_clock *clock,vm_pit *pit,vm_pic *pic,vm_rtc *rtc,vm_uart *uart,vm_console *console,vm_post *post,
+    pl_u32 coordinate,pl_u32 request,pl_u64 value)
+{return transfer(physical,port,state,segments,clock,pit,pic,rtc,uart,console,post,coordinate,request,value,0u);}
+machine_result vm_io_checked_transfer(vm_io_admission *a,vm_memory *physical,pl_u32 port,
+    const machine_state *state,const machine_segments *segments,
+    vm_clock *clock,vm_pit *pit,vm_pic *pic,vm_rtc *rtc,vm_uart *uart,vm_console *console,vm_post *post,
+    pl_u32 coordinate,pl_u32 request,pl_u64 value)
+{
+    if(!a||!physical||!state||!a->valid||a->generation!=physical->generation||a->rip!=state->rip
+        ||a->port!=port||a->coordinate!=coordinate||a->transfer!=request)return MACHINE_RESULT_ENTRY_MAP;
+    machine_result result=transfer(physical,port,state,segments,clock,pit,pic,rtc,uart,console,post,coordinate,request,value,1u);
+    if(result&&machine_result_kind(result)!=MACHINE_RESULT_BARRIER)*a=(vm_io_admission){0};
+    return result;
 }
 machine_result vm_time_read(vm_memory *physical, pl_u32 port,
     const machine_state *state, const machine_segments *segments, vm_clock *clock, const vm_console *console)

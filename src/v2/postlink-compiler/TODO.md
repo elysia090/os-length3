@@ -23,6 +23,23 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+INS/OUTS now consume a common width/address/segment/repeat law and ordinary
+Wasm through C permission/device/memory/checkpoint owners, not a string-I/O
+interpreter. A real frontend omission lost REP flags for these machine rows;
+it is fixed. 4,608 complete TCG reference-system records and 4,608 WHPX
+denied-only records pass; permitted-fault WHPX oops is excluded as an oracle
+failure, not fitted as guest semantics. C UART read-once after residency wait,
+console output byte latching and two bounded-REP resumes pass. 72 native/cold
+forms / 576 malformed laws, full x86/VM/compiler/postlink and positive I/O-owner
+plus emitter ASan/UBSan are warning-free. Actual make: 5,598 -> 4,728 missing
+(870 recovered), first dced / register FSUBR at 0xa19a. Directory publication
+still refuses before mkdir/root. Same-bundle short Node retains the 86-step
+witness and quota, NOT Linux boot. Native bundle/UI unchanged; no fresh browser,
+signed production root, size/speed/RSS claim. See
+[ordering, permission decision, reference failure and reproduction](../vm/check/browser/evidence/2026-10-08-string-io.md).
+
+## Previous ENTER checkpoint
+
 General ENTER now consumes one checked 16/64-bit allocation/nesting law and
 ordered construction steps, ordinary Wasm and existing C SS/MMU transactions.
 Independent native reference-x86 observations expose partial RAM on 2,784
@@ -488,9 +505,14 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
    remaining arithmetic/source-context/precise-event cases: make's current first
-   miss is 4d6d / INS at 0xa12b. Close generic string input/output ordering,
-   permission, memory fault, repetition/frontier and device-event ownership
-   with independent observations; do not skip it or synthesize #UD.
+   miss is dced / register FSUBR at 0xa19a. Generalize the existing exact extended
+   integer-memory add/sub normal form to BOTH raw extended operands, including
+   unsupported/NaN/denormal/empty priorities, destination direction and pop.
+   Do not round through f64 or introduce a math interpreter/callback.
+   String I/O now has permission-before-zero/memory, read/store/output latches,
+   bounded repetitions and exact device/host barriers. Preserve its pinned
+   C authorization decision across memory/clock/console waits and cancel it
+   on new entry; do not repeat the TSS decision after intervening A/D effects.
    ENTER now has native-proven 16/64 allocation/nesting, partial RAM/fault and
    a two-word C checkpoint. Reuse that generic residual ownership where needed;
    exact snapshots must include it, not silently replay a partial instruction.

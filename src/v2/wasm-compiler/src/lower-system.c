@@ -349,6 +349,7 @@ static void lower_cpuid(cut_lowering *cut)
 }
 void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if(cut->report.boundary==WASM_CUT_SYSTEM&&instruction->machine_operation==PL_X86_MACHINE_PORT_IO&&(instruction->machine_argument&(1ull<<10u))){cut_lower_string_io(cut,instruction);return;}
     pl_x86_selector_read snapshot;
     if(pl_x86_selector_read_lower(instruction,&snapshot) && snapshot.umip){
         /* A conditional privilege fault precedes the destination access.
