@@ -11,6 +11,7 @@ int cut_stack_supported(const pl_x86_instruction *instruction)
                 | PL_X86_INSTRUCTION_REPEATED | PL_X86_INSTRUCTION_TRAP_AFTER)) return 0;
     pl_u32 count = instruction->visible_operand_count;
     const pl_x86_operand *operand = instruction->operands;
+    pl_x86_enter enter;if(pl_x86_enter_lower(instruction,&enter))return 1;
     if (instruction->operation == PL_X86_OPERATION_LEAVE)
         return !count && instruction->flow == PL_X86_FLOW_NEXT
             && instruction->machine_operation == PL_X86_MACHINE_NONE
@@ -78,6 +79,7 @@ static void pop_flags(cut_lowering *cut, pl_u32 width)
 
 void cut_lower_stack(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    if(instruction->operation==PL_X86_OPERATION_ENTER){cut_lower_enter(cut,instruction);return;}
     const pl_x86_operand rsp = { .kind = PL_X86_OPERAND_REGISTER, .bits = 64u,
         .value.reg = {PL_X86_REGISTER_GPR, 4u, 64u, 0u} };
     const pl_x86_operand rbp = { .kind = PL_X86_OPERAND_REGISTER, .bits = 64u,

@@ -29,6 +29,7 @@ static pl_u32 state_offset;
 static pl_u32 segments_offset;
 static vm_boot boot;
 static vm_execution execution;
+static pl_u32 active_call_port;
 static machine_activity activity;
 static vm_directory artifact_directory;
 static pl_u32 artifact_module_offset,artifact_module_bytes;
@@ -1283,11 +1284,20 @@ static machine_result call_entry(void *pointer, pl_u32 slot, pl_u64 binding, pl_
      * never an x86 instruction fallback. Slots stay pinned during vm_run. */
     machine_entry entry = (machine_entry)(uintptr_t)slot;
     vm_memory_abort(&resident);
+    active_call_port=owner->port;
     machine_result result = entry(state_offset, owner->port, binding, operand_binding);
+    active_call_port=0u;
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
     if(!(state->x87_status&~(pl_u32)state->x87_control&63u))vm_pic_set_irq(&pic,13u,0u);
     vm_memory_abort(&resident);
     return result;
+}
+machine_result vm_checkpoint(pl_u32 port,pl_u32 operation,pl_u64 cursor,pl_u64 frontier)
+{
+    if(port!=active_call_port||!execution.in_call||!private_port(port)
+        ||!private_record(port,sizeof(machine_memory_checkpoint_port))
+        ||!separate(port,sizeof(machine_memory_checkpoint_port),state_offset,sizeof(machine_state)))return MACHINE_RESULT_ENTRY_MAP;
+    return vm_execution_checkpoint(&execution,(machine_memory_checkpoint_port *)(uintptr_t)port,operation,cursor,frontier);
 }
 machine_result vm_run(pl_u32 port, pl_u64 generation, pl_u32 maximum_cuts)
 {

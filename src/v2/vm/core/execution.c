@@ -20,6 +20,17 @@ void vm_execution_cancel(vm_execution *execution)
     execution->generation=0u;execution->continuation=(vm_execution_row){0};
     execution->continuation_generation=0u;execution->continuation_flags=0u;
     execution->continuation_interruptible=0u;
+    if(!execution->in_call){execution->frontier[0]=execution->frontier[1]=0u;execution->call_generation=0u;}
+}
+machine_result vm_execution_checkpoint(vm_execution *e,machine_memory_checkpoint_port *p,
+    pl_u32 operation,pl_u64 cursor,pl_u64 frontier)
+{
+    if(!e||!p||!e->in_call||!e->call_generation||operation>MACHINE_CHECKPOINT_CLEAR)return MACHINE_RESULT_ENTRY_MAP;
+    if(p->scalar.generation!=e->call_generation)return MACHINE_RESULT_STALE_GENERATION;
+    if(operation==MACHINE_CHECKPOINT_GET){p->cursor=e->frontier[0];p->frontier=e->frontier[1];}
+    else if(operation==MACHINE_CHECKPOINT_SET){e->frontier[0]=cursor;e->frontier[1]=frontier;}
+    else e->frontier[0]=e->frontier[1]=0u;
+    return 0u;
 }
 int vm_execution_open(vm_execution *execution, const vm_execution_row *rows,
                        pl_u32 count, pl_u64 generation, const machine_state *state)
@@ -115,7 +126,10 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
         pl_u32 source_instructions = row->source_instructions;
         pl_u16 flags_before=resuming?execution->continuation_flags
             :(pl_u16)(state->rflags&MACHINE_X86_ARITHMETIC_FLAGS);
+        if(!resuming)execution->frontier[0]=execution->frontier[1]=0u;
+        execution->in_call=1u;execution->call_generation=generation;
         result = call(owner, row->slot, row->entry, row->operand_binding);
+        execution->in_call=0u;execution->call_generation=0u;
         if (machine_result_kind(result) == MACHINE_RESULT_BARRIER
                 && machine_result_payload(result) <= MACHINE_BARRIER_FLOATING
                 && source_instructions == 1u && state->rip == row->entry) {
@@ -129,6 +143,7 @@ machine_result vm_execution_run(vm_execution *execution, machine_state *state,
             state->rflags=(state->rflags&~(pl_u64)MACHINE_X86_ARITHMETIC_FLAGS)|flags_before;
         execution->continuation = (vm_execution_row){0}; execution->continuation_generation = 0u;
         execution->continuation_flags=0u;execution->continuation_interruptible=0u;
+        execution->frontier[0]=execution->frontier[1]=0u;
         int halted = result == MACHINE_RESULT_HALT;
         if (halted) {
             if (!execution->activity || source_instructions != 1u

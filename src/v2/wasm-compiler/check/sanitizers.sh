@@ -14,8 +14,8 @@ for product in support x86 optimized-x86;do make -j4 -C "$temporary/$product" CF
 make -j4 -C "$temporary/artifact" CFLAGS="$flags" build/index-stream-check
 "$temporary/artifact/build/index-stream-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
-    build/segment-load-check build/system-segments-check build/code-cut-check build/literal-check build/source-module-check build/quotient-cap-check build/image-check build/image-module-check build/image-stream-check build/x87-snapshot-check build/x87-compare-check build/x87-integer-check build/x87-arithmetic-check build/x87-status-check
-for test in segment-load system-segments code-cut literal source-module quotient-cap x87-snapshot x87-compare x87-integer x87-arithmetic x87-status;do "$temporary/wasm-compiler/build/$test-check";done
+    build/segment-load-check build/system-segments-check build/code-cut-check build/literal-check build/source-module-check build/quotient-cap-check build/image-check build/image-module-check build/image-stream-check build/x87-snapshot-check build/x87-compare-check build/x87-integer-check build/x87-arithmetic-check build/x87-status-check build/enter-check
+for test in segment-load system-segments code-cut literal source-module quotient-cap x87-snapshot x87-compare x87-integer x87-arithmetic x87-status enter;do "$temporary/wasm-compiler/build/$test-check";done
 if [[ -n ${LENGTH3_IMAGE_INPUT:-} ]];then
     "$temporary/wasm-compiler/build/image-check" "$LENGTH3_IMAGE_INPUT"
     "$temporary/wasm-compiler/build/image-module-check" "$LENGTH3_IMAGE_INPUT"

@@ -43,6 +43,7 @@ WASM_FLAGS += -Wl,--export=vm_directory_module_plan,--export=vm_directory_source
 WASM_FLAGS += -Wl,--export=vm_directory_image_source_bind,--export=vm_directory_image_plan,--export=vm_directory_image_publish
 WASM_FLAGS += -Wl,--export=vm_directory_image_select
 WASM_FLAGS += -Wl,--export=vm_floating_wait
+WASM_FLAGS += -Wl,--export=vm_checkpoint
 ifeq ($(WASM_PROFILE),1)
 WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile
 endif
@@ -56,6 +57,17 @@ WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: checkpoint-check
+check: checkpoint-check
+checkpoint-check: $(BUILD)/checkpoint-check
+	$(BUILD)/checkpoint-check
+$(BUILD)/checkpoint-check: check/checkpoint.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
+.PHONY: checkpoint-sanitizer-check
+checkpoint-sanitizer-check: $(BUILD)/checkpoint-sanitizer-check
+	$(BUILD)/checkpoint-sanitizer-check
+$(BUILD)/checkpoint-sanitizer-check: check/checkpoint.c core/execution.c | $(BUILD)
+	$(CC) -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all $(WARN) $(INCLUDES) $^ -o $@
 .PHONY: system-check
 .PHONY: directory-check
 .PHONY: artifact-dependency directory-sanitizer-check

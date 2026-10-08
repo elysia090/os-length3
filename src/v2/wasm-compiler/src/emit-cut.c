@@ -275,6 +275,8 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
             || cut_vector_binary_local(&instruction));
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    pl_u32 checkpoint=0u;
+    if(plan->report.boundary_operation==PL_X86_OPERATION_ENTER){locals=CUT_ENTER_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_INTEGER)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC)locals=CUT_X87_ARITHMETIC_LOCALS;
@@ -297,7 +299,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u);
         cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        pl_u32 port_bytes=plan->system_cut==CUT_SYSTEM_FXRSTOR ? sizeof(machine_memory_extent_port)
+        pl_u32 port_bytes=checkpoint ? sizeof(machine_memory_checkpoint_port) : plan->system_cut==CUT_SYSTEM_FXRSTOR ? sizeof(machine_memory_extent_port)
             : plan->report.memory_bytes==16u ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
         cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu);
         cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);

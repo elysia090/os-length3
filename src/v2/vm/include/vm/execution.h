@@ -5,6 +5,7 @@
 #include <machine/state.h>
 #include <machine/segments.h>
 #include <machine/activity.h>
+#include <machine/memory.h>
 
 #define VM_EXECUTION_MAX_ROWS 4096u
 #define VM_EXECUTION_MAX_QUANTUM 65536u
@@ -37,6 +38,9 @@ typedef struct {
     pl_u64 continuation_generation;
     pl_u16 continuation_flags; /* Six sparse pre-instruction arithmetic bits. */
     pl_u8 continuation_interruptible; /* Only a completed quantum frontier. */
+    pl_u8 in_call;
+    pl_u64 call_generation;
+    pl_u64 frontier[2]; /* Opaque minimal compiled-transfer residual. */
     vm_execution_select select;
 } vm_execution;
 typedef machine_result (*vm_execution_fetch)(void *owner, pl_u64 address);
@@ -62,6 +66,8 @@ void vm_execution_close(vm_execution *execution);
 /* A committed control event discards an incomplete instruction but preserves
  * completed-prefix accounting. This is not a guest decoder or a rollback. */
 void vm_execution_cancel(vm_execution *execution);
+machine_result vm_execution_checkpoint(vm_execution *execution,machine_memory_checkpoint_port *port,
+    pl_u32 operation,pl_u64 cursor,pl_u64 frontier);
 /* Each cut's executable page(s) are checked through the C MMU before calling
  * the already compiled function; no opcode/source decoding occurs here. A
  * same-page span needs one permission/residency check, a crossing instruction

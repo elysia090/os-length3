@@ -1,0 +1,19 @@
+{
+  "format": "compiled-enter-checkpoint-v1",
+  "status": "progress",
+  "baseline": "2d71316",
+  "nativePublication": "1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195",
+  "nativeBundleSha256": "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc",
+  "compiler": {"bytes": 587558, "sha256": "014cff55473939156c16f47aea2a2ad71ff64c25112df8772d76ab41ee422484", "growthBytes": 2185},
+  "vm": {"bytes": 95674, "sha256": "e9382f15a13c7bb293e547a96cc2cfcbeb15577209c50b364800f7de30618694", "growthBytes": 662},
+  "nativeOracle": {"scope": "independent native reference x86 build VM, not product execution", "forms": 672, "rows": 8064,
+    "faults": 3984, "faultsWithPartialRam": 2784, "faultsWithGprChanges": 0},
+  "cExecution": {"cpuRamFaultComparisons": 8064, "syntheticResidencyResumes": 252, "checkpointWords": 2, "opaqueOpcodes": false, "cpuSnapshot": false},
+  "construction": {"rawDescriptorForms": 14336, "malformedRefusals": 114688, "nativeColdByteForms": 672, "capacityNoClobber": true},
+  "actualMake": {"coordinates": 233455, "lowerable": 227857, "missingBefore": 6282, "missingAfter": 5598, "recovered": 684,
+    "firstAddress": "0xa12b", "firstSource": "4d6d", "firstFamily": "INS", "firstStatus": -102, "directoryCreated": false, "rootPublished": false},
+  "checks": {"x86": "pass", "vm": "pass", "compiler": "pass", "postlinkCompiler": "pass", "positiveEnterASanUBSan": "pass", "checkpointASanUBSan": "pass", "warnings": 0},
+  "sameBundleShortNode": {"witness": 86, "retired": 1617931, "admissions": 1000000, "stop": "quota", "linuxBoot": "not-achieved"},
+  "freshBrowserObservation": false, "workerSnapshotRecovery": "not-proved", "nativeBundleOrHumanUiChanged": false,
+  "signedRootPublished": false, "linuxBoot": "not-achieved", "executionSpeedup": "not-measured", "globalMinimum": "not-proved"
+}

@@ -114,6 +114,13 @@ int pl_x86_x87_memory_relation_plan(pl_u32 bits,pl_u32 integer,pl_arena *arena,p
 int pl_x86_x87_zero_relation_plan(pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 memory,integer,bytes,source,ordered,pop,zero;pl_u16 opcode;} pl_x86_x87_status_compare;
 int pl_x86_x87_status_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_status_compare *out);
+/* Construction-only expansion of ENTER's ordered transfers. Frame reads use
+ * full RBP even with operand16; only stored words and final BP are narrow. */
+typedef struct {pl_u16 allocation;pl_u8 bytes,level;pl_u16 steps;} pl_x86_enter;
+enum {PL_X86_ENTER_OLD_BASE,PL_X86_ENTER_READ,PL_X86_ENTER_COPY,PL_X86_ENTER_FRAME,PL_X86_ENTER_PROBE};
+typedef struct {pl_u32 kind,subtract;} pl_x86_enter_step_info;
+int pl_x86_enter_lower(const pl_x86_instruction *instruction,pl_x86_enter *out);
+int pl_x86_enter_step(const pl_x86_enter *enter,pl_u32 rank,pl_x86_enter_step_info *out);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

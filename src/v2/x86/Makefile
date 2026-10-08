@@ -15,6 +15,12 @@ ZYDIS_SOURCES = Register SharedData DecoderData Decoder Mnemonic
 ZYDIS_OBJECTS = $(patsubst %,$(BUILD)/zydis/%.o,$(ZYDIS_SOURCES))
 
 .PHONY: all check clean
+.PHONY: enter-check
+check: enter-check
+enter-check: $(BUILD)/enter-check
+	$(BUILD)/enter-check
+$(BUILD)/enter-check: check/enter.c $(BUILD)/libx86.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libx86.a ../support/build/libsupport.a -o $@
 .PHONY: x87-integer-arithmetic-check
 check: x87-integer-arithmetic-check
 x87-integer-arithmetic-check: $(BUILD)/x87-integer-arithmetic-check

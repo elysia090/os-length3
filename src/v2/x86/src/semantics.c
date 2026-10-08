@@ -1991,26 +1991,16 @@ static int lower_leave(const pl_x86_instruction *instruction,
 static int lower_enter(const pl_x86_instruction *instruction,
                        semantic_builder *builder)
 {
-    if (instruction->visible_operand_count != 2u)
-        return PL_ERROR_X86_SEMANTIC;
-    const pl_x86_operand *allocation = &instruction->operands[0];
-    const pl_x86_operand *nesting = &instruction->operands[1];
+    pl_x86_enter law;if(!pl_x86_enter_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;
     pl_u32 bits = instruction->operand_width;
-    if (allocation->kind != PL_X86_OPERAND_IMMEDIATE
-            || nesting->kind != PL_X86_OPERAND_IMMEDIATE
-            || allocation->bits != 16u || nesting->bits != 8u
-            || (bits != 16u && bits != 64u))
-        return PL_ERROR_X86_SEMANTIC;
-    pl_u32 width = bits / 8u;
-    pl_u32 level = (pl_u32)nesting->value.immediate & 31u;
+    pl_u32 width = law.bytes,level=law.level;
     pl_operand frame;
     int status = stack_pointer(builder, -(pl_i64)width, &frame);
     if (status) return status;
     status = memory_frame(
         builder, frame, operand(PL_OPERAND_LOCAL, 5u), level, bits);
     if (status) return status;
-    pl_u64 allocation_bytes = allocation->value.immediate & 0xffffu;
-    pl_u64 consumed = allocation_bytes + (pl_u64)width * (level + 1u);
+    pl_u64 consumed = law.allocation + (pl_u64)width * (level?level+1u:1u);
     pl_operand next_rsp;
     status = stack_pointer(builder, -(pl_i64)consumed, &next_rsp);
     if (status) return status;

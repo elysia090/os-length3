@@ -141,7 +141,7 @@ arithmetic-ssa NEW-HARDWARE-DIRECTORY --ssa
 finite-reference
 node data/oracle/check-x87-state.mjs VM.wasm COLD.wasm NEW-HARDWARE-DIRECTORY --arithmetic
 node data/oracle/check-x87-fault.mjs VM.wasm COLD.wasm --arithmetic
-node data/oracle/check-x87-code.mjs COLD.wasm NATIVE-ARITHMETIC-CODE 48
+node data/oracle/check-cold-code.mjs COLD.wasm NATIVE-ARITHMETIC-CODE 48
 node data/oracle/check-x87-boundary.mjs VM.wasm COLD.wasm
 ```
 

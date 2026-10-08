@@ -23,6 +23,24 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+General ENTER now consumes one checked 16/64-bit allocation/nesting law and
+ordered construction steps, ordinary Wasm and existing C SS/MMU transactions.
+Independent native reference-x86 observations expose partial RAM on 2,784
+fault cases but unchanged GPRs. 8,064 CPU/RAM/fault comparisons and 252 exact
+resource-wait resumes pass, including aliasing; only a cursor and pending
+read word survive in the C execution owner. No opcode or CPU image crosses
+the checkpoint import. 14,336 raw-descriptor forms / 114,688 refusals, 672
+native/cold byte forms, full x86/VM/compiler/postlink and positive ASan/UBSan
+pass. Actual make: 6,282 -> 5,598 missing (684 recovered), first 4d6d / INS
+at 0xa12b. Directory/root publication remains refused before mkdir. Same-bundle
+short Node and old FPU/deferred-boundary checks pass; no fresh browser Linux
+boot or signed root. Exact Worker snapshot/recovery must retain the new
+in-flight residual too; that product lifecycle gate is NOT completed.
+Native bundle/UI unchanged; no minimum/size/speed/RSS claim. See
+[ordered effect, checkpoint lifecycle and reproduction](../vm/check/browser/evidence/2026-10-08-enter.md).
+
+## Previous status-comparison checkpoint
+
 Status-word comparison now reuses ONE relation and ONE state publisher with
 existing EFLAGS comparison. FCOM/FUCOM, FICOM, float memory, two-pop and FTST
 pass 44,032 physical FPU/RFLAGS -> C-MMU/table comparisons through 43 modules.
@@ -470,9 +488,12 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
    remaining arithmetic/source-context/precise-event cases: make's current first
-   miss is ENTER c84989d6 at 0xa0fc. Close its general stack-frame allocation,
-   nesting, partial fault/continuation and operand-width law using independent
-   native observations; do not skip this coordinate or synthesize #UD.
+   miss is 4d6d / INS at 0xa12b. Close generic string input/output ordering,
+   permission, memory fault, repetition/frontier and device-event ownership
+   with independent observations; do not skip it or synthesize #UD.
+   ENTER now has native-proven 16/64 allocation/nesting, partial RAM/fault and
+   a two-word C checkpoint. Reuse that generic residual ownership where needed;
+   exact snapshots must include it, not silently replay a partial instruction.
    Status-word comparisons now share exact IEEE32/64 projection, source
    denormal/signaling classification, relation and physical publication.
    Four remaining status aliases need their exact descriptor/hardware gates.

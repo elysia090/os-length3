@@ -34,6 +34,13 @@ _Static_assert(sizeof(machine_memory_port) == 48u, "memory port ABI extent");
 _Static_assert(offsetof(machine_memory_port, value) == 8u, "memory value ABI");
 _Static_assert(offsetof(machine_memory_port, fault_address) == 16u, "memory fault ABI");
 _Static_assert(offsetof(machine_memory_port, request_address) == 32u, "memory request ABI");
+/* Two opaque words of an in-flight compiled transfer, NOT an opcode or CPU
+ * image. The C execution owner resets them on a fresh entry and releases them
+ * on completion/fault/cancel. GET publishes them only during the bound call.
+ * A resource wait pins entry/context/table and these words until resume. */
+typedef struct {machine_memory_port scalar;pl_u64 cursor,frontier;} machine_memory_checkpoint_port;
+_Static_assert(sizeof(machine_memory_checkpoint_port)==64u,"checkpoint port extent");
+enum {MACHINE_CHECKPOINT_GET,MACHINE_CHECKPOINT_SET,MACHINE_CHECKPOINT_CLEAR};
 
 /* A double-word reservation extends, never aliases, the scalar fault/request
  * fields. Both words are private outputs of one complete read/write preflight.

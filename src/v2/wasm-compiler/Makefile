@@ -50,6 +50,13 @@ SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-integer.c
 SOURCES += src/lower-x87-arithmetic.c
 SOURCES += src/lower-x87-status.c
+SOURCES += src/lower-enter.c
+.PHONY: enter-check
+check: enter-check
+enter-check: $(BUILD)/enter-check
+	$(BUILD)/enter-check
+$(BUILD)/enter-check: check/enter.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: x87-status-check
 check: x87-status-check
 x87-status-check: $(BUILD)/x87-status-check

@@ -1,5 +1,13 @@
 # x86 semantic oracles
 
+`check-enter.mjs VM.WASM COMPILER.WASM NATIVE-RECORDS` compares common compiled
+ENTER with independent reference-x86 CPU/partial-RAM observations. Its synthetic
+deferred-page cases resume through the C-owned two-word checkpoint, including
+aliasing and a retained read awaiting store. They are not production storage
+authentication or Worker-recovery claims. `check-cold-code.mjs` generalizes
+the former x87 byte-identity helper to every 1..15-byte source instruction.
+See [ENTER, minimal residual and actual coverage](../../src/v2/vm/check/browser/evidence/2026-10-08-enter.md).
+
 `prepare-float.ps1 -Verify` authenticates pinned official SoftFloat/TestFloat
 3e archives, retains unmodified upstream sources/licenses under `data/upstream`
 and builds their independent references under Windows `temp/float-oracle`.
