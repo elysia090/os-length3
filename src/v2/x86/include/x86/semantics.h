@@ -88,6 +88,12 @@ typedef struct { pl_u8 status,memory; } pl_x86_x87_snapshot;
 int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_snapshot *out);
 /* WAIT is its own instruction, not a prefix or an x87 value operation. */
 int pl_x86_x87_wait_supported(const pl_x86_instruction *instruction);
+typedef struct {pl_u8 free_register,source,step;} pl_x86_x87_stack;
+#define PL_X86_X87_STACK_MAX_NODES 12u
+/* Tag release and cyclic TOP movement. No numeric payload or exception is
+ * created; an already pending exception still precedes the state change. */
+int pl_x86_x87_stack_lower(const pl_x86_instruction *instruction,pl_x86_x87_stack *out);
+int pl_x86_x87_stack_plan(const pl_x86_x87_stack *law,pl_arena *arena,pl_plan *out);
 
 typedef struct { pl_u8 source,ordered,pop;pl_u16 opcode; } pl_x86_x87_compare;
 int pl_x86_x87_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_compare *out);

@@ -285,6 +285,8 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->report.boundary_operation==PL_X86_OPERATION_ENTER){locals=CUT_ENTER_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_STRING_IO){locals=CUT_STRING_IO_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
+    /* Logical slot 1 is the first declared local (engine index 4). */
+    if(plan->system_cut==CUT_SYSTEM_X87_STACK)locals=28u+PL_X86_X87_STACK_MAX_NODES;
     if(plan->system_cut==CUT_SYSTEM_X87_INTEGER)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_INTEGER_STORE)locals=180u;
     if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC)locals=CUT_X87_ARITHMETIC_LOCALS;

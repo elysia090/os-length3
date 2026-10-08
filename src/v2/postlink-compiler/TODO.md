@@ -1,4 +1,4 @@
-# Remaining work — 2026-10-08
+# Remaining work — 2026-10-09
 
 ## Fixed input and success
 
@@ -22,6 +22,19 @@ exactly. Measure fetch count/bytes, resident high-water and cold-ready
 separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
+
+FFREE/FFREEP/FINCSTP/FDECSTP now share one two-output SSA field transfer, no
+VM opcode evaluator. Exact packed-field substitution drops maximum work15->12,
+span6.144 constructor/prefix forms,2016 malformed laws,1179648 state-word
+checks,18432 complete physical states and13824 fault/wait/success models pass,
+along with positive ASan/UBSan and prior MMX/INT/FWAIT regressions. Same make
+745->732 unresolved; cumulative1031->732 (299 recovered). Continue larger
+floating transfer/view families (x87372), SIMD238 and far-control91, then the
+other31, until ZERO and actual browser acceptance. The known native CALL
+payload red is retained, not retried into an equivalence claim. See
+[exact field equations and product execution](../vm/check/browser/evidence/2026-10-09-x87-stack.md).
+
+## Preceding software/waiting checkpoint
 
 Every INT vector and FWAIT now use the common C compiler/event owner, with
 explicit F1 vs INT1 origin and the MP&&TS waiting law.168-byte pinned event

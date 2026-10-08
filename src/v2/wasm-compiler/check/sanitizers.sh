@@ -26,6 +26,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/software-interrupt-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-wait-check
 "$temporary/wasm-compiler/build/x87-wait-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-stack-check
+"$temporary/wasm-compiler/build/x87-stack-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/divide-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/return-check
 "$temporary/wasm-compiler/build/return-check"

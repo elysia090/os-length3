@@ -36,6 +36,13 @@ SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
+SOURCES += src/lower-x87-stack.c
+.PHONY: x87-stack-check
+check: x87-stack-check
+x87-stack-check: $(BUILD)/x87-stack-check
+	$(BUILD)/x87-stack-check
+$(BUILD)/x87-stack-check: check/x87-stack.c ../x86/check/scalar-plan.h $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: packed-binary-check
 check: mmx-transfer-check
 mmx-transfer-check: $(BUILD)/mmx-transfer-check

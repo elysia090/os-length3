@@ -5,3 +5,4 @@ X86_SOURCES += src/translate-byte.c
 X86_SOURCES += src/x87-integer-store.c
 X86_SOURCES += src/return.c
 X86_SOURCES += src/mmx-transfer.c
+X86_SOURCES += src/x87-stack.c

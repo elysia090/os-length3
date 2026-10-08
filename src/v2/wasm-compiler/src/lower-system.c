@@ -23,6 +23,7 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if(pl_x86_x87_wait_supported(instruction))return CUT_SYSTEM_X87_WAIT;
+    pl_x86_x87_stack fpu_stack;if(pl_x86_x87_stack_lower(instruction,&fpu_stack))return CUT_SYSTEM_X87_STACK;
     pl_x86_return returning;
     if(pl_x86_return_lower(instruction,&returning))return returning.interrupt?CUT_SYSTEM_INTERRUPT_RETURN:CUT_SYSTEM_FAR_RETURN;
     pl_x86_count_branch count;
@@ -437,6 +438,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         ||pl_x86_x87_memory_arithmetic_lower(instruction,&arithmetic)){
         cut_lower_x87_arithmetic(cut,instruction);return;}
     if(pl_x86_x87_wait_supported(instruction)){cut_lower_x87_wait(cut);return;}
+    pl_x86_x87_stack fpu_stack;if(pl_x86_x87_stack_lower(instruction,&fpu_stack)){cut_lower_x87_stack(cut,instruction);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.

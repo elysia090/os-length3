@@ -2924,6 +2924,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&((instruction->machine_argument&255u)==22u
+        ||(instruction->machine_argument&255u)==43u)){
+        pl_x86_x87_stack law;if(!pl_x86_x87_stack_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87 && !instruction->machine_argument
         && !pl_x86_x87_wait_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&((instruction->machine_argument&255u)==17u

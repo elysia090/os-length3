@@ -21,9 +21,10 @@ static void operand_emit(cut_lowering *c,pl_operand a,const pl_u32 *input,pl_u32
     if(a.kind==PL_OPERAND_PROJECTION&&(a.value&255u)!=16u&&(a.value&255u)!=0u){if((a.value&255u)==4u){cut_const(c,6u);cut_op(c,0x88u);}
         cut_const(c,1u);cut_op(c,0x83u);}
 }
-void cut_emit_scalar_plan(cut_lowering *c,const pl_plan *p,const pl_u32 *input,pl_u32 first,const pl_u32 output[3])
+void cut_emit_scalar_projection(cut_lowering *c,const pl_plan *p,const pl_u32 *input,pl_u32 first,const pl_u32 *output,pl_u32 count)
 {
-    if(!p||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES||(p->local_count!=5u&&p->local_count!=6u)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    if(!p||!input||!output||!count||count>p->local_count||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES
+        ||(p->local_count!=5u&&p->local_count!=6u)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;
         if(node->argument_at>p->argument_count||node->argument_count>p->argument_count-node->argument_at)goto bad;
         const pl_operand *args=p->arguments+node->argument_at;
@@ -41,7 +42,7 @@ void cut_emit_scalar_plan(cut_lowering *c,const pl_plan *p,const pl_u32 *input,p
             ||args[2].kind!=PL_OPERAND_CONST||args[2].value!=64u||args[3].kind!=PL_OPERAND_CONST||args[3].value!=~0ull))goto bad;
         for(pl_u32 a=0u;a<arity;++a)if(!operand_valid(p,args[a],n))goto bad;
     }
-    for(pl_u32 i=0u;i<3u;++i)if(!operand_valid(p,p->locals[i],p->node_count))goto bad;
+    for(pl_u32 i=0u;i<count;++i)if(!operand_valid(p,p->locals[i],p->node_count))goto bad;
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;const pl_operand *a=p->arguments+node->argument_at;
         if(node->opcode==PL_OPCODE_X86_COMPARE){
             operand_emit(c,a[1],input,first);operand_emit(c,a[2],input,first);cut_op(c,0x54u);cut_op(c,0xadu);
@@ -62,6 +63,8 @@ void cut_emit_scalar_plan(cut_lowering *c,const pl_plan *p,const pl_u32 *input,p
         }
         cut_set(c,first+n);
     }
-    for(pl_u32 i=0u;i<3u;++i){operand_emit(c,p->locals[i],input,first);cut_set(c,output[i]);}return;
+    for(pl_u32 i=0u;i<count;++i){operand_emit(c,p->locals[i],input,first);cut_set(c,output[i]);}return;
 bad:c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;
 }
+void cut_emit_scalar_plan(cut_lowering *c,const pl_plan *p,const pl_u32 *input,pl_u32 first,const pl_u32 output[3])
+{cut_emit_scalar_projection(c,p,input,first,output,3u);}
