@@ -42,7 +42,7 @@ self.onmessage = async ({ data: { generation } }) => {
       // overwrite the VM's static data. Only the derived module escapes.
       const coldMemory = new WebAssembly.Memory({initial:16,maximum:32});
       const compiler = (await WebAssembly.instantiate(compilerModule,{machine:{memory:coldMemory}})).exports;
-      expect(compiler.compiler_entry_abi()===3,'regenerate old compiler/fixtures, not an ABI adapter');
+      expect(compiler.compiler_entry_abi()===4,'regenerate old compiler/fixtures, not an ABI adapter');
       const input = compiler.compiler_arena_min(), output = input + 8192, report = output + 65536;
       expect(report + compiler.compiler_report_bytes() <= coldMemory.buffer.byteLength,'bounded cold arena');
       new Uint8Array(coldMemory.buffer,input,4096).set(new Uint8Array(codePage));
@@ -61,7 +61,7 @@ self.onmessage = async ({ data: { generation } }) => {
     const memory = new WebAssembly.Memory({ initial: 8, maximum: 16 });
     const vm = (await WebAssembly.instantiate(provider, { machine: { memory } })).exports;
     const instance = await WebAssembly.instantiate(cut, { machine: { memory, access: vm.vm_access } });
-    expect(vm.vm_entry_abi()===3 && instance.exports.cut.length===4,'uniform typed table');
+    expect(vm.vm_entry_abi()===4 && instance.exports.cut.length===4,'uniform typed table');
     const directory = vm.vm_arena_min(), base = directory + 4096, port = base + 2048;
     const cutRow = directory + 512, entry = BigInt(meta.entry);
     const table = vm.__indirect_function_table, slot = table.grow(1);

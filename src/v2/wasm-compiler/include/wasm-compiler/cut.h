@@ -73,7 +73,7 @@ int wasm_compiler_emit_code_projection(const pl_x86_image *source,pl_u64 generat
 
 /* Import machine.memory (ordinary wasm32 memory, >= one page); export
  * cut(i32 machine_state_offset, i32 memory_port_offset, i64 admitted_entry,
- *     i32 operand_binding) -> i64 machine_result (machine-entry ABI 3).
+ *     i32 operand_binding) -> i64 machine_result (machine-entry ABI 4).
  * The trusted compiler reports a signed displacement binding for one isolated
  * IP/GPR-relative memory operand, including scaled index and disp8, or the
  * final rel8/rel32 branch of a pure cut. A single GPR MOV whose value fits

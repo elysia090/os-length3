@@ -39,7 +39,7 @@ for (const name of names) {
   if(compiler){
     const input=compiler.compiler_arena_min(),output=input+8192,report=output+65536;
     const cold=Buffer.from(coldMemory.buffer),view=new DataView(coldMemory.buffer),entry=BigInt(meta.entry);
-    assert.equal(compiler.compiler_entry_abi(),3);assert.equal(compiler.compiler_report_bytes(),80);
+    assert.equal(compiler.compiler_entry_abi(),4);assert.equal(compiler.compiler_report_bytes(),80);
     cold.set(source,input);assert.equal(compiler.compiler_open_pages(input,1,entry&~4095n,9n),0);
     assert.equal(compiler.compiler_emit(entry,1,output,65536,report),0,`${name}: common cold grammar`);
     assert.equal(view.getBigUint64(report+32,true),BigInt(meta.sourceBytes));
@@ -54,7 +54,7 @@ for (const name of names) {
     machine: { memory, access: vm.vm_access, reserve: vm.vm_reserve, commit: vm.vm_commit },
   });
   const directoryOffset = vm.vm_arena_min(), base = directoryOffset + 4096;
-  assert.equal(vm.vm_entry_abi(),3);assert.equal(instance.exports.cut.length,4,'ABI-3 native emission required');
+  assert.equal(vm.vm_entry_abi(),4);assert.equal(instance.exports.cut.length,4,'ABI-4 native emission required');
   const state = base, port = base + 2048, firstPage = base + 28672, nextPage = base + 40960;
   const cases = await readFile(`${prefix}.cases`);
   assert.equal(cases.length, 512 * 38 * 8);

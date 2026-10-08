@@ -71,7 +71,7 @@ int wasm_compiler_open(wasm_compiler *compiler,
  * never a prefix of this single-module API.
  *
  * Import ordinary machine.memory / used typed callbacks and immutable i64
- * machine.image_bias. Export entry with the machine-entry ABI 3 signature:
+ * machine.image_bias. Export entry with the machine-entry ABI 4 signature:
  * it maps admitted_entry-image_bias to a known ELF coordinate, supplies that
  * coordinate's compiled scalar binding and calls its shared body. Unknown
  * coordinates return ENTRY_MAP without CPU mutation, not a guest fault or

@@ -57,7 +57,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   const compilerModule = await WebAssembly.compile(compilerBytes);
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
   const cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
-  assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
+  assert.equal(vm.vm_entry_abi(),4);assert.equal(cc.compiler_entry_abi(),4);
   for(const name of ['vm_source_demands','vm_source_admissions','vm_run_interrupted','vm_run_source'])
     assert.equal(typeof vm[name],'function','C warm admission observations required');
   assert(vm.vm_arena_min()<=cc.compiler_static_min(),'disjoint VM and cold static/stack reservations');

@@ -24,6 +24,8 @@ make -j4 -C "$temporary/artifact" CFLAGS="$flags" build/index-stream-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
     build/segment-load-check build/system-segments-check build/code-cut-check build/literal-check build/source-module-check build/quotient-cap-check build/image-check build/image-module-check build/image-stream-check build/x87-snapshot-check build/x87-compare-check build/x87-integer-check build/x87-arithmetic-check build/x87-register-check build/x87-status-check build/enter-check build/string-io-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/software-interrupt-check
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-wait-check
+"$temporary/wasm-compiler/build/x87-wait-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/divide-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/return-check
 "$temporary/wasm-compiler/build/return-check"

@@ -12,14 +12,15 @@ enum vm_event_kind { VM_EVENT_FAULT, VM_EVENT_INTERRUPT, VM_EVENT_SOFTWARE, VM_E
 typedef struct {
     pl_u64 generation, context[5], frame[6], target, stack, descriptor_address;
     machine_segment_cache code;
-    pl_u32 stage, pushed, words, selector, gate_type, descriptor_access, kind;
+    pl_u32 stage, pushed, words, selector, gate_type, descriptor_access, kind, vector;
 } vm_fault_delivery;
 _Static_assert(sizeof(vm_fault_delivery) == 168u, "bounded event frontier extent");
 
 /* Deliver a pending processor fault from machine_memory_port through the
  * guest IDT. Currently long-mode interrupt/trap gates to non-conforming CPL0
  * code, IST=0; outer origins use a valid busy 64-bit TSS.RSP0,
- * vectors 0/1/6/7/10/11/12/13/14/17. CR2 is published for #PF before delivery.
+ * vectors 0/1/6/7/10/11/12/13/14/16/17/19. Only error-code faults push a sixth
+ * slot; #MF/#XM do not. CR2 is published for #PF before delivery.
  * Host page absence returns BARRIER and retains the bounded event frontier.
  * Success updates RIP/CS/RSP/flags but does not retire the faulting instruction.
  * A secondary architectural fault is exposed and releases the frontier;
@@ -40,7 +41,9 @@ machine_result vm_fault_enter(vm_memory *physical, pl_u32 port_offset,
 machine_result vm_interrupt_enter(vm_memory *physical, pl_u32 port_offset,
     machine_state *state, machine_segments *segments, vm_fault_delivery *delivery, vm_pic *pic);
 
-/* Explicit #BP/#DB trap delivery to CPL0/IST0. #DB bypasses gate DPL and
+/* Software INT (every vector) and explicit #BP/#DB to CPL0/IST0. The event
+ * word is defined in machine/exception.h; ordinary INT 1 is not a debug trap.
+ * Explicit #DB bypasses gate DPL and
  * uses EXT=1 for secondary errors. Outer origins use TSS.RSP0.
  * next_rip is the architectural return coordinate, not a handler address.
  * #DB clears DR6.B0..3/GD once before delivery, including failed delivery.
@@ -49,7 +52,7 @@ machine_result vm_interrupt_enter(vm_memory *physical, pl_u32 port_offset,
  * Retry must use the same vector/return coordinate and serialized frontier. */
 machine_result vm_software_interrupt_enter(vm_memory *physical, pl_u32 port_offset,
     machine_state *state, machine_segments *segments, vm_fault_delivery *delivery,
-    pl_u32 vector, pl_u64 next_rip);
+    pl_u32 event, pl_u64 next_rip);
 
 /* 16/32/64-bit IRET to equally/less privileged 64-bit code, including unconditional
  * SS:RSP restoration, target descriptor checks and outer cache invalidation.

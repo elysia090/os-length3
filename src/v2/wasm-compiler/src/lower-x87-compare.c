@@ -33,6 +33,14 @@ void cut_x87_wait_guard(cut_lowering *c,pl_u32 cw,pl_u32 sw)
     cut_load(c,offsetof(machine_state,cr0));cut_const(c,12u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);fault_if(c,7u);
     cut_x87_pending_guard(c,cw,sw);
 }
+void cut_lower_x87_wait(cut_lowering *c)
+{
+    /* FWAIT ignores EM. MP && TS raises #NM before pending #MF/FERR. No
+     * numeric state, instruction pointer or opcode is published on success. */
+    cut_load(c,offsetof(machine_state,cr0));cut_const(c,10u);cut_op(c,0x83u);
+    cut_const(c,10u);cut_op(c,0x51u);fault_if(c,7u);
+    cut_x87_pending_guard(c,CUT_LEFT,CUT_RIGHT);
+}
 void cut_lower_x87_compare(cut_lowering *c,const pl_x86_instruction *i)
 {
     pl_x86_x87_compare law;if(!pl_x86_x87_compare_lower(i,&law)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}

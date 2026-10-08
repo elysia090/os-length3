@@ -1,0 +1,47 @@
+// Actual C compiler/MMU/table; model comparisons are not native observations.
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const [vmFile,compilerFile]=process.argv.slice(2);
+if(!compilerFile)throw new Error('VM.WASM COMPILER.WASM');
+const memory=new WebAssembly.Memory({initial:16}),cm=new WebAssembly.Memory({initial:16});
+const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports,
+  cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
+const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(cm.buffer),cv=new DataView(cm.buffer),
+  dir=vm.vm_arena_min(),cpu=dir+4096,segments=cpu+1408,port=cpu+2048,rows=dir+512,codeView=port+64,
+  ci=cc.compiler_arena_min(),co=ci+8192,cr=co+65536,entry=0x400000n,payload=i=>cpu+(i+2)*4096,
+  put=(at,x)=>v.setBigUint64(at,BigInt(x),true),table=vm.__indirect_function_table;
+table.grow(Math.max(0,vm.vm_slot_min()+vm.vm_source_capacity()-table.length));
+let comparisons=0,nm=0,mf=0,ferr=0,success=0;
+for(const prefix of [[],[0x66],[0x67],[0x48],[0x64],[0x65],[0xf2],[0xf3]]){
+  const source=Buffer.from([...prefix,0x9b]);c.fill(0x90,ci,ci+4096);c.set(source,ci);
+  assert.equal(cc.compiler_open_pages(ci,1,entry,9n),0);assert.equal(cc.compiler_emit(entry,8,co,65536,cr),0);
+  const binding=cv.getUint32(cr+76,true),module=await WebAssembly.compile(c.subarray(co,co+Number(cv.getBigUint64(cr+40,true))));
+  const cut=(await WebAssembly.instantiate(module,{machine:{memory,floating_wait:vm.vm_floating_wait}})).exports.cut;
+  for(const dispatch of [false,true])for(let mask=0;mask<8;++mask)for(const ne of [false,true])for(let pending=0;pending<3;++pending){
+    vm.vm_close();a.fill(0,dir);
+    [0x1000,0x2000,0x3000,0x4000,0x8000].forEach((address,i)=>{
+      put(dir+i*32,address);v.setUint32(dir+i*32+8,(i+2)*4096,true);v.setUint32(dir+i*32+12,3,true);v.setUint32(dir+i*32+16,1,true);
+    });
+    put(payload(0),0x2067);put(payload(1),0x3067);put(payload(2)+16,0x4067);put(payload(3),0x8067);a.set(source,payload(4));
+    for(let reg=0;reg<16;++reg)put(cpu+reg*8,0xabcdef0123450000n+BigInt(reg));
+    put(cpu+384,entry);put(cpu+392,0x10202);put(cpu+400,0x80010011|(mask<<1)|(ne?32:0));
+    put(cpu+408,0x1000);put(cpu+416,32);put(cpu+424,0x500);put(cpu+488,8);put(cpu+600,0x400);put(cpu+1128,42);put(port,9);
+    a.fill(0x5a,cpu+1152,cpu+1256);v.setUint16(cpu+1232,pending===1?0x37e:0x37f,true);v.setUint16(cpu+1234,pending?0x8081:0,true);
+    v.setUint32(segments,2,true);v.setUint32(segments+36,0xa09b,true);
+    assert.equal(vm.vm_open(cpu,a.length-cpu,4096,dir,5,5,dir+1024,9n),0);
+    assert.equal(vm.vm_bind_state(cpu),0);assert.equal(vm.vm_bind_segments(segments),0);
+    assert.equal(vm.vm_source_query(port,entry,1,codeView,rows),1n);table.set(v.getUint32(rows+16,true),cut);
+    assert.equal(vm.vm_source_publish(source.length,1,binding,rows),0);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
+    const before=Buffer.from(a.subarray(cpu,cpu+1256)),expected=Buffer.from(before),fault=(mask&5)===5?7:pending===1&&ne?16:0,
+      waiting=!fault&&pending===1,result=dispatch?vm.vm_run(port,9n,1):cut(cpu,port,entry,binding);
+    if(fault){assert.equal(result,BigInt(fault)*8n+3n);assert.equal(v.getUint32(port+24,true),fault);fault===7?++nm:++mf;}
+    else if(waiting){assert.equal(result,34n);++ferr;}
+    else {assert.equal(result,1n);expected.writeBigUInt64LE(entry+BigInt(source.length),384);
+      expected.writeBigUInt64LE(0x202n,392);expected.writeBigUInt64LE(43n,1128);++success;}
+    assert(a.subarray(cpu,cpu+1256).equals(expected),`full state prefix=${prefix}, mask=${mask}, NE=${ne}, pending=${pending}, dispatch=${dispatch}`);
+    if(dispatch)assert.equal(vm.vm_source_retired(),fault||waiting?0n:1n);
+    ++comparisons;
+  }
+}
+vm.vm_close();cc.compiler_close();console.log(JSON.stringify({status:'pass',comparisons,nm,mf,ferr,success,
+  scope:'8 prefix forms; MP/TS/EM/NE, masked/pending state, direct + C table; FWAIT preserves complete numeric state',linuxBoot:'not-tested'}));

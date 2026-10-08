@@ -8,7 +8,7 @@ const memory=new WebAssembly.Memory({initial:32,maximum:34});
 const coldMemory=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
-assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
+assert.equal(vm.vm_entry_abi(),4);assert.equal(cc.compiler_entry_abi(),4);
 let data=Buffer.from(memory.buffer),view=new DataView(memory.buffer);
 const cold=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer);
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;

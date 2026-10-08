@@ -11,7 +11,7 @@ if(!compilerFile || flags.some(flag=>flag!=='--observe') || flags.length>1)
 const binary=await readFile(compilerFile);
 const memory=new WebAssembly.Memory({initial:32,maximum:34});
 const cc=(await WebAssembly.instantiate(binary,{machine:{memory}})).instance.exports;
-assert.equal(cc.compiler_entry_abi(),3,'explicit typed coordinate ABI, no two-argument fallback');
+assert.equal(cc.compiler_entry_abi(),4,'explicit typed coordinate ABI, no two-argument fallback');
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;
 const state=(report+80+4095)&~4095,windowBytes=4096,stateBytes=1256;
 assert(state+windowBytes<=memory.buffer.byteLength,'disjoint state window');

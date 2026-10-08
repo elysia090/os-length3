@@ -174,7 +174,8 @@ int main(int argc,char **argv)
     for(pl_u32 rf=0u;rf<2u;++rf) {
         reset(0x108f00u-alignment,0x1000204u,0x603u|((pl_u64)rf<<16u),vector,gate);
         if(vector==1u){cpu.system[MACHINE_SYSTEM_DR0+6u]=0xffffefffu;cpu.system[MACHINE_SYSTEM_DR0+7u]=0x2400u;}
-        EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,vector,before.rip+1u));
+        EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,
+            vector|(vector==1u?MACHINE_SOFTWARE_DEBUG_TRAP:0u),before.rip+1u));
         EXPECT(cpu.retired==123u && cpu.rip==0x9000u && !delivery.stage);
         EXPECT(cpu.registers[4]==((before.registers[4]&~15ull)-40u));
         EXPECT(get(stack_offset(cpu.registers[4]))==before.rip+1u);
@@ -186,6 +187,42 @@ int main(int argc,char **argv)
         EXPECT(cpu.rip==before.rip+1u && cpu.registers[4]==before.registers[4] && cpu.rflags==0x603u);
         ++software;
     }
+    /* Every INT n is software delivery, even if n also names a processor
+     * fault. INT 1 must leave debug registers alone; it is not F1. */
+    unsigned generic=0u;
+    for(pl_u32 vector=0u;vector<256u;++vector)for(pl_u32 gate=0x8eu;gate<=0x8fu;++gate){
+        reset(0x108f03u,0x1000204u,0x10603u,vector,gate);
+        cpu.system[MACHINE_SYSTEM_DR0+6u]=0xffffefffu;cpu.system[MACHINE_SYSTEM_DR0+7u]=0x2400u;before=cpu;
+        pages[4].kind=VM_MEMORY_DEFERRED;
+        EXPECT(vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,vector,before.rip+2u)==2u);
+        EXPECT(delivery.kind==VM_EVENT_SOFTWARE&&delivery.words==5u&&!memcmp(&cpu,&before,sizeof cpu));
+        vm_fault_delivery pinned=delivery;
+        EXPECT(vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,vector^1u,before.rip+2u)==6u);
+        EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!memcmp(&delivery,&pinned,sizeof pinned));
+        pages[4].kind=VM_MEMORY_RAM;
+        EXPECT(!vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,vector,before.rip+2u));
+        EXPECT(cpu.registers[4]==0x108ed8u&&get(stack_offset(cpu.registers[4]))==before.rip+2u);
+        EXPECT(get(stack_offset(cpu.registers[4])+16u)==0x603u&&cpu.retired==123u);
+        EXPECT(cpu.system[MACHINE_SYSTEM_DR0+6u]==0xffffefffu&&cpu.system[MACHINE_SYSTEM_DR0+7u]==0x2400u);
+        EXPECT(cpu.system[MACHINE_SYSTEM_CR2]==before.system[MACHINE_SYSTEM_CR2]);
+        ++generic;
+    }
+    for(pl_u32 vector=0u;vector<256u;++vector){
+        reset(0x108f00u,0x300000u,0x603u,vector,0x0eu);
+        cpu.system[MACHINE_SYSTEM_CS]=27u;segments.cache[MACHINE_SEGMENT_CS].attributes=0xa0fbu;before=cpu;
+        EXPECT(vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,vector,cpu.rip+2u)==107u);
+        EXPECT(get(24u)==((pl_u64)(vector*8u+2u)<<32u|13u)&&!memcmp(&cpu,&before,sizeof cpu));
+        ++generic;
+    }
+    for(pl_u32 vector=16u;vector<=19u;vector+=3u){
+        reset(0x108f00u,0x1000204u,0x603u,vector,0x8eu);
+        EXPECT(!vm_fault_enter(&memory,0u,&cpu,&segments,&delivery));
+        EXPECT(cpu.registers[4]==0x108ed8u&&get(stack_offset(cpu.registers[4]))==before.rip);
+        EXPECT(get(stack_offset(cpu.registers[4])+16u)==0x10603u&&cpu.retired==123u);
+    }
+    reset(0x108f00u,0x1000204u,0x603u,1u,0x8eu);
+    EXPECT(vm_software_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,256u,cpu.rip+1u)==6u);
+    EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!delivery.stage);
     /* Descriptor or frame failure still belongs to the source instruction;
      * it has not been retired or replaced with a successful #BP continuation. */
     for(pl_u32 mode=0u;mode<8u;++mode) {
@@ -276,6 +313,6 @@ int main(int argc,char **argv)
     EXPECT(vm_interrupt_enter(&memory,0u,&cpu,&segments,&delivery,&pic)==6u);
     EXPECT(!memcmp(&pic,&accepted,sizeof pic)&&!memcmp(&cpu,&before,sizeof cpu)&&!delivery.stage);
     if(failures)return 1;
-    printf("Long-mode CPL0 fault/trap/IRETQ: %u cases; PIC IRQ/retry/return: %u; software #BP models: %u; TSS inner-fault models: %u; IST/secondary escalation NOT tested\n",cases,interrupts,software,inner);
+    printf("Long-mode fault/IRET: %u; PIC IRQ: %u; explicit traps: %u; generic INT: %u; inner faults: %u; #MF/#XM no error slot\n",cases,interrupts,software,generic,inner);
     return 0;
 }

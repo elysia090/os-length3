@@ -332,6 +332,13 @@ software-interrupt-check: $(BUILD)/software-interrupt-check
 $(BUILD)/software-interrupt-check: check/software-interrupt.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 
+.PHONY: x87-wait-check
+check: x87-wait-check
+x87-wait-check: $(BUILD)/x87-wait-check
+	$(BUILD)/x87-wait-check
+$(BUILD)/x87-wait-check: check/x87-wait.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+
 .PHONY: fxsave-check
 check: fxsave-check
 fxsave-check: $(BUILD)/fxsave-check $(BUILD)/fxsave-observe

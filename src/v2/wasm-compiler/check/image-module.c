@@ -35,6 +35,8 @@ int main(int argc,char **argv)
     for(pl_u32 n=0u;n<(pl_u32)bytes;++n){vm_image_module out=sentinel;
         EXPECT(vm_image_module_open(output,n,&out)<0 && !memcmp(&out,&sentinel,sizeof out));}
     memcpy(saved,output,(size_t)bytes);pl_u32 header=(pl_u32)(module.digest-output)-32u;
+    pl_write_u32(output+header+8u,3u);vm_image_module old=sentinel;
+    EXPECT(vm_image_module_open(output,(pl_u32)bytes,&old)==VM_MODULE_ERROR_ABI&&!memcmp(&old,&sentinel,sizeof old));
     const pl_u32 positions[]={0u,4u,8u,12u,16u,20u,24u,28u};
     for(pl_u32 i=0u;i<sizeof positions/sizeof positions[0];++i){
         memcpy(output,saved,(size_t)bytes);pl_write_u32(output+header+positions[i],~0u);vm_image_module out=sentinel;

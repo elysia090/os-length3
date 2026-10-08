@@ -12,7 +12,7 @@ const nativeDirectory=directories[0];
 const memory=new WebAssembly.Memory({initial:32,maximum:34}),coldMemory=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:coldMemory}})).instance.exports;
-assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
+assert.equal(vm.vm_entry_abi(),4);assert.equal(cc.compiler_entry_abi(),4);
 assert.equal(cc.compiler_report_bytes(),80);assert.equal(vm.vm_source_metadata_bytes(),6880);
 let data=Buffer.from(memory.buffer),view=new DataView(memory.buffer);
 const cold=Buffer.from(coldMemory.buffer),cv=new DataView(coldMemory.buffer);

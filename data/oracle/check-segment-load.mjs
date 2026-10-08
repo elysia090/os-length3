@@ -13,7 +13,7 @@ const vm=(await WebAssembly.instantiate(provider,{machine:{memory}})).exports;
 const compilerModule=await WebAssembly.compile(await readFile(compilerFile));
 assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
 const cc=(await WebAssembly.instantiate(compilerModule,{machine:{memory:cm}})).exports;
-assert.equal(vm.vm_entry_abi(),3);assert.equal(cc.compiler_entry_abi(),3);
+assert.equal(vm.vm_entry_abi(),4);assert.equal(cc.compiler_entry_abi(),4);
 const cold=Buffer.from(cm.buffer),cv=new DataView(cm.buffer),ci=cc.compiler_arena_min(),co=ci+8192,cr=co+65536;
 const dir=vm.vm_arena_min()+4096,rows=dir+512,branches=dir+1024,base=dir+4096;
 const hidden=base+1408,port=base+2048,entry=0x400000n;

@@ -45,6 +45,9 @@ long_start:
     mov $13,%ecx
     call install_gate
     lidt idt_pointer(%rip)
+.ifdef control_event_oracle
+    .include "data/oracle/control-event-cases.inc"
+.else
 .ifdef debug_trap_oracle
     /* Reuse this oracle's Multiboot/long-mode/IDT setup, not another machine. */
     .include "data/oracle/debug-trap-cases.inc"
@@ -165,6 +168,7 @@ emit:
     mov $0x10,%eax
     out %eax,$0xf4
     hlt
+.endif
 .endif
 install_gate:
     lea idt(%rip),%rdi

@@ -901,7 +901,9 @@ machine_result vm_floating_wait(pl_u32 port)
         ||resident.reservation.parts||clock_boundary_pending())return MACHINE_RESULT_ENTRY_MAP;
     if(vm_memory_load((const pl_u8 *)(uintptr_t)port,8u)!=resident.generation)return MACHINE_RESULT_STALE_GENERATION;
     const machine_state *state=(const machine_state *)(uintptr_t)state_offset;
-    if((state->cr0&44u)||!(state->x87_status&~(pl_u32)state->x87_control&63u))return MACHINE_RESULT_ENTRY_MAP;
+    /* Deferred FERR is valid for FWAIT with EM or TS/!MP too. The emitted
+     * operation has already applied its own #NM guard; NE selects #MF. */
+    if((state->cr0&32u)||(state->cr0&10u)==10u||!(state->x87_status&~(pl_u32)state->x87_control&63u))return MACHINE_RESULT_ENTRY_MAP;
     if(vm_pic_set_irq(&pic,13u,1u))return MACHINE_RESULT_ENTRY_MAP;
     return machine_result_make(MACHINE_RESULT_BARRIER,MACHINE_BARRIER_FLOATING);
 }
@@ -1044,14 +1046,15 @@ machine_result vm_fault(pl_u32 port)
 }
 /* Generic software-exception boundary; no opcode or handler address enters
  * the VM. The emitted caller publishes retirement after successful delivery. */
-machine_result vm_software_interrupt(pl_u32 port, pl_u32 vector, pl_u64 next_rip)
+machine_result vm_software_interrupt(pl_u32 port, pl_u32 event, pl_u64 next_rip)
 {
     if (table_frontier.stage || !segments_offset || !private_port(port)
-            || (delivery.stage && delivery.kind!=(vector==MACHINE_EXCEPTION_DEBUG?VM_EVENT_DEBUG_TRAP:VM_EVENT_SOFTWARE))) return MACHINE_RESULT_ENTRY_MAP;
+            || !machine_software_valid(event)
+            || (delivery.stage && delivery.kind!=(event&MACHINE_SOFTWARE_DEBUG_TRAP?VM_EVENT_DEBUG_TRAP:VM_EVENT_SOFTWARE))) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply); vm_memory_abort(&resident); resident.write_touched=0u;
     machine_result result=vm_software_interrupt_enter(&resident,port-arena_base,
         (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,
-        &delivery,vector,next_rip);
+        &delivery,event,next_rip);
     if (!result || resident.write_touched) execution.generation=0u;
     return memory_result(port,result);
 }

@@ -76,8 +76,8 @@ int main(void)
         memset(output,0xa5,sizeof output);memcpy(reference,output,sizeof output);
         memset(reports,0xa5,sizeof reports);memcpy(saved,reports,sizeof reports);bytes=77u;
         for(pl_u32 i=0u;i<COUNT;++i)options[i].maximum_module_bytes=kind==1u?7645u:8000u;
-        /* INT1 is supported now; ordinary INT 1 remains a distinct gate. */
-        if(kind==2u){page[64u+(COUNT-1u)*16u]=0xcdu;page[65u+(COUNT-1u)*16u]=1u;}
+        /* FPTAN still needs its value law; ordinary INT 1 is closed. */
+        if(kind==2u){page[64u+(COUNT-1u)*16u]=0xd9u;page[65u+(COUNT-1u)*16u]=0xf2u;}
         int status=wasm_compiler_emit_code_projection(&image,9u,options,COUNT,output,
             kind==0u?7645u:sizeof output,&bytes,reports);
         EXPECT(status==(kind==2u?WASM_COMPILER_ERROR_GRAMMAR:WASM_COMPILER_ERROR_CAPACITY));

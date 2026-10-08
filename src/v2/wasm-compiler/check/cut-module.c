@@ -70,7 +70,7 @@ int main(int argc,char **argv)
         if(case_id==2u)options[1].entry=options[0].entry;
         if(case_id==3u)capacity=1u;
         if(case_id==4u)options[1].maximum_module_bytes=1u;
-        if(case_id==5u){page[(COUNT-1u)*64u]=0xcdu;page[(COUNT-1u)*64u+1u]=1u;}
+        if(case_id==5u){page[(COUNT-1u)*64u]=0xd9u;page[(COUNT-1u)*64u+1u]=0xf2u;}
         int status=wasm_compiler_emit_code_module(&source,9u,options,count,module,capacity,
             case_id==6u?(pl_u64 *)reports:&bytes,reports);
         options[1].entry=old;options[1].maximum_module_bytes=old_cap;page[(COUNT-1u)*64u]=old_byte;

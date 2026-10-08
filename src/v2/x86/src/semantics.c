@@ -2687,16 +2687,24 @@ pl_u32 pl_x86_machine_inputs(const pl_x86_instruction *instruction)
 
 int pl_x86_software_trap_lower(const pl_x86_instruction *i,pl_x86_software_trap *out)
 {
-    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER|PL_X86_INSTRUCTION_TRAP_AFTER;
+    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
     if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY
-        ||i->operation!=PL_X86_OPERATION_FAULT||i->flow!=PL_X86_FLOW_FAULT||i->family!=PL_X86_FAMILY_INTERRUPT
-        ||i->machine_operation!=PL_X86_MACHINE_SOFTWARE_INTERRUPT||i->visible_operand_count
+        ||i->family!=PL_X86_FAMILY_INTERRUPT||i->machine_operation!=PL_X86_MACHINE_SOFTWARE_INTERRUPT
         ||(i->flags&required)!=required||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
             |PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED))
         ||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes)return 0;
-    pl_u32 vector=i->opcode==0xf1u?1u:i->opcode==0xccu?3u:0u;
-    if(!vector||i->trap_vector!=vector||i->machine_argument!=vector)return 0;
-    *out=(pl_x86_software_trap){(pl_u8)vector,i->source_bytes};return 1;
+    pl_u32 vector;
+    if(i->opcode==0xcdu){const pl_x86_operand *o=i->operands;
+        if(i->flow!=PL_X86_FLOW_INTERRUPT||i->operation!=PL_X86_OPERATION_UNSUPPORTED||i->visible_operand_count!=1u
+            ||o->kind!=PL_X86_OPERAND_IMMEDIATE||o->bits!=8u||o->value.immediate>255u
+            ||i->machine_argument!=o->value.immediate||i->trap_vector||(i->flags&PL_X86_INSTRUCTION_TRAP_AFTER))return 0;
+        vector=(pl_u32)o->value.immediate;
+    }else{
+        vector=i->opcode==0xf1u?1u:i->opcode==0xccu?3u:0u;
+        if(!vector||i->operation!=PL_X86_OPERATION_FAULT||i->flow!=PL_X86_FLOW_FAULT||i->visible_operand_count
+            ||!(i->flags&PL_X86_INSTRUCTION_TRAP_AFTER)||i->trap_vector!=vector||i->machine_argument!=vector)return 0;
+    }
+    *out=(pl_x86_software_trap){(pl_u8)vector,i->source_bytes,(pl_u8)(i->opcode==0xf1u)};return 1;
 }
 int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out)
 {
@@ -2902,18 +2910,29 @@ int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_s
     *out=(pl_x86_x87_snapshot){(pl_u8)(kind==PL_X86_X87_STORE_STATUS_WORD),(pl_u8)memory};return 1;
 }
 
+int pl_x86_x87_wait_supported(const pl_x86_instruction *i)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    return i && i->status==PL_X86_DECODE_VALID && i->encoding==PL_X86_ENCODING_LEGACY
+        && i->machine_operation==PL_X86_MACHINE_X87 && !i->machine_argument && i->opcode==0x9bu
+        && i->operation==PL_X86_OPERATION_UNSUPPORTED && i->flow==PL_X86_FLOW_NEXT && !i->visible_operand_count
+        && (i->flags&required)==required && !(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER))
+        && i->source_bytes && i->source_bytes<=15u && i->length==i->source_bytes && i->fallthrough-i->rip==i->source_bytes;
+}
 int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87 && !instruction->machine_argument
+        && !pl_x86_x87_wait_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&((instruction->machine_argument&255u)==17u
         ||(instruction->machine_argument&255u)==40u||(instruction->machine_argument&255u)==45u)){
         pl_x86_mmx_transfer law;if(!pl_x86_mmx_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_FAR_RETURN||instruction->machine_operation==PL_X86_MACHINE_INTERRUPT_RETURN){
         pl_x86_return law;if(!pl_x86_return_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->operation==PL_X86_OPERATION_TRANSLATE_BYTE&&!pl_x86_translate_byte_memory(instruction))return PL_ERROR_X86_SEMANTIC;
-    if(instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT
-        &&((instruction->flags&PL_X86_INSTRUCTION_TRAP_AFTER)||instruction->opcode==0xf1u||instruction->opcode==0xccu)){
+    if(instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT){
         pl_x86_software_trap law;if(!pl_x86_software_trap_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_PORT_IO&&(instruction->machine_argument&(1ull<<10u))){
         pl_x86_string_io law;if(!pl_x86_string_io_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}

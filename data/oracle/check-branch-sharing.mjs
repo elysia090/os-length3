@@ -10,7 +10,7 @@ if(!compilerFile || flags.some(flag=>flag!=='--observe') || flags.length>1)
   throw new Error('usage: check-branch-sharing.mjs COMPILER.WASM [--observe]');
 const compiler=await readFile(compilerFile),memory=new WebAssembly.Memory({initial:32});
 const cc=(await WebAssembly.instantiate(compiler,{machine:{memory}})).instance.exports;
-assert.equal(cc.compiler_entry_abi(),3);
+assert.equal(cc.compiler_entry_abi(),4);
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;
 const state=(report+80+4095)&~4095,data=Buffer.from(memory.buffer),view=new DataView(memory.buffer);
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');

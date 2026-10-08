@@ -22,6 +22,7 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 }
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    if(pl_x86_x87_wait_supported(instruction))return CUT_SYSTEM_X87_WAIT;
     pl_x86_return returning;
     if(pl_x86_return_lower(instruction,&returning))return returning.interrupt?CUT_SYSTEM_INTERRUPT_RETURN:CUT_SYSTEM_FAR_RETURN;
     pl_x86_count_branch count;
@@ -389,10 +390,11 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         return;
     }
     if (instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT) {
+        pl_x86_software_trap law;if(!pl_x86_software_trap_lower(instruction,&law)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
         /* C owns descriptor checks and the pinned frame; retirement follows
          * successful delivery. A wait or delivery fault keeps the source RIP. */
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
-        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
+        cut_i32_const(cut,law.vector|(law.debug?MACHINE_SOFTWARE_DEBUG_TRAP:0u));
         cut_coordinate(cut,instruction->fallthrough);
         cut_call(cut,WASM_IMPORT_SOFTWARE_INTERRUPT); cut_access_status(cut);
         cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
@@ -434,6 +436,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)||pl_x86_x87_register_arithmetic_lower(instruction,&register_arithmetic)
         ||pl_x86_x87_memory_arithmetic_lower(instruction,&arithmetic)){
         cut_lower_x87_arithmetic(cut,instruction);return;}
+    if(pl_x86_x87_wait_supported(instruction)){cut_lower_x87_wait(cut);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)) {
         /* FNINIT is no-wait: pending x87 exceptions do not become #MF here.

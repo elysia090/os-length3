@@ -68,7 +68,7 @@ int main(int argc,char **argv)
         EXPECT(vm_module_open(projected,n,&out)<0 && !memcmp(&out,&sentinel,sizeof out));}
     memcpy(saved,projected,(size_t)bytes);
     pl_u32 row=(pl_u32)(opened.rows-projected),header=row-MACHINE_SOURCE_HEADER_BYTES;
-    for(pl_u32 kind=0u;kind<12u;++kind){
+    for(pl_u32 kind=0u;kind<13u;++kind){
         memcpy(projected,saved,(size_t)bytes);
         if(kind<3u)pl_write_u32(projected+header+kind*4u,999u);
         if(kind==3u)pl_write_u32(projected+header+12u,COUNT-1u);
@@ -80,6 +80,7 @@ int main(int argc,char **argv)
         if(kind==9u)pl_write_u16(projected+row+8u,0u);
         if(kind==10u)pl_write_u16(projected+row+10u,1u);
         if(kind==11u)pl_write_u32(projected+row+MACHINE_SOURCE_ROW_BYTES,64u);
+        if(kind==12u)pl_write_u32(projected+header+8u,3u); /* Old INT1 meaning must not be adapted. */
         vm_module out=sentinel;EXPECT(vm_module_open(projected,(pl_u32)bytes,&out)<0
             && !memcmp(&out,&sentinel,sizeof out));
     }

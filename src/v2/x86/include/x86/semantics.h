@@ -55,8 +55,8 @@ typedef struct { pl_u8 vector,bytes; } pl_x86_fault_cut;
 /* A decoder-proved synchronous #UD/#GP with a decisive source extent. Fetch
  * incompleteness and trap-after instructions are different machine futures. */
 int pl_x86_fault_cut_lower(const pl_x86_instruction *instruction,pl_x86_fault_cut *out);
-typedef struct {pl_u8 vector,bytes;} pl_x86_software_trap;
-/* INT1/INT3 are explicit traps, not INT n or pending fault cuts. */
+typedef struct {pl_u8 vector,bytes,debug;} pl_x86_software_trap;
+/* One delivered software event. Explicit INT1 differs from INT imm8=1. */
 int pl_x86_software_trap_lower(const pl_x86_instruction *instruction,pl_x86_software_trap *out);
 
 typedef struct { pl_u8 bits,compare; } pl_x86_register_update;
@@ -86,6 +86,8 @@ typedef struct { pl_u8 status,memory; } pl_x86_x87_snapshot;
 /* No-wait FNSTCW/FNSTSW: one current 16-bit word, no floating exception
  * consumption. EM/TS #NM precedes operand access; AX preserves its parent. */
 int pl_x86_x87_snapshot_lower(const pl_x86_instruction *instruction,pl_x86_x87_snapshot *out);
+/* WAIT is its own instruction, not a prefix or an x87 value operation. */
+int pl_x86_x87_wait_supported(const pl_x86_instruction *instruction);
 
 typedef struct { pl_u8 source,ordered,pop;pl_u16 opcode; } pl_x86_x87_compare;
 int pl_x86_x87_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_compare *out);

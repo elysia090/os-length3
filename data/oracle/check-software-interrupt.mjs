@@ -1,7 +1,7 @@
 // Native C emission -> exact cold C bytes -> real C IDT/MMU/frame provider.
 // The independent system instruction oracle is check-exception.mjs.
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
 const [providerFile,compilerFile,directory]=process.argv.slice(2);
 if(!directory)throw new Error('usage: check-software-interrupt.mjs VM.WASM COMPILER.WASM NATIVE-DIRECTORY');
@@ -13,7 +13,7 @@ const dir=vm.vm_arena_min(),base=dir+4096,port=base+2048,segments=base+1408,rows
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536,entry=0x400000n;
 const payload=i=>base+(i+1)*4096,put=(at,x)=>v.setBigUint64(at,BigInt(x),true);
 const slot=vm.__indirect_function_table.grow(1),cpu=()=>Buffer.from(data.subarray(base,base+1256));
-let parity=0,comparisons=0,waits=0,faults=0,refusals=0,eventVector=3;
+let parity=0,comparisons=0,waits=0,faults=0,refusals=0,eventVector=3,debug=false;
 function reset(source,{gate=0x8e,flags=0x10603n,rsp=0xb100n,deferred=-1}={}) {
   data.fill(0,base);
   for(let i=0;i<10;++i) {
@@ -52,13 +52,15 @@ function expected(sourceBytes) {
   state.writeBigUInt64LE(43n,1128);
   return {state,image};
 }
-function debugEffect(state){if(eventVector===1){state.writeBigUInt64LE(state.readBigUInt64LE(592)&~15n,592);
+function debugEffect(state){if(debug){state.writeBigUInt64LE(state.readBigUInt64LE(592)&~15n,592);
   state.writeBigUInt64LE(state.readBigUInt64LE(600)&~0x2000n,600);}return state;}
 try {
-  for(let form=0;form<16;++form) {
+  const forms=(await readdir(directory)).filter(x=>/^software-interrupt-\d+\.json$/.test(x))
+    .map(x=>Number(x.match(/\d+/)[0])).sort((a,b)=>a-b);assert.equal(forms.length,2064);
+  for(const form of forms) {
     const prefix=path.join(directory,`software-interrupt-${form}`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),source=await readFile(`${prefix}.source-page`),emitted=await readFile(`${prefix}.wasm`);
-    eventVector=meta.vector??3;assert([1,3].includes(eventVector));
+    eventVector=meta.vector;debug=Boolean(meta.debug);assert(eventVector>=0&&eventVector<256);
     cold.set(source,input);assert.equal(cc.compiler_open_pages(input,1,entry,9n),0);
     assert.equal(cc.compiler_emit(entry,8,output,65536,report),0);
     assert.equal(cv.getBigUint64(report+40,true),BigInt(emitted.length));assert(cold.subarray(output,output+emitted.length).equals(emitted));++parity;
@@ -94,7 +96,7 @@ try {
     }
     for(const dispatch of [false,true])for(let mode=0;mode<6;++mode) {
       reset(source);bind(meta.sourceBytes);
-      if(mode===0)put(base+472,eventVector*16-1);
+      if(mode===0)put(base+472,eventVector?eventVector*16-1:0);
       if(mode===1)data[payload(4)+eventVector*16+5]=0x0f;
       if(mode===2)data[payload(4)+eventVector*16+5]=0x8d;
       if(mode===3)put(payload(4)+eventVector*16,0x9000n|24n<<16n|0x8fn<<40n);

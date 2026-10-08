@@ -45,18 +45,18 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
     int trap=software||kind==VM_EVENT_DEBUG_TRAP;
     if (!delivery->stage) {
         if (kind==VM_EVENT_FAULT && vector != 0u && vector != 1u && vector != 6u && vector != 7u && vector != 10u && vector != 11u
-                && vector != 12u && vector != 13u && vector != 14u && vector != 17u)
+                && vector != 12u && vector != 13u && vector != 14u && vector != 16u && vector != 17u && vector != 19u)
             return MACHINE_RESULT_ENTRY_MAP;
         if (kind==VM_EVENT_FAULT && vector == 14u) state->system[MACHINE_SYSTEM_CR2] =
             vm_memory_load(port + offsetof(machine_memory_port,fault_address),8u);
-        if(vector==1u){state->system[MACHINE_SYSTEM_DR0+7u]&=~0x2000ull;
+        if(vector==1u&&kind!=VM_EVENT_SOFTWARE){state->system[MACHINE_SYSTEM_DR0+7u]&=~0x2000ull;
             if(kind==VM_EVENT_DEBUG_TRAP)state->system[MACHINE_SYSTEM_DR0+6u]&=~15ull;}
-        *delivery = (vm_fault_delivery){.generation=memory->generation,.stage=1u,.kind=kind,
+        *delivery = (vm_fault_delivery){.generation=memory->generation,.stage=1u,.kind=kind,.vector=vector,
             .context={state->rip,state->cr0,state->cr3,state->cr4,state->efer},
             .frame={state->system[MACHINE_SYSTEM_SS] & 65535u,state->registers[4],
                     trap ? state->rflags & ~0x10000ull : state->rflags | (irq ? 0u : 0x10000u),
                     state->system[MACHINE_SYSTEM_CS] & 65535u,trap ? next_rip : state->rip,error},
-            .words=kind==VM_EVENT_FAULT && vector >= 10u ? 6u : 5u,.stack=state->registers[4] & ~15ull,
+            .words=kind==VM_EVENT_FAULT && ((vector>=10u&&vector<=14u)||vector==17u) ? 6u : 5u,.stack=state->registers[4] & ~15ull,
             .descriptor_address=vector * 16u};
     } else if (delivery->kind != kind || delivery->stage > 4u || (delivery->words != 5u && delivery->words != 6u)
             || delivery->pushed > delivery->words
@@ -195,12 +195,12 @@ machine_result vm_interrupt_enter(vm_memory *memory, pl_u32 port, machine_state 
 }
 
 machine_result vm_software_interrupt_enter(vm_memory *memory, pl_u32 port, machine_state *state,
-    machine_segments *segments, vm_fault_delivery *delivery, pl_u32 vector, pl_u64 next_rip)
+    machine_segments *segments, vm_fault_delivery *delivery, pl_u32 event, pl_u64 next_rip)
 {
-    pl_u32 kind=vector==MACHINE_EXCEPTION_DEBUG?VM_EVENT_DEBUG_TRAP:VM_EVENT_SOFTWARE;
-    if (!delivery || !admitted(memory,port,state,segments) || (vector!=MACHINE_EXCEPTION_BREAKPOINT&&vector!=MACHINE_EXCEPTION_DEBUG)
+    pl_u32 vector=event&255u,kind=event&MACHINE_SOFTWARE_DEBUG_TRAP?VM_EVENT_DEBUG_TRAP:VM_EVENT_SOFTWARE;
+    if (!machine_software_valid(event)||!delivery || !admitted(memory,port,state,segments)
             || !((next_rip-state->rip)>=1u && (next_rip-state->rip)<=15u)
-            || (delivery->stage && delivery->kind!=kind)) return MACHINE_RESULT_ENTRY_MAP;
+            || (delivery->stage && (delivery->kind!=kind||delivery->vector!=vector))) return MACHINE_RESULT_ENTRY_MAP;
     return enter(memory,port,state,segments,delivery,kind,vector,0u,next_rip);
 }
 

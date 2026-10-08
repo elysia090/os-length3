@@ -23,6 +23,20 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Every INT vector and FWAIT now use the common C compiler/event owner, with
+explicit F1 vs INT1 origin and the MP&&TS waiting law.168-byte pinned event
+frontier includes the vector; #MF/#XM have five, not six frame slots. ABI4
+rejects stale module descriptors.1152 independent WHPX rows match;2064 forms/
+24768 malformed laws,264192 full-state models,16512 retries,24768 delivery
+faults and768 WAIT state models pass, plus positive ASan/UBSan. Same make
+1031->745 unresolved (286 recovered). Continue remaining x87 views/transfers,
+SIMD and far-control families until ZERO, without changing the publication
+gate. Full unrestricted checks retained the already-known intermittent native
+CALL payload red; scoped passes are not a claim that this architectural red
+was fixed. See [event distinctions and actual observations](../vm/check/browser/evidence/2026-10-08-control-events.md).
+
+## Preceding packed-lane checkpoint
+
 MMX64/XMM128 binary lanes now share33 operators, alias substitutions and one
 SIMD emitter:28,512+47,520 physical rows. MOVD/MOVQ/MOVNTQ join the shared scalar
 transfer path:1,920 actual RAX/FPU/tag/flags/memory rows. Full saved tags are
