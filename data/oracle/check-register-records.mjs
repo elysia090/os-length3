@@ -85,7 +85,8 @@ export async function checkRegisterRecords({providerFile,compilerFile,directory,
         assert(data.subarray(base,base+1256).equals(before)); ++refusals;
       }
       reset(source,meta,record); put(base+392,flags(record,meta)|0x10000n);
-      assert.equal(vm.vm_run(port,9n,1),1n); assert.equal(view.getBigUint64(base+392,true),flags(record,meta));
+      assert.equal(vm.vm_run(port,9n,1),1n);
+      assert.equal(view.getBigUint64(base+392,true),meta.stateBytes ? native.readBigUInt64LE(meta.stateBytes+392) : u64(record,33));
       for(const {offset,mask,vector} of faultMasks)for(const rf of [0n,0x10000n])for(const dispatched of [false,true]){
         reset(source,meta,record); put(base+offset,view.getBigUint64(base+offset,true)|mask);
         put(base+392,flags(record,meta)|rf); const before=cpu();

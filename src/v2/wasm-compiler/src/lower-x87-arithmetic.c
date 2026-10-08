@@ -23,10 +23,12 @@ static void empty(cut_lowering *c,pl_u32 local)
 void cut_lower_x87_arithmetic(cut_lowering *c,const pl_x86_instruction *i)
 {
     pl_x86_x87_register_arithmetic reg={0};int registers=pl_x86_x87_register_arithmetic_lower(i,&reg);
-    pl_x86_x87_integer_arithmetic law={0};if(!registers&&!pl_x86_x87_integer_arithmetic_lower(i,&law)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    pl_x86_x87_integer_arithmetic law={0};int integer=pl_x86_x87_integer_arithmetic_lower(i,&law);
+    if(!registers&&!integer&&!pl_x86_x87_memory_arithmetic_lower(i,&law)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     _Alignas(8) pl_u8 scratch[131072];pl_arena arena={scratch,sizeof scratch,0u};pl_plan pure;
     int status=registers?pl_x86_x87_register_arithmetic_plan(reg.operation,&arena,&pure)
-        :pl_x86_x87_integer_arithmetic_plan(law.bytes*8u,law.operation,&arena,&pure);
+        :integer?pl_x86_x87_integer_arithmetic_plan(law.bytes*8u,law.operation,&arena,&pure)
+        :pl_x86_x87_memory_arithmetic_plan(law.bytes*8u,law.operation,&arena,&pure);
     if(status){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     cut_x87_wait_guard(c,FA_CW,FA_SW);
     if(!registers){const pl_x86_memory *address=&i->operands[0].value.memory;

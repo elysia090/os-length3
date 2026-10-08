@@ -48,7 +48,10 @@ static int save(const char *directory,pl_u32 form,const char *suffix,const void 
 static pl_u32 encoding(pl_u32 form,pl_u32 *width,pl_u32 *kind,pl_u32 *operation,pl_u32 *count_kind,pl_u32 *count)
 {
     static const pl_u32 selectors[]={0u,1u,4u,5u,7u},counts[]={0u,1u,7u,8u,15u,16u,31u,32u,63u,64u,255u};
-    if(form<260u) {
+    if(form>=340u){pl_u32 extra=form-340u,rank=extra%68u;*operation=2u+extra/68u;
+        if(rank<52u){*width=8u<<(rank/13u);*kind=0u;*count_kind=rank%13u;*count=*count_kind<2u?*count_kind:counts[*count_kind-2u];}
+        else{rank-=52u;*width=8u<<(rank/4u);*kind=rank%4u+1u;*count_kind=0u;*count=0u;}
+    }else if(form<260u) {
         *operation=selectors[form/52u];*width=8u<<((form/13u)%4u);*kind=0u;
         *count_kind=form%13u;*count=*count_kind<2u?*count_kind:counts[*count_kind-2u];
     } else {
@@ -74,7 +77,8 @@ static pl_u32 encoding(pl_u32 form,pl_u32 *width,pl_u32 *kind,pl_u32 *operation,
 static pl_u64 defined_flags(pl_u32 width,pl_u32 operation,pl_u32 count)
 {
     if(!count)return ~0ull;
-    pl_u64 undefined=operation<2u?0u:0x10u;
+    if((operation==2u||operation==3u)&&width<32u&&!(count%(width+1u)))return ~0ull;
+    pl_u64 undefined=operation<4u?0u:0x10u;
     if(count!=1u)undefined|=0x800u;
     if(operation!=7u && operation>=4u && count>=width)undefined|=1u;
     return ~undefined;
@@ -83,7 +87,7 @@ static int check_admission(void)
 {
     pl_u8 page[4096];pl_x86_map map={page,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};
     pl_x86_image image={&map,1u,0u,map.address};wasm_cut_options options={map.address,8u,sizeof module};
-    for(pl_u32 form=0u;form<340u;++form) {
+    for(pl_u32 form=0u;form<476u;++form) {
         pl_u32 width,kind,operation,count_kind,count;memset(source,0x90,sizeof source);
         pl_u32 size=encoding(form,&width,&kind,&operation,&count_kind,&count);
         memset(page,0x90,sizeof page);memcpy(page+1u,source,size);
@@ -111,7 +115,7 @@ static int check_admission(void)
             continue;
         }
         wasm_cut_report before=report;pl_u64 emitted=77u;
-        if(wasm_compiler_emit_code_cut(&image,9u,&options,module,sizeof module,&emitted,&report)!=WASM_COMPILER_ERROR_GRAMMAR
+        if(wasm_compiler_emit_code_cut(&image,9u,&options,module,1u,&emitted,&report)!=WASM_COMPILER_ERROR_CAPACITY
             || emitted!=77u || memcmp(&report,&before,sizeof report))return -1;
         for(pl_u32 i=0u;i<sizeof module;++i)if(module[i]!=0xa5u)return -1;
     }
@@ -138,7 +142,7 @@ int main(int argc,char **argv)
     }
     static const pl_u32 edge_counts[]={0u,1u,7u,8u,15u,16u,31u,32u,63u,64u,65u,127u,128u,255u,33u,17u};
     pl_u64 seed=0x8731c59abd26e40full;
-    for(pl_u32 form=0u;form<340u;++form) {
+    for(pl_u32 form=0u;form<476u;++form) {
         memset(source,0x90,sizeof source);pl_u32 width,kind,operation,count_kind,count;
         pl_u32 size=encoding(form,&width,&kind,&operation,&count_kind,&count),bytes=width/8u;
         pl_x86_map map={source,0x400000u,4096u,4096u,PL_ELF_FLAG_EXECUTE,9u};

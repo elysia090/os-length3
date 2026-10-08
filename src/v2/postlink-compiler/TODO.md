@@ -23,6 +23,26 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Integer/register division, IEEE32/64 memory add/sub/div and all multiply
+locations share the significand/rounding/classification core: 300,672 physical
+FPU/RFLAGS rows pass actual C compiler/MMU/table execution. 480,000 canonical
+finite register cases pass official SoftFloat; old 42,624 rows remain green.
+General U128/U64 quotient has 1,003,264 divq/fault controls; old 64-round loop
+deleted. LAHF/SAHF/CMC close the live flag frontier: 43,008 direct/C rows.
+RCL/RCR substitute word+carry directly: 69,632 register rows per execution
+mode; 243,712 memory rows per mode / 47,936 faults / 1,904 waits+retries.
+XLAT shares C memory admission: 8,192 normal + 8,192 protection-fault rows /
+16,384 C dispatch controls / 32 waits+retries. Full checks/ASan/UBSan pass.
+No product guest interpreter/numeric callback. Actual make: 4,381 -> 2,648
+missing, same 233,455 PF_X bytes; first df5300 / FIST m16.
+Continue whole-family closure to ZERO, then publish/boot the same native bundle.
+Finding the next coordinate is not a stopping condition or permission to #UD it.
+Same-source integer DIV execution is 0.412..0.443 of baseline in measured Node
+calls; fixture grows 489->1,427 bytes, not storage/native/Linux speed. See
+[common closure and reproduction](../vm/check/browser/evidence/2026-10-08-division.md).
+
+## Previous explicit-debug-trap checkpoint
+
 INT1/F1 now shares INT3's checked trap descriptor, ordinary Wasm and C event
 frontier. #DB bypasses IDT DPL, uses EXT=1 for secondary errors, clears low
 DR6 status/GD before delivery and preserves these effects across failure/wait.

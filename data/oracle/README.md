@@ -1,5 +1,26 @@
 # x86 semantic oracles
 
+The SAME arithmetic observer closes integer/register division, binary32/64
+memory add/sub/div, and all three multiply locations through shared SSA.
+`check-x87-state.mjs VM.WASM COMPILER.WASM RECORDS MODE` compares 300,672
+physical FPU/RFLAGS rows for these added families, not Linux acceptance.
+Modes: `--divide`, `--register-divide`, `--memory`, `--multiply`,
+`--memory-multiply`, `--register-multiply`; the observer uses those same modes.
+Official SoftFloat is an independent reference, never product runtime.
+Register `--finite` checks all six operations. Common U128/U64 SSA replaces
+the old bit loop. `benchmark-divide.mjs BASELINE-COMPILER CURRENT-COMPILER`
+compares actual execution with equal state writes, compilation excluded. See
+[shared closure, derivation and measurements](../../src/v2/vm/check/browser/evidence/2026-10-08-division.md).
+
+`prepare-shift-cuts.sh NEW-DIRECTORY carry-rotate` covers RCL/RCR width/count/
+composition. Existing memory-shift now has 476 forms through C reserve/commit.
+`prepare-translate-cuts.sh` adds XLAT address/segment/prefix records; run
+`check-wasm-provider.mjs VM.WASM RECORDS --dispatch --compiler=COMPILER.WASM
+--prefix=xlat-` for actual C-MMU execution/faults. `check-flags-low.mjs` uses
+shared complete-register records for LAHF/SAHF/CMC and carry/direction controls.
+`inspect-wasm-closure.c` prints every PF_X product-grammar failure; it never
+changes acceptance or executes guest instructions.
+
 `prepare-debug.sh NEW-DIRECTORY --traps` reuses the existing Multiboot/debug
 oracle for explicit F1 traps; `--trap-faults` adds invalid IDT/GDT delivery.
 Run with an explicitly identified accelerator. `check-debug-trap.mjs VM.WASM

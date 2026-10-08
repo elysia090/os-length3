@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 const [vmFile,compilerFile,directory,mode]=process.argv.slice(2);
-if(!directory||(mode&&!['--arithmetic','--status','--register'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status|--register]');
-const arithmetic=mode==='--arithmetic',status=mode==='--status',register=mode==='--register',
-  prefix=register?'x87-register':status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',forms=register?81:status?172:arithmetic?576:192;
+if(!directory||(mode&&!['--arithmetic','--status','--register','--divide','--register-divide','--memory','--multiply','--memory-multiply','--register-multiply'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status|--register|--divide|--register-divide|--memory|--multiply|--memory-multiply|--register-multiply]');
+const arithmetic=mode==='--arithmetic',status=mode==='--status',registerDivide=mode==='--register-divide',registerMultiply=mode==='--register-multiply',register=registerMultiply||registerDivide||mode==='--register',
+  multiply=mode==='--multiply',memoryMultiply=mode==='--memory-multiply',divide=mode==='--divide',ieee=mode==='--memory',
+  prefix=memoryMultiply?'x87-memory-multiply':multiply?'x87-integer-multiply':registerMultiply?'x87-register-multiply':ieee?'x87-memory-arithmetic':registerDivide?'x87-register-divide':divide?'x87-division':register?'x87-register':status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',
+  forms=(multiply||memoryMultiply)?224:registerMultiply?27:ieee?1120:registerDivide?54:divide?448:register?81:status?172:arithmetic?576:192;
 const memory=new WebAssembly.Memory({initial:16}),vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cm=new WebAssembly.Memory({initial:16}),cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
 const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(cm.buffer),cv=new DataView(cm.buffer);
@@ -43,6 +45,6 @@ for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(director
       .filter(([offset,byte])=>actual[offset]!==byte).slice(0,24).map(([offset,byte])=>`${offset}:${actual[offset].toString(16)}/${byte.toString(16)}`).join(',')}`);++comparisons;
   }
 }
-vm.vm_close();console.log(JSON.stringify({format:register?'native-register-arithmetic-c-v1':status?'native-fpu-status-c-v1':arithmetic?'native-fi-arithmetic-c-v1':'native-fild-c-v1',status:'pass',comparisons,modules,
+vm.vm_close();console.log(JSON.stringify({format:'native-x87-full-state-c-v2',mode:mode??'--integer-load',status:'pass',comparisons,modules,
   oracle:status?'physical Windows FPU/RFLAGS; IM/DM,relation,alias,tag,TOP,pop matrix; GPR invariance architectural':
     'physical Windows FPU/RFLAGS; GPR invariance architectural; PC/RC/exception-mask matrix',linuxBoot:'not-tested'},null,2));

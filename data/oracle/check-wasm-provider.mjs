@@ -9,7 +9,7 @@ import {seedNativeSelector} from './selector-observation.mjs';
 const [providerFile, directory, ...options] = process.argv.slice(2);
 if (!providerFile || !directory)
   throw new Error('usage: node check-wasm-provider.mjs VM.WASM NATIVE-RECORD-DIRECTORY [--dispatch] [--compiler=COMPILER.WASM]');
-assert(options.every(option=>option==='--dispatch'||option.startsWith('--compiler=')), 'unknown check mode');
+assert(options.every(option=>option==='--dispatch'||option.startsWith('--compiler=')||option.startsWith('--prefix=')), 'unknown check mode');
 assert(options.filter(option=>option==='--dispatch').length<=1);
 const compilerOptions=options.filter(option=>option.startsWith('--compiler='));
 assert(compilerOptions.length<=1);
@@ -22,7 +22,9 @@ const provider = await WebAssembly.compile(await readFile(providerFile));
 assert.deepEqual(WebAssembly.Module.imports(provider), [
   { module: 'machine', name: 'memory', kind: 'memory' },
 ]);
-const names = (await readdir(directory)).filter(name => /^memory-\d+\.json$/.test(name)).sort();
+const prefixes=options.filter(option=>option.startsWith('--prefix='));assert(prefixes.length<=1);
+const prefix=prefixes[0]?.slice(9);
+const names = (await readdir(directory)).filter(name => prefix?name.startsWith(prefix)&&name.endsWith('.json'):/^memory-\d+\.json$/.test(name)).sort();
 assert(names.length > 0);
 let comparisons = 0, hardwareFaults = 0, resumeFlagChecks = 0, selectorModels = 0;
 let dispatchComparisons = 0;
@@ -78,6 +80,15 @@ for (const name of names) {
   function open() {
     assert.equal(vm.vm_open(base,memory.buffer.byteLength - base,4096,directoryOffset,6,6,directoryOffset + 1024,9n), 0);
     assert.equal(vm.vm_bind_state(state), 0);
+    bindSegments();
+  }
+  function bindSegments(){
+    if(!(meta.access&192))return;
+    const at=state+1408,view=new DataView(memory.buffer);
+    Buffer.from(memory.buffer).fill(0,at,at+136);view.setUint32(at,2,true);
+    view.setUint32(at+36,0xa09b,true);
+    for(const rank of [4,5])view.setUint32(at+8+rank*16+12,0x10000,true);
+    assert.equal(vm.vm_bind_segments(at),0);
   }
   function tables(view, address) {
     for (let level = 0; level < 4; ++level) {
@@ -147,6 +158,7 @@ for (const name of names) {
     Buffer.from(memory.buffer).set(source.subarray(offset,offset + meta.sourceBytes),destination + offset);
     assert.equal(vm.vm_open(base,memory.buffer.byteLength-base,4096,directoryOffset,10,10,directoryOffset+1024,9n),0);
     assert.equal(vm.vm_bind_state(state),0);
+    bindSegments();
     const rowAt = directoryOffset + 512;
     view.setBigUint64(rowAt,entry,true); view.setUint32(rowAt+8,meta.sourceBytes,true);
     view.setUint32(rowAt+12,1,true); view.setUint32(rowAt+16,slot,true); view.setUint32(rowAt+20,meta.operandBinding,true);
@@ -204,7 +216,7 @@ for (const name of names) {
         word(36) & ((1n << BigInt(meta.bytes * 8)) - 1n), true);
     }
     const savedDirectory = Buffer.from(new Uint8Array(memory.buffer, directoryOffset, 192));
-    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry),meta.operandBinding), 1n);
+    assert.equal(instance.exports.cut(state, port,BigInt(meta.entry),meta.operandBinding), 1n,`${name}: direct row ${row}`);
     assert.deepEqual(arena(), expected, `${name}: native/C-Wasm row ${row}`);
     assert.deepEqual(Buffer.from(memory.buffer, directoryOffset, 192), savedDirectory);
     ++comparisons;

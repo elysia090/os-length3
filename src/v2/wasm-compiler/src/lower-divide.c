@@ -77,26 +77,12 @@ static void wide_divide(cut_lowering *cut,const pl_x86_instruction *instruction)
     cut_get(cut,CUT_LEFT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x82u); cut_set(cut,CUT_NEXT);
     cut_get(cut,CUT_VALUE); cut_set(cut,CUT_LEFT);
     cut_op(cut,0x05u);
-    /* Restoring division: with 0<=H<D, t=2H+top(L)<2D. Its 65th bit
-     * OR (low(t)>=D) decides one subtraction; after it H remains <D.
-     * LEFT consumes one dividend bit and appends one quotient bit per round.
-     * Exactly 64 compiled rounds, no ISA interpreter or host arithmetic. */
-    cut_const(cut,64u); cut_set(cut,CUT_STATUS);
-    cut_op(cut,0x03u); cut_op(cut,0x40u);
-    cut_get(cut,CUT_NEXT); cut_const(cut,63u); cut_op(cut,0x88u); cut_set(cut,CUT_VALUE);
-    cut_get(cut,CUT_NEXT); cut_const(cut,1u); cut_op(cut,0x86u);
-    cut_get(cut,CUT_LEFT); cut_const(cut,63u); cut_op(cut,0x88u); cut_op(cut,0x84u);
-    cut_set(cut,CUT_NEXT);
-    cut_get(cut,CUT_LEFT); cut_const(cut,1u); cut_op(cut,0x86u); cut_set(cut,CUT_LEFT);
-    cut_get(cut,CUT_VALUE); cut_op(cut,0x50u); cut_op(cut,0x45u);
-    cut_get(cut,CUT_NEXT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x5au); cut_op(cut,0x72u);
-    cut_op(cut,0x04u); cut_op(cut,0x40u);
-    cut_get(cut,CUT_NEXT); cut_get(cut,CUT_RIGHT); cut_op(cut,0x7du); cut_set(cut,CUT_NEXT);
-    cut_get(cut,CUT_LEFT); cut_const(cut,1u); cut_op(cut,0x84u); cut_set(cut,CUT_LEFT);
-    cut_op(cut,0x0bu);
-    cut_get(cut,CUT_STATUS); cut_const(cut,1u); cut_op(cut,0x7du); cut_set(cut,CUT_STATUS);
-    cut_get(cut,CUT_STATUS); cut_op(cut,0x50u); cut_op(cut,0x45u);
-    cut_op(cut,0x0du); wasm_writer_uleb(cut->writer,0u); cut_op(cut,0x0bu); cut_op(cut,0x0bu);
+    /* Shared exact quotient SSA: no second bit-serial evaluator in the
+     * backend. The same fragment can feed floating significand arithmetic. */
+    _Alignas(8) pl_u8 scratch[65536];pl_arena arena={scratch,sizeof scratch,0u};pl_plan quotient;
+    if(pl_x86_unsigned_divide_plan(&arena,&quotient)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    const pl_u32 input[]={CUT_NEXT,CUT_LEFT,CUT_RIGHT,0u,0u},output[]={CUT_LEFT,CUT_NEXT,CUT_STATUS};
+    cut_emit_scalar_plan(cut,&quotient,input,26u,output);cut_op(cut,0x0bu);
     if (signed_divide) {
         /* Negative quotients permit magnitude 2^63; positive ones do not.
          * Remainder has numerator's sign. No publication precedes this #DE. */

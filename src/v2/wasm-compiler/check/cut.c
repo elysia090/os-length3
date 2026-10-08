@@ -73,10 +73,12 @@ static int oracle_flags_mask(const pl_x86_image *image, const wasm_cut_report *r
             pl_u64 bits = count->kind == PL_X86_OPERAND_IMMEDIATE
                         ? count->value.immediate : initial_rcx;
             pl_u64 n = bits & (width == 64u ? 63u : 31u);
-            if (instruction.condition<2u) {
+            if (instruction.condition<4u) {
+                pl_u64 original=n;
+                if(instruction.condition>=2u&&width<32u)n%=width+1u;
                 if (n) {
                     mask|=1u; /* Rotates always define CF for a nonzero masked count. */
-                    if (n==1u) mask|=0x800u;
+                    if (original==1u) mask|=0x800u;
                     else mask&=~0x800ull;
                 }
                 break; /* SF/ZF/AF/PF, and every flag at count zero, are preserved. */

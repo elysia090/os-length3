@@ -150,7 +150,8 @@ int main(int argc, char **argv)
     if (pl_x86_decode_profile(&image, report.entry, &instruction)) goto finish;
     if(report.memory_access&MACHINE_MEMORY_FS)native_role=0;
     if(report.memory_access&MACHINE_MEMORY_GS)native_role=1;
-    int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
+    int translate=instruction.operation==PL_X86_OPERATION_TRANSLATE_BYTE;
+    int store = !translate&&instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
     int unary = instruction.operation == PL_X86_OPERATION_INCREMENT
         || instruction.operation == PL_X86_OPERATION_DECREMENT
         || instruction.operation == PL_X86_OPERATION_NEGATE
@@ -185,7 +186,7 @@ int main(int argc, char **argv)
     int precise_rmw = (report.memory_access & (MACHINE_MEMORY_READ|MACHINE_MEMORY_WRITE))
         == (MACHINE_MEMORY_READ|MACHINE_MEMORY_WRITE);
     int precise_write = precise_rmw || set || selector;
-    const pl_x86_memory *operand = &instruction.operands[store ? 0u : 1u].value.memory;
+    const pl_x86_memory *operand = &instruction.operands[(store||translate) ? 0u : 1u].value.memory;
     relative = operand->base.class_id == PL_X86_REGISTER_IP;
     /* High application memory, not ASan's reserved low shadow/gap. */
     pl_u64 base = instruction.address_width == 32u ? 0x23456000ull : 0x123456789000ull;
@@ -202,7 +203,7 @@ int main(int argc, char **argv)
                 && mprotect(code,code_bytes,PROT_READ | PROT_WRITE | PROT_EXEC)) goto finish;
     }
     if (!relative && (instruction.operation == PL_X86_OPERATION_CONDITIONAL_MOVE
-            || instruction.operation == PL_X86_OPERATION_BIT_TEST || multiply || carry || precise_write || summary)) {
+            || instruction.operation == PL_X86_OPERATION_BIT_TEST || multiply || carry || precise_write || summary||translate)) {
         struct sigaction action = {.sa_sigaction=native_segment_signal,.sa_flags=SA_SIGINFO};
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGSEGV,&action,&old_action)) goto finish;
@@ -217,6 +218,7 @@ int main(int argc, char **argv)
     for (pl_u32 row = 0u; row < 512u; ++row) {
         machine_state state = { 0 }; pl_u64 record[38];
         for (pl_u32 reg = 0u; reg < 16u; ++reg) state.registers[reg] = random_word(&seed);
+        if(translate)state.registers[0]=(state.registers[0]&~255ull)|(row&255u);
         state.rflags = 0x202u | (random_word(&seed) & 0x8d5u);
         if (set && row < 256u) {
             static const pl_u32 positions[] = {0u,2u,4u,6u,7u,11u};
@@ -248,6 +250,7 @@ int main(int argc, char **argv)
                 goto finish;
             pl_u32 base_register = operand->base.index;
             state.registers[base_register] = address - word_offset - (pl_u64)operand->displacement;
+            if(translate)state.registers[base_register]-=state.registers[0]&255u;
             if (operand->index.class_id == PL_X86_REGISTER_GPR) {
                 if (!indexed_bit || operand->index.index != instruction.operands[1].value.reg.index)
                     state.registers[operand->index.index] = row & 15u;

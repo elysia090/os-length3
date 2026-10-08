@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -ge 1 && $# -le 2 && ! -e $1 ]] || { printf 'usage: %s NEW-OUTPUT-DIRECTORY [shift|rotate]\n' "$0" >&2; exit 2; }
+[[ $# -ge 1 && $# -le 2 && ! -e $1 ]] || { printf 'usage: %s NEW-OUTPUT-DIRECTORY [shift|rotate|carry-rotate]\n' "$0" >&2; exit 2; }
 family=${2:-shift}
 case $family in
   shift) opcodes=(shl shr sar); first=1; last=12;;
   rotate) opcodes=(rol ror); first=13; last=26;;
+  carry-rotate) opcodes=(rcl rcr); first=27; last=34;;
   *) printf 'unknown shift family\n' >&2; exit 2;;
 esac
 repo=$(cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -24,7 +25,7 @@ emit() {
 for opcode in "${opcodes[@]}"; do
   for width in 8 16 32 64; do
     emit "$opcode-$width-cl" -DSHIFT_OPCODE="$opcode" -DSHIFT_WIDTH="$width"
-    for count in 0 1 7 8 15 16 31 32 63 64 255; do
+    for count in 0 1 7 8 9 10 15 16 17 18 31 32 63 64 255; do
       emit "$opcode-$width-$count" -DSHIFT_OPCODE="$opcode" -DSHIFT_WIDTH="$width" -DSHIFT_COUNT="$count"
     done
   done

@@ -5,7 +5,7 @@ int cut_shift_supported(const pl_x86_instruction *instruction)
     const pl_x86_operand *count = &instruction->operands[1];
     return instruction->operation == PL_X86_OPERATION_SHIFT
         && instruction->visible_operand_count == 2u
-        && (instruction->condition < 2u || instruction->condition == 4u || instruction->condition == 5u
+        && (instruction->condition < 4u || instruction->condition == 4u || instruction->condition == 5u
             || instruction->condition == 7u)
         && (count->kind == PL_X86_OPERAND_IMMEDIATE
             || (count->kind == PL_X86_OPERAND_REGISTER && cut_gpr(&count->value.reg)
@@ -124,6 +124,44 @@ void cut_shift_value(cut_lowering *cut, const pl_x86_instruction *instruction)
     if (kind<2u) {
         rotate_value(cut,width,kind);
         return;
+    }
+    if(kind<4u){
+        // RCL/RCR rotate the (word,carry) pair, not the word alone. Narrow
+        // pairs fit one i64; the 65-bit pair is substituted into two shifts
+        // and its one carry bit. Guard k=1's otherwise modulo-64 cross shift.
+        if(width<64u){
+            cut_get(cut,CUT_RIGHT);if(width<32u){cut_const(cut,width+1u);cut_op(cut,0x82u);}cut_set(cut,CUT_NEXT);
+            cut_get(cut,CUT_LEFT);cut_const(cut,1u);cut_op(cut,0x86u);cut_get(cut,CUT_FLAGS);cut_const(cut,1u);cut_op(cut,0x83u);cut_op(cut,0x84u);cut_set(cut,CUT_VALUE);
+            cut_get(cut,CUT_VALUE);cut_get(cut,CUT_NEXT);cut_op(cut,kind==2u?0x86u:0x88u);
+            cut_get(cut,CUT_VALUE);cut_const(cut,width+1u);cut_get(cut,CUT_NEXT);cut_op(cut,0x7du);cut_op(cut,kind==2u?0x88u:0x86u);
+            cut_op(cut,0x84u);cut_mask(cut,width+1u);cut_set(cut,CUT_VALUE);
+            cut_get(cut,CUT_VALUE);cut_const(cut,1u);cut_op(cut,0x83u);cut_set(cut,CUT_NEXT);
+            cut_get(cut,CUT_VALUE);cut_const(cut,1u);cut_op(cut,0x88u);cut_set(cut,CUT_VALUE);
+        }else{
+            cut_get(cut,CUT_LEFT);cut_get(cut,CUT_RIGHT);cut_op(cut,kind==2u?0x86u:0x88u);
+            cut_get(cut,CUT_FLAGS);cut_const(cut,1u);cut_op(cut,0x83u);
+            if(kind==2u){cut_get(cut,CUT_RIGHT);cut_const(cut,1u);cut_op(cut,0x7du);}
+            else{cut_const(cut,64u);cut_get(cut,CUT_RIGHT);cut_op(cut,0x7du);}
+            cut_op(cut,0x86u);cut_op(cut,0x84u);
+            cut_get(cut,CUT_LEFT);cut_const(cut,65u);cut_get(cut,CUT_RIGHT);cut_op(cut,0x7du);cut_op(cut,kind==2u?0x88u:0x86u);
+            cut_const(cut,0u);cut_get(cut,CUT_RIGHT);cut_const(cut,1u);cut_op(cut,0x52u);cut_op(cut,0x1bu);cut_op(cut,0x84u);
+            cut_get(cut,CUT_LEFT);cut_get(cut,CUT_RIGHT);cut_op(cut,0x50u);cut_op(cut,0x45u);cut_op(cut,0x1bu);cut_set(cut,CUT_VALUE);
+            cut_get(cut,CUT_LEFT);
+            if(kind==2u){cut_const(cut,64u);cut_get(cut,CUT_RIGHT);cut_op(cut,0x7du);}
+            else{cut_get(cut,CUT_RIGHT);cut_const(cut,1u);cut_op(cut,0x7du);}
+            cut_op(cut,0x88u);cut_const(cut,1u);cut_op(cut,0x83u);cut_set(cut,CUT_NEXT);
+        }
+        pl_u32 wanted=cut->wanted_flags&0x801u;if(!wanted)return;
+        cut_get(cut,CUT_RIGHT);if(width<32u){cut_const(cut,width+1u);cut_op(cut,0x82u);}
+        cut_op(cut,0x50u);cut_op(cut,0x45u);cut_op(cut,0x04u);cut_op(cut,0x40u);
+        cut_get(cut,CUT_FLAGS);cut_const(cut,~(pl_u64)wanted);cut_op(cut,0x83u);
+        if(wanted&1u){cut_get(cut,CUT_NEXT);cut_op(cut,0x84u);}
+        if(wanted&0x800u){cut_get(cut,CUT_VALUE);cut_const(cut,width-1u);cut_op(cut,0x88u);
+            if(kind==2u)cut_get(cut,CUT_NEXT);else{cut_get(cut,CUT_VALUE);cut_const(cut,width-2u);cut_op(cut,0x88u);}
+            cut_op(cut,0x85u);cut_const(cut,1u);cut_op(cut,0x83u);
+            cut_const(cut,0u);cut_get(cut,CUT_RIGHT);cut_const(cut,1u);cut_op(cut,0x51u);cut_op(cut,0x1bu);
+            cut_const(cut,11u);cut_op(cut,0x86u);cut_op(cut,0x84u);}
+        cut_set(cut,CUT_FLAGS);cut_op(cut,0x0bu);cut->report.flags_written=1u;return;
     }
     cut_get(cut, CUT_LEFT);
     if (kind == 7u && width < 64u) {

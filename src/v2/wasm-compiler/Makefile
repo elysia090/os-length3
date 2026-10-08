@@ -52,6 +52,18 @@ SOURCES += src/lower-x87-arithmetic.c
 SOURCES += src/lower-x87-status.c
 SOURCES += src/lower-enter.c
 SOURCES += src/lower-string-io.c
+.PHONY: translate-byte-check
+check: translate-byte-check
+translate-byte-check: $(BUILD)/translate-byte-check
+	$(BUILD)/translate-byte-check
+$(BUILD)/translate-byte-check: check/translate-byte.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: flags-low-check
+check: flags-low-check
+flags-low-check: $(BUILD)/flags-low-check
+	$(BUILD)/flags-low-check
+$(BUILD)/flags-low-check: check/flags-low.c check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< check/native-cut.S $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: x87-register-check
 check: x87-register-check
 x87-register-check: $(BUILD)/x87-register-check

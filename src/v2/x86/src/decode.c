@@ -2414,8 +2414,8 @@ static void classify_machine_operation(
                 && out->operands[0].kind == PL_X86_OPERAND_MEMORY
                 && (out->operands[0].bits == 16u
                     || out->operands[0].bits == 32u)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 7u
                 | ((pl_u64)(out->operands[0].bits / 8u) << 8u)
@@ -2433,8 +2433,8 @@ static void classify_machine_operation(
                     || out->operands[0].bits == 32u
                     || out->operands[0].bits == 64u)
                 && source->mnemonic == ZYDIS_MNEMONIC_FADD) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 8u
                 | ((pl_u64)(out->operands[0].bits / 8u) << 8u)
@@ -2474,8 +2474,8 @@ static void classify_machine_operation(
                     || out->operands[0].bits == 64u)
                 && (source->mnemonic == ZYDIS_MNEMONIC_FSUB
                     || source->mnemonic == ZYDIS_MNEMONIC_FSUBR)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FSUBR;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 13u
@@ -2521,8 +2521,8 @@ static void classify_machine_operation(
                     || out->operands[0].bits == 64u)
                 && (source->mnemonic == ZYDIS_MNEMONIC_FDIV
                     || source->mnemonic == ZYDIS_MNEMONIC_FDIVR)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FDIVR;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 15u
@@ -2541,8 +2541,8 @@ static void classify_machine_operation(
                 && out->operands[1].value.reg.class_id
                    == PL_X86_REGISTER_X87
                 && out->operands[1].value.reg.index < 8u) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FDIVR
                           || source->mnemonic == ZYDIS_MNEMONIC_FDIVRP;
             if (source->mnemonic == ZYDIS_MNEMONIC_FDIVP
@@ -2564,8 +2564,8 @@ static void classify_machine_operation(
                 && out->operands[0].kind == PL_X86_OPERAND_MEMORY
                 && (out->operands[0].bits == 16u
                     || out->operands[0].bits == 32u)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FIDIVR;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 16u
@@ -2584,8 +2584,8 @@ static void classify_machine_operation(
                 && (out->operands[0].bits == 32u
                     || out->operands[0].bits == 64u)
                 && source->mnemonic == ZYDIS_MNEMONIC_FMUL) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 9u
                 | ((pl_u64)(out->operands[0].bits / 8u) << 8u)
@@ -2602,8 +2602,8 @@ static void classify_machine_operation(
                 && out->operands[1].value.reg.class_id
                    == PL_X86_REGISTER_X87
                 && out->operands[1].value.reg.index < 8u) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FMULP;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 9u | ((pl_u64)fop << 16u)

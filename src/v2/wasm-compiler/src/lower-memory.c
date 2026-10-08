@@ -169,6 +169,8 @@ static void exchange_value(cut_lowering *cut,pl_u32 width)
 
 int cut_memory_supported(const pl_x86_instruction *instruction)
 {
+    const pl_x86_operand *translation=pl_x86_translate_byte_memory(instruction);
+    if(translation)return cut_memory_address_supported(instruction,&translation->value.memory);
     if (cut_paired_exchange_supported(instruction)) return 1;
     int unary = unary_arithmetic(instruction->operation);
     int set = instruction->operation == PL_X86_OPERATION_CONDITIONAL_SET;
@@ -273,6 +275,17 @@ pl_u32 cut_memory_role(const pl_x86_memory *address)
 
 void cut_lower_memory(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
+    const pl_x86_operand *translation=pl_x86_translate_byte_memory(instruction);
+    if(translation){
+        pl_x86_operand base={.kind=PL_X86_OPERAND_REGISTER,.bits=instruction->address_width,
+            .value.reg={PL_X86_REGISTER_GPR,3u,instruction->address_width,0u}};
+        pl_x86_operand al={.kind=PL_X86_OPERAND_REGISTER,.bits=8u,.value.reg={PL_X86_REGISTER_GPR,0u,8u,0u}};
+        cut_read_operand(cut,&base,instruction->address_width);cut_read_operand(cut,&al,8u);cut_op(cut,0x7cu);
+        cut_mask(cut,instruction->address_width);cut_set(cut,CUT_ADDRESS);
+        cut->report.memory_bytes=1u;cut->report.memory_access=MACHINE_MEMORY_READ|cut_memory_role(&translation->value.memory);
+        cut_const(cut,0u);cut_set(cut,CUT_VALUE);cut_access(cut);cut_access_value(cut);cut_set(cut,CUT_VALUE);
+        cut_write_register(cut,&al.value.reg);return;
+    }
     if (cut_paired_exchange_supported(instruction)) { cut_lower_paired_exchange(cut,instruction); return; }
     const pl_x86_operand *operands = instruction->operands;
     int first = operands[0].kind == PL_X86_OPERAND_MEMORY;

@@ -93,10 +93,11 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
     case PL_X86_OPERATION_DECREMENT: return 0x8d4u;
     case PL_X86_OPERATION_SHIFT:
         if (!cut_shift_supported(instruction)) return 0u;
-        if (instruction->operands[1].kind == PL_X86_OPERAND_IMMEDIATE
-                && !(instruction->operands[1].value.immediate
-                     & (instruction->operands[0].bits == 64u ? 63u : 31u))) return 0u;
-        return instruction->condition<2u ? 0x801u : 0x8d5u;
+        if(instruction->operands[1].kind==PL_X86_OPERAND_IMMEDIATE){
+            pl_u64 count=instruction->operands[1].value.immediate&(instruction->operands[0].bits==64u?63u:31u);
+            if((instruction->condition==2u||instruction->condition==3u)&&instruction->operands[0].bits<32u)count%=instruction->operands[0].bits+1u;
+            if(!count)return 0u;}
+        return instruction->condition<4u ? 0x801u : 0x8d5u;
     case PL_X86_OPERATION_DOUBLE_SHIFT:
         if(!cut_double_shift_supported(instruction))return 0u;
         if(instruction->operands[2].kind==PL_X86_OPERAND_IMMEDIATE
@@ -104,8 +105,9 @@ pl_u32 cut_flag_write_mask(const pl_x86_instruction *instruction)
                 & (instruction->operands[0].bits==64u?63u:31u)))return 0u;
         return 0x8d5u;
     case PL_X86_OPERATION_FLAG_CONTROL:
-        return instruction->condition < 2u ? 1u
+        return instruction->condition < 3u ? 1u
             : instruction->condition == 3u || instruction->condition == 4u ? 0x400u : 0u;
+    case PL_X86_OPERATION_STORE_FLAGS_LOW: return 0xd5u;
     case PL_X86_OPERATION_BIT_TEST: return 1u;
     case PL_X86_OPERATION_BIT_SUMMARY:
         return instruction->condition<2u ? 0x40u : instruction->condition==4u ? 0x8d5u : 0u;
@@ -128,6 +130,9 @@ pl_u32 cut_flag_kill_mask(const pl_x86_instruction *instruction)
 pl_u32 cut_flag_read_mask(const pl_x86_instruction *instruction)
 {
     if(instruction->operation==PL_X86_OPERATION_STRING)return 0x400u;
+    if(instruction->operation==PL_X86_OPERATION_LOAD_FLAGS_LOW)return 0xd5u;
+    if(instruction->operation==PL_X86_OPERATION_FLAG_CONTROL&&instruction->condition==2u)return 1u;
+    if(instruction->operation==PL_X86_OPERATION_SHIFT&&(instruction->condition==2u||instruction->condition==3u))return 1u;
     pl_x86_count_branch count;
     if(pl_x86_count_branch_lower(instruction,&count))return count.zero_flag?0x40u:0u;
     static const pl_u32 condition_bits[] = { 0x800u,1u,0x40u,0x41u,0x80u,4u,0x880u,0x8c0u };
@@ -154,6 +159,8 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
                 | PL_X86_INSTRUCTION_PRIVILEGED | PL_X86_INSTRUCTION_TRAP_AFTER))
             || !canonical(instruction->rip) || !canonical(instruction->fallthrough)) return 0;
     if (instruction->operation == PL_X86_OPERATION_NOP) return 1;
+    if(instruction->operation==PL_X86_OPERATION_LOAD_FLAGS_LOW||instruction->operation==PL_X86_OPERATION_STORE_FLAGS_LOW)
+        return instruction->flow==PL_X86_FLOW_NEXT&&!count;
     if (instruction->operation == PL_X86_OPERATION_ACCUMULATOR_EXTEND
             || instruction->operation == PL_X86_OPERATION_HIGH_EXTEND)
         return instruction->flow == PL_X86_FLOW_NEXT && !count
@@ -161,7 +168,7 @@ int cut_instruction_supported(const pl_x86_instruction *instruction)
             && instruction->operand_width == (16u << instruction->condition);
     if (instruction->operation == PL_X86_OPERATION_FLAG_CONTROL)
         return instruction->flow == PL_X86_FLOW_NEXT && !count
-            && (instruction->condition < 2u || instruction->condition == 3u || instruction->condition == 4u);
+            && instruction->condition<5u;
     if (instruction->operation == PL_X86_OPERATION_BRANCH)
         return (instruction->flow == PL_X86_FLOW_JUMP
                 || (instruction->flow == PL_X86_FLOW_CONDITIONAL && instruction->condition < 16u))
@@ -386,6 +393,17 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
     const pl_x86_operand *operands = instruction->operands;
     pl_u32 operation = instruction->operation;
     if (operation == PL_X86_OPERATION_NOP) return;
+    if(operation==PL_X86_OPERATION_LOAD_FLAGS_LOW){
+        cut_get(cut,CUT_FLAGS);cut_const(cut,0xd5u);cut_op(cut,0x83u);cut_const(cut,2u);cut_op(cut,0x84u);cut_set(cut,CUT_VALUE);
+        pl_x86_register ah={.class_id=PL_X86_REGISTER_GPR,.index=0u,.bits=8u,.flags=PL_X86_REGISTER_HIGH8};
+        cut_write_register(cut,&ah);return;
+    }
+    if(operation==PL_X86_OPERATION_STORE_FLAGS_LOW){
+        if(!(cut->wanted_flags&0xd5u))return;
+        load_register(cut,0u);cut_get(cut,1u);cut_const(cut,8u);cut_op(cut,0x88u);cut_const(cut,0xd5u);cut_op(cut,0x83u);
+        cut_get(cut,CUT_FLAGS);cut_const(cut,~0xd5ull);cut_op(cut,0x83u);cut_op(cut,0x84u);cut_set(cut,CUT_FLAGS);
+        cut->report.flags_written=1u;return;
+    }
     if(operation==PL_X86_OPERATION_EXCHANGE_ADD || operation==PL_X86_OPERATION_COMPARE_EXCHANGE){
         cut_lower_register_update(cut,instruction);return;
     }
@@ -484,8 +502,10 @@ void cut_lower_instruction(cut_lowering *cut, const pl_x86_instruction *instruct
         return;
     }
     if (operation == PL_X86_OPERATION_FLAG_CONTROL) {
-        pl_u32 bit = instruction->condition < 2u ? 1u : 0x400u;
+        pl_u32 bit = instruction->condition < 3u ? 1u : 0x400u;
         if (!(cut->wanted_flags & bit)) return;
+        if(instruction->condition==2u){cut_get(cut,CUT_FLAGS);cut_const(cut,1u);cut_op(cut,0x85u);
+            cut_set(cut,CUT_FLAGS);cut->report.flags_written=1u;return;}
         cut_get(cut, CUT_FLAGS); cut_const(cut, ~(pl_u64)bit); cut_op(cut, 0x83u);
         if (instruction->condition == 1u || instruction->condition == 4u) {
             cut_const(cut, bit); cut_op(cut, 0x84u);

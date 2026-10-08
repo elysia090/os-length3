@@ -6,9 +6,10 @@
 /* Independent numeric reference only. Stack, deferred errors, noncanonical
  * values and unmasked publication remain in the full-state hardware gate. */
 static machine_state states[1536][2];
+static const char *record_prefix="x87-register";
 static int read_form(const char *dir,pl_u32 form,const char *suffix,void *data,size_t bytes)
 {
-    char path[4096];int n=snprintf(path,sizeof path,"%s/x87-register-%u.%s",dir,form,suffix);
+    char path[4096];int n=snprintf(path,sizeof path,"%s/%s-%u.%s",dir,record_prefix,form,suffix);
     if(n<1||(size_t)n>=sizeof path)return 1;
     FILE *file=fopen(path,"rb");if(!file)return 1;
     int bad=fread(data,1u,bytes,file)!=bytes;if(!bad&&fgetc(file)!=EOF)bad=1;if(fclose(file))bad=1;return bad;
@@ -23,8 +24,8 @@ static int finite(void)
 {
     const pl_u8 rounding[]={softfloat_round_near_even,softfloat_round_min,softfloat_round_max,softfloat_round_minMag},precision[]={0u,2u,3u};
     pl_u32 count=0u;pl_u64 seed=0x13579bdf2468ace1ull;
-    for(pl_u32 op=0u;op<3u;++op){_Alignas(8) pl_u8 scratch[131072];pl_arena arena={scratch,sizeof scratch,0u};pl_plan plan;
-        if(pl_x86_x87_register_arithmetic_plan(op==0u?0u:op==1u?2u:3u,&arena,&plan))return 1;
+    for(pl_u32 op=0u;op<6u;++op){_Alignas(8) pl_u8 scratch[131072];pl_arena arena={scratch,sizeof scratch,0u};pl_plan plan;
+        if(pl_x86_x87_register_arithmetic_plan(op,&arena,&plan))return 1;
         for(pl_u32 n=0u;n<80000u;++n){pl_u32 pc=precision[n%3u],rc=(n/3u)&3u;
             pl_u32 ea=(pl_u32)(sample(&seed)%32767u),eb=(pl_u32)(sample(&seed)%32767u);
             if(n&3u){pl_u32 distance=(pl_u32)(sample(&seed)%130u);eb=ea>distance?ea-distance:0u;}
@@ -40,10 +41,11 @@ static int finite(void)
             extFloat80_t x={.signif=a,.signExp=sa},y={.signif=b,.signExp=sb};
             extF80_roundingPrecision=pc==0u?32u:pc==2u?64u:80u;softfloat_roundingMode=rounding[rc];
             softfloat_detectTininess=softfloat_tininess_afterRounding;softfloat_exceptionFlags=0u;
-            extFloat80_t expected=op==0u?extF80_add(x,y):op==1u?extF80_sub(x,y):extF80_sub(y,x);
-            pl_u32 flags=((softfloat_exceptionFlags&softfloat_flag_overflow)?8u:0u)
+            extFloat80_t expected=op==0u?extF80_add(x,y):op==1u?extF80_mul(x,y):op==2u?extF80_sub(x,y):op==3u?extF80_sub(y,x):op==4u?extF80_div(x,y):extF80_div(y,x);
+            pl_u32 flags=((softfloat_exceptionFlags&softfloat_flag_invalid)?1u:0u)|((softfloat_exceptionFlags&softfloat_flag_infinite)?4u:0u)
+                |((softfloat_exceptionFlags&softfloat_flag_overflow)?8u:0u)
                 |((softfloat_exceptionFlags&softfloat_flag_underflow)?16u:0u)|((softfloat_exceptionFlags&softfloat_flag_inexact)?32u:0u);
-            if(out[0]!=expected.signif||out[1]!=expected.signExp||(out[2]&56u)!=flags||(out[2]&(1u<<16u))){
+            if(out[0]!=expected.signif||out[1]!=expected.signExp||(out[2]&61u)!=flags||(out[2]&(1u<<16u))){
                 fprintf(stderr,"finite register SSA differs %u/%u PC=%u RC=%u\n",op,n,pc,rc);return 1;}
             ++count;
         }
@@ -53,18 +55,22 @@ static int finite(void)
 int main(int argc,char **argv)
 {
     if(argc==2&&!strcmp(argv[1],"--finite"))return finite();
-    int ssa=argc==3&&!strcmp(argv[2],"--ssa");
-    if(argc!=2&&!ssa)return 2;
+    int ssa=0,divide=0,multiply=0;
+    if(argc<2||argc>4)return 2;
+    for(int n=2;n<argc;++n){if(!strcmp(argv[n],"--ssa"))ssa=1;else if(!strcmp(argv[n],"--divide"))divide=1;else if(!strcmp(argv[n],"--multiply"))multiply=1;else return 2;}
+    if(divide&&multiply)return 2;
+    if(divide)record_prefix="x87-register-divide";
+    if(multiply)record_prefix="x87-register-multiply";
     const pl_u8 rounding[]={softfloat_round_near_even,softfloat_round_min,softfloat_round_max,softfloat_round_minMag};
     pl_u32 compared=0u,outside=0u,ssa_rows=0u,max_work=0u,max_span=0u,max_arena=0u;
-    for(pl_u32 form=0u;form<81u;++form){pl_u8 code[2];pl_u32 rows=form<72u?400u:1536u;
+    for(pl_u32 form=0u;form<(multiply?27u:divide?54u:81u);++form){pl_u8 code[2];pl_u32 rows=form<(multiply?24u:divide?48u:72u)?400u:1536u;
         if(read_form(argv[1],form,"source",code,sizeof code)||read_form(argv[1],form,"cases",states,(size_t)rows*sizeof states[0]))return 2;
         pl_u32 index=code[1]&7u,group=(code[1]>>3u)&7u,other_destination=code[0]!=0xd8u;
         if((code[0]!=0xd8u&&code[0]!=0xdcu&&code[0]!=0xdeu)||(code[1]&0xc0u)!=0xc0u
-            ||(group!=0u&&group!=4u&&group!=5u))return 2;
-        int reverse=other_destination?group==4u:group==5u;
+            ||(multiply?group!=1u:divide?(group!=6u&&group!=7u):(group!=0u&&group!=4u&&group!=5u)))return 2;
+        int reverse=other_destination?group==(divide?6u:4u):group==(divide?7u:5u);
         _Alignas(8) pl_u8 scratch[131072];pl_arena arena={scratch,sizeof scratch,0u};pl_plan plan;
-        if(ssa){int status=pl_x86_x87_register_arithmetic_plan(group==0u?0u:reverse?3u:2u,&arena,&plan);
+        if(ssa){int status=pl_x86_x87_register_arithmetic_plan(multiply?1u:divide?(reverse?5u:4u):group==0u?0u:reverse?3u:2u,&arena,&plan);
             if(status){fprintf(stderr,"register SSA construction %u: %d, arena %u\n",form,status,arena.used);return 1;}
             if(plan.node_count>max_work)max_work=plan.node_count;
             if(plan.span>max_span)max_span=plan.span;
@@ -89,13 +95,14 @@ int main(int argc,char **argv)
             extF80_roundingPrecision=pc==0u?32u:pc==2u?64u:80u;
             softfloat_roundingMode=rounding[(before->x87_control>>10u)&3u];
             softfloat_detectTininess=softfloat_tininess_afterRounding;softfloat_exceptionFlags=0u;
-            extFloat80_t result=group==0u?extF80_add(a,b):reverse?extF80_sub(b,a):extF80_sub(a,b);
+            extFloat80_t result=multiply?extF80_mul(a,b):divide?(reverse?extF80_div(b,a):extF80_div(a,b)):group==0u?extF80_add(a,b):reverse?extF80_sub(b,a):extF80_sub(a,b);
             pl_u32 flags=((softfloat_exceptionFlags&softfloat_flag_invalid)?1u:0u)
+                |((softfloat_exceptionFlags&softfloat_flag_infinite)?4u:0u)
                 |((softfloat_exceptionFlags&softfloat_flag_overflow)?8u:0u)
                 |((softfloat_exceptionFlags&softfloat_flag_underflow)?16u:0u)
                 |((softfloat_exceptionFlags&softfloat_flag_inexact)?32u:0u);
             if(result.signif!=after->x87_significand[dst]||result.signExp!=after->x87_sign_exponent[dst]
-                ||flags!=(after->x87_status&0x39u)){
+                ||flags!=((after->x87_status&0x3du)&~((after->x87_status&0x40u)?1u:0u))){
                 fprintf(stderr,"register reference differs %u/%u (%02x%02x): expected %016llx/%04x/%02x, native %016llx/%04x/%02x\n",
                     form,row,code[0],code[1],(unsigned long long)result.signif,result.signExp,flags,
                     (unsigned long long)after->x87_significand[dst],after->x87_sign_exponent[dst],after->x87_status&0x39u);return 1;}

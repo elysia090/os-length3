@@ -7,15 +7,16 @@ int main(int argc,char **argv)
 {
     if(argc>2)return 2;
     const pl_u8 prefixes[]={0u,0x66u,0x67u,0x48u,0xf2u,0xf3u,0x64u,0x65u};pl_u32 forms=0u,refusals=0u;
-    for(pl_u32 p=0u;p<8u;++p)for(pl_u32 encoding=0u;encoding<3u;++encoding)for(pl_u32 op=0u;op<3u;++op)for(pl_u32 reg=0u;reg<8u;++reg){
+    for(pl_u32 p=0u;p<8u;++p)for(pl_u32 encoding=0u;encoding<3u;++encoding)for(pl_u32 op=0u;op<6u;++op)for(pl_u32 reg=0u;reg<8u;++reg){
         pl_u32 n=0u;memset(page,0x90,sizeof page);if(prefixes[p])page[n++]=prefixes[p];
         pl_u8 primary=(pl_u8)(encoding==0u?0xd8u:encoding==1u?0xdcu:0xdeu);
-        pl_u8 second=(pl_u8)((op==0u?0xc0u:op==1u?(encoding?0xe8u:0xe0u):(encoding?0xe0u:0xe8u))|reg);
+        pl_u8 second=(pl_u8)((op==5u?0xc8u:op==0u?0xc0u:op==1u?(encoding?0xe8u:0xe0u):op==2u?(encoding?0xe0u:0xe8u)
+            :op==3u?(encoding?0xf8u:0xf0u):(encoding?0xf0u:0xf8u))|reg);
         page[n++]=primary;page[n++]=second;
         pl_x86_map map={page,0x400000u,sizeof page,sizeof page,PL_ELF_FLAG_EXECUTE,9u};pl_x86_image image={&map,1u,0u,map.address};
         pl_x86_instruction i;pl_x86_x87_register_arithmetic law;
         if(pl_x86_decode_profile(&image,map.address,&i)||!pl_x86_x87_register_arithmetic_lower(&i,&law)
-            ||law.operation!=(op==0u?0u:op==1u?2u:3u)||law.pop!=(encoding==2u)
+            ||law.operation!=(op==5u?1u:op==0u?0u:op==1u?2u:op==2u?3u:op+1u)||law.pop!=(encoding==2u)
             ||law.destination!=(encoding?reg:0u)||law.source!=(encoding?0u:reg)
             ||law.opcode!=(((primary&7u)<<8u)|second))return 1;
         wasm_cut_options options={map.address,1u,sizeof module};wasm_cut_report report;pl_u64 bytes=0u;

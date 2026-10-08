@@ -101,6 +101,30 @@ _start:
 #elif SHIFT_CASE == 26
     ror %cl,%rax
     adc %rcx,%rax
+#elif SHIFT_CASE == 27
+    add %rdx,%rax
+    rcl %cl,%ax
+#elif SHIFT_CASE == 28
+    xor %rdx,%rax
+    rcr %cl,%rax
+#elif SHIFT_CASE == 29
+    rcl %cl,%cl
+    mov %rcx,%rax
+#elif SHIFT_CASE == 30
+    rcr %cl,%ch
+    mov %rcx,%rax
+#elif SHIFT_CASE == 31
+    rcl $9,%ah
+    setc %dl
+#elif SHIFT_CASE == 32
+    rcr $17,%ax
+    setc %dl
+#elif SHIFT_CASE == 33
+    rcl %cl,%rax
+    adc %rdx,%rax
+#elif SHIFT_CASE == 34
+    rcr %cl,%rax
+    adc %rdx,%rax
 #else
 #error unknown shift fixture
 #endif

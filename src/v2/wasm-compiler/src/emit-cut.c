@@ -177,7 +177,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->report.memory_bytes=2u;
                 else if (!system) {
                     int store = instruction.operands[0].kind == PL_X86_OPERAND_MEMORY;
-                    plan->report.memory_bytes = stack || string ? instruction.operand_width / 8u
+                    plan->report.memory_bytes = instruction.operation==PL_X86_OPERATION_TRANSLATE_BYTE?1u:stack || string ? instruction.operand_width / 8u
                         : instruction.operands[store ? 0u : 1u].bits / 8u;
                 }
                 if (stack && (instruction.operation == PL_X86_OPERATION_CALL
@@ -284,6 +284,11 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->system_cut==CUT_SYSTEM_X87_INTEGER)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC)locals=CUT_X87_ARITHMETIC_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_STATUS_COMPARE)locals=CUT_X87_STATUS_LOCALS;
+    if(plan->report.boundary_operation==PL_X86_OPERATION_DIVIDE_UNSIGNED||plan->report.boundary_operation==PL_X86_OPERATION_DIVIDE_SIGNED){
+        pl_x86_instruction division;
+        if(pl_x86_decode_profile(&plan->image,rip,&division))return WASM_COMPILER_ERROR_GRAMMAR;
+        if(division.operand_width==64u)locals=192u;
+    }
     cut.vector_local = locals + 4u; /* Four typed bindings precede locals. */
     wasm_writer_uleb(writer, permutation_local?2u:1u);
     wasm_writer_uleb(writer, locals);

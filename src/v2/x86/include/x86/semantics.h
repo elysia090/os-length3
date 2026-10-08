@@ -104,11 +104,20 @@ int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x
 /* Integer-memory add/subtract. Inputs: ST0 significand/sign-exponent,
  * signed operand, control word, empty predicate. Outputs: significand,
  * sign-exponent, outcome (new exception bits, C1, suppress bit16, tag18..19).
- * Operation is 0 add, 2 subtract, 3 reverse subtract. No state effects. */
+ * Descriptor operations: 0 add, 2 subtract, 3 reverse subtract,
+ * 4 divide, 5 reverse divide. No state effects. */
 #define PL_X86_X87_ARITHMETIC_MAX_NODES 512u
 int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 bytes,operation;pl_u16 opcode;} pl_x86_x87_integer_arithmetic;
 int pl_x86_x87_integer_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
+/* Binary32/64 memory operands share the exact extended arithmetic core.
+ * Source denormal classification survives the widening conversion. */
+int pl_x86_x87_memory_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
+int pl_x86_x87_memory_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
+/* Total unsigned 128/64 quotient. Inputs H,L,D in locals 0..2; outputs
+ * quotient,remainder,#DE predicate. Invalid operands publish zero payloads.
+ * Fixed radix-2^32 corrections, not a bit-serial runtime loop. */
+int pl_x86_unsigned_divide_plan(pl_arena *arena,pl_plan *out);
 /* Raw extended operands: A significand/sign-exponent, B fields, CW, empty.
  * Results are significand, sign-exponent and exception/tag/publication word. */
 int pl_x86_x87_register_arithmetic_plan(pl_u32 operation,pl_arena *arena,pl_plan *out);
@@ -132,6 +141,9 @@ int pl_x86_enter_step(const pl_x86_enter *enter,pl_u32 rank,pl_x86_enter_step_in
 typedef struct {pl_u8 bytes,write,repeated,address_bits,segment,index;} pl_x86_string_io;
 int pl_x86_string_io_lower(const pl_x86_instruction *instruction,pl_x86_string_io *out);
 const pl_x86_operand *pl_x86_string_io_memory(const pl_x86_instruction *instruction);
+/* XLAT's only memory coordinate is RBX/EBX + unsigned AL, then segment
+ * translation. Neither REX.B nor operand-size changes that base or result. */
+const pl_x86_operand *pl_x86_translate_byte_memory(const pl_x86_instruction *instruction);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

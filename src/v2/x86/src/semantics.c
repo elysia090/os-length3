@@ -2906,6 +2906,7 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->operation==PL_X86_OPERATION_TRANSLATE_BYTE&&!pl_x86_translate_byte_memory(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT
         &&((instruction->flags&PL_X86_INSTRUCTION_TRAP_AFTER)||instruction->opcode==0xf1u||instruction->opcode==0xccu)){
         pl_x86_software_trap law;if(!pl_x86_software_trap_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
@@ -2913,12 +2914,17 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         pl_x86_string_io law;if(!pl_x86_string_io_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==1u){
         pl_x86_x87_integer_load law;if(!pl_x86_x87_integer_load_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
-    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==12u){
+    if(instruction->machine_operation==PL_X86_MACHINE_X87
+        &&((instruction->machine_argument&255u)==12u||(instruction->machine_argument&255u)==16u||(instruction->machine_argument&255u)==7u)){
         pl_x86_x87_integer_arithmetic law;if(!pl_x86_x87_integer_arithmetic_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87
         &&(instruction->visible_operand_count!=1u||((instruction->machine_argument>>16u)&0xc0u)==0xc0u)
-        &&((instruction->machine_argument&255u)==8u||(instruction->machine_argument&255u)==13u)){
+        &&((instruction->machine_argument&255u)==8u||(instruction->machine_argument&255u)==9u||(instruction->machine_argument&255u)==13u||(instruction->machine_argument&255u)==15u)){
         pl_x86_x87_register_arithmetic law;if(!pl_x86_x87_register_arithmetic_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&instruction->visible_operand_count==1u
+        &&instruction->operands[0].kind==PL_X86_OPERAND_MEMORY
+        &&((instruction->machine_argument&255u)==8u||(instruction->machine_argument&255u)==9u||(instruction->machine_argument&255u)==13u||(instruction->machine_argument&255u)==15u)){
+        pl_x86_x87_integer_arithmetic law;if(!pl_x86_x87_memory_arithmetic_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==11u){
         pl_x86_x87_status_compare law;if(!pl_x86_x87_status_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87

@@ -48,6 +48,10 @@ static inline pl_operand leading_zeros(expression *e,pl_operand a)
     return binary(e,96u,constant(63u),index);
 }
 typedef struct {pl_operand sig,se,zero;} integer_expression;
+typedef struct {pl_operand sig,se,classes;} ieee_expression;
+ieee_expression ieee_value(expression *e,pl_u32 bits,pl_operand input);
+typedef struct {pl_operand quotient,remainder,invalid;} quotient_expression;
+quotient_expression unsigned_divide_value(expression *e,pl_operand high,pl_operand low,pl_operand divisor);
 typedef struct {pl_operand relation,raised,empty;} relation_expression;
 relation_expression x87_relation(expression *e,pl_u32 ordered,pl_operand a,pl_operand sa,
     pl_operand b,pl_operand sb,pl_operand empty,pl_operand source_denormal);

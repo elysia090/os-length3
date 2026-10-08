@@ -90,7 +90,7 @@ function compare(cut,wanted,label,dispatch=false) {
   if(dispatch){assert.equal(vm.vm_completed(),wanted.result===1n?1:0);assert.equal(vm.vm_source_retired(),wanted.result===1n?1n:0n);}
 }
 try {
-  for(let form=0;form<340;++form) {
+for(let form=0;form<476;++form) {
     const prefix=path.join(directory,`memory-shift-${form}`),source=await readFile(`${prefix}.source-page`);
     const meta=JSON.parse(await readFile(`${prefix}.json`)),emitted=await readFile(`${prefix}.wasm`);
     const native=await readFile(`${prefix}.cases`);assert.equal(native.length,512*stride);

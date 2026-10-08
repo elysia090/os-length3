@@ -230,15 +230,16 @@ int main(int argc, char **argv)
             && !report.memory_bytes && report.written_registers==1u
             && report.flags_written==(edge==5u || !!(count&(width==64u ? 63u : 31u))));
     }
-    /* Through-carry forms remain unsupported for both register and memory;
-     * their shared operation tag must not admit them as ordinary rotates. */
+    /* Through-carry forms close both locations through the same word/carry
+     * equations; memory retains its separate precise transaction boundary. */
     for (pl_u32 kind=0u;kind<4u;++kind) {
         memset(pages,0x90,sizeof pages);
         pages[0]=0x66u; pages[1]=0xc1u;
         pages[2]=(pl_u8)((kind<2u ? 0xc0u : 0x07u)|((2u+(kind&1u))<<3u));
         pages[3]=8u;
-        EXPECT(wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report)
-            ==WASM_COMPILER_ERROR_GRAMMAR);
+        EXPECT(!wasm_compiler_emit_code_cut(&source,9u,&options,output,sizeof output,&bytes,&report));
+        EXPECT(report.source_bytes==4u&&report.source_instructions==1u&&report.flags_written
+            &&report.memory_bytes==(kind<2u?0u:2u));
     }
     for (pl_u32 kind=0u;kind<5u;++kind)
     for (pl_u32 width=16u;width<=64u;width*=2u) {

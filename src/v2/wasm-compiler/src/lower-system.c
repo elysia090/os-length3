@@ -38,6 +38,8 @@ int cut_system_supported(const pl_x86_instruction *instruction)
         &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_ARITHMETIC;
     pl_x86_x87_register_arithmetic register_arithmetic;
     if(pl_x86_x87_register_arithmetic_lower(instruction,&register_arithmetic))return CUT_SYSTEM_X87_ARITHMETIC;
+    if(pl_x86_x87_memory_arithmetic_lower(instruction,&arithmetic)
+        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_ARITHMETIC;
     if(pl_x86_x87_snapshot_lower(instruction,&fpu)
         && (!fpu.memory || cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))
         return CUT_SYSTEM_X87_SNAPSHOT;
@@ -431,7 +433,8 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(pl_x86_x87_integer_load_lower(instruction,&integer)){cut_lower_x87_integer(cut,instruction);return;}
     pl_x86_x87_integer_arithmetic arithmetic;
     pl_x86_x87_register_arithmetic register_arithmetic;
-    if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)||pl_x86_x87_register_arithmetic_lower(instruction,&register_arithmetic)){
+    if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)||pl_x86_x87_register_arithmetic_lower(instruction,&register_arithmetic)
+        ||pl_x86_x87_memory_arithmetic_lower(instruction,&arithmetic)){
         cut_lower_x87_arithmetic(cut,instruction);return;}
     if (instruction->machine_operation==PL_X86_MACHINE_X87
             && (instruction->machine_argument==PL_X86_X87_INITIALIZE||instruction->machine_argument==PL_X86_X87_CLEAR_EXCEPTIONS)) {

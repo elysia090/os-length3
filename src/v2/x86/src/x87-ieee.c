@@ -1,9 +1,8 @@
 #include <x86/semantics.h>
 #include "x87-expression.h"
-typedef struct {pl_operand sig,se,classes;} ieee_expression;
 /* Raw binary interchange -> exact extended fields. NaN signaling/payload
  * and source denormal class survive; consuming operations own exceptions. */
-static ieee_expression ieee_value(expression *e,pl_u32 bits,pl_operand x)
+ieee_expression ieee_value(expression *e,pl_u32 bits,pl_operand x)
 {
     pl_u32 fraction_bits=bits==32u?23u:52u,bias=bits==32u?127u:1023u;
     pl_u64 exponent_mask=bits==32u?255u:2047u,fraction_mask=(1ull<<fraction_bits)-1u;
