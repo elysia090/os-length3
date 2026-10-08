@@ -6,9 +6,9 @@ and builds their independent references under Windows `temp/float-oracle`.
 `float-source.json` records provenance and limitations: these libraries are
 never product runtime/fallbacks. `check-x87-integer.c` compares common integer
 SSA with that reference; its caller must use the same FAST_INT64/LITTLEENDIAN
-interface layout as the library. `check-x87-integer-memory.mjs` independently compares
+interface layout as the library. `check-x87-state.mjs` independently compares
 FILD C-Wasm/C-MMU execution with physical Windows FPU/RFLAGS observations;
-`check-x87-integer-fault.mjs` covers separate fault-priority models. See
+`check-x87-fault.mjs` covers separate fault-priority models. See
 [derivation, measured coverage and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-integer.md).
 
 Its `--arithmetic` mode is the strict full-state gate for
@@ -21,6 +21,16 @@ mode independently tests common numeric/outcome SSA against all hardware rows.
 `check-x87-finite.c` adds 240,000 canonical finite/precision/rounding samples
 against the pinned reference. Fault-model `--arithmetic` mode uses the SAME
 driver as FILD. See [closed numeric/state path and limits](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-arithmetic.md).
+
+`--status` covers FCOM/FUCOM, memory/integer comparisons, two-pop and FTST.
+`check-x87-ieee.c` tests exact raw IEEE32/64 -> extended fields against official
+SoftFloat, retaining source denormal and signaling classes explicitly.
+`check-x87-status.c` compares the SAME relation SSA with independent hardware
+records; the state driver checks complete C-MMU/table execution. See
+[derivation, full-state gates and actual-browser scope](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-status.md).
+Browser image staging now preflights every candidate through the shared C
+admission/execution check before copying any assets; an older authenticated
+directory lacking source-admission metadata is refused, not silently staged.
 
 `check-absent-io.mjs VM.WASM COMPILER.WASM` checks the fixed platform's eight
 absent ISA-DMA page ports and three absent legacy UART ranges through actual

@@ -119,7 +119,7 @@ This is NOT support for arithmetic execution. Full x86/compiler/postlink
 checks are warning-free; the test does not override the existing make check
 recipe. Unknown arithmetic still refuses -102.
 
-ONE `check-x87-integer-memory.mjs` C-MMU/table driver now serves FILD and this
+ONE C-MMU/table driver (now generalized as `check-x87-state.mjs`) serves FILD and this
 arithmetic gate; the old FILD-only script is removed. FILD's 12,288 complete
 comparisons and 18 native/cold byte forms remain green with the latest compiler.
 Cold compiler is 504,728 bytes / SHA-256
@@ -133,7 +133,7 @@ make -C src/v2/x86 x87-integer-arithmetic-check
 powershell -File data/oracle/prepare-float.ps1 -Arithmetic
 observe-arithmetic NEW-HARDWARE-DIRECTORY
 arithmetic-oracle NEW-HARDWARE-DIRECTORY
-node data/oracle/check-x87-integer-memory.mjs VM.wasm COLD.wasm NEW-HARDWARE-DIRECTORY --arithmetic
+node data/oracle/check-x87-state.mjs VM.wasm COLD.wasm NEW-HARDWARE-DIRECTORY --arithmetic
 ```
 
 Build the Windows observer with support/machine include paths and normal GCC

@@ -2321,8 +2321,9 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_FCOMPP:
     case ZYDIS_MNEMONIC_FUCOMPP:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u) | source->raw.modrm.rm;
             pl_u32 quiet = source->mnemonic == ZYDIS_MNEMONIC_FUCOMPP;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 11u | ((pl_u64)fop << 16u)
@@ -2335,8 +2336,9 @@ static void classify_machine_operation(
         break;
     case ZYDIS_MNEMONIC_FTST:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u) | source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 11u | ((pl_u64)fop << 16u)
                 | (1ull << 44u);
@@ -2732,8 +2734,9 @@ static void classify_machine_operation(
                     || out->operands[0].bits == 64u)
                 && (source->mnemonic == ZYDIS_MNEMONIC_FCOM
                     || source->mnemonic == ZYDIS_MNEMONIC_FCOMP)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u) | source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FCOMP;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 11u
@@ -2757,8 +2760,9 @@ static void classify_machine_operation(
             if (!other || other->kind != PL_X86_OPERAND_REGISTER
                     || other->value.reg.class_id != PL_X86_REGISTER_X87
                     || other->value.reg.index >= 8u) break;
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u) | source->raw.modrm.rm;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FCOMP
                           || source->mnemonic == ZYDIS_MNEMONIC_FUCOMP;
             if (source->mnemonic == ZYDIS_MNEMONIC_FUCOM
@@ -2779,8 +2783,9 @@ static void classify_machine_operation(
                 && out->operands[0].kind == PL_X86_OPERAND_MEMORY
                 && (out->operands[0].bits == 16u
                     || out->operands[0].bits == 32u)) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                       | ((pl_u32)source->raw.modrm.mod << 6u)
+                       | ((pl_u32)source->raw.modrm.reg << 3u) | source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             pl_u32 options = source->mnemonic == ZYDIS_MNEMONIC_FICOMP
                            ? 5u : 4u;

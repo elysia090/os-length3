@@ -49,6 +49,13 @@ SOURCES += src/lower-x87-snapshot.c
 SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-integer.c
 SOURCES += src/lower-x87-arithmetic.c
+SOURCES += src/lower-x87-status.c
+.PHONY: x87-status-check
+check: x87-status-check
+x87-status-check: $(BUILD)/x87-status-check
+	$(BUILD)/x87-status-check
+$(BUILD)/x87-status-check: check/x87-status.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: x87-arithmetic-check
 check: x87-arithmetic-check
 x87-arithmetic-check: $(BUILD)/x87-arithmetic-check
@@ -106,6 +113,14 @@ $(BUILD)/count-branch-check: check/count-branch.c check/native-cut.S $(BUILD)/li
 .PHONY: cut-module-check
 .PHONY: source-module-check
 .PHONY: image-path-check
+.PHONY: image-fpu-check
+check: image-fpu-check
+image-fpu-check: all fixture-tools
+	@set -eu; scratch=$$(mktemp -d); trap 'rm -rf "$$scratch"' EXIT; \
+	$(CC) -nostdlib -no-pie -Wl,--build-id=none,--emit-relocs check/image-fpu.S -o "$$scratch/linked.elf"; \
+	../postlink-compiler/build/postlink-compiler "$$scratch/linked.elf" -o "$$scratch/optimized.elf"; \
+	../optimized-x86/build/postlink-verify "$$scratch/linked.elf" "$$scratch/optimized.elf"; \
+	$(BUILD)/wasm-compiler --directory "$$scratch/optimized.elf" "$$scratch/directory"
 .PHONY: image-stream-check
 check: image-stream-check
 image-stream-check: $(BUILD)/image-stream-check fixture-tools

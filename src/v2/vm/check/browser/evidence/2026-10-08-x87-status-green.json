@@ -1,0 +1,41 @@
+{
+  "format": "shared-x87-status-comparison-checkpoint-v1",
+  "status": "progress",
+  "baseline": "33e64b6",
+  "nativePublication": "1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195",
+  "nativeBundleSha256": "4438d58897f8795a69b77d46fcfd45259717c739f9a0419fd7c1541d089c77cc",
+  "compiler": {"bytes": 585373, "sha256": "6b663a10b314f4b6a185996af6b2294c1665e02150dd8a94ee967dbce433c912", "growthBytes": 23185},
+  "vm": {"bytes": 95012, "sha256": "92d917f30526f46b00554202de16fcfc0f5eae5f0af537ebc554bfc74b01be5c", "changed": false},
+  "projection": {"ieeeReferenceSamples": 200000, "maxAbstractNodes": 33, "maxAbstractSpan": 8, "sourceDenormalAndSignalingRetained": true},
+  "relation": {"hardwareComparisons": 44032, "maxAbstractNodes": 99, "maxAbstractSpan": 22, "sharedWithEflags": true, "minimumProved": false},
+  "execution": {
+    "nativeHardwareStateComparisons": 44032, "forms": 172, "modules": 43,
+    "pendingUnmasked": 12886, "popsWhilePending": 0, "c1Retained": 0,
+    "ccChangedWhilePending": 11126,
+    "scope": "local physical Windows FPU/RFLAGS; GPR invariance architectural; not universal undefined-bit certification",
+    "nativeColdByteForms": 344, "malformedLaws": 4128,
+    "faultModels": 1440, "successControls": 96,
+    "newMathCallback": false, "f64Conversion": false, "runtimeIsaInterpreter": false
+  },
+  "actualMake": {
+    "coordinates": 233455, "lowerable": 227173,
+    "missingBefore": 6404, "missingAfter": 6282, "recovered": 122,
+    "remainingStatusFamilyAliases": 4,
+    "firstAddress": "0xa0fc", "firstSource": "c84989d6", "firstOperation": "ENTER", "firstStatus": -102,
+    "directoryCreated": false, "rootPublished": false
+  },
+  "browser": {
+    "observed": true, "status": "pass", "linuxBoot": "not-tested",
+    "totalComparisons": 1287, "totalRefusals": 41,
+    "fpuCoordinates": 39, "fpuComparisons": 117, "executionCompilerCalls": 0,
+    "fpuDirectoryBytes": 23776, "fpuDirectoryObjects": 3,
+    "fixture": "ordinary linked/postlinked/verified ELF and local trusted root; not signed Linux release",
+    "staleDirectoryPreflight": "refused -153 before staged manifest changed",
+    "permissionOrSandboxOverride": false
+  },
+  "regressions": {"x86": "pass", "compiler": "pass", "postlinkCompiler": "pass", "positiveASanUBSan": "pass", "warnings": 0},
+  "retainedHardwareRegressions": {"fild": 12288, "integerArithmetic": 36864, "eflagsComparison": 16384},
+  "sameBundleShortNode": {"witnessInstructions": 86, "retired": 1617931, "admissions": 1000000, "stop": "quota", "linuxBoot": "not-achieved"},
+  "signedRootPublished": false, "linuxBoot": "not-achieved", "nativePublicationOrHumanUiChanged": false,
+  "executionSpeedup": "not-measured", "rssReclamation": "not-measured"
+}

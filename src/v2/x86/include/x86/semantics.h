@@ -106,6 +106,14 @@ int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x
 int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 bytes,operation;pl_u16 opcode;} pl_x86_x87_integer_arithmetic;
 int pl_x86_x87_integer_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
+/* Exact raw IEEE32/64 -> extended fields. Output class bits are source
+ * denormal(0), signaling NaN(1), zero(2). No quieting/rounding/state effect. */
+int pl_x86_x87_ieee_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
+#define PL_X86_X87_MEMORY_RELATION_MAX_NODES 192u
+int pl_x86_x87_memory_relation_plan(pl_u32 bits,pl_u32 integer,pl_arena *arena,pl_plan *out);
+int pl_x86_x87_zero_relation_plan(pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 memory,integer,bytes,source,ordered,pop,zero;pl_u16 opcode;} pl_x86_x87_status_compare;
+int pl_x86_x87_status_compare_lower(const pl_x86_instruction *instruction,pl_x86_x87_status_compare *out);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

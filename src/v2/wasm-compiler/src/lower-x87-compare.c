@@ -49,19 +49,31 @@ void cut_lower_x87_compare(cut_lowering *c,const pl_x86_instruction *i)
     cut_op(c,0x72u);cut_op(c,0xadu);cut_set(c,FP_EMPTY);
     const pl_u32 inputs[]={FP_A,FP_SA,FP_B,FP_SB,FP_EMPTY},outputs[]={FP_REL,FP_RAISED,FP_EMPTY};
     cut_emit_scalar_plan(c,&pure,inputs,FP_FIRST,outputs);
-    cut_get(c,FP_RAISED);cut_get(c,FP_CW);cut_const(c,~0ull);cut_op(c,0x85u);cut_op(c,0x83u);cut_const(c,63u);cut_op(c,0x83u);
-    cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0xadu);cut_set(c,FP_UNMASKED);
-    cut_get(c,FP_SW);cut_const(c,~0x200ull);cut_op(c,0x83u);cut_get(c,FP_SW);cut_get(c,FP_EMPTY);cut_op(c,0xa7u);cut_op(c,0x1bu);cut_set(c,FP_SW);
-    cut_get(c,FP_SW);cut_get(c,FP_RAISED);cut_op(c,0x84u);cut_set(c,FP_SW);
-    cut_get(c,FP_UNMASKED);cut_op(c,0xa7u);cut_op(c,0x04u);cut_op(c,0x40u);
-    cut_get(c,FP_SW);cut_const(c,0x8080u);cut_op(c,0x84u);cut_set(c,FP_SW);
-    cut_const(c,law.opcode);cut_set(c,CUT_VALUE);store16(c,offsetof(machine_state,x87_opcode),CUT_VALUE);cut_op(c,0x0bu);
-    if(law.pop){cut_get(c,FP_UNMASKED);cut_op(c,0x50u);cut_op(c,0x04u);cut_op(c,0x40u);
-        cut_get(c,FP_TAG);cut_const(c,3u);cut_get(c,FP_TOP);cut_const(c,1u);cut_op(c,0x86u);cut_op(c,0x86u);cut_op(c,0x84u);cut_set(c,FP_TAG);
-        store16(c,offsetof(machine_state,x87_tag),FP_TAG);
-        cut_get(c,FP_SW);cut_const(c,~0x3800ull);cut_op(c,0x83u);cut_get(c,FP_TOP);cut_const(c,1u);cut_op(c,0x7cu);cut_const(c,7u);cut_op(c,0x83u);
-        cut_const(c,11u);cut_op(c,0x86u);cut_op(c,0x84u);cut_set(c,FP_SW);cut_op(c,0x0bu);}
-    store16(c,offsetof(machine_state,x87_status),FP_SW);
+    const cut_x87_comparison view={FP_TOP,FP_TAG,FP_SW,FP_CW,FP_REL,FP_RAISED,FP_EMPTY,FP_UNMASKED,law.opcode,law.pop,0u,0u};
+    cut_publish_x87_comparison(c,i,&view);
+}
+void cut_publish_x87_comparison(cut_lowering *c,const pl_x86_instruction *i,const cut_x87_comparison *p)
+{
+    cut_get(c,p->raised);cut_get(c,p->cw);cut_const(c,~0ull);cut_op(c,0x85u);cut_op(c,0x83u);cut_const(c,63u);cut_op(c,0x83u);
+    cut_op(c,0x50u);cut_op(c,0x45u);cut_op(c,0xadu);cut_set(c,p->unmasked);
+    cut_get(c,p->sw);cut_const(c,~0x200ull);cut_op(c,0x83u);
+    if(!p->status){cut_get(c,p->sw);cut_get(c,p->empty);cut_op(c,0xa7u);cut_op(c,0x1bu);}
+    cut_set(c,p->sw);cut_get(c,p->sw);cut_get(c,p->raised);cut_op(c,0x84u);cut_set(c,p->sw);
+    if(p->status){cut_get(c,p->sw);cut_const(c,~0x4500ull);cut_op(c,0x83u);
+        cut_get(c,p->relation);cut_const(c,8u);cut_op(c,0x86u);cut_op(c,0x84u);cut_set(c,p->sw);}
+    cut_get(c,p->unmasked);cut_op(c,0xa7u);cut_op(c,0x04u);cut_op(c,0x40u);
+    cut_get(c,p->sw);cut_const(c,0x8080u);cut_op(c,0x84u);cut_set(c,p->sw);
+    cut_const(c,p->opcode);cut_set(c,CUT_VALUE);store16(c,offsetof(machine_state,x87_opcode),CUT_VALUE);
+    if(p->memory)cut_store(c,offsetof(machine_state,x87_dp),CUT_ADDRESS);
+    cut_op(c,0x0bu);
+    if(p->pop){cut_get(c,p->unmasked);cut_op(c,0x50u);cut_op(c,0x04u);cut_op(c,0x40u);
+        for(pl_u32 n=0u;n<p->pop;++n){cut_get(c,p->tag);cut_const(c,3u);cut_get(c,p->top);
+            if(n){cut_const(c,n);cut_op(c,0x7cu);cut_const(c,7u);cut_op(c,0x83u);}
+            cut_const(c,1u);cut_op(c,0x86u);cut_op(c,0x86u);cut_op(c,0x84u);cut_set(c,p->tag);}
+        store16(c,offsetof(machine_state,x87_tag),p->tag);
+        cut_get(c,p->sw);cut_const(c,~0x3800ull);cut_op(c,0x83u);cut_get(c,p->top);cut_const(c,p->pop);cut_op(c,0x7cu);cut_const(c,7u);cut_op(c,0x83u);
+        cut_const(c,11u);cut_op(c,0x86u);cut_op(c,0x84u);cut_set(c,p->sw);cut_op(c,0x0bu);}
+    store16(c,offsetof(machine_state,x87_status),p->sw);
     cut_coordinate(c,i->rip);cut_set(c,CUT_VALUE);cut_store(c,offsetof(machine_state,x87_ip),CUT_VALUE);
-    cut_get(c,CUT_FLAGS);cut_const(c,~0x8d5ull);cut_op(c,0x83u);cut_get(c,FP_REL);cut_op(c,0x84u);cut_set(c,CUT_FLAGS);c->report.flags_written=1u;
+    if(!p->status){cut_get(c,CUT_FLAGS);cut_const(c,~0x8d5ull);cut_op(c,0x83u);cut_get(c,p->relation);cut_op(c,0x84u);cut_set(c,CUT_FLAGS);c->report.flags_written=1u;}
 }

@@ -48,6 +48,9 @@ static inline pl_operand leading_zeros(expression *e,pl_operand a)
     return binary(e,96u,constant(63u),index);
 }
 typedef struct {pl_operand sig,se,zero;} integer_expression;
+typedef struct {pl_operand relation,raised,empty;} relation_expression;
+relation_expression x87_relation(expression *e,pl_u32 ordered,pl_operand a,pl_operand sa,
+    pl_operand b,pl_operand sb,pl_operand empty,pl_operand source_denormal);
 static inline integer_expression integer_value(expression *e,pl_u32 bits,pl_operand x)
 {
     if(bits<64u){x=binary(e,PL_OPCODE_LANE64_SHL,x,constant(64u-bits));x=binary(e,PL_OPCODE_LANE64_SAR,x,constant(64u-bits));}

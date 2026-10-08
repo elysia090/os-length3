@@ -23,6 +23,25 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Status-word comparison now reuses ONE relation and ONE state publisher with
+existing EFLAGS comparison. FCOM/FUCOM, FICOM, float memory, two-pop and FTST
+pass 44,032 physical FPU/RFLAGS -> C-MMU/table comparisons through 43 modules.
+Exact raw IEEE32/64 projection preserves source denormal/signaling information;
+200,000 official-reference samples, 344 native/cold forms, 4,128 malformed
+laws and 1,440 fault models pass. Full x86/compiler/postlink and positive
+ASan/UBSan are warning-free. Actual make: 6,404 -> 6,282 missing (122 recovered);
+first is ENTER c84989d6 at 0xa0fc. Four status-family alias coordinates remain
+unlowered; do not call the ISA complete. Directory/root publication still
+refuses -102 before mkdir. A new ordinary postlinked/verified 39-coordinate
+FPU ELF passes actual-browser C image admission (117 comparisons), 1,287 total
+/ 41 refusals and zero execution compiler calls. Staging refuses the genuinely
+old admission directory BEFORE altering assets. This is local diagnostic
+delivery, not a signed Linux root or boot/shell. Native publication/UI/VM are
+unchanged; no speed/size/RSS claim. See
+[derivation, hardware caveat and exact reproduction](../vm/check/browser/evidence/2026-10-08-x87-status.md).
+
+## Previous exact arithmetic checkpoint
+
 FIADD/FISUB/FISUBR signed16/32 now use one shared ext80 SSA and ordinary Wasm,
 not f64, SoftFloat in the product, or a VM math callback. Native hardware's
 36,864 complete FPU/RFLAGS states match C-MMU/table execution through six
@@ -451,12 +470,14 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
    remaining arithmetic/source-context/precise-event cases: make's current first
-   miss is d818 / memory FCOMP, not FISUB or dfe8. No-wait snapshots/FNCLEX,
-   signed16/32/64 coercion/FILD and integer-memory add/sub are now covered.
-   Derive exact IEEE32/64 -> extended conversion and source denormal/NaN
-   classification for memory compares/loads; reuse the common relation and
-   physical FPU publication, not a second floating implementation. Preserve
-   memory fault priority, C0/C2/C3, C1, stack pop and deferred exceptions.
+   miss is ENTER c84989d6 at 0xa0fc. Close its general stack-frame allocation,
+   nesting, partial fault/continuation and operand-width law using independent
+   native observations; do not skip this coordinate or synthesize #UD.
+   Status-word comparisons now share exact IEEE32/64 projection, source
+   denormal/signaling classification, relation and physical publication.
+   Four remaining status aliases need their exact descriptor/hardware gates.
+   Reuse that projection for remaining float loads/stores/arithmetic, preserving
+   memory fault priority, rounding, payload/tag/TOP and deferred exceptions.
    Continue the other actual arithmetic families using independent full-state
    hardware gates; SoftFloat/TestFloat are build-side references, not product
    helpers or substitutes for unmasked state semantics.

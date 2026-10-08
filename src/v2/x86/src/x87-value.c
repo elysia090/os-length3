@@ -36,12 +36,10 @@ int pl_x86_x87_integer_load_lower(const pl_x86_instruction *i,pl_x86_x87_integer
         ||i->machine_argument!=(1u|((pl_u64)width<<8u)|((pl_u64)fop<<16u)))return 0;
     *out=(pl_x86_x87_integer_load){(pl_u8)width,(pl_u16)fop};return 1;
 }
-int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out)
+relation_expression x87_relation(expression *builder,pl_u32 ordered,pl_operand a,pl_operand sa,
+    pl_operand b,pl_operand sb,pl_operand empty,pl_operand source_denormal)
 {
-    if(!arena||!out||ordered>1u||alias>1u)return PL_ERROR_PLAN;
-    pl_plan raw={.instructions=1u};expression e={0};
-    if(pl_builder_open(&e.builder,&raw,arena,PL_X86_X87_RELATION_MAX_NODES,320u,0u,5u))return PL_ERROR_ARENA;
-    pl_operand a={PL_OPERAND_LOCAL,0u},sa={PL_OPERAND_LOCAL,1u},b={PL_OPERAND_LOCAL,alias?0u:2u},sb={PL_OPERAND_LOCAL,alias?1u:3u},empty={PL_OPERAND_LOCAL,4u};
+    expression e=*builder;
     pl_operand ea=bit_and(&e,sa,constant(0x7fffu)),eb=bit_and(&e,sb,constant(0x7fffu));
     pl_operand za=equal(&e,ea,constant(0u)),zb=equal(&e,eb,constant(0u));
     pl_operand aq=equal(&e,a,constant(0u)),bq=equal(&e,b,constant(0u));
@@ -68,6 +66,7 @@ int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan
     pl_operand nonzero_a=not(&e,aq),nonzero_b=not(&e,bq);
     pl_operand denormal_a=bit_and(&e,za,nonzero_a),denormal_b=bit_and(&e,zb,nonzero_b);
     pl_operand denormal=bit_or(&e,denormal_a,denormal_b);
+    denormal=bit_or(&e,denormal,source_denormal);
     pl_operand raised_de=select(&e,constant(2u),constant(0u),denormal);
     pl_operand no_unordered_de=select(&e,constant(0u),raised_de,unordered);
     pl_operand raised=select(&e,constant(1u),no_unordered_de,invalid);
@@ -88,6 +87,16 @@ int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan
     pl_operand nonzero_flags=select(&e,constant(1u),equal_flags,less);
     pl_operand zero_flags=select(&e,constant(64u),nonzero_flags,both_zero);
     pl_operand relation=select(&e,constant(69u),zero_flags,unordered);
+    *builder=e;return(relation_expression){relation,raised,empty};
+}
+int pl_x86_x87_relation_plan(pl_u32 ordered,pl_u32 alias,pl_arena *arena,pl_plan *out)
+{
+    if(!arena||!out||ordered>1u||alias>1u)return PL_ERROR_PLAN;
+    pl_plan raw={.instructions=1u};expression e={0};
+    if(pl_builder_open(&e.builder,&raw,arena,PL_X86_X87_RELATION_MAX_NODES,320u,0u,5u))return PL_ERROR_ARENA;
+    pl_operand a={PL_OPERAND_LOCAL,0u},sa={PL_OPERAND_LOCAL,1u},b={PL_OPERAND_LOCAL,alias?0u:2u},sb={PL_OPERAND_LOCAL,alias?1u:3u},empty={PL_OPERAND_LOCAL,4u};
+    relation_expression result=x87_relation(&e,ordered,a,sa,b,sb,empty,constant(0u));
+    pl_operand relation=result.relation,raised=result.raised;
     raw.locals[0]=relation;raw.locals[1]=raised;raw.locals[2]=empty;
     raw.locals[3]=(pl_operand){PL_OPERAND_LOCAL,3u};raw.locals[4]=empty;
     if(e.failed)return PL_ERROR_ARENA;
@@ -101,6 +110,18 @@ int pl_x86_x87_integer_plan(pl_u32 bits,pl_arena *arena,pl_plan *out)
     integer_expression integer=integer_value(&e,bits,(pl_operand){PL_OPERAND_LOCAL,0u});
     raw.locals[0]=integer.sig;raw.locals[1]=integer.se;raw.locals[2]=integer.zero;
     raw.locals[3]=(pl_operand){PL_OPERAND_LOCAL,3u};raw.locals[4]=(pl_operand){PL_OPERAND_LOCAL,4u};
+    if(e.failed)return PL_ERROR_ARENA;
+    const pl_u8 live[]={1u,1u,1u,0u,0u};return pl_compact_projected(&raw,live,arena,out);
+}
+int pl_x86_x87_zero_relation_plan(pl_arena *arena,pl_plan *out)
+{
+    if(!arena||!out)return PL_ERROR_PLAN;
+    pl_plan raw={.instructions=1u};expression e={0};
+    if(pl_builder_open(&e.builder,&raw,arena,PL_X86_X87_RELATION_MAX_NODES,320u,0u,5u))return PL_ERROR_ARENA;
+    pl_operand a={PL_OPERAND_LOCAL,0u},sa={PL_OPERAND_LOCAL,1u},empty={PL_OPERAND_LOCAL,4u};
+    relation_expression value=x87_relation(&e,1u,a,sa,constant(0u),constant(0u),empty,constant(0u));
+    raw.locals[0]=value.relation;raw.locals[1]=value.raised;raw.locals[2]=value.empty;
+    raw.locals[3]=(pl_operand){PL_OPERAND_LOCAL,3u};raw.locals[4]=empty;
     if(e.failed)return PL_ERROR_ARENA;
     const pl_u8 live[]={1u,1u,1u,0u,0u};return pl_compact_projected(&raw,live,arena,out);
 }

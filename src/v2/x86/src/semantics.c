@@ -2907,6 +2907,8 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         pl_x86_x87_integer_load law;if(!pl_x86_x87_integer_load_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==12u){
         pl_x86_x87_integer_arithmetic law;if(!pl_x86_x87_integer_arithmetic_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==11u){
+        pl_x86_x87_status_compare law;if(!pl_x86_x87_status_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87
         && ((instruction->machine_argument&255u)==5u||(instruction->machine_argument&255u)==6u
             ||(instruction->machine_argument&255u)==19u||(instruction->machine_argument&255u)==20u)){
