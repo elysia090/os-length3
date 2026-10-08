@@ -106,6 +106,11 @@ int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x
 int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 bytes,operation;pl_u16 opcode;} pl_x86_x87_integer_arithmetic;
 int pl_x86_x87_integer_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_arithmetic *out);
+/* Raw extended operands: A significand/sign-exponent, B fields, CW, empty.
+ * Results are significand, sign-exponent and exception/tag/publication word. */
+int pl_x86_x87_register_arithmetic_plan(pl_u32 operation,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 source,destination,operation,pop;pl_u16 opcode;} pl_x86_x87_register_arithmetic;
+int pl_x86_x87_register_arithmetic_lower(const pl_x86_instruction *instruction,pl_x86_x87_register_arithmetic *out);
 /* Exact raw IEEE32/64 -> extended fields. Output class bits are source
  * denormal(0), signaling NaN(1), zero(2). No quieting/rounding/state effect. */
 int pl_x86_x87_ieee_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);

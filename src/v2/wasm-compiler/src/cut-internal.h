@@ -21,7 +21,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_HALT, CUT_SYSTEM_COUNTER_BRANCH, CUT_SYSTEM_SELECTOR_SNAPSHOT, CUT_SYSTEM_X87_SNAPSHOT,
        CUT_SYSTEM_X87_COMPARE, CUT_SYSTEM_X87_INTEGER, CUT_SYSTEM_X87_ARITHMETIC, CUT_SYSTEM_X87_STATUS_COMPARE, CUT_SYSTEM_STRING_IO };
 #define CUT_X87_LOCALS 140u
-#define CUT_X87_ARITHMETIC_LOCALS (40u+PL_X86_X87_ARITHMETIC_MAX_NODES)
+#define CUT_X87_ARITHMETIC_LOCALS (44u+PL_X86_X87_ARITHMETIC_MAX_NODES)
 #define CUT_X87_STATUS_LOCALS (40u+PL_X86_X87_MEMORY_RELATION_MAX_NODES)
 enum { CUT_CARRY_NORMAL, CUT_CARRY_PRESERVE, CUT_CARRY_INPUT };
 enum { CUT_BIND_NONE, CUT_BIND_MEMORY_DISPLACEMENT, CUT_BIND_CONTROL_DISPLACEMENT,
@@ -146,7 +146,7 @@ void cut_lower_string_io(cut_lowering *cut,const pl_x86_instruction *instruction
 typedef struct {pl_u32 top,tag,sw,cw,relation,raised,empty,unmasked,opcode,pop,memory,status;} cut_x87_comparison;
 void cut_publish_x87_comparison(cut_lowering *cut,const pl_x86_instruction *instruction,const cut_x87_comparison *view);
 void cut_x87_wait_guard(cut_lowering *cut,pl_u32 cw,pl_u32 sw);
-void cut_emit_scalar_plan(cut_lowering *cut,const pl_plan *plan,const pl_u32 inputs[5],pl_u32 first,const pl_u32 outputs[3]);
+void cut_emit_scalar_plan(cut_lowering *cut,const pl_plan *plan,const pl_u32 *inputs,pl_u32 first,const pl_u32 outputs[3]);
 void cut_lower_mxcsr(cut_lowering *cut, const pl_x86_instruction *instruction);
 int cut_vector_supported(const pl_x86_instruction *instruction);
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction);

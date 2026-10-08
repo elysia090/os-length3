@@ -4,7 +4,7 @@
 static int operand_valid(const pl_plan *p,pl_operand a,pl_u32 before)
 {
     if(a.kind==PL_OPERAND_CONST)return 1;
-    if(a.kind==PL_OPERAND_LOCAL)return a.value<5u;
+    if(a.kind==PL_OPERAND_LOCAL)return a.value<p->local_count;
     pl_u64 n=a.kind==PL_OPERAND_PROJECTION?a.value>>8u:a.value;
     if(!n||n>before)return 0;
     pl_u32 op=p->nodes[n-1u].opcode;
@@ -12,7 +12,7 @@ static int operand_valid(const pl_plan *p,pl_operand a,pl_u32 before)
     return a.kind==PL_OPERAND_PROJECTION&&((op==PL_OPCODE_X86_COMPARE&&((a.value&255u)==2u||(a.value&255u)==4u))
         ||(op==PL_OPCODE_X86_BIT_SUMMARY&&(a.value&255u)==16u));
 }
-static void operand_emit(cut_lowering *c,pl_operand a,const pl_u32 input[5],pl_u32 first)
+static void operand_emit(cut_lowering *c,pl_operand a,const pl_u32 *input,pl_u32 first)
 {
     if(a.kind==PL_OPERAND_CONST){cut_const(c,a.value);return;}
     if(a.kind==PL_OPERAND_LOCAL){cut_get(c,input[a.value]);return;}
@@ -21,9 +21,9 @@ static void operand_emit(cut_lowering *c,pl_operand a,const pl_u32 input[5],pl_u
     if(a.kind==PL_OPERAND_PROJECTION&&(a.value&255u)!=16u){if((a.value&255u)==4u){cut_const(c,6u);cut_op(c,0x88u);}
         cut_const(c,1u);cut_op(c,0x83u);}
 }
-void cut_emit_scalar_plan(cut_lowering *c,const pl_plan *p,const pl_u32 input[5],pl_u32 first,const pl_u32 output[3])
+void cut_emit_scalar_plan(cut_lowering *c,const pl_plan *p,const pl_u32 *input,pl_u32 first,const pl_u32 output[3])
 {
-    if(!p||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES||p->local_count!=5u){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    if(!p||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES||(p->local_count!=5u&&p->local_count!=6u)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;
         if(node->argument_at>p->argument_count||node->argument_count>p->argument_count-node->argument_at)goto bad;
         const pl_operand *args=p->arguments+node->argument_at;

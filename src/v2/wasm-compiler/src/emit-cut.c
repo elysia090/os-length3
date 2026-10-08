@@ -159,7 +159,8 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if (system==CUT_SYSTEM_FXSAVE || system==CUT_SYSTEM_FXRSTOR)
                     plan->report.memory_bytes=512u;
                 else if (system==CUT_SYSTEM_MXCSR) plan->report.memory_bytes=4u;
-                else if (system==CUT_SYSTEM_X87_INTEGER||system==CUT_SYSTEM_X87_ARITHMETIC) plan->report.memory_bytes=instruction.operands[0].bits/8u;
+                else if ((system==CUT_SYSTEM_X87_INTEGER||system==CUT_SYSTEM_X87_ARITHMETIC)&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
+                    plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_X87_STATUS_COMPARE&&instruction.visible_operand_count&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY) plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if(system==CUT_SYSTEM_STRING_IO)plan->report.memory_bytes=(pl_u32)instruction.machine_argument&255u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)

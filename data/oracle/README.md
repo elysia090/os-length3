@@ -3,10 +3,15 @@
 The existing `x87-arithmetic-observe` also accepts `DIRECTORY --register`:
 72 raw register add/sub encodings, both operand directions/pop/alias, plus
 precision/rounding/exception-mask matrices. `check-x87-state.mjs --register`
-uses the SAME C-MMU/table gate; currently it is red at real make's DC ED/-102.
+uses the SAME C-MMU/table gate; the original DC ED red is now green at all
+42,624 physical full-state rows. `check-x87-register.c --ssa` checks the common
+numeric/outcome plan against these records; `--finite` adds 240,000 canonical
+finite samples. Build this checker with the shared arithmetic/compact/sweep/
+arena sources, as shown in the
+[current closure and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-register.md).
 `check-x87-register.c` checks only the canonical masked numeric subset against
 official SoftFloat, never supplying a product implementation. See
-[population, exception publication and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-register-red.md).
+[original red population and exception publication](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-register-red.md).
 
 `check-string-io.mjs VM.WASM COMPILER.WASM RECORDS` executes compiled INS/OUTS
 against independent reference-system CPU/RAM records. The primary WHPX route

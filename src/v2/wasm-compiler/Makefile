@@ -52,6 +52,12 @@ SOURCES += src/lower-x87-arithmetic.c
 SOURCES += src/lower-x87-status.c
 SOURCES += src/lower-enter.c
 SOURCES += src/lower-string-io.c
+.PHONY: x87-register-check
+check: x87-register-check
+x87-register-check: $(BUILD)/x87-register-check
+	$(BUILD)/x87-register-check
+$(BUILD)/x87-register-check: check/x87-register.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: string-io-check
 check: string-io-check
 string-io-check: $(BUILD)/string-io-check

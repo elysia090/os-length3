@@ -23,6 +23,25 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Register FADD/FSUB/FSUBR and pop forms now share the integer-memory arithmetic
+SSA core, raw two-operand classification and ordinary Wasm publisher. 42,624
+local physical full-state rows match C-MMU/table execution through 72 modules;
+22,347 canonical masked rows and 240,000 finite samples agree with official
+SoftFloat. Masked overflow's previously missing C1 increment is fixed. 576
+native/cold prefix forms / 6,912 malformed laws / untouched capacity failures,
+12,096 #NM/#MF models / 1,728 zero/pop successes, full x86/VM/compiler/postlink
+and positive ASan/UBSan pass without warnings. Actual make: 4,728 -> 4,609
+missing (119 recovered), first F1/debug trap at 0xa21e. Whole-directory
+publication still refuses before mkdir/root. Actual browser C image admission
+passes 1,341 comparisons / 41 refusals, including 171 for the new 57-coordinate
+ordinary postlinked FPU ELF, with zero execution compiler calls. Same-bundle
+short Node retains the 86-step witness and quota, NOT Linux boot. Compiler
+grows 11,888 bytes; VM/native publication/UI unchanged. No signed Linux root,
+boot/shell, speed/RSS or minimum claim. See
+[shared expression, publication, browser and reproduction](../vm/check/browser/evidence/2026-10-08-x87-register.md).
+
+## Previous string-I/O checkpoint
+
 INS/OUTS now consume a common width/address/segment/repeat law and ordinary
 Wasm through C permission/device/memory/checkpoint owners, not a string-I/O
 interpreter. A real frontend omission lost REP flags for these machine rows;
@@ -38,12 +57,12 @@ witness and quota, NOT Linux boot. Native bundle/UI unchanged; no fresh browser,
 signed production root, size/speed/RSS claim. See
 [ordering, permission decision, reference failure and reproduction](../vm/check/browser/evidence/2026-10-08-string-io.md).
 
-## Next register-arithmetic red
+## Previous register-arithmetic red
 
 The existing hardware arithmetic observer now also captures TWO raw extended
 operands: 42,624 complete local physical FPU/RFLAGS states / 72 encodings.
 22,347 canonical masked numeric cases match official SoftFloat; 20,277 remain
-outside that reference domain. All 81 construction groups still refuse -102,
+outside that reference domain. At `998d565`, all 81 construction groups refused -102,
 including the actual make source DC ED. Correct its old name: this is FSUB
 ST(5), ST(0), not FSUBR. Of 2,208 unmasked-pending observations, 554 changed
 payload and 192 popped; IE/DE suppress both, whereas OE/UE/PE can publish/pop.
@@ -519,9 +538,12 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
    remaining arithmetic/source-context/precise-event cases: make's current first
-   miss is dced / register FSUB at 0xa19a. Generalize the existing exact extended
-   integer-memory add/sub normal form to BOTH raw extended operands, including
-   unsupported/NaN/denormal/empty priorities, destination direction and pop.
+   miss is F1/debug trap at 0xa21e. Close its precise trap/retirement/debug-state
+   boundary against independent observations; do not substitute #UD or skip it.
+   Register extended add/sub now shares integer arithmetic's exact core and
+   handles both raw operand classes, destination direction and pop. Continue
+   the remaining float-memory arithmetic, conversion/store and other families,
+   retaining source denormal/signaling classes from the existing IEEE projection.
    Do not round through f64 or introduce a math interpreter/callback.
    String I/O now has permission-before-zero/memory, read/store/output latches,
    bounded repetitions and exact device/host barriers. Preserve its pinned

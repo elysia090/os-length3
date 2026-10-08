@@ -3,7 +3,7 @@
 #include <x86/semantics.h>
 /* Oracle-only evaluation. Product execution emits ordinary instructions. */
 static pl_u64 check_scalar_nodes[PL_X86_X87_ARITHMETIC_MAX_NODES+1u];
-static pl_u64 check_scalar_value(pl_operand a,const pl_u64 input[5])
+static pl_u64 check_scalar_value(pl_operand a,const pl_u64 *input)
 {
     if(a.kind==PL_OPERAND_CONST)return a.value;
     if(a.kind==PL_OPERAND_LOCAL)return input[a.value];
@@ -12,7 +12,7 @@ static pl_u64 check_scalar_value(pl_operand a,const pl_u64 input[5])
         return(a.value&255u)==16u?v:(a.value&255u)==2u?v&1u:(v>>6u)&1u;}
     return ~0ull;
 }
-static int check_scalar_plan(const pl_plan *p,const pl_u64 input[5],pl_u64 out[3])
+static int check_scalar_plan(const pl_plan *p,const pl_u64 *input,pl_u64 out[3])
 {
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;const pl_operand *arg=p->arguments+node->argument_at;
         pl_u64 a=check_scalar_value(arg[0],input),b=node->argument_count>1u?check_scalar_value(arg[1],input):0u,v;

@@ -1,5 +1,9 @@
 # Register add/sub: independently observed red — 2026-10-08
 
+Historical pre-lowering evidence at `998d565`. The current shared path is
+[green in the stated domain](2026-10-08-x87-register.md); commands below describe
+the original red revision, not the latest checker's additional SSA linkage.
+
 Baseline `5792275` closes string I/O, NOT register extended arithmetic. The
 actual published make still has 4,728 unlowered coordinates of 233,455. Its
 first source, DC ED at 0xa19a, is **FSUB ST(5), ST(0)**, not FSUBR as the earlier

@@ -19,6 +19,27 @@ int pl_x86_x87_integer_arithmetic_lower(const pl_x86_instruction *i,pl_x86_x87_i
         ||i->machine_argument!=(12u|((pl_u64)width<<8u)|((pl_u64)fop<<16u)|((pl_u64)operation<<36u)))return 0;
     *out=(pl_x86_x87_integer_arithmetic){(pl_u8)width,(pl_u8)operation,(pl_u16)fop};return 1;
 }
+int pl_x86_x87_register_arithmetic_lower(const pl_x86_instruction *i,pl_x86_x87_register_arithmetic *out)
+{
+    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY
+        ||i->machine_operation!=PL_X86_MACHINE_X87||i->visible_operand_count!=2u||i->operand_count<2u
+        ||i->operand_count>PL_X86_MAX_OPERANDS||(i->flow!=PL_X86_FLOW_NEXT&&i->flow!=PL_X86_FLOW_SYSTEM)
+        ||(i->flags&required)!=required||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED
+            |PL_X86_INSTRUCTION_READS_MEMORY|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    pl_u32 kind=(pl_u32)i->machine_argument&255u,fop=(pl_u32)(i->machine_argument>>16u)&0x7ffu,primary=i->opcode;
+    if((primary!=0xd8u&&primary!=0xdcu&&primary!=0xdeu)||(fop>>8u)!=(primary&7u)||(fop&0xc0u)!=0xc0u)return 0;
+    pl_u32 group=(fop>>3u)&7u,index=fop&7u,pop=primary==0xdeu;
+    if((kind==8u&&group!=0u)||(kind==13u&&group!=4u&&group!=5u)||(kind!=8u&&kind!=13u))return 0;
+    pl_u32 destination=primary==0xd8u?0u:index,source=primary==0xd8u?index:0u;
+    pl_u32 reverse=kind==13u&&(primary==0xd8u?group==5u:group==4u),operation=kind==8u?0u:reverse?3u:2u;
+    pl_u32 options=kind==8u?pop:reverse|(pop<<1u);
+    if(i->machine_argument!=(kind|((pl_u64)fop<<16u)|((pl_u64)source<<32u)|((pl_u64)destination<<36u)|((pl_u64)options<<40u)))return 0;
+    for(pl_u32 n=0u;n<2u;++n){const pl_x86_operand *o=i->operands+n;const pl_x86_register *r=&o->value.reg;
+        if(o->kind!=PL_X86_OPERAND_REGISTER||o->bits!=80u||r->class_id!=PL_X86_REGISTER_X87||r->bits!=80u
+            ||r->flags||r->index!=(n?source:destination))return 0;}
+    *out=(pl_x86_x87_register_arithmetic){(pl_u8)source,(pl_u8)destination,(pl_u8)operation,(pl_u8)pop,(pl_u16)fop};return 1;
+}
 static pl_operand add(expression *e,pl_operand a,pl_operand b){return binary(e,89u,a,b);}
 static pl_operand sub(expression *e,pl_operand a,pl_operand b){return binary(e,96u,a,b);}
 static pl_operand xor(expression *e,pl_operand a,pl_operand b){return binary(e,86u,a,b);}
@@ -66,13 +87,16 @@ static rounded round_value(expression *e,pair a,pl_operand exponent,pl_operand d
     pl_operand sig=add(e,base,delta),carry=less(e,sig,base);sig=select(e,constant(0x8000000000000000ull),sig,carry);
     exponent=add(e,exponent,carry);return(rounded){sig,exponent,increment,inexact};
 }
-int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
+static int arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
 {
-    if(!arena||!out||(bits!=16u&&bits!=32u)||(operation!=0u&&operation!=2u&&operation!=3u))return PL_ERROR_PLAN;
+    if(!arena||!out||(bits!=0u&&bits!=16u&&bits!=32u)||(operation!=0u&&operation!=2u&&operation!=3u))return PL_ERROR_PLAN;
     pl_plan raw={.instructions=1u};expression e={0};
-    if(pl_builder_open(&e.builder,&raw,arena,PL_X86_X87_ARITHMETIC_MAX_NODES,2048u,0u,5u))return PL_ERROR_ARENA;
-    pl_operand a={PL_OPERAND_LOCAL,0u},sa={PL_OPERAND_LOCAL,1u},input={PL_OPERAND_LOCAL,2u},cw={PL_OPERAND_LOCAL,3u},empty={PL_OPERAND_LOCAL,4u};
-    integer_expression integer=integer_value(&e,bits,input);pl_operand b=integer.sig,sb=integer.se;
+    pl_u32 locals=bits?5u:6u;
+    if(pl_builder_open(&e.builder,&raw,arena,PL_X86_X87_ARITHMETIC_MAX_NODES,2048u,0u,locals))return PL_ERROR_ARENA;
+    pl_operand a={PL_OPERAND_LOCAL,0u},sa={PL_OPERAND_LOCAL,1u},input={PL_OPERAND_LOCAL,2u};
+    pl_operand cw={PL_OPERAND_LOCAL,bits?3u:4u},empty={PL_OPERAND_LOCAL,bits?4u:5u};
+    pl_operand b=input,sb={PL_OPERAND_LOCAL,3u};
+    if(bits){integer_expression integer=integer_value(&e,bits,input);b=integer.sig;sb=integer.se;}
     pl_operand ea=bit_and(&e,sa,constant(0x7fffu)),eb=bit_and(&e,sb,constant(0x7fffu));
     pl_operand za=equal(&e,ea,constant(0u)),zb=equal(&e,eb,constant(0u));
     pl_operand ae=select(&e,constant(1u),ea,za),be=select(&e,constant(1u),eb,zb);
@@ -132,21 +156,42 @@ int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *ar
     result_sig=select(&e,normal.sig,result_sig,wrapped);result_exp=select(&e,wrapped_exp,result_exp,wrapped);
     pl_operand increment=select(&e,normal.increment,gradual.increment,wrapped),inexact=select(&e,normal.inexact,gradual.inexact,wrapped);
     pl_operand masked_over=bit_and(&e,overflow,om);inexact=bit_or(&e,inexact,masked_over);
+    /* Masked overflow rounds to infinity or the finite maximum even when
+     * the unbounded significand addition had no discarded fraction. */
+    increment=select(&e,to_inf,increment,masked_over);
     pl_operand raised=shl(&e,overflow,constant(3u)),u=shl(&e,underflow,constant(4u)),p=shl(&e,inexact,constant(5u));
     raised=bit_or(&e,raised,u);raised=bit_or(&e,raised,p);
     result_exp=sub(&e,result_exp,constant(128u));pl_operand sign_word=shl(&e,sign,constant(15u)),result_se=bit_or(&e,result_exp,sign_word);
-    pl_operand integer_bit=shift(&e,a,63u),no_integer=not(&e,integer_bit),nonzero_e=not(&e,za),unsupported=bit_and(&e,nonzero_e,no_integer);
-    pl_operand all_e=equal(&e,ea,constant(32767u)),fraction=bit_and(&e,a,constant(0x7fffffffffffffffull)),has_fraction=nz(&e,fraction);
-    pl_operand nan=bit_and(&e,all_e,has_fraction),quiet=bit(&e,a,62u),signaling=not(&e,quiet);signaling=bit_and(&e,nan,signaling);
-    pl_operand indefinite=bit_or(&e,empty,unsupported),invalid=bit_or(&e,indefinite,signaling);
-    pl_operand special=bit_or(&e,indefinite,all_e);raised=select(&e,constant(0u),raised,special);increment=select(&e,constant(0u),increment,special);
-    pl_operand quiet_sig=bit_or(&e,a,constant(0x4000000000000000ull)),special_sig=select(&e,quiet_sig,a,nan);
-    pl_operand inf_sign=shift(&e,sa,15u);if(operation==3u)inf_sign=xor(&e,inf_sign,constant(1u));
-    inf_sign=shl(&e,inf_sign,constant(15u));pl_operand inf_se=bit_or(&e,inf_sign,ea),special_se=select(&e,sa,inf_se,nan);
-    result_sig=select(&e,special_sig,result_sig,all_e);result_se=select(&e,special_se,result_se,all_e);
+    pl_operand ja=bit(&e,a,63u),jb=bit(&e,b,63u),nonzero_ea=not(&e,za),nonzero_eb=not(&e,zb);
+    pl_operand no_ja=not(&e,ja),no_jb=not(&e,jb),ua=bit_and(&e,nonzero_ea,no_ja),ub=bits?constant(0u):bit_and(&e,nonzero_eb,no_jb);
+    pl_operand unsupported=bit_or(&e,ua,ub),all_ea=equal(&e,ea,constant(32767u)),all_eb=bits?constant(0u):equal(&e,eb,constant(32767u));
+    pl_operand fa=bit_and(&e,a,constant(0x7fffffffffffffffull)),fb=bit_and(&e,b,constant(0x7fffffffffffffffull));
+    pl_operand fraction_a=nz(&e,fa),fraction_b=nz(&e,fb),nan_a=bit_and(&e,all_ea,fraction_a),nan_b=bit_and(&e,all_eb,fraction_b);
+    pl_operand nan=bit_or(&e,nan_a,nan_b),qa=bit(&e,a,62u),qb=bit(&e,b,62u),sna=not(&e,qa),snb=not(&e,qb);
+    sna=bit_and(&e,nan_a,sna);snb=bit_and(&e,nan_b,snb);pl_operand signaling=bit_or(&e,sna,snb);
+    /* Raw NaN signs/payloads precede arithmetic sign changes. Quiet wins
+     * over signaling; within one class use larger payload, then positive
+     * sign on an equal-payload tie. The integer projection has no NaN. */
+    pl_operand a_quiet=bit_or(&e,a,constant(0x4000000000000000ull)),b_quiet=bit_or(&e,b,constant(0x4000000000000000ull));
+    pl_operand larger_a=less(&e,b_quiet,a_quiet),equal_payload=equal(&e,a_quiet,b_quiet),positive_tie=less(&e,sa,sb);
+    positive_tie=bit_and(&e,equal_payload,positive_tie);larger_a=bit_or(&e,larger_a,positive_tie);
+    pl_operand same_class=equal(&e,sna,snb),b_not_nan=not(&e,nan_b),a_not_signaling=not(&e,sna);
+    pl_operand b_signaling=bit_and(&e,snb,a_not_signaling);
+    pl_operand choose_a=select(&e,larger_a,b_signaling,same_class);choose_a=bit_or(&e,choose_a,b_not_nan);choose_a=bit_and(&e,choose_a,nan_a);
+    pl_operand nan_sig=bits?a_quiet:select(&e,a_quiet,b_quiet,choose_a),nan_se=bits?sa:select(&e,sa,sb,choose_a);
+    pl_operand both_all=bit_and(&e,all_ea,all_eb),opposed=not(&e,same_sign),conflict=bit_and(&e,both_all,opposed);
+    pl_operand no_nan=not(&e,nan);conflict=bit_and(&e,conflict,no_nan);
+    pl_operand indefinite=bit_or(&e,empty,unsupported);indefinite=bit_or(&e,indefinite,conflict);
+    pl_operand invalid=bit_or(&e,indefinite,signaling),any_all=bit_or(&e,all_ea,all_eb),special=bit_or(&e,indefinite,any_all);
+    raised=select(&e,constant(0u),raised,special);increment=select(&e,constant(0u),increment,special);
+    pl_operand inf_sign=select(&e,as,bs,all_ea);inf_sign=shl(&e,inf_sign,constant(15u));
+    pl_operand inf_se=bit_or(&e,inf_sign,constant(32767u)),special_sig=select(&e,nan_sig,constant(0x8000000000000000ull),nan);
+    pl_operand special_se=select(&e,nan_se,inf_se,nan);
+    result_sig=select(&e,special_sig,result_sig,any_all);result_se=select(&e,special_se,result_se,any_all);
     result_sig=select(&e,constant(0xc000000000000000ull),result_sig,indefinite);result_se=select(&e,constant(0xffffu),result_se,indefinite);
-    pl_operand nonzero_a=nz(&e,a),denormal=bit_and(&e,za,nonzero_a),im=bit(&e,cw,0u),dm=bit(&e,cw,1u);
-    pl_operand ie=select(&e,constant(1u),constant(0u),invalid),de=select(&e,constant(0u),denormal,invalid);
+    pl_operand nonzero_a=nz(&e,a),nonzero_b=nz(&e,b),da=bit_and(&e,za,nonzero_a),db=bits?constant(0u):bit_and(&e,zb,nonzero_b);
+    pl_operand denormal=bit_or(&e,da,db),im=bit(&e,cw,0u),dm=bit(&e,cw,1u),priority=bit_or(&e,invalid,nan);
+    pl_operand ie=select(&e,constant(1u),constant(0u),invalid),de=select(&e,constant(0u),denormal,priority);
     pl_operand de_bits=shl(&e,de,constant(1u)),unmask_i=not(&e,im),unmask_d=not(&e,dm);
     unmask_i=bit_and(&e,unmask_i,invalid);unmask_d=bit_and(&e,unmask_d,de);pl_operand suppress=bit_or(&e,unmask_i,unmask_d);
     raised=select(&e,constant(0u),raised,suppress);increment=select(&e,constant(0u),increment,suppress);
@@ -157,7 +202,12 @@ int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *ar
     pl_operand tag=select(&e,constant(2u),constant(0u),special_tag);tag=select(&e,constant(1u),tag,result_zero);
     pl_operand c1=shl(&e,increment,constant(9u)),no_write=shl(&e,suppress,constant(16u)),tag_word=shl(&e,tag,constant(18u));
     pl_operand outcome=bit_or(&e,raised,c1);outcome=bit_or(&e,outcome,no_write);outcome=bit_or(&e,outcome,tag_word);
-    raw.locals[0]=result_sig;raw.locals[1]=result_se;raw.locals[2]=outcome;raw.locals[3]=cw;raw.locals[4]=empty;
+    raw.locals[0]=result_sig;raw.locals[1]=result_se;raw.locals[2]=outcome;
+    for(pl_u32 local=3u;local<locals;++local)raw.locals[local]=(pl_operand){PL_OPERAND_LOCAL,local};
     if(e.failed)return PL_ERROR_ARENA;
-    const pl_u8 live[]={1u,1u,1u,0u,0u};return pl_compact_projected(&raw,live,arena,out);
+    const pl_u8 live[]={1u,1u,1u,0u,0u,0u};return pl_compact_projected(&raw,live,arena,out);
 }
+int pl_x86_x87_integer_arithmetic_plan(pl_u32 bits,pl_u32 operation,pl_arena *arena,pl_plan *out)
+{return bits==16u||bits==32u?arithmetic_plan(bits,operation,arena,out):PL_ERROR_PLAN;}
+int pl_x86_x87_register_arithmetic_plan(pl_u32 operation,pl_arena *arena,pl_plan *out)
+{return arithmetic_plan(0u,operation,arena,out);}
