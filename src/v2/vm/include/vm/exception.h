@@ -51,10 +51,10 @@ machine_result vm_software_interrupt_enter(vm_memory *physical, pl_u32 port_offs
     machine_state *state, machine_segments *segments, vm_fault_delivery *delivery,
     pl_u32 vector, pl_u64 next_rip);
 
-/* IRETQ from CPL0 to equally/less privileged 64-bit code, including unconditional
+/* 16/32/64-bit IRET to equally/less privileged 64-bit code, including unconditional
  * SS:RSP restoration, target descriptor checks and outer cache invalidation.
- * CPL1..3 origins, compatibility targets and CET refuse admission. Caller must
+ * Return word is defined in machine/control.h. Compatibility/CET remain gaps. Caller must
  * remove any exception error code first, exactly as on x86. */
 machine_result vm_interrupt_return(vm_memory *physical, pl_u32 port_offset,
-    machine_state *state, machine_segments *segments);
+    machine_state *state, machine_segments *segments,pl_u32 return_word);
 #endif

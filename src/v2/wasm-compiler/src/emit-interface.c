@@ -32,7 +32,7 @@ static const machine_import interface[WASM_IMPORT_COUNT]={
     {"read_extent",{4u,{I32,I64,I32,I32}}},
     {"far_return",{2u,{I32,I32}}},
     {"control",{3u,{I32,I32,I64}}},
-    {"iret",{1u,{I32}}},
+    {"iret",{2u,{I32,I32}}},
     {"msr",{4u,{I32,I32,I32,I64}}},
     {"debug",{4u,{I32,I32,I32,I64}}},
     {"io",{4u,{I32,I32,I32,I64}}},

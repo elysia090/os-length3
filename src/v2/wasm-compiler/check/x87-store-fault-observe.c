@@ -51,15 +51,24 @@ int main(int argc,char **argv)
         trapped=0;__asm__ volatile("fxsave64 %0":"=m"(host)::"memory");
         if(!sigsetjmp(recovery,1)){
             __asm__ volatile("fxrstor64 %[input]\n\tfxsave64 %[before]\n\tcall *%[code]\n\tfxsave64 %[after]"
-                :[before]"=m"(before),[after]"=m"(after):[input]"m"(input),[code]"r"(code):"memory","cc");
+                :[before]"=m"(before),[after]"=m"(after):[input]"m"(input),[code]"r"(code):"memory","cc",
+                 "xmm0","xmm1","xmm2","xmm3","xmm4","xmm5","xmm6","xmm7",
+                 "xmm8","xmm9","xmm10","xmm11","xmm12","xmm13","xmm14","xmm15");
         }
-        __asm__ volatile("fxrstor64 %0"::"m"(host):"memory");
+        // The host image predates sigsetjmp: restoring it can also replace
+        // compiler-live XMM values. Declare that clobber, including the fault
+        // path; diagnostic printing must not accidentally hide this hazard.
+        __asm__ volatile("fxrstor64 %0"::"m"(host):"memory",
+            "xmm0","xmm1","xmm2","xmm3","xmm4","xmm5","xmm6","xmm7",
+            "xmm8","xmm9","xmm10","xmm11","xmm12","xmm13","xmm14","xmm15");
         machine_state first={0},last={0};check_x87_project(&first,before);check_x87_project(&last,after);
         int same=memcmp(&first.x87_significand,&last.x87_significand,sizeof(machine_state)-offsetof(machine_state,x87_significand))==0;
         if(trapped)++faults;else if(readonly)++suppressed_faults;
         if(argc==2)printf("{\"form\":%u,\"sample\":%u,\"readonly\":%u,\"fault\":%u,\"vector\":%llu,\"error\":%llu,\"beforeSW\":%u,\"afterSW\":%u,\"fpuUnchanged\":%s}\n",
             form,sample,readonly,!!trapped,(unsigned long long)(trapped?vector:0u),(unsigned long long)(trapped?error:0u),first.x87_status,last.x87_status,same?"true":"false");++rows;
-        if(!!trapped!=(readonly&&(sample==0u||sample==2u))||(trapped&&(vector!=14u||error!=7u||!same)))return 1;
+        if(!!trapped!=(readonly&&(sample==0u||sample==2u))||(trapped&&(vector!=14u||error!=7u||!same))){
+            fprintf(stderr,"Store oracle mismatch form=%u sample=%u readonly=%u trap=%u vector=%llu error=%llu unchanged=%u\n",
+                form,sample,readonly,!!trapped,(unsigned long long)vector,(unsigned long long)error,(unsigned)same);return 1;}
         pl_u32 row=sample*2u+readonly;machine_state *a=records[row],*b=a+1u;
         memset(a,0,sizeof *a);a->rip=0x400000u;a->rflags=0x10202u;a->cr0=0x80010031u;a->cr3=0x1000u;a->cr4=32u;a->efer=0xd00u;
         a->system[MACHINE_SYSTEM_CS]=19u;a->system[MACHINE_SYSTEM_DR0+7u]=0x400u;a->retired=42u;*b=*a;

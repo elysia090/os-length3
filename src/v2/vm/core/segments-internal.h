@@ -1,6 +1,10 @@
 #ifndef VM_SEGMENTS_INTERNAL_H
 #define VM_SEGMENTS_INTERNAL_H
-#include <machine/segments.h>
+#include <vm/segments.h>
+machine_result vm_descriptor_read(vm_memory *memory,pl_u32 port,const machine_state *state,
+    const machine_segments *segments,pl_u32 selector,pl_u32 external,pl_u64 *address,pl_u64 *value);
+machine_result vm_descriptor_accessed(vm_memory *memory,pl_u32 port,const machine_state *state,pl_u64 address,pl_u32 access);
+void vm_segments_outer(machine_state *state,machine_segments *segments,pl_u32 cpl);
 static inline machine_segment_cache vm_segment_cache_raw(pl_u64 descriptor)
 {
     machine_segment_cache cache;

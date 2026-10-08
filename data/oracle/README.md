@@ -1,5 +1,12 @@
 # x86 semantic oracles
 
+Return widths reuse the existing system observer with a low INT landing pad:
+`prepare-return-widths.sh NEW-DIRECTORY` generates16/32/64-bit IRET and far RET
+with0/7 release. Both `check-iret-system.mjs` and `check-outer-iret.mjs` accept
+`--return=BYTES,FAR,DISCARD`; old IRETQ and frame-priority controls remain default.
+Only the former launches an independent test VM; neither is a product guest
+interpreter. See [return closure and exact reference scope](../../src/v2/vm/check/browser/evidence/2026-10-08-return-widths.md).
+
 FIST/FISTP/FISTTP and FLD32/64 also consume the common physical SSA and C
 memory/push/store owners. Observer/checker modes `--store` and `--load` provide
 24,576/6,144 complete physical FPU/RFLAGS rows. `check-x87-store.c` and

@@ -53,7 +53,7 @@ static void check_case(const pl_u64 *row)
     if(first)cpu.registers[4]+=8u;
     /* The oracle's #UD/#GP handler advances RIP; #PF retries the same store. */
     if(kind==1u||kind==2u)put(stack_offset(cpu.registers[4]),rip+2u);
-    EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
+    EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments,0u));
     EXPECT(cpu.registers[4]==row[14] && cpu.rflags==(row[13]|(kind==3u?0u:0x10000u)));
     /* A successful ordinary instruction clears restored RF; IRETQ itself
      * does not. The system oracle records after its retried/skipped cut. */
@@ -82,7 +82,7 @@ int main(int argc,char **argv)
             EXPECT(cpu.registers[4]==((before.registers[4]&~15ull)-48u));
             EXPECT(cpu.rflags==(gate==0x8eu?0x403u:0x603u));
             EXPECT(get(stack_offset(cpu.registers[4]))==2u && cpu.retired==before.retired);
-            cpu.registers[4]+=8u;EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
+            cpu.registers[4]+=8u;EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments,0u));
             EXPECT(cpu.rip==before.rip && cpu.registers[4]==before.registers[4] && cpu.rflags==0x10603u);
             ++cases;
         }
@@ -147,7 +147,7 @@ int main(int argc,char **argv)
         EXPECT(cpu.registers[4]==0x108ed8u);
         EXPECT(get(stack_offset(cpu.registers[4]))==before.rip);
         EXPECT(get(stack_offset(cpu.registers[4])+16u)==before.rflags);
-        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
+        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments,0u));
         EXPECT(cpu.rflags==before.rflags && cpu.registers[4]==before.registers[4]);
         ++interrupts;
     }
@@ -182,7 +182,7 @@ int main(int argc,char **argv)
         EXPECT(cpu.rflags==(gate==0x8eu?0x403u:0x603u));
         EXPECT(cpu.system[MACHINE_SYSTEM_CR2]==before.system[MACHINE_SYSTEM_CR2]);
         if(vector==1u)EXPECT(cpu.system[MACHINE_SYSTEM_DR0+6u]==0xffffeff0u&&cpu.system[MACHINE_SYSTEM_DR0+7u]==0x400u);
-        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
+        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments,0u));
         EXPECT(cpu.rip==before.rip+1u && cpu.registers[4]==before.registers[4] && cpu.rflags==0x603u);
         ++software;
     }

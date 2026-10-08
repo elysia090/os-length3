@@ -49,6 +49,7 @@ WASM_FLAGS += -DVM_SOURCE_PROFILE -Wl,--export=vm_source_profile
 endif
 SOURCES = core/resource.c core/memory.c core/mmu.c core/boot.c core/supply.c core/execution.c core/segments.c core/tables.c core/control.c core/registers.c core/msr.c core/debug.c core/exception.c core/interrupt.c core/source.c core/clock.c core/pit.c core/pic.c core/rtc.c core/uart.c core/console.c core/io.c
 SOURCES += core/system.c
+SOURCES += core/descriptor.c
 SOURCES += core/directory.c
 SOURCES += core/module.c
 include ../artifact/sources.mk
@@ -57,6 +58,12 @@ WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: return-widths-check
+check: return-widths-check
+return-widths-check: $(BUILD)/return-widths-check
+	$(BUILD)/return-widths-check
+$(BUILD)/return-widths-check: check/return-widths.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 .PHONY: checkpoint-check
 check: checkpoint-check
 checkpoint-check: $(BUILD)/checkpoint-check

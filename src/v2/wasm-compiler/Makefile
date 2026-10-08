@@ -63,6 +63,12 @@ $(BUILD)/x87-integer-store-check: check/x87-integer-store.c $(BUILD)/libwasm-com
 SOURCES += src/lower-x87-status.c
 SOURCES += src/lower-enter.c
 SOURCES += src/lower-string-io.c
+.PHONY: return-check
+check: return-check
+return-check: $(BUILD)/return-check
+	$(BUILD)/return-check
+$(BUILD)/return-check: check/return.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: translate-byte-check
 check: translate-byte-check
 translate-byte-check: $(BUILD)/translate-byte-check

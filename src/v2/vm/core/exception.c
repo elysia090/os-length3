@@ -2,6 +2,7 @@
 #include "memory-internal.h"
 #include "segments-internal.h"
 #include <stddef.h>
+#include <machine/control.h>
 
 static int canonical(pl_u64 address)
 { return address >> 47u == 0u || address >> 47u == 0x1ffffu; }
@@ -28,36 +29,6 @@ static int admitted(vm_memory *memory, pl_u32 port, const machine_state *state,
         && (segments->cache[MACHINE_SEGMENT_CS].attributes & 0x2000u)
         && !(segments->cache[MACHINE_SEGMENT_CS].attributes & (0x4000u | MACHINE_SEGMENT_UNUSABLE))
         && !(state->rflags & 0x20000u) && !(state->cr4 & (1ull << 23u));
-}
-static machine_result descriptor(vm_memory *memory, pl_u32 port, machine_state *state,
-    const machine_segments *segments, pl_u32 selector, pl_u32 external, pl_u64 *address, pl_u64 *value)
-{
-    pl_u32 error = (selector & 0xfffcu) | external, index = selector & 0xfff8u;
-    pl_u8 *bytes = memory->bytes + port;
-    if (!(selector & 0xfffcu)) return fault(bytes,state,13u,external);
-    pl_u64 base = state->system[MACHINE_SYSTEM_GDTR_BASE], limit = state->system[MACHINE_SYSTEM_GDTR_LIMIT];
-    if (limit > 65535u) return MACHINE_RESULT_ENTRY_MAP;
-    if (selector & 4u) {
-        const machine_segment_cache *ldt = segments->cache + MACHINE_SEGMENT_LDTR;
-        if ((ldt->attributes & MACHINE_SEGMENT_UNUSABLE) || (ldt->attributes & 0x9fu) != 0x82u)
-            return fault(bytes,state,13u,error);
-        base = ldt->base; limit = ldt->limit;
-    }
-    if ((pl_u64)index + 7u > limit || base > ~0ull - index - 7u
-            || !canonical(base + index) || !canonical(base + index + 7u))
-        return fault(bytes,state,13u,error);
-    *address = base + index;
-    vm_mmu_context context = {state->cr0,state->cr3,state->cr4,state->efer,0u};
-    machine_result result = vm_mmu_access(memory,port,&context,*address,8u,MACHINE_MEMORY_READ,0u);
-    if (!result) *value = vm_memory_load(bytes + offsetof(machine_memory_port,value),8u);
-    return result;
-}
-static machine_result accessed(vm_memory *memory, pl_u32 port, const machine_state *state,
-                               pl_u64 address, pl_u32 access)
-{
-    if (access & 1u) return 0u;
-    vm_mmu_context context = {state->cr0,state->cr3,state->cr4,state->efer,0u};
-    return vm_mmu_access(memory,port,&context,address + 5u,1u,MACHINE_MEMORY_WRITE,access | 1u);
 }
 
 static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state *state,
@@ -129,7 +100,7 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
     }
     if (delivery->stage == 2u) {
         pl_u64 value;
-        result = descriptor(memory,port_offset,state,segments,delivery->selector,
+        result = vm_descriptor_read(memory,port_offset,state,segments,delivery->selector,
                              external,&delivery->descriptor_address,&value);
         if (result) goto done;
         pl_u32 access = (pl_u32)(value >> 40u) & 255u, selector_error = (delivery->selector & 0xfffcu) | external;
@@ -163,7 +134,7 @@ static machine_result enter(vm_memory *memory, pl_u32 port_offset, machine_state
             delivery->descriptor_access|=256u;
         }
         if (!canonical(delivery->stack)) { result = fault(port,state,12u,0u); goto done; }
-        result = accessed(memory,port_offset,state,delivery->descriptor_address,delivery->descriptor_access&255u);
+        result = vm_descriptor_accessed(memory,port_offset,state,delivery->descriptor_address,delivery->descriptor_access&255u);
         if (result) goto done;
         delivery->stage = 4u;
     }
@@ -234,19 +205,22 @@ machine_result vm_software_interrupt_enter(vm_memory *memory, pl_u32 port, machi
 }
 
 machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
-    machine_state *state, machine_segments *segments)
+    machine_state *state, machine_segments *segments,pl_u32 return_word)
 {
     vm_memory_abort(memory);
-    if (!admitted(memory,port_offset,state,segments) || (state->system[MACHINE_SYSTEM_CS]&3u))
+    pl_u32 bytes=machine_return_bytes(return_word);
+    if (!bytes||(return_word&MACHINE_RETURN_DISCARD_MASK)||!admitted(memory,port_offset,state,segments))
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u8 *port = memory->bytes + port_offset;
     if (vm_memory_load(port,8u) != memory->generation) return MACHINE_RESULT_STALE_GENERATION;
     if (state->rflags & 0x4000u) return fault(port,state,13u,0u);
-    vm_mmu_context context = {state->cr0,state->cr3,state->cr4,state->efer,0u};
+    pl_u32 cpl=(pl_u32)state->system[MACHINE_SYSTEM_CS]&3u;
+    vm_mmu_context context = {state->cr0,state->cr3,state->cr4,state->efer,cpl};
+    if(state->registers[4]>~0ull-(3u*bytes-1u))return fault(port,state,12u,0u);
     pl_u64 frame[5];
     for (pl_u32 i = 0u; i < 3u; ++i) {
-        pl_u32 width = i == 1u ? 2u : 8u;
-        machine_result result = vm_mmu_access(memory,port_offset,&context,state->registers[4] + i * 8u,
+        pl_u32 width = i == 1u ? 2u : bytes;
+        machine_result result = vm_mmu_access(memory,port_offset,&context,state->registers[4] + i * bytes,
             width,MACHINE_MEMORY_READ | MACHINE_MEMORY_STACK,0u);
         if (result) return result;
         frame[i] = vm_memory_load(port + offsetof(machine_memory_port,value),width);
@@ -254,26 +228,27 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
     pl_u32 selector = (pl_u32)frame[1] & 65535u, error = selector & 0xfffcu;
     pl_u32 return_cpl = selector & 3u;
     pl_u64 address, value;
-    machine_result result = descriptor(memory,port_offset,state,segments,selector,0u,&address,&value);
+    machine_result result = vm_descriptor_read(memory,port_offset,state,segments,selector,0u,&address,&value);
     if (result) return result;
     pl_u32 access = (pl_u32)(value >> 40u) & 255u;
     machine_segment_cache code = vm_segment_cache_decode(value);
     pl_u32 dpl = (access >> 5u) & 3u;
-    if ((access & 0x18u) != 0x18u
+    if ((access & 0x18u) != 0x18u || return_cpl<cpl
             || ((access & 4u) ? dpl > return_cpl : dpl != return_cpl)
             || (code.attributes & 0x6000u) != 0x2000u)
         return fault(port,state,13u,error);
     if (!(access & 128u)) return fault(port,state,11u,error);
     /* Loading CS can set its descriptor Accessed bit before a later SS
      * check fails. Architectural register publication is still deferred. */
-    result = accessed(memory,port_offset,state,address,access);
+    result = vm_descriptor_accessed(memory,port_offset,state,address,access);
     if (result) return result;
+    if(state->registers[4]>~0ull-(5u*bytes-1u))return fault(port,state,12u,0u);
     /* CS checks precede outer stack operands. Selector slots have 8-byte
      * spacing, but only the low two bytes are read; SS precedes RSP. Reading
      * discarded bytes changes #PF priority/address at page boundaries. */
     for (pl_u32 rank = 0u; rank < 2u; ++rank) {
-        pl_u32 i = 4u-rank, width = rank ? 8u : 2u;
-        result = vm_mmu_access(memory,port_offset,&context,state->registers[4] + i * 8u,
+        pl_u32 i = 4u-rank, width = rank ? bytes : 2u;
+        result = vm_mmu_access(memory,port_offset,&context,state->registers[4] + i * bytes,
             width,MACHINE_MEMORY_READ | MACHINE_MEMORY_STACK,0u);
         if (result) return result;
         frame[i] = vm_memory_load(port + offsetof(machine_memory_port,value),width);
@@ -283,7 +258,7 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
     machine_segment_cache stack = {0u,0u,MACHINE_SEGMENT_UNUSABLE | return_cpl << 5u};
     pl_u64 stack_address = 0u; pl_u32 stack_access = 1u;
     if (ss & 0xfffcu) {
-        result = descriptor(memory,port_offset,state,segments,ss,0u,&stack_address,&value);
+        result = vm_descriptor_read(memory,port_offset,state,segments,ss,0u,&stack_address,&value);
         if (result) return result;
         stack_access = (pl_u32)(value >> 40u) & 255u;
         if ((stack_access & 0x1au) != 0x12u || ((stack_access >> 5u) & 3u) != return_cpl)
@@ -291,7 +266,7 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
         if (!(stack_access & 128u)) return fault(port,state,12u,ss & 0xfffcu);
         stack = vm_segment_cache_decode(value);
     } else if (return_cpl == 3u) return fault(port,state,13u,0u);
-    result = accessed(memory,port_offset,state,stack_address,stack_access);
+    result = vm_descriptor_accessed(memory,port_offset,state,stack_address,stack_access);
     if (result) return result;
     /* RIP legality follows the descriptor loads and their Accessed writes.
      * Merely restoring RSP does not dereference it: a non-canonical restored
@@ -303,21 +278,14 @@ machine_result vm_interrupt_return(vm_memory *memory, pl_u32 port_offset,
     /* Outer return invalidates only data/non-conforming caches whose old
      * descriptor privilege is now too strong. Conforming code remains usable.
      * No architectural selector/cache publication precedes the checks above. */
-    if (return_cpl) for (pl_u32 rank = 0u; rank <= MACHINE_SEGMENT_GS; ++rank) {
-        if (rank == MACHINE_SEGMENT_CS || rank == MACHINE_SEGMENT_SS) continue;
-        machine_segment_cache *cache = segments->cache + rank;
-        if (!(cache->attributes & MACHINE_SEGMENT_UNUSABLE)
-                && ((cache->attributes >> 5u) & 3u) < return_cpl
-                && (cache->attributes & 12u) != 12u) {
-            state->system[MACHINE_SYSTEM_ES + rank] = 0u;
-            /* IRET invalidation preserves the cached base/limit. In 64-bit
-             * mode FS/GS bases remain observable independently of selector. */
-            cache->attributes = (cache->attributes & ~128u) | MACHINE_SEGMENT_UNUSABLE;
-        }
-    }
+    if(return_cpl>cpl)vm_segments_outer(state,segments,return_cpl);
     /* CPL0 restores IOPL/IF/VIF/VIP; VM remains unchanged. Reserved bits
      * use the architectural fixed-zero/fixed-one representative. */
-    state->rflags = (frame[2] & 0x3d7fd5u) | (state->rflags & 0x20000u) | 2u;
+    pl_u64 mask=0x4dd5u;
+    if(bytes!=2u)mask|=0x250000u; /* RF/AC/ID */
+    if(cpl<=((state->rflags>>12u)&3u))mask|=0x200u;
+    if(!cpl){mask|=0x3000u;if(bytes!=2u)mask|=0x180000u;}
+    state->rflags=(frame[2]&mask)|(state->rflags&~mask&0x3f7fd5u)|2u;
     segments->interrupt_shadow = 0u;
     return 0u;
 }

@@ -2906,6 +2906,8 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_FAR_RETURN||instruction->machine_operation==PL_X86_MACHINE_INTERRUPT_RETURN){
+        pl_x86_return law;if(!pl_x86_return_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->operation==PL_X86_OPERATION_TRANSLATE_BYTE&&!pl_x86_translate_byte_memory(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_SOFTWARE_INTERRUPT
         &&((instruction->flags&PL_X86_INSTRUCTION_TRAP_AFTER)||instruction->opcode==0xf1u||instruction->opcode==0xccu)){

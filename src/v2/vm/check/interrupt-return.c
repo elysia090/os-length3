@@ -46,25 +46,25 @@ int main(void)
             expected.system[MACHINE_SYSTEM_ES+i]=0u;
             hidden.cache[i].attributes=(hidden.cache[i].attributes&~128u)|MACHINE_SEGMENT_UNUSABLE;
         }
-        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));
+        EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments,0u));
         EXPECT(!memcmp(&cpu,&expected,sizeof cpu)&&!memcmp(&segments,&hidden,sizeof segments));
         EXPECT(arena[16384u+29u]==(0x9bu|cpl<<5u)&&arena[16384u+37u]==(0x93u|cpl<<5u));++returns;
     }
     /* A later stack fault must retain the already-completed CS Accessed write,
      * but not publish any architectural register, hidden cache or retirement. */
     reset(3u,0u);arena[16384u+37u]&=127u;
-    EXPECT(vm_interrupt_return(&memory,0u,&cpu,&segments)==99u);
+    EXPECT(vm_interrupt_return(&memory,0u,&cpu,&segments,0u)==99u);
     EXPECT(arena[16384u+29u]==0xfbu&&arena[16384u+37u]==0x72u);
     EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!memcmp(&segments,&old_segments,sizeof segments));++faults;
     reset(3u,0u);put(20480u+0xe00u,0x800000000000ull);
-    EXPECT(vm_interrupt_return(&memory,0u,&cpu,&segments)==107u);
+    EXPECT(vm_interrupt_return(&memory,0u,&cpu,&segments,0u)==107u);
     EXPECT(arena[16384u+29u]==0xfbu&&arena[16384u+37u]==0xf3u);
     EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!memcmp(&segments,&old_segments,sizeof segments));++faults;
     for(pl_u32 rank=3u;rank<=4u;++rank) {
         reset(3u,0u);pages[rank].kind=VM_MEMORY_DEFERRED;
-        EXPECT(vm_interrupt_return(&memory,0u,&cpu,&segments)==2u);
+        EXPECT(vm_interrupt_return(&memory,0u,&cpu,&segments,0u)==2u);
         EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!memcmp(&segments,&old_segments,sizeof segments));
-        pages[rank].kind=VM_MEMORY_RAM;EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments));++waits;
+        pages[rank].kind=VM_MEMORY_RAM;EXPECT(!vm_interrupt_return(&memory,0u,&cpu,&segments,0u));++waits;
     }
     /* Last-page SS selector has only two significant bytes. Null CS must
      * fault before the absent outer stack operands; otherwise SS is read
@@ -75,7 +75,7 @@ int main(void)
         cpu.registers[4]=0x1fffe8u-align;before=cpu;
         pl_u32 at=20480u+(pl_u32)(cpu.registers[4]&4095u);
         put(at,0x600100u);put(at+8u,invalid?3u:27u);put(at+16u,0x603u);put(at+24u,0x7e00u);put(at+32u,35u);
-        machine_result result=vm_interrupt_return(&memory,0u,&cpu,&segments);
+        machine_result result=vm_interrupt_return(&memory,0u,&cpu,&segments,0u);
         if(invalid||align<10u) {
             EXPECT(result==(invalid?107u:115u));
             EXPECT(!memcmp(&cpu,&before,sizeof cpu)&&!memcmp(&segments,&old_segments,sizeof segments));

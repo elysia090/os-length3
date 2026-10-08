@@ -1,0 +1,17 @@
+{
+  "format":"common-return-width-closure-v1","status":"verified-families","baseline":"2c71dab",
+  "compiler":{"bytes":662863,"sha256":"e621bbf73bdd51f11106ae6bcb54543b4fd252ecf577ea6627835566eddbd8ba"},
+  "vm":{"bytes":98049,"sha256":"f76222154bd1faf642e50243644ea60e3e662b36bcc5ab09ac2ce354ab3b0449"},
+  "families":{"farReturnWidths":[16,32,64],"interruptReturnWidths":[16,32,64],"farParameterRelease":[0,7],"sameAndOuterLongModeTargets":true,"originCplFlagModels":[0,1,2,3],"oneDescriptorAndAccessedOwner":true,"old64OnlyAdmissionRemoved":true,"staleContextAfterFarReturnFixed":true},
+  "constructors":{"forms":147,"malformedRefusals":1764},
+  "models":{"completeStateReturns":360,"preservedStateNullSelectorFaults":360},
+  "whpx":{"freshProfiles":8,"freshSystemRows":2560,"retainedIretQRows":320,"retainedFramePriorityRows":352,"allComparedThroughCAndColdTable":true,"physicalSiliconClaim":false},
+  "retainedIretModels":{"comparisons":120,"faults":12,"waits":2,"refusals":1},
+  "tcgFar32":{"rows":320,"differingFields":240,"stackNotPresentVectorDifferences":16,"csAccessedDifferences":144,"ssAccessedDifferences":80,"differencesFitted":false},
+  "referenceHarness":{"explicitFxrstorXmmClobbers":true,"noPerRowDiagnosticRepeats":10,"rowsPerRepeat":64},
+  "checks":{"vm":"pass","x86":"pass","compiler":"pass","postlink":"pass","positiveAsanUbsan":"pass","warnings":0},
+  "actualMake":{"domain":"every-final-PF_X-byte","coordinates":233455,"lowerable":232066,"baselineMissing":2099,"missing":1389,"recovered":710,"unloweredFaults":0,"fetchDemands":0,"capacityRefusals":0,"firstAddress":"0xa733","firstSource":"0f746941","domainNarrowed":false},
+  "sameBundleShortNode":{"independentWitness":86,"retired":1617931,"admissions":1000000,"stop":"quota","immutableImageBytes":89878528},
+  "nativeBundleOrHumanUiChanged":false,"productQemuOrInterpreter":false,"rootPublished":false,"linuxBoot":"not-achieved",
+  "remainingMachineAbi":["compatibility targets","CET","general TF/AC execution"],"wholeGoal":"active"
+}

@@ -153,6 +153,8 @@ const pl_x86_operand *pl_x86_string_io_memory(const pl_x86_instruction *instruct
 /* XLAT's only memory coordinate is RBX/EBX + unsigned AL, then segment
  * translation. Neither REX.B nor operand-size changes that base or result. */
 const pl_x86_operand *pl_x86_translate_byte_memory(const pl_x86_instruction *instruction);
+typedef struct {pl_u8 bytes,interrupt;pl_u16 discard;} pl_x86_return;
+int pl_x86_return_lower(const pl_x86_instruction *instruction,pl_x86_return *out);
 
 /* A static lane selection over one or two 128-bit inputs. Coordinates below
  * 16 name the first input; coordinates 16..31 name the second input. Input

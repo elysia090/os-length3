@@ -353,8 +353,8 @@ int main(void)
             }
         }
 
-    /* Far return: complete stack preflight, descriptor/privilege validation,
-     * hidden CS commit and deliberate rejection of outer/mode transitions. */
+    /* Far return: stack/descriptor checks and hidden CS commit. These outer
+     * inputs have no valid saved SS; report #GP instead of refusing the family. */
     pl_u32 returns = 0u;
     for (pl_u32 cpl = 0u; cpl < 4u; ++cpl)
     for (pl_u32 rpl = 0u; rpl < 4u; ++rpl)
@@ -381,7 +381,7 @@ int main(void)
             || (access_byte & 4u ? dpl > rpl : dpl != rpl);
         if (denied) vector = 13u; else if (!(access_byte & 128u)) vector = 11u;
         if (vector) expect_fault(result,before.rip,vector,16u);
-        else if (rpl != cpl) EXPECT(result == MACHINE_RESULT_ENTRY_MAP);
+        else if (rpl != cpl) expect_fault(result,before.rip,13u,0u);
         else {
             EXPECT(result == 0u);
             before.system[MACHINE_SYSTEM_CS] = 16u | rpl;

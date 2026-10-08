@@ -1013,7 +1013,7 @@ machine_result vm_table(pl_u32 port, pl_u64 address, pl_u32 rank, pl_u32 access)
     return memory_result(port,result);
 }
 
-machine_result vm_return(pl_u32 port, pl_u32 discard_bytes)
+machine_result vm_return(pl_u32 port, pl_u32 return_word)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
@@ -1021,8 +1021,8 @@ machine_result vm_return(pl_u32 port, pl_u32 discard_bytes)
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     resident.write_touched = 0u;
     machine_result result = vm_far_return(&resident,port - arena_base,
-        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,discard_bytes);
-    if (resident.write_touched) execution.generation = 0u;
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,return_word);
+    if (!result || resident.write_touched) execution.generation = 0u;
     return memory_result(port,result);
 }
 
@@ -1055,7 +1055,7 @@ machine_result vm_software_interrupt(pl_u32 port, pl_u32 vector, pl_u64 next_rip
     if (!result || resident.write_touched) execution.generation=0u;
     return memory_result(port,result);
 }
-machine_result vm_iret(pl_u32 port)
+machine_result vm_iret(pl_u32 port,pl_u32 return_word)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
@@ -1063,7 +1063,7 @@ machine_result vm_iret(pl_u32 port)
     if (delivery.stage || !segments_offset || !private_port(port)) return MACHINE_RESULT_ENTRY_MAP;
     resident.write_touched = 0u;
     machine_result result = vm_interrupt_return(&resident,port - arena_base,
-        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset);
+        (machine_state *)(uintptr_t)state_offset,(machine_segments *)(uintptr_t)segments_offset,return_word);
     if (!result || resident.write_touched) execution.generation = 0u;
     return memory_result(port,result);
 }

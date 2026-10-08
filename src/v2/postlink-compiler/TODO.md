@@ -23,6 +23,21 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+far RET/IRET now have one width/parameter descriptor and C frame path. All16/32/
+64-bit forms, outer far returns, origin-CPL/IOPL flag masks and significant
+selector bytes are implemented. Shared GDT/LDT/Accessed/outer-cache owners
+replace duplicate descriptor logic.2560 fresh WHPX system rows +672 retained
+IRETQ/frame rows match C and cold compiled/C dispatch;360+360 full-state/fault
+models and147/1764 construction/refusal gates pass. Successful far returns
+now revoke stale execution context, not only when a descriptor was written.
+Same make domain2099->1389 unresolved (710 recovered). Next close MMX/packed,
+remaining x87 and far call/jump families; preserve full ZERO and Linux acceptance
+goal. Compatibility/CET and general TF/AC contexts remain explicit ABI tasks,
+not permission to treat unsupported states as successful execution. See
+[return frame, independent differences and reproduction](../vm/check/browser/evidence/2026-10-08-return-widths.md).
+
+## Preceding floating-transfer checkpoint
+
 FIST/FISTP/FISTTP are now closed through one signed conversion/store/pop path:
 24,576 full physical rows +7,424 official numeric rows,64 independent actual
 write-fault ordering rows,64 prefix forms/768 malformed controls. Unmasked

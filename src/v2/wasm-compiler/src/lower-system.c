@@ -4,6 +4,7 @@
 #include <machine/msr.h>
 #include <machine/exception.h>
 #include <machine/system.h>
+#include <machine/control.h>
 static int memory_order_supported(const pl_x86_instruction *instruction)
 {
     const pl_u32 required=PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
@@ -21,6 +22,8 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 }
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_return returning;
+    if(pl_x86_return_lower(instruction,&returning))return returning.interrupt?CUT_SYSTEM_INTERRUPT_RETURN:CUT_SYSTEM_FAR_RETURN;
     pl_x86_count_branch count;
     if(pl_x86_count_branch_lower(instruction,&count) && count.bits!=16u)return CUT_SYSTEM_COUNTER_BRANCH;
     pl_x86_selector_read snapshot;
@@ -150,12 +153,6 @@ int cut_system_supported(const pl_x86_instruction *instruction)
             && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
                                        | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_MSR;
     if (instruction->status == PL_X86_DECODE_VALID
-            && instruction->machine_operation == PL_X86_MACHINE_INTERRUPT_RETURN
-            && instruction->machine_argument == 64u && instruction->operand_width == 64u
-            && instruction->flow == PL_X86_FLOW_RETURN
-            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
-                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_INTERRUPT_RETURN;
-    if (instruction->status == PL_X86_DECODE_VALID
             && instruction->machine_operation == PL_X86_MACHINE_CPUID
             && !instruction->visible_operand_count
             && (instruction->flow == PL_X86_FLOW_NEXT || instruction->flow == PL_X86_FLOW_SYSTEM)
@@ -191,12 +188,6 @@ int cut_system_supported(const pl_x86_instruction *instruction)
         if (rank == 0u || rank == 2u || rank == 3u || rank == 4u || rank == 8u)
             return CUT_SYSTEM_CONTROL_READ;
     }
-    if (instruction->status == PL_X86_DECODE_VALID
-            && instruction->machine_operation == PL_X86_MACHINE_FAR_RETURN
-            && instruction->flow == PL_X86_FLOW_RETURN && instruction->operand_width == 64u
-            && instruction->machine_argument <= 65535u
-            && !(instruction->flags & (PL_X86_INSTRUCTION_LOCKED | PL_X86_INSTRUCTION_REPEATED
-                                       | PL_X86_INSTRUCTION_TRAP_AFTER))) return CUT_SYSTEM_FAR_RETURN;
     if (instruction->status == PL_X86_DECODE_VALID
             && instruction->machine_operation == PL_X86_MACHINE_DESCRIPTOR_TABLE
             && instruction->machine_argument <= 3u
@@ -524,7 +515,9 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         return;
     }
     if (cut->has_interrupt_return) {
+        pl_x86_return law;if(!pl_x86_return_lower(instruction,&law)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
+        cut_i32_const(cut,machine_return_word(law.bytes,0u));
         cut_call(cut,WASM_IMPORT_IRET); cut_access_status(cut);
         cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
         cut_load(cut,offsetof(machine_state,rflags)); cut_set(cut,CUT_FLAGS);
@@ -566,8 +559,9 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         return;
     }
     if (cut->has_far_return) {
+        pl_x86_return law;if(!pl_x86_return_lower(instruction,&law)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
-        cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->machine_argument);
+        cut_i32_const(cut,machine_return_word(law.bytes,law.discard));
         cut_call(cut,WASM_IMPORT_FAR_RETURN); cut_access_status(cut);
         cut_load(cut,offsetof(machine_state,rip)); cut_set(cut,CUT_NEXT);
         return;

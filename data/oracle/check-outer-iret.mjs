@@ -2,7 +2,11 @@
 // observations are separate; this does not boot Linux or certify all IRET modes.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-const [vmFile,compilerFile,hardwareFile,tcgFile,...extra]=process.argv.slice(2);
+const arguments_=process.argv.slice(2),variant=arguments_.find(x=>x.startsWith('--return='));
+if(variant&&!/^--return=(2|4|8),(0|1),(0|7)$/.test(variant))throw new Error('invalid return transaction');
+const [operandBytes,far,discard]=variant?variant.slice(9).split(',').map(Number):[8,0,0];
+const returnWord=(operandBytes===2?1:operandBytes===4?2:0)*65536+discard;
+const [vmFile,compilerFile,hardwareFile,tcgFile,...extra]=arguments_.filter(x=>!x.startsWith('--return='));
 if(!compilerFile||extra.length)throw new Error('usage: check-outer-iret.mjs VM.WASM COMPILER.WASM [HARDWARE-ROWS.log] [TCG-ROWS.log]');
 const memory=new WebAssembly.Memory({initial:8});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
@@ -11,24 +15,26 @@ const base=directory+4096,segments=base+1408,port=base+2048;
 const physical=[0x1000,0x2000,0x3000,0x4000,0x5000,0x6000,0x7000];
 const payload=rank=>base+(rank+2)*4096;
 const put=(at,x)=>v.setBigUint64(at,BigInt.asUintN(64,BigInt(x)),true);
+const putSlot=(at,x,bytes)=>{for(let i=0;i<bytes;++i)data[at+i]=Number(BigInt.asUintN(64,BigInt(x))>>BigInt(i*8)&255n);};
 const get=at=>v.getBigUint64(at,true);
 let comparisons=0,faults=0,waits=0,refusals=0,compiled=0,native=0;
 const compilerMemory=new WebAssembly.Memory({initial:16});
 const cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:compilerMemory}})).instance.exports;
 const input=cc.compiler_arena_min(),output=input+8192,report=output+65536;
 const source=new Uint8Array(compilerMemory.buffer),rv=new DataView(compilerMemory.buffer);
-source.fill(0x90,input,input+4096);source.set([0x48,0xcf],input);
+const spelling=Uint8Array.from([...(operandBytes===2?[0x66]:operandBytes===8?[0x48]:[]),far?(discard?0xca:0xcb):0xcf,...(far&&discard?[discard,0]:[])]);
+source.fill(0x90,input,input+4096);source.set(spelling,input);
 assert.equal(cc.compiler_open_pages(input,1,0x6000n,9n),0);
 assert.equal(cc.compiler_emit(0x6000n,1,output,65536,report),0);
-assert.equal(rv.getBigUint64(report+32,true),2n);
+assert.equal(rv.getBigUint64(report+32,true),BigInt(spelling.length));
 const cut=(await WebAssembly.instantiate(source.slice(output,output+Number(rv.getBigUint64(report+40,true))),
-  {machine:{memory,iret:vm.vm_iret}})).instance.exports.cut;
+  {machine:{memory,iret:vm.vm_iret,far_return:vm.vm_return}})).instance.exports.cut;
 const slot=vm.__indirect_function_table.grow(1),rows=directory+512;
 vm.__indirect_function_table.set(slot,cut);
 const binding=rv.getUint32(report+76,true);
 function runCompiled() {
-  put(base+384,0x6000);data.set([0x48,0xcf],payload(5));
-  put(rows,0x6000);v.setUint32(rows+8,2,true);v.setUint32(rows+12,1,true);
+  put(base+384,0x6000);data.set(spelling,payload(5));
+  put(rows,0x6000);v.setUint32(rows+8,spelling.length,true);v.setUint32(rows+12,1,true);
   v.setUint32(rows+16,slot,true);v.setUint32(rows+20,binding,true);
   assert.equal(vm.vm_bind_execution(rows,1,9n),0);++compiled;
   return vm.vm_run(port,9n,1);
@@ -62,6 +68,7 @@ function reset(cpl,conforming=false,accessed=true) {
 }
 const cpu=()=>Buffer.from(data.subarray(base,base+1256));
 const hidden=()=>Buffer.from(data.subarray(segments,segments+136));
+if(!variant){
 for(const cpl of [1,2,3])for(const conforming of [false,true])for(const accessed of [false,true])
 for(const flags of [2n,0x202n,0x10647n,0x3d7fd5n,~0n])for(const rsp of [0x7e00n,0x800000000000n]) {
   const {frame,codeAccess,stackAccess}=reset(cpl,conforming,accessed);put(frame+16,flags);put(frame+24,rsp);
@@ -121,6 +128,7 @@ for(const rank of [3,4]) {
 }
 reset(3);put(port,8);const before=cpu(),h=hidden();assert.equal(vm.vm_iret(port),5n);
 assert(cpu().equals(before));assert(hidden().equals(h));++refusals;
+}
 let oracleDifferences=[];
 if(hardwareFile) {
   const parse=async file=>(await readFile(file,'utf8')).trim().split(/\r?\n/)
@@ -138,14 +146,17 @@ if(hardwareFile) {
     }
     put(payload(3)+24,0x00af00000000ffffn|row[2]<<40n);
     put(payload(3)+32,0x00cf00000000ffffn|row[3]<<40n);
-    put(frame,row[7]===128n?row[9]-2n:0x100260n);put(frame+16,row[4]);put(frame+24,row[5]);
-    put(frame+8,24|cpl);put(frame+32,32|cpl);
-    if(index>>4===18)put(frame,0x800000000000n);
-    if(index>>4===14)put(frame+32,3);
-    if(index>>4===20)put(frame+8,3);
+    const frameBytes=far?4*operandBytes+discard:5*operandBytes;
+    const slotAt=rank=>frame+(far&&rank>=3?(rank-1)*operandBytes+discard:rank*operandBytes);
+    putSlot(frame,row[7]===128n?row[9]-2n:variant?0x7000n:0x100260n,operandBytes);
+    if(!far)putSlot(slotAt(2),row[4],operandBytes);
+    putSlot(slotAt(3),row[5],operandBytes);putSlot(slotAt(1),24|cpl,operandBytes);putSlot(slotAt(4),32|cpl,operandBytes);
+    if(index>>4===18&&operandBytes===8)putSlot(frame,0x800000000000n,operandBytes);
+    if(index>>4===14)putSlot(slotAt(4),3,operandBytes);
+    if(index>>4===20)putSlot(slotAt(1),3,operandBytes);
     put(base+384,row[7]===128n?row[9]-4n:row[9]);
     put(base+392,2);put(segments+8+4*16,row[18]);put(segments+8+5*16,row[19]);
-    const prior=cpu(),cache=hidden(),result=vm.vm_iret(port);
+    const prior=cpu(),cache=hidden(),result=far?vm.vm_return(port,returnWord):vm.vm_iret(port,returnWord);
     if(row[7]===128n) {
       assert.equal(result,0n,`hardware return ${index}`);
       assert.equal(get(base+384)+2n,row[9]);assert.equal(get(base+32),row[12]);
@@ -155,7 +166,7 @@ if(hardwareFile) {
       assert.equal(BigInt(v.getUint32(port+28,true)),row[8]);
       assert.equal(get(port+16),row[7]===14n?row[22]:row[9]);
       assert(cpu().equals(prior));assert(hidden().equals(cache));
-      assert.equal(row[10],8n);assert.equal(row[13],16n);assert.equal(row[12],row[6]-40n);
+      assert.equal(row[10],8n);assert.equal(row[13],16n);assert.equal(row[12],row[6]-BigInt(frameBytes));
       assert.equal(row[11],0x10002n,'native fault frame adds RF without retiring IRET');
     }
     for(const [rank,field] of [[3,14],[0,15],[4,16],[5,17]])assert.equal(get(base+480+rank*8),row[field]);
@@ -164,10 +175,11 @@ if(hardwareFile) {
     assert.equal(BigInt(data[payload(3)+37]),row[21],`SS Accessed side effect ${index}`);++native;
     const expected=cpu(),hiddenResult=hidden();data.set(prior,base);data.set(cache,segments);
     data[payload(3)+29]=Number(row[2]);data[payload(3)+37]=Number(row[3]);
-    if(row[7]===128n)expected.writeBigUInt64LE(expected.readBigUInt64LE(1128)+1n,1128);
+    if(row[7]===128n){expected.writeBigUInt64LE(expected.readBigUInt64LE(1128)+1n,1128);
+      if(far)hiddenResult.writeUInt32LE(0,4);}
     else expected.writeBigUInt64LE(0x6000n,384);
     assert.equal(runCompiled(),row[7]===128n?5n:row[7]*8n+3n,`compiled hardware case ${index}`);
-    assert(cpu().equals(expected));assert(hidden().equals(hiddenResult));
+    assert(cpu().equals(expected),`compiled whole CPU ${index}`);assert(hidden().equals(hiddenResult),`compiled hidden cache ${index}`);
     assert.equal(vm.vm_completed(),row[7]===128n?1:0);
     assert.equal(vm.vm_source_retired(),row[7]===128n?1n:0n);
     if(row[7]===14n)assert.equal(get(port+16),row[22]);
@@ -189,7 +201,7 @@ if(hardwareFile) {
 }
 vm.vm_close();
 console.log(JSON.stringify({format:'c-outer-iret-model-v1',status:'pass',comparisons,faults,waits,refusals,
-  compiled,native,oracleDifferences:{count:oracleDifferences.length,
+  compiled,native,returnVariant:variant??'default IRETQ',oracleDifferences:{count:oracleDifferences.length,
     byField:Object.fromEntries([...new Set(oracleDifferences.map(x=>x.field))].map(field=>[field,oracleDifferences.filter(x=>x.field===field).length])),
     examples:oracleDifferences.slice(0,4)},
   oracle:hardwareFile?'whole C-state models, cold compiled/C table dispatch and independent hardware-assisted system observations'

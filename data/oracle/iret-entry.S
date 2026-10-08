@@ -1,6 +1,24 @@
 /* Independent system oracle only. Real IRETQ leaves CPL0; a hardware INT gate
  * records the resulting user frame. Failed trials start a new fixture case,
  * never an execution fallback for a product guest. */
+.ifndef RETURN_BYTES
+.equ RETURN_BYTES,8
+.endif
+.ifndef RETURN_FAR
+.equ RETURN_FAR,0
+.endif
+.ifndef RETURN_DISCARD
+.equ RETURN_DISCARD,0
+.endif
+.macro return_slot q,d,w,offset
+.if RETURN_BYTES == 8
+    mov \q,\offset(%rsp)
+.elseif RETURN_BYTES == 4
+    mov \d,\offset(%rsp)
+.else
+    mov \w,\offset(%rsp)
+.endif
+.endm
 .ifdef FRAME_FAULT_PROFILE
 .equ HAVE_PF_HANDLER,1
 .endif
@@ -49,6 +67,10 @@ _start:
     ljmp $8,$long_start
 .code64
 long_start:
+    /* Low identity-map landing pad makes a 16-bit offset observable too.
+     * INT transfers onto the real TSS kernel stack before any user RSP use. */
+    movw $0x80cd,0x7000
+    movw $0x0b0f,0x7002
     lidt idt_pointer(%rip)
     mov $tss,%eax
     shl $16,%rax
@@ -198,7 +220,37 @@ descriptors_ready:
     cmp $14,%r13d
     jne 8f
     mov $3,%eax
-8:  push %rax
+8:
+.if RETURN_FAR || RETURN_BYTES != 8
+    mov %rax,%r8
+    mov $24,%eax
+    or %r14d,%eax
+    mov %rax,%r9
+    mov $0x7000,%eax
+    cmp $18,%r13d
+    jne 21f
+.if RETURN_BYTES == 8
+    mov $0x0000800000000000,%rax
+.endif
+21:
+.if RETURN_FAR
+    sub $(4*RETURN_BYTES+RETURN_DISCARD),%rsp
+    return_slot %rax,%eax,%ax,0
+    return_slot %r9,%r9d,%r9w,RETURN_BYTES
+    mov 40(%rdi),%rax
+    return_slot %rax,%eax,%ax,2*RETURN_BYTES+RETURN_DISCARD
+    return_slot %r8,%r8d,%r8w,3*RETURN_BYTES+RETURN_DISCARD
+.else
+    sub $(5*RETURN_BYTES),%rsp
+    return_slot %rax,%eax,%ax,0
+    return_slot %r9,%r9d,%r9w,RETURN_BYTES
+    return_slot %rbx,%ebx,%bx,2*RETURN_BYTES
+    mov 40(%rdi),%rax
+    return_slot %rax,%eax,%ax,3*RETURN_BYTES
+    return_slot %r8,%r8d,%r8w,4*RETURN_BYTES
+.endif
+.else
+    push %rax
     pushq 40(%rdi)
     push %rbx
     mov %r14d,%eax
@@ -219,6 +271,7 @@ descriptors_ready:
     mov $0x0000800000000000,%rax
 12:
     push %rax
+.endif
     pushq $2
     popfq
 .ifdef FRAME_FAULT_PROFILE
@@ -232,7 +285,21 @@ descriptors_ready:
     popfq
 .endif
 iret_trial:
-    iretq
+.if RETURN_BYTES == 2
+    .byte 0x66
+.elseif RETURN_BYTES == 8
+    .byte 0x48
+.endif
+.if RETURN_FAR
+.if RETURN_DISCARD
+    .byte 0xca
+    .word RETURN_DISCARD
+.else
+    .byte 0xcb
+.endif
+.else
+    .byte 0xcf
+.endif
 user_start:
     int $128
     ud2
