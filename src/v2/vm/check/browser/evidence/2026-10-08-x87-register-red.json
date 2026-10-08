@@ -1,0 +1,18 @@
+{
+  "format": "register-arithmetic-independent-red-v1",
+  "baseline": "5792275", "status": "red",
+  "firstSource": "dced", "firstMeaning": "FSUB ST(5), ST(0)",
+  "priorMnemonicLabelCorrected": true,
+  "hardware": {"oracle": "physical Windows CPU, not universal silicon certification", "forms": 81, "sourceEncodings": 72,
+    "rows": 42624, "recordBytes": 107071488, "unmaskedPending": 2208, "payloadChangedWhilePending": 554, "poppedWhilePending": 192,
+    "observerSha256": "2ca3cc54193898a981e151175a30c5e4bdf3ae630639d17876849224ca515900"},
+  "unmaskedCauses": {"IE": {"pending": 912, "changed": 0, "popped": 0}, "DE": {"pending": 720, "changed": 0, "popped": 0},
+    "OE": {"pending": 48, "changed": 48, "popped": 16}, "UE": {"pending": 216, "changed": 216, "popped": 72},
+    "PE": {"pending": 312, "changed": 290, "popped": 104}},
+  "softfloat": {"status": "pass", "canonicalMaskedComparisons": 22347, "outsideReferenceDomain": 20277,
+    "archiveSha256": "21130ce885d35c1fe73fc1e1bf2244178167e05c6747cad5f450cc991714c746", "productRuntime": false},
+  "commonCompiler": {"constructionGroups": 81, "grammarRefusals": 81, "firstStatus": -102, "registerExecutionCompared": 0},
+  "retainedGreens": {"integerArithmetic": 36864, "statusComparisons": 44032, "integerObserverRows": 36864},
+  "actualMakeMissing": 4728, "productCodeChanged": false, "nativeBundleOrHumanUiChanged": false,
+  "freshBrowserRun": false, "rootPublished": false, "linuxBoot": "not-achieved", "executionSpeedup": "not-measured"
+}

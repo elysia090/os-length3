@@ -76,6 +76,9 @@ x87-arithmetic-check: $(BUILD)/x87-arithmetic-check
 	$(BUILD)/x87-arithmetic-check
 $(BUILD)/x87-arithmetic-check: check/x87-arithmetic.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
 	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+# Independent physical-Windows observer; never linked into product execution.
+$(BUILD)/x87-arithmetic-observe: check/x87-arithmetic-observe.c check/x87-hardware.h check/x87-observation.h | $(BUILD)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
 .PHONY: x87-snapshot-check
 check: x87-snapshot-check
 x87-snapshot-check: $(BUILD)/x87-snapshot-check

@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 const [vmFile,compilerFile,directory,mode]=process.argv.slice(2);
-if(!directory||(mode&&!['--arithmetic','--status'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status]');
-const arithmetic=mode==='--arithmetic',status=mode==='--status',prefix=status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',forms=status?172:arithmetic?576:192;
+if(!directory||(mode&&!['--arithmetic','--status','--register'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status|--register]');
+const arithmetic=mode==='--arithmetic',status=mode==='--status',register=mode==='--register',
+  prefix=register?'x87-register':status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',forms=register?81:status?172:arithmetic?576:192;
 const memory=new WebAssembly.Memory({initial:16}),vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cm=new WebAssembly.Memory({initial:16}),cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
 const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(cm.buffer),cv=new DataView(cm.buffer);
@@ -14,9 +15,9 @@ const put=(at,x)=>v.setBigUint64(at,BigInt(x),true),table=vm.__indirect_function
 table.grow(Math.max(0,vm.vm_slot_min()+vm.vm_source_capacity()-table.length));let comparisons=0,modules=0;
 const cached=new Map();
 for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(directory,`${prefix}-${form}.${suffix}`));
-  const meta=JSON.parse(await file('json')),source=await file('source'),native=await file('cases'),operands=await file(status?'operands':'integers');
-  assert.equal(meta.stateBytes,1256);assert.equal(native.length,meta.native*2512);assert.equal(operands.length,meta.native*8);
-  assert.equal(source.length,meta.sourceBytes);assert((status&&meta.bytes===0)||[2,4,8].includes(meta.bytes));
+  const meta=JSON.parse(await file('json')),source=await file('source'),native=await file('cases'),operands=register?null:await file(status?'operands':'integers');
+  assert.equal(meta.stateBytes,1256);assert.equal(native.length,meta.native*2512);if(operands)assert.equal(operands.length,meta.native*8);
+  assert.equal(source.length,meta.sourceBytes);assert(((status||register)&&meta.bytes===0)||[2,4,8].includes(meta.bytes));
   const operandOffset=meta.operandOffset??256;assert([256,4096].includes(operandOffset));
   const key=source.toString('hex');let made=cached.get(key);
   if(!made){c.fill(0x90,ci,ci+4096);c.set(source,ci);assert.equal(cc.compiler_open_pages(ci,1,entry,9n),0);
@@ -30,7 +31,7 @@ for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(director
     [0x1000,0x2000,0x3000,0x4000,0x8000,0x9000].forEach((address,i)=>{
       put(dir+i*32,address);v.setUint32(dir+i*32+8,(i+2)*4096,true);v.setUint32(dir+i*32+12,3,true);v.setUint32(dir+i*32+16,1,true);});
     put(cpu+8192,0x2067);put(cpu+12288,0x3067);put(cpu+16384+16,0x4067);put(cpu+20480,0x8067);put(cpu+20488,0x9067);
-    a.fill(0x90,cpu+24576,cpu+28672);a.set(source,cpu+24576);a.set(operands.subarray(row*8,row*8+meta.bytes),cpu+24576+operandOffset);
+    a.fill(0x90,cpu+24576,cpu+28672);a.set(source,cpu+24576);if(operands)a.set(operands.subarray(row*8,row*8+meta.bytes),cpu+24576+operandOffset);
     put(port,9);v.setUint32(segments,2,true);v.setUint32(segments+36,0xa09b,true);
     assert.equal(vm.vm_open(cpu,a.length-cpu,4096,dir,6,6,dir+2048,9n),0);
     assert.equal(vm.vm_bind_state(cpu),0);assert.equal(vm.vm_bind_segments(segments),0);
@@ -42,6 +43,6 @@ for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(director
       .filter(([offset,byte])=>actual[offset]!==byte).slice(0,24).map(([offset,byte])=>`${offset}:${actual[offset].toString(16)}/${byte.toString(16)}`).join(',')}`);++comparisons;
   }
 }
-vm.vm_close();console.log(JSON.stringify({format:status?'native-fpu-status-c-v1':arithmetic?'native-fi-arithmetic-c-v1':'native-fild-c-v1',status:'pass',comparisons,modules,
+vm.vm_close();console.log(JSON.stringify({format:register?'native-register-arithmetic-c-v1':status?'native-fpu-status-c-v1':arithmetic?'native-fi-arithmetic-c-v1':'native-fild-c-v1',status:'pass',comparisons,modules,
   oracle:status?'physical Windows FPU/RFLAGS; IM/DM,relation,alias,tag,TOP,pop matrix; GPR invariance architectural':
     'physical Windows FPU/RFLAGS; GPR invariance architectural; PC/RC/exception-mask matrix',linuxBoot:'not-tested'},null,2));

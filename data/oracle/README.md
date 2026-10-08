@@ -1,5 +1,13 @@
 # x86 semantic oracles
 
+The existing `x87-arithmetic-observe` also accepts `DIRECTORY --register`:
+72 raw register add/sub encodings, both operand directions/pop/alias, plus
+precision/rounding/exception-mask matrices. `check-x87-state.mjs --register`
+uses the SAME C-MMU/table gate; currently it is red at real make's DC ED/-102.
+`check-x87-register.c` checks only the canonical masked numeric subset against
+official SoftFloat, never supplying a product implementation. See
+[population, exception publication and reproduction](../../src/v2/vm/check/browser/evidence/2026-10-08-x87-register-red.md).
+
 `check-string-io.mjs VM.WASM COMPILER.WASM RECORDS` executes compiled INS/OUTS
 against independent reference-system CPU/RAM records. The primary WHPX route
 produced a guest bad-pagetable oops for permitted INS into absent memory;

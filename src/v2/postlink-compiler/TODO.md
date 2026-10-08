@@ -32,11 +32,25 @@ failure, not fitted as guest semantics. C UART read-once after residency wait,
 console output byte latching and two bounded-REP resumes pass. 72 native/cold
 forms / 576 malformed laws, full x86/VM/compiler/postlink and positive I/O-owner
 plus emitter ASan/UBSan are warning-free. Actual make: 5,598 -> 4,728 missing
-(870 recovered), first dced / register FSUBR at 0xa19a. Directory publication
+(870 recovered), first dced / register FSUB at 0xa19a. Directory publication
 still refuses before mkdir/root. Same-bundle short Node retains the 86-step
 witness and quota, NOT Linux boot. Native bundle/UI unchanged; no fresh browser,
 signed production root, size/speed/RSS claim. See
 [ordering, permission decision, reference failure and reproduction](../vm/check/browser/evidence/2026-10-08-string-io.md).
+
+## Next register-arithmetic red
+
+The existing hardware arithmetic observer now also captures TWO raw extended
+operands: 42,624 complete local physical FPU/RFLAGS states / 72 encodings.
+22,347 canonical masked numeric cases match official SoftFloat; 20,277 remain
+outside that reference domain. All 81 construction groups still refuse -102,
+including the actual make source DC ED. Correct its old name: this is FSUB
+ST(5), ST(0), not FSUBR. Of 2,208 unmasked-pending observations, 554 changed
+payload and 192 popped; IE/DE suppress both, whereas OE/UE/PE can publish/pop.
+Do not copy the comparison writer's blanket ES suppression. The SAME C-state
+driver retains integer arithmetic 36,864 and status comparison 44,032 greens.
+No new product arithmetic, coverage/boot/root/size/speed claim. See
+[independent red, numeric reference and exact population](../vm/check/browser/evidence/2026-10-08-x87-register-red.md).
 
 ## Previous ENTER checkpoint
 
@@ -505,7 +519,7 @@ PID 1/root mount/shell/tooling/browser acceptance remain unachieved.
    relation and tested deferred #MF/FERR boundary, with 16,384 local hardware
    observations and byte-identical native/cold output. Continue the real
    remaining arithmetic/source-context/precise-event cases: make's current first
-   miss is dced / register FSUBR at 0xa19a. Generalize the existing exact extended
+   miss is dced / register FSUB at 0xa19a. Generalize the existing exact extended
    integer-memory add/sub normal form to BOTH raw extended operands, including
    unsupported/NaN/denormal/empty priorities, destination direction and pop.
    Do not round through f64 or introduce a math interpreter/callback.
