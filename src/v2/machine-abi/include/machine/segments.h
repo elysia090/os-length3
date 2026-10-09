@@ -41,4 +41,10 @@ _Static_assert(sizeof(machine_segments) == 136u, "segment context ABI extent");
  * Memory-source system loads read through machine.access first; no source
  * opcode or EA decoder is added to the segment owner. LDTR/TR require CPL0.
  * No source opcode, register number or instruction decoder is passed here. */
+/* machine.descriptor(private_pair_port,selector16) -> result borrows exactly
+ * the current raw8-byte GDT/LDT row. DIRECT supplies raw value + availability
+ * in scalar.value/high; a missing coordinate is 0/0. Typed interpretation
+ * and visible flag/register publication belong to the compiled transfer.
+ * Implicit reads use supervisor privilege. Fault/wait leaves both outputs;
+ * no opcode, destination coordinate or full CPU image crosses this API. */
 #endif

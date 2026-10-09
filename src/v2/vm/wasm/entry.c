@@ -1136,6 +1136,18 @@ machine_result vm_system(pl_u32 port, pl_u32 operation, pl_u64 next_rip)
     return result;
 }
 
+machine_result vm_descriptor(pl_u32 port,pl_u32 selector)
+{
+    if(table_frontier.stage)return MACHINE_RESULT_ENTRY_MAP;
+    vm_supply_reset(&supply);vm_memory_abort(&resident);
+    if(delivery.stage||!segments_offset||!private_record(port,sizeof(machine_memory_pair_port)))return MACHINE_RESULT_ENTRY_MAP;
+    pl_u64 admitted=sources.valid;
+    resident.write_touched=0u;
+    machine_result result=vm_descriptor_query(&resident,port-arena_base,
+        (const machine_state *)(uintptr_t)state_offset,(const machine_segments *)(uintptr_t)segments_offset,selector);
+    after_guest_write(admitted);
+    return memory_result(port,result);
+}
 machine_result vm_segment(pl_u32 port, pl_u32 rank, pl_u32 selector)
 {
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;

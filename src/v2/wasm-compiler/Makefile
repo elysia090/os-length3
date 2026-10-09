@@ -38,6 +38,13 @@ SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
 SOURCES += src/lower-vector-integer-float.c
 SOURCES += src/lower-float-compare.c
+SOURCES += src/lower-selector-query.c
+.PHONY: selector-query-check
+check: selector-query-check
+selector-query-check: $(BUILD)/selector-query-check
+	$(BUILD)/selector-query-check
+$(BUILD)/selector-query-check: check/selector-query.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: float-compare-check
 check: float-compare-check
 float-compare-check: $(BUILD)/float-compare-check

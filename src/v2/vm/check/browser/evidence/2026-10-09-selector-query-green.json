@@ -1,0 +1,18 @@
+{
+  "format": "raw-descriptor-selector-residual-evidence-v1",
+  "nativePublication": "1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195",
+  "entryABI": 4,
+  "query": {"constructors": 6528, "malformedLaws": 104448, "completeSsaModels": 98304, "graphUpperBound": [36,11]},
+  "native": {"forms": 12, "comparisons": 12288, "undefinedLARnibbleDifferences": 3840, "authority": "WHPX native Linux process installed LDT readback independent of LAR/LSL results", "scope": "CPL3 LDT RAX/RFLAGS; other invariance architectural; hidden caches/coordinates declared mirror; defined LAR frontier, raw receipts intact"},
+  "coreAssertions": 199,
+  "boundary": {"comparisons": 1442, "faults": 264, "ordinaryWaits": 264, "immediateSuccess": 912, "completeStateRetries": 266, "explicitAdAliasComparisons": 2},
+  "residual": {"word": "selector+1", "maximumOrdinalBits": 17, "liveOpaqueWords": 1, "sourceReplay": false, "wholeCpuSnapshot": false},
+  "make": {"domain": "every-final-PF_X-byte", "coordinates": 233455, "before": 397, "after": 368, "lowerable": 233087, "recovered": 29, "faultRefusals": 0, "fetchDemands": 0, "capacityRefusals": 0, "firstRemaining": "ded2 at0xb08c"},
+  "compiler": {"bytes": 746232, "sha256": "7eb5433875d88b46eae8e5bde4bc18e85948e3a91350a9fc8ac85987ac331de1"},
+  "vm": {"bytes": 99927, "sha256": "13b086ab7769d7c71ae15e63d7839be5bf4df6a0f9f30393f0928e62815da640"},
+  "scopedProductAndPositiveSanitizers": "pass",
+  "unrestrictedNativeGate": "known intermittent CALL RAM payload red retained separately",
+  "linuxBoot": "not-tested",
+  "publicationUpdated": false,
+  "humanUIChanged": false
+}

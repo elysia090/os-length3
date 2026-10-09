@@ -3,6 +3,10 @@
 #include <vm/segments.h>
 machine_result vm_descriptor_read(vm_memory *memory,pl_u32 port,const machine_state *state,
     const machine_segments *segments,pl_u32 selector,pl_u32 external,pl_u64 *address,pl_u64 *value);
+/* Probe absence is a normal result. The faulting load above adds its own
+ * selector #GP policy; no descriptor bytes are fetched for absent entries. */
+machine_result vm_descriptor_probe(vm_memory *memory,pl_u32 port,const machine_state *state,
+    const machine_segments *segments,pl_u32 selector,pl_u64 *address,pl_u64 *value,pl_u32 *present);
 machine_result vm_descriptor_accessed(vm_memory *memory,pl_u32 port,const machine_state *state,pl_u64 address,pl_u32 access);
 void vm_segments_outer(machine_state *state,machine_segments *segments,pl_u32 cpl);
 static inline machine_segment_cache vm_segment_cache_raw(pl_u64 descriptor)

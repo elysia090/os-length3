@@ -2924,6 +2924,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                  pl_arena *arena, pl_x86_semantic *out)
 {
     if (!instruction || !arena || !out) return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
+        &&(instruction->opcode==2u||instruction->opcode==3u||instruction->visible_operand_count==2u)){
+        pl_x86_selector_query law;if(!pl_x86_selector_query_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT
         &&(((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_ORDERED||((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_COMPARE_UNORDERED)){
         pl_x86_float_compare law;if(!pl_x86_float_compare_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}

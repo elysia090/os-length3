@@ -242,5 +242,12 @@ typedef struct {
     pl_u8 element_bytes,target_class,target_bytes;
 } pl_x86_vector_float_integer;
 int pl_x86_vector_float_integer_lower(const pl_x86_instruction *instruction,pl_x86_vector_float_integer *out);
+typedef struct {pl_u8 limit,bytes,source_memory,source,target;} pl_x86_selector_query;
+int pl_x86_selector_query_lower(const pl_x86_instruction *instruction,pl_x86_selector_query *out);
+/* Inputs descriptor,coordinate availability,CPL,selector,old parent. Outputs
+ * complete parent and ZF predicate. Long-mode type table; Present is not an admission
+ * condition. LAR's undefined nibble is canonical zero, never authority. */
+#define PL_X86_SELECTOR_QUERY_MAX_NODES 64u
+int pl_x86_selector_query_plan(pl_u32 limit,pl_u32 bits,pl_arena *arena,pl_plan *out);
 
 #endif /* X86_SEMANTICS_H */

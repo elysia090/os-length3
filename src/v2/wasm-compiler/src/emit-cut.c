@@ -166,6 +166,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if(system==CUT_SYSTEM_VECTOR_INTEGER_FLOAT)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
                 else if(system==CUT_SYSTEM_VECTOR_FLOAT_INTEGER)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
                 else if(system==CUT_SYSTEM_FLOAT_COMPARE)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?instruction.operands[1].bits/8u:0u;
+                else if(system==CUT_SYSTEM_SELECTOR_QUERY)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?2u:0u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                 {pl_x86_vector_binary law;plan->report.memory_bytes=pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
@@ -286,11 +287,15 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         if(law.source_class==PL_X86_REGISTER_MMX){permutation_local=5u;locals=26u;}else locals=32u+PL_X86_SIGNED_FLOAT_MAX_NODES;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_FLOAT_INTEGER){permutation_local=3u;locals=26u;}
     if(plan->system_cut==CUT_SYSTEM_FLOAT_COMPARE)locals=32u+PL_X86_FLOAT_COMPARE_MAX_NODES;
+    if(plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY)locals=32u+PL_X86_SELECTOR_QUERY_MAX_NODES;
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_binary law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_binary_lower(&i,&law)&&law.register_bytes==8u)locals=26u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_mmx_transfer law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_mmx_transfer_lower(&i,&law)){locals=26u;permutation_local=1u;}}
     pl_u32 checkpoint=0u;
+    if(plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY){pl_x86_instruction i;pl_x86_selector_query law;
+        if(pl_x86_decode_profile(&plan->image,rip,&i)||!pl_x86_selector_query_lower(&i,&law))return WASM_COMPILER_ERROR_GRAMMAR;
+        checkpoint=law.source_memory;}
     if(plan->report.boundary_operation==PL_X86_OPERATION_ENTER){locals=CUT_ENTER_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_STRING_IO){locals=CUT_STRING_IO_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
@@ -325,7 +330,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u);
         cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
-        pl_u32 port_bytes=checkpoint ? sizeof(machine_memory_checkpoint_port) : plan->system_cut==CUT_SYSTEM_FXRSTOR ? sizeof(machine_memory_extent_port)
+        pl_u32 port_bytes=checkpoint?sizeof(machine_memory_checkpoint_port):plan->system_cut==CUT_SYSTEM_SELECTOR_QUERY?sizeof(machine_memory_pair_port):plan->system_cut==CUT_SYSTEM_FXRSTOR ? sizeof(machine_memory_extent_port)
             : (plan->report.memory_bytes==10u||plan->report.memory_bytes==16u) ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
         cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu);
         cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);

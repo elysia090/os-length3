@@ -19,6 +19,8 @@ make -j4 -C "$temporary/vm" CFLAGS="$flags" build/exception-check
 "$temporary/vm/build/exception-check"
 make -j4 -C "$temporary/vm" CFLAGS="$flags" build/return-widths-check
 "$temporary/vm/build/return-widths-check"
+make -j4 -C "$temporary/vm" CFLAGS="$flags" build/descriptor-query-check
+"$temporary/vm/build/descriptor-query-check"
 make -j4 -C "$temporary/artifact" CFLAGS="$flags" build/index-stream-check
 "$temporary/artifact/build/index-stream-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
@@ -41,6 +43,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/scalar-projection-c
 "$temporary/wasm-compiler/build/scalar-projection-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-compare-check
 "$temporary/wasm-compiler/build/float-compare-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/selector-query-check
+"$temporary/wasm-compiler/build/selector-query-check"
 "$temporary/wasm-compiler/build/mmx-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/flags-low-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/translate-byte-check

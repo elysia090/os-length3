@@ -43,13 +43,17 @@ int main(int argc, char **argv)
                 || save(argv[1],rank,"wasm",output,(size_t)length) || save(argv[1],rank,"source-page",page,sizeof page)) return 1;
         }
     }
-    /* Existing typed family also contains LAR/LSL; do not admit it by the
-     * operation tag alone. Unsupported prefixes publish no partial module. */
+    /* LAR/LSL share the family tag, not LLDT/LTR's privileged cache writer.
+     * They now use the independently checked query/SSA path. */
     const pl_u8 denied[][5]={{0x0f,0x02,0xc0,0x90,0x90},{0x0f,0x03,0xc0,0x90,0x90},
         {0xf0,0x0f,0x00,0xd8,0x90},
         {0x64,0x0f,0x00,0x1f,0x90},{0x65,0x0f,0x00,0x17,0x90}};
     for (unsigned i=0u;i<sizeof denied/sizeof denied[0];++i) {
         memset(page,0x90,sizeof page); memcpy(page,denied[i],sizeof denied[i]); memset(output,0xa5,sizeof output);
+        if(i<2u){pl_u64 length=0u;wasm_cut_report report;
+            EXPECT(!wasm_compiler_emit_code_cut(&image,9u,&options,output,sizeof output,&length,&report));
+            EXPECT(length>8u&&report.source_instructions==1u&&report.source_bytes==3u&&!report.memory_bytes
+                &&report.flags_written&&(report.written_registers&1u)&&report.continuation==image.entry+3u);continue;}
         if(i==2u){EXPECT(!check_fault_admission(&image,&options,6u));continue;}
         if(denied[i][0]==0x64u||denied[i][0]==0x65u){
             EXPECT(!check_segment_admission(&image,&options,denied[i][0]));

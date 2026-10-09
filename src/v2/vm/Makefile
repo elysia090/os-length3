@@ -18,6 +18,7 @@ WASM_FLAGS += -Wl,--export=vm_boot_initial_segments,--export=vm_bind_segments,--
 WASM_FLAGS += -Wl,--export=vm_reserve,--export=vm_commit,--export=vm_abort,--export=vm_table,--export=vm_return
 WASM_FLAGS += -Wl,--export=vm_reserve_pair,--export=vm_commit_pair
 WASM_FLAGS += -Wl,--export=vm_read_pair
+WASM_FLAGS += -Wl,--export=vm_descriptor
 WASM_FLAGS += -Wl,--export=vm_read_extent
 WASM_FLAGS += -Wl,--export=vm_write_begin,--export=vm_write_word,--export=vm_write_end
 WASM_FLAGS += -Wl,--export=vm_control,--export=vm_code,--export=vm_grow,--export=vm_page_prepare,--export=vm_page_commit,--export=vm_page_count
@@ -58,6 +59,12 @@ WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: descriptor-query-check
+check: descriptor-query-check
+descriptor-query-check: $(BUILD)/descriptor-query-check
+	$(BUILD)/descriptor-query-check
+$(BUILD)/descriptor-query-check: check/descriptor-query.c $(BUILD)/libvm.a
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libvm.a -o $@
 .PHONY: return-widths-check
 check: return-widths-check
 return-widths-check: $(BUILD)/return-widths-check

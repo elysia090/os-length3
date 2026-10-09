@@ -23,6 +23,21 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+LAR/LSL now use one raw descriptor probe plus independent parent/ZF SSA;
+source widths, invalid coordinate policy and implicit supervisor reads are
+separate.6528 constructors/104448 malformed,98304 pure type/privilege/parent
+models,12288 independent process-LDT observations (documented undefined LAR
+nibble projected,3840 differences retained),199 C owner assertions and1442
+boundary comparisons/266 exact retries pass. Memory-source selector+1 is one
+bounded17-bit residual word; descriptor A/D alias no longer replays the source
+or revokes unrelated execution. VM/scoped/postlink/positive sanitizers are
+warning-free. Same make397->368 (all29 query misses recovered),233087/233455
+lowerable; first DE D2 at0xb08c. Remaining SIMD121/x87154/far91/other2 still
+belong to ZERO and complete browser acceptance. No signed root/UI change.
+See [descriptor, selector and exact residual](../vm/check/browser/evidence/2026-10-09-selector-query.md).
+
+## Preceding IEEE/projection checkpoint
+
 Signed32/64 -> IEEE32/64 and COMISS/UCOMISS/COMISD/UCOMISD now share exact
 x86 SSA, one MXCSR/exception publisher and minimal output-region stores.
 163840+98304 independent physical rows,262144 official numeric rows,
