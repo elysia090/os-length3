@@ -1,6 +1,7 @@
 #include <vm/mmu.h>
 #include <vm/tables.h>
 #include <vm/control.h>
+#include "../core/memory-internal.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -63,7 +64,7 @@ static void walk_proof_models(void)
         pl_u64 initial=pattern==0u?0u:pattern==1u?~0ull:pattern==2u?0x1122334455667788ull:0x8000000000000001ull;
         put(pages[4].offset,initial);put(pages[5].offset,~initial);
         EXPECT(!access(&cpu,base,8u,flags,initial));
-        EXPECT(memory.walks[(base>>12u)&63u].depth==4u);
+        EXPECT(memory.walks[vm_memory_walk_rank(base)].depth==4u);
         pl_u64 entry=get(entries[level]),address=base;
         switch(mode){case 0u:break;case 1u:put(entries[level],entry&~32ull);break;
         case 2u:put(entries[level],entry&~64ull);break;case 3u:put(entries[level],entry&~1ull);break;
@@ -88,9 +89,46 @@ static void walk_proof_models(void)
     printf("walk proof: %u cached/fresh whole-RAM/port/write-order comparisons; ancestor/control/access/cross-page mutation\n",comparisons);
 }
 
+static void pattern_models(void)
+{
+    pl_u32 comparisons=0u;const pl_u32 starts[]={0u,1u,7u,8u,2048u,4088u,4093u,4095u};
+    for(pl_u32 width=1u;width<=8u;width*=2u)for(pl_u32 reverse=0u;reverse<2u;++reverse)
+    for(pl_u32 index=0u;index<8u;++index)for(pl_u32 cap=1u;cap<=256u;cap*=2u)
+    for(pl_u32 mode=0u;mode<7u;++mode){reset(base);vm_mmu_context cpu=context();pl_u32 within=starts[index];
+        pl_u32 available=within+width>4096u?1u:reverse?within/width+1u:(4096u-within)/width;
+        pl_u32 count=cap<available?cap:available;
+        if(mode==1u)put(entries[3],get(entries[3])&~2ull);
+        if(mode==2u)put(entries[3],get(entries[3])&~1ull);
+        if(mode==3u)pages[4].rights=1u;
+        if(mode==4u)pages[5].rights=1u;
+        if(mode==5u)put(port,8u);
+        if(mode==6u)pages[4].kind=VM_MEMORY_ROM;
+        memcpy(reference_arena,arena,sizeof arena);vm_memory reference=memory;reference.bytes=reference_arena;
+        pl_u64 address=base+within,value=0x123456789abcdef0ull;
+        machine_result actual=vm_mmu_fill(&memory,port,&cpu,address,count*width,width,reverse,value),expected=0u;
+        for(pl_u32 n=0u;n<count&&!expected;++n)expected=vm_mmu_access(&reference,port,&cpu,
+            reverse?address-(pl_u64)n*width:address+(pl_u64)n*width,width,MACHINE_MEMORY_WRITE,value);
+        if(!expected)vm_memory_store(reference_arena+port+8u,count,8u);
+        EXPECT(actual==expected);EXPECT(!memcmp(arena,reference_arena,sizeof arena));++comparisons;
+    }
+    printf("homogeneous span: %u full-RAM/port scalar equivalence cases, both directions/widths/page edges/permissions/ROM/stale\n",comparisons);
+    /* The target aliases its own leaf table. One store unmaps the next
+     * access: bulk materialization must not run through that fault cut. */
+    reset(base);vm_mmu_context alias=context();put(entries[3],0x4067u);
+    EXPECT(!vm_mmu_fill(&memory,port,&alias,base,2048u,8u,0u,0u));
+    EXPECT(get(port+8u)==1u&&get(pages[3].offset)==0u);
+    expect_fault(vm_mmu_fill(&memory,port,&alias,base+8u,2048u,8u,0u,0u),base+8u,14u,2u);
+}
+
 int main(void)
 {
     walk_proof_models();
+    pattern_models();
+    reset(base);vm_mmu_context alias_cpu=context();
+    for(pl_u32 rank=0u;rank<8u;++rank){put(pages[3].offset+rank*64u*8u,0x8067u);
+        EXPECT(!access(&alias_cpu,base+(pl_u64)rank*64u*4096u,8u,MACHINE_MEMORY_READ,0u));}
+    pl_u32 retained=0u;for(pl_u32 rank=0u;rank<64u;++rank)retained+=(pl_u32)(memory.walks[rank].depth!=0u);
+    EXPECT(retained==8u); /* Old low-six-bit index retains just one. */
     /* Observation uses the SAME walk, but cannot create A/D writes, proof
      * rows, ports, reservations or counters. Only resident fragments exist. */
     for(pl_u32 mode=0u;mode<4u;++mode){vm_mmu_context cpu=context();cpu.cpl=3u;reset(base);

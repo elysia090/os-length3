@@ -110,6 +110,16 @@ median ratios are0.8652/0.8556/0.9169; provider bytes increase110272 ->119044.
 The new browser run retains the same kernel/root/deadline/clock and aligns the
 engine index with the existing construction lifetime; no shell claim yet.
 See [word/VM evidence](../vm/check/browser/evidence/2026-10-10-word-access.md).
+The same64 walk rows now avoid periodic address collisions; the alias workload
+ratio is0.5989, not a general40% improvement. Homogeneous page-local stores
+use one bounded C memory geometry, clipping at actually changed paging
+ancestors.4032 RAM/port models and336 native REP STOS receipts pass; same-provider
+store ratio0.03957 with larger emitted code. Full independent C/MMU/memory and
+ASan/UBSan gates pass. Initial REP/BSS/three-memset and all14622864 decompression
+bytes remain verified while C warm cohorts begin earlier. Profiled browser
+passes supervision initialization, but offline service transition still times
+out. Production no-counter provider is under test; CPU/deadline/clock unchanged.
+See [span/startup evidence](../vm/check/browser/evidence/2026-10-10-span-and-startup.md).
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership

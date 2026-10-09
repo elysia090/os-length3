@@ -6,7 +6,7 @@ import path from 'node:path';
 const [providerFile,directory,family = 'movs',compilerFile,...extra] = process.argv.slice(2);
 if (!directory || !['movs','stos'].includes(family) || extra.length)
   throw new Error('usage: check-repeat.mjs VM.WASM REPEAT-FIXTURE-DIRECTORY [movs|stos [COMPILER.WASM]]');
-const cm = compilerFile ? new WebAssembly.Memory({initial:16}) : null;
+const cm = compilerFile ? new WebAssembly.Memory({initial:32}) : null;
 const cc = cm ? (await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports : null;
 const cold = cm ? Buffer.from(cm.buffer) : null, cv = cm ? new DataView(cm.buffer) : null;
 const input = cc?.compiler_arena_min(), output = input + 8192, report = output + 65536;

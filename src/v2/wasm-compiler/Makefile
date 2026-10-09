@@ -9,6 +9,10 @@ BUILD ?= build
 PROVIDER_LIBRARIES = ../optimized-x86/build/liboptimized-x86.a \
 	../x86/build/libx86.a ../support/build/libsupport.a
 WASM_OUTPUT ?= $(BUILD)/wasm-compiler.wasm
+.PHONY: repeat-refresh-tool
+repeat-refresh-tool: $(BUILD)/repeat-refresh
+$(BUILD)/repeat-refresh: ../../../data/oracle/refresh-repeat.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 WASM_CC ?= clang
 # Disjoint cold static/stack placement in a caller-owned imported memory.
 # Stack follows this module's data, not address zero in another module.
@@ -21,6 +25,7 @@ WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--export=compiler_arena_min,--export=compiler_report_bytes,--export=compiler_close \
 	-Wl,--export=compiler_open_elf,--export=compiler_open_pages,--export=compiler_emit
 WASM_FLAGS += -Wl,--export=compiler_entry_abi
+WASM_FLAGS += -Wl,--export=compiler_memory_features
 WASM_FLAGS += -Wl,--export=compiler_emit_module
 WASM_FLAGS += -Wl,--export=compiler_emit_projection
 WASM_FLAGS += -Wl,--export=compiler_emit_image,--export=compiler_image_report_bytes

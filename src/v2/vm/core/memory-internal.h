@@ -4,6 +4,13 @@
 
 const vm_memory_page *vm_memory_find(vm_memory *memory, pl_u64 address);
 const vm_memory_page *vm_memory_find_readonly(const vm_memory *memory,pl_u64 address);
+static inline pl_u32 vm_memory_walk_rank(pl_u64 address)
+{
+    pl_u64 page=address>>12u;
+    /* Preserve low-page locality without mapping every64-page stride onto
+     * one slot. This only selects a candidate; the complete witness matches. */
+    return (pl_u32)(page^(page>>6u)^(page>>12u)^(page>>18u))&63u;
+}
 static inline void vm_memory_before_write(vm_memory *memory, pl_u32 offset, pl_u32 bytes)
 {
     if (memory->before_write) memory->before_write(memory->write_owner,offset,bytes);

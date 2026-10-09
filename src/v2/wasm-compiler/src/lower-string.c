@@ -35,11 +35,36 @@ void cut_repeat_frontier(cut_lowering *cut)
     }
 }
 
+static void pattern_count(cut_lowering *c,pl_u32 bytes)
+{
+    pl_u32 shift=bytes==8u?3u:bytes==4u?2u:bytes==2u?1u:0u;
+    cut_get(c,CUT_ADDRESS);cut_const(c,4095u);cut_op(c,0x83u);cut_const(c,shift);cut_op(c,0x88u);cut_const(c,1u);cut_op(c,0x7cu);
+    cut_const(c,4096u);cut_get(c,CUT_ADDRESS);cut_const(c,4095u);cut_op(c,0x83u);cut_op(c,0x7du);cut_const(c,shift);cut_op(c,0x88u);
+    cut_get(c,CUT_FLAGS);cut_const(c,0x400u);cut_op(c,0x83u);cut_op(c,0xa7u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);
+    /* A word crossing the page is exactly one ordinary scalar transaction. */
+    cut_const(c,1u);cut_get(c,CUT_NEXT);cut_get(c,CUT_NEXT);cut_op(c,0x50u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);
+    cut_const(c,1u);cut_get(c,CUT_NEXT);cut_get(c,CUT_ADDRESS);cut_const(c,4095u);cut_op(c,0x83u);
+    cut_const(c,4096u-bytes);cut_op(c,0x56u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);
+    for(pl_u32 i=0u;i<2u;++i){pl_u32 limit=i?CUT_REPEAT_BUDGET:2u;
+        cut_get(c,CUT_NEXT);cut_get(c,limit);cut_get(c,CUT_NEXT);cut_get(c,limit);cut_op(c,0x54u);cut_op(c,0x1bu);cut_set(c,CUT_NEXT);}
+}
+
+static void pattern_access(cut_lowering *c,pl_u32 bytes)
+{
+    pl_u32 shift=bytes==8u?3u:bytes==4u?2u:bytes==2u?1u:0u;
+    cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_get(c,CUT_ADDRESS);
+    cut_get(c,CUT_NEXT);cut_const(c,shift);cut_op(c,0x86u);cut_op(c,0xa7u);
+    cut_get(c,CUT_FLAGS);cut_const(c,0x400u);cut_op(c,0x83u);cut_const(c,2u);cut_op(c,0x86u);
+    cut_const(c,MACHINE_MEMORY_WRITE|MACHINE_MEMORY_PATTERN|(shift<<10u));cut_op(c,0x84u);cut_op(c,0xa7u);
+    cut_get(c,CUT_LEFT);cut_call(c,WASM_IMPORT_ACCESS);cut_access_status(c);
+    cut_access_value(c);cut_set(c,CUT_NEXT);
+}
+
 void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
 {
     pl_x86_string law;
     if(!pl_x86_string_lower(instruction,&law)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
-    int store=law.kind==1u,compare=law.kind>=3u,repeated=law.repeated;
+    int store=law.kind==1u,compare=law.kind>=3u,repeated=law.repeated,pattern=store&&repeated;
     /* The exact frontier is known before the first possible partial return.
      * A store neither reads nor narrows/publishes RSI or RAX. */
     cut->report.written_registers|=(law.reads_source?0x40u:0u)|((law.reads_target||law.writes_target)?0x80u:0u)
@@ -95,7 +120,7 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(law.reads_target || law.writes_target){
         cut_get(cut,8u);cut_mask(cut,width);cut_set(cut,CUT_ADDRESS);
         cut->report.memory_access=law.writes_target?MACHINE_MEMORY_WRITE:MACHINE_MEMORY_READ;
-        cut_access(cut);
+        if(pattern){pattern_count(cut,bytes);pattern_access(cut,bytes);}else cut_access(cut);
         if(compare){
             cut_access_value(cut);cut_set(cut,CUT_RIGHT);
             cut_get(cut,CUT_LEFT);cut_get(cut,CUT_RIGHT);cut_op(cut,0x7du);cut_mask(cut,law.bits);cut_set(cut,CUT_VALUE);
@@ -111,11 +136,12 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
      * neither read nor written and faulting 32-bit pointers keep their old
      * parent values. Successful publication zero-extends the new pointers. */
     if (repeated) {
-        cut_get(cut,2u); cut_const(cut,1u); cut_op(cut,0x7du); cut_mask(cut,width); cut_set(cut,2u);
+        cut_get(cut,2u);if(pattern)cut_get(cut,CUT_NEXT);else cut_const(cut,1u);
+        cut_op(cut,0x7du); cut_mask(cut,width); cut_set(cut,2u);
     }
     for(pl_u32 local=7u;local<=8u;++local){
         if(!(cut->report.written_registers&(1u<<(local-1u))))continue;
-        cut_get(cut,local);cut_get(cut,stride);cut_op(cut,0x7cu);
+        cut_get(cut,local);cut_get(cut,stride);if(pattern){cut_get(cut,CUT_NEXT);cut_op(cut,0x7eu);}cut_op(cut,0x7cu);
         cut_mask(cut,width); cut_set(cut,local);
     }
     if (repeated) {
@@ -124,7 +150,8 @@ void cut_lower_string(cut_lowering *cut, const pl_x86_instruction *instruction)
             if(law.not_equal)cut_op(cut,0x45u);
             cut_op(cut,0x0du);wasm_writer_uleb(cut->writer,1u);
         }
-        cut_get(cut,CUT_REPEAT_BUDGET); cut_const(cut,1u); cut_op(cut,0x7du); cut_set(cut,CUT_REPEAT_BUDGET);
+        cut_get(cut,CUT_REPEAT_BUDGET);if(pattern)cut_get(cut,CUT_NEXT);else cut_const(cut,1u);
+        cut_op(cut,0x7du); cut_set(cut,CUT_REPEAT_BUDGET);
         cut_op(cut,0x0cu); wasm_writer_uleb(cut->writer,0u);
         cut_op(cut,0x0bu); cut_op(cut,0x0bu);
     }

@@ -143,6 +143,7 @@ static int clock_boundary_pending(void)
 { return clock_owner.stage && clock_owner.key==VM_CLOCK_BOUNDARY_KEY; }
 pl_u32 vm_source_capacity(void) { return VM_SOURCE_CAPACITY; }
 pl_u32 vm_entry_abi(void) { return MACHINE_ENTRY_ABI_VERSION; }
+pl_u32 vm_memory_features(void) { return MACHINE_MEMORY_FEATURE_PATTERN; }
 pl_u32 vm_halted(void) { return activity.state == MACHINE_ACTIVITY_HALTED; }
 pl_u32 vm_source_metadata_bytes(void) { return sizeof(vm_source_banks); }
 
@@ -668,6 +669,12 @@ machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
     if (table_frontier.stage) return MACHINE_RESULT_ENTRY_MAP;
     vm_supply_reset(&supply);
     vm_memory_abort(&resident);
+    pl_u32 pattern=access&MACHINE_MEMORY_PATTERN,word_bytes=1u<<((access>>10u)&3u),reverse=!!(access&MACHINE_MEMORY_PATTERN_REVERSE);
+    if(pattern){
+        if(access&~(pl_u32)(MACHINE_MEMORY_PATTERN|MACHINE_MEMORY_PATTERN_WIDTH|MACHINE_MEMORY_PATTERN_REVERSE|MACHINE_MEMORY_WRITE)
+            ||!(access&MACHINE_MEMORY_WRITE))return MACHINE_RESULT_ENTRY_MAP;
+        access=MACHINE_MEMORY_WRITE;
+    }
     if (delivery.stage || !private_port(port) || linear_address(&address,&access))
         return machine_result_make(MACHINE_RESULT_ENTRY_MAP, 0u);
     const pl_u8 *state = resident.bytes + state_offset - arena_base;
@@ -681,7 +688,8 @@ machine_result vm_access(pl_u32 port, pl_u64 address, pl_u32 bytes,
     };
     pl_u64 admitted=sources.valid;
     resident.write_touched = 0u;
-    machine_result result = vm_mmu_access(&resident, port - arena_base, &context, address, bytes, access, value);
+    machine_result result = pattern?vm_mmu_fill(&resident,port-arena_base,&context,address,bytes,word_bytes,reverse,value)
+        :vm_mmu_access(&resident, port - arena_base, &context, address, bytes, access, value);
     after_guest_write(admitted);
     return memory_result(port,result);
 }

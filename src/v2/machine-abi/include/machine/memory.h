@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 #define MACHINE_MEMORY_ABI_VERSION 2u
+#define MACHINE_MEMORY_FEATURE_PATTERN 2u
 
 enum machine_memory_access {
     MACHINE_MEMORY_READ = 1u,
@@ -14,6 +15,15 @@ enum machine_memory_access {
     MACHINE_MEMORY_FS = 64u,
     MACHINE_MEMORY_GS = 128u,
     MACHINE_MEMORY_ALIGNED8 = 256u,
+    /* A bounded homogeneous RAM run: word bytes=1<<bits10..11, total bytes
+     * in the ordinary range argument, bit12 selects decreasing addresses.
+     * The address is the FIRST word, not the lowest byte on a reverse run.
+     * Success publishes completed words in port.value,1..requested words.
+     * The provider clips before reusing a possibly changed translation.
+     * This describes data geometry/value, never a guest instruction. */
+    MACHINE_MEMORY_PATTERN = 512u,
+    MACHINE_MEMORY_PATTERN_WIDTH = 3072u,
+    MACHINE_MEMORY_PATTERN_REVERSE = 4096u,
 };
 
 /* One private port per serialized execution lane. A fault is a pending CPU

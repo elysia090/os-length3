@@ -61,6 +61,8 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
   assert.deepEqual(WebAssembly.Module.imports(compilerModule),[{module:'machine',name:'memory',kind:'memory'}]);
   let cc = (await WebAssembly.instantiate(compilerModule,{machine:{memory}})).exports;
   assert.equal(vm.vm_entry_abi(),4);assert.equal(cc.compiler_entry_abi(),4);
+  const memoryFeatures=vm.vm_memory_features?.()??0;
+  assert(((cc.compiler_memory_features?.()??0)&~memoryFeatures)===0,'compiler memory contract supported by C provider');
   for(const name of ['vm_source_demands','vm_source_admissions','vm_run_interrupted','vm_run_source'])
     assert.equal(typeof vm[name],'function','C warm admission observations required');
   assert(vm.vm_arena_min()<=cc.compiler_static_min(),'disjoint VM and cold static/stack reservations');
@@ -192,6 +194,7 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     const probeMemory=new WebAssembly.Memory({initial:Math.ceil(input/65536)});
     const probe=(await WebAssembly.instantiate(module,{machine:{memory:probeMemory}})).exports;
     assert.equal(probe.compiler_entry_abi(),4);const output=probe.compiler_arena_min();
+    assert(((probe.compiler_memory_features?.()??0)&~memoryFeatures)===0,'replacement memory contract supported by C provider');
     assert(probe.compiler_static_min()>=vm.vm_arena_min()&&output>=probe.compiler_static_min()&&output+65536+80<=input,
       'replacement remains inside private construction reservation');probe.compiler_close();
     const oldRip=rip(),oldRetired=view.getBigUint64(base+1128,true);
@@ -612,11 +615,16 @@ export async function checkStartup(reader,providerBytes,compilerBytes,readExtent
     assert.equal(view.getBigUint64(rows,true),entry);
     assert(instructions > 0 && instructions <= limit);
     assert.equal(vm.vm_bind_execution(rows,1,generation),0); ++admissions;
-    // Never leap over startup proof observations. Only after the actual
-    // independently checked decompression AND Linux-entry cut may warm
-    // quanta use already published C source rows. This is not a native
-    // checkpoint restore, predecoded RIP list or host branch execution.
-    const cutBudget=linuxEntry ? warmCuts : 1;
+    // Initial REP/BSS and all three scalar memset observations remain single-cut.
+    // Afterwards the first ELF-header read is still a cold construction
+    // boundary: its memory instruction cannot be inside a preceding pure
+    // slice, and this on-demand owner has never published that entry. C yields
+    // BEFORE that read, preserving the complete decompression comparison.
+    // Linux's first entry is likewise unseen and yields before construction.
+    // No CPU restore, injected output, guessed branch or observation opcode
+    // is introduced. The strict regression keeps warmCuts=1 throughout.
+    const initialProofReady=bssComparedBytes===0x18160&&memsetReturns===3&&memsetComparedBytes===131104&&!memsetInput;
+    const cutBudget=linuxEntry||initialProofReady ? warmCuts : 1;
     progress.reset(retired);
     let result;
     for (let resumes = 0; resumes < 8192; ++resumes) {

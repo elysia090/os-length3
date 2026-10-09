@@ -41,8 +41,10 @@ try {
     $taskProfile = if ($Profile) { '1' } else { '0' }
     # Mode flags are not ordinary timestamp dependencies. Rebuild this small
     # standalone module so changing profile mode cannot retain a stale target.
-    $taskLayout = if ($Compiler) { @("COLD_STATIC_MIN=$StaticMin") } else { @() }
-    & $taskMake.Source -B -C "src/v2/$taskProduct" wasm "WASM_CC=$taskCompiler" "WASM_OUTPUT=$taskTarget" "WASM_PROFILE=$taskProfile" @taskLayout
+    [string[]]$taskMakeArguments = @('-B', '-C', "src/v2/$taskProduct", 'wasm',
+        "WASM_CC=$taskCompiler", "WASM_OUTPUT=$taskTarget", "WASM_PROFILE=$taskProfile")
+    if ($Compiler) { $taskMakeArguments += "COLD_STATIC_MIN=$StaticMin" }
+    & $taskMake.Source @taskMakeArguments
     if ($LASTEXITCODE) { throw "C $taskProduct Wasm build failed" }
 } finally { Pop-Location }
 Get-FileHash -Algorithm SHA256 -LiteralPath $taskOutput

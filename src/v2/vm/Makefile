@@ -39,6 +39,7 @@ WASM_FLAGS += -Wl,--export=vm_source_query,--export=vm_source_extend,--export=vm
 WASM_FLAGS += -Wl,--export=vm_source_versions_start,--export=vm_source_stamp
 WASM_FLAGS += -Wl,--export=vm_source_capacity,--export=vm_source_metadata_bytes
 WASM_FLAGS += -Wl,--export=vm_entry_abi
+WASM_FLAGS += -Wl,--export=vm_memory_features
 WASM_FLAGS += -Wl,--export=vm_source_demands,--export=vm_source_admissions,--export=vm_run_interrupted
 WASM_FLAGS += -Wl,--export=vm_source_demand_banks,--export=vm_source_demand_word
 WASM_FLAGS += -Wl,--export=vm_run_source

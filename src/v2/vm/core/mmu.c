@@ -60,7 +60,7 @@ static machine_result walk(vm_memory *memory, pl_u8 *port,
                             const vm_mmu_context *context, pl_u64 address,
                             pl_u32 access, pl_u64 *physical,int observe)
 {
-    vm_walk_proof *retained=&memory->walks[(address>>12u)&63u];
+    vm_walk_proof *retained=&memory->walks[vm_memory_walk_rank(address)];
     if(!observe&&retained->depth&&retained->depth<=4u&&retained->virtual_page==(address&~4095ull)
         &&retained->access==access&&retained->cpl==context->cpl
         &&retained->control[0]==context->cr0&&retained->control[1]==context->cr3
@@ -239,6 +239,47 @@ machine_result vm_mmu_access(vm_memory *memory, pl_u32 port_offset,
         }
         vm_memory_store(memory->bytes + port_offset + offsetof(machine_memory_port, value), value, 8u);
     }
+    return 0u;
+}
+
+machine_result vm_mmu_fill(vm_memory *memory,pl_u32 port,const vm_mmu_context *context,
+    pl_u64 first,pl_u32 bytes,pl_u32 word_bytes,pl_u32 reverse,pl_u64 value)
+{
+    vm_memory_abort(memory);
+    if((word_bytes!=1u&&word_bytes!=2u&&word_bytes!=4u&&word_bytes!=8u)||reverse>1u
+        ||!bytes||bytes%word_bytes||bytes/word_bytes>MACHINE_REPEAT_MAX_ELEMENTS)return MACHINE_RESULT_ENTRY_MAP;
+    if(bytes==word_bytes){machine_result single=vm_mmu_access(memory,port,context,first,word_bytes,MACHINE_MEMORY_WRITE,value);
+        if(!single)vm_memory_store(memory->bytes+port+offsetof(machine_memory_port,value),1u,8u);
+        return single;}
+    pl_u32 within=(pl_u32)(first&4095u),tail=bytes-word_bytes;
+    if(within+word_bytes>4096u||(reverse?tail>within:bytes>4096u-within))return MACHINE_RESULT_ENTRY_MAP;
+    vm_memory_reservation ready;
+    machine_result result=preflight(memory,port,context,first,word_bytes,MACHINE_MEMORY_WRITE,8u,&ready);
+    if(result)return result;
+    if(ready.parts!=1u)return MACHINE_RESULT_ENTRY_MAP;
+    pl_u32 count=bytes/word_bytes;
+    /* A store may itself overwrite a paging ancestor. Stop immediately
+     * AFTER the first such word, then rewalk at the next source frontier.
+     * The same exact ancestor witness supplies the physical hazard cut. */
+    if(!ready.discard){const vm_walk_proof *proof=&memory->walks[vm_memory_walk_rank(first)];
+        if(proof->depth>4u||!proof->depth||proof->virtual_page!=(first&~4095ull)||proof->access!=MACHINE_MEMORY_WRITE)count=1u;
+        else for(pl_u32 n=0u;n<proof->depth;++n){const vm_walk_ancestor *ancestor=proof->ancestors+n;
+            pl_u64 a=ready.offsets[0],low=a-(reverse?tail:0u);
+            if((pl_u64)ancestor->offset+8u<=low||ancestor->offset>=low+bytes)continue;
+            for(pl_u32 j=0u;j<8u;++j){pl_u64 at=(pl_u64)ancestor->offset+j;
+                if(at<low||at>=low+bytes)continue;
+                pl_u32 shift=(pl_u32)((at-low)&(word_bytes-1u))*8u;
+                if((pl_u8)(ancestor->entry>>(j*8u))==(pl_u8)(value>>shift))continue;
+                pl_u64 index=reverse?(at>=a?0u:(a-1u-at)/word_bytes+1u):(at-a)/word_bytes;
+                if(index+1u<count)count=(pl_u32)index+1u;
+            }
+        }
+        bytes=count*word_bytes;tail=bytes-word_bytes;pl_u32 offset=ready.offsets[0]-(reverse?tail:0u);
+        vm_memory_before_write(memory,offset,bytes);
+        for(pl_u32 i=0u;i<bytes;i+=word_bytes)vm_memory_store(memory->bytes+offset+i,value,word_bytes);
+        memory->write_touched=1u;
+    }
+    vm_memory_store(memory->bytes+port+offsetof(machine_memory_port,value),count,8u);
     return 0u;
 }
 

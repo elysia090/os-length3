@@ -23,6 +23,10 @@ typedef struct {
  * target is a private64-byte buffer, disjoint from physical guest storage. */
 int vm_mmu_observe_string(vm_memory *physical,const vm_mmu_context *context,
                           pl_u64 address,pl_u8 target[64]);
+/* At most256 equal words. A multiword run fits one guest page; a single
+ * word retains the ordinary cross-page/fault order. No CPU state is supplied. */
+machine_result vm_mmu_fill(vm_memory *physical,pl_u32 port,const vm_mmu_context *context,
+    pl_u64 first,pl_u32 bytes,pl_u32 word_bytes,pl_u32 reverse,pl_u64 value);
 
 /* The directory describes resident PHYSICAL pages, not guest translations.
  * All context/rows/residency are pinned by a serialized single-vCPU owner.
