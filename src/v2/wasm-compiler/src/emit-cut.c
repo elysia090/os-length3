@@ -170,7 +170,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                 {pl_x86_vector_binary law;plan->report.memory_bytes=pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
-                {pl_x86_mmx_transfer law;plan->report.memory_bytes=pl_x86_mmx_transfer_lower(&instruction,&law)?(law.source_memory||law.target_memory?law.bytes:0u):
+                {pl_x86_mmx_transfer law;pl_x86_scalar_vector_transfer lane;plan->report.memory_bytes=pl_x86_scalar_vector_transfer_lower(&instruction,&lane)?(lane.source_memory||lane.target_memory?lane.bytes:0u):pl_x86_mmx_transfer_lower(&instruction,&law)?(law.source_memory||law.target_memory?law.bytes:0u):
                     (instruction.machine_argument&(3ull<<24u))?(instruction.machine_argument&255u)==9u?4u:8u:0u;}
                 else if((system==CUT_SYSTEM_SELECTOR_SNAPSHOT || system==CUT_SYSTEM_X87_SNAPSHOT)
                     && instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)

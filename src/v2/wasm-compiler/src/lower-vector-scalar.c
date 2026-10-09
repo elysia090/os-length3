@@ -15,6 +15,9 @@ static int scalar(const pl_x86_operand *operand,pl_u32 width)
 }
 int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_scalar_vector_transfer transfer;
+    if(pl_x86_scalar_vector_transfer_lower(instruction,&transfer))return !(transfer.source_memory||transfer.target_memory)
+        ||cut_memory_address_supported(instruction,&instruction->operands[transfer.target_memory?0u:1u].value.memory);
     pl_x86_mmx_transfer mmx;
     if(pl_x86_mmx_transfer_lower(instruction,&mmx))return !(mmx.source_memory||mmx.target_memory)
         ||cut_memory_address_supported(instruction,&instruction->operands[mmx.target_memory?0u:1u].value.memory);
@@ -25,9 +28,6 @@ int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
                 |PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
     pl_u32 kind=(pl_u32)(instruction->machine_argument&255u),width=kind==9u?32u:64u;
     const pl_x86_operand *target=&instruction->operands[0],*source=&instruction->operands[1];
-    if(kind==39u)return vector(target,64u) && target->bits==128u && vector(source,64u)
-        && instruction->machine_argument==(39u|((pl_u64)target->value.reg.index<<8u)
-            |((pl_u64)source->value.reg.index<<16u)|(3ull<<32u));
     if(kind==14u) {
         int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
         const pl_x86_operand *memory=read?source:target,*lane=read?target:source;
@@ -57,12 +57,14 @@ int cut_vector_scalar_supported(const pl_x86_instruction *instruction)
 void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
     pl_x86_mmx_transfer law;int mmx=pl_x86_mmx_transfer_lower(instruction,&law);
-    pl_u32 width=mmx?law.bytes*8u:(instruction->machine_argument&255u)==9u?32u:64u;
+    pl_x86_scalar_vector_transfer transfer;int scalar_lane=pl_x86_scalar_vector_transfer_lower(instruction,&transfer);
+    pl_u32 width=scalar_lane?transfer.bytes*8u:mmx?law.bytes*8u:(instruction->machine_argument&255u)==9u?32u:64u;
     int half=(instruction->machine_argument&255u)==14u;
     pl_u32 selected=half?(pl_u32)(instruction->machine_argument>>32u)*8u:0u;
     const pl_x86_operand *target=&instruction->operands[0],*source=&instruction->operands[1];
     int read=source->kind==PL_X86_OPERAND_MEMORY,write=target->kind==PL_X86_OPERAND_MEMORY;
     if(mmx)cut_mmx_guard(cut);else cut_sse_guard(cut);
+    if(scalar_lane&&transfer.alias&&!transfer.clear)return;
     /* Only the low scalar is live. Capture it before touching an aliased XMM
      * destination or publishing any CPU state; 32-bit GPR output zero-extends. */
     if(read)cut_const(cut,0u);
@@ -90,6 +92,14 @@ void cut_lower_vector_scalar(cut_lowering *cut,const pl_x86_instruction *instruc
     }
     if(vector(target,width)) {
         pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+target->value.reg.index*16u;
+        if(scalar_lane){
+            cut_get(cut,0u);cut_get(cut,CUT_VALUE);
+            if(transfer.clear){
+                cut_op(cut,0xfdu);wasm_writer_uleb(cut->writer,0x12u);cut_const(cut,0u);cut_op(cut,0xfdu);wasm_writer_uleb(cut->writer,0x1eu);cut_op(cut,1u);
+                cut_op(cut,0xfdu);wasm_writer_uleb(cut->writer,0x0bu);wasm_writer_uleb(cut->writer,4u);wasm_writer_uleb(cut->writer,offset);
+            }else{cut_op(cut,width==32u?0x3eu:0x37u);wasm_writer_uleb(cut->writer,width==32u?2u:3u);wasm_writer_uleb(cut->writer,offset);}
+            return;
+        }
         /* A selected-half write leaves the other half resident and untouched.
          * No old-vector read, blend, second store or pair access is required. */
         cut_store(cut,offset+selected,CUT_VALUE);

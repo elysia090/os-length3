@@ -50,8 +50,8 @@ for(let form=0;form<672;++form){const file=suffix=>readFile(path.join(directory,
       // Synthetic RAM fixture only: publish the already owned physical page,
       // not a production storage/authentication claim or a reopen/refetch.
       v.setUint32(dir+(6+missingPage)*32+16,1,true);result=vm.vm_run(port,9n,1);++waits;}
-    assert.equal(result,vector?vector*8n+3n:missingPage>=0?5n:1n,`ENTER result ${form}/${phase}`);
-    if(missingPage>=0&&!vector)assert.equal(vm.vm_source_retired(),1n,'latched completion retires once despite ordinary admission revocation');
+    assert.equal(result,vector?vector*8n+3n:1n,`ENTER result ${form}/${phase}`);
+    if(missingPage>=0&&!vector)assert.equal(vm.vm_source_retired(),1n,'disjoint stack writes preserve the exact pinned source and retire once');
     for(let reg=0;reg<16;++reg)assert.equal(v.getBigUint64(cpu+reg*8,true),record.readBigUInt64LE(136+reg*8),`ENTER GPR ${form}/${phase}/${reg}`);
     assert.equal(v.getBigUint64(cpu+392,true),record.readBigUInt64LE(264),`ENTER flags ${form}/${phase}`);
     assert.equal(v.getBigUint64(cpu+384,true),record.readBigUInt64LE(272));

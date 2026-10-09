@@ -573,10 +573,22 @@ static void after_guest_write(pl_u64 admitted)
      * no guest import can publish a source. Equality therefore proves the
      * write is disjoint from ALL retained executable extents. The owned next
      * cut still rewalks the MMU and checks original context/physical identity.
-     * Flat directories and latched instructions retain the coarse fence. */
+     * Flat directories retain the coarse fence. A resumed source instruction
+     * can use its exact still-owned row, not a fresh virtual lookup: the next
+     * cut still rewalks the MMU after any data/page-table modification. */
+    pl_u32 rank=run_source_rank;
+    if(execution.continuation.slot){
+        const vm_execution_row *latched=&execution.continuation;
+        rank=latched->slot>=sources.first_slot?latched->slot-sources.first_slot:VM_SOURCE_ROWS;
+        if(rank<VM_SOURCE_ROWS){const vm_execution_row *owned=&sources.rows[rank].row;
+            if(owned->entry!=latched->entry||owned->source_bytes!=latched->source_bytes
+                ||owned->source_instructions!=latched->source_instructions||owned->slot!=latched->slot
+                ||owned->operand_binding!=latched->operand_binding)rank=VM_SOURCE_ROWS;
+        }
+    }
     if (execution.select==source_entry && execution.generation==resident.generation
-            && !execution.continuation.slot && run_source_rank<VM_SOURCE_ROWS
-            && (admitted&(1ull<<run_source_rank)) && sources.valid==admitted) return;
+            && sources.generation==resident.generation&&rank<VM_SOURCE_ROWS
+            && (admitted&(1ull<<rank)) && sources.valid==admitted) return;
     execution.generation=0u;
 }
 

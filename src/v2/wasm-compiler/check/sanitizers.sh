@@ -45,6 +45,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/float-compare-check
 "$temporary/wasm-compiler/build/float-compare-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/selector-query-check
 "$temporary/wasm-compiler/build/selector-query-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/scalar-vector-transfer-check
+"$temporary/wasm-compiler/build/scalar-vector-transfer-check"
 "$temporary/wasm-compiler/build/mmx-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/flags-low-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/translate-byte-check

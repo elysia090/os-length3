@@ -11,4 +11,5 @@ X86_SOURCES += src/x87-exchange.c
 X86_SOURCES += src/vector-integer-float.c
 X86_SOURCES += src/float-compare.c
 X86_SOURCES += src/selector-query.c
+X86_SOURCES += src/scalar-vector-transfer.c
 X86_SOURCES += src/vector-float-integer.c

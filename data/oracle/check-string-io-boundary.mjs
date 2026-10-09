@@ -25,7 +25,7 @@ await start(Buffer.from([0x6c]),true);
 assert.equal(vm.vm_io(port,0x3fa,0x101,1n),0n);assert.equal(vm.vm_io(port,0x3fc,0x101,16n),0n);
 assert.equal(vm.vm_io(port,0x3f8,0x101,65n),0n);assert.equal(vm.vm_io(port,0x3f8,0x101,66n),0n);
 assert.equal(vm.vm_run(port,9n,1),2n);assert.equal(v.getBigUint64(cpu+56,true),0x12340100n);assert.equal(v.getBigUint64(cpu+1128,true),42n);
-v.setUint32(dir+6*32+16,1,true);assert.equal(vm.vm_run(port,9n,1),5n);assert.equal(vm.vm_source_retired(),1n);assert.equal(a[payload(6)+256],65);
+v.setUint32(dir+6*32+16,1,true);assert.equal(vm.vm_run(port,9n,1),1n);assert.equal(vm.vm_source_retired(),1n);assert.equal(a[payload(6)+256],65);
 assert.equal(vm.vm_io(port,0x3f8,1,0n),0n);assert.equal(v.getBigUint64(port+8,true),66n,'second FIFO byte remains: no repeated first read');
 assert.equal(vm.vm_checkpoint(port,0,0n,0n),6n,'checkpoint outside a bound call refused');
 await start(Buffer.from([0x6e]),false);a[payload(6)+256]=67;
@@ -37,7 +37,7 @@ await start(Buffer.from([0xf3,0x6c]),false);put(cpu+8,513);put(cpu+16,0x3ff);
 assert.equal(vm.vm_io(port,0x3ff,0x101,91n),0n);
 assert.equal(vm.vm_run(port,9n,1),10n);assert.equal(v.getBigUint64(cpu+8,true),257n);assert.equal(v.getBigUint64(cpu+1128,true),42n);
 assert.equal(vm.vm_run(port,9n,1),10n);assert.equal(v.getBigUint64(cpu+8,true),1n);
-assert.equal(vm.vm_run(port,9n,1),5n);assert.equal(v.getBigUint64(cpu+8,true),0n);assert.equal(v.getBigUint64(cpu+1128,true),43n);
+assert.equal(vm.vm_run(port,9n,1),1n);assert.equal(v.getBigUint64(cpu+8,true),0n);assert.equal(v.getBigUint64(cpu+1128,true),43n);
 assert(a.subarray(payload(6)+256,payload(6)+256+513).every(byte=>byte===91));
 vm.vm_close();console.log(JSON.stringify({format:'string-io-c-boundary-v1',status:'pass',inputReadOnce:1,outputLatchedByte:1,
   quantumResumes:2,oracle:'C UART FIFO/resource/console models, not physical I/O silicon or production page supply',linuxBoot:'not-tested'},null,2));

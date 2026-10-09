@@ -37,6 +37,12 @@ SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
 SOURCES += src/lower-vector-integer-float.c
+.PHONY: scalar-vector-transfer-check
+check: scalar-vector-transfer-check
+scalar-vector-transfer-check: $(BUILD)/scalar-vector-transfer-check
+	$(BUILD)/scalar-vector-transfer-check
+$(BUILD)/scalar-vector-transfer-check: check/scalar-vector-transfer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-float-compare.c
 SOURCES += src/lower-selector-query.c
 .PHONY: selector-query-check

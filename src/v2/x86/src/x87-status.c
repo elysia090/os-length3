@@ -34,7 +34,10 @@ int pl_x86_x87_status_compare_lower(const pl_x86_instruction *i,pl_x86_x87_statu
     if(other->kind!=PL_X86_OPERAND_REGISTER||other->bits!=80u||other->value.reg.class_id!=PL_X86_REGISTER_X87
         ||other->value.reg.index>=8u||other->value.reg.flags)return 0;
     pl_u32 options=(pl_u32)(i->machine_argument>>36u),pop=options&1u,quiet=(options>>1u)&1u;
-    pl_u32 expected=(quiet?0x5e0u:0xd0u)|(pop?8u:0u)|other->value.reg.index;
+    pl_u32 base=quiet?0x5e0u:0xd0u;
+    if(!quiet&&(fop>>8u)==4u)base=0x4d0u;
+    else if(!quiet&&(fop>>8u)==6u&&pop)base=0x6d0u; // DE /2 has single-pop comparison semantics.
+    pl_u32 expected=base|((base==0x6d0u)?0u:(pop?8u:0u))|other->value.reg.index;
     if(options>3u||fop!=expected||i->machine_argument!=(11u|((pl_u64)fop<<16u)|((pl_u64)other->value.reg.index<<32u)|((pl_u64)options<<36u)))return 0;
     *out=(pl_x86_x87_status_compare){0u,0u,0u,other->value.reg.index,(pl_u8)!quiet,(pl_u8)pop,0u,(pl_u16)fop};return 1;
 }

@@ -7,13 +7,14 @@ int main(int argc,char **argv)
 {
     if(argc>2)return 2;
     const pl_u8 prefixes[]={0u,0x66u,0x67u,0x48u,0xf2u,0xf3u,0x64u,0x65u};pl_u32 forms=0u,refusals=0u;
-    for(pl_u32 p=0u;p<8u;++p)for(pl_u32 family=0u;family<43u;++family){
+    for(pl_u32 p=0u;p<8u;++p)for(pl_u32 family=0u;family<67u;++family){
         pl_u32 n=0u,memory=family<8u,width=0u;memset(page,0x90,sizeof page);if(prefixes[p])page[n++]=prefixes[p];
         if(memory){pl_u32 integer=family>=4u,pop=!(family&1u);width=integer?(family<6u?2u:4u):(family<2u?4u:8u);
             page[n++]=(pl_u8)(integer?(width==2u?0xdeu:0xdau):(width==4u?0xd8u:0xdcu));page[n++]=(pl_u8)(((pop?3u:2u)<<3u)|7u);
         }else if(family<40u){pl_u32 mode=(family-8u)/8u,index=(family-8u)&7u,ordered=mode<2u,pop=!(mode&1u);
             page[n++]=(pl_u8)(ordered?0xd8u:0xddu);page[n++]=(pl_u8)((ordered?0xd0u:0xe0u)|(pop?8u:0u)|index);
-        }else{page[n++]=(pl_u8)(family==40u?0xdeu:family==41u?0xdau:0xd9u);page[n++]=(pl_u8)(family==40u?0xd9u:family==41u?0xe9u:0xe4u);}
+        }else if(family<43u){page[n++]=(pl_u8)(family==40u?0xdeu:family==41u?0xdau:0xd9u);page[n++]=(pl_u8)(family==40u?0xd9u:family==41u?0xe9u:0xe4u);}
+        else{pl_u32 alias=family-43u;page[n++]=(pl_u8)(alias<16u?0xdcu:0xdeu);page[n++]=(pl_u8)(0xd0u+(alias&7u)+(alias>=8u&&alias<16u?8u:0u));}
         pl_x86_map map={page,0x400000u,sizeof page,sizeof page,PL_ELF_FLAG_EXECUTE,9u};pl_x86_image image={&map,1u,0u,map.address};
         pl_x86_instruction i;pl_x86_x87_status_compare law;
         if(pl_x86_decode_profile(&image,map.address,&i)||!pl_x86_x87_status_compare_lower(&i,&law)||law.memory!=memory||law.bytes!=width)return 1;

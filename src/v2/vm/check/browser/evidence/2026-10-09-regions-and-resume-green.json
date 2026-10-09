@@ -1,0 +1,17 @@
+{
+  "format": "scalar-regions-retained-source-evidence-v1",
+  "nativePublication": "1a0bddc2340a976d859fabfe7c67eeea66efb3a0d4ae21dc24a1299da2753195",
+  "entryABI": 4,
+  "scalarMoves": {"constructors": 4352, "malformedLaws": 69632, "physical": 15360, "modules": 240, "retainedNativeScalarRows": 9984, "retainedNativeFaultFrames": 1148},
+  "statusAliases": {"encodings": 24, "newConstructors": 192, "newMalformedLaws": 2304, "allConstructors": 536, "allMalformedLaws": 6432, "physical": 24576, "modules": 24, "scope": "tested Intel projection/decoder behavior, not a claim that all clones/SDM support the extra encodings"},
+  "boundary": {"comparisons": 2049, "faults": 1840, "ordinaryWaits": 32, "completeRetries": 16, "immediateSuccess": 176, "resumedRealCodeWriteRevocations": 1},
+  "regressions": {"nativeEnter": 8064, "enterFaults": 3984, "enterResumes": 252, "sourceCohortComparisons": 42, "sourceCodeRevocations": 2, "disjointWriteRuns": 10, "revalidatedWrites": 3, "selectorBoundary": 1442, "uartInputReadOnce": 1, "outputLatchedByte": 1, "repResumes": 2},
+  "make": {"domain": "every-final-PF_X-byte", "coordinates": 233455, "before": 368, "after": 329, "lowerable": 233126, "recovered": 39, "faultRefusals": 0, "fetchDemands": 0, "capacityRefusals": 0, "firstRemaining": "0f06/CLTS at0xb4b9"},
+  "compiler": {"bytes": 747377, "sha256": "f3a9e44b48dd7ea3f0a6052ebca3238491b901a20f0337e157760621319384b1"},
+  "vm": {"bytes": 99110, "sha256": "4bbd6a814be8c8514e107286f9de660816c2c029bfacd12b8269da2f2f7ff571"},
+  "scopedProductAndPositiveSanitizers": "pass",
+  "unrestrictedNativeGate": "known intermittent CALL RAM payload red retained separately",
+  "linuxBoot": "not-tested",
+  "publicationUpdated": false,
+  "humanUIChanged": false
+}

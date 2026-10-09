@@ -226,6 +226,10 @@ int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
                                pl_x86_vector_binary *out);
 typedef struct {pl_u8 bytes,source_memory,target_memory,source_mmx,target_mmx,aligned;} pl_x86_mmx_transfer;
 int pl_x86_mmx_transfer_lower(const pl_x86_instruction *instruction,pl_x86_mmx_transfer *out);
+typedef struct {pl_u8 bytes,source_memory,target_memory,source,target,clear,alias;} pl_x86_scalar_vector_transfer;
+/* MOVSS/MOVSD and register MOVQ project a scalar region; memory loads/MOVQ
+ * clear the remaining region, scalar register moves preserve it. No FP math. */
+int pl_x86_scalar_vector_transfer_lower(const pl_x86_instruction *instruction,pl_x86_scalar_vector_transfer *out);
 typedef struct {pl_u8 source_memory,source,target,source_class,source_bytes,target_bytes;} pl_x86_vector_integer_float;
 int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
 /* Inputs signed word and RC, outputs raw IEEE bits and inexact predicate.
