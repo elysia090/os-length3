@@ -11,6 +11,7 @@ WASM_PROFILE ?= 0
 WASM_FLAGS = --target=wasm32-unknown-unknown -O2 -ffreestanding -nostdlib \
 	-Wl,--no-entry,--strip-all -Xlinker --import-memory=machine,memory \
 	-Wl,--export=vm_arena_min,--export=vm_open,--export=vm_close,--export=vm_bind_state,--export=vm_access
+WASM_FLAGS += -flto
 WASM_FLAGS += -Wl,--export=vm_boot_prepare,--export=vm_boot_project,--export=vm_boot_initial_state
 WASM_FLAGS += -Wl,--export=vm_boot_image
 WASM_FLAGS += -Wl,--export-table,--growable-table,--export=vm_slot_min,--export=vm_bind_execution,--export=vm_run,--export=vm_completed,--export=vm_source_retired
@@ -65,6 +66,12 @@ WASM_SOURCES = wasm/entry.c $(SOURCES) $(ARTIFACT_PROVIDER_SOURCES)
 OBJECTS = $(patsubst core/%.c,$(BUILD)/%.o,$(SOURCES))
 
 .PHONY: all check wasm clean
+.PHONY: word-access-check
+check: word-access-check
+word-access-check: $(BUILD)/word-access-check
+	$(BUILD)/word-access-check
+$(BUILD)/word-access-check: check/word-access.c core/memory-internal.h
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< -o $@
 .PHONY: source-banks-check
 check: source-banks-check
 source-banks-check: $(BUILD)/source-banks-check

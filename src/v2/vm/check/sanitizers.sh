@@ -11,5 +11,5 @@ flags='-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize
 make -j4 -C "$root" BUILD="$temporary" CFLAGS="$flags" \
     "$temporary/clock-check" "$temporary/pit-check" "$temporary/pic-check" \
     "$temporary/rtc-check" "$temporary/uart-check" "$temporary/execution-check" \
-    "$temporary/source-banks-check"
-for test in clock pit pic rtc uart execution source-banks;do "$temporary/$test-check";done
+    "$temporary/source-banks-check" "$temporary/word-access-check"
+for test in clock pit pic rtc uart execution source-banks word-access;do "$temporary/$test-check";done

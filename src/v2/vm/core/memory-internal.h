@@ -10,11 +10,25 @@ static inline void vm_memory_before_write(vm_memory *memory, pl_u32 offset, pl_u
 }
 static inline pl_u64 vm_memory_load(const pl_u8 *bytes, pl_u32 count)
 {
+#if defined(__GNUC__) && defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    /* Fixed-width memcpy is an unaligned, alias-safe exact extent. It lets
+     * the compiler retain one physical word instead of eight byte lanes. */
+    if(count==8u){pl_u64 word;__builtin_memcpy(&word,bytes,8u);return word;}
+    if(count==4u){pl_u32 word;__builtin_memcpy(&word,bytes,4u);return word;}
+    if(count==2u){pl_u16 word;__builtin_memcpy(&word,bytes,2u);return word;}
+#endif
     pl_u64 value = 0u;
     for (pl_u32 i = 0u; i < count; ++i) value |= (pl_u64)bytes[i] << (i * 8u);
     return value;
 }
 static inline void vm_memory_store(pl_u8 *bytes, pl_u64 value, pl_u32 count)
-{ for (pl_u32 i = 0u; i < count; ++i) bytes[i] = (pl_u8)(value >> (i * 8u)); }
+{
+#if defined(__GNUC__) && defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if(count==8u){__builtin_memcpy(bytes,&value,8u);return;}
+    if(count==4u){pl_u32 word=(pl_u32)value;__builtin_memcpy(bytes,&word,4u);return;}
+    if(count==2u){pl_u16 word=(pl_u16)value;__builtin_memcpy(bytes,&word,2u);return;}
+#endif
+    for (pl_u32 i = 0u; i < count; ++i) bytes[i] = (pl_u8)(value >> (i * 8u));
+}
 
 #endif

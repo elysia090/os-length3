@@ -102,6 +102,14 @@ unverified. See [physical source ownership](../vm/check/browser/evidence/2026-10
 The engine byte index was only256KiB while construction references already
 retained2MiB of bodies; align those bounded lifetimes before the next run.
 Do not substitute increased service timeouts for actual runtime fixes.
+The banked browser run confirms an actual supervision timeout before terminal
+startup. Exact2/4/8-byte physical words plus linked C VM optimization now pass
+2097152 unaligned comparisons/allocation edges, full independent C/sanitizer
+checks and196608/30720 SSE/FRNDINT states. Equal C-MMU read/write/cross-page
+median ratios are0.8652/0.8556/0.9169; provider bytes increase110272 ->119044.
+The new browser run retains the same kernel/root/deadline/clock and aligns the
+engine index with the existing construction lifetime; no shell claim yet.
+See [word/VM evidence](../vm/check/browser/evidence/2026-10-10-word-access.md).
 A bounded run reaches266481582 retired /150000000 admissions and ends at
 the diagnostic quota, not an ISA miss. Explicit interactive lifetime is now
 separate from that regression quota; bounded work/memory/source ownership
