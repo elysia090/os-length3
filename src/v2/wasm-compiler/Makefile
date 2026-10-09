@@ -37,6 +37,12 @@ SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
 SOURCES += src/lower-vector-integer-float.c
+.PHONY: cr0-clear-check
+check: cr0-clear-check
+cr0-clear-check: $(BUILD)/cr0-clear-check
+	$(BUILD)/cr0-clear-check
+$(BUILD)/cr0-clear-check: check/cr0-clear.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: scalar-vector-transfer-check
 check: scalar-vector-transfer-check
 scalar-vector-transfer-check: $(BUILD)/scalar-vector-transfer-check

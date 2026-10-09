@@ -23,6 +23,7 @@ static int memory_order_supported(const pl_x86_instruction *instruction)
 int cut_system_supported(const pl_x86_instruction *instruction)
 {
     if(pl_x86_x87_wait_supported(instruction))return CUT_SYSTEM_X87_WAIT;
+    if(pl_x86_cr0_clear_supported(instruction))return CUT_SYSTEM_CONTROL_WRITE;
     pl_x86_selector_query query;if(pl_x86_selector_query_lower(instruction,&query)
         &&(!query.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_SELECTOR_QUERY;
     pl_x86_float_compare floating_compare;if(pl_x86_float_compare_lower(instruction,&floating_compare)
@@ -569,6 +570,14 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         return;
     }
     if (cut->has_control_write) {
+        if(pl_x86_cr0_clear_supported(instruction)){
+            require_cpl0(cut);cut_load(cut,offsetof(machine_state,cr0));cut_set(cut,CUT_LEFT);
+            // Already-clear TS is an exact identity, not an equal-value MOV
+            // CR0 write. Keep its source admission and privilege boundary.
+            cut_get(cut,CUT_LEFT);cut_const(cut,8u);cut_op(cut,0x83u);cut_op(cut,0x50u);cut_op(cut,0x45u);cut_op(cut,0x04u);cut_op(cut,0x40u);
+            cut_op(cut,0x20u);wasm_writer_uleb(cut->writer,1u);cut_i32_const(cut,0u);
+            cut_get(cut,CUT_LEFT);cut_const(cut,~8ull);cut_op(cut,0x83u);cut_call(cut,WASM_IMPORT_CONTROL);cut_access_status(cut);cut_op(cut,0x0bu);return;
+        }
         cut_op(cut,0x20u); wasm_writer_uleb(cut->writer,1u);
         cut_op(cut,0x41u); wasm_writer_uleb(cut->writer,instruction->operands[0].value.reg.index);
         cut_read_operand(cut,&instruction->operands[1],64u);

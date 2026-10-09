@@ -45,6 +45,9 @@ long_start:
     mov $13,%ecx
     call install_gate
     lidt idt_pointer(%rip)
+.ifdef cr0_clear_oracle
+    .include "data/oracle/cr0-clear-cases.inc"
+.else
 .ifdef control_event_oracle
     .include "data/oracle/control-event-cases.inc"
 .else
@@ -168,6 +171,7 @@ emit:
     mov $0x10,%eax
     out %eax,$0xf4
     hlt
+.endif
 .endif
 .endif
 install_gate:

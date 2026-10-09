@@ -253,5 +253,7 @@ int pl_x86_selector_query_lower(const pl_x86_instruction *instruction,pl_x86_sel
  * condition. LAR's undefined nibble is canonical zero, never authority. */
 #define PL_X86_SELECTOR_QUERY_MAX_NODES 64u
 int pl_x86_selector_query_plan(pl_u32 limit,pl_u32 bits,pl_arena *arena,pl_plan *out);
+/* Privileged CLTS changes only CR0.TS. Prefixes do not change its width. */
+int pl_x86_cr0_clear_supported(const pl_x86_instruction *instruction);
 
 #endif /* X86_SEMANTICS_H */
