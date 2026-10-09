@@ -14,8 +14,9 @@ static pl_u64 check_scalar_value(pl_operand a,const pl_u64 *input)
         return(a.value&255u)==16u?v:(a.value&255u)==2u?v&1u:(v>>6u)&1u;}
     return ~0ull;
 }
-static int check_scalar_plan(const pl_plan *p,const pl_u64 *input,pl_u64 out[3])
+static int check_scalar_projection(const pl_plan *p,const pl_u64 *input,pl_u64 *out,pl_u32 count)
 {
+    if(!p||!input||!out||!count||count>p->local_count||p->node_count>PL_X86_X87_ARITHMETIC_MAX_NODES)return 1;
     for(pl_u32 n=0u;n<p->node_count;++n){const pl_node *node=p->nodes+n;const pl_operand *arg=p->arguments+node->argument_at;
         pl_u64 a=check_scalar_value(arg[0],input),b=node->argument_count>1u?check_scalar_value(arg[1],input):0u,v;
         check_scalar_quotients[n+1u]=(pl_u8)(node->opcode==PL_OPCODE_X86_DIVIDE);
@@ -30,7 +31,9 @@ static int check_scalar_plan(const pl_plan *p,const pl_u64 *input,pl_u64 out[3])
         case PL_OPCODE_X86_BIT_SUMMARY:a=check_scalar_value(arg[1],input);v=~0ull;for(pl_u32 k=0u;k<64u;++k)if((a>>k)&1u)v=k;break;
         default:return 1;}check_scalar_nodes[n+1u]=v;
     }
-    for(pl_u32 i=0u;i<3u;++i)out[i]=check_scalar_value(p->locals[i],input);
+    for(pl_u32 i=0u;i<count;++i)out[i]=check_scalar_value(p->locals[i],input);
     return 0;
 }
+static inline int check_scalar_plan(const pl_plan *p,const pl_u64 *input,pl_u64 out[3])
+{return check_scalar_projection(p,input,out,3u);}
 #endif

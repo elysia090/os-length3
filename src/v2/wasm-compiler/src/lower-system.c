@@ -42,7 +42,10 @@ int cut_system_supported(const pl_x86_instruction *instruction)
         &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_INTEGER;
     pl_x86_x87_integer_store integer_store;
     if(pl_x86_x87_integer_store_lower(instruction,&integer_store)
-        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_INTEGER_STORE;
+        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_STORE;
+    pl_x86_x87_float_store float_store;
+    if(pl_x86_x87_float_store_lower(instruction,&float_store)
+        &&(!float_store.memory||cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))return CUT_SYSTEM_X87_STORE;
     pl_x86_x87_integer_arithmetic arithmetic;
     if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)
         &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_ARITHMETIC;
@@ -431,7 +434,9 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     pl_x86_x87_integer_load integer;
     if(pl_x86_x87_integer_load_lower(instruction,&integer)||pl_x86_x87_memory_load_lower(instruction,&integer)){cut_lower_x87_integer(cut,instruction);return;}
     pl_x86_x87_integer_store integer_store;
-    if(pl_x86_x87_integer_store_lower(instruction,&integer_store)){cut_lower_x87_integer_store(cut,instruction);return;}
+    if(pl_x86_x87_integer_store_lower(instruction,&integer_store)){cut_lower_x87_store(cut,instruction);return;}
+    pl_x86_x87_float_store float_store;
+    if(pl_x86_x87_float_store_lower(instruction,&float_store)){cut_lower_x87_store(cut,instruction);return;}
     pl_x86_x87_integer_arithmetic arithmetic;
     pl_x86_x87_register_arithmetic register_arithmetic;
     if(pl_x86_x87_integer_arithmetic_lower(instruction,&arithmetic)||pl_x86_x87_register_arithmetic_lower(instruction,&register_arithmetic)

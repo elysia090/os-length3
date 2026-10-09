@@ -18,7 +18,7 @@ int main(int argc,char **argv)
     (void)argc;(void)argv;return 2;
 #else
     if(argc!=2)return 2;
-    pl_u8 *code=VirtualAlloc(NULL,4096u,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);if(!code)return 1;
+    pl_u8 *code=check_x87_allocate(4096u);if(!code)return 1;
     const pl_u8 prefixes[]={0u,0x66u,0x67u,0x48u,0x64u,0x65u,0xf2u,0xf3u};
     for(unsigned form=0u;form<144u;++form){DWORD previous;unsigned law=form/8u,p=form&7u,length=0u;
         if(!VirtualProtect(code,4096u,PAGE_READWRITE,&previous))return 1;

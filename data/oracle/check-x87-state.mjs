@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 const [vmFile,compilerFile,directory,mode]=process.argv.slice(2);
-if(!directory||(mode&&!['--arithmetic','--status','--register','--divide','--register-divide','--memory','--multiply','--memory-multiply','--register-multiply','--store','--load','--store-fault','--mmx','--packed','--mmx-transfer','--stack'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status|--register|--divide|--register-divide|--memory|--multiply|--memory-multiply|--register-multiply|--store|--load|--store-fault|--mmx|--packed|--mmx-transfer|--stack]');
-const stack=mode==='--stack',arithmetic=mode==='--arithmetic',status=mode==='--status',registerDivide=mode==='--register-divide',registerMultiply=mode==='--register-multiply',register=stack||registerMultiply||registerDivide||mode==='--register',
-  moves=mode==='--mmx-transfer',packed=mode==='--packed',mmx=mode==='--mmx',storeFault=mode==='--store-fault',load=mode==='--load',store=storeFault||mode==='--store',multiply=mode==='--multiply',memoryMultiply=mode==='--memory-multiply',divide=mode==='--divide',ieee=mode==='--memory',
-  prefix=stack?'x87-stack':moves?'mmx-transfer':packed?'packed-binary':mmx?'mmx-binary':storeFault?'x87-store-fault':load?'x87-ieee-load':store?'x87-integer-store':memoryMultiply?'x87-memory-multiply':multiply?'x87-integer-multiply':registerMultiply?'x87-register-multiply':ieee?'x87-memory-arithmetic':registerDivide?'x87-register-divide':divide?'x87-division':register?'x87-register':status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',
-  forms=stack?144:moves?60:packed?1485:mmx?891:storeFault?8:load?96:store?384:(multiply||memoryMultiply)?224:registerMultiply?27:ieee?1120:registerDivide?54:divide?448:register?81:status?172:arithmetic?576:192;
+if(!directory||(mode&&!['--arithmetic','--status','--register','--divide','--register-divide','--memory','--multiply','--memory-multiply','--register-multiply','--store','--load','--store-fault','--mmx','--packed','--mmx-transfer','--stack','--float-store','--float-fault'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status|--register|--divide|--register-divide|--memory|--multiply|--memory-multiply|--register-multiply|--store|--load|--store-fault|--mmx|--packed|--mmx-transfer|--stack|--float-store|--float-fault]');
+const floatFault=mode==='--float-fault',floating=floatFault||mode==='--float-store',stack=mode==='--stack',arithmetic=mode==='--arithmetic',status=mode==='--status',registerDivide=mode==='--register-divide',registerMultiply=mode==='--register-multiply',register=stack||registerMultiply||registerDivide||mode==='--register',
+  moves=mode==='--mmx-transfer',packed=mode==='--packed',mmx=mode==='--mmx',storeFault=floatFault||mode==='--store-fault',load=mode==='--load',store=storeFault||mode==='--store',multiply=mode==='--multiply',memoryMultiply=mode==='--memory-multiply',divide=mode==='--divide',ieee=mode==='--memory',
+  prefix=floatFault?'x87-float-store-fault':floating?'x87-float-store':stack?'x87-stack':moves?'mmx-transfer':packed?'packed-binary':mmx?'mmx-binary':storeFault?'x87-store-fault':load?'x87-ieee-load':store?'x87-integer-store':memoryMultiply?'x87-memory-multiply':multiply?'x87-integer-multiply':registerMultiply?'x87-register-multiply':ieee?'x87-memory-arithmetic':registerDivide?'x87-register-divide':divide?'x87-division':register?'x87-register':status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',
+  forms=floatFault?5:floating?260:stack?144:moves?60:packed?1485:mmx?891:storeFault?8:load?96:store?384:(multiply||memoryMultiply)?224:registerMultiply?27:ieee?1120:registerDivide?54:divide?448:register?81:status?172:arithmetic?576:192;
 const memory=new WebAssembly.Memory({initial:16}),vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cm=new WebAssembly.Memory({initial:16}),cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
 const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(cm.buffer),cv=new DataView(cm.buffer);
@@ -17,13 +17,14 @@ const put=(at,x)=>v.setBigUint64(at,BigInt(x),true),table=vm.__indirect_function
 table.grow(Math.max(0,vm.vm_slot_min()+vm.vm_source_capacity()-table.length));let comparisons=0,modules=0;
 const cached=new Map();
 for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(directory,`${prefix}-${form}.${suffix}`));
-  const meta=JSON.parse(await file('json')),source=await file('source'),native=await file('cases'),operands=register||(mmx||packed||moves)&&!meta.bytes?null:await file(status?'operands':'integers');
-  const writes=store||moves&&meta.store;
+  const meta=JSON.parse(await file('json')),source=await file('source'),native=await file('cases'),operands=register||(floating||mmx||packed||moves)&&!meta.bytes?null:await file(status?'operands':'integers');
+  const writes=store||(floating||moves)&&meta.store;
   const operandStride=meta.operandStride??8;
   const written=writes?await file('written'):null;
+  const writtenStride=meta.writtenStride??8;assert([8,16].includes(writtenStride));
   const faultRows=storeFault?await file('faults'):null,errors=storeFault?await file('errors'):null;
   assert.equal(meta.stateBytes,1256);assert.equal(native.length,meta.native*2512);if(operands)assert.equal(operands.length,meta.native*operandStride);
-  assert.equal(source.length,meta.sourceBytes);assert(((status||register||mmx||packed||moves)&&meta.bytes===0)||[2,4,8,16].includes(meta.bytes));
+  assert.equal(source.length,meta.sourceBytes);assert(((floating||status||register||mmx||packed||moves)&&meta.bytes===0)||[2,4,8,10,16].includes(meta.bytes));
   const operandOffset=meta.operandOffset??256;assert([256,4096].includes(operandOffset));
   const key=source.toString('hex');let made=cached.get(key);
   if(!made){c.fill(0x90,ci,ci+4096);c.set(source,ci);assert.equal(cc.compiler_open_pages(ci,1,entry,9n),0);
@@ -37,7 +38,7 @@ for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(director
     [0x1000,0x2000,0x3000,0x4000,0x8000,0x9000].forEach((address,i)=>{
       put(dir+i*32,address);v.setUint32(dir+i*32+8,(i+2)*4096,true);v.setUint32(dir+i*32+12,3,true);v.setUint32(dir+i*32+16,1,true);});
     put(cpu+8192,0x2067);put(cpu+12288,0x3067);put(cpu+16384+16,0x4067);put(cpu+20480,0x8067);put(cpu+20488,storeFault&&(row&1)?0x9065:0x9067);
-    a.fill(0x90,cpu+24576,cpu+28672);a.set(source,cpu+24576);if(operands)a.set(operands.subarray(row*operandStride,row*operandStride+(writes?8:meta.bytes)),cpu+24576+operandOffset);
+    a.fill(0x90,cpu+24576,cpu+28672);a.set(source,cpu+24576);if(operands)a.set(operands.subarray(row*operandStride,row*operandStride+(writes?writtenStride:meta.bytes)),cpu+24576+operandOffset);
     put(port,9);v.setUint32(segments,2,true);v.setUint32(segments+36,0xa09b,true);
     assert.equal(vm.vm_open(cpu,a.length-cpu,4096,dir,6,6,dir+2048,9n),0);
     assert.equal(vm.vm_bind_state(cpu),0);assert.equal(vm.vm_bind_segments(segments),0);
@@ -48,7 +49,7 @@ for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(director
       assert.equal(vm.vm_completed(),0);assert.equal(vm.vm_source_retired(),0n);}
     else{assert([1n,...(writes?[5n]:[])].includes(result),`${prefix} result ${form}/${row}: ${result}`);assert.equal(vm.vm_completed(),1);assert.equal(vm.vm_source_retired(),1n);}
     if(writes){
-      assert(a.subarray(cpu+24576+operandOffset,cpu+24576+operandOffset+8).equals(written.subarray(row*8,(row+1)*8)),`${prefix} memory ${form}/${row}`);}
+      assert(a.subarray(cpu+24576+operandOffset,cpu+24576+operandOffset+writtenStride).equals(written.subarray(row*writtenStride,(row+1)*writtenStride)),`${prefix} memory ${form}/${row}`);}
     const actual=a.subarray(cpu,cpu+1256);
     assert(actual.equals(after),`${prefix} full state ${form}/${row}; byte differences: ${Array.from(after.entries())
       .filter(([offset,byte])=>actual[offset]!==byte).slice(0,24).map(([offset,byte])=>`${offset}:${actual[offset].toString(16)}/${byte.toString(16)}`).join(',')}`);++comparisons;

@@ -3,6 +3,17 @@
 #include "x87-observation.h"
 #ifdef _WIN32
 #include <windows.h>
+/* Windows context images expose 32-bit ErrorOffset/DataOffset. Keep native
+ * test coordinates representable across context switches, rather than
+ * repairing an individual FXSAVE receipt after truncation. Oracle only. */
+static inline pl_u8 *check_x87_allocate(size_t bytes)
+{
+    for(uintptr_t at=0x10000000u;at<0x70000000u;at+=65536u){
+        pl_u8 *code=VirtualAlloc((void *)at,bytes,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
+        if(code)return code;
+    }
+    return NULL;
+}
 /* Oracle only. Capture actual RAX/flags/FPU images. Other GPR invariance is
  * architectural; code under this helper may only transfer the implicit RAX. */
 static inline void check_x87_hardware_full(machine_state *first,machine_state *last,const void *code,const void *input,void *before,void *after,pl_u16 *tags)

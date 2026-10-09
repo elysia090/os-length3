@@ -131,6 +131,12 @@ int pl_x86_x87_integer_store_lower(const pl_x86_instruction *instruction,pl_x86_
 /* Inputs sig,sign/exp,CW,empty; outputs signed payload,raised/C1/SF,suppress.
  * PC does not round integer destinations; FISTTP overrides RC to truncation. */
 int pl_x86_x87_integer_store_plan(pl_u32 bits,pl_u32 truncate,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,memory,destination,pop,no_check;pl_u16 opcode;} pl_x86_x87_float_store;
+int pl_x86_x87_float_store_lower(const pl_x86_instruction *instruction,pl_x86_x87_float_store *out);
+/* Inputs extended significand/sign-exponent,CW,empty. Outputs low/high
+ * payload,new exception/C1/SF bits,suppress. PC never rounds store formats. */
+#define PL_X86_X87_FLOAT_STORE_MAX_NODES 192u
+int pl_x86_x87_float_store_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
 /* Total unsigned 128/64 quotient. Inputs H,L,D in locals 0..2; outputs
  * quotient,remainder,#DE predicate. Invalid operands publish zero payloads.
  * Fixed radix-2^32 corrections, not a bit-serial runtime loop. */

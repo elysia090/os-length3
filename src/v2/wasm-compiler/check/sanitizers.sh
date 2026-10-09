@@ -38,6 +38,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/flags-low-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/translate-byte-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-integer-store-check
 "$temporary/wasm-compiler/build/x87-integer-store-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-float-store-check
+"$temporary/wasm-compiler/build/x87-float-store-check"
 "$temporary/wasm-compiler/build/translate-byte-check"
 "$temporary/wasm-compiler/build/flags-low-check"
 "$temporary/wasm-compiler/build/divide-check"

@@ -23,6 +23,20 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+FST/FSTP32/64/80, DD/DF register aliases and FSTPNCE now use the same publisher
+as integer stores; old integer-only lowering is removed/moved. Exact rounding
+SSA and suppression preserve store/pop/fault ordering; NCE empty source reads
+no payload.360 constructors/5040 malformed controls,16640 physical rows,
+600000 official numeric rows,60 independent fault-ordering rows and9600 C
+boundary models pass;464 postlink semantic witnesses and positive sanitizers
+are green. Same make732->625 (107 recovered); cumulative1031->625 (406).
+Remaining x87265/vector238/far91/other31 still belong to the same ZERO and
+actual-browser gate. First0f0200 is a selector descriptor operation, not a
+fallback. Numeric117/34 is an upper bound, not a minimum/speed claim. See
+[exact numeric and shared memory publication](../vm/check/browser/evidence/2026-10-09-floating-stores.md).
+
+## Preceding tag/TOP checkpoint
+
 FFREE/FFREEP/FINCSTP/FDECSTP now share one two-output SSA field transfer, no
 VM opcode evaluator. Exact packed-field substitution drops maximum work15->12,
 span6.144 constructor/prefix forms,2016 malformed laws,1179648 state-word

@@ -67,9 +67,17 @@ SOURCES += src/lower-x87-snapshot.c
 SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-integer.c
 SOURCES += src/lower-x87-arithmetic.c
-SOURCES += src/lower-x87-integer-store.c
-.PHONY: x87-integer-store-check
-check: x87-integer-store-check x87-store-fault-check
+SOURCES += src/lower-x87-store.c
+.PHONY: x87-float-store-check
+check: x87-float-store-check
+x87-float-store-check: $(BUILD)/x87-float-store-check
+	$(BUILD)/x87-float-store-check
+$(BUILD)/x87-float-store-check: check/x87-float-store.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+.PHONY: x87-integer-store-check x87-float-fault-check
+check: x87-integer-store-check x87-store-fault-check x87-float-fault-check
+x87-float-fault-check: $(BUILD)/x87-store-fault-observe
+	$(BUILD)/x87-store-fault-observe --float
 x87-store-fault-check: $(BUILD)/x87-store-fault-observe
 	$(BUILD)/x87-store-fault-observe
 $(BUILD)/x87-store-fault-observe: check/x87-store-fault-observe.c check/x87-observation.h | $(BUILD)

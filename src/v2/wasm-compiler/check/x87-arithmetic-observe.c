@@ -171,9 +171,7 @@ int main(int argc,char **argv)
     /* Windows' context format has 32-bit x87 ErrorOffset/DataOffset fields.
      * Keep both native oracle coordinates representable without truncation;
      * do not repair individual recorded pointers after an OS context switch. */
-    pl_u8 *code=NULL;
-    for(uintptr_t address=0x10000000u;!code&&address<0x70000000u;address+=65536u)
-        code=VirtualAlloc((void *)address,8192u,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
+    pl_u8 *code=check_x87_allocate(8192u);
     if(!code||(uintptr_t)code>0xffffffffu-8192u)return 1;
     if(store_mode||load_mode){int result=observe_store(dir,code,load_mode);if(!VirtualFree(code,0u,MEM_RELEASE))result=1;return result;}
     if(register_mode){int result=observe_register(dir,code,register_multiply?2:register_divide);if(!VirtualFree(code,0u,MEM_RELEASE))result=1;return result;}
