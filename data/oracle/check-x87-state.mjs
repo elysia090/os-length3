@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 const [vmFile,compilerFile,directory,mode]=process.argv.slice(2);
-if(!directory||(mode&&!['--arithmetic','--status','--register','--divide','--register-divide','--memory','--multiply','--memory-multiply','--register-multiply','--store','--load','--store-fault','--mmx','--packed','--mmx-transfer','--stack','--float-store','--float-fault'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status|--register|--divide|--register-divide|--memory|--multiply|--memory-multiply|--register-multiply|--store|--load|--store-fault|--mmx|--packed|--mmx-transfer|--stack|--float-store|--float-fault]');
-const floatFault=mode==='--float-fault',floating=floatFault||mode==='--float-store',stack=mode==='--stack',arithmetic=mode==='--arithmetic',status=mode==='--status',registerDivide=mode==='--register-divide',registerMultiply=mode==='--register-multiply',register=stack||registerMultiply||registerDivide||mode==='--register',
+if(!directory||(mode&&!['--arithmetic','--status','--register','--divide','--register-divide','--memory','--multiply','--memory-multiply','--register-multiply','--store','--load','--store-fault','--mmx','--packed','--mmx-transfer','--stack','--float-store','--float-fault','--load-view'].includes(mode)))throw new Error('VM.WASM COLD.WASM HARDWARE-RECORDS [--arithmetic|--status|--register|--divide|--register-divide|--memory|--multiply|--memory-multiply|--register-multiply|--store|--load|--store-fault|--mmx|--packed|--mmx-transfer|--stack|--float-store|--float-fault|--load-view]');
+const loadView=mode==='--load-view',floatFault=mode==='--float-fault',floating=floatFault||mode==='--float-store',stack=mode==='--stack',arithmetic=mode==='--arithmetic',status=mode==='--status',registerDivide=mode==='--register-divide',registerMultiply=mode==='--register-multiply',register=stack||registerMultiply||registerDivide||mode==='--register',
   moves=mode==='--mmx-transfer',packed=mode==='--packed',mmx=mode==='--mmx',storeFault=floatFault||mode==='--store-fault',load=mode==='--load',store=storeFault||mode==='--store',multiply=mode==='--multiply',memoryMultiply=mode==='--memory-multiply',divide=mode==='--divide',ieee=mode==='--memory',
-  prefix=floatFault?'x87-float-store-fault':floating?'x87-float-store':stack?'x87-stack':moves?'mmx-transfer':packed?'packed-binary':mmx?'mmx-binary':storeFault?'x87-store-fault':load?'x87-ieee-load':store?'x87-integer-store':memoryMultiply?'x87-memory-multiply':multiply?'x87-integer-multiply':registerMultiply?'x87-register-multiply':ieee?'x87-memory-arithmetic':registerDivide?'x87-register-divide':divide?'x87-division':register?'x87-register':status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',
-  forms=floatFault?5:floating?260:stack?144:moves?60:packed?1485:mmx?891:storeFault?8:load?96:store?384:(multiply||memoryMultiply)?224:registerMultiply?27:ieee?1120:registerDivide?54:divide?448:register?81:status?172:arithmetic?576:192;
+  prefix=loadView?'x87-load-view':floatFault?'x87-float-store-fault':floating?'x87-float-store':stack?'x87-stack':moves?'mmx-transfer':packed?'packed-binary':mmx?'mmx-binary':storeFault?'x87-store-fault':load?'x87-ieee-load':store?'x87-integer-store':memoryMultiply?'x87-memory-multiply':multiply?'x87-integer-multiply':registerMultiply?'x87-register-multiply':ieee?'x87-memory-arithmetic':registerDivide?'x87-register-divide':divide?'x87-division':register?'x87-register':status?'x87-status':arithmetic?'x87-arithmetic':'x87-integer',
+  forms=loadView?132:floatFault?5:floating?260:stack?144:moves?60:packed?1485:mmx?891:storeFault?8:load?96:store?384:(multiply||memoryMultiply)?224:registerMultiply?27:ieee?1120:registerDivide?54:divide?448:register?81:status?172:arithmetic?576:192;
 const memory=new WebAssembly.Memory({initial:16}),vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports;
 const cm=new WebAssembly.Memory({initial:16}),cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
 const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(cm.buffer),cv=new DataView(cm.buffer);
@@ -17,14 +17,14 @@ const put=(at,x)=>v.setBigUint64(at,BigInt(x),true),table=vm.__indirect_function
 table.grow(Math.max(0,vm.vm_slot_min()+vm.vm_source_capacity()-table.length));let comparisons=0,modules=0;
 const cached=new Map();
 for(let form=0;form<forms;++form){const file=suffix=>readFile(path.join(directory,`${prefix}-${form}.${suffix}`));
-  const meta=JSON.parse(await file('json')),source=await file('source'),native=await file('cases'),operands=register||(floating||mmx||packed||moves)&&!meta.bytes?null:await file(status?'operands':'integers');
+  const meta=JSON.parse(await file('json')),source=await file('source'),native=await file('cases'),operands=register||(loadView||floating||mmx||packed||moves)&&!meta.bytes?null:await file(status?'operands':'integers');
   const writes=store||(floating||moves)&&meta.store;
   const operandStride=meta.operandStride??8;
   const written=writes?await file('written'):null;
   const writtenStride=meta.writtenStride??8;assert([8,16].includes(writtenStride));
   const faultRows=storeFault?await file('faults'):null,errors=storeFault?await file('errors'):null;
   assert.equal(meta.stateBytes,1256);assert.equal(native.length,meta.native*2512);if(operands)assert.equal(operands.length,meta.native*operandStride);
-  assert.equal(source.length,meta.sourceBytes);assert(((floating||status||register||mmx||packed||moves)&&meta.bytes===0)||[2,4,8,10,16].includes(meta.bytes));
+  assert.equal(source.length,meta.sourceBytes);assert(((loadView||floating||status||register||mmx||packed||moves)&&meta.bytes===0)||[2,4,8,10,16].includes(meta.bytes));
   const operandOffset=meta.operandOffset??256;assert([256,4096].includes(operandOffset));
   const key=source.toString('hex');let made=cached.get(key);
   if(!made){c.fill(0x90,ci,ci+4096);c.set(source,ci);assert.equal(cc.compiler_open_pages(ci,1,entry,9n),0);

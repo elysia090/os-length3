@@ -62,7 +62,7 @@ machine_result vm_mmu_reserve_record_access(vm_memory *physical, pl_u32 port_off
 machine_result vm_mmu_read_record(vm_memory *physical, pl_u32 port_offset,
                                   const vm_mmu_context *context, pl_u64 address,
                                   pl_u32 bytes, pl_u32 access, pl_u8 *target);
-/* Same preflight for exactly sixteen bytes: substitute pinned fragments into
+/* Same preflight for 1..16 bytes: substitute exact pinned fragments into
  * pair-port value/high directly. No record buffer or RMW reservation; the
  * pair extent must be private/reserved and disjoint from CPU/directory. */
 machine_result vm_mmu_read_pair(vm_memory *physical, pl_u32 port_offset,

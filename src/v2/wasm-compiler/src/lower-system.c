@@ -31,15 +31,19 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     pl_x86_selector_read snapshot;
     pl_x86_x87_snapshot fpu;
     pl_x86_x87_compare compare;
+    pl_x86_x87_exchange exchange;if(pl_x86_x87_exchange_lower(instruction,&exchange))return CUT_SYSTEM_X87_EXCHANGE;
     if(pl_x86_x87_compare_lower(instruction,&compare))return CUT_SYSTEM_X87_COMPARE;
     pl_x86_x87_status_compare status;
     if(pl_x86_x87_status_compare_lower(instruction,&status)
         &&(!status.memory||cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))return CUT_SYSTEM_X87_STATUS_COMPARE;
     pl_x86_x87_integer_load integer;
     if(pl_x86_x87_integer_load_lower(instruction,&integer)
-        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_INTEGER;
+        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_LOAD;
     if(pl_x86_x87_memory_load_lower(instruction,&integer)
-        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_INTEGER;
+        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_LOAD;
+    pl_x86_x87_raw_load raw_load;
+    if(pl_x86_x87_raw_load_lower(instruction,&raw_load)
+        &&(!raw_load.memory||cut_memory_address_supported(instruction,&instruction->operands[0].value.memory)))return CUT_SYSTEM_X87_LOAD;
     pl_x86_x87_integer_store integer_store;
     if(pl_x86_x87_integer_store_lower(instruction,&integer_store)
         &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_STORE;
@@ -428,11 +432,14 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     pl_x86_x87_snapshot fpu;
     if(pl_x86_x87_snapshot_lower(instruction,&fpu)){cut_lower_x87_snapshot(cut,instruction);return;}
     pl_x86_x87_compare compare;
+    pl_x86_x87_exchange exchange;if(pl_x86_x87_exchange_lower(instruction,&exchange)){cut_lower_x87_exchange(cut,instruction);return;}
     if(pl_x86_x87_compare_lower(instruction,&compare)){cut_lower_x87_compare(cut,instruction);return;}
     pl_x86_x87_status_compare status;
     if(pl_x86_x87_status_compare_lower(instruction,&status)){cut_lower_x87_status_compare(cut,instruction);return;}
     pl_x86_x87_integer_load integer;
-    if(pl_x86_x87_integer_load_lower(instruction,&integer)||pl_x86_x87_memory_load_lower(instruction,&integer)){cut_lower_x87_integer(cut,instruction);return;}
+    pl_x86_x87_raw_load raw_load;
+    if(pl_x86_x87_integer_load_lower(instruction,&integer)||pl_x86_x87_memory_load_lower(instruction,&integer)||pl_x86_x87_raw_load_lower(instruction,&raw_load)){
+        cut_lower_x87_load(cut,instruction);return;}
     pl_x86_x87_integer_store integer_store;
     if(pl_x86_x87_integer_store_lower(instruction,&integer_store)){cut_lower_x87_store(cut,instruction);return;}
     pl_x86_x87_float_store float_store;

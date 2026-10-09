@@ -1,8 +1,8 @@
 // Actual C compiler/MMU/table; model comparisons are not native observations.
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-const [vmFile,compilerFile,mode]=process.argv.slice(2),stack=mode==='--stack';
-if(!compilerFile||(mode&&!stack))throw new Error('VM.WASM COMPILER.WASM [--stack]');
+const [vmFile,compilerFile,mode]=process.argv.slice(2),stack=mode==='--stack',exchange=mode==='--exchange';
+if(!compilerFile||(mode&&!stack&&!exchange))throw new Error('VM.WASM COMPILER.WASM [--stack|--exchange]');
 const memory=new WebAssembly.Memory({initial:16}),cm=new WebAssembly.Memory({initial:16});
 const vm=(await WebAssembly.instantiate(await readFile(vmFile),{machine:{memory}})).instance.exports,
   cc=(await WebAssembly.instantiate(await readFile(compilerFile),{machine:{memory:cm}})).instance.exports;
@@ -12,8 +12,8 @@ const a=Buffer.from(memory.buffer),v=new DataView(memory.buffer),c=Buffer.from(c
   put=(at,x)=>v.setBigUint64(at,BigInt(x),true),table=vm.__indirect_function_table;
 table.grow(Math.max(0,vm.vm_slot_min()+vm.vm_source_capacity()-table.length));
 let comparisons=0,nm=0,mf=0,ferr=0,success=0;
-for(let form=0;form<(stack?18:1);++form)for(const prefix of [[],[0x66],[0x67],[0x48],[0x64],[0x65],[0xf2],[0xf3]]){
-  const source=Buffer.from([...prefix,...(stack?[form<8?0xdd:form<16?0xdf:0xd9,form<16?0xc0+(form&7):form===16?0xf6:0xf7]:[0x9b])]);c.fill(0x90,ci,ci+4096);c.set(source,ci);
+for(let form=0;form<(exchange?24:stack?18:1);++form)for(const prefix of [[],[0x66],[0x67],[0x48],[0x64],[0x65],[0xf2],[0xf3]]){
+  const source=Buffer.from([...prefix,...(exchange?[form<8?0xd9:form<16?0xdd:0xdf,0xc8+(form&7)]:stack?[form<8?0xdd:form<16?0xdf:0xd9,form<16?0xc0+(form&7):form===16?0xf6:0xf7]:[0x9b])]);c.fill(0x90,ci,ci+4096);c.set(source,ci);
   assert.equal(cc.compiler_open_pages(ci,1,entry,9n),0);assert.equal(cc.compiler_emit(entry,8,co,65536,cr),0);
   const binding=cv.getUint32(cr+76,true),module=await WebAssembly.compile(c.subarray(co,co+Number(cv.getBigUint64(cr+40,true))));
   const cut=(await WebAssembly.instantiate(module,{machine:{memory,floating_wait:vm.vm_floating_wait}})).exports.cut;
@@ -32,7 +32,7 @@ for(let form=0;form<(stack?18:1);++form)for(const prefix of [[],[0x66],[0x67],[0
     assert.equal(vm.vm_bind_state(cpu),0);assert.equal(vm.vm_bind_segments(segments),0);
     assert.equal(vm.vm_source_query(port,entry,1,codeView,rows),1n);table.set(v.getUint32(rows+16,true),cut);
     assert.equal(vm.vm_source_publish(source.length,1,binding,rows),0);assert.equal(vm.vm_bind_execution(rows,1,9n),0);
-    const before=Buffer.from(a.subarray(cpu,cpu+1256)),expected=Buffer.from(before),fault=(stack?Boolean(mask&6):(mask&5)===5)?7:pending===1&&ne?16:0,
+    const before=Buffer.from(a.subarray(cpu,cpu+1256)),expected=Buffer.from(before),fault=(stack||exchange?Boolean(mask&6):(mask&5)===5)?7:pending===1&&ne?16:0,
       waiting=!fault&&pending===1,result=dispatch?vm.vm_run(port,9n,1):cut(cpu,port,entry,binding);
     if(fault){assert.equal(result,BigInt(fault)*8n+3n);assert.equal(v.getUint32(port+24,true),fault);fault===7?++nm:++mf;}
     else if(waiting){assert.equal(result,34n);++ferr;}
@@ -43,6 +43,10 @@ for(let form=0;form<(stack?18:1);++form)for(const prefix of [[],[0x66],[0x67],[0
         if(form>=8&&form<16)tag|=3<<(top*2);
         const next=form<8?top:(top+(form===16?7:1))&7;
         expected.writeUInt16LE((sw&0xc5ff)|(next<<11),1234);expected.writeUInt16LE(tag,1236);expected.writeBigUInt64LE(entry,1240);}
+      if(exchange){const sw=before.readUInt16LE(1234),top=(sw>>>11)&7,other=(top+(form&7))&7,tag=before.readUInt16LE(1236),
+        ta=(tag>>>(top*2))&3,tb=(tag>>>(other*2))&3;
+        expected.writeUInt16LE((tag&~((3<<(top*2))|(3<<(other*2))))|(tb<<(top*2))|(ta<<(other*2)),1236);
+        expected.writeUInt16LE(sw&~0x200,1234);expected.writeBigUInt64LE(entry,1240);}
       ++success;}
     assert(a.subarray(cpu,cpu+1256).equals(expected),`full state prefix=${prefix}, mask=${mask}, NE=${ne}, pending=${pending}, dispatch=${dispatch}`);
     if(dispatch)assert.equal(vm.vm_source_retired(),fault||waiting?0n:1n);
@@ -50,5 +54,5 @@ for(let form=0;form<(stack?18:1);++form)for(const prefix of [[],[0x66],[0x67],[0
   }
 }
 vm.vm_close();cc.compiler_close();console.log(JSON.stringify({status:'pass',comparisons,nm,mf,ferr,success,
-  scope:stack?'All FFREE/FFREEP/TOP forms/prefixes, MP/TS/EM/NE, pending/masked, direct + C table':
+  scope:exchange?'All FXCH encodings/prefixes, MP/TS/EM/NE, pending/masked, direct + C table':stack?'All FFREE/FFREEP/TOP forms/prefixes, MP/TS/EM/NE, pending/masked, direct + C table':
     '8 prefix forms; MP/TS/EM/NE, masked/pending state, direct + C table; FWAIT preserves complete numeric state',linuxBoot:'not-tested'}));

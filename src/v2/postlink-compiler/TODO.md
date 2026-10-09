@@ -23,6 +23,20 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Raw80/register FLD joins FILD/IEEE loads in one publisher; FXCH24 encodings
+join the same checked SSA vocabulary. Exact1..16-byte pair reads preserve
+fault/wait outputs and read no padding;544 split models pass.8448 physical
+states,264 constructors/3696 malformed controls,8 independent page/stack-fault
+rows,192 raw-load and18432 FXCH models pass; FILD/IEEE and complete SIMD
+populations remain green. Source-empty precedes full-destination in C1; self
+exchange and determined empty/full sources do not read latent payload.
+Same make625->514 (111 recovered), cumulative1031->514 (517). Remaining
+SIMD238/floating154/far91/other31 still belong to ZERO and actual-browser
+acceptance. Scoped/postlink/sanitizer gates pass; known CALL RAM equivalence
+red is retained separately. See [exact extents and shared transfer state](../vm/check/browser/evidence/2026-10-09-load-exchange.md).
+
+## Preceding floating-store checkpoint
+
 FST/FSTP32/64/80, DD/DF register aliases and FSTPNCE now use the same publisher
 as integer stores; old integer-only lowering is removed/moved. Exact rounding
 SSA and suppression preserve store/pop/fault ordering; NCE empty source reads

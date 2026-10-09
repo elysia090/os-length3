@@ -3,9 +3,9 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const [vmFile,compilerFile,mode]=process.argv.slice(2),memory=new WebAssembly.Memory({initial:16}),cm=new WebAssembly.Memory({initial:16});
-if(mode&&!['--arithmetic','--status','--register','--load','--store','--mmx'].includes(mode))throw new Error('VM.WASM COMPILER.WASM [--arithmetic|--status|--register|--load|--store|--mmx]');
-const mmx=mode==='--mmx',load=mode==='--load',store=mode==='--store',arithmetic=mode==='--arithmetic',status=mode==='--status',register=mmx||mode==='--register';
-const cases=mmx?[{width:0,pop:false,opcode:0x0f,second:0xef,modrm:0xc0}]:store?[[0xdf,2,2],[0xdb,2,4],[0xdf,3,2],[0xdb,3,4],[0xdf,7,8],[0xdf,1,2],[0xdb,1,4],[0xdd,1,8]]
+if(mode&&!['--arithmetic','--status','--register','--load','--store','--mmx','--raw-load'].includes(mode))throw new Error('VM.WASM COMPILER.WASM [--arithmetic|--status|--register|--load|--store|--mmx|--raw-load]');
+const raw=mode==='--raw-load',mmx=mode==='--mmx',load=raw||mode==='--load',store=mode==='--store',arithmetic=mode==='--arithmetic',status=mode==='--status',register=mmx||mode==='--register';
+const cases=raw?[{width:10,opcode:0xdb,modrm:0x2f}]:mmx?[{width:0,pop:false,opcode:0x0f,second:0xef,modrm:0xc0}]:store?[[0xdf,2,2],[0xdb,2,4],[0xdf,3,2],[0xdb,3,4],[0xdf,7,8],[0xdf,1,2],[0xdb,1,4],[0xdd,1,8]]
   .map(([opcode,group,width])=>({opcode,width,modrm:(group<<3)|7})):
   load?[4,8].map(width=>({width,opcode:width===4?0xd9:0xdd,modrm:7})):
   register?Array.from({length:72},(_,family)=>{const index=family&7,encoding=Math.floor(family/24),operation=Math.floor(family/8)%3;
@@ -26,7 +26,7 @@ for(const prefix of [[],[0x66],[0x67],[0x48],[0x64],[0x65]])for(const item of ca
   const source=Buffer.from([...prefix.filter(x=>!mmx||x!==0x66),item.opcode,...(item.second?[item.second]:[]),item.modrm]);c.fill(0x90,ci,ci+4096);c.set(source,ci);
   assert.equal(cc.compiler_open_pages(ci,1,entry,9n),0);assert.equal(cc.compiler_emit(entry,1,co,65536,cr),0);
   const binding=cv.getUint32(cr+76,true),instance=(await WebAssembly.instantiate(c.subarray(co,co+Number(cv.getBigUint64(cr+40,true))),
-    {machine:{memory,access:vm.vm_access,floating_wait:vm.vm_floating_wait,write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,write_end:vm.vm_write_end}})).instance;
+    {machine:{memory,access:vm.vm_access,read_pair:vm.vm_read_pair,floating_wait:vm.vm_floating_wait,write_begin:vm.vm_write_begin,write_word:vm.vm_write_word,write_end:vm.vm_write_end}})).instance;
   for(const mask of [0n,4n,8n,12n])for(const pending of [false,true])for(const resident of [false,true])for(const crossing of [false,true]){
     vm.vm_close();a.fill(0,dir);
     [0x1000,0x2000,0x3000,0x4000,0x8000,0x9000,0xa000].forEach((address,i)=>{
@@ -53,12 +53,15 @@ for(const prefix of [[],[0x66],[0x67],[0x48],[0x64],[0x65]])for(const item of ca
         after.writeBigUInt64LE(43n,1128);after.writeUInt16LE(0x100|(item.pop?0x800:0)|(item.integer?0:2),1234);
         after.writeUInt16LE(item.pop?0xffff:0xfffd,1236);after.writeBigUInt64LE(entry,1240);
         assert(a.subarray(cpu,cpu+1256).equals(after),'complete status compare model');
+      }else if(raw){const after=Buffer.from(before);after.writeBigUInt64LE(entry+BigInt(source.length),384);after.writeBigUInt64LE(0x202n,392);
+        after.writeBigUInt64LE(43n,1128);after.writeBigUInt64LE(1n,1152+7*8);after.writeUInt16LE(0,1216+7*2);after.writeUInt16LE(0x3800,1234);
+        after.writeUInt16LE(0xbfff,1236);after.writeBigUInt64LE(entry,1240);assert(a.subarray(cpu,cpu+1256).equals(after),'complete raw80 push model');
       }else{const top=arithmetic?0:7;assert.equal(v.getBigUint64(cpu+1152+top*8,true),0x8000000000000000n);
         assert.equal(v.getUint16(cpu+1216+top*2,true),load?(width===4?0x3f6a:0x3bcd):arithmetic&&group===4?0xbfff:0x3fff);}
       ++success;}
     assert(a.subarray(payload(5),payload(6)+4096).equals(data));
   }
 }
-vm.vm_close();cc.compiler_close();console.log(JSON.stringify({status:'pass',family:mmx?'MMX':store?'integer-store':load?'IEEE-load':register?'register-arithmetic':status?'status-comparison':arithmetic?'integer-arithmetic':'FILD',faults,success,
+vm.vm_close();cc.compiler_close();console.log(JSON.stringify({status:'pass',family:raw?'extended80-load':mmx?'MMX':store?'integer-store':load?'IEEE-load':register?'register-arithmetic':status?'status-comparison':arithmetic?'integer-arithmetic':'FILD',faults,success,
   oracle:register?'C #NM/#MF and complete zero/pop models; register operations do not access absent operand pages':
     'C #NM/#MF-before-access and readonly/cross-page/absent operand models',linuxBoot:'not-tested'}));

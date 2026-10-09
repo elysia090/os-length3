@@ -49,25 +49,55 @@ int pl_x86_x87_memory_load_lower(const pl_x86_instruction *i,pl_x86_x87_integer_
         ||i->machine_argument!=(10u|((pl_u64)width<<8u)|((pl_u64)fop<<16u)))return 0;
     *out=(pl_x86_x87_integer_load){(pl_u8)width,(pl_u16)fop};return 1;
 }
-int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 integer,pl_arena *arena,pl_plan *out)
+int pl_x86_x87_raw_load_lower(const pl_x86_instruction *i,pl_x86_x87_raw_load *out)
 {
-    if(!arena||!out||integer>1u||(integer?(bits!=16u&&bits!=32u&&bits!=64u):(bits!=32u&&bits!=64u)))return PL_ERROR_PLAN;
+    pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY
+        ||i->machine_operation!=PL_X86_MACHINE_X87||i->visible_operand_count!=1u
+        ||(i->flow!=PL_X86_FLOW_NEXT&&i->flow!=PL_X86_FLOW_SYSTEM)||(i->flags&required)!=required
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_WRITES_MEMORY
+            |PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_PRIVILEGED))
+        ||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes)return 0;
+    const pl_x86_operand *o=i->operands;pl_u32 op=(pl_u32)(i->machine_argument>>16u)&0x7ffu;
+    if(o->kind==PL_X86_OPERAND_MEMORY){
+        if(o->bits!=80u||i->opcode!=0xdbu||!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)
+            ||(op>>8u)!=3u||((op>>3u)&7u)!=5u||(op&0xc0u)==0xc0u
+            ||i->machine_argument!=(10u|(10ull<<8u)|((pl_u64)op<<16u)))return 0;
+        *out=(pl_x86_x87_raw_load){10u,1u,0u,(pl_u16)op};return 1;
+    }
+    if(o->kind!=PL_X86_OPERAND_REGISTER||o->bits!=80u||o->value.reg.class_id!=PL_X86_REGISTER_X87
+        ||o->value.reg.bits!=80u||o->value.reg.index>=8u||o->value.reg.flags||i->opcode!=0xd9u
+        ||(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)||op!=(0x1c0u|o->value.reg.index)
+        ||i->machine_argument!=(10u|((pl_u64)op<<16u)|((pl_u64)o->value.reg.index<<32u)))return 0;
+    *out=(pl_x86_x87_raw_load){10u,0u,(pl_u8)o->value.reg.index,(pl_u16)op};return 1;
+}
+int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 format,pl_arena *arena,pl_plan *out)
+{
+    if(!arena||!out||format>2u||(format==2u?bits!=80u:format==1u?(bits!=16u&&bits!=32u&&bits!=64u):(bits!=32u&&bits!=64u)))return PL_ERROR_PLAN;
     pl_plan raw={.instructions=1u};expression e={0};
     if(pl_builder_open(&e.builder,&raw,arena,96u,384u,0u,5u))return PL_ERROR_ARENA;
     pl_operand input={PL_OPERAND_LOCAL,0u},cw={PL_OPERAND_LOCAL,1u},full={PL_OPERAND_LOCAL,2u},sig,se,zero,denormal=constant(0u),signaling=constant(0u);
-    if(integer){integer_expression v=integer_value(&e,bits,input);sig=v.sig;se=v.se;zero=v.zero;}
+    pl_operand source_empty=format==2u?(pl_operand){PL_OPERAND_LOCAL,4u}:constant(0u),stack_fault=bit_or(&e,full,source_empty);
+    if(format==1u){integer_expression v=integer_value(&e,bits,input);sig=v.sig;se=v.se;zero=v.zero;}
+    else if(format==2u){sig=input;se=(pl_operand){PL_OPERAND_LOCAL,3u};
+        pl_operand exp=bit_and(&e,se,constant(32767u)),ze=equal(&e,exp,constant(0u)),zs=equal(&e,sig,constant(0u));zero=bit_and(&e,ze,zs);}
     else{ieee_expression v=ieee_value(&e,bits,input);sig=v.sig;se=v.se;denormal=bit_and(&e,v.classes,constant(1u));
         signaling=shift(&e,v.classes,1u);signaling=bit_and(&e,signaling,constant(1u));zero=shift(&e,v.classes,2u);zero=bit_and(&e,zero,constant(1u));}
     pl_operand quiet=binary(&e,PL_OPCODE_LANE64_SHL,signaling,constant(62u));sig=bit_or(&e,sig,quiet);
-    sig=select(&e,constant(0xc000000000000000ull),sig,full);se=select(&e,constant(0xffffu),se,full);
-    pl_operand ie=bit_or(&e,full,signaling),valid=not(&e,ie),de=bit_and(&e,denormal,valid);
+    sig=select(&e,constant(0xc000000000000000ull),sig,stack_fault);se=select(&e,constant(0xffffu),se,stack_fault);
+    pl_operand ie=bit_or(&e,stack_fault,signaling),valid=not(&e,ie),de=bit_and(&e,denormal,valid);
     pl_operand exponent=bit_and(&e,se,constant(32767u)),special=equal(&e,exponent,constant(32767u));
-    pl_operand tag=select(&e,constant(2u),constant(0u),special);tag=select(&e,constant(1u),tag,zero);tag=select(&e,constant(2u),tag,full);
+    if(format==2u){pl_operand ze=equal(&e,exponent,constant(0u)),j=shift(&e,sig,63u),no_j=not(&e,j);
+        special=bit_or(&e,special,ze);special=bit_or(&e,special,no_j);}
+    pl_operand tag=select(&e,constant(2u),constant(0u),special);tag=select(&e,constant(1u),tag,zero);tag=select(&e,constant(2u),tag,stack_fault);
     // IEEE denormal loading is exact: even an unmasked DE publishes the
     // normalized value and pushes while latching the deferred exception.
     pl_operand im=bit_and(&e,cw,constant(1u)),unmask_i=not(&e,im);pl_operand suppress=bit_and(&e,unmask_i,ie);
     pl_operand raised=binary(&e,PL_OPCODE_LANE64_SHL,de,constant(1u));raised=bit_or(&e,raised,ie);
-    pl_operand stack=binary(&e,PL_OPCODE_LANE64_SHL,full,constant(6u)),c1=binary(&e,PL_OPCODE_LANE64_SHL,full,constant(9u));raised=bit_or(&e,raised,stack);raised=bit_or(&e,raised,c1);
+    /* Register-source underflow precedes destination overflow: when both
+     * are empty/full, IE/SF is set but C1 describes underflow, not overflow. */
+    pl_operand source_present=not(&e,source_empty),overflow=bit_and(&e,full,source_present);
+    pl_operand stack=binary(&e,PL_OPCODE_LANE64_SHL,stack_fault,constant(6u)),c1=binary(&e,PL_OPCODE_LANE64_SHL,overflow,constant(9u));raised=bit_or(&e,raised,stack);raised=bit_or(&e,raised,c1);
     pl_operand no_write=binary(&e,PL_OPCODE_LANE64_SHL,suppress,constant(16u)),tag_word=binary(&e,PL_OPCODE_LANE64_SHL,tag,constant(18u));
     pl_operand outcome=bit_or(&e,raised,no_write);outcome=bit_or(&e,outcome,tag_word);
     raw.locals[0]=sig;raw.locals[1]=se;raw.locals[2]=outcome;raw.locals[3]=(pl_operand){PL_OPERAND_LOCAL,3u};raw.locals[4]=(pl_operand){PL_OPERAND_LOCAL,4u};

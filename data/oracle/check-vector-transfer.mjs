@@ -409,7 +409,7 @@ try {
   const source=await readFile(path.join(directory,'vector-0.source-page'));
   const meta=JSON.parse(await readFile(path.join(directory,'vector-0.json')));
   const record=(await readFile(path.join(directory,'vector-0.cases'))).subarray(0,stride);
-  for(const [size,access,where,generation]of [[0,1,port,9n],[8,1,port,9n],[15,1,port,9n],[17,1,port,9n],
+  for(const [size,access,where,generation]of [[0,1,port,9n],[0x80000000,1,port,9n],[17,1,port,9n],
       ...[0,2,3,8,16,255].map(access=>[16,access,port,9n]),[16,1,port+1,9n],[16,1,base,9n],
       [16,1,base+4048,9n],[16,1,port,8n]]) {
     reset(source,meta,record,0);put(port,generation);const before=cpu(),bytes=image();

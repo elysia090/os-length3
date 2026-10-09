@@ -7,3 +7,4 @@ X86_SOURCES += src/return.c
 X86_SOURCES += src/mmx-transfer.c
 X86_SOURCES += src/x87-stack.c
 X86_SOURCES += src/x87-float-store.c
+X86_SOURCES += src/x87-exchange.c

@@ -798,7 +798,7 @@ machine_result vm_read_pair(pl_u32 port, pl_u64 address, pl_u32 bytes, pl_u32 ac
     vm_supply_reset(&supply);vm_memory_abort(&resident);
     if (delivery.stage || !private_record(port,sizeof(machine_memory_pair_port))
             || linear_address(&address,&access)
-            || bytes!=16u || (access & ~39u) || (access & 3u)!=MACHINE_MEMORY_READ)
+            || !bytes || bytes>16u || (access & ~39u) || (access & 3u)!=MACHINE_MEMORY_READ)
         return MACHINE_RESULT_ENTRY_MAP;
     pl_u64 admitted=sources.valid;
     vm_mmu_context context=cpu_context();resident.write_touched=0u;

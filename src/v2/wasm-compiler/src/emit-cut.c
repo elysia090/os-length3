@@ -159,7 +159,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if (system==CUT_SYSTEM_FXSAVE || system==CUT_SYSTEM_FXRSTOR)
                     plan->report.memory_bytes=512u;
                 else if (system==CUT_SYSTEM_MXCSR) plan->report.memory_bytes=4u;
-                else if ((system==CUT_SYSTEM_X87_INTEGER||system==CUT_SYSTEM_X87_ARITHMETIC||system==CUT_SYSTEM_X87_STORE)&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
+                else if ((system==CUT_SYSTEM_X87_LOAD||system==CUT_SYSTEM_X87_ARITHMETIC||system==CUT_SYSTEM_X87_STORE)&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
                     plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_X87_STATUS_COMPARE&&instruction.visible_operand_count&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY) plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if(system==CUT_SYSTEM_STRING_IO)plan->report.memory_bytes=(pl_u32)instruction.machine_argument&255u;
@@ -285,9 +285,10 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->report.boundary_operation==PL_X86_OPERATION_ENTER){locals=CUT_ENTER_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_STRING_IO){locals=CUT_STRING_IO_LOCALS;checkpoint=1u;}
     if(plan->system_cut==CUT_SYSTEM_X87_COMPARE)locals=CUT_X87_LOCALS;
+    if(plan->system_cut==CUT_SYSTEM_X87_EXCHANGE)locals=72u;
     /* Logical slot 1 is the first declared local (engine index 4). */
     if(plan->system_cut==CUT_SYSTEM_X87_STACK)locals=28u+PL_X86_X87_STACK_MAX_NODES;
-    if(plan->system_cut==CUT_SYSTEM_X87_INTEGER)locals=CUT_X87_LOCALS;
+    if(plan->system_cut==CUT_SYSTEM_X87_LOAD)locals=CUT_X87_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_STORE)locals=38u+PL_X86_X87_FLOAT_STORE_MAX_NODES;
     if(plan->system_cut==CUT_SYSTEM_X87_ARITHMETIC)locals=CUT_X87_ARITHMETIC_LOCALS;
     if(plan->system_cut==CUT_SYSTEM_X87_STATUS_COMPARE)locals=CUT_X87_STATUS_LOCALS;
@@ -315,7 +316,7 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u); cut_op(&cut, 0x71u); return_if(&cut);
         cut_op(&cut, 0x20u); wasm_writer_uleb(writer, 1u); cut_op(&cut, 0xadu);
         pl_u32 port_bytes=checkpoint ? sizeof(machine_memory_checkpoint_port) : plan->system_cut==CUT_SYSTEM_FXRSTOR ? sizeof(machine_memory_extent_port)
-            : plan->report.memory_bytes==16u ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
+            : (plan->report.memory_bytes==10u||plan->report.memory_bytes==16u) ? sizeof(machine_memory_pair_port) : sizeof(machine_memory_port);
         cut_const(&cut, port_bytes); cut_op(&cut, 0x7cu);
         cut_op(&cut, 0x3fu); cut_op(&cut, 0u); cut_op(&cut, 0xadu);
         cut_const(&cut, 65536u); cut_op(&cut, 0x7eu); cut_op(&cut, 0x56u); return_if(&cut);

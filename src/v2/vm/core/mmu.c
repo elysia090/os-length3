@@ -255,25 +255,28 @@ machine_result vm_mmu_read_pair(vm_memory *memory, pl_u32 port_offset,
                                 pl_u32 bytes, pl_u32 access)
 {
     vm_memory_abort(memory);
-    if (!memory || !memory->bytes || bytes!=16u || (access & ~39u)
+    if (!memory || !memory->bytes || !bytes || bytes>16u || (access & ~39u)
             || (access & 3u)!=MACHINE_MEMORY_READ
             || (pl_u64)port_offset+sizeof(machine_memory_pair_port)>memory->reserved_bytes)
         return MACHINE_RESULT_ENTRY_MAP;
     vm_memory_reservation ready;
     machine_result result=preflight(memory,port_offset,context,address,bytes,access,16u,&ready);
     if (result) return result;
-    /* Substitute pinned fragments directly into the two final words. There
+    /* Substitute the exact 1..16-byte extent into the two final words. There
      * is no sixteen-byte intermediate record or second translation. Each
      * fragment ends at its physical page; each word ends at bit 63. */
     const pl_u8 *first=memory->bytes+ready.offsets[0];
     pl_u32 n=ready.lengths[0];pl_u64 low,high;
-    if (n>=8u) {
+    if(bytes<=8u){
+        low=vm_memory_load(first,n);high=0u;
+        if(n<bytes)low|=vm_memory_load(memory->bytes+ready.offsets[1],bytes-n)<<(n*8u);
+    }else if (n>=8u) {
         low=vm_memory_load(first,8u);high=vm_memory_load(first+8u,n-8u);
-        if (n<16u) high|=vm_memory_load(memory->bytes+ready.offsets[1],16u-n)<<((n-8u)*8u);
+        if (n<bytes) high|=vm_memory_load(memory->bytes+ready.offsets[1],bytes-n)<<((n-8u)*8u);
     } else {
         const pl_u8 *second=memory->bytes+ready.offsets[1];
         low=vm_memory_load(first,n)|(vm_memory_load(second,8u-n)<<(n*8u));
-        high=vm_memory_load(second+8u-n,8u);
+        high=vm_memory_load(second+8u-n,bytes-8u);
     }
     vm_memory_store(memory->bytes+port_offset+offsetof(machine_memory_port,value),low,8u);
     vm_memory_store(memory->bytes+port_offset+offsetof(machine_memory_pair_port,high),high,8u);

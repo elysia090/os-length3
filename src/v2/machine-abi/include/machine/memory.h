@@ -66,7 +66,8 @@ typedef struct {
 } machine_memory_extent_port;
 _Static_assert(sizeof(machine_memory_extent_port)==64u,"borrowed extent port ABI");
 
-/* machine.read_pair(port,address,16,READ[|STACK|ALIGNED16]) -> result:
+/* machine.read_pair(port,address,bytes,READ[|STACK|ALIGNED16]) -> result:
+ * exact bytes=1..16; ALIGNED16 requires16. Unused high bits are zero.
  * complete read-only preflight publishes scalar.value/high only on success.
  * Unaligned records may cross two pages; faults/waits leave both words and
  * CPU/payload unchanged. There is no retained RMW reservation or opcode.

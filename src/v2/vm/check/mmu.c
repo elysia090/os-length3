@@ -79,7 +79,7 @@ int main(void)
     }
     /* Every possible crossing split derives the same two words without a
      * temporary payload. Poisoned outputs survive a late fault/wait. */
-    for (pl_u32 split=0u;split<16u;++split)for(pl_u32 mode=0u;mode<4u;++mode) {
+    for(pl_u32 bytes=1u;bytes<=16u;++bytes)for (pl_u32 split=0u;split<bytes;++split)for(pl_u32 mode=0u;mode<4u;++mode) {
         vm_mmu_context cpu=context();reset(base);
         pl_u64 address=base+4096u-split;
         for(pl_u32 i=0u;i<8192u;++i)arena[28672u+i]=(pl_u8)(i*91u+split);
@@ -88,15 +88,15 @@ int main(void)
         if(mode==2u)pages[5].kind=VM_MEMORY_DEFERRED;
         if(mode==3u)put(port,8u);
         memcpy(saved,arena,sizeof arena);
-        machine_result result=vm_mmu_read_pair(&memory,port,&cpu,address,16u,1u);
+        machine_result result=vm_mmu_read_pair(&memory,port,&cpu,address,bytes,1u);
         if(mode==1u)expect_fault(result,base+4096u,14u,0u);
         else if(mode==2u)EXPECT(result==MACHINE_RESULT_BARRIER);
         else if(mode==3u)EXPECT(result==MACHINE_RESULT_STALE_GENERATION);
         else {
             EXPECT(!result);pl_u64 low=0u,high=0u;
-            for(pl_u32 i=0u;i<8u;++i) {
-                low|=(pl_u64)arena[32768u-split+i]<<(i*8u);
-                high|=(pl_u64)arena[32776u-split+i]<<(i*8u);
+            for(pl_u32 i=0u;i<bytes;++i) {
+                if(i<8u)low|=(pl_u64)arena[32768u-split+i]<<(i*8u);
+                else high|=(pl_u64)arena[32768u-split+i]<<((i-8u)*8u);
             }
             EXPECT(get(port+8u)==low && get(port+48u)==high);
         }

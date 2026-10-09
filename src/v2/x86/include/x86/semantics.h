@@ -110,9 +110,17 @@ int pl_x86_x87_integer_plan(pl_u32 bits,pl_arena *arena,pl_plan *out);
 typedef struct {pl_u8 bytes;pl_u16 opcode;} pl_x86_x87_integer_load;
 int pl_x86_x87_integer_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
 int pl_x86_x87_memory_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_integer_load *out);
-/* Exact load and push outcome. Inputs raw word,CW,full-stack predicate;
- * outputs extended fields and the arithmetic outcome/tag publication word. */
-int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 integer,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 bytes,memory,source;pl_u16 opcode;} pl_x86_x87_raw_load;
+int pl_x86_x87_raw_load_lower(const pl_x86_instruction *instruction,pl_x86_x87_raw_load *out);
+typedef struct {pl_u8 source;pl_u16 opcode;} pl_x86_x87_exchange;
+int pl_x86_x87_exchange_lower(const pl_x86_instruction *instruction,pl_x86_x87_exchange *out);
+/* Inputs A.sig/A.se,B.sig/B.se,CW,two empty bits. Outputs raised,suppress,
+ * new A.sig/A.se,new B.sig/B.se. Alias projection needs only outputs0..3. */
+int pl_x86_x87_exchange_plan(pl_u32 alias,pl_arena *arena,pl_plan *out);
+/* Exact load/push. Format0 IEEE,1 signed integer,2 extended80. Inputs raw
+ * word,CW,full-stack; format2 also uses high sign/exp and source-empty bits.
+ * Outputs extended fields and the exception/tag publication word. */
+int pl_x86_x87_load_plan(pl_u32 bits,pl_u32 format,pl_arena *arena,pl_plan *out);
 /* Integer-memory add/subtract. Inputs: ST0 significand/sign-exponent,
  * signed operand, control word, empty predicate. Outputs: significand,
  * sign-exponent, outcome (new exception bits, C1, suppress bit16, tag18..19).

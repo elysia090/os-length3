@@ -19,7 +19,7 @@ enum { CUT_SYSTEM_NONE, CUT_SYSTEM_INTERRUPT_FLAG, CUT_SYSTEM_SEGMENT, CUT_SYSTE
        CUT_SYSTEM_MXCSR, CUT_SYSTEM_VECTOR_TRANSFER, CUT_SYSTEM_VECTOR_SCALAR,
        CUT_SYSTEM_MEMORY_ORDER, CUT_SYSTEM_FXRSTOR, CUT_SYSTEM_PRIVILEGE_TRANSFER,
        CUT_SYSTEM_HALT, CUT_SYSTEM_COUNTER_BRANCH, CUT_SYSTEM_SELECTOR_SNAPSHOT, CUT_SYSTEM_X87_SNAPSHOT,
-       CUT_SYSTEM_X87_COMPARE, CUT_SYSTEM_X87_INTEGER, CUT_SYSTEM_X87_ARITHMETIC, CUT_SYSTEM_X87_STATUS_COMPARE, CUT_SYSTEM_STRING_IO, CUT_SYSTEM_X87_STORE, CUT_SYSTEM_X87_WAIT, CUT_SYSTEM_X87_STACK };
+       CUT_SYSTEM_X87_COMPARE, CUT_SYSTEM_X87_LOAD, CUT_SYSTEM_X87_ARITHMETIC, CUT_SYSTEM_X87_STATUS_COMPARE, CUT_SYSTEM_STRING_IO, CUT_SYSTEM_X87_STORE, CUT_SYSTEM_X87_WAIT, CUT_SYSTEM_X87_STACK, CUT_SYSTEM_X87_EXCHANGE };
 #define CUT_X87_LOCALS 140u
 #define CUT_X87_ARITHMETIC_LOCALS (44u+PL_X86_X87_ARITHMETIC_MAX_NODES)
 #define CUT_X87_STATUS_LOCALS (40u+PL_X86_X87_MEMORY_RELATION_MAX_NODES)
@@ -136,7 +136,8 @@ void cut_lower_fxrstor(cut_lowering *cut, const pl_x86_instruction *instruction)
 int cut_mxcsr_supported(const pl_x86_instruction *instruction);
 void cut_lower_x87_snapshot(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_x87_compare(cut_lowering *cut,const pl_x86_instruction *instruction);
-void cut_lower_x87_integer(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_x87_load(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_x87_exchange(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_x87_store(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_x87_arithmetic(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_x87_status_compare(cut_lowering *cut,const pl_x86_instruction *instruction);
