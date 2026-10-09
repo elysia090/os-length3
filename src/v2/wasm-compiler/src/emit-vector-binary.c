@@ -38,7 +38,56 @@ static pl_u32 operation(const pl_x86_vector_binary *law)
     case PL_X86_VECTOR_BINARY_MAXIMUM:return (lane?0x98u:0x78u)+(law->signed_lanes?0u:1u);
     case PL_X86_VECTOR_BINARY_AVERAGE:return lane?0x9bu:0x7bu;
     case PL_X86_VECTOR_BINARY_MULTIPLY:return 0x95u;
+    case PL_X86_VECTOR_BINARY_MULTIPLY_ADD:return 0xbau;
+    case PL_X86_VECTOR_BINARY_NARROW:return law->lane_bytes==4u?0x85u:law->signed_lanes?0x65u:0x66u;
     default:return ~0u;
+    }
+}
+static void get_vector(cut_lowering *c,pl_u32 local)
+{cut_op(c,0x20u);wasm_writer_uleb(c->writer,local);}
+static void set_vector(cut_lowering *c,pl_u32 local)
+{cut_op(c,0x21u);wasm_writer_uleb(c->writer,local);}
+static void shuffle(cut_lowering *c,const pl_u8 bytes[16])
+{simd(c,0x0du);for(pl_u32 i=0u;i<16u;++i)cut_op(c,bytes[i]);}
+static void compact_narrow_mmx(cut_lowering *c)
+{
+    const pl_u8 select[]={0,1,2,3,8,9,10,11,0,1,2,3,8,9,10,11};
+    set_vector(c,c->vector_result);get_vector(c,c->vector_result);get_vector(c,c->vector_result);shuffle(c,select);
+}
+static void even_dwords(cut_lowering *c,pl_u32 local)
+{
+    const pl_u8 select[]={0,1,2,3,8,9,10,11,0,1,2,3,8,9,10,11};
+    get_vector(c,local);get_vector(c,local);shuffle(c,select);
+}
+static void product_half(cut_lowering *c,const pl_x86_vector_binary *law,pl_u32 high)
+{
+    get_vector(c,c->vector_local);get_vector(c,c->vector_aux);
+    simd(c,(law->signed_lanes?0xbcu:0xbeu)+high);
+    if(law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND){cut_i32_const(c,0x4000u);simd(c,0x11u);simd(c,0xaeu);}
+    cut_i32_const(c,law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND?15u:16u);simd(c,law->signed_lanes?0xacu:0xadu);
+}
+static void composite(cut_lowering *c,const pl_x86_vector_binary *law)
+{
+    switch(law->operation){
+    case PL_X86_VECTOR_BINARY_MULTIPLY_HIGH:case PL_X86_VECTOR_BINARY_MULTIPLY_ROUND:{
+        const pl_u8 select[]={0,1,4,5,8,9,12,13,16,17,20,21,24,25,28,29};
+        product_half(c,law,0u);set_vector(c,c->vector_result);get_vector(c,c->vector_result);
+        if(law->register_bytes==16u)product_half(c,law,1u);else get_vector(c,c->vector_result);
+        // Truncate, do not saturate: -32768 * -32768 rounds to 0x8000
+        // for PMULHRSW, unlike Wasm's saturating q15 multiplication.
+        shuffle(c,select);return;
+    }
+    case PL_X86_VECTOR_BINARY_MULTIPLY_EVEN:
+        even_dwords(c,c->vector_local);even_dwords(c,c->vector_aux);simd(c,0xdeu);return;
+    case PL_X86_VECTOR_BINARY_SUM_ABSOLUTE:{
+        const pl_u8 neighbor[]={4,5,6,7,0,1,2,3,12,13,14,15,8,9,10,11};
+        get_vector(c,c->vector_local);get_vector(c,c->vector_aux);simd(c,0x79u);
+        get_vector(c,c->vector_local);get_vector(c,c->vector_aux);simd(c,0x77u);simd(c,0x71u);
+        simd(c,0x7du);simd(c,0x7fu);set_vector(c,c->vector_result);
+        get_vector(c,c->vector_result);get_vector(c,c->vector_result);get_vector(c,c->vector_result);shuffle(c,neighbor);simd(c,0xaeu);
+        set_vector(c,c->vector_result);even_dwords(c,c->vector_result);simd(c,0xc9u);return;
+    }
+    default:c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;
     }
 }
 void cut_mmx_publish(cut_lowering *cut,pl_u32 index)
@@ -81,8 +130,11 @@ void cut_mmx_publish(cut_lowering *cut,pl_u32 index)
 int cut_vector_binary_local(const pl_x86_instruction *instruction)
 {
     pl_x86_vector_binary law;
-    return pl_x86_vector_binary_lower(instruction, &law)
-        && (law.register_bytes==8u||(law.alias && law.result == PL_X86_VECTOR_BINARY_VALUE));
+    if(!pl_x86_vector_binary_lower(instruction,&law))return 0;
+    if(law.result==PL_X86_VECTOR_BINARY_VALUE&&(law.operation==PL_X86_VECTOR_BINARY_MULTIPLY_HIGH
+        ||law.operation==PL_X86_VECTOR_BINARY_MULTIPLY_EVEN||law.operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND
+        ||law.operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE||law.operation==PL_X86_VECTOR_BINARY_NARROW))return 3;
+    return law.register_bytes==8u||(law.alias&&law.result==PL_X86_VECTOR_BINARY_VALUE);
 }
 
 void cut_emit_vector_binary(cut_lowering *cut, const pl_x86_instruction *instruction,
@@ -95,6 +147,13 @@ void cut_emit_vector_binary(cut_lowering *cut, const pl_x86_instruction *instruc
         cut_const(cut, law->result == PL_X86_VECTOR_BINARY_ONES ? ~0ull : 0u);
         simd(cut, 0x12u);
     } else {
+        int expanded=law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_HIGH||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_EVEN
+            ||law->operation==PL_X86_VECTOR_BINARY_MULTIPLY_ROUND||law->operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE;
+        if(expanded){
+            load_vector(cut,index,law->register_bytes);set_vector(cut,cut->vector_local);
+            if(law->alias)get_vector(cut,cut->vector_local);else source(cut,instruction,law);set_vector(cut,cut->vector_aux);
+            composite(cut,law);
+        }else{
         if (law->reverse) source(cut, instruction, law);
         load_vector(cut, instruction->operands[0].value.reg.index,law->register_bytes);
         if (law->alias) {
@@ -102,6 +161,8 @@ void cut_emit_vector_binary(cut_lowering *cut, const pl_x86_instruction *instruc
             cut_op(cut, 0x20u); wasm_writer_uleb(cut->writer, cut->vector_local);
         } else if (!law->reverse) source(cut, instruction, law);
         pl_u32 op=operation(law);if(op==~0u){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}simd(cut,op);
+        if(mmx&&law->operation==PL_X86_VECTOR_BINARY_NARROW)compact_narrow_mmx(cut);
+        }
     }
     if(mmx){simd(cut,0x1du);cut_op(cut,0u);cut_op(cut,0x37u);wasm_writer_uleb(cut->writer,3u);
         wasm_writer_uleb(cut->writer,offsetof(machine_state,x87_significand)+index*8u);cut_mmx_publish(cut,index);}

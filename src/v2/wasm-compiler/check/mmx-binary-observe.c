@@ -50,23 +50,25 @@ int main(int argc,char **argv)
 #ifndef _WIN32
     (void)argc;(void)argv;return 2;
 #else
-    int moves=argc==3&&!strcmp(argv[2],"--transfer"),tag_first=argc==3&&!strcmp(argv[2],"--tag-first"),wide=argc==3&&!strcmp(argv[2],"--wide");if(argc!=2&&!tag_first&&!wide&&!moves)return 2;
-    if(wide)record_prefix="packed-binary";
+    int extended=argc==3&&(!strcmp(argv[2],"--extended")||!strcmp(argv[2],"--wide-extended"));
+    int moves=argc==3&&!strcmp(argv[2],"--transfer"),tag_first=argc==3&&!strcmp(argv[2],"--tag-first"),wide=argc==3&&(!strcmp(argv[2],"--wide")||!strcmp(argv[2],"--wide-extended"));if(argc!=2&&!tag_first&&!wide&&!moves&&!extended)return 2;
+    if(extended)record_prefix=wide?"packed-extended":"mmx-extended";else if(wide)record_prefix="packed-binary";
     pl_u8 *code=NULL;for(uintptr_t address=0x10000000u;!code&&address<0x70000000u;address+=65536u)
         code=VirtualAlloc((void *)address,8192u,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
     if(!code)return 1;
     if(moves){int result=transfer(argv[1],code);if(!VirtualFree(code,0u,MEM_RELEASE))result=1;return result;}
     const pl_u8 opcodes[]={0xef,0xdb,0xeb,0xdf,0xfc,0xfd,0xfe,0xd4,0x74,0x75,0x76,0xf8,0xf9,0xfa,0xfb,
-        0x64,0x65,0x66,0xec,0xed,0xdc,0xdd,0xe8,0xe9,0xd8,0xd9,0xda,0xea,0xde,0xee,0xe0,0xe3,0xd5};
+        0x64,0x65,0x66,0xec,0xed,0xdc,0xdd,0xe8,0xe9,0xd8,0xd9,0xda,0xea,0xde,0xee,0xe0,0xe3,0xd5,
+        0xf5,0xe4,0xe5,0xf4,0x67,0x6b,0x63,0xf6,0x0b};
     const pl_u8 targets[]={0u,5u,7u,9u,15u},prefixes[]={0u,0x67u,0x48u};pl_u32 forms=0u;pl_u64 seed=0x6d6d7862696e6172ull;int failed=1;
-    for(pl_u32 family=0u;family<33u;++family)for(pl_u32 dst=0u;dst<(wide?5u:3u);++dst)for(pl_u32 mode=0u;mode<3u;++mode)
+    for(pl_u32 family=extended?33u:0u;family<(extended?42u:33u);++family)for(pl_u32 dst=0u;dst<(wide?5u:3u);++dst)for(pl_u32 mode=0u;mode<3u;++mode)
     for(pl_u32 prefix=0u;prefix<3u;++prefix,++forms){DWORD old;pl_u32 destination=targets[dst],source=(destination+3u)&(wide?15u:7u),n=0u;
         if(!VirtualProtect(code,4096u,PAGE_READWRITE,&old))goto done;
         if(wide){if(prefixes[prefix]==0x67u)code[n++]=0x67u;code[n++]=0x66u;
             pl_u32 rex=(prefixes[prefix]==0x48u?8u:0u)|(destination>=8u?4u:0u)|(mode==1u&&source>=8u?1u:mode==0u&&destination>=8u?1u:0u);
             if(rex)code[n++]=(pl_u8)(0x40u|rex);}
         else if(prefixes[prefix])code[n++]=prefixes[prefix];
-        code[n++]=0x0fu;code[n++]=opcodes[family];
+        code[n++]=0x0fu;if(family==41u)code[n++]=0x38u;code[n++]=opcodes[family];
         code[n++]=(pl_u8)((mode==2u?0u:0xc0u)|((destination&7u)<<3u)|(mode==2u?5u:(mode==0u?destination:source)&7u));
         if(mode==2u){put(code+n,4096u-n-4u,4u);n+=4u;}
         pl_u32 tail=n;if(tag_first){code[tail++]=0xd9u;code[tail++]=0x35u;put(code+tail,4112u-tail-4u,4u);tail+=4u;}code[tail]=0xc3u;

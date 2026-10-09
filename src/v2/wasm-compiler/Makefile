@@ -36,6 +36,13 @@ SOURCES += src/lower-mxcsr.c
 SOURCES += src/lower-vector.c
 SOURCES += src/lower-vector-unpack.c
 SOURCES += src/emit-vector-binary.c
+SOURCES += src/lower-vector-integer-float.c
+.PHONY: vector-integer-float-check
+check: vector-integer-float-check
+vector-integer-float-check: $(BUILD)/vector-integer-float-check
+	$(BUILD)/vector-integer-float-check
+$(BUILD)/vector-integer-float-check: check/vector-integer-float.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-x87-stack.c
 .PHONY: x87-stack-check
 check: x87-stack-check

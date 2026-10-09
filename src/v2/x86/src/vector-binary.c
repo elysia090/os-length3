@@ -43,6 +43,15 @@ static int packed(pl_u64 operation,pl_x86_vector_binary *law)
     case 33u:law->operation=PL_X86_VECTOR_BINARY_AVERAGE;law->lane_bytes=1u;break;
     case 34u:law->operation=PL_X86_VECTOR_BINARY_AVERAGE;law->lane_bytes=2u;break;
     case 49u:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY;law->lane_bytes=2u;break;
+    case 14u:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY_ADD;law->lane_bytes=2u;law->signed_lanes=1u;break;
+    case 16u:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY_HIGH;law->lane_bytes=2u;break;
+    case 25u:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY_HIGH;law->lane_bytes=2u;law->signed_lanes=1u;break;
+    case 23u:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY_EVEN;law->lane_bytes=4u;break;
+    case PL_X86_PACKED_MULTIPLY_HIGH_ROUND_SCALE_WORD:law->operation=PL_X86_VECTOR_BINARY_MULTIPLY_ROUND;law->lane_bytes=2u;law->signed_lanes=1u;break;
+    case 26u:law->operation=PL_X86_VECTOR_BINARY_NARROW;law->lane_bytes=2u;break;
+    case 40u:law->operation=PL_X86_VECTOR_BINARY_NARROW;law->lane_bytes=4u;law->signed_lanes=1u;break;
+    case 46u:law->operation=PL_X86_VECTOR_BINARY_NARROW;law->lane_bytes=2u;law->signed_lanes=1u;break;
+    case 9u:law->operation=PL_X86_VECTOR_BINARY_SUM_ABSOLUTE;law->lane_bytes=1u;break;
     default:return 0;
     }
     return 1;
@@ -97,7 +106,8 @@ int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
     law.reverse = (pl_u8)(law.operation == PL_X86_VECTOR_BINARY_AND_NOT);
     if (law.alias) {
         if (law.operation == PL_X86_VECTOR_BINARY_EQUAL) law.result = PL_X86_VECTOR_BINARY_ONES;
-        else if(law.operation==PL_X86_VECTOR_BINARY_GREATER||law.operation==PL_X86_VECTOR_BINARY_SUBTRACT||law.operation==PL_X86_VECTOR_BINARY_SUBTRACT_SAT)law.result=PL_X86_VECTOR_BINARY_ZERO;
+        else if(law.operation==PL_X86_VECTOR_BINARY_GREATER||law.operation==PL_X86_VECTOR_BINARY_SUBTRACT||law.operation==PL_X86_VECTOR_BINARY_SUBTRACT_SAT
+            ||law.operation==PL_X86_VECTOR_BINARY_SUM_ABSOLUTE)law.result=PL_X86_VECTOR_BINARY_ZERO;
         else if (law.operation == PL_X86_VECTOR_BINARY_XOR || law.reverse)
             law.result = PL_X86_VECTOR_BINARY_ZERO;
         else if (law.operation == PL_X86_VECTOR_BINARY_AND || law.operation == PL_X86_VECTOR_BINARY_OR

@@ -23,6 +23,19 @@ separately. Cold shell three seconds remains a target.
 
 ## Authoritative checkpoint
 
+Shared MMX/XMM lane law now includes9 multiply/dot/even-multiply/round/pack/SAD
+families, with20736 new physical rows and14448/115584 construction/refusal
+gates. CVTPI2PS uses exact binary64 widening plus directed IEEE adjacency,
+vector PE detection and the same MMX tag publisher; masked/unmasked23040+
+23040 independent states match, including pre-fault MMX transition.720/8640
+construction/refusal gates, scoped/postlink/positive sanitizers are green.
+Same make514->460 (54 conversion coordinates), cumulative1031->460 (571).
+Remaining SIMD184/floating154/far91/other31 still belong to ZERO and actual
+browser acceptance. Packed additions do not occur in this make inventory and
+are not counted as its speed gain. See [exact lanes, rounding and fault boundary](../vm/check/browser/evidence/2026-10-09-packed-conversion.md).
+
+## Preceding exact load/exchange checkpoint
+
 Raw80/register FLD joins FILD/IEEE loads in one publisher; FXCH24 encodings
 join the same checked SSA vocabulary. Exact1..16-byte pair reads preserve
 fault/wait outputs and read no padding;544 split models pass.8448 physical

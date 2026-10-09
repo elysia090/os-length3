@@ -163,6 +163,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                     plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_X87_STATUS_COMPARE&&instruction.visible_operand_count&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY) plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if(system==CUT_SYSTEM_STRING_IO)plan->report.memory_bytes=(pl_u32)instruction.machine_argument&255u;
+                else if(system==CUT_SYSTEM_VECTOR_INTEGER_FLOAT)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?8u:0u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
                 {pl_x86_vector_binary law;plan->report.memory_bytes=pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
@@ -273,10 +274,12 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER) {
         pl_x86_instruction instruction;
         if(pl_x86_decode_profile(&plan->image,rip,&instruction))return WASM_COMPILER_ERROR_GRAMMAR;
-        permutation_local=(pl_u32)(cut_vector_projection_local(&instruction)
-            || cut_vector_binary_local(&instruction));
+        permutation_local=(pl_u32)cut_vector_projection_local(&instruction);
+        pl_u32 binary_locals=(pl_u32)cut_vector_binary_local(&instruction);
+        if(binary_locals>permutation_local)permutation_local=binary_locals;
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_INTEGER_FLOAT){permutation_local=5u;locals=26u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_binary law;
         if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_binary_lower(&i,&law)&&law.register_bytes==8u)locals=26u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_SCALAR){pl_x86_instruction i;pl_x86_mmx_transfer law;
@@ -298,10 +301,11 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         if(division.operand_width==64u)locals=192u;
     }
     cut.vector_local = locals + 4u; /* Four typed bindings precede locals. */
+    cut.vector_aux=cut.vector_local+1u;cut.vector_result=cut.vector_local+2u;
     wasm_writer_uleb(writer, permutation_local?2u:1u);
     wasm_writer_uleb(writer, locals);
     wasm_writer_byte(writer, 0x7eu);
-    if(permutation_local) {wasm_writer_uleb(writer,1u);wasm_writer_byte(writer,0x7bu);}
+    if(permutation_local) {wasm_writer_uleb(writer,permutation_local);wasm_writer_byte(writer,0x7bu);}
     cut_get(&cut, 0u); cut_op(&cut, 0x41u); wasm_writer_uleb(writer, 7u);
     cut_op(&cut, 0x71u); return_if(&cut);
     /* Validate the whole state reservation before any access. i64 arithmetic

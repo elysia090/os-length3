@@ -33,6 +33,8 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/return-check
 "$temporary/wasm-compiler/build/return-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/packed-binary-check build/mmx-transfer-check
 "$temporary/wasm-compiler/build/packed-binary-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/vector-integer-float-check
+"$temporary/wasm-compiler/build/vector-integer-float-check"
 "$temporary/wasm-compiler/build/mmx-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/flags-low-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/translate-byte-check

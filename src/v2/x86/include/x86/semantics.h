@@ -207,7 +207,10 @@ enum pl_x86_vector_binary_operator {
     PL_X86_VECTOR_BINARY_SUBTRACT,PL_X86_VECTOR_BINARY_GREATER,
     PL_X86_VECTOR_BINARY_ADD_SAT,PL_X86_VECTOR_BINARY_SUBTRACT_SAT,
     PL_X86_VECTOR_BINARY_MINIMUM,PL_X86_VECTOR_BINARY_MAXIMUM,
-    PL_X86_VECTOR_BINARY_AVERAGE,PL_X86_VECTOR_BINARY_MULTIPLY
+    PL_X86_VECTOR_BINARY_AVERAGE,PL_X86_VECTOR_BINARY_MULTIPLY,
+    PL_X86_VECTOR_BINARY_MULTIPLY_HIGH,PL_X86_VECTOR_BINARY_MULTIPLY_ADD,
+    PL_X86_VECTOR_BINARY_MULTIPLY_EVEN,PL_X86_VECTOR_BINARY_MULTIPLY_ROUND,
+    PL_X86_VECTOR_BINARY_NARROW,PL_X86_VECTOR_BINARY_SUM_ABSOLUTE
 };
 enum pl_x86_vector_binary_result {
     PL_X86_VECTOR_BINARY_VALUE, PL_X86_VECTOR_BINARY_IDENTITY,
@@ -223,5 +226,7 @@ int pl_x86_vector_binary_lower(const pl_x86_instruction *instruction,
                                pl_x86_vector_binary *out);
 typedef struct {pl_u8 bytes,source_memory,target_memory,source_mmx,target_mmx,aligned;} pl_x86_mmx_transfer;
 int pl_x86_mmx_transfer_lower(const pl_x86_instruction *instruction,pl_x86_mmx_transfer *out);
+typedef struct {pl_u8 source_memory,source,target;} pl_x86_vector_integer_float;
+int pl_x86_vector_integer_float_lower(const pl_x86_instruction *instruction,pl_x86_vector_integer_float *out);
 
 #endif /* X86_SEMANTICS_H */
