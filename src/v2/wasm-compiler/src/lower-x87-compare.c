@@ -28,9 +28,13 @@ void cut_x87_pending_guard(cut_lowering *c,pl_u32 cw,pl_u32 sw)
     cut_load(c,offsetof(machine_state,cr0));cut_const(c,32u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);fault_if(c,16u);
     cut_op(c,0x20u);wasm_writer_uleb(c->writer,1u);cut_call(c,WASM_IMPORT_FLOATING_WAIT);cut_op(c,0x0fu);cut_op(c,0x0bu);
 }
-void cut_x87_wait_guard(cut_lowering *c,pl_u32 cw,pl_u32 sw)
+void cut_x87_device_guard(cut_lowering *c)
 {
     cut_load(c,offsetof(machine_state,cr0));cut_const(c,12u);cut_op(c,0x83u);cut_op(c,0x50u);cut_op(c,0x45u);fault_if(c,7u);
+}
+void cut_x87_wait_guard(cut_lowering *c,pl_u32 cw,pl_u32 sw)
+{
+    cut_x87_device_guard(c);
     cut_x87_pending_guard(c,cw,sw);
 }
 void cut_lower_x87_wait(cut_lowering *c)

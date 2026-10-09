@@ -23,6 +23,8 @@ make -j4 -C "$temporary/vm" CFLAGS="$flags" build/descriptor-query-check
 "$temporary/vm/build/descriptor-query-check"
 make -j4 -C "$temporary/vm" CFLAGS="$flags" build/far-transfer-check
 "$temporary/vm/build/far-transfer-check"
+make -j4 -C "$temporary/vm" CFLAGS="$flags" build/source-check
+"$temporary/vm/build/source-check"
 make -j4 -C "$temporary/artifact" CFLAGS="$flags" build/index-stream-check
 "$temporary/artifact/build/index-stream-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" \
@@ -36,11 +38,16 @@ make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-transfer-check
 "$temporary/wasm-compiler/build/x87-transfer-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-control-check
 "$temporary/wasm-compiler/build/x87-control-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/x87-environment-check
+"$temporary/wasm-compiler/build/x87-environment-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/divide-check
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/return-check
 "$temporary/wasm-compiler/build/return-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/packed-binary-check build/mmx-transfer-check
 "$temporary/wasm-compiler/build/packed-binary-check"
+make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/packed-shift-check build/vector-unpack-check
+"$temporary/wasm-compiler/build/packed-shift-check"
+"$temporary/wasm-compiler/build/vector-unpack-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/vector-integer-float-check
 "$temporary/wasm-compiler/build/vector-integer-float-check"
 make -j4 -C "$temporary/wasm-compiler" CFLAGS="$flags" build/vector-float-integer-check

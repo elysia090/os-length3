@@ -110,6 +110,18 @@ $(BUILD)/packed-binary-check: check/packed-binary.c $(BUILD)/libwasm-compiler.a 
 SOURCES += src/lower-vector-shuffle.c
 SOURCES += src/emit-vector-projection.c
 SOURCES += src/lower-vector-shift.c
+.PHONY: packed-shift-check
+.PHONY: vector-unpack-check
+check: vector-unpack-check
+vector-unpack-check: $(BUILD)/vector-unpack-check
+	$(BUILD)/vector-unpack-check
+$(BUILD)/vector-unpack-check: check/vector-unpack.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
+check: packed-shift-check
+packed-shift-check: $(BUILD)/packed-shift-check
+	$(BUILD)/packed-shift-check
+$(BUILD)/packed-shift-check: check/packed-shift.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 SOURCES += src/lower-vector-scalar.c
 SOURCES += src/emit-interface.c
 SOURCES += src/coverage.c
@@ -117,6 +129,13 @@ SOURCES += src/lower-register-update.c
 SOURCES += src/image.c src/image-stream.c
 SOURCES += src/emit-image-metadata.c
 SOURCES += src/lower-x87-snapshot.c
+SOURCES += src/lower-x87-environment.c
+.PHONY: x87-environment-check
+check: x87-environment-check
+x87-environment-check: $(BUILD)/x87-environment-check
+	$(BUILD)/x87-environment-check
+$(BUILD)/x87-environment-check: check/x87-environment.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: x87-control-check
 check: x87-control-check
 x87-control-check: $(BUILD)/x87-control-check

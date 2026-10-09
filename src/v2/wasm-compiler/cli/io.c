@@ -1,5 +1,6 @@
 #include "io.h"
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -10,7 +11,11 @@ pl_u8 *cli_read_file(const char *path, pl_u64 *bytes)
     long length;
     if (!file) return NULL;
     if (fseek(file, 0, SEEK_END) || (length = ftell(file)) <= 0
-            || (unsigned long)length > SIZE_MAX || fseek(file, 0, SEEK_SET)) goto done;
+            || fseek(file, 0, SEEK_SET)) goto done;
+    /* Reject narrowing only on targets where long is wider than size_t. */
+#if SIZE_MAX < ULONG_MAX
+    if ((unsigned long)length > SIZE_MAX) goto done;
+#endif
     data = malloc((size_t)length);
     if (!data) goto done;
     if (fread(data, 1u, (size_t)length, file) != (size_t)length) {

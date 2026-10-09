@@ -11,6 +11,21 @@ int pl_x86_x87_control_load_supported(const pl_x86_instruction *i)
             |PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER))
         &&i->source_bytes&&i->source_bytes<=15u&&i->length==i->source_bytes&&i->fallthrough-i->rip==i->source_bytes;
 }
+int pl_x86_x87_environment_lower(const pl_x86_instruction *i,pl_x86_x87_environment *out)
+{
+    if(!i||!out)return 0;
+    pl_u32 kind=(pl_u32)i->machine_argument&255u,width=(pl_u32)(i->machine_argument>>8u),restore=kind&1u,full=kind>=34u;
+    pl_u32 env=width-(full?80u:0u),required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER
+        |(restore?PL_X86_INSTRUCTION_READS_MEMORY:PL_X86_INSTRUCTION_WRITES_MEMORY);
+    if(kind<32u||kind>35u||(env!=14u&&env!=28u)||i->machine_argument!=(kind|((pl_u64)width<<8u))
+        ||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->machine_operation!=PL_X86_MACHINE_X87
+        ||i->opcode!=(full?0xddu:0xd9u)||i->visible_operand_count!=1u||i->operands[0].kind!=PL_X86_OPERAND_MEMORY
+        ||i->operands[0].bits!=width*8u||(i->flow!=PL_X86_FLOW_NEXT&&i->flow!=PL_X86_FLOW_SYSTEM)||(i->flags&required)!=required
+        ||(i->flags&((restore?PL_X86_INSTRUCTION_WRITES_MEMORY:PL_X86_INSTRUCTION_READS_MEMORY)|PL_X86_INSTRUCTION_LOCKED
+            |PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_TRAP_AFTER))
+        ||!i->source_bytes||i->source_bytes>15u||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes)return 0;
+    *out=(pl_x86_x87_environment){(pl_u8)env,(pl_u8)width,(pl_u8)restore,(pl_u8)full};return 1;
+}
 int pl_x86_x87_control_load_plan(pl_arena *arena,pl_plan *out)
 {
     if(!arena||!out)return PL_ERROR_PLAN;

@@ -1,4 +1,16 @@
 #include "cut-internal.h"
+void cut_lower_mmx_shuffle(cut_lowering *c,const pl_x86_instruction *i,const pl_x86_mmx_shuffle *law)
+{
+    cut_mmx_guard(c);
+    if(law->source_memory){const pl_x86_memory *m=&i->operands[1].value.memory;cut_effective_address(c,i,m);cut_set(c,CUT_ADDRESS);
+        c->report.memory_access=MACHINE_MEMORY_READ|cut_memory_role(m);cut_const(c,0u);cut_set(c,CUT_VALUE);cut_access(c);cut_access_value(c);
+    }else cut_load(c,offsetof(machine_state,x87_significand)+law->source*8u);
+    cut_set(c,26u);
+    _Alignas(8) pl_u8 scratch[16384];pl_arena arena={scratch,sizeof scratch,0u};pl_plan plan;
+    if(pl_x86_mmx_shuffle_plan(law->control,&arena,&plan)){c->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+    const pl_u32 input[]={26u},output[]={27u};cut_emit_scalar_projection(c,&plan,input,32u,output,1u);
+    cut_store(c,offsetof(machine_state,x87_significand)+law->target*8u,27u);cut_mmx_publish(c,law->target);
+}
 
 static void simd(cut_lowering *cut,pl_u32 opcode)
 {

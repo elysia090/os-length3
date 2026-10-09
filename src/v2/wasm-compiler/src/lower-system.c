@@ -37,6 +37,8 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     pl_x86_x87_stack fpu_stack;if(pl_x86_x87_stack_lower(instruction,&fpu_stack))return CUT_SYSTEM_X87_STACK;
     pl_x86_x87_transfer fpu_transfer;if(pl_x86_x87_transfer_lower(instruction,&fpu_transfer))return CUT_SYSTEM_X87_TRANSFER;
     if(pl_x86_x87_control_load_supported(instruction)&&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return CUT_SYSTEM_X87_LOAD;
+    pl_x86_x87_environment environment;if(pl_x86_x87_environment_lower(instruction,&environment)
+        &&cut_memory_address_supported(instruction,&instruction->operands[0].value.memory))return environment.restore?CUT_SYSTEM_FXRSTOR:CUT_SYSTEM_FXSAVE;
     pl_x86_return returning;
     if(pl_x86_return_lower(instruction,&returning))return returning.interrupt?CUT_SYSTEM_INTERRUPT_RETURN:CUT_SYSTEM_FAR_RETURN;
     pl_x86_count_branch count;
@@ -424,6 +426,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
         return;
     }
     if (cut_io_supported(instruction)) { cut_lower_io(cut,instruction); return; }
+    pl_x86_x87_environment environment;if(pl_x86_x87_environment_lower(instruction,&environment)){cut_lower_x87_environment(cut,instruction);return;}
     if (cut_fxsave_supported(instruction)) { cut_lower_fxsave(cut,instruction); return; }
     if (cut_fxrstor_supported(instruction)) { cut_lower_fxrstor(cut,instruction); return; }
     if (cut_mxcsr_supported(instruction)) { cut_lower_mxcsr(cut,instruction); return; }

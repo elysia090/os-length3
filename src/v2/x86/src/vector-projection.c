@@ -1,5 +1,61 @@
 /* Static vector permutations are one coordinate substitution. */
 #include <x86/semantics.h>
+#include "x87-expression.h"
+int pl_x86_mmx_shuffle_lower(const pl_x86_instruction *i,pl_x86_mmx_shuffle *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
+        ||i->machine_operation!=PL_X86_MACHINE_X87||(i->machine_argument&255u)!=38u||i->opcode!=0x70u
+        ||i->visible_operand_count!=3u||(i->flags&required)!=required||!i->source_bytes||i->source_bytes>15u
+        ||i->source_bytes!=i->length||i->fallthrough-i->rip!=i->length
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_PRIVILEGED|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_TRAP_AFTER)))return 0;
+    const pl_x86_operand *d=i->operands,*s=d+1u,*c=d+2u;pl_u32 memory=s->kind==PL_X86_OPERAND_MEMORY;
+    if(d->kind!=PL_X86_OPERAND_REGISTER||d->bits!=64u||d->value.reg.class_id!=PL_X86_REGISTER_MMX||d->value.reg.bits!=64u||d->value.reg.flags||d->value.reg.index>=8u
+        ||s->bits!=64u||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=PL_X86_REGISTER_MMX||s->value.reg.bits!=64u||s->value.reg.flags||s->value.reg.index>=8u))
+        ||c->kind!=PL_X86_OPERAND_IMMEDIATE||c->bits!=8u||c->value.immediate>255u||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory)return 0;
+    pl_u64 expected=38u|((pl_u64)(memory?8u:0u)<<8u)|(i->machine_argument&(0x7ffull<<16u))
+        |((pl_u64)(memory?0u:s->value.reg.index)<<32u)|((pl_u64)d->value.reg.index<<36u)|(c->value.immediate<<48u);
+    if(i->machine_argument!=expected)return 0;
+    *out=(pl_x86_mmx_shuffle){(pl_u8)memory,(pl_u8)(memory?0u:s->value.reg.index),d->value.reg.index,(pl_u8)c->value.immediate};return 1;
+}
+int pl_x86_mmx_shuffle_plan(pl_u32 control,pl_arena *arena,pl_plan *out)
+{
+    if(control>255u||!arena||!out)return PL_ERROR_PLAN;
+    pl_plan raw={.instructions=1u};expression e={0};if(pl_builder_open(&e.builder,&raw,arena,24u,72u,0u,1u))return PL_ERROR_ARENA;
+    pl_operand input={PL_OPERAND_LOCAL,0u},value=constant(0u);
+    pl_x86_vector_projection p={2u,0u,(pl_u8)control,1u,0u,0u,0u,0u};
+    if(control==0xe4u)value=input;
+    else for(pl_u32 word=0u;word<4u;++word){pl_u32 selected=pl_x86_vector_project_byte(&p,word*2u)*8u;
+        pl_operand lane=shift(&e,input,selected);lane=bit_and(&e,lane,constant(65535u));
+        if(word)lane=binary(&e,PL_OPCODE_LANE64_SHL,lane,constant(word*16u));
+        value=bit_or(&e,value,lane);}
+    raw.locals[0]=value;if(e.failed)return PL_ERROR_ARENA;const pl_u8 live[]={1u};return pl_compact_projected(&raw,live,arena,out);
+}
+int pl_x86_vector_shift_lower(const pl_x86_instruction *i,pl_x86_vector_shift *out)
+{
+    const pl_u32 required=PL_X86_INSTRUCTION_MAY_TRAP|PL_X86_INSTRUCTION_PRECISE_CUT|PL_X86_INSTRUCTION_BARRIER;
+    if(!i||!out||i->status!=PL_X86_DECODE_VALID||i->encoding!=PL_X86_ENCODING_LEGACY||i->flow!=PL_X86_FLOW_NEXT
+        ||i->machine_operation!=PL_X86_MACHINE_VECTOR||(i->machine_argument&255u)!=PL_X86_VECTOR_PACKED_SHIFT
+        ||i->visible_operand_count!=2u||(i->flags&required)!=required||!i->source_bytes||i->source_bytes>15u
+        ||i->length!=i->source_bytes||i->fallthrough-i->rip!=i->source_bytes
+        ||(i->flags&(PL_X86_INSTRUCTION_LOCKED|PL_X86_INSTRUCTION_REPEATED|PL_X86_INSTRUCTION_TRAP_AFTER|PL_X86_INSTRUCTION_WRITES_MEMORY|PL_X86_INSTRUCTION_PRIVILEGED)))return 0;
+    const pl_x86_operand *d=i->operands,*s=d+1u;pl_u32 mmx=(pl_u32)(i->machine_argument>>25u)&1u,width=mmx?64u:128u;
+    pl_u32 bits=(pl_u32)(i->machine_argument>>32u)&255u,left=(pl_u32)(i->machine_argument>>28u)&1u,arithmetic=(pl_u32)(i->machine_argument>>27u)&1u;
+    pl_u32 immediate=s->kind==PL_X86_OPERAND_IMMEDIATE,memory=s->kind==PL_X86_OPERAND_MEMORY,cls=mmx?PL_X86_REGISTER_MMX:PL_X86_REGISTER_VECTOR;
+    if((bits!=16u&&bits!=32u&&bits!=64u)||(arithmetic&&(left||bits==64u))||d->kind!=PL_X86_OPERAND_REGISTER
+        ||d->bits!=width||d->value.reg.class_id!=cls||d->value.reg.bits!=width||d->value.reg.flags||d->value.reg.index>=(mmx?8u:16u)
+        ||(immediate?(s->bits!=8u||s->value.immediate>255u):s->bits!=width
+            ||(!memory&&(s->kind!=PL_X86_OPERAND_REGISTER||s->value.reg.class_id!=cls||s->value.reg.bits!=width||s->value.reg.flags||s->value.reg.index>=(mmx?8u:16u))))
+        ||!!(i->flags&PL_X86_INSTRUCTION_READS_MEMORY)!=memory)return 0;
+    pl_u32 opcode=immediate?bits==16u?0x71u:bits==32u?0x72u:0x73u:
+        arithmetic?bits==16u?0xe1u:0xe2u:(left?0xf0u:0xd0u)+(bits==16u?1u:bits==32u?2u:3u);
+    pl_u64 expected=PL_X86_VECTOR_PACKED_SHIFT|((pl_u64)d->value.reg.index<<8u)|((pl_u64)(!memory&&!immediate?s->value.reg.index:0u)<<16u)
+        |((pl_u64)memory<<24u)|((pl_u64)mmx<<25u)|((pl_u64)immediate<<26u)|((pl_u64)arithmetic<<27u)|((pl_u64)left<<28u)
+        |((pl_u64)bits<<32u)|((pl_u64)(immediate?s->value.immediate:0u)<<40u);
+    if(i->machine_argument!=expected||i->opcode!=opcode)return 0;
+    *out=(pl_x86_vector_shift){(pl_u8)(width/8u),(pl_u8)bits,(pl_u8)left,(pl_u8)arithmetic,(pl_u8)immediate,
+        (pl_u8)(immediate?s->value.immediate:0u),(pl_u8)memory,(pl_u8)(!memory&&!immediate?s->value.reg.index:0u),d->value.reg.index};return 1;
+}
 
 static int xmm(const pl_x86_operand *operand)
 {

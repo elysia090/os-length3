@@ -125,10 +125,6 @@ enum pl_x86_vector_operation {
     PL_X86_VECTOR_FIXED_DWORD_SHUFFLE = 47u,
     PL_X86_VECTOR_MMX_LANE_TRANSFER = 48u,
     PL_X86_VECTOR_SCALAR_FLOAT = 59u,
-    /* One descriptor covers every immediate packed-lane shift.  The packed
-     * operation is the same stable operation used by the register/memory
-     * quotient; only the source projection is an immediate byte. */
-    PL_X86_VECTOR_PACKED_SHIFT_IMMEDIATE = 60u,
     PL_X86_VECTOR_BYTE_SHUFFLE = 61u,
     PL_X86_VECTOR_SHUFFLE_LOW_WORDS = 63u,
     /* Packed binary64 arithmetic is one lane-wise operation family.  The
@@ -136,6 +132,7 @@ enum pl_x86_vector_operation {
      * location is carried independently so every backend sees one ABI. */
     PL_X86_VECTOR_PACKED_FLOAT64 = 64u,
     PL_X86_VECTOR_PACKED_CONVERT = 65u,
+    PL_X86_VECTOR_PACKED_SHIFT = 66u,
 };
 
 enum pl_x86_packed_float_operation {
@@ -171,9 +168,6 @@ enum pl_x86_x87_operation {
     PL_X86_X87_INITIALIZE = 44u,
     PL_X86_X87_CLEAR_EXCEPTIONS = 47u,
     PL_X86_X87_STATE_IMAGE = 51u,
-    /* MMX aliases the x87 register file.  Immediate packed shifts still use
-     * one explicit descriptor rather than an instruction-byte interpreter. */
-    PL_X86_X87_PACKED_SHIFT_IMMEDIATE = 59u,
     PL_X86_X87_BYTE_SHUFFLE = 60u,
     PL_X86_X87_ALIGN_RIGHT = 61u,
 };
@@ -193,9 +187,6 @@ enum pl_x86_cr0_status_operation {
 #define PL_X86_SCALAR_FLOAT_TARGET_BYTES_SHIFT 40u
 #define PL_X86_SCALAR_FLOAT_SOURCE_BYTES_SHIFT 48u
 #define PL_X86_SCALAR_FLOAT_IMMEDIATE_SHIFT    56u
-#define PL_X86_PACKED_SHIFT_TARGET_SHIFT        8u
-#define PL_X86_PACKED_SHIFT_OPERATION_SHIFT    32u
-#define PL_X86_PACKED_SHIFT_IMMEDIATE_SHIFT    40u
 #define PL_X86_VECTOR_TARGET_SHIFT               8u
 #define PL_X86_VECTOR_SOURCE_SHIFT              16u
 #define PL_X86_VECTOR_SOURCE_MEMORY             (1ull << 24u)

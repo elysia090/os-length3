@@ -151,6 +151,8 @@ void cut_publish_x87_comparison(cut_lowering *cut,const pl_x86_instruction *inst
 void cut_x87_wait_guard(cut_lowering *cut,pl_u32 cw,pl_u32 sw);
 void cut_lower_x87_transfer(cut_lowering *cut,const pl_x86_instruction *instruction);
 void cut_lower_x87_control_load(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_x87_environment(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_x87_device_guard(cut_lowering *cut);
 void cut_x87_pending_guard(cut_lowering *cut,pl_u32 cw,pl_u32 sw);
 void cut_lower_x87_wait(cut_lowering *cut);
 void cut_lower_x87_stack(cut_lowering *cut,const pl_x86_instruction *instruction);
@@ -171,6 +173,7 @@ int cut_vector_binary_local(const pl_x86_instruction *instruction);
 void cut_emit_vector_binary(cut_lowering *cut, const pl_x86_instruction *instruction,
                              const pl_x86_vector_binary *law);
 void cut_lower_vector_shuffle(cut_lowering *cut,const pl_x86_instruction *instruction);
+void cut_lower_mmx_shuffle(cut_lowering *cut,const pl_x86_instruction *instruction,const pl_x86_mmx_shuffle *law);
 int cut_vector_projection_local(const pl_x86_instruction *instruction);
 void cut_emit_vector_projection(cut_lowering *cut,
     const pl_x86_instruction *instruction,

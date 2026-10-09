@@ -1,20 +1,7 @@
 #include "cut-internal.h"
 
-pl_u32 cut_vector_unpack_shape(const pl_x86_instruction *instruction)
-{
-    if((instruction->machine_argument&255u)!=10u)return 0u;
-    switch(instruction->machine_argument>>32u) {
-    case 39u:return 8u;
-    case 29u:return 16u;
-    case 18u:return 32u;
-    case 22u:return 64u;
-    case 13u:return 128u|8u;
-    case 20u:return 128u|16u;
-    case 37u:case 38u:return 128u|32u;
-    case 19u:return 128u|64u;
-    default:return 0u;
-    }
-}
+pl_u32 cut_vector_unpack_shape(const pl_x86_instruction *i)
+{pl_x86_vector_unpack law;return pl_x86_vector_unpack_lower(i,&law)?law.lane_bits|(law.high?128u:0u):0u;}
 
 static void spread(cut_lowering *cut,pl_u32 local,pl_u32 half,pl_u32 width)
 {
@@ -33,6 +20,20 @@ static void spread(cut_lowering *cut,pl_u32 local,pl_u32 half,pl_u32 width)
 
 void cut_lower_vector_unpack(cut_lowering *cut,const pl_x86_instruction *instruction,pl_u32 shape)
 {
+    pl_x86_vector_unpack law;
+    if(pl_x86_vector_unpack_lower(instruction,&law)&&law.register_bytes==8u){
+        cut_mmx_guard(cut);
+        if(law.source_memory){const pl_x86_memory *m=&instruction->operands[1].value.memory;cut_effective_address(cut,instruction,m);cut_set(cut,CUT_ADDRESS);
+            cut->report.memory_access=MACHINE_MEMORY_READ|cut_memory_role(m);cut_const(cut,0u);cut_set(cut,CUT_VALUE);cut_access(cut);cut_access_value(cut);}
+        else cut_load(cut,offsetof(machine_state,x87_significand)+law.source*8u);
+        if(law.high){cut_const(cut,32u);cut_op(cut,0x88u);}cut_set(cut,26u);
+        if(law.alias)cut_get(cut,26u);else{cut_load(cut,offsetof(machine_state,x87_significand)+law.target*8u);if(law.high){cut_const(cut,32u);cut_op(cut,0x88u);}}
+        cut_set(cut,27u);
+        _Alignas(8) pl_u8 scratch[16384];pl_arena arena={scratch,sizeof scratch,0u};pl_plan plan;
+        if(pl_x86_vector_unpack_plan(law.lane_bits,law.alias,&arena,&plan)){cut->writer->error=WASM_COMPILER_ERROR_GRAMMAR;return;}
+        const pl_u32 inputs[]={27u,26u},outputs[]={28u};cut_emit_scalar_projection(cut,&plan,inputs,32u,outputs,1u);
+        cut_store(cut,offsetof(machine_state,x87_significand)+law.target*8u,28u);cut_mmx_publish(cut,law.target);return;
+    }
     pl_u32 width=shape&127u,selected=shape&128u?8u:0u;
     pl_u32 offset=(pl_u32)offsetof(machine_state,xmm)+instruction->operands[0].value.reg.index*16u;
     int read=!!(instruction->machine_argument&(1ull<<24u));

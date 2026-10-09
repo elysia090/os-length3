@@ -90,6 +90,10 @@ int pl_x86_x87_control_load_supported(const pl_x86_instruction *instruction);
 /* Waiting control load: source word, old SW -> canonical CW, recomputed
  * ES/B. New pending exceptions are deferred, never raised by the load. */
 int pl_x86_x87_control_load_plan(pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 environment_bytes,bytes,restore,registers;} pl_x86_x87_environment;
+/* Protected long-mode 14/28-byte environment and optional eight raw ST
+ * fields, in logical order. No format record is a saved execution program. */
+int pl_x86_x87_environment_lower(const pl_x86_instruction *instruction,pl_x86_x87_environment *out);
 /* WAIT is its own instruction, not a prefix or an x87 value operation. */
 int pl_x86_x87_wait_supported(const pl_x86_instruction *instruction);
 typedef struct {pl_u8 free_register,source,step;} pl_x86_x87_stack;
@@ -210,6 +214,15 @@ typedef struct {
 
 int pl_x86_vector_project(const pl_x86_instruction *instruction,
                            pl_x86_vector_projection *out);
+typedef struct {pl_u8 register_bytes,lane_bits,left,arithmetic,immediate,count,source_memory,source,target;} pl_x86_vector_shift;
+int pl_x86_vector_shift_lower(const pl_x86_instruction *instruction,pl_x86_vector_shift *out);
+typedef struct {pl_u8 source_memory,source,target,control;} pl_x86_mmx_shuffle;
+int pl_x86_mmx_shuffle_lower(const pl_x86_instruction *instruction,pl_x86_mmx_shuffle *out);
+int pl_x86_mmx_shuffle_plan(pl_u32 control,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 register_bytes,lane_bits,high,source_memory,source_bytes,source,target,alias;} pl_x86_vector_unpack;
+int pl_x86_vector_unpack_candidate(const pl_x86_instruction *instruction);
+int pl_x86_vector_unpack_lower(const pl_x86_instruction *instruction,pl_x86_vector_unpack *out);
+int pl_x86_vector_unpack_plan(pl_u32 bits,pl_u32 alias,pl_arena *arena,pl_plan *out);
 pl_u32 pl_x86_vector_project_byte(const pl_x86_vector_projection *projection,
                                   pl_u32 byte);
 

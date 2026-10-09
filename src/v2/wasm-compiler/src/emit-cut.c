@@ -157,7 +157,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 if (indirect) plan->report.memory_bytes = instruction.operation == PL_X86_OPERATION_CALL
                     || instruction.operands[0].kind == PL_X86_OPERAND_MEMORY ? 8u : 0u;
                 else if (system==CUT_SYSTEM_FXSAVE || system==CUT_SYSTEM_FXRSTOR)
-                    plan->report.memory_bytes=512u;
+                    plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_MXCSR) plan->report.memory_bytes=4u;
                 else if ((system==CUT_SYSTEM_X87_LOAD||system==CUT_SYSTEM_X87_ARITHMETIC||system==CUT_SYSTEM_X87_STORE)&&instruction.operands[0].kind==PL_X86_OPERAND_MEMORY)
                     plan->report.memory_bytes=instruction.operands[0].bits/8u;
@@ -169,7 +169,7 @@ int cut_prepare_image(const pl_x86_image *image, const wasm_cut_options *options
                 else if(system==CUT_SYSTEM_SELECTOR_QUERY)plan->report.memory_bytes=instruction.operands[1].kind==PL_X86_OPERAND_MEMORY?2u:0u;
                 else if(system==CUT_SYSTEM_FAR_TRANSFER)plan->report.memory_bytes=instruction.operands[0].bits/8u;
                 else if (system==CUT_SYSTEM_VECTOR_TRANSFER)
-                {pl_x86_vector_binary law;plan->report.memory_bytes=pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
+                {pl_x86_vector_binary law;pl_x86_vector_shift shift;pl_x86_vector_unpack unpack;pl_x86_mmx_shuffle shuffle;plan->report.memory_bytes=pl_x86_mmx_shuffle_lower(&instruction,&shuffle)?(shuffle.source_memory?8u:0u):pl_x86_vector_unpack_lower(&instruction,&unpack)?(unpack.source_memory?unpack.source_bytes:0u):pl_x86_vector_shift_lower(&instruction,&shift)?(shift.source_memory?shift.register_bytes:0u):pl_x86_vector_binary_lower(&instruction,&law)?(law.source_memory?law.register_bytes:0u):(instruction.machine_argument&(3ull<<24u))?16u:0u;}
                 else if (system==CUT_SYSTEM_VECTOR_SCALAR)
                 {pl_x86_mmx_transfer law;pl_x86_scalar_vector_transfer lane;plan->report.memory_bytes=pl_x86_scalar_vector_transfer_lower(&instruction,&lane)?(lane.source_memory||lane.target_memory?lane.bytes:0u):pl_x86_mmx_transfer_lower(&instruction,&law)?(law.source_memory||law.target_memory?law.bytes:0u):
                     (instruction.machine_argument&(3ull<<24u))?(instruction.machine_argument&255u)==9u?4u:8u:0u;}
@@ -281,8 +281,19 @@ static int prologue(wasm_writer *writer,const cut_plan *plan,cut_lowering *state
         permutation_local=(pl_u32)cut_vector_projection_local(&instruction);
         pl_u32 binary_locals=(pl_u32)cut_vector_binary_local(&instruction);
         if(binary_locals>permutation_local)permutation_local=binary_locals;
+        pl_x86_vector_shift shift;if(pl_x86_vector_shift_lower(&instruction,&shift)&&shift.register_bytes==8u)permutation_local=1u;
+        pl_x86_vector_unpack unpack;if(pl_x86_vector_unpack_lower(&instruction,&unpack)&&unpack.register_bytes==8u)permutation_local=1u;
+        pl_x86_mmx_shuffle shuffle;if(pl_x86_mmx_shuffle_lower(&instruction,&shuffle))permutation_local=1u;
     }
     pl_u32 locals=cut.has_repeat?CUT_REPEAT_LOCALS:cut.has_port?CUT_MEMORY_LOCALS:CUT_LOCAL_COUNT;
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_shift law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_shift_lower(&i,&law))locals=28u;}
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_vector_unpack law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_vector_unpack_lower(&i,&law)&&law.register_bytes==8u)locals=64u;}
+    if(plan->system_cut==CUT_SYSTEM_VECTOR_TRANSFER){pl_x86_instruction i;pl_x86_mmx_shuffle law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_mmx_shuffle_lower(&i,&law))locals=64u;}
+    if(plan->system_cut==CUT_SYSTEM_FXSAVE||plan->system_cut==CUT_SYSTEM_FXRSTOR){pl_x86_instruction i;pl_x86_x87_environment law;
+        if(!pl_x86_decode_profile(&plan->image,rip,&i)&&pl_x86_x87_environment_lower(&i,&law))locals=48u;}
     if(plan->system_cut==CUT_SYSTEM_VECTOR_INTEGER_FLOAT){pl_x86_instruction i;pl_x86_vector_integer_float law;
         if(pl_x86_decode_profile(&plan->image,rip,&i)||!pl_x86_vector_integer_float_lower(&i,&law))return WASM_COMPILER_ERROR_GRAMMAR;
         if(law.source_class==PL_X86_REGISTER_MMX){permutation_local=5u;locals=26u;}else locals=32u+PL_X86_SIGNED_FLOAT_MAX_NODES;}

@@ -2940,6 +2940,12 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         &&!pl_x86_cr0_clear_supported(instruction))return PL_ERROR_X86_SEMANTIC;
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==39u){
         pl_x86_scalar_vector_transfer law;if(!pl_x86_scalar_vector_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&(instruction->machine_argument&255u)==PL_X86_VECTOR_PACKED_SHIFT){
+        pl_x86_vector_shift law;if(!pl_x86_vector_shift_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(pl_x86_vector_unpack_candidate(instruction)){
+        pl_x86_vector_unpack law;if(!pl_x86_vector_unpack_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==38u){
+        pl_x86_mmx_shuffle law;if(!pl_x86_mmx_shuffle_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_SYSTEM_SELECTOR
         &&(instruction->opcode==2u||instruction->opcode==3u||instruction->visible_operand_count==2u)){
         pl_x86_selector_query law;if(!pl_x86_selector_query_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
@@ -3006,6 +3012,8 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
         pl_x86_x87_snapshot law;if(!pl_x86_x87_snapshot_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==30u
         &&!pl_x86_x87_control_load_supported(instruction))return PL_ERROR_X86_SEMANTIC;
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)>=32u&&(instruction->machine_argument&255u)<=35u){
+        pl_x86_x87_environment law;if(!pl_x86_x87_environment_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_READ_SELECTOR){pl_x86_selector_read law;
         if(!pl_x86_selector_read_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if (instruction->status != PL_X86_DECODE_VALID
@@ -3071,7 +3079,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
             || (out->machine_operation == PL_X86_MACHINE_VALIDATE_SELECTOR
                 && ((out->machine_argument >> 1u) & 1u))
             || (out->machine_operation == PL_X86_MACHINE_VECTOR
-                && ((out->machine_argument >> 24u) & 3u))
+                && ((out->machine_argument >> 24u)
+                    & ((out->machine_argument & 0xffu)
+                       == PL_X86_VECTOR_PACKED_SHIFT ? 1u : 3u)))
             || (out->machine_operation == PL_X86_MACHINE_WRITE_SEGMENT
                 && ((out->machine_argument >> 16u) & 1u))
             || (out->machine_operation == PL_X86_MACHINE_READ_SELECTOR
@@ -3184,7 +3194,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
                               : out->machine_operation
                                 == PL_X86_MACHINE_VECTOR
                                 && (out->machine_argument & 0xffu) != 28u
-                                && !((out->machine_argument >> 25u) & 1u)
+                                && ((out->machine_argument & 0xffu)
+                                    == PL_X86_VECTOR_PACKED_SHIFT
+                                    || !((out->machine_argument >> 25u) & 1u))
                               ? 1u : 0u;
         if (out->machine_operation == PL_X86_MACHINE_X87
                 && (((out->machine_argument & 0xffu) >= 17u

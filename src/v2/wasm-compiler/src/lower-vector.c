@@ -10,6 +10,15 @@ static int xmm(const pl_x86_operand *operand, int selected_half)
 }
 int cut_vector_supported(const pl_x86_instruction *instruction)
 {
+    pl_x86_mmx_shuffle mmx_shuffle;
+    if(pl_x86_mmx_shuffle_lower(instruction,&mmx_shuffle))return !mmx_shuffle.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
+    pl_x86_vector_shift shift;
+    if(pl_x86_vector_shift_lower(instruction,&shift))return !shift.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
+    pl_x86_vector_unpack unpacked;
+    if(pl_x86_vector_unpack_lower(instruction,&unpacked))return !unpacked.source_memory
+        ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
     pl_x86_vector_binary binary;
     if(pl_x86_vector_binary_lower(instruction,&binary))return !binary.source_memory
         ||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory);
@@ -101,6 +110,9 @@ static void write_word(cut_lowering *cut,pl_u32 offset,pl_u32 local)
 }
 void cut_lower_vector(cut_lowering *cut,const pl_x86_instruction *instruction)
 {
+    pl_x86_mmx_shuffle shuffle;if(pl_x86_mmx_shuffle_lower(instruction,&shuffle)){cut_lower_mmx_shuffle(cut,instruction,&shuffle);return;}
+    pl_x86_vector_shift shifted;if(pl_x86_vector_shift_lower(instruction,&shifted)){cut_lower_vector_shift(cut,instruction,0u);return;}
+    pl_x86_vector_unpack unpacked;if(pl_x86_vector_unpack_lower(instruction,&unpacked)&&unpacked.register_bytes==8u){cut_lower_vector_unpack(cut,instruction,0u);return;}
     pl_x86_vector_binary binary;
     int binary_value=pl_x86_vector_binary_lower(instruction,&binary),mmx=binary_value&&binary.register_bytes==8u;
     int read=binary_value?binary.source_memory:!!(instruction->machine_argument&(1ull<<24u));
