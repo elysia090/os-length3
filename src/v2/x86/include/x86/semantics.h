@@ -117,6 +117,15 @@ int pl_x86_x87_exchange_lower(const pl_x86_instruction *instruction,pl_x86_x87_e
 /* Inputs A.sig/A.se,B.sig/B.se,CW,two empty bits. Outputs raised,suppress,
  * new A.sig/A.se,new B.sig/B.se. Alias projection needs only outputs0..3. */
 int pl_x86_x87_exchange_plan(pl_u32 alias,pl_arena *arena,pl_plan *out);
+typedef struct {pl_u8 kind,source,condition,constant;pl_u16 opcode;} pl_x86_x87_transfer;
+enum {PL_X86_X87_TRANSFER_CONDITIONAL,PL_X86_X87_TRANSFER_NEGATE,PL_X86_X87_TRANSFER_ABSOLUTE,PL_X86_X87_TRANSFER_CONSTANT};
+/* Raw register/constant transfer, without numeric conversion. Inputs:
+ * source sig/se, target/source tags, CW, EFLAGS. Outputs: sig,se,tag,raised,
+ * suppress,write. Empty operands are checked even for a false condition.
+ * Sign operations only need the exponent/sign field; constants ignore PC. */
+#define PL_X86_X87_TRANSFER_MAX_NODES 32u
+int pl_x86_x87_transfer_lower(const pl_x86_instruction *instruction,pl_x86_x87_transfer *out);
+int pl_x86_x87_transfer_plan(const pl_x86_x87_transfer *law,pl_arena *arena,pl_plan *out);
 /* Exact load/push. Format0 IEEE,1 signed integer,2 extended80. Inputs raw
  * word,CW,full-stack; format2 also uses high sign/exp and source-empty bits.
  * Outputs extended fields and the exception/tag publication word. */

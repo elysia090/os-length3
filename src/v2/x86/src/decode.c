@@ -1684,8 +1684,8 @@ static void classify_machine_operation(
     case ZYDIS_MNEMONIC_FCHS:
     case ZYDIS_MNEMONIC_FABS:
         if (!out->visible_operand_count) {
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             pl_u32 absolute = source->mnemonic == ZYDIS_MNEMONIC_FABS;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 54u | ((pl_u64)fop << 16u)
@@ -2278,8 +2278,8 @@ static void classify_machine_operation(
                              : source->mnemonic == ZYDIS_MNEMONIC_FCMOVNE ? 5u
                              : source->mnemonic == ZYDIS_MNEMONIC_FCMOVNBE ? 7u
                              : 11u;
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 36u | ((pl_u64)fop << 16u)
                 | ((pl_u64)out->operands[1].value.reg.index << 32u)
@@ -2385,8 +2385,8 @@ static void classify_machine_operation(
                             : source->mnemonic == ZYDIS_MNEMONIC_FLDLG2 ? 4u
                             : source->mnemonic == ZYDIS_MNEMONIC_FLDLN2 ? 5u
                             : 6u;
-            pl_u32 fop = ((pl_u32)(out->source[0] & 7u) << 8u)
-                       | out->source[1];
+            pl_u32 fop = ((pl_u32)(source->opcode & 7u) << 8u)
+                |((pl_u32)source->raw.modrm.mod<<6u)|((pl_u32)source->raw.modrm.reg<<3u)|source->raw.modrm.rm;
             out->machine_operation = PL_X86_MACHINE_X87;
             out->machine_argument = 42u | ((pl_u64)fop << 16u)
                 | ((pl_u64)constant << 32u);

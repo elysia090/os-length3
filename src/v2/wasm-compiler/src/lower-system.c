@@ -35,6 +35,7 @@ int cut_system_supported(const pl_x86_instruction *instruction)
     pl_x86_vector_float_integer float_integer;if(pl_x86_vector_float_integer_lower(instruction,&float_integer)
         &&(!float_integer.source_memory||cut_memory_address_supported(instruction,&instruction->operands[1].value.memory)))return CUT_SYSTEM_VECTOR_FLOAT_INTEGER;
     pl_x86_x87_stack fpu_stack;if(pl_x86_x87_stack_lower(instruction,&fpu_stack))return CUT_SYSTEM_X87_STACK;
+    pl_x86_x87_transfer fpu_transfer;if(pl_x86_x87_transfer_lower(instruction,&fpu_transfer))return CUT_SYSTEM_X87_TRANSFER;
     pl_x86_return returning;
     if(pl_x86_return_lower(instruction,&returning))return returning.interrupt?CUT_SYSTEM_INTERRUPT_RETURN:CUT_SYSTEM_FAR_RETURN;
     pl_x86_count_branch count;
@@ -449,6 +450,7 @@ void cut_lower_system(cut_lowering *cut, const pl_x86_instruction *instruction)
     if(pl_x86_x87_snapshot_lower(instruction,&fpu)){cut_lower_x87_snapshot(cut,instruction);return;}
     pl_x86_x87_compare compare;
     pl_x86_x87_exchange exchange;if(pl_x86_x87_exchange_lower(instruction,&exchange)){cut_lower_x87_exchange(cut,instruction);return;}
+    pl_x86_x87_transfer fpu_transfer;if(pl_x86_x87_transfer_lower(instruction,&fpu_transfer)){cut_lower_x87_transfer(cut,instruction);return;}
     if(pl_x86_x87_compare_lower(instruction,&compare)){cut_lower_x87_compare(cut,instruction);return;}
     pl_x86_x87_status_compare status;
     if(pl_x86_x87_status_compare_lower(instruction,&status)){cut_lower_x87_status_compare(cut,instruction);return;}

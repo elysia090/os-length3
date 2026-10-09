@@ -2954,6 +2954,9 @@ int pl_x86_lower(const pl_x86_instruction *instruction,
     if(instruction->machine_operation==PL_X86_MACHINE_VECTOR&&((instruction->machine_argument&255u)==30u
         ||((instruction->machine_argument&255u)==PL_X86_VECTOR_SCALAR_FLOAT&&((instruction->machine_argument>>32u)&255u)==PL_X86_SCALAR_FLOAT_INTEGER_TO_FLOAT))){
         pl_x86_vector_integer_float law;if(!pl_x86_vector_integer_float_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
+    if(instruction->machine_operation==PL_X86_MACHINE_X87&&((instruction->machine_argument&255u)==36u
+        ||(instruction->machine_argument&255u)==42u||(instruction->machine_argument&255u)==54u)){
+        pl_x86_x87_transfer law;if(!pl_x86_x87_transfer_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==21u){
         pl_x86_x87_exchange law;if(!pl_x86_x87_exchange_lower(instruction,&law))return PL_ERROR_X86_SEMANTIC;}
     if(instruction->machine_operation==PL_X86_MACHINE_X87&&(instruction->machine_argument&255u)==14u){

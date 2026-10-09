@@ -23,12 +23,16 @@ Cold shell3s remains a target, not an achieved claim.
 
 ## Current authoritative state
 
-Same make/every-final-PF_X-byte population:233218/233455 lowerable,237 missing,
-zero missing fault cuts/fetch/capacity refusals. Remaining floating150,
+Same make/every-final-PF_X-byte population:233263/233455 lowerable,192 missing,
+zero missing fault cuts/fetch/capacity refusals. Remaining floating105,
 SIMD86,atomic1. FirstDD32 at0xd382. This complete byte inventory is
 not an execution trace, kernel/image publication or browser boot proof.
 
-Far call/jump now shares the descriptor/MMU/event owner, including conforming
+FCMOV/sign/constants now share pure x86 transfer SSA, with no latent payload
+read for false/identity/empty arms. 37376 independent physical comparisons and
+56064 compiled boundary models pass;45 more coordinates are recovered.
+See [raw x87 transfer](../vm/check/browser/evidence/2026-10-09-x87-transfer.md).
+Far call/jump shares the descriptor/MMU/event owner, including conforming
 code, call gates, inner stack changes, partial frame faults and exact retries.
 All91 far coordinates are recovered;384 independent CPU frames and3456
 compiled boundary models pass. See [far control transaction](../vm/check/browser/evidence/2026-10-09-far-transfer.md).

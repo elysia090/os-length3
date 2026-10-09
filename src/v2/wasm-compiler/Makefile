@@ -120,6 +120,13 @@ SOURCES += src/lower-x87-snapshot.c
 SOURCES += src/emit-scalar-plan.c src/lower-x87-compare.c
 SOURCES += src/lower-x87-load.c
 SOURCES += src/lower-x87-exchange.c
+SOURCES += src/lower-x87-transfer.c
+.PHONY: x87-transfer-check
+check: x87-transfer-check
+x87-transfer-check: $(BUILD)/x87-transfer-check
+	$(BUILD)/x87-transfer-check
+$(BUILD)/x87-transfer-check: check/x87-transfer.c $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES)
+	$(CC) $(CFLAGS) $(WARN) $(INCLUDES) $< $(BUILD)/libwasm-compiler.a $(PROVIDER_LIBRARIES) -o $@
 .PHONY: x87-load-view-check
 check: x87-load-view-check x87-load-fault-check
 x87-load-fault-check: $(BUILD)/x87-load-fault-observe
